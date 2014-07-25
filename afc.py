@@ -1,3 +1,28 @@
+#!/usr/bin/env python
+# -*- coding: utf8 -*-
+#
+# $Id$
+#
+# Copyright (c) 2012-2014 "dark[-at-]gotohack.org"
+#
+# This file is part of pymobiledevice
+#
+# pymobiledevice is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+
+
 from construct.core import Struct
 from construct.lib.container import Container
 from construct.macros import String, ULInt64
@@ -428,11 +453,4 @@ class AFCShell(Cmd):
         print self.afc.get_device_infos()
         
 if __name__ == "__main__":
-    #lockdown = LockdownClient()
-    #afc = AFCClient(lockdown)
-    #afc.read_directory("/DCIM/100APPLE/")
-    #d = afc.get_file_contents("/DCIM/100APPLE/IMG_0001.JPG")
-    #open("test.jpg","wb").write(d)
-    #afc.set_file_contents("/test.txt", "hello world")
-    #print afc.get_file_info("/etc/fstab")
     AFCShell().cmdloop("Hello")

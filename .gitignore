@@ -1,1 +1,8 @@
 *.pyc
+*.swp
+*~
+*.dmp
+*.dmg
+*.gz
+var/
+Library/

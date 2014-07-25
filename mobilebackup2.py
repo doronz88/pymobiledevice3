@@ -1,3 +1,28 @@
+#!/usr/bin/env python
+# -*- coding: utf8 -*-
+#
+# $Id$
+#
+# Copyright (c) 2012-2014 "dark[-at-]gotohack.org"
+#
+# This file is part of pymobiledevice
+#
+# pymobiledevice is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+
+
 from lockdown import LockdownClient
 from mobilebackup import MobileBackupClient
 from optparse import OptionParser
@@ -32,7 +57,7 @@ class MobileBackup2Client(MobileBackupClient):
         else:
             self.lockdown = LockdownClient()
         try:
-            self.udid = lockdown.getValue("", "UniqueDeviceID")#lockdown.udid
+            self.udid = lockdown.getValue("", "UniqueDeviceID")
         except:
             self.lockdown = LockdownClient()
             self.udid = self.lockdown.getValue("", "UniqueDeviceID")
@@ -42,29 +67,24 @@ class MobileBackup2Client(MobileBackupClient):
         if backupPath:
             self.backupPath = backupPath
         else:
-            self.backupPath = "backups" #self.udid
+            self.backupPath = "backups"
         if not os.path.isdir(self.backupPath):
             os.makedirs(self.backupPath,0o0755)  
         
         print "Starting new com.apple.mobilebackup2 service with working dir: %s" %  self.backupPath
         self.password = ""
         DLMessageVersionExchange = self.service.recvPlist()
-        #print DLMessageVersionExchange
         version_major = DLMessageVersionExchange[1]
         self.service.sendPlist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
         DLMessageDeviceReady = self.service.recvPlist()
-        #print DLMessageDeviceReady
         if DLMessageDeviceReady and DLMessageDeviceReady[0] == "DLMessageDeviceReady":
-            #print "Got DLMessageDeviceReady"
             self.version_exchange()
         else:
             raise Exception("MobileBackup2Client init error %s" % DLMessageDeviceReady)
 
     def __del__(self):
         if self.service:
-            #print "Disconnecting"
             self.service.sendPlist(["DLMessageDisconnect", "___EmptyParameterString___"])
-            #print self.service.recvPlist() 
          
     def internal_mobilebackup2_send_message(self, name, data):
         data["MessageName"] = name
@@ -198,7 +218,6 @@ class MobileBackup2Client(MobileBackupClient):
     def work_loop(self):
         while True:
             msg = self.mobilebackup2_receive_message()
-            #print msg
             if not msg:
                 break
 
@@ -221,9 +240,9 @@ class MobileBackup2Client(MobileBackupClient):
                 self.mb2_handle_make_directory(msg)
             elif msg[0] == "DLMessageUploadFiles":
                 self.mb2_handle_receive_files(msg)
-            elif msg[0] in ["DLMessageMoveFiles","DLMessageMoveItems"]:#DRK
+            elif msg[0] in ["DLMessageMoveFiles","DLMessageMoveItems"]:
                 self.mb2_handle_move_files(msg)
-            elif msg[0] in ["DLMessageRemoveFiles", "DLMessageRemoveItems"]:#DRK
+            elif msg[0] in ["DLMessageRemoveFiles", "DLMessageRemoveItems"]:
                 self.mb2_handle_remove_files(msg)
             elif msg[0] == "DLMessageCopyItem":
                 self.mb2_handle_copy_item(msg)
@@ -246,9 +265,7 @@ class MobileBackup2Client(MobileBackupClient):
         writePlist(statusDict,self.check_filename("Status.plist"))
 
 
-    def backup(self):#,bkpPath=None):
-        #if bkpPath:
-        #   self.backupPath = bkpPath
+    def backup(self):
         if not os.path.isdir(os.path.join(self.backupPath,self.udid)):
             os.makedirs(os.path.join(self.backupPath,self.udid))
         self.create_info_plist()
@@ -258,10 +275,8 @@ class MobileBackup2Client(MobileBackupClient):
     def restore(self,options = {"RestoreSystemFiles": True,
                                 "RestoreShouldReboot": False,
                                 "RestoreDontCopyBackup": True, #FIXME
-                                "RestorePreserveSettings": True}):#,bkpPath=None):
+                                "RestorePreserveSettings": True}):
         
-        #if bkpPath:
-        #   self.backupPath = bkpPath
         m = os.path.join(self.backupPath,self.udid,"Manifest.plist")
         manifest = readPlist(m)
         if manifest["IsEncrypted"]:
@@ -386,8 +401,6 @@ class MobileBackup2Client(MobileBackupClient):
     def restore_mbdb(self, data):
         return write_file(os.path.join(self.backupPath, "Manifest.mbdb"), data)
 
-
-    
                      
 if __name__ == "__main__":
     parser = OptionParser(usage="%prog")

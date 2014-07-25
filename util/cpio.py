@@ -1,3 +1,27 @@
+#!/usr/bin/env python
+# -*- coding: utf8 -*-
+#
+# $Id$
+#
+# Copyright (c) 2012-2014 "dark[-at-]gotohack.org"
+#
+# This file is part of pymobiledevice
+#
+# pymobiledevice is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+
 from pprint import pprint
 import sys
 from struct import unpack, pack
@@ -29,19 +53,16 @@ def version():
 class CpioArchive(object):
 
     def __init__(self, cpiofile=None, fileobj=None, mode="rb"):
-        #assert(self.is_cpiofile(cpiofile=cpiofile,fileobj=fileobj))
         if fileobj:
             self.ifile = fileobj
         else:
             self.ifile = open(cpiofile,mode)
 
     def is_cpiofile(self,cpiofile=None,fileobj=None):
-        print cpiofile,fileobj
         if fileobj:
             magic = int(fileobj.read(6),8)    
         else:
             magic = int(open(cpiofile,'r').read(6),8)
-        print oct(magic)
 
         if magic in [NEW_MAGIC, CRC_MAGIC, OLD_MAGIC]:
             return True
@@ -79,7 +100,6 @@ class CpioArchive(object):
                     continue
 
             fullOutPath = os.path.join(outpath,f["name"].strip("../")) 
-            #print "[|] CPIO Creating:",fullOutPath
    
             if (f["mode"] & IFMT == ISFIFO):#FIFO
                 if not os.path.isdir(os.path.dirname(fullOutPath)):
@@ -92,28 +112,15 @@ class CpioArchive(object):
                     os.makedirs(fullOutPath, f["mode"] & MODEMASK)
    
             if (f["mode"] & IFMT == ISBLK): #Block special file
-                #if not os.path.isdir(os.path.dirname(fullOutPath)):
-                #    os.makedirs(os.path.dirname(fullOutPath),0o0755)
-                #os.mknod(fullOutPath, mode=f["mode"] & FILEMODE, device)
                 raise NotImplementedError
             
             if (f["mode"] & IFMT == ISCHR): #Character special file
-                #if not os.path.isdir(os.path.dirname(fullOutPath)):
-                #    os.makedirs(os.path.dirname(fullOutPath),0o0755)
                 raise NotImplementedError
             
             if (f["mode"] & IFMT == ISLNK): #Reserved for symbolic links
-                #if not os.path.islink((fullOutPath)):
-                #    if not os.path.islink(os.path.dirname(fullOutPath)):
-                #        os.makedirs(os.path.dirname(fullOutPath),0o0755)
-                #    print "L",os.path.join(outpath,f["data"].strip("../")),fullOutPath
-                #    #os.symlink(os.path.join(outpath,f["data"].strip("../")),fullOutPath)
                 raise NotImplementedError
 
             if (f["mode"] & IFMT == ISOCK): #Reserved for sockets
-                #if not os.path.isdir(os.path.dirname(fullOutPath)):
-                #    os.makedirs(os.path.dirname(fullOutPath),0o0755)
-                #os.mknod(fullOutPath, mode=f["mode"] & FILEMODE, device)
                 raise NotImplementedError
             
             if (f["mode"] & IFMT == ISCTG) or (f["mode"] & IFMT == ISREG): #Contiguous or Regular file
@@ -123,7 +130,6 @@ class CpioArchive(object):
                 fd.write(f["data"])
 
             os.chmod(fullOutPath, f["mode"] & MODEMASK)
-            #os.chown(fullOutPath, f["uid"], f["gid"])
         
             
 if __name__ == "__main__":
