@@ -27,9 +27,7 @@ from lockdown import LockdownClient
 from mobilebackup import MobileBackupClient
 from optparse import OptionParser
 from pprint import pprint
-#from util import makedirs, read_file, 
 from util import write_file, hexdump
-#from util.bplist import BPlistReader
 from biplist import writePlist, readPlist, Data
 import os
 import hashlib
@@ -105,7 +103,6 @@ class MobileBackup2Client(MobileBackupClient):
         d = {"TargetIdentifier": target,
              "SourceIdentifier": source,
              "Options": options}
-        #pprint(d)
         self.internal_mobilebackup2_send_message(request, d)        
     
     def mobilebackup2_receive_message(self):
@@ -115,10 +112,9 @@ class MobileBackup2Client(MobileBackupClient):
         a = ["DLMessageStatusResponse", status_code, status1, status2]
         self.service.sendPlist(a)
 
-    def mb2_handle_free_disk_space(self,msg): #DRK
+    def mb2_handle_free_disk_space(self,msg):
         s = os.statvfs(self.backupPath)
         freeSpace = s.f_bsize * s.f_bavail
-        #print "freeSpage %s" % freeSpace
         a = ["DLMessageStatusResponse", 0, freeSpace]
         self.service.sendPlist(a)
 
@@ -144,12 +140,10 @@ class MobileBackup2Client(MobileBackupClient):
         #print "Reading",self.check_filename(filename) #FIXME
         data = self.read_file(self.check_filename(filename))
         if data != None:
-            #print hexdump(data)
             print "Sending %s to device" % filename
             self.service.send_raw(chr(CODE_FILE_DATA) + data)
             self.service.send_raw(chr(CODE_SUCCESS))
         else:
-            #print "DATA %s" % hexdump(data)
             print "File %s requested from device not found" % filename
             self.service.send_raw(chr(CODE_ERROR_LOCAL))
             self.mb2_multi_status_add_file_error(errplist, filename, ERROR_ENOENT, "Could not find the droid you were looking for ;)")
@@ -183,14 +177,12 @@ class MobileBackup2Client(MobileBackupClient):
             if device_filename == "":
                 break
             backup_filename = self.service.recv_raw()
-            #print device_filename, backup_filename
             filedata = ""
             while True:
                 stuff = self.service.recv_raw()
                 if ord(stuff[0]) == CODE_FILE_DATA:
                     filedata += stuff[1:]
                 elif ord(stuff[0]) == CODE_SUCCESS:
-                    #print "Success"
                     self.write_file(self.check_filename(backup_filename), filedata)
                     break
                 else:
@@ -319,7 +311,6 @@ class MobileBackup2Client(MobileBackupClient):
                 user_id=501,group_id=501,last_modification=None,
                 last_status_change_time=None,birth_time=None,
                 protection_class=0x00,num_attributes=0x00):
-        #print path, protection_class
         if not last_status_change_time:
             last_status_change_time = time()
         if not birth_time:
@@ -412,7 +403,6 @@ if __name__ == "__main__":
                   help="Show backup info")
     parser.add_option("-l", "--list", dest="list", action="store_true", default=False,
                   help="Show backup info")
-    #parser.set_defaults(backup=True)
     (options, args) = parser.parse_args()
     
     lockdown = LockdownClient()

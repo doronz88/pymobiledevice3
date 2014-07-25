@@ -1,5 +1,7 @@
 * text=auto
 *.py  filter=tabspace
 *.py  filter=indent
+*.py  filter=ident
 utils/*.py  filter=tabspace
 utils/*.py  filter=indent
+utils/*py   filter=ident
