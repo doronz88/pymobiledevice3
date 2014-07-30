@@ -25,7 +25,9 @@
 import struct
 import time
 import sys
+from tempfile import mkstemp
 from lockdown import LockdownClient
+from optparse import OptionParser
 
 """
 struct pcap_hdr_s {
@@ -83,17 +85,28 @@ class Win32Pipe(object):
         return errCode == 0
 
 if __name__ == "__main__":
-    if sys.platform == "win32":
+    
+    if sys.platform == "darwin":
+            print "Why not use rvictl ?"
+
+    parser = OptionParser(usage="%prog")
+    parser.add_option("-o", "--output", dest="output", default=False,
+                  help="Output location", type="string")
+
+    (options, args) = parser.parse_args()
+    if options.output:
+        output = options.output
+
+    elif sys.platform == "win32":
         import win32pipe, win32file
         output = Win32Pipe()
-    elif sys.platform == "darwin":
-        print "Why not use rvictl ?"
-        output = PcapOut(sys.argv[1])
+
     else:
-        output = PcapOut(sys.argv[1])
+        _,path = mkstemp(prefix="device_dump_",suffix=".pcap",dir=".")
+        print "Recording data to: %s" % path
+        output = PcapOut(path)
 
     lockdown = LockdownClient()
-    
     pcap = lockdown.startService("com.apple.pcapd")
     
     while True:
@@ -103,12 +116,15 @@ if __name__ == "__main__":
         data = d.data
         hdrsize, xxx, packet_size = struct.unpack(">LBL", data[:9])
         flags1, flags2, offset_to_ip_data, zero = struct.unpack(">LLLL", data[9:0x19])
+        
         assert hdrsize >= 0x19
         interfacetype= data[0x19:hdrsize].strip("\x00")
         t = time.time()
         print interfacetype, packet_size, t
+        
         packet = data[hdrsize:]
         assert packet_size == len(packet)
+
         if offset_to_ip_data == 0:
             #add fake ethernet header for pdp packets
             packet = "\xBE\xEF" * 6 + "\x08\x00" + packet
