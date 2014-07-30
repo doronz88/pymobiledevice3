@@ -26,27 +26,26 @@
 from lockdown import LockdownClient
 from pprint import pprint
 import plistlib
+from optparse import OptionParser
 
-"""
-com.apple.mobile.diagnostics_relay
-Request
-    Goodbye
-    All
-    GasGauge
-    WiFi
-    Shutdown
-    Restart
-    MobileGestalt    {"MobileGestaltKeys": []}
-    Sleep
-    NAND
-    IORegistry    {"Request": "IORegistry", "CurrentPlane": "", "EntryName": "","EntryClass":""}
-    Obliterate
+Requests = """Goodbye
+All
+GasGauge
+WiFi
+Shutdown
+Restart
+MobileGestalt
+Sleep
+NAND
+IORegistry
+Obliterate
 """
 
 """
 BasebandKeyHashInformation
 BasebandFirmwareManifestData
 """
+
 MobileGestaltKeys = """DieId
 SerialNumber
 UniqueChipID
@@ -137,23 +136,28 @@ class DIAGClient(object):
         self.service = self.lockdown.startService(serviceName)
         self.packet_num = 0
 
+
     def stop_session(self):
         print "Disconecting..."
         self.service.close()
 
-    def query_mobilegestalt(self, MobileGestalt = MobileGestaltKeys.split("\n")):
-        self.service.sendPlist({"Request": "MobileGestalt", "MobileGestaltKeys": MobileGestalt})
+
+    def query_mobilegestalt(self, MobileGestalt=MobileGestaltKeys.split("\n")):
+        self.service.sendPlist({"Request": "MobileGestalt", 
+                                "MobileGestaltKeys": MobileGestalt})
+        
         res = self.service.recvPlist()
-        #pprint(res)
-        if res.has_key("Diagnostics"):
-            return res;
+        d = res.get("Diagnostics") 
+        if d:
+            return d.get("MobileGestalt")
         return None
 
+
     def action(self, action="Shutdown", flags=None):	
-        self.service.sendPlist({"Request": action, })
+        self.service.sendPlist({"Request": action })
         res = self.service.recvPlist()
-        #pprint(res)
-        return res    
+        return res.get("Diagnostics") 
+
 
     def restart(self):
         return self.action("Restart")
@@ -162,48 +166,84 @@ class DIAGClient(object):
     def shutdown(self):
         return self.action("Shutdown")
 
+
     def diagnostics(self, diagType="All"):
         self.service.sendPlist({"Request": diagType})
         res = self.service.recvPlist()
         pprint(res)
-        if res.has_key("Diagnostics"):
-            return res;
+        if res:
+            return res.get("Diagnostics")
         return None
-            
-    def ioregistry_entry(self, name=None, ioclass=None):
-        req = {}
-        req["Request"] = "IORegistry"
-        if (name):
-            req["EntryName"] = name
+                    
 
-        if (ioclass):
-            req["EntryClass"] = ioclass
+    def ioregistry_entry(self, name=None, ioclass=None):
+        d = {}
+        if name:
+            d["EntryName"] = name
+
+        if ioclass:
+            d["EntryClass"] = ioclass
         
-        self.service.sendPlist(req)
+        d["Request"] = "IORegistry"
+
+        self.service.sendPlist(d)
         res = self.service.recvPlist()
         pprint(res)
-        if res.has_key("Diagnostics"):
-            return res;
+        if res:
+            return res.get("Diagnostics")
         return None
-  
-    def ioregistry_plane(self, plane):
-        req = {}
-        req["Request"] = "IORegistry"
-        req["CurrentPlane"] = ioclass
-        self.service.sendPlist(req)
+          
+
+    def ioregistry_plane(self, plane=""):
+        d = {}
+        if plane:
+            d["CurrentPlane"] = plane
+
+        else:
+            d["CurrentPlane"] = ""
+        d["Request"] = "IORegistry"
+        
+        self.service.sendPlist(d)
         res = self.service.recvPlist()
-        pprint(res)
-        if res.has_key("Diagnostics"):
-            return res;
+        dd = res.get("Diagnostics") 
+        if dd:
+            return dd.get("IORegistry")
         return None
 
 
 if __name__ == "__main__":
-    lockdown = LockdownClient()
-    ProductVersion = lockdown.getValue("", "ProductVersion")
-    assert ProductVersion[0] >= "4"
+    
+    parser = OptionParser(usage="%prog")
+    parser.add_option("-c", "--cmd", dest="cmd", default=True,
+                  help="Launch diagnostic command", type="string")
+    parser.add_option("-m", "--mobilegestalt", dest="mobilegestalt_key", default=False,
+                  help="Request mobilegestalt key", type="string")
+    parser.add_option("-i", "--ioclass", dest="ioclass", default=False,
+                  help="Request ioclass", type="string")
+    parser.add_option("-n", "--ioname", dest="ioname", default=False,
+                  help="Request ionqme", type="string")
+
+    (options, args) = parser.parse_args()
 
     diag = DIAGClient()
-    diag.diagnostics()
-    diag.query_mobilegestalt()
-    diag.restart()
+    if not options.cmd:
+        diag.diagnostics()
+        
+    if options.cmd == "IORegistry":
+        res = diag.ioregistry_plane()
+
+    elif  options.cmd == "MobileGestalt":
+
+        if not options.mobilegestalt_key or options.mobilegestalt_key not in MobileGestaltKeys.split("\n"):
+            res = diag.query_mobilegestalt()
+
+        else:
+            res = diag.query_mobilegestalt([options.mobilegestalt_key])
+
+    else:
+        res = diag.action(options.cmd)
+ 
+    if res:
+        for k in res.keys():
+            print " %s \t: %s" % (k,res[k])
+        
