@@ -43,19 +43,23 @@ class Syslog(object):
                   
 
     def watch(self,procName=None,logFile=None):
-        if logFile:
-            f = open(logFile,'w')
+                
         while True:
             d = self.c.recv(4096)
+            
             if not d:
                 break
+
             if procName:
                 procFilter = re.compile(procName,re.IGNORECASE)
                 if len(d.split(" ")) > 4 and  not procFilter.search(d):
                     continue
+
             print d.strip("\n\x00\x00")
+
             if logFile:
-                f.write(d.replace("\x00", ""))
+                with open(logFile, 'a') as f:
+                    f.write(d.replace("\x00", ""))
 
 if __name__ == "__main__":
     parser = OptionParser(usage="%prog")
