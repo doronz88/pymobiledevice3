@@ -22,25 +22,22 @@
 #
 #
 
-
 from lockdown import LockdownClient
+from util.cpio import CpioArchive
 import zlib
 import gzip
 from pprint import pprint
 from tempfile import mkstemp
+from optparse import OptionParser
+from io import BytesIO
+import os
 
-SRCFILES = """Accounts
-Baseband
-Bluetooth
+SRCFILES = """Baseband
 CrashReporter
 Caches
-CoreLocation
-DataAccess
-EmbeddedSocial
+MobileAsset
 HFSMeta
-Keyboard
 Lockdown
-MapsLogs
 MobileBackup
 MobileDelete
 MobileInstallation
@@ -49,7 +46,9 @@ Network
 UserDatabases
 WiFi
 WirelessAutomation
-Lockdown
+NANDDebugInfo
+SystemConfiguration
+Ubiquity
 tmp"""
 
 class FileRelayClient(object):
@@ -68,28 +67,56 @@ class FileRelayClient(object):
 
     def request_sources(self, sources=["UserDatabases"]):  
         print "Downloading sources ", sources
-        self.service.sendPlist({"Sources":sources})
+        self.service.sendPlist({"Sources": sources})
         res = self.service.recvPlist()
+        pprint(res)
         if res:
-            if res.has_key("Status"):
-                if res["Status"] == "Acknowledged":
-                    z = ""
-                    while True:
-                        x = self.service.recv()
-                        if not x:
-                            break
-                        z += x
-                    return z
+            s = res.get("Status")
+            if s == "Acknowledged":
+                z = ""
+                while True:
+                    x = self.service.recv()
+                    if not x:
+                        break
+                    z += x
+                return z
+            else:
+               print res.get("Error")
         return None
        
 if __name__ == "__main__":
-    lockdown = LockdownClient()
-    ProductVersion = lockdown.getValue("", "ProductVersion")
-    assert ProductVersion[0] >= "4"
+
+    parser = OptionParser(usage="%prog")
+    parser.add_option("-s", "--source", dest="source", default=False,
+                  help="File relay source to dump", type="string")
+    parser.add_option("-e", "--extract",dest="extractpath" , default=False,
+                  help="Extract archive to specified location", type="string")
+    parser.add_option("-o", "--output", dest="outputfile", default=False,
+                  help="Output location", type="string")
+
+    (options, args) = parser.parse_args()
 
     fc = FileRelayClient()
-    data = fc.request_sources(SRCFILES.split("\n"))
+    if options.source:
+       s = []
+       s.append(options.source)
+       data = fc.request_sources(s) 
+    else:
+        data = fc.request_sources(SRCFILES.split("\n"))
+    
     if data:
-        _,path = mkstemp(prefix="fileRelay_dump_",suffix=".dmp",dir=".")
+        if options.outputfile:
+            path = options.outputfile
+        else:
+            _,path = mkstemp(prefix="fileRelay_dump_",suffix=".dmp",dir=".")
+        
         open(path,'wb').write(data)
-        print  "Data saved to  %s " % path
+        print  "Data saved to:  %s " % path
+
+        if options.extractpath:
+            with open(path, 'r') as f:
+                gz = gzip.GzipFile(mode='rb', fileobj=f)
+                cpio = CpioArchive(fileobj=BytesIO(gz.read()))
+                if not os.path.isdir(options.extractpath):
+                    os.makedirs(options.extractpath,0o0755)
+                cpio.extract_files(files=None,outpath=options.extractpath)
