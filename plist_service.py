@@ -40,8 +40,7 @@ class PlistService(object):
         mux = usbmux.USBMux()
         mux.process(1.0)
         dev = None
-        #if not mux.devices:
-        #print "Waiting for iOS device %s" % str(udid)
+
         while not dev and mux.devices :
             mux.process(1.0)
             if udid:
@@ -53,8 +52,6 @@ class PlistService(object):
                 dev = mux.devices[0]
                 print "Connecting to device: " + dev.serial
 
-        #
-        #self.udid = dev.serial ###
         try:
             self.s = mux.connect(dev, self.port)
         except:
