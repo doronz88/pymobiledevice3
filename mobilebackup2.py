@@ -54,14 +54,14 @@ class MobileBackup2Client(MobileBackupClient):
             self.lockdown = lockdown
         else:
             self.lockdown = LockdownClient()
-        try:
-            self.udid = lockdown.getValue("", "UniqueDeviceID")
-        except:
-            self.lockdown = LockdownClient()
-            self.udid = self.lockdown.getValue("", "UniqueDeviceID")
+        
+        self.udid = lockdown.getValue("", "UniqueDeviceID")        
+        self.willEncrypt = lockdown.getValue("com.apple.mobile.backup", "WillEncrypt") 
+        
         self.service = self.lockdown.startService("com.apple.mobilebackup2")
         if not self.service:
             raise Exception("MobileBackup2Client init error : Could not start com.apple.mobilebackup2")
+        
         if backupPath:
             self.backupPath = backupPath
         else:
@@ -70,6 +70,7 @@ class MobileBackup2Client(MobileBackupClient):
             os.makedirs(self.backupPath,0o0755)  
         
         print "Starting new com.apple.mobilebackup2 service with working dir: %s" %  self.backupPath
+        
         self.password = ""
         DLMessageVersionExchange = self.service.recvPlist()
         version_major = DLMessageVersionExchange[1]
@@ -137,7 +138,7 @@ class MobileBackup2Client(MobileBackupClient):
         self.service.send_raw(filename)
         if not filename.startswith(self.udid):
             filename = self.udid + "/" + filename
-        #print "Reading",self.check_filename(filename) #FIXME
+
         data = self.read_file(self.check_filename(filename))
         if data != None:
             print "Sending %s to device" % filename
@@ -239,17 +240,25 @@ class MobileBackup2Client(MobileBackupClient):
             elif msg[0] == "DLMessageCopyItem":
                 self.mb2_handle_copy_item(msg)
             elif msg[0] == "DLMessageProcessMessage":
-                return msg[1]
+                errcode = msg[1].get("ErrorCode")
+                if errcode == 0:
+                    m =  msg[1].get("MessageName")
+                    if m != "Response":
+                        print m 
+                if errcode == 1:
+                    print msg[1].get("ErrorDescription")
+                    print "Please unlock your device and retry..."
+                break
             elif msg[0] == "DLMessageGetFreeDiskSpace":
-                self.mb2_handle_free_disk_space(msg) #
+                self.mb2_handle_free_disk_space(msg)
             elif msg[0] == "DLMessageDisconnect":
                 break
   
-    def create_status_plist(self):
+    def create_status_plist(self,fullBackup=True):
         #Creating Status file for backup
         statusDict = { 'UUID': '82D108D4-521C-48A5-9C42-79C5E654B98F', #FixMe We Should USE an UUID generator uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
                    'BackupState': 'new', 
-                   'IsFullBackup': True, 
+                   'IsFullBackup': fullBackup, 
                    'Version': '2.4', 
                    'Date': datetime.datetime.fromtimestamp(mktime(gmtime())),
                    'SnapshotState': 'finished'
@@ -257,18 +266,26 @@ class MobileBackup2Client(MobileBackupClient):
         writePlist(statusDict,self.check_filename("Status.plist"))
 
 
-    def backup(self):
+    def backup(self,fullBackup=True):
+        print "Starting%sbackup..." % (" Encrypted " if self.willEncrypt else "") 
+        options = {}
         if not os.path.isdir(os.path.join(self.backupPath,self.udid)):
             os.makedirs(os.path.join(self.backupPath,self.udid))
+        
         self.create_info_plist()
-        self.mobilebackup2_send_request("Backup", self.udid, "")
+
+        if fullBackup == True:
+            options["ForceFullBackup"] = True
+        self.mobilebackup2_send_request("Backup", self.udid, options)
         self.work_loop()
     
-    def restore(self,options = {"RestoreSystemFiles": True,
+
+    def restore(self, options = {"RestoreSystemFiles": True,
                                 "RestoreShouldReboot": False,
-                                "RestoreDontCopyBackup": True, #FIXME
+                                "RestoreDontCopyBackup": True,
                                 "RestorePreserveSettings": True}):
         
+        print "Starting restoration..."
         m = os.path.join(self.backupPath,self.udid,"Manifest.plist")
         manifest = readPlist(m)
         if manifest["IsEncrypted"]:
@@ -278,124 +295,34 @@ class MobileBackup2Client(MobileBackupClient):
         self.mobilebackup2_send_request("Restore", self.udid, self.udid, options)
         self.work_loop()
 
-    def info(self):
-        self.mobilebackup2_send_request("Info", self.udid, "")
+
+    def info(self,options={}):
+        self.mobilebackup2_send_request("Info", self.udid, options)
         info = self.work_loop()
         if info:
             pprint(info['Content'])
 
-    def list(self):
-        self.mobilebackup2_send_request("List", self.udid, "")
+
+    def list(self,options={}):
+        self.mobilebackup2_send_request("List", self.udid, options)
         z = self.work_loop()
         if z:
             print z["Content"]
    
-    def unback(self):
-        self.mobilebackup2_send_request("Unback", self.udid, "")
-        print self.work_loop()
+
+    def changepw(self,oldpw,newpw):
+        options = { "OldPassword" : olpw,
+                    "NewPassword" : newpw }
+                    
+        self.mobilebackup2_send_request("ChangePassword", self.udid, "")
+        self.work_loop()
+
+        
     
-    def mbdb_add_link(self, domain, path, target, mode=0xA1ED):
-        return self.mbdb_add(domain,path,target=target, mode=mode | MASK_SYMBOLIC_LINK)
-    
-    def mbdb_add_file(self, domain, path, filedata, mode=0x81ED,protection_class=0x04,num_attributes=0x00):
-        return self.mbdb_add(domain,path, filedata=filedata, 
-                             mode=(mode | MASK_REGULAR_FILE),
-                             protection_class=protection_class,
-                             num_attributes=num_attributes)
-
-    def mbdb_add_directory(self, domain, path, mode=0x41ED):
-        return self.mbdb_add(domain,path, mode=mode | MASK_DIRECTORY)
-    
-    def mbdb_add(self, domain, path, target="", encryption_key="", filedata="", 
-                mode=0x81ED,inode_number=0x1337,
-                user_id=501,group_id=501,last_modification=None,
-                last_status_change_time=None,birth_time=None,
-                protection_class=0x00,num_attributes=0x00):
-        if not last_status_change_time:
-            last_status_change_time = time()
-        if not birth_time:
-            birth_time = time()
-        if not last_modification:
-            last_modification = time()
-
-        digest = ""
-        fn = domain + "-" + path
-        namedigest = hashlib.sha1(fn).digest()
-        if (mode & MASK_SYMBOLIC_LINK) != MASK_SYMBOLIC_LINK and (mode & MASK_DIRECTORY) != MASK_DIRECTORY : 
-            fpath = os.path.join(self.backupPath, self.udid ,namedigest.encode("hex"))
-            if os.path.isfile(fpath):
-                print "%s-%s already exists, deleting it" % (domain, path)
-                os.remove(fpath)
-            if filedata:
-                if domain == "HomeDomain":
-                    digest = hashlib.sha1(filedata).digest()
-                write_file(fpath, filedata) 
-
-
-        data = []
-        data.append(pack('>H', mode)) # mode, sur 2octets 
-        data.append(pack('>Q', inode_number)) # inode_number, sur 8octets
-        data.append(pack('>I', user_id)) # user_id, sur 4octets
-        data.append(pack('>I', group_id)) # group_id, sur 4octets
-        data.append(pack('>i', last_modification)) # last_modification, sur 4octets
-        data.append(pack('>i', last_status_change_time)) # last_status_change_time, sur 4octets
-        data.append(pack('>i', birth_time)) # birth_time, sur 4octets
-        data.append(pack('>q', len(filedata)))
-        data.append(chr(protection_class)) # protection_class, sur 1octet
-        data.append(chr(num_attributes)) # num_attributes, sur 1octet
-    
-        payload = ""
-        for i in [domain,path,target,digest,encryption_key]:
-            if len(i) == 0:
-                payload += pack('>H',0xFFFF)
-            else:
-                payload += pack('>H',len(i)) + i
-         
-        payload += "".join(map(str,data))
-        #print hexdump(payload)
-        m = os.path.join(self.backupPath,self.udid,"Manifest.mbdb")
-        if  os.path.isfile(m):
-            off = os.path.getsize(os.path.join(m))
-            f = open(m, "ab")
-        else:
-            off = 0
-            print "[!] Creating new mbdb file:", m
-            f = open(m, "wb+")
-            f.write(MBDB_SIGNATURE)
-
-        f.write(payload)
-        f.close()
-        print "Creating %s from %s" % (namedigest.encode("hex"),path) 
-        #HAX for ios 4  
-        if os.path.exists(os.path.join(self.backupPath,self.udid,"Manifest.mbdx")):
-            print "Patching mbdx, mdbd offset=%d" % off
-            f = open(os.path.join(self.backupPath,self.udid,"Manifest.mbdx"), "rb")
-            mbdx = f.read()
-            f.close()
-            nrecords = unpack(">L", mbdx[6:10])[0]
-            print "%d recrods in mdbx" % nrecords
-            nrecords += 1
-            index = namedigest + pack(">L", off-6) + pack('>H',mode)
-            f = open(os.path.join(self.backupPath, "Manifest.mbdx"), "wb")
-            f.write("mbdx\x02\x00" + pack(">L", nrecords) + mbdx[10:] +index)
-            f.close()
-
-    def save_mbdb(self):
-        return read_file(os.path.join(self.backupPath, "Manifest.mbdb"))
-    
-    def restore_mbdb(self, data):
-        return write_file(os.path.join(self.backupPath, "Manifest.mbdb"), data)
-
-    def save_mbdb(self):
-        return read_file(os.path.join(self.backupPath, "Manifest.mbdb"))
-    
-    def restore_mbdb(self, data):
-        return write_file(os.path.join(self.backupPath, "Manifest.mbdb"), data)
-
                      
 if __name__ == "__main__":
     parser = OptionParser(usage="%prog")
-    parser.add_option("-b", "--backup", dest="backup", action="store_true", default=False,
+    parser.add_option("-b", "--backup", dest="backup", action="store_true", default=True,
                   help="Backup device")
     parser.add_option("-r", "--restore", dest="restore", action="store_true", default=False,
                   help="Restore device")
@@ -407,12 +334,12 @@ if __name__ == "__main__":
     
     lockdown = LockdownClient()
     mb = MobileBackup2Client(lockdown)
-
+    
+    args
+    
     if options.backup:
-        print "Lauching device backup..."
         mb.backup()
     elif options.restore:
-        print "Restoring device backup..."
         mb.restore()
     if options.info:
         mb.info()
