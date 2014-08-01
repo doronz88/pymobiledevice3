@@ -64,7 +64,6 @@ class MobileBackupClient(object):
         self.service = lockdown.startService("com.apple.mobilebackup")
         self.udid = lockdown.udid
         DLMessageVersionExchange = self.service.recvPlist()
-        print DLMessageVersionExchange
         version_major = DLMessageVersionExchange[1]
         self.service.sendPlist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
         DLMessageDeviceReady = self.service.recvPlist()
@@ -76,31 +75,28 @@ class MobileBackupClient(object):
             raise Exception("HAX, sneaky dots in path %s" % name)
         if not name.startswith(self.backupPath):
             if name.startswith(self.udid):
-                return os.path.join(self.backupPath, name)
-            return os.path.join(self.backupPath, self.udid, name)
+                name = os.path.join(self.backupPath, name)
+                return name
+            name = os.path.join(self.backupPath, self.udid, name)
+            return name
         return name
         
 
     def read_file(self, filename):
         filename = self.check_filename(filename)
         if os.path.isfile(filename):
-            f=open(filename, "rb")
-            data = f.read()
-            f.close()
-            return data
+            with open(filename, 'rb') as f:
+                data = f.read()
+                f.close()  
+                return data
         return None
+
     
-    def write_file(self, filename, data): #FIXME
+    def write_file(self, filename, data):
         filename = self.check_filename(filename)
-        try:
-            print "Writing filename %s" % filename
-            f=open(filename, "wb")
+        with open(filename, 'wb') as f:
             f.write(data)
-            f.close()
-        except: #FIXME
-            print "mobilebackup.py Could not write", filename
-            exit()
-            
+            f.close()            
     
     def create_info_plist(self):
         root_node =  self.lockdown.getValue()
@@ -136,7 +132,7 @@ class MobileBackupClient(object):
         afc = AFCClient(self.lockdown)
         iTunesFilesDict = {}
         iTunesFiles = afc.read_directory("/iTunes_Control/iTunes/")
-        #print iTunesFiles
+        
         for i in iTunesFiles:
             data = afc.get_file_contents("/iTunes_Control/iTunes/"  + i)
             if data:
@@ -146,14 +142,8 @@ class MobileBackupClient(object):
         iBooksData2 = afc.get_file_contents("/Books/iBooksData2.plist")
         if iBooksData2:
             info["iBooks Data 2"] = plistlib.Data(iBooksData2)
-        #pprint(info)
-        print self.lockdown.getValue("com.apple.iTunes")
+        
         info["iTunes Settings"] = self.lockdown.getValue("com.apple.iTunes")
-        #self.backupPath = self.udid
-        #if not os.path.isdir(self.backupPath):
-        #    os.makedirs(self.backupPath)
-        #print info
-        #raw_input()
         print "Creating %s" % os.path.join(self.udid,"Info.plist")
         self.write_file(os.path.join(self.udid,"Info.plist"), plistlib.writePlistToString(info))
 
