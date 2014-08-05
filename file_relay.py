@@ -24,6 +24,7 @@
 
 from lockdown import LockdownClient
 from util.cpio import CpioArchive
+from util.optparser import MultipleOption
 import zlib
 import gzip
 from pprint import pprint
@@ -34,8 +35,8 @@ import os
 
 SRCFILES = """Baseband
 CrashReporter
-Caches
 MobileAsset
+VARFS
 HFSMeta
 Lockdown
 MobileBackup
@@ -49,7 +50,8 @@ WirelessAutomation
 NANDDebugInfo
 SystemConfiguration
 Ubiquity
-tmp"""
+tmp
+WirelessAutomation"""
 
 class FileRelayClient(object):
     def __init__(self, lockdown=None, serviceName="com.apple.mobile.file_relay"):
@@ -66,29 +68,33 @@ class FileRelayClient(object):
         self.service.close()
 
     def request_sources(self, sources=["UserDatabases"]):  
-        print "Downloading sources ", sources
         self.service.sendPlist({"Sources": sources})
-        res = self.service.recvPlist()
-        pprint(res)
-        if res:
-            s = res.get("Status")
-            if s == "Acknowledged":
-                z = ""
-                while True:
-                    x = self.service.recv()
-                    if not x:
-                        break
-                    z += x
-                return z
-            else:
-               print res.get("Error")
+        while 1:
+            res = self.service.recvPlist()
+            pprint(res)
+            if res:
+                s = res.get("Status")
+                if s == "Acknowledged":
+                    z = ""
+                    while True:
+                        x = self.service.recv()
+                        if not x:
+                            break
+                        z += x
+                    return z
+                else:
+                    print res.get("Error")
         return None
        
 if __name__ == "__main__":
 
-    parser = OptionParser(usage="%prog")
-    parser.add_option("-s", "--source", dest="source", default=False,
-                  help="File relay source to dump", type="string")
+    parser = OptionParser(option_class=MultipleOption,usage="%prog")
+    parser.add_option("-s", "--sources", 
+                      action="extend", 
+                      dest="sources", 
+                      metavar='SOURCES',
+                      help="comma separated list of file relay source to dump", 
+                      type="string")
     parser.add_option("-e", "--extract",dest="extractpath" , default=False,
                   help="Extract archive to specified location", type="string")
     parser.add_option("-o", "--output", dest="outputfile", default=False,
@@ -96,27 +102,27 @@ if __name__ == "__main__":
 
     (options, args) = parser.parse_args()
 
-    fc = FileRelayClient()
-    if options.source:
-       s = []
-       s.append(options.source)
-       data = fc.request_sources(s) 
+    sources = []
+    if options.sources:
+        sources = options.sources
     else:
-        data = fc.request_sources(SRCFILES.split("\n"))
+        sources = SRCFILES.split("\n")
+    print "Downloading: %s" % ''.join([str(item)+" " for item in sources])
+
+    fc = FileRelayClient()
+    data = fc.request_sources(sources) 
     
     if data:
         if options.outputfile:
             path = options.outputfile
         else:
-            _,path = mkstemp(prefix="fileRelay_dump_",suffix=".dmp",dir=".")
+            _,path = mkstemp(prefix="fileRelay_dump_",suffix=".gz",dir=".")
         
         open(path,'wb').write(data)
         print  "Data saved to:  %s " % path
-
-        if options.extractpath:
-            with open(path, 'r') as f:
-                gz = gzip.GzipFile(mode='rb', fileobj=f)
-                cpio = CpioArchive(fileobj=BytesIO(gz.read()))
-                if not os.path.isdir(options.extractpath):
-                    os.makedirs(options.extractpath,0o0755)
-                cpio.extract_files(files=None,outpath=options.extractpath)
+        
+    if options.extractpath:   
+        with open(path, 'r') as f:
+            gz = gzip.GzipFile(mode='rb', fileobj=f)
+            cpio = CpioArchive(fileobj=BytesIO(gz.read()))
+            cpio.extract_files(files=None,outpath=options.extractpath) 
