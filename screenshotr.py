@@ -23,7 +23,7 @@
 #
 
 
-from lockdown import LockdownClient
+from lockdown import Lockdown
 from pprint import pprint
 import plistlib
 from time import gmtime, strftime
@@ -31,12 +31,12 @@ from optparse import OptionParser
 import os
 import plistlib
 
-class screenshotrClient(object):
+class screenshotr(object):
     def __init__(self, lockdown=None, serviceName='com.apple.mobile.screenshotr'):
         if lockdown:
             self.lockdown = lockdown
         else:
-            self.lockdown = LockdownClient()
+            self.lockdown = Lockdown()
         #Starting Screenshot service
         self.service = self.lockdown.startService(serviceName)
         
@@ -72,7 +72,7 @@ if __name__ == '__main__':
     if options.outDir:
         outPath = options.outDir
 
-    screenshotr = screenshotrClient()    
+    screenshotr = screenshotr()    
     data = screenshotr.take_screenshot()
     if data:
         filename = strftime('screenshot-%Y-%m-%d-%H-%M-%S.tif',gmtime()) 
