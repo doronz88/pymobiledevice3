@@ -26,7 +26,7 @@
 from construct.core import Struct
 from construct.lib.container import Container
 from construct.macros import String, ULInt64
-from lockdown import LockdownClient
+from lockdown import Lockdown
 import struct
 from cmd import Cmd
 import os
@@ -122,13 +122,13 @@ AFCPacket = Struct("AFCPacket",
                    )
 
 
-class AFCClient(object):
+class AFC(object):
     def __init__(self, lockdown=None, serviceName="com.apple.afc", service=None):
         self.serviceName = serviceName
         if lockdown:
             self.lockdown = lockdown
         else:
-            self.lockdown = LockdownClient()
+            self.lockdown = Lockdown()
 
         if service:
             self.service = service
@@ -178,7 +178,7 @@ class AFCClient(object):
             self.dispatch_packet(opcode, data)
             return self.receive_data()
         except:
-            self.lockdown = LockdownClient()
+            self.lockdown = Lockdown()
             self.service = self.lockdown.startService(self.serviceName)
             return  self.do_operation(opcode, data)
     
@@ -278,7 +278,7 @@ class AFCClient(object):
 		self.dispatch_packet(AFC_OP_READ, struct.pack("<QQ", handle, toRead))
 		s, d = self.receive_data()
 	    except:
-		self.lockdown = LockdownClient()
+		self.lockdown = Lockdown()
 		self.service = self.lockdown.startService("com.apple.afc")
 		return  self.file_read(handle, sz)
 
@@ -308,7 +308,7 @@ class AFCClient(object):
 			             this_length=48)
 		s, d = self.receive_data()
 	except:
-	    self.lockdown = LockdownClient()
+	    self.lockdown = Lockdown()
 	    self.service = lockdown.startService(serviceName)
 	    self.file_write(handle,data)
         return s
@@ -356,16 +356,17 @@ class AFCClient(object):
 
 class AFCShell(Cmd):
 
-    def __init__(self, completekey='tab', stdin=None, stdout=None, client=None):
+    def __init__(self, afcname='com.apple.afc', completekey='tab', stdin=None, stdout=None, client=None):
 
         Cmd.__init__(self, completekey=completekey, stdin=stdin, stdout=stdout)
-        self.lockdown = LockdownClient()
+        self.lockdown = Lockdown()
         if client:
             self.afc = client
         else:
-            self.afc = AFCClient(self.lockdown, "com.apple.afc")
-        self.curdir = "/"
-        self.prompt = "AFC$ " + self.curdir + " "
+            self.afc = AFC(self.lockdown, afcname)
+        
+        self.curdir = '/'
+        self.prompt = 'AFC$ ' + self.curdir + ' '
         self.complete_cat = self._complete
         self.complete_ls = self._complete
     
@@ -383,13 +384,11 @@ class AFCShell(Cmd):
     
             
     def do_link(self, p):
-
         z = p.split()
         self.afc.make_link(AFC_SYMLINK, z[0], z[1])
     
         
     def do_cd(self, p):
-
         if not p.startswith("/"):
             new = self.curdir + "/" + p
         else:
@@ -411,7 +410,6 @@ class AFCShell(Cmd):
     
 
     def do_ls(self, p):
-
         d = self.afc.read_directory(self.curdir + "/" + p)
         if d:
             for dd in d:
@@ -419,7 +417,6 @@ class AFCShell(Cmd):
     
 
     def do_cat(self, p):
-
         data = self.afc.get_file_contents(self.curdir + "/" + p)
         if data and p.endswith(".plist"):
             pprint(parsePlist(data))
@@ -436,7 +433,6 @@ class AFCShell(Cmd):
     
         
     def do_pull(self, user_args):
-        
         args = user_args.split()
         if len(args) != 2:
             out = "."
@@ -472,7 +468,6 @@ class AFCShell(Cmd):
                         f.write(data)                
 
     def do_push(self, p):
-
         fromTo = p.split()
         if len(fromTo) != 2:
             return
@@ -495,7 +490,6 @@ class AFCShell(Cmd):
 
 
     def do_hexdump(self, p):
-
         t = p.split(" ")
         l = 0
         if len(t) < 1:
