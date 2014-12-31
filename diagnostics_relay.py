@@ -23,7 +23,7 @@
 #
 
 
-from lockdown import LockdownClient
+from lockdown import Lockdown
 from pprint import pprint
 import plistlib
 from optparse import OptionParser
@@ -126,12 +126,12 @@ RegionalBehaviorNoVOIP
 RegionalBehaviorAll
 ApNonce"""
 
-class DIAGClient(object):
+class DIAG(object):
     def __init__(self, lockdown=None, serviceName="com.apple.mobile.diagnostics_relay"):
         if lockdown:
             self.lockdown = lockdown
         else:
-            self.lockdown = LockdownClient()
+            self.lockdown = Lockdown()
 
         self.service = self.lockdown.startService(serviceName)
         self.packet_num = 0
@@ -170,7 +170,6 @@ class DIAGClient(object):
     def diagnostics(self, diagType="All"):
         self.service.sendPlist({"Request": diagType})
         res = self.service.recvPlist()
-        pprint(res)
         if res:
             return res.get("Diagnostics")
         return None
@@ -214,7 +213,7 @@ class DIAGClient(object):
 if __name__ == "__main__":
     
     parser = OptionParser(usage="%prog")
-    parser.add_option("-c", "--cmd", dest="cmd", default=True,
+    parser.add_option("-c", "--cmd", dest="cmd", default=False,
                   help="Launch diagnostic command", type="string")
     parser.add_option("-m", "--mobilegestalt", dest="mobilegestalt_key", default=False,
                   help="Request mobilegestalt key", type="string")
@@ -225,11 +224,11 @@ if __name__ == "__main__":
 
     (options, args) = parser.parse_args()
 
-    diag = DIAGClient()
+    diag = DIAG()
     if not options.cmd:
-        diag.diagnostics()
+        res = diag.diagnostics()
         
-    if options.cmd == "IORegistry":
+    elif options.cmd == "IORegistry":
         res = diag.ioregistry_plane()
 
     elif  options.cmd == "MobileGestalt":
