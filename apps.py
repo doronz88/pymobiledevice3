@@ -23,9 +23,9 @@
 #
 
 
-from lockdown import LockdownClient
+from lockdown import Lockdown
 from pprint import pprint
-from afc import AFCClient, AFCShell
+from afc import AFC, AFCShell
 from optparse import OptionParser
 import os
 
@@ -33,7 +33,7 @@ def house_arrest(lockdown, applicationId):
     try:
         mis = lockdown.startService("com.apple.mobile.house_arrest")
     except:
-        lockdown = LockdownClient()
+        lockdown = Lockdown()
         mis = lockdown.startService("com.apple.mobile.house_arrest")
 
     if mis == None:
@@ -45,7 +45,7 @@ def house_arrest(lockdown, applicationId):
     if error: 
         print res["Error"]
         return None
-    return AFCClient(lockdown, service=mis)
+    return AFC(lockdown, service=mis)
 
 def house_arrest_shell(lockdown, applicationId):
     afc =  house_arrest(lockdown, applicationId)
@@ -85,7 +85,7 @@ def mobile_install_old(lockdown):
 
 def mobile_install(lockdown,ipaPath):
     #Start afc service & upload ipa    
-    afc = AFCClient(lockdown)
+    afc = AFC(lockdown)
     afc.set_file_contents("/" + os.path.basename(ipaPath), open(ipaPath,'rb').read())
     mci = lockdown.startService("com.apple.mobile.installation_proxy")
     #print mci.sendPlist({"Command":"Archive","ApplicationIdentifier": "com.joystickgenerals.STActionPig"})
@@ -141,13 +141,13 @@ if __name__ == "__main__":
      
     (options, args) = parser.parse_args()
     if options.list:
-        lockdown = LockdownClient()
+        lockdown = Lockdown()
         list_apps(lockdown)
     elif options.app:
-        lockdown = LockdownClient()
+        lockdown = Lockdown()
         house_arrest_shell(lockdown, options.app)
     elif options.installapp:
-        lockdown = LockdownClient()
+        lockdown = Lockdown()
         mobile_install(lockdown, options.installapp)
     else:
         parser.print_help()
