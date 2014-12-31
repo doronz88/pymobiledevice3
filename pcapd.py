@@ -26,7 +26,7 @@ import struct
 import time
 import sys
 from tempfile import mkstemp
-from lockdown import LockdownClient
+from lockdown import Lockdown
 from optparse import OptionParser
 
 """
@@ -50,20 +50,21 @@ LINKTYPE_ETHERNET = 1
 LINKTYPE_RAW      = 101
 
 class PcapOut(object):
-    def __init__(self, name):
-        self.f = open("test.pcap","wb")
-        self.f.write(struct.pack("<LHHLLLL", 0xa1b2c3d4, 2, 4, 0, 0, 65535, LINKTYPE_ETHERNET))
+
+    def __init__(self, pipename=r'test.pcap'):
+        self.pipe = open(pipename,'wb')
+        self.pipe.write(struct.pack("<LHHLLLL", 0xa1b2c3d4, 2, 4, 0, 0, 65535, LINKTYPE_ETHERNET))
     
     def __del__(self):
-        self.f.close()
+        self.pipe.close()
         
     def writePacket(self, packet):
         t = time.time()
         #TODO check milisecond conversion
-        pkthdr = struct.pack("<LLLL", int(t), int(t*1000000 % 1000000), len(packet), len(packet))
+        pkthdr = struct.pack('<LLLL', int(t), int(t*1000000 % 1000000), len(packet), len(packet))
         data = pkthdr + packet
-        l = self.f.write(data)
-        self.f.flush()
+        l = self.pipe.write(data)
+        self.pipe.flush()
         return True
 
 class Win32Pipe(object):
@@ -94,19 +95,19 @@ if __name__ == "__main__":
                   help="Output location", type="string")
 
     (options, args) = parser.parse_args()
-    if options.output:
-        output = options.output
-
-    elif sys.platform == "win32":
+    if sys.platform == "win32":
         import win32pipe, win32file
         output = Win32Pipe()
 
     else:
-        _,path = mkstemp(prefix="device_dump_",suffix=".pcap",dir=".")
+        if options.output:
+            path = options.output
+	else:
+            _,path = mkstemp(prefix="device_dump_",suffix=".pcap",dir=".")
         print "Recording data to: %s" % path
         output = PcapOut(path)
 
-    lockdown = LockdownClient()
+    lockdown = Lockdown()
     pcap = lockdown.startService("com.apple.pcapd")
     
     while True:
