@@ -26,13 +26,13 @@
 from construct.core import Struct
 from construct.lib.container import Container
 from construct.macros import String, ULInt64
-from lockdown import LockdownClient
+from lockdown import Lockdown
 import struct
 import plistlib
 from pprint import pprint
 import os
 import datetime
-from afc import AFCClient
+from afc import AFC
 from util import makedirs
 
 #
@@ -57,12 +57,24 @@ DEVICE_LINK_FILE_STATUS_NONE = 0
 DEVICE_LINK_FILE_STATUS_HUNK = 1
 DEVICE_LINK_FILE_STATUS_LAST_HUNK = 2
 
+class DeviceVersionNotSupported(Exception):
+    def __str__(self):
+	return "Device version not supported, please use mobilebackup2"
 
-class MobileBackupClient(object):
-    def __init__(self, lockdown):
-        self.lockdown = lockdown
-        self.service = lockdown.startService("com.apple.mobilebackup")
-        self.udid = lockdown.udid
+
+class MobileBackup(object):
+    def __init__(self, lockdown=None):
+	if lockdown:
+            self.lockdown = lockdown
+        else:
+            self.lockdown = Lockdown()
+
+	ProductVersion = self.lockdown.getValue("", "ProductVersion")
+	if ProductVersion[0] >= "5":
+	    raise DeviceVersionNotSupported
+
+        self.service = self.lockdown.startService("com.apple.mobilebackup")
+        self.udid = self.lockdown.udid
         DLMessageVersionExchange = self.service.recvPlist()
         version_major = DLMessageVersionExchange[1]
         self.service.sendPlist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
@@ -99,23 +111,22 @@ class MobileBackupClient(object):
             f.close()            
     
     def create_info_plist(self):
-        root_node =  self.lockdown.getValue()
-        info = {"BuildVersion": root_node["BuildVersion"],
-                "DeviceName":  root_node["DeviceName"],
-                "Display Name": root_node["DeviceName"],
+        root_node =  self.lockdown.allValues
+        #print pprint(root_node)
+        info = {"BuildVersion": root_node.get("BuildVersion"),
+                "DeviceName":  root_node.get("DeviceName"),
+                "Display Name": root_node.get("DeviceName"),
                 "GUID": "---",
-                "ProductType": root_node["ProductType"],
-                "ProductVersion": root_node["ProductVersion"],
-                "Serial Number": root_node["SerialNumber"],
+                "ProductType": root_node.get("ProductType"),
+                "ProductVersion": root_node.get("ProductVersion"),
+                #"Serial Number": root_node.get("SerialNumber"),
                 "Unique Identifier": self.udid.upper(),
                 "Target Identifier": self.udid,
                 "Target Type": "Device",
                 "iTunes Version": "10.0.1"
                 }
-        if root_node.has_key("IntegratedCircuitCardIdentity"):
-            info["ICCID"] = root_node["IntegratedCircuitCardIdentity"]
-        if root_node.has_key("InternationalMobileEquipmentIdentity"):
-            info["IMEI"] = root_node["InternationalMobileEquipmentIdentity"]
+        info["ICCID"] = root_node.get("IntegratedCircuitCardIdentity")
+        info["IMEI"] = root_node.get("InternationalMobileEquipmentIdentity")
         info["Last Backup Date"] = datetime.datetime.now()
         
         iTunesFiles = ["ApertureAlbumPrefs",
@@ -129,7 +140,7 @@ class MobileBackupClient(object):
                         "iTunesPrefs",
                         "iTunesPrefs.plist"
         ]
-        afc = AFCClient(self.lockdown)
+        afc = AFC(self.lockdown)
         iTunesFilesDict = {}
         iTunesFiles = afc.read_directory("/iTunes_Control/iTunes/")
         
@@ -193,19 +204,18 @@ class MobileBackupClient(object):
             data = res[1].data
             info = res[2]
             if not f:
-                outpath = self.check_filename(info["DLFileDest"])
-                print info["DLFileAttributesKey"]["Filename"], info["DLFileDest"]
+                outpath = self.check_filename(info.get("DLFileDest"))
+                print info["DLFileAttributesKey"]["Filename"], info.get("DLFileDest")
                 f = open(outpath + ".mddata", "wb")
             f.write(data)
             if info.get("DLFileStatusKey") == DEVICE_LINK_FILE_STATUS_LAST_HUNK:
                 self.send_file_received()
                 f.close()
                 if not info.get("BackupManifestKey", False):
-                    plistlib.writePlist(info["BackupFileInfo"], outpath + ".mdinfo")
+                    plistlib.writePlist(info.get("BackupFileInfo"), outpath + ".mdinfo")
                 f = None
     
 if __name__ == "__main__":
-    lockdown = LockdownClient()
-    mb = MobileBackupClient(lockdown)
+    mb = MobileBackup()
     mb.request_backup()
 
