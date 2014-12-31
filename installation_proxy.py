@@ -29,7 +29,6 @@ from optparse import OptionParser
 from house_arrest import house_arrest
 from util import read_file, write_file, hexdump, readPlist, parsePlist
 from biplist import writePlist,  Data
-from image_mounter import ImgMntClient
 import tempfile
 import os
 from time import sleep
@@ -87,6 +86,7 @@ class installation_proxy:
             if z.get('Status') == 'Complete':
                 print "Installation %s\n" % z['Status']
                 break
+
 
     #TODO:
     #   - List archived applications.
@@ -151,6 +151,11 @@ class installation_proxy:
         files=afc.dir_walk('/')
         return files
 
+    def close(self):
+        self.service.close()
+
+    def __del__(self):
+        self.close()
 
 
 if __name__ == "__main__":
