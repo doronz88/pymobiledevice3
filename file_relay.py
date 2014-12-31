@@ -22,7 +22,7 @@
 #
 #
 
-from lockdown import LockdownClient
+from lockdown import Lockdown
 from util.cpio import CpioArchive
 from util.optparser import MultipleOption
 import zlib
@@ -53,12 +53,20 @@ Ubiquity
 tmp
 WirelessAutomation"""
 
-class FileRelayClient(object):
+class DeviceVersionNotSupported(Exception):
+    pass
+
+class FileRelay(object):
     def __init__(self, lockdown=None, serviceName="com.apple.mobile.file_relay"):
         if lockdown:
             self.lockdown = lockdown
         else:
-            self.lockdown = LockdownClient()
+            self.lockdown = Lockdown()
+	
+	ProductVersion = self.lockdown.getValue("", "ProductVersion")
+
+	if ProductVersion[0] >= "8":
+	    raise DeviceVersionNotSupported
 
         self.service = self.lockdown.startService(serviceName)
         self.packet_num = 0
@@ -84,6 +92,7 @@ class FileRelayClient(object):
                     return z
                 else:
                     print res.get("Error")
+                    break
         return None
        
 if __name__ == "__main__":
@@ -109,7 +118,13 @@ if __name__ == "__main__":
         sources = SRCFILES.split("\n")
     print "Downloading: %s" % ''.join([str(item)+" " for item in sources])
 
-    fc = FileRelayClient()
+    fc = None
+    try:	
+    	fc = FileRelay()
+    except:
+	print "Device with product vertion >= 8.0 does not handle fileRelay service"
+	exit()
+
     data = fc.request_sources(sources) 
     
     if data:
