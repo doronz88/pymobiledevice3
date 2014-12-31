@@ -23,8 +23,8 @@
 #
 
 
-from lockdown import LockdownClient
-from mobilebackup import MobileBackupClient
+from lockdown import Lockdown
+from mobilebackup import MobileBackup
 from optparse import OptionParser
 from pprint import pprint
 from util import write_file, hexdump
@@ -48,19 +48,30 @@ MASK_SYMBOLIC_LINK = 0xa000
 MASK_REGULAR_FILE = 0x8000
 MASK_DIRECTORY = 0x4000
 
-class MobileBackup2Client(MobileBackupClient):
+class DeviceVersionNotSupported(Exception):
+    def __str__(self):
+	return "Device version not supported, please use mobilebackup"
+
+
+class MobileBackup2(MobileBackup):
+
+    service = None
     def __init__(self, lockdown = None,backupPath = None):
-        if lockdown:
+	if lockdown:
             self.lockdown = lockdown
         else:
-            self.lockdown = LockdownClient()
+            self.lockdown = Lockdown()
+
+	ProductVersion = self.lockdown.getValue("", "ProductVersion")
+	if ProductVersion[0] < "5":
+	    raise DeviceVersionNotSupported
         
         self.udid = lockdown.getValue("", "UniqueDeviceID")        
         self.willEncrypt = lockdown.getValue("com.apple.mobile.backup", "WillEncrypt") 
         
         self.service = self.lockdown.startService("com.apple.mobilebackup2")
         if not self.service:
-            raise Exception("MobileBackup2Client init error : Could not start com.apple.mobilebackup2")
+            raise Exception("MobileBackup2 init error : Could not start com.apple.mobilebackup2")
         
         if backupPath:
             self.backupPath = backupPath
@@ -79,7 +90,7 @@ class MobileBackup2Client(MobileBackupClient):
         if DLMessageDeviceReady and DLMessageDeviceReady[0] == "DLMessageDeviceReady":
             self.version_exchange()
         else:
-            raise Exception("MobileBackup2Client init error %s" % DLMessageDeviceReady)
+            raise Exception("MobileBackup2 init error %s" % DLMessageDeviceReady)
 
     def __del__(self):
         if self.service:
@@ -118,8 +129,6 @@ class MobileBackup2Client(MobileBackupClient):
         freeSpace = s.f_bsize * s.f_bavail
         a = ["DLMessageStatusResponse", 0, freeSpace]
         self.service.sendPlist(a)
-
-
 
     def mb2_multi_status_add_file_error(self, errplist, path, error_code, error_message):
         errplist[path] = {"DLFileErrorCode": error_code, "DLFileErrorString": error_message}
@@ -283,14 +292,18 @@ class MobileBackup2Client(MobileBackupClient):
     def restore(self, options = {"RestoreSystemFiles": True,
                                 "RestoreShouldReboot": False,
                                 "RestoreDontCopyBackup": True,
-                                "RestorePreserveSettings": True}):
+                                "RestorePreserveSettings": True},
+			password=None):
         
         print "Starting restoration..."
         m = os.path.join(self.backupPath,self.udid,"Manifest.plist")
         manifest = readPlist(m)
-        if manifest["IsEncrypted"]:
+        if manifest.get("IsEncrypted"):
             print "Backup is encrypted, enter password : "
-            self.password = raw_input()
+            if password:
+                self.password = password
+            else: 
+                self.password = raw_input()
             options["Password"] = self.password
         self.mobilebackup2_send_request("Restore", self.udid, self.udid, options)
         self.work_loop()
@@ -300,7 +313,8 @@ class MobileBackup2Client(MobileBackupClient):
         self.mobilebackup2_send_request("Info", self.udid, options)
         info = self.work_loop()
         if info:
-            pprint(info['Content'])
+            pprint(info.get("Content"))
+        return info
 
 
     def list(self,options={}):
@@ -308,16 +322,25 @@ class MobileBackup2Client(MobileBackupClient):
         z = self.work_loop()
         if z:
             print z["Content"]
-   
+        return z
 
     def changepw(self,oldpw,newpw):
         options = { "OldPassword" : olpw,
                     "NewPassword" : newpw }
                     
         self.mobilebackup2_send_request("ChangePassword", self.udid, "")
-        self.work_loop()
+        z = self.work_loop()
+        if z:
+            print z
+        return z
 
-        
+    def unback(self,options={"Password": None}):
+        self.mobilebackup2_send_request("Unback", self.udid, options)
+        print self.work_loop()
+
+    def enableCloudBackup(self,options={"CloudBackupState": False}):
+        self.mobilebackup2_send_request("EnableCloudBackup", self.udid, options)
+        print self.work_loop()
     
                      
 if __name__ == "__main__":
@@ -332,10 +355,8 @@ if __name__ == "__main__":
                   help="Show backup info")
     (options, args) = parser.parse_args()
     
-    lockdown = LockdownClient()
-    mb = MobileBackup2Client(lockdown)
-    
-    args
+    lockdown = Lockdown()
+    mb = MobileBackup2(lockdown)
     
     if options.backup:
         mb.backup()
