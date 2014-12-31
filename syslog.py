@@ -23,7 +23,7 @@
 #
 
 
-from lockdown import LockdownClient
+from lockdown import Lockdown
 from datetime import datetime
 from util import getHomePath
 from util import hexdump
@@ -37,9 +37,13 @@ class Syslog(object):
         if lockdown:
             self.lockdown = lockdown
         else:
-            self.lockdown = LockdownClient()
+            self.lockdown = Lockdown()
         self.c = self.lockdown.startService("com.apple.syslog_relay")
-        self.c.send("watch")
+        if self.c:
+            self.c.send("watch")
+        else:
+            sys.exit(1)
+
                   
 
     def watch(self,procName=None,logFile=None):
