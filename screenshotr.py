@@ -23,7 +23,7 @@
 #
 
 
-from lockdown import Lockdown
+from lockdown import LockdownClient
 from pprint import pprint
 import plistlib
 from time import gmtime, strftime
@@ -36,7 +36,7 @@ class screenshotr(object):
         if lockdown:
             self.lockdown = lockdown
         else:
-            self.lockdown = Lockdown()
+            self.lockdown = LockdownClient()
         #Starting Screenshot service
         self.service = self.lockdown.startService(serviceName)
         
