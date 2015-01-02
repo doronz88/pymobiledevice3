@@ -5,7 +5,13 @@ that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV�
 pymobiledevice
 ==============
 
-This library allows other software to easily interact with the services hosted on the device: 
+
+Requirements
+--------------
+Python 2.7
+M2Crypto
+Construct
+
 
 Lockdownd.py [com.apple.lockownd]
 --------------
@@ -72,5 +78,6 @@ pcapd.py [com.apple.pcapd]
 --------------
 Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from an iOS device. 
 On Mac OSX the virtual interface can be enabled with the rvictl command. This script allows to use this service on other systems.
+
 
 
