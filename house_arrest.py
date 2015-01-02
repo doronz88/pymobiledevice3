@@ -22,62 +22,35 @@
 #
 #
 
-from lockdown import Lockdown
+from lockdown import LockdownClient
 from pprint import pprint
-from afc import AFC, AFCShell
+from afc import AFCClient, AFCShell
 from optparse import OptionParser
 import os
 
+class HouseArrestAFCClient(AFCClient):
 
-class house_arrest(AFC):
-    
-    def __init__(self, lockdown=None,serviceName="com.apple.mobile.house_arrest", service=None):
-
-        if lockdown:
-            self.lockdown = lockdown
-        else:
-            self.lockdown = Lockdown()
-
-        if service:
-            self.service = service
-        else:
-            self.service = self.lockdown.startService(serviceName)
-        self.packet_num = 0
-     
-
-    def stop_session(self):
-        self.service.close()
-
-    def send_command(self, applicationId, cmd="VendContainer"):        
-        self.service.sendPlist({"Command": cmd, "Identifier": applicationId})
-        res = self.service.recvPlist()
-
-        if res.get("Error"):
-            print res["Error"]
-            return None
-
-    def VendContainer(applicationId):        
-        return send_command(self, applicationId, cmd="VendContainer")
-
-    def VendDocuments(applicationId):        
- 	return send_command(self, applicationId, cmd="VendDocuments")
-
-    
+    def __init__(self, bid, sandbox="VendContainer", lockdown=None):
+        self.lockdown = lockdown if lockdown else LockdownClient()
+        service = self.lockdown.startService("com.apple.mobile.house_arrest") 
+    	res = service.sendRequest({"Command": sandbox, "Identifier": bid})
+        super(HouseArrestAFCClient, self).__init__(self.lockdown, service=service)
 
 if __name__ == "__main__":
     parser = OptionParser(usage="%prog -a  applicationId")
     parser.add_option("-a", "--application", dest="applicationId", default=False,
                   help="Application ID <com.apple.iBooks>", type="string")
-    parser.add_option("-c", "--command", dest="cmd", default=False,
-                  help="House_Arrest commands (VendContainer, VendDocuments): ", type="string")
+    parser.add_option("-s", "--sandbox", dest="sandbox", default=False,
+                  help="House_Arrest sandbox (VendContainer, VendDocuments): ", type="string")
 
     (options, args) = parser.parse_args()
-    h =  house_arrest()
+    
     if not options.applicationId:
-	parser.error('Application ID not specify')
-    elif options.applicationId and options.cmd:
-	h.send_command(options.applicationId,cmd=options.cmd)
+	parser.error("Application ID not specify")
+    elif options.applicationId and options.sandbox:
+	h =  HouseArrestAFCClient(options.applicationId, sandbox=options.sandbox)
     	AFCShell(client=h).cmdloop()
     else:
-	h.send_command(options.applicationId)
+	h =  HouseArrestAFCClient(options.applicationId)
     	AFCShell(client=h).cmdloop()
+    
