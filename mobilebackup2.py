@@ -23,7 +23,7 @@
 #
 
 
-from lockdown import Lockdown
+from lockdown import LockdownClient
 from mobilebackup import MobileBackup
 from optparse import OptionParser
 from pprint import pprint
@@ -60,7 +60,7 @@ class MobileBackup2(MobileBackup):
 	if lockdown:
             self.lockdown = lockdown
         else:
-            self.lockdown = Lockdown()
+            self.lockdown = LockdownClient()
 
 	ProductVersion = self.lockdown.getValue("", "ProductVersion")
 	if ProductVersion[0] < "5":
@@ -355,7 +355,7 @@ if __name__ == "__main__":
                   help="Show backup info")
     (options, args) = parser.parse_args()
     
-    lockdown = Lockdown()
+    lockdown = LockdownClient()
     mb = MobileBackup2(lockdown)
     
     if options.backup:

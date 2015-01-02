@@ -26,7 +26,7 @@ import struct
 import time
 import sys
 from tempfile import mkstemp
-from lockdown import Lockdown
+from lockdown import LockdownClient
 from optparse import OptionParser
 
 """
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         print "Recording data to: %s" % path
         output = PcapOut(path)
 
-    lockdown = Lockdown()
+    lockdown = LockdownClient()
     pcap = lockdown.startService("com.apple.pcapd")
     
     while True:

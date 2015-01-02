@@ -66,7 +66,7 @@ def list_devices():
     return [d.serial for d in mux.devices]
 
 
-class Lockdown(object):
+class LockdownClient(object):
 
     def __init__(self,udid=None):
         self.paired = False
@@ -261,7 +261,7 @@ class Lockdown(object):
 
 
 if __name__ == "__main__":
-    l = Lockdown()
+    l = LockdownClient()
     if l:
         n = writeHomeFile(HOMEFOLDER, "%s_infos.plist" % l.udid, plistlib.writePlistToString(l.allValues))
         print "Wrote infos to %s" % n

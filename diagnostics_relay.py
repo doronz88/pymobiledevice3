@@ -23,7 +23,7 @@
 #
 
 
-from lockdown import Lockdown
+from lockdown import LockdownClient
 from pprint import pprint
 import plistlib
 from optparse import OptionParser
@@ -126,12 +126,12 @@ RegionalBehaviorNoVOIP
 RegionalBehaviorAll
 ApNonce"""
 
-class DIAG(object):
+class DIAGClient(object):
     def __init__(self, lockdown=None, serviceName="com.apple.mobile.diagnostics_relay"):
         if lockdown:
             self.lockdown = lockdown
         else:
-            self.lockdown = Lockdown()
+            self.lockdown = LockdownClient()
 
         self.service = self.lockdown.startService(serviceName)
         self.packet_num = 0
@@ -224,7 +224,7 @@ if __name__ == "__main__":
 
     (options, args) = parser.parse_args()
 
-    diag = DIAG()
+    diag = DIAGClient()
     if not options.cmd:
         res = diag.diagnostics()
         

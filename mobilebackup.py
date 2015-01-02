@@ -26,13 +26,13 @@
 from construct.core import Struct
 from construct.lib.container import Container
 from construct.macros import String, ULInt64
-from lockdown import Lockdown
+from lockdown import LockdownClient
 import struct
 import plistlib
 from pprint import pprint
 import os
 import datetime
-from afc import AFC
+from afc import AFCClient
 from util import makedirs
 
 #
@@ -67,7 +67,7 @@ class MobileBackup(object):
 	if lockdown:
             self.lockdown = lockdown
         else:
-            self.lockdown = Lockdown()
+            self.lockdown = LockdownClient()
 
 	ProductVersion = self.lockdown.getValue("", "ProductVersion")
 	if ProductVersion[0] >= "5":
@@ -140,7 +140,7 @@ class MobileBackup(object):
                         "iTunesPrefs",
                         "iTunesPrefs.plist"
         ]
-        afc = AFC(self.lockdown)
+        afc = AFCClient(self.lockdown)
         iTunesFilesDict = {}
         iTunesFiles = afc.read_directory("/iTunes_Control/iTunes/")
         

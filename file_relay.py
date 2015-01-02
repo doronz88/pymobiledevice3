@@ -22,7 +22,7 @@
 #
 #
 
-from lockdown import Lockdown
+from lockdown import LockdownClient
 from util.cpio import CpioArchive
 from util.optparser import MultipleOption
 import zlib
@@ -61,7 +61,7 @@ class FileRelay(object):
         if lockdown:
             self.lockdown = lockdown
         else:
-            self.lockdown = Lockdown()
+            self.lockdown = LockdownClient()
 	
 	ProductVersion = self.lockdown.getValue("", "ProductVersion")
 
@@ -102,8 +102,8 @@ if __name__ == "__main__":
                       action="extend", 
                       dest="sources", 
                       metavar='SOURCES',
-                      help="comma separated list of file relay source to dump", 
-                      type="string")
+                      choices=SRCFILES.split("\n"),
+                      help="comma separated list of file relay source to dump")
     parser.add_option("-e", "--extract",dest="extractpath" , default=False,
                   help="Extract archive to specified location", type="string")
     parser.add_option("-o", "--output", dest="outputfile", default=False,

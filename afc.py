@@ -26,7 +26,7 @@
 from construct.core import Struct
 from construct.lib.container import Container
 from construct.macros import String, ULInt64
-from lockdown import Lockdown
+from lockdown import LockdownClient
 import struct
 from cmd import Cmd
 import os
@@ -34,6 +34,7 @@ from util import hexdump, parsePlist
 from pprint import pprint
 import plistlib
 import time 
+import posixpath
 
 MODEMASK =  0o0000777
 
@@ -122,18 +123,11 @@ AFCPacket = Struct("AFCPacket",
                    )
 
 
-class AFC(object):
+class AFCClient(object):
     def __init__(self, lockdown=None, serviceName="com.apple.afc", service=None):
-        self.serviceName = serviceName
-        if lockdown:
-            self.lockdown = lockdown
-        else:
-            self.lockdown = Lockdown()
-
-        if service:
-            self.service = service
-        else:
-            self.service = self.lockdown.startService(serviceName)
+	self.serviceName = serviceName
+        self.lockdown = lockdown if lockdown else LockdownClient()
+        self.service = service if service else self.lockdown.startService(self.serviceName)
         self.packet_num = 0
 
 
@@ -178,7 +172,7 @@ class AFC(object):
             self.dispatch_packet(opcode, data)
             return self.receive_data()
         except:
-            self.lockdown = Lockdown()
+            self.lockdown = LockdownClient()
             self.service = self.lockdown.startService(self.serviceName)
             return  self.do_operation(opcode, data)
     
@@ -246,9 +240,7 @@ class AFC(object):
 
     def file_open(self, filename, mode=AFC_FOPEN_RDONLY):
         status, data = self.do_operation(AFC_OP_FILE_OPEN, struct.pack("<Q", mode) + filename + "\x00")
-        if data:
-            handle = struct.unpack("<Q", data)[0]
-            return handle
+        return struct.unpack("<Q", data)[0] if data else None
     
 
     def file_close(self, handle):
@@ -278,7 +270,7 @@ class AFC(object):
 		self.dispatch_packet(AFC_OP_READ, struct.pack("<QQ", handle, toRead))
 		s, d = self.receive_data()
 	    except:
-		self.lockdown = Lockdown()
+		self.lockdown = LockdownClient()
 		self.service = self.lockdown.startService("com.apple.afc")
 		return  self.file_read(handle, sz)
 
@@ -308,7 +300,7 @@ class AFC(object):
 			             this_length=48)
 		s, d = self.receive_data()
 	except:
-	    self.lockdown = Lockdown()
+	    self.lockdown = LockdownClient()
 	    self.service = lockdown.startService(serviceName)
 	    self.file_write(handle,data)
         return s
@@ -341,29 +333,35 @@ class AFC(object):
         d = self.file_write(h, data)
         self.file_close(h)
 
-    def dir_walk(self,dir,file_list=[]):
-        d = os.path.abspath(dir)
-        file_list = []
-        for file in [file for file in self.read_directory(d) if not file in [".",".."]]:
-            path = os.path.join(d,file)
-            info =  self.get_file_info(path)
-            if info:
-                if info['st_ifmt'] == 'S_IFDIR':
-                    file_list += self.dir_walk(path,file_list)
-                    info['path'] = path
-                    file_list.append(info)
-	    return file_list
+
+    def dir_walk(self, dirname):
+        dirs = []
+        files = []
+        for fd in self.read_directory(dirname):
+            if fd in ('.', '..', ''):
+                continue
+            infos = self.get_file_info(posixpath.join(dirname, fd))
+	    if infos and infos.get('st_ifmt') == 'S_IFDIR':
+                dirs.append(fd)
+            else:
+                files.append(fd)
+
+        yield dirname, dirs, files
+
+        if dirs:
+            for d in dirs:
+                for walk_result in self.dir_walk(posixpath.join(dirname, d)):
+                    yield walk_result
+
+
 
 class AFCShell(Cmd):
 
     def __init__(self, afcname='com.apple.afc', completekey='tab', stdin=None, stdout=None, client=None):
 
         Cmd.__init__(self, completekey=completekey, stdin=stdin, stdout=stdout)
-        self.lockdown = Lockdown()
-        if client:
-            self.afc = client
-        else:
-            self.afc = AFC(self.lockdown, afcname)
+        self.lockdown = LockdownClient()
+        self.afc = client if client else AFCClient(self.lockdown, afcname)
         
         self.curdir = '/'
         self.prompt = 'AFC$ ' + self.curdir + ' '
@@ -395,12 +393,11 @@ class AFCShell(Cmd):
             new = p
         
         new = os.path.normpath(new).replace("\\","/").replace("//","/")    
-        d = self.afc.read_directory(new)
-        if d:
+        if self.afc.read_directory(new):
             self.curdir = new
             self.prompt = "AFC$ %s " % new
         else:
-            print "%s does not exists" % new
+            print "%s does not exist" % new
     
    
     def _complete(self, text, line, begidx, endidx):
@@ -508,9 +505,34 @@ class AFCShell(Cmd):
         print self.afc.make_directory(p)
 
 
+    def do_rmdir(self, p):
+        return self.afc.remove_directory(p)
+
+
     def do_infos(self, p):
         print self.afc.get_device_infos()
+
+
+    def do_rmdir(self, p):
+        return self.afc.remove_directory(p)
+
+
+    def do_mv(self, p):
+        t = p.split()
+        return self.afc.rename_path(t[0], t[1])
+
+
         
+class AFC2Client(AFCClient):
+    def __init__(self, lockdown=None):
+        super(AFC, self).__init__(lockdown, "com.apple.afc2")
+
+
+
+class AFCCrashLog(AFCClient):
+    def __init__(self, lockdown=None):
+        super(AFCCrashLog, self).__init__(lockdown, "com.apple.crashreportcopymobile")
+
 
 
 if __name__ == "__main__":
