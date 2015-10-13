@@ -32,7 +32,7 @@ import warnings
 
 warnings.warn(
 """The libraries upon which this program depends will soon be deprecated in
-favor of the house_arrest.py and installation_proxy.py libraries.  
+favor of the house_arrest.py and installation_proxy.py libraries.
 See those files for example program written using the new libraries."""
 )
 
@@ -49,17 +49,17 @@ def house_arrest(lockdown, applicationId):
     mis.sendPlist({"Command": "VendDocuments", "Identifier": applicationId})
     res = mis.recvPlist()
     error = res.get("Error")
-    if error: 
+    if error:
         print res["Error"]
         return None
     return AFCClient(lockdown, service=mis)
 
 def house_arrest_shell(lockdown, applicationId):
     afc =  house_arrest(lockdown, applicationId)
-    AFCShell(afc=afc).cmdloop()
+    AFCShell(client=afc).cmdloop()
     #print afc.read_directory("/")
 
-    
+
 """
 "Install"
 "Upgrade"
@@ -77,7 +77,7 @@ if stat("/var/mobile/tdmtanf") => "TDMTANF Bypass" => SignerIdentity bypass
 """
 
 def mobile_install(lockdown,ipaPath):
-    #Start afc service & upload ipa    
+    #Start afc service & upload ipa
     afc = AFCClient(lockdown)
     afc.set_file_contents("/" + os.path.basename(ipaPath), open(ipaPath,'rb').read())
     mci = lockdown.startService("com.apple.mobile.installation_proxy")
@@ -98,7 +98,7 @@ def mobile_install(lockdown,ipaPath):
 
 def list_apps(lockdown):
     mci = lockdown.startService("com.apple.mobile.installation_proxy")
-    #print 
+    #print
     mci.sendPlist({"Command":"Lookup"})
     res = mci.recvPlist()
     for app in res["LookupResult"].values():
@@ -127,11 +127,11 @@ if __name__ == "__main__":
     parser = OptionParser(usage="%prog")
     parser.add_option("-l", "--list", dest="list", action="store_true", default=False,
                   help="List installed applications (non system apps)")
-    parser.add_option("-a", "--app", dest="app", action="store", default=None, 
-                  metavar="FILE", help="Access application files with AFC")
-    parser.add_option("-i", "--install", dest="installapp", action="store", default=None, 
+    parser.add_option("-a", "--app", dest="app", action="store", default=None,
+                  metavar="APPID", help="Access application files with AFC")
+    parser.add_option("-i", "--install", dest="installapp", action="store", default=None,
                   metavar="FILE", help="Install an application package")
-     
+
     (options, args) = parser.parse_args()
     if options.list:
         lockdown = LockdownClient()
