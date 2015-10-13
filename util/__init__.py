@@ -4,6 +4,7 @@ import os
 from bplist import BPlistReader
 import cPickle
 import gzip
+from optparse import *
 
 def read_file(filename):
     f = open(filename, "rb")
@@ -40,7 +41,7 @@ def writeHomeFile(foldername, filename, data):
     filepath = getHomePath(foldername, filename)
     write_file(filepath, data)
     return filepath
-    
+
 def readPlist(filename):
     f = open(filename,"rb")
     d = f.read(16)
@@ -62,7 +63,7 @@ def sizeof_fmt(num):
         if num < 1024.0:
             return "%d%s" % (num, x)
         num /= 1024.0
-        
+
 #http://www.5dollarwhitebox.org/drupal/node/84
 def convert_bytes(bytes):
     bytes = float(bytes)
@@ -115,9 +116,22 @@ def save_pickle(filename,data):
     f = gzip.open(filename,"wb")
     cPickle.dump(data, f, cPickle.HIGHEST_PROTOCOL)
     f.close()
-    
+
 def load_pickle(filename):
     f = gzip.open(filename,"rb")
     data = cPickle.load(f)
     f.close()
     return data
+
+
+class MultipleOption(Option):
+    ACTIONS = Option.ACTIONS + ("extend",)
+    STORE_ACTIONS = Option.STORE_ACTIONS + ("extend",)
+    TYPED_ACTIONS = Option.TYPED_ACTIONS + ("extend",)
+    ALWAYS_TYPED_ACTIONS = Option.ALWAYS_TYPED_ACTIONS + ("extend",)
+
+    def take_action(self, action, dest, opt, value, values, parser):
+        if action == "extend":
+            values.ensure_value(dest, []).append(value)
+        else:
+            Option.take_action(self, action, dest, opt, value, values, parser)
