@@ -48,17 +48,14 @@ def house_arrest(lockdown, applicationId):
         return
     mis.sendPlist({"Command": "VendDocuments", "Identifier": applicationId})
     res = mis.recvPlist()
-    error = res.get("Error")
-    if error:
-        print res["Error"]
+    if res.get("Error"):
+        print "Unable to Lookup the selected application: You probably trying to access to a system app..."
         return None
     return AFCClient(lockdown, service=mis)
 
 def house_arrest_shell(lockdown, applicationId):
     afc =  house_arrest(lockdown, applicationId)
-    AFCShell(client=afc).cmdloop()
-    #print afc.read_directory("/")
-
+    if afc: AFCShell(client=afc).cmdloop()
 
 """
 "Install"
