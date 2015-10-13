@@ -24,7 +24,7 @@
 
 from lockdown import LockdownClient
 from util.cpio import CpioArchive
-from util.optparser import MultipleOption
+from util import MultipleOption
 import zlib
 import gzip
 from pprint import pprint
@@ -62,7 +62,7 @@ class FileRelay(object):
             self.lockdown = lockdown
         else:
             self.lockdown = LockdownClient()
-	
+
 	ProductVersion = self.lockdown.getValue("", "ProductVersion")
 
 	if ProductVersion[0] >= "8":
@@ -75,11 +75,10 @@ class FileRelay(object):
         print "Disconecting..."
         self.service.close()
 
-    def request_sources(self, sources=["UserDatabases"]):  
+    def request_sources(self, sources=["UserDatabases"]):
         self.service.sendPlist({"Sources": sources})
         while 1:
             res = self.service.recvPlist()
-            pprint(res)
             if res:
                 s = res.get("Status")
                 if s == "Acknowledged":
@@ -94,13 +93,13 @@ class FileRelay(object):
                     print res.get("Error")
                     break
         return None
-       
+
 if __name__ == "__main__":
 
     parser = OptionParser(option_class=MultipleOption,usage="%prog")
-    parser.add_option("-s", "--sources", 
-                      action="extend", 
-                      dest="sources", 
+    parser.add_option("-s", "--sources",
+                      action="extend",
+                      dest="sources",
                       metavar='SOURCES',
                       choices=SRCFILES.split("\n"),
                       help="comma separated list of file relay source to dump")
@@ -115,29 +114,29 @@ if __name__ == "__main__":
     if options.sources:
         sources = options.sources
     else:
-        sources = SRCFILES.split("\n")
+        sources = ["UserDatabases"]
     print "Downloading: %s" % ''.join([str(item)+" " for item in sources])
 
     fc = None
-    try:	
+    try:
     	fc = FileRelay()
     except:
-	print "Device with product vertion >= 8.0 does not handle fileRelay service"
+	print "Device with product vertion >= 8.0 does not allow access to fileRelay service"
 	exit()
 
-    data = fc.request_sources(sources) 
-    
+    data = fc.request_sources(sources)
+
     if data:
         if options.outputfile:
             path = options.outputfile
         else:
             _,path = mkstemp(prefix="fileRelay_dump_",suffix=".gz",dir=".")
-        
+
         open(path,'wb').write(data)
         print  "Data saved to:  %s " % path
-        
-    if options.extractpath:   
+
+    if options.extractpath:
         with open(path, 'r') as f:
             gz = gzip.GzipFile(mode='rb', fileobj=f)
             cpio = CpioArchive(fileobj=BytesIO(gz.read()))
-            cpio.extract_files(files=None,outpath=options.extractpath) 
+            cpio.extract_files(files=None,outpath=options.extractpath)
