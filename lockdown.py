@@ -132,6 +132,8 @@ class LockdownClient(object):
             folder = os.environ["ALLUSERSPROFILE"] + "/Apple/Lockdown/"
         elif sys.platform == "darwin":
             folder = "/var/db/lockdown/"
+        elif sys.platform == 'linux2':
+            folder = '/var/lib/lockdown/'
         try:
             pair_record = plistlib.readPlist(folder + "%s.plist" % self.identifier) 
         except:
