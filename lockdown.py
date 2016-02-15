@@ -76,11 +76,11 @@ class LockdownClient(object):
         self.paired = False
         self.label = "pyMobileDevice"
         
-	assert self.queryType() == "com.apple.mobile.lockdown"
+        assert self.queryType() == "com.apple.mobile.lockdown"
 
         self.udid = self.getValue("", "UniqueDeviceID")
         self.allValues = self.getValue("", "")
-	self.UniqueChipID = self.allValues.get("UniqueChipID")
+        self.UniqueChipID = self.allValues.get("UniqueChipID")
         self.DevicePublicKey =  self.getValue("", "DevicePublicKey")
         self.identifier = self.udid
         if not self.identifier:
@@ -244,7 +244,7 @@ class LockdownClient(object):
         self.c.sendPlist(req)
         res = self.c.recvPlist()
         print res
-	return res
+        return res
 
         
     def startService(self, name):
@@ -256,7 +256,7 @@ class LockdownClient(object):
         StartService = self.c.recvPlist()
         if not StartService or StartService.get("Error"):
             print StartService
-	    raise StartServiceError
+            raise StartServiceError
         return PlistService(StartService.get("Port"))
 
 

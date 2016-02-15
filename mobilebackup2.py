@@ -50,21 +50,21 @@ MASK_DIRECTORY = 0x4000
 
 class DeviceVersionNotSupported(Exception):
     def __str__(self):
-	return "Device version not supported, please use mobilebackup"
+        return "Device version not supported, please use mobilebackup"
 
 
 class MobileBackup2(MobileBackup):
 
     service = None
     def __init__(self, lockdown = None,backupPath = None):
-	if lockdown:
+        if lockdown:
             self.lockdown = lockdown
         else:
             self.lockdown = LockdownClient()
 
-	ProductVersion = self.lockdown.getValue("", "ProductVersion")
-	if ProductVersion[0] < "5":
-	    raise DeviceVersionNotSupported
+        ProductVersion = self.lockdown.getValue("", "ProductVersion")
+        if ProductVersion[0] < "5":
+            raise DeviceVersionNotSupported
         
         self.udid = lockdown.getValue("", "UniqueDeviceID")        
         self.willEncrypt = lockdown.getValue("com.apple.mobile.backup", "WillEncrypt") 
@@ -212,7 +212,7 @@ class MobileBackup2(MobileBackup):
             try:
                 filename = self.check_filename(filename)
                 if os.path.isfile(filename):
-                     os.unlink(filename)
+                    os.unlink(filename)
             except Exception, e:
                 print e
         self.mobilebackup2_send_status_response(0)
@@ -325,7 +325,7 @@ class MobileBackup2(MobileBackup):
         return z
 
     def changepw(self,oldpw,newpw):
-        options = { "OldPassword" : olpw,
+        options = { "OldPassword" : oldpw,
                     "NewPassword" : newpw }
                     
         self.mobilebackup2_send_request("ChangePassword", self.udid, "")

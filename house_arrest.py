@@ -33,7 +33,7 @@ class HouseArrestAFCClient(AFCClient):
     def __init__(self, bid, sandbox="VendContainer", lockdown=None):
         self.lockdown = lockdown if lockdown else LockdownClient()
         service = self.lockdown.startService("com.apple.mobile.house_arrest") 
-    	res = service.sendRequest({"Command": sandbox, "Identifier": bid})
+        res = service.sendRequest({"Command": sandbox, "Identifier": bid})
         super(HouseArrestAFCClient, self).__init__(self.lockdown, service=service)
 
 if __name__ == "__main__":
@@ -46,11 +46,11 @@ if __name__ == "__main__":
     (options, args) = parser.parse_args()
     
     if not options.applicationId:
-	parser.error("Application ID not specify")
+        parser.error("Application ID not specify")
     elif options.applicationId and options.sandbox:
-	h =  HouseArrestAFCClient(options.applicationId, sandbox=options.sandbox)
-    	AFCShell(client=h).cmdloop()
+        h =  HouseArrestAFCClient(options.applicationId, sandbox=options.sandbox)
+        AFCShell(client=h).cmdloop()
     else:
-	h =  HouseArrestAFCClient(options.applicationId)
-    	AFCShell(client=h).cmdloop()
+        h =  HouseArrestAFCClient(options.applicationId)
+        AFCShell(client=h).cmdloop()
     
