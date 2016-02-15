@@ -102,7 +102,8 @@ class installation_proxy(object):
 
 
     def apps_info(self):
-        return self.service.sendRequest({"Command": "Lookup"}).get("LookupResult")
+        self.service.sendPlist({"Command": "Lookup"})
+        return self.service.recvPlist().get('LookupResult')
 
 
     def archive(self,bundleID, options=None, handler=None, *args):
@@ -136,10 +137,10 @@ class installation_proxy(object):
 
     def print_apps(self, appType=["User"]):
         for app in self.get_apps(appType):
-            print "%s : %s => %s" %  (app.get("CFBundleDisplayName"), 
+            print ("%s : %s => %s" %  (app.get("CFBundleDisplayName"), 
                                       app.get("CFBundleIdentifier"), 
                                       app.get("Path") if app.get("Path") 
-                                      else app.get("Container"))
+                                      else app.get("Container"))).encode('utf-8')
 
 
     def get_apps_bid(self,appTypes=["User"]):
