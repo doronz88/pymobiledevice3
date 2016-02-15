@@ -24,7 +24,7 @@
 
 
 from plist_service import PlistService
-from pprint import pprint
+from usbmux import usbmux
 from ca import ca_do_everything
 from util import write_file, readHomeFile, writeHomeFile
 import os
@@ -166,6 +166,8 @@ class LockdownClient(object):
             return False
 
         d = {"Label": self.label, "Request": "StartSession", "HostID": pair_record.get("HostID", self.hostID)}
+        if hasattr(pair_record, 'SystemBUID'):
+            d['SystemBUID'] = pair_record['SystemBUID']
         self.c.sendPlist(d)
         startsession = self.c.recvPlist() 
         self.SessionID = startsession.get("SessionID")
