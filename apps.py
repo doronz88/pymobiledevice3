@@ -102,7 +102,7 @@ def list_apps(lockdown):
         if app.get("ApplicationType") != "System":
             print app["CFBundleIdentifier"], "=>", app.get("Container")
         else:
-            print app["CFBundleIdentifier"], "=>", app.get("CFBundleDisplayName")
+            print app["CFBundleIdentifier"], "=>", app.get("CFBundleDisplayName").encode('utf-8')
 
 
 def get_apps_BundleID(lockdown,appType="User"):
