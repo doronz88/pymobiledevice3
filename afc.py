@@ -125,7 +125,7 @@ AFCPacket = Struct("AFCPacket",
 
 class AFCClient(object):
     def __init__(self, lockdown=None, serviceName="com.apple.afc", service=None):
-	self.serviceName = serviceName
+        self.serviceName = serviceName
         self.lockdown = lockdown if lockdown else LockdownClient()
         self.service = service if service else self.lockdown.startService(self.serviceName)
         self.packet_num = 0

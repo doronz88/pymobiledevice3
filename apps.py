@@ -112,7 +112,7 @@ def get_apps_BundleID(lockdown,appType="User"):
     res = mci.recvPlist()
     for app in res["LookupResult"].values():
         if app.get("ApplicationType")  == appType:
-	        appList.append(app["CFBundleIdentifier"])
+            appList.append(app["CFBundleIdentifier"])
         #else: #FIXME
         #    appList.append(app["CFBundleIdentifier"])
     mci.close()
