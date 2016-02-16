@@ -228,7 +228,7 @@ class USBMux(object):
 			self.protoclass = PlistProtocol
 			self.version = 1
 		self.devices = self.listener.devices
-	def process(self, timeout=None):
+	def process(self, timeout=10):
 		self.listener.process(timeout)
 	def connect(self, device, port):
 		connector = MuxConnection(self.socketpath, self.protoclass)
