@@ -34,6 +34,7 @@ import hashlib
 from struct import unpack, pack
 from time import mktime, gmtime, sleep, time
 import datetime
+import notification_proxy
 
 CODE_SUCCESS = 0x00
 CODE_ERROR_LOCAL =  0x06
@@ -68,8 +69,15 @@ class MobileBackup2(MobileBackup):
         
         self.udid = lockdown.getValue("", "UniqueDeviceID")        
         self.willEncrypt = lockdown.getValue("com.apple.mobile.backup", "WillEncrypt") 
+        self.escrowBag = lockdown.getValue('', 'EscrowBag')
         
-        self.service = self.lockdown.startService("com.apple.mobilebackup2")
+        self.notification_proxy = notification_proxy.NPClient()
+        self.notification_proxy.observe_notification(notification_proxy.NP_SYNC_CANCEL_REQUEST)
+        self.notification_proxy.observe_notification(notification_proxy.NP_SYNC_LOCK_REQUEST)
+        self.notification_proxy.observe_notification(notification_proxy.NP_SYNC_RESUME_REQUEST)
+        self.notification_proxy.observe_notification(notification_proxy.NP_SYNC_SUSPEND_REQUEST)
+        
+        self.service = self.lockdown.startServiceWithEscrowBag("com.apple.mobilebackup2", self.escrowBag)
         if not self.service:
             raise Exception("MobileBackup2 init error : Could not start com.apple.mobilebackup2")
         

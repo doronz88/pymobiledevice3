@@ -73,6 +73,7 @@ class LockdownClient(object):
         self.SessionID = None
         self.c = PlistService(62078,udid)
         self.hostID = self.generate_hostID()
+        self.SystemBUID = self.generate_hostID()
         self.paired = False
         self.label = "pyMobileDevice"
         
@@ -156,6 +157,7 @@ class LockdownClient(object):
                 print "No  pymobiledevice pairing record found for device %s" % self.identifier
                 return False
 
+        self.record = pair_record
         ValidatePair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
         self.c = PlistService(62078,self.udid) 
         self.c.sendPlist(ValidatePair)
@@ -165,9 +167,9 @@ class LockdownClient(object):
             print "ValidatePair fail", ValidatePair
             return False
 
-        d = {"Label": self.label, "Request": "StartSession", "HostID": pair_record.get("HostID", self.hostID)}
-        if hasattr(pair_record, 'SystemBUID'):
-            d['SystemBUID'] = pair_record['SystemBUID']
+        self.hostID = pair_record.get("HostID", self.hostID)
+        self.SystemBUID = pair_record.get("SystemBUID", self.SystemBUID)
+        d = {"Label": self.label, "Request": "StartSession", "HostID": self.hostID, 'SystemBUID': self.SystemBUID}
         self.c.sendPlist(d)
         startsession = self.c.recvPlist() 
         self.SessionID = startsession.get("SessionID")
@@ -219,6 +221,8 @@ class LockdownClient(object):
     
     def getValue(self, domain=None, key=None):
 
+        if(hasattr(self, 'record') and hasattr(self.record, key)):
+            return self.record[key]
         req = {"Request":"GetValue", "Label": self.label}
         
         if domain:
@@ -261,6 +265,17 @@ class LockdownClient(object):
             raise StartServiceError
         return PlistService(StartService.get("Port"))
 
+    def startServiceWithEscrowBag(self, name, escrowBag):
+        if not self.paired:
+            print "NotPaired"
+            raise NotPairedError
+
+        self.c.sendPlist({"Label": self.label, "Request": "StartService", "Service": name, 'EscrowBag':escrowBag})
+        StartService = self.c.recvPlist()
+        if not StartService or StartService.get("Error"):
+            print StartService
+            raise StartServiceError
+        return PlistService(StartService.get("Port"))
 
 
 
