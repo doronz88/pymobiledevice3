@@ -23,9 +23,6 @@
 #
 
 
-from construct.core import Struct
-from construct.lib.container import Container
-from construct.macros import String, ULInt64
 from lockdown import LockdownClient
 import struct
 import plistlib
