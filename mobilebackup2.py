@@ -218,9 +218,9 @@ class MobileBackup2(MobileBackup):
     def work_loop(self):
         while True:
             msg = self.mobilebackup2_receive_message()
-            print msg
             if not msg:
-                break
+                print 'no message!'
+                return 0
 
             assert(msg[0] in ["DLMessageDownloadFiles",
                     "DLContentsOfDirectory",
@@ -249,7 +249,6 @@ class MobileBackup2(MobileBackup):
                 self.mb2_handle_copy_item(msg)
             elif msg[0] == "DLMessageProcessMessage":
                 errcode = msg[1].get("ErrorCode")
-                print msg[1].get("ErrorDescription")
                 if errcode == 0:
                     m =  msg[1].get("MessageName")
                     if m != "Response":
@@ -262,11 +261,11 @@ class MobileBackup2(MobileBackup):
                     print 'Not enough free space on device for restore'
                 if errcode == 17:
                     print 'please press \'trust this computer\' in your device'
-                break
+                return errcode
             elif msg[0] == "DLMessageGetFreeDiskSpace":
                 self.mb2_handle_free_disk_space(msg)
             elif msg[0] == "DLMessageDisconnect":
-                break
+                return 0
   
     def create_status_plist(self,fullBackup=True):
         #Creating Status file for backup
@@ -290,7 +289,7 @@ class MobileBackup2(MobileBackup):
 
         options["ForceFullBackup"] = fullBackup
         self.mobilebackup2_send_request("Backup", self.udid, options)
-        self.work_loop()
+        return self.work_loop()
     
 
     def restore(self, options = {"RestoreSystemFiles": True,
@@ -312,7 +311,7 @@ class MobileBackup2(MobileBackup):
                 self.password = raw_input()
             options["Password"] = self.password
         self.mobilebackup2_send_request("Restore", self.udid, self.udid, options)
-        self.work_loop()
+        return self.work_loop()
 
 
     def info(self,options={}):
