@@ -110,33 +110,22 @@ class MobileBackup(object):
     def create_info_plist(self):
         root_node =  self.lockdown.allValues
         #print pprint(root_node)
-        info = {"BuildVersion": root_node.get("BuildVersion"),
-                "DeviceName":  root_node.get("DeviceName"),
-                "Display Name": root_node.get("DeviceName"),
+        info = {"BuildVersion": root_node.get("BuildVersion") or "",
+                "DeviceName":  root_node.get("DeviceName") or "",
+                "Display Name": root_node.get("DeviceName") or "",
                 "GUID": "---",
-                "ProductType": root_node.get("ProductType"),
-                "ProductVersion": root_node.get("ProductVersion"),
-                #"Serial Number": root_node.get("SerialNumber"),
+                "ProductType": root_node.get("ProductType") or "",
+                "ProductVersion": root_node.get("ProductVersion") or "",
+                "Serial Number": root_node.get("SerialNumber") or "",
                 "Unique Identifier": self.udid.upper(),
                 "Target Identifier": self.udid,
                 "Target Type": "Device",
                 "iTunes Version": "10.0.1"
                 }
-        info["ICCID"] = root_node.get("IntegratedCircuitCardIdentity")
-        info["IMEI"] = root_node.get("InternationalMobileEquipmentIdentity")
+        info["ICCID"] = root_node.get("IntegratedCircuitCardIdentity") or ""
+        info["IMEI"] = root_node.get("InternationalMobileEquipmentIdentity") or ""
         info["Last Backup Date"] = datetime.datetime.now()
         
-        iTunesFiles = ["ApertureAlbumPrefs",
-                        "IC-Info.sidb",
-                        "IC-Info.sidv",
-                        "PhotosFolderAlbums",
-                        "PhotosFolderName",
-                        "PhotosFolderPrefs",
-                        "iPhotoAlbumPrefs",
-                        "iTunesApplicationIDs",
-                        "iTunesPrefs",
-                        "iTunesPrefs.plist"
-        ]
         afc = AFCClient(self.lockdown)
         iTunesFilesDict = {}
         iTunesFiles = afc.read_directory("/iTunes_Control/iTunes/")

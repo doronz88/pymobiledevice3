@@ -31,6 +31,7 @@ from util import write_file, hexdump
 from biplist import writePlist, readPlist, Data
 import os
 import hashlib
+import afc
 from struct import unpack, pack
 from time import mktime, gmtime, sleep, time
 import datetime
@@ -69,15 +70,8 @@ class MobileBackup2(MobileBackup):
         
         self.udid = lockdown.getValue("", "UniqueDeviceID")        
         self.willEncrypt = lockdown.getValue("com.apple.mobile.backup", "WillEncrypt") 
-        self.escrowBag = lockdown.getValue('', 'EscrowBag')
         
-        self.notification_proxy = notification_proxy.NPClient()
-        self.notification_proxy.observe_notification(notification_proxy.NP_SYNC_CANCEL_REQUEST)
-        self.notification_proxy.observe_notification(notification_proxy.NP_SYNC_LOCK_REQUEST)
-        self.notification_proxy.observe_notification(notification_proxy.NP_SYNC_RESUME_REQUEST)
-        self.notification_proxy.observe_notification(notification_proxy.NP_SYNC_SUSPEND_REQUEST)
-        
-        self.service = self.lockdown.startServiceWithEscrowBag("com.apple.mobilebackup2", self.escrowBag)
+        self.service = self.lockdown.startServiceWithEscrowBag("com.apple.mobilebackup2")
         if not self.service:
             raise Exception("MobileBackup2 init error : Could not start com.apple.mobilebackup2")
         
@@ -298,7 +292,9 @@ class MobileBackup2(MobileBackup):
     
 
     def restore(self, options = {"RestoreSystemFiles": True,
-                                "RestoreShouldReboot": False,
+                                "RestoreShouldReboot": True,
+                                "RestorePreserveCameraRoll": True,
+                                "RemoveItemsNotRestored": False,
                                 "RestoreDontCopyBackup": True,
                                 "RestorePreserveSettings": True},
 			password=None):
@@ -361,15 +357,19 @@ if __name__ == "__main__":
                   help="Show backup info")
     parser.add_option("-l", "--list", dest="list", action="store_true", default=False,
                   help="Show backup info")
+    parser.add_option("-u", "--uuid", dest="uuid", action="store", default=None,
+                  help="uuid of device to backup/restore")
+    parser.add_option("-p", "--path", dest="path", action="store", default=None,
+                  help="path to backup/restore to")
     (options, args) = parser.parse_args()
     
-    lockdown = LockdownClient()
-    mb = MobileBackup2(lockdown)
+    lockdown = LockdownClient(options.uuid)
+    mb = MobileBackup2(lockdown, options.path)
     
-    if options.backup:
-        mb.backup()
-    elif options.restore:
+    if options.restore:
         mb.restore()
+    elif options.backup:
+        mb.backup()
     if options.info:
         mb.info()
     if options.list:

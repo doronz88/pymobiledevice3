@@ -24,7 +24,6 @@
 
 
 from plist_service import PlistService
-from usbmux import usbmux
 from ca import ca_do_everything
 from util import write_file, readHomeFile, writeHomeFile
 import os
@@ -33,6 +32,7 @@ import sys
 import uuid
 import platform
 import time
+from usbmux import usbmux
 
 
 class NotTrustedError(Exception):
@@ -80,7 +80,7 @@ class LockdownClient(object):
         assert self.queryType() == "com.apple.mobile.lockdown"
 
         self.udid = self.getValue("", "UniqueDeviceID")
-        self.allValues = self.getValue("", "")
+        self.allValues = self.getValue()
         self.UniqueChipID = self.allValues.get("UniqueChipID")
         self.DevicePublicKey =  self.getValue("", "DevicePublicKey")
         self.identifier = self.udid
@@ -221,7 +221,7 @@ class LockdownClient(object):
     
     def getValue(self, domain=None, key=None):
 
-        if(hasattr(self, 'record') and hasattr(self.record, key)):
+        if(isinstance(key, str) and hasattr(self, 'record') and hasattr(self.record, key)):
             return self.record[key]
         req = {"Request":"GetValue", "Label": self.label}
         
@@ -265,10 +265,14 @@ class LockdownClient(object):
             raise StartServiceError
         return PlistService(StartService.get("Port"))
 
-    def startServiceWithEscrowBag(self, name, escrowBag):
+    def startServiceWithEscrowBag(self, name, escrowBag = None):
         if not self.paired:
             print "NotPaired"
             raise NotPairedError
+        
+        if (not escrowBag):
+            escrowBag = self.record['EscrowBag']
+        
 
         self.c.sendPlist({"Label": self.label, "Request": "StartService", "Service": name, 'EscrowBag':escrowBag})
         StartService = self.c.recvPlist()
