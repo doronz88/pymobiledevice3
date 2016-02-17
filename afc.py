@@ -33,7 +33,6 @@ import os
 from util import hexdump, parsePlist
 from pprint import pprint
 import plistlib
-import time
 import posixpath
 
 MODEMASK =  0o0000777

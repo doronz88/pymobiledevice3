@@ -277,6 +277,8 @@ class LockdownClient(object):
         self.c.sendPlist({"Label": self.label, "Request": "StartService", "Service": name, 'EscrowBag':escrowBag})
         StartService = self.c.recvPlist()
         if not StartService or StartService.get("Error"):
+            if StartService.get("Error", "") == 'PasswordProtected':
+                print 'your device is protected with password, please enter password in device'
             print StartService
             raise StartServiceError
         return PlistService(StartService.get("Port"))

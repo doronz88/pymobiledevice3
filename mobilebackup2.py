@@ -29,9 +29,9 @@ from optparse import OptionParser
 from pprint import pprint
 from biplist import writePlist, readPlist
 import os
-from struct import pack
 from time import mktime, gmtime
 import datetime
+from uuid import uuid4
 
 CODE_SUCCESS = 0x00
 CODE_ERROR_LOCAL =  0x06
@@ -167,13 +167,12 @@ class MobileBackup2(MobileBackup):
             self.mobilebackup2_send_status_response(0)
 
     def mb2_handle_list_directory(self, msg):
-        path = msg[1]
         dirlist = {}
         self.mobilebackup2_send_status_response(0, status2=dirlist);
 
     def mb2_handle_make_directory(self, msg):
         dirname = self.check_filename(msg[1])
-        print "Creating directory %s" % dirname
+#         print "Creating directory %s" % dirname
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
         self.mobilebackup2_send_status_response(0, "")
@@ -200,13 +199,13 @@ class MobileBackup2(MobileBackup):
 
     def mb2_handle_move_files(self, msg):
         for k,v in msg[1].items():
-            print "Renaming %s to %s"  % (self.check_filename(k),self.check_filename(v))
+#             print "Renaming %s to %s"  % (self.check_filename(k),self.check_filename(v))
             os.rename(self.check_filename(k),self.check_filename(v))
         self.mobilebackup2_send_status_response(0)
 
     def mb2_handle_remove_files(self, msg):
         for filename in msg[1]:
-            print "Removing ", self.check_filename(filename)
+#             print "Removing ", self.check_filename(filename)
             try:
                 filename = self.check_filename(filename)
                 if os.path.isfile(filename):
@@ -226,8 +225,10 @@ class MobileBackup2(MobileBackup):
                     "DLContentsOfDirectory",
                     "DLMessageCreateDirectory",
                     "DLMessageUploadFiles",
-                    "DLMessageMoveFiles","DLMessageMoveItems",
-                    "DLMessageRemoveFiles", "DLMessageRemoveItems",
+                    "DLMessageMoveFiles",
+                    "DLMessageMoveItems",
+                    "DLMessageRemoveFiles",
+                    "DLMessageRemoveItems",
                     "DLMessageCopyItem",
                     "DLMessageProcessMessage",
                     "DLMessageGetFreeDiskSpace",
@@ -269,7 +270,7 @@ class MobileBackup2(MobileBackup):
   
     def create_status_plist(self,fullBackup=True):
         #Creating Status file for backup
-        statusDict = { 'UUID': '82D108D4-521C-48A5-9C42-79C5E654B98F', #FixMe We Should USE an UUID generator uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
+        statusDict = { 'UUID': str(uuid4).upper(), #FixMe We Should USE an UUID generator uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
                    'BackupState': 'new', 
                    'IsFullBackup': fullBackup, 
                    'Version': '2.4', 
@@ -302,7 +303,11 @@ class MobileBackup2(MobileBackup):
         
         print "Starting restoration..."
         m = os.path.join(self.backupPath,self.udid,"Manifest.plist")
-        manifest = readPlist(m)
+        try:
+            manifest = readPlist(m)
+        except IOError:
+            print 'not a valid backup folder'
+            return -1
         if manifest.get("IsEncrypted"):
             print "Backup is encrypted, enter password : "
             if password:
