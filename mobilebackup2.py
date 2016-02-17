@@ -27,15 +27,11 @@ from lockdown import LockdownClient
 from mobilebackup import MobileBackup
 from optparse import OptionParser
 from pprint import pprint
-from util import write_file, hexdump
-from biplist import writePlist, readPlist, Data
+from biplist import writePlist, readPlist
 import os
-import hashlib
-import afc
-from struct import unpack, pack
-from time import mktime, gmtime, sleep, time
+from struct import pack
+from time import mktime, gmtime
 import datetime
-import notification_proxy
 
 CODE_SUCCESS = 0x00
 CODE_ERROR_LOCAL =  0x06
@@ -222,6 +218,7 @@ class MobileBackup2(MobileBackup):
     def work_loop(self):
         while True:
             msg = self.mobilebackup2_receive_message()
+            print msg
             if not msg:
                 break
 
@@ -252,13 +249,19 @@ class MobileBackup2(MobileBackup):
                 self.mb2_handle_copy_item(msg)
             elif msg[0] == "DLMessageProcessMessage":
                 errcode = msg[1].get("ErrorCode")
+                print msg[1].get("ErrorDescription")
                 if errcode == 0:
                     m =  msg[1].get("MessageName")
                     if m != "Response":
                         print m 
                 if errcode == 1:
-                    print msg[1].get("ErrorDescription")
                     print "Please unlock your device and retry..."
+                if errcode == 211:
+                    print 'Please go to Settings->iClould->Find My iPhone and disable it'
+                if errcode == 105:
+                    print 'Not enough free space on device for restore'
+                if errcode == 17:
+                    print 'please press \'trust this computer\' in your device'
                 break
             elif msg[0] == "DLMessageGetFreeDiskSpace":
                 self.mb2_handle_free_disk_space(msg)
@@ -285,8 +288,7 @@ class MobileBackup2(MobileBackup):
         
         self.create_info_plist()
 
-        if fullBackup == True:
-            options["ForceFullBackup"] = True
+        options["ForceFullBackup"] = fullBackup
         self.mobilebackup2_send_request("Backup", self.udid, options)
         self.work_loop()
     
