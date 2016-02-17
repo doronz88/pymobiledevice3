@@ -232,8 +232,8 @@ class AFCClient(object):
             return self.list_to_dict(data)
 
 
-    def make_link(self, target, linkname, type=AFC_SYMLINK):
-        status, data = self.do_operation(AFC_OP_MAKE_LINK, struct.pack("<Q", type) + target + "\x00" + linkname + "\x00")
+    def make_link(self, target, linkname, typ=AFC_SYMLINK):
+        status, data = self.do_operation(AFC_OP_MAKE_LINK, struct.pack("<Q", typ) + target + "\x00" + linkname + "\x00")
         print "make_link", status
         return status
 

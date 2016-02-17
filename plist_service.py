@@ -61,8 +61,8 @@ class PlistService(object):
     def close(self):
         self.s.close()
     
-    def recv(self, len=4096):
-        return self.s.recv(len)
+    def recv(self, length=4096):
+        return self.s.recv(length)
     
     def send(self, data):
         return self.s.send(data)

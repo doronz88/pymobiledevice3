@@ -35,9 +35,9 @@ from util import makedirs
 #
 # Fix plistlib.py line 364
 #     def asBase64(self, maxlinelength=76):
-#	if self.data != None:
-#	    return _encodeBase64(self.data, maxlinelength)
-#	return ""
+#        if self.data != None:
+#            return _encodeBase64(self.data, maxlinelength)
+#        return ""
 #
 #
 
@@ -56,19 +56,19 @@ DEVICE_LINK_FILE_STATUS_LAST_HUNK = 2
 
 class DeviceVersionNotSupported(Exception):
     def __str__(self):
-	return "Device version not supported, please use mobilebackup2"
+        return "Device version not supported, please use mobilebackup2"
 
 
 class MobileBackup(object):
     def __init__(self, lockdown=None):
-	if lockdown:
+        if lockdown:
             self.lockdown = lockdown
         else:
             self.lockdown = LockdownClient()
 
-	ProductVersion = self.lockdown.getValue("", "ProductVersion")
-	if ProductVersion[0] >= "5":
-	    raise DeviceVersionNotSupported
+        ProductVersion = self.lockdown.getValue("", "ProductVersion")
+        if ProductVersion[0] >= "5":
+            raise DeviceVersionNotSupported
 
         self.service = self.lockdown.startService("com.apple.mobilebackup")
         self.udid = self.lockdown.udid

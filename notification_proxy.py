@@ -111,8 +111,8 @@ class NPClient(object):
             elif res.get("Command") == "ProxyDeath":
                     print "NotificationProxy died!"
             else:
-                 print "Got unknown NotificationProxy command %s" % res.get("Command")
-                 pprint(res)
+                print "Got unknown NotificationProxy command %s" % res.get("Command")
+                pprint(res)
         return None  
 
 
