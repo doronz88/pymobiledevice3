@@ -1,0 +1,1364 @@
+Connecting to device: 1da9ae263353356291a8e72b72526c2681b8424f
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Request</key>
+	<string>QueryType</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Request</key>
+	<string>QueryType</string>
+	<key>Type</key>
+	<string>com.apple.mobile.lockdown</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>UniqueDeviceID</string>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>GetValue</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>UniqueDeviceID</string>
+	<key>Request</key>
+	<string>GetValue</string>
+	<key>Value</key>
+	<string>1da9ae263353356291a8e72b72526c2681b8424f</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>GetValue</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Request</key>
+	<string>GetValue</string>
+	<key>Value</key>
+	<dict>
+		<key>BasebandCertId</key>
+		<integer>3554301762</integer>
+		<key>BasebandKeyHashInformation</key>
+		<dict>
+			<key>AKeyStatus</key>
+			<integer>2</integer>
+			<key>SKeyHash</key>
+			<data>
+			7MQEUyvzG4gjjZc7KsNNAVTS8g4=
+			</data>
+			<key>SKeyStatus</key>
+			<integer>0</integer>
+		</dict>
+		<key>BasebandSerialNumber</key>
+		<data>
+		JFCYHA==
+		</data>
+		<key>BasebandVersion</key>
+		<string>6.01.00</string>
+		<key>BoardId</key>
+		<integer>2</integer>
+		<key>BuildVersion</key>
+		<string>13B143</string>
+		<key>ChipID</key>
+		<integer>35168</integer>
+		<key>DeviceClass</key>
+		<string>iPhone</string>
+		<key>DeviceColor</key>
+		<string>#3b3b3c</string>
+		<key>DeviceName</key>
+		<string>iPhone</string>
+		<key>DieID</key>
+		<integer>6281557489488</integer>
+		<key>HardwareModel</key>
+		<string>N53AP</string>
+		<key>PartitionType</key>
+		<string></string>
+		<key>ProductName</key>
+		<string>iPhone OS</string>
+		<key>ProductType</key>
+		<string>iPhone6,2</string>
+		<key>ProductVersion</key>
+		<string>9.1</string>
+		<key>ProductionSOC</key>
+		<true/>
+		<key>ProtocolVersion</key>
+		<string>2</string>
+		<key>TelephonyCapability</key>
+		<true/>
+		<key>UniqueChipID</key>
+		<integer>6281557489488</integer>
+		<key>UniqueDeviceID</key>
+		<string>1da9ae263353356291a8e72b72526c2681b8424f</string>
+		<key>WiFiAddress</key>
+		<string>5c:f5:da:e2:b7:a9</string>
+	</dict>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>DevicePublicKey</string>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>GetValue</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>DevicePublicKey</string>
+	<key>Request</key>
+	<string>GetValue</string>
+	<key>Value</key>
+	<data>
+	LS0tLS1CRUdJTiBSU0EgUFVCTElDIEtFWS0tLS0tCk1JSUJDZ0tDQVFFQThHT3FzYlAy
+	YU1NdytYL1JPWEFtOFlzM2Z1M1RYS1FiOVV3YVZxYnFhb1F5QzFHNnVLT1UNCjFEZFNh
+	QXBNVTdCSzFSQ1E3WDFwWkFQS0dJWkduN3VBOW9ONDhVV1N4MjBCTE1TbDI5aHlXYys0
+	dWJTd1ErUm8NCjZ3bkpCR0xpVVd4dTBoUlFWKzJ6SldGV3JGNFR1anZCMEw3NHhtYm1U
+	SEdyM3MyQkQ0MlhnY2w4bS9UUkJxRHcNCmUrTXIxN3dVY1JrbmpuM2NXRkhveVBUVW9T
+	N2lpMG1SeW9GS3FWeVZFVkRyOXJCb0t5M0hObHpEcnNOSHhKK0INCk5sWENYdXpiMnl6
+	VGRpWndnMVAzL0NhamRScnppVHdhWVlIdzdLQmMvdFVKaU5aQkU2YVVmR0o3OU4vZnpq
+	eWoNCmhUSWFnc0tjdExVOWcvL2NRaStYMjVjTmxqdnVJSDZybndJREFRQUIKLS0tLS1F
+	TkQgUlNBIFBVQkxJQyBLRVktLS0tLQo=
+	</data>
+</dict>
+</plist>
+
+Using iTunes pair record: 1da9ae263353356291a8e72b72526c2681b8424f.plist
+Connecting to device: 1da9ae263353356291a8e72b72526c2681b8424f
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>PairRecord</key>
+	<dict>
+		<key>DeviceCertificate</key>
+		<data>
+		LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUN1akNDQWFLZ0F3SUJB
+		Z0lCQURBTkJna3Foa2lHOXcwQkFRVUZBREFBTUI0WERURTJNREl3TVRFM05U
+		QTAKT1ZvWERUSTJNREV5T1RFM05UQTBPVm93QURDQ0FTSXdEUVlKS29aSWh2
+		Y05BUUVCQlFBRGdnRVBBRENDQVFvQwpnZ0VCQVBCanFyR3o5bWpETVBsLzBU
+		bHdKdkdMTjM3dDAxeWtHL1ZNR2xhbTZtcUVNZ3RSdXJpamxOUTNVbWdLClRG
+		T3dTdFVRa08xOWFXUUR5aGlHUnArN2dQYURlUEZGa3NkdEFTekVwZHZZY2xu
+		UHVMbTBzRVBrYU9zSnlRUmkKNGxGc2J0SVVVRmZ0c3lWaFZxeGVFN283d2RD
+		KytNWm01a3h4cTk3TmdRK05sNEhKZkp2MDBRYWc4SHZqSzllOApGSEVaSjQ1
+		OTNGaFI2TWowMUtFdTRvdEprY3FCU3FsY2xSRlE2L2F3YUNzdHh6WmN3NjdE
+		UjhTZmdUWlZ3bDdzCjI5c3MwM1ltY0lOVDkvd21vM1VhODRrOEdtR0I4T3ln
+		WFA3VkNZaldRUk9tbEh4aWUvVGYzODQ4bzRVeUdvTEMKbkxTMVBZUC8zRUl2
+		bDl1WERaWTc3aUIrcTU4Q0F3RUFBYU0vTUQwd0RBWURWUjBUQVFIL0JBSXdB
+		REFkQmdOVgpIUTRFRmdRVXg1c2lRLzVISXZraTBTWU9MOUNZUnRTQ2F4Y3dE
+		Z1lEVlIwUEFRSC9CQVFEQWdXZ01BMEdDU3FHClNJYjNEUUVCQlFVQUE0SUJB
+		UUJzR2Fhck1lZC9MN1hhTzBSLzBZRndROWE4UGVDQWljYmVPeTBhTWthbDFM
+		bVEKdUtWdWc3RzVMcVYycXd3SmYxNFVzd3JSR2ZuaXkvdHVHeUt6ZExSaEJY
+		QmV5SjNucFNnRDlmUkQ2bDBvU1RIegpVY3BDTkw0d2o3VHMyaVhGRXphcGl5
+		SW5KN05DakFFTW1paXJIbTQwSjc3dFBaYTMwWGhPcW80cXBkakZkTkNJCnQz
+		eUl1d2l1TmN4eHRHTS9wdC8wQTZzeXZtYmRmWEZ5TnJjMGFRK2QxNkcyRGFY
+		SkR3dllHSnJMd1BlNHZEQWEKbWVtM3A0WXQyWHlOb1BpcElIZlJ6QUxxZGNW
+		ZTRIN2lDQnVPSDFldktKRWxDZ1RNZUVIejVTTVBuc2NoSmZqMgplYnFCOURu
+		ZFNIZFZLaHB4LzllTlpQRkVMNGZOMjBaME1kTmNlQXVQCi0tLS0tRU5EIENF
+		UlRJRklDQVRFLS0tLS0K
+		</data>
+		<key>EscrowBag</key>
+		<data>
+		pSIMv/iKv2GHnPAg/MbOnYEZcI/vnlTpiantWACcQNw=
+		</data>
+		<key>HostCertificate</key>
+		<data>
+		LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUN1akNDQWFLZ0F3SUJB
+		Z0lCQURBTkJna3Foa2lHOXcwQkFRVUZBREFBTUI0WERURTJNREl3TVRFM05U
+		QTAKT1ZvWERUSTJNREV5T1RFM05UQTBPVm93QURDQ0FTSXdEUVlKS29aSWh2
+		Y05BUUVCQlFBRGdnRVBBRENDQVFvQwpnZ0VCQU5QWlhEcjd3cTZaTUNUSlg5
+		QVhUOEZQVkFvcW9JQ0RmOU1IbWJtZUd0cmp4QmdSVDZuVG1WTDVBT0k1CjJR
+		RGQrVEhFT0wvWGUrU2R4QWFhQ2s1NzRsVWtYblUxVFlaWE44dnA4NzNTMnF5
+		S01KNFJ4ajdMYWtBK0d4bVoKTGMwaFMzZ2Nta1QwbGRxR1E2MVh1RlFwaVRw
+		OHpRSXo0dzk5eDdQVDBQT01DM1ZMY0NGWnBLTmdhTUM2OGM2MQorUjhLYVpt
+		b1Zpdm1vS3dkU2hRL1B6UXZyeXV0Z3E2OEhPaEJNRVowaHpiTFRxUUk5N0pJ
+		bUNwMEJXM0tzT0YzClYwT3gvTTIyejNoa2ZtVzJ0eUNMUjQ2RVpYZENpSkUv
+		bXVja1lucm9IRm9RVnN3dmZ5bkdzb3A0NFRvRFFYUDIKQm9CRVZkeCtidEtX
+		WG8wcFQxeTY2RkRyWVUwQ0F3RUFBYU0vTUQwd0RBWURWUjBUQVFIL0JBSXdB
+		REFkQmdOVgpIUTRFRmdRVWo5Q1hBdlA4dGtPUkRkSGp4RWZyM1NNSkxNb3dE
+		Z1lEVlIwUEFRSC9CQVFEQWdXZ01BMEdDU3FHClNJYjNEUUVCQlFVQUE0SUJB
+		UUFueTdnOVZ6WE9wOWh4SzdldkRnbzZCNWFIZGRUeWJnamM2WFdLdzdRUFlV
+		RXgKMmZ3RTJ4U2xhRHdQU2NMTXRoZGVVNkhaeFFFSDdCUkNVNTYwMEVjcTlq
+		N3d1VldyMHhxT0hUaGk1MEVMc0xrbApqN3ZzYTdqYlNPU1hUL0FCRitQQ2Q2
+		QVY5OHpJZ3g3cXFEbGhpYzFEa2J2azl3aXRhcjRhRXN1czJVbGcvRGR1Cm9q
+		ZkpkZ0RKaXpkUE55KzV6RW1ZbHhXeWZSTnhJR0pHVUNpMGxXTm1RQ2c2NGtk
+		MjI3RkNYWnAzWXg0TnI1TFUKVHRvQTZXRGFaU3ZjUDVtb0t1ZU5BRmRzM1VT
+		WVBwTzZDS1B2NlRISm9zdldMMVlZenVwMVZPQThKNnJRdVRjOApUVnNKdlNI
+		TmtIdW1KazZWRVh2WWEvYVBFK2RYVVFTbk9jZUxyT1dqCi0tLS0tRU5EIENF
+		UlRJRklDQVRFLS0tLS0K
+		</data>
+		<key>HostID</key>
+		<string>30498073372522485224934132</string>
+		<key>HostPrivateKey</key>
+		<data>
+		LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFcFFJQkFBS0NB
+		UUVBMDlsY092dkNycGt3Sk1sZjBCZFB3VTlVQ2lxZ2dJTi8wd2VadVo0YTJ1
+		UEVHQkZQCnFkT1pVdmtBNGpuWkFOMzVNY1E0djlkNzVKM0VCcG9LVG52aVZT
+		UmVkVFZOaGxjM3krbnp2ZExhcklvd25oSEcKUHN0cVFENGJHWmt0elNGTGVC
+		eWFSUFNWMm9aRHJWZTRWQ21KT256TkFqUGpEMzNIczlQUTg0d0xkVXR3SVZt
+		awpvMkJvd0xyeHpyWDVId3BwbWFoV0srYWdyQjFLRkQ4L05DK3ZLNjJDcnJ3
+		YzZFRXdSblNITnN0T3BBajNza2lZCktuUUZiY3F3NFhkWFE3SDh6YmJQZUdS
+		K1piYTNJSXRIam9SbGQwS0lrVCthNXlSaWV1Z2NXaEJXekM5L0tjYXkKaW5q
+		aE9nTkJjL1lHZ0VSVjNINXUwcFplalNsUFhMcm9VT3RoVFFJREFRQUJBb0lC
+		QVFDYWhoSkRKNzR5VXFTTwpRS0Ixalh0c09tdkhXcDVsL3dUdXJiMlFhZVdX
+		d2NvWDhCQ1doRFJ6RkJOejc5UDhVT3ppUXdsTnpXU2VOZ0YwCiswa0hSRSty
+		NFBKUk5nY05OWE1LZHVTR0VsWFV3cHVCd045RWtHVTQ1TlFwa05TYXFtMTgr
+		QWdDd2hESUsyVVQKL0VjRWhLT0hHTjhFZTBwazAwOG1PUnRSZWxZbFFBU1hB
+		MDdYUTlMREdtZmVkaWVmZTZubnFBcnBKeTVJaG16TQp5RTJPdHZmS2F3UXVC
+		MElvQ3pwSlluT2U3R3lUWkpJK3FDRDY2VVlRNXRrYzYvSkg2alQ2RTRtYVF2
+		QUp5OEcrCmF4QUYvenZmM0lLRUtEMXF1VGdDekpkQjZmc09pbUJmNm12TUlw
+		cmtQRmRlb2dxQitWWVJNWGZ4aElnWWJQazMKVXN6U3RnUGhBb0dCQU9tQk1q
+		bk9odGthaHNXVnVXWTViMnNRcjRjZDBTQnlwTU5NejV6R0JoQ3BwY3hsLy90
+		MApLaDNZd1Z2NjBqNDIyb1IxOEJiRjVGbHNQcEswRVF3bzFZQkxuakVnMjJK
+		VTQvTHdHYStFRDN2WFladVBuS0FkCktjNFlvZ1JUYWpMSUh1WjdOUUtsUnVM
+		bzdnTVBMd0JJSWliSy9qMnZsUXFCcUV0d09Ibi9sZW5GQW9HQkFPaEMKRlVZ
+		NExwWllBUzlaenllclhzaE0wa0liaFIwc21TTjZ6OHhLN3JsZVBIcm5lQ2Vh
+		NktKaG9zRThEREl1bDliYQpvWFViaGl2MFNGNGtkaFJxenVFTUhFdEN2TzV2
+		UFJKZ09ERjhmY2djUjh5aFJPT2JKS25BWVNZSndsZUgvRHNKCmovSzZBMlF2
+		czdzZjEzYmZvSXJRRDdLUVlvamV0allwRS9kVFJmbnBBb0dCQUlaUTNOVkhx
+		V1hFem5WbGRLb0sKcTc2SWNJOW1aVjhtMHdQTWNUZ2E2RzQ1UjdmVmpIUFdG
+		RXZxM1A3TnZwWXU4Mjl5YjlLSnJwcUptMHpENjNKMQpJcXFUMU1FcHgwZysw
+		SWh6K0RKdjRvQTRHbHRqTnBNYmMycXIzTFprVFJnODZSbG5FYzBkeVRMSkRm
+		QVFrZGExCnAzOXRFT1htMC9LaE5tOStjOTRwV05DSkFvR0FHYVRTUElLUGdr
+		SU5QM0VuRWpZMXJOL3VoeVlLdUlIb0ZxYkUKc3NYRFBleE51VFE5YkFJS2xZ
+		TTZPU09zSlE1SDdZME9McVB2V0lNTVNuaTBJT1Q2R3BiL3VMK1JwTEhiaUYv
+		ZgpWSGR1VzkzamY1Qit6cktlaGErY0Nsc2hmaENocE5NVmRiTmNGSCsvMUhW
+		YmtPQjRGVnVMb0NlWStZdTlpcFZXCmd3Ukt3YUVDZ1lFQXRGMHZRMDdCWTdT
+		S3VRVE93cGdJSVVXKzFBNDN0Z2lnSFlhbjFpWG9zUUZiMzd6MllQa3EKdUNZ
+		dVRYbElNMFQ3akNwQjJuaWNqSFJJZzFJMHhhVWRkWFdOaXExMElnY0pSemdy
+		aHZOdlNTYWJ1WUhpS1pzRwpYZmtVWnZ3K094Qmk4SWpYd1p3VDZFb0ExNFp6
+		R1dIMzJ4YkpNMUFjajNDUWNaWUt6NEpudzZRPQotLS0tLUVORCBSU0EgUFJJ
+		VkFURSBLRVktLS0tLQo=
+		</data>
+		<key>RootCertificate</key>
+		<data>
+		LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUNyVENDQVpXZ0F3SUJB
+		Z0lCQURBTkJna3Foa2lHOXcwQkFRVUZBREFBTUI0WERURTJNREl3TVRFM05U
+		QTAKT1ZvWERUSTJNREV5T1RFM05UQTBPVm93QURDQ0FTSXdEUVlKS29aSWh2
+		Y05BUUVCQlFBRGdnRVBBRENDQVFvQwpnZ0VCQU1BMUdtMDE2emZWbXJodGdE
+		NitRd2s3dFFLcGFFcUFjeHJXN09YM1o5THZGM05XRyt0Njk5azFsUzZuClcx
+		MjNERThZVFZzK3U5Mm5KSVBvcHhOVzcrYTZJQzQxbUVFZkh2UnNXT092ODdR
+		MkpVRXcycDM0MnFhSnZMWkIKSkNwamlOU043d0RqSzR4L01IYjZhWEJmZnY1
+		SVBXbDBRdm9KNmVjL2k5Q21zUVd5dHRya3h4ZERJbkdtVDZKZwpXeW81Nmg0
+		ZE1KM0M2RU1mVUNTMFVTdUdmbkl4ZWhHNERnZ2M1UGhkckVMZVB5TDlLSHVC
+		U3dGNzNYRXB4R0FFCjNkS1h1V01DSkx3UHpZRVp3K2JLN0UyMFJ5NVNVYU1G
+		VXQ2Q2VGeTdZd2p5b0xXN25kSGxmekgrQ1pQeW5OOE4Kc3FYTWFjUVRxekJG
+		amQzd2ZOOTRISkRRditjQ0F3RUFBYU15TURBd0R3WURWUjBUQVFIL0JBVXdB
+		d0VCL3pBZApCZ05WSFE0RUZnUVVDQTJTcWErbytxYXdpZjVTeGZTTEEzU3FV
+		cFl3RFFZSktvWklodmNOQVFFRkJRQURnZ0VCCkFFekllbmQ2NkxtMS90RGlk
+		M0JTZGhJeVo1aXRpSVNTQmtvRGJJOThNTzYzdEtyeXZsZmNJWG9WM2lkdHp0
+		aXkKOEQ2SGUwOW5NenlDQnhVU1YrUG9VZ21iMEVDQVUvQTBwWWpPRnkrbFBR
+		WTFSR284djd4L0tvVG4wR0JITWVBNgpsSGx1dWJCQzEyMENKSXdnWU1qSVFr
+		TGRreWl3ODVXNDlDSTAwYXNvR2NwV2JCckJWRjdsNGtRSFJhaW45akJtCjB2
+		VUN1YkZNTitLWFNuaWhMdkt5eHRqQksrdWlwWlJaM3FZbitJYWVScEtKeFRV
+		SS85VXgxTThneUs5VVczTXgKclhGQVduUlBDNDB5eEV5WURhZDRoTVgzU3Ji
+		Ym9QVGc4Z1gwUUZaaUlvRzdXYTJJbUlGQS8rNE9kY2w5NXRuRgpaNG9zcjY3
+		cEYvTm11eXdEQmNvMG92dz0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+		</data>
+		<key>RootPrivateKey</key>
+		<data>
+		LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkFBS0NB
+		UUVBd0RVYWJUWHJOOVdhdUcyQVByNURDVHUxQXFsb1NvQnpHdGJzNWZkbjB1
+		OFhjMVliCjYzcjMyVFdWTHFkYlhiY01UeGhOV3o2NzNhY2tnK2luRTFidjVy
+		b2dMaldZUVI4ZTlHeFk0Ni96dERZbFFURGEKbmZqYXBvbTh0a0VrS21PSTFJ
+		M3ZBT01yakg4d2R2cHBjRjkrL2tnOWFYUkMrZ25wNXorTDBLYXhCYksyMnVU
+		SApGME1pY2FaUG9tQmJLam5xSGgwd25jTG9ReDlRSkxSUks0WitjakY2RWJn
+		T0NCemsrRjJzUXQ0L0l2MG9lNEZMCkFYdmRjU25FWUFUZDBwZTVZd0lrdkEv
+		TmdSbkQ1c3JzVGJSSExsSlJvd1ZTM29KNFhMdGpDUEtndGJ1ZDBlVi8KTWY0
+		SmsvS2MzdzJ5cGN4cHhCT3JNRVdOM2ZCODMzZ2NrTkMvNXdJREFRQUJBb0lC
+		QUUzYmRPZjJKbURJbXRMSQpNR0c2Q2tlTU13ZHYvZm5uekRoOEJSd21PcDA4
+		RW1DNjZiWmFhbGxIRmpYK3ZzallaQmtKL0JQUTlxS1RtUHdCCjJ1Ty9uSS8y
+		cHlCd3YwcnB3MDA1TWt5UXNvUTJScU1BbWgzUmR5aHN0TStTMVlhQ0tTUUls
+		bDdpcG5wVDd4clMKMXJFWlRjVE5HR3RHRi9kVzJyTzhqdk1uQXFBT2ptaWp6
+		eW5WbUg1VVFaWk1rTmRMYUNNYzlaZXRKM3R1YktKagprTHNVWGIrZlJnWmZZ
+		UTkxVnNtbzdXbHBVME5DUWZVN21MS2xsRG9lWEFmaWxUWWxaV09CanRwWnJw
+		M3dpTFlaCjVFRG1jSmsrVDhZdzJjSmtjU2N5WVoyVTBNTXZWWHd0VWYvRU1O
+		QnlWdHZwdm9BNXhXMGdOWXZVSC9uK055T3gKbnBiNUc2a0NnWUVBK3N3eTE5
+		QWkrNTlzb05sVnZVSjVBNDJSUTAzYTNqNkREbnYxaVJ1Y2xOTmNJQnkvcnZr
+		agp5b1owbVRsejBCUUMxcnhtVU8wYXNCbmpLekIxNjVXdGpJL255K1J4NXU0
+		QmZOYUZITW9pb05tWXUwanhJSzQwCkRpejAxTEk2ZjlMeUNvNXh2dE03a29R
+		bi92aWFyb0wzZXBoRFdPSU43dnhGeXFBWFJOTHdTbk1DZ1lFQXhESEcKY3FS
+		Vy9XS0FNZmVSbkpYanJnVm5JWkFhcDdmdGp1eEJnU3NSZUpBVU9DUXdmYkpk
+		Wm84d3IwT2lma29NS0VRYwpGaVlaN0piWkpWSEpQU2krcTB3UEcvSWo2ZUJS
+		RkhDYzRzMXdlMUM3eHJMS2ZqUkw4MU85YUFiQXlPa0pDbk1OCm9LSWdMcll4
+		djZpckxMSXFzZnhPQzBYWEpyUzFQcWVPa1lOLzA3MENnWUErMi9OYVdCYU1q
+		cGJCY2ZlbGFnVysKdURyU2JhOFB5UWM4R0NHZ2JjVS9JQUtWSWQrQlVYeUJC
+		Rll4R1U5SHRkeElTZ3d5K0ZxYURNTDlUallnQi9IcApxeC9qNEt3VHYwK3NK
+		SEJVbU8wNDk1RHFVQXZ2cnZucEc2ZDVyL290azRlSzBjejhrU0Q3Umhob05a
+		TS9iaC90CklFQ3hCR2VOb0xrMVlnNnk5MU8ydFFLQmdEaldXckZYbnNQbFIx
+		SXljSUsyZ2JFbWE0d3puU1U5aVpyQUl2SHkKc2lzRlFuWkpOYXNVZ3k1MUNS
+		dWRNblAzcTdIMm1WUnBVVlZURmpGVGtrTWZqSzAvYVprayt2YUVQN2oyTHQw
+		ZAp1eHBlZHlmSElCYVR1L1VRSzJ6NWw5d2NkcndLUE1adWNYaFcyKzYwUkhL
+		OFl0WVJTK0xFSnVKVnM3UWxBbzV4ClZCVFpBb0dCQUtoNm1VSlA2bXlEU1hj
+		NGZGNzNRQTVybHFKRzg3eVcyNlVDQVFJdEswS01YYW02dGVVYUFhencKcU1z
+		MmJuUkRyRjdzK3h5Z0lZRE54ajc5cnNyM1hOemtsdUlzK2NLSXprM29ZTGFL
+		UkMrZUxrVkxuU2dWb3NYKwpkdXoxSXd5K2VtRW5oK082a2Q1MGUycmhOam1D
+		MTRkVDBLNUJPZ1Q5dElGdktGY3RMREt5Ci0tLS0tRU5EIFJTQSBQUklWQVRF
+		IEtFWS0tLS0tCg==
+		</data>
+		<key>SystemBUID</key>
+		<string>30498072-110440080933184132</string>
+		<key>WiFiMACAddress</key>
+		<string>5c:f5:da:e2:b7:a9</string>
+	</dict>
+	<key>Request</key>
+	<string>ValidatePair</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Request</key>
+	<string>ValidatePair</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>HostID</key>
+	<string>30498073372522485224934132</string>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>StartSession</string>
+	<key>SystemBUID</key>
+	<string>30498072-110440080933184132</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnableSessionSSL</key>
+	<true/>
+	<key>Request</key>
+	<string>StartSession</string>
+	<key>SessionID</key>
+	<string>2E310EB8-199E-46E7-A1AF-E4275DD99FE9</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>ProductVersion</string>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>GetValue</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>ProductVersion</string>
+	<key>Request</key>
+	<string>GetValue</string>
+	<key>Value</key>
+	<string>9.1</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>UniqueDeviceID</string>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>GetValue</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>UniqueDeviceID</string>
+	<key>Request</key>
+	<string>GetValue</string>
+	<key>Value</key>
+	<string>1da9ae263353356291a8e72b72526c2681b8424f</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Domain</key>
+	<string>com.apple.mobile.backup</string>
+	<key>Key</key>
+	<string>WillEncrypt</string>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>GetValue</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Domain</key>
+	<string>com.apple.mobile.backup</string>
+	<key>Key</key>
+	<string>WillEncrypt</string>
+	<key>Request</key>
+	<string>GetValue</string>
+	<key>Value</key>
+	<false/>
+</dict>
+</plist>
+
+Connecting to device: 1da9ae263353356291a8e72b72526c2681b8424f
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Request</key>
+	<string>QueryType</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Request</key>
+	<string>QueryType</string>
+	<key>Type</key>
+	<string>com.apple.mobile.lockdown</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>UniqueDeviceID</string>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>GetValue</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>UniqueDeviceID</string>
+	<key>Request</key>
+	<string>GetValue</string>
+	<key>Value</key>
+	<string>1da9ae263353356291a8e72b72526c2681b8424f</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>GetValue</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Request</key>
+	<string>GetValue</string>
+	<key>Value</key>
+	<dict>
+		<key>BasebandCertId</key>
+		<integer>3554301762</integer>
+		<key>BasebandKeyHashInformation</key>
+		<dict>
+			<key>AKeyStatus</key>
+			<integer>2</integer>
+			<key>SKeyHash</key>
+			<data>
+			7MQEUyvzG4gjjZc7KsNNAVTS8g4=
+			</data>
+			<key>SKeyStatus</key>
+			<integer>0</integer>
+		</dict>
+		<key>BasebandSerialNumber</key>
+		<data>
+		JFCYHA==
+		</data>
+		<key>BasebandVersion</key>
+		<string>6.01.00</string>
+		<key>BoardId</key>
+		<integer>2</integer>
+		<key>BuildVersion</key>
+		<string>13B143</string>
+		<key>ChipID</key>
+		<integer>35168</integer>
+		<key>DeviceClass</key>
+		<string>iPhone</string>
+		<key>DeviceColor</key>
+		<string>#3b3b3c</string>
+		<key>DeviceName</key>
+		<string>iPhone</string>
+		<key>DieID</key>
+		<integer>6281557489488</integer>
+		<key>HardwareModel</key>
+		<string>N53AP</string>
+		<key>PartitionType</key>
+		<string></string>
+		<key>ProductName</key>
+		<string>iPhone OS</string>
+		<key>ProductType</key>
+		<string>iPhone6,2</string>
+		<key>ProductVersion</key>
+		<string>9.1</string>
+		<key>ProductionSOC</key>
+		<true/>
+		<key>ProtocolVersion</key>
+		<string>2</string>
+		<key>TelephonyCapability</key>
+		<true/>
+		<key>UniqueChipID</key>
+		<integer>6281557489488</integer>
+		<key>UniqueDeviceID</key>
+		<string>1da9ae263353356291a8e72b72526c2681b8424f</string>
+		<key>WiFiAddress</key>
+		<string>5c:f5:da:e2:b7:a9</string>
+	</dict>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>DevicePublicKey</string>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>GetValue</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>DevicePublicKey</string>
+	<key>Request</key>
+	<string>GetValue</string>
+	<key>Value</key>
+	<data>
+	LS0tLS1CRUdJTiBSU0EgUFVCTElDIEtFWS0tLS0tCk1JSUJDZ0tDQVFFQThHT3FzYlAy
+	YU1NdytYL1JPWEFtOFlzM2Z1M1RYS1FiOVV3YVZxYnFhb1F5QzFHNnVLT1UNCjFEZFNh
+	QXBNVTdCSzFSQ1E3WDFwWkFQS0dJWkduN3VBOW9ONDhVV1N4MjBCTE1TbDI5aHlXYys0
+	dWJTd1ErUm8NCjZ3bkpCR0xpVVd4dTBoUlFWKzJ6SldGV3JGNFR1anZCMEw3NHhtYm1U
+	SEdyM3MyQkQ0MlhnY2w4bS9UUkJxRHcNCmUrTXIxN3dVY1JrbmpuM2NXRkhveVBUVW9T
+	N2lpMG1SeW9GS3FWeVZFVkRyOXJCb0t5M0hObHpEcnNOSHhKK0INCk5sWENYdXpiMnl6
+	VGRpWndnMVAzL0NhamRScnppVHdhWVlIdzdLQmMvdFVKaU5aQkU2YVVmR0o3OU4vZnpq
+	eWoNCmhUSWFnc0tjdExVOWcvL2NRaStYMjVjTmxqdnVJSDZybndJREFRQUIKLS0tLS1F
+	TkQgUlNBIFBVQkxJQyBLRVktLS0tLQo=
+	</data>
+</dict>
+</plist>
+
+Using iTunes pair record: 1da9ae263353356291a8e72b72526c2681b8424f.plist
+Connecting to device: 1da9ae263353356291a8e72b72526c2681b8424f
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>PairRecord</key>
+	<dict>
+		<key>DeviceCertificate</key>
+		<data>
+		LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUN1akNDQWFLZ0F3SUJB
+		Z0lCQURBTkJna3Foa2lHOXcwQkFRVUZBREFBTUI0WERURTJNREl3TVRFM05U
+		QTAKT1ZvWERUSTJNREV5T1RFM05UQTBPVm93QURDQ0FTSXdEUVlKS29aSWh2
+		Y05BUUVCQlFBRGdnRVBBRENDQVFvQwpnZ0VCQVBCanFyR3o5bWpETVBsLzBU
+		bHdKdkdMTjM3dDAxeWtHL1ZNR2xhbTZtcUVNZ3RSdXJpamxOUTNVbWdLClRG
+		T3dTdFVRa08xOWFXUUR5aGlHUnArN2dQYURlUEZGa3NkdEFTekVwZHZZY2xu
+		UHVMbTBzRVBrYU9zSnlRUmkKNGxGc2J0SVVVRmZ0c3lWaFZxeGVFN283d2RD
+		KytNWm01a3h4cTk3TmdRK05sNEhKZkp2MDBRYWc4SHZqSzllOApGSEVaSjQ1
+		OTNGaFI2TWowMUtFdTRvdEprY3FCU3FsY2xSRlE2L2F3YUNzdHh6WmN3NjdE
+		UjhTZmdUWlZ3bDdzCjI5c3MwM1ltY0lOVDkvd21vM1VhODRrOEdtR0I4T3ln
+		WFA3VkNZaldRUk9tbEh4aWUvVGYzODQ4bzRVeUdvTEMKbkxTMVBZUC8zRUl2
+		bDl1WERaWTc3aUIrcTU4Q0F3RUFBYU0vTUQwd0RBWURWUjBUQVFIL0JBSXdB
+		REFkQmdOVgpIUTRFRmdRVXg1c2lRLzVISXZraTBTWU9MOUNZUnRTQ2F4Y3dE
+		Z1lEVlIwUEFRSC9CQVFEQWdXZ01BMEdDU3FHClNJYjNEUUVCQlFVQUE0SUJB
+		UUJzR2Fhck1lZC9MN1hhTzBSLzBZRndROWE4UGVDQWljYmVPeTBhTWthbDFM
+		bVEKdUtWdWc3RzVMcVYycXd3SmYxNFVzd3JSR2ZuaXkvdHVHeUt6ZExSaEJY
+		QmV5SjNucFNnRDlmUkQ2bDBvU1RIegpVY3BDTkw0d2o3VHMyaVhGRXphcGl5
+		SW5KN05DakFFTW1paXJIbTQwSjc3dFBaYTMwWGhPcW80cXBkakZkTkNJCnQz
+		eUl1d2l1TmN4eHRHTS9wdC8wQTZzeXZtYmRmWEZ5TnJjMGFRK2QxNkcyRGFY
+		SkR3dllHSnJMd1BlNHZEQWEKbWVtM3A0WXQyWHlOb1BpcElIZlJ6QUxxZGNW
+		ZTRIN2lDQnVPSDFldktKRWxDZ1RNZUVIejVTTVBuc2NoSmZqMgplYnFCOURu
+		ZFNIZFZLaHB4LzllTlpQRkVMNGZOMjBaME1kTmNlQXVQCi0tLS0tRU5EIENF
+		UlRJRklDQVRFLS0tLS0K
+		</data>
+		<key>EscrowBag</key>
+		<data>
+		pSIMv/iKv2GHnPAg/MbOnYEZcI/vnlTpiantWACcQNw=
+		</data>
+		<key>HostCertificate</key>
+		<data>
+		LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUN1akNDQWFLZ0F3SUJB
+		Z0lCQURBTkJna3Foa2lHOXcwQkFRVUZBREFBTUI0WERURTJNREl3TVRFM05U
+		QTAKT1ZvWERUSTJNREV5T1RFM05UQTBPVm93QURDQ0FTSXdEUVlKS29aSWh2
+		Y05BUUVCQlFBRGdnRVBBRENDQVFvQwpnZ0VCQU5QWlhEcjd3cTZaTUNUSlg5
+		QVhUOEZQVkFvcW9JQ0RmOU1IbWJtZUd0cmp4QmdSVDZuVG1WTDVBT0k1CjJR
+		RGQrVEhFT0wvWGUrU2R4QWFhQ2s1NzRsVWtYblUxVFlaWE44dnA4NzNTMnF5
+		S01KNFJ4ajdMYWtBK0d4bVoKTGMwaFMzZ2Nta1QwbGRxR1E2MVh1RlFwaVRw
+		OHpRSXo0dzk5eDdQVDBQT01DM1ZMY0NGWnBLTmdhTUM2OGM2MQorUjhLYVpt
+		b1Zpdm1vS3dkU2hRL1B6UXZyeXV0Z3E2OEhPaEJNRVowaHpiTFRxUUk5N0pJ
+		bUNwMEJXM0tzT0YzClYwT3gvTTIyejNoa2ZtVzJ0eUNMUjQ2RVpYZENpSkUv
+		bXVja1lucm9IRm9RVnN3dmZ5bkdzb3A0NFRvRFFYUDIKQm9CRVZkeCtidEtX
+		WG8wcFQxeTY2RkRyWVUwQ0F3RUFBYU0vTUQwd0RBWURWUjBUQVFIL0JBSXdB
+		REFkQmdOVgpIUTRFRmdRVWo5Q1hBdlA4dGtPUkRkSGp4RWZyM1NNSkxNb3dE
+		Z1lEVlIwUEFRSC9CQVFEQWdXZ01BMEdDU3FHClNJYjNEUUVCQlFVQUE0SUJB
+		UUFueTdnOVZ6WE9wOWh4SzdldkRnbzZCNWFIZGRUeWJnamM2WFdLdzdRUFlV
+		RXgKMmZ3RTJ4U2xhRHdQU2NMTXRoZGVVNkhaeFFFSDdCUkNVNTYwMEVjcTlq
+		N3d1VldyMHhxT0hUaGk1MEVMc0xrbApqN3ZzYTdqYlNPU1hUL0FCRitQQ2Q2
+		QVY5OHpJZ3g3cXFEbGhpYzFEa2J2azl3aXRhcjRhRXN1czJVbGcvRGR1Cm9q
+		ZkpkZ0RKaXpkUE55KzV6RW1ZbHhXeWZSTnhJR0pHVUNpMGxXTm1RQ2c2NGtk
+		MjI3RkNYWnAzWXg0TnI1TFUKVHRvQTZXRGFaU3ZjUDVtb0t1ZU5BRmRzM1VT
+		WVBwTzZDS1B2NlRISm9zdldMMVlZenVwMVZPQThKNnJRdVRjOApUVnNKdlNI
+		TmtIdW1KazZWRVh2WWEvYVBFK2RYVVFTbk9jZUxyT1dqCi0tLS0tRU5EIENF
+		UlRJRklDQVRFLS0tLS0K
+		</data>
+		<key>HostID</key>
+		<string>30498073372522485224934132</string>
+		<key>HostPrivateKey</key>
+		<data>
+		LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFcFFJQkFBS0NB
+		UUVBMDlsY092dkNycGt3Sk1sZjBCZFB3VTlVQ2lxZ2dJTi8wd2VadVo0YTJ1
+		UEVHQkZQCnFkT1pVdmtBNGpuWkFOMzVNY1E0djlkNzVKM0VCcG9LVG52aVZT
+		UmVkVFZOaGxjM3krbnp2ZExhcklvd25oSEcKUHN0cVFENGJHWmt0elNGTGVC
+		eWFSUFNWMm9aRHJWZTRWQ21KT256TkFqUGpEMzNIczlQUTg0d0xkVXR3SVZt
+		awpvMkJvd0xyeHpyWDVId3BwbWFoV0srYWdyQjFLRkQ4L05DK3ZLNjJDcnJ3
+		YzZFRXdSblNITnN0T3BBajNza2lZCktuUUZiY3F3NFhkWFE3SDh6YmJQZUdS
+		K1piYTNJSXRIam9SbGQwS0lrVCthNXlSaWV1Z2NXaEJXekM5L0tjYXkKaW5q
+		aE9nTkJjL1lHZ0VSVjNINXUwcFplalNsUFhMcm9VT3RoVFFJREFRQUJBb0lC
+		QVFDYWhoSkRKNzR5VXFTTwpRS0Ixalh0c09tdkhXcDVsL3dUdXJiMlFhZVdX
+		d2NvWDhCQ1doRFJ6RkJOejc5UDhVT3ppUXdsTnpXU2VOZ0YwCiswa0hSRSty
+		NFBKUk5nY05OWE1LZHVTR0VsWFV3cHVCd045RWtHVTQ1TlFwa05TYXFtMTgr
+		QWdDd2hESUsyVVQKL0VjRWhLT0hHTjhFZTBwazAwOG1PUnRSZWxZbFFBU1hB
+		MDdYUTlMREdtZmVkaWVmZTZubnFBcnBKeTVJaG16TQp5RTJPdHZmS2F3UXVC
+		MElvQ3pwSlluT2U3R3lUWkpJK3FDRDY2VVlRNXRrYzYvSkg2alQ2RTRtYVF2
+		QUp5OEcrCmF4QUYvenZmM0lLRUtEMXF1VGdDekpkQjZmc09pbUJmNm12TUlw
+		cmtQRmRlb2dxQitWWVJNWGZ4aElnWWJQazMKVXN6U3RnUGhBb0dCQU9tQk1q
+		bk9odGthaHNXVnVXWTViMnNRcjRjZDBTQnlwTU5NejV6R0JoQ3BwY3hsLy90
+		MApLaDNZd1Z2NjBqNDIyb1IxOEJiRjVGbHNQcEswRVF3bzFZQkxuakVnMjJK
+		VTQvTHdHYStFRDN2WFladVBuS0FkCktjNFlvZ1JUYWpMSUh1WjdOUUtsUnVM
+		bzdnTVBMd0JJSWliSy9qMnZsUXFCcUV0d09Ibi9sZW5GQW9HQkFPaEMKRlVZ
+		NExwWllBUzlaenllclhzaE0wa0liaFIwc21TTjZ6OHhLN3JsZVBIcm5lQ2Vh
+		NktKaG9zRThEREl1bDliYQpvWFViaGl2MFNGNGtkaFJxenVFTUhFdEN2TzV2
+		UFJKZ09ERjhmY2djUjh5aFJPT2JKS25BWVNZSndsZUgvRHNKCmovSzZBMlF2
+		czdzZjEzYmZvSXJRRDdLUVlvamV0allwRS9kVFJmbnBBb0dCQUlaUTNOVkhx
+		V1hFem5WbGRLb0sKcTc2SWNJOW1aVjhtMHdQTWNUZ2E2RzQ1UjdmVmpIUFdG
+		RXZxM1A3TnZwWXU4Mjl5YjlLSnJwcUptMHpENjNKMQpJcXFUMU1FcHgwZysw
+		SWh6K0RKdjRvQTRHbHRqTnBNYmMycXIzTFprVFJnODZSbG5FYzBkeVRMSkRm
+		QVFrZGExCnAzOXRFT1htMC9LaE5tOStjOTRwV05DSkFvR0FHYVRTUElLUGdr
+		SU5QM0VuRWpZMXJOL3VoeVlLdUlIb0ZxYkUKc3NYRFBleE51VFE5YkFJS2xZ
+		TTZPU09zSlE1SDdZME9McVB2V0lNTVNuaTBJT1Q2R3BiL3VMK1JwTEhiaUYv
+		ZgpWSGR1VzkzamY1Qit6cktlaGErY0Nsc2hmaENocE5NVmRiTmNGSCsvMUhW
+		YmtPQjRGVnVMb0NlWStZdTlpcFZXCmd3Ukt3YUVDZ1lFQXRGMHZRMDdCWTdT
+		S3VRVE93cGdJSVVXKzFBNDN0Z2lnSFlhbjFpWG9zUUZiMzd6MllQa3EKdUNZ
+		dVRYbElNMFQ3akNwQjJuaWNqSFJJZzFJMHhhVWRkWFdOaXExMElnY0pSemdy
+		aHZOdlNTYWJ1WUhpS1pzRwpYZmtVWnZ3K094Qmk4SWpYd1p3VDZFb0ExNFp6
+		R1dIMzJ4YkpNMUFjajNDUWNaWUt6NEpudzZRPQotLS0tLUVORCBSU0EgUFJJ
+		VkFURSBLRVktLS0tLQo=
+		</data>
+		<key>RootCertificate</key>
+		<data>
+		LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUNyVENDQVpXZ0F3SUJB
+		Z0lCQURBTkJna3Foa2lHOXcwQkFRVUZBREFBTUI0WERURTJNREl3TVRFM05U
+		QTAKT1ZvWERUSTJNREV5T1RFM05UQTBPVm93QURDQ0FTSXdEUVlKS29aSWh2
+		Y05BUUVCQlFBRGdnRVBBRENDQVFvQwpnZ0VCQU1BMUdtMDE2emZWbXJodGdE
+		NitRd2s3dFFLcGFFcUFjeHJXN09YM1o5THZGM05XRyt0Njk5azFsUzZuClcx
+		MjNERThZVFZzK3U5Mm5KSVBvcHhOVzcrYTZJQzQxbUVFZkh2UnNXT092ODdR
+		MkpVRXcycDM0MnFhSnZMWkIKSkNwamlOU043d0RqSzR4L01IYjZhWEJmZnY1
+		SVBXbDBRdm9KNmVjL2k5Q21zUVd5dHRya3h4ZERJbkdtVDZKZwpXeW81Nmg0
+		ZE1KM0M2RU1mVUNTMFVTdUdmbkl4ZWhHNERnZ2M1UGhkckVMZVB5TDlLSHVC
+		U3dGNzNYRXB4R0FFCjNkS1h1V01DSkx3UHpZRVp3K2JLN0UyMFJ5NVNVYU1G
+		VXQ2Q2VGeTdZd2p5b0xXN25kSGxmekgrQ1pQeW5OOE4Kc3FYTWFjUVRxekJG
+		amQzd2ZOOTRISkRRditjQ0F3RUFBYU15TURBd0R3WURWUjBUQVFIL0JBVXdB
+		d0VCL3pBZApCZ05WSFE0RUZnUVVDQTJTcWErbytxYXdpZjVTeGZTTEEzU3FV
+		cFl3RFFZSktvWklodmNOQVFFRkJRQURnZ0VCCkFFekllbmQ2NkxtMS90RGlk
+		M0JTZGhJeVo1aXRpSVNTQmtvRGJJOThNTzYzdEtyeXZsZmNJWG9WM2lkdHp0
+		aXkKOEQ2SGUwOW5NenlDQnhVU1YrUG9VZ21iMEVDQVUvQTBwWWpPRnkrbFBR
+		WTFSR284djd4L0tvVG4wR0JITWVBNgpsSGx1dWJCQzEyMENKSXdnWU1qSVFr
+		TGRreWl3ODVXNDlDSTAwYXNvR2NwV2JCckJWRjdsNGtRSFJhaW45akJtCjB2
+		VUN1YkZNTitLWFNuaWhMdkt5eHRqQksrdWlwWlJaM3FZbitJYWVScEtKeFRV
+		SS85VXgxTThneUs5VVczTXgKclhGQVduUlBDNDB5eEV5WURhZDRoTVgzU3Ji
+		Ym9QVGc4Z1gwUUZaaUlvRzdXYTJJbUlGQS8rNE9kY2w5NXRuRgpaNG9zcjY3
+		cEYvTm11eXdEQmNvMG92dz0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+		</data>
+		<key>RootPrivateKey</key>
+		<data>
+		LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkFBS0NB
+		UUVBd0RVYWJUWHJOOVdhdUcyQVByNURDVHUxQXFsb1NvQnpHdGJzNWZkbjB1
+		OFhjMVliCjYzcjMyVFdWTHFkYlhiY01UeGhOV3o2NzNhY2tnK2luRTFidjVy
+		b2dMaldZUVI4ZTlHeFk0Ni96dERZbFFURGEKbmZqYXBvbTh0a0VrS21PSTFJ
+		M3ZBT01yakg4d2R2cHBjRjkrL2tnOWFYUkMrZ25wNXorTDBLYXhCYksyMnVU
+		SApGME1pY2FaUG9tQmJLam5xSGgwd25jTG9ReDlRSkxSUks0WitjakY2RWJn
+		T0NCemsrRjJzUXQ0L0l2MG9lNEZMCkFYdmRjU25FWUFUZDBwZTVZd0lrdkEv
+		TmdSbkQ1c3JzVGJSSExsSlJvd1ZTM29KNFhMdGpDUEtndGJ1ZDBlVi8KTWY0
+		SmsvS2MzdzJ5cGN4cHhCT3JNRVdOM2ZCODMzZ2NrTkMvNXdJREFRQUJBb0lC
+		QUUzYmRPZjJKbURJbXRMSQpNR0c2Q2tlTU13ZHYvZm5uekRoOEJSd21PcDA4
+		RW1DNjZiWmFhbGxIRmpYK3ZzallaQmtKL0JQUTlxS1RtUHdCCjJ1Ty9uSS8y
+		cHlCd3YwcnB3MDA1TWt5UXNvUTJScU1BbWgzUmR5aHN0TStTMVlhQ0tTUUls
+		bDdpcG5wVDd4clMKMXJFWlRjVE5HR3RHRi9kVzJyTzhqdk1uQXFBT2ptaWp6
+		eW5WbUg1VVFaWk1rTmRMYUNNYzlaZXRKM3R1YktKagprTHNVWGIrZlJnWmZZ
+		UTkxVnNtbzdXbHBVME5DUWZVN21MS2xsRG9lWEFmaWxUWWxaV09CanRwWnJw
+		M3dpTFlaCjVFRG1jSmsrVDhZdzJjSmtjU2N5WVoyVTBNTXZWWHd0VWYvRU1O
+		QnlWdHZwdm9BNXhXMGdOWXZVSC9uK055T3gKbnBiNUc2a0NnWUVBK3N3eTE5
+		QWkrNTlzb05sVnZVSjVBNDJSUTAzYTNqNkREbnYxaVJ1Y2xOTmNJQnkvcnZr
+		agp5b1owbVRsejBCUUMxcnhtVU8wYXNCbmpLekIxNjVXdGpJL255K1J4NXU0
+		QmZOYUZITW9pb05tWXUwanhJSzQwCkRpejAxTEk2ZjlMeUNvNXh2dE03a29R
+		bi92aWFyb0wzZXBoRFdPSU43dnhGeXFBWFJOTHdTbk1DZ1lFQXhESEcKY3FS
+		Vy9XS0FNZmVSbkpYanJnVm5JWkFhcDdmdGp1eEJnU3NSZUpBVU9DUXdmYkpk
+		Wm84d3IwT2lma29NS0VRYwpGaVlaN0piWkpWSEpQU2krcTB3UEcvSWo2ZUJS
+		RkhDYzRzMXdlMUM3eHJMS2ZqUkw4MU85YUFiQXlPa0pDbk1OCm9LSWdMcll4
+		djZpckxMSXFzZnhPQzBYWEpyUzFQcWVPa1lOLzA3MENnWUErMi9OYVdCYU1q
+		cGJCY2ZlbGFnVysKdURyU2JhOFB5UWM4R0NHZ2JjVS9JQUtWSWQrQlVYeUJC
+		Rll4R1U5SHRkeElTZ3d5K0ZxYURNTDlUallnQi9IcApxeC9qNEt3VHYwK3NK
+		SEJVbU8wNDk1RHFVQXZ2cnZucEc2ZDVyL290azRlSzBjejhrU0Q3Umhob05a
+		TS9iaC90CklFQ3hCR2VOb0xrMVlnNnk5MU8ydFFLQmdEaldXckZYbnNQbFIx
+		SXljSUsyZ2JFbWE0d3puU1U5aVpyQUl2SHkKc2lzRlFuWkpOYXNVZ3k1MUNS
+		dWRNblAzcTdIMm1WUnBVVlZURmpGVGtrTWZqSzAvYVprayt2YUVQN2oyTHQw
+		ZAp1eHBlZHlmSElCYVR1L1VRSzJ6NWw5d2NkcndLUE1adWNYaFcyKzYwUkhL
+		OFl0WVJTK0xFSnVKVnM3UWxBbzV4ClZCVFpBb0dCQUtoNm1VSlA2bXlEU1hj
+		NGZGNzNRQTVybHFKRzg3eVcyNlVDQVFJdEswS01YYW02dGVVYUFhencKcU1z
+		MmJuUkRyRjdzK3h5Z0lZRE54ajc5cnNyM1hOemtsdUlzK2NLSXprM29ZTGFL
+		UkMrZUxrVkxuU2dWb3NYKwpkdXoxSXd5K2VtRW5oK082a2Q1MGUycmhOam1D
+		MTRkVDBLNUJPZ1Q5dElGdktGY3RMREt5Ci0tLS0tRU5EIFJTQSBQUklWQVRF
+		IEtFWS0tLS0tCg==
+		</data>
+		<key>SystemBUID</key>
+		<string>30498072-110440080933184132</string>
+		<key>WiFiMACAddress</key>
+		<string>5c:f5:da:e2:b7:a9</string>
+	</dict>
+	<key>Request</key>
+	<string>ValidatePair</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Request</key>
+	<string>ValidatePair</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>HostID</key>
+	<string>30498073372522485224934132</string>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>StartSession</string>
+	<key>SystemBUID</key>
+	<string>30498072-110440080933184132</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnableSessionSSL</key>
+	<true/>
+	<key>Request</key>
+	<string>StartSession</string>
+	<key>SessionID</key>
+	<string>03914C2E-1BEE-4283-9688-18A60F7CF633</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>StartService</string>
+	<key>Service</key>
+	<string>com.apple.mobile.notification_proxy</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Port</key>
+	<integer>50302</integer>
+	<key>Request</key>
+	<string>StartService</string>
+	<key>Service</key>
+	<string>com.apple.mobile.notification_proxy</string>
+</dict>
+</plist>
+
+Connecting to device: 1da9ae263353356291a8e72b72526c2681b8424f
+Observing com.apple.itunes-client.syncCancelRequest
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Command</key>
+	<string>ObserveNotification</string>
+	<key>Name</key>
+	<string>com.apple.itunes-client.syncCancelRequest</string>
+</dict>
+</plist>
+
+Observing com.apple.itunes-client.syncSuspendRequest
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Command</key>
+	<string>ObserveNotification</string>
+	<key>Name</key>
+	<string>com.apple.itunes-client.syncSuspendRequest</string>
+</dict>
+</plist>
+
+Observing com.apple.itunes-client.syncResumeRequest
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Command</key>
+	<string>ObserveNotification</string>
+	<key>Name</key>
+	<string>com.apple.itunes-client.syncResumeRequest</string>
+</dict>
+</plist>
+
+Observing com.apple.mobile.data_sync.domain_changed
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Command</key>
+	<string>ObserveNotification</string>
+	<key>Name</key>
+	<string>com.apple.mobile.data_sync.domain_changed</string>
+</dict>
+</plist>
+
+Connecting to device: 1da9ae263353356291a8e72b72526c2681b8424f
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Request</key>
+	<string>QueryType</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Request</key>
+	<string>QueryType</string>
+	<key>Type</key>
+	<string>com.apple.mobile.lockdown</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>UniqueDeviceID</string>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>GetValue</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>UniqueDeviceID</string>
+	<key>Request</key>
+	<string>GetValue</string>
+	<key>Value</key>
+	<string>1da9ae263353356291a8e72b72526c2681b8424f</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>GetValue</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Request</key>
+	<string>GetValue</string>
+	<key>Value</key>
+	<dict>
+		<key>BasebandCertId</key>
+		<integer>3554301762</integer>
+		<key>BasebandKeyHashInformation</key>
+		<dict>
+			<key>AKeyStatus</key>
+			<integer>2</integer>
+			<key>SKeyHash</key>
+			<data>
+			7MQEUyvzG4gjjZc7KsNNAVTS8g4=
+			</data>
+			<key>SKeyStatus</key>
+			<integer>0</integer>
+		</dict>
+		<key>BasebandSerialNumber</key>
+		<data>
+		JFCYHA==
+		</data>
+		<key>BasebandVersion</key>
+		<string>6.01.00</string>
+		<key>BoardId</key>
+		<integer>2</integer>
+		<key>BuildVersion</key>
+		<string>13B143</string>
+		<key>ChipID</key>
+		<integer>35168</integer>
+		<key>DeviceClass</key>
+		<string>iPhone</string>
+		<key>DeviceColor</key>
+		<string>#3b3b3c</string>
+		<key>DeviceName</key>
+		<string>iPhone</string>
+		<key>DieID</key>
+		<integer>6281557489488</integer>
+		<key>HardwareModel</key>
+		<string>N53AP</string>
+		<key>PartitionType</key>
+		<string></string>
+		<key>ProductName</key>
+		<string>iPhone OS</string>
+		<key>ProductType</key>
+		<string>iPhone6,2</string>
+		<key>ProductVersion</key>
+		<string>9.1</string>
+		<key>ProductionSOC</key>
+		<true/>
+		<key>ProtocolVersion</key>
+		<string>2</string>
+		<key>TelephonyCapability</key>
+		<true/>
+		<key>UniqueChipID</key>
+		<integer>6281557489488</integer>
+		<key>UniqueDeviceID</key>
+		<string>1da9ae263353356291a8e72b72526c2681b8424f</string>
+		<key>WiFiAddress</key>
+		<string>5c:f5:da:e2:b7:a9</string>
+	</dict>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>DevicePublicKey</string>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>GetValue</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Key</key>
+	<string>DevicePublicKey</string>
+	<key>Request</key>
+	<string>GetValue</string>
+	<key>Value</key>
+	<data>
+	LS0tLS1CRUdJTiBSU0EgUFVCTElDIEtFWS0tLS0tCk1JSUJDZ0tDQVFFQThHT3FzYlAy
+	YU1NdytYL1JPWEFtOFlzM2Z1M1RYS1FiOVV3YVZxYnFhb1F5QzFHNnVLT1UNCjFEZFNh
+	QXBNVTdCSzFSQ1E3WDFwWkFQS0dJWkduN3VBOW9ONDhVV1N4MjBCTE1TbDI5aHlXYys0
+	dWJTd1ErUm8NCjZ3bkpCR0xpVVd4dTBoUlFWKzJ6SldGV3JGNFR1anZCMEw3NHhtYm1U
+	SEdyM3MyQkQ0MlhnY2w4bS9UUkJxRHcNCmUrTXIxN3dVY1JrbmpuM2NXRkhveVBUVW9T
+	N2lpMG1SeW9GS3FWeVZFVkRyOXJCb0t5M0hObHpEcnNOSHhKK0INCk5sWENYdXpiMnl6
+	VGRpWndnMVAzL0NhamRScnppVHdhWVlIdzdLQmMvdFVKaU5aQkU2YVVmR0o3OU4vZnpq
+	eWoNCmhUSWFnc0tjdExVOWcvL2NRaStYMjVjTmxqdnVJSDZybndJREFRQUIKLS0tLS1F
+	TkQgUlNBIFBVQkxJQyBLRVktLS0tLQo=
+	</data>
+</dict>
+</plist>
+
+Using iTunes pair record: 1da9ae263353356291a8e72b72526c2681b8424f.plist
+Connecting to device: 1da9ae263353356291a8e72b72526c2681b8424f
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>PairRecord</key>
+	<dict>
+		<key>DeviceCertificate</key>
+		<data>
+		LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUN1akNDQWFLZ0F3SUJB
+		Z0lCQURBTkJna3Foa2lHOXcwQkFRVUZBREFBTUI0WERURTJNREl3TVRFM05U
+		QTAKT1ZvWERUSTJNREV5T1RFM05UQTBPVm93QURDQ0FTSXdEUVlKS29aSWh2
+		Y05BUUVCQlFBRGdnRVBBRENDQVFvQwpnZ0VCQVBCanFyR3o5bWpETVBsLzBU
+		bHdKdkdMTjM3dDAxeWtHL1ZNR2xhbTZtcUVNZ3RSdXJpamxOUTNVbWdLClRG
+		T3dTdFVRa08xOWFXUUR5aGlHUnArN2dQYURlUEZGa3NkdEFTekVwZHZZY2xu
+		UHVMbTBzRVBrYU9zSnlRUmkKNGxGc2J0SVVVRmZ0c3lWaFZxeGVFN283d2RD
+		KytNWm01a3h4cTk3TmdRK05sNEhKZkp2MDBRYWc4SHZqSzllOApGSEVaSjQ1
+		OTNGaFI2TWowMUtFdTRvdEprY3FCU3FsY2xSRlE2L2F3YUNzdHh6WmN3NjdE
+		UjhTZmdUWlZ3bDdzCjI5c3MwM1ltY0lOVDkvd21vM1VhODRrOEdtR0I4T3ln
+		WFA3VkNZaldRUk9tbEh4aWUvVGYzODQ4bzRVeUdvTEMKbkxTMVBZUC8zRUl2
+		bDl1WERaWTc3aUIrcTU4Q0F3RUFBYU0vTUQwd0RBWURWUjBUQVFIL0JBSXdB
+		REFkQmdOVgpIUTRFRmdRVXg1c2lRLzVISXZraTBTWU9MOUNZUnRTQ2F4Y3dE
+		Z1lEVlIwUEFRSC9CQVFEQWdXZ01BMEdDU3FHClNJYjNEUUVCQlFVQUE0SUJB
+		UUJzR2Fhck1lZC9MN1hhTzBSLzBZRndROWE4UGVDQWljYmVPeTBhTWthbDFM
+		bVEKdUtWdWc3RzVMcVYycXd3SmYxNFVzd3JSR2ZuaXkvdHVHeUt6ZExSaEJY
+		QmV5SjNucFNnRDlmUkQ2bDBvU1RIegpVY3BDTkw0d2o3VHMyaVhGRXphcGl5
+		SW5KN05DakFFTW1paXJIbTQwSjc3dFBaYTMwWGhPcW80cXBkakZkTkNJCnQz
+		eUl1d2l1TmN4eHRHTS9wdC8wQTZzeXZtYmRmWEZ5TnJjMGFRK2QxNkcyRGFY
+		SkR3dllHSnJMd1BlNHZEQWEKbWVtM3A0WXQyWHlOb1BpcElIZlJ6QUxxZGNW
+		ZTRIN2lDQnVPSDFldktKRWxDZ1RNZUVIejVTTVBuc2NoSmZqMgplYnFCOURu
+		ZFNIZFZLaHB4LzllTlpQRkVMNGZOMjBaME1kTmNlQXVQCi0tLS0tRU5EIENF
+		UlRJRklDQVRFLS0tLS0K
+		</data>
+		<key>EscrowBag</key>
+		<data>
+		pSIMv/iKv2GHnPAg/MbOnYEZcI/vnlTpiantWACcQNw=
+		</data>
+		<key>HostCertificate</key>
+		<data>
+		LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUN1akNDQWFLZ0F3SUJB
+		Z0lCQURBTkJna3Foa2lHOXcwQkFRVUZBREFBTUI0WERURTJNREl3TVRFM05U
+		QTAKT1ZvWERUSTJNREV5T1RFM05UQTBPVm93QURDQ0FTSXdEUVlKS29aSWh2
+		Y05BUUVCQlFBRGdnRVBBRENDQVFvQwpnZ0VCQU5QWlhEcjd3cTZaTUNUSlg5
+		QVhUOEZQVkFvcW9JQ0RmOU1IbWJtZUd0cmp4QmdSVDZuVG1WTDVBT0k1CjJR
+		RGQrVEhFT0wvWGUrU2R4QWFhQ2s1NzRsVWtYblUxVFlaWE44dnA4NzNTMnF5
+		S01KNFJ4ajdMYWtBK0d4bVoKTGMwaFMzZ2Nta1QwbGRxR1E2MVh1RlFwaVRw
+		OHpRSXo0dzk5eDdQVDBQT01DM1ZMY0NGWnBLTmdhTUM2OGM2MQorUjhLYVpt
+		b1Zpdm1vS3dkU2hRL1B6UXZyeXV0Z3E2OEhPaEJNRVowaHpiTFRxUUk5N0pJ
+		bUNwMEJXM0tzT0YzClYwT3gvTTIyejNoa2ZtVzJ0eUNMUjQ2RVpYZENpSkUv
+		bXVja1lucm9IRm9RVnN3dmZ5bkdzb3A0NFRvRFFYUDIKQm9CRVZkeCtidEtX
+		WG8wcFQxeTY2RkRyWVUwQ0F3RUFBYU0vTUQwd0RBWURWUjBUQVFIL0JBSXdB
+		REFkQmdOVgpIUTRFRmdRVWo5Q1hBdlA4dGtPUkRkSGp4RWZyM1NNSkxNb3dE
+		Z1lEVlIwUEFRSC9CQVFEQWdXZ01BMEdDU3FHClNJYjNEUUVCQlFVQUE0SUJB
+		UUFueTdnOVZ6WE9wOWh4SzdldkRnbzZCNWFIZGRUeWJnamM2WFdLdzdRUFlV
+		RXgKMmZ3RTJ4U2xhRHdQU2NMTXRoZGVVNkhaeFFFSDdCUkNVNTYwMEVjcTlq
+		N3d1VldyMHhxT0hUaGk1MEVMc0xrbApqN3ZzYTdqYlNPU1hUL0FCRitQQ2Q2
+		QVY5OHpJZ3g3cXFEbGhpYzFEa2J2azl3aXRhcjRhRXN1czJVbGcvRGR1Cm9q
+		ZkpkZ0RKaXpkUE55KzV6RW1ZbHhXeWZSTnhJR0pHVUNpMGxXTm1RQ2c2NGtk
+		MjI3RkNYWnAzWXg0TnI1TFUKVHRvQTZXRGFaU3ZjUDVtb0t1ZU5BRmRzM1VT
+		WVBwTzZDS1B2NlRISm9zdldMMVlZenVwMVZPQThKNnJRdVRjOApUVnNKdlNI
+		TmtIdW1KazZWRVh2WWEvYVBFK2RYVVFTbk9jZUxyT1dqCi0tLS0tRU5EIENF
+		UlRJRklDQVRFLS0tLS0K
+		</data>
+		<key>HostID</key>
+		<string>30498073372522485224934132</string>
+		<key>HostPrivateKey</key>
+		<data>
+		LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFcFFJQkFBS0NB
+		UUVBMDlsY092dkNycGt3Sk1sZjBCZFB3VTlVQ2lxZ2dJTi8wd2VadVo0YTJ1
+		UEVHQkZQCnFkT1pVdmtBNGpuWkFOMzVNY1E0djlkNzVKM0VCcG9LVG52aVZT
+		UmVkVFZOaGxjM3krbnp2ZExhcklvd25oSEcKUHN0cVFENGJHWmt0elNGTGVC
+		eWFSUFNWMm9aRHJWZTRWQ21KT256TkFqUGpEMzNIczlQUTg0d0xkVXR3SVZt
+		awpvMkJvd0xyeHpyWDVId3BwbWFoV0srYWdyQjFLRkQ4L05DK3ZLNjJDcnJ3
+		YzZFRXdSblNITnN0T3BBajNza2lZCktuUUZiY3F3NFhkWFE3SDh6YmJQZUdS
+		K1piYTNJSXRIam9SbGQwS0lrVCthNXlSaWV1Z2NXaEJXekM5L0tjYXkKaW5q
+		aE9nTkJjL1lHZ0VSVjNINXUwcFplalNsUFhMcm9VT3RoVFFJREFRQUJBb0lC
+		QVFDYWhoSkRKNzR5VXFTTwpRS0Ixalh0c09tdkhXcDVsL3dUdXJiMlFhZVdX
+		d2NvWDhCQ1doRFJ6RkJOejc5UDhVT3ppUXdsTnpXU2VOZ0YwCiswa0hSRSty
+		NFBKUk5nY05OWE1LZHVTR0VsWFV3cHVCd045RWtHVTQ1TlFwa05TYXFtMTgr
+		QWdDd2hESUsyVVQKL0VjRWhLT0hHTjhFZTBwazAwOG1PUnRSZWxZbFFBU1hB
+		MDdYUTlMREdtZmVkaWVmZTZubnFBcnBKeTVJaG16TQp5RTJPdHZmS2F3UXVC
+		MElvQ3pwSlluT2U3R3lUWkpJK3FDRDY2VVlRNXRrYzYvSkg2alQ2RTRtYVF2
+		QUp5OEcrCmF4QUYvenZmM0lLRUtEMXF1VGdDekpkQjZmc09pbUJmNm12TUlw
+		cmtQRmRlb2dxQitWWVJNWGZ4aElnWWJQazMKVXN6U3RnUGhBb0dCQU9tQk1q
+		bk9odGthaHNXVnVXWTViMnNRcjRjZDBTQnlwTU5NejV6R0JoQ3BwY3hsLy90
+		MApLaDNZd1Z2NjBqNDIyb1IxOEJiRjVGbHNQcEswRVF3bzFZQkxuakVnMjJK
+		VTQvTHdHYStFRDN2WFladVBuS0FkCktjNFlvZ1JUYWpMSUh1WjdOUUtsUnVM
+		bzdnTVBMd0JJSWliSy9qMnZsUXFCcUV0d09Ibi9sZW5GQW9HQkFPaEMKRlVZ
+		NExwWllBUzlaenllclhzaE0wa0liaFIwc21TTjZ6OHhLN3JsZVBIcm5lQ2Vh
+		NktKaG9zRThEREl1bDliYQpvWFViaGl2MFNGNGtkaFJxenVFTUhFdEN2TzV2
+		UFJKZ09ERjhmY2djUjh5aFJPT2JKS25BWVNZSndsZUgvRHNKCmovSzZBMlF2
+		czdzZjEzYmZvSXJRRDdLUVlvamV0allwRS9kVFJmbnBBb0dCQUlaUTNOVkhx
+		V1hFem5WbGRLb0sKcTc2SWNJOW1aVjhtMHdQTWNUZ2E2RzQ1UjdmVmpIUFdG
+		RXZxM1A3TnZwWXU4Mjl5YjlLSnJwcUptMHpENjNKMQpJcXFUMU1FcHgwZysw
+		SWh6K0RKdjRvQTRHbHRqTnBNYmMycXIzTFprVFJnODZSbG5FYzBkeVRMSkRm
+		QVFrZGExCnAzOXRFT1htMC9LaE5tOStjOTRwV05DSkFvR0FHYVRTUElLUGdr
+		SU5QM0VuRWpZMXJOL3VoeVlLdUlIb0ZxYkUKc3NYRFBleE51VFE5YkFJS2xZ
+		TTZPU09zSlE1SDdZME9McVB2V0lNTVNuaTBJT1Q2R3BiL3VMK1JwTEhiaUYv
+		ZgpWSGR1VzkzamY1Qit6cktlaGErY0Nsc2hmaENocE5NVmRiTmNGSCsvMUhW
+		YmtPQjRGVnVMb0NlWStZdTlpcFZXCmd3Ukt3YUVDZ1lFQXRGMHZRMDdCWTdT
+		S3VRVE93cGdJSVVXKzFBNDN0Z2lnSFlhbjFpWG9zUUZiMzd6MllQa3EKdUNZ
+		dVRYbElNMFQ3akNwQjJuaWNqSFJJZzFJMHhhVWRkWFdOaXExMElnY0pSemdy
+		aHZOdlNTYWJ1WUhpS1pzRwpYZmtVWnZ3K094Qmk4SWpYd1p3VDZFb0ExNFp6
+		R1dIMzJ4YkpNMUFjajNDUWNaWUt6NEpudzZRPQotLS0tLUVORCBSU0EgUFJJ
+		VkFURSBLRVktLS0tLQo=
+		</data>
+		<key>RootCertificate</key>
+		<data>
+		LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUNyVENDQVpXZ0F3SUJB
+		Z0lCQURBTkJna3Foa2lHOXcwQkFRVUZBREFBTUI0WERURTJNREl3TVRFM05U
+		QTAKT1ZvWERUSTJNREV5T1RFM05UQTBPVm93QURDQ0FTSXdEUVlKS29aSWh2
+		Y05BUUVCQlFBRGdnRVBBRENDQVFvQwpnZ0VCQU1BMUdtMDE2emZWbXJodGdE
+		NitRd2s3dFFLcGFFcUFjeHJXN09YM1o5THZGM05XRyt0Njk5azFsUzZuClcx
+		MjNERThZVFZzK3U5Mm5KSVBvcHhOVzcrYTZJQzQxbUVFZkh2UnNXT092ODdR
+		MkpVRXcycDM0MnFhSnZMWkIKSkNwamlOU043d0RqSzR4L01IYjZhWEJmZnY1
+		SVBXbDBRdm9KNmVjL2k5Q21zUVd5dHRya3h4ZERJbkdtVDZKZwpXeW81Nmg0
+		ZE1KM0M2RU1mVUNTMFVTdUdmbkl4ZWhHNERnZ2M1UGhkckVMZVB5TDlLSHVC
+		U3dGNzNYRXB4R0FFCjNkS1h1V01DSkx3UHpZRVp3K2JLN0UyMFJ5NVNVYU1G
+		VXQ2Q2VGeTdZd2p5b0xXN25kSGxmekgrQ1pQeW5OOE4Kc3FYTWFjUVRxekJG
+		amQzd2ZOOTRISkRRditjQ0F3RUFBYU15TURBd0R3WURWUjBUQVFIL0JBVXdB
+		d0VCL3pBZApCZ05WSFE0RUZnUVVDQTJTcWErbytxYXdpZjVTeGZTTEEzU3FV
+		cFl3RFFZSktvWklodmNOQVFFRkJRQURnZ0VCCkFFekllbmQ2NkxtMS90RGlk
+		M0JTZGhJeVo1aXRpSVNTQmtvRGJJOThNTzYzdEtyeXZsZmNJWG9WM2lkdHp0
+		aXkKOEQ2SGUwOW5NenlDQnhVU1YrUG9VZ21iMEVDQVUvQTBwWWpPRnkrbFBR
+		WTFSR284djd4L0tvVG4wR0JITWVBNgpsSGx1dWJCQzEyMENKSXdnWU1qSVFr
+		TGRreWl3ODVXNDlDSTAwYXNvR2NwV2JCckJWRjdsNGtRSFJhaW45akJtCjB2
+		VUN1YkZNTitLWFNuaWhMdkt5eHRqQksrdWlwWlJaM3FZbitJYWVScEtKeFRV
+		SS85VXgxTThneUs5VVczTXgKclhGQVduUlBDNDB5eEV5WURhZDRoTVgzU3Ji
+		Ym9QVGc4Z1gwUUZaaUlvRzdXYTJJbUlGQS8rNE9kY2w5NXRuRgpaNG9zcjY3
+		cEYvTm11eXdEQmNvMG92dz0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+		</data>
+		<key>RootPrivateKey</key>
+		<data>
+		LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkFBS0NB
+		UUVBd0RVYWJUWHJOOVdhdUcyQVByNURDVHUxQXFsb1NvQnpHdGJzNWZkbjB1
+		OFhjMVliCjYzcjMyVFdWTHFkYlhiY01UeGhOV3o2NzNhY2tnK2luRTFidjVy
+		b2dMaldZUVI4ZTlHeFk0Ni96dERZbFFURGEKbmZqYXBvbTh0a0VrS21PSTFJ
+		M3ZBT01yakg4d2R2cHBjRjkrL2tnOWFYUkMrZ25wNXorTDBLYXhCYksyMnVU
+		SApGME1pY2FaUG9tQmJLam5xSGgwd25jTG9ReDlRSkxSUks0WitjakY2RWJn
+		T0NCemsrRjJzUXQ0L0l2MG9lNEZMCkFYdmRjU25FWUFUZDBwZTVZd0lrdkEv
+		TmdSbkQ1c3JzVGJSSExsSlJvd1ZTM29KNFhMdGpDUEtndGJ1ZDBlVi8KTWY0
+		SmsvS2MzdzJ5cGN4cHhCT3JNRVdOM2ZCODMzZ2NrTkMvNXdJREFRQUJBb0lC
+		QUUzYmRPZjJKbURJbXRMSQpNR0c2Q2tlTU13ZHYvZm5uekRoOEJSd21PcDA4
+		RW1DNjZiWmFhbGxIRmpYK3ZzallaQmtKL0JQUTlxS1RtUHdCCjJ1Ty9uSS8y
+		cHlCd3YwcnB3MDA1TWt5UXNvUTJScU1BbWgzUmR5aHN0TStTMVlhQ0tTUUls
+		bDdpcG5wVDd4clMKMXJFWlRjVE5HR3RHRi9kVzJyTzhqdk1uQXFBT2ptaWp6
+		eW5WbUg1VVFaWk1rTmRMYUNNYzlaZXRKM3R1YktKagprTHNVWGIrZlJnWmZZ
+		UTkxVnNtbzdXbHBVME5DUWZVN21MS2xsRG9lWEFmaWxUWWxaV09CanRwWnJw
+		M3dpTFlaCjVFRG1jSmsrVDhZdzJjSmtjU2N5WVoyVTBNTXZWWHd0VWYvRU1O
+		QnlWdHZwdm9BNXhXMGdOWXZVSC9uK055T3gKbnBiNUc2a0NnWUVBK3N3eTE5
+		QWkrNTlzb05sVnZVSjVBNDJSUTAzYTNqNkREbnYxaVJ1Y2xOTmNJQnkvcnZr
+		agp5b1owbVRsejBCUUMxcnhtVU8wYXNCbmpLekIxNjVXdGpJL255K1J4NXU0
+		QmZOYUZITW9pb05tWXUwanhJSzQwCkRpejAxTEk2ZjlMeUNvNXh2dE03a29R
+		bi92aWFyb0wzZXBoRFdPSU43dnhGeXFBWFJOTHdTbk1DZ1lFQXhESEcKY3FS
+		Vy9XS0FNZmVSbkpYanJnVm5JWkFhcDdmdGp1eEJnU3NSZUpBVU9DUXdmYkpk
+		Wm84d3IwT2lma29NS0VRYwpGaVlaN0piWkpWSEpQU2krcTB3UEcvSWo2ZUJS
+		RkhDYzRzMXdlMUM3eHJMS2ZqUkw4MU85YUFiQXlPa0pDbk1OCm9LSWdMcll4
+		djZpckxMSXFzZnhPQzBYWEpyUzFQcWVPa1lOLzA3MENnWUErMi9OYVdCYU1q
+		cGJCY2ZlbGFnVysKdURyU2JhOFB5UWM4R0NHZ2JjVS9JQUtWSWQrQlVYeUJC
+		Rll4R1U5SHRkeElTZ3d5K0ZxYURNTDlUallnQi9IcApxeC9qNEt3VHYwK3NK
+		SEJVbU8wNDk1RHFVQXZ2cnZucEc2ZDVyL290azRlSzBjejhrU0Q3Umhob05a
+		TS9iaC90CklFQ3hCR2VOb0xrMVlnNnk5MU8ydFFLQmdEaldXckZYbnNQbFIx
+		SXljSUsyZ2JFbWE0d3puU1U5aVpyQUl2SHkKc2lzRlFuWkpOYXNVZ3k1MUNS
+		dWRNblAzcTdIMm1WUnBVVlZURmpGVGtrTWZqSzAvYVprayt2YUVQN2oyTHQw
+		ZAp1eHBlZHlmSElCYVR1L1VRSzJ6NWw5d2NkcndLUE1adWNYaFcyKzYwUkhL
+		OFl0WVJTK0xFSnVKVnM3UWxBbzV4ClZCVFpBb0dCQUtoNm1VSlA2bXlEU1hj
+		NGZGNzNRQTVybHFKRzg3eVcyNlVDQVFJdEswS01YYW02dGVVYUFhencKcU1z
+		MmJuUkRyRjdzK3h5Z0lZRE54ajc5cnNyM1hOemtsdUlzK2NLSXprM29ZTGFL
+		UkMrZUxrVkxuU2dWb3NYKwpkdXoxSXd5K2VtRW5oK082a2Q1MGUycmhOam1D
+		MTRkVDBLNUJPZ1Q5dElGdktGY3RMREt5Ci0tLS0tRU5EIFJTQSBQUklWQVRF
+		IEtFWS0tLS0tCg==
+		</data>
+		<key>SystemBUID</key>
+		<string>30498072-110440080933184132</string>
+		<key>WiFiMACAddress</key>
+		<string>5c:f5:da:e2:b7:a9</string>
+	</dict>
+	<key>Request</key>
+	<string>ValidatePair</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Request</key>
+	<string>ValidatePair</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>HostID</key>
+	<string>30498073372522485224934132</string>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>StartSession</string>
+	<key>SystemBUID</key>
+	<string>30498072-110440080933184132</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnableSessionSSL</key>
+	<true/>
+	<key>Request</key>
+	<string>StartSession</string>
+	<key>SessionID</key>
+	<string>91CC3D90-D91E-4523-8331-9261E527FBB7</string>
+</dict>
+</plist>
+
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>StartService</string>
+	<key>Service</key>
+	<string>com.apple.afc</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Port</key>
+	<integer>50306</integer>
+	<key>Request</key>
+	<string>StartService</string>
+	<key>Service</key>
+	<string>com.apple.afc</string>
+</dict>
+</plist>
+
+Connecting to device: 1da9ae263353356291a8e72b72526c2681b8424f
+>>>> <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EscrowBag</key>
+	<data>
+	pSIMv/iKv2GHnPAg/MbOnYEZcI/vnlTpiantWACcQNw=
+	</data>
+	<key>Label</key>
+	<string>pyMobileDevice</string>
+	<key>Request</key>
+	<string>StartService</string>
+	<key>Service</key>
+	<string>com.apple.mobilebackup2</string>
+</dict>
+</plist>
+
+<<<<<<<< <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Error</key>
+	<string>MissingValue</string>
+	<key>Request</key>
+	<string>StartService</string>
+	<key>Service</key>
+	<string>com.apple.mobilebackup2</string>
+</dict>
+</plist>
+
+{'Request': 'StartService', 'Service': 'com.apple.mobilebackup2', 'Error': 'MissingValue'}

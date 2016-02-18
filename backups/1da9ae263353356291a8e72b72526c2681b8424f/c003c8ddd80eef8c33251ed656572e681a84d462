@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AllowPairing</key>
+	<true/>
+	<key>CloudConfigurationUIComplete</key>
+	<true/>
+	<key>ConfigurationWasApplied</key>
+	<true/>
+	<key>IsMDMUnremovable</key>
+	<false/>
+	<key>IsMandatory</key>
+	<true/>
+	<key>IsSupervised</key>
+	<true/>
+	<key>Organization</key>
+	<string>NNN</string>
+	<key>OrganizationName</key>
+	<string>NetSpark Ltd</string>
+	<key>PostSetupProfileWasInstalled</key>
+	<true/>
+	<key>SkipSetup</key>
+	<array>
+		<string>Location</string>
+		<string>Restore</string>
+		<string>Android</string>
+		<string>AppleID</string>
+		<string>Siri</string>
+		<string>Diagnostics</string>
+		<string>Passcode</string>
+		<string>Biometric</string>
+		<string>Payment</string>
+		<string>Zoom</string>
+	</array>
+</dict>
+</plist>

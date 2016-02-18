@@ -162,7 +162,7 @@ class AFCClient(object):
                     print "Status length != 8"
                 status = struct.unpack("<Q", data[:8])[0]
             elif res.operation != AFC_OP_DATA:
-                pass#print "error ?", res
+                print "error ?", res
         return status, data
 
 

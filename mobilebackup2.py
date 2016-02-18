@@ -54,7 +54,7 @@ class DeviceVersionNotSupported(Exception):
 class MobileBackup2(MobileBackup):
 
     service = None
-    def __init__(self, lockdown = None,backupPath = None):
+    def __init__(self, lockdown = None,backupPath = None, filter =None):
         if lockdown:
             self.lockdown = lockdown
         else:
@@ -66,6 +66,8 @@ class MobileBackup2(MobileBackup):
         
         self.udid = lockdown.getValue("", "UniqueDeviceID")        
         self.willEncrypt = lockdown.getValue("com.apple.mobile.backup", "WillEncrypt") 
+        
+        self.filter = filter
         
         self.service = self.lockdown.startServiceWithEscrowBag("com.apple.mobilebackup2")
         if not self.service:
@@ -123,8 +125,11 @@ class MobileBackup2(MobileBackup):
         self.service.sendPlist(a)
 
     def mb2_handle_free_disk_space(self,msg):
-        s = os.statvfs(self.backupPath)
-        freeSpace = s.f_bsize * s.f_bavail
+        try:
+            s = os.statvfs(self.backupPath)
+            freeSpace = s.f_bsize * s.f_bavail
+        except:
+            freeSpace = 65000000000
         a = ["DLMessageStatusResponse", 0, freeSpace]
         self.service.sendPlist(a)
 
@@ -190,22 +195,28 @@ class MobileBackup2(MobileBackup):
                 if ord(stuff[0]) == CODE_FILE_DATA:
                     filedata += stuff[1:]
                 elif ord(stuff[0]) == CODE_SUCCESS:
-                    self.write_file(self.check_filename(backup_filename), filedata)
+                    if not self.filter or self.filter(device_filename):
+                        print device_filename, ' passed filter ',backup_filename , len(filedata)
+                        self.write_file(self.check_filename(backup_filename), filedata)
                     break
                 else:
-                    print "Unknown code", ord(stuff[0])
+                    print "Unknown code", ord(stuff[0]), backup_filename
+                    self.write_file(self.check_filename(backup_filename), filedata)
                     break
         self.mobilebackup2_send_status_response(0)
 
     def mb2_handle_move_files(self, msg):
         for k,v in msg[1].items():
-#             print "Renaming %s to %s"  % (self.check_filename(k),self.check_filename(v))
-            os.rename(self.check_filename(k),self.check_filename(v))
+            print "Renaming %s to %s"  % (self.check_filename(k),self.check_filename(v))
+            try:
+                os.rename(self.check_filename(k),self.check_filename(v))
+            except:
+                pass
         self.mobilebackup2_send_status_response(0)
 
     def mb2_handle_remove_files(self, msg):
         for filename in msg[1]:
-#             print "Removing ", self.check_filename(filename)
+            print "Removing ", self.check_filename(filename)
             try:
                 filename = self.check_filename(filename)
                 if os.path.isfile(filename):
@@ -250,19 +261,22 @@ class MobileBackup2(MobileBackup):
                 self.mb2_handle_copy_item(msg)
             elif msg[0] == "DLMessageProcessMessage":
                 errcode = msg[1].get("ErrorCode")
-                if errcode == 0:
-                    m =  msg[1].get("MessageName")
+                if errcode in [0, 205]:
+                    m =  msg[1].get("MessageName", "")
                     if m != "Response":
                         print m 
+                    return 0
                 if errcode == 1:
-                    print "Please unlock your device and retry..."
+                    raise Exception("Please unlock your device and retry...")
                 if errcode == 211:
-                    print 'Please go to Settings->iClould->Find My iPhone and disable it'
+                    raise Exception('Please go to Settings->iClould->Find My iPhone and disable it')
                 if errcode == 105:
-                    print 'Not enough free space on device for restore'
+                    raise Exception('Not enough free space on device for restore')
                 if errcode == 17:
-                    print 'please press \'trust this computer\' in your device'
-                return errcode
+                    raise Exception('please press \'trust this computer\' in your device')
+                if errcode == 102:
+                    raise Exception('Please reboot your device and try again')
+                raise Exception('Unknown error ' + str(errcode) + msg[1].get("ErrorDescription", ""))
             elif msg[0] == "DLMessageGetFreeDiskSpace":
                 self.mb2_handle_free_disk_space(msg)
             elif msg[0] == "DLMessageDisconnect":

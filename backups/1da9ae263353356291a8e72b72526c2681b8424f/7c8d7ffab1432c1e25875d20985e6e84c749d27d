@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>albums</key>
+	<array>
+		<string>579CF465-0D5E-41C7-A29E-76C3DBDDDFA4</string>
+		<string>12D884E9-6A2B-4FA5-9824-4A6E990BD137</string>
+		<string>B53DBF50-B5BE-46E6-84DB-F7B1262D78C0</string>
+		<string>5D30B9C4-30E3-4F23-93A3-B6B61EB8CEB3</string>
+		<string>A5ADCDE3-EDF3-446A-9159-4B42C91679BB</string>
+		<string>FE0155E8-2E8A-4837-AAF2-4779566EE560</string>
+		<string>E5FEB2D8-2046-45C2-9348-2C39F7A87E3E</string>
+		<string>58039190-3572-4D85-B0F3-6B3C7477B273</string>
+		<string>9B342072-DD04-4863-A1CF-75F6FA2E1F75</string>
+		<string>548AA73A-69A2-4A8F-9655-3D03BF76A98D</string>
+		<string>7BA801BC-3301-4075-8146-949ABD9B15E8</string>
+		<string>63A12FCB-F159-494B-85AA-BC728165B6C2</string>
+		<string>2E0E10CB-1C5E-46A8-B7E6-799ADA354365</string>
+		<string>D044E518-6488-44B4-BFA0-D09BD8FB99BA</string>
+		<string>010BF9B7-3C9F-4A15-A808-F838798F17DF</string>
+		<string>62387492-C60C-47A6-B984-48F9C67FB369</string>
+		<string>4061814B-3323-43ED-857E-9EE236C0527E</string>
+		<string>86F3D336-50F0-4E78-A38A-2D4117BF591A</string>
+		<string>769EE6D6-EA66-487A-A56D-3D236410A159</string>
+		<string>8D5F9AD4-FF77-4834-B033-3FB647768F31</string>
+	</array>
+</dict>
+</plist>

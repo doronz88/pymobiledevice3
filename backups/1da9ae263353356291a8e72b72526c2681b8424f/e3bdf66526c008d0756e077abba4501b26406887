@@ -1,0 +1,220 @@
+2016-01-25 17:28:32.906 [B] [main-thread] LL_A* application/notification/UIApplicationSceneOcclusionChangedNotification: {
+LL_A     isBackgrounded = 1;
+LL_A     isCarDisplay = 0;
+LL_A     isOccluded = 0;
+LL_A     scene = "<FBSSceneImpl: 0x144d57b20; identifier: net.whatsapp.WhatsApp; valid: YES> {\n    settings = <UIMutableApplicationSceneSettings: 0x144e0ed40> {\n        frame = {{0, 0}, {320, 568}};\n        level = 1.0;\n        interfaceOrientation = portrait;\n        backgrounded = YES;\n        otherSettings = <BSMutableSettings: 0x144e0ede0> {\n            deviceOrientationEventsEnabled = YES;\n        };\n    };\n    clientSettings = <UIMutableApplicationSceneClientSettings: 0x144e0...
+2016-01-25 17:28:33.071 [B] [main-thread] LL_A* appdelegate/device-unlocked
+2016-01-25 17:28:33.073 [B] [main-thread] LL_A* appdelegate/chat-database-unlocked
+2016-01-25 17:28:33.073 [B] [main-thread] LL_A* appdelegate/protected-data-available/0
+2016-01-25 17:28:33.149 [B] [main-thread] LL_A* appdata/app-group: file:///private/var/mobile/Containers/Shared/AppGroup/FAD8FD11-D19A-4B64-A0D5-9E1A60836DAC/
+2016-01-25 17:28:33.218 [B] [main-thread] LL_N* asyncsocket/random/host/e6.whatsapp.net.
+2016-01-25 17:28:33.218 [B] [main-thread] LL_N* asyncsocket/random/host/e9.whatsapp.net.
+2016-01-25 17:28:33.219 [B] [main-thread] LL_N* asyncsocket/random/host/e4.whatsapp.net.
+2016-01-25 17:28:33.219 [B] [main-thread] LL_N* asyncsocket/random/host/e14.whatsapp.net.
+2016-01-25 17:28:33.219 [B] [main-thread] LL_N* asyncsocket/random/host/e2.whatsapp.net.
+2016-01-25 17:28:33.219 [B] [main-thread] LL_N* asyncsocket/random/host/e5.whatsapp.net.
+2016-01-25 17:28:33.220 [B] [main-thread] LL_N* asyncsocket/random/host/e11.whatsapp.net.
+2016-01-25 17:28:33.220 [B] [main-thread] LL_N* asyncsocket/random/host/e1.whatsapp.net.
+2016-01-25 17:28:33.220 [B] [main-thread] LL_N* asyncsocket/random/host/e3.whatsapp.net.
+2016-01-25 17:28:33.221 [B] [main-thread] LL_N* asyncsocket/random/host/e16.whatsapp.net.
+2016-01-25 17:28:33.221 [B] [main-thread] LL_N* asyncsocket/random/host/e13.whatsapp.net.
+2016-01-25 17:28:33.221 [B] [main-thread] LL_N* asyncsocket/random/host/e7.whatsapp.net.
+2016-01-25 17:28:33.221 [B] [main-thread] LL_N* asyncsocket/random/host/e10.whatsapp.net.
+2016-01-25 17:28:33.221 [B] [main-thread] LL_N* asyncsocket/random/host/e15.whatsapp.net.
+2016-01-25 17:28:33.222 [B] [main-thread] LL_N* asyncsocket/random/host/e8.whatsapp.net.
+2016-01-25 17:28:33.222 [B] [main-thread] LL_N* asyncsocket/random/host/e12.whatsapp.net.
+2016-01-25 17:28:33.226 [B] [xmpp] LL_A  connection/p/0
+2016-01-25 17:28:33.243 [B] [main-thread] LL_A* serverprops/default
+2016-01-25 17:28:33.268 [B] [main-thread] LL_A* url-session/add-session: net.whatsapp.WhatsApp
+2016-01-25 17:28:33.275 [B] [xmpp] LL_A  Reachability flags: [-R tc--D--]
+LL_A 
+2016-01-25 17:28:33.277 [B] [xmpp] LL_A  connection/reachability/changed: Unknown->WiFi [status: None]
+2016-01-25 17:28:33.277 WhatsApp[409:44746] *** -[NSKeyedUnarchiver initForReadingWithData:]: data is NULL
+2016-01-25 17:28:33.362 [B] [main-thread] LL_A* url-session/add-session: main
+2016-01-25 17:28:33.406 [B] [bgtask] LL_A  background-task/start/main/1
+2016-01-25 17:28:33.412 [B] [xmpp] LL_W  connection/check/denied: no jid
+2016-01-25 17:28:33.643 [B] [main-thread] LL_A* application/finished-launching (badge = 0, state = 2)
+2016-01-25 17:28:33.688 [B] [main-thread] LL_A* backup/errors/marker/set (2016-01-25 15:28:33 +0000)
+2016-01-25 17:28:33.690 [B] [main-thread] LL_A* backup/auto/settings//frequency/loaded (off)
+2016-01-25 17:28:33.704 [B] [main-thread] LL_A* backup/manager/status/upload/create
+2016-01-25 17:28:33.705 [B] [default-qos] LL_A  file-mgr/purge/start
+2016-01-25 17:28:33.756 [B] [default-qos] LL_A  file-mgr/purge/end
+2016-01-25 17:28:33.757 [B] [main-thread] LL_E* fieldstats/openfile/error/2
+2016-01-25 17:28:33.758 [B] [main-thread] LL_E* fieldstats/createfile/createdir/{/var/mobile/Containers/Data/Application/0C85682F-CBCE-4FEB-94D0-60D86BE73268/Library/FieldStats}
+2016-01-25 17:28:33.759 [B] [Cloud Backup Manager] LL_A  backup/manager/ubiquity/loaded=0 (0.053 sec)
+2016-01-25 17:28:33.759 [B] [main-thread] LL_A* webclient/last-session/none
+2016-01-25 17:28:33.881 [B] [main-thread] LL_A* axolotl/store/load/finish time=[0.090]
+2016-01-25 17:28:33.887 [B] [main-thread] LL_E* axolotl/load-store/signedPreKey/missing
+2016-01-25 17:28:33.902 [B] [main-thread] LL_A* axolotl/keychain/deleted
+2016-01-25 17:28:33.903 [B] [main-thread] LL_A* axolotl/store/clear
+2016-01-25 17:28:33.968 [B] [main-thread] LL_A* axolotl/store/load/finish time=[0.063]
+2016-01-25 17:28:33.987 [B] [main-thread] LL_A* axolotl/keychain/create/result: 0
+2016-01-25 17:28:35.118 [B] [main-thread] LL_A* axolotl/identity/created
+2016-01-25 17:28:35.139 [B] [main-thread] LL_A* Upgrade from: none
+2016-01-25 17:28:35.165 [B] [main-thread] LL_A* wallpaperlibrary/upgrade from=[0] to=[1]
+2016-01-25 17:28:35.167 [B] [main-thread] LL_A* wallpaperlibrary/restore-default
+2016-01-25 17:28:35.167 [B] [default-qos] LL_A  
+LL_A Device: iPhone 5s 
+LL_A System: iPhone OS 9.1 (13B143) 
+LL_A WhatsApp version: 2.12.13 
+LL_A Carrier name: Cellcom 
+LL_A Mobile country code: 425 
+LL_A Mobile network code: 002 
+LL_A Language: he-IL 
+LL_A Locale: IL 
+LL_A Phone number: (null) (null) 
+LL_A JID: none 
+LL_A Time zone: Local Time Zone (Asia/Jerusalem (GMT+2) offset 7200) [+2.0] 
+LL_A Uptime: 0.064 days 
+LL_A Accessibility: VoiceOver [0], Invert colors [0], Bold text [0], Darker colors [0]
+2016-01-25 17:28:35.168 [B] [default-qos] LL_A  ap1: flags=8802 < broadcast simplex multicast > | link addr=02:00:00:00:00:00
+2016-01-25 17:28:35.168 [B] [default-qos] LL_A  awdl0: flags=8843 < up broadcast running simplex multicast > | link addr=02:00:00:00:00:00
+2016-01-25 17:28:35.168 [B] [default-qos] LL_A  en0: flags=8863 < up broadcast running simplex multicast > | link addr=02:00:00:00:00:00
+2016-01-25 17:28:35.168 [B] [default-qos] LL_A  en1: flags=8822 < broadcast simplex multicast > | link addr=02:00:00:00:00:00
+2016-01-25 17:28:35.168 [B] [default-qos] LL_A  lo0: flags=8049 < up loopback running multicast > | link addr=none | ipv6 ip=::1/netmask=ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff | ipv4 ip=127.0.0.1/netmask=255.0.0.0 | ipv6 ip=fe80::1/netmask=ffff:ffff:ffff:ffff::
+2016-01-25 17:28:35.169 [B] [default-qos] LL_A  pdp_ip0: flags=8051 < up ptp running multicast > | link addr=none | ipv4 ip=10.129.60.64/netmask=255.255.255.255
+2016-01-25 17:28:35.169 [B] [default-qos] LL_A  pdp_ip1: flags=8010 < ptp multicast > | link addr=none
+2016-01-25 17:28:35.169 [B] [default-qos] LL_A  pdp_ip2: flags=8010 < ptp multicast > | link addr=none
+2016-01-25 17:28:35.169 [B] [default-qos] LL_A  pdp_ip3: flags=8010 < ptp multicast > | link addr=none
+2016-01-25 17:28:35.169 [B] [main-thread] LL_A* ChatStorage.sqlite does not exist
+2016-01-25 17:28:35.169 [B] [default-qos] LL_A  pdp_ip4: flags=8010 < ptp multicast > | link addr=none
+2016-01-25 17:28:35.170 [B] [default-qos] LL_A  utun0: flags=8051 < up ptp running multicast > | link addr=none | ipv4 ip=10.0.93.187/netmask=255.255.255.255
+2016-01-25 17:28:35.170 [B] [main-thread] LL_A* ChatSearch.sqlite does not exist
+2016-01-25 17:28:35.170 [B] [main-thread] LL_A* Contacts.sqlite does not exist
+2016-01-25 17:28:35.172 [B] [main-thread] LL_A* Disk space available: 11,575.7 MB
+2016-01-25 17:28:35.298 [B] [main-thread] LL_A* coredata/loadstore/finish time=[0.117]
+2016-01-25 17:28:35.329 [B] [main-thread] LL_A* JID not found - exiting
+2016-01-25 17:28:35.333 [B] [main-thread] LL_N* Testing network connection...
+2016-01-25 17:28:35.333 [B] [main-thread] LL_N* Reachable Via WiFi Network.
+2016-01-25 17:28:35.333 [B] [main-thread] LL_A* verification-controller/create
+2016-01-25 17:28:35.334 [B] [addressbook] LL_A  syncmanager/request-full when=[(null)]
+2016-01-25 17:28:35.372 [B] [xmpp] LL_A  Reachability flags: [-R tc--D--]
+LL_A 
+2016-01-25 17:28:35.373 [B] [xmpp] LL_A  Reachability flags: [-R tc--D--]
+LL_A 
+2016-01-25 17:28:35.410 [B] [main-thread] LL_W* appdelegate/shortcut-items/reset/no-tabbar
+2016-01-25 17:28:35.417 [B] [main-thread] LL_W* appdelegate/shortcut-items/reset/no-tabbar
+2016-01-25 17:28:35.417 [B] [main-thread] LL_A* appdel/finished-launching/done [2.17]
+2016-01-25 17:28:35.421 [B] [main-thread] LL_A* app/background-fetch
+2016-01-25 17:28:35.424 [B] [bgtask] LL_A  app/suspending/reset
+2016-01-25 17:28:35.611 [B] [xmpp] LL_A  Reachability flags: [-R tc--D--]
+LL_A 
+2016-01-25 17:28:35.772 [B] [xmpp] LL_A  Reachability flags: [WR t-----d]
+LL_A 
+2016-01-25 17:28:35.772 [B] [xmpp] LL_A  connection/reachability/changed: WiFi->GPRS [status: None]
+2016-01-25 17:28:35.912 WhatsApp[409:44714] Can't find keyplane that supports type 4 for keyboard iPhone-Portrait-NumberPad; using 563160167_Portrait_iPhone-Simple-Pad_Default
+2016-01-25 17:28:36.364 [B] [main-thread] LL_A* VoIP stack:      wa_call.c  wa_call_set_network_medium Cellular
+LL_A 
+2016-01-25 17:28:36.366 [B] [main-thread] LL_A* url-session/session/net.whatsapp.WhatsApp/get-tasks/upload/0/download/0
+2016-01-25 17:28:36.367 [B] [main-thread] LL_A* url-session/main/restoring-taskdata/count/0
+2016-01-25 17:28:36.376 [B] [main-thread] LL_A* coredata/moc/main/create moc=[<NSManagedObjectContext: 0x144e86010>]
+2016-01-25 17:28:36.387 [B] [main-thread] LL_A* taskmanager/battery/power-save/off [0.57 | 1]
+2016-01-25 17:28:36.388 [B] [main-thread] LL_A* taskmanager/low-power-mode/off
+2016-01-25 17:28:36.388 [B] [main-thread] LL_A* taskmanager/paused
+2016-01-25 17:28:36.391 [B] [main-thread] LL_A* chatstorage/orphaned-messages/count: 0 [time: 0.003694]
+2016-01-25 17:28:36.397 [B] [main-thread] LL_A* appdelegate/address-book/access-request/application-inactive
+2016-01-25 17:28:36.402 [B] [main-thread] LL_A* app/background/resumed/reason: 3
+2016-01-25 17:28:36.414 [B] [main-thread] LL_A* app/audio-volume: 0.000000
+2016-01-25 17:28:36.414 [B] [main-thread] LL_A* VoIP stack:      wa_call.c  wa_call_set_network_medium Cellular
+LL_A 
+2016-01-25 17:28:36.431 [B] [main-thread] LL_N* Testing network connection...
+2016-01-25 17:28:36.431 [B] [main-thread] LL_N* Reachable Via Carrier Data Network.
+2016-01-25 17:28:36.434 [B] [main-thread] LL_N* Testing network connection...
+2016-01-25 17:28:36.435 [B] [main-thread] LL_N* Reachable Via Carrier Data Network.
+2016-01-25 17:28:45.488 [B] [bgtask] LL_A  app/will-suspend
+2016-01-25 17:28:45.501 [B] [main-thread] LL_W* app/background/resume/background-fetch/warning: failed
+2016-01-25 17:28:45.501 [B] [main-thread] LL_A* app/background/disconnecting...
+2016-01-25 17:28:45.506 [B] [main-thread] LL_A* app/background/disconnected
+2016-01-25 17:28:45.519 [B] [bgtask] LL_A  app/background-task-ended: 1 [170.770 sec remaining]
+2016-01-25 17:36:20.628 [B] [CTTelephonyNetworkInfo] LL_A  connection/cellular/radio-changed: (null)
+2016-01-25 17:36:20.629 [B] [bgtask] LL_A  background-task/start/main/9
+2016-01-25 17:36:20.630 [B] [bgtask] LL_A  app/resumed
+2016-01-25 17:36:20.631 WhatsApp[409:44714]  *|synchronize-skip|* a fence was started inside of a snapshot block - skipping the workspace synchronize because it may dequeue messages from the fenceExemptQueue and snapshots expect that not to happen
+2016-01-25 17:36:21.272 WhatsApp[409:44714]  *|synchronize-skip|* a fence was started inside of a snapshot block - skipping the workspace synchronize because it may dequeue messages from the fenceExemptQueue and snapshots expect that not to happen
+2016-01-25 17:36:21.694 [B] [xmpp] LL_A  Reachability flags: [-R tc--D--]
+LL_A 
+2016-01-25 17:36:21.694 [B] [xmpp] LL_A  connection/reachability/changed: GPRS->WiFi [status: None]
+2016-01-25 17:36:21.694 [B] [xmpp] LL_A  Reachability flags: [-R tc--D--]
+LL_A 
+2016-01-25 17:36:21.828 [B] [xmpp] LL_A  Reachability flags: [-R tc--D--]
+LL_A 
+2016-01-25 17:36:21.878 [B] [main-thread] LL_A* VoIP stack:      wa_call.c  wa_call_set_network_medium Wifi
+LL_A 
+2016-01-25 17:36:21.879 [B] [main-thread] LL_A* app/background-fetch
+2016-01-25 17:36:21.880 [B] [bgtask] LL_A  app/suspending/reset
+2016-01-25 17:36:21.880 [B] [main-thread] LL_A* application/notification/UIApplicationSceneOcclusionChangedNotification: {
+LL_A     isBackgrounded = 1;
+LL_A     isCarDisplay = 0;
+LL_A     isOccluded = 0;
+LL_A     scene = "<FBSSceneImpl: 0x144d57b20; identifier: net.whatsapp.WhatsApp; valid: YES> {\n    settings = <UIMutableApplicationSceneSettings: 0x144e0ed40> {\n        frame = {{0, 0}, {320, 568}};\n        level = 1.0;\n        interfaceOrientation = portrait;\n        backgrounded = YES;\n        otherSettings = <BSMutableSettings: 0x144e0ede0> {\n            deviceOrientationEventsEnabled = YES;\n        };\n    };\n    clientSettings = <UIApplicationSceneClientSettings: 0x14608dcd0> {...
+2016-01-25 17:36:21.880 [B] [bgtask] LL_A  app/suspending/reset
+2016-01-25 17:36:21.886 [B] [main-thread] LL_N* Testing network connection...
+2016-01-25 17:36:21.887 [B] [main-thread] LL_N* Reachable Via WiFi Network.
+2016-01-25 17:36:21.881 WhatsApp[409:44714] _BSMachError: (os/kern) invalid capability (20)
+2016-01-25 17:36:21.887 WhatsApp[409:44714] _BSMachError: (os/kern) invalid name (15)
+2016-01-25 17:36:21.888 WhatsApp[409:44714] _BSMachError: (os/kern) invalid capability (20)
+2016-01-25 17:36:21.889 WhatsApp[409:44714] _BSMachError: (os/kern) invalid name (15)
+2016-01-25 17:36:21.890 WhatsApp[409:44714] _BSMachError: (os/kern) invalid capability (20)
+2016-01-25 17:36:21.892 WhatsApp[409:44714] _BSMachError: (os/kern) invalid name (15)
+2016-01-25 17:36:21.909 [B] [main-thread] LL_A* taskmanager/battery/power-save/off [0.56 | 1]
+2016-01-25 17:36:21.911 [B] [main-thread] LL_A* app/background/resumed/reason: 3
+2016-01-25 17:36:21.911 [B] [main-thread] LL_A* app/audio-volume: 0.000000
+2016-01-25 17:36:27.757 [B] [xmpp] LL_A  Reachability flags: [-R tc--D--]
+LL_A 
+2016-01-25 17:36:27.759 [B] [xmpp] LL_A  Reachability flags: [WR t------]
+LL_A 
+2016-01-25 17:36:27.760 [B] [xmpp] LL_A  connection/reachability/changed: WiFi->GPRS [status: None]
+2016-01-25 17:36:27.768 [B] [main-thread] LL_A* VoIP stack:      wa_call.c  wa_call_set_network_medium Cellular
+LL_A 
+2016-01-25 17:36:27.769 [B] [main-thread] LL_N* Testing network connection...
+2016-01-25 17:36:27.769 [B] [main-thread] LL_N* Reachable Via Carrier Data Network.
+2016-01-25 17:36:28.152 [B] [xmpp] LL_A  Reachability flags: [WR t-----d]
+LL_A 
+2016-01-25 17:36:31.949 [B] [bgtask] LL_A  app/will-suspend
+2016-01-25 17:36:31.961 [B] [main-thread] LL_W* app/background/resume/background-fetch/warning: failed
+2016-01-25 17:36:31.962 [B] [main-thread] LL_A* app/background/disconnecting...
+2016-01-25 17:36:31.979 [B] [main-thread] LL_A* app/background/disconnected
+2016-01-25 17:36:31.988 [B] [bgtask] LL_A  app/background-task-ended: 9 [28.480 sec remaining]
+2016-01-25 17:36:31.993 [B] [bgtask] LL_W  app/check-state/warning: timer fire ignored
+2016-01-25 17:36:31.995 [B] [bgtask] LL_W  app/check-state/warning: timer fire ignored
+2016-01-25 17:36:32.046 WhatsApp[409:44714]  *|synchronize-skip|* a fence was started inside of a snapshot block - skipping the workspace synchronize because it may dequeue messages from the fenceExemptQueue and snapshots expect that not to happen
+2016-01-25 17:36:32.274 [B] [bgtask] LL_W  app/check-state/warning: timer fire ignored
+2016-01-25 17:36:32.323 WhatsApp[409:44714]  *|synchronize-skip|* a fence was started inside of a snapshot block - skipping the workspace synchronize because it may dequeue messages from the fenceExemptQueue and snapshots expect that not to happen
+2016-01-25 17:36:33.271 [B] [bgtask] LL_W  app/check-state/warning: timer fire ignored
+2016-01-25 17:45:03.536 [B] [main-thread] LL_A* taskmanager/battery/power-save/off [0.55 | 1]
+2016-01-25 17:45:03.536 [B] [main-thread] LL_A* app/background-fetch
+2016-01-25 17:45:03.536 [B] [main-thread] LL_A* application/notification/UIApplicationSceneOcclusionChangedNotification: {
+LL_A     isBackgrounded = 1;
+LL_A     isCarDisplay = 0;
+LL_A     isOccluded = 0;
+LL_A     scene = "<FBSSceneImpl: 0x144d57b20; identifier: net.whatsapp.WhatsApp; valid: YES> {\n    settings = <UIMutableApplicationSceneSettings: 0x144e0ed40> {\n        frame = {{0, 0}, {320, 568}};\n        level = 1.0;\n        interfaceOrientation = portrait;\n        backgrounded = YES;\n        otherSettings = <BSMutableSettings: 0x144e0ede0> {\n            deviceOrientationEventsEnabled = YES;\n        };\n    };\n    clientSettings = <UIApplicationSceneClientSettings: 0x14608dcd0> {...
+2016-01-25 17:45:03.537 [B] [bgtask] LL_A  background-task/start/main/19
+2016-01-25 17:45:03.537 [B] [bgtask] LL_A  app/resumed
+2016-01-25 17:45:03.537 [B] [bgtask] LL_A  app/suspending/reset
+2016-01-25 17:45:03.537 [B] [bgtask] LL_A  app/suspending/reset
+2016-01-25 17:45:03.534 WhatsApp[409:44714] _BSMachError: (os/kern) invalid capability (20)
+2016-01-25 17:45:03.538 WhatsApp[409:44714] _BSMachError: (os/kern) invalid name (15)
+2016-01-25 17:45:03.617 WhatsApp[409:44714] _BSMachError: (os/kern) invalid capability (20)
+2016-01-25 17:45:03.619 WhatsApp[409:44714] _BSMachError: (os/kern) invalid name (15)
+2016-01-25 17:45:03.670 [B] [main-thread] LL_A* app/background/resumed/reason: 3
+2016-01-25 17:45:03.671 [B] [main-thread] LL_A* app/audio-volume: 0.000000
+2016-01-25 17:45:03.728 [B] [xmpp] LL_A  Reachability flags: [-R tc--D--]
+LL_A 
+2016-01-25 17:45:03.729 [B] [xmpp] LL_A  connection/reachability/changed: GPRS->WiFi [status: None]
+2016-01-25 17:45:03.739 [B] [xmpp] LL_A  Reachability flags: [-R tc--D--]
+LL_A 
+2016-01-25 17:45:03.763 [B] [xmpp] LL_A  Reachability flags: [-R tc--D--]
+LL_A 
+2016-01-25 17:45:03.786 [B] [main-thread] LL_A* VoIP stack:      wa_call.c  wa_call_set_network_medium Wifi
+LL_A 
+2016-01-25 17:45:03.790 [B] [main-thread] LL_N* Testing network connection...
+2016-01-25 17:45:03.791 [B] [main-thread] LL_N* Reachable Via WiFi Network.
+2016-01-25 17:45:13.456 [B] [bgtask] LL_A  app/will-suspend
+2016-01-25 17:45:13.466 [B] [main-thread] LL_W* app/background/resume/background-fetch/warning: failed
+2016-01-25 17:45:13.467 [B] [main-thread] LL_A* app/background/disconnecting...
+2016-01-25 17:45:13.488 [B] [main-thread] LL_A* app/background/disconnected
+2016-01-25 17:45:13.496 [B] [bgtask] LL_A  app/background-task-ended: 19 [29.803 sec remaining]
+2016-01-25 17:45:13.501 [B] [bgtask] LL_W  app/check-state/warning: timer fire ignored
+2016-01-25 17:45:13.506 [B] [bgtask] LL_W  app/check-state/warning: timer fire ignored
+2016-01-25 17:45:13.542 WhatsApp[409:44714]  *|synchronize-skip|* a fence was started inside of a snapshot block - skipping the workspace synchronize because it may dequeue messages from the fenceExemptQueue and snapshots expect that not to happen
+2016-01-25 17:45:13.721 WhatsApp[409:44714]  *|synchronize-skip|* a fence was started inside of a snapshot block - skipping the workspace synchronize because it may dequeue messages from the fenceExemptQueue and snapshots expect that not to happen

@@ -91,7 +91,7 @@ class BinaryProtocol(object):
 			devid = struct.unpack("I", payload)[0]
 			return {'DeviceID': devid}
 		else:
-			raise MuxError("Invalid incoming request type %d"%req)
+			raise MuxError("Invalid incoming response type %d"%resp)
 
 	def sendpacket(self, req, tag, payload={}):
 		payload = self._pack(req, payload)
