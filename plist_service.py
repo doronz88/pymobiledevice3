@@ -61,8 +61,8 @@ class PlistService(object):
     def close(self):
         self.s.close()
     
-    def recv(self, length=4096):
-        return self.s.recv(length)
+    def recv(self, len=4096):
+        return self.s.recv(len)
     
     def send(self, data):
         return self.s.send(data)
@@ -78,7 +78,7 @@ class PlistService(object):
         return data
 
     def recv_raw(self):
-        l = self.recv_exact(4)
+        l = self.recv(4)
         if not l or len(l) != 4:
             return
         l = struct.unpack(">L", l)[0]
@@ -89,7 +89,7 @@ class PlistService(object):
     
     def recvPlist(self):
         payload = self.recv_raw()
-#         print '<<<<<<<<',payload
+        #print '<<<<<<<<',payload
         if not payload:
             return
         if payload.startswith("bplist00"):
@@ -103,9 +103,9 @@ class PlistService(object):
     
     def sendPlist(self, d):
         payload = plistlib.writePlistToString(d)
-#         print '>>>>',payload
+        #print '>>>>',payload
         l = struct.pack(">L", len(payload))
-        return self.send(l + payload)
+        self.send(l + payload)
 
     def ssl_start(self, keyfile, certfile):
         self.s = ssl.wrap_socket(self.s, keyfile, certfile, ssl_version=ssl.PROTOCOL_TLSv1)

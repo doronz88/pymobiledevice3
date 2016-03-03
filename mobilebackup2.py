@@ -27,11 +27,13 @@ from lockdown import LockdownClient
 from mobilebackup import MobileBackup
 from optparse import OptionParser
 from pprint import pprint
-from biplist import writePlist, readPlist
+from util import write_file, hexdump
+from biplist import writePlist, readPlist, Data
 import os
-from time import mktime, gmtime
+import hashlib
+from struct import unpack, pack
+from time import mktime, gmtime, sleep, time
 import datetime
-from uuid import uuid4
 
 CODE_SUCCESS = 0x00
 CODE_ERROR_LOCAL =  0x06
@@ -48,28 +50,26 @@ MASK_DIRECTORY = 0x4000
 
 class DeviceVersionNotSupported(Exception):
     def __str__(self):
-        return "Device version not supported, please use mobilebackup"
+	return "Device version not supported, please use mobilebackup"
 
 
 class MobileBackup2(MobileBackup):
 
     service = None
-    def __init__(self, lockdown = None,backupPath = None, filter =None):
-        if lockdown:
+    def __init__(self, lockdown = None,backupPath = None):
+	if lockdown:
             self.lockdown = lockdown
         else:
             self.lockdown = LockdownClient()
 
-        ProductVersion = self.lockdown.getValue("", "ProductVersion")
-        if ProductVersion[0] < "5":
-            raise DeviceVersionNotSupported
+	ProductVersion = self.lockdown.getValue("", "ProductVersion")
+	if ProductVersion[0] < "5":
+	    raise DeviceVersionNotSupported
         
         self.udid = lockdown.getValue("", "UniqueDeviceID")        
         self.willEncrypt = lockdown.getValue("com.apple.mobile.backup", "WillEncrypt") 
         
-        self.filter = filter
-        
-        self.service = self.lockdown.startServiceWithEscrowBag("com.apple.mobilebackup2")
+        self.service = self.lockdown.startService("com.apple.mobilebackup2")
         if not self.service:
             raise Exception("MobileBackup2 init error : Could not start com.apple.mobilebackup2")
         
@@ -125,11 +125,8 @@ class MobileBackup2(MobileBackup):
         self.service.sendPlist(a)
 
     def mb2_handle_free_disk_space(self,msg):
-        try:
-            s = os.statvfs(self.backupPath)
-            freeSpace = s.f_bsize * s.f_bavail
-        except:
-            freeSpace = 65000000000
+        s = os.statvfs(self.backupPath)
+        freeSpace = s.f_bsize * s.f_bavail
         a = ["DLMessageStatusResponse", 0, freeSpace]
         self.service.sendPlist(a)
 
@@ -172,12 +169,13 @@ class MobileBackup2(MobileBackup):
             self.mobilebackup2_send_status_response(0)
 
     def mb2_handle_list_directory(self, msg):
+        path = msg[1]
         dirlist = {}
         self.mobilebackup2_send_status_response(0, status2=dirlist);
 
     def mb2_handle_make_directory(self, msg):
         dirname = self.check_filename(msg[1])
-#         print "Creating directory %s" % dirname
+        print "Creating directory %s" % dirname
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
         self.mobilebackup2_send_status_response(0, "")
@@ -195,23 +193,17 @@ class MobileBackup2(MobileBackup):
                 if ord(stuff[0]) == CODE_FILE_DATA:
                     filedata += stuff[1:]
                 elif ord(stuff[0]) == CODE_SUCCESS:
-                    if not self.filter or self.filter(device_filename):
-                        print device_filename, ' passed filter ',backup_filename , len(filedata)
-                        self.write_file(self.check_filename(backup_filename), filedata)
+                    self.write_file(self.check_filename(backup_filename), filedata)
                     break
                 else:
-                    print "Unknown code", ord(stuff[0]), backup_filename
-                    self.write_file(self.check_filename(backup_filename), filedata)
+                    print "Unknown code", ord(stuff[0])
                     break
         self.mobilebackup2_send_status_response(0)
 
     def mb2_handle_move_files(self, msg):
         for k,v in msg[1].items():
             print "Renaming %s to %s"  % (self.check_filename(k),self.check_filename(v))
-            try:
-                os.rename(self.check_filename(k),self.check_filename(v))
-            except:
-                pass
+            os.rename(self.check_filename(k),self.check_filename(v))
         self.mobilebackup2_send_status_response(0)
 
     def mb2_handle_remove_files(self, msg):
@@ -220,7 +212,7 @@ class MobileBackup2(MobileBackup):
             try:
                 filename = self.check_filename(filename)
                 if os.path.isfile(filename):
-                    os.unlink(filename)
+                     os.unlink(filename)
             except Exception, e:
                 print e
         self.mobilebackup2_send_status_response(0)
@@ -229,17 +221,14 @@ class MobileBackup2(MobileBackup):
         while True:
             msg = self.mobilebackup2_receive_message()
             if not msg:
-                print 'no message!'
-                return 0
+                break
 
             assert(msg[0] in ["DLMessageDownloadFiles",
                     "DLContentsOfDirectory",
                     "DLMessageCreateDirectory",
                     "DLMessageUploadFiles",
-                    "DLMessageMoveFiles",
-                    "DLMessageMoveItems",
-                    "DLMessageRemoveFiles",
-                    "DLMessageRemoveItems",
+                    "DLMessageMoveFiles","DLMessageMoveItems",
+                    "DLMessageRemoveFiles", "DLMessageRemoveItems",
                     "DLMessageCopyItem",
                     "DLMessageProcessMessage",
                     "DLMessageGetFreeDiskSpace",
@@ -261,30 +250,22 @@ class MobileBackup2(MobileBackup):
                 self.mb2_handle_copy_item(msg)
             elif msg[0] == "DLMessageProcessMessage":
                 errcode = msg[1].get("ErrorCode")
-                if errcode in [0, 205]:
-                    m =  msg[1].get("MessageName", "")
+                if errcode == 0:
+                    m =  msg[1].get("MessageName")
                     if m != "Response":
                         print m 
-                    return 0
                 if errcode == 1:
-                    raise Exception("Please unlock your device and retry...")
-                if errcode == 211:
-                    raise Exception('Please go to Settings->iClould->Find My iPhone and disable it')
-                if errcode == 105:
-                    raise Exception('Not enough free space on device for restore')
-                if errcode == 17:
-                    raise Exception('please press \'trust this computer\' in your device')
-                if errcode == 102:
-                    raise Exception('Please reboot your device and try again')
-                raise Exception('Unknown error ' + str(errcode) + msg[1].get("ErrorDescription", ""))
+                    print msg[1].get("ErrorDescription")
+                    print "Please unlock your device and retry..."
+                break
             elif msg[0] == "DLMessageGetFreeDiskSpace":
                 self.mb2_handle_free_disk_space(msg)
             elif msg[0] == "DLMessageDisconnect":
-                return 0
+                break
   
     def create_status_plist(self,fullBackup=True):
         #Creating Status file for backup
-        statusDict = { 'UUID': str(uuid4).upper(), #FixMe We Should USE an UUID generator uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
+        statusDict = { 'UUID': '82D108D4-521C-48A5-9C42-79C5E654B98F', #FixMe We Should USE an UUID generator uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
                    'BackupState': 'new', 
                    'IsFullBackup': fullBackup, 
                    'Version': '2.4', 
@@ -302,26 +283,21 @@ class MobileBackup2(MobileBackup):
         
         self.create_info_plist()
 
-        options["ForceFullBackup"] = fullBackup
+        if fullBackup == True:
+            options["ForceFullBackup"] = True
         self.mobilebackup2_send_request("Backup", self.udid, options)
-        return self.work_loop()
+        self.work_loop()
     
 
     def restore(self, options = {"RestoreSystemFiles": True,
-                                "RestoreShouldReboot": True,
-                                "RestorePreserveCameraRoll": True,
-                                "RemoveItemsNotRestored": False,
+                                "RestoreShouldReboot": False,
                                 "RestoreDontCopyBackup": True,
                                 "RestorePreserveSettings": True},
 			password=None):
         
         print "Starting restoration..."
         m = os.path.join(self.backupPath,self.udid,"Manifest.plist")
-        try:
-            manifest = readPlist(m)
-        except IOError:
-            print 'not a valid backup folder'
-            return -1
+        manifest = readPlist(m)
         if manifest.get("IsEncrypted"):
             print "Backup is encrypted, enter password : "
             if password:
@@ -330,7 +306,7 @@ class MobileBackup2(MobileBackup):
                 self.password = raw_input()
             options["Password"] = self.password
         self.mobilebackup2_send_request("Restore", self.udid, self.udid, options)
-        return self.work_loop()
+        self.work_loop()
 
 
     def info(self,options={}):
@@ -349,10 +325,10 @@ class MobileBackup2(MobileBackup):
         return z
 
     def changepw(self,oldpw,newpw):
-        options = { "OldPassword" : oldpw,
+        options = { "OldPassword" : olpw,
                     "NewPassword" : newpw }
                     
-        self.mobilebackup2_send_request("ChangePassword", self.udid, "", options)
+        self.mobilebackup2_send_request("ChangePassword", self.udid, "")
         z = self.work_loop()
         if z:
             print z
@@ -377,19 +353,15 @@ if __name__ == "__main__":
                   help="Show backup info")
     parser.add_option("-l", "--list", dest="list", action="store_true", default=False,
                   help="Show backup info")
-    parser.add_option("-u", "--uuid", dest="uuid", action="store", default=None,
-                  help="uuid of device to backup/restore")
-    parser.add_option("-p", "--path", dest="path", action="store", default=None,
-                  help="path to backup/restore to")
     (options, args) = parser.parse_args()
     
-    lockdown = LockdownClient(options.uuid)
-    mb = MobileBackup2(lockdown, options.path)
+    lockdown = LockdownClient()
+    mb = MobileBackup2(lockdown)
     
-    if options.restore:
-        mb.restore()
-    elif options.backup:
+    if options.backup:
         mb.backup()
+    elif options.restore:
+        mb.restore()
     if options.info:
         mb.info()
     if options.list:
