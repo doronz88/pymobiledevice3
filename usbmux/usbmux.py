@@ -91,7 +91,7 @@ class BinaryProtocol(object):
 			devid = struct.unpack("I", payload)[0]
 			return {'DeviceID': devid}
 		else:
-			raise MuxError("Invalid incoming response type %d"%resp)
+			raise MuxError("Invalid incoming request type %d"%req)
 
 	def sendpacket(self, req, tag, payload={}):
 		payload = self._pack(req, payload)
@@ -228,7 +228,7 @@ class USBMux(object):
 			self.protoclass = PlistProtocol
 			self.version = 1
 		self.devices = self.listener.devices
-	def process(self, timeout=10):
+	def process(self, timeout=None):
 		self.listener.process(timeout)
 	def connect(self, device, port):
 		connector = MuxConnection(self.socketpath, self.protoclass)

@@ -24,6 +24,7 @@
 
 
 from plist_service import PlistService
+from pprint import pprint
 from ca import ca_do_everything
 from util import write_file, readHomeFile, writeHomeFile
 import os
@@ -32,7 +33,6 @@ import sys
 import uuid
 import platform
 import time
-from usbmux import usbmux
 
 
 class NotTrustedError(Exception):
@@ -73,23 +73,22 @@ class LockdownClient(object):
         self.SessionID = None
         self.c = PlistService(62078,udid)
         self.hostID = self.generate_hostID()
-        self.SystemBUID = self.generate_hostID()
         self.paired = False
         self.label = "pyMobileDevice"
         
-        assert self.queryType() == "com.apple.mobile.lockdown"
+	assert self.queryType() == "com.apple.mobile.lockdown"
 
         self.udid = self.getValue("", "UniqueDeviceID")
-        self.allValues = self.getValue()
-        self.UniqueChipID = self.allValues.get("UniqueChipID")
+        self.allValues = self.getValue("", "")
+	self.UniqueChipID = self.allValues.get("UniqueChipID")
         self.DevicePublicKey =  self.getValue("", "DevicePublicKey")
         self.identifier = self.udid
         if not self.identifier:
             if self.UniqueChipID:
                 self.identifier = "%x" % self.UniqueChipID
             else:
-#                 print "Could not get UDID or ECID, failing"
-                raise Exception("Could not get UDID or ECID, failing")
+                print "Could not get UDID or ECID, failing"
+                raise
 
         if not self.validate_pairing():
             self.pair()
@@ -133,8 +132,6 @@ class LockdownClient(object):
             folder = os.environ["ALLUSERSPROFILE"] + "/Apple/Lockdown/"
         elif sys.platform == "darwin":
             folder = "/var/db/lockdown/"
-        elif sys.platform == 'linux2':
-            folder = '/var/lib/lockdown/'
         try:
             pair_record = plistlib.readPlist(folder + "%s.plist" % self.identifier) 
         except:
@@ -157,7 +154,6 @@ class LockdownClient(object):
                 print "No  pymobiledevice pairing record found for device %s" % self.identifier
                 return False
 
-        self.record = pair_record
         ValidatePair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
         self.c = PlistService(62078,self.udid) 
         self.c.sendPlist(ValidatePair)
@@ -167,9 +163,7 @@ class LockdownClient(object):
             print "ValidatePair fail", ValidatePair
             return False
 
-        self.hostID = pair_record.get("HostID", self.hostID)
-        self.SystemBUID = pair_record.get("SystemBUID", self.SystemBUID)
-        d = {"Label": self.label, "Request": "StartSession", "HostID": self.hostID, 'SystemBUID': self.SystemBUID}
+        d = {"Label": self.label, "Request": "StartSession", "HostID": pair_record.get("HostID", self.hostID)}
         self.c.sendPlist(d)
         startsession = self.c.recvPlist() 
         self.SessionID = startsession.get("SessionID")
@@ -221,8 +215,6 @@ class LockdownClient(object):
     
     def getValue(self, domain=None, key=None):
 
-        if(isinstance(key, str) and hasattr(self, 'record') and hasattr(self.record, key)):
-            return self.record[key]
         req = {"Request":"GetValue", "Label": self.label}
         
         if domain:
@@ -250,7 +242,7 @@ class LockdownClient(object):
         self.c.sendPlist(req)
         res = self.c.recvPlist()
         print res
-        return res
+	return res
 
         
     def startService(self, name):
@@ -262,26 +254,9 @@ class LockdownClient(object):
         StartService = self.c.recvPlist()
         if not StartService or StartService.get("Error"):
             print StartService
-            raise StartServiceError
+	    raise StartServiceError
         return PlistService(StartService.get("Port"))
 
-    def startServiceWithEscrowBag(self, name, escrowBag = None):
-        if not self.paired:
-            print "NotPaired"
-            raise NotPairedError
-        
-        if (not escrowBag):
-            escrowBag = self.record['EscrowBag']
-        
-
-        self.c.sendPlist({"Label": self.label, "Request": "StartService", "Service": name, 'EscrowBag':escrowBag})
-        StartService = self.c.recvPlist()
-        if not StartService or StartService.get("Error"):
-            if StartService.get("Error", "") == 'PasswordProtected':
-                raise Exception('your device is protected with password, please enter password in device')
-            print StartService
-            raise StartServiceError
-        return PlistService(StartService.get("Port"))
 
 
 

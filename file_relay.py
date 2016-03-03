@@ -63,10 +63,10 @@ class FileRelay(object):
         else:
             self.lockdown = LockdownClient()
 
-        ProductVersion = self.lockdown.getValue("", "ProductVersion")
+	ProductVersion = self.lockdown.getValue("", "ProductVersion")
 
-        if ProductVersion[0] >= "8":
-            raise DeviceVersionNotSupported
+	if ProductVersion[0] >= "8":
+	    raise DeviceVersionNotSupported
 
         self.service = self.lockdown.startService(serviceName)
         self.packet_num = 0
@@ -119,10 +119,10 @@ if __name__ == "__main__":
 
     fc = None
     try:
-        fc = FileRelay()
+    	fc = FileRelay()
     except:
-        print "Device with product vertion >= 8.0 does not allow access to fileRelay service"
-        exit()
+	print "Device with product vertion >= 8.0 does not allow access to fileRelay service"
+	exit()
 
     data = fc.request_sources(sources)
 
