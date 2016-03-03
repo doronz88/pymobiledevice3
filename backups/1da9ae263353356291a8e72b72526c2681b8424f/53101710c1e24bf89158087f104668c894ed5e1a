@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>MSAssetMetadataDateContentCreated</key>
+	<date>2016-02-11T15:25:56Z</date>
+	<key>MSAssetMetadataDateContentModified</key>
+	<date>2016-02-11T15:25:56Z</date>
+	<key>MSAssetMetadataDeviceID</key>
+	<string>66030d6be9f5a57d82c32ee38539d86c1f588144</string>
+	<key>MSAssetMetadataFileSize</key>
+	<integer>681254</integer>
+	<key>MSAssetMetadataPixelHeight</key>
+	<integer>2590</integer>
+	<key>MSAssetMetadataPixelWidth</key>
+	<integer>1088</integer>
+	<key>MSAssetMetadataStreamIDKey</key>
+	<string>10076987111</string>
+	<key>isDerivedAsset</key>
+	<false/>
+	<key>k-filename</key>
+	<string>IMG_0009.JPG</string>
+	<key>kPLLocalMSMetadataAssetPLUUIDKey</key>
+	<string>7AE6445B-3E0A-4A6D-BF09-7579E40F4082</string>
+	<key>kPLPhotoStreamAssetCollectionUUID</key>
+	<string>C4287BE8-2162-4F91-BC67-ED427090EE78</string>
+	<key>kPLPhotoStreamDateCreatedKey</key>
+	<date>2016-02-11T15:25:56Z</date>
+	<key>kPLPhotoStreamMasterAssetHashKey</key>
+	<data>
+	AeKczK7k4u1X/iVqdfvVDHjKV8Jq
+	</data>
+	<key>kPLPhotoStreamMasterAssetMetadataKey</key>
+	<dict>
+		<key>MSAssetMetadataDateContentCreated</key>
+		<date>2016-02-11T15:25:56Z</date>
+		<key>MSAssetMetadataDateContentModified</key>
+		<date>2016-02-11T15:25:56Z</date>
+		<key>MSAssetMetadataDeviceID</key>
+		<string>66030d6be9f5a57d82c32ee38539d86c1f588144</string>
+		<key>MSAssetMetadataFileSize</key>
+		<integer>681254</integer>
+		<key>MSAssetMetadataPixelHeight</key>
+		<integer>2590</integer>
+		<key>MSAssetMetadataPixelWidth</key>
+		<integer>1088</integer>
+		<key>MSAssetMetadataStreamIDKey</key>
+		<string>10076987111</string>
+	</dict>
+	<key>kPLPhotoStreamModifiedDateKey</key>
+	<date>2016-02-11T15:25:56Z</date>
+	<key>kPLPhotoStreamServerUploadedDateKey</key>
+	<date>2016-02-11T15:36:53Z</date>
+</dict>
+</plist>

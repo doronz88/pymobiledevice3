@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>InstallDate</key>
+	<date>2016-02-16T17:49:32Z</date>
+	<key>InstallOptions</key>
+	<dict>
+		<key>filterFlag</key>
+		<integer>1</integer>
+		<key>signatureVersion</key>
+		<real>1</real>
+	</dict>
+	<key>MCProfileIsRemovalStub</key>
+	<true/>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PERSISTENT_REF</key>
+			<data>
+			aWRudAAAAAAAAADo
+			</data>
+			<key>PayloadDescription</key>
+			<string>Provides device authentication (certificate or identity).</string>
+			<key>PayloadDisplayName</key>
+			<string>NetSpark iOS filtered device</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.mgmt.External.56b75815-d1da-43fa-b92e-19824cae2c64.credential</string>
+			<key>PayloadOrganization</key>
+			<string>NetSpark LTD</string>
+			<key>PayloadType</key>
+			<string>com.apple.security.pkcs12</string>
+			<key>PayloadUUID</key>
+			<string>E7B651E3-AB6A-4036-A304-5E235C818BE2</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>UDID</key>
+			<string>1da9ae263353356291a8e72b72526c2681b8424f</string>
+		</dict>
+		<dict>
+			<key>PERSISTENT_REF</key>
+			<data>
+			Y2VydAAAAAAAAADp
+			</data>
+			<key>PayloadDescription</key>
+			<string>Provides device authentication (certificate or identity).</string>
+			<key>PayloadDisplayName</key>
+			<string>www.netspark.com</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.mgmt.External.56b75815-d1da-43fa-b92e-19824cae2c64.credential1</string>
+			<key>PayloadOrganization</key>
+			<string>NetSpark LTD</string>
+			<key>PayloadType</key>
+			<string>com.apple.security.root</string>
+			<key>PayloadUUID</key>
+			<string>BCCB259D-198F-4903-B2BE-500D1FFCFF3F</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>UDID</key>
+			<string>1da9ae263353356291a8e72b72526c2681b8424f</string>
+		</dict>
+		<dict>
+			<key>AccessRights</key>
+			<integer>8191</integer>
+			<key>CheckInURL</key>
+			<string>https://ios-mdm1.netsparkmobile.com:8080/checkin/?ip=10.1.54.165&amp;device_id=79514&amp;activation_code=VKSANM&amp;time=1455644947&amp;key=7a79676b1cfce3a1d2f4f139d24475d4&amp;env=pro</string>
+			<key>CheckOutWhenRemoved</key>
+			<true/>
+			<key>IdentityPersistentRef</key>
+			<data>
+			aWRudAAAAAAAAADo
+			</data>
+			<key>PayloadDescription</key>
+			<string>Configures Mobile Device Management</string>
+			<key>PayloadDisplayName</key>
+			<string>Mobile Device Management</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.mgmt.External.56b75815-d1da-43fa-b92e-19824cae2c64.mdm</string>
+			<key>PayloadOrganization</key>
+			<string>NetSpark LTD</string>
+			<key>PayloadType</key>
+			<string>com.apple.mdm</string>
+			<key>PayloadUUID</key>
+			<string>BD5A0BBA-0A7E-491B-83EA-781E9FC12EE2</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>ServerURL</key>
+			<string>https://ios-mdm1.netsparkmobile.com:8080/server</string>
+			<key>SignMessage</key>
+			<true/>
+			<key>Topic</key>
+			<string>com.apple.mgmt.External.56b75815-d1da-43fa-b92e-19824cae2c64</string>
+			<key>UseDevelopmentAPNS</key>
+			<false/>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>NetSpark Mobile filter profile</string>
+	<key>PayloadDisplayName</key>
+	<string>NetSpark MDM Profile - Production</string>
+	<key>PayloadIdentifier</key>
+	<string>com.apple.mgmt.External.56b75815-d1da-43fa-b92e-19824cae2c64</string>
+	<key>PayloadOrganization</key>
+	<string>NetSpark LTD</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>24D31E94-F8E8-4E6E-86C5-B969A0234F58</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+	<key>ProductBuildVersion</key>
+	<string>13B143</string>
+	<key>ProductVersion</key>
+	<string>9.1</string>
+	<key>ProfileWasEncrypted</key>
+	<false/>
+</dict>
+</plist>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.news</key>
+	<dict>
+		<key>clientRestrictions</key>
+		<dict>
+			<key>restrictedBool</key>
+			<dict>
+				<key>allowNews</key>
+				<dict>
+					<key>preference</key>
+					<false/>
+					<key>value</key>
+					<false/>
+				</dict>
+			</dict>
+			<key>union</key>
+			<dict>
+				<key>blacklistedAppBundleIDs</key>
+				<dict>
+					<key>values</key>
+					<array>
+						<string>com.apple.news</string>
+					</array>
+				</dict>
+			</dict>
+		</dict>
+		<key>clientType</key>
+		<string>com.apple.news</string>
+		<key>compliant</key>
+		<true/>
+		<key>localizedClientDescription</key>
+		<string>News</string>
+	</dict>
+</dict>
+</plist>

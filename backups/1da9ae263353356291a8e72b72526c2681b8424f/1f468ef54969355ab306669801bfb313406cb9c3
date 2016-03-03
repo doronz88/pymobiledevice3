@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>InstallDate</key>
+	<date>2016-02-15T12:09:50Z</date>
+	<key>InstallOptions</key>
+	<dict>
+		<key>filterFlag</key>
+		<integer>1</integer>
+		<key>isCloudLocked</key>
+		<false/>
+		<key>isCloudProfile</key>
+		<false/>
+		<key>signatureVersion</key>
+		<real>1.0</real>
+	</dict>
+	<key>MCProfileIsRemovalStub</key>
+	<true/>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PERSISTENT_REF</key>
+			<data>
+			Y2VydAAAAAAAAAC8
+			</data>
+			<key>PayloadDisplayName</key>
+			<string>NetSpark MDM CA</string>
+			<key>PayloadIdentifier</key>
+			<string>4447b349782e25415129db3f0bca540380b8becea</string>
+			<key>PayloadType</key>
+			<string>com.apple.security.pem</string>
+			<key>PayloadUUID</key>
+			<string>6D524BE1-C2B0-4BD4-B0BF-D84675C50CF8</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>UDID</key>
+			<string>1da9ae263353356291a8e72b72526c2681b8424f</string>
+		</dict>
+		<dict>
+			<key>PayloadDescription</key>
+			<string>Configures a password for profile removal</string>
+			<key>PayloadDisplayName</key>
+			<string>Profile Removal</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.profileRemovalPassword.71B918A5-C13E-4904-BF36-054C5F7059C4</string>
+			<key>PayloadType</key>
+			<string>com.apple.profileRemovalPassword</string>
+			<key>PayloadUUID</key>
+			<string>71B918A5-C13E-4904-BF36-054C5F7059C4</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>RemovalPassword</key>
+			<string>1234</string>
+		</dict>
+	</array>
+	<key>PayloadDisplayName</key>
+	<string>NetSpark MDM CA</string>
+	<key>PayloadIdentifier</key>
+	<string>4447b349782e25415129db3f0bca540380b8becea</string>
+	<key>PayloadType</key>
+	<string>CertificateWrapper</string>
+	<key>PayloadUUID</key>
+	<string>70FD86C7-B541-43E6-9FF6-231E9DE36851</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+	<key>ProductBuildVersion</key>
+	<string>13B143</string>
+	<key>ProductVersion</key>
+	<string>9.1</string>
+	<key>ProfileWasEncrypted</key>
+	<false/>
+	<key>SignerCerts</key>
+	<array>
+		<data>
+		MIIDcTCCAlmgAwIBAgIJANZgIiGAkcCDMA0GCSqGSIb3DQEBCwUAME8xCzAJ
+		BgNVBAYTAklMMQ8wDQYDVQQIDAZJc3JhZWwxFTATBgNVBAoMDE5ldFNwYXJr
+		IExURDEYMBYGA1UEAwwPTmV0U3BhcmsgTURNIENBMB4XDTE1MDcxOTE2MTM1
+		N1oXDTE2MDcxODE2MTM1N1owTzELMAkGA1UEBhMCSUwxDzANBgNVBAgMBklz
+		cmFlbDEVMBMGA1UECgwMTmV0U3BhcmsgTFREMRgwFgYDVQQDDA9OZXRTcGFy
+		ayBNRE0gQ0EwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCgc4S3
+		pDc7dKidmIdsUcOf/5Guver0BIp9nEW6ejXHoReHUbe7n821NAac+oNJ2pza
+		mHEdNs8r97AutMW9qTCOLXiJ4+03CZ4297KF44zJRiZXbOfRdGY7op8ZdWO3
+		N0wiD8hwsr2k2WnJxRieocwDg+nlJEM6VYcft7piMwcDKn+PFqFCqSaJXS2H
+		yk+xstUOpzjaRG7nElmGFkv5NAsvXPVsEdIDNXC5MLCFFh0hw5c1FL4+3QzH
+		DBmsWHTVfjs+juPl3028TDIKapk/5pyk9zl9miTLxtWNGMnNQVRwrJct6KMN
+		uAp1hS77BOo8wfmFws6puhpoFzlCtthoc7dTAgMBAAGjUDBOMB0GA1UdDgQW
+		BBSXdrFZiAM93wZlOg28O+cEpuEZBzAfBgNVHSMEGDAWgBSXdrFZiAM93wZl
+		Og28O+cEpuEZBzAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQBv
+		cB8HVLFiT4t5a7nrc6ZlafQoMPAzapHkfXp0l9N4+JKlUdMbmP+gh3FuatL5
+		rW68u7eVupY8Rq3bFrwdUQAADH84YYg7r14K122ZUw6PSlThRJxWhKtj9tg2
+		zj4iZODXUmW+A2rvjoxteq1mI6dBn1xGFYvkWF7lpn+IUVZhhKQBKn4OJT6k
+		QI4H5dap+BVbJZ+F0ZqB4wiKmtCUUET9qCKW6Z3Fj0NEBXWIfg1o4jLyQuAU
+		71XCKMiMGTLtnOnvWkTZmxxMKyZpXOxu6GdZKwKdVCS4iK9s/pyFjX6XR2SC
+		SeRC1AhGkJIKu/pwsYi/32LU0OhRkWOEtCyhXkLl
+		</data>
+	</array>
+</dict>
+</plist>

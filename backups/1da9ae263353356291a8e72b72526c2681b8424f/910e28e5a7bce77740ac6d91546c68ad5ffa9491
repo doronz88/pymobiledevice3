@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BBSectionOrderDefaultIDs</key>
+	<array>
+		<string>com.apple.weathernotifications.bundle</string>
+		<string>com.apple.mobiletimer</string>
+		<string>com.apple.mobilephone</string>
+		<string>com.apple.MobileSMS</string>
+		<string>com.apple.Passbook</string>
+		<string>com.apple.reminders</string>
+		<string>com.apple.mobilecal</string>
+		<string>com.apple.mobileslideshow</string>
+		<string>com.apple.gamecenter</string>
+		<string>com.apple.mobilemail</string>
+		<string>com.apple.cmas</string>
+		<string>com.apple.mobilecal.today</string>
+		<string>com.apple.Preferences</string>
+		<string>com.apple.AppStore</string>
+		<string>com.apple.facetime</string>
+		<string>com.apple.SocialBulletinBoardProvider</string>
+		<string>com.apple.weather.today</string>
+		<string>net.whatsapp.WhatsApp</string>
+		<string>com.apple.AirDrop</string>
+		<string>com.apple.tips</string>
+		<string>com.apple.family</string>
+		<string>com.apple.CoreRoutine</string>
+		<string>com.apple.DuetHeuristic-BM</string>
+		<string>com.apple.Maps</string>
+		<string>com.apple.CarPlay</string>
+		<string>com.apple.followup</string>
+		<string>com.apple.passbook.general</string>
+		<string>com.google.hangouts</string>
+	</array>
+	<key>SectionOrderRule</key>
+	<integer>2</integer>
+</dict>
+</plist>

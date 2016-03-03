@@ -1,0 +1,119 @@
+2016-01-31 14:46:11.285 [B] [main-thread] LL_A* application/notification/UIApplicationSceneOcclusionChangedNotification: {
+LL_A     isBackgrounded = 1;
+LL_A     isCarDisplay = 0;
+LL_A     isOccluded = 0;
+LL_A     scene = "<FBSSceneImpl: 0x13461e030; identifier: net.whatsapp.WhatsApp; valid: YES> {\n    settings = <UIMutableApplicationSceneSettings: 0x13454cfa0> {\n        frame = {{0, 0}, {320, 568}};\n        level = 1.0;\n        interfaceOrientation = portrait;\n        backgrounded = YES;\n        otherSettings = <BSMutableSettings: 0x13450d580> {\n            deviceOrientationEventsEnabled = YES;\n        };\n    };\n    clientSettings = <UIMutableApplicationSceneClientSettings: 0x13461...
+2016-01-31 14:46:11.285 [B] [main-thread] LL_A* appdelegate/device-unlocked
+2016-01-31 14:46:11.285 [B] [main-thread] LL_A* appdelegate/chat-database-unlocked
+2016-01-31 14:46:11.285 [B] [main-thread] LL_A* appdelegate/protected-data-available/1
+2016-01-31 14:46:11.285 [B] [main-thread] LL_A* appdata/app-group: file:///private/var/mobile/Containers/Shared/AppGroup/FAD8FD11-D19A-4B64-A0D5-9E1A60836DAC/
+2016-01-31 14:46:11.285 [B] [main-thread] LL_N* asyncsocket/random/host/e12.whatsapp.net.
+2016-01-31 14:46:11.285 [B] [main-thread] LL_N* asyncsocket/random/host/e9.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e11.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e8.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e4.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e15.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e7.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e5.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e6.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e13.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e16.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e3.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e10.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e1.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e14.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [main-thread] LL_N* asyncsocket/random/host/e2.whatsapp.net.
+2016-01-31 14:46:11.286 [B] [xmpp] LL_A  connection/p/0
+2016-01-31 14:46:11.286 [B] [xmpp] LL_A  Reachability flags: [WR t------]
+LL_A 
+2016-01-31 14:46:11.286 [B] [xmpp] LL_A  connection/reachability/changed: Unknown->GPRS [status: None]
+2016-01-31 14:46:11.287 [B] [main-thread] LL_A* serverprops/default
+2016-01-31 14:46:11.260 WhatsApp[168:2224] *** -[NSKeyedUnarchiver initForReadingWithData:]: data is NULL
+2016-01-31 14:46:13.194 [B] [main-thread] LL_A* url-session/add-session: net.whatsapp.WhatsApp
+2016-01-31 14:46:13.299 [B] [xmpp] LL_A  Reachability flags: [-R tc-----]
+LL_A 
+2016-01-31 14:46:13.299 [B] [xmpp] LL_A  connection/reachability/changed: GPRS->None [status: None]
+2016-01-31 14:46:13.299 [B] [main-thread] LL_A* url-session/add-session: main
+2016-01-31 14:46:13.299 [B] [bgtask] LL_A  background-task/start/main/1
+2016-01-31 14:46:13.300 [B] [xmpp] LL_W  connection/check/denied: no jid
+2016-01-31 14:46:13.318 [B] [xmpp] LL_A  Reachability flags: [WR t-----d]
+LL_A 
+2016-01-31 14:46:13.318 [B] [xmpp] LL_A  connection/reachability/changed: None->GPRS [status: None]
+2016-01-31 14:46:13.318 [B] [main-thread] LL_A* application/finished-launching (badge = 0, state = 2)
+2016-01-31 14:46:13.318 [B] [main-thread] LL_A* backup/auto/settings//frequency/loaded (off)
+2016-01-31 14:46:13.318 [B] [default-qos] LL_A  file-mgr/purge/start
+2016-01-31 14:46:13.318 [B] [main-thread] LL_A* backup/manager/status/upload/create
+2016-01-31 14:46:13.318 [B] [default-qos] LL_A  file-mgr/purge/end
+2016-01-31 14:46:13.318 [B] [main-thread] LL_A* fieldstats/read-record/eof
+2016-01-31 14:46:13.318 [B] [main-thread] LL_A* webclient/last-session/none
+2016-01-31 14:46:13.318 [B] [main-thread] LL_A* axolotl/store/load/finish time=[0.021]
+2016-01-31 14:46:13.318 [B] [main-thread] LL_A* axolotl/identity/key/serialize/result/0
+2016-01-31 14:46:13.318 [B] [main-thread] LL_A* axolotl/identity/key/serialize/result/0
+2016-01-31 14:46:13.319 [B] [main-thread] LL_A* axolotl/identity/loaded (registered=0)
+2016-01-31 14:46:13.319 [B] [default-qos] LL_A  
+LL_A Device: iPhone 5s 
+LL_A System: iPhone OS 9.1 (13B143) 
+LL_A WhatsApp version: 2.12.13 
+LL_A Carrier name: Cellcom 
+LL_A Mobile country code: 425 
+LL_A Mobile network code: 002 
+LL_A Language: he-IL 
+LL_A Locale: IL 
+LL_A Phone number: (null) (null) 
+LL_A JID: none 
+LL_A Time zone: Local Time Zone (Asia/Jerusalem (GMT+2) offset 7200) [+2.0] 
+LL_A Uptime: 0.000 days 
+LL_A Accessibility: VoiceOver [0], Invert colors [0], Bold text [0], Darker colors [0]
+2016-01-31 14:46:13.319 [B] [default-qos] LL_A  ap1: flags=8802 < broadcast simplex multicast > | link addr=02:00:00:00:00:00
+2016-01-31 14:46:13.319 [B] [default-qos] LL_A  awdl0: flags=8843 < up broadcast running simplex multicast > | link addr=02:00:00:00:00:00 | ipv6 ip=fe80::4f3:74ff:fe8a:cf6c/netmask=ffff:ffff:ffff:ffff::
+2016-01-31 14:46:13.319 [B] [default-qos] LL_A  en0: flags=8863 < up broadcast running simplex multicast > | link addr=02:00:00:00:00:00
+2016-01-31 14:46:13.319 [B] [default-qos] LL_A  en1: flags=8863 < up broadcast running simplex multicast > | link addr=02:00:00:00:00:00
+2016-01-31 14:46:13.319 [B] [default-qos] LL_A  ipsec0: flags=8051 < up ptp running multicast > | link addr=none | ipv4 ip=10.254.54.165/netmask=255.0.0.0
+2016-01-31 14:46:13.319 [B] [default-qos] LL_A  lo0: flags=8049 < up loopback running multicast > | link addr=none | ipv6 ip=::1/netmask=ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff | ipv4 ip=127.0.0.1/netmask=255.0.0.0 | ipv6 ip=fe80::1/netmask=ffff:ffff:ffff:ffff::
+2016-01-31 14:46:13.320 [B] [default-qos] LL_A  pdp_ip0: flags=8051 < up ptp running multicast > | link addr=none | ipv4 ip=10.160.33.37/netmask=255.255.255.255
+2016-01-31 14:46:13.320 [B] [default-qos] LL_A  pdp_ip1: flags=8010 < ptp multicast > | link addr=none
+2016-01-31 14:46:13.320 [B] [default-qos] LL_A  pdp_ip2: flags=8010 < ptp multicast > | link addr=none
+2016-01-31 14:46:13.320 [B] [default-qos] LL_A  pdp_ip3: flags=8010 < ptp multicast > | link addr=none
+2016-01-31 14:46:13.321 [B] [default-qos] LL_A  pdp_ip4: flags=8010 < ptp multicast > | link addr=none
+2016-01-31 14:46:13.321 [B] [Cloud Backup Manager] LL_A  backup/manager/ubiquity/loaded=0 (0.317 sec)
+2016-01-31 14:46:13.326 [B] [main-thread] LL_A* ChatStorage.sqlite size: 204.8 KB
+2016-01-31 14:46:13.328 [B] [main-thread] LL_A* ChatSearch.sqlite size: 32.8 KB
+2016-01-31 14:46:13.329 [B] [main-thread] LL_A* Contacts.sqlite size: 110.6 KB
+2016-01-31 14:46:13.329 [B] [main-thread] LL_A* Disk space available: 10,897.4 MB
+2016-01-31 14:46:13.329 [B] [main-thread] LL_A* coredata/loadstore/finish time=[0.072]
+2016-01-31 14:46:13.329 [B] [main-thread] LL_A* JID not found - exiting
+2016-01-31 14:46:13.329 [B] [main-thread] LL_N* Testing network connection...
+2016-01-31 14:46:13.329 [B] [main-thread] LL_N* Reachable Via Carrier Data Network.
+2016-01-31 14:46:13.329 [B] [main-thread] LL_A* verification-controller/create
+2016-01-31 14:46:13.329 [B] [addressbook] LL_A  syncmanager/request-full when=[(null)]
+2016-01-31 14:46:13.338 [B] [main-thread] LL_W* appdelegate/shortcut-items/reset/no-tabbar
+2016-01-31 14:46:13.339 [B] [main-thread] LL_W* appdelegate/shortcut-items/reset/no-tabbar
+2016-01-31 14:46:13.339 [B] [main-thread] LL_A* appdel/finished-launching/done [2.08]
+2016-01-31 14:46:13.497 WhatsApp[168:2133] Can't find keyplane that supports type 4 for keyboard iPhone-Portrait-NumberPad; using 563160167_Portrait_iPhone-Simple-Pad_Default
+error in __connection_block_invoke_2: Connection interrupted
+2016-01-31 14:46:16.029 [B] [main-thread] LL_A* VoIP stack:      wa_call.c  wa_call_set_network_medium Cellular
+LL_A 
+2016-01-31 14:46:16.030 [B] [main-thread] LL_A* VoIP stack:      wa_call.c  wa_call_set_network_medium Cellular
+LL_A 
+2016-01-31 14:46:16.030 [B] [main-thread] LL_A* url-session/main/restoring-taskdata/count/0
+2016-01-31 14:46:16.030 [B] [main-thread] LL_A* url-session/session/net.whatsapp.WhatsApp/get-tasks/upload/0/download/0
+2016-01-31 14:46:16.030 [B] [main-thread] LL_A* VoIP stack:      wa_call.c  wa_call_set_network_medium Cellular
+LL_A 
+2016-01-31 14:46:16.031 [B] [main-thread] LL_A* coredata/moc/main/create moc=[<NSManagedObjectContext: 0x1347f87c0>]
+2016-01-31 14:46:16.037 [B] [main-thread] LL_A* taskmanager/paused
+2016-01-31 14:46:16.037 [B] [main-thread] LL_A* taskmanager/battery/power-save/on [0.17 | 1]
+2016-01-31 14:46:16.037 [B] [main-thread] LL_A* taskmanager/low-power-mode/off
+2016-01-31 14:46:16.038 [B] [main-thread] LL_A* chatstorage/orphaned-messages/count: 0 [time: 0.001659]
+2016-01-31 14:46:16.043 [B] [main-thread] LL_A* appdelegate/address-book/access-request/application-inactive
+2016-01-31 14:46:16.046 [B] [main-thread] LL_A* app/background/resumed/reason: 0
+2016-01-31 14:46:16.056 [B] [main-thread] LL_A* app/audio-volume: 0.000000
+2016-01-31 14:46:16.964 [B] [main-thread] LL_N* Testing network connection...
+2016-01-31 14:46:16.964 [B] [main-thread] LL_N* Reachable Via Carrier Data Network.
+2016-01-31 14:46:16.964 [B] [main-thread] LL_N* Testing network connection...
+2016-01-31 14:46:16.964 [B] [main-thread] LL_N* Reachable Via Carrier Data Network.
+2016-01-31 14:46:16.965 [B] [main-thread] LL_N* Testing network connection...
+2016-01-31 14:46:16.965 [B] [main-thread] LL_N* Reachable Via Carrier Data Network.
+2016-01-31 14:46:16.965 [B] [bgtask] LL_A  app/will-suspend
+2016-01-31 14:46:16.973 [B] [main-thread] LL_A* app/background/disconnecting...
+2016-01-31 14:46:16.973 [B] [main-thread] LL_A* app/background/disconnected
+2016-01-31 14:46:16.977 [B] [bgtask] LL_A  app/background-task-ended: 1 [176.810 sec remaining]

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>HiddenProfiles</key>
+	<array>
+		<string>com.apple.Cellcom_il</string>
+	</array>
+	<key>OrderedProfiles</key>
+	<array>
+		<string>d5efc9d4a98c4d8b10bbab9312a327a0379bab48a</string>
+		<string>db22edc8fccdf845b29600947f466ee8525c6d42a</string>
+		<string>com.apple.mgmt.External.56b75815-d1da-43fa-b92e-19824cae2c64</string>
+	</array>
+</dict>
+</plist>

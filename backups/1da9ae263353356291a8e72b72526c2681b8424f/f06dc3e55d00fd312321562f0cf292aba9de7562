@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>InstallDate</key>
+	<date>2016-02-18T12:32:34Z</date>
+	<key>InstallOptions</key>
+	<dict>
+		<key>filterFlag</key>
+		<integer>1</integer>
+		<key>isInstalledByMDM</key>
+		<true/>
+		<key>managingProfileIdentifier</key>
+		<string>com.apple.mgmt.External.56b75815-d1da-43fa-b92e-19824cae2c64</string>
+		<key>signatureVersion</key>
+		<real>1</real>
+	</dict>
+	<key>MCProfileIsRemovalStub</key>
+	<true/>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PERSISTENT_REF</key>
+			<data>
+			aWRudAAAAAAAAAEC
+			</data>
+			<key>PayloadDescription</key>
+			<string>Provides device authentication (certificate or identity).</string>
+			<key>PayloadDisplayName</key>
+			<string>79514_1da9ae263353356291a8e72b72526c2681b8424f</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.mgmt.External.16b9f831-6faf-496d-85c8-423eec14e306.credential1</string>
+			<key>PayloadOrganization</key>
+			<string>NetSpark LTD</string>
+			<key>PayloadType</key>
+			<string>com.apple.security.pkcs12</string>
+			<key>PayloadUUID</key>
+			<string>5AB69FA8-82DC-40A1-AFE1-9AAD9BC2F669</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>UDID</key>
+			<string>1da9ae263353356291a8e72b72526c2681b8424f</string>
+		</dict>
+		<dict>
+			<key>PERSISTENT_REF</key>
+			<data>
+			Y2VydAAAAAAAAAED
+			</data>
+			<key>PayloadDescription</key>
+			<string>Provides device authentication (certificate or identity).</string>
+			<key>PayloadDisplayName</key>
+			<string>MDM Netspark CA2</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.mgmt.External.16b9f831-6faf-496d-85c8-423eec14e305.credential2</string>
+			<key>PayloadOrganization</key>
+			<string>NetSpark LTD</string>
+			<key>PayloadType</key>
+			<string>com.apple.security.root</string>
+			<key>PayloadUUID</key>
+			<string>F26D5B90-C80A-42A6-BAD6-CC634AEDA823</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>UDID</key>
+			<string>1da9ae263353356291a8e72b72526c2681b8424f</string>
+		</dict>
+		<dict>
+			<key>PayloadDescription</key>
+			<string>Configures VPN settings, including authentication.</string>
+			<key>PayloadDisplayName</key>
+			<string>VPN (Netspark Mobile VPN)</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.mgmt.External.16b9f831-6faf-496d-85c8-423eec14e306.vpn</string>
+			<key>PayloadOrganization</key>
+			<string>NetSpark LTD</string>
+			<key>PayloadType</key>
+			<string>com.apple.vpn.managed</string>
+			<key>PayloadUUID</key>
+			<string>00EAF74E-AEBA-4F9D-B39A-B1B94F531DDA</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>PersistentResourceID</key>
+			<string>CCC5C992-E2DE-48A7-808B-00002C92ADE2</string>
+			<key>ServiceName</key>
+			<string>Netspark Mobile VPN standalone</string>
+			<key>VPNType</key>
+			<string>IPSec</string>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>NetSpark Mobile VPN filtering profile</string>
+	<key>PayloadDisplayName</key>
+	<string>NetSpark VPN Profile standalone</string>
+	<key>PayloadIdentifier</key>
+	<string>com.netspark.4FB33593-2A8E-49C1-9092-99A00982E005</string>
+	<key>PayloadOrganization</key>
+	<string>NetSpark LTD</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>527F2771-AC14-4D4C-AFCE-EA3E2F7BDDF7</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+	<key>ProductBuildVersion</key>
+	<string>13B143</string>
+	<key>ProductVersion</key>
+	<string>9.1</string>
+	<key>ProfileWasEncrypted</key>
+	<false/>
+</dict>
+</plist>
