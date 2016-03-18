@@ -21,36 +21,55 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 #
-
+import os
 from lockdown import LockdownClient
 from pprint import pprint
 from afc import AFCClient, AFCShell
 from optparse import OptionParser
-import os
 
-class HouseArrestAFCClient(AFCClient):
 
-    def __init__(self, bid, sandbox="VendContainer", lockdown=None):
+class HouseArrestClient(AFCClient):
+
+    def __init__(self, lockdown=None,serviceName="com.apple.mobile.house_arrest", service=None):
+        self.serviceName = serviceName
         self.lockdown = lockdown if lockdown else LockdownClient()
-        service = self.lockdown.startService("com.apple.mobile.house_arrest") 
-    	res = service.sendRequest({"Command": sandbox, "Identifier": bid})
-        super(HouseArrestAFCClient, self).__init__(self.lockdown, service=service)
+        self.service = service if service else self.lockdown.startService(self.serviceName)
+
+    def stop_session(self):
+        print "Disconecting..."
+        self.service.close()
+
+    def send_command(self, applicationId, cmd="VendDocuments"):
+        self.service.sendPlist({"Command": cmd, "Identifier": applicationId})
+        res = self.service.recvPlist()
+
+        if res.get("Error"):
+            print res["Error"]
+            return None
+
+    def shell(self,applicationId,cmd="VendDocuments"):
+        res = self.send_command(applicationId, cmd="VendDocuments")
+        if res:
+            AFCShell(client=self.service).cmdloop()
+
 
 if __name__ == "__main__":
     parser = OptionParser(usage="%prog -a  applicationId")
     parser.add_option("-a", "--application", dest="applicationId", default=False,
                   help="Application ID <com.apple.iBooks>", type="string")
-    parser.add_option("-s", "--sandbox", dest="sandbox", default=False,
-                  help="House_Arrest sandbox (VendContainer, VendDocuments): ", type="string")
+    parser.add_option("-c", "--command", dest="cmd", default=False,
+                  help="House_Arrest commands: ", type="string")
 
     (options, args) = parser.parse_args()
-    
-    if not options.applicationId:
-	parser.error("Application ID not specify")
-    elif options.applicationId and options.sandbox:
-	h =  HouseArrestAFCClient(options.applicationId, sandbox=options.sandbox)
-    	AFCShell(client=h).cmdloop()
+    h = HouseArrestClient()
+    if options.cmd:
+        h.shell(options.applicationId)
     else:
-	h =  HouseArrestAFCClient(options.applicationId)
-    	AFCShell(client=h).cmdloop()
-    
+        h.shell(options.applicationId, cmd=options.cmd)
+
+
+
+
+
+
+
