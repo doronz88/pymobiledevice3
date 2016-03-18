@@ -22,17 +22,19 @@
 #
 #
 
-
-from plist_service import PlistService
-from pprint import pprint
-from ca import ca_do_everything
-from util import write_file, readHomeFile, writeHomeFile
 import os
 import plistlib
 import sys
 import uuid
 import platform
 import time
+
+from plist_service import PlistService
+from pprint import pprint
+from ca import ca_do_everything
+from util import write_file, readHomeFile, writeHomeFile
+from usbmux import usbmux
+
 
 
 class NotTrustedError(Exception):
@@ -48,7 +50,8 @@ class CannotStopSessionError(Exception):
     pass
 
 class StartServiceError(Exception):
-    pass
+    def __init__(self, message):
+        print "[ERROR] %s" % message
 
 class FatalPairingError(Exception):
     pass
@@ -73,14 +76,15 @@ class LockdownClient(object):
         self.SessionID = None
         self.c = PlistService(62078,udid)
         self.hostID = self.generate_hostID()
+        self.SystemBUID = self.generate_hostID()
         self.paired = False
         self.label = "pyMobileDevice"
 
-	assert self.queryType() == "com.apple.mobile.lockdown"
+        assert self.queryType() == "com.apple.mobile.lockdown"
 
         self.udid = self.getValue("", "UniqueDeviceID")
-        self.allValues = self.getValue("", "")
-	self.UniqueChipID = self.allValues.get("UniqueChipID")
+        self.allValues = self.getValue()
+        self.UniqueChipID = self.allValues.get("UniqueChipID")
         self.DevicePublicKey =  self.getValue("", "DevicePublicKey")
         self.identifier = self.udid
         if not self.identifier:
@@ -94,7 +98,7 @@ class LockdownClient(object):
             self.pair()
             if not self.validate_pairing():
                 raise FatalPairingError
-        self.paired = True
+            self.paired = True
         return
 
     def queryType(self):
@@ -166,7 +170,9 @@ class LockdownClient(object):
             print "ValidatePair fail", ValidatePair
             return False
 
-        d = {"Label": self.label, "Request": "StartSession", "HostID": pair_record.get("HostID", self.hostID)}
+        self.hostID = pair_record.get("HostID", self.hostID)
+        self.SystemBUID = pair_record.get("SystemBUID", self.SystemBUID)
+        d = {"Label": self.label, "Request": "StartSession", "HostID": self.hostID, 'SystemBUID': self.SystemBUID}
         self.c.sendPlist(d)
         startsession = self.c.recvPlist()
         self.SessionID = startsession.get("SessionID")
@@ -219,6 +225,9 @@ class LockdownClient(object):
 
     def getValue(self, domain=None, key=None):
 
+        if(isinstance(key, str) and hasattr(self, 'record') and hasattr(self.record, key)):
+            return self.record[key]
+
         req = {"Request":"GetValue", "Label": self.label}
 
         if domain:
@@ -246,7 +255,7 @@ class LockdownClient(object):
         self.c.sendPlist(req)
         res = self.c.recvPlist()
         print res
-	return res
+        return res
 
 
     def startService(self, name):
@@ -257,11 +266,23 @@ class LockdownClient(object):
         self.c.sendPlist({"Label": self.label, "Request": "StartService", "Service": name})
         StartService = self.c.recvPlist()
         if not StartService or StartService.get("Error"):
-            print StartService
-	    raise StartServiceError
+            raise StartServiceError(StartService.get("Error"))
         return PlistService(StartService.get("Port"))
 
 
+    def startServiceWithEscrowBag(self, name, escrowBag = None):
+        if not self.paired:
+            print "NotPaired"
+            raise NotPairedError
+
+        if (not escrowBag):
+            escrowBag = self.record['EscrowBag']
+
+        self.c.sendPlist({"Label": self.label, "Request": "StartService", "Service": name, 'EscrowBag':plistlib.Data(escrowBag)})
+        StartService = self.c.recvPlist()
+        if not StartService or StartService.get("Error"):
+            raise StartServiceError(StartService.get("Error"))
+        return PlistService(StartService.get("Port"))
 
 
 if __name__ == "__main__":
@@ -271,3 +292,4 @@ if __name__ == "__main__":
         print "Wrote infos to %s" % n
     else:
         print "Unable to connect to device"
+
