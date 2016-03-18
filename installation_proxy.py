@@ -23,15 +23,9 @@
 #
 
 from lockdown import LockdownClient
-from pprint import pprint
-from afc import AFCClient, AFCShell
 from optparse import OptionParser
-from house_arrest import HouseArrestAFCClient
-from util import read_file, write_file, hexdump, readPlist, parsePlist
-from biplist import writePlist,  Data
-import tempfile
 import os
-from time import sleep
+from afc import AFC2Client
 
 
 client_options = {
@@ -52,7 +46,7 @@ class installation_proxy(object):
         else:
             self.lockdown = LockdownClient()
 
-	self.service = self.lockdown.startService("com.apple.mobile.installation_proxy")
+        self.service = self.lockdown.startService("com.apple.mobile.installation_proxy")
 
 
     def watch_completion(self,handler=None,*args):
@@ -62,47 +56,48 @@ class installation_proxy(object):
                 break
             completion = z.get("PercentComplete")
             if completion:
-		if handler:
+                if handler:
                     print "calling handler"
-		    handler(completion,*args)	
+                    handler(completion,*args)
                 print "%s %% Complete" % z.get("PercentComplete")
             if z.get("Status") == "Complete":
                 return z.get("Status")
-	return "Error"
+        return "Error"
 
     def send_cmd_for_bid(self,bundleID, cmd="Archive", options=None, handler=None, *args):
         cmd = {"Command": cmd, "ApplicationIdentifier": bundleID }
         if options:
-	    cmd.update(options) 
+            cmd.update(options) 
         self.service.sendPlist(cmd)
-	print "%s : " % (cmd, bundleID)
-	print "%s : %s\n" % (cmd, self.watch_completion(handler, *args))
+        print "%s : " % (cmd, bundleID)
+        print "%s : %s\n" % (cmd, self.watch_completion(handler, *args))
                 
 
     def uninstall(self,bundleID, options=None, handler=None, *args):
         self.send_cmd_for_bid(bundleID, "Uninstall", options, handler, args)
 
     def install_or_upgrade(self, ipaPath, cmd="Install", options=None, handler=None, *args):
-        afc = AFC(self.lockdown)
+        afc = AFC2Client(self.lockdown)
         afc.set_file_contents("/" + os.path.basename(ipaPath), open(ipaPath,"rb").read())
         cmd = {"Command":cmd, "PackagePath": os.path.basename(ipaPath)}
         if options:
-	    cmd.update(options) 
+            cmd.update(options) 
         self.service.sendPlist(cmd)
-	print "%s : " % (cmd, bundleID)
-	print "%s : %s\n" % (cmd, self.watch_completion(handler, args))
+#         print "%s : " % (cmd, bundleID)
+        print "%s : %s\n" % (cmd, self.watch_completion(handler, args))
 
 
     def install(self,ipaPath, options=None, handler=None, *args):
-        return install_or_upgrade(ipaPath, "Install", client_options, handler, args)
+        return self.install_or_upgrade(ipaPath, "Install", client_options, handler, args)
 
 
     def upgrade(self,ipaPath, options=None, handler=None, *args):
-        return install_or_upgrade(ipaPath, "Upgrade", client_options, handler, args)
+        return self.install_or_upgrade(ipaPath, "Upgrade", client_options, handler, args)
 
 
     def apps_info(self):
-        return self.service.sendRequest({"Command": "Lookup"}).get("LookupResult")
+        self.service.sendPlist({"Command": "Lookup"})
+        return self.service.recvPlist().get('LookupResult')
 
 
     def archive(self,bundleID, options=None, handler=None, *args):
@@ -136,14 +131,14 @@ class installation_proxy(object):
 
     def print_apps(self, appType=["User"]):
         for app in self.get_apps(appType):
-            print "%s : %s => %s" %  (app.get("CFBundleDisplayName"), 
+            print ("%s : %s => %s" %  (app.get("CFBundleDisplayName"), 
                                       app.get("CFBundleIdentifier"), 
                                       app.get("Path") if app.get("Path") 
-                                      else app.get("Container"))
+                                      else app.get("Container"))).encode('utf-8')
 
 
     def get_apps_bid(self,appTypes=["User"]):
-	return [app["CFBundleIdentifier"]
+        return [app["CFBundleIdentifier"]
                 for app in self.get_apps()
                 if app.get("ApplicationType") in appTypes]
 
@@ -189,19 +184,19 @@ if __name__ == "__main__":
     (options, args) = parser.parse_args()
     #FIXME We should handle all installation proxy commands
     if  options.listapps:
-    	instpxy = installation_proxy()
-    	instpxy.print_apps(["User","System"])
+        instpxy = installation_proxy()
+        instpxy.print_apps(["User","System"])
     elif  options.install_ipapath:
-    	instpxy = installation_proxy()
-    	instpxy.install(options.install_ipapath)
+        instpxy = installation_proxy()
+        instpxy.install(options.install_ipapath)
     elif  options.remove_bundleid:
-    	instpxy = installation_proxy()
-    	instpxy.remove(options.remove_bundleid)
+        instpxy = installation_proxy()
+        instpxy.remove(options.remove_bundleid)
     elif  options.upgrade_bundleid:
-    	instpxy = installation_proxy()
-    	instpxy.upgrade(options.upgrade_bundleid)
+        instpxy = installation_proxy()
+        instpxy.upgrade(options.upgrade_bundleid)
     elif  options.archive_bundleid:
-    	instpxy = installation_proxy()
-    	instpxy.archive(options.archive_bundleid)
+        instpxy = installation_proxy()
+        instpxy.archive(options.archive_bundleid)
     else:
         parser.error("Incorrect number of arguments")
