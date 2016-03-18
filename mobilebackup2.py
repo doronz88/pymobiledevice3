@@ -23,17 +23,18 @@
 #
 
 
-from lockdown import LockdownClient
-from mobilebackup import MobileBackup
+import os
+import hashlib
+import datetime
 from optparse import OptionParser
 from pprint import pprint
 from util import write_file, hexdump
 from biplist import writePlist, readPlist, Data
-import os
-import hashlib
 from struct import unpack, pack
 from time import mktime, gmtime, sleep, time
-import datetime
+
+from lockdown import LockdownClient
+from mobilebackup import MobileBackup
 
 CODE_SUCCESS = 0x00
 CODE_ERROR_LOCAL =  0x06
@@ -43,33 +44,30 @@ CODE_FILE_DATA = 0x0c
 ERROR_ENOENT = -6
 ERROR_EEXIST = -7
 
-MBDB_SIGNATURE = 'mbdb\x05\x00'
-MASK_SYMBOLIC_LINK = 0xa000
-MASK_REGULAR_FILE = 0x8000
-MASK_DIRECTORY = 0x4000
 
 class DeviceVersionNotSupported(Exception):
     def __str__(self):
-	return "Device version not supported, please use mobilebackup"
+        return "Device version not supported, please use mobilebackup"
 
 
 class MobileBackup2(MobileBackup):
 
     service = None
-    def __init__(self, lockdown = None,backupPath = None):
-	if lockdown:
+    def __init__(self, lockdown = None,backupPath = None, password=""):
+        if lockdown:
             self.lockdown = lockdown
         else:
             self.lockdown = LockdownClient()
 
-	ProductVersion = self.lockdown.getValue("", "ProductVersion")
-	if ProductVersion[0] < "5":
-	    raise DeviceVersionNotSupported
+        ProductVersion = self.lockdown.getValue("", "ProductVersion")
+        if ProductVersion[0] < "5":
+            raise DeviceVersionNotSupported
 
         self.udid = lockdown.getValue("", "UniqueDeviceID")
         self.willEncrypt = lockdown.getValue("com.apple.mobile.backup", "WillEncrypt")
+        self.escrowBag = lockdown.getValue('', 'EscrowBag')
 
-        self.service = self.lockdown.startService("com.apple.mobilebackup2")
+        self.service = self.lockdown.startServiceWithEscrowBag("com.apple.mobilebackup2", self.escrowBag)
         if not self.service:
             raise Exception("MobileBackup2 init error : Could not start com.apple.mobilebackup2")
 
@@ -82,7 +80,7 @@ class MobileBackup2(MobileBackup):
 
         print "Starting new com.apple.mobilebackup2 service with working dir: %s" %  self.backupPath
 
-        self.password = ""
+        self.password = password
         DLMessageVersionExchange = self.service.recvPlist()
         version_major = DLMessageVersionExchange[1]
         self.service.sendPlist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
@@ -212,7 +210,7 @@ class MobileBackup2(MobileBackup):
             try:
                 filename = self.check_filename(filename)
                 if os.path.isfile(filename):
-                     os.unlink(filename)
+                    os.unlink(filename)
             except Exception, e:
                 print e
         self.mobilebackup2_send_status_response(0)
