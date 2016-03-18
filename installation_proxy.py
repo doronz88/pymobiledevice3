@@ -25,7 +25,7 @@
 from lockdown import LockdownClient
 from optparse import OptionParser
 import os
-from afc import AFC2Client
+from afc import AFCClient
 
 
 client_options = {
@@ -67,21 +67,21 @@ class installation_proxy(object):
     def send_cmd_for_bid(self,bundleID, cmd="Archive", options=None, handler=None, *args):
         cmd = {"Command": cmd, "ApplicationIdentifier": bundleID }
         if options:
-            cmd.update(options) 
+            cmd.update(options)
         self.service.sendPlist(cmd)
-        print "%s : " % (cmd, bundleID)
+        #print "%s : " % (cmd, bundleID)
         print "%s : %s\n" % (cmd, self.watch_completion(handler, *args))
-                
+
 
     def uninstall(self,bundleID, options=None, handler=None, *args):
         self.send_cmd_for_bid(bundleID, "Uninstall", options, handler, args)
 
     def install_or_upgrade(self, ipaPath, cmd="Install", options=None, handler=None, *args):
-        afc = AFC2Client(self.lockdown)
+        afc = AFCClient(self.lockdown)
         afc.set_file_contents("/" + os.path.basename(ipaPath), open(ipaPath,"rb").read())
         cmd = {"Command":cmd, "PackagePath": os.path.basename(ipaPath)}
         if options:
-            cmd.update(options) 
+            cmd.update(options)
         self.service.sendPlist(cmd)
 #         print "%s : " % (cmd, bundleID)
         print "%s : %s\n" % (cmd, self.watch_completion(handler, args))
@@ -131,9 +131,9 @@ class installation_proxy(object):
 
     def print_apps(self, appType=["User"]):
         for app in self.get_apps(appType):
-            print ("%s : %s => %s" %  (app.get("CFBundleDisplayName"), 
-                                      app.get("CFBundleIdentifier"), 
-                                      app.get("Path") if app.get("Path") 
+            print ("%s : %s => %s" %  (app.get("CFBundleDisplayName"),
+                                      app.get("CFBundleIdentifier"),
+                                      app.get("Path") if app.get("Path")
                                       else app.get("Container"))).encode('utf-8')
 
 
@@ -152,29 +152,29 @@ class installation_proxy(object):
 
 if __name__ == "__main__":
     parser = OptionParser(usage="%prog cmd <command options>")
-    parser.add_option("-l", "--listapps", 
+    parser.add_option("-l", "--listapps",
                       default=False,
                       action="store_true",
                       help="List installed applications")
-    parser.add_option("-i", "--install", 
+    parser.add_option("-i", "--install",
                       default=False,
                       action="store",
                       dest="install_ipapath",
                       metavar="FILE",
                       help="Install application on device")
-    parser.add_option("-r", "--remove", 
+    parser.add_option("-r", "--remove",
                       default=False,
                       action="store",
                       dest="remove_bundleid",
                       metavar="BUNDLE_ID",
                       help="Remove (uninstall) application from device")
-    parser.add_option("-u", "--upgrade", 
+    parser.add_option("-u", "--upgrade",
                       default=False,
                       action="store",
                       dest="upgrade_bundleid",
                       metavar="BUNDLE_ID",
                       help="Upgrade application on device")
-    parser.add_option("-a", "--archive", 
+    parser.add_option("-a", "--archive",
                       default=False,
                       action="store",
                       dest="archive_bundleid",
