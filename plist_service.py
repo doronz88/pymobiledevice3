@@ -35,7 +35,7 @@ class PlistService(object):
     def __init__(self, port, udid=None):
         self.port = port
         self.connect(udid)
-        
+
     def connect(self, udid=None):
         mux = usbmux.USBMux()
         mux.process(1.0)
@@ -60,13 +60,25 @@ class PlistService(object):
 
     def close(self):
         self.s.close()
-    
+
     def recv(self, len=4096):
         return self.s.recv(len)
-    
+
     def send(self, data):
-        return self.s.send(data)
-    
+        try:
+            self.s.send(data)
+        except:
+            print "Sending data to device failled"
+            return -1
+        return 0
+
+    def sendRequest(self, data):
+        res = None
+        if self.sendPlist(data) >= 0:
+            res = self.recvPlist()
+        return res
+
+
     def recv_exact(self, l):
         data = ""
         while l > 0:
@@ -78,34 +90,32 @@ class PlistService(object):
         return data
 
     def recv_raw(self):
-        l = self.recv(4)
+        l = self.recv_exact(4)
         if not l or len(l) != 4:
             return
         l = struct.unpack(">L", l)[0]
         return self.recv_exact(l)
-    
+
     def send_raw(self, data):
         return self.send(struct.pack(">L", len(data)) + data)
-    
+
     def recvPlist(self):
         payload = self.recv_raw()
-        #print '<<<<<<<<',payload
         if not payload:
             return
         if payload.startswith("bplist00"):
             return BPlistReader(payload).parse()
         elif payload.startswith("<?xml"):
             #HAX lockdown HardwarePlatform with null bytes
-            payload = sub('[^\w<>\/ \-_0-9\"\'\\=\.\?\!\+]+','', payload.decode('utf-8')).encode('utf-8') 
+            payload = sub('[^\w<>\/ \-_0-9\"\'\\=\.\?\!\+]+','', payload.decode('utf-8')).encode('utf-8')
             return plistlib.readPlistFromString(payload)
         else:
             raise Exception("recvPlist invalid data : %s" % payload[:100].encode("hex"))
-    
+
     def sendPlist(self, d):
         payload = plistlib.writePlistToString(d)
-        #print '>>>>',payload
         l = struct.pack(">L", len(payload))
-        self.send(l + payload)
+        return self.send(l + payload)
 
     def ssl_start(self, keyfile, certfile):
         self.s = ssl.wrap_socket(self.s, keyfile, certfile, ssl_version=ssl.PROTOCOL_TLSv1)
