@@ -512,10 +512,6 @@ class AFCShell(Cmd):
         print self.afc.get_device_infos()
 
 
-    def do_rmdir(self, p):
-        return self.afc.remove_directory(p)
-
-
     def do_mv(self, p):
         t = p.split()
         return self.afc.rename_path(t[0], t[1])
@@ -524,7 +520,7 @@ class AFCShell(Cmd):
 
 class AFC2Client(AFCClient):
     def __init__(self, lockdown=None):
-        super(AFC, self).__init__(lockdown, serviceName="com.apple.afc2")
+        super(AFC2Client, self).__init__(lockdown, serviceName="com.apple.afc2")
 
 
 
