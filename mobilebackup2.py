@@ -304,7 +304,11 @@ class MobileBackup2(MobileBackup):
 
         print "Starting restoration..."
         m = os.path.join(self.backupPath,self.udid,"Manifest.plist")
-        manifest = readPlist(m)
+        try:
+            manifest = readPlist(m)
+        except IOError:
+            print 'not a valid backup folder'
+            return -1
         if manifest.get("IsEncrypted"):
             print "Backup is encrypted, enter password : "
             if password:
