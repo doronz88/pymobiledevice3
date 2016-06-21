@@ -91,8 +91,8 @@ class LockdownClient(object):
             if self.UniqueChipID:
                 self.identifier = "%x" % self.UniqueChipID
             else:
-                print "Could not get UDID or ECID, failing"
-                raise
+#                 print "Could not get UDID or ECID, failing"
+                raise Exception("Could not get UDID or ECID, failing")
 
         if not self.validate_pairing():
             self.pair()
@@ -281,6 +281,8 @@ class LockdownClient(object):
         self.c.sendPlist({"Label": self.label, "Request": "StartService", "Service": name, 'EscrowBag':plistlib.Data(escrowBag)})
         StartService = self.c.recvPlist()
         if not StartService or StartService.get("Error"):
+            if StartService.get("Error", "") == 'PasswordProtected':
+                raise StartServiceError('your device is protected with password, please enter password in device and try again')
             raise StartServiceError(StartService.get("Error"))
         return PlistService(StartService.get("Port"))
 
