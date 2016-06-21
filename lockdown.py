@@ -161,6 +161,7 @@ class LockdownClient(object):
                 print "No  pymobiledevice pairing record found for device %s" % self.identifier
                 return False
 
+        self.record = pair_record
         ValidatePair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
         self.c = PlistService(62078,self.udid)
         self.c.sendPlist(ValidatePair)
