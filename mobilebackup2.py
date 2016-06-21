@@ -295,7 +295,9 @@ class MobileBackup2(MobileBackup):
 
 
     def restore(self, options = {"RestoreSystemFiles": True,
-                                "RestoreShouldReboot": False,
+                                "RestoreShouldReboot": True,
+                                "RestorePreserveCameraRoll": True,
+                                "RemoveItemsNotRestored": False,
                                 "RestoreDontCopyBackup": True,
                                 "RestorePreserveSettings": True},
 			password=None):
