@@ -363,10 +363,14 @@ if __name__ == "__main__":
                   help="Show backup info")
     parser.add_option("-l", "--list", dest="list", action="store_true", default=False,
                   help="Show backup info")
+    parser.add_option("-u", "--uuid", dest="uuid", action="store", default=None,
+                  help="uuid of device to backup/restore")
+    parser.add_option("-p", "--path", dest="path", action="store", default=None,
+                  help="path to backup/restore to")
     (options, args) = parser.parse_args()
 
-    lockdown = LockdownClient()
-    mb = MobileBackup2(lockdown)
+    lockdown = LockdownClient(options.uuid)
+    mb = MobileBackup2(lockdown, options.path)
 
     if options.backup:
         mb.backup()
