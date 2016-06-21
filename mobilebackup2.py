@@ -253,9 +253,16 @@ class MobileBackup2(MobileBackup):
                     if m != "Response":
                         print m
                 if errcode == 1:
-                    print msg[1].get("ErrorDescription")
-                    print "Please unlock your device and retry..."
-                break
+                    raise Exception("Please unlock your device and retry...")
+                if errcode == 211:
+                    raise Exception('Please go to Settings->iClould->Find My iPhone and disable it')
+                if errcode == 105:
+                    raise Exception('Not enough free space on device for restore')
+                if errcode == 17:
+                    raise Exception('please press \'trust this computer\' in your device')
+                if errcode == 102:
+                    raise Exception('Please reboot your device and try again')
+                raise Exception('Unknown error ' + str(errcode) + msg[1].get("ErrorDescription", ""))
             elif msg[0] == "DLMessageGetFreeDiskSpace":
                 self.mb2_handle_free_disk_space(msg)
             elif msg[0] == "DLMessageDisconnect":
