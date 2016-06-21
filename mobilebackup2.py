@@ -35,7 +35,7 @@ from time import mktime, gmtime, sleep, time
 
 from lockdown import LockdownClient
 from mobilebackup import MobileBackup
-
+from uuid import uuid4
 CODE_SUCCESS = 0x00
 CODE_ERROR_LOCAL =  0x06
 CODE_ERROR_REMOTE = 0x0b
@@ -270,7 +270,7 @@ class MobileBackup2(MobileBackup):
 
     def create_status_plist(self,fullBackup=True):
         #Creating Status file for backup
-        statusDict = { 'UUID': '82D108D4-521C-48A5-9C42-79C5E654B98F', #FixMe We Should USE an UUID generator uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
+        statusDict = { 'UUID': str(uuid4()).upper(),
                    'BackupState': 'new',
                    'IsFullBackup': fullBackup,
                    'Version': '2.4',
