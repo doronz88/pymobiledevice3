@@ -98,7 +98,7 @@ class LockdownClient(object):
             self.pair()
             if not self.validate_pairing():
                 raise FatalPairingError
-            self.paired = True
+        self.paired = True
         return
 
     def queryType(self):
