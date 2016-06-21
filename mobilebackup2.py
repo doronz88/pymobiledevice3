@@ -337,8 +337,8 @@ class MobileBackup2(MobileBackup):
     def changepw(self,oldpw,newpw):
         options = { "OldPassword" : oldpw,
                     "NewPassword" : newpw }
-
-        self.mobilebackup2_send_request("ChangePassword", self.udid, "")
+                    
+        self.mobilebackup2_send_request("ChangePassword", self.udid, "", options)
         z = self.work_loop()
         if z:
             print z
