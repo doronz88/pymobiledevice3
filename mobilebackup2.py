@@ -288,8 +288,7 @@ class MobileBackup2(MobileBackup):
 
         self.create_info_plist()
 
-        if fullBackup == True:
-            options["ForceFullBackup"] = True
+        options["ForceFullBackup"] = fullBackup
         self.mobilebackup2_send_request("Backup", self.udid, options)
         self.work_loop()
 
