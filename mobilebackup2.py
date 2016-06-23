@@ -60,7 +60,7 @@ class MobileBackup2(MobileBackup):
             self.lockdown = LockdownClient()
 
         ProductVersion = self.lockdown.getValue("", "ProductVersion")
-        if ProductVersion and float(ProductVersion) < 5:
+        if ProductVersion and int(ProductVersion[:ProductVersion.find('.')]) < 5:
             raise DeviceVersionNotSupported
 
         self.udid = lockdown.getValue("", "UniqueDeviceID")
