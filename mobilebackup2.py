@@ -35,7 +35,7 @@ from time import mktime, gmtime, sleep, time
 
 from lockdown import LockdownClient
 from mobilebackup import MobileBackup
-
+from uuid import uuid4
 CODE_SUCCESS = 0x00
 CODE_ERROR_LOCAL =  0x06
 CODE_ERROR_REMOTE = 0x0b
@@ -60,7 +60,7 @@ class MobileBackup2(MobileBackup):
             self.lockdown = LockdownClient()
 
         ProductVersion = self.lockdown.getValue("", "ProductVersion")
-        if ProductVersion[0] < "5":
+        if ProductVersion and int(ProductVersion[:ProductVersion.find('.')]) < 5:
             raise DeviceVersionNotSupported
 
         self.udid = lockdown.getValue("", "UniqueDeviceID")
@@ -253,9 +253,16 @@ class MobileBackup2(MobileBackup):
                     if m != "Response":
                         print m
                 if errcode == 1:
-                    print msg[1].get("ErrorDescription")
-                    print "Please unlock your device and retry..."
-                break
+                    raise Exception("Please unlock your device and retry...")
+                if errcode == 211:
+                    raise Exception('Please go to Settings->iClould->Find My iPhone and disable it')
+                if errcode == 105:
+                    raise Exception('Not enough free space on device for restore')
+                if errcode == 17:
+                    raise Exception('please press \'trust this computer\' in your device')
+                if errcode == 102:
+                    raise Exception('Please reboot your device and try again')
+                raise Exception('Unknown error ' + str(errcode) + msg[1].get("ErrorDescription", ""))
             elif msg[0] == "DLMessageGetFreeDiskSpace":
                 self.mb2_handle_free_disk_space(msg)
             elif msg[0] == "DLMessageDisconnect":
@@ -263,7 +270,7 @@ class MobileBackup2(MobileBackup):
 
     def create_status_plist(self,fullBackup=True):
         #Creating Status file for backup
-        statusDict = { 'UUID': '82D108D4-521C-48A5-9C42-79C5E654B98F', #FixMe We Should USE an UUID generator uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
+        statusDict = { 'UUID': str(uuid4()).upper(),
                    'BackupState': 'new',
                    'IsFullBackup': fullBackup,
                    'Version': '2.4',
@@ -281,21 +288,26 @@ class MobileBackup2(MobileBackup):
 
         self.create_info_plist()
 
-        if fullBackup == True:
-            options["ForceFullBackup"] = True
+        options["ForceFullBackup"] = fullBackup
         self.mobilebackup2_send_request("Backup", self.udid, options)
         self.work_loop()
 
 
     def restore(self, options = {"RestoreSystemFiles": True,
-                                "RestoreShouldReboot": False,
+                                "RestoreShouldReboot": True,
+                                "RestorePreserveCameraRoll": True,
+                                "RemoveItemsNotRestored": False,
                                 "RestoreDontCopyBackup": True,
                                 "RestorePreserveSettings": True},
 			password=None):
 
         print "Starting restoration..."
         m = os.path.join(self.backupPath,self.udid,"Manifest.plist")
-        manifest = readPlist(m)
+        try:
+            manifest = readPlist(m)
+        except IOError:
+            print 'not a valid backup folder'
+            return -1
         if manifest.get("IsEncrypted"):
             print "Backup is encrypted, enter password : "
             if password:
@@ -325,8 +337,8 @@ class MobileBackup2(MobileBackup):
     def changepw(self,oldpw,newpw):
         options = { "OldPassword" : oldpw,
                     "NewPassword" : newpw }
-
-        self.mobilebackup2_send_request("ChangePassword", self.udid, "")
+                    
+        self.mobilebackup2_send_request("ChangePassword", self.udid, "", options)
         z = self.work_loop()
         if z:
             print z
@@ -351,10 +363,14 @@ if __name__ == "__main__":
                   help="Show backup info")
     parser.add_option("-l", "--list", dest="list", action="store_true", default=False,
                   help="Show backup info")
+    parser.add_option("-u", "--uuid", dest="uuid", action="store", default=None,
+                  help="uuid of device to backup/restore")
+    parser.add_option("-p", "--path", dest="path", action="store", default=None,
+                  help="path to backup/restore to")
     (options, args) = parser.parse_args()
 
-    lockdown = LockdownClient()
-    mb = MobileBackup2(lockdown)
+    lockdown = LockdownClient(options.uuid)
+    mb = MobileBackup2(lockdown, options.path)
 
     if options.backup:
         mb.backup()

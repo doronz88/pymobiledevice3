@@ -265,13 +265,13 @@ class AFCClient(object):
                 toRead = MAXIMUM_READ_SIZE
             else:
                 toRead = sz
-	    try:
-		self.dispatch_packet(AFC_OP_READ, struct.pack("<QQ", handle, toRead))
-		s, d = self.receive_data()
-	    except:
-		self.lockdown = LockdownClient()
-		self.service = self.lockdown.startService("com.apple.afc")
-		return  self.file_read(handle, sz)
+            try:
+                self.dispatch_packet(AFC_OP_READ, struct.pack("<QQ", handle, toRead))
+                s, d = self.receive_data()
+            except:
+                self.lockdown = LockdownClient()
+                self.service = self.lockdown.startService("com.apple.afc")
+                return  self.file_read(handle, sz)
 
             if s != AFC_E_SUCCESS:
                 break
@@ -284,24 +284,24 @@ class AFCClient(object):
         MAXIMUM_WRITE_SIZE = 1 << 15
         hh = struct.pack("<Q", handle)
         segments = len(data) / MAXIMUM_WRITE_SIZE
-	try:
-	    for i in xrange(segments):
-		self.dispatch_packet(AFC_OP_WRITE,
-		                 hh + data[i*MAXIMUM_WRITE_SIZE:(i+1)*MAXIMUM_WRITE_SIZE],
-			             this_length=48)
-		s, d = self.receive_data()
-		if s != AFC_E_SUCCESS:
-		    print "file_write error %d" % s
-		    break
-	    if len(data) % MAXIMUM_WRITE_SIZE:
-		self.dispatch_packet(AFC_OP_WRITE,
-		                     hh + data[segments*MAXIMUM_WRITE_SIZE:],
-			             this_length=48)
-		s, d = self.receive_data()
-	except:
-	    self.lockdown = LockdownClient()
-	    self.service = lockdown.startService(serviceName)
-	    self.file_write(handle,data)
+        try:
+            for i in xrange(segments):
+                self.dispatch_packet(AFC_OP_WRITE,
+                                 hh + data[i*MAXIMUM_WRITE_SIZE:(i+1)*MAXIMUM_WRITE_SIZE],
+                                     this_length=48)
+                s, d = self.receive_data()
+                if s != AFC_E_SUCCESS:
+                    print "file_write error %d" % s
+                    break
+            if len(data) % MAXIMUM_WRITE_SIZE:
+                self.dispatch_packet(AFC_OP_WRITE,
+                                     hh + data[segments*MAXIMUM_WRITE_SIZE:],
+                                     this_length=48)
+                s, d = self.receive_data()
+        except:
+            self.lockdown = LockdownClient()
+            self.service = self.lockdown.startService(self.serviceName)
+            self.file_write(handle,data)
         return s
 
 
@@ -322,7 +322,7 @@ class AFCClient(object):
             d = self.file_read(h, int(info["st_size"]))
             self.file_close(h)
             return d
-	    return
+        return
 
 
     def set_file_contents(self, filename, data):
@@ -340,7 +340,7 @@ class AFCClient(object):
             if fd in ('.', '..', ''):
                 continue
             infos = self.get_file_info(posixpath.join(dirname, fd))
-	    if infos and infos.get('st_ifmt') == 'S_IFDIR':
+            if infos and infos.get('st_ifmt') == 'S_IFDIR':
                 dirs.append(fd)
             else:
                 files.append(fd)
