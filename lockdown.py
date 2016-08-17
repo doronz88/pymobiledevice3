@@ -244,7 +244,7 @@ class LockdownClient(object):
                 return r.data
             return r
 
-    def setValue(self, domain=None, key=None):
+    def setValue(self, value, domain=None, key=None):
 
         req = {"Request":"SetValue", "Label": self.label}
 
@@ -253,6 +253,7 @@ class LockdownClient(object):
         if key:
             req["Key"] = key
 
+        req["Value"] = value
         self.c.sendPlist(req)
         res = self.c.recvPlist()
         print res
