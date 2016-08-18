@@ -23,7 +23,7 @@
 #
 
 
-from lockdown import LockdownClient
+from pymobiledevice.lockdown import LockdownClient
 from pprint import pprint
 import plistlib
 from optparse import OptionParser
@@ -143,20 +143,20 @@ class DIAGClient(object):
 
 
     def query_mobilegestalt(self, MobileGestalt=MobileGestaltKeys.split("\n")):
-        self.service.sendPlist({"Request": "MobileGestalt", 
+        self.service.sendPlist({"Request": "MobileGestalt",
                                 "MobileGestaltKeys": MobileGestalt})
-        
+
         res = self.service.recvPlist()
-        d = res.get("Diagnostics") 
+        d = res.get("Diagnostics")
         if d:
             return d.get("MobileGestalt")
         return None
 
 
-    def action(self, action="Shutdown", flags=None):	
+    def action(self, action="Shutdown", flags=None):
         self.service.sendPlist({"Request": action })
         res = self.service.recvPlist()
-        return res.get("Diagnostics") 
+        return res.get("Diagnostics")
 
 
     def restart(self):
@@ -173,7 +173,7 @@ class DIAGClient(object):
         if res:
             return res.get("Diagnostics")
         return None
-                    
+
 
     def ioregistry_entry(self, name=None, ioclass=None):
         d = {}
@@ -182,7 +182,7 @@ class DIAGClient(object):
 
         if ioclass:
             d["EntryClass"] = ioclass
-        
+
         d["Request"] = "IORegistry"
 
         self.service.sendPlist(d)
@@ -191,7 +191,7 @@ class DIAGClient(object):
         if res:
             return res.get("Diagnostics")
         return None
-          
+
 
     def ioregistry_plane(self, plane=""):
         d = {}
@@ -201,17 +201,17 @@ class DIAGClient(object):
         else:
             d["CurrentPlane"] = ""
         d["Request"] = "IORegistry"
-        
+
         self.service.sendPlist(d)
         res = self.service.recvPlist()
-        dd = res.get("Diagnostics") 
+        dd = res.get("Diagnostics")
         if dd:
             return dd.get("IORegistry")
         return None
 
 
 if __name__ == "__main__":
-    
+
     parser = OptionParser(usage="%prog")
     parser.add_option("-c", "--cmd", dest="cmd", default=False,
                   help="Launch diagnostic command", type="string")
@@ -227,7 +227,7 @@ if __name__ == "__main__":
     diag = DIAGClient()
     if not options.cmd:
         res = diag.diagnostics()
-        
+
     elif options.cmd == "IORegistry":
         res = diag.ioregistry_plane()
 
@@ -241,8 +241,8 @@ if __name__ == "__main__":
 
     else:
         res = diag.action(options.cmd)
- 
+
     if res:
         for k in res.keys():
             print " %s \t: %s" % (k,res[k])
-        
+

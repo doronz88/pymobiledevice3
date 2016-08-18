@@ -23,17 +23,17 @@
 #
 
 
-from lockdown import LockdownClient
+from pymobiledevice.lockdown import LockdownClient
 from optparse import OptionParser
 from pprint import pprint
 import plistlib
-from util import read_file
+from pymobiledevice.util import read_file
 
 class MobileConfigService(object):
     def __init__(self, lockdown):
         self.lockdown = lockdown
         self.service = lockdown.startService("com.apple.mobile.MCInstall")
-    
+
     def GetProfileList(self):
         self.service.sendPlist({"RequestType":"GetProfileList"})
         res = self.service.recvPlist()
@@ -42,7 +42,7 @@ class MobileConfigService(object):
             pprint(res)
             return
         return res
-    
+
     def InstallProfile(self, s):
         #s = plistlib.writePlistToString(payload)
         self.service.sendPlist({"RequestType":"InstallProfile", "Payload": plistlib.Data(s)})
@@ -69,18 +69,18 @@ def main():
     parser = OptionParser(usage="%prog")
     parser.add_option("-l", "--list", dest="list", action="store_true",
                       default=False, help="List installed profiles")
-    parser.add_option("-i", "--install", dest="install", action="store", 
+    parser.add_option("-i", "--install", dest="install", action="store",
                   metavar="FILE", help="Install profile")
-    parser.add_option("-r", "--remove", dest="remove", action="store", 
+    parser.add_option("-r", "--remove", dest="remove", action="store",
                   metavar="IDENTIFIER", help="Remove profile")
     (options, args) = parser.parse_args()
-    
+
     if not options.list and not options.install and not options.remove:
         parser.print_help()
         return
     lockdown = LockdownClient()
     mc = MobileConfigService(lockdown)
-    
+
     if options.list:
         pprint(mc.GetProfileList())
     elif options.install:

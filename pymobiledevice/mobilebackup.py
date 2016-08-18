@@ -23,14 +23,14 @@
 #
 
 
-from lockdown import LockdownClient
+from pymobiledevice.lockdown import LockdownClient
 import struct
 import plistlib
 from pprint import pprint
 import os
 import datetime
-from afc import AFCClient
-from util import makedirs
+from pymobiledevice.afc import AFCClient
+from pymobiledevice.util import makedirs
 
 #
 # Fix plistlib.py line 364
@@ -78,7 +78,7 @@ class MobileBackup(object):
         DLMessageDeviceReady = self.service.recvPlist()
         if DLMessageDeviceReady and DLMessageDeviceReady[0] == "DLMessageDeviceReady":
             print "Got DLMessageDeviceReady"
-    
+
     def check_filename(self, name):
         if name.find("../") != -1:
             raise Exception("HAX, sneaky dots in path %s" % name)
@@ -89,24 +89,24 @@ class MobileBackup(object):
             name = os.path.join(self.backupPath, self.udid, name)
             return name
         return name
-        
+
 
     def read_file(self, filename):
         filename = self.check_filename(filename)
         if os.path.isfile(filename):
             with open(filename, 'rb') as f:
                 data = f.read()
-                f.close()  
+                f.close()
                 return data
         return None
 
-    
+
     def write_file(self, filename, data):
         filename = self.check_filename(filename)
         with open(filename, 'wb') as f:
             f.write(data)
-            f.close()            
-    
+            f.close()
+
     def create_info_plist(self):
         root_node =  self.lockdown.allValues
         #print pprint(root_node)
@@ -125,21 +125,21 @@ class MobileBackup(object):
         info["ICCID"] = root_node.get("IntegratedCircuitCardIdentity") or ""
         info["IMEI"] = root_node.get("InternationalMobileEquipmentIdentity") or ""
         info["Last Backup Date"] = datetime.datetime.now()
-        
+
         afc = AFCClient(self.lockdown)
         iTunesFilesDict = {}
         iTunesFiles = afc.read_directory("/iTunes_Control/iTunes/")
-        
+
         for i in iTunesFiles:
             data = afc.get_file_contents("/iTunes_Control/iTunes/"  + i)
             if data:
                 iTunesFilesDict[i] = plistlib.Data(data)
         info["iTunesFiles"] = iTunesFilesDict
-        
+
         iBooksData2 = afc.get_file_contents("/Books/iBooksData2.plist")
         if iBooksData2:
             info["iBooks Data 2"] = plistlib.Data(iBooksData2)
-        
+
         info["iTunes Settings"] = self.lockdown.getValue("com.apple.iTunes")
         print "Creating %s" % os.path.join(self.udid,"Info.plist")
         self.write_file(os.path.join(self.udid,"Info.plist"), plistlib.writePlistToString(info))
@@ -147,16 +147,16 @@ class MobileBackup(object):
     def ping(self, message):
         self.service.sendPlist(["DLMessagePing", message])
         print "ping response", self.service.recvPlist()
-    
+
     def device_link_service_send_process_message(self, msg):
         return self.service.sendPlist(["DLMessageProcessMessage", msg])
-    
+
     def device_link_service_receive_process_message(self):
         req = self.service.recvPlist()
         if req:
             assert req[0] == "DLMessageProcessMessage"
             return req[1]
-    
+
     def send_file_received(self):
         return self.device_link_service_send_process_message({"BackupMessageTypeKey": "kBackupMessageBackupFileReceived"})
 
@@ -174,7 +174,7 @@ class MobileBackup(object):
             print res
             return
         self.device_link_service_send_process_message(res)
-        
+
         filedata = ""
         f = None
         outpath = None
@@ -200,7 +200,7 @@ class MobileBackup(object):
                 if not info.get("BackupManifestKey", False):
                     plistlib.writePlist(info.get("BackupFileInfo"), outpath + ".mdinfo")
                 f = None
-    
+
 if __name__ == "__main__":
     mb = MobileBackup()
     mb.request_backup()

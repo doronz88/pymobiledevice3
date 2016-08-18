@@ -22,9 +22,9 @@
 #
 #
 
-from lockdown import LockdownClient
-from util.cpio import CpioArchive
-from util import MultipleOption
+from pymobiledevice.lockdown import LockdownClient
+from pymobiledevice.util.cpio import CpioArchive
+from pymobiledevice.util import MultipleOption
 import zlib
 import gzip
 from pprint import pprint

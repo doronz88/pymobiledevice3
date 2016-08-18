@@ -22,10 +22,10 @@
 #
 #
 
-from lockdown import LockdownClient
+from pymobiledevice.lockdown import LockdownClient
 from optparse import OptionParser
 import os
-from afc import AFCClient
+from pymobiledevice.afc import AFCClient
 
 
 client_options = {

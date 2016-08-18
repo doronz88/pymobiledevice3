@@ -29,11 +29,11 @@ import uuid
 import platform
 import time
 
-from plist_service import PlistService
+from pymobiledevice.plist_service import PlistService
 from pprint import pprint
-from ca import ca_do_everything
-from util import write_file, readHomeFile, writeHomeFile
-from usbmux import usbmux
+from pymobiledevice.ca import ca_do_everything
+from pymobiledevice.util import write_file, readHomeFile, writeHomeFile
+from pymobiledevice.usbmux import usbmux
 
 
 
@@ -280,7 +280,7 @@ class LockdownClient(object):
         if (not escrowBag):
             escrowBag = self.record['EscrowBag']
 
-        self.c.sendPlist({"Label": self.label, "Request": "StartService", "Service": name, 'EscrowBag':plistlib.Data(escrowBag)})
+        self.c.sendPlist({"Label": self.label, "Request": "StartService", "Service": name, 'EscrowBag':escrowBag})
         StartService = self.c.recvPlist()
         if not StartService or StartService.get("Error"):
             if StartService.get("Error", "") == 'PasswordProtected':
