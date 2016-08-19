@@ -6,13 +6,6 @@
 #
 #
 
-"""
-File name: setup.py
-Version: 0.1
-Author: gotohack <mathieu.renard@gotohack.org>
-Date created: 2016-08-18
-"""
-
 from setuptools import setup, find_packages
 from os import path
 
@@ -21,19 +14,19 @@ f = path.join(here, 'README.md')
 
 setup(
     name='pymobiledevice',
-    version='0.0.1',
+    version='0.1.5',
     description="Interface with iOS devices",
-    url='https://github.com/iOSForensics/pymobiledevice',
-    author='gotohack',
-    author_email='mathieu.renard@gotohack.org',
-    license='GPL',
+    url='https://github.com/gotohack/pymobiledevice',
+    author='dhilipsiva',
+    author_email='dhilipsiva@gmail.com',
+    license='MIT',
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
         'Topic :: Software Development :: Build Tools',
-        'License :: OSI Approved :: GNU General Public License (GPL)',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.5',
+        'License :: OSI Approved :: MIT License',
+        'Programming Language :: Python :: 2.7',
+        #'Programming Language :: Python :: 3',
     ],
 
     keywords='pymobiledevice ios iphone ipad ipod',
@@ -42,9 +35,12 @@ setup(
     entry_points='',
     install_requires=[
         'construct',
-        'm2crypto',
+        'ak-m2crypto',
     ],
     extras_require={
+        ':python_version >= "3"': [
+            'ak-vendor',
+        ],
         'dev': [''],
         'test': [''],
     },
