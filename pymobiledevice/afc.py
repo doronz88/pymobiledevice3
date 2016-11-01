@@ -524,7 +524,7 @@ class AFCShell(Cmd):
 
 class AFC2Client(AFCClient):
     def __init__(self, lockdown=None):
-        super(AFC, self).__init__(lockdown, serviceName="com.apple.afc2")
+        super(AFC2Client, self).__init__(lockdown, serviceName="com.apple.afc2")
 
 
 
