@@ -23,7 +23,6 @@ import SocketServer
 import select
 from optparse import OptionParser
 import sys
-import threading
 
 class SocketRelay(object):
 	def __init__(self, a, b, maxbuf=65535):
@@ -77,7 +76,23 @@ class TCPRelay(SocketServer.BaseRequestHandler):
 			print "No device found"
 			self.request.close()
 			return
-		dev = mux.devices[0]
+		dev = None
+		print 'udid:%s' % options.udid
+		if options.udid:
+			for device in mux.devices:
+				print device
+				if device.serial == options.udid:
+					dev = device
+					break
+			if not dev:
+				for _ in xrange(5): 
+					mux.process(0.1)
+				for device in mux.devices:
+					if device.serial == options.udid:
+						dev = device
+						break	
+		else:
+			dev = mux.devices[0]
 		print "Connecting to device %s"%str(dev)
 		dsock = mux.connect(dev, self.server.rport)
 		lsock = self.request
@@ -102,6 +117,7 @@ parser = OptionParser(usage="usage: %prog [OPTIONS] RemotePort[:LocalPort] [Remo
 parser.add_option("-t", "--threaded", dest='threaded', action='store_true', default=False, help="use threading to handle multiple connections at once")
 parser.add_option("-b", "--bufsize", dest='bufsize', action='store', metavar='KILOBYTES', type='int', default=128, help="specify buffer size for socket forwarding")
 parser.add_option("-s", "--socket", dest='sockpath', action='store', metavar='PATH', type='str', default=None, help="specify the path of the usbmuxd socket")
+parser.add_option("-u", "--udid", dest='udid', action='store', metavar='UDID', type='str', default=None, help="specify the udid of iOS device")
 
 options, args = parser.parse_args()
 
