@@ -512,10 +512,6 @@ class AFCShell(Cmd):
         print self.afc.get_device_infos()
 
 
-    def do_rmdir(self, p):
-        return self.afc.remove_directory(p)
-
-
     def do_mv(self, p):
         t = p.split()
         return self.afc.rename_path(t[0], t[1])
