@@ -1,0 +1,9 @@
+construct
+ak-m2crypto
+
+[:python_version >= "3"]
+ak-vendor
+
+[dev]
+
+[test]
