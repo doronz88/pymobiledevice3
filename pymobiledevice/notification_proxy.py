@@ -22,13 +22,16 @@
 #
 #
 
-from lockdown import LockdownClient
-from pprint import pprint
 import plistlib
 import thread
 import time
+import logging
 
-# NP Client to device Notifications (post_notification) 
+from pymobiledevice.lockdown import LockdownClient
+
+from pprint import pprint
+
+# NP Client to device Notifications (post_notification)
 NP_SYNC_WILL_START           = "com.apple.itunes-mobdev.syncWillStart"
 NP_SYNC_DID_START            = "com.apple.itunes-mobdev.syncDidStart"
 NP_SYNC_DID_FINISH           = "com.apple.itunes-mobdev.syncDidFinish"
@@ -60,60 +63,57 @@ NP_ADDRESS_BOOK_PREF_CHANGED = "com.apple.AddressBook.PreferenceChanged"
 
 
 class NPClient(object):
-    def __init__(self, lockdown=None, serviceName="com.apple.mobile.notification_proxy"):
-        if lockdown:
-            self.lockdown = lockdown
-        else:
-            self.lockdown = LockdownClient()
+    def __init__(self, lockdown=None, serviceName="com.apple.mobile.notification_proxy", udid=None, logger=None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
         self.service = self.lockdown.startService(serviceName)
 
-
     def stop_session(self):
-        print "Disconecting..."
+        self.logger.info("Disconecting...")
         self.service.close()
 
 
     def post_notification(self, notification):
         #Sends a notification to the device's notification_proxy.
-        
+
         self.service.sendPlist({"Command": "PostNotification",
                                 "Name": notification})
 
         self.service.sendPlist({"Command": "Shutdown"})
         res = self.service.recvPlist()
-        pprint(res)
+        #pprint(res)
         if res:
             if res.get("Command") == "ProxyDeath":
                 return res.get("Command")
             else:
-                print "Got unknown NotificationProxy command %s" % res.get("Command")
-                pprint(res)
-        return None
+                self.logger.error("Got unknown NotificationProxy command %s", res.get("Command"))
+                self.logger.debug(res)
+        return
 
 
     def observe_notification(self, notification):
         #Tells the device to send a notification on the specified event
-        
-        print "Observing %s" % notification
+
+        self.logger.info("Observing %s", notification)
         self.service.sendPlist({"Command": "ObserveNotification",
                                 "Name": notification})
 
 
     def get_notification(self, notification):
         #Checks if a notification has been sent by the device
-        
+
         res = self.service.recvPlist()
         if res:
             if res.get("Command") == "RelayNotification":
                 if res.get("Name"):
                     return res.get("Name")
-            
+
             elif res.get("Command") == "ProxyDeath":
-                    print "NotificationProxy died!"
+                    self.logger.error("NotificationProxy died!")
             else:
-                print "Got unknown NotificationProxy command %s" % res.get("Command")
-                pprint(res)
-        return None  
+                self.logger.warn("Got unknown NotificationProxy command %s", res.get("Command"))
+                self.logger.debug(res)
+        return
 
 
     def notifier(self, name, args=None):
@@ -122,7 +122,7 @@ class NPClient(object):
             return None
 
         self.observe_notification(args.get("notification"))
-        
+
         while args.get("running") == True:
             np_name = self.get_notification(args.get("notification"))
             if np_name:
@@ -130,12 +130,12 @@ class NPClient(object):
                 try:
                     thread.start_new_thread( args.get("callback") , (np_name, userdata, ) )
                 except:
-                    print "Error: unable to start thread"
+                    self.logger.error("Error: unable to start thread")
 
 
     def subscribe(self, notification, cb, data=None):
 
-        np_data = { 
+        np_data = {
             "running": True,
             "notification": notification,
             "callback": cb,
@@ -161,4 +161,4 @@ def cb_test(name,data=None):
 if __name__ == "__main__":
     np = NPClient()
     np.subscribe(NP_DEVICE_NAME_CHANGED, cb_test, data=None)
- 
+
