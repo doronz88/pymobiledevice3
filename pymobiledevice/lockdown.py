@@ -292,6 +292,7 @@ class LockdownClient(object):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
     l = LockdownClient()
     if l:
         n = writeHomeFile(HOMEFOLDER, "%s_infos.plist" % l.udid, plistlib.writePlistToString(l.allValues))
