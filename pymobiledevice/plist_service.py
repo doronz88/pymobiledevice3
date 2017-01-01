@@ -28,11 +28,12 @@ from util.bplist import BPlistReader
 import plistlib
 import ssl
 import struct
-from pprint import pprint
 from re import sub
+import logging
 
 class PlistService(object):
-    def __init__(self, port, udid=None):
+    def __init__(self, port, udid=None, logger=None):
+        self.logger = logger or logging.getLogger(__name__)
         self.port = port
         self.connect(udid)
 
@@ -47,11 +48,8 @@ class PlistService(object):
                 for d in mux.devices:
                     if d.serial == udid:
                         dev = d
-                        print "Connecting to device: " + dev.serial
             else:
                 dev = mux.devices[0]
-                print "Connecting to device: " + dev.serial
-
         try:
             self.s = mux.connect(dev, self.port)
         except:
@@ -68,7 +66,7 @@ class PlistService(object):
         try:
             self.s.send(data)
         except:
-            print "Sending data to device failled"
+            self.logger.error("Sending data to device failled")
             return -1
         return 0
 
