@@ -22,35 +22,36 @@
 #
 #
 
+import re
+import logging
 
-from lockdown import LockdownClient
+from pymobiledevice.lockdown import LockdownClient
+
 from datetime import datetime
 from util import getHomePath
 from util import hexdump
 from sys import exit
 from optparse import OptionParser
 
-import re
 
 class Syslog(object):
-    def __init__(self, lockdown=None):
-        if lockdown:
-            self.lockdown = lockdown
-        else:
-            self.lockdown = LockdownClient()
+    def __init__(self, lockdown=None, udid=None, logger=None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
+
         self.c = self.lockdown.startService("com.apple.syslog_relay")
         if self.c:
             self.c.send("watch")
         else:
             sys.exit(1)
 
-                  
 
-    def watch(self,procName=None,logFile=None):
-                
+
+    def watch(self, procName=None, logFile=None, handler=None):
+
         while True:
             d = self.c.recv(4096)
-            
+
             if not d:
                 break
 
@@ -59,24 +60,35 @@ class Syslog(object):
                 if len(d.split(" ")) > 4 and  not procFilter.search(d):
                     continue
 
-            print d.strip("\n\x00\x00")
+            data = d.strip("\n\x00\x00")
+
+            if handler:
+                handler(data)
+            else:
+                print data
 
             if logFile:
                 with open(logFile, 'a') as f:
                     f.write(d.replace("\x00", ""))
 
+
 if __name__ == "__main__":
     parser = OptionParser(usage="%prog")
+  parser.add_option("-u", "--udid",
+                  default=False, action="store", dest="device_udid", metavar="DEVICE_UDID",
+                  help="Device udid")
     parser.add_option("-p", "--process", dest="procName", default=False,
                   help="Show process log only", type="string")
     parser.add_option("-o", "--logfile", dest="logFile", default=False,
                   help="Write Logs into specified file", type="string")
     (options, args) = parser.parse_args()
-    
+
     try:
         while True:
             try:
-                syslog = Syslog()
+                logging.basicConfig(level=logging.INFO)
+                lckdn = LockdownClient(options.device_udid)
+                syslog = Syslog(lockdown=lckdn)
                 syslog.watch(procName=options.procName,logFile=options.logFile)
             except KeyboardInterrupt:
                 print "KeyboardInterrupt caught"
@@ -84,6 +96,6 @@ if __name__ == "__main__":
             else:
                 pass
 
-    
-    except (KeyboardInterrupt, SystemExit): 
+
+    except (KeyboardInterrupt, SystemExit):
         exit()
