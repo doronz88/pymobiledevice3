@@ -22,24 +22,27 @@
 #
 #
 
+import logging
+import plistlib
 
+from pymobiledevice.util import read_file
 from pymobiledevice.lockdown import LockdownClient
+
 from optparse import OptionParser
 from pprint import pprint
-import plistlib
-from pymobiledevice.util import read_file
 
 class MobileConfigService(object):
-    def __init__(self, lockdown):
-        self.lockdown = lockdown
+    def __init__(self, lockdown, udid=None, logger=None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
         self.service = lockdown.startService("com.apple.mobile.MCInstall")
 
     def GetProfileList(self):
         self.service.sendPlist({"RequestType":"GetProfileList"})
         res = self.service.recvPlist()
         if res.get("Status") != "Acknowledged":
-            print "GetProfileList error"
-            pprint(res)
+            self.logger.error("GetProfileList error")
+            self.logger.error(res)
             return
         return res
 
@@ -53,7 +56,7 @@ class MobileConfigService(object):
         if not profiles:
             return
         if not profiles["ProfileMetadata"].has_key(ident):
-            print "Trying to remove not installed profile %s" % ident
+            self.logger.info("Trying to remove not installed profile %s", ident)
             return
         meta = profiles["ProfileMetadata"][ident]
         pprint(meta)
