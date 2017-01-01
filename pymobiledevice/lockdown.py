@@ -166,7 +166,6 @@ class LockdownClient(object):
 
         self.record = pair_record
         ValidatePair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
-        self.c = PlistService(62078,self.udid)
         self.c.sendPlist(ValidatePair)
         r = self.c.recvPlist()
         if not r or r.has_key("Error"):
@@ -206,7 +205,6 @@ class LockdownClient(object):
                        "SystemBUID": "30142955-444094379208051516" }
 
         pair = {"Label": self.label, "Request": "Pair", "PairRecord": pair_record}
-        self.c = PlistService(62078,self.udid)
         self.c.sendPlist(pair)
         pair = self.c.recvPlist()
 
@@ -272,7 +270,7 @@ class LockdownClient(object):
         StartService = self.c.recvPlist()
         if not StartService or StartService.get("Error"):
             raise StartServiceError(StartService.get("Error"))
-        return PlistService(StartService.get("Port"))
+        return PlistService(StartService.get("Port"), self.udid)
 
 
     def startServiceWithEscrowBag(self, name, escrowBag = None):
@@ -289,7 +287,7 @@ class LockdownClient(object):
             if StartService.get("Error", "") == 'PasswordProtected':
                 raise StartServiceError('your device is protected with password, please enter password in device and try again')
             raise StartServiceError(StartService.get("Error"))
-        return PlistService(StartService.get("Port"))
+        return PlistService(StartService.get("Port"), self.udid)
 
 
 if __name__ == "__main__":
