@@ -21,17 +21,19 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 #
+import os
+import zlib
+import gzip
+import logging
 
 from pymobiledevice.lockdown import LockdownClient
 from pymobiledevice.util.cpio import CpioArchive
 from pymobiledevice.util import MultipleOption
-import zlib
-import gzip
+
 from pprint import pprint
 from tempfile import mkstemp
 from optparse import OptionParser
 from io import BytesIO
-import os
 
 SRCFILES = """Baseband
 CrashReporter
@@ -57,12 +59,10 @@ class DeviceVersionNotSupported(Exception):
     pass
 
 class FileRelay(object):
-    def __init__(self, lockdown=None, serviceName="com.apple.mobile.file_relay"):
-        if lockdown:
-            self.lockdown = lockdown
-        else:
-            self.lockdown = LockdownClient()
-
+    def __init__(self, lockdown=None, serviceName="com.apple.mobile.file_relay",
+                       udid=None, logger=None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
         ProductVersion = self.lockdown.getValue("", "ProductVersion")
 
         if ProductVersion[0] >= "8":
@@ -72,7 +72,7 @@ class FileRelay(object):
         self.packet_num = 0
 
     def stop_session(self):
-        print "Disconecting..."
+        self.logger.info("Disconecting...")
         self.service.close()
 
     def request_sources(self, sources=["UserDatabases"]):
@@ -115,13 +115,13 @@ if __name__ == "__main__":
         sources = options.sources
     else:
         sources = ["UserDatabases"]
-    print "Downloading: %s" % ''.join([str(item)+" " for item in sources])
+    print("Downloading: %s" % "".join([str(item)+" " for item in sources]))
 
     fc = None
     try:
         fc = FileRelay()
     except:
-        print "Device with product vertion >= 8.0 does not allow access to fileRelay service"
+        print("Device with product vertion >= 8.0 does not allow access to fileRelay service")
         exit()
 
     data = fc.request_sources(sources)
@@ -133,7 +133,7 @@ if __name__ == "__main__":
             _,path = mkstemp(prefix="fileRelay_dump_",suffix=".gz",dir=".")
 
         open(path,'wb').write(data)
-        print  "Data saved to:  %s " % path
+        self.logger.info("Data saved to:  %s ", path)
 
     if options.extractpath:
         with open(path, 'r') as f:
