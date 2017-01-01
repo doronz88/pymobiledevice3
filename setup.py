@@ -14,12 +14,12 @@ f = path.join(here, 'README.md')
 
 setup(
     name='pymobiledevice',
-    version='0.1.5',
+    version='0.1.7',
     description="Interface with iOS devices",
-    url='https://github.com/gotohack/pymobiledevice',
-    author='dhilipsiva',
-    author_email='dhilipsiva@gmail.com',
-    license='MIT',
+    url='https://github.com/iOSForensics/pymobiledevice',
+    author='gotohack',
+    author_email='dark[-at-]gotohack.org',
+    license='GPL',
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
@@ -35,13 +35,13 @@ setup(
     entry_points='',
     install_requires=[
         'construct',
-        'ak-m2crypto',
+        'm2crypto',
     ],
-    extras_require={
-        ':python_version >= "3"': [
-            'ak-vendor',
-        ],
-        'dev': [''],
-        'test': [''],
-    },
+    #extras_require={
+    #    'python_version >= "3"': [
+    #        'ak-vendor',
+    #    ],
+    #    'dev': [''],
+    #    'test': [''],
+    #},
 )
