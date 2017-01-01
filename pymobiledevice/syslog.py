@@ -74,7 +74,7 @@ class Syslog(object):
 
 if __name__ == "__main__":
     parser = OptionParser(usage="%prog")
-  parser.add_option("-u", "--udid",
+    parser.add_option("-u", "--udid",
                   default=False, action="store", dest="device_udid", metavar="DEVICE_UDID",
                   help="Device udid")
     parser.add_option("-p", "--process", dest="procName", default=False,
