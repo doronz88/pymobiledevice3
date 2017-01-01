@@ -22,11 +22,12 @@
 #
 #
 
-from pymobiledevice.lockdown import LockdownClient
-from optparse import OptionParser
 import os
-from pymobiledevice.afc import AFCClient
+import logging
 
+from optparse import OptionParser
+from pymobiledevice.afc import AFCClient
+from pymobiledevice.lockdown import LockdownClient, list_devices
 
 client_options = {
     "SkipUninstall" : False,
@@ -39,14 +40,17 @@ client_options = {
 
 class installation_proxy(object):
 
-    def __init__(self,lockdown=None):
+    def __init__(self, lockdown=None, udid=None, logger=None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
+        if not self.lockdown:
+            raise Exception("Unable to start lockdown")
+        self.start()
 
-        if lockdown:
-            self.lockdown = lockdown
-        else:
-            self.lockdown = LockdownClient()
-
+    def start(self):
         self.service = self.lockdown.startService("com.apple.mobile.installation_proxy")
+        if not self.service:
+            raise Exception("installation_proxy init error : Could not start com.apple.mobile.installation_proxy")
 
 
     def watch_completion(self,handler=None,*args):
@@ -57,64 +61,99 @@ class installation_proxy(object):
             completion = z.get("PercentComplete")
             if completion:
                 if handler:
-                    print "calling handler"
+                    self.logger.debug("calling handler")
                     handler(completion,*args)
-                print "%s %% Complete" % z.get("PercentComplete")
+                self.logger.info("%s %% Complete",z.get("PercentComplete"))
             if z.get("Status") == "Complete":
                 return z.get("Status")
         return "Error"
 
-    def send_cmd_for_bid(self,bundleID, cmd="Archive", options=None, handler=None, *args):
-        cmd = {"Command": cmd, "ApplicationIdentifier": bundleID }
-        if options:
-            cmd.update(options)
-        self.service.sendPlist(cmd)
-        #print "%s : " % (cmd, bundleID)
-        print "%s : %s\n" % (cmd, self.watch_completion(handler, *args))
+    def send_cmd_for_bid(self, bid, cmd="Archive", options={}, handler=None, *args):
+        cmd = { "Command": cmd,
+                "ClientOptions": options,
+                "ApplicationIdentifier": bid }
+
+        self.logger.info("%s : %s\n", cmd, self.watch_completion(handler, *args))
 
 
-    def uninstall(self,bundleID, options=None, handler=None, *args):
-        self.send_cmd_for_bid(bundleID, "Uninstall", options, handler, args)
+    def uninstall(self, bid, options=None, handler=None, *args):
+        self.send_cmd_for_bid(bid, "Uninstall", options, handler, args)
 
-    def install_or_upgrade(self, ipaPath, cmd="Install", options=None, handler=None, *args):
+    def install_or_upgrade(self, ipaPath, cmd="Install", options={}, handler=None, *args):
         afc = AFCClient(self.lockdown)
         afc.set_file_contents("/" + os.path.basename(ipaPath), open(ipaPath,"rb").read())
-        cmd = {"Command":cmd, "PackagePath": os.path.basename(ipaPath)}
-        if options:
-            cmd.update(options)
+        cmd = { "Command": cmd,
+                "ClientOptions": options,
+                "PackagePath": os.path.basename(ipaPath)}
+
         self.service.sendPlist(cmd)
-#         print "%s : " % (cmd, bundleID)
-        print "%s : %s\n" % (cmd, self.watch_completion(handler, args))
+        self.watch_completion(handler, args)
 
 
-    def install(self,ipaPath, options=None, handler=None, *args):
-        return self.install_or_upgrade(ipaPath, "Install", client_options, handler, args)
+    def install(self, ipaPath, options={}, handler=None, *args):
+        return self.install_or_upgrade(ipaPath, "Install", options, handler, args)
 
 
-    def upgrade(self,ipaPath, options=None, handler=None, *args):
-        return self.install_or_upgrade(ipaPath, "Upgrade", client_options, handler, args)
+    def upgrade(self, ipaPath, options={}, handler=None, *args):
+        return self.install_or_upgrade(ipaPath, "Upgrade", options, handler, args)
 
 
-    def apps_info(self):
-        self.service.sendPlist({"Command": "Lookup"})
+    def check_capabilities_match(self, capabilities, options={}):
+        cmd = { "Command": "CheckCapabilitiesMatch",
+                "ClientOptions": options }
+
+        if capabilities:
+            cmd["Capabilities"] =  capabilities
+
+        self.service.sendPlist(cmd)
+        result = self.service.recvPlist().get("LookupResult")
+        return result
+
+
+    def browse(self, options={}, attributes=None, handler=None, *args):
+        if attributes:
+            options["ReturnAttributes"] =  attributes
+
+        cmd = { "Command": "Browse",
+                "ClientOptions": options }
+
+        self.service.sendPlist(cmd)
+
+        result = []
+        while True:
+            z = self.service.recvPlist()
+            if not z:
+                break
+
+            data = z.get("CurrentList")
+            if data:
+                result += data
+
+            if z.get("Status") == "Complete":
+                break
+
+        return result
+
+    def apps_info(self, options={}):
+        cmd = {"Command": "Lookup",
+                "ClientOptions": options }
+
+        self.service.sendPlist(cmd)
         return self.service.recvPlist().get('LookupResult')
 
+    def archive(self, bid, options={}, handler=None, *args):
+        self.send_cmd_for_bid(bid, "Archive", options, handler, args)
 
-    def archive(self,bundleID, options=None, handler=None, *args):
-        self.send_cmd_for_bid(bundleID, "Archive", options, handler, args)
+    def restore_archive(self, bid, options={}, handler=None, *args):
+        self.send_cmd_for_bid(bid, "Restore", options, handler, args)
 
+    def remove_archive(self, bid, options={}, handler=None, *args):
+        self.send_cmd_for_bid(bid, "RemoveArchive", options, handler, args)
 
-    def restore_archive(self,bundleID, options=None, handler=None, *args):
-        self.send_cmd_for_bid(bundleID, "Restore", client_options, handler, args)
-
-
-    def remove_archive(self,bundleID, options={}, handler=None, *args):
-        self.send_cmd_for_bid(bundleID, "RemoveArchive", options, handler, args)
-
-
-    def archives_info(self):
-        return self.service.sendRequest({"Command": "LookupArchive"}).get("LookupResult")
-
+    def archives_info(self, options={}):
+        cmd = {"Command": "LookupArchive",
+               "ClientOptions": options}
+        return self.service.sendRequest(cmd).get("LookupResult")
 
     def search_path_for_bid(self, bid):
         path = None
@@ -123,11 +162,9 @@ class installation_proxy(object):
                 path = a.get("Path")+"/"+a.get("CFBundleExecutable")
         return path
 
-
     def get_apps(self,appTypes=["User"]):
         return [app for app in self.apps_info().values()
                 if app.get("ApplicationType") in appTypes]
-
 
     def print_apps(self, appType=["User"]):
         for app in self.get_apps(appType):
@@ -136,22 +173,23 @@ class installation_proxy(object):
                                       app.get("Path") if app.get("Path")
                                       else app.get("Container"))).encode('utf-8')
 
-
     def get_apps_bid(self,appTypes=["User"]):
         return [app["CFBundleIdentifier"]
                 for app in self.get_apps()
                 if app.get("ApplicationType") in appTypes]
 
-
     def close(self):
         self.service.close()
 
-    def __del__(self):
-        self.close()
-
 
 if __name__ == "__main__":
-    parser = OptionParser(usage="%prog cmd <command options>")
+    parser = OptionParser(usage="%prog -u <udid> cmd <command options>")
+    parser.add_option("-u", "--udid",
+                      default=False,
+                      action="store",
+                      dest="device_udid",
+                      metavar="DEVICE_UDID",
+                      help="Device udid")
     parser.add_option("-l", "--listapps",
                       default=False,
                       action="store_true",
@@ -168,7 +206,7 @@ if __name__ == "__main__":
                       dest="remove_bundleid",
                       metavar="BUNDLE_ID",
                       help="Remove (uninstall) application from device")
-    parser.add_option("-u", "--upgrade",
+    parser.add_option("-g", "--upgrade",
                       default=False,
                       action="store",
                       dest="upgrade_bundleid",
@@ -182,21 +220,28 @@ if __name__ == "__main__":
                       help="Archive application on device")
 
     (options, args) = parser.parse_args()
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger(__name__)
     #FIXME We should handle all installation proxy commands
+    try:
+        instpxy = installation_proxy(udid=options.device_udid)
+    except:
+        logger.error("Unable to connect to device")
+        exit(-1)
+
     if  options.listapps:
-        instpxy = installation_proxy()
         instpxy.print_apps(["User","System"])
     elif  options.install_ipapath:
-        instpxy = installation_proxy()
+        instpxy = installation_proxy(udid=options.device_udid)
         instpxy.install(options.install_ipapath)
     elif  options.remove_bundleid:
-        instpxy = installation_proxy()
+        instpxy = installation_proxy(udid=options.device_udid)
         instpxy.remove(options.remove_bundleid)
     elif  options.upgrade_bundleid:
-        instpxy = installation_proxy()
+        instpxy = installation_proxy(udid=options.device_udid)
         instpxy.upgrade(options.upgrade_bundleid)
     elif  options.archive_bundleid:
-        instpxy = installation_proxy()
+        instpxy = installation_proxy(udid=options.device_udid)
         instpxy.archive(options.archive_bundleid)
     else:
         parser.error("Incorrect number of arguments")
