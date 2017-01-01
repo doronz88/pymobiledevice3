@@ -61,7 +61,6 @@ if __name__ == '__main__':
     parser = OptionParser(usage='%prog')
     parser.add_option("-u", "--udid", default=False, action="store", dest="device_udid", metavar="DEVICE_UDID",
                   help="Device udid")
-    parser.add_option("-b", "--backup", dest="backup", action="store_true", default=False,
     parser.add_option('-p', '--path', dest='outDir', default=False,
             help='Output Directory (default: . )', type='string')
     (options, args) = parser.parse_args()
