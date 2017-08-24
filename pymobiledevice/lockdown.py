@@ -27,12 +27,10 @@ import plistlib
 import sys
 import uuid
 import platform
-import time
 
 from pymobiledevice.plist_service import PlistService
-from pprint import pprint
 from pymobiledevice.ca import ca_do_everything
-from pymobiledevice.util import write_file, readHomeFile, writeHomeFile
+from pymobiledevice.util import readHomeFile, writeHomeFile
 from pymobiledevice.usbmux import usbmux
 
 
@@ -82,16 +80,16 @@ class LockdownClient(object):
 
         assert self.queryType() == "com.apple.mobile.lockdown"
 
-        self.udid = self.getValue("", "UniqueDeviceID")
         self.allValues = self.getValue()
+        self.udid = self.allValues.get("UniqueDeviceID")
         self.UniqueChipID = self.allValues.get("UniqueChipID")
-        self.DevicePublicKey =  self.getValue("", "DevicePublicKey")
+        self.DevicePublicKey =  self.allValues.get("DevicePublicKey")
+        self.ios_version = self.allValues.get("ProductVersion")
         self.identifier = self.udid
         if not self.identifier:
             if self.UniqueChipID:
                 self.identifier = "%x" % self.UniqueChipID
             else:
-#                 print "Could not get UDID or ECID, failing"
                 raise Exception("Could not get UDID or ECID, failing")
 
         if not self.validate_pairing():
@@ -110,7 +108,6 @@ class LockdownClient(object):
         hostname = platform.node()
         hostid = uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
         return str(hostid).upper()
-
 
     def enter_recovery(self):
         self.c.sendPlist({"Request": "EnterRecovery"})
@@ -147,7 +144,7 @@ class LockdownClient(object):
             print "Using iTunes pair record: %s.plist" % self.identifier
             certPem = pair_record["HostCertificate"].data
             privateKeyPem = pair_record["HostPrivateKey"].data
-
+ 
         else:
             print "No iTunes pairing record found for device %s" % self.identifier
             print "Looking for pymobiledevice pairing record"
@@ -160,15 +157,16 @@ class LockdownClient(object):
             else:
                 print "No  pymobiledevice pairing record found for device %s" % self.identifier
                 return False
-
+ 
         self.record = pair_record
-        ValidatePair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
-        self.c.sendPlist(ValidatePair)
-        r = self.c.recvPlist()
-        if not r or r.has_key("Error"):
-            pair_record = None
-            print "ValidatePair fail", ValidatePair
-            return False
+        if not self.ios_version.startswith('11'):
+            ValidatePair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
+            self.c.sendPlist(ValidatePair)
+            r = self.c.recvPlist()
+            if not r or r.has_key("Error"):
+                pair_record = None
+                print "ValidatePair fail", ValidatePair
+                return False
 
         self.hostID = pair_record.get("HostID", self.hostID)
         self.SystemBUID = pair_record.get("SystemBUID", self.SystemBUID)
