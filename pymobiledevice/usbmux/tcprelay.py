@@ -23,6 +23,7 @@ import SocketServer
 import select
 from optparse import OptionParser
 import sys
+import time
 
 class SocketRelay(object):
 	def __init__(self, a, b, maxbuf=65535):
@@ -75,12 +76,8 @@ class TCPRelay(SocketServer.BaseRequestHandler):
 			sockpath = None	
 		mux = usbmux.USBMux(sockpath)
 		print "Waiting for devices..."
-		if not mux.devices:
-			mux.process(1.0)
-		if not mux.devices:
-			print "No device found"
-			self.request.close()
-			return
+		mux.process(1.0)
+	
 		dev = None
 		if globals().has_key('options'):
 			udid = options.udid
@@ -93,14 +90,21 @@ class TCPRelay(SocketServer.BaseRequestHandler):
 					dev = device
 					break
 			if not dev:
-				for _ in xrange(5): 
-					mux.process(0.1)
-				for device in mux.devices:
-					if device.serial == udid:
-						dev = device
+				for _ in xrange(20): 
+					mux.process(0.5)
+					for device in mux.devices:
+						if device.serial == udid:
+							dev = device
+							break
+					if dev :
 						break	
 		else:
 			dev = mux.devices[0]
+			
+		if not mux.devices:
+			print "No device found"
+			self.request.close()
+			return
 		print "Connecting to device %s"%str(dev)
 		dsock = mux.connect(dev, self.server.rport)
 		lsock = self.request
