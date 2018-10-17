@@ -22,17 +22,17 @@
 #
 #
 
-
 from lockdown import LockdownClient
-from datetime import datetime
-from util import getHomePath
-from util import hexdump
 from sys import exit
-from optparse import OptionParser
-
 import re
+import time
+
+TIME_FORMAT = '%H:%M:%S'
 
 class Syslog(object):
+    '''
+    查看系统日志
+    '''
     def __init__(self, lockdown=None):
         if lockdown:
             self.lockdown = lockdown
@@ -42,48 +42,55 @@ class Syslog(object):
         if self.c:
             self.c.send("watch")
         else:
-            sys.exit(1)
+            exit(1)                
 
-                  
+    def watch(self, watchtime, logFile=None, procName=None):
+        '''查看日志  
+        :param watchtime: 时间(秒)
+        :type watchtime: int
+        :param logFile: 日志文件完整路径
+        :type logFile:  str
+        :param procName: 进程名
+        :type proName:  str
+        '''
 
-    def watch(self,procName=None,logFile=None):
-                
+        begin = time.strftime(TIME_FORMAT)
+  
         while True:
             d = self.c.recv(4096)
-            
-            if not d:
-                break
-
             if procName:
                 procFilter = re.compile(procName,re.IGNORECASE)
                 if len(d.split(" ")) > 4 and  not procFilter.search(d):
                     continue
-
-            print d.strip("\n\x00\x00")
-
+            s =  d.strip("\n\x00\x00")
+            print s
             if logFile:
                 with open(logFile, 'a') as f:
-                    f.write(d.replace("\x00", ""))
-
+                    f.write(d.replace("\x00", ""))            
+            now = self.time_match(s[7:15])
+            if now:
+                time_spend = self.time_caculate(str(begin), now)
+                if time_spend > watchtime :
+                    break
+                 
+    def time_match(self, str_time):
+        '''判断时间格式是否匹配 
+        '''
+        pattern = re.compile(r'\d{2}:\d{2}:\d{2}')
+        match = pattern.match(str_time)
+        if match:
+            return str_time
+        else:
+            return False
+        
+    def time_caculate(self, a, b):
+        '''
+        计算两个字符串的时间差
+        '''    
+        time_a = int(a[6:8])+60*int(a[3:5])+3600*int(a[0:2])
+        time_b = int(b[6:8])+60*int(b[3:5])+3600*int(b[0:2])
+        return time_b - time_a
+               
 if __name__ == "__main__":
-    parser = OptionParser(usage="%prog")
-    parser.add_option("-p", "--process", dest="procName", default=False,
-                  help="Show process log only", type="string")
-    parser.add_option("-o", "--logfile", dest="logFile", default=False,
-                  help="Write Logs into specified file", type="string")
-    (options, args) = parser.parse_args()
-    
-    try:
-        while True:
-            try:
-                syslog = Syslog()
-                syslog.watch(procName=options.procName,logFile=options.logFile)
-            except KeyboardInterrupt:
-                print "KeyboardInterrupt caught"
-                raise
-            else:
-                pass
-
-    
-    except (KeyboardInterrupt, SystemExit): 
-        exit()
+    syslog = Syslog()
+    syslog.watch(10,'/tmp/sys.log','QQ')
