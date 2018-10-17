@@ -1,0 +1,23 @@
+language: python
+matrix:
+  include:
+  - os: linux
+    dist: trusty
+    sudo: false
+    python: '2.7'
+  - os: osx
+    python: '2.7'
+    language: generic
+    env: PYENV_VERSION=2.7.12
+# command to install dependencies
+install:
+  - pip install -r requirements.txt
+script:
+  - python test/__init__.py
+deploy:
+  provider: pypi
+  user: "qta"
+  password:
+    secure: "jPnIUdHointg7MLtEk2bbR5dcmygW/5FULbfMCrEPikz9D6+BOZkLNJ2DE3lih22DSe8/k6FXSpz6m7r6PWYoUB4edU2QLl0auZpJjKsBvnGD/a2oHyvJV5MKOQUtAOUDA0lM4hlyqs5Ece06SF+zsfbFQnIkmMos8MY9T2QlMBiB9K3IaZTcJtxWx4T+Yw3tbR8w2eZvYxJ4YNQ69u+N7PJAB9v8Tf4NenFWPZe+gqTEx1XVIb07Mj9pno0jvS5RLGILV7jmCaM3nUx1gPITwT1bd1ArA2wTgNdXzRpRHOYptnItIcd+1GxS+SrqerS+HrrBGA+XlCKcBrjX/tCYmSQjpA4NykpNwXR/Q2PNH4FGltAkhdQiMBycMBv+SZzcqdfv2olu+1+HhXvfVW7iq4hlhvSmF/zLYax9Op0i25qm3VIrBdEJh795iV8S2Ty1Kim9DLmtGjtlQh9h4qFgnEmReWUbD+fVBZKsif+RixFe90Ik8RmpBqIsKn6Jd+tDj0igNYQ/tnekmL0JQdoCbh1V2Dqykh8MZ76K3GaG3adxCtLQTCqb15RzCkj/gm7lyeYreaQ7pf1dqvU1VlqpynQU5XZq6FF4IqeSFERAND9SEsKjc9Rp0Z2WzdLS5OqFJwVbfieSvhR2wxKH0uV5IlJlU7Y91us1GwnMmxac20="
+  on:
+    tags: true
