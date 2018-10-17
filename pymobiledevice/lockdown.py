@@ -92,8 +92,9 @@ class LockdownClient(object):
             else:
                 raise Exception("Could not get UDID or ECID, failing")
 
-        if not self.validate_pairing():
+        if not self.validate_pairing():        
             self.pair()
+            self.c = PlistService(62078,udid)
             if not self.validate_pairing():
                 raise FatalPairingError
         self.paired = True
