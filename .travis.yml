@@ -1,23 +1,21 @@
 language: python
 matrix:
   include:
-  - os: linux
-    dist: trusty
-    sudo: false
-    python: '2.7'
   - os: osx
     python: '2.7'
     language: generic
-    env: PYENV_VERSION=2.7.12
-# command to install dependencies
 install:
   - pip install -r requirements.txt
+  - sudo mkdir /usr/local/man
+  - sudo chmod a+w /usr/local/man
 script:
   - python test/__init__.py
 deploy:
   provider: pypi
   user: "qta"
-  password:
-    secure: "jPnIUdHointg7MLtEk2bbR5dcmygW/5FULbfMCrEPikz9D6+BOZkLNJ2DE3lih22DSe8/k6FXSpz6m7r6PWYoUB4edU2QLl0auZpJjKsBvnGD/a2oHyvJV5MKOQUtAOUDA0lM4hlyqs5Ece06SF+zsfbFQnIkmMos8MY9T2QlMBiB9K3IaZTcJtxWx4T+Yw3tbR8w2eZvYxJ4YNQ69u+N7PJAB9v8Tf4NenFWPZe+gqTEx1XVIb07Mj9pno0jvS5RLGILV7jmCaM3nUx1gPITwT1bd1ArA2wTgNdXzRpRHOYptnItIcd+1GxS+SrqerS+HrrBGA+XlCKcBrjX/tCYmSQjpA4NykpNwXR/Q2PNH4FGltAkhdQiMBycMBv+SZzcqdfv2olu+1+HhXvfVW7iq4hlhvSmF/zLYax9Op0i25qm3VIrBdEJh795iV8S2Ty1Kim9DLmtGjtlQh9h4qFgnEmReWUbD+fVBZKsif+RixFe90Ik8RmpBqIsKn6Jd+tDj0igNYQ/tnekmL0JQdoCbh1V2Dqykh8MZ76K3GaG3adxCtLQTCqb15RzCkj/gm7lyeYreaQ7pf1dqvU1VlqpynQU5XZq6FF4IqeSFERAND9SEsKjc9Rp0Z2WzdLS5OqFJwVbfieSvhR2wxKH0uV5IlJlU7Y91us1GwnMmxac20="
+  password: 
+    secure: BRukPB27oCtxWgoCI4ERD7Bn/coAYlRl8zrmb9qsI9zOsK8FheLbOGHkmZ0voYUtPNgFt8yOBAZgfJeCKAE64ABgDzHtZoTbZVfmtOaGT0bREknURQMU4+HFaoZGc0DqOnC8fk0MkoCVJxzuxFMD4AyJlsLZghH2LDDCXICsS36mBI+yFY3zmcIuvRlmmpFx1xI8XicFlz7w5oqoRiHzXO6oFweyIV+8Z5k5M1A4VQZ8/NhrDIGV4gCrqNsIOKmqVgtYpeXy+NYlH3gLPOS5MTIukrirr4VJyGTwz6JzZiZdukgetqfEGutTp9FHZ1p/qGgSRSZbRAZnW7XLAN8lY71BeIa3If+hJ6UwP4rkb/PGOoq3u0MF2NiMNkaLVZX+shtiJaUQAfft509WWDcl2DbMtlwJtJ/eL7HGI6K0K9VnWA5Z6NCXpHFsmIazoA0Ye9vPYF49Lwi0NJTxyZ5JItrViM9/t2+vi1bcEjuWoIF+//ohSZX090Pio8Wg1UZt18xZf1qlVESfPOACPxn6g2ahCYvpKXinZhlG7lZBIXbx3+DlQSnMWCQUuCn20bsisIt/0aEetdA/VF/bF/1XpApLwm5/vjfTr1ZX+wYc7gt756LqVCQWlv9QOL3pJepv1zMapUNwRN0EEcHMJOOcOgZ59CxnJkkfK8Gbn8v74KA=
+  distributions: sdist bdist_egg
   on:
     tags: true
+    branch: master
