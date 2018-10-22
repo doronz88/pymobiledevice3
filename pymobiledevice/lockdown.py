@@ -160,7 +160,7 @@ class LockdownClient(object):
                 return False
  
         self.record = pair_record
-        if not self.ios_version.startswith('11'):
+        if int(self.ios_version.split('.')[0]) < 11:
             ValidatePair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
             self.c.sendPlist(ValidatePair)
             r = self.c.recvPlist()
