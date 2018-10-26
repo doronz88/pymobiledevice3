@@ -11,7 +11,7 @@ VERSION = "1.0.1"
   
 def replace_version_py(version):
     content = """# -*- coding: utf-8 -*-
-'''pymobiledevice2版本
+'''pymobiledevice-qta版本
 '''
 VERSION = '%(version)s' 
 """

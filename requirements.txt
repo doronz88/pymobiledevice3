@@ -1,2 +1,3 @@
-M2Crypto
-construct
+ak-M2Crypto
+ak-construct
+pyasn1
