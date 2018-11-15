@@ -10,6 +10,7 @@ install:
   - sudo chmod a+w /usr/local/man
 script:
   - python test/__init__.py
+before_deploy: echo $TRAVIS_TAG | sed 's/^.//' > version.txt
 deploy:
   provider: pypi
   user: "qta"

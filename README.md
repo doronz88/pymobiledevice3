@@ -7,8 +7,8 @@ that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV�
 ## Requirements
 
 Python 2.7
-ak-M2Crypto
-ak-construct
+M2Crypto
+construct 2.5.2
 pyasn1
 
 
