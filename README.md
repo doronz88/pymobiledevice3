@@ -6,10 +6,10 @@ that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV�
 
 ## Requirements
 
-Python 2.7
-M2Crypto
-construct 2.5.2
-pyasn1
+* Python 2.7
+* M2Crypto
+* construct 2.5.2
+* pyasn1
 
 
 ## Lockdownd.py [com.apple.lockownd]
