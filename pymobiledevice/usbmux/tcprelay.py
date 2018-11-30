@@ -18,12 +18,14 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
-import usbmux
-import SocketServer
-import select
-from optparse import OptionParser
 import sys
-import time
+import select
+	from optparse import OptionParser
+from six import PY3
+from six.moves import socketserver
+
+from pymobiledevice.usbmux import usbmux
+
 
 class SocketRelay(object):
 	def __init__(self, a, b, maxbuf=65535):
@@ -31,6 +33,9 @@ class SocketRelay(object):
 		self.b = b
 		self.atob = ""
 		self.btoa = ""
+		if PY3:
+			self.atob = b""
+			self.btoa = b""
 		self.maxbuf = maxbuf
 	def handle(self):
 		while True:
@@ -64,33 +69,31 @@ class SocketRelay(object):
 				if not s:
 					return
 				self.btoa += s
-			#print "Relay iter: %8d atob, %8d btoa, lists: %r %r %r"%(len(self.atob), len(self.btoa), rlo, wlo, xlo)
+			#print("Relay iter: %8d atob, %8d btoa, lists: %r %r %r"%(len(self.atob), len(self.btoa), rlo, wlo, xlo))
 
 
-class TCPRelay(SocketServer.BaseRequestHandler):
+class TCPRelay(socketserver.BaseRequestHandler):
 	def handle(self):
-		print "Incoming connection to %d"%self.server.server_address[1]
-		if globals().has_key('options'):
+		if 'options' in globals():
 			sockpath = options.sockpath
 		else:
 			sockpath = None	
 		mux = usbmux.USBMux(sockpath)
-		print "Waiting for devices..."
+		print("Waiting for devices...")
 		mux.process(1.0)
 	
 		dev = None
-		if globals().has_key('options'):
+		if 'options' in globals():
 			udid = options.udid
 		else:
 			udid = self.server.udid
 		if udid:
 			for device in mux.devices:
-				print device
 				if device.serial == udid:
 					dev = device
 					break
 			if not dev:
-				for _ in xrange(20): 
+				for _ in range(20):
 					mux.process(0.5)
 					for device in mux.devices:
 						if device.serial == udid:
@@ -102,27 +105,27 @@ class TCPRelay(SocketServer.BaseRequestHandler):
 			dev = mux.devices[0]
 			
 		if not mux.devices:
-			print "No device found"
+			print("No device found")
 			self.request.close()
 			return
-		print "Connecting to device %s"%str(dev)
+		print("Connecting to device %s"%str(dev))
 		dsock = mux.connect(dev, self.server.rport)
 		lsock = self.request
-		print "Connection established, relaying data"
+		print("Connection established, relaying data")
 		try:
 			fwd = SocketRelay(dsock, lsock, self.server.bufsize * 1024)
 			fwd.handle()
 		finally:
 			dsock.close()
 			lsock.close()
-		print "Connection closed"
+			print("Connection closed")
 
 
-class TCPServer(SocketServer.TCPServer):
+class TCPServer(socketserver.TCPServer):
 	allow_reuse_address = True
 
 
-class ThreadedTCPServer(SocketServer.ThreadingMixIn, TCPServer):
+class ThreadedTCPServer(socketserver.ThreadingMixIn, TCPServer):
 	pass
 
 
@@ -142,7 +145,7 @@ def forward_ports(pair_ports, udid=None, threaded=True, bufsize=128):
 		rport, lport = pair_port.split(":")
 		rport = int(rport)
 		lport = int(lport)
-		print "Forwarding local port %d to remote port %d"%(lport, rport)
+		print("Forwarding local port %d to remote port %d"%(lport, rport))
 		server = serverclass(("localhost", lport), TCPRelay)
 		server.rport = rport
 		server.bufsize = bufsize
@@ -195,7 +198,7 @@ if __name__ == '__main__':
 	HOST = "localhost"
 	
 	for rport, lport in ports:
-		print "Forwarding local port %d to remote port %d"%(lport, rport)
+		print("Forwarding local port %d to remote port %d"%(lport, rport))
 		server = serverclass((HOST, lport), TCPRelay)
 		server.rport = rport
 		server.bufsize = options.bufsize

@@ -24,17 +24,14 @@
 
 
 import os
-import hashlib
 import datetime
 from optparse import OptionParser
 from pprint import pprint
-from util import write_file, hexdump
-from biplist import writePlist, readPlist, Data
-from struct import unpack, pack
-from time import mktime, gmtime, sleep, time
+from biplist import writePlist, readPlist
+from time import mktime, gmtime
 
-from lockdown import LockdownClient
-from mobilebackup import MobileBackup
+from pymobiledevice.lockdown import LockdownClient
+from pymobiledevice.mobilebackup import MobileBackup
 from uuid import uuid4
 CODE_SUCCESS = 0x00
 CODE_ERROR_LOCAL =  0x06
@@ -78,7 +75,7 @@ class MobileBackup2(MobileBackup):
         if not os.path.isdir(self.backupPath):
             os.makedirs(self.backupPath,0o0755)
 
-        print "Starting new com.apple.mobilebackup2 service with working dir: %s" %  self.backupPath
+        print("Starting new com.apple.mobilebackup2 service with working dir: %s" %  self.backupPath)
 
         self.password = password
         DLMessageVersionExchange = self.service.recvPlist()
@@ -102,7 +99,7 @@ class MobileBackup2(MobileBackup):
         res = self.device_link_service_receive_process_message()
         if res:
             if name and res["MessageName"] != name:
-                print "MessageName does not match %s %s" % (name, str(res))
+                print("MessageName does not match %s %s" % (name, str(res)))
             return res
 
     def version_exchange(self):
@@ -148,11 +145,11 @@ class MobileBackup2(MobileBackup):
 
         data = self.read_file(self.check_filename(filename))
         if data != None:
-            print "Sending %s to device" % filename
+            print("Sending %s to device" % filename)
             self.service.send_raw(chr(CODE_FILE_DATA) + data)
             self.service.send_raw(chr(CODE_SUCCESS))
         else:
-            print "File %s requested from device not found" % filename
+            print("File %s requested from device not found" % filename)
             self.service.send_raw(chr(CODE_ERROR_LOCAL))
             self.mb2_multi_status_add_file_error(errplist, filename, ERROR_ENOENT, "Could not find the droid you were looking for ;)")
 
@@ -173,7 +170,7 @@ class MobileBackup2(MobileBackup):
 
     def mb2_handle_make_directory(self, msg):
         dirname = self.check_filename(msg[1])
-        print "Creating directory %s" % dirname
+        print("Creating directory %s" % dirname)
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
         self.mobilebackup2_send_status_response(0, "")
@@ -194,25 +191,25 @@ class MobileBackup2(MobileBackup):
                     self.write_file(self.check_filename(backup_filename), filedata)
                     break
                 else:
-                    print "Unknown code", ord(stuff[0])
+                    print("Unknown code", ord(stuff[0]))
                     break
         self.mobilebackup2_send_status_response(0)
 
     def mb2_handle_move_files(self, msg):
         for k,v in msg[1].items():
-            print "Renaming %s to %s"  % (self.check_filename(k),self.check_filename(v))
+            print("Renaming %s to %s"  % (self.check_filename(k),self.check_filename(v)))
             os.rename(self.check_filename(k),self.check_filename(v))
         self.mobilebackup2_send_status_response(0)
 
     def mb2_handle_remove_files(self, msg):
         for filename in msg[1]:
-            print "Removing ", self.check_filename(filename)
+            print("Removing ", self.check_filename(filename))
             try:
                 filename = self.check_filename(filename)
                 if os.path.isfile(filename):
                     os.unlink(filename)
-            except Exception, e:
-                print e
+            except Exception as e:
+                print(e)
         self.mobilebackup2_send_status_response(0)
 
     def work_loop(self):
@@ -251,7 +248,7 @@ class MobileBackup2(MobileBackup):
                 if errcode == 0:
                     m =  msg[1].get("MessageName")
                     if m != "Response":
-                        print m
+                        print(m)
                 if errcode == 1:
                     raise Exception("Please unlock your device and retry...")
                 if errcode == 211:
@@ -281,7 +278,7 @@ class MobileBackup2(MobileBackup):
 
 
     def backup(self,fullBackup=True):
-        print "Starting%sbackup..." % (" Encrypted " if self.willEncrypt else "")
+        print("Starting%sbackup..." % (" Encrypted " if self.willEncrypt else ""))
         options = {}
         if not os.path.isdir(os.path.join(self.backupPath,self.udid)):
             os.makedirs(os.path.join(self.backupPath,self.udid))
@@ -301,15 +298,15 @@ class MobileBackup2(MobileBackup):
                                 "RestorePreserveSettings": True},
 			password=None):
 
-        print "Starting restoration..."
+        print("Starting restoration...")
         m = os.path.join(self.backupPath,self.udid,"Manifest.plist")
         try:
             manifest = readPlist(m)
         except IOError:
-            print 'not a valid backup folder'
+            print('not a valid backup folder')
             return -1
         if manifest.get("IsEncrypted"):
-            print "Backup is encrypted, enter password : "
+            print("Backup is encrypted, enter password : ")
             if password:
                 self.password = password
             else:
@@ -331,7 +328,7 @@ class MobileBackup2(MobileBackup):
         self.mobilebackup2_send_request("List", self.udid, options)
         z = self.work_loop()
         if z:
-            print z["Content"]
+            print(z["Content"])
         return z
 
     def changepw(self,oldpw,newpw):
@@ -341,16 +338,16 @@ class MobileBackup2(MobileBackup):
         self.mobilebackup2_send_request("ChangePassword", self.udid, "", options)
         z = self.work_loop()
         if z:
-            print z
+            print(z)
         return z
 
     def unback(self,options={"Password": None}):
         self.mobilebackup2_send_request("Unback", self.udid, options)
-        print self.work_loop()
+        print(self.work_loop())
 
     def enableCloudBackup(self,options={"CloudBackupState": False}):
         self.mobilebackup2_send_request("EnableCloudBackup", self.udid, options)
-        print self.work_loop()
+        print(self.work_loop())
 
 
 if __name__ == "__main__":

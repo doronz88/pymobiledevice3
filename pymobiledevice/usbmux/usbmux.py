@@ -19,6 +19,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 import socket, struct, select, sys
+from six import PY3
 
 try:
 	import plistlib
@@ -45,9 +46,14 @@ class SafeStreamSocket:
 			totalsent = totalsent + sent
 	def recv(self, size):
 		msg = ''
+		if PY3:
+			msg = b''
 		while len(msg) < size:
 			chunk = self.sock.recv(size-len(msg))
-			if chunk == '':
+			empty_chunk = ''
+			if PY3:
+				empty_chunk = b''
+			if chunk == empty_chunk:
 				raise MuxError("socket connection broken")
 			msg = msg + chunk
 		return msg
@@ -74,9 +80,15 @@ class BinaryProtocol(object):
 
 	def _pack(self, req, payload):
 		if req == self.TYPE_CONNECT:
-			return struct.pack("IH", payload['DeviceID'], payload['PortNumber']) + "\x00\x00"
+			connect_data = "\x00\x00"
+			if PY3:
+				connect_data = b"\x00\x00"
+			return struct.pack("IH", payload['DeviceID'], payload['PortNumber']) + connect_data
 		elif req == self.TYPE_LISTEN:
-			return ""
+			if PY3:
+				return b""
+			else:
+				return ""
 		else:
 			raise ValueError("Invalid outgoing request type %d"%req)
 	
@@ -137,12 +149,19 @@ class PlistProtocol(BinaryProtocol):
 			req = [self.TYPE_CONNECT, self.TYPE_LISTEN][req-2]
 		payload['MessageType'] = req
 		payload['ProgName'] = 'tcprelay'
-		BinaryProtocol.sendpacket(self, self.TYPE_PLIST, tag, plistlib.writePlistToString(payload))
+		if PY3:
+			wrapped_payload = plistlib.dumps(payload)
+		else:
+			wrapped_payload = plistlib.writePlistToString(payload)
+		BinaryProtocol.sendpacket(self, self.TYPE_PLIST, tag, wrapped_payload)
 	def getpacket(self):
 		resp, tag, payload = BinaryProtocol.getpacket(self)
 		if resp != self.TYPE_PLIST:
 			raise MuxError("Received non-plist type %d"%resp)
-		payload = plistlib.readPlistFromString(payload)
+		if PY3:
+			payload = plistlib.loads(payload)
+		else:
+			payload = plistlib.readPlistFromString(payload)
 		return payload['MessageType'], tag, payload
 
 class MuxConnection(object):
@@ -236,11 +255,10 @@ class USBMux(object):
 
 if __name__ == "__main__":
 	mux = USBMux()
-	print "Waiting for devices..."
+	print("Waiting for devices...")
 	if not mux.devices:
 		mux.process(0.1)
 	while True:
-		print "Devices:"
 		for dev in mux.devices:
-			print dev
+			print("Device:", dev)
 		mux.process()

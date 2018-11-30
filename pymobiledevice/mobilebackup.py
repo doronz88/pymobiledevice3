@@ -24,13 +24,11 @@
 
 
 from pymobiledevice.lockdown import LockdownClient
-import struct
 import plistlib
 from pprint import pprint
 import os
 import datetime
 from pymobiledevice.afc import AFCClient
-from pymobiledevice.util import makedirs
 
 #
 # Fix plistlib.py line 364
@@ -77,7 +75,7 @@ class MobileBackup(object):
         self.service.sendPlist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
         DLMessageDeviceReady = self.service.recvPlist()
         if DLMessageDeviceReady and DLMessageDeviceReady[0] == "DLMessageDeviceReady":
-            print "Got DLMessageDeviceReady"
+            print("Got DLMessageDeviceReady")
 
     def check_filename(self, name):
         if name.find("../") != -1:
@@ -141,12 +139,12 @@ class MobileBackup(object):
             info["iBooks Data 2"] = plistlib.Data(iBooksData2)
 
         info["iTunes Settings"] = self.lockdown.getValue("com.apple.iTunes")
-        print "Creating %s" % os.path.join(self.udid,"Info.plist")
+        print("Creating %s" % os.path.join(self.udid,"Info.plist"))
         self.write_file(os.path.join(self.udid,"Info.plist"), plistlib.writePlistToString(info))
 
     def ping(self, message):
         self.service.sendPlist(["DLMessagePing", message])
-        print "ping response", self.service.recvPlist()
+        print("ping response", self.service.recvPlist())
 
     def device_link_service_send_process_message(self, msg):
         return self.service.sendPlist(["DLMessageProcessMessage", msg])
@@ -171,7 +169,7 @@ class MobileBackup(object):
         if not res:
             return
         if res["BackupMessageTypeKey"] != "BackupMessageBackupReplyOK":
-            print res
+            print(res)
             return
         self.device_link_service_send_process_message(res)
 
@@ -183,7 +181,7 @@ class MobileBackup(object):
             if not res or res[0] != "DLSendFile":
                 if res[0] == "DLMessageProcessMessage":
                     if res[1].get("BackupMessageTypeKey") == "BackupMessageBackupFinished":
-                        print "Backup finished OK !"
+                        print("Backup finished OK !")
                         #TODO BackupFilesToDeleteKey
                         plistlib.writePlist(res[1]["BackupManifestKey"], self.check_filename("Manifest.plist"))
                 break
@@ -191,7 +189,7 @@ class MobileBackup(object):
             info = res[2]
             if not f:
                 outpath = self.check_filename(info.get("DLFileDest"))
-                print info["DLFileAttributesKey"]["Filename"], info.get("DLFileDest")
+                print(info["DLFileAttributesKey"]["Filename"], info.get("DLFileDest"))
                 f = open(outpath + ".mddata", "wb")
             f.write(data)
             if info.get("DLFileStatusKey") == DEVICE_LINK_FILE_STATUS_LAST_HUNK:

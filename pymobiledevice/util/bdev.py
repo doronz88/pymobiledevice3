@@ -57,7 +57,7 @@ class FTLBlockDevice(object):
         #    return "\x00" * self.blockSize
         lpn = int(self.lbaoffset + blockNum * self.lbaToLpnFactor)
         d = self.nand.readLPN(lpn, self.key)
-        for i in xrange(1, self.pagesPerLBA):
+        for i in range(1, self.pagesPerLBA):
             d += self.nand.readLPN(lpn + i, self.key)
         if self.lbasPerPage:
             zz = blockNum % self.lbasPerPage
@@ -72,7 +72,7 @@ class FTLBlockDevice(object):
 
     def dumpToFile(self, outputfilename):
         hs = sizeof_fmt((self.last_lba - self.lbaoffset) * self.pageSize)
-        print "Dumping partition to %s (%s)" % (outputfilename, hs)
+        print("Dumping partition to %s (%s)" % (outputfilename, hs))
         flags = os.O_CREAT | os.O_RDWR
         if sys.platform == "win32":
             flags |= os.O_BINARY
@@ -80,11 +80,11 @@ class FTLBlockDevice(object):
         
         pbar = ProgressBar(self.last_lba - self.lbaoffset - 1)
         pbar.start()
-        for i in xrange(self.lbaoffset, self.last_lba):
+        for i in range(self.lbaoffset, self.last_lba):
             pbar.update(i-self.lbaoffset)
             d = self.nand.readLPN(i, self.key)
             if i == self.lbaoffset and d[0x400:0x402] != "HX":
-                print "FAIL? Not HFS partition or wrong key"
+                print("FAIL? Not HFS partition or wrong key")
             os.write(fd, d)
         pbar.finish()
         os.close(fd)
@@ -116,8 +116,9 @@ class IMG3BlockDevice(object):
     
     def getIVforBlock(self, blockNum):
         #read last 16 bytes of previous block to get IV
-        if not self.ivs.has_key(blockNum):
-            os.lseek(self.fd, self.offset + self.blockSize * blockNum - 16, os.SEEK_SET)
+        if blockNum not in self.ivs:
+            os.lseek(self.fd, self.offset + self.blockSize *
+                     blockNum - 16, os.SEEK_SET)
             self.ivs[blockNum] = os.read(self.fd, 16)
         return self.ivs[blockNum]
 

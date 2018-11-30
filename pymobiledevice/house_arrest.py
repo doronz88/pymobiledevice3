@@ -36,7 +36,7 @@ class HouseArrestClient(AFCClient):
         self.service = service if service else self.lockdown.startService(self.serviceName)
 
     def stop_session(self):
-        print "Disconecting..."
+        print("Disconecting...")
         self.service.close()
 
     def send_command(self, applicationId, cmd="VendDocuments"):
@@ -44,7 +44,7 @@ class HouseArrestClient(AFCClient):
         res = self.service.recvPlist()
 
         if res.get("Error"):
-            print res["Error"]
+            print(res["Error"])
             return None
 
     def shell(self,applicationId,cmd="VendDocuments"):
