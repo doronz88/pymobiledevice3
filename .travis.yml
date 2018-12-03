@@ -4,8 +4,6 @@ matrix:
   - os: osx
     python: '2.7'
     language: generic
-    env:
-      - BUILD_SDIST=true
   - os: osx
     python: '3.6'
     language: generic
@@ -18,6 +16,7 @@ script:
 before_deploy: echo $TRAVIS_TAG > version.txt
 deploy:
   skip_cleanup: true
+  skip_existing: true
   provider: pypi
   user: qta
   password: 
@@ -26,4 +25,4 @@ deploy:
   on:
     tags: true
     branch: master
-    condition: $TRAVIS_TAG =~ [0-9]+\.[0-9]+\.[0-9]+ && $BUILD_SDIST=true
+    condition: $TRAVIS_TAG =~ [0-9]+\.[0-9]+\.[0-9]+
