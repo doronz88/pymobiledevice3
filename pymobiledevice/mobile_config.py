@@ -38,7 +38,7 @@ class MobileConfigService(object):
         self.service.sendPlist({"RequestType":"GetProfileList"})
         res = self.service.recvPlist()
         if res.get("Status") != "Acknowledged":
-            print "GetProfileList error"
+            print("GetProfileList error")
             pprint(res)
             return
         return res
@@ -53,7 +53,7 @@ class MobileConfigService(object):
         if not profiles:
             return
         if not profiles["ProfileMetadata"].has_key(ident):
-            print "Trying to remove not installed profile %s" % ident
+            print("Trying to remove not installed profile %s" % ident)
             return
         meta = profiles["ProfileMetadata"][ident]
         pprint(meta)

@@ -72,7 +72,7 @@ class FileRelay(object):
         self.packet_num = 0
 
     def stop_session(self):
-        print "Disconecting..."
+        print("Disconecting...")
         self.service.close()
 
     def request_sources(self, sources=["UserDatabases"]):
@@ -90,7 +90,7 @@ class FileRelay(object):
                         z += x
                     return z
                 else:
-                    print res.get("Error")
+                    print(res.get("Error"))
                     break
         return None
 
@@ -115,13 +115,13 @@ if __name__ == "__main__":
         sources = options.sources
     else:
         sources = ["UserDatabases"]
-    print "Downloading: %s" % ''.join([str(item)+" " for item in sources])
+    print("Downloading: %s" % ''.join([str(item)+" " for item in sources]))
 
     fc = None
     try:
         fc = FileRelay()
     except:
-        print "Device with product vertion >= 8.0 does not allow access to fileRelay service"
+        print("Device with product vertion >= 8.0 does not allow access to fileRelay service")
         exit()
 
     data = fc.request_sources(sources)
@@ -133,7 +133,7 @@ if __name__ == "__main__":
             _,path = mkstemp(prefix="fileRelay_dump_",suffix=".gz",dir=".")
 
         open(path,'wb').write(data)
-        print  "Data saved to:  %s " % path
+        print("Data saved to:  %s " % path)
 
     if options.extractpath:
         with open(path, 'r') as f:

@@ -22,12 +22,14 @@
 #
 #
 
-from lockdown import LockdownClient
+from pymobiledevice.lockdown import LockdownClient
+from six import PY3
 from sys import exit
 import re
 import time
 
 TIME_FORMAT = '%H:%M:%S'
+
 
 class Syslog(object):
     '''
@@ -58,12 +60,14 @@ class Syslog(object):
   
         while True:
             d = self.c.recv(4096)
+            if PY3:
+                d = d.decode('utf-8')
             if procName:
                 procFilter = re.compile(procName,re.IGNORECASE)
-                if len(d.split(" ")) > 4 and  not procFilter.search(d):
+                if len(d.split(" ")) > 4 and not procFilter.search(d):
                     continue
-            s =  d.strip("\n\x00\x00")
-            print s
+            s = d.strip("\n\x00\x00")
+            print(s)
             if logFile:
                 with open(logFile, 'a') as f:
                     f.write(d.replace("\x00", ""))            

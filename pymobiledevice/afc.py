@@ -22,18 +22,20 @@
 #
 #
 
-
+from past.builtins import xrange
+import os
 from construct.core import Struct
-from construct.lib.container import Container
-from construct.macros import String, ULInt64
-from pymobiledevice.lockdown import LockdownClient
+from construct.lib.containers import Container
+from construct import Bytes, Int64ul
 import struct
 from cmd import Cmd
-import os
-from util import hexdump, parsePlist
+from six import PY3
 from pprint import pprint
 import plistlib
 import posixpath
+
+from pymobiledevice.lockdown import LockdownClient
+from pymobiledevice.util import hexdump, parsePlist
 
 MODEMASK =  0o0000777
 
@@ -111,14 +113,16 @@ AFC_LOCK_SH = 1 | 4  #/**< shared lock */
 AFC_LOCK_EX = 2 | 4  #/**< exclusive lock */
 AFC_LOCK_UN = 8 | 4  #/**< unlock */
 
+if PY3:
+    AFCMAGIC = b"CFA6LPAA"
+else:
+    AFCMAGIC = "CFA6LPAA"
 
-AFCMAGIC = "CFA6LPAA"
-AFCPacket = Struct("AFCPacket",
-                   String("magic", 8,),
-                   ULInt64("entire_length"),
-                   ULInt64("this_length"),
-                   ULInt64("packet_num"),
-                   ULInt64("operation")
+AFCPacket = Struct("magic" / Bytes(8),
+                   "entire_length" / Int64ul,
+                   "this_length" / Int64ul,
+                   "packet_num" / Int64ul,
+                   "operation" / Int64ul
                    )
 
 
@@ -131,7 +135,7 @@ class AFCClient(object):
 
 
     def stop_session(self):
-        print "Disconecting..."
+        print("Disconecting...")
         self.service.close()
 
 
@@ -145,6 +149,8 @@ class AFCClient(object):
             afcpack.this_length = this_length
         header = AFCPacket.build(afcpack)
         self.packet_num += 1
+        if PY3 and isinstance(data, str):
+            data = data.encode('utf-8')
         self.service.send(header + data)
 
 
@@ -159,7 +165,7 @@ class AFCClient(object):
             data = self.service.recv_exact(length)
             if res.operation == AFC_OP_STATUS:
                 if length != 8:
-                    print "Status length != 8"
+                    print("Status length != 8")
                 status = struct.unpack("<Q", data[:8])[0]
             elif res.operation != AFC_OP_DATA:
                 pass#print "error ?", res
@@ -173,16 +179,18 @@ class AFCClient(object):
         except:
             self.lockdown = LockdownClient()
             self.service = self.lockdown.startService(self.serviceName)
-            return  self.do_operation(opcode, data)
+            return self.do_operation(opcode, data)
 
 
     def list_to_dict(self, d):
+        if PY3:
+            d = d.decode('utf-8')
         t = d.split("\x00")
         t = t[:-1]
 
         assert len(t) % 2 == 0
         res = {}
-        for i in xrange(len(t)/2):
+        for i in xrange(int(len(t)/2)):
             res[t[i*2]] = t[i*2 + 1]
         return res
 
@@ -196,7 +204,9 @@ class AFCClient(object):
     def read_directory(self, dirname):
         status, data = self.do_operation(AFC_OP_READ_DIR, dirname)
         if status == AFC_E_SUCCESS:
-            return filter(lambda x:x!="", data.split("\x00"))
+            if PY3:
+                data = data.decode('utf-8')
+            return [x for x in data.split("\x00") if x != ""]
         return []
 
 
@@ -208,7 +218,7 @@ class AFCClient(object):
     def remove_directory(self, dirname):
         info = self.get_file_info(dirname)
         if not info or info.get("st_ifmt") != "S_IFDIR":
-            print "remove_directory: %s not S_IFDIR" % dirname
+            print("remove_directory: %s not S_IFDIR" % dirname)
             return
 
         for d in self.read_directory(dirname):
@@ -219,7 +229,7 @@ class AFCClient(object):
             if info.get("st_ifmt") == "S_IFDIR":
                 self.remove_directory(dirname + "/" + d)
             else:
-                print dirname + "/" + d
+                print(dirname + "/" + d)
                 self.file_remove(dirname + "/" + d)
         assert len(self.read_directory(dirname)) == 2 #.. et .
         return self.file_remove(dirname)
@@ -232,13 +242,23 @@ class AFCClient(object):
 
 
     def make_link(self, target, linkname, type=AFC_SYMLINK):
-        status, data = self.do_operation(AFC_OP_MAKE_LINK, struct.pack("<Q", type) + target + "\x00" + linkname + "\x00")
-        print "make_link", status
+        if PY3:
+            linkname = linkname.encode('utf-8')
+            separator = b"\x00"
+        else:
+            separator = "\x00"
+        status, data = self.do_operation(AFC_OP_MAKE_LINK, struct.pack("<Q", type) + target + separator + linkname + separator)
+        print("make_link", status)
         return status
 
 
     def file_open(self, filename, mode=AFC_FOPEN_RDONLY):
-        status, data = self.do_operation(AFC_OP_FILE_OPEN, struct.pack("<Q", mode) + filename + "\x00")
+        if PY3:
+            filename = filename.encode('utf-8')
+            separator = b"\x00"
+        else:
+            separator = "\x00"
+        status, data = self.do_operation(AFC_OP_FILE_OPEN, struct.pack("<Q", mode) + filename + separator)
         return struct.unpack("<Q", data)[0] if data else None
 
 
@@ -248,18 +268,31 @@ class AFCClient(object):
 
 
     def file_remove(self, filename):
-        status, data = self.do_operation(AFC_OP_REMOVE_PATH, filename + "\x00")
+        if PY3:
+            filename = filename.encode('utf-8')
+            separator = b"\x00"
+        else:
+            separator = "\x00"
+        status, data = self.do_operation(AFC_OP_REMOVE_PATH, filename + separator)
         return status
 
 
     def file_rename(self, old, new):
-        status, data = self.do_operation(AFC_OP_RENAME_PATH, old + "\x00" + new + "\x00")
+        if PY3:
+            old = old.encode('utf-8')
+            new = new.encode('utf-8')
+            separator = b"\x00"
+        else:
+            separator = "\x00"
+        status, data = self.do_operation(AFC_OP_RENAME_PATH, old + separator + new + separator)
         return status
 
 
     def file_read(self, handle, sz):
         MAXIMUM_READ_SIZE = 1 << 16
         data = ""
+        if PY3:
+            data = b""
         while sz > 0:
             if sz > MAXIMUM_READ_SIZE:
                 toRead = MAXIMUM_READ_SIZE
@@ -269,6 +302,8 @@ class AFCClient(object):
                 self.dispatch_packet(AFC_OP_READ, struct.pack("<QQ", handle, toRead))
                 s, d = self.receive_data()
             except:
+                import traceback
+                traceback.print_exc()
                 self.lockdown = LockdownClient()
                 self.service = self.lockdown.startService("com.apple.afc")
                 return  self.file_read(handle, sz)
@@ -283,7 +318,7 @@ class AFCClient(object):
     def file_write(self, handle, data):
         MAXIMUM_WRITE_SIZE = 1 << 15
         hh = struct.pack("<Q", handle)
-        segments = len(data) / MAXIMUM_WRITE_SIZE
+        segments = int(len(data) / MAXIMUM_WRITE_SIZE)
         try:
             for i in xrange(segments):
                 self.dispatch_packet(AFC_OP_WRITE,
@@ -291,7 +326,7 @@ class AFCClient(object):
                                      this_length=48)
                 s, d = self.receive_data()
                 if s != AFC_E_SUCCESS:
-                    print "file_write error %d" % s
+                    print("file_write error %d" % s)
                     break
             if len(data) % MAXIMUM_WRITE_SIZE:
                 self.dispatch_packet(AFC_OP_WRITE,
@@ -312,10 +347,10 @@ class AFCClient(object):
                 filename =  info['LinkTarget']
 
             if info['st_ifmt'] == 'S_IFDIR':
-                print "%s is directory..." % filename
+                print("%s is directory..." % filename)
                 return
 
-            print "Reading %s" % filename
+            print("Reading %s" % filename)
             h = self.file_open(filename)
             if not h:
                 return
@@ -337,6 +372,8 @@ class AFCClient(object):
         dirs = []
         files = []
         for fd in self.read_directory(dirname):
+            if PY3 and isinstance(fd, bytes):
+                fd = fd.decode('utf-8')
             if fd in ('.', '..', ''):
                 continue
             infos = self.get_file_info(posixpath.join(dirname, fd))
@@ -359,8 +396,7 @@ class AFCShell(Cmd):
     def __init__(self, afcname='com.apple.afc', completekey='tab', stdin=None, stdout=None, client=None):
 
         Cmd.__init__(self, completekey=completekey, stdin=stdin, stdout=stdout)
-        self.lockdown = LockdownClient()
-        self.afc = client if client else AFCClient(self.lockdown, serviceName=afcname)
+        self.afc = client if client else AFCClient(LockdownClient(), serviceName=afcname)
 
         self.curdir = '/'
         self.prompt = 'AFC$ ' + self.curdir + ' '
@@ -377,7 +413,7 @@ class AFCShell(Cmd):
 
 
     def do_pwd(self, p):
-        print self.curdir
+        print(self.curdir)
 
 
     def do_link(self, p):
@@ -396,7 +432,7 @@ class AFCShell(Cmd):
             self.curdir = new
             self.prompt = "AFC$ %s " % new
         else:
-            print "%s does not exist" % new
+            print("%s does not exist" % new)
 
 
     def _complete(self, text, line, begidx, endidx):
@@ -409,7 +445,7 @@ class AFCShell(Cmd):
         d = self.afc.read_directory(self.curdir + "/" + p)
         if d:
             for dd in d:
-                print dd
+                print(dd)
 
 
     def do_cat(self, p):
@@ -417,7 +453,7 @@ class AFCShell(Cmd):
         if data and p.endswith(".plist"):
             pprint(parsePlist(data))
         else:
-            print data
+            print(data)
 
 
     def do_rm(self, p):
@@ -440,7 +476,7 @@ class AFCShell(Cmd):
 
         f =  self.afc.get_file_info(path)
         if not f:
-            print "Source file does not exist.."
+            print("Source file does not exist..")
             return
 
         out_path = out + "/" + path
@@ -467,7 +503,7 @@ class AFCShell(Cmd):
         fromTo = p.split()
         if len(fromTo) != 2:
             return
-        print "from %s to %s" % (fromTo[0], fromTo[1])
+        print("from %s to %s" % (fromTo[0], fromTo[1]))
         if os.path.isdir(fromTo[0]):
             self.afc.make_directory(os.path.join(fromTo[1]))
             for x in os.listdir(fromTo[0]):
@@ -482,7 +518,7 @@ class AFCShell(Cmd):
 
 
     def do_head(self, p):
-        print self.afc.get_file_contents(self.curdir + "/" + p)[:32]
+        print(self.afc.get_file_contents(self.curdir + "/" + p)[:32])
 
 
     def do_hexdump(self, p):
@@ -501,7 +537,7 @@ class AFCShell(Cmd):
 
 
     def do_mkdir(self, p):
-        print self.afc.make_directory(p)
+        print(self.afc.make_directory(p))
 
 
     def do_rmdir(self, p):
@@ -509,7 +545,7 @@ class AFCShell(Cmd):
 
 
     def do_infos(self, p):
-        print self.afc.get_device_infos()
+        print(self.afc.get_device_infos())
 
 
     def do_mv(self, p):

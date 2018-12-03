@@ -65,6 +65,8 @@ if __name__ == "__main__":
         entry_points={},
         classifiers=[
             "Programming Language :: Python :: 2.7",
+            "Programming Language :: Python :: 3.6",
+            "Programming Language :: Python :: 3.7",
         ],
         url="https://github.com/qtacore/pymobiledevice",
         project_urls={

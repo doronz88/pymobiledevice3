@@ -83,17 +83,17 @@ class CpioArchive(object):
             f["name"] = self.ifile.read(f.get("namesize"))[:-1] # Removing \x00
             f["data"] = self.ifile.read(f.get("filesize"))
         except:
-            print 'ERROR: cpio record trunked (incomplete archive)'
+            print('ERROR: cpio record trunked (incomplete archive)')
             return None
         return f
 
     def extract_files(self,files=None,outpath="."):
-        print "Extracting files from CPIO archive" 
+        print("Extracting files from CPIO archive" )
         while 1:
             try:
                 hdr = int(self.ifile.read(6),8)
             except:
-                print 'ERROR: cpio record trunked (incomplete archive)'
+                print('ERROR: cpio record trunked (incomplete archive)')
                 break
 
             if hdr != OLD_MAGIC:
@@ -105,11 +105,11 @@ class CpioArchive(object):
             
             if files:
                 if not f.get("name") in files:
-                    print "Skipped %s" % f.get("name")
+                    print("Skipped %s" % f.get("name"))
                     continue
             
             fullOutPath = os.path.join(outpath,f.get("name").strip("../")) 
-            print "x %s" % fullOutPath
+            print("x %s" % fullOutPath)
 
             if (f.get("mode") & IFMT == ISFIFO):#FIFO
                 if not os.path.isdir(os.path.dirname(fullOutPath)):

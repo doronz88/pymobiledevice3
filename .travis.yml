@@ -4,6 +4,11 @@ matrix:
   - os: osx
     python: '2.7'
     language: generic
+    env:
+      - BUILD_SDIST=true
+  - os: osx
+    python: '3.6'
+    language: generic
 install:
   - pip install -r requirements.txt
   - sudo mkdir /usr/local/man
@@ -21,3 +26,4 @@ deploy:
   on:
     tags: true
     branch: master
+    condition: $TRAVIS_TAG =~ [0-9]+\.[0-9]+\.[0-9]+ && $BUILD_SDIST=true

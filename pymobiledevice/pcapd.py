@@ -26,7 +26,7 @@ import struct
 import time
 import sys
 from tempfile import mkstemp
-from lockdown import LockdownClient
+from pymobiledevice.lockdown import LockdownClient
 from optparse import OptionParser
 
 """
@@ -75,7 +75,7 @@ class Win32Pipe(object):
                                            1, 65536, 65536,
                                            300,
                                            None)
-        print "Connect wireshark to %s" % pipename
+        print("Connect wireshark to %s" % pipename)
         win32pipe.ConnectNamedPipe(self.pipe, None)
         win32file.WriteFile(self.pipe, struct.pack("<LHHLLLL", 0xa1b2c3d4, 2, 4, 0, 0, 65535, LINKTYPE_ETHERNET))
 
@@ -88,7 +88,7 @@ class Win32Pipe(object):
 if __name__ == "__main__":
     
     if sys.platform == "darwin":
-            print "Why not use rvictl ?"
+            print("Why not use rvictl ?")
 
     parser = OptionParser(usage="%prog")
     parser.add_option("-o", "--output", dest="output", default=False,
@@ -104,7 +104,7 @@ if __name__ == "__main__":
             path = options.output
 	else:
             _,path = mkstemp(prefix="device_dump_",suffix=".pcap",dir=".")
-        print "Recording data to: %s" % path
+        print("Recording data to: %s" % path)
         output = PcapOut(path)
 
     lockdown = LockdownClient()
@@ -121,7 +121,7 @@ if __name__ == "__main__":
         assert hdrsize >= 0x19
         interfacetype= data[0x19:hdrsize].strip("\x00")
         t = time.time()
-        print interfacetype, packet_size, t
+        print(interfacetype, packet_size, t)
         
         packet = data[hdrsize:]
         assert packet_size == len(packet)
