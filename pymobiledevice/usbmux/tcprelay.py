@@ -20,7 +20,7 @@
 
 import sys
 import select
-	from optparse import OptionParser
+from optparse import OptionParser
 from six import PY3
 from six.moves import socketserver
 

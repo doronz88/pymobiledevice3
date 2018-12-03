@@ -18,6 +18,7 @@ class InstallationProxyTest(unittest.TestCase):
             mux.process(0.1)
         if len(mux.devices) == 0:
             print("no real device found")
+            self.no_device = True
             return
         self.udid = mux.devices[0].serial
         self.lockdownclient = LockdownClient(self.udid)
@@ -41,6 +42,8 @@ class InstallationProxyTest(unittest.TestCase):
                     return (False, z.get("ErrorDescription"))
 
     def test_install_app(self):
+        if self.no_device:
+            return
         ipa_path = os.path.join(os.path.expanduser("~"), "Downloads/app/DemoApp.ipa")
         tmp_ipa = "/t%d.ipa" % time.time()
         with open(ipa_path, "rb") as f:
@@ -57,6 +60,8 @@ class InstallationProxyTest(unittest.TestCase):
         self.assertTrue(result, 'install_app failed: %s' % err)
 
     def test_uninstall_app(self):
+        if self.no_device:
+            return
         bundle_id = "com.tencent.qt4i.demo"
         cmd = {"Command": "Uninstall", "ApplicationIdentifier": bundle_id}
         self.service.sendPlist(cmd)
@@ -64,10 +69,14 @@ class InstallationProxyTest(unittest.TestCase):
         self.assertTrue(result, 'uninstall_app failed: %s' % err)
 
     def test_apps_info(self):
+        if self.no_device:
+            return
         self.service.sendPlist({"Command": "Lookup"})
         print(self.service.recvPlist())
 
     def test_list_apps(self, app_type='user'):
+        if self.no_device:
+            return
         options = {}
         if app_type == 'system':
             options["ApplicationType"] = "System"
@@ -88,5 +97,5 @@ class InstallationProxyTest(unittest.TestCase):
         print(apps)
 
     def tearDown(self):
-        if self.service:
+        if not self.no_device and self.service:
             self.service.close()

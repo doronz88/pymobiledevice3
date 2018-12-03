@@ -20,6 +20,7 @@ class HouseArrestTest(unittest.TestCase):
             mux.process(0.1)
         if len(mux.devices) == 0:
             print("no real device found")
+            self.no_device = True
             return
         udid = mux.devices[0].serial
         lockdown_client = LockdownClient(udid)
@@ -34,6 +35,8 @@ class HouseArrestTest(unittest.TestCase):
         self.afc_shell = AFCShell(client=self.afc)
 
     def test_list_files_in_sandbox(self):
+        if self.no_device:
+            return
         sandbox_tree =[]
         file_path = '/Documents'
         for l in self.afc.read_directory(file_path):
@@ -46,17 +49,23 @@ class HouseArrestTest(unittest.TestCase):
         pprint.pprint(sandbox_tree)
 
     def test_push_file_to_sandbox(self):
+        if self.no_device:
+            return
         data = b"hello sandbox!"
         self.afc.set_file_contents('/Documents/test.log', data)
 
     def test_pull_file_from_sandbox(self):
+        if self.no_device:
+            return
         data = b"hello sandbox!"
         content = self.afc.get_file_contents('/Documents/test.log')
         print(content)
 
     def test_remove_file_in_sandbox(self):
+        if self.no_device:
+            return
         self.afc_shell.do_rm('/Documents/test.log')
 
     def tearDown(self):
-        if self.service:
+        if not self.no_device and self.service:
             self.service.close()

@@ -19,6 +19,7 @@ class CrashReportTest(unittest.TestCase):
             mux.process(0.1)
         if len(mux.devices) == 0:
             print("no real device found")
+            self.no_device = True
             return
         udid = mux.devices[0].serial
 
@@ -44,5 +45,5 @@ class CrashReportTest(unittest.TestCase):
         print(local_crashes)
 
     def tearDown(self):
-        if self.service:
+        if not self.no_device and self.service:
             self.service.close()
