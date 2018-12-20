@@ -4,6 +4,8 @@
 
 
 import os
+import platform
+import sys
 from setuptools import setup, find_packages
   
 BASE_DIR = os.path.realpath(os.path.dirname(__file__))
@@ -39,6 +41,11 @@ def parse_requirements():
                 line = line.strip()
                 if line:
                     reqs.append(line)
+    if sys.platform == "win32":
+        if "64" in platform.architecture()[0]:
+            reqs.append('M2CryptoWin64')
+        else:
+            reqs.append('M2CryptoWin32')
     return reqs
 
 
