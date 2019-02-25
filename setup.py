@@ -6,7 +6,7 @@
 import os
 from setuptools import setup, find_packages
 BASE_DIR = os.path.realpath(os.path.dirname(__file__))
-VERSION = "1.0.1"
+VERSION = "1.0.8"
 
 def replace_version_py(version):
     content = """# -*- coding: utf-8 -*-
