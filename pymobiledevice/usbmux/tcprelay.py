@@ -23,7 +23,7 @@ import SocketServer
 import select
 from optparse import OptionParser
 import sys
-import threading
+import time
 
 class SocketRelay(object):
 	def __init__(self, a, b, maxbuf=65535):
@@ -66,18 +66,45 @@ class SocketRelay(object):
 				self.btoa += s
 			#print "Relay iter: %8d atob, %8d btoa, lists: %r %r %r"%(len(self.atob), len(self.btoa), rlo, wlo, xlo)
 
+
 class TCPRelay(SocketServer.BaseRequestHandler):
 	def handle(self):
 		print "Incoming connection to %d"%self.server.server_address[1]
-		mux = usbmux.USBMux(options.sockpath)
+		if globals().has_key('options'):
+			sockpath = options.sockpath
+		else:
+			sockpath = None	
+		mux = usbmux.USBMux(sockpath)
 		print "Waiting for devices..."
-		if not mux.devices:
-			mux.process(1.0)
+		mux.process(1.0)
+	
+		dev = None
+		if globals().has_key('options'):
+			udid = options.udid
+		else:
+			udid = self.server.udid
+		if udid:
+			for device in mux.devices:
+				print device
+				if device.serial == udid:
+					dev = device
+					break
+			if not dev:
+				for _ in xrange(20): 
+					mux.process(0.5)
+					for device in mux.devices:
+						if device.serial == udid:
+							dev = device
+							break
+					if dev :
+						break	
+		else:
+			dev = mux.devices[0]
+			
 		if not mux.devices:
 			print "No device found"
 			self.request.close()
 			return
-		dev = mux.devices[0]
 		print "Connecting to device %s"%str(dev)
 		dsock = mux.connect(dev, self.server.rport)
 		lsock = self.request
@@ -90,59 +117,96 @@ class TCPRelay(SocketServer.BaseRequestHandler):
 			lsock.close()
 		print "Connection closed"
 
+
 class TCPServer(SocketServer.TCPServer):
 	allow_reuse_address = True
+
 
 class ThreadedTCPServer(SocketServer.ThreadingMixIn, TCPServer):
 	pass
 
-HOST = "localhost"
 
-parser = OptionParser(usage="usage: %prog [OPTIONS] RemotePort[:LocalPort] [RemotePort[:LocalPort]]...")
-parser.add_option("-t", "--threaded", dest='threaded', action='store_true', default=False, help="use threading to handle multiple connections at once")
-parser.add_option("-b", "--bufsize", dest='bufsize', action='store', metavar='KILOBYTES', type='int', default=128, help="specify buffer size for socket forwarding")
-parser.add_option("-s", "--socket", dest='sockpath', action='store', metavar='PATH', type='str', default=None, help="specify the path of the usbmuxd socket")
+def forward_ports(pair_ports, udid=None, threaded=True, bufsize=128):
+	'''iOS真机设备的端口转发
+	
+	:param pair_ports: 端口对的数组，每对端口中前一个代表远程端口，后一个代表本地端口，例如：["8100:8100", "8200:8200"]
+	:type pair_ports: list
+	'''
+	servers=[]
+	if threaded:
+		serverclass = ThreadedTCPServer
+	else:
+		serverclass = TCPServer
+		
+	for pair_port in pair_ports:
+		rport, lport = pair_port.split(":")
+		rport = int(rport)
+		lport = int(lport)
+		print "Forwarding local port %d to remote port %d"%(lport, rport)
+		server = serverclass(("localhost", lport), TCPRelay)
+		server.rport = rport
+		server.bufsize = bufsize
+		server.udid = udid
+		servers.append(server)
 
-options, args = parser.parse_args()
+	alive = True
+	while alive:
+		try:
+			rl, wl, xl = select.select(servers, [], []) 
+			for server in rl:
+				server.handle_request()
+		except:
+			alive = False
+	
 
-serverclass = TCPServer
-if options.threaded:
-	serverclass = ThreadedTCPServer
+if __name__ == '__main__':
+	parser = OptionParser(usage="usage: %prog [OPTIONS] RemotePort[:LocalPort] [RemotePort[:LocalPort]]...")
+	parser.add_option("-t", "--threaded", dest='threaded', action='store_true', default=False, help="use threading to handle multiple connections at once")
+	parser.add_option("-b", "--bufsize", dest='bufsize', action='store', metavar='KILOBYTES', type='int', default=128, help="specify buffer size for socket forwarding")
+	parser.add_option("-s", "--socket", dest='sockpath', action='store', metavar='PATH', type='str', default=None, help="specify the path of the usbmuxd socket")
+	parser.add_option("-u", "--udid", dest='udid', action='store', metavar='UDID', type='str', default=None, help="specify the udid of iOS device")
+	
+	options, args = parser.parse_args()
 
-if len(args) == 0:
-	parser.print_help()
-	sys.exit(1)
+	serverclass = TCPServer
+	if options.threaded:
+		serverclass = ThreadedTCPServer
 
-ports = []
-
-for arg in args:
-	try:
-		if ':' in arg:
-			rport, lport = arg.split(":")
-			rport = int(rport)
-			lport = int(lport)
-			ports.append((rport, lport))
-		else:
-			ports.append((int(arg), int(arg)))
-	except:
+	if len(args) == 0:
 		parser.print_help()
 		sys.exit(1)
 
-servers=[]
+	ports = []
 
-for rport, lport in ports:
-	print "Forwarding local port %d to remote port %d"%(lport, rport)
-	server = serverclass((HOST, lport), TCPRelay)
-	server.rport = rport
-	server.bufsize = options.bufsize
-	servers.append(server)
+	for arg in args:
+		try:
+			if ':' in arg:
+				rport, lport = arg.split(":")
+				rport = int(rport)
+				lport = int(lport)
+				ports.append((rport, lport))
+			else:
+				ports.append((int(arg), int(arg)))
+		except:
+			parser.print_help()
+			sys.exit(1)
 
-alive = True
+	servers=[]
+	HOST = "localhost"
+	
+	for rport, lport in ports:
+		print "Forwarding local port %d to remote port %d"%(lport, rport)
+		server = serverclass((HOST, lport), TCPRelay)
+		server.rport = rport
+		server.bufsize = options.bufsize
+		servers.append(server)
 
-while alive:
-	try:
-		rl, wl, xl = select.select(servers, [], [])
-		for server in rl:
-			server.handle_request()
-	except:
-		alive = False
+	alive = True
+	
+	while alive:
+		try:
+			rl, wl, xl = select.select(servers, [], [])
+			for server in rl:
+				server.handle_request()
+		except:
+			alive = False

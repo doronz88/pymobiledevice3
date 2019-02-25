@@ -30,8 +30,8 @@ import posixpath
 import logging
 
 from construct.core import Struct
-from construct.lib.container import Container
-from construct.macros import String, ULInt64
+from construct.lib.containers import Container
+from construct import Const,  Int64ul
 
 from pymobiledevice.lockdown import LockdownClient
 
@@ -116,13 +116,13 @@ AFC_LOCK_EX = 2 | 4  #/**< exclusive lock */
 AFC_LOCK_UN = 8 | 4  #/**< unlock */
 
 
-AFCMAGIC = "CFA6LPAA"
-AFCPacket = Struct("AFCPacket",
-                   String("magic", 8,),
-                   ULInt64("entire_length"),
-                   ULInt64("this_length"),
-                   ULInt64("packet_num"),
-                   ULInt64("operation")
+AFCMAGIC = b"CFA6LPAA"
+AFCPacket = Struct(
+                   "magic" / Const(AFCMAGIC),
+                   "entire_length" /Int64ul,
+                   "this_length" / Int64ul,
+                   "packet_num" / Int64ul,
+                   "operation" / Int64ul,
                    )
 
 
@@ -517,10 +517,6 @@ class AFCShell(Cmd):
         print self.afc.get_device_infos()
 
 
-    def do_rmdir(self, p):
-        return self.afc.remove_directory(p)
-
-
     def do_mv(self, p):
         t = p.split()
         return self.afc.rename_path(t[0], t[1])
@@ -528,8 +524,8 @@ class AFCShell(Cmd):
 
 
 class AFC2Client(AFCClient):
-    def __init__(self, lockdown=None, udid=None):
-        super(AFC, self).__init__(lockdown, serviceName="com.apple.afc2", udid=udid)
+    def __init__(self, lockdown=None):
+        super(AFC2Client, self).__init__(lockdown, serviceName="com.apple.afc2",udid=udid)
 
 
 

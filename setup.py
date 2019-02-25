@@ -1,47 +1,65 @@
-#! /usr/bin/env python
 # -*- coding: utf-8 -*-
-#
-# vim: fenc=utf-8
-# vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
-#
-#
+'''package script
+'''
 
+
+import os
 from setuptools import setup, find_packages
-from os import path
+BASE_DIR = os.path.realpath(os.path.dirname(__file__))
+VERSION = "1.0.1"
 
-here = path.abspath(path.dirname(__file__))
-f = path.join(here, 'README.md')
+def replace_version_py(version):
+    content = """# -*- coding: utf-8 -*-
+'''pymobiledevice2
+'''
+VERSION = '%(version)s'
+"""
+    version_py = os.path.join(BASE_DIR, 'pymobiledevice', 'version.py')
+    with open(version_py, 'w') as fd:
+        fd.write(content % {'version':version})
 
-setup(
-    name='pymobiledevice',
-    version='0.1.7',
-    description="Interface with iOS devices",
-    url='https://github.com/iOSForensics/pymobiledevice',
-    author='gotohack',
-    author_email='dark[-at-]gotohack.org',
-    license='GPL',
-    classifiers=[
-        'Development Status :: 4 - Beta',
-        'Intended Audience :: Developers',
-        'Topic :: Software Development :: Build Tools',
-        'License :: OSI Approved :: MIT License',
-        'Programming Language :: Python :: 2.7',
-        #'Programming Language :: Python :: 3',
-    ],
 
-    keywords='pymobiledevice ios iphone ipad ipod',
-    packages=find_packages(),
-    py_modules=['pymobiledevice'],
-    entry_points='',
-    install_requires=[
-        'construct',
-        'm2crypto',
-    ],
-    #extras_require={
-    #    'python_version >= "3"': [
-    #        'ak-vendor',
-    #    ],
-    #    'dev': [''],
-    #    'test': [''],
-    #},
-)
+def generate_version():
+    version = VERSION
+    if os.path.isfile(os.path.join(BASE_DIR, "version.txt")):
+        with open("version.txt", "r") as fd:
+            content = fd.read().strip()
+            if content:
+                version = content
+    replace_version_py(version)
+    return version
+
+
+def parse_requirements():
+    reqs = []
+    if os.path.isfile(os.path.join(BASE_DIR, "requirements.txt")):
+        with open(os.path.join(BASE_DIR, "requirements.txt"), 'r') as fd:
+            for line in fd.readlines():
+                line = line.strip()
+                if line:
+                    reqs.append(line)
+    return reqs
+
+
+
+if __name__ == "__main__":
+
+    setup(
+        version=generate_version(),
+        name="pymobiledevice-qta",
+        long_description="""
+# pymobiledevice
+
+pymobiledevice is a cross-platform implementation of the mobiledevice library
+that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV® devices.
+""",
+        long_description_content_type='text/markdown',
+        cmdclass={},
+        packages=find_packages(),
+        package_data={'':['*.txt', '*.TXT'], },
+        data_files=[(".", ["requirements.txt"])],
+        author="QTA",
+        license="Copyright(c)2010-2018 Tencent All Rights Reserved. ",
+        install_requires=parse_requirements(),
+        entry_points={}
+    )

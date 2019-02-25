@@ -31,9 +31,8 @@ import time
 import logging
 
 from pymobiledevice.plist_service import PlistService
-from pprint import pprint
 from pymobiledevice.ca import ca_do_everything
-from pymobiledevice.util import write_file, readHomeFile, writeHomeFile
+from pymobiledevice.util import readHomeFile, writeHomeFile
 from pymobiledevice.usbmux import usbmux
 
 
@@ -84,20 +83,21 @@ class LockdownClient(object):
 
         assert self.queryType() == "com.apple.mobile.lockdown"
 
-        self.udid = self.getValue("", "UniqueDeviceID")
         self.allValues = self.getValue()
+        self.udid = self.allValues.get("UniqueDeviceID")
         self.UniqueChipID = self.allValues.get("UniqueChipID")
-        self.DevicePublicKey =  self.getValue("", "DevicePublicKey")
+        self.DevicePublicKey =  self.allValues.get("DevicePublicKey")
+        self.ios_version = self.allValues.get("ProductVersion")
         self.identifier = self.udid
         if not self.identifier:
             if self.UniqueChipID:
                 self.identifier = "%x" % self.UniqueChipID
             else:
-#                 print "Could not get UDID or ECID, failing"
                 raise Exception("Could not get UDID or ECID, failing")
 
         if not self.validate_pairing():
             self.pair()
+            self.c = PlistService(62078,udid)
             if not self.validate_pairing():
                 raise FatalPairingError
         self.paired = True
@@ -112,7 +112,6 @@ class LockdownClient(object):
         hostname = platform.node()
         hostid = uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
         return str(hostid).upper()
-
 
     def enter_recovery(self):
         self.c.sendPlist({"Request": "EnterRecovery"})
@@ -165,13 +164,14 @@ class LockdownClient(object):
                 return False
 
         self.record = pair_record
-        ValidatePair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
-        self.c.sendPlist(ValidatePair)
-        r = self.c.recvPlist()
-        if not r or r.has_key("Error"):
-            pair_record = None
-            self.logger.error("ValidatePair fail: %s", ValidatePair)
-            return False
+        if int(self.ios_version.split('.')[0]) < 11:
+            ValidatePair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
+            self.c.sendPlist(ValidatePair)
+            r = self.c.recvPlist()
+            if not r or r.has_key("Error"):
+                pair_record = None
+                self.logger.error("ValidatePair fail: %s", ValidatePair)
+                return False
 
         self.hostID = pair_record.get("HostID", self.hostID)
         self.SystemBUID = pair_record.get("SystemBUID", self.SystemBUID)
