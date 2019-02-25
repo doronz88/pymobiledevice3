@@ -1,8 +1,12 @@
+# python编译文件
 *.pyc
-*.swp
-*~
-*.dmp
-*.dmg
-*.gz
-var/
-Library/
+# 打包自动生成的目录
+build/
+dist/
+pymobiledevice2.egg-info/
+version.txt
+# 调试目录
+debug/
+# Mac系统自动生成的文件
+*.DS_Store
+
