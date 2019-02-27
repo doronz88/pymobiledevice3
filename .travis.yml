@@ -13,7 +13,9 @@ install:
   - sudo chmod a+w /usr/local/man
 script:
   - python test/__init__.py
-before_deploy: echo $TRAVIS_TAG > version.txt
+before_deploy: 
+  - echo $TRAVIS_TAG > version.txt
+  - export PATH=/Users/travis/Library/Python/2.7/bin:$PATH
 deploy:
   skip_cleanup: true
   skip_existing: true
