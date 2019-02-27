@@ -1,4 +1,4 @@
-M2Crypto ; sys_platform != 'win32'
+M2Crypto ; sys_platform == 'darwin'
 construct>=2.9.29
 pyasn1
 future
