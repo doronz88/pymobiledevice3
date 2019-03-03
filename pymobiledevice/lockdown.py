@@ -144,18 +144,21 @@ class LockdownClient(object):
         elif len(sys.platform) >= 5:
             if sys.platform[0:5] == "linux":
                 folder = "/var/lib/lockdown/"
-        try:
-            pair_record = plistlib.readPlist(folder + "%s.plist" % self.identifier)
-        except:
-            pair_record = None
+        path = folder + "%s.plist" % self.identifier
+        with open(path, 'rb') as fd:
+            pair_record = plistlib.readPlist(fd)
         if pair_record:
             self.logger.info("Using iTunes pair record: %s.plist", self.identifier)
-            certPem = pair_record["HostCertificate"].data
-            privateKeyPem = pair_record["HostPrivateKey"].data
+            if PY3:
+                certPem = pair_record["HostCertificate"]
+                privateKeyPem = pair_record["HostPrivateKey"]
+            else:
+                certPem = pair_record["HostCertificate"].data
+                privateKeyPem = pair_record["HostPrivateKey"].data
 
         else:
-            self.logger.warn("No iTunes pairing record found for device %s", self.identifier)
-            self.logger.warn("Looking for pymobiledevice pairing record")
+            self.logger.warning("No iTunes pairing record found for device %s", self.identifier)
+            self.logger.warning("Looking for pymobiledevice pairing record")
             record = readHomeFile(HOMEFOLDER, "%s.plist" % self.identifier)
             if record:
                 pair_record = plistlib.readPlistFromString(record)
@@ -167,7 +170,7 @@ class LockdownClient(object):
                     privateKeyPem = pair_record["HostPrivateKey"].data
                 self.logger.info("Found pymobiledevice pairing record for device %s", self.udid)
             else:
-                self.logger.warn("No  pymobiledevice pairing record found for device %s", self.identifier)
+                self.logger.warning("No  pymobiledevice pairing record found for device %s", self.identifier)
                 return False
 
         self.record = pair_record

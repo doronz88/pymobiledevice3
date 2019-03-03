@@ -4,6 +4,7 @@ import plistlib
 import os
 import gzip
 from optparse import *
+from six import PY3
 
 try:
     import cPickle
@@ -86,8 +87,13 @@ def xor_strings(a,b):
         r+= chr(ord(a[i])^ord(b[i]))
     return r
 
-hex = lambda data: " ".join("%02X" % ord(i) for i in data)
-ascii = lambda data: "".join(c if 31 < ord(c) < 127 else "." for c in data)
+
+if PY3:
+    hex = lambda data: " ".join("%02X" % i for i in data)
+    ascii = lambda data: "".join(chr(c) if 31 < c < 127 else "." for c in data)
+else:
+    hex = lambda data: " ".join("%02X" % ord(i) for i in data)
+    ascii = lambda data: "".join(c if 31 < ord(c) < 127 else "." for c in data)
 
 def hexdump(d):
     for i in xrange(0,len(d),16):
