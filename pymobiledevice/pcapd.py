@@ -21,7 +21,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 #
-
+from __future__ import print_function
+from six import PY3
 import struct
 import time
 import sys
@@ -78,7 +79,7 @@ class Win32Pipe(object):
                                            1, 65536, 65536,
                                            300,
                                            None)
-        print "Connect wireshark to %s" % pipename
+        print("Connect wireshark to %s" % pipename)
         win32pipe.ConnectNamedPipe(self.pipe, None)
         win32file.WriteFile(self.pipe, struct.pack("<LHHLLLL", 0xa1b2c3d4, 2, 4, 0, 0, 65535, LINKTYPE_ETHERNET))
 
@@ -91,7 +92,7 @@ class Win32Pipe(object):
 if __name__ == "__main__":
 
     if sys.platform == "darwin":
-            print "Why not use rvictl ?"
+            print("Why not use rvictl ?")
 
     parser = OptionParser(usage="%prog")
     parser.add_option("-u", "--udid",
@@ -108,9 +109,9 @@ if __name__ == "__main__":
     else:
         if options.output:
             path = options.output
-	else:
+        else:
             _,path = mkstemp(prefix="device_dump_",suffix=".pcap",dir=".")
-        print "Recording data to: %s" % path
+        print("Recording data to: %s" % path)
         output = PcapOut(path)
 
     logging.basicConfig(level=logging.INFO)
@@ -121,21 +122,28 @@ if __name__ == "__main__":
         d = pcap.recvPlist()
         if not d:
             break
-        data = d.data
-        hdrsize, xxx, packet_size = struct.unpack(">LBL", data[:9])
-        flags1, flags2, offset_to_ip_data, zero = struct.unpack(">LLLL", data[9:0x19])
+        if not PY3:
+            d = d.data
+        hdrsize, xxx, packet_size = struct.unpack(">LBL", d[:9])
+        flags1, flags2, offset_to_ip_data, zero = struct.unpack(">LLLL", d[9:0x19])
 
         assert hdrsize >= 0x19
-        interfacetype= data[0x19:hdrsize].strip("\x00")
+        if PY3:
+            interfacetype= d[0x19:hdrsize].strip(b"\x00")
+        else:
+            interfacetype= d[0x19:hdrsize].strip("\x00")
+            interfacetype = "b'"+"\\x".join("{:02x}".format(ord(c)) for c in interfacetype)+"'"
         t = time.time()
-        print interfacetype, packet_size, t
-
-        packet = data[hdrsize:]
+        print(interfacetype, packet_size, t)
+        packet = d[hdrsize:]
         assert packet_size == len(packet)
 
         if offset_to_ip_data == 0:
             #add fake ethernet header for pdp packets
-            packet = "\xBE\xEF" * 6 + "\x08\x00" + packet
+            if PY3:
+                packet = b"\xBE\xEF" * 6 + b"\x08\x00" + packet
+            else:
+                packet = "\xBE\xEF" * 6 + "\x08\x00" + packet
         if not output.writePacket(packet):
             break
 

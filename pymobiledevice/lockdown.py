@@ -35,6 +35,11 @@ from pymobiledevice.ca import ca_do_everything
 from pymobiledevice.util import readHomeFile, writeHomeFile
 from pymobiledevice.usbmux import usbmux
 
+from six import PY3
+if PY3:
+    plistlib.readPlistFromString = plistlib.loads
+    plistlib.writePlistToString = plistlib.dumps
+    plistlib.readPlist = plistlib.load
 
 
 class NotTrustedError(Exception):
@@ -51,7 +56,7 @@ class CannotStopSessionError(Exception):
 
 class StartServiceError(Exception):
     def __init__(self, message):
-        print "[ERROR] %s" % message
+        print("[ERROR] %s" % message)
 
 class FatalPairingError(Exception):
     pass
@@ -118,7 +123,6 @@ class LockdownClient(object):
         res = self.c.recvPlist()
         logger.debug(res)
 
-
     def stop_session(self):
         if self.SessionID and self.c:
             self.c.sendPlist({"Label": self.label, "Request": "StopSession", "SessionID": self.SessionID})
@@ -127,7 +131,6 @@ class LockdownClient(object):
             if not res or res.get("Result") != "Success":
                 raise CannotStopSessionError
             return res
-
 
     def validate_pairing(self):
         pair_record = None
@@ -156,9 +159,13 @@ class LockdownClient(object):
             record = readHomeFile(HOMEFOLDER, "%s.plist" % self.identifier)
             if record:
                 pair_record = plistlib.readPlistFromString(record)
+                if PY3:
+                    certPem = pair_record["HostCertificate"]
+                    privateKeyPem = pair_record["HostPrivateKey"]
+                else:
+                    certPem = pair_record["HostCertificate"].data
+                    privateKeyPem = pair_record["HostPrivateKey"].data
                 self.logger.info("Found pymobiledevice pairing record for device %s", self.udid)
-                certPem = pair_record["HostCertificate"].data
-                privateKeyPem = pair_record["HostPrivateKey"].data
             else:
                 self.logger.warn("No  pymobiledevice pairing record found for device %s", self.identifier)
                 return False
@@ -181,7 +188,10 @@ class LockdownClient(object):
         self.SessionID = startsession.get("SessionID")
         if startsession.get("EnableSessionSSL"):
             sslfile = self.identifier + "_ssl.txt"
-            sslfile = writeHomeFile(HOMEFOLDER, sslfile, certPem + "\n" + privateKeyPem)
+            lf = "\n"
+            if PY3:
+                lf = b"\n"
+            sslfile = writeHomeFile(HOMEFOLDER, sslfile, certPem + lf + privateKeyPem)
             self.c.ssl_start(sslfile, sslfile)
 
         self.paired = True

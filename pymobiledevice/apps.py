@@ -22,14 +22,12 @@
 #
 #
 
-
-from pymobiledevice.lockdown import LockdownClient
-from pprint import pprint
-from afc import AFCClient, AFCShell
-from optparse import OptionParser
+from __future__ import print_function
 import os
 import warnings
-
+from pymobiledevice.lockdown import LockdownClient
+from pymobiledevice.afc import AFCClient, AFCShell
+from optparse import OptionParser
 warnings.warn(
 """The libraries upon which this program depends will soon be deprecated in
 favor of the house_arrest.py and installation_proxy.py libraries.
@@ -49,7 +47,7 @@ def house_arrest(lockdown, applicationId):
     mis.sendPlist({"Command": "VendDocuments", "Identifier": applicationId})
     res = mis.recvPlist()
     if res.get("Error"):
-        print "Unable to Lookup the selected application: You probably trying to access to a system app..."
+        print("Unable to Lookup the selected application: You probably trying to access to a system app...")
         return None
     return AFCClient(lockdown, service=mis)
 
@@ -88,21 +86,20 @@ def mobile_install(lockdown,ipaPath):
             break
         completion = z.get('PercentComplete')
         if completion:
-            print 'Installing, %s: %s %% Complete' % (ipaPath, z['PercentComplete'])
+            print('Installing, %s: %s %% Complete' % (ipaPath, z['PercentComplete']))
         if z.get('Status') == 'Complete':
-            print "Installation %s\n" % z['Status']
+            print("Installation %s\n" % z['Status'])
             break
 
 def list_apps(lockdown):
     mci = lockdown.startService("com.apple.mobile.installation_proxy")
-    #print
     mci.sendPlist({"Command":"Lookup"})
     res = mci.recvPlist()
     for app in res["LookupResult"].values():
         if app.get("ApplicationType") != "System":
-            print app["CFBundleIdentifier"], "=>", app.get("Container")
+            print(app["CFBundleIdentifier"], "=>", app.get("Container"))
         else:
-            print app["CFBundleIdentifier"], "=> N/A"
+            print(app["CFBundleIdentifier"], "=> N/A")
 
 
 def get_apps_BundleID(lockdown,appType="User"):

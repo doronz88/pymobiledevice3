@@ -3,7 +3,7 @@ import os, sys
 import bz2
 from array import array
 import struct
-import cStringIO as StringIO
+from six import StringIO
 
 def patch(old_file_name, new_file_name, patch_file_name):
     
@@ -18,7 +18,7 @@ def patch(old_file_name, new_file_name, patch_file_name):
     compressed_diff_block    = patch_file.read(compressed_diff_len)
     compressed_extra_block   = patch_file.read()
 
-    control_stream = StringIO.StringIO(bz2.decompress(compressed_control_block))
+    control_stream = StringIO(bz2.decompress(compressed_control_block))
     diff_string    = bz2.decompress(compressed_diff_block)
     extra_string   = bz2.decompress(compressed_extra_block)
     		
@@ -41,24 +41,24 @@ def patch(old_file_name, new_file_name, patch_file_name):
 def offtin(buf):
 	s = ord(buf[7])
 	
-	y=(s&0x7F)<<56;
-	y+=ord(buf[6])<<48;
-	y+=ord(buf[5])<<40;
-	y+=ord(buf[4])<<32;
-	y+=ord(buf[3])<<24;
-	y+=ord(buf[2])<<16;
-	y+=ord(buf[1])<<8;
-	y+=ord(buf[0]);
+    y = (s & 0x7F) << 56
+    y += ord(buf[6]) << 48
+    y += ord(buf[5]) << 40
+    y += ord(buf[4]) << 32
+    y += ord(buf[3]) << 24
+    y += ord(buf[2]) << 16
+    y += ord(buf[1]) << 8
+    y += ord(buf[0])
 
-	if (s&0x80):
-		y=-y;
+    if (s & 0x80):
+        y = -y
 		
 	return y
 	
 
 if __name__ == '__main__': 
 	if(len(sys.argv) < 4):
-		print "bpatch: usage: python bpatch.py oldfile newfile patchfile"
+		print("bpatch: usage: python bpatch.py oldfile newfile patchfile")
 	else:
 		old_file_name   = sys.argv[1]
 		new_file_name   = sys.argv[2]

@@ -28,6 +28,7 @@ import logging
 
 from pymobiledevice.lockdown import LockdownClient
 
+from six import PY3
 from pprint import pprint
 from time import gmtime, strftime
 from optparse import OptionParser
@@ -53,8 +54,11 @@ class screenshotr(object):
         assert res[0] == "DLMessageProcessMessage"
 
         if res[1].get('MessageType') == 'ScreenShotReply':
-            data = res[1]['ScreenShotData'].data
-            return data
+            if PY3:
+                screen_data = res[1]['ScreenShotData']
+            else:
+                screen_data = res[1]['ScreenShotData'].data
+            return screen_data
         return None
 
 if __name__ == '__main__':
@@ -77,7 +81,7 @@ if __name__ == '__main__':
     if data:
         filename = strftime('screenshot-%Y-%m-%d-%H-%M-%S.tif',gmtime())
         outPath = os.path.join(outPath, filename)
-        print 'Saving Screenshot at %s' % outPath
+        print('Saving Screenshot at %s' % outPath)
         o = open(outPath,'wb')
         o.write(data)
 

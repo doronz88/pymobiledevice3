@@ -4,6 +4,8 @@
 
 
 import os
+import platform
+import sys
 from setuptools import setup, find_packages
 BASE_DIR = os.path.realpath(os.path.dirname(__file__))
 VERSION = "1.0.8"
@@ -38,21 +40,26 @@ def parse_requirements():
                 line = line.strip()
                 if line:
                     reqs.append(line)
+    if sys.platform == "win32":
+        if "64" in platform.architecture()[0]:
+            reqs.append('M2CryptoWin64')
+        else:
+            reqs.append('M2CryptoWin32')
     return reqs
 
+
+def get_description():
+    with open(os.path.join(BASE_DIR, "README.md"), "r") as fh:
+        return fh.read()
 
 
 if __name__ == "__main__":
 
     setup(
         version=generate_version(),
-        name="pymobiledevice-qta",
-        long_description="""
-# pymobiledevice
-
-pymobiledevice is a cross-platform implementation of the mobiledevice library
-that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV® devices.
-""",
+        name="pymobiledevice",
+        description="python implementation for libimobiledevice library",
+        long_description=get_description(),
         long_description_content_type='text/markdown',
         cmdclass={},
         packages=find_packages(),
@@ -61,5 +68,14 @@ that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV�
         author="QTA",
         license="Copyright(c)2010-2018 Tencent All Rights Reserved. ",
         install_requires=parse_requirements(),
-        entry_points={}
+        entry_points={},
+        classifiers=[
+            "Programming Language :: Python :: 2.7",
+            "Programming Language :: Python :: 3.6",
+            "Programming Language :: Python :: 3.7",
+        ],
+        url="https://github.com/iOSForensics/pymobiledevice",
+        project_urls={
+            "pymobiledevice Documentation":"https://github.com/iOSForensics/pymobiledevice"
+        },
     )

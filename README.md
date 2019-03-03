@@ -1,4 +1,8 @@
-# pymobiledevice [![GitHub license](https://img.shields.io/cran/l/devtools.svg)](LICENSE) [![Build Status](https://travis-ci.org/qtacore/pymobiledevice2.svg?branch=master)](https://travis-ci.org/qtacore/pymobiledevice2)
+# pymobiledevice
+
+[![GitHub license](https://img.shields.io/cran/l/devtools.svg)](LICENSE)
+[![Build Status](https://travis-ci.org/qtacore/pymobiledevice.svg?branch=master)](https://travis-ci.org/qtacore/pymobiledevice)
+[![PyPi version](https://img.shields.io/pypi/v/pymobiledevice-qta.svg)](https://pypi.python.org/pypi/pymobiledevice-qta/) 
 
 pymobiledevice is a cross-platform implementation of the mobiledevice library 
 that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV® devices.
@@ -6,9 +10,13 @@ that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV�
 
 ## Requirements
 
-Python 2.7
-M2Crypto
-Construct
+* Python 2.7 and 3.x
+* M2Crypto
+* construct >= 2.9.29
+* pyasn1
+* future
+* six
+* biplist
 
 
 ## Lockdownd.py [com.apple.lockownd]

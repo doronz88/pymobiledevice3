@@ -23,15 +23,23 @@
 #
 
 
-from usbmux import usbmux
-from util.bplist import BPlistReader
 import plistlib
 import ssl
 import struct
-from re import sub
 import logging
+import codecs
+from re import sub
+from six import PY3
+
+from pymobiledevice.usbmux import usbmux
+
+if PY3:
+    plistlib.readPlistFromString = plistlib.loads
+    plistlib.writePlistToString = plistlib.dumps
+
 
 class PlistService(object):
+
     def __init__(self, port, udid=None, logger=None):
         self.logger = logger or logging.getLogger(__name__)
         self.port = port
@@ -50,6 +58,7 @@ class PlistService(object):
                         dev = d
             else:
                 dev = mux.devices[0]
+                self.logger.info("Connecting to device: " + dev.serial)
         try:
             self.s = mux.connect(dev, self.port)
         except:
@@ -79,6 +88,8 @@ class PlistService(object):
 
     def recv_exact(self, l):
         data = ""
+        if PY3:
+            data = b""
         while l > 0:
             d = self.recv(l)
             if not d or len(d) == 0:
@@ -95,15 +106,28 @@ class PlistService(object):
         return self.recv_exact(l)
 
     def send_raw(self, data):
-        return self.send(struct.pack(">L", len(data)) + data)
+        if PY3 and isinstance(data, str):
+            data = codecs.encode(data)
+        hdr = struct.pack(">L", len(data))
+        msg =  b"".join([hdr,data])
+        return self.send(msg)
 
     def recvPlist(self):
         payload = self.recv_raw()
         if not payload:
             return
-        if payload.startswith("bplist00"):
-            return BPlistReader(payload).parse()
-        elif payload.startswith("<?xml"):
+        bplist_header = "bplist00"
+        xml_header = "<?xml"
+        if PY3:
+            bplist_header = b"bplist00"
+            xml_header = b"<?xml"
+        if payload.startswith(bplist_header):
+            if PY3:
+                return plistlib.readPlistFromString(payload)
+            else:
+                from pymobiledevice.util.bplist import BPlistReader
+                return BPlistReader(payload).parse()
+        elif payload.startswith(xml_header):
             #HAX lockdown HardwarePlatform with null bytes
             payload = sub('[^\w<>\/ \-_0-9\"\'\\=\.\?\!\+]+','', payload.decode('utf-8')).encode('utf-8')
             return plistlib.readPlistFromString(payload)

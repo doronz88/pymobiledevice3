@@ -72,4 +72,4 @@ class SBServiceClient(object):
 
 if __name__ == "__main__":
     s = SBServiceClient()
-    print s.get_icon_pngdata("com.apple.weather")
+    print(s.get_icon_pngdata("com.apple.weather"))

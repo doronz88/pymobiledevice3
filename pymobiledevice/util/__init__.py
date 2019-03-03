@@ -1,10 +1,16 @@
+from past.builtins import xrange
 import glob
 import plistlib
 import os
-from bplist import BPlistReader
-import cPickle
 import gzip
 from optparse import *
+
+try:
+    import cPickle
+except ImportError:
+    import pickle as cPickle
+    plistlib.readPlistFromString = plistlib.loads
+    plistlib.readPlist = plistlib.load
 
 def read_file(filename):
     f = open(filename, "rb")
@@ -43,19 +49,10 @@ def writeHomeFile(foldername, filename, data):
     return filepath
 
 def readPlist(filename):
-    f = open(filename,"rb")
-    d = f.read(16)
-    f.close()
-    if d.startswith("bplist"):
-        return BPlistReader.plistWithFile(filename)
-    else:
-        return plistlib.readPlist(filename)
+    return plistlib.readPlist(filename)
 
 def parsePlist(s):
-    if s.startswith("bplist"):
-        return BPlistReader.plistWithString(s)
-    else:
-        return plistlib.readPlistFromString(s)
+    return plistlib.readPlistFromString(s)
 
 #http://stackoverflow.com/questions/1094841/reusable-library-to-get-human-readable-version-of-file-size
 def sizeof_fmt(num):
@@ -95,7 +92,7 @@ ascii = lambda data: "".join(c if 31 < ord(c) < 127 else "." for c in data)
 def hexdump(d):
     for i in xrange(0,len(d),16):
         data = d[i:i+16]
-        print "%08X | %s | %s" % (i, hex(data).ljust(47), ascii(data))
+        print("%08X | %s | %s" % (i, hex(data).ljust(47), ascii(data)))
 
 def search_plist(directory, matchDict):
     for p in map(os.path.normpath, glob.glob(directory + "/*.plist")):
@@ -107,7 +104,7 @@ def search_plist(directory, matchDict):
                     ok = False
                     break
             if ok:
-                print "Using plist file %s" % p
+                print("Using plist file %s" % p)
                 return d
         except:
             continue

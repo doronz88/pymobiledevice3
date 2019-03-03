@@ -22,13 +22,14 @@
 #
 #
 
+import time
 import plistlib
-import thread
 import time
 import logging
 
 from pymobiledevice.lockdown import LockdownClient
 
+from six.moves import _thread
 from pprint import pprint
 
 # NP Client to device Notifications (post_notification)
@@ -93,7 +94,6 @@ class NPClient(object):
 
     def observe_notification(self, notification):
         #Tells the device to send a notification on the specified event
-
         self.logger.info("Observing %s", notification)
         self.service.sendPlist({"Command": "ObserveNotification",
                                 "Name": notification})
@@ -132,7 +132,6 @@ class NPClient(object):
                 except:
                     self.logger.error("Error: unable to start thread")
 
-
     def subscribe(self, notification, cb, data=None):
 
         np_data = {
@@ -143,9 +142,10 @@ class NPClient(object):
         }
 
         try:
-            thread.start_new_thread( self.notifier, ("NotificationProxyNotifier_"+notification, np_data, ) )
+            import threading
+            _thread.start_new_thread( self.notifier, ("NotificationProxyNotifier_"+notification, np_data, ) )
         except:
-            print "Error: unable to start thread"
+            print("Error: unable to start thread")
 
         while(1):
             time.sleep(1)
@@ -153,8 +153,8 @@ class NPClient(object):
 
 
 def cb_test(name,data=None):
-    print "Got Notification >> %s" % name
-    print "Data:"
+    print("Got Notification >> %s" % name)
+    print("Data:")
     pprint(data)
 
 

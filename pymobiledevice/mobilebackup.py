@@ -28,6 +28,9 @@ import plistlib
 import os
 import datetime
 import logging
+import codecs
+
+from six import PY3
 
 from pymobiledevice.lockdown import LockdownClient
 from pymobiledevice.afc import AFCClient
@@ -81,7 +84,10 @@ class MobileBackup(object):
             self.logger.info("Got DLMessageDeviceReady")
 
     def check_filename(self, name):
-        if name.find("../") != -1:
+        print(type(name), name)
+        if PY3 and not isinstance(name, str):
+           name = codecs.decode(name)
+        if "../" in name:
             raise Exception("HAX, sneaky dots in path %s" % name)
         if not name.startswith(self.backupPath):
             if name.startswith(self.udid):

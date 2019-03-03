@@ -68,11 +68,12 @@ class installation_proxy(object):
                 return z.get("Status")
         return "Error"
 
-    def send_cmd_for_bid(self, bid, cmd="Archive", options={}, handler=None, *args):
+    def send_cmd_for_bid(self, bid, cmd="Archive", options=None, handler=None, *args):
         cmd = { "Command": cmd,
-                "ClientOptions": options,
-                "ApplicationIdentifier": bid }
 
+                "ApplicationIdentifier": bid }
+        if options:
+            cmd.update({"ClientOptions": options})
         self.logger.info("%s : %s\n", cmd, self.watch_completion(handler, *args))
 
 
@@ -89,14 +90,11 @@ class installation_proxy(object):
         self.service.sendPlist(cmd)
         self.watch_completion(handler, args)
 
-
     def install(self, ipaPath, options={}, handler=None, *args):
         return self.install_or_upgrade(ipaPath, "Install", options, handler, args)
 
-
     def upgrade(self, ipaPath, options={}, handler=None, *args):
         return self.install_or_upgrade(ipaPath, "Upgrade", options, handler, args)
-
 
     def check_capabilities_match(self, capabilities, options={}):
         cmd = { "Command": "CheckCapabilitiesMatch",
@@ -168,10 +166,10 @@ class installation_proxy(object):
 
     def print_apps(self, appType=["User"]):
         for app in self.get_apps(appType):
-            print ("%s : %s => %s" %  (app.get("CFBundleDisplayName"),
+            print(("%s : %s => %s" % (app.get("CFBundleDisplayName"),
                                       app.get("CFBundleIdentifier"),
                                       app.get("Path") if app.get("Path")
-                                      else app.get("Container"))).encode('utf-8')
+                                      else app.get("Container"))).encode('utf-8'))
 
     def get_apps_bid(self,appTypes=["User"]):
         return [app["CFBundleIdentifier"]

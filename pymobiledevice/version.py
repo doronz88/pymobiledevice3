@@ -1,4 +1,4 @@
 # -*- coding: utf-8 -*-
-'''pymobiledevice2版本
+'''pymobiledevice-qta版本
 '''
-VERSION = '0.1.10' 
+VERSION = '1.0.3' 

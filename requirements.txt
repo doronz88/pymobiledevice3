@@ -1,2 +1,6 @@
-M2Crypto
-construct
+M2Crypto ; sys_platform == 'darwin'
+construct>=2.9.29
+pyasn1
+future
+six
+biplist

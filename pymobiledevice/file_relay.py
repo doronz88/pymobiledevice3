@@ -90,7 +90,7 @@ class FileRelay(object):
                         z += x
                     return z
                 else:
-                    print res.get("Error")
+                    print(res.get("Error"))
                     break
         return None
 
@@ -116,7 +116,6 @@ if __name__ == "__main__":
     else:
         sources = ["UserDatabases"]
     print("Downloading: %s" % "".join([str(item)+" " for item in sources]))
-
     fc = None
     try:
         fc = FileRelay()

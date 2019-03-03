@@ -24,13 +24,13 @@
 
 
 import os
-import hashlib
 import datetime
 import plistlib
 import logging
 
 from optparse import OptionParser
 from pprint import pprint
+from time import mktime, gmtime
 from util import write_file, hexdump
 from biplist import writePlist, readPlist, Data
 from struct import unpack, pack
@@ -38,6 +38,7 @@ from time import mktime, gmtime, sleep, time
 from uuid import uuid4
 from stat import *
 
+from six import PY3
 from pymobiledevice.afc import AFCClient
 from pymobiledevice.installation_proxy import installation_proxy
 from pymobiledevice.notification_proxy import *
@@ -61,7 +62,7 @@ class DeviceVersionNotSupported(Exception):
 
 
 class MobileBackup2(MobileBackup):
-
+    service = None
     def __init__(self, lockdown = None,backupPath = None, password="", udid=None, logger=None):
         self.logger = logger or logging.getLogger(__name__)
         self.backupPath = backupPath if backupPath else "backups"
@@ -81,7 +82,8 @@ class MobileBackup2(MobileBackup):
         self.willEncrypt = lockdown.getValue("com.apple.mobile.backup", "WillEncrypt")
         self.escrowBag = lockdown.getValue('', 'EscrowBag')
         self.afc = AFCClient(self.lockdown) #We need this to create lock files
-        self.service = self.lockdown.startServiceWithEscrowBag("com.apple.mobilebackup2", self.escrowBag)
+        self.service = self.lockdown.startService("com.apple.mobilebackup2")
+        #self.service = self.lockdown.startServiceWithEscrowBag("com.apple.mobilebackup2", self.escrowBag)
         if not self.service:
             raise Exception("MobileBackup2 init error : Could not start com.apple.mobilebackup2")
 
@@ -97,7 +99,7 @@ class MobileBackup2(MobileBackup):
         if DLMessageDeviceReady and DLMessageDeviceReady[0] == "DLMessageDeviceReady":
             res = self.version_exchange()
             protocol_version = res.get('ProtocolVersion')
-            self.logger.info("Negotiated Protocol Version %s", protocol_version[1])
+            self.logger.info("Negotiated Protocol Version %s", protocol_version)
         else:
             raise Exception("MobileBackup2 init error %s", DLMessageDeviceReady)
 
@@ -165,7 +167,11 @@ class MobileBackup2(MobileBackup):
         data = self.read_file(self.check_filename(filename))
         if data != None:
             self.logger.info("Sending %s to device", filename)
-            self.service.send_raw(chr(CODE_FILE_DATA) + data)
+            if PY3: # FIXME
+                msg = b"".join([(CODE_FILE_DATA).to_bytes(1,'little'), data])
+            else:
+                msg = chr(CODE_FILE_DATA) + data
+            self.service.send_raw(msg)
             self.service.send_raw(chr(CODE_SUCCESS))
         else:
             self.logger.warn("File %s requested from device not found", filename)
@@ -177,7 +183,10 @@ class MobileBackup2(MobileBackup):
         errplist = {}
         for f in msg[1]:
             self.mb2_handle_send_file(f, errplist)
-        self.service.send("\x00\x00\x00\x00")
+        msg = "\x00\x00\x00\x00"
+        if PY3:
+            msg = b"\x00\x00\x00\x00"
+        self.service.send(msg)
         if len(errplist):
             self.mobilebackup2_send_status_response(-13, "Multi status", errplist)
         else:
@@ -221,24 +230,30 @@ class MobileBackup2(MobileBackup):
             backup_filename = self.service.recv_raw()
             self.logger.debug("Downloading: %s to %s", device_filename, backup_filename)
             filedata = ""
+            if PY3:
+                filedata = bytearray(b"")
             last_code = 0x00
             while True:
                 stuff = self.service.recv_raw()
-                if ord(stuff[0]) == CODE_FILE_DATA:
-                    filedata += stuff[1:]
-                elif ord(stuff[0]) == CODE_SUCCESS:
+                if PY3:
+                    code = stuff[0]
+                else:
+                    code = ord(stuff[0])
+                if code == CODE_FILE_DATA:
+                    filedata = stuff[1:]
+                elif code == CODE_SUCCESS:
                     self.write_file(self.check_filename(backup_filename), filedata)
                     break
-                elif ord(stuff[0]) == CODE_ERROR_REMOTE:
+                elif code == CODE_ERROR_REMOTE:
                       if last_code != CODE_FILE_DATA:
                         self.logger.warn("Received an error message from device: %s for:\n\t%s\n\t[%s]",
-                                ord(stuff[0]), device_filename, backup_filename)
+                                ord(code), device_filename, backup_filename)
                 else:
                     self.logger.warn("Unknown code: %s for:\n\t%s\n\t[%s]",
-                                        ord(stuff[0]), device_filename, backup_filename)
+                                        code, device_filename, backup_filename)
                     self.logger.warn(msg)
                     #break
-            last_code = ord(stuff[0])
+            last_code = code
         self.mobilebackup2_send_status_response(0)
 
     def mb2_handle_move_files(self, msg):
@@ -256,7 +271,7 @@ class MobileBackup2(MobileBackup):
                 filename = self.check_filename(filename)
                 if os.path.isfile(filename):
                     os.unlink(filename)
-            except Exception, e:
+            except Exception as e:
                 self.logger.error(e)
         self.mobilebackup2_send_status_response(0)
 
@@ -300,16 +315,21 @@ class MobileBackup2(MobileBackup):
                     break
                 if errcode == 1:
                     self.logger.info("Please unlock your device and retry...")
+                    raise Exception("Please unlock your device and retry...")
                 if errcode == 211:
                     self.logger.info("Please go to Settings->iClould->Find My iPhone and disable it")
+                    raise Exception('Please go to Settings->iClould->Find My iPhone and disable it')
                 if errcode == 105:
                     self.logger.info("Not enough free space on device for restore")
+                    raise Exception('Not enough free space on device for restore')
                 if errcode == 17:
                     self.logger.info("please press 'trust this computer' in your device")
+                    raise Exception('please press \'trust this computer\' in your device')
                 if errcode == 102:
                     self.logger.info("Please reboot your device and try again")
+                    raise Exception('Please reboot your device and try again')
                 self.logger.error("Unknown error: %d : %s", errcode, msg[1].get("ErrorDescription", ""))
-                raise Exception(errcode)
+                raise Exception('Unknown error ' + str(errcode) + msg[1].get("ErrorDescription", ""))
             elif msg[0] == "DLMessageGetFreeDiskSpace":
                 self.mb2_handle_free_disk_space(msg)
             elif msg[0] == "DLMessageDisconnect":
@@ -428,7 +448,7 @@ class MobileBackup2(MobileBackup):
             os.makedirs(os.path.join(self.backupPath,self.udid))
         self.logger.info("Backup mode: %s", "Full backup" if fullBackup else "Incremental backup")
         self.create_info_plist()
-        options = { "ForceFullBackup": fullBackup }
+        options = {"ForceFullBackup": fullBackup}
         self.mobilebackup2_send_request("Backup", self.udid, options)
         self.work_loop()
 
@@ -449,7 +469,7 @@ class MobileBackup2(MobileBackup):
             self.logger.error("not a valid backup folder")
             return -1
         if manifest.get("IsEncrypted"):
-            print "Backup is encrypted, enter password : "
+            print("Backup is encrypted, enter password : ")
             if password:
                 self.password = password
             else:
@@ -484,7 +504,6 @@ class MobileBackup2(MobileBackup):
     def enableCloudBackup(self,options={"CloudBackupState": False}):
         self.mobilebackup2_send_request("EnableCloudBackup", self.udid, options)
         self.work_loop()
-
 
     def mobilebackup2_notify_cb(notification, data=None):
         if notification == NP_SYNC_CANCEL_REQUEST:
