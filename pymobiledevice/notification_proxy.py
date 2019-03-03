@@ -29,7 +29,7 @@ import logging
 
 from pymobiledevice.lockdown import LockdownClient
 
-from six.moves import _thread
+from six.moves import _thread as thread
 from pprint import pprint
 
 # NP Client to device Notifications (post_notification)
@@ -141,12 +141,7 @@ class NPClient(object):
             "userdata": data,
         }
 
-        try:
-            import threading
-            _thread.start_new_thread( self.notifier, ("NotificationProxyNotifier_"+notification, np_data, ) )
-        except:
-            print("Error: unable to start thread")
-
+        thread.start_new_thread( self.notifier, ("NotificationProxyNotifier_"+notification, np_data, ) )
         while(1):
             time.sleep(1)
 
