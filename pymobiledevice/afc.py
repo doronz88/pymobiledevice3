@@ -21,11 +21,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 #
-import os
-import struct
-import plistlib
-import posixpath
-import logging
+from __future__ import print_function
 
 import os
 import struct
@@ -405,9 +401,9 @@ class AFCClient(object):
 
 class AFCShell(Cmd):
 
-    def __init__(self, afcname='com.apple.afc', completekey='tab', stdin=None, stdout=None, client=None, udid=None):
-
+    def __init__(self, afcname='com.apple.afc', completekey='tab', stdin=None, stdout=None, client=None, udid=None, logger=None):
         Cmd.__init__(self, completekey=completekey, stdin=stdin, stdout=stdout)
+        self.logger = logger or logging.getLogger(__name__)
         self.lockdown = LockdownClient()
         self.afc = client if client else AFCClient(self.lockdown, serviceName=afcname, udid=udid)
         self.curdir = '/'
@@ -484,8 +480,7 @@ class AFCShell(Cmd):
             out = args[1]
             path = args[0]
 
-
-        f =  self.afc.get_file_info(path)
+        f =  self.afc.get_file_info(self.curdir + "/" + path)
         if not f:
             print("Source file does not exist..")
             return
@@ -501,7 +496,7 @@ class AFCShell(Cmd):
                     continue
                 self.do_pull(path + "/" + d + " " + out)
         else:
-            data = self.afc.get_file_contents(path)
+            data = self.afc.get_file_contents(self.curdir + "/" + path)
             if data:
                 if data and path.endswith(".plist"):
                     z = parsePlist(data)
@@ -556,7 +551,8 @@ class AFCShell(Cmd):
 
 
     def do_infos(self, p):
-        print(self.afc.get_device_infos())
+        for k,v in self.afc.get_device_infos().items():
+            print(k, '\t:\t',v)
 
 
     def do_mv(self, p):
@@ -566,16 +562,18 @@ class AFCShell(Cmd):
 
 
 class AFC2Client(AFCClient):
-    def __init__(self, lockdown=None):
+    def __init__(self, lockdown=None,udid=None, logger=None):
         super(AFC2Client, self).__init__(lockdown, serviceName="com.apple.afc2",udid=udid)
 
 
 
 class AFCCrashLog(AFCClient):
-    def __init__(self, lockdown=None, udid=None):
+    def __init__(self, lockdown=None, udid=None, logger=None):
         super(AFCCrashLog, self).__init__(lockdown, serviceName="com.apple.crashreportcopymobile", udid=udid)
 
 
 
 if __name__ == "__main__":
+    import sys
+    logging.basicConfig(level=logging.INFO)
     AFCShell().cmdloop("Hello iPhone!")
