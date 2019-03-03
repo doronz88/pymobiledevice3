@@ -22,13 +22,12 @@
 #
 #
 
-
+from __future__ import print_function
+import os
+import warnings
 from pymobiledevice.lockdown import LockdownClient
 from pymobiledevice.afc import AFCClient, AFCShell
 from optparse import OptionParser
-import os
-import warnings
-
 warnings.warn(
 """The libraries upon which this program depends will soon be deprecated in
 favor of the house_arrest.py and installation_proxy.py libraries.

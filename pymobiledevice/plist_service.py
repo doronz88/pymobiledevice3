@@ -26,6 +26,7 @@
 import plistlib
 import ssl
 import struct
+import codecs
 from re import sub
 from six import PY3
 
@@ -71,11 +72,14 @@ class PlistService(object):
         return self.s.recv(length)
 
     def send(self, data):
-        try:
-            self.s.send(data)
-        except:
-            print("Sending data to device failled")
-            return -1
+        #try:
+        #if PY3:
+        #    self.s.send(str(data, "utf-8"))
+        #else:
+        self.s.send(data)
+        #except:
+        #    print("Sending data to device failled")
+        #    return -1
         return 0
 
     def sendRequest(self, data):
@@ -105,7 +109,11 @@ class PlistService(object):
         return self.recv_exact(l)
 
     def send_raw(self, data):
-        return self.send(struct.pack(">L", len(data)) + data)
+        if PY3 and isinstance(data, str):
+            data = codecs.encode(data)
+        hdr = struct.pack(">L", len(data))
+        msg =  b"".join([hdr,data])
+        return self.send(msg)
 
     def recvPlist(self):
         payload = self.recv_raw()

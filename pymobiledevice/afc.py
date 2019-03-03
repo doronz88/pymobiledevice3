@@ -21,18 +21,23 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 #
-
-from past.builtins import xrange
 import os
-from construct.core import Struct
-from construct.lib.containers import Container
-from construct import Bytes, Int64ul
 import struct
-from cmd import Cmd
-from six import PY3
-from pprint import pprint
 import plistlib
 import posixpath
+import logging
+
+from construct.core import Struct
+from construct.lib.containers import Container
+from construct import Const,  Int64ul
+
+from pymobiledevice.lockdown import LockdownClient
+
+from cmd import Cmd
+from past.builtins import xrange
+from six import PY3
+from util import hexdump, parsePlist
+from pprint import pprint
 
 from pymobiledevice.lockdown import LockdownClient
 from pymobiledevice.util import hexdump, parsePlist
@@ -118,24 +123,25 @@ if PY3:
 else:
     AFCMAGIC = "CFA6LPAA"
 
-AFCPacket = Struct("magic" / Bytes(8),
-                   "entire_length" / Int64ul,
+AFCPacket = Struct(
+                   "magic" / Const(AFCMAGIC),
+                   "entire_length" /Int64ul,
                    "this_length" / Int64ul,
                    "packet_num" / Int64ul,
-                   "operation" / Int64ul
+                   "operation" / Int64ul,
                    )
 
-
 class AFCClient(object):
-    def __init__(self, lockdown=None, serviceName="com.apple.afc", service=None):
+    def __init__(self, lockdown=None, serviceName="com.apple.afc", service=None, udid=None, logger=None):
+        self.logger = logger or logging.getLogger(__name__)
         self.serviceName = serviceName
-        self.lockdown = lockdown if lockdown else LockdownClient()
+        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
         self.service = service if service else self.lockdown.startService(self.serviceName)
         self.packet_num = 0
 
 
     def stop_session(self):
-        print("Disconecting...")
+        self.logger.info("Disconecting...")
         self.service.close()
 
 
@@ -165,7 +171,7 @@ class AFCClient(object):
             data = self.service.recv_exact(length)
             if res.operation == AFC_OP_STATUS:
                 if length != 8:
-                    print("Status length != 8")
+                    self.logger.error("Status length != 8")
                 status = struct.unpack("<Q", data[:8])[0]
             elif res.operation != AFC_OP_DATA:
                 pass#print "error ?", res
@@ -218,7 +224,7 @@ class AFCClient(object):
     def remove_directory(self, dirname):
         info = self.get_file_info(dirname)
         if not info or info.get("st_ifmt") != "S_IFDIR":
-            print("remove_directory: %s not S_IFDIR" % dirname)
+            self.logger.info("remove_directory: %s not S_IFDIR", dirname)
             return
 
         for d in self.read_directory(dirname):
@@ -229,7 +235,7 @@ class AFCClient(object):
             if info.get("st_ifmt") == "S_IFDIR":
                 self.remove_directory(dirname + "/" + d)
             else:
-                print(dirname + "/" + d)
+                self.logger.info("%s/%s", dirname, d)
                 self.file_remove(dirname + "/" + d)
         assert len(self.read_directory(dirname)) == 2 #.. et .
         return self.file_remove(dirname)
@@ -248,7 +254,7 @@ class AFCClient(object):
         else:
             separator = "\x00"
         status, data = self.do_operation(AFC_OP_MAKE_LINK, struct.pack("<Q", type) + target + separator + linkname + separator)
-        print("make_link", status)
+        self.logger.info("make_link: %s", status)
         return status
 
 
@@ -326,7 +332,7 @@ class AFCClient(object):
                                      this_length=48)
                 s, d = self.receive_data()
                 if s != AFC_E_SUCCESS:
-                    print("file_write error %d" % s)
+                    self.logger.error("file_write error: %d", s)
                     break
             if len(data) % MAXIMUM_WRITE_SIZE:
                 self.dispatch_packet(AFC_OP_WRITE,
@@ -347,10 +353,10 @@ class AFCClient(object):
                 filename =  info['LinkTarget']
 
             if info['st_ifmt'] == 'S_IFDIR':
-                print("%s is directory..." % filename)
+                self.logger.info("%s is directory...", filename)
                 return
 
-            print("Reading %s" % filename)
+            self.logger.info("Reading: %s", filename)
             h = self.file_open(filename)
             if not h:
                 return
@@ -393,11 +399,11 @@ class AFCClient(object):
 
 class AFCShell(Cmd):
 
-    def __init__(self, afcname='com.apple.afc', completekey='tab', stdin=None, stdout=None, client=None):
+    def __init__(self, afcname='com.apple.afc', completekey='tab', stdin=None, stdout=None, client=None, udid=None):
 
         Cmd.__init__(self, completekey=completekey, stdin=stdin, stdout=stdout)
-        self.afc = client if client else AFCClient(LockdownClient(), serviceName=afcname)
-
+        self.lockdown = LockdownClient()
+        self.afc = client if client else AFCClient(self.lockdown, serviceName=afcname, udid=udid)
         self.curdir = '/'
         self.prompt = 'AFC$ ' + self.curdir + ' '
         self.complete_cat = self._complete
@@ -432,8 +438,7 @@ class AFCShell(Cmd):
             self.curdir = new
             self.prompt = "AFC$ %s " % new
         else:
-            print("%s does not exist" % new)
-
+            self.logger.error("%s does not exist", new)
 
     def _complete(self, text, line, begidx, endidx):
         filename = text.split("/")[-1]
@@ -556,13 +561,13 @@ class AFCShell(Cmd):
 
 class AFC2Client(AFCClient):
     def __init__(self, lockdown=None):
-        super(AFC2Client, self).__init__(lockdown, serviceName="com.apple.afc2")
+        super(AFC2Client, self).__init__(lockdown, serviceName="com.apple.afc2",udid=udid)
 
 
 
 class AFCCrashLog(AFCClient):
-    def __init__(self, lockdown=None):
-        super(AFCCrashLog, self).__init__(lockdown, serviceName="com.apple.crashreportcopymobile")
+    def __init__(self, lockdown=None, udid=None):
+        super(AFCCrashLog, self).__init__(lockdown, serviceName="com.apple.crashreportcopymobile", udid=udid)
 
 
 

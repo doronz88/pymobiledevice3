@@ -23,12 +23,19 @@
 #
 
 
-from pymobiledevice.lockdown import LockdownClient
+import struct
 import plistlib
-from pprint import pprint
 import os
 import datetime
+import logging
+import codecs
+
+from six import PY3
+
+from pymobiledevice.lockdown import LockdownClient
 from pymobiledevice.afc import AFCClient
+from pymobiledevice.util import makedirs
+from pymobiledevice.installation_proxy import installation_proxy
 
 #
 # Fix plistlib.py line 364
@@ -58,16 +65,15 @@ class DeviceVersionNotSupported(Exception):
 
 
 class MobileBackup(object):
-    def __init__(self, lockdown=None):
-        if lockdown:
-            self.lockdown = lockdown
-        else:
-            self.lockdown = LockdownClient()
-
+    def __init__(self, lockdown=None, udid=None, logger=None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
         ProductVersion = self.lockdown.getValue("", "ProductVersion")
         if ProductVersion[0] >= "5":
             raise DeviceVersionNotSupported
+        self.start()
 
+    def start(self):
         self.service = self.lockdown.startService("com.apple.mobilebackup")
         self.udid = self.lockdown.udid
         DLMessageVersionExchange = self.service.recvPlist()
@@ -75,10 +81,13 @@ class MobileBackup(object):
         self.service.sendPlist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
         DLMessageDeviceReady = self.service.recvPlist()
         if DLMessageDeviceReady and DLMessageDeviceReady[0] == "DLMessageDeviceReady":
-            print("Got DLMessageDeviceReady")
+            self.logger.info("Got DLMessageDeviceReady")
 
     def check_filename(self, name):
-        if name.find("../") != -1:
+        print(type(name), name)
+        if PY3 and not isinstance(name, str):
+           name = codecs.decode(name)
+        if "../" in name:
             raise Exception("HAX, sneaky dots in path %s" % name)
         if not name.startswith(self.backupPath):
             if name.startswith(self.udid):
@@ -107,7 +116,6 @@ class MobileBackup(object):
 
     def create_info_plist(self):
         root_node =  self.lockdown.allValues
-        #print pprint(root_node)
         info = {"BuildVersion": root_node.get("BuildVersion") or "",
                 "DeviceName":  root_node.get("DeviceName") or "",
                 "Display Name": root_node.get("DeviceName") or "",
@@ -139,12 +147,13 @@ class MobileBackup(object):
             info["iBooks Data 2"] = plistlib.Data(iBooksData2)
 
         info["iTunes Settings"] = self.lockdown.getValue("com.apple.iTunes")
-        print("Creating %s" % os.path.join(self.udid,"Info.plist"))
+        self.logger.info("Creating: %s", os.path.join(self.udid,"Info.plist"))
         self.write_file(os.path.join(self.udid,"Info.plist"), plistlib.writePlistToString(info))
 
     def ping(self, message):
         self.service.sendPlist(["DLMessagePing", message])
-        print("ping response", self.service.recvPlist())
+        res = self.service.recvPlist()
+        self.logger.debug("ping response:", res)
 
     def device_link_service_send_process_message(self, msg):
         return self.service.sendPlist(["DLMessageProcessMessage", msg])
@@ -169,7 +178,7 @@ class MobileBackup(object):
         if not res:
             return
         if res["BackupMessageTypeKey"] != "BackupMessageBackupReplyOK":
-            print(res)
+            self.logger.error(res)
             return
         self.device_link_service_send_process_message(res)
 
@@ -181,7 +190,7 @@ class MobileBackup(object):
             if not res or res[0] != "DLSendFile":
                 if res[0] == "DLMessageProcessMessage":
                     if res[1].get("BackupMessageTypeKey") == "BackupMessageBackupFinished":
-                        print("Backup finished OK !")
+                        self.logger.info("Backup finished OK !")
                         #TODO BackupFilesToDeleteKey
                         plistlib.writePlist(res[1]["BackupManifestKey"], self.check_filename("Manifest.plist"))
                 break
@@ -189,7 +198,7 @@ class MobileBackup(object):
             info = res[2]
             if not f:
                 outpath = self.check_filename(info.get("DLFileDest"))
-                print(info["DLFileAttributesKey"]["Filename"], info.get("DLFileDest"))
+                self.logger.debug("%s %s", info["DLFileAttributesKey"]["Filename"], info.get("DLFileDest"))
                 f = open(outpath + ".mddata", "wb")
             f.write(data)
             if info.get("DLFileStatusKey") == DEVICE_LINK_FILE_STATUS_LAST_HUNK:
@@ -200,6 +209,7 @@ class MobileBackup(object):
                 f = None
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     mb = MobileBackup()
     mb.request_backup()
 
