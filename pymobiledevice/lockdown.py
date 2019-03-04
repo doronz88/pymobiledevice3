@@ -32,7 +32,7 @@ import logging
 
 from pymobiledevice.plist_service import PlistService
 from pymobiledevice.ca import ca_do_everything
-from pymobiledevice.util import readHomeFile, writeHomeFile
+from pymobiledevice.util import readHomeFile, writeHomeFile, getHomePath
 from pymobiledevice.usbmux import usbmux
 
 from six import PY3
@@ -132,11 +132,20 @@ class LockdownClient(object):
                 raise CannotStopSessionError
             return res
 
-    def validate_pairing(self):
+    def read_pair_record_from_file(self,path):
         pair_record = None
-        certPem = None
-        privateKeyPem = None
+        try:
+            with open(path, 'rb') as fd:
+                pair_record = plistlib.readPlist(fd)
+        except IOError as e:
+            self.logger.error("I/O error({0}): {1}".format(e.errno, e.strerror))
+            self.logger.error("Unable to read: %s", path)
+        except:
+            self.logger.error("Unable to read: %s", path)
+        return pair_record
 
+    def get_itunes_record_path(self):
+        folder = None
         if sys.platform == "win32":
             folder = os.environ["ALLUSERSPROFILE"] + "/Apple/Lockdown/"
         elif sys.platform == "darwin":
@@ -144,36 +153,43 @@ class LockdownClient(object):
         elif len(sys.platform) >= 5:
             if sys.platform[0:5] == "linux":
                 folder = "/var/lib/lockdown/"
-        path = folder + "%s.plist" % self.identifier
-        with open(path, 'rb') as fd:
-            pair_record = plistlib.readPlist(fd)
-        if pair_record:
-            self.logger.info("Using iTunes pair record: %s.plist", self.identifier)
-            if PY3:
-                certPem = pair_record["HostCertificate"]
-                privateKeyPem = pair_record["HostPrivateKey"]
-            else:
-                certPem = pair_record["HostCertificate"].data
-                privateKeyPem = pair_record["HostPrivateKey"].data
+        return folder
 
-        else:
-            self.logger.warning("No iTunes pairing record found for device %s", self.identifier)
-            self.logger.warning("Looking for pymobiledevice pairing record")
-            record = readHomeFile(HOMEFOLDER, "%s.plist" % self.identifier)
-            if record:
-                pair_record = plistlib.readPlistFromString(record)
-                if PY3:
-                    certPem = pair_record["HostCertificate"]
-                    privateKeyPem = pair_record["HostPrivateKey"]
-                else:
-                    certPem = pair_record["HostCertificate"].data
-                    privateKeyPem = pair_record["HostPrivateKey"].data
+    def get_pair_record(self):
+        pair_record = None
+        itune_records_folder_path = self.get_itunes_record_path()
+        if itune_records_folder_path:
+            path = itune_records_folder_path + "%s.plist" % self.identifier
+            pair_record = self.read_pair_record_from_file(path)
+            if pair_record:
+                self.logger.info("Using iTunes pair record: %s.plist", self.identifier)
+            else:
+                self.logger.warning("No iTunes pairing record found for device %s", self.identifier)
+
+        if pair_record == None:
+            self.logger.warning("Looking for pymobiledevice pairing record...")
+            path = getHomePath(HOMEFOLDER, "%s.plist" %  self.identifier)
+            pair_record = self.read_pair_record_from_file(path)
+            if pair_record:
                 self.logger.info("Found pymobiledevice pairing record for device %s", self.udid)
             else:
                 self.logger.warning("No  pymobiledevice pairing record found for device %s", self.identifier)
-                return False
 
-        self.record = pair_record
+        return pair_record
+
+    def validate_pairing(self):
+        pair_record = None
+        certPem = None
+        privateKeyPem = None
+
+        pair_record = self.get_pair_record()
+        if PY3:
+            certPem = pair_record["HostCertificate"]
+            privateKeyPem = pair_record["HostPrivateKey"]
+        else:
+            certPem = pair_record["HostCertificate"].data
+            privateKeyPem = pair_record["HostPrivateKey"].data
+
         if int(self.ios_version.split('.')[0]) < 11:
             ValidatePair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
             self.c.sendPlist(ValidatePair)
@@ -220,18 +236,19 @@ class LockdownClient(object):
         pair = {"Label": self.label, "Request": "Pair", "PairRecord": pair_record}
         self.c.sendPlist(pair)
         pair = self.c.recvPlist()
+        print(pair)
 
-        if pair and  pair.get("Result") == "Success" or pair.has_key("EscrowBag"):
-            pair_record["HostPrivateKey"] = plistlib.Data(privateKeyPem)
-            pair_record["EscrowBag"] = pair.get("EscrowBag")
-            writeHomeFile(HOMEFOLDER, "%s.plist" % self.identifier, plistlib.writePlistToString(pair_record))
-            self.paired = True
-            return True
-
-        elif pair and  pair.get("Error") == "PasswordProtected":
-            self.c.close()
-            raise NotTrustedError
-
+        if pair:
+            if pair.get("Result") == "Success" or pair.get("EscrowBag"):
+                print("kikou")
+                pair_record["HostPrivateKey"] = plistlib.Data(privateKeyPem)
+                pair_record["EscrowBag"] = pair.get("EscrowBag")
+                writeHomeFile(HOMEFOLDER, "%s.plist" % self.identifier, plistlib.writePlistToString(pair_record))
+                self.paired = True
+                return True
+            elif pair.get("Error") == "PasswordProtected":
+                self.c.close()
+                raise NotTrustedError
         else:
             self.logger.error(pair.get("Error"))
             self.c.close()
@@ -239,7 +256,6 @@ class LockdownClient(object):
 
 
     def getValue(self, domain=None, key=None):
-
         if(isinstance(key, str) and hasattr(self, 'record') and hasattr(self.record, key)):
             return self.record[key]
 
@@ -259,7 +275,6 @@ class LockdownClient(object):
             return r
 
     def setValue(self, value, domain=None, key=None):
-
         req = {"Request":"SetValue", "Label": self.label}
 
         if domain:
