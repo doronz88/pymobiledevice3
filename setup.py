@@ -6,9 +6,10 @@
 import os
 import platform
 import sys
+from pymobiledevice import version as pm
 from setuptools import setup, find_packages
 BASE_DIR = os.path.realpath(os.path.dirname(__file__))
-VERSION = "1.0.8"
+VERSION = pm.VERSION
 
 def replace_version_py(version):
     content = """# -*- coding: utf-8 -*-
@@ -65,8 +66,8 @@ if __name__ == "__main__":
         packages=find_packages(),
         package_data={'':['*.txt', '*.TXT'], },
         data_files=[(".", ["requirements.txt"])],
-        author="QTA",
-        license="Copyright(c)2010-2018 Tencent All Rights Reserved. ",
+        author="Mathieu Renard <dark[-at-]gotohack.org>",
+        license="Copyright(c)2010-2019 Mathieu Renard All Rights Reserved. ",
         install_requires=parse_requirements(),
         entry_points={},
         classifiers=[
