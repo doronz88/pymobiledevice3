@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-'''diagnostics_relay的测试用例
+'''diagnostics_relay test case
 '''
 
 import unittest

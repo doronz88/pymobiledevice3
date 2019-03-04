@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-'''house_arrest的测试用例
+'''house_arrest test case
 '''
 
 import unittest
@@ -25,7 +25,7 @@ class HouseArrestTest(unittest.TestCase):
         udid = mux.devices[0].serial
         lockdown_client = LockdownClient(udid)
         self.service = lockdown_client.startService("com.apple.mobile.house_arrest")
-        self.service.sendPlist({"Command": "VendContainer", "Identifier": "com.tencent.mqq"})
+        self.service.sendPlist({"Command": "VendContainer", "Identifier": "com.gotohack.testapp"})
         status = self.service.recvPlist()
         if 'Error' in status and status['Error'] == "ApplicationLookupFailed":
             raise RuntimeWarning('ApplicationLookupFailed')

@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-'''installation_proxy的测试用例
+'''installation_proxy test case
 '''
 
 import unittest
@@ -50,8 +50,8 @@ class InstallationProxyTest(unittest.TestCase):
             ipa_content = f.read()
             afc = AFCClient(self.lockdownclient)
             afc.set_file_contents(tmp_ipa, ipa_content)
-            print("上传完毕")
-        print("开始安装")
+            print("Upload completed")
+        print("Starting installation")
         cmd = {"Command":"Install", "PackagePath": tmp_ipa}
         self.lockdownclient = LockdownClient(self.udid)
         self.service = self.lockdownclient.startService("com.apple.mobile.installation_proxy")
@@ -62,7 +62,7 @@ class InstallationProxyTest(unittest.TestCase):
     def test_uninstall_app(self):
         if self.no_device:
             return
-        bundle_id = "com.tencent.qt4i.demo"
+        bundle_id = "com.gotohack.test.demo"
         cmd = {"Command": "Uninstall", "ApplicationIdentifier": bundle_id}
         self.service.sendPlist(cmd)
         result, err = self.wait_completion()

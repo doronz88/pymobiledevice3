@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-'''afc的测试用例
+'''afc test case
 '''
 
 import unittest
@@ -36,7 +36,7 @@ class AfcTest(unittest.TestCase):
         lockdown.startService("com.apple.afc")
         info = lockdown.allValues
         print(info)
-        self.assertIsInstance(info, dict, '查询设备信息错误')
+        self.assertIsInstance(info, dict, 'Query device information error')
 
     def test_exec_cmd(self):
         udid = self._get_device()

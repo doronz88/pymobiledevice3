@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-'''screenshotr的测试用例
+'''screenshotr test case
 '''
 
 import unittest

@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-'''syslog_relay的测试用例
+'''syslog_relay test case
 '''
 
 import unittest
