@@ -15,7 +15,7 @@ that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV�
 * future
 * six
 * biplist
-
+* usbmuxd must be installed and running
 
 ## Lockdownd.py [com.apple.lockownd]
 
