@@ -50,7 +50,7 @@ def parse_requirements():
 
 
 def get_description():
-    with open(os.path.join(BASE_DIR, "README.md"), "r") as fh:
+    with open(os.path.join(BASE_DIR, "README.md"), "r", encoding="utf-8") as fh:
         return fh.read()
 
 
