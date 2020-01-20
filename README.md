@@ -85,7 +85,7 @@ On Mac OSX the virtual interface can be enabled with the rvictl command. This sc
 
 
 # How to contribute
-Contributors are essential to PyIMG4 (as they are to most open source projects).
+Contributors are essential to PyMobiledevice (as they are to most open source projects).
 Drop us a line if you want to contribute.
 We also accept pull request.
 
