@@ -163,7 +163,7 @@ class AFCClient(object):
 
 
     def receive_data(self):
-        res = self.service.recv(40)
+        res = self.service.recv_exact(40)
         status = AFC_E_SUCCESS
         data = ""
         if res:
@@ -449,7 +449,10 @@ class AFCShell(Cmd):
 
 
     def do_ls(self, p):
-        d = self.afc.read_directory(self.curdir + "/" + p)
+        dirname = self.curdir + "/" + p
+        if self.curdir.endswith("/"):
+            dirname = self.curdir + p
+        d = self.afc.read_directory(dirname)
         if d:
             for dd in d:
                 print(dd)
@@ -502,6 +505,9 @@ class AFCShell(Cmd):
                     z = parsePlist(data)
                     plistlib.writePlist(z, out_path)
                 else:
+                    out_dir = os.path.dirname(out_path)
+                    if not os.path.exists(out_dir):
+                        os.makedirs(out_dir, MODEMASK)
                     with open(out_path, 'wb+') as f:
                         f.write(data)
 

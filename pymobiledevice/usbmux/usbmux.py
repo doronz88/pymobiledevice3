@@ -144,7 +144,7 @@ class PlistProtocol(BinaryProtocol):
 		return payload
 	
 	def sendpacket(self, req, tag, payload={}):
-		payload['ClientVersionString'] = 'usbmux.py by marcan'
+		payload['ClientVersionString'] = 'qt4i-usbmuxd'
 		if isinstance(req, int):
 			req = [self.TYPE_CONNECT, self.TYPE_LISTEN][req-2]
 		payload['MessageType'] = req
@@ -162,7 +162,7 @@ class PlistProtocol(BinaryProtocol):
 			payload = plistlib.loads(payload)
 		else:
 			payload = plistlib.readPlistFromString(payload)
-		return payload['MessageType'], tag, payload
+		return payload.get('MessageType', ''), tag, payload
 
 class MuxConnection(object):
 	def __init__(self, socketpath, protoclass):
@@ -252,6 +252,28 @@ class USBMux(object):
 	def connect(self, device, port):
 		connector = MuxConnection(self.socketpath, self.protoclass)
 		return connector.connect(device, port)
+
+
+class UsbmuxdClient(MuxConnection):
+
+	def __init__(self):
+		super(UsbmuxdClient, self).__init__("/var/run/usbmuxd", PlistProtocol)
+
+	def get_pair_record(self, udid):
+		tag = self.pkttag
+		self.pkttag += 1
+		payload = {"PairRecordID": udid}
+		self.proto.sendpacket("ReadPairRecord", tag, payload)
+		_, recvtag, data = self.proto.getpacket()
+		if recvtag != tag:
+			raise MuxError("Reply tag mismatch: expected %d, got %d" % (tag, recvtag))
+		pair_record = data['PairRecordData'].data
+		if PY3:
+			pair_record = plistlib.loads(pair_record)
+		else:
+			pair_record = plistlib.readPlistFromString(pair_record)
+		return pair_record
+
 
 if __name__ == "__main__":
 	mux = USBMux()

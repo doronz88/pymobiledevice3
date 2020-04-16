@@ -13,6 +13,7 @@ from pymobiledevice.afc import AFCClient
 class InstallationProxyTest(unittest.TestCase):
 
     def setUp(self):
+        self.no_device = False
         mux = USBMux()
         if not mux.devices:
             mux.process(0.1)
