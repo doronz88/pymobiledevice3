@@ -91,7 +91,7 @@ class BinaryProtocol(object):
 				return ""
 		else:
 			raise ValueError("Invalid outgoing request type %d"%req)
-	
+
 	def _unpack(self, resp, payload):
 		if resp == self.TYPE_RESULT:
 			return {'Number':struct.unpack("I", payload)[0]}
@@ -136,13 +136,13 @@ class PlistProtocol(BinaryProtocol):
 		if not haveplist:
 			raise Exception("You need the plistlib module")
 		BinaryProtocol.__init__(self, socket)
-	
+
 	def _pack(self, req, payload):
 		return payload
-	
+
 	def _unpack(self, resp, payload):
 		return payload
-	
+
 	def sendpacket(self, req, tag, payload={}):
 		payload['ClientVersionString'] = 'qt4i-usbmuxd'
 		if isinstance(req, int):
@@ -267,10 +267,11 @@ class UsbmuxdClient(MuxConnection):
 		_, recvtag, data = self.proto.getpacket()
 		if recvtag != tag:
 			raise MuxError("Reply tag mismatch: expected %d, got %d" % (tag, recvtag))
-		pair_record = data['PairRecordData'].data
 		if PY3:
+			pair_record = data['PairRecordData']
 			pair_record = plistlib.loads(pair_record)
 		else:
+			pair_record = data['PairRecordData'].data
 			pair_record = plistlib.readPlistFromString(pair_record)
 		return pair_record
 
