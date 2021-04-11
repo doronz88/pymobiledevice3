@@ -10,7 +10,7 @@ import IPython
 import click
 from pygments import highlight, lexers, formatters
 
-from pymobiledevice3.afc import AFCShell
+from pymobiledevice3.afc import AFCShell, AFCClient
 from pymobiledevice3.diagnostics_service import DiagnosticsService
 from pymobiledevice3.installation_proxy_service import InstallationProxyService
 from pymobiledevice3.lockdown import LockdownClient
@@ -294,12 +294,55 @@ def crash(udid, action):
         AFCShell(udid=udid, afcname='com.apple.crashreportcopymobile').cmdloop()
 
 
-@cli.command()
-@click.option('--udid')
-@click.argument('action', type=click.Choice(['shell']), default='shell')
-def afc(udid, action):
+@cli.group()
+def afc():
     """ FileSystem utils """
+    pass
+
+
+@afc.command('shell')
+@click.option('--udid')
+def afc_shell(udid):
+    """ open an AFC shell rooted at /var/mobile/Media """
     AFCShell(udid=udid, afcname='com.apple.afc').cmdloop()
+
+
+@afc.command('pull')
+@click.option('--udid')
+@click.argument('remote_file', type=click.Path(exists=False))
+@click.argument('local_file', type=click.File('wb'))
+def afc_pull(udid, remote_file, local_file):
+    """ open an AFC shell rooted at /var/mobile/Media """
+    lockdown = LockdownClient(udid=udid)
+    local_file.write(AFCClient(lockdown=lockdown).get_file_contents(remote_file))
+
+
+@afc.command('push')
+@click.option('--udid')
+@click.argument('local_file', type=click.File('rb'))
+@click.argument('remote_file', type=click.Path(exists=False))
+def afc_push(udid, local_file, remote_file):
+    """ open an AFC shell rooted at /var/mobile/Media """
+    lockdown = LockdownClient(udid=udid)
+    AFCClient(lockdown=lockdown).set_file_contents(remote_file, local_file.read())
+
+
+@afc.command('ls')
+@click.option('--udid')
+@click.argument('remote_file', type=click.Path(exists=False))
+def afc_ls(udid, remote_file):
+    """ open an AFC shell rooted at /var/mobile/Media """
+    lockdown = LockdownClient(udid=udid)
+    pprint(AFCClient(lockdown=lockdown).read_directory(remote_file))
+
+
+@afc.command('rm')
+@click.option('--udid')
+@click.argument('remote_file', type=click.Path(exists=False))
+def afc_rm(udid, remote_file):
+    """ open an AFC shell rooted at /var/mobile/Media """
+    lockdown = LockdownClient(udid=udid)
+    AFCClient(lockdown=lockdown).file_remove(remote_file)
 
 
 @cli.command()
