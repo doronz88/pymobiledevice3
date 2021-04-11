@@ -5,9 +5,9 @@
 #
 # Copyright (c) 2012-2014 "dark[-at-]gotohack.org"
 #
-# This file is part of pymobiledevice
+# This file is part of pymobiledevice3
 #
-# pymobiledevice is free software: you can redistribute it and/or modify
+# pymobiledevice3 is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
@@ -25,35 +25,38 @@
 from __future__ import print_function
 import os
 import warnings
-from pymobiledevice.lockdown import LockdownClient
-from pymobiledevice.afc import AFCClient, AFCShell
+from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.afc import AFCClient, AFCShell
 from optparse import OptionParser
+
 warnings.warn(
-"""The libraries upon which this program depends will soon be deprecated in
-favor of the house_arrest.py and installation_proxy.py libraries.
-See those files for example program written using the new libraries."""
+    """The libraries upon which this program depends will soon be deprecated in
+    favor of the house_arrest.py and installation_proxy.py libraries.
+    See those files for example program written using the new libraries."""
 )
 
 
 def house_arrest(lockdown, applicationId):
     try:
-        mis = lockdown.startService("com.apple.mobile.house_arrest")
+        mis = lockdown.start_service("com.apple.mobile.house_arrest")
     except:
         lockdown = LockdownClient()
-        mis = lockdown.startService("com.apple.mobile.house_arrest")
+        mis = lockdown.start_service("com.apple.mobile.house_arrest")
 
     if mis == None:
         return
-    mis.sendPlist({"Command": "VendDocuments", "Identifier": applicationId})
-    res = mis.recvPlist()
+    mis.send_plist({"Command": "VendDocuments", "Identifier": applicationId})
+    res = mis.recv_plist()
     if res.get("Error"):
         print("Unable to Lookup the selected application: You probably trying to access to a system app...")
         return None
     return AFCClient(lockdown, service=mis)
 
+
 def house_arrest_shell(lockdown, applicationId):
-    afc =  house_arrest(lockdown, applicationId)
+    afc = house_arrest(lockdown, applicationId)
     if afc: AFCShell(client=afc).cmdloop()
+
 
 """
 "Install"
@@ -71,17 +74,18 @@ installd
 if stat("/var/mobile/tdmtanf") => "TDMTANF Bypass" => SignerIdentity bypass
 """
 
-def mobile_install(lockdown,ipaPath):
-    #Start afc service & upload ipa
+
+def mobile_install(lockdown, ipaPath):
+    # Start afc service & upload ipa
     afc = AFCClient(lockdown)
-    afc.set_file_contents("/" + os.path.basename(ipaPath), open(ipaPath,'rb').read())
-    mci = lockdown.startService("com.apple.mobile.installation_proxy")
-    #print mci.sendPlist({"Command":"Archive","ApplicationIdentifier": "com.joystickgenerals.STActionPig"})
-    mci.sendPlist({"Command":"Install",
-                         #"ApplicationIdentifier": "com.gotohack.JBChecker",
-                         "PackagePath": os.path.basename(ipaPath)})
+    afc.set_file_contents("/" + os.path.basename(ipaPath), open(ipaPath, 'rb').read())
+    mci = lockdown.start_service("com.apple.mobile.installation_proxy")
+    # print mci.sendPlist({"Command":"Archive","ApplicationIdentifier": "com.joystickgenerals.STActionPig"})
+    mci.send_plist({"Command": "Install",
+                    # "ApplicationIdentifier": "com.gotohack.JBChecker",
+                    "PackagePath": os.path.basename(ipaPath)})
     while True:
-        z =  mci.recvPlist()
+        z = mci.recv_plist()
         if not z:
             break
         completion = z.get('PercentComplete')
@@ -91,10 +95,11 @@ def mobile_install(lockdown,ipaPath):
             print("Installation %s\n" % z['Status'])
             break
 
+
 def list_apps(lockdown):
-    mci = lockdown.startService("com.apple.mobile.installation_proxy")
-    mci.sendPlist({"Command":"Lookup"})
-    res = mci.recvPlist()
+    mci = lockdown.start_service("com.apple.mobile.installation_proxy")
+    mci.send_plist({"Command": "Lookup"})
+    res = mci.recv_plist()
     for app in res["LookupResult"].values():
         if app.get("ApplicationType") != "System":
             print(app["CFBundleIdentifier"], "=>", app.get("Container"))
@@ -102,29 +107,28 @@ def list_apps(lockdown):
             print(app["CFBundleIdentifier"], "=> N/A")
 
 
-def get_apps_BundleID(lockdown,appType="User"):
+def get_apps_BundleID(lockdown, appType="User"):
     appList = []
-    mci = lockdown.startService("com.apple.mobile.installation_proxy")
-    mci.sendPlist({"Command":"Lookup"})
-    res = mci.recvPlist()
+    mci = lockdown.start_service("com.apple.mobile.installation_proxy")
+    mci.send_plist({"Command": "Lookup"})
+    res = mci.recv_plist()
     for app in res["LookupResult"].values():
-        if app.get("ApplicationType")  == appType:
+        if app.get("ApplicationType") == appType:
             appList.append(app["CFBundleIdentifier"])
-        #else: #FIXME
+        # else: #FIXME
         #    appList.append(app["CFBundleIdentifier"])
     mci.close()
-    #pprint(appList)
     return appList
 
 
 if __name__ == "__main__":
     parser = OptionParser(usage="%prog")
     parser.add_option("-l", "--list", dest="list", action="store_true", default=False,
-                  help="List installed applications (non system apps)")
+                      help="List installed applications (non system apps)")
     parser.add_option("-a", "--app", dest="app", action="store", default=None,
-                  metavar="APPID", help="Access application files with AFC")
+                      metavar="APPID", help="Access application files with AFC")
     parser.add_option("-i", "--install", dest="installapp", action="store", default=None,
-                  metavar="FILE", help="Install an application package")
+                      metavar="FILE", help="Install an application package")
 
     (options, args) = parser.parse_args()
     if options.list:
@@ -138,4 +142,3 @@ if __name__ == "__main__":
         mobile_install(lockdown, options.installapp)
     else:
         parser.print_help()
-

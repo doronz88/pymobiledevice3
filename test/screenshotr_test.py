@@ -5,9 +5,9 @@
 import unittest
 import tempfile
 
-from pymobiledevice.usbmux.usbmux import USBMux
-from pymobiledevice.lockdown import LockdownClient
-from pymobiledevice.screenshotr import screenshotr
+from pymobiledevice3.usbmux.usbmux import USBMux
+from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.screenshot_service import ScreenshotService
 
 
 class ScreenshotrTest(unittest.TestCase):
@@ -23,7 +23,7 @@ class ScreenshotrTest(unittest.TestCase):
         lockdownclient = LockdownClient(udid)
         tiff_file = tempfile.NamedTemporaryFile(suffix='.tiff')
         tiff_file_path = tiff_file.name
-        screenshot = screenshotr(lockdownclient)
+        screenshot = ScreenshotService(lockdownclient)
         data = screenshot.take_screenshot()
         with open(tiff_file_path, "wb") as fd:
             fd.write(data)

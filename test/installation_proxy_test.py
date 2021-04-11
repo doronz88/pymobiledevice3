@@ -6,9 +6,9 @@ import unittest
 import time
 import os
 
-from pymobiledevice.usbmux.usbmux import USBMux
-from pymobiledevice.lockdown import LockdownClient
-from pymobiledevice.afc import AFCClient
+from pymobiledevice3.usbmux.usbmux import USBMux
+from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.afc import AFCClient
 
 class InstallationProxyTest(unittest.TestCase):
 
@@ -23,11 +23,11 @@ class InstallationProxyTest(unittest.TestCase):
             return
         self.udid = mux.devices[0].serial
         self.lockdownclient = LockdownClient(self.udid)
-        self.service = self.lockdownclient.startService("com.apple.mobile.installation_proxy")
+        self.service = self.lockdownclient.start_service("com.apple.mobile.installation_proxy")
 
     def wait_completion(self, handler=None, *args):
         while True:
-            z = self.service.recvPlist()
+            z = self.service.recv_plist()
             print(type(z), z)
             if not z:
                 break
@@ -55,8 +55,8 @@ class InstallationProxyTest(unittest.TestCase):
         print("Starting installation")
         cmd = {"Command":"Install", "PackagePath": tmp_ipa}
         self.lockdownclient = LockdownClient(self.udid)
-        self.service = self.lockdownclient.startService("com.apple.mobile.installation_proxy")
-        self.service.sendPlist(cmd)
+        self.service = self.lockdownclient.start_service("com.apple.mobile.installation_proxy")
+        self.service.send_plist(cmd)
         result, err = self.wait_completion()
         self.assertTrue(result, 'install_app failed: %s' % err)
 
@@ -65,15 +65,15 @@ class InstallationProxyTest(unittest.TestCase):
             return
         bundle_id = "com.gotohack.test.demo"
         cmd = {"Command": "Uninstall", "ApplicationIdentifier": bundle_id}
-        self.service.sendPlist(cmd)
+        self.service.send_plist(cmd)
         result, err = self.wait_completion()
         self.assertTrue(result, 'uninstall_app failed: %s' % err)
 
     def test_apps_info(self):
         if self.no_device:
             return
-        self.service.sendPlist({"Command": "Lookup"})
-        print(self.service.recvPlist())
+        self.service.send_plist({"Command": "Lookup"})
+        print(self.service.recv_plist())
 
     def test_list_apps(self, app_type='user'):
         if self.no_device:
@@ -85,10 +85,10 @@ class InstallationProxyTest(unittest.TestCase):
             options["ApplicationType"] = "User"
         options["ReturnAttributes"] = ["CFBundleIdentifier",
                                        "CFBundleName", ]
-        self.service.sendPlist({"Command": "Browse", "ClientOptions": options})
+        self.service.send_plist({"Command": "Browse", "ClientOptions": options})
         apps = []
         while True:
-            z = self.service.recvPlist()
+            z = self.service.recv_plist()
             if z.get("Status") == "BrowsingApplications":
                 apps.extend(z["CurrentList"])
             elif z.get("Status") == "Complete":

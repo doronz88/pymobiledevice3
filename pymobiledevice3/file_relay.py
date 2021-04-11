@@ -5,9 +5,9 @@
 #
 # Copyright (c) 2012-2014 "dark[-at-]gotohack.org"
 #
-# This file is part of pymobiledevice
+# This file is part of pymobiledevice3
 #
-# pymobiledevice is free software: you can redistribute it and/or modify
+# pymobiledevice3 is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
@@ -21,16 +21,14 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 #
-import os
-import zlib
 import gzip
 import logging
 
-from pymobiledevice.lockdown import LockdownClient
-from pymobiledevice.util.cpio import CpioArchive
-from pymobiledevice.util import MultipleOption
+from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.util.cpio import CpioArchive
+from pymobiledevice3.util import MultipleOption
+from pymobiledevice3.plist_service import ConnectionFailedException
 
-from pprint import pprint
 from tempfile import mkstemp
 from optparse import OptionParser
 from io import BytesIO
@@ -55,20 +53,17 @@ Ubiquity
 tmp
 WirelessAutomation"""
 
+
 class DeviceVersionNotSupported(Exception):
     pass
 
+
 class FileRelay(object):
-    def __init__(self, lockdown=None, serviceName="com.apple.mobile.file_relay",
-                       udid=None, logger=None):
+    def __init__(self, lockdown=None, service_name="com.apple.mobile.file_relay",
+                 udid=None, logger=None):
         self.logger = logger or logging.getLogger(__name__)
         self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
-        ProductVersion = self.lockdown.getValue("", "ProductVersion")
-
-        if ProductVersion[0] >= "8":
-            raise DeviceVersionNotSupported
-
-        self.service = self.lockdown.startService(serviceName)
+        self.service = self.lockdown.start_service(service_name)
         self.packet_num = 0
 
     def stop_session(self):
@@ -76,9 +71,9 @@ class FileRelay(object):
         self.service.close()
 
     def request_sources(self, sources=["UserDatabases"]):
-        self.service.sendPlist({"Sources": sources})
+        self.service.send_plist({"Sources": sources})
         while 1:
-            res = self.service.recvPlist()
+            res = self.service.recv_plist()
             if res:
                 s = res.get("Status")
                 if s == "Acknowledged":
@@ -94,19 +89,19 @@ class FileRelay(object):
                     break
         return None
 
-if __name__ == "__main__":
 
-    parser = OptionParser(option_class=MultipleOption,usage="%prog")
+if __name__ == "__main__":
+    parser = OptionParser(option_class=MultipleOption, usage="%prog")
     parser.add_option("-s", "--sources",
                       action="extend",
                       dest="sources",
                       metavar='SOURCES',
                       choices=SRCFILES.split("\n"),
                       help="comma separated list of file relay source to dump")
-    parser.add_option("-e", "--extract",dest="extractpath" , default=False,
-                  help="Extract archive to specified location", type="string")
+    parser.add_option("-e", "--extract", dest="extractpath", default=False,
+                      help="Extract archive to specified location", type="string")
     parser.add_option("-o", "--output", dest="outputfile", default=False,
-                  help="Output location", type="string")
+                      help="Output location", type="string")
 
     (options, args) = parser.parse_args()
 
@@ -115,12 +110,14 @@ if __name__ == "__main__":
         sources = options.sources
     else:
         sources = ["UserDatabases"]
-    print("Downloading: %s" % "".join([str(item)+" " for item in sources]))
+    print("Downloading: %s" % "".join([str(item) + " " for item in sources]))
     fc = None
     try:
         fc = FileRelay()
-    except:
-        print("Device with product vertion >= 8.0 does not allow access to fileRelay service")
+    except ConnectionFailedException:
+        print(
+            'Failed to connect to FileRelay service. '
+            'Device with product vertion >= 8.0 does not allow access to fileRelay service')
         exit()
 
     data = fc.request_sources(sources)
@@ -129,13 +126,13 @@ if __name__ == "__main__":
         if options.outputfile:
             path = options.outputfile
         else:
-            _,path = mkstemp(prefix="fileRelay_dump_",suffix=".gz",dir=".")
+            _, path = mkstemp(prefix="fileRelay_dump_", suffix=".gz", dir=".")
 
-        open(path,'wb').write(data)
-        self.logger.info("Data saved to:  %s ", path)
+        open(path, 'wb').write(data)
+        fc.logger.info("Data saved to:  %s ", path)
 
     if options.extractpath:
         with open(path, 'r') as f:
             gz = gzip.GzipFile(mode='rb', fileobj=f)
             cpio = CpioArchive(fileobj=BytesIO(gz.read()))
-            cpio.extract_files(files=None,outpath=options.extractpath)
+            cpio.extract_files(files=None, outpath=options.extractpath)

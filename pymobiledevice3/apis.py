@@ -13,25 +13,24 @@ Date created: 2016-06-19
 """
 
 from os import path
-# from pprint import pprint
 
 
 def get_lockdown_and_service(udid):
-    from pymobiledevice.lockdown import LockdownClient
+    from pymobiledevice3.lockdown import LockdownClient
     lockdown = LockdownClient(udid)
-    service = lockdown.startService("com.apple.mobile.installation_proxy")
+    service = lockdown.start_service("com.apple.mobile.installation_proxy")
     return lockdown, service
 
 
 def run_command(service, uuid, cmd):
-    service.sendPlist(cmd)
-    z = service.recvPlist()
+    service.send_plist(cmd)
+    z = service.recv_plist()
     while 'PercentComplete' in z:
         if not z:
             break
         if z.get("Status") == "Complete":
             return z.get("Status")
-        z = service.recvPlist()
+        z = service.recv_plist()
     service.close()
     return z
 
@@ -40,7 +39,7 @@ def install_ipa(uuid, ipa_path):
     """
     docstring for install_ipa
     """
-    from pymobiledevice.afc import AFCClient
+    from pymobiledevice3.afc import AFCClient
     lockdown, service = get_lockdown_and_service(uuid)
     afc = AFCClient(lockdown=lockdown)
     afc.set_file_contents(

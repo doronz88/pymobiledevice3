@@ -4,8 +4,8 @@
 
 import unittest
 
-from pymobiledevice.usbmux.usbmux import USBMux
-from pymobiledevice.syslog import Syslog
+from pymobiledevice3.usbmux.usbmux import USBMux
+from pymobiledevice3.syslog_service import SyslogService
 
 
 class ListDeviceTest(unittest.TestCase):
@@ -17,5 +17,5 @@ class ListDeviceTest(unittest.TestCase):
         if len(mux.devices) == 0:
             print("no real device found")
             return
-        syslog = Syslog()
+        syslog = SyslogService()
         syslog.watch(10, '/tmp/sys.log', 'QQ')

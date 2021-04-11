@@ -1,6 +1,9 @@
-M2Crypto==0.32.0 ; sys_platform == 'darwin'
+M2Crypto
 construct>=2.9.29
 pyasn1
-future
-six
-biplist
+termcolor
+click
+coloredlogs
+IPython
+bpylist2
+pygments

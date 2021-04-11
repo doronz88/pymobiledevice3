@@ -5,9 +5,9 @@
 import unittest
 import time
 
-from pymobiledevice.usbmux.usbmux import USBMux
-from pymobiledevice.lockdown import LockdownClient
-from pymobiledevice.diagnostics_relay import DIAGClient
+from pymobiledevice3.usbmux.usbmux import USBMux
+from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.diagnostics_service import DiagnosticsService
 
 
 class DiagnosticsRelayTest(unittest.TestCase):
@@ -21,7 +21,7 @@ class DiagnosticsRelayTest(unittest.TestCase):
             return
         udid = mux.devices[0].serial
         lockdown = LockdownClient(udid)
-        DIAGClient(lockdown).restart()
+        DiagnosticsService(lockdown).restart()
         time.sleep(10)
         for _ in range(20):
             mux.process(1)

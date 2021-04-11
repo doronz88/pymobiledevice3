@@ -4,9 +4,9 @@
 
 import unittest
 
-from pymobiledevice.usbmux.usbmux import USBMux
-from pymobiledevice.lockdown import LockdownClient
-from pymobiledevice.afc import AFCShell
+from pymobiledevice3.usbmux.usbmux import USBMux
+from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.afc import AFCShell
 
 
 
@@ -33,7 +33,7 @@ class AfcTest(unittest.TestCase):
             print("no real device found")
             return
         lockdown = LockdownClient(udid)
-        lockdown.startService("com.apple.afc")
+        lockdown.start_service("com.apple.afc")
         info = lockdown.allValues
         print(info)
         self.assertIsInstance(info, dict, 'Query device information error')

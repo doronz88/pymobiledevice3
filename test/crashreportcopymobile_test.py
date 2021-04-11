@@ -5,10 +5,10 @@
 import unittest
 import os
 
-from pymobiledevice.usbmux.usbmux import USBMux
-from pymobiledevice.lockdown import LockdownClient
-from pymobiledevice.afc import AFCShell
-from pymobiledevice.afc import AFCClient
+from pymobiledevice3.usbmux.usbmux import USBMux
+from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.afc import AFCShell
+from pymobiledevice3.afc import AFCClient
 
 
 class CrashReportTest(unittest.TestCase):
@@ -25,7 +25,7 @@ class CrashReportTest(unittest.TestCase):
 
         procname = "QQ"
         lockdown = LockdownClient(udid)
-        self.service = lockdown.startService("com.apple.crashreportcopymobile")
+        self.service = lockdown.start_service("com.apple.crashreportcopymobile")
         client = AFCClient(lockdown,service=self.service)
         afc_shell = AFCShell(client=client)
         remote_crash_path = '/'

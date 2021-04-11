@@ -24,7 +24,7 @@ from optparse import OptionParser
 from six import PY3
 from six.moves import socketserver
 
-from pymobiledevice.usbmux import usbmux
+from pymobiledevice3.usbmux import usbmux
 
 
 class SocketRelay(object):

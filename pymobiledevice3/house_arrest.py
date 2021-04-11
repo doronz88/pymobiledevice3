@@ -5,9 +5,9 @@
 #
 # Copyright (c) 2012-2014 "dark[-at-]gotohack.org"
 #
-# This file is part of pymobiledevice
+# This file is part of pymobiledevice3
 #
-# pymobiledevice is free software: you can redistribute it and/or modify
+# pymobiledevice3 is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
@@ -25,32 +25,27 @@
 import os
 import logging
 
-from pymobiledevice.lockdown import LockdownClient
-from pymobiledevice.afc import AFCClient, AFCShell
+from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.afc import AFCClient, AFCShell
 
 from pprint import pprint
 from optparse import OptionParser
 
 
 class HouseArrestClient(AFCClient):
-
-        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
-        self.serviceName = serviceName
-        self.service = service if service else self.lockdown.startService(self.serviceName)
-
-    def __init__(self, udid=None,logger=None):
+    def __init__(self, udid=None, logger=None):
         self.logger = logger or logging.getLogger(__name__)
         lockdownClient = LockdownClient(udid)
         serviceName = "com.apple.mobile.house_arrest"
         super(HouseArrestClient, self).__init__(lockdownClient, serviceName)
 
     def stop_session(self):
-        self.logger.info("Disconecting...")
+        self.logger.info("Disconnecting...")
         self.service.close()
 
     def send_command(self, applicationId, cmd="VendContainer"):
-        self.service.sendPlist({"Command": cmd, "Identifier": applicationId})
-        res = self.service.recvPlist()
+        self.service.send_plist({"Command": cmd, "Identifier": applicationId})
+        res = self.service.recv_plist()
         if res.get("Error"):
             self.logger.error("%s : %s", applicationId, res.get("Error"))
             return False
@@ -67,9 +62,9 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.WARN)
     parser = OptionParser(usage="%prog -a  applicationId")
     parser.add_option("-a", "--application", dest="applicationId", default=False,
-                  help="Application ID <com.apple.iBooks>", type="string")
+                      help="Application ID <com.apple.iBooks>", type="string")
     parser.add_option("-c", "--command", dest="cmd", default=False,
-                  help="House_Arrest commands: ", type="string")
+                      help="House_Arrest commands: ", type="string")
 
     (options, args) = parser.parse_args()
     h = HouseArrestClient()
@@ -77,10 +72,3 @@ if __name__ == "__main__":
         h.shell(options.applicationId, cmd=options.cmd)
     else:
         h.shell(options.applicationId)
-
-
-
-
-
-
-

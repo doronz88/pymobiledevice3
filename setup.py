@@ -2,14 +2,15 @@
 '''package script
 '''
 
-
 import os
 import platform
 import sys
-from pymobiledevice import version as pm
+from pymobiledevice3 import version as pm
 from setuptools import setup, find_packages
+
 BASE_DIR = os.path.realpath(os.path.dirname(__file__))
 VERSION = pm.VERSION
+
 
 def replace_version_py(version):
     content = """# -*- coding: utf-8 -*-
@@ -17,9 +18,9 @@ def replace_version_py(version):
 '''
 VERSION = '%(version)s'
 """
-    version_py = os.path.join(BASE_DIR, 'pymobiledevice', 'version.py')
+    version_py = os.path.join(BASE_DIR, 'pymobiledevice3', 'version.py')
     with open(version_py, 'w') as fd:
-        fd.write(content % {'version':version})
+        fd.write(content % {'version': version})
 
 
 def generate_version():
@@ -50,33 +51,34 @@ def parse_requirements():
 
 
 def get_description():
-    with open(os.path.join(BASE_DIR, "README.md"), "r", encoding="utf-8") as fh:
+    with open(os.path.join(BASE_DIR, "README.md"), "r") as fh:
         return fh.read()
 
 
 if __name__ == "__main__":
-
     setup(
         version=generate_version(),
-        name="pymobiledevice",
+        name="pymobiledevice3",
         description="python implementation for libimobiledevice library",
         long_description=get_description(),
         long_description_content_type='text/markdown',
         cmdclass={},
         packages=find_packages(),
-        package_data={'':['*.txt', '*.TXT'], },
+        package_data={'': ['*.txt', '*.TXT'], },
         data_files=[(".", ["requirements.txt"])],
-        author="Mathieu Renard <dark[-at-]gotohack.org>",
-        license="Copyright(c)2010-2019 Mathieu Renard All Rights Reserved. ",
+        author="DoronZ",
         install_requires=parse_requirements(),
-        entry_points={},
+        entry_points={
+            'console_scripts': ['pymobiledevice3=pymobiledevice3.cli:cli',
+                                ],
+        },
         classifiers=[
-            "Programming Language :: Python :: 2.7",
-            "Programming Language :: Python :: 3.6",
             "Programming Language :: Python :: 3.7",
+            "Programming Language :: Python :: 3.8",
+            "Programming Language :: Python :: 3.9",
         ],
-        url="https://github.com/iOSForensics/pymobiledevice",
+        url="https://github.com/doronz88/pymobiledevice",
         project_urls={
-            "pymobiledevice Documentation":"https://github.com/iOSForensics/pymobiledevice"
+            "pymobiledevice3 Documentation": "https://github.com/iOSForensics/pymobiledevice"
         },
     )
