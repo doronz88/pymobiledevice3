@@ -382,5 +382,13 @@ def launch(udid, bundle_id):
         print(f'Procces launched with pid {pid}')
 
 
+@developer.command('shell')
+@click.option('--udid')
+def shell(udid):
+    """ Launch developer shell. """
+    with DvtSecureSocketProxyService(lockdown=LockdownClient(udid=udid)) as dvt:
+        dvt.shell()
+
+
 if __name__ == '__main__':
     cli()
