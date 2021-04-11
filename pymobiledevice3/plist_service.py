@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
-import plistlib
-import ssl
-import struct
-import logging
-import codecs
 from re import sub
+import plistlib
+import logging
+import struct
+import ssl
 
 from pymobiledevice3.usbmux import usbmux
 
@@ -47,18 +46,11 @@ class PlistService(object):
         return self.s.recv(length)
 
     def send(self, data):
-        try:
-            self.s.sendall(data)
-        except:
-            self.logger.error("Sending data to device failed")
-            return -1
-        return 0
+        self.s.sendall(data)
 
     def send_request(self, data):
-        res = None
-        if self.send_plist(data) >= 0:
-            res = self.recv_plist()
-        return res
+        self.send_plist(data)
+        return self.recv_plist()
 
     def recv_exact(self, l):
         data = b""
