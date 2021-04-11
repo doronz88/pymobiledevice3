@@ -1,7 +1,9 @@
 *.pyc
+.idea/
+venv/
 build/
 dist/
-pymobiledevice2.egg-info/
+*.egg-info/
 version.txt
 debug/
 *.DS_Store
