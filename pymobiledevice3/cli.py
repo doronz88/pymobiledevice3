@@ -386,5 +386,21 @@ def shell(lockdown):
         dvt.shell()
 
 
+@developer.command('ls', cls=Command)
+@click.argument('path', type=click.Path(exists=False))
+def ls(lockdown, path):
+    """ Launch developer shell. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        pprint(dvt.ls(path))
+
+
+@developer.command('ls', cls=Command)
+@click.argument('path', type=click.Path(exists=False))
+def ls(lockdown, path):
+    """ Launch developer shell. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        pprint(dvt.ls(path))
+
+
 if __name__ == '__main__':
     cli()
