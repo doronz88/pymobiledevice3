@@ -1,107 +1,153 @@
-# pymobiledevice
+# Description
 
 [![GitHub license](https://img.shields.io/cran/l/devtools.svg)](LICENSE)
 
-pymobiledevice is a cross-platform implementation of the mobiledevice library
+`pymobiledevice3` is a fork from `pymobiledevice`, which is a cross-platform implementation of the mobiledevice library
 that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV® devices.
 
+This version uses more recent coding standards.
 
-## Requirements
+# Installation
 
-* Python 2.7 and 3.x
-* M2Crypto
-* construct >= 2.9.29
-* pyasn1
-* future
-* six
-* biplist
-* usbmuxd must be installed and running
+```shell
+git clone git@github.com:doronz88/pymobiledevice3.git
+cd pymobiledevice3
+python3 -m pip install --user -U -e .
+```
 
-## Lockdownd.py [com.apple.lockownd]
+# Usage
 
-This script can be used in order to pair with the device & starts other services.
+```
+Usage: pymobiledevice3 [OPTIONS] COMMAND [ARGS]...
 
-*Other services can only be accessed after successful pairing.
-Succesful pairing requires the device to be unlocked and the user to click
-"Trust this device" on their phone screen.*
+Options:
+  --help  Show this message and exit.
 
+Commands:
+  afc           FileSystem utils
+  config        configuration options
+  crash         crash utils
+  diagnostics   diagnostics options
+  lockdown      lockdown options
+  notification  API for notify_post() & notify_register_dispatch().
+  pcap          sniff device traffic
+  ps            show process list
+  screenshot    take a screenshot in TIFF format
+  syslog        syslog options
+  developer     Developer options
+```
 
-## afc.py [com.apple.afc]
+![](example.gif)
 
-This service is responsible for things such as copying music and photos. AFC Clients like iTunes
-are allowed accessing to a “jailed” or limited area of the device filesystem. Actually, AFC clients can
-only access certain files, namely those located in the Media folder.
+# Lockdown services
 
+Support | Service | Process | Description
+--------|---------|---------|----------------------
+DONE |  `com.apple.afc` | `/usr/libexec/afcd --xpc -d /private/var/mobile/Media` | File access for `/var/mobile/Media`
+DONE | `com.apple.crashreportcopymobile` | `/usr/libexec/afcd --xpc--service-name com.apple.crashreportcopymobile -d /private/var/mobile/Library/Logs/CrashReporter` | File access for `/var/mobile/Library/Logs/CrashReports`
+DONE | `com.apple.pcapd` | `/usr/libexec/pcapd` | Sniff device's network traffic
+DONE | `com.apple.mobile.screenshotr` | | Take screenshot in TIFF format
+DONE | `com.apple.syslog_relay` | `/usr/libexec/diagnosticd` | Just streams syslog lines as raw strings
+DONE | `com.apple.os_trace_relay` | `/usr/libexec/diagnosticd` | More extensive syslog monitoring
+DONE | `com.apple.mobile.diagnostics_relay` | `com.apple.mobile.diagnostics_relay` | General diagnostic tools
+DONE | `com.apple.mobile.notification_proxy` | `/usr/libexec/notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()`
+DONE | `com.apple.crashreportmover` | `/usr/libexec/crash_mover` | Just trigger `crash_mover` to move all crash reports into crash directory
+DONE | `com.apple.mobile.MCInstall` | `/usr/libexec/mc_mobile_tunnel` | Profile management
+In Progress | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` | Developer instrumentation service
+Not yet | `com.apple.atc` | `/usr/libexec/atc` | Profile management related
+Not yet | `com.apple.mobile.assertion_agent` | `/usr/libexec/mobile_assertion_agent` | Create power assertion to prevent different kinds of sleep
+Not yet | `com.apple.ait.aitd` | `/usr/libexec/atc`
+Not yet | `com.apple.hpd.mobile` | `/usr/libexec//usr/libexec/hpd --lockdown -d /var/mobile/Media/HighlandPark -u mobile`
+Not yet | `com.apple.iosdiagnostics.relay` | `/usr/libexec/ios_diagnostics_relay`
+Not yet | `com.apple.misagent` | `/usr/libexec/misagent`
+Not yet | `com.apple.mobile.MDMService` | `/usr/libexec/MDMService`
+Not yet | `com.apple.mobile.debug_image_mount` | `/usr/libexec/debug_image_mount`
+Not yet | `com.apple.mobile.file_relay` | `/usr/libexec/mobile_file_relay` | File access for iOS <= 8
+Not yet | `com.apple.mobile.heartbeat` | `/usr/libexec/lockdownd`
+Not yet | `com.apple.mobile.house_arrest` | `/usr/libexec/mobile_house_arrest`
+Not yet | `com.apple.mobile.insecure_notification_proxy` | `/usr/libexec/notification_proxy -i` | API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
+Not yet | `com.apple.mobile.installation_proxy` | `/usr/libexec/mobile_installation_proxy`
+Not yet | `com.apple.mobile.mobile_image_mounter` | `/usr/libexec/mobile_storage_proxy`
+Not yet | `com.apple.mobilebackup` | `/usr/libexec/BackupAgent --lockdown`
+Not yet | `com.apple.mobilebackup2` | `/usr/libexec/BackupAgent2 --lockdown`
+Not yet | `com.apple.mobilesync` | `/usr/libexec/SyncAgent --lockdown --oneshot -v`
+Not yet | `com.apple.purpletestr` | `/usr/libexec/PurpleTestr --lockdown --oneshot`
+Not yet | `com.apple.radios.wirelesstester.mobile` | `/usr/local/bin/WirelessTester -l 1 -o /var/mobile/WirelessTester_mobile.log`
+Not yet | `com.apple.radios.wirelesstester.root` | `/usr/local/bin/WirelessTester -l 1 -o /var/mobile/WirelessTester_mobile.log`
+Not yet | `com.apple.rasd` | `/usr/libexec/rasd`
+Not yet | `com.apple.springboardservices` | `/usr/libexec/springboardservicesrelay`
+Not yet | `com.apple.thermalmonitor.thermtgraphrelay` | `/usr/libexec/thermtgraphrelay`
+Not yet | `com.apple.webinspector` | `/usr/libexec/webinspectord`
 
-## house_arrest.py [com.apple.mobile.house_arrest]
+## `com.apple.instruments.remoteserver.DVTSecureSocketProxy`
 
-This service allows accessing to AppStore applications folders and their content.
-In other words, by using an AFC client, a user/attacker can download the application resources and data.
-It also includes the “default preferences” file where credentials are sometimes stored.
+Exports several ObjC objects and allows calling their respective selectors.
+The `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` service reads the
+configuration stored from `[[NSUserDefaults standardUserDefaults] boolForKey:@"DTXConnectionTracer"]`
+If the value is true, then `/tmp/DTServiceHub[PID].DTXConnection.RANDOM.log` is created and can be used to debug the
+transport protocol.
 
+For example:
 
-## installation_proxy.py [com.apple.mobile.installation_proxy]
+```
+root@iPhone (/var/root)# tail -f /tmp/DTServiceHub[369].DTXConnection.qNjM2U.log
+170.887982 x4 resuming [c0]: <DTXConnection 0x100d20670 : x4>
+170.889120 x4   sent   [c0]: < DTXMessage 0x100d52b10 : i2.0 c0 dispatch:[_notifyOfPublishedCapabilities:<NSDictionary 0x100d0e1b0 | 92 key/value pairs>] >
+170.889547 x4 received [c0]: < DTXMessage 0x100d0a550 : i1.0 c0 dispatch:[_notifyOfPublishedCapabilities:<NSDictionary 0x100d16a40 | 2 key/value pairs>] >
+170.892101 x4 received [c0]: < DTXMessage 0x100d0a550 : i3.0e c0 dispatch:[_requestChannelWithCode:[1]identifier :"com.apple.instruments.server.services.deviceinfo"] >
+170.892238 x4   sent   [c0]: < DTXMessage 0x100d61830 : i3.1 c0 >
+170.892973 x4 received [c1f]: < DTXMessage 0x100d0a550 : i4.0e c1 dispatch:[runningProcesses] >
+171.204957 x4   sent   [c1f]: < DTXMessage 0x100c557a0 : i4.1 c1 object:(__NSArrayM*)<NSArray 0x100c199d0 | 245 objects> { <NSDictionary 0x100c167c0 | 5 key/value pairs>, <NSDictionary 0x100d17970 | 5 key/value pairs>, <NSDictionary 0x100d17f40 | 5 key/value pairs>, <NSDictionary 0x100d61750 | 5 key/value pairs>, <NSDictionary 0x100c16760 | 5 key/value pairs>, ...  } >
+171.213326 x4 received [c0]: < DTXMessage : kDTXInterruptionMessage >
+171.213424 x4  handler [c0]: < DTXMessage : i1 kDTXInterruptionMessage >
+171.213477 x4 received [c1f]: < DTXMessage : kDTXInterruptionMessage >
+```
 
-The installation proxy manages applications on a device.
-It allows execution of the following commands:
-- List installed applications
-- List archived applications
-- ...
+For editing the configuration we can simply add the respected key into:
+`/var/mobile/Library/Preferences/.GlobalPreferences.plist` and kill `cfprefsd`
 
+The valid selectors for triggering can be found using the following Frida
+script the same way Roy Bowman used for iterating all classes which implement
+the protocol `DTXAllowedRPC`:
 
-## mobilebackup.py & mobilebackup2.py [ com.apple.mobilebackup & com.apple.mobilebackup2 ]
+```shell
+frida -U DTServiceHub
+```
 
-Those services are used by iTunes to backup the device.
+```javascript
+for (var name in ObjC.protocols) {
+  var protocol = ObjC.protocols[name]
+  if ('DTXAllowedRPC' in protocol.protocols) {
+    console.log('@protocol', name)
+    console.log('  ' + Object.keys(protocol.methods).join('\n  '))
+  }
+}
+```
 
+The complete list for the following XCode versions can be found in:
+* [12.4](./DTServices-12.4.txt)
 
-## diagnostics_relay.py [com.apple.mobile.diagnostics_relay]
+## `com.apple.os_trace_relay`
 
-The diagnostic relay allows requesting iOS diagnostic information.
-The service handles the following actions:
-- [ Sleep ]Puts the device into deep sleep mode and disconnects from host.
-- [ Restart ] Restart the device and optionally show a user notification.
-- [ Shutdown ] Shutdown of the device and optionally show a user notification.
-- [ NAND, IORegistry, GasGauge, MobileGestalt ] Querry diagnostic informations.
-- ...
+Provides API for the following operations:
+* Show process list (process name and pid)
+* Stream syslog lines in binary form with optional filtering by pid.
+* Get old stored syslog archive in PAX format (can be extracted using `pax -r < filename`).
+    * Archive contain the contents are the `/var/db/diagnostics` directory
 
+## `com.apple.mobile.diagnostics_relay`
 
-## filerelay.py [com.apple.mobile.file_relay]
+Provides an API to:
+* Query MobileGestalt & IORegistry keys.
+* Reboot, shutdown or put the device in sleep mode. 
 
-Depending of the iOS version, the file relay service may support the following commands:
-    Accounts, AddressBook, AppleSupport, AppleTV, Baseband, Bluetooth, CrashReporter, CLTM
-    Caches, CoreLocation, DataAccess, DataMigrator, demod, Device-o-Matic, EmbeddedSocial, FindMyiPhone
-    GameKitLogs, itunesstored, IORegUSBDevice, HFSMeta, Keyboard, Lockdown, MapsLogs, MobileAsset,
-    MobileBackup, MobileCal, MobileDelete, MobileInstallation, MobileMusicPlayer, MobileNotes, NANDDebugInfo
-    Network, Photos, SafeHarbor, SystemConfiguration, tmp, Ubiquity, UserDatabases, VARFS, VPN, Voicemail
-    WiFi, WirelessAutomation.
+## `com.apple.mobile.file_relay`
 
-All the files returned by the iPhone are stored in clear text in a gziped CPIO archive.
+On older iOS versions, this was the main relay used for file operations, which was
+later replaced with AFC.
 
+## `com.apple.pcapd`
 
-## pcapd.py [com.apple.pcapd]
-
-Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from an iOS device.
-On Mac OSX the virtual interface can be enabled with the rvictl command. This script allows to use this service on other systems.
-
-
-# How to contribute
-Contributors are essential to pymobiledevice (as they are to most open source projects).
-Drop us a line if you want to contribute.
-We also accept pull request.
-
-
-# Reporting issues
-### Questions
-It is OK so submit issues to ask questions (more than OK, encouraged). There is a label "question" that you can use for that.
-
-### Bugs
-If you have installed pymobiledevice through a package manager (from your Linux or BSD system, from PyPI, etc.), please get and install the current development code, and check that the bug still exists before submitting an issue.
-
-Please label your issues "bug".
-
-If you're not sure whether a behavior is a bug or not, submit an issue and ask, don't be shy!
-
-Enhancements / feature requests
-If you want a feature in pymobiledevice, but cannot implement it yourself or want some hints on how to do that, open an issue with label "enhancement".
-
-Explain if possible the API you would like to have (e.g., give examples of function calls, etc.).
+Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from an iOS
+device. On Mac OSX the virtual interface can be enabled with the rvictl command. This script allows to use this service
+on other systems.
