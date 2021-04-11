@@ -2,6 +2,7 @@
 
 import logging
 import io
+import plistlib
 from datetime import datetime
 from functools import partial
 
@@ -147,6 +148,16 @@ class DvtSecureSocketProxyService(object):
                 'MessageAux': MessageAux,
             })
 
+    def ls(self, path):
+        channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
+        args = MessageAux().append_obj(path)
+        self.send_message(
+            channel, 'directoryListingForPath:', args
+        )
+        ret, aux = self.recv_message()
+        assert ret
+        return ret
+
     def proclist(self):
         channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
         self.send_message(channel, 'runningProcesses')
@@ -240,7 +251,12 @@ class DvtSecureSocketProxyService(object):
         else:
             aux = None
         obj_size = pheader.totalLength - pheader.auxiliaryLength
-        ret = archiver.unarchive(packet_stream.read(obj_size)) if obj_size else None
+        data = packet_stream.read(obj_size)
+        try:
+            ret = archiver.unarchive(data) if obj_size else None
+        except archiver.MissingClassMapping as e:
+            print(plistlib.loads(data))
+            raise e
         return ret, aux
 
     def _recv_packet_fragments(self):

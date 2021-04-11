@@ -31,7 +31,7 @@
   - requestVMSnapshot
   - stopTracking
   - startTracking
-@protocol DTFileBrowserServiceAuthorizedAPI
+@protocol DTFileBrowserServiceAuthorizedAPI (com.apple.instruments.server.services.filebrowser, appleInternal)
   - entriesInPathsArray:
   - dataFromFileAtPath:
   - updateAttributesForItem:
@@ -91,7 +91,7 @@
   - startStreamTransfer:
   - putData:toStreamID:
   - endStreamTransfer:
-@protocol DTFileTransferServiceDebugInboxAuthorizedAPI
+@protocol DTFileTransferServiceDebugInboxAuthorizedAPI (com.apple.instruments.server.services.filetransfer)
   - transferFile:toDebugInboxOfApplicationWithBundleIdentifier:destinationFilename:
   - openFileInDocumentDebugInbox:forApplicationWithBundleIdentifier:withAnnotation:
   - transferData:intoAppContainerForBundleIdentifier:filename:
