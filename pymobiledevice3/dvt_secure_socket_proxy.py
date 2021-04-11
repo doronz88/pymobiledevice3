@@ -3,12 +3,42 @@
 import logging
 import io
 from datetime import datetime
+from functools import partial
 
+import IPython
+from pygments import highlight, lexers, formatters
 from bpylist import archiver
 from construct import Struct, Int32ul, Int16ul, Int64ul, Const, Prefixed, GreedyBytes, this, Adapter, Select, \
     GreedyRange, Switch
 
 from pymobiledevice3.lockdown import LockdownClient
+
+SHELL_USAGE = '''
+# This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
+# Generally speaking, each channel represents a group of actions. 
+# Calling actions is done using a selector and auxiliary (parameters).
+# Receiving answers is done by getting a return value and seldom auxiliary (private / extra parameters).
+# To see the available channels, type the following:
+developer.channels
+
+# In order to send messages, you need to create a channel:
+channel = developer.make_channel('com.apple.instruments.server.services.deviceinfo')
+
+# After creating the channel you can call allowed selectors:
+channel.runningProcesses()
+
+# If an answer is expected, you can receive it using the receive method:
+processes = channel.receive()
+
+# Sometimes the selector requires parameters, You can add them using MessageAux. For example lets kill a process:
+channel = developer.make_channel('com.apple.instruments.server.services.processcontrol')
+args = MessageAux().append_obj(80) # This will kill pid 80
+channel.killPid_(args, expects_reply=False) # Killing a process doesn't require an answer.
+
+# In some rare cases, you might want to receive the auxiliary and the selector return value.
+# For that cases you can use the recv_message method.
+return_value, auxiliary = developer.recv_message()
+'''
 
 
 class BplitAdapter(Adapter):
@@ -68,6 +98,31 @@ class MessageAux:
         return message_aux_t_struct.build(dict(aux=self.values))
 
 
+class Channel(int):
+    @classmethod
+    def create(cls, value: int, service):
+        channel = cls(value)
+        channel._service = service
+        return channel
+
+    def receive(self):
+        return self._service.recv_message()[0]
+
+    @staticmethod
+    def _sanitize_name(name: str):
+        """
+        Sanitize python name to ObjectiveC name.
+        """
+        if name.startswith('_'):
+            name = '_' + name[1:].replace('_', ':')
+        else:
+            name = name.replace('_', ':')
+        return name
+
+    def __getattr__(self, item):
+        return partial(self._service.send_message, self, self._sanitize_name(item))
+
+
 class DvtSecureSocketProxyService(object):
     SERVICE_NAME = 'com.apple.instruments.remoteserver.DVTSecureSocketProxy'
     INSTRUMENTS_MESSAGE_TYPE = 2
@@ -83,6 +138,14 @@ class DvtSecureSocketProxyService(object):
         self.channels = {}
         self.cur_channel = 0
         self.cur_message = 0
+
+    def shell(self):
+        IPython.embed(
+            header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.TerminalTrueColorFormatter(style='native')),
+            user_ns={
+                'developer': self,
+                'MessageAux': MessageAux,
+            })
 
     def proclist(self):
         channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
@@ -139,7 +202,7 @@ class DvtSecureSocketProxyService(object):
         ret, aux = self.recv_message()
         assert ret is None
         assert code > 0
-        return code
+        return Channel.create(code, self)
 
     def send_message(self, channel: int, selector: str = None, args: MessageAux = None, expects_reply: bool = True):
         self.cur_message += 1
