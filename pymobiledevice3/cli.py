@@ -422,7 +422,7 @@ def launch(udid, bundle_id):
     lockdown = LockdownClient(udid=udid)
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         pid = dvt.launch(bundle_id)
-        print(f'Procces launched with pid {pid}')
+        print(f'Process launched with pid {pid}')
 
 
 @developer.command('shell')
