@@ -347,7 +347,7 @@ def proclist(udid, nocolor):
             if 'startDate' in process:
                 process['startDate'] = str(process['startDate'])
 
-        print_object(processes, colored=not(nocolor))
+        print_object(processes, colored=not nocolor)
 
 
 @developer.command('applist')
@@ -358,7 +358,7 @@ def applist(udid, nocolor):
     lockdown = LockdownClient(udid=udid)
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         apps = dvt.applist()
-        print_object(apps, colored=not(nocolor))
+        print_object(apps, colored=not nocolor)
 
 
 @developer.command('kill')
