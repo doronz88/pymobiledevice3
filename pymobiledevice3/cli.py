@@ -195,6 +195,14 @@ def syslog():
 @click.option('-m', '--match', help='match expression')
 def syslog_live(lockdown, out, nocolor, pid, match):
     """ view live syslog lines """
+
+    log_level_colors = {
+        'Notice': 'white',
+        'Error': 'red',
+        'Fault': 'red',
+        'Warning': 'yellow',
+    }
+
     for syslog_entry in OsTraceService(lockdown=lockdown).syslog(pid=pid):
         pid = syslog_entry.pid
         timestamp = syslog_entry.timestamp
@@ -210,12 +218,9 @@ def syslog_live(lockdown, out, nocolor, pid, match):
             if len(image_name) > 0:
                 image_name = colored(image_name, 'magenta')
             pid = colored(syslog_entry['pid'], 'cyan')
-            level = colored(syslog_entry['level'], {
-                'Notice': 'white',
-                'Error': 'red',
-                'Fault': 'red',
-                'Warning': 'yellow',
-            }[level])
+
+            if level in syslog_entry:
+                level = colored(level, log_level_colors[level])
 
             message = colored(syslog_entry['message'], 'white')
 
