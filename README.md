@@ -31,16 +31,18 @@ Options:
 
 Commands:
   afc           FileSystem utils
+  apps          application options
   config        configuration options
   crash         crash utils
+  developer     developer options
   diagnostics   diagnostics options
   lockdown      lockdown options
+  mounter       mounter options
   notification  API for notify_post() & notify_register_dispatch().
   pcap          sniff device traffic
   ps            show process list
   screenshot    take a screenshot in TIFF format
   syslog        syslog options
-  developer     Developer options
 ```
 
 ## Sending your own messages
@@ -130,6 +132,7 @@ DONE | `com.apple.mobile.notification_proxy` | `/usr/libexec/notification_proxy`
 DONE | `com.apple.crashreportmover` | `/usr/libexec/crash_mover` | Just trigger `crash_mover` to move all crash reports into crash directory
 DONE | `com.apple.mobile.MCInstall` | `/usr/libexec/mc_mobile_tunnel` | Profile management
 DONE | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` | Developer instrumentation service
+DONE | `com.apple.mobile.mobile_image_mounter` | `/usr/libexec/mobile_storage_proxy`
 Not yet | `com.apple.atc` | `/usr/libexec/atc` | Profile management related
 Not yet | `com.apple.mobile.assertion_agent` | `/usr/libexec/mobile_assertion_agent` | Create power assertion to prevent different kinds of sleep
 Not yet | `com.apple.ait.aitd` | `/usr/libexec/atc`
@@ -143,7 +146,6 @@ Not yet | `com.apple.mobile.heartbeat` | `/usr/libexec/lockdownd`
 Not yet | `com.apple.mobile.house_arrest` | `/usr/libexec/mobile_house_arrest`
 Not yet | `com.apple.mobile.insecure_notification_proxy` | `/usr/libexec/notification_proxy -i` | API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
 Not yet | `com.apple.mobile.installation_proxy` | `/usr/libexec/mobile_installation_proxy`
-Not yet | `com.apple.mobile.mobile_image_mounter` | `/usr/libexec/mobile_storage_proxy`
 Not yet | `com.apple.mobilebackup` | `/usr/libexec/BackupAgent --lockdown`
 Not yet | `com.apple.mobilebackup2` | `/usr/libexec/BackupAgent2 --lockdown`
 Not yet | `com.apple.mobilesync` | `/usr/libexec/SyncAgent --lockdown --oneshot -v`
