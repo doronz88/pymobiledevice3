@@ -43,6 +43,10 @@ Commands:
   developer     Developer options
 ```
 
+## Sending your own messages
+
+### Lockdown messages
+
 Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays
 yourself, you can run:
 
@@ -69,7 +73,9 @@ client.send(b"hello")
 print(client.recv_exact(20))
 ```
 
-Also, if you want to play with `DTServiceHub` which lies behind the `developer` options, you can also use:
+### Instruments messages
+
+If you want to play with `DTServiceHub` which lies behind the `developer` options, you can also use:
 
 ```shell
 pymobiledevice3 developer shell
