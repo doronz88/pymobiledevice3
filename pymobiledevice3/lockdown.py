@@ -1,47 +1,16 @@
-#!/usr/bin/env python
-# -*- coding: utf8 -*-
-#
-# $Id$
-#
-# Copyright (c) 2012-2014 "dark[-at-]gotohack.org"
-#
-# This file is part of pymobiledevice3
-#
-# pymobiledevice3 is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-#
-
-import os
+#!/usr/bin/env python3
 import plistlib
-import sys
-import uuid
 import platform
-import time
 import logging
+import uuid
+import sys
+import os
 import re
 
 from pymobiledevice3.plist_service import PlistService
 from pymobiledevice3.ca import ca_do_everything
-from pymobiledevice3.util import readHomeFile, writeHomeFile, getHomePath
+from pymobiledevice3.util import readHomeFile, writeHomeFile
 from pymobiledevice3.usbmux import usbmux
-
-from six import PY3
-
-if PY3:
-    plistlib.readPlistFromString = plistlib.loads
-    plistlib.writePlistToString = plistlib.dumps
-    plistlib.readPlist = plistlib.load
 
 
 class NotTrustedError(Exception):
@@ -86,8 +55,8 @@ class LockdownClient(object):
         self.paired = False
         self.SessionID = None
         self.c = PlistService(62078, udid)
-        self.hostID = self.generate_hostID()
-        self.SystemBUID = self.generate_hostID()
+        self.hostID = self.generate_host_id()
+        self.SystemBUID = self.generate_host_id()
         self.paired = False
         self.label = "pyMobileDevice"
 
@@ -144,7 +113,7 @@ class LockdownClient(object):
         res = self.c.recv_plist()
         return res.get("Type")
 
-    def generate_hostID(self):
+    def generate_host_id(self):
         hostname = platform.node()
         hostid = uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
         return str(hostid).upper()
@@ -164,8 +133,8 @@ class LockdownClient(object):
 
     def validate_pairing(self):
         pair_record = None
-        certPem = None
-        privateKeyPem = None
+        cert_pem = None
+        private_key_pem = None
 
         if sys.platform == "win32":
             folder = os.environ["ALLUSERSPROFILE"] + "/Apple/Lockdown/"
@@ -194,12 +163,8 @@ class LockdownClient(object):
                     return False
         self.record = pair_record
 
-        if PY3:
-            certPem = pair_record["HostCertificate"]
-            privateKeyPem = pair_record["HostPrivateKey"]
-        else:
-            certPem = pair_record["HostCertificate"].data
-            privateKeyPem = pair_record["HostPrivateKey"].data
+        cert_pem = pair_record["HostCertificate"]
+        private_key_pem = pair_record["HostPrivateKey"]
 
         if self.compare_ios_version("11.0") < 0:
             ValidatePair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
@@ -214,14 +179,12 @@ class LockdownClient(object):
         self.SystemBUID = pair_record.get("SystemBUID", self.SystemBUID)
         d = {"Label": self.label, "Request": "StartSession", "HostID": self.hostID, 'SystemBUID': self.SystemBUID}
         self.c.send_plist(d)
-        startsession = self.c.recv_plist()
-        self.SessionID = startsession.get("SessionID")
-        if startsession.get("EnableSessionSSL"):
+        start_session = self.c.recv_plist()
+        self.SessionID = start_session.get("SessionID")
+        if start_session.get("EnableSessionSSL"):
             self.sslfile = self.identifier + "_ssl.txt"
-            lf = "\n"
-            if PY3:
-                lf = b"\n"
-            self.sslfile = writeHomeFile(HOMEFOLDER, self.sslfile, certPem + lf + privateKeyPem)
+            lf = b"\n"
+            self.sslfile = writeHomeFile(HOMEFOLDER, self.sslfile, cert_pem + lf + private_key_pem)
             self.c.ssl_start(self.sslfile, self.sslfile)
 
         self.paired = True
@@ -256,34 +219,28 @@ class LockdownClient(object):
                     return False
         self.record = pair_record
 
-        if PY3:
-            certPem = pair_record["HostCertificate"]
-            privateKeyPem = pair_record["HostPrivateKey"]
-        else:
-            certPem = pair_record["HostCertificate"].data
-            privateKeyPem = pair_record["HostPrivateKey"].data
+        cert_pem = pair_record["HostCertificate"]
+        private_key_pem = pair_record["HostPrivateKey"]
 
         if self.compare_ios_version("11.0") < 0:
-            ValidatePair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
-            self.c.send_plist(ValidatePair)
+            validate_pair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
+            self.c.send_plist(validate_pair)
             r = self.c.recv_plist()
             if not r or r.has_key("Error"):
                 pair_record = None
-                self.logger.error("ValidatePair fail: %s", ValidatePair)
+                self.logger.error("ValidatePair fail: %s", validate_pair)
                 return False
 
         self.hostID = pair_record.get("HostID", self.hostID)
         self.SystemBUID = pair_record.get("SystemBUID", self.SystemBUID)
         d = {"Label": self.label, "Request": "StartSession", "HostID": self.hostID, 'SystemBUID': self.SystemBUID}
         self.c.send_plist(d)
-        startsession = self.c.recv_plist()
-        self.SessionID = startsession.get("SessionID")
-        if startsession.get("EnableSessionSSL"):
+        start_session = self.c.recv_plist()
+        self.SessionID = start_session.get("SessionID")
+        if start_session.get("EnableSessionSSL"):
             self.sslfile = self.identifier + "_ssl.txt"
-            lf = "\n"
-            if PY3:
-                lf = b"\n"
-            self.sslfile = writeHomeFile(HOMEFOLDER, self.sslfile, certPem + lf + privateKeyPem)
+            lf = b"\n"
+            self.sslfile = writeHomeFile(HOMEFOLDER, self.sslfile, cert_pem + lf + private_key_pem)
             self.c.ssl_start(self.sslfile, self.sslfile)
 
         self.paired = True
@@ -363,11 +320,11 @@ class LockdownClient(object):
             raise NotPairedError
 
         self.c.send_plist({"Label": self.label, "Request": "StartService", "Service": name})
-        startService = self.c.recv_plist()
-        ssl_enabled = startService.get("EnableServiceSSL", ssl)
-        if not startService or startService.get("Error"):
-            raise StartServiceError(startService.get("Error"))
-        plist_service = PlistService(startService.get("Port"), self.udid)
+        start_service = self.c.recv_plist()
+        ssl_enabled = start_service.get("EnableServiceSSL", ssl)
+        if not start_service or start_service.get("Error"):
+            raise StartServiceError(start_service.get("Error"))
+        plist_service = PlistService(start_service.get("Port"), self.udid)
         if ssl_enabled:
             plist_service.ssl_start(self.sslfile, self.sslfile)
         return plist_service
