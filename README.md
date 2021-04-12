@@ -134,7 +134,7 @@ DONE | `com.apple.mobile.MCInstall` | `/usr/libexec/mc_mobile_tunnel` | Profile 
 DONE | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` | Developer instrumentation service
 DONE | `com.apple.mobile.mobile_image_mounter` | `/usr/libexec/mobile_storage_proxy`
 DONE | `com.apple.mobile.house_arrest` | `/usr/libexec/mobile_house_arrest` | Get AFC utils (file management per application bundle)
-Not yet | `com.apple.idamd` | `/usr/libexec/idamd` | Allows settings the IDAM configuration (whatever that means...) 
+DONE | `com.apple.mobile.installation_proxy` | `/usr/libexec/mobile_installation_proxy` | Application managementNot yet | `com.apple.idamd` | `/usr/libexec/idamd` | Allows settings the IDAM configuration (whatever that means...) 
 Not yet | `com.apple.atc` | `/usr/libexec/atc` | AirTraffic related
 Not yet | `com.apple.mobile.assertion_agent` | `/usr/libexec/mobile_assertion_agent` | Create power assertion to prevent different kinds of sleep
 Not yet | `com.apple.ait.aitd` | `/usr/libexec/atc` | AirTraffic related
@@ -142,14 +142,12 @@ Not yet | `com.apple.misagent` | `/usr/libexec/misagent` | Profile related
 Not yet | `com.apple.mobile.file_relay` | `/usr/libexec/mobile_file_relay` | File access for iOS <= 8
 Not yet | `com.apple.mobile.heartbeat` | `/usr/libexec/lockdownd`
 Not yet | `com.apple.mobile.insecure_notification_proxy` | `/usr/libexec/notification_proxy -i` | API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
-Not yet | `com.apple.mobile.installation_proxy` | `/usr/libexec/mobile_installation_proxy`
 Not yet | `com.apple.mobilebackup` | `/usr/libexec/BackupAgent --lockdown`
 Not yet | `com.apple.mobilebackup2` | `/usr/libexec/BackupAgent2 --lockdown`
 Not yet | `com.apple.mobilesync` | `/usr/libexec/SyncAgent --lockdown --oneshot -v`
 Not yet | `com.apple.purpletestr` | `/usr/libexec/PurpleTestr --lockdown --oneshot`
 Not yet | `com.apple.radios.wirelesstester.mobile` | `/usr/local/bin/WirelessTester -l 1 -o /var/mobile/WirelessTester_mobile.log`
 Not yet | `com.apple.radios.wirelesstester.root` | `/usr/local/bin/WirelessTester -l 1 -o /var/mobile/WirelessTester_mobile.log`
-Not yet | `com.apple.rasd` | `/usr/libexec/rasd`
 Not yet | `com.apple.springboardservices` | `/usr/libexec/springboardservicesrelay`
 Not yet | `com.apple.thermalmonitor.thermtgraphrelay` | `/usr/libexec/thermtgraphrelay`
 Not yet | `com.apple.webinspector` | `/usr/libexec/webinspectord`
