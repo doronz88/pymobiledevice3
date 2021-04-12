@@ -1,32 +1,9 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
-#
-#	usbmux.py - usbmux client library for Python
-#
-# Copyright (C) 2009	Hector Martin "marcan" <hector@marcansoft.com>
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 2 or version 3.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
-
-import socket, struct, select, sys
-from six import PY3
-
-try:
-    import plistlib
-
-    haveplist = True
-except:
-    haveplist = False
+import plistlib
+import select
+import socket
+import struct
+import sys
 
 
 class MuxError(Exception):
@@ -51,14 +28,10 @@ class SafeStreamSocket:
             totalsent = totalsent + sent
 
     def recv(self, size):
-        msg = ''
-        if PY3:
-            msg = b''
+        msg = b''
         while len(msg) < size:
             chunk = self.sock.recv(size - len(msg))
-            empty_chunk = ''
-            if PY3:
-                empty_chunk = b''
+            empty_chunk = b''
             if chunk == empty_chunk:
                 raise MuxError("socket connection broken")
             msg = msg + chunk
@@ -74,7 +47,7 @@ class MuxDevice(object):
 
     def __str__(self):
         return "<MuxDevice: ID %d ProdID 0x%04x Serial '%s' Location 0x%x>" % (
-        self.devid, self.usbprod, self.serial, self.location)
+            self.devid, self.usbprod, self.serial, self.location)
 
 
 class BinaryProtocol(object):
@@ -91,15 +64,10 @@ class BinaryProtocol(object):
 
     def _pack(self, req, payload):
         if req == self.TYPE_CONNECT:
-            connect_data = "\x00\x00"
-            if PY3:
-                connect_data = b"\x00\x00"
+            connect_data = b"\x00\x00"
             return struct.pack("IH", payload['DeviceID'], payload['PortNumber']) + connect_data
         elif req == self.TYPE_LISTEN:
-            if PY3:
-                return b""
-            else:
-                return ""
+            return b""
         else:
             raise ValueError("Invalid outgoing request type %d" % req)
 
@@ -148,8 +116,6 @@ class PlistProtocol(BinaryProtocol):
     VERSION = 1
 
     def __init__(self, socket):
-        if not haveplist:
-            raise Exception("You need the plistlib module")
         BinaryProtocol.__init__(self, socket)
 
     def _pack(self, req, payload):
@@ -164,20 +130,14 @@ class PlistProtocol(BinaryProtocol):
             req = [self.TYPE_CONNECT, self.TYPE_LISTEN][req - 2]
         payload['MessageType'] = req
         payload['ProgName'] = 'tcprelay'
-        if PY3:
-            wrapped_payload = plistlib.dumps(payload)
-        else:
-            wrapped_payload = plistlib.writePlistToString(payload)
+        wrapped_payload = plistlib.dumps(payload)
         BinaryProtocol.sendpacket(self, self.TYPE_PLIST, tag, wrapped_payload)
 
     def getpacket(self):
         resp, tag, payload = BinaryProtocol.getpacket(self)
         if resp != self.TYPE_PLIST:
             raise MuxError("Received non-plist type %d" % resp)
-        if PY3:
-            payload = plistlib.loads(payload)
-        else:
-            payload = plistlib.readPlistFromString(payload)
+        payload = plistlib.loads(payload)
         return payload.get('MessageType', ''), tag, payload
 
 
@@ -218,7 +178,9 @@ class MuxConnection(object):
         else:
             raise MuxError("Invalid packet type received: %d" % resp)
 
-    def _exchange(self, req, payload={}):
+    def _exchange(self, req, payload=None):
+        if payload is None:
+            payload = {}
         mytag = self.pkttag
         self.pkttag += 1
         self.proto.sendpacket(req, mytag, payload)
@@ -294,12 +256,8 @@ class UsbmuxdClient(MuxConnection):
         _, recvtag, data = self.proto.getpacket()
         if recvtag != tag:
             raise MuxError("Reply tag mismatch: expected %d, got %d" % (tag, recvtag))
-        if PY3:
-            pair_record = data['PairRecordData']
-            pair_record = plistlib.loads(pair_record)
-        else:
-            pair_record = data['PairRecordData'].data
-            pair_record = plistlib.readPlistFromString(pair_record)
+        pair_record = data['PairRecordData']
+        pair_record = plistlib.loads(pair_record)
         return pair_record
 
 
