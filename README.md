@@ -133,17 +133,14 @@ DONE | `com.apple.crashreportmover` | `/usr/libexec/crash_mover` | Just trigger 
 DONE | `com.apple.mobile.MCInstall` | `/usr/libexec/mc_mobile_tunnel` | Profile management
 DONE | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` | Developer instrumentation service
 DONE | `com.apple.mobile.mobile_image_mounter` | `/usr/libexec/mobile_storage_proxy`
-Not yet | `com.apple.atc` | `/usr/libexec/atc` | Profile management related
+DONE | `com.apple.mobile.house_arrest` | `/usr/libexec/mobile_house_arrest` | Get AFC utils (file management per application bundle)
+Not yet | `com.apple.idamd` | `/usr/libexec/idamd` | Allows settings the IDAM configuration (whatever that means...) 
+Not yet | `com.apple.atc` | `/usr/libexec/atc` | AirTraffic related
 Not yet | `com.apple.mobile.assertion_agent` | `/usr/libexec/mobile_assertion_agent` | Create power assertion to prevent different kinds of sleep
-Not yet | `com.apple.ait.aitd` | `/usr/libexec/atc`
-Not yet | `com.apple.hpd.mobile` | `/usr/libexec//usr/libexec/hpd --lockdown -d /var/mobile/Media/HighlandPark -u mobile`
-Not yet | `com.apple.iosdiagnostics.relay` | `/usr/libexec/ios_diagnostics_relay`
-Not yet | `com.apple.misagent` | `/usr/libexec/misagent`
-Not yet | `com.apple.mobile.MDMService` | `/usr/libexec/MDMService`
-Not yet | `com.apple.mobile.debug_image_mount` | `/usr/libexec/debug_image_mount`
+Not yet | `com.apple.ait.aitd` | `/usr/libexec/atc` | AirTraffic related
+Not yet | `com.apple.misagent` | `/usr/libexec/misagent` | Profile related
 Not yet | `com.apple.mobile.file_relay` | `/usr/libexec/mobile_file_relay` | File access for iOS <= 8
 Not yet | `com.apple.mobile.heartbeat` | `/usr/libexec/lockdownd`
-Not yet | `com.apple.mobile.house_arrest` | `/usr/libexec/mobile_house_arrest`
 Not yet | `com.apple.mobile.insecure_notification_proxy` | `/usr/libexec/notification_proxy -i` | API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
 Not yet | `com.apple.mobile.installation_proxy` | `/usr/libexec/mobile_installation_proxy`
 Not yet | `com.apple.mobilebackup` | `/usr/libexec/BackupAgent --lockdown`
@@ -156,6 +153,7 @@ Not yet | `com.apple.rasd` | `/usr/libexec/rasd`
 Not yet | `com.apple.springboardservices` | `/usr/libexec/springboardservicesrelay`
 Not yet | `com.apple.thermalmonitor.thermtgraphrelay` | `/usr/libexec/thermtgraphrelay`
 Not yet | `com.apple.webinspector` | `/usr/libexec/webinspectord`
+BUG | `com.apple.iosdiagnostics.relay` | `/usr/libexec/ios_diagnostics_relay` | Failed to connect to it from some reason
 
 ## `com.apple.instruments.remoteserver.DVTSecureSocketProxy`
 

@@ -11,6 +11,7 @@ from pygments import highlight, lexers, formatters
 
 from pymobiledevice3.afc import AFCShell, AFCClient
 from pymobiledevice3.diagnostics_service import DiagnosticsService
+from pymobiledevice3.house_arrest_service import HouseArrestService
 from pymobiledevice3.installation_proxy_service import InstallationProxyService
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.mobile_config import MobileConfigService
@@ -147,6 +148,13 @@ def apps_uninstall(lockdown, bundle_id):
 def apps_install(lockdown, ipa_path):
     """ install given .ipa """
     pprint(InstallationProxyService(lockdown=lockdown).install_from_local(ipa_path))
+
+
+@apps.command('afc', cls=Command)
+@click.argument('bundle_id')
+def apps_afc(lockdown, bundle_id):
+    """ open an AFC shell for given bundle_id, assuming its profile is installed """
+    HouseArrestService(lockdown=lockdown).shell(bundle_id)
 
 
 @cli.group()
@@ -455,6 +463,11 @@ def ls(lockdown, path):
     """ Launch developer shell. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         pprint(dvt.ls(path))
+
+
+@cli.command('test', cls=Command)
+def test(lockdown):
+    HouseArrestService(lockdown=lockdown).shell('com.waze.iphone')
 
 
 if __name__ == '__main__':
