@@ -7,6 +7,12 @@ that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV�
 
 This version uses more recent coding standards.
 
+To understand the bits and bytes of the communication with `lockdownd` you are advised to take a look at this article:
+
+https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lockdown-service-7f2a1dfd07ae
+
+Here we try to wrap every relay possible of `lockdownd`.
+
 # Installation
 
 ```shell
@@ -37,6 +43,70 @@ Commands:
   developer     Developer options
 ```
 
+Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays
+yourself, you can run:
+
+```shell
+pymobiledevice3 lockdown service <service-name>
+```
+
+This will start an IPython shell where you already have the connection established using the `client` variable and you
+can send & receive messages.
+
+```python
+# This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
+
+# For example, you can do the following:
+client.send_plist({"Command": "DoSomething"})
+
+# and view the reply
+print(client.recv_plist())
+
+# or just send raw message
+client.send(b"hello")
+
+# and view the result
+print(client.recv_exact(20))
+```
+
+Also, if you want to play with `DTServiceHub` which lies behind the `developer` options, you can also use:
+
+```shell
+pymobiledevice3 developer shell
+```
+
+To also get an IPython shell, which lets you call ObjC methods from the exported objects in the instruments' namespace
+like so:
+
+```python
+# This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
+# Generally speaking, each channel represents a group of actions.
+# Calling actions is done using a selector and auxiliary (parameters).
+# Receiving answers is done by getting a return value and seldom auxiliary (private / extra parameters).
+# To see the available channels, type the following:
+developer.channels
+
+# In order to send messages, you need to create a channel:
+channel = developer.make_channel('com.apple.instruments.server.services.deviceinfo')
+
+# After creating the channel you can call allowed selectors:
+channel.runningProcesses()
+
+# If an answer is expected, you can receive it using the receive method:
+processes = channel.receive()
+
+# Sometimes the selector requires parameters, You can add them using MessageAux. For example lets kill a process:
+channel = developer.make_channel('com.apple.instruments.server.services.processcontrol')
+args = MessageAux().append_obj(80)  # This will kill pid 80
+channel.killPid_(args, expects_reply=False)  # Killing a process doesn't require an answer.
+
+# In some rare cases, you might want to receive the auxiliary and the selector return value.
+# For that cases you can use the recv_message method.
+return_value, auxiliary = developer.recv_message()
+```
+
+## Example
+
 ![](example.gif)
 
 # Lockdown services
@@ -53,7 +123,7 @@ DONE | `com.apple.mobile.diagnostics_relay` | `com.apple.mobile.diagnostics_rela
 DONE | `com.apple.mobile.notification_proxy` | `/usr/libexec/notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()`
 DONE | `com.apple.crashreportmover` | `/usr/libexec/crash_mover` | Just trigger `crash_mover` to move all crash reports into crash directory
 DONE | `com.apple.mobile.MCInstall` | `/usr/libexec/mc_mobile_tunnel` | Profile management
-In Progress | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` | Developer instrumentation service
+DONE | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` | Developer instrumentation service
 Not yet | `com.apple.atc` | `/usr/libexec/atc` | Profile management related
 Not yet | `com.apple.mobile.assertion_agent` | `/usr/libexec/mobile_assertion_agent` | Create power assertion to prevent different kinds of sleep
 Not yet | `com.apple.ait.aitd` | `/usr/libexec/atc`
@@ -106,9 +176,8 @@ root@iPhone (/var/root)# tail -f /tmp/DTServiceHub[369].DTXConnection.qNjM2U.log
 For editing the configuration we can simply add the respected key into:
 `/var/mobile/Library/Preferences/.GlobalPreferences.plist` and kill `cfprefsd`
 
-The valid selectors for triggering can be found using the following Frida
-script the same way Roy Bowman used for iterating all classes which implement
-the protocol `DTXAllowedRPC`:
+The valid selectors for triggering can be found using the following Frida script the same way Roy Bowman used for
+iterating all classes which implement the protocol `DTXAllowedRPC`:
 
 ```shell
 frida -U DTServiceHub
@@ -125,11 +194,13 @@ for (var name in ObjC.protocols) {
 ```
 
 The complete list for the following XCode versions can be found in:
+
 * [12.4](./DTServices-12.4.txt)
 
 ## `com.apple.os_trace_relay`
 
 Provides API for the following operations:
+
 * Show process list (process name and pid)
 * Stream syslog lines in binary form with optional filtering by pid.
 * Get old stored syslog archive in PAX format (can be extracted using `pax -r < filename`).
@@ -138,13 +209,13 @@ Provides API for the following operations:
 ## `com.apple.mobile.diagnostics_relay`
 
 Provides an API to:
+
 * Query MobileGestalt & IORegistry keys.
-* Reboot, shutdown or put the device in sleep mode. 
+* Reboot, shutdown or put the device in sleep mode.
 
 ## `com.apple.mobile.file_relay`
 
-On older iOS versions, this was the main relay used for file operations, which was
-later replaced with AFC.
+On older iOS versions, this was the main relay used for file operations, which was later replaced with AFC.
 
 ## `com.apple.pcapd`
 

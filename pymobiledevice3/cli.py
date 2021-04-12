@@ -131,9 +131,7 @@ def lockdown_recovery(lockdown):
 @click.argument('service_name')
 def lockdown_service(lockdown, service_name):
     """ send-receive raw service messages """
-    client = lockdown.start_service(service_name)
-    logging.info('use `client` variable to interact with the connected service')
-    IPython.embed()
+    lockdown.start_service(service_name).shell()
 
 
 @cli.group()

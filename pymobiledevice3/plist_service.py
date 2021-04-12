@@ -6,11 +6,31 @@ import logging
 import struct
 import ssl
 
+import IPython
+from pygments import highlight, lexers, formatters
+
 from pymobiledevice3.usbmux import usbmux
 
 
 class ConnectionFailedException(Exception):
     pass
+
+
+SHELL_USAGE = """
+# This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
+
+# For example, you can do the following:
+client.send_plist({"Command": "DoSomething"})
+
+# and view the reply
+print(client.recv_plist())
+
+# or just send raw message
+client.send(b"hello")
+
+# and view the result
+print(client.recv_exact(20))
+"""
 
 
 class PlistService(object):
@@ -98,3 +118,10 @@ class PlistService(object):
 
     def ssl_start(self, keyfile, certfile):
         self.s = ssl.wrap_socket(self.s, keyfile, certfile, ssl_version=ssl.PROTOCOL_TLSv1)
+
+    def shell(self):
+        IPython.embed(
+            header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.TerminalTrueColorFormatter(style='native')),
+            user_ns={
+                'client': self,
+            })
