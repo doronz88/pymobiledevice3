@@ -477,10 +477,5 @@ def device_information(lockdown, nocolor):
         }, colored=not nocolor)
 
 
-@cli.command('test', cls=Command)
-def test(lockdown):
-    HouseArrestService(lockdown=lockdown).shell('com.waze.iphone')
-
-
 if __name__ == '__main__':
     cli()
