@@ -26,5 +26,6 @@ def test_logs_watching_time(lockdown):
     syslog_service = SyslogService(lockdown)
     first_log = next(syslog_service.watch())
     time.sleep(2)
+    syslog_service = SyslogService(lockdown)
     second_log = next(syslog_service.watch())
     assert extract_log_time(first_log) < extract_log_time(second_log)
