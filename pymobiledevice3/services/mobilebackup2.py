@@ -312,7 +312,7 @@ class MobileBackup2(MobileBackup):
 
     def create_info_plist(self):
         # Get device information
-        device_info = self.lockdown.allValues
+        device_info = self.lockdown.all_values
 
         # Get a list of installed user applications
         instpxy = InstallationProxyService(self.lockdown)
