@@ -191,6 +191,15 @@ class DvtSecureSocketProxyService(object):
         assert ret
         return ret
 
+    def system_information(self):
+        return self._request_information('systemInformation')
+
+    def hardware_information(self):
+        return self._request_information('hardwareInformation')
+
+    def network_information(self):
+        return self._request_information('networkInformation')
+
     def perform_handshake(self):
         args = MessageAux()
         args.append_obj({'com.apple.private.DTXBlockCompression': 2, 'com.apple.private.DTXConnection': 1})
@@ -256,6 +265,13 @@ class DvtSecureSocketProxyService(object):
             print(plistlib.loads(data))
             raise e
         return ret, aux
+
+    def _request_information(self, selector_name):
+        channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
+        self.send_message(channel, selector_name)
+        ret, aux = self.recv_message()
+        assert ret
+        return ret
 
     def _recv_packet_fragments(self):
         packet_data = b''
