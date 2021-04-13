@@ -7,3 +7,4 @@ coloredlogs
 IPython
 bpylist2
 pygments
+hexdump

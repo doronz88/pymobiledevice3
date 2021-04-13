@@ -4,7 +4,7 @@
 
 import unittest
 
-from pymobiledevice3.usbmux.usbmux import USBMux
+from pymobiledevice3.usbmux import USBMux
 
 
 class ListDeviceTest(unittest.TestCase):

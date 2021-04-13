@@ -7,7 +7,7 @@ import ssl
 import IPython
 from pygments import highlight, lexers, formatters
 
-from pymobiledevice3.usbmux import usbmux
+from pymobiledevice3 import usbmux
 
 
 class ConnectionFailedException(Exception):
@@ -31,7 +31,7 @@ print(client.recv_exact(20))
 """
 
 
-class PlistService(object):
+class ServiceConnection(object):
     def __init__(self, port, udid=None, logger=None):
         self.logger = logger or logging.getLogger(__name__)
         self.port = port
@@ -61,7 +61,8 @@ class PlistService(object):
         self.s.close()
 
     def recv(self, length=4096):
-        return self.s.recv(length)
+        data = self.s.recv(length)
+        return data
 
     def send(self, data):
         self.s.sendall(data)

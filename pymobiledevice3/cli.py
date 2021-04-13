@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
-import os
 from pprint import pprint
 import logging
 import json
+import os
 
+from pygments import highlight, lexers, formatters
 from termcolor import colored
 import coloredlogs
 import click
-from pygments import highlight, lexers, formatters
 
 from pymobiledevice3.afc import AFCShell, AFCClient
-from pymobiledevice3.diagnostics_service import DiagnosticsService
-from pymobiledevice3.house_arrest_service import HouseArrestService
-from pymobiledevice3.installation_proxy_service import InstallationProxyService
+from pymobiledevice3.services.diagnostics_service import DiagnosticsService
+from pymobiledevice3.services.house_arrest_service import HouseArrestService
+from pymobiledevice3.services.installation_proxy_service import InstallationProxyService
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.mobile_config import MobileConfigService
-from pymobiledevice3.mobile_image_mounter_service import MobileImageMounterService
-from pymobiledevice3.notification_proxy_service import NotificationProxyService
-from pymobiledevice3.os_trace_service import OsTraceService
-from pymobiledevice3.pcapd_service import PcapdService
-from pymobiledevice3.screenshot_service import ScreenshotService
-from pymobiledevice3.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.mobile_config_service import MobileConfigService
+from pymobiledevice3.services.mobile_image_mounter_service import MobileImageMounterService
+from pymobiledevice3.services.notification_proxy_service import NotificationProxyService
+from pymobiledevice3.services.os_trace_service import OsTraceService
+from pymobiledevice3.services.pcapd_service import PcapdService
+from pymobiledevice3.services.screenshot_service import ScreenshotService
+from pymobiledevice3.services.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 
 coloredlogs.install(level=logging.DEBUG)
 
@@ -48,7 +48,7 @@ class Command(click.Command):
     def __init__(self, *args, **kwargs):
         super(Command, self).__init__(*args, **kwargs)
         self.params[:0] = [
-            click.Option(('lockdown', '--udid'), callback=self.udid)
+            click.Option(('lockdown', '--udid'), callback=self.udid),
         ]
 
 

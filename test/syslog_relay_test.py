@@ -4,8 +4,8 @@
 
 import unittest
 
-from pymobiledevice3.usbmux.usbmux import USBMux
-from pymobiledevice3.syslog_service import SyslogService
+from pymobiledevice3.usbmux import USBMux
+from pymobiledevice3.services.syslog_service import SyslogService
 
 
 class ListDeviceTest(unittest.TestCase):

@@ -9,11 +9,11 @@ from uuid import uuid4
 from stat import *
 
 from pymobiledevice3.afc import AFCClient
-from pymobiledevice3.installation_proxy_service import InstallationProxyService
-from pymobiledevice3.notification_proxy_service import *
-from pymobiledevice3.sbservices_service import SBServicesService
+from pymobiledevice3.services.installation_proxy_service import InstallationProxyService
+from pymobiledevice3.services.notification_proxy_service import *
+from pymobiledevice3.services.sbservices_service import SBServicesService
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.mobilebackup import MobileBackup
+from pymobiledevice3.services.mobilebackup import MobileBackup
 
 CODE_SUCCESS = 0x00
 CODE_ERROR_LOCAL = 0x06
@@ -93,7 +93,9 @@ class MobileBackup2(MobileBackup):
 
         return self.internal_mobilebackup2_receive_message("Response")
 
-    def mobilebackup2_send_request(self, request, target, source, options={}):
+    def mobilebackup2_send_request(self, request, target, source, options=None):
+        if options is None:
+            options = {}
         d = {"TargetIdentifier": target,
              "SourceIdentifier": source,
              "Options": options}
@@ -105,7 +107,9 @@ class MobileBackup2(MobileBackup):
 
     def mobilebackup2_send_status_response(self, status_code,
                                            status1="___EmptyParameterString___",
-                                           status2={}):
+                                           status2=None):
+        if status2 is None:
+            status2 = {}
         a = ["DLMessageStatusResponse", status_code, status1, status2]
         self.service.send_plist(a)
 
@@ -146,13 +150,13 @@ class MobileBackup2(MobileBackup):
                                                  ERROR_ENOENT, "Could not find the droid you were looking for ;)")
 
     def mb2_handle_send_files(self, msg):
-        errplist = {}
+        err_plist = {}
         for f in msg[1]:
-            self.mb2_handle_send_file(f, errplist)
-        msg = b"\x00\x00\x00\x00"
+            self.mb2_handle_send_file(f, err_plist)
+        msg = b'\x00\x00\x00\x00'
         self.service.send(msg)
-        if len(errplist):
-            self.mobilebackup2_send_status_response(-13, "Multi status", errplist)
+        if len(err_plist):
+            self.mobilebackup2_send_status_response(-13, 'Multi status', err_plist)
         else:
             self.mobilebackup2_send_status_response(0)
 
