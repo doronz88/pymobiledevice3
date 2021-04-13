@@ -18,13 +18,14 @@ class ScreenshotService(object):
         if dl_message_device_ready[0] != 'DLMessageDeviceReady':
             raise Exception('Screenshotr didn\'t return ready state')
 
-    def take_screenshot(self):
+    def take_screenshot(self) -> bytes:
         self.service.send_plist(['DLMessageProcessMessage', {'MessageType': 'ScreenShotRequest'}])
-        res = self.service.recv_plist()
+        response = self.service.recv_plist()
 
-        assert len(res) == 2
-        assert res[0] == "DLMessageProcessMessage"
+        assert len(response) == 2
+        assert response[0] == "DLMessageProcessMessage"
 
-        if res[1].get('MessageType') == 'ScreenShotReply':
-            return res[1]['ScreenShotData']
-        return None
+        if response[1].get('MessageType') == 'ScreenShotReply':
+            return response[1]['ScreenShotData']
+
+        raise Exception(f'invalid response: {response}')

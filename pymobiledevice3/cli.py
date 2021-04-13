@@ -325,7 +325,7 @@ def pcap(lockdown, out):
 @cli.command(cls=Command)
 @click.argument('out', type=click.File('wb'))
 def screenshot(lockdown, out):
-    """ take a screenshot in TIFF format """
+    """ take a screenshot in PNG format """
     out.write(ScreenshotService(lockdown=lockdown).take_screenshot())
 
 
@@ -337,7 +337,7 @@ def crash(lockdown, action):
         ack = b'ping\x00'
         assert ack == lockdown.start_service('com.apple.crashreportmover').recv_exact(len(ack))
     elif action == 'shell':
-        AFCShell(udid=udid, afcname='com.apple.crashreportcopymobile').cmdloop()
+        AFCShell(lockdown=lockdown, afcname='com.apple.crashreportcopymobile').cmdloop()
 
 
 @cli.group()

@@ -322,12 +322,11 @@ class AFCClient(object):
 
 
 class AFCShell(Cmd):
-    def __init__(self, afcname='com.apple.afc', completekey='tab', stdin=None, stdout=None, client=None,
-                 logger=None, lockdown=None, udid=None):
-        Cmd.__init__(self, completekey=completekey, stdin=stdin, stdout=stdout)
-        self.logger = logger or logging.getLogger(__name__)
-        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
-        self.afc = client if client else AFCClient(self.lockdown, service_name=afcname)
+    def __init__(self, lockdown: LockdownClient, afcname='com.apple.afc', completekey='tab'):
+        Cmd.__init__(self, completekey=completekey)
+        self.logger = logging.getLogger(__name__)
+        self.lockdown = lockdown
+        self.afc = AFCClient(self.lockdown, service_name=afcname)
         self.curdir = '/'
         self.prompt = 'AFC$ ' + self.curdir + ' '
         self.complete_cat = self._complete

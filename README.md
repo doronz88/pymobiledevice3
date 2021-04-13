@@ -124,13 +124,13 @@ Support | Service | Process | Description
 DONE |  `com.apple.afc` | `/usr/libexec/afcd --xpc -d /private/var/mobile/Media` | File access for `/var/mobile/Media`
 DONE | `com.apple.crashreportcopymobile` | `/usr/libexec/afcd --xpc--service-name com.apple.crashreportcopymobile -d /private/var/mobile/Library/Logs/CrashReporter` | File access for `/var/mobile/Library/Logs/CrashReports`
 DONE | `com.apple.pcapd` | `/usr/libexec/pcapd` | Sniff device's network traffic
-DONE | `com.apple.mobile.screenshotr` | | Take screenshot in TIFF format
 DONE | `com.apple.syslog_relay` | `/usr/libexec/diagnosticd` | Just streams syslog lines as raw strings
 DONE | `com.apple.os_trace_relay` | `/usr/libexec/diagnosticd` | More extensive syslog monitoring
 DONE | `com.apple.mobile.diagnostics_relay` | `com.apple.mobile.diagnostics_relay` | General diagnostic tools
 DONE | `com.apple.mobile.notification_proxy` | `/usr/libexec/notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()`
 DONE | `com.apple.crashreportmover` | `/usr/libexec/crash_mover` | Just trigger `crash_mover` to move all crash reports into crash directory
 DONE | `com.apple.mobile.MCInstall` | `/usr/libexec/mc_mobile_tunnel` | Profile management
+DONE | `com.apple.mobile.screenshotr` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/XPCServices/com.apple.dt.DTScreenshotService.xpc/com.apple.dt.DTScreenshotService` | Take screenshot in TIFF format
 DONE | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` | Developer instrumentation service
 DONE | `com.apple.mobile.mobile_image_mounter` | `/usr/libexec/mobile_storage_proxy`
 DONE | `com.apple.mobile.house_arrest` | `/usr/libexec/mobile_house_arrest` | Get AFC utils (file management per application bundle)
