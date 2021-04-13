@@ -75,7 +75,7 @@ class MobileBackup(object):
             f.close()
 
     def create_info_plist(self):
-        root_node = self.lockdown.allValues
+        root_node = self.lockdown.all_values
         info = {"BuildVersion": root_node.get("BuildVersion") or "", "DeviceName": root_node.get("DeviceName") or "",
                 "Display Name": root_node.get("DeviceName") or "", "GUID": "---",
                 "ProductType": root_node.get("ProductType") or "",

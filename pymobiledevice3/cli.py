@@ -202,6 +202,12 @@ def lockdown_service(lockdown, service_name):
     lockdown.start_service(service_name).shell()
 
 
+@lockdown.command('info', cls=Command)
+def lockdown_info(lockdown):
+    """ query all lockdown values """
+    pprint(lockdown.all_values)
+
+
 @cli.group()
 def diagnostics():
     """ diagnostics options """

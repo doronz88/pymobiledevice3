@@ -29,8 +29,7 @@ class CannotStopSessionError(Exception):
 
 
 class StartServiceError(Exception):
-    def __init__(self, message):
-        print("[ERROR] %s" % message)
+    pass
 
 
 class FatalPairingError(Exception):
@@ -84,9 +83,10 @@ def list_devices():
 
 
 class LockdownClient(object):
+    DEFAULT_CLIENT_NAME = 'pyMobileDevice'
     SERVICE_PORT = 62078
 
-    def __init__(self, udid=None):
+    def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME):
         self.logger = logging.getLogger(__name__)
         self.paired = False
         self.SessionID = None
@@ -94,19 +94,19 @@ class LockdownClient(object):
         self.host_id = self.generate_host_id()
         self.system_buid = self.generate_host_id()
         self.paired = False
-        self.label = 'pyMobileDevice'
+        self.label = client_name
 
         assert self.query_type() == 'com.apple.mobile.lockdown'
 
-        self.allValues = self.get_value()
-        self.udid = self.allValues.get('UniqueDeviceID').replace('-', '')
-        self.UniqueChipID = self.allValues.get('UniqueChipID')
-        self.DevicePublicKey = self.allValues.get('DevicePublicKey')
-        self.ios_version = self.allValues.get('ProductVersion')
+        self.all_values = self.get_value()
+        self.udid = self.all_values.get('UniqueDeviceID').replace('-', '')
+        self.unique_chip_id = self.all_values.get('UniqueChipID')
+        self.device_public_key = self.all_values.get('DevicePublicKey')
+        self.ios_version = self.all_values.get('ProductVersion')
         self.identifier = self.udid
         if not self.identifier:
-            if self.UniqueChipID:
-                self.identifier = "%x" % self.UniqueChipID
+            if self.unique_chip_id:
+                self.identifier = "%x" % self.unique_chip_id
             else:
                 raise Exception('Could not get UDID or ECID, failing')
 
@@ -229,15 +229,15 @@ class LockdownClient(object):
         return True
 
     def pair(self):
-        self.DevicePublicKey = self.get_value("", "DevicePublicKey")
-        if self.DevicePublicKey == '':
+        self.device_public_key = self.get_value("", "DevicePublicKey")
+        if self.device_public_key == '':
             self.logger.error("Unable to retrieve DevicePublicKey")
             return False
 
         self.logger.info("Creating host key & certificate")
-        cert_pem, private_key_pem, device_certificate = ca_do_everything(self.DevicePublicKey)
+        cert_pem, private_key_pem, device_certificate = ca_do_everything(self.device_public_key)
 
-        pair_record = {"DevicePublicKey": plistlib.Data(self.DevicePublicKey),
+        pair_record = {"DevicePublicKey": plistlib.Data(self.device_public_key),
                        "DeviceCertificate": plistlib.Data(device_certificate),
                        "HostCertificate": plistlib.Data(cert_pem),
                        "HostID": self.host_id,
@@ -292,46 +292,31 @@ class LockdownClient(object):
 
         req["Value"] = value
         self.service.send_plist(req)
-        res = self.service.recv_plist()
-        self.logger.debug(res)
-        return res
+        response = self.service.recv_plist()
+        self.logger.debug(response)
+        return response
 
-    def start_service(self, name, ssl=False) -> ServiceConnection:
+    def start_service(self, name, ssl=False, escrow_bag=None) -> ServiceConnection:
         if not self.paired:
-            self.logger.info("NotPaired")
-            raise NotPairedError
+            self.logger.info('NotPaired')
+            raise NotPairedError()
 
-        self.service.send_plist({"Label": self.label, "Request": "StartService", "Service": name})
-        start_service = self.service.recv_plist()
-        ssl_enabled = start_service.get("EnableServiceSSL", ssl)
-        if not start_service or start_service.get("Error"):
-            raise StartServiceError(start_service.get("Error"))
-        plist_service = ServiceConnection(start_service.get("Port"), self.udid)
-        if ssl_enabled:
-            plist_service.ssl_start(self.ssl_file, self.ssl_file)
-        return plist_service
+        request = {'Label': self.label, 'Request': 'StartService', 'Service': name}
+        if escrow_bag is not None:
+            request['EscrowBag'] = escrow_bag
 
-    def start_service_with_escrow_bag(self, name, escrow_bag=None):
-        if not self.paired:
-            self.logger.info("NotPaired")
-            raise NotPairedError
-
-        if not escrow_bag:
-            escrow_bag = self.pair_record['EscrowBag']
-
-        self.service.send_plist(
-            {"Label": self.label, "Request": "StartService", "Service": name, 'EscrowBag': escrow_bag})
-        start_service = self.service.recv_plist()
-        if not start_service or start_service.get("Error"):
-            if start_service.get("Error", "") == 'PasswordProtected':
+        self.service.send_plist(request)
+        response = self.service.recv_plist()
+        ssl_enabled = response.get('EnableServiceSSL', ssl)
+        if not response or response.get('Error'):
+            if response.get("Error", "") == 'PasswordProtected':
                 raise StartServiceError(
                     'your device is protected with password, please enter password in device and try again')
-            raise StartServiceError(start_service.get("Error"))
-        ssl_enabled = start_service.get("EnableServiceSSL", False)
-        plist_service = ServiceConnection(start_service.get("Port"), self.udid)
+            raise StartServiceError(response.get("Error"))
+        service_connection = ServiceConnection(response.get('Port'), self.udid)
         if ssl_enabled:
-            plist_service.ssl_start(self.ssl_file, self.ssl_file)
-        return plist_service
+            service_connection.ssl_start(self.ssl_file, self.ssl_file)
+        return service_connection
 
 
 if __name__ == "__main__":
@@ -339,7 +324,7 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     l = LockdownClient()
     if l:
-        n = write_home_file(HOMEFOLDER, "%s_infos.plist" % l.udid, plistlib.writePlistToString(l.allValues))
+        n = write_home_file(HOMEFOLDER, "%s_infos.plist" % l.udid, plistlib.writePlistToString(l.all_values))
         logger.info("Wrote infos to %s", n)
     else:
         logger.error("Unable to connect to device")
