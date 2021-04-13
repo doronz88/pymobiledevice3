@@ -4,7 +4,7 @@ from pymobiledevice3.lockdown import LockdownClient
 
 CHUNK_SIZE = 4096
 TIME_FORMAT = '%H:%M:%S'
-SYSLOG_LINE_SPLITTER = '\n\x00'
+SYSLOG_LINE_SPLITTER = b'\n\x00'
 
 
 class SyslogService(object):
@@ -20,10 +20,10 @@ class SyslogService(object):
         self.service = self.lockdown.start_service(self.SERVICE_NAME)
 
     def watch(self):
-        buf = ''
+        buf = b''
         while True:
             # read in chunks till we have at least one syslog line
-            chunk = self.service.recv(CHUNK_SIZE).decode('utf-8')
+            chunk = self.service.recv(CHUNK_SIZE)
             buf += chunk
 
             # SYSLOG_LINE_SPLITTER is used to split each syslog line

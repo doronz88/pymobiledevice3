@@ -21,6 +21,7 @@ from pymobiledevice3.services.os_trace_service import OsTraceService
 from pymobiledevice3.services.pcapd_service import PcapdService
 from pymobiledevice3.services.screenshot_service import ScreenshotService
 from pymobiledevice3.services.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.syslog_service import SyslogService
 
 coloredlogs.install(level=logging.DEBUG)
 
@@ -258,6 +259,13 @@ def diagnostics_mg(lockdown, keys):
 def syslog():
     """ syslog options """
     pass
+
+
+@syslog.command('live-old', cls=Command)
+def syslog_live_old(lockdown):
+    """ view live syslog lines in raw bytes form from old relay """
+    for line in SyslogService(lockdown=lockdown).watch():
+        print(line)
 
 
 @syslog.command('live', cls=Command)

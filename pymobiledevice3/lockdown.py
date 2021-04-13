@@ -251,7 +251,7 @@ class LockdownClient(object):
         if pair and pair.get("Result") == "Success" or pair.has_key("EscrowBag"):
             pair_record["HostPrivateKey"] = plistlib.Data(private_key_pem)
             pair_record["EscrowBag"] = pair.get("EscrowBag")
-            write_home_file(HOMEFOLDER, "%s.plist" % self.identifier, plistlib.writePlistToString(pair_record))
+            write_home_file(HOMEFOLDER, "%s.plist" % self.identifier, plistlib.dumps(pair_record))
             self.paired = True
             return True
 
