@@ -5,13 +5,12 @@
 `pymobiledevice3` is a fork from `pymobiledevice`, which is a cross-platform implementation of the mobiledevice library
 that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV® devices.
 
-This version uses more recent coding standards.
+This version uses more recent coding standards and adds a lot more features. Also, many of the features not present
+in `libimobiledevice` can be found here.
 
 To understand the bits and bytes of the communication with `lockdownd` you are advised to take a look at this article:
 
 https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lockdown-service-7f2a1dfd07ae
-
-Here we try to wrap every relay possible of `lockdownd`.
 
 # Installation
 
@@ -41,7 +40,7 @@ Commands:
   notification  API for notify_post() & notify_register_dispatch().
   pcap          sniff device traffic
   ps            show process list
-  screenshot    take a screenshot in TIFF format
+  screenshot    take a screenshot into a PNG format
   syslog        syslog options
 ```
 
@@ -130,7 +129,7 @@ DONE | `com.apple.mobile.diagnostics_relay` | `com.apple.mobile.diagnostics_rela
 DONE | `com.apple.mobile.notification_proxy` | `/usr/libexec/notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()`
 DONE | `com.apple.crashreportmover` | `/usr/libexec/crash_mover` | Just trigger `crash_mover` to move all crash reports into crash directory
 DONE | `com.apple.mobile.MCInstall` | `/usr/libexec/mc_mobile_tunnel` | Profile management
-DONE | `com.apple.mobile.screenshotr` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/XPCServices/com.apple.dt.DTScreenshotService.xpc/com.apple.dt.DTScreenshotService` | Take screenshot in TIFF format
+DONE | `com.apple.mobile.screenshotr` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/XPCServices/com.apple.dt.DTScreenshotService.xpc/com.apple.dt.DTScreenshotService` | Take screenshot into a PNG format
 DONE | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` | Developer instrumentation service
 DONE | `com.apple.mobile.mobile_image_mounter` | `/usr/libexec/mobile_storage_proxy`
 DONE | `com.apple.mobile.house_arrest` | `/usr/libexec/mobile_house_arrest` | Get AFC utils (file management per application bundle)
