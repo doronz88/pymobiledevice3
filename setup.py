@@ -81,4 +81,5 @@ if __name__ == "__main__":
         project_urls={
             "pymobiledevice3 Documentation": "https://github.com/iOSForensics/pymobiledevice"
         },
+        tests_require=['pytest'],
     )

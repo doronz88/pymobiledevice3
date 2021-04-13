@@ -3,7 +3,6 @@
 import time
 from datetime import datetime
 
-from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.syslog_service import SyslogService
 
 SYSLOG_TIME_FORMAT = '%b %d %H:%M:%S'
@@ -19,13 +18,13 @@ def extract_log_time(log_line: str) -> datetime:
     return datetime.strptime(log_line[:timestamp_end + 1], SYSLOG_TIME_FORMAT)
 
 
-def test_logs_watching_time():
+def test_logs_watching_time(lockdown):
     """
-    Test that after watching logs 1 second after result in logs with later timestamp.
+    Test that after watching logs 2 seconds after result in logs with later timestamp.
+    :param pymobiledevice3.lockdown.LockdownClient lockdown: Lockdown client.
     """
-    lockdown = LockdownClient()
     syslog_service = SyslogService(lockdown)
     first_log = next(syslog_service.watch())
-    time.sleep(1)
+    time.sleep(2)
     second_log = next(syslog_service.watch())
     assert extract_log_time(first_log) < extract_log_time(second_log)
