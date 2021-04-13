@@ -2,8 +2,6 @@ import logging
 
 from pymobiledevice3.lockdown import LockdownClient
 
-from pprint import *
-
 SB_PORTRAIT = 1
 SB_PORTRAIT_UPSIDE_DOWN = 2
 SB_LANDSCAPE = 3
@@ -11,19 +9,12 @@ SB_LANDSCAPE_HOME_TO_LEFT = 4
 
 
 class SBServicesService(object):
-    service = None
+    SERVICE_NAME = 'com.apple.springboardservices'
 
-    def __init__(self, lockdown=None, udid=None, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
-        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
-        if not self.lockdown:
-            raise Exception("Unable to start lockdown")
-        self.start()
-
-    def start(self):
-        self.service = self.lockdown.start_service("com.apple.springboardservices")
-        if not self.service:
-            raise Exception("SBService init error : Could not start com.apple.springboardservices")
+    def __init__(self, lockdown: LockdownClient):
+        self.logger = logging.getLogger(__name__)
+        self.lockdown = lockdown
+        self.service = self.lockdown.start_service(self.SERVICE_NAME)
 
     def get_icon_state(self, format_version="2"):
         cmd = {"command": "getIconState"}

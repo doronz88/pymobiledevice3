@@ -5,10 +5,12 @@ from pymobiledevice3.afc import AFCClient, AFCShell
 
 
 class HouseArrestService(AFCClient):
-    def __init__(self, lockdown=None, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
-        self.lockdown = lockdown if lockdown else LockdownClient()
-        service_name = "com.apple.mobile.house_arrest"
+    SERVICE_NAME = 'com.apple.mobile.house_arrest'
+
+    def __init__(self, lockdown: LockdownClient):
+        self.logger = logging.getLogger(__name__)
+        self.lockdown = lockdown
+        service_name = self.SERVICE_NAME
         super(HouseArrestService, self).__init__(self.lockdown, service_name)
 
     def send_command(self, applicationId, cmd="VendContainer"):

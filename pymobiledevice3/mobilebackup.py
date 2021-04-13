@@ -1,29 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf8 -*-
-#
-# $Id$
-#
-# Copyright (c) 2012-2014 "dark[-at-]gotohack.org"
-#
-# This file is part of pymobiledevice3
-#
-# pymobiledevice3 is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-#
-
-
-import struct
 import plistlib
 import os
 import datetime
@@ -34,18 +8,6 @@ from six import PY3
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.afc import AFCClient
-from pymobiledevice3.util import makedirs
-from pymobiledevice3.installation_proxy_service import InstallationProxyService
-
-#
-# Fix plistlib.py line 364
-#     def asBase64(self, maxlinelength=76):
-#        if self.data != None:
-#            return _encodeBase64(self.data, maxlinelength)
-#        return ""
-#
-#
-
 
 MOBILEBACKUP_E_SUCCESS = 0
 MOBILEBACKUP_E_INVALID_ARG = -1

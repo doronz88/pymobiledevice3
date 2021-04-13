@@ -2,6 +2,7 @@
 
 import plistlib
 import logging
+import struct
 
 from construct import Struct, Bytes, Int32ul, CString, Timestamp, Optional, Enum, Byte, Probe
 
@@ -31,10 +32,12 @@ syslog_t = Struct(
 
 
 class OsTraceService(object):
-    def __init__(self, lockdown=None, udid=None, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
-        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
-        self.c = self.lockdown.start_service('com.apple.os_trace_relay')
+    SERVICE_NAME = 'com.apple.os_trace_relay'
+
+    def __init__(self, lockdown: LockdownClient):
+        self.logger = logging.getLogger(__name__)
+        self.lockdown = lockdown
+        self.c = self.lockdown.start_service(self.SERVICE_NAME)
 
     def get_pid_list(self):
         self.c.send_plist({'Request': 'PidList'})
@@ -49,7 +52,6 @@ class OsTraceService(object):
 
     def syslog(self, pid=-1):
         self.c.send_plist({'Request': 'StartActivity', 'Pid': pid})
-        import struct
 
         length_length, = struct.unpack('<I', self.c.recv_exact(4))
         length = int(self.c.recv_exact(length_length)[::-1].hex(), 16)

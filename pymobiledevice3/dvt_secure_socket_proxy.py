@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import logging
 import io
 import plistlib
@@ -132,9 +130,9 @@ class DvtSecureSocketProxyService(object):
     APP_LISTING_IDENTIFIER = 'com.apple.instruments.server.services.device.applictionListing'
     PROCESS_CONTROL_IDENTIFIER = 'com.apple.instruments.server.services.processcontrol'
 
-    def __init__(self, lockdown=None, udid=None, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
-        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
+    def __init__(self, lockdown: LockdownClient):
+        self.logger = logging.getLogger(__name__)
+        self.lockdown = lockdown
         self.c = self.lockdown.start_service(self.SERVICE_NAME)
         self.channels = {}
         self.cur_channel = 0

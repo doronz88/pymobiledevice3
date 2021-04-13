@@ -1,14 +1,15 @@
-#!/usr/bin/env python
 import logging
 
 from pymobiledevice3.lockdown import LockdownClient
 
 
 class MobileImageMounterService(object):
-    def __init__(self, lockdown=None, service_name="com.apple.mobile.mobile_image_mounter", udid=None, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
-        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
-        self.service = self.lockdown.start_service(service_name)
+    SERVICE_NAME = 'com.apple.mobile.mobile_image_mounter'
+
+    def __init__(self, lockdown: LockdownClient):
+        self.logger = logging.getLogger(__name__)
+        self.lockdown = lockdown
+        self.service = self.lockdown.start_service(self.SERVICE_NAME)
 
     def list_images(self):
         """ Lookup mounted image by its name. """

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from pymobiledevice3.lockdown import LockdownClient
 
 Requests = """Goodbye
@@ -99,13 +97,11 @@ MobileGestaltKeys = ['BasebandKeyHashInformation',
 
 
 class DiagnosticsService(object):
-    def __init__(self, lockdown=None, service_name='com.apple.mobile.diagnostics_relay'):
-        if lockdown:
-            self.lockdown = lockdown
-        else:
-            self.lockdown = LockdownClient()
+    SERVICE_NAME = 'com.apple.mobile.diagnostics_relay'
 
-        self.service = self.lockdown.start_service(service_name)
+    def __init__(self, lockdown: LockdownClient):
+        self.lockdown = lockdown
+        self.service = self.lockdown.start_service(self.SERVICE_NAME)
         self.packet_num = 0
 
     def mobilegestalt(self, keys=None):

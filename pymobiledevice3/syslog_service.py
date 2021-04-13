@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import logging
 
 from pymobiledevice3.lockdown import LockdownClient
@@ -14,16 +12,18 @@ class SyslogService(object):
     View system logs
     """
 
-    def __init__(self, lockdown=None, udid=None, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
-        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
-        self.c = self.lockdown.start_service('com.apple.syslog_relay')
+    SERVICE_NAME = 'com.apple.syslog_relay'
+
+    def __init__(self, lockdown: LockdownClient):
+        self.logger = logging.getLogger(__name__)
+        self.lockdown = lockdown
+        self.service = self.lockdown.start_service(self.SERVICE_NAME)
 
     def watch(self):
         buf = ''
         while True:
             # read in chunks till we have at least one syslog line
-            chunk = self.c.recv(CHUNK_SIZE).decode('utf-8')
+            chunk = self.service.recv(CHUNK_SIZE).decode('utf-8')
             buf += chunk
 
             # SYSLOG_LINE_SPLITTER is used to split each syslog line

@@ -31,18 +31,20 @@ LINKTYPE_ETHERNET = 1
 LINKTYPE_RAW = 101
 
 
-class PcapdService():
-    def __init__(self, lockdown=None, udid=None, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
-        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
-        self.c = self.lockdown.start_service('com.apple.pcapd')
+class PcapdService:
+    SERVICE_NAME = 'com.apple.pcapd'
+
+    def __init__(self, lockdown: LockdownClient):
+        self.logger = logging.getLogger(__name__)
+        self.lockdown = lockdown
+        self.service = self.lockdown.start_service(self.SERVICE_NAME)
 
     def watch(self, out=None):
         if out:
             out.write(struct.pack("<LHHLLLL", 0xa1b2c3d4, 2, 4, 0, 0, 65535, LINKTYPE_ETHERNET))
 
         while True:
-            d = self.c.recv_plist()
+            d = self.service.recv_plist()
             if not d:
                 break
             hdrsize, xxx, packet_size = struct.unpack(">LBL", d[:9])

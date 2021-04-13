@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 import plistlib
 import logging
 
@@ -6,10 +5,12 @@ from pymobiledevice3.lockdown import LockdownClient
 
 
 class MobileConfigService(object):
-    def __init__(self, lockdown, udid=None, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
-        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
-        self.service = lockdown.start_service("com.apple.mobile.MCInstall")
+    SERVICE_NAME = 'com.apple.mobile.MCInstall'
+
+    def __init__(self, lockdown: LockdownClient):
+        self.logger = logging.getLogger(__name__)
+        self.lockdown = lockdown
+        self.service = lockdown.start_service(self.SERVICE_NAME)
 
     def get_profile_list(self):
         self.service.send_plist({"RequestType": "GetProfileList"})
