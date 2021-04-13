@@ -6,10 +6,8 @@ import unittest
 import os
 import pprint
 
-from pymobiledevice3.usbmux.usbmux import USBMux
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.usbmux import USBMux
 from pymobiledevice3.afc import AFCShell
-from pymobiledevice3.afc import AFCClient
 from pymobiledevice3.house_arrest import HouseArrestClient
 
 class HouseArrestTest(unittest.TestCase):

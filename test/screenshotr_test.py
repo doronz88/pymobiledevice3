@@ -5,9 +5,9 @@
 import unittest
 import tempfile
 
-from pymobiledevice3.usbmux.usbmux import USBMux
+from pymobiledevice3.usbmux import USBMux
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.screenshot_service import ScreenshotService
+from pymobiledevice3.services.screenshot_service import ScreenshotService
 
 
 class ScreenshotrTest(unittest.TestCase):

@@ -3,14 +3,15 @@
 from pprint import pprint
 from cmd import Cmd
 import posixpath
+import plistlib
 import logging
 import struct
 import os
 
 from construct import Struct, Const, Int64ul, Container, Switch, Enum, Bytes, Tell, this
+import hexdump
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.util import hexdump, parsePlist
 
 MAXIMUM_READ_SIZE = 1 << 16
 MODE_MASK = 0o0000777
@@ -375,8 +376,8 @@ class AFCShell(Cmd):
 
     def do_cat(self, p):
         data = self.afc.get_file_contents(posixpath.join(self.curdir, p))
-        if data and p.endswith(".plist"):
-            pprint(parsePlist(data))
+        if data and p.endswith('.plist'):
+            pprint(plistlib.loads(data))
         else:
             print(data)
 
@@ -446,7 +447,7 @@ class AFCShell(Cmd):
 
     def do_hexdump(self, filename):
         filename = posixpath.join(self.curdir, filename)
-        hexdump(self.afc.get_file_contents(filename))
+        print(hexdump.hexdump(self.afc.get_file_contents(filename)))
 
     def do_mkdir(self, p):
         print(self.afc.make_directory(p))

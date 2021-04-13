@@ -13,11 +13,11 @@ class HouseArrestService(AFCClient):
         service_name = self.SERVICE_NAME
         super(HouseArrestService, self).__init__(self.lockdown, service_name)
 
-    def send_command(self, applicationId, cmd="VendContainer"):
-        self.service.send_plist({"Command": cmd, "Identifier": applicationId})
+    def send_command(self, bundle_id, cmd="VendContainer"):
+        self.service.send_plist({"Command": cmd, "Identifier": bundle_id})
         res = self.service.recv_plist()
         if res.get("Error"):
-            self.logger.error("%s: %s", applicationId, res.get("Error"))
+            self.logger.error("%s: %s", bundle_id, res.get("Error"))
             return False
         else:
             return True

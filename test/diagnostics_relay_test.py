@@ -5,9 +5,9 @@
 import unittest
 import time
 
-from pymobiledevice3.usbmux.usbmux import USBMux
+from pymobiledevice3.usbmux import USBMux
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.diagnostics_service import DiagnosticsService
+from pymobiledevice3.services.diagnostics_service import DiagnosticsService
 
 
 class DiagnosticsRelayTest(unittest.TestCase):
