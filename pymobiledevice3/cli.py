@@ -460,9 +460,21 @@ def shell(lockdown):
 @developer.command('ls', cls=Command)
 @click.argument('path', type=click.Path(exists=False))
 def ls(lockdown, path):
-    """ Launch developer shell. """
+    """ List directory. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         pprint(dvt.ls(path))
+
+
+@developer.command('device-information', cls=Command)
+@click.option('--nocolor', is_flag=True)
+def device_information(lockdown, nocolor):
+    """ Print system information. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        print_object({
+            'system': dvt.system_information(),
+            'hardware': dvt.hardware_information(),
+            'network': dvt.network_information(),
+        }, colored=not nocolor)
 
 
 @cli.command('test', cls=Command)
