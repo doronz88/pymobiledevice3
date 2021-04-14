@@ -8,3 +8,4 @@ IPython
 bpylist2
 pygments
 hexdump
+arrow
