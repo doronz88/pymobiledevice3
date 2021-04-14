@@ -1,37 +1,11 @@
 # -*- coding: utf-8 -*-
-'''package script
-'''
-
-import os
+from setuptools import setup, find_packages
 import platform
 import sys
-from pymobiledevice3 import version as pm
-from setuptools import setup, find_packages
+import os
 
 BASE_DIR = os.path.realpath(os.path.dirname(__file__))
-VERSION = pm.VERSION
-
-
-def replace_version_py(version):
-    content = """# -*- coding: utf-8 -*-
-'''pymobiledevice2
-'''
-VERSION = '%(version)s'
-"""
-    version_py = os.path.join(BASE_DIR, 'pymobiledevice3', 'version.py')
-    with open(version_py, 'w') as fd:
-        fd.write(content % {'version': version})
-
-
-def generate_version():
-    version = VERSION
-    if os.path.isfile(os.path.join(BASE_DIR, "version.txt")):
-        with open("version.txt", "r") as fd:
-            content = fd.read().strip()
-            if content:
-                version = content
-    replace_version_py(version)
-    return version
+VERSION = '1.0'
 
 
 def parse_requirements():
@@ -57,7 +31,7 @@ def get_description():
 
 if __name__ == "__main__":
     setup(
-        version=generate_version(),
+        version=VERSION,
         name="pymobiledevice3",
         description="python implementation for libimobiledevice library",
         long_description=get_description(),
@@ -77,9 +51,9 @@ if __name__ == "__main__":
             "Programming Language :: Python :: 3.8",
             "Programming Language :: Python :: 3.9",
         ],
-        url="https://github.com/doronz88/pymobiledevice",
+        url="https://github.com/doronz88/pymobiledevice3",
         project_urls={
-            "pymobiledevice3 Documentation": "https://github.com/iOSForensics/pymobiledevice"
+            "pymobiledevice3": "https://github.com/doronz88/pymobiledevice3"
         },
         tests_require=['pytest'],
     )

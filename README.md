@@ -1,9 +1,7 @@
 # Description
 
-[![GitHub license](https://img.shields.io/cran/l/devtools.svg)](LICENSE)
-
-`pymobiledevice3` is a fork from `pymobiledevice`, which is a cross-platform implementation of the mobiledevice library
-that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV® devices.
+`pymobiledevice3` is a fork from `pymobiledevice`, which is a cross-platform implementation of the mobiledevice library that
+talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV® devices.
 
 This version uses more recent coding standards and adds a lot more features. Also, many of the features not present
 in `libimobiledevice` can be found here.
@@ -48,15 +46,15 @@ Commands:
 
 ### Lockdown messages
 
-Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays
-yourself, you can run:
+Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays yourself,
+you can run:
 
 ```shell
 pymobiledevice3 lockdown service <service-name>
 ```
 
-This will start an IPython shell where you already have the connection established using the `client` variable and you
-can send & receive messages.
+This will start an IPython shell where you already have the connection established using the `client` variable and you can send
+& receive messages.
 
 ```python
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
@@ -82,8 +80,7 @@ If you want to play with `DTServiceHub` which lies behind the `developer` option
 pymobiledevice3 developer shell
 ```
 
-To also get an IPython shell, which lets you call ObjC methods from the exported objects in the instruments' namespace
-like so:
+To also get an IPython shell, which lets you call ObjC methods from the exported objects in the instruments' namespace like so:
 
 ```python
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
@@ -155,10 +152,10 @@ BUG | `com.apple.iosdiagnostics.relay` | `/usr/libexec/ios_diagnostics_relay` | 
 ## `com.apple.instruments.remoteserver.DVTSecureSocketProxy`
 
 Exports several ObjC objects and allows calling their respective selectors.
-The `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` service reads the
-configuration stored from `[[NSUserDefaults standardUserDefaults] boolForKey:@"DTXConnectionTracer"]`
-If the value is true, then `/tmp/DTServiceHub[PID].DTXConnection.RANDOM.log` is created and can be used to debug the
-transport protocol.
+The `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` service reads the configuration
+stored from `[[NSUserDefaults standardUserDefaults] boolForKey:@"DTXConnectionTracer"]`
+If the value is true, then `/tmp/DTServiceHub[PID].DTXConnection.RANDOM.log` is created and can be used to debug the transport
+protocol.
 
 For example:
 
@@ -179,8 +176,8 @@ root@iPhone (/var/root)# tail -f /tmp/DTServiceHub[369].DTXConnection.qNjM2U.log
 For editing the configuration we can simply add the respected key into:
 `/var/mobile/Library/Preferences/.GlobalPreferences.plist` and kill `cfprefsd`
 
-The valid selectors for triggering can be found using the following Frida script the same way Roy Bowman used for
-iterating all classes which implement the protocol `DTXAllowedRPC`:
+The valid selectors for triggering can be found using the following Frida script the same way Roy Bowman used for iterating all
+classes which implement the protocol `DTXAllowedRPC`:
 
 ```shell
 frida -U DTServiceHub
@@ -222,6 +219,6 @@ On older iOS versions, this was the main relay used for file operations, which w
 
 ## `com.apple.pcapd`
 
-Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from an iOS
-device. On Mac OSX the virtual interface can be enabled with the rvictl command. This script allows to use this service
-on other systems.
+Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from an iOS device.
+On Mac OSX the virtual interface can be enabled with the rvictl command. This script allows to use this service on other
+systems.
