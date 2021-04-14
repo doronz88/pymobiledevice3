@@ -6,7 +6,7 @@ from functools import partial
 
 import IPython
 from pygments import highlight, lexers, formatters
-from bpylist import archiver
+from bpylist2 import archiver
 from construct import Struct, Int32ul, Int16ul, Int64ul, Const, Prefixed, GreedyBytes, this, Adapter, Select, \
     GreedyRange, Switch
 
