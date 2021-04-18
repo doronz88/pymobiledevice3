@@ -478,14 +478,18 @@ def kill(lockdown, pid):
 
 @developer.command('launch', cls=Command)
 @click.argument('arguments', type=click.STRING)
-def launch(lockdown, arguments: str):
+@click.option('--kill-existing/--no-kill-existing', default=True)
+@click.option('--suspended', is_flag=True)
+def launch(lockdown, arguments: str, kill_existing: bool, suspended: bool):
     """
     Launch a process.
     :param arguments: Arguments of process to launch, the first argument is the bundle id.
+    :param kill_existing: Whether to kill an existing instance of this process.
+    :param suspended: Same as WaitForDebugger.
     """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         parsed_arguments = shlex.split(arguments)
-        pid = dvt.launch(parsed_arguments[0], parsed_arguments[1:])
+        pid = dvt.launch(parsed_arguments[0], parsed_arguments[1:], kill_existing, suspended)
         print(f'Process launched with pid {pid}')
 
 
