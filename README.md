@@ -1,3 +1,7 @@
+![Python application](https://github.com/doronz88/pymobiledevice3/workflows/Python%20application/badge.svg)
+![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)
+![Code Quality](https://img.shields.io/lgtm/grade/python/github/doronz88/pymobiledevice3?style=plastic)
+
 # Description
 
 `pymobiledevice3` is a fork from `pymobiledevice`, which is a cross-platform implementation of the mobiledevice library that

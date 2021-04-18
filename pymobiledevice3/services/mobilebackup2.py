@@ -6,7 +6,6 @@ import logging
 import stat
 import os
 
-from optparse import OptionParser
 from time import mktime, gmtime
 from uuid import uuid4
 
@@ -35,10 +34,10 @@ class DeviceVersionNotSupported(Exception):
 class MobileBackup2(MobileBackup):
     service = None
 
-    def __init__(self, lockdown: LockdownClient=None, backupPath=None, password="", udid=None):
-        super().__init__(lockdown, udid)
+    def __init__(self, lockdown: LockdownClient = None, backup_path=None, password=""):
+        super().__init__(lockdown)
         self.logger = logging.getLogger(__name__)
-        self.backupPath = backupPath if backupPath else "backups"
+        self.backupPath = backup_path if backup_path else "backups"
         self.password = password
         self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
         if not self.lockdown:
@@ -302,15 +301,15 @@ class MobileBackup2(MobileBackup):
 
     def create_status_plist(self, fullBackup=True):
         # Creating Status file for backup
-        statusDict = {'UUID': str(uuid4()).upper(),
-                      'BackupState': 'new',
-                      'IsFullBackup': fullBackup,
-                      'Version': '2.4',
-                      'Date': datetime.datetime.fromtimestamp(mktime(gmtime())),
-                      'SnapshotState': 'finished'
-                      }
+        status_dict = {'UUID': str(uuid4()).upper(),
+                       'BackupState': 'new',
+                       'IsFullBackup': fullBackup,
+                       'Version': '2.4',
+                       'Date': datetime.datetime.fromtimestamp(mktime(gmtime())),
+                       'SnapshotState': 'finished'
+                       }
         with open(self.check_filename("Status.plist"), 'wb') as f:
-            plistlib.dump(statusDict, f)
+            plistlib.dump(status_dict, f)
 
     def create_info_plist(self):
         # Get device information
@@ -353,19 +352,19 @@ class MobileBackup2(MobileBackup):
         info["Applications"] = apps_data
         info["Installed Applications"] = installed_apps
         # Handling itunes files
-        iTunesFiles = ["ApertureAlbumPrefs", "IC-Info.sidb", "IC-Info.sidv", "PhotosFolderAlbums",
-                       "PhotosFolderName", "PhotosFolderPrefs", "VoiceMemos.plist", "iPhotoAlbumPrefs",
-                       "iTunesApplicationIDs", "iTunesPrefs", "iTunesPrefs.plist"]
-        iTunesFilesDict = {}
-        for i in iTunesFiles:
+        i_tunes_files = ["ApertureAlbumPrefs", "IC-Info.sidb", "IC-Info.sidv", "PhotosFolderAlbums",
+                         "PhotosFolderName", "PhotosFolderPrefs", "VoiceMemos.plist", "iPhotoAlbumPrefs",
+                         "iTunesApplicationIDs", "iTunesPrefs", "iTunesPrefs.plist"]
+        i_tunes_files_dict = {}
+        for i in i_tunes_files:
             data = self.afc.get_file_contents("/iTunes_Control/iTunes/" + i)
             if data:
-                iTunesFilesDict[i] = data
+                i_tunes_files_dict[i] = data
 
-        info["iTunesFiles"] = iTunesFilesDict
-        iBooksData2 = self.afc.get_file_contents("/Books/iBooksData2.plist")
-        if iBooksData2:
-            info["iBooks Data 2"] = iBooksData2
+        info["iTunesFiles"] = i_tunes_files_dict
+        i_books_data2 = self.afc.get_file_contents("/Books/iBooksData2.plist")
+        if i_books_data2:
+            info["iBooks Data 2"] = i_books_data2
 
         info["iTunes Settings"] = self.lockdown.get_value("com.apple.iTunes")
         self.logger.info("Creating %s", os.path.join(self.udid, "Info.plist"))
@@ -382,9 +381,7 @@ class MobileBackup2(MobileBackup):
         self.mobilebackup2_send_request("Backup", self.udid, options)
         self.work_loop()
 
-    def restore(self, options=None,
-                password=None):
-
+    def restore(self, options=None, password=None):
         if options is None:
             options = {"RestoreSystemFiles": True,
                        "RestoreShouldReboot": True,
@@ -443,34 +440,3 @@ class MobileBackup2(MobileBackup):
             options = {"CloudBackupState": False}
         self.mobilebackup2_send_request("EnableCloudBackup", self.udid, options)
         self.work_loop()
-
-
-if __name__ == "__main__":
-    parser = OptionParser(usage="%prog -u <udid> cmd <command options>")
-    parser.add_option("-u", "--udid", default=False, action="store", dest="device_udid", metavar="DEVICE_UDID",
-                      help="Device udid")
-    parser.add_option("-b", "--backup", dest="backup", action="store_true", default=False,
-                      help="Backup device")
-    parser.add_option("-r", "--restore", dest="restore", action="store_true", default=False,
-                      help="Restore device")
-    parser.add_option("-i", "--info", dest="info", action="store_true", default=False,
-                      help="Show backup info")
-    parser.add_option("-l", "--list", dest="list", action="store_true", default=False,
-                      help="Show backup info")
-    parser.add_option("-p", "--path", dest="path", action="store", default=False,
-                      help="path to backup/restore to")
-    (options, args) = parser.parse_args()
-
-    logging.basicConfig(level=logging.INFO)
-    lockdown = LockdownClient(options.device_udid)
-    mb = MobileBackup2(lockdown, options.path)
-    if options.backup:
-        mb.backup(full_backup=False)
-    elif options.restore:
-        mb.restore()
-    elif options.info:
-        mb.info()
-    elif options.list:
-        mb.list()
-    else:
-        parser.error("Incorrect number of arguments")

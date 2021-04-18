@@ -4,8 +4,6 @@ import datetime
 import logging
 import codecs
 
-from six import PY3
-
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.afc import AFCClient
 
@@ -28,12 +26,12 @@ class DeviceVersionNotSupported(Exception):
 
 
 class MobileBackup(object):
-    def __init__(self, lockdown=None, udid=None, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
-        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
-        ProductVersion = self.lockdown.get_value("", "ProductVersion")
-        if ProductVersion[0] >= "5":
-            raise DeviceVersionNotSupported
+    def __init__(self, lockdown: LockdownClient):
+        self.logger = logging.getLogger(__name__)
+        self.lockdown = lockdown
+        product_version = self.lockdown.get_value("", "ProductVersion")
+        if product_version[0] >= "5":
+            raise DeviceVersionNotSupported()
         self.start()
 
     def start(self):
@@ -47,7 +45,7 @@ class MobileBackup(object):
             self.logger.info("Got DLMessageDeviceReady")
 
     def check_filename(self, name):
-        if PY3 and not isinstance(name, str):
+        if not isinstance(name, str):
             name = codecs.decode(name)
         if "../" in name:
             raise Exception("HAX, sneaky dots in path %s" % name)
@@ -163,9 +161,3 @@ class MobileBackup(object):
                     with open(outpath + ".mdinfo", 'wb') as f:
                         plistlib.dump(info.get("BackupFileInfo"), f)
                 f = None
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    mb = MobileBackup()
-    mb.request_backup()
