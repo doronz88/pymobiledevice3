@@ -5,6 +5,7 @@ import logging
 import tempfile
 import json
 import os
+import shlex
 
 from pygments import highlight, lexers, formatters
 from daemonize import Daemonize
@@ -476,11 +477,15 @@ def kill(lockdown, pid):
 
 
 @developer.command('launch', cls=Command)
-@click.argument('bundle_id', type=click.STRING)
-def launch(lockdown, bundle_id):
-    """ Kill a process by its pid. """
+@click.argument('arguments', type=click.STRING)
+def launch(lockdown, arguments: str):
+    """
+    Launch a process.
+    :param arguments: Arguments of process to launch, the first argument is the bundle id.
+    """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        pid = dvt.launch(bundle_id)
+        parsed_arguments = shlex.split(arguments)
+        pid = dvt.launch(parsed_arguments[0], parsed_arguments[1:])
         print(f'Process launched with pid {pid}')
 
 

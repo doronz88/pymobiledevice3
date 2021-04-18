@@ -178,9 +178,10 @@ class DvtSecureSocketProxyService(object):
         channel = self.make_channel(self.PROCESS_CONTROL_IDENTIFIER)
         self.send_message(channel, 'killPid:', MessageAux().append_obj(pid), False)
 
-    def launch(self, bundle_id):
+    def launch(self, bundle_id, arguments=None):
+        arguments = [] if arguments is None else arguments
         channel = self.make_channel(self.PROCESS_CONTROL_IDENTIFIER)
-        args = MessageAux().append_obj('').append_obj(bundle_id).append_obj({}).append_obj([]).append_obj({
+        args = MessageAux().append_obj('').append_obj(bundle_id).append_obj({}).append_obj(arguments).append_obj({
             'StartSuspendedKey': 0,
             'KillExisting': 1,
         })
