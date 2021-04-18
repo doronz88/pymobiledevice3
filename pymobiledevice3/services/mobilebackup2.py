@@ -35,7 +35,7 @@ class DeviceVersionNotSupported(Exception):
 class MobileBackup2(MobileBackup):
     service = None
 
-    def __init__(self, lockdown=None, backupPath=None, password="", udid=None):
+    def __init__(self, lockdown: LockdownClient=None, backupPath=None, password="", udid=None):
         super().__init__(lockdown, udid)
         self.logger = logging.getLogger(__name__)
         self.backupPath = backupPath if backupPath else "backups"

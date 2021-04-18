@@ -271,7 +271,7 @@ class LockdownClient(object):
         else:
             self.logger.error(pair.get("Error"))
             self.service.close()
-            raise PairingError
+            raise PairingError()
 
     def get_value(self, domain=None, key=None):
         if isinstance(key, str) and hasattr(self, 'record') and hasattr(self.pair_record, key):

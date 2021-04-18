@@ -12,7 +12,7 @@ Authors: Heikki Toivonen
 """
 import base64
 
-from M2Crypto import RSA, X509, EVP, m2, BIO
+from M2Crypto import RSA, X509, EVP, m2, BIO, ASN1
 from M2Crypto.RSA import load_pub_key_bio
 from pyasn1.type import univ
 from pyasn1.codec.der import encoder as der_encoder
@@ -81,34 +81,34 @@ def make_cert(req, caPkey):
     # all the relevant data from the request and ask a human operator
     # if you were sure. Now we just create the certificate blindly based
     # on the request.
-    cert = X509.X509()
+    certificate = X509.X509()
     # We know we are making CA cert now...
     # Serial defaults to 0.
-    cert.set_serial_number(1)
-    cert.set_version(2)
-    cert.set_subject(sub)
+    certificate.set_serial_number(ASN1.m2.asn1_integer_new(1))
+    certificate.set_version(2)
+    certificate.set_subject(sub)
     issuer = X509.X509_Name()
     issuer['CN'] = 'The Issuer Monkey'
     issuer['O'] = 'The Organization Otherwise Known as My CA, Inc.'
-    cert.set_issuer(issuer)
-    cert.set_pubkey(pkey)
-    notBefore = m2.x509_get_not_before(cert.x509)
-    notAfter = m2.x509_get_not_after(cert.x509)
-    m2.x509_gmtime_adj(notBefore, 0)
+    certificate.set_issuer(issuer)
+    certificate.set_pubkey(pkey)
+    not_before = m2.x509_get_not_before(certificate.x509)
+    not_after = m2.x509_get_not_after(certificate.x509)
+    m2.x509_gmtime_adj(not_before, 0)
     days = 30
-    m2.x509_gmtime_adj(notAfter, 60 * 60 * 24 * days)
-    cert.add_ext(
+    m2.x509_gmtime_adj(not_after, 60 * 60 * 24 * days)
+    certificate.add_ext(
         X509.new_extension('subjectAltName', 'DNS:foobar.example.com'))
     ext = X509.new_extension('nsComment', 'M2Crypto generated certificate')
     ext.set_critical(0)  # Defaults to non-critical, but we can also set it
-    cert.add_ext(ext)
-    cert.sign(caPkey, 'sha1')
+    certificate.add_ext(ext)
+    certificate.sign(caPkey, 'sha1')
 
-    assert (cert.get_ext('subjectAltName').get_name() == 'subjectAltName')
-    assert (cert.get_ext_at(0).get_name() == 'subjectAltName')
-    assert (cert.get_ext_at(0).get_value() == 'DNS:foobar.example.com')
+    assert (certificate.get_ext('subjectAltName').get_name() == 'subjectAltName')
+    assert (certificate.get_ext_at(0).get_name() == 'subjectAltName')
+    assert (certificate.get_ext_at(0).get_value() == 'DNS:foobar.example.com')
 
-    return cert
+    return certificate
 
 
 def ca():
