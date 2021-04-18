@@ -3,7 +3,7 @@
 import time
 from datetime import datetime
 
-from pymobiledevice3.services.syslog_service import SyslogService
+from pymobiledevice3.services.syslog import SyslogService
 
 SYSLOG_TIME_FORMAT = '%b %d %H:%M:%S'
 

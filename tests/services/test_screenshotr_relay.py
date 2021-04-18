@@ -3,7 +3,7 @@
 screenshotr test case
 """
 
-from pymobiledevice3.services.screenshot_service import ScreenshotService
+from pymobiledevice3.services.screenshot import ScreenshotService
 
 PNG_HEADER = b'\x89\x50\x4e\x47\x0d\x0a\x1a\x0a'
 

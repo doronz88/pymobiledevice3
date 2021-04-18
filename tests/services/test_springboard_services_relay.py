@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-from pymobiledevice3.services.springboard_services import SpringBoardServicesService
+from pymobiledevice3.services.springboard import SpringBoardServicesService
 
 PNG_HEADER = b'\x89\x50\x4e\x47\x0d\x0a\x1a\x0a'
 
