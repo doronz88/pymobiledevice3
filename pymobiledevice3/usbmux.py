@@ -240,7 +240,7 @@ class USBMux(object):
             self.version = 1
         self.devices = self.listener.devices
 
-    def process(self, timeout=10.0):
+    def process(self, timeout=0.01):
         self.listener.process(timeout)
 
     def connect(self, device, port):
@@ -269,7 +269,7 @@ if __name__ == "__main__":
     mux = USBMux()
     print("Waiting for devices...")
     if not mux.devices:
-        mux.process(0.1)
+        mux.process()
     while True:
         for dev in mux.devices:
             print("Device:", dev)

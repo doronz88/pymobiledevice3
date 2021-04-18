@@ -39,11 +39,11 @@ class ServiceConnection(object):
     @staticmethod
     def create(udid, port):
         mux = usbmux.USBMux()
-        mux.process(1.0)
+        mux.process()
         target_device = None
 
         while target_device is None:
-            mux.process(1.0)
+            mux.process()
             for connected_device in mux.devices:
                 if connected_device.serial == udid:
                     target_device = connected_device

@@ -82,7 +82,7 @@ def write_home_file(folder_name, filename, data):
 
 def list_devices():
     mux = usbmux.USBMux()
-    mux.process(0.1)
+    mux.process()
     return [d.serial for d in mux.devices]
 
 

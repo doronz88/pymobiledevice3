@@ -14,6 +14,7 @@ class TcpForwarder:
         self.lockdown = lockdown
         self.src_port = src_port
         self.dst_port = dst_port
+        self.server_socket = None
         self.inputs = []
 
         # dictionaries containing the required maps to transfer data between each local
@@ -51,13 +52,13 @@ class TcpForwarder:
                 self._handle_close_or_error(current_sock)
 
     def _handle_close_or_error(self, from_sock):
-        # if an error occurred its time to close the two sockets
-        other_sock = self.connections[current_sock]
+        """ if an error occurred its time to close the two sockets """
+        other_sock = self.connections[from_sock]
 
         other_sock.close()
-        current_sock.close()
-        inputs.remove(other_sock)
-        inputs.remove(current_sock)
+        from_sock.close()
+        self.inputs.remove(other_sock)
+        self.inputs.remove(from_sock)
 
         self.logger.info(f'connection {other_sock} was closed')
 
@@ -66,7 +67,7 @@ class TcpForwarder:
 
         if data is None:
             # no data means socket was closed
-            self._handle_close_or_error()
+            self._handle_close_or_error(from_sock)
             return
 
         # when data is received from one end, just forward it to the other
@@ -78,7 +79,7 @@ class TcpForwarder:
         other_sock.setblocking(False)
 
     def _handle_server_connection(self):
-        # accept the connection from local machine and attempt to connect at remote
+        """ accept the connection from local machine and attempt to connect at remote """
         local_connection, client_address = self.server_socket.accept()
         local_connection.setblocking(False)
 
@@ -87,6 +88,8 @@ class TcpForwarder:
         except ConnectionFailedException:
             self.logger.error(f'failed to connect to port: {self.dst_port}')
             local_connection.close()
+            return
+
         remote_connection.setblocking(False)
 
         # append the newly created sockets into input list
