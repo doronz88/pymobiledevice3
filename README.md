@@ -33,6 +33,9 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
     * `pymobiledevice3 lockdown service service_name`
 * Mounting images
   * `pymobiledevice3 mounter`
+* Notification listening and triggering (`notify_post()` api)
+  * `pymobiledevice3 notification post notification_name`
+  * `pymobiledevice3 notification observe notification_name`
 * DeveloperDiskImage features:
   * Process management
     * `pymobiledevice3 developer kill/launch/....`
