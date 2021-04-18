@@ -56,6 +56,8 @@ python3 -m pip install --user -U -e .
 
 # Usage
 
+You can either use the CLI:
+
 ```
 Usage: pymobiledevice3 [OPTIONS] COMMAND [ARGS]...
 
@@ -76,6 +78,18 @@ Commands:
   ps            show process list
   screenshot    take a screenshot in PNG format
   syslog        syslog options
+```
+
+Or import and use the API yourself:
+
+```python
+from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.syslog import SyslogService
+
+lockdown = LockdownClient()
+for line in SyslogService(lockdown=lockdown).watch():
+    # just print all syslog lines as is
+    print(line)
 ```
 
 ## Sending your own messages
