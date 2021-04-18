@@ -32,40 +32,41 @@ print(client.recv_exact(20))
 
 
 class ServiceConnection(object):
-    def __init__(self, port, udid=None, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
-        self.port = port
-        self.connect(udid)
+    def __init__(self, socket):
+        self.logger = logging.getLogger(__name__)
+        self.socket = socket
 
-    def connect(self, udid=None):
+    @staticmethod
+    def create(udid, port):
         mux = usbmux.USBMux()
         mux.process(1.0)
-        dev = None
+        target_device = None
 
-        while not dev and mux.devices:
+        while target_device is None:
             mux.process(1.0)
-            if udid:
-                for d in mux.devices:
-                    if d.serial == udid:
-                        dev = d
-            else:
-                dev = mux.devices[0]
-                self.logger.info(f'Connecting to device: {dev.serial}')
+            for connected_device in mux.devices:
+                if connected_device.serial == udid:
+                    target_device = connected_device
+                    break
         try:
-            self.s = mux.connect(dev, self.port)
+            socket = mux.connect(target_device, port)
         except:
-            raise ConnectionFailedException("Connection to device port %d failed" % self.port)
-        return dev.serial
+            raise ConnectionFailedException(f'Connection to device port {port} failed')
+
+        return ServiceConnection(socket)
+
+    def setblocking(self, blocking: bool):
+        self.socket.setblocking(blocking)
 
     def close(self):
-        self.s.close()
+        self.socket.close()
 
     def recv(self, length=4096):
-        data = self.s.recv(length)
+        data = self.socket.recv(length)
         return data
 
     def send(self, data):
-        self.s.sendall(data)
+        self.socket.sendall(data)
 
     def send_request(self, data):
         self.send_plist(data)
@@ -116,7 +117,7 @@ class ServiceConnection(object):
         return self.send(l + payload)
 
     def ssl_start(self, keyfile, certfile):
-        self.s = ssl.wrap_socket(self.s, keyfile, certfile, ssl_version=ssl.PROTOCOL_TLSv1)
+        self.socket = ssl.wrap_socket(self.socket, keyfile, certfile, ssl_version=ssl.PROTOCOL_TLSv1)
 
     def shell(self):
         IPython.embed(

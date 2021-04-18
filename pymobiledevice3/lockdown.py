@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-import plistlib
-import platform
 import logging
-import uuid
-import sys
 import os
+import platform
+import plistlib
 import re
+import sys
+import uuid
 
-from pymobiledevice3.service_connection import ServiceConnection
-from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3 import usbmux
+from pymobiledevice3.ca import ca_do_everything
+from pymobiledevice3.service_connection import ServiceConnection
 
 
 class NotTrustedError(Exception):
@@ -33,6 +33,10 @@ class StartServiceError(Exception):
 
 
 class FatalPairingError(Exception):
+    pass
+
+
+class NoDeviceConnected(Exception):
     pass
 
 
@@ -78,7 +82,7 @@ def write_home_file(folder_name, filename, data):
 
 def list_devices():
     mux = usbmux.USBMux()
-    mux.process(1)
+    mux.process(0.1)
     return [d.serial for d in mux.devices]
 
 
@@ -87,10 +91,16 @@ class LockdownClient(object):
     SERVICE_PORT = 62078
 
     def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME):
+        if udid is None:
+            available_udids = list_devices()
+            if len(available_udids) == 0:
+                raise NoDeviceConnected()
+            udid = available_udids[0]
+
         self.logger = logging.getLogger(__name__)
         self.paired = False
         self.SessionID = None
-        self.service = ServiceConnection(self.SERVICE_PORT, udid)
+        self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
         self.host_id = self.generate_host_id()
         self.system_buid = self.generate_host_id()
         self.paired = False
@@ -112,7 +122,7 @@ class LockdownClient(object):
 
         if not self.validate_pairing():
             self.pair()
-            self.service = ServiceConnection(self.SERVICE_PORT, udid)
+            self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
             if not self.validate_pairing():
                 raise FatalPairingError
         self.paired = True
@@ -313,7 +323,7 @@ class LockdownClient(object):
                 raise StartServiceError(
                     'your device is protected with password, please enter password in device and try again')
             raise StartServiceError(response.get("Error"))
-        service_connection = ServiceConnection(response.get('Port'), self.udid)
+        service_connection = ServiceConnection.create(self.udid, response.get('Port'))
         if ssl_enabled:
             service_connection.ssl_start(self.ssl_file, self.ssl_file)
         return service_connection
