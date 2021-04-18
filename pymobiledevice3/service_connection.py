@@ -106,7 +106,7 @@ class ServiceConnection(object):
             return plistlib.loads(payload)
         elif payload.startswith(xml_header):
             # HAX lockdown HardwarePlatform with null bytes
-            payload = sub('[^\w<>\/ \-_0-9\"\'\\=\.\?\!\+]+', '', payload.decode('utf-8')).encode('utf-8')
+            payload = sub(r'[^\w<>\/ \-_0-9\"\'\\=\.\?\!\+]+', '', payload.decode('utf-8')).encode('utf-8')
             return plistlib.loads(payload)
         else:
             raise Exception(f'recv_plist invalid data: {payload[:100].hex()}')

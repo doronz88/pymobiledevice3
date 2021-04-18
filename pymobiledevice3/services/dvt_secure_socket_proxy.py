@@ -178,11 +178,19 @@ class DvtSecureSocketProxyService(object):
         channel = self.make_channel(self.PROCESS_CONTROL_IDENTIFIER)
         self.send_message(channel, 'killPid:', MessageAux().append_obj(pid), False)
 
-    def launch(self, bundle_id):
+    def launch(self, bundle_id: str, arguments=None, kill_existing: bool = True, start_suspended: bool = False):
+        """
+        Launch a process.
+        :param bundle_id: Bundle id of the process.
+        :param list arguments: List of argument to pass to process.
+        :param kill_existing: Whether to kill an existing instance of this process.
+        :param start_suspended: Same as WaitForDebugger.
+        """
+        arguments = [] if arguments is None else arguments
         channel = self.make_channel(self.PROCESS_CONTROL_IDENTIFIER)
-        args = MessageAux().append_obj('').append_obj(bundle_id).append_obj({}).append_obj([]).append_obj({
-            'StartSuspendedKey': 0,
-            'KillExisting': 1,
+        args = MessageAux().append_obj('').append_obj(bundle_id).append_obj({}).append_obj(arguments).append_obj({
+            'StartSuspendedKey': start_suspended,
+            'KillExisting': kill_existing,
         })
         self.send_message(
             channel, 'launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:', args
