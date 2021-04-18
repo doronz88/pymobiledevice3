@@ -11,7 +11,7 @@ from stat import *
 from pymobiledevice3.afc import AFCClient
 from pymobiledevice3.services.installation_proxy_service import InstallationProxyService
 from pymobiledevice3.services.notification_proxy_service import *
-from pymobiledevice3.services.sbservices_service import SBServicesService
+from pymobiledevice3.services.springboard_services import SpringBoardServicesService
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.mobilebackup import MobileBackup
 
@@ -333,7 +333,7 @@ class MobileBackup2(MobileBackup):
                 "Last Backup Date": datetime.datetime.now()}
 
         # Starting SpringBoard service to retrieve icons position
-        self.sbs = SBServicesService(self.lockdown)
+        self.sbs = SpringBoardServicesService(self.lockdown)
         installed_apps = []
         apps_data = {}
         for app_entry in apps:

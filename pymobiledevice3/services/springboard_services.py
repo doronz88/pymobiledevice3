@@ -8,7 +8,7 @@ SB_LANDSCAPE = 3
 SB_LANDSCAPE_HOME_TO_LEFT = 4
 
 
-class SBServicesService(object):
+class SpringBoardServicesService(object):
     SERVICE_NAME = 'com.apple.springboardservices'
 
     def __init__(self, lockdown: LockdownClient):
@@ -57,8 +57,3 @@ class SBServicesService(object):
         if res:
             return res.get("pngData")
         return None
-
-
-if __name__ == "__main__":
-    s = SBServicesService()
-    print(s.get_icon_pngdata("com.apple.weather"))
