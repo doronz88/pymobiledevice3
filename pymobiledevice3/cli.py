@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
+from functools import partial
 from pprint import pprint
 import logging
+import tempfile
 import json
 import os
 
 from pygments import highlight, lexers, formatters
+from daemonize import Daemonize
 from termcolor import colored
 import coloredlogs
 import click
 
 from pymobiledevice3.afc import AFCShell, AFCClient
+from pymobiledevice3.tcp_forwarder import TcpForwarder
 from pymobiledevice3.services.diagnostics_service import DiagnosticsService
 from pymobiledevice3.services.house_arrest_service import HouseArrestService
 from pymobiledevice3.services.installation_proxy_service import InstallationProxyService
@@ -159,27 +163,27 @@ def apps_afc(lockdown, bundle_id):
 
 
 @cli.group()
-def config():
-    """ configuration options """
+def profile():
+    """ profile options """
     pass
 
 
-@config.command('list', cls=Command)
-def config_list(lockdown):
+@profile.command('list', cls=Command)
+def profile_list(lockdown):
     """ list installed profiles """
     pprint(MobileConfigService(lockdown=lockdown).get_profile_list())
 
 
-@config.command('install', cls=Command)
+@profile.command('install', cls=Command)
 @click.argument('profile', type=click.File('rb'))
-def config_install(lockdown, profile):
+def profile_install(lockdown, profile):
     """ install given profile file """
     pprint(MobileConfigService(lockdown=lockdown).install_profile(profile.read()))
 
 
-@config.command('remove', cls=Command)
+@profile.command('remove', cls=Command)
 @click.argument('name')
-def config_remove(lockdown, name):
+def profile_remove(lockdown, name):
     """ remove profile by name """
     pprint(MobileConfigService(lockdown=lockdown).remove_profile(name))
 
@@ -188,6 +192,22 @@ def config_remove(lockdown, name):
 def lockdown():
     """ lockdown options """
     pass
+
+
+@lockdown.command('forward', cls=Command)
+@click.argument('src_port', type=click.IntRange(1, 0xffff))
+@click.argument('dst_port', type=click.IntRange(1, 0xffff))
+@click.option('-d', '--daemonize', is_flag=True)
+def lockdown_forward(lockdown, src_port, dst_port, daemonize):
+    """ forward tcp port """
+    forwarder = TcpForwarder(lockdown, src_port, dst_port)
+
+    if daemonize:
+        with tempfile.NamedTemporaryFile('wt') as pid_file:
+            daemon = Daemonize(app=f'forwarder {src_port}->{dst_port}', pid=pid_file.name, action=forwarder.start)
+            daemon.start()
+    else:
+        forwarder.start()
 
 
 @lockdown.command('recovery', cls=Command)

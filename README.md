@@ -10,6 +10,39 @@ To understand the bits and bytes of the communication with `lockdownd` you are a
 
 https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lockdown-service-7f2a1dfd07ae
 
+# Features
+
+* TCP portwarding 
+  * `pymobiledevice3 lockdown forward src_port dst_port`)
+* Screenshots
+  * `pymobiledevice3 screenshot screen.png`
+* Live and past syslogs
+  * `pymobiledevice3 syslog live`
+  * `pymobiledevice3 syslog archive syslogs.pax`
+* Profile installation
+  * `pymobiledevice3 profile install/remove/list`
+* Application management
+  * `pymobiledevice3 apps`
+* File system management (AFC)
+  * `pymobiledevice3 afc`
+* Crash reports management
+  * `pymobiledevice3 crash`
+* Network sniffing
+  * `pymobiledevice3 pcap [out.pcap]`
+* Raw shell for experimenting:
+    * `pymobiledevice3 lockdown service service_name`
+* Mounting images
+  * `pymobiledevice3 mounter`
+* DeveloperDiskImage features:
+  * Process management
+    * `pymobiledevice3 developer kill/launch/....`
+  * **Non-chrooted** directory listing
+    * `pymobiledevice3 developer ls /`
+  * Raw shell for experimenting:
+    * `pymobiledevice3 developer shell`
+
+* And some more 😁
+
 # Installation
 
 ```shell
@@ -29,7 +62,6 @@ Options:
 Commands:
   afc           FileSystem utils
   apps          application options
-  config        configuration options
   crash         crash utils
   developer     developer options
   diagnostics   diagnostics options
@@ -37,8 +69,9 @@ Commands:
   mounter       mounter options
   notification  API for notify_post() & notify_register_dispatch().
   pcap          sniff device traffic
+  profile       profile options
   ps            show process list
-  screenshot    take a screenshot into a PNG format
+  screenshot    take a screenshot in PNG format
   syslog        syslog options
 ```
 
