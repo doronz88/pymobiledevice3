@@ -34,9 +34,6 @@ class TcpForwarder:
 
         self.inputs = [self.server_socket]
 
-        local_connection = None
-        remote_connection = None
-
         while self.inputs:
             # will only perform the socket select on the inputs. the outputs will handled
             # as synchronous blocking

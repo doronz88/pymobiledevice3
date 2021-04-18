@@ -26,10 +26,7 @@ def convert_pkcs1_to_pkcs8_pubkey(bitsdata):
     bitstring.setComponentByPosition(0, univ.Integer(pubkey_pkcs1[0]))
     bitstring.setComponentByPosition(1, univ.Integer(pubkey_pkcs1[1]))
     bitstring = der_encoder.encode(bitstring)
-    try:
-        bitstring = ''.join([('00000000' + bin(ord(x))[2:])[-8:] for x in list(bitstring)])
-    except:
-        bitstring = ''.join([('00000000' + bin(x)[2:])[-8:] for x in list(bitstring)])
+    bitstring = ''.join([('00000000' + bin(ord(x))[2:])[-8:] for x in list(bitstring)])
     bitstring = univ.BitString("'%s'B" % bitstring)
     pubkeyid = univ.Sequence()
     pubkeyid.setComponentByPosition(0, univ.ObjectIdentifier('1.2.840.113549.1.1.1'))  # == OID for rsaEncryption
@@ -91,8 +88,8 @@ def make_cert(req, caPkey):
     cert.set_version(2)
     cert.set_subject(sub)
     issuer = X509.X509_Name()
-    issuer.CN = 'The Issuer Monkey'
-    issuer.O = 'The Organization Otherwise Known as My CA, Inc.'
+    issuer['CN'] = 'The Issuer Monkey'
+    issuer['O'] = 'The Organization Otherwise Known as My CA, Inc.'
     cert.set_issuer(issuer)
     cert.set_pubkey(pkey)
     notBefore = m2.x509_get_not_before(cert.x509)

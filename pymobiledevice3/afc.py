@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 
-from pprint import pprint
-from cmd import Cmd
-import posixpath
-import plistlib
 import logging
-import struct
 import os
+import plistlib
+import posixpath
+import struct
+from cmd import Cmd
+from pprint import pprint
 
-from construct import Struct, Const, Int64ul, Container, Switch, Enum, Bytes, Tell, this
 import hexdump
+from construct import Struct, Const, Int64ul, Container, Enum, Tell
 
 from pymobiledevice3.lockdown import LockdownClient
 
@@ -230,22 +230,14 @@ class AFCClient(object):
         data = b""
         while sz > 0:
             if sz > MAXIMUM_READ_SIZE:
-                toRead = MAXIMUM_READ_SIZE
+                to_read = MAXIMUM_READ_SIZE
             else:
-                toRead = sz
-            try:
-                self._dispatch_packet(afc_opcode_t.AFC_OP_READ, struct.pack("<QQ", handle, toRead))
-                status, chunk = self._receive_data()
-            except:
-                import traceback
-                traceback.print_exc()
-                self.lockdown = LockdownClient()
-                self.service = self.lockdown.start_service("com.apple.afc")
-                return self.file_read(handle, sz)
-
+                to_read = sz
+            self._dispatch_packet(afc_opcode_t.AFC_OP_READ, struct.pack("<QQ", handle, to_read))
+            status, chunk = self._receive_data()
             if status != afc_error_t.AFC_E_SUCCESS:
                 break
-            sz -= toRead
+            sz -= to_read
             data += chunk
         return data
 
@@ -383,9 +375,9 @@ class AFCShell(Cmd):
     def do_rm(self, p):
         f = self.afc.get_file_info(posixpath.join(self.curdir, p))
         if f['st_ifmt'] == 'S_IFDIR':
-            d = self.afc.remove_directory(posixpath.join(self.curdir, p))
+            self.afc.remove_directory(posixpath.join(self.curdir, p))
         else:
-            d = self.afc.file_remove(posixpath.join(self.curdir, p))
+            self.afc.file_remove(posixpath.join(self.curdir, p))
 
     def do_pull(self, user_args):
         args = user_args.split()

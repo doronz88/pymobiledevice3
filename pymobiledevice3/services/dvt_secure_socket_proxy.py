@@ -14,7 +14,7 @@ from pymobiledevice3.lockdown import LockdownClient
 
 SHELL_USAGE = '''
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
-# Generally speaking, each channel represents a group of actions. 
+# Generally speaking, each channel represents a group of actions.
 # Calling actions is done using a selector and auxiliary (parameters).
 # Receiving answers is done by getting a return value and seldom auxiliary (private / extra parameters).
 # To see the available channels, type the following:

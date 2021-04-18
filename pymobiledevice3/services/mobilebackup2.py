@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
+# flake8: noqa
 import plistlib
 import datetime
+import logging
+import stat
 import os
 
 from optparse import OptionParser
 from time import mktime, gmtime
 from uuid import uuid4
-from stat import *
 
 from pymobiledevice3.afc import AFCClient
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
-from pymobiledevice3.services.notification_proxy import *
 from pymobiledevice3.services.springboard import SpringBoardServicesService
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.mobilebackup import MobileBackup
@@ -34,8 +35,9 @@ class DeviceVersionNotSupported(Exception):
 class MobileBackup2(MobileBackup):
     service = None
 
-    def __init__(self, lockdown=None, backupPath=None, password="", udid=None, logger=None):
-        self.logger = logger or logging.getLogger(__name__)
+    def __init__(self, lockdown=None, backupPath=None, password="", udid=None):
+        super().__init__(lockdown, udid)
+        self.logger = logging.getLogger(__name__)
         self.backupPath = backupPath if backupPath else "backups"
         self.password = password
         self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
@@ -165,22 +167,22 @@ class MobileBackup2(MobileBackup):
         self.logger.info("List directory: %s" % path)
         dirlist = {}
         if path.find("../") != -1:
-            raise Exception("HAX, sneaky dots in path %s" % name)
+            raise Exception(f'HAX, sneaky dots in path {path}')
         for root, dirs, files in os.walk(os.path.join(self.backupPath, path)):
             for fname in files:
                 fpath = os.path.join(root, fname)
                 finfo = {}
                 st = os.stat(fpath)
                 ftype = "DLFileTypeUnknown"
-                if S_ISDIR(st.st_mode):
+                if stat.S_ISDIR(st.st_mode):
                     ftype = "DLFileTypeDirectory"
-                elif S_ISREG(st.st_mode):
+                elif stat.S_ISREG(st.st_mode):
                     ftype = "DLFileTypeRegular"
                 finfo["DLFileType"] = ftype
                 finfo["DLFileSize"] = st.st_size
                 finfo["DLFileModificationDate"] = st.st_mtime
                 dirlist[fname] = finfo
-        self.mobilebackup2_send_status_response(0, status2=dirlist);
+        self.mobilebackup2_send_status_response(0, status2=dirlist)
 
     def mb2_handle_make_directory(self, msg):
         dirname = self.check_filename(msg[1])

@@ -3,9 +3,6 @@
 import logging
 import struct
 import time
-import sys
-
-import click
 
 from pymobiledevice3.lockdown import LockdownClient
 
@@ -51,7 +48,6 @@ class PcapdService:
             flags1, flags2, offset_to_ip_data, zero = struct.unpack(">LLLL", d[9:0x19])
 
             assert hdrsize >= 0x19
-            interfacetype = d[0x19:hdrsize].strip(b"\x00")
             packet = d[hdrsize:]
             logging.info(packet)
             assert packet_size == len(packet)
