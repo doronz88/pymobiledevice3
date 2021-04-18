@@ -15,18 +15,18 @@ import click
 
 from pymobiledevice3.afc import AFCShell, AFCClient
 from pymobiledevice3.tcp_forwarder import TcpForwarder
-from pymobiledevice3.services.diagnostics_service import DiagnosticsService
-from pymobiledevice3.services.house_arrest_service import HouseArrestService
-from pymobiledevice3.services.installation_proxy_service import InstallationProxyService
+from pymobiledevice3.services.diagnostics import DiagnosticsService
+from pymobiledevice3.services.house_arrest import HouseArrestService
+from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.mobile_config_service import MobileConfigService
-from pymobiledevice3.services.mobile_image_mounter_service import MobileImageMounterService
-from pymobiledevice3.services.notification_proxy_service import NotificationProxyService
-from pymobiledevice3.services.os_trace_service import OsTraceService
-from pymobiledevice3.services.pcapd_service import PcapdService
-from pymobiledevice3.services.screenshot_service import ScreenshotService
+from pymobiledevice3.services.mobile_config import MobileConfigService
+from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
+from pymobiledevice3.services.notification_proxy import NotificationProxyService
+from pymobiledevice3.services.os_trace import OsTraceService
+from pymobiledevice3.services.pcapd import PcapdService
+from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.dvt_secure_socket_proxy import DvtSecureSocketProxyService
-from pymobiledevice3.services.syslog_service import SyslogService
+from pymobiledevice3.services.syslog import SyslogService
 
 coloredlogs.install(level=logging.DEBUG)
 
