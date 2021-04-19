@@ -240,7 +240,7 @@ class USBMux(object):
             self.version = 1
         self.devices = self.listener.devices
 
-    def process(self, timeout=0.01):
+    def process(self, timeout=0):
         self.listener.process(timeout)
 
     def connect(self, device, port):

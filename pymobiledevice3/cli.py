@@ -12,7 +12,7 @@ from daemonize import Daemonize
 from pygments import highlight, lexers, formatters
 from termcolor import colored
 
-from pymobiledevice3.afc import AFCShell, AFCClient
+from pymobiledevice3.services.afc import AfcShell, AfcService
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.diagnostics import DiagnosticsService
 from pymobiledevice3.services.dvt_secure_socket_proxy import DvtSecureSocketProxyService
@@ -371,7 +371,7 @@ def crash(lockdown, action):
         ack = b'ping\x00'
         assert ack == lockdown.start_service('com.apple.crashreportmover').recv_exact(len(ack))
     elif action == 'shell':
-        AFCShell(lockdown=lockdown, afcname='com.apple.crashreportcopymobile').cmdloop()
+        AfcShell(lockdown=lockdown, afcname='com.apple.crashreportcopymobile').cmdloop()
 
 
 @cli.group()
@@ -383,7 +383,7 @@ def afc():
 @afc.command('shell', cls=Command)
 def afc_shell(lockdown):
     """ open an AFC shell rooted at /var/mobile/Media """
-    AFCShell(lockdown=lockdown, afcname='com.apple.afc').cmdloop()
+    AfcShell(lockdown=lockdown, afcname='com.apple.afc').cmdloop()
 
 
 @afc.command('pull', cls=Command)
@@ -391,7 +391,7 @@ def afc_shell(lockdown):
 @click.argument('local_file', type=click.File('wb'))
 def afc_pull(lockdown, remote_file, local_file):
     """ open an AFC shell rooted at /var/mobile/Media """
-    local_file.write(AFCClient(lockdown=lockdown).get_file_contents(remote_file))
+    local_file.write(AfcService(lockdown=lockdown).get_file_contents(remote_file))
 
 
 @afc.command('push', cls=Command)
@@ -399,21 +399,21 @@ def afc_pull(lockdown, remote_file, local_file):
 @click.argument('remote_file', type=click.Path(exists=False))
 def afc_push(lockdown, local_file, remote_file):
     """ open an AFC shell rooted at /var/mobile/Media """
-    AFCClient(lockdown=lockdown).set_file_contents(remote_file, local_file.read())
+    AfcService(lockdown=lockdown).set_file_contents(remote_file, local_file.read())
 
 
 @afc.command('ls', cls=Command)
 @click.argument('remote_file', type=click.Path(exists=False))
 def afc_ls(lockdown, remote_file):
     """ open an AFC shell rooted at /var/mobile/Media """
-    pprint(AFCClient(lockdown=lockdown).read_directory(remote_file))
+    pprint(AfcService(lockdown=lockdown).listdir(remote_file))
 
 
 @afc.command('rm', cls=Command)
 @click.argument('remote_file', type=click.Path(exists=False))
 def afc_rm(lockdown, remote_file):
     """ open an AFC shell rooted at /var/mobile/Media """
-    AFCClient(lockdown=lockdown).file_remove(remote_file)
+    AfcService(lockdown=lockdown).rm(remote_file)
 
 
 @cli.command(cls=Command)

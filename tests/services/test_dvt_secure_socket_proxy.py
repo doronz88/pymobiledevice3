@@ -1,5 +1,3 @@
-# -*- coding:utf-8 -*-
-
 from pymobiledevice3.services.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 
 

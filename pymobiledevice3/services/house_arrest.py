@@ -1,10 +1,10 @@
 import logging
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.afc import AFCClient, AFCShell
+from pymobiledevice3.services.afc import AfcService, AfcShell
 
 
-class HouseArrestService(AFCClient):
+class HouseArrestService(AfcService):
     SERVICE_NAME = 'com.apple.mobile.house_arrest'
 
     def __init__(self, lockdown: LockdownClient):
@@ -25,4 +25,4 @@ class HouseArrestService(AFCClient):
     def shell(self, application_id, cmd="VendContainer"):
         res = self.send_command(application_id, cmd)
         if res:
-            AFCShell(self.lockdown).cmdloop()
+            AfcShell(self.lockdown).cmdloop()

@@ -40,7 +40,9 @@ class FileRelayService(object):
         self.logger.info("Disconecting...")
         self.service.close()
 
-    def request_sources(self, sources=["UserDatabases"]):
+    def request_sources(self, sources=None):
+        if sources is None:
+            sources = ["UserDatabases"]
         self.service.send_plist({"Sources": sources})
         while 1:
             res = self.service.recv_plist()
