@@ -52,6 +52,14 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
 
 # Installation
 
+Install latest version using `pip`:
+
+```shell
+python3 -m pip install --user -U pymobiledevice3
+```
+
+Or install the latest version from sources:
+
 ```shell
 git clone git@github.com:doronz88/pymobiledevice3.git
 cd pymobiledevice3
