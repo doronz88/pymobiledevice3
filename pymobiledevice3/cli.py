@@ -48,6 +48,9 @@ def print_object(buf, colored=True):
 class Command(click.Command):
     @staticmethod
     def udid(ctx, param, value):
+        if '_PYMOBILEDEVICE3_COMPLETE' in os.environ:
+            # prevent lockdown connection establishment when in autocomplete mode
+            return
         return LockdownClient(udid=value)
 
     def __init__(self, *args, **kwargs):
