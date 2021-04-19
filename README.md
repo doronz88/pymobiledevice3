@@ -2,6 +2,22 @@
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/doronz88/pymobiledevice3.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/doronz88/pymobiledevice3/context:python)
 
+- [Description](#description)
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+  * [Sending your own messages](#sending-your-own-messages)
+    + [Lockdown messages](#lockdown-messages)
+    + [Instruments messages](#instruments-messages)
+  * [Example](#example)
+- [Lockdown services](#lockdown-services)
+  * [`com.apple.instruments.remoteserver.DVTSecureSocketProxy`](#comappleinstrumentsremoteserverdvtsecuresocketproxy)
+  * [`com.apple.os_trace_relay`](#comappleos_trace_relay)
+  * [`com.apple.mobile.diagnostics_relay`](#comapplemobilediagnostics_relay)
+  * [`com.apple.mobile.file_relay`](#comapplemobilefile_relay)
+  * [`com.apple.pcapd`](#comapplepcapd)
+
+
 # Description
 
 `pymobiledevice3` is a fork from `pymobiledevice`, which is a cross-platform implementation of the mobiledevice library
