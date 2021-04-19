@@ -194,7 +194,7 @@ return_value, auxiliary = developer.recv_message()
 
 ## Example
 
-![](example.gif)
+![](https://github.com/doronz88/pymobiledevice3/blob/master/example.gif?raw=true)
 
 # Lockdown services
 
