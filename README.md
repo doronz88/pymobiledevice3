@@ -171,8 +171,8 @@ return_value, auxiliary = developer.recv_message()
 
 Support | Service | Process | Description
 --------|---------|---------|----------------------
-DONE |  `com.apple.afc` | `/usr/libexec/afcd --xpc -d /private/var/mobile/Media` | File access for `/var/mobile/Media`
-DONE | `com.apple.crashreportcopymobile` | `/usr/libexec/afcd --xpc--service-name com.apple.crashreportcopymobile -d /private/var/mobile/Library/Logs/CrashReporter` | File access for `/var/mobile/Library/Logs/CrashReports`
+DONE |  `com.apple.afc` | `/usr/libexec/afcd` | File access for `/var/mobile/Media`
+DONE | `com.apple.crashreportcopymobile` | `/usr/libexec/afcd -r` | File access for `/var/mobile/Library/Logs/CrashReports`
 DONE | `com.apple.pcapd` | `/usr/libexec/pcapd` | Sniff device's network traffic
 DONE | `com.apple.syslog_relay` | `/usr/libexec/diagnosticd` | Just streams syslog lines as raw strings
 DONE | `com.apple.os_trace_relay` | `/usr/libexec/diagnosticd` | More extensive syslog monitoring
