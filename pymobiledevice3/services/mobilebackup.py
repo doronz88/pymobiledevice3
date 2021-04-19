@@ -49,11 +49,11 @@ class MobileBackup(object):
             name = codecs.decode(name)
         if "../" in name:
             raise Exception("HAX, sneaky dots in path %s" % name)
-        if not name.startswith(self.backupPath):
+        if not name.startswith(self.backup_path):
             if name.startswith(self.udid):
-                name = os.path.join(self.backupPath, name)
+                name = os.path.join(self.backup_path, name)
                 return name
-            name = os.path.join(self.backupPath, self.udid, name)
+            name = os.path.join(self.backup_path, self.udid, name)
             return name
         return name
 
@@ -100,7 +100,7 @@ class MobileBackup(object):
 
         info["iTunes Settings"] = self.lockdown.get_value("com.apple.iTunes")
         self.logger.info("Creating: %s", os.path.join(self.udid, "Info.plist"))
-        self.write_file(os.path.join(self.udid, "Info.plist"), plistlib.writePlistToString(info))
+        self.write_file(os.path.join(self.udid, "Info.plist"), plistlib.dumps(info))
 
     def ping(self, message):
         self.service.send_plist(["DLMessagePing", message])

@@ -3,6 +3,7 @@
 import plistlib
 import datetime
 import logging
+import posixpath
 import stat
 import os
 
@@ -31,57 +32,53 @@ class DeviceVersionNotSupported(Exception):
         return "Device version not supported, please use mobilebackup"
 
 
-class MobileBackup2(MobileBackup):
+class MobileBackup2Service(MobileBackup):
     service = None
 
-    def __init__(self, lockdown: LockdownClient = None, backup_path=None, password=""):
-        super().__init__(lockdown)
+    def __init__(self, lockdown: LockdownClient, backup_path='backups', password=''):
+        # super().__init__(lockdown)
         self.logger = logging.getLogger(__name__)
-        self.backupPath = backup_path if backup_path else "backups"
+        self.backup_path = backup_path
         self.password = password
-        self.lockdown = lockdown if lockdown else LockdownClient(udid=udid)
-        if not self.lockdown:
-            raise Exception("Unable to start lockdown")
+        self.lockdown = lockdown
+        product_version = self.lockdown.get_value("", "ProductVersion")
+        if product_version and int(product_version[:product_version.find('.')]) < 5:
+            raise DeviceVersionNotSupported()
 
-        ProductVersion = self.lockdown.get_value("", "ProductVersion")
-        if ProductVersion and int(ProductVersion[:ProductVersion.find('.')]) < 5:
-            raise DeviceVersionNotSupported
+        self.udid = self.lockdown.get_value("", "UniqueDeviceID")
+        self.will_encrypt = self.lockdown.get_value("com.apple.mobile.backup", "WillEncrypt")
+        self.escrow_bag = self.lockdown.get_value('', 'EscrowBag')
+        self.afc = AfcService(self.lockdown)  # We need this to create lock files
+        self.service = self.lockdown.start_service("com.apple.mobilebackup2")
+
         self.start()
 
     def start(self):
-        self.udid = lockdown.get_value("", "UniqueDeviceID")
-        self.willEncrypt = lockdown.get_value("com.apple.mobile.backup", "WillEncrypt")
-        self.escrowBag = lockdown.get_value('', 'EscrowBag')
-        self.afc = AfcService(self.lockdown)  # We need this to create lock files
-        self.service = self.lockdown.start_service("com.apple.mobilebackup2")
-        if not self.service:
-            raise Exception("MobileBackup2 init error : Could not start com.apple.mobilebackup2")
+        if not os.path.isdir(self.backup_path):
+            os.makedirs(self.backup_path, 0o0755)
 
-        if not os.path.isdir(self.backupPath):
-            os.makedirs(self.backupPath, 0o0755)
+        self.logger.info("Starting new com.apple.mobilebackup2 service with working dir: %s", self.backup_path)
 
-        self.logger.info("Starting new com.apple.mobilebackup2 service with working dir: %s", self.backupPath)
-
-        DLMessageVersionExchange = self.service.recv_plist()
-        version_major = DLMessageVersionExchange[1]
+        dl_message_version_exchange = self.service.recv_plist()
+        version_major = dl_message_version_exchange[1]
         self.service.send_plist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
-        DLMessageDeviceReady = self.service.recv_plist()
-        if DLMessageDeviceReady and DLMessageDeviceReady[0] == "DLMessageDeviceReady":
+        dl_message_device_ready = self.service.recv_plist()
+        if dl_message_device_ready and dl_message_device_ready[0] == "DLMessageDeviceReady":
             res = self.version_exchange()
             protocol_version = res.get('ProtocolVersion')
             self.logger.info("Negotiated Protocol Version %s", protocol_version)
         else:
-            raise Exception("MobileBackup2 init error %s", DLMessageDeviceReady)
+            raise Exception("MobileBackup2 init error %s", dl_message_device_ready)
 
-    def __del__(self):
+    def close(self):
         if self.service:
             self.service.send_plist(["DLMessageDisconnect", "___EmptyParameterString___"])
 
-    def internal_mobilebackup2_send_message(self, name, data):
+    def _send_message(self, name, data):
         data["MessageName"] = name
         self.device_link_service_send_process_message(data)
 
-    def internal_mobilebackup2_receive_message(self, name=None):
+    def _recv_message(self, name=None):
         res = self.device_link_service_receive_process_message()
         if res:
             if name and res["MessageName"] != name:
@@ -89,41 +86,41 @@ class MobileBackup2(MobileBackup):
             return res
 
     def version_exchange(self):
-        self.internal_mobilebackup2_send_message("Hello",
-                                                 {"SupportedProtocolVersions": [2.0, 2.1]})
+        self._send_message("Hello",
+                           {"SupportedProtocolVersions": [2.0, 2.1]})
 
-        return self.internal_mobilebackup2_receive_message("Response")
+        return self._recv_message("Response")
 
-    def mobilebackup2_send_request(self, request, target, source, options=None):
+    def _send_request(self, request, target, source, options=None):
         if options is None:
             options = {}
         d = {"TargetIdentifier": target,
              "SourceIdentifier": source,
              "Options": options}
 
-        self.internal_mobilebackup2_send_message(request, d)
+        self._send_message(request, d)
 
-    def mobilebackup2_receive_message(self):
+    def recv_plist(self):
         return self.service.recv_plist()
 
-    def mobilebackup2_send_status_response(self, status_code,
-                                           status1="___EmptyParameterString___",
-                                           status2=None):
+    def _send_status_response(self, status_code,
+                              status1="___EmptyParameterString___",
+                              status2=None):
         if status2 is None:
             status2 = {}
         a = ["DLMessageStatusResponse", status_code, status1, status2]
         self.service.send_plist(a)
 
-    def mb2_handle_free_disk_space(self, msg):
-        s = os.statvfs(self.backupPath)
+    def _handle_free_disk_space(self, msg):
+        s = os.statvfs(self.backup_path)
         freeSpace = s.f_bsize * s.f_bavail
         res = ["DLMessageStatusResponse", 0, "___EmptyParameterString___", freeSpace]
         self.service.send_plist(res)
 
-    def mb2_multi_status_add_file_error(self, errplist, path, error_code, error_message):
+    def _multi_status_add_file_error(self, errplist, path, error_code, error_message):
         errplist[path] = {"DLFileErrorCode": error_code, "DLFileErrorString": error_message}
 
-    def mb2_handle_copy_item(self, msg):
+    def _handle_copy_item(self, msg):
         src = self.check_filename(msg[1])
         dst = self.check_filename(msg[2])
         if os.path.isfile(src):
@@ -131,12 +128,12 @@ class MobileBackup2(MobileBackup):
             self.write_file(dst, data)
         else:
             os.makedirs(dst)
-        self.mobilebackup2_send_status_response(0)
+        self._send_status_response(0)
 
-    def mb2_handle_send_file(self, filename, errplist):
+    def _handle_send_file(self, filename, errplist):
         self.service.send_raw(filename)
         if not filename.startswith(self.udid):
-            filename = self.udid + "/" + filename
+            filename = os.path.join(self.udid, filename)
 
         data = self.read_file(self.check_filename(filename))
         if data is not None:
@@ -147,27 +144,27 @@ class MobileBackup2(MobileBackup):
         else:
             self.logger.warning("File %s requested from device not found", filename)
             self.service.send_raw(chr(CODE_ERROR_LOCAL))
-            self.mb2_multi_status_add_file_error(errplist, filename,
-                                                 ERROR_ENOENT, "Could not find the droid you were looking for ;)")
+            self._multi_status_add_file_error(errplist, filename,
+                                              ERROR_ENOENT, "Could not find the droid you were looking for ;)")
 
-    def mb2_handle_send_files(self, msg):
+    def _handle_send_files(self, msg):
         err_plist = {}
         for f in msg[1]:
-            self.mb2_handle_send_file(f, err_plist)
+            self._handle_send_file(f, err_plist)
         msg = b'\x00\x00\x00\x00'
         self.service.send(msg)
         if len(err_plist):
-            self.mobilebackup2_send_status_response(-13, 'Multi status', err_plist)
+            self._send_status_response(-13, 'Multi status', err_plist)
         else:
-            self.mobilebackup2_send_status_response(0)
+            self._send_status_response(0)
 
-    def mb2_handle_list_directory(self, msg):
+    def _handle_list_directory(self, msg):
         path = msg[1]
         self.logger.info("List directory: %s" % path)
         dirlist = {}
         if path.find("../") != -1:
             raise Exception(f'HAX, sneaky dots in path {path}')
-        for root, dirs, files in os.walk(os.path.join(self.backupPath, path)):
+        for root, dirs, files in os.walk(os.path.join(self.backup_path, path)):
             for fname in files:
                 fpath = os.path.join(root, fname)
                 finfo = {}
@@ -181,16 +178,16 @@ class MobileBackup2(MobileBackup):
                 finfo["DLFileSize"] = st.st_size
                 finfo["DLFileModificationDate"] = st.st_mtime
                 dirlist[fname] = finfo
-        self.mobilebackup2_send_status_response(0, status2=dirlist)
+        self._send_status_response(0, status2=dirlist)
 
-    def mb2_handle_make_directory(self, msg):
+    def _handle_make_directory(self, msg):
         dirname = self.check_filename(msg[1])
         self.logger.info("Creating directory %s", dirname)
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
-        self.mobilebackup2_send_status_response(0, "")
+        self._send_status_response(0, "")
 
-    def mb2_handle_receive_files(self, msg):
+    def _handle_receive_files(self, msg):
         done = 0
         while not done:
             device_filename = self.service.recv_raw()
@@ -218,16 +215,16 @@ class MobileBackup2(MobileBackup):
                     self.logger.warning(msg)
                     # break
             last_code = code
-        self.mobilebackup2_send_status_response(0)
+        self._send_status_response(0)
 
-    def mb2_handle_move_files(self, msg):
+    def _handle_move_files(self, msg):
         self.logger.info("Moving %d files", len(msg[1]))
         for k, v in msg[1].items():
             self.logger.info("Renaming:\n\t%s \n\tto %s", self.check_filename(k), self.check_filename(v))
             os.rename(self.check_filename(k), self.check_filename(v))
-        self.mobilebackup2_send_status_response(0)
+        self._send_status_response(0)
 
-    def mb2_handle_remove_files(self, msg):
+    def _handle_remove_files(self, msg):
         self.logger.info("Removing %d files", len(msg[1]))
         for filename in msg[1]:
             self.logger.info("Removing %s", self.check_filename(filename))
@@ -237,11 +234,11 @@ class MobileBackup2(MobileBackup):
                     os.unlink(filename)
             except Exception as e:
                 self.logger.error(e)
-        self.mobilebackup2_send_status_response(0)
+        self._send_status_response(0)
 
     def work_loop(self):
         while True:
-            msg = self.mobilebackup2_receive_message()
+            msg = self.recv_plist()
             if not msg:
                 break
 
@@ -257,19 +254,19 @@ class MobileBackup2(MobileBackup):
                                "DLMessageDisconnect"])
 
             if msg[0] == "DLMessageDownloadFiles":
-                self.mb2_handle_send_files(msg)
+                self._handle_send_files(msg)
             elif msg[0] == "DLContentsOfDirectory":
-                self.mb2_handle_list_directory(msg)
+                self._handle_list_directory(msg)
             elif msg[0] == "DLMessageCreateDirectory":
-                self.mb2_handle_make_directory(msg)
+                self._handle_make_directory(msg)
             elif msg[0] == "DLMessageUploadFiles":
-                self.mb2_handle_receive_files(msg)
+                self._handle_receive_files(msg)
             elif msg[0] in ["DLMessageMoveFiles", "DLMessageMoveItems"]:
-                self.mb2_handle_move_files(msg)
+                self._handle_move_files(msg)
             elif msg[0] in ["DLMessageRemoveFiles", "DLMessageRemoveItems"]:
-                self.mb2_handle_remove_files(msg)
+                self._handle_remove_files(msg)
             elif msg[0] == "DLMessageCopyItem":
-                self.mb2_handle_copy_item(msg)
+                self._handle_copy_item(msg)
             elif msg[0] == "DLMessageProcessMessage":
                 errcode = msg[1].get("ErrorCode")
                 if errcode == 0:
@@ -295,7 +292,7 @@ class MobileBackup2(MobileBackup):
                 self.logger.error("Unknown error: %d : %s", errcode, msg[1].get("ErrorDescription", ""))
                 raise Exception('Unknown error ' + str(errcode) + msg[1].get("ErrorDescription", ""))
             elif msg[0] == "DLMessageGetFreeDiskSpace":
-                self.mb2_handle_free_disk_space(msg)
+                self._handle_free_disk_space(msg)
             elif msg[0] == "DLMessageDisconnect":
                 break
 
@@ -351,34 +348,35 @@ class MobileBackup2(MobileBackup):
 
         info["Applications"] = apps_data
         info["Installed Applications"] = installed_apps
+
         # Handling itunes files
-        i_tunes_files = ["ApertureAlbumPrefs", "IC-Info.sidb", "IC-Info.sidv", "PhotosFolderAlbums",
-                         "PhotosFolderName", "PhotosFolderPrefs", "VoiceMemos.plist", "iPhotoAlbumPrefs",
-                         "iTunesApplicationIDs", "iTunesPrefs", "iTunesPrefs.plist"]
         i_tunes_files_dict = {}
-        for i in i_tunes_files:
-            data = self.afc.get_file_contents("/iTunes_Control/iTunes/" + i)
-            if data:
-                i_tunes_files_dict[i] = data
+        itunes_directory = posixpath.join('/', 'iTunes_Control', 'iTunes')
+        for filename in self.afc.listdir(itunes_directory):
+            if filename in ('.', '..'):
+                continue
+            filename = posixpath.join(itunes_directory, filename)
+            data = self.afc.get_file_contents(filename)
+            i_tunes_files_dict[filename] = data
 
         info["iTunesFiles"] = i_tunes_files_dict
+
         i_books_data2 = self.afc.get_file_contents("/Books/iBooksData2.plist")
-        if i_books_data2:
-            info["iBooks Data 2"] = i_books_data2
+        info["iBooks Data 2"] = i_books_data2
 
         info["iTunes Settings"] = self.lockdown.get_value("com.apple.iTunes")
         self.logger.info("Creating %s", os.path.join(self.udid, "Info.plist"))
-        self.write_file(os.path.join(self.udid, "Info.plist"), plistlib.writePlistToString(info))
+        self.write_file(os.path.join(self.udid, "Info.plist"), plistlib.dumps(info))
 
     def backup(self, full_backup=True):
         # TODO set_sync_lock
-        self.logger.info("Starting %s backup...", ("Encrypted " if self.willEncrypt else ""))
-        if not os.path.isdir(os.path.join(self.backupPath, self.udid)):
-            os.makedirs(os.path.join(self.backupPath, self.udid))
+        self.logger.info("Starting %s backup...", ("Encrypted " if self.will_encrypt else ""))
+        if not os.path.isdir(os.path.join(self.backup_path, self.udid)):
+            os.makedirs(os.path.join(self.backup_path, self.udid))
         self.logger.info("Backup mode: %s", "Full backup" if full_backup else "Incremental backup")
         self.create_info_plist()
         options = {"ForceFullBackup": full_backup}
-        self.mobilebackup2_send_request("Backup", self.udid, options)
+        self._send_request("Backup", self.udid, options)
         self.work_loop()
 
     def restore(self, options=None, password=None):
@@ -390,7 +388,7 @@ class MobileBackup2(MobileBackup):
                        "RestoreDontCopyBackup": True,
                        "RestorePreserveSettings": True}
         self.logger.info("Starting restoration...")
-        m = os.path.join(self.backupPath, self.udid, "Manifest.plist")
+        m = os.path.join(self.backup_path, self.udid, "Manifest.plist")
         try:
             with open(m, 'rb') as f:
                 manifest = plistlib.load(f)
@@ -404,39 +402,39 @@ class MobileBackup2(MobileBackup):
             else:
                 self.password = input()
             options["Password"] = self.password
-        self.mobilebackup2_send_request("Restore", self.udid, self.udid, options)
+        self._send_request("Restore", self.udid, self.udid, options)
         self.work_loop()
 
     def info(self, options=None):
         if options is None:
             options = {}
         source_udid = self.udid
-        self.mobilebackup2_send_request("Info", self.udid, source_udid, options)
+        self._send_request("Info", self.udid, source_udid, options)
         self.work_loop()
 
     def list(self, options=None):
         if options is None:
             options = {}
         source_udid = self.udid
-        self.mobilebackup2_send_request("List", self.udid, source_udid, options)
+        self._send_request("List", self.udid, source_udid, options)
         self.work_loop()
 
     def changepw(self, oldpw, newpw):
         options = {"OldPassword": oldpw,
                    "NewPassword": newpw}
 
-        self.mobilebackup2_send_request("ChangePassword", self.udid, "", options)
+        self._send_request("ChangePassword", self.udid, "", options)
         self.work_loop()
 
     def unback(self, options=None):
         if options is None:
             options = {"Password": None}
         source_udid = self.udid
-        self.mobilebackup2_send_request("Unback", self.udid, source_udid, options)
+        self._send_request("Unback", self.udid, source_udid, options)
         self.work_loop()
 
     def enableCloudBackup(self, options=None):
         if options is None:
             options = {"CloudBackupState": False}
-        self.mobilebackup2_send_request("EnableCloudBackup", self.udid, options)
+        self._send_request("EnableCloudBackup", self.udid, options)
         self.work_loop()
