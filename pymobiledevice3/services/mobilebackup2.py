@@ -10,6 +10,7 @@ import os
 from time import mktime, gmtime
 from uuid import uuid4
 
+from pymobiledevice3.exceptions import DeviceVersionNotSupportedError
 from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.springboard import SpringBoardServicesService
@@ -27,23 +28,18 @@ ERROR_EEXIST = -7
 LOCK_ATTEMPTS = 10
 
 
-class DeviceVersionNotSupported(Exception):
-    def __str__(self):
-        return "Device version not supported, please use mobilebackup"
-
-
 class MobileBackup2Service(MobileBackup):
     service = None
 
     def __init__(self, lockdown: LockdownClient, backup_path='backups', password=''):
-        # super().__init__(lockdown)
+        super().__init__(lockdown)  # TODO: fix bugs
         self.logger = logging.getLogger(__name__)
         self.backup_path = backup_path
         self.password = password
         self.lockdown = lockdown
         product_version = self.lockdown.get_value("", "ProductVersion")
         if product_version and int(product_version[:product_version.find('.')]) < 5:
-            raise DeviceVersionNotSupported()
+            raise DeviceVersionNotSupportedError()
 
         self.udid = self.lockdown.get_value("", "UniqueDeviceID")
         self.will_encrypt = self.lockdown.get_value("com.apple.mobile.backup", "WillEncrypt")

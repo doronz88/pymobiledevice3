@@ -3,7 +3,7 @@ import socket
 import select
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.service_connection import ServiceConnection, ConnectionFailedException
+from pymobiledevice3.service_connection import ServiceConnection, ConnectionFailedError
 
 
 class TcpForwarder:
@@ -82,7 +82,7 @@ class TcpForwarder:
 
         try:
             remote_connection = ServiceConnection.create(self.lockdown.udid, self.dst_port).socket
-        except ConnectionFailedException:
+        except ConnectionFailedError:
             self.logger.error(f'failed to connect to port: {self.dst_port}')
             local_connection.close()
             return

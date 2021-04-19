@@ -1,17 +1,10 @@
-#!/usr/bin/python
 import plistlib
 import select
 import socket
 import struct
 import sys
 
-
-class MuxError(Exception):
-    pass
-
-
-class MuxVersionError(MuxError):
-    pass
+from pymobiledevice3.exceptions import MuxError, MuxVersionError
 
 
 class SafeStreamSocket:
@@ -24,7 +17,7 @@ class SafeStreamSocket:
         while totalsent < len(msg):
             sent = self.sock.send(msg[totalsent:])
             if sent == 0:
-                raise MuxError("socket connection broken")
+                raise MuxError('socket connection broken')
             totalsent = totalsent + sent
 
     def recv(self, size):
@@ -33,7 +26,7 @@ class SafeStreamSocket:
             chunk = self.sock.recv(size - len(msg))
             empty_chunk = b''
             if chunk == empty_chunk:
-                raise MuxError("socket connection broken")
+                raise MuxError('socket connection broken')
             msg = msg + chunk
         return msg
 
