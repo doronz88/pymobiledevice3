@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import datetime
 import json
 import logging
 import os
@@ -8,6 +9,7 @@ from pprint import pprint
 
 import click
 import coloredlogs
+import hexdump
 from daemonize import Daemonize
 from pygments import highlight, lexers, formatters
 from termcolor import colored
@@ -191,13 +193,13 @@ def profile_remove(lockdown, name):
     pprint(MobileConfigService(lockdown=lockdown).remove_profile(name))
 
 
-@cli.group()
-def lockdown():
+@cli.group('lockdown')
+def lockdown_group():
     """ lockdown options """
     pass
 
 
-@lockdown.command('forward', cls=Command)
+@lockdown_group.command('forward', cls=Command)
 @click.argument('src_port', type=click.IntRange(1, 0xffff))
 @click.argument('dst_port', type=click.IntRange(1, 0xffff))
 @click.option('-d', '--daemonize', is_flag=True)
@@ -213,20 +215,20 @@ def lockdown_forward(lockdown, src_port, dst_port, daemonize):
         forwarder.start()
 
 
-@lockdown.command('recovery', cls=Command)
+@lockdown_group.command('recovery', cls=Command)
 def lockdown_recovery(lockdown):
     """ enter recovery """
     pprint(lockdown.enter_recovery())
 
 
-@lockdown.command('service', cls=Command)
+@lockdown_group.command('service', cls=Command)
 @click.argument('service_name')
 def lockdown_service(lockdown, service_name):
     """ send-receive raw service messages """
     lockdown.start_service(service_name).shell()
 
 
-@lockdown.command('info', cls=Command)
+@lockdown_group.command('info', cls=Command)
 def lockdown_info(lockdown):
     """ query all lockdown values """
     pprint(lockdown.all_values)
@@ -354,9 +356,36 @@ def syslog_archive(lockdown, out):
 
 @cli.command(cls=Command)
 @click.argument('out', type=click.File('wb'), required=False)
-def pcap(lockdown, out):
+@click.option('-c', '--count', type=click.INT, default=-1, help='Number of packets to sniff. Omit to endless sniff.')
+@click.option('--process', default=None, help='Process to filter. Omit for all.')
+@click.option('--nocolor', is_flag=True)
+def pcap(lockdown, out, count, process, nocolor):
     """ sniff device traffic """
-    PcapdService(lockdown=lockdown).watch(out=out)
+    service = PcapdService(lockdown=lockdown)
+    packets_generator = service.watch(packets_count=count, process=process)
+    if out is not None:
+        service.write_to_pcap(out, packets_generator)
+        return
+
+    formatter = formatters.TerminalTrueColorFormatter(style='native')
+
+    for packet in packets_generator:
+        date = datetime.datetime.fromtimestamp(packet.seconds + (packet.microseconds / 1000000))
+        data = (
+            f'{date}: '
+            f'Process {packet.comm} ({packet.pid}), '
+            f'Interface: {packet.interface_name} ({packet.interface_type.name}), '
+            f'Family: {packet.protocol_family.name}'
+        )
+        if nocolor:
+            print(data)
+        else:
+            print(highlight(data, lexers.HspecLexer(), formatter), end='')
+        hex_dump = hexdump.hexdump(packet.data, result='return')
+        if nocolor:
+            print(hex_dump, end='\n\n')
+        else:
+            print(highlight(hex_dump, lexers.HexdumpLexer(), formatter))
 
 
 @cli.command(cls=Command)
