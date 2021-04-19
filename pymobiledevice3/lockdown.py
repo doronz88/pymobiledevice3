@@ -193,7 +193,6 @@ class LockdownClient(object):
             self.service.send_plist(validate_pair)
             r = self.service.recv_plist()
             if (not r) or ('Error' in r):
-                pair_record = None
                 self.logger.error("ValidatePair fail", validate_pair)
                 return False
 

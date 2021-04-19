@@ -111,14 +111,6 @@ def make_cert(req, caPkey):
     return certificate
 
 
-def ca():
-    key = generate_rsa_key()
-    pkey = make_pkey(key)
-    req = make_request(pkey)
-    cert = make_cert(req, pkey)
-    return (cert, pkey)
-
-
 def ca_do_everything(DevicePublicKey):
     rsa = generate_rsa_key()
     privateKey = make_pkey(rsa)
