@@ -9,7 +9,7 @@ import os
 from time import mktime, gmtime
 from uuid import uuid4
 
-from pymobiledevice3.afc import AFCClient
+from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.springboard import SpringBoardServicesService
 from pymobiledevice3.lockdown import LockdownClient
@@ -52,7 +52,7 @@ class MobileBackup2(MobileBackup):
         self.udid = lockdown.get_value("", "UniqueDeviceID")
         self.willEncrypt = lockdown.get_value("com.apple.mobile.backup", "WillEncrypt")
         self.escrowBag = lockdown.get_value('', 'EscrowBag')
-        self.afc = AFCClient(self.lockdown)  # We need this to create lock files
+        self.afc = AfcService(self.lockdown)  # We need this to create lock files
         self.service = self.lockdown.start_service("com.apple.mobilebackup2")
         if not self.service:
             raise Exception("MobileBackup2 init error : Could not start com.apple.mobilebackup2")

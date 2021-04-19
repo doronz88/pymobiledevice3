@@ -1,21 +1,29 @@
-# -*- coding:utf-8 -*-
-"""
-AFC test case
-"""
+from pymobiledevice3.services.afc import AfcService
 
-from pymobiledevice3.afc import AFCClient, AFC_FOPEN_RW, AFC_FOPEN_RDONLY
+TEST_FILENAME = 'test'
 
 
 def test_file_read_write(lockdown):
-    afc = AFCClient(lockdown)
+    afc = AfcService(lockdown)
     body = b'data'
 
-    handle = afc.file_open('test', AFC_FOPEN_RW)
-    afc.file_write(handle, body)
-    afc.file_close(handle)
+    afc.set_file_contents(TEST_FILENAME, body)
+    assert afc.get_file_contents(TEST_FILENAME) == body
 
-    handle = afc.file_open('test', AFC_FOPEN_RDONLY)
-    read_data = afc.file_read(handle, len(body))
-    afc.file_close(handle)
 
-    assert body == read_data
+def test_ls(lockdown):
+    afc = AfcService(lockdown)
+    filenames = afc.listdir('/')
+    assert 'DCIM' in filenames
+
+
+def test_rm(lockdown):
+    afc = AfcService(lockdown)
+    afc.set_file_contents(TEST_FILENAME, b'')
+    filenames = afc.listdir('/')
+    assert TEST_FILENAME in filenames
+
+    afc.rm(TEST_FILENAME)
+
+    filenames = afc.listdir('/')
+    assert TEST_FILENAME not in filenames

@@ -5,7 +5,7 @@ import logging
 import codecs
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.afc import AFCClient
+from pymobiledevice3.services.afc import AfcService
 
 MOBILEBACKUP_E_SUCCESS = 0
 MOBILEBACKUP_E_INVALID_ARG = -1
@@ -84,9 +84,9 @@ class MobileBackup(object):
                 "IMEI": root_node.get("InternationalMobileEquipmentIdentity") or "",
                 "Last Backup Date": datetime.datetime.now()}
 
-        afc = AFCClient(self.lockdown)
+        afc = AfcService(self.lockdown)
         iTunesFilesDict = {}
-        iTunesFiles = afc.read_directory("/iTunes_Control/iTunes/")
+        iTunesFiles = afc.listdir("/iTunes_Control/iTunes/")
 
         for i in iTunesFiles:
             data = afc.get_file_contents("/iTunes_Control/iTunes/" + i)

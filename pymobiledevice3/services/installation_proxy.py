@@ -3,7 +3,7 @@ import logging
 import os
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.afc import AFCClient
+from pymobiledevice3.services.afc import AfcService
 
 client_options = {
     "SkipUninstall": False,
@@ -54,7 +54,7 @@ class InstallationProxyService(object):
         if options is None:
             options = {}
         remote_path = posixpath.join('/', os.path.basename(ipa_path))
-        afc = AFCClient(self.lockdown)
+        afc = AfcService(self.lockdown)
         afc.set_file_contents(remote_path, open(ipa_path, "rb").read())
         cmd = {"Command": cmd,
                "ClientOptions": options,
