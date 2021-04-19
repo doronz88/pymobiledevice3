@@ -52,7 +52,21 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
 
 # Installation
 
-Install latest version using `pip`:
+Make sure `swig` is installed for `M2Crypto` installation:
+
+On MAC:
+
+```shell
+brew install swig
+```
+
+On Linux:
+
+```shell
+sudo apt install swig
+```
+
+Now you can install the last released version using `pip`:
 
 ```shell
 python3 -m pip install --user -U pymobiledevice3
