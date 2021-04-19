@@ -62,7 +62,7 @@ class TcpForwarder:
     def _handle_data(self, from_sock):
         data = from_sock.recv(1024)
 
-        if data is None:
+        if len(data) == 0:
             # no data means socket was closed
             self._handle_close_or_error(from_sock)
             return
