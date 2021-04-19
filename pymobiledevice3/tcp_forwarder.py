@@ -21,21 +21,18 @@ class TcpForwarder:
         # socket to its remote socket and vice versa
         self.connections = {}
 
-    def start(self):
+    def start(self, address='0.0.0.0'):
         """
         forward each connection from given local machine port to remote device port
         """
         # create local tcp server socket
         self.server_socket = socket.socket()
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.bind(('0.0.0.0', self.src_port))
+        self.server_socket.bind((address, self.src_port))
         self.server_socket.listen(self.MAX_FORWARDED_CONNECTIONS)
         self.server_socket.setblocking(False)
 
         self.inputs = [self.server_socket]
-
-        local_connection = None
-        remote_connection = None
 
         while self.inputs:
             # will only perform the socket select on the inputs. the outputs will handled

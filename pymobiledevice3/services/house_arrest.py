@@ -25,4 +25,4 @@ class HouseArrestService(AFCClient):
     def shell(self, application_id, cmd="VendContainer"):
         res = self.send_command(application_id, cmd)
         if res:
-            AFCShell(client=self).cmdloop()
+            AFCShell(self.lockdown).cmdloop()

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-import plistlib
 import logging
+import plistlib
 import struct
 
-from construct import Struct, Bytes, Int32ul, CString, Timestamp, Optional, Enum, Byte, Probe
+from construct import Struct, Bytes, Int32ul, CString, Timestamp, Optional, Enum, Byte
 
 from pymobiledevice3.lockdown import LockdownClient
 

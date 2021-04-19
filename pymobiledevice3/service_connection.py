@@ -48,9 +48,10 @@ class ServiceConnection(object):
                 if connected_device.serial == udid:
                     target_device = connected_device
                     break
+
         try:
             socket = mux.connect(target_device, port)
-        except:
+        except usbmux.MuxError:
             raise ConnectionFailedException(f'Connection to device port {port} failed')
 
         return ServiceConnection(socket)
@@ -72,22 +73,22 @@ class ServiceConnection(object):
         self.send_plist(data)
         return self.recv_plist()
 
-    def recv_exact(self, l):
+    def recv_exact(self, size):
         data = b""
-        while l > 0:
-            d = self.recv(l)
+        while size > 0:
+            d = self.recv(size)
             if not d or len(d) == 0:
                 break
             data += d
-            l -= len(d)
+            size -= len(d)
         return data
 
     def recv_raw(self):
-        l = self.recv_exact(4)
-        if not l or len(l) != 4:
+        response = self.recv_exact(4)
+        if not response or len(response) != 4:
             return
-        l = struct.unpack(">L", l)[0]
-        return self.recv_exact(l)
+        response = struct.unpack(">L", response)[0]
+        return self.recv_exact(response)
 
     def send_raw(self, data):
         if isinstance(data, str):
@@ -113,8 +114,8 @@ class ServiceConnection(object):
 
     def send_plist(self, d):
         payload = plistlib.dumps(d)
-        l = struct.pack(">L", len(payload))
-        return self.send(l + payload)
+        message = struct.pack(">L", len(payload))
+        return self.send(message + payload)
 
     def ssl_start(self, keyfile, certfile):
         self.socket = ssl.wrap_socket(self.socket, keyfile, certfile, ssl_version=ssl.PROTOCOL_TLSv1)

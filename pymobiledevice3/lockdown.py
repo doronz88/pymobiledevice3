@@ -258,7 +258,7 @@ class LockdownClient(object):
         self.service.send_plist(pair)
         pair = self.service.recv_plist()
 
-        if pair and pair.get("Result") == "Success" or pair.has_key("EscrowBag"):
+        if pair and (pair.get("Result") == "Success") or ('EscrowBag' in pair):
             pair_record["HostPrivateKey"] = plistlib.Data(private_key_pem)
             pair_record["EscrowBag"] = pair.get("EscrowBag")
             write_home_file(HOMEFOLDER, "%s.plist" % self.identifier, plistlib.dumps(pair_record))
@@ -271,7 +271,7 @@ class LockdownClient(object):
         else:
             self.logger.error(pair.get("Error"))
             self.service.close()
-            raise PairingError
+            raise PairingError()
 
     def get_value(self, domain=None, key=None):
         if isinstance(key, str) and hasattr(self, 'record') and hasattr(self.pair_record, key):
@@ -327,14 +327,3 @@ class LockdownClient(object):
         if ssl_enabled:
             service_connection.ssl_start(self.ssl_file, self.ssl_file)
         return service_connection
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
-    l = LockdownClient()
-    if l:
-        n = write_home_file(HOMEFOLDER, "%s_infos.plist" % l.udid, plistlib.writePlistToString(l.all_values))
-        logger.info("Wrote infos to %s", n)
-    else:
-        logger.error("Unable to connect to device")
