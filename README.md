@@ -1,6 +1,6 @@
-![Python application](https://github.com/doronz88/pymobiledevice3/workflows/Python%20application/badge.svg)
-![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)
-![Code Quality](https://img.shields.io/lgtm/grade/python/github/doronz88/pymobiledevice3?style=plastic)
+[![Python application](https://github.com/doronz88/pymobiledevice3/workflows/Python%20application/badge.svg)](https://github.com/doronz88/pymobiledevice3/actions/workflows/python-app.yml "Python application action")
+[![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
+[![Code Quality](https://img.shields.io/lgtm/grade/python/github/doronz88/pymobiledevice3?style=plastic)](https://lgtm.com/projects/g/doronz88/pymobiledevice3 "Code Quality")
 
 # Description
 
