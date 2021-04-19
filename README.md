@@ -4,8 +4,8 @@
 
 # Description
 
-`pymobiledevice3` is a fork from `pymobiledevice`, which is a cross-platform implementation of the mobiledevice library that
-talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV® devices.
+`pymobiledevice3` is a fork from `pymobiledevice`, which is a cross-platform implementation of the mobiledevice library
+that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV® devices.
 
 This version uses more recent coding standards and adds a lot more features. Also, many of the features not present
 in `libimobiledevice` can be found here.
@@ -16,37 +16,37 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
 
 # Features
 
-* TCP portwarding 
-  * `pymobiledevice3 lockdown forward src_port dst_port`)
+* TCP portwarding
+    * `pymobiledevice3 lockdown forward src_port dst_port`)
 * Screenshots
-  * `pymobiledevice3 screenshot screen.png`
+    * `pymobiledevice3 screenshot screen.png`
 * Live and past syslogs
-  * `pymobiledevice3 syslog live`
-  * `pymobiledevice3 syslog archive syslogs.pax`
+    * `pymobiledevice3 syslog live`
+    * `pymobiledevice3 syslog archive syslogs.pax`
 * Profile installation
-  * `pymobiledevice3 profile install/remove/list`
+    * `pymobiledevice3 profile install/remove/list`
 * Application management
-  * `pymobiledevice3 apps`
+    * `pymobiledevice3 apps`
 * File system management (AFC)
-  * `pymobiledevice3 afc`
+    * `pymobiledevice3 afc`
 * Crash reports management
-  * `pymobiledevice3 crash`
+    * `pymobiledevice3 crash`
 * Network sniffing
-  * `pymobiledevice3 pcap [out.pcap]`
+    * `pymobiledevice3 pcap [out.pcap]`
 * Raw shell for experimenting:
     * `pymobiledevice3 lockdown service service_name`
 * Mounting images
-  * `pymobiledevice3 mounter`
+    * `pymobiledevice3 mounter`
 * Notification listening and triggering (`notify_post()` api)
-  * `pymobiledevice3 notification post notification_name`
-  * `pymobiledevice3 notification observe notification_name`
+    * `pymobiledevice3 notification post notification_name`
+    * `pymobiledevice3 notification observe notification_name`
 * DeveloperDiskImage features:
-  * Process management
-    * `pymobiledevice3 developer kill/launch/....`
-  * **Non-chrooted** directory listing
-    * `pymobiledevice3 developer ls /`
-  * Raw shell for experimenting:
-    * `pymobiledevice3 developer shell`
+    * Process management
+        * `pymobiledevice3 developer kill/launch/....`
+    * **Non-chrooted** directory listing
+        * `pymobiledevice3 developer ls /`
+    * Raw shell for experimenting:
+        * `pymobiledevice3 developer shell`
 
 * And some more 😁
 
@@ -64,6 +64,12 @@ Or install the latest version from sources:
 git clone git@github.com:doronz88/pymobiledevice3.git
 cd pymobiledevice3
 python3 -m pip install --user -U -e .
+```
+
+You can also install auto-completion for all available sub-commands by adding the following into your `~/.zshrc`:
+
+```shell
+eval "$(_PYMOBILEDEVICE3_COMPLETE=source_zsh pymobiledevice3)"
 ```
 
 # Usage
@@ -108,15 +114,15 @@ for line in SyslogService(lockdown=lockdown).watch():
 
 ### Lockdown messages
 
-Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays yourself,
-you can run:
+Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays
+yourself, you can run:
 
 ```shell
 pymobiledevice3 lockdown service <service-name>
 ```
 
-This will start an IPython shell where you already have the connection established using the `client` variable and you can send
-& receive messages.
+This will start an IPython shell where you already have the connection established using the `client` variable and you
+can send & receive messages.
 
 ```python
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
@@ -142,7 +148,8 @@ If you want to play with `DTServiceHub` which lies behind the `developer` option
 pymobiledevice3 developer shell
 ```
 
-To also get an IPython shell, which lets you call ObjC methods from the exported objects in the instruments' namespace like so:
+To also get an IPython shell, which lets you call ObjC methods from the exported objects in the instruments' namespace
+like so:
 
 ```python
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
@@ -214,10 +221,10 @@ BUG | `com.apple.iosdiagnostics.relay` | `/usr/libexec/ios_diagnostics_relay` | 
 ## `com.apple.instruments.remoteserver.DVTSecureSocketProxy`
 
 Exports several ObjC objects and allows calling their respective selectors.
-The `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` service reads the configuration
-stored from `[[NSUserDefaults standardUserDefaults] boolForKey:@"DTXConnectionTracer"]`
-If the value is true, then `/tmp/DTServiceHub[PID].DTXConnection.RANDOM.log` is created and can be used to debug the transport
-protocol.
+The `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` service reads the
+configuration stored from `[[NSUserDefaults standardUserDefaults] boolForKey:@"DTXConnectionTracer"]`
+If the value is true, then `/tmp/DTServiceHub[PID].DTXConnection.RANDOM.log` is created and can be used to debug the
+transport protocol.
 
 For example:
 
@@ -238,8 +245,8 @@ root@iPhone (/var/root)# tail -f /tmp/DTServiceHub[369].DTXConnection.qNjM2U.log
 For editing the configuration we can simply add the respected key into:
 `/var/mobile/Library/Preferences/.GlobalPreferences.plist` and kill `cfprefsd`
 
-The valid selectors for triggering can be found using the following Frida script the same way Roy Bowman used for iterating all
-classes which implement the protocol `DTXAllowedRPC`:
+The valid selectors for triggering can be found using the following Frida script the same way Roy Bowman used for
+iterating all classes which implement the protocol `DTXAllowedRPC`:
 
 ```shell
 frida -U DTServiceHub
@@ -281,6 +288,6 @@ On older iOS versions, this was the main relay used for file operations, which w
 
 ## `com.apple.pcapd`
 
-Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from an iOS device.
-On Mac OSX the virtual interface can be enabled with the rvictl command. This script allows to use this service on other
-systems.
+Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from an iOS
+device. On Mac OSX the virtual interface can be enabled with the rvictl command. This script allows to use this service
+on other systems.
