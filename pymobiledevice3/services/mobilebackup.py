@@ -1,9 +1,10 @@
-import plistlib
-import os
+import codecs
 import datetime
 import logging
-import codecs
+import os
+import plistlib
 
+from pymobiledevice3.exceptions import DeviceVersionNotSupportedError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcService
 
@@ -20,18 +21,13 @@ DEVICE_LINK_FILE_STATUS_HUNK = 1
 DEVICE_LINK_FILE_STATUS_LAST_HUNK = 2
 
 
-class DeviceVersionNotSupported(Exception):
-    def __str__(self):
-        return "Device version not supported, please use mobilebackup2"
-
-
 class MobileBackup(object):
     def __init__(self, lockdown: LockdownClient):
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
         product_version = self.lockdown.get_value("", "ProductVersion")
         if product_version[0] >= "5":
-            raise DeviceVersionNotSupported()
+            raise DeviceVersionNotSupportedError()
         self.start()
 
     def start(self):

@@ -9,35 +9,9 @@ import uuid
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
+from pymobiledevice3.exceptions import NoDeviceConnectedError, FatalPairingError, CannotStopSessionError, NotTrustedError, \
+    PairingError, NotPairedError, StartServiceError
 from pymobiledevice3.service_connection import ServiceConnection
-
-
-class NotTrustedError(Exception):
-    pass
-
-
-class PairingError(Exception):
-    pass
-
-
-class NotPairedError(Exception):
-    pass
-
-
-class CannotStopSessionError(Exception):
-    pass
-
-
-class StartServiceError(Exception):
-    pass
-
-
-class FatalPairingError(Exception):
-    pass
-
-
-class NoDeviceConnected(Exception):
-    pass
 
 
 # we store pairing records and ssl keys in ~/.pymobiledevice3
@@ -94,7 +68,7 @@ class LockdownClient(object):
         if udid is None:
             available_udids = list_devices()
             if len(available_udids) == 0:
-                raise NoDeviceConnected()
+                raise NoDeviceConnectedError()
             udid = available_udids[0]
 
         self.logger = logging.getLogger(__name__)
@@ -124,7 +98,7 @@ class LockdownClient(object):
             self.pair()
             self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
             if not self.validate_pairing():
-                raise FatalPairingError
+                raise FatalPairingError()
         self.paired = True
         return
 
@@ -174,7 +148,7 @@ class LockdownClient(object):
             self.SessionID = None
             res = self.service.recv_plist()
             if not res or res.get("Result") != "Success":
-                raise CannotStopSessionError
+                raise CannotStopSessionError()
             return res
 
     def validate_pairing(self):
@@ -267,7 +241,7 @@ class LockdownClient(object):
 
         elif pair and pair.get("Error") == "PasswordProtected":
             self.service.close()
-            raise NotTrustedError
+            raise NotTrustedError()
         else:
             self.logger.error(pair.get("Error"))
             self.service.close()

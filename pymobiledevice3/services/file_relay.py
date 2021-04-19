@@ -23,10 +23,6 @@ tmp
 WirelessAutomation"""
 
 
-class DeviceVersionNotSupported(Exception):
-    pass
-
-
 class FileRelayService(object):
     SERVICE_NAME = 'com.apple.mobile.file_relay'
 

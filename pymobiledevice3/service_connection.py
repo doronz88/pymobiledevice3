@@ -8,11 +8,7 @@ import IPython
 from pygments import highlight, lexers, formatters
 
 from pymobiledevice3 import usbmux
-
-
-class ConnectionFailedException(Exception):
-    pass
-
+from pymobiledevice3.exceptions import ConnectionFailedError
 
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
@@ -52,7 +48,7 @@ class ServiceConnection(object):
         try:
             socket = mux.connect(target_device, port)
         except usbmux.MuxError:
-            raise ConnectionFailedException(f'Connection to device port {port} failed')
+            raise ConnectionFailedError(f'Connection to device port {port} failed')
 
         return ServiceConnection(socket)
 
