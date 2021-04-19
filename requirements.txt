@@ -5,7 +5,7 @@ termcolor
 click
 coloredlogs
 IPython
-bpylist2
+bpylist2>=4.0.1
 pygments
 hexdump
 arrow
