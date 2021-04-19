@@ -1,6 +1,6 @@
 [![Python application](https://github.com/doronz88/pymobiledevice3/workflows/Python%20application/badge.svg)](https://github.com/doronz88/pymobiledevice3/actions/workflows/python-app.yml "Python application action")
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
-[![Code Quality](https://img.shields.io/lgtm/grade/python/github/doronz88/pymobiledevice3?style=plastic)](https://lgtm.com/projects/g/doronz88/pymobiledevice3 "Code Quality")
+[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/doronz88/pymobiledevice3.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/doronz88/pymobiledevice3/context:python)
 
 # Description
 
