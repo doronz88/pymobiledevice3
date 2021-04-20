@@ -116,7 +116,9 @@ class ServiceConnection(object):
         return self.sendall(message + payload)
 
     def ssl_start(self, keyfile, certfile):
-        self.socket = ssl.wrap_socket(self.socket, keyfile, certfile, ssl_version=ssl.PROTOCOL_TLSv1)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+        context.load_cert_chain(certfile, keyfile)
+        self.socket = context.wrap_socket(self.socket)
 
     def shell(self):
         IPython.embed(
