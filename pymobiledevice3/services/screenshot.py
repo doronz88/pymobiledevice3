@@ -13,7 +13,7 @@ class ScreenshotService(object):
 
         dl_message_version_exchange = self.service.recv_plist()
         version_major = dl_message_version_exchange[1]
-        self.service.send_plist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
+        self.service.send_plist(['DLMessageVersionExchange', 'DLVersionsOk', version_major])
         dl_message_device_ready = self.service.recv_plist()
         if dl_message_device_ready[0] != 'DLMessageDeviceReady':
             raise Exception('Screenshotr didn\'t return ready state')
@@ -23,7 +23,7 @@ class ScreenshotService(object):
         response = self.service.recv_plist()
 
         assert len(response) == 2
-        assert response[0] == "DLMessageProcessMessage"
+        assert response[0] == 'DLMessageProcessMessage'
 
         if response[1].get('MessageType') == 'ScreenShotReply':
             return response[1]['ScreenShotData']

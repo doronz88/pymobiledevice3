@@ -107,50 +107,50 @@ class DiagnosticsService(object):
     def mobilegestalt(self, keys=None):
         if keys is None or len(keys) == 0:
             keys = MobileGestaltKeys
-        self.service.send_plist({"Request": "MobileGestalt",
-                                 "MobileGestaltKeys": keys})
+        self.service.send_plist({'Request': 'MobileGestalt',
+                                 'MobileGestaltKeys': keys})
 
         res = self.service.recv_plist()
-        d = res.get("Diagnostics")
+        d = res.get('Diagnostics')
         if d:
-            return d.get("MobileGestalt")
+            return d.get('MobileGestalt')
         return None
 
     def action(self, action):
-        self.service.send_plist({"Request": action})
+        self.service.send_plist({'Request': action})
         response = self.service.recv_plist()
-        if response.get("Status", None) is None:
+        if response.get('Status', None) is None:
             raise Exception(f'got invalid response: {response}')
 
     def restart(self):
-        self.action("Restart")
+        self.action('Restart')
 
     def shutdown(self):
-        self.action("Shutdown")
+        self.action('Shutdown')
 
     def sleep(self):
-        self.action("Sleep")
+        self.action('Sleep')
 
-    def info(self, diag_type="All"):
-        self.service.send_plist({"Request": diag_type})
+    def info(self, diag_type='All'):
+        self.service.send_plist({'Request': diag_type})
         res = self.service.recv_plist()
         if res:
-            return res.get("Diagnostics")
+            return res.get('Diagnostics')
         return None
 
     def ioregistry(self, plane=None, name=None, ioclass=None):
         d = {}
 
         if plane:
-            d["CurrentPlane"] = plane
+            d['CurrentPlane'] = plane
 
         if name:
-            d["EntryName"] = name
+            d['EntryName'] = name
 
         if ioclass:
-            d["EntryClass"] = ioclass
+            d['EntryClass'] = ioclass
 
-        d["Request"] = "IORegistry"
+        d['Request'] = 'IORegistry'
 
         self.service.send_plist(d)
         response = self.service.recv_plist()

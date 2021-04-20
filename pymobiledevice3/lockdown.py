@@ -16,7 +16,7 @@ from pymobiledevice3.service_connection import ServiceConnection
 
 
 # we store pairing records and ssl keys in ~/.pymobiledevice3
-HOMEFOLDER = ".pymobiledevice3"
+HOMEFOLDER = '.pymobiledevice3'
 MAXTRIES = 20
 
 
@@ -94,7 +94,7 @@ class LockdownClient(object):
         self.identifier = self.udid
         if not self.identifier:
             if self.unique_chip_id:
-                self.identifier = "%x" % self.unique_chip_id
+                self.identifier = '%x' % self.unique_chip_id
             else:
                 raise Exception('Could not get UDID or ECID, failing')
 
@@ -133,9 +133,9 @@ class LockdownClient(object):
             return 0
 
     def query_type(self):
-        self.service.send_plist({"Request": "QueryType"})
+        self.service.send_plist({'Request': 'QueryType'})
         res = self.service.recv_plist()
-        return res.get("Type")
+        return res.get('Type')
 
     def generate_host_id(self):
         hostname = platform.node()
@@ -143,15 +143,15 @@ class LockdownClient(object):
         return str(hostid).upper()
 
     def enter_recovery(self):
-        self.service.send_plist({"Request": "EnterRecovery"})
+        self.service.send_plist({'Request': 'EnterRecovery'})
         return self.service.recv_plist()
 
     def stop_session(self):
         if self.SessionID and self.service:
-            self.service.send_plist({"Label": self.label, "Request": "StopSession", "SessionID": self.SessionID})
+            self.service.send_plist({'Label': self.label, 'Request': 'StopSession', 'SessionID': self.SessionID})
             self.SessionID = None
             res = self.service.recv_plist()
-            if not res or res.get("Result") != "Success":
+            if not res or res.get('Result') != 'Success':
                 raise CannotStopSessionError()
             return res
 
@@ -182,33 +182,33 @@ class LockdownClient(object):
                 record = read_home_file(HOMEFOLDER, f'{self.identifier}.plist')
                 if record:
                     pair_record = plistlib.loads(record)
-                    self.logger.warning(f'Found pymobiledevice3 pairing record for device {self.uuid}')
+                    self.logger.warning(f'Found pymobiledevice3 pairing record for device {self.udid}')
                 else:
                     self.logger.error(f'No pymobiledevice3 pairing record found for device {self.identifier}')
                     return False
 
         self.pair_record = pair_record
 
-        cert_pem = pair_record["HostCertificate"]
-        private_key_pem = pair_record["HostPrivateKey"]
+        cert_pem = pair_record['HostCertificate']
+        private_key_pem = pair_record['HostPrivateKey']
 
-        if self.compare_ios_version("11.0") < 0:
-            validate_pair = {"Label": self.label, "Request": "ValidatePair", "PairRecord": pair_record}
+        if self.compare_ios_version('11.0') < 0:
+            validate_pair = {'Label': self.label, 'Request': 'ValidatePair', 'PairRecord': pair_record}
             self.service.send_plist(validate_pair)
             r = self.service.recv_plist()
             if (not r) or ('Error' in r):
-                self.logger.error("ValidatePair fail", validate_pair)
+                self.logger.error('ValidatePair fail', validate_pair)
                 return False
 
-        self.host_id = pair_record.get("HostID", self.host_id)
-        self.system_buid = pair_record.get("SystemBUID", self.system_buid)
-        d = {"Label": self.label, "Request": "StartSession", "HostID": self.host_id, 'SystemBUID': self.system_buid}
+        self.host_id = pair_record.get('HostID', self.host_id)
+        self.system_buid = pair_record.get('SystemBUID', self.system_buid)
+        d = {'Label': self.label, 'Request': 'StartSession', 'HostID': self.host_id, 'SystemBUID': self.system_buid}
         self.service.send_plist(d)
         start_session = self.service.recv_plist()
-        self.SessionID = start_session.get("SessionID")
-        if start_session.get("EnableSessionSSL"):
-            self.ssl_file = self.identifier + "_ssl.txt"
-            lf = b"\n"
+        self.SessionID = start_session.get('SessionID')
+        if start_session.get('EnableSessionSSL'):
+            self.ssl_file = self.identifier + '_ssl.txt'
+            lf = b'\n'
             self.ssl_file = write_home_file(HOMEFOLDER, self.ssl_file, cert_pem + lf + private_key_pem)
             self.service.ssl_start(self.ssl_file, self.ssl_file)
 
@@ -216,37 +216,37 @@ class LockdownClient(object):
         return True
 
     def pair(self):
-        self.device_public_key = self.get_value("", "DevicePublicKey")
+        self.device_public_key = self.get_value('', 'DevicePublicKey')
         if self.device_public_key == '':
-            self.logger.error("Unable to retrieve DevicePublicKey")
+            self.logger.error('Unable to retrieve DevicePublicKey')
             return False
 
-        self.logger.info("Creating host key & certificate")
+        self.logger.info('Creating host key & certificate')
         cert_pem, private_key_pem, device_certificate = ca_do_everything(self.device_public_key)
 
-        pair_record = {"DevicePublicKey": plistlib.Data(self.device_public_key),
-                       "DeviceCertificate": plistlib.Data(device_certificate),
-                       "HostCertificate": plistlib.Data(cert_pem),
-                       "HostID": self.host_id,
-                       "RootCertificate": plistlib.Data(cert_pem),
-                       "SystemBUID": "30142955-444094379208051516"}
+        pair_record = {'DevicePublicKey': plistlib.Data(self.device_public_key),
+                       'DeviceCertificate': plistlib.Data(device_certificate),
+                       'HostCertificate': plistlib.Data(cert_pem),
+                       'HostID': self.host_id,
+                       'RootCertificate': plistlib.Data(cert_pem),
+                       'SystemBUID': '30142955-444094379208051516'}
 
-        pair = {"Label": self.label, "Request": "Pair", "PairRecord": pair_record}
+        pair = {'Label': self.label, 'Request': 'Pair', 'PairRecord': pair_record}
         self.service.send_plist(pair)
         pair = self.service.recv_plist()
 
-        if pair and (pair.get("Result") == "Success") or ('EscrowBag' in pair):
-            pair_record["HostPrivateKey"] = plistlib.Data(private_key_pem)
-            pair_record["EscrowBag"] = pair.get("EscrowBag")
-            write_home_file(HOMEFOLDER, "%s.plist" % self.identifier, plistlib.dumps(pair_record))
+        if pair and (pair.get('Result') == 'Success') or ('EscrowBag' in pair):
+            pair_record['HostPrivateKey'] = plistlib.Data(private_key_pem)
+            pair_record['EscrowBag'] = pair.get('EscrowBag')
+            write_home_file(HOMEFOLDER, '%s.plist' % self.identifier, plistlib.dumps(pair_record))
             self.paired = True
             return True
 
-        elif pair and pair.get("Error") == "PasswordProtected":
+        elif pair and pair.get('Error') == 'PasswordProtected':
             self.service.close()
             raise NotTrustedError()
         else:
-            self.logger.error(pair.get("Error"))
+            self.logger.error(pair.get('Error'))
             self.service.close()
             raise PairingError()
 
@@ -254,30 +254,30 @@ class LockdownClient(object):
         if isinstance(key, str) and hasattr(self, 'record') and hasattr(self.pair_record, key):
             return self.pair_record[key]
 
-        req = {"Request": "GetValue", "Label": self.label}
+        req = {'Request': 'GetValue', 'Label': self.label}
 
         if domain:
-            req["Domain"] = domain
+            req['Domain'] = domain
         if key:
-            req["Key"] = key
+            req['Key'] = key
 
         self.service.send_plist(req)
         res = self.service.recv_plist()
         if res:
-            r = res.get("Value")
-            if hasattr(r, "data"):
+            r = res.get('Value')
+            if hasattr(r, 'data'):
                 return r.data
             return r
 
     def set_value(self, value, domain=None, key=None):
-        req = {"Request": "SetValue", "Label": self.label}
+        req = {'Request': 'SetValue', 'Label': self.label}
 
         if domain:
-            req["Domain"] = domain
+            req['Domain'] = domain
         if key:
-            req["Key"] = key
+            req['Key'] = key
 
-        req["Value"] = value
+        req['Value'] = value
         self.service.send_plist(req)
         response = self.service.recv_plist()
         self.logger.debug(response)
@@ -296,7 +296,7 @@ class LockdownClient(object):
         response = self.service.recv_plist()
         ssl_enabled = response.get('EnableServiceSSL', ssl)
         if not response or response.get('Error'):
-            if response.get("Error", "") == 'PasswordProtected':
+            if response.get('Error', '') == 'PasswordProtected':
                 raise StartServiceError(
                     'your device is protected with password, please enter password in device and try again')
             raise StartServiceError(response.get("Error"))
