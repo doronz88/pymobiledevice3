@@ -275,7 +275,7 @@ root@iPhone (/var/root)# tail -f /tmp/DTServiceHub[369].DTXConnection.qNjM2U.log
 For editing the configuration we can simply add the respected key into:
 `/var/mobile/Library/Preferences/.GlobalPreferences.plist` and kill `cfprefsd`
 
-The valid selectors for triggering can be found using the following Frida script the same way Roy Bowman used for
+The valid selectors for triggering can be found using the following Frida script the same way Troy Bowman used for
 iterating all classes which implement the protocol `DTXAllowedRPC`:
 
 ```shell
