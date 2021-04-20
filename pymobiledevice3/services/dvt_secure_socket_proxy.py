@@ -11,6 +11,7 @@ from construct import Struct, Int32ul, Int16ul, Int64ul, Const, Prefixed, Greedy
     GreedyRange, Switch
 
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.exceptions import DvtDirListError
 
 SHELL_USAGE = '''
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
@@ -153,7 +154,8 @@ class DvtSecureSocketProxyService(object):
             channel, 'directoryListingForPath:', args
         )
         ret, aux = self.recv_message()
-        assert ret
+        if ret is None:
+            raise DvtDirListError()
         return ret
 
     def proclist(self):
