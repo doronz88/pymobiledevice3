@@ -8,9 +8,9 @@ from pygments import highlight, lexers, formatters
 from pymobiledevice3.lockdown import LockdownClient
 
 
-def print_object(buf, colored=True):
+def print_object(buf, colored=True, default=None):
     if colored:
-        formatted_json = json.dumps(buf, sort_keys=True, indent=4)
+        formatted_json = json.dumps(buf, sort_keys=True, indent=4, default=default)
         colorful_json = highlight(formatted_json, lexers.JsonLexer(), formatters.TerminalFormatter())
         print(colorful_json)
     else:
