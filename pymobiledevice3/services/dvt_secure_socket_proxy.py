@@ -147,7 +147,13 @@ class DvtSecureSocketProxyService(object):
                 'MessageAux': MessageAux,
             })
 
-    def ls(self, path):
+    def ls(self, path: str):
+        """
+        List a directory.
+        :param path: Directory to list.
+        :return: Contents of the directory.
+        :rtype: list[str]
+        """
         channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
         args = MessageAux().append_obj(path)
         self.send_message(
@@ -159,6 +165,11 @@ class DvtSecureSocketProxyService(object):
         return ret
 
     def proclist(self):
+        """
+        Get the process list from the device.
+        :return: List of process and their attributes.
+        :rtype: list[dict]
+        """
         channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
         self.send_message(channel, 'runningProcesses')
         ret, aux = self.recv_message()
@@ -169,6 +180,11 @@ class DvtSecureSocketProxyService(object):
         return ret
 
     def applist(self):
+        """
+        Get the applications list from the device.
+        :return: List of applications and their attributes.
+        :rtype: list[dict]
+        """
         channel = self.make_channel(self.APP_LISTING_IDENTIFIER)
         args = MessageAux().append_obj({}).append_obj('')
         self.send_message(channel, 'installedApplicationsMatching:registerUpdateToken:', args)
@@ -176,17 +192,22 @@ class DvtSecureSocketProxyService(object):
         assert isinstance(ret, list)
         return ret
 
-    def kill(self, pid):
+    def kill(self, pid: int):
+        """
+        Kill a process.
+        :param pid: PID of process to kill.
+        """
         channel = self.make_channel(self.PROCESS_CONTROL_IDENTIFIER)
         self.send_message(channel, 'killPid:', MessageAux().append_obj(pid), False)
 
-    def launch(self, bundle_id: str, arguments=None, kill_existing: bool = True, start_suspended: bool = False):
+    def launch(self, bundle_id: str, arguments=None, kill_existing: bool = True, start_suspended: bool = False) -> int:
         """
         Launch a process.
         :param bundle_id: Bundle id of the process.
         :param list arguments: List of argument to pass to process.
         :param kill_existing: Whether to kill an existing instance of this process.
         :param start_suspended: Same as WaitForDebugger.
+        :return: PID of created process.
         """
         arguments = [] if arguments is None else arguments
         channel = self.make_channel(self.PROCESS_CONTROL_IDENTIFIER)
