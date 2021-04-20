@@ -47,7 +47,7 @@ class ServiceConnection(object):
 
         try:
             socket = mux.connect(target_device, port)
-        except usbmux.MuxError:
+        except usbmux.MuxException:
             raise ConnectionFailedError(f'Connection to device port {port} failed')
 
         return ServiceConnection(socket)

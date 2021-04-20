@@ -4,7 +4,7 @@ import socket
 import struct
 import sys
 
-from pymobiledevice3.exceptions import MuxError, MuxVersionError
+from pymobiledevice3.exceptions import MuxException, MuxVersionError
 
 
 class SafeStreamSocket:
@@ -17,7 +17,7 @@ class SafeStreamSocket:
         while totalsent < len(msg):
             sent = self.sock.send(msg[totalsent:])
             if sent == 0:
-                raise MuxError('socket connection broken')
+                raise MuxException('socket connection broken')
             totalsent = totalsent + sent
 
     def recv(self, size):
@@ -26,7 +26,7 @@ class SafeStreamSocket:
             chunk = self.sock.recv(size - len(msg))
             empty_chunk = b''
             if chunk == empty_chunk:
-                raise MuxError('socket connection broken')
+                raise MuxException('socket connection broken')
             msg = msg + chunk
         return msg
 
@@ -76,21 +76,21 @@ class BinaryProtocol(object):
             devid = struct.unpack('I', payload)[0]
             return {'DeviceID': devid}
         else:
-            raise MuxError('Invalid incoming response type %d' % resp)
+            raise MuxException('Invalid incoming response type %d' % resp)
 
     def send_packet(self, req, tag, payload=None):
         if payload is None:
             payload = {}
         payload = self._pack(req, payload)
         if self.connected:
-            raise MuxError('Mux is connected, cannot issue control packets')
+            raise MuxException('Mux is connected, cannot issue control packets')
         length = 16 + len(payload)
         data = struct.pack('IIII', length, self.VERSION, req, tag) + payload
         self.socket.send(data)
 
     def get_packet(self):
         if self.connected:
-            raise MuxError('Mux is connected, cannot issue control packets')
+            raise MuxException('Mux is connected, cannot issue control packets')
         dlen = self.socket.recv(4)
         dlen = struct.unpack('I', dlen)[0]
         body = self.socket.recv(dlen - 4)
@@ -133,7 +133,7 @@ class PlistProtocol(BinaryProtocol):
     def get_packet(self):
         resp, tag, payload = BinaryProtocol.get_packet(self)
         if resp != self.TYPE_PLIST:
-            raise MuxError('Received non-plist type %d' % resp)
+            raise MuxException('Received non-plist type %d' % resp)
         payload = plistlib.loads(payload)
         return payload.get('MessageType', ''), tag, payload
 
@@ -158,7 +158,7 @@ class MuxConnection(object):
             if resp == self.proto.TYPE_RESULT:
                 return tag, data
             else:
-                raise MuxError('Invalid packet type received: %d' % resp)
+                raise MuxException('Invalid packet type received: %d' % resp)
 
     def _processpacket(self):
         resp, tag, data = self.proto.get_packet()
@@ -171,9 +171,9 @@ class MuxConnection(object):
                 if dev.devid == data['DeviceID']:
                     self.devices.remove(dev)
         elif resp == self.proto.TYPE_RESULT:
-            raise MuxError('Unexpected result: %d' % resp)
+            raise MuxException('Unexpected result: %d' % resp)
         else:
-            raise MuxError('Invalid packet type received: %d' % resp)
+            raise MuxException('Invalid packet type received: %d' % resp)
 
     def _exchange(self, req, payload=None):
         if payload is None:
@@ -183,21 +183,21 @@ class MuxConnection(object):
         self.proto.send_packet(req, mytag, payload)
         recvtag, data = self._getreply()
         if recvtag != mytag:
-            raise MuxError('Reply tag mismatch: expected %d, got %d' % (mytag, recvtag))
+            raise MuxException('Reply tag mismatch: expected %d, got %d' % (mytag, recvtag))
         return data['Number']
 
     def listen(self):
         ret = self._exchange(self.proto.TYPE_LISTEN)
         if ret != 0:
-            raise MuxError('Listen failed: error %d' % ret)
+            raise MuxException('Listen failed: error %d' % ret)
 
     def process(self, timeout=None):
         if self.proto.connected:
-            raise MuxError('Socket is connected, cannot process listener events')
+            raise MuxException('Socket is connected, cannot process listener events')
         rlo, wlo, xlo = select.select([self.socket.sock], [], [self.socket.sock], timeout)
         if xlo:
             self.socket.sock.close()
-            raise MuxError('Exception in listener socket')
+            raise MuxException('Exception in listener socket')
         if rlo:
             self._processpacket()
 
@@ -205,7 +205,7 @@ class MuxConnection(object):
         ret = self._exchange(self.proto.TYPE_CONNECT,
                              {'DeviceID': device.devid, 'PortNumber': ((port << 8) & 0xFF00) | (port >> 8)})
         if ret != 0:
-            raise MuxError('Connect failed: error %d' % ret)
+            raise MuxException('Connect failed: error %d' % ret)
         self.proto.connected = True
         return self.socket.sock
 
@@ -252,7 +252,7 @@ class UsbmuxdClient(MuxConnection):
         self.proto.send_packet('ReadPairRecord', tag, payload)
         _, recvtag, data = self.proto.get_packet()
         if recvtag != tag:
-            raise MuxError('Reply tag mismatch: expected %d, got %d' % (tag, recvtag))
+            raise MuxException('Reply tag mismatch: expected %d, got %d' % (tag, recvtag))
         pair_record = data['PairRecordData']
         pair_record = plistlib.loads(pair_record)
         return pair_record

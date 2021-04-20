@@ -42,9 +42,21 @@ class DeviceNonConnectedError(PyMobileDevice3Exception):
     pass
 
 
-class MuxError(PyMobileDevice3Exception):
+class MuxException(PyMobileDevice3Exception):
     pass
 
 
-class MuxVersionError(MuxError):
+class MuxVersionError(MuxException):
+    pass
+
+
+class ArgumentError(PyMobileDevice3Exception):
+    pass
+
+
+class AfcException(PyMobileDevice3Exception):
+    pass
+
+
+class AfcFileNotFoundError(AfcException):
     pass
