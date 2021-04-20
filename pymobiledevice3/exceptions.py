@@ -60,3 +60,13 @@ class AfcException(PyMobileDevice3Exception):
 
 class AfcFileNotFoundError(AfcException):
     pass
+
+
+class DvtException(PyMobileDevice3Exception):
+    """ Domain exception for DVT operations. """
+    pass
+
+
+class DvtDirListError(DvtException):
+    """ Raise when directory listing fails. """
+    pass
