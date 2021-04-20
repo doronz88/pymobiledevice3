@@ -43,7 +43,7 @@ if __name__ == "__main__":
         author="DoronZ",
         install_requires=parse_requirements(),
         entry_points={
-            'console_scripts': ['pymobiledevice3=pymobiledevice3.cli:cli',
+            'console_scripts': ['pymobiledevice3=pymobiledevice3.__main__:cli',
                                 ],
         },
         classifiers=[
