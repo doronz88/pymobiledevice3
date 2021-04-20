@@ -16,6 +16,6 @@ def crash(lockdown, action):
     """ crash utils """
     if action == 'flush':
         ack = b'ping\x00'
-        assert ack == lockdown.start_service('com.apple.crashreportmover').recv_exact(len(ack))
+        assert ack == lockdown.start_service('com.apple.crashreportmover').recvall(len(ack))
     elif action == 'shell':
         AfcShell(lockdown=lockdown, afcname='com.apple.crashreportcopymobile').cmdloop()

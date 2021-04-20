@@ -251,7 +251,7 @@ class DvtSecureSocketProxyService(object):
             expectsReply=int(expects_reply)
         ))
         msg = mheader + pheader + aux + sel
-        self.c.send(msg)
+        self.c.sendall(msg)
 
     def recv_message(self):
         packet_stream = self._recv_packet_fragments()
@@ -284,7 +284,7 @@ class DvtSecureSocketProxyService(object):
     def _recv_packet_fragments(self):
         packet_data = b''
         while True:
-            data = self.c.recv_exact(dtx_message_header_struct.sizeof())
+            data = self.c.recvall(dtx_message_header_struct.sizeof())
             mheader = dtx_message_header_struct.parse(data)
             if not mheader.conversationIndex:
                 if mheader.identifier > self.cur_message:
@@ -292,7 +292,7 @@ class DvtSecureSocketProxyService(object):
             if mheader.fragmentCount > 1 and mheader.fragmentId == 0:
                 # when reading multiple message fragments, the first fragment contains only a message header
                 continue
-            packet_data += self.c.recv_exact(mheader.length)
+            packet_data += self.c.recvall(mheader.length)
             if mheader.fragmentId == mheader.fragmentCount - 1:
                 break
         return io.BytesIO(packet_data)

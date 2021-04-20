@@ -127,7 +127,7 @@ class MobileBackup2Service(MobileBackup):
         self._send_status_response(0)
 
     def _handle_send_file(self, filename, errplist):
-        self.service.send_raw(filename)
+        self.service.send_prefixed(filename)
         if not filename.startswith(self.udid):
             filename = os.path.join(self.udid, filename)
 
@@ -135,11 +135,11 @@ class MobileBackup2Service(MobileBackup):
         if data is not None:
             self.logger.info("Sending %s to device", filename)
             msg = b"".join([(CODE_FILE_DATA).to_bytes(1, 'little'), data])
-            self.service.send_raw(msg)
-            self.service.send_raw(chr(CODE_SUCCESS))
+            self.service.send_prefixed(msg)
+            self.service.send_prefixed(chr(CODE_SUCCESS))
         else:
             self.logger.warning("File %s requested from device not found", filename)
-            self.service.send_raw(chr(CODE_ERROR_LOCAL))
+            self.service.send_prefixed(chr(CODE_ERROR_LOCAL))
             self._multi_status_add_file_error(errplist, filename,
                                               ERROR_ENOENT, "Could not find the droid you were looking for ;)")
 
@@ -148,7 +148,7 @@ class MobileBackup2Service(MobileBackup):
         for f in msg[1]:
             self._handle_send_file(f, err_plist)
         msg = b'\x00\x00\x00\x00'
-        self.service.send(msg)
+        self.service.sendall(msg)
         if len(err_plist):
             self._send_status_response(-13, 'Multi status', err_plist)
         else:
@@ -186,15 +186,15 @@ class MobileBackup2Service(MobileBackup):
     def _handle_receive_files(self, msg):
         done = 0
         while not done:
-            device_filename = self.service.recv_raw()
+            device_filename = self.service.recv_prefixed()
             if device_filename == "":
                 break
-            backup_filename = self.service.recv_raw()
+            backup_filename = self.service.recv_prefixed()
             self.logger.debug("Downloading: %s to %s", device_filename, backup_filename)
             filedata = bytearray(b"")
             last_code = 0x00
             while True:
-                stuff = self.service.recv_raw()
+                stuff = self.service.recv_prefixed()
                 code = stuff[0]
                 if code == CODE_FILE_DATA:
                     filedata = stuff[1:]

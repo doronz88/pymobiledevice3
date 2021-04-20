@@ -140,7 +140,7 @@ class InstallationProxyService(object):
             options = {}
         cmd = {"Command": "LookupArchive",
                "ClientOptions": options}
-        return self.service.send_request(cmd).get("LookupResult")
+        return self.service.send_recv_plist(cmd).get("LookupResult")
 
     def search_path_for_bid(self, bid):
         path = None

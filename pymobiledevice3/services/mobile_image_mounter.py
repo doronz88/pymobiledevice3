@@ -55,7 +55,7 @@ class MobileImageMounterService(object):
         if status != 'ReceiveBytesAck':
             raise Exception(f'command ReceiveBytes failed with: {result}')
 
-        self.service.send(image)
+        self.service.sendall(image)
         result = self.service.recv_plist()
 
         status = result.get('Status')

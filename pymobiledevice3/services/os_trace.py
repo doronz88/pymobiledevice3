@@ -41,28 +41,28 @@ class OsTraceService(object):
 
     def get_pid_list(self):
         self.c.send_plist({'Request': 'PidList'})
-        response = self.c.recv_raw()
+        response = self.c.recv_prefixed()
         return plistlib.loads(response[1:])
 
     def create_archive(self) -> tuple:
         self.c.send_plist({'Request': 'CreateArchive'})
-        response = self.c.recv_raw()
+        response = self.c.recv_prefixed()
         length = response[0]
         return plistlib.loads(response[1:length + 1]), response[length + 1:]
 
     def syslog(self, pid=-1):
         self.c.send_plist({'Request': 'StartActivity', 'Pid': pid})
 
-        length_length, = struct.unpack('<I', self.c.recv_exact(4))
-        length = int(self.c.recv_exact(length_length)[::-1].hex(), 16)
-        response = plistlib.loads(self.c.recv_exact(length))
+        length_length, = struct.unpack('<I', self.c.recvall(4))
+        length = int(self.c.recvall(length_length)[::-1].hex(), 16)
+        response = plistlib.loads(self.c.recvall(length))
 
         if response['Status'] != 'RequestSuccessful':
             raise Exception(f'got invalid response: {response}')
 
         while True:
-            assert b'\x02' == self.c.recv_exact(1)
-            length, = struct.unpack('<I', self.c.recv_exact(4))
-            line = self.c.recv_exact(length)
+            assert b'\x02' == self.c.recvall(1)
+            length, = struct.unpack('<I', self.c.recvall(4))
+            line = self.c.recvall(length)
             entry = syslog_t.parse(line)
             yield entry
