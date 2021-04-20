@@ -164,10 +164,10 @@ client.send_plist({"Command": "DoSomething"})
 print(client.recv_plist())
 
 # or just send raw message
-client.send(b"hello")
+client.sendall(b"hello")
 
 # and view the result
-print(client.recv_exact(20))
+print(client.recvall(20))
 ```
 
 ### Instruments messages

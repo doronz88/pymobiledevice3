@@ -23,7 +23,7 @@ print(client.recv_plist())
 client.send(b"hello")
 
 # and view the result
-print(client.recv_exact(20))
+print(client.recvall(20))
 """
 
 
@@ -59,18 +59,18 @@ class ServiceConnection(object):
         self.socket.close()
 
     def recv(self, length=4096):
-        data = self.socket.recv(length)
-        return data
+        """ socket.recv() normal behavior. attempt to receive a single chunk """
+        return self.socket.recv(length)
 
-    def send(self, data):
+    def sendall(self, data):
         self.socket.sendall(data)
 
-    def send_request(self, data):
+    def send_recv_plist(self, data):
         self.send_plist(data)
         return self.recv_plist()
 
-    def recv_exact(self, size):
-        data = b""
+    def recvall(self, size):
+        data = b''
         while size > 0:
             d = self.recv(size)
             if not d or len(d) == 0:
@@ -79,22 +79,24 @@ class ServiceConnection(object):
             size -= len(d)
         return data
 
-    def recv_raw(self):
-        response = self.recv_exact(4)
+    def recv_prefixed(self):
+        """ receive a data block prefixed with a u32 length field """
+        response = self.recvall(4)
         if not response or len(response) != 4:
             return
-        response = struct.unpack(">L", response)[0]
-        return self.recv_exact(response)
+        response = struct.unpack('>L', response)[0]
+        return self.recvall(response)
 
-    def send_raw(self, data):
+    def send_prefixed(self, data):
+        """ send a data block prefixed with a u32 length field """
         if isinstance(data, str):
             data = data.encode()
-        hdr = struct.pack(">L", len(data))
-        msg = b"".join([hdr, data])
-        return self.send(msg)
+        hdr = struct.pack('>L', len(data))
+        msg = b''.join([hdr, data])
+        return self.sendall(msg)
 
     def recv_plist(self):
-        payload = self.recv_raw()
+        payload = self.recv_prefixed()
         if not payload:
             return
         bplist_header = b'bplist00'
@@ -111,7 +113,7 @@ class ServiceConnection(object):
     def send_plist(self, d):
         payload = plistlib.dumps(d)
         message = struct.pack(">L", len(payload))
-        return self.send(message + payload)
+        return self.sendall(message + payload)
 
     def ssl_start(self, keyfile, certfile):
         self.socket = ssl.wrap_socket(self.socket, keyfile, certfile, ssl_version=ssl.PROTOCOL_TLSv1)

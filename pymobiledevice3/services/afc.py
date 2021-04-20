@@ -283,17 +283,17 @@ class AfcService(object):
             afcpack.this_length = this_length
         header = AFCPacket.build(afcpack)
         self.packet_num += 1
-        self.service.send(header + data)
+        self.service.sendall(header + data)
 
     def _receive_data(self):
-        res = self.service.recv_exact(AFCPacket.sizeof())
+        res = self.service.recvall(AFCPacket.sizeof())
         status = afc_error_t.AFC_E_SUCCESS
         data = ""
         if res:
             res = AFCPacket.parse(res)
             assert res["entire_length"] >= AFCPacket.sizeof()
             length = res["entire_length"] - AFCPacket.sizeof()
-            data = self.service.recv_exact(length)
+            data = self.service.recvall(length)
             if res.operation == afc_opcode_t.AFC_OP_STATUS:
                 if length != 8:
                     self.logger.error("Status length != 8")
