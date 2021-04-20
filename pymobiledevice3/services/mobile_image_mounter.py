@@ -1,5 +1,6 @@
 import logging
 
+from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 
 
@@ -14,7 +15,12 @@ class MobileImageMounterService(object):
     def list_images(self):
         """ Lookup mounted image by its name. """
         self.service.send_plist({'Command': 'CopyDevices'})
-        return self.service.recv_plist()
+        response = self.service.recv_plist()
+
+        if response.get('Error'):
+            raise PyMobileDevice3Exception('unsupported command')
+
+        return response
 
     def lookup_image(self, image_type):
         """ Lookup mounted image by its name. """
@@ -29,7 +35,10 @@ class MobileImageMounterService(object):
                                  'ImageType': image_type,
                                  'MountPath': mount_path,
                                  'ImageSignature': signature})
-        return self.service.recv_plist()
+        response = self.service.recv_plist()
+
+        if response.get('Error'):
+            raise PyMobileDevice3Exception('unsupported command')
 
     def mount(self, image_type, signature):
         """ Upload image into device. """
@@ -40,7 +49,7 @@ class MobileImageMounterService(object):
         status = result.get('Status')
 
         if status != 'Complete':
-            raise Exception(f'command MountImage failed with: {result}')
+            raise PyMobileDevice3Exception(f'command MountImage failed with: {result}')
 
     def upload_image(self, image_type, image, signature):
         """ Upload image into device. """
@@ -53,7 +62,7 @@ class MobileImageMounterService(object):
         status = result.get('Status')
 
         if status != 'ReceiveBytesAck':
-            raise Exception(f'command ReceiveBytes failed with: {result}')
+            raise PyMobileDevice3Exception(f'command ReceiveBytes failed with: {result}')
 
         self.service.sendall(image)
         result = self.service.recv_plist()
@@ -61,4 +70,4 @@ class MobileImageMounterService(object):
         status = result.get('Status')
 
         if status != 'Complete':
-            raise Exception(f'command ReceiveBytes failed to send bytes with: {result}')
+            raise PyMobileDevice3Exception(f'command ReceiveBytes failed to send bytes with: {result}')
