@@ -17,6 +17,7 @@ from pymobiledevice3.cli.crash import cli as crash_cli
 from pymobiledevice3.cli.afc import cli as afc_cli
 from pymobiledevice3.cli.ps import cli as ps_cli
 from pymobiledevice3.cli.notification import cli as notification_cli
+from pymobiledevice3.cli.list_devices import cli as list_devices_cli
 
 coloredlogs.install(level=logging.DEBUG)
 
@@ -30,7 +31,7 @@ logging.getLogger('humanfriendly.prompts').disabled = True
 def cli():
     cli_commands = click.CommandCollection(sources=[
         developer_cli, mounter_cli, apps_cli, profile_cli, lockdown_cli, diagnostics_cli, syslog_cli, pcap_cli,
-        screenshot_cli, crash_cli, afc_cli, ps_cli, notification_cli
+        screenshot_cli, crash_cli, afc_cli, ps_cli, notification_cli, list_devices_cli
     ])
     cli_commands()
 
