@@ -9,8 +9,9 @@ import uuid
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
-from pymobiledevice3.exceptions import NoDeviceConnectedError, FatalPairingError, CannotStopSessionError, NotTrustedError, \
-    PairingError, NotPairedError, StartServiceError
+from pymobiledevice3.exceptions import NoDeviceConnectedError, FatalPairingError, CannotStopSessionError, \
+    NotTrustedError, \
+    PairingError, NotPairedError, StartServiceError, DeviceNonConnectedError
 from pymobiledevice3.service_connection import ServiceConnection
 
 
@@ -65,11 +66,14 @@ class LockdownClient(object):
     SERVICE_PORT = 62078
 
     def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME):
+        available_udids = list_devices()
         if udid is None:
-            available_udids = list_devices()
             if len(available_udids) == 0:
                 raise NoDeviceConnectedError()
             udid = available_udids[0]
+        else:
+            if udid not in available_udids:
+                raise DeviceNonConnectedError()
 
         self.logger = logging.getLogger(__name__)
         self.paired = False

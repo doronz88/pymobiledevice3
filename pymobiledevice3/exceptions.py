@@ -38,6 +38,10 @@ class NoDeviceConnectedError(PyMobileDevice3Exception):
     pass
 
 
+class DeviceNonConnectedError(PyMobileDevice3Exception):
+    pass
+
+
 class MuxError(PyMobileDevice3Exception):
     pass
 
