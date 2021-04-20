@@ -13,28 +13,28 @@ class MobileConfigService(object):
         self.service = lockdown.start_service(self.SERVICE_NAME)
 
     def get_profile_list(self):
-        self.service.send_plist({"RequestType": "GetProfileList"})
+        self.service.send_plist({'RequestType': 'GetProfileList'})
         response = self.service.recv_plist()
-        if response.get("Status", None) != "Acknowledged":
+        if response.get('Status', None) != 'Acknowledged':
             raise Exception(f'invalid response {response}')
         return response
 
     def install_profile(self, payload):
-        self.service.send_plist({"RequestType": "InstallProfile", "Payload": plistlib.Data(payload)})
+        self.service.send_plist({'RequestType': 'InstallProfile', 'Payload': plistlib.Data(payload)})
         return self.service.recv_plist()
 
     def remove_profile(self, ident):
         profiles = self.get_profile_list()
         if not profiles:
             return
-        if ident not in profiles["ProfileMetadata"]:
-            self.logger.info("Trying to remove not installed profile %s", ident)
+        if ident not in profiles['ProfileMetadata']:
+            self.logger.info('Trying to remove not installed profile %s', ident)
             return
-        meta = profiles["ProfileMetadata"][ident]
-        data = plistlib.dumps({"PayloadType": "Configuration",
-                               "PayloadIdentifier": ident,
-                               "PayloadUUID": meta["PayloadUUID"],
-                               "PayloadVersion": meta["PayloadVersion"]
+        meta = profiles['ProfileMetadata'][ident]
+        data = plistlib.dumps({'PayloadType': 'Configuration',
+                               'PayloadIdentifier': ident,
+                               'PayloadUUID': meta['PayloadUUID'],
+                               'PayloadVersion': meta['PayloadVersion']
                                })
-        self.service.send_plist({"RequestType": "RemoveProfile", "ProfileIdentifier": plistlib.Data(data)})
+        self.service.send_plist({'RequestType': 'RemoveProfile', 'ProfileIdentifier': plistlib.Data(data)})
         return self.service.recv_plist()

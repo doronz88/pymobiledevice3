@@ -27,7 +27,7 @@ def convert_pkcs1_to_pkcs8_pubkey(bitsdata):
     bitstring.setComponentByPosition(1, univ.Integer(pubkey_pkcs1[1]))
     bitstring = der_encoder.encode(bitstring)
     bitstring = ''.join([('00000000' + bin(ord(x))[2:])[-8:] for x in list(bitstring)])
-    bitstring = univ.BitString("'%s'B" % bitstring)
+    bitstring = univ.BitString('\'%s\'B' % bitstring)
     pubkeyid = univ.Sequence()
     pubkeyid.setComponentByPosition(0, univ.ObjectIdentifier('1.2.840.113549.1.1.1'))  # == OID for rsaEncryption
     pubkeyid.setComponentByPosition(1, univ.Null(''))
@@ -35,9 +35,9 @@ def convert_pkcs1_to_pkcs8_pubkey(bitsdata):
     pubkey_seq.setComponentByPosition(0, pubkeyid)
     pubkey_seq.setComponentByPosition(1, bitstring)
     base64.MAXBINSIZE = (64 // 4) * 3
-    res = b"-----BEGIN PUBLIC KEY-----\n"
+    res = b'-----BEGIN PUBLIC KEY-----\n'
     res += base64.b64encode(der_encoder.encode(pubkey_seq))
-    res += b"-----END PUBLIC KEY-----\n"
+    res += b'-----END PUBLIC KEY-----\n'
     return res
 
 
@@ -114,13 +114,13 @@ def make_cert(req, caPkey):
 def ca_do_everything(DevicePublicKey):
     rsa = generate_rsa_key()
     privateKey = make_pkey(rsa)
-    req = make_request(privateKey, "The Issuer Monkey")
+    req = make_request(privateKey, 'The Issuer Monkey')
     cert = make_cert(req, privateKey)
     rsa2 = load_pub_key_bio(BIO.MemoryBuffer(
         convert_pkcs1_to_pkcs8_pubkey(DevicePublicKey)))
     pkey2 = EVP.PKey()
     pkey2.assign_rsa(rsa2)
-    req = make_request(pkey2, "Device")
+    req = make_request(pkey2, 'Device')
     cert2 = make_cert(req, privateKey)
     return cert.as_pem(), privateKey.as_pem(None), cert2.as_pem()
 
@@ -129,7 +129,7 @@ if __name__ == '__main__':
     rsa = generate_rsa_key()
     pkey = make_pkey(rsa)
     print(pkey.as_pem(None))
-    req = make_request(pkey, "The Issuer Monkey")
+    req = make_request(pkey, 'The Issuer Monkey')
     cert = make_cert(req, pkey)
     print(cert.as_text())
     cert.save_pem('my_ca_cert.pem')

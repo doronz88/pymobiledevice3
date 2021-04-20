@@ -39,7 +39,7 @@ class MuxDevice(object):
         self.location = location
 
     def __str__(self):
-        return "<MuxDevice: ID %d ProdID 0x%04x Serial '%s' Location 0x%x>" % (
+        return '''<MuxDevice: ID %d ProdID 0x%04x Serial '%s' Location 0x%x>''' % (
             self.devid, self.usbprod, self.serial, self.location)
 
 
@@ -57,56 +57,56 @@ class BinaryProtocol(object):
 
     def _pack(self, req, payload):
         if req == self.TYPE_CONNECT:
-            connect_data = b"\x00\x00"
-            return struct.pack("IH", payload['DeviceID'], payload['PortNumber']) + connect_data
+            connect_data = b'\x00\x00'
+            return struct.pack('IH', payload['DeviceID'], payload['PortNumber']) + connect_data
         elif req == self.TYPE_LISTEN:
-            return b""
+            return b''
         else:
-            raise ValueError("Invalid outgoing request type %d" % req)
+            raise ValueError('Invalid outgoing request type %d' % req)
 
     def _unpack(self, resp, payload):
         if resp == self.TYPE_RESULT:
-            return {'Number': struct.unpack("I", payload)[0]}
+            return {'Number': struct.unpack('I', payload)[0]}
         elif resp == self.TYPE_DEVICE_ADD:
-            devid, usbpid, serial, pad, location = struct.unpack("IH256sHI", payload)
-            serial = serial.split(b"\0")[0]
+            devid, usbpid, serial, pad, location = struct.unpack('IH256sHI', payload)
+            serial = serial.split(b'\0')[0]
             return {'DeviceID': devid,
                     'Properties': {'LocationID': location, 'SerialNumber': serial, 'ProductID': usbpid}}
         elif resp == self.TYPE_DEVICE_REMOVE:
-            devid = struct.unpack("I", payload)[0]
+            devid = struct.unpack('I', payload)[0]
             return {'DeviceID': devid}
         else:
-            raise MuxError("Invalid incoming response type %d" % resp)
+            raise MuxError('Invalid incoming response type %d' % resp)
 
     def send_packet(self, req, tag, payload=None):
         if payload is None:
             payload = {}
         payload = self._pack(req, payload)
         if self.connected:
-            raise MuxError("Mux is connected, cannot issue control packets")
+            raise MuxError('Mux is connected, cannot issue control packets')
         length = 16 + len(payload)
-        data = struct.pack("IIII", length, self.VERSION, req, tag) + payload
+        data = struct.pack('IIII', length, self.VERSION, req, tag) + payload
         self.socket.send(data)
 
     def get_packet(self):
         if self.connected:
-            raise MuxError("Mux is connected, cannot issue control packets")
+            raise MuxError('Mux is connected, cannot issue control packets')
         dlen = self.socket.recv(4)
-        dlen = struct.unpack("I", dlen)[0]
+        dlen = struct.unpack('I', dlen)[0]
         body = self.socket.recv(dlen - 4)
-        version, resp, tag = struct.unpack("III", body[:0xc])
+        version, resp, tag = struct.unpack('III', body[:0xc])
         if version != self.VERSION:
-            raise MuxVersionError("Version mismatch: expected %d, got %d" % (self.VERSION, version))
+            raise MuxVersionError('Version mismatch: expected %d, got %d' % (self.VERSION, version))
         payload = self._unpack(resp, body[0xc:])
         return (resp, tag, payload)
 
 
 class PlistProtocol(BinaryProtocol):
-    TYPE_RESULT = "Result"
-    TYPE_CONNECT = "Connect"
-    TYPE_LISTEN = "Listen"
-    TYPE_DEVICE_ADD = "Attached"
-    TYPE_DEVICE_REMOVE = "Detached"  # ???
+    TYPE_RESULT = 'Result'
+    TYPE_CONNECT = 'Connect'
+    TYPE_LISTEN = 'Listen'
+    TYPE_DEVICE_ADD = 'Attached'
+    TYPE_DEVICE_REMOVE = 'Detached'  # ???
     TYPE_PLIST = 8
     VERSION = 1
 
@@ -133,7 +133,7 @@ class PlistProtocol(BinaryProtocol):
     def get_packet(self):
         resp, tag, payload = BinaryProtocol.get_packet(self)
         if resp != self.TYPE_PLIST:
-            raise MuxError("Received non-plist type %d" % resp)
+            raise MuxError('Received non-plist type %d' % resp)
         payload = plistlib.loads(payload)
         return payload.get('MessageType', ''), tag, payload
 
@@ -158,7 +158,7 @@ class MuxConnection(object):
             if resp == self.proto.TYPE_RESULT:
                 return tag, data
             else:
-                raise MuxError("Invalid packet type received: %d" % resp)
+                raise MuxError('Invalid packet type received: %d' % resp)
 
     def _processpacket(self):
         resp, tag, data = self.proto.get_packet()
@@ -171,9 +171,9 @@ class MuxConnection(object):
                 if dev.devid == data['DeviceID']:
                     self.devices.remove(dev)
         elif resp == self.proto.TYPE_RESULT:
-            raise MuxError("Unexpected result: %d" % resp)
+            raise MuxError('Unexpected result: %d' % resp)
         else:
-            raise MuxError("Invalid packet type received: %d" % resp)
+            raise MuxError('Invalid packet type received: %d' % resp)
 
     def _exchange(self, req, payload=None):
         if payload is None:
@@ -183,21 +183,21 @@ class MuxConnection(object):
         self.proto.send_packet(req, mytag, payload)
         recvtag, data = self._getreply()
         if recvtag != mytag:
-            raise MuxError("Reply tag mismatch: expected %d, got %d" % (mytag, recvtag))
+            raise MuxError('Reply tag mismatch: expected %d, got %d' % (mytag, recvtag))
         return data['Number']
 
     def listen(self):
         ret = self._exchange(self.proto.TYPE_LISTEN)
         if ret != 0:
-            raise MuxError("Listen failed: error %d" % ret)
+            raise MuxError('Listen failed: error %d' % ret)
 
     def process(self, timeout=None):
         if self.proto.connected:
-            raise MuxError("Socket is connected, cannot process listener events")
+            raise MuxError('Socket is connected, cannot process listener events')
         rlo, wlo, xlo = select.select([self.socket.sock], [], [self.socket.sock], timeout)
         if xlo:
             self.socket.sock.close()
-            raise MuxError("Exception in listener socket")
+            raise MuxError('Exception in listener socket')
         if rlo:
             self._processpacket()
 
@@ -205,7 +205,7 @@ class MuxConnection(object):
         ret = self._exchange(self.proto.TYPE_CONNECT,
                              {'DeviceID': device.devid, 'PortNumber': ((port << 8) & 0xFF00) | (port >> 8)})
         if ret != 0:
-            raise MuxError("Connect failed: error %d" % ret)
+            raise MuxError('Connect failed: error %d' % ret)
         self.proto.connected = True
         return self.socket.sock
 
@@ -233,7 +233,7 @@ class USBMux(object):
             self.version = 1
         self.devices = self.listener.devices
 
-    def process(self, timeout=0):
+    def process(self, timeout=0.1):
         self.listener.process(timeout)
 
     def connect(self, device, port):
@@ -243,27 +243,27 @@ class USBMux(object):
 
 class UsbmuxdClient(MuxConnection):
     def __init__(self):
-        super(UsbmuxdClient, self).__init__("/var/run/usbmuxd", PlistProtocol)
+        super(UsbmuxdClient, self).__init__('/var/run/usbmuxd', PlistProtocol)
 
     def get_pair_record(self, udid):
         tag = self.pkttag
         self.pkttag += 1
-        payload = {"PairRecordID": udid}
-        self.proto.send_packet("ReadPairRecord", tag, payload)
+        payload = {'PairRecordID': udid}
+        self.proto.send_packet('ReadPairRecord', tag, payload)
         _, recvtag, data = self.proto.get_packet()
         if recvtag != tag:
-            raise MuxError("Reply tag mismatch: expected %d, got %d" % (tag, recvtag))
+            raise MuxError('Reply tag mismatch: expected %d, got %d' % (tag, recvtag))
         pair_record = data['PairRecordData']
         pair_record = plistlib.loads(pair_record)
         return pair_record
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     mux = USBMux()
-    print("Waiting for devices...")
+    print('Waiting for devices...')
     if not mux.devices:
         mux.process()
     while True:
         for dev in mux.devices:
-            print("Device:", dev)
+            print('Device:', dev)
         mux.process()
