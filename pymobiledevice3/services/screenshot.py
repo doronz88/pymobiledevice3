@@ -1,5 +1,6 @@
 import logging
 
+from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 
 
@@ -16,7 +17,7 @@ class ScreenshotService(object):
         self.service.send_plist(['DLMessageVersionExchange', 'DLVersionsOk', version_major])
         dl_message_device_ready = self.service.recv_plist()
         if dl_message_device_ready[0] != 'DLMessageDeviceReady':
-            raise Exception('Screenshotr didn\'t return ready state')
+            raise PyMobileDevice3Exception('Screenshotr didn\'t return ready state')
 
     def take_screenshot(self) -> bytes:
         self.service.send_plist(['DLMessageProcessMessage', {'MessageType': 'ScreenShotRequest'}])
@@ -28,4 +29,4 @@ class ScreenshotService(object):
         if response[1].get('MessageType') == 'ScreenShotReply':
             return response[1]['ScreenShotData']
 
-        raise Exception(f'invalid response: {response}')
+        raise PyMobileDevice3Exception(f'invalid response: {response}')

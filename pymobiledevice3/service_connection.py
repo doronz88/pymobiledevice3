@@ -8,7 +8,7 @@ import IPython
 from pygments import highlight, lexers, formatters
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.exceptions import ConnectionFailedError
+from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception
 
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
@@ -108,7 +108,7 @@ class ServiceConnection(object):
             payload = sub(r'[^\w<>\/ \-_0-9\"\'\\=\.\?\!\+]+', '', payload.decode('utf-8')).encode('utf-8')
             return plistlib.loads(payload)
         else:
-            raise Exception(f'recv_plist invalid data: {payload[:100].hex()}')
+            raise PyMobileDevice3Exception(f'recv_plist invalid data: {payload[:100].hex()}')
 
     def send_plist(self, d):
         payload = plistlib.dumps(d)

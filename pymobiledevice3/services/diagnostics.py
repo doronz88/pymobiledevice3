@@ -1,3 +1,4 @@
+from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 
 Requests = """Goodbye
@@ -120,7 +121,7 @@ class DiagnosticsService(object):
         self.service.send_plist({'Request': action})
         response = self.service.recv_plist()
         if response.get('Status', None) is None:
-            raise Exception(f'got invalid response: {response}')
+            raise PyMobileDevice3Exception(f'got invalid response: {response}')
 
     def restart(self):
         self.action('Restart')
@@ -155,7 +156,7 @@ class DiagnosticsService(object):
         self.service.send_plist(d)
         response = self.service.recv_plist()
         if response.get('Status', None) != 'Success':
-            raise Exception(f'got invalid response: {response}')
+            raise PyMobileDevice3Exception(f'got invalid response: {response}')
 
         dd = response.get('Diagnostics')
         if dd:

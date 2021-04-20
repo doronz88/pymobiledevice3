@@ -11,7 +11,7 @@ from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import NoDeviceConnectedError, FatalPairingError, CannotStopSessionError, \
     NotTrustedError, \
-    PairingError, NotPairedError, StartServiceError, DeviceNonConnectedError
+    PairingError, NotPairedError, StartServiceError, DeviceNonConnectedError, PyMobileDevice3Exception
 from pymobiledevice3.service_connection import ServiceConnection
 
 
@@ -96,7 +96,7 @@ class LockdownClient(object):
             if self.unique_chip_id:
                 self.identifier = '%x' % self.unique_chip_id
             else:
-                raise Exception('Could not get UDID or ECID, failing')
+                raise PyMobileDevice3Exception('Could not get UDID or ECID, failing')
 
         if not self.validate_pairing():
             self.pair()
@@ -116,7 +116,7 @@ class LockdownClient(object):
         """
         version_reg = r'^\d*\.\d*\.?\d*$'
         if not re.match(version_reg, ios_version):
-            raise Exception('ios_version invalid:%s' % ios_version)
+            raise PyMobileDevice3Exception('ios_version invalid:%s' % ios_version)
         a = self.ios_version.split('.')
         b = ios_version.split('.')
         length = min(len(a), len(b))

@@ -1,6 +1,7 @@
 import plistlib
 import logging
 
+from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 
 
@@ -16,7 +17,7 @@ class MobileConfigService(object):
         self.service.send_plist({'RequestType': 'GetProfileList'})
         response = self.service.recv_plist()
         if response.get('Status', None) != 'Acknowledged':
-            raise Exception(f'invalid response {response}')
+            raise PyMobileDevice3Exception(f'invalid response {response}')
         return response
 
     def install_profile(self, payload):

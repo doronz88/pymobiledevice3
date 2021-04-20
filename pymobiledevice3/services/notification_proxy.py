@@ -1,5 +1,6 @@
 import logging
 
+from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 
 
@@ -19,7 +20,7 @@ class NotificationProxyService(object):
         self.service.send_plist({'Command': 'Shutdown'})
         res = self.service.recv_plist()
         if res.get('Command', None) != 'ProxyDeath':
-            raise Exception(f'invalid response: {res}')
+            raise PyMobileDevice3Exception(f'invalid response: {res}')
 
     def notify_register_dispatch(self, name):
         """ Tells the device to send a notification on the specified event. """

@@ -6,6 +6,7 @@ import struct
 
 from construct import Struct, Bytes, Int32ul, CString, Timestamp, Optional, Enum, Byte
 
+from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 
 CHUNK_SIZE = 4096
@@ -58,7 +59,7 @@ class OsTraceService(object):
         response = plistlib.loads(self.c.recvall(length))
 
         if response['Status'] != 'RequestSuccessful':
-            raise Exception(f'got invalid response: {response}')
+            raise PyMobileDevice3Exception(f'got invalid response: {response}')
 
         while True:
             assert b'\x02' == self.c.recvall(1)
