@@ -224,11 +224,11 @@ class LockdownClient(object):
         self.logger.info('Creating host key & certificate')
         cert_pem, private_key_pem, device_certificate = ca_do_everything(self.device_public_key)
 
-        pair_record = {'DevicePublicKey': plistlib.Data(self.device_public_key),
-                       'DeviceCertificate': plistlib.Data(device_certificate),
-                       'HostCertificate': plistlib.Data(cert_pem),
+        pair_record = {'DevicePublicKey': self.device_public_key,
+                       'DeviceCertificate': device_certificate,
+                       'HostCertificate': cert_pem,
                        'HostID': self.host_id,
-                       'RootCertificate': plistlib.Data(cert_pem),
+                       'RootCertificate': cert_pem,
                        'SystemBUID': '30142955-444094379208051516'}
 
         pair = {'Label': self.label, 'Request': 'Pair', 'PairRecord': pair_record}
@@ -236,7 +236,7 @@ class LockdownClient(object):
         pair = self.service.recv_plist()
 
         if pair and (pair.get('Result') == 'Success') or ('EscrowBag' in pair):
-            pair_record['HostPrivateKey'] = plistlib.Data(private_key_pem)
+            pair_record['HostPrivateKey'] = private_key_pem
             pair_record['EscrowBag'] = pair.get('EscrowBag')
             write_home_file(HOMEFOLDER, '%s.plist' % self.identifier, plistlib.dumps(pair_record))
             self.paired = True
