@@ -21,7 +21,7 @@ class MobileConfigService(object):
         return response
 
     def install_profile(self, payload):
-        self.service.send_plist({'RequestType': 'InstallProfile', 'Payload': plistlib.Data(payload)})
+        self.service.send_plist({'RequestType': 'InstallProfile', 'Payload': payload})
         return self.service.recv_plist()
 
     def remove_profile(self, ident):
@@ -37,5 +37,5 @@ class MobileConfigService(object):
                                'PayloadUUID': meta['PayloadUUID'],
                                'PayloadVersion': meta['PayloadVersion']
                                })
-        self.service.send_plist({'RequestType': 'RemoveProfile', 'ProfileIdentifier': plistlib.Data(data)})
+        self.service.send_plist({'RequestType': 'RemoveProfile', 'ProfileIdentifier': data})
         return self.service.recv_plist()
