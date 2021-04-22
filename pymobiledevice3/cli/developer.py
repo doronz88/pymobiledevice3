@@ -1,8 +1,10 @@
+import posixpath
 import shlex
 from pprint import pprint
 
 import click
 
+from pymobiledevice3.exceptions import DvtDirListError
 from pymobiledevice3.services.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.cli.cli_common import print_object, Command
 
@@ -73,12 +75,26 @@ def shell(lockdown):
         dvt.shell()
 
 
+def show_dirlist(dvt, dirname, recusive=False):
+    try:
+        filenames = dvt.ls(dirname)
+    except DvtDirListError:
+        return
+
+    for filename in filenames:
+        filename = posixpath.join(dirname, filename)
+        print(filename)
+        if recusive:
+            show_dirlist(dvt, filename, recusive=recusive)
+
+
 @developer.command('ls', cls=Command)
 @click.argument('path', type=click.Path(exists=False))
-def ls(lockdown, path):
+@click.option('-r', '--recursive', is_flag=True)
+def ls(lockdown, path, recursive):
     """ List directory. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        pprint(dvt.ls(path))
+        show_dirlist(dvt, path, recusive=recursive)
 
 
 @developer.command('device-information', cls=Command)
