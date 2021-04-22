@@ -21,7 +21,7 @@ def afc():
 @afc.command('shell', cls=Command)
 def afc_shell(lockdown):
     """ open an AFC shell rooted at /var/mobile/Media """
-    AfcShell(lockdown=lockdown, afcname='com.apple.afc').cmdloop()
+    AfcShell(lockdown=lockdown, service_name='com.apple.afc').cmdloop()
 
 
 @afc.command('pull', cls=Command)

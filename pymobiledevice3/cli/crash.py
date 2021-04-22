@@ -1,7 +1,10 @@
+import logging
+import os
+
 import click
 
 from pymobiledevice3.cli.cli_common import Command
-from pymobiledevice3.services.afc import AfcShell
+from pymobiledevice3.services.afc import AfcShell, AfcService
 
 
 @click.group()
@@ -10,12 +13,41 @@ def cli():
     pass
 
 
-@cli.command(cls=Command)
-@click.argument('action', type=click.Choice(['flush', 'shell']))
-def crash(lockdown, action):
-    """ crash utils """
-    if action == 'flush':
-        ack = b'ping\x00'
-        assert ack == lockdown.start_service('com.apple.crashreportmover').recvall(len(ack))
-    elif action == 'shell':
-        AfcShell(lockdown=lockdown, afcname='com.apple.crashreportcopymobile').cmdloop()
+@cli.group()
+def crash():
+    """ crash report options """
+    pass
+
+
+@crash.command('clear', cls=Command)
+def crash_clear(lockdown):
+    """ clear(/remove) all crash reports """
+    afc = AfcService(lockdown, service_name='com.apple.crashreportcopymobile')
+    afc.rm('/', force=True)
+
+
+@crash.command('pull', cls=Command)
+@click.argument('out', type=click.Path(file_okay=False, dir_okay=True, exists=False))
+def crash_pull(lockdown, out):
+    """ pull all crash reports """
+    if not os.path.exists(out):
+        os.makedirs(out)
+
+    def log(src, dst):
+        logging.info(f'{src} --> {dst}')
+
+    afc = AfcService(lockdown, service_name='com.apple.crashreportcopymobile')
+    afc.pull('/', out, callback=log)
+
+
+@crash.command('shell', cls=Command)
+def crash_shell(lockdown):
+    """ start an afc shell """
+    AfcShell(lockdown=lockdown, service_name='com.apple.crashreportcopymobile').cmdloop()
+
+
+@crash.command('mover-ping', cls=Command)
+def crash_mover_ping(lockdown):
+    """ make sure com.apple.crashreportmover is running """
+    ack = b'ping\x00'
+    assert ack == lockdown.start_service('com.apple.crashreportmover').recvall(len(ack))

@@ -2,14 +2,17 @@
 
 import logging
 import os
+import pathlib
 import plistlib
 import posixpath
+import shlex
 import struct
 from cmd import Cmd
 from pprint import pprint
 
 import hexdump
 from construct import Struct, Const, Int64ul, Container, Enum, Tell, CString, GreedyRange
+from pygments import highlight, lexers, formatters
 
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError
 from pymobiledevice3.lockdown import LockdownClient
@@ -183,7 +186,7 @@ def list_to_dict(d):
     return res
 
 
-class AfcService(object):
+class AfcService:
     def __init__(self, lockdown: LockdownClient, service_name='com.apple.afc'):
         self.logger = logging.getLogger(__name__)
         self.service_name = service_name
@@ -191,33 +194,107 @@ class AfcService(object):
         self.service = self.lockdown.start_service(self.service_name)
         self.packet_num = 0
 
+    def pull(self, src, dst, callback=None):
+        if callback is not None:
+            callback(src, dst)
+
+        if not self.isdir(src):
+            # normal file
+            with open(dst, 'wb') as f:
+                f.write(self.get_file_contents(src))
+        else:
+            # directory
+            if not os.path.exists(dst):
+                dst = os.path.join(dst, os.path.basename(src))
+                os.makedirs(dst)
+
+            for filename in self.listdir(src):
+                src_filename = posixpath.join(src, filename)
+                dst_filename = os.path.join(dst, filename).removeprefix('/')
+
+                if self.isdir(src_filename):
+                    if not os.path.exists(dst_filename):
+                        os.makedirs(dst_filename)
+                    self.pull(src_filename, dst_filename, callback=callback)
+                    continue
+
+                self.pull(src_filename, dst_filename, callback=callback)
+
+    def exists(self, filename):
+        try:
+            self.stat(filename)
+            return True
+        except AfcFileNotFoundError:
+            return False
+
+    def makedirs(self, filename):
+        filename = filename.removeprefix('/')
+        temp = '.'
+        for sub_entry in pathlib.PosixPath(filename).parts:
+            temp = posixpath.join(temp, sub_entry)
+            if not self.exists(temp):
+                self.mkdir(temp)
+
+    def push(self, local_path, remote_path, callback=None):
+        if callback is not None:
+            callback(local_path, remote_path)
+
+        if not os.path.isdir(local_path):
+            # normal file
+            with open(local_path, 'rb') as f:
+                self.set_file_contents(remote_path, f.read())
+        else:
+            # directory
+            if not self.exists(remote_path):
+                self.makedirs(remote_path)
+
+            for filename in os.listdir(local_path):
+                local_filename = os.path.join(local_path, filename)
+                remote_filename = posixpath.join(remote_path, filename).removeprefix('/')
+
+                if os.path.isdir(local_filename):
+                    if not self.exists(remote_filename):
+                        self.makedirs(remote_filename)
+                    self.push(local_filename, remote_filename, callback=callback)
+                    continue
+
+                self.push(local_filename, remote_filename, callback=callback)
+
+    def _rm_single(self, filename, force=False):
+        try:
+            self._do_operation(afc_opcode_t.REMOVE_PATH, afc_rm_req_t.build({'filename': filename}))
+        except AfcException as e:
+            if not force:
+                raise e
+
+    def rm(self, filename, force=False):
+        if not self.isdir(filename):
+            # single file
+            self._rm_single(filename, force=force)
+            return
+
+        # directory
+        for entry in self.listdir(filename):
+            current_filename = posixpath.join(filename, entry)
+            if self.isdir(current_filename):
+                self.rm(current_filename, force=force)
+            else:
+                self._rm_single(current_filename, force=force)
+        return self._rm_single(filename, force=force)
+
     def get_device_info(self):
         return list_to_dict(self._do_operation(afc_opcode_t.GET_DEVINFO))
 
     def listdir(self, filename):
         data = self._do_operation(afc_opcode_t.READ_DIR, afc_read_dir_req_t.build({'filename': filename}))
-        return afc_read_dir_resp_t.parse(data).filenames
+        return afc_read_dir_resp_t.parse(data).filenames[2:]  # skip the . and ..
 
     def mkdir(self, filename):
         return self._do_operation(afc_opcode_t.MAKE_DIR, afc_mkdir_req_t.build({'filename': filename}))
 
-    def rmdir(self, filename):
+    def isdir(self, filename) -> bool:
         stat = self.stat(filename)
-        if not stat or stat.get('st_ifmt') != 'S_IFDIR':
-            raise AfcException(f'{filename} is not a directory')
-
-        for d in self.listdir(filename):
-            if d in ('.', '..'):
-                continue
-
-            current_filename = posixpath.join(filename, d)
-            stat = self.stat(current_filename)
-            if stat.get('st_ifmt') == 'S_IFDIR':
-                self.rmdir(current_filename)
-            else:
-                self.rm(current_filename)
-        assert len(self.listdir(filename)) == 2  # .. et .
-        return self.rm(filename)
+        return stat.get('st_ifmt') == 'S_IFDIR'
 
     def stat(self, filename):
         return list_to_dict(
@@ -229,6 +306,7 @@ class AfcService(object):
                                   afc_make_link_req_t.build({'type': type_, 'target': target, 'source': source}))
 
     def fopen(self, filename, mode='r'):
+        # filename = filename.removeprefix('/')
         if mode not in AFC_FOPEN_TEXTUAL_MODES:
             raise ArgumentError(f'mode can be only one of: {AFC_FOPEN_TEXTUAL_MODES.keys()}')
 
@@ -238,9 +316,6 @@ class AfcService(object):
 
     def fclose(self, handle):
         return self._do_operation(afc_opcode_t.FILE_CLOSE, afc_fclose_req_t.build({'handle': handle}))
-
-    def rm(self, filename):
-        return self._do_operation(afc_opcode_t.REMOVE_PATH, afc_rm_req_t.build({'filename': filename}))
 
     def rename(self, source, target):
         return self._do_operation(afc_opcode_t.RENAME_PATH,
@@ -373,16 +448,35 @@ class AfcService(object):
         return data
 
 
+def safe_cmd(f):
+    def safe_f(self, *args, **kwargs):
+        try:
+            f(self, *args, **kwargs)
+        except AfcException as e:
+            logging.error(f'{e}')
+        except KeyboardInterrupt:
+            # reconnect to service
+            self.afc = AfcService(self.lockdown, service_name=self.service_name)
+            logging.warning('user aborted')
+
+    return safe_f
+
+
 class AfcShell(Cmd):
-    def __init__(self, lockdown: LockdownClient, afcname='com.apple.afc', completekey='tab'):
+    def __init__(self, lockdown: LockdownClient, service_name='com.apple.afc', completekey='tab'):
         Cmd.__init__(self, completekey=completekey)
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
-        self.afc = AfcService(self.lockdown, service_name=afcname)
+        self.service_name = service_name
+        self.afc = AfcService(self.lockdown, service_name=service_name)
         self.curdir = '/'
-        self.prompt = 'AFC$ ' + self.curdir + ' '
         self.complete_cat = self._complete
         self.complete_ls = self._complete
+        self._update_prompt()
+
+    def _update_prompt(self):
+        self.prompt = highlight(f'mobile@AFC ({self.curdir})$ ', lexers.BashSessionLexer(),
+                                formatters.TerminalTrueColorFormatter(style='colorful')).strip()
 
     def do_exit(self, p):
         return True
@@ -393,10 +487,12 @@ class AfcShell(Cmd):
     def do_pwd(self, p):
         print(self.curdir)
 
+    @safe_cmd
     def do_link(self, p):
         z = p.split()
         self.afc.link(afc_link_type_t.SYMLINK, z[0], z[1])
 
+    @safe_cmd
     def do_cd(self, p):
         if not p.startswith('/'):
             new = posixpath.join(self.curdir, p)
@@ -406,16 +502,16 @@ class AfcShell(Cmd):
         new = os.path.normpath(new).replace('\\', '/').replace('//', '/')
         if self.afc.listdir(new):
             self.curdir = new
-            self.prompt = 'AFC$ %s ' % new
+            self._update_prompt()
         else:
             self.logger.error('%s does not exist', new)
 
     def _complete(self, text, line, begidx, endidx):
-        filename = text.split('/')[-1]
-        dirname = '/'.join(text.split('/')[:-1])
-        return [dirname + '/' + x for x in self.afc.listdir(self.curdir + '/' + dirname) if
-                x.startswith(filename)]
+        dirname = posixpath.join(self.curdir, posixpath.dirname(text))
+        prefix = posixpath.basename(text)
+        return [filename for filename in self.afc.listdir(dirname) if filename.startswith(prefix)]
 
+    @safe_cmd
     def do_ls(self, p):
         filename = posixpath.join(self.curdir, p)
         if self.curdir.endswith('/'):
@@ -425,6 +521,7 @@ class AfcShell(Cmd):
             for filename in filenames:
                 print(filename)
 
+    @safe_cmd
     def do_cat(self, p):
         data = self.afc.get_file_contents(posixpath.join(self.curdir, p))
         if data and p.endswith('.plist'):
@@ -432,89 +529,67 @@ class AfcShell(Cmd):
         else:
             print(data)
 
-    def do_rm(self, p):
-        f = self.afc.stat(posixpath.join(self.curdir, p))
-        if f['st_ifmt'] == 'S_IFDIR':
-            self.afc.rmdir(posixpath.join(self.curdir, p))
-        else:
-            self.afc.rm(posixpath.join(self.curdir, p))
+    @safe_cmd
+    def do_rm(self, args):
+        for filename in shlex.split(args):
+            self.afc.rm(filename)
 
+    @safe_cmd
     def do_pull(self, user_args):
-        args = user_args.split()
+        def log(src, dst):
+            logging.info(f'{src} --> {dst}')
+
+        args = shlex.split(user_args)
         if len(args) != 2:
-            local_path = '..'
-            remote_path = user_args
+            logging.error('pull expects <src> <dst>')
+            return
         else:
-            local_path = args[1]
             remote_path = args[0]
+            local_path = args[1]
 
-        remote_file_info = self.afc.stat(posixpath.join(self.curdir, remote_path))
-        if not remote_file_info:
-            logging.error('remote file does not exist')
+        remote_path = posixpath.normpath(posixpath.join(self.curdir, remote_path))
+        self.afc.pull(remote_path, local_path, callback=log)
+
+    @safe_cmd
+    def do_push(self, user_args):
+        def log(src, dst):
+            logging.info(f'{src} --> {dst}')
+
+        args = shlex.split(user_args)
+        if len(args) != 2:
+            logging.error('push expects <src> <dst>')
             return
-
-        out_path = posixpath.join(local_path, remote_path)
-        if remote_file_info['st_ifmt'] == 'S_IFDIR':
-            if not os.path.isdir(out_path):
-                os.makedirs(out_path, MODE_MASK)
-
-            for d in self.afc.listdir(remote_path):
-                if d == '.' or d == '..' or d == '':
-                    continue
-                self.do_pull(remote_path + '/' + d + ' ' + local_path)
         else:
-            contents = self.afc.get_file_contents(posixpath.join(self.curdir, remote_path))
-            out_dir = os.path.dirname(out_path)
-            if not os.path.exists(out_dir):
-                os.makedirs(out_dir, MODE_MASK)
-            with open(out_path, 'wb') as remote_file_info:
-                remote_file_info.write(contents)
+            local_path = args[0]
+            remote_path = args[1]
 
-    def do_push(self, p):
-        src_dst = p.split()
-        if len(src_dst) != 2:
-            self.logger.error('USAGE: push <src> <dst>')
-            return
-        src = src_dst[0]
-        dst = src_dst[1]
+        remote_path = posixpath.normpath(posixpath.join(self.curdir, remote_path))
+        self.afc.push(local_path, remote_path, callback=log)
 
-        src = os.path.expanduser(src)
-        dst = os.path.expanduser(dst)
-
-        logging.info(f'from {src} to {dst}')
-        if os.path.isdir(src):
-            self.afc.mkdir(os.path.join(dst))
-            for x in os.listdir(src):
-                if x.startswith('.'):
-                    continue
-                path = os.path.join(src, x)
-                dst = os.path.join(dst + '/' + path)
-                self.do_push(path + ' ' + dst)
-        else:
-            data = open(src, 'rb').read()
-            self.afc.set_file_contents(posixpath.join(self.curdir, dst), data)
-
+    @safe_cmd
     def do_head(self, p):
         print(self.afc.get_file_contents(posixpath.join(self.curdir, p))[:32])
 
+    @safe_cmd
     def do_hexdump(self, filename):
         filename = posixpath.join(self.curdir, filename)
         print(hexdump.hexdump(self.afc.get_file_contents(filename)))
 
+    @safe_cmd
     def do_mkdir(self, p):
-        print(self.afc.mkdir(p))
+        self.afc.mkdir(p)
 
-    def do_rmdir(self, p):
-        return self.afc.rmdir(p)
-
+    @safe_cmd
     def do_info(self, p):
         for k, v in self.afc.get_device_info().items():
             print(k, '\t:\t', v)
 
+    @safe_cmd
     def do_mv(self, p):
         t = p.split()
         return self.afc.rename(t[0], t[1])
 
+    @safe_cmd
     def do_stat(self, filename):
         filename = posixpath.join(self.curdir, filename)
         pprint(self.afc.stat(filename))
