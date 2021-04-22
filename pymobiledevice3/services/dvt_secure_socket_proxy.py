@@ -11,7 +11,7 @@ from construct import Struct, Int32ul, Int16ul, Int64ul, Const, Prefixed, Greedy
     GreedyRange, Switch
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.exceptions import DvtDirListError
+from pymobiledevice3.exceptions import DvtDirListError, ConnectionFailedError
 
 SHELL_USAGE = '''
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
@@ -124,7 +124,6 @@ class Channel(int):
 
 
 class DvtSecureSocketProxyService(object):
-    SERVICE_NAME = 'com.apple.instruments.remoteserver.DVTSecureSocketProxy'
     INSTRUMENTS_MESSAGE_TYPE = 2
     EXPECTS_REPLY_MASK = 0x1000
     DEVICEINFO_IDENTIFIER = 'com.apple.instruments.server.services.deviceinfo'
@@ -134,7 +133,17 @@ class DvtSecureSocketProxyService(object):
     def __init__(self, lockdown: LockdownClient):
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
-        self.c = self.lockdown.start_service(self.SERVICE_NAME)
+
+        try:
+            # iOS >= 14.0
+            self.service = self.lockdown.start_service('com.apple.instruments.remoteserver.DVTSecureSocketProxy')
+        except ConnectionFailedError:
+            # iOS < 14.0
+            self.service = self.lockdown.start_service('com.apple.instruments.remoteserver')
+            if hasattr(self.service.socket, '_sslobj'):
+                # after the remoteserver protocol is successfully paired, you need to close the ssl protocol
+                # channel and use clear text transmission
+                self._cli.socket._sslobj = None
         self.channels = {}
         self.cur_channel = 0
         self.cur_message = 0
@@ -274,7 +283,7 @@ class DvtSecureSocketProxyService(object):
             expectsReply=int(expects_reply)
         ))
         msg = mheader + pheader + aux + sel
-        self.c.sendall(msg)
+        self.service.sendall(msg)
 
     def recv_message(self):
         packet_stream = self._recv_packet_fragments()
@@ -307,7 +316,7 @@ class DvtSecureSocketProxyService(object):
     def _recv_packet_fragments(self):
         packet_data = b''
         while True:
-            data = self.c.recvall(dtx_message_header_struct.sizeof())
+            data = self.service.recvall(dtx_message_header_struct.sizeof())
             mheader = dtx_message_header_struct.parse(data)
             if not mheader.conversationIndex:
                 if mheader.identifier > self.cur_message:
@@ -315,7 +324,7 @@ class DvtSecureSocketProxyService(object):
             if mheader.fragmentCount > 1 and mheader.fragmentId == 0:
                 # when reading multiple message fragments, the first fragment contains only a message header
                 continue
-            packet_data += self.c.recvall(mheader.length)
+            packet_data += self.service.recvall(mheader.length)
             if mheader.fragmentId == mheader.fragmentCount - 1:
                 break
         return io.BytesIO(packet_data)
