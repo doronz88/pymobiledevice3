@@ -1,4 +1,4 @@
-from pprint import pprint
+import posixpath
 
 import click
 
@@ -28,7 +28,7 @@ def afc_shell(lockdown):
 @click.argument('remote_file', type=click.Path(exists=False))
 @click.argument('local_file', type=click.File('wb'))
 def afc_pull(lockdown, remote_file, local_file):
-    """ open an AFC shell rooted at /var/mobile/Media """
+    """ pull remote file from /var/mobile/Media """
     local_file.write(AfcService(lockdown=lockdown).get_file_contents(remote_file))
 
 
@@ -36,19 +36,28 @@ def afc_pull(lockdown, remote_file, local_file):
 @click.argument('local_file', type=click.File('rb'))
 @click.argument('remote_file', type=click.Path(exists=False))
 def afc_push(lockdown, local_file, remote_file):
-    """ open an AFC shell rooted at /var/mobile/Media """
+    """ push local file into /var/mobile/Media """
     AfcService(lockdown=lockdown).set_file_contents(remote_file, local_file.read())
+
+
+def show_dirlist(afc, dirname, recursive=False):
+    for filename in afc.listdir(dirname):
+        filename = posixpath.join(dirname, filename)
+        print(filename)
+        if recursive and afc.isdir(filename):
+            show_dirlist(afc, filename, recursive=recursive)
 
 
 @afc.command('ls', cls=Command)
 @click.argument('remote_file', type=click.Path(exists=False))
-def afc_ls(lockdown, remote_file):
-    """ open an AFC shell rooted at /var/mobile/Media """
-    pprint(AfcService(lockdown=lockdown).listdir(remote_file))
+@click.option('-r', '--recursive', is_flag=True)
+def afc_ls(lockdown, remote_file, recursive):
+    """ perform a dirlist rooted at /var/mobile/Media """
+    show_dirlist(AfcService(lockdown=lockdown), remote_file, recursive=recursive)
 
 
 @afc.command('rm', cls=Command)
 @click.argument('remote_file', type=click.Path(exists=False))
 def afc_rm(lockdown, remote_file):
-    """ open an AFC shell rooted at /var/mobile/Media """
+    """ remove a file rooted at /var/mobile/Media """
     AfcService(lockdown=lockdown).rm(remote_file)

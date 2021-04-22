@@ -474,57 +474,57 @@ class AfcShell(Cmd):
         self.complete_ls = self._complete
         self._update_prompt()
 
-    def _update_prompt(self):
-        self.prompt = highlight(f'mobile@AFC ({self.curdir})$ ', lexers.BashSessionLexer(),
-                                formatters.TerminalTrueColorFormatter(style='colorful')).strip()
-
-    def do_exit(self, p):
+    def do_exit(self, args):
         return True
 
-    def do_quit(self, p):
+    def do_quit(self, args):
         return True
 
-    def do_pwd(self, p):
+    def do_pwd(self, args):
         print(self.curdir)
 
     @safe_cmd
-    def do_link(self, p):
-        z = p.split()
+    def do_link(self, args):
+        z = args.split()
         self.afc.link(afc_link_type_t.SYMLINK, z[0], z[1])
 
     @safe_cmd
-    def do_cd(self, p):
-        if not p.startswith('/'):
-            new = posixpath.join(self.curdir, p)
+    def do_cd(self, args):
+        if not args.startswith('/'):
+            new = posixpath.join(self.curdir, args)
         else:
-            new = p
+            new = args
 
-        new = os.path.normpath(new).replace('\\', '/').replace('//', '/')
+        new = posixpath.normpath(new)
         if self.afc.listdir(new):
             self.curdir = new
             self._update_prompt()
         else:
             self.logger.error('%s does not exist', new)
 
-    def _complete(self, text, line, begidx, endidx):
-        dirname = posixpath.join(self.curdir, posixpath.dirname(text))
-        prefix = posixpath.basename(text)
-        return [filename for filename in self.afc.listdir(dirname) if filename.startswith(prefix)]
-
     @safe_cmd
-    def do_ls(self, p):
-        filename = posixpath.join(self.curdir, p)
+    def do_ls(self, args):
+        filename = posixpath.join(self.curdir, args)
         if self.curdir.endswith('/'):
-            filename = self.curdir + p
+            filename = posixpath.join(self.curdir, args)
         filenames = self.afc.listdir(filename)
         if filenames:
             for filename in filenames:
                 print(filename)
 
     @safe_cmd
-    def do_cat(self, p):
-        data = self.afc.get_file_contents(posixpath.join(self.curdir, p))
-        if data and p.endswith('.plist'):
+    def do_walk(self, args):
+        dirname = posixpath.join(self.curdir, args)
+        for filename in self.afc.listdir(dirname):
+            filename = posixpath.join(dirname, filename)
+            print(filename)
+            if self.afc.isdir(filename):
+                self.do_walk(filename)
+
+    @safe_cmd
+    def do_cat(self, args):
+        data = self.afc.get_file_contents(posixpath.join(self.curdir, args))
+        if data and args.endswith('.plist'):
             pprint(plistlib.loads(data))
         else:
             print(data)
@@ -535,11 +535,11 @@ class AfcShell(Cmd):
             self.afc.rm(filename)
 
     @safe_cmd
-    def do_pull(self, user_args):
+    def do_pull(self, args):
         def log(src, dst):
             logging.info(f'{src} --> {dst}')
 
-        args = shlex.split(user_args)
+        args = shlex.split(args)
         if len(args) != 2:
             logging.error('pull expects <src> <dst>')
             return
@@ -551,11 +551,11 @@ class AfcShell(Cmd):
         self.afc.pull(remote_path, local_path, callback=log)
 
     @safe_cmd
-    def do_push(self, user_args):
+    def do_push(self, args):
         def log(src, dst):
             logging.info(f'{src} --> {dst}')
 
-        args = shlex.split(user_args)
+        args = shlex.split(args)
         if len(args) != 2:
             logging.error('push expects <src> <dst>')
             return
@@ -567,29 +567,38 @@ class AfcShell(Cmd):
         self.afc.push(local_path, remote_path, callback=log)
 
     @safe_cmd
-    def do_head(self, p):
-        print(self.afc.get_file_contents(posixpath.join(self.curdir, p))[:32])
+    def do_head(self, args):
+        print(self.afc.get_file_contents(posixpath.join(self.curdir, args))[:32])
 
     @safe_cmd
-    def do_hexdump(self, filename):
-        filename = posixpath.join(self.curdir, filename)
-        print(hexdump.hexdump(self.afc.get_file_contents(filename)))
+    def do_hexdump(self, args):
+        args = posixpath.join(self.curdir, args)
+        print(hexdump.hexdump(self.afc.get_file_contents(args)))
 
     @safe_cmd
-    def do_mkdir(self, p):
-        self.afc.mkdir(p)
+    def do_mkdir(self, args):
+        self.afc.mkdir(args)
 
     @safe_cmd
-    def do_info(self, p):
+    def do_info(self, args):
         for k, v in self.afc.get_device_info().items():
             print(k, '\t:\t', v)
 
     @safe_cmd
-    def do_mv(self, p):
-        t = p.split()
+    def do_mv(self, args):
+        t = args.split()
         return self.afc.rename(t[0], t[1])
 
     @safe_cmd
-    def do_stat(self, filename):
-        filename = posixpath.join(self.curdir, filename)
-        pprint(self.afc.stat(filename))
+    def do_stat(self, args):
+        args = posixpath.join(self.curdir, args)
+        pprint(self.afc.stat(args))
+
+    def _update_prompt(self):
+        self.prompt = highlight(f'mobile@AFC ({self.curdir})$ ', lexers.BashSessionLexer(),
+                                formatters.TerminalTrueColorFormatter(style='colorful')).strip()
+
+    def _complete(self, text, line, begidx, endidx):
+        dirname = posixpath.join(self.curdir, posixpath.dirname(text))
+        prefix = posixpath.basename(text)
+        return [filename for filename in self.afc.listdir(dirname) if filename.startswith(prefix)]
