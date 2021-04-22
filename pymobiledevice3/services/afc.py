@@ -595,8 +595,8 @@ class AfcShell(Cmd):
         pprint(self.afc.stat(args))
 
     def _update_prompt(self):
-        self.prompt = highlight(f'mobile@AFC ({self.curdir})$ ', lexers.BashSessionLexer(),
-                                formatters.TerminalTrueColorFormatter(style='colorful')).strip()
+        self.prompt = highlight(f'[AFC:{self.curdir}]$ ', lexers.BashSessionLexer(),
+                                formatters.TerminalTrueColorFormatter(style='solarized-dark')).strip()
 
     def _complete(self, text, line, begidx, endidx):
         dirname = posixpath.join(self.curdir, posixpath.dirname(text))
