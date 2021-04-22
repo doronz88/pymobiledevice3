@@ -106,3 +106,11 @@ def device_information(lockdown, nocolor):
             'hardware': dvt.hardware_information(),
             'network': dvt.network_information(),
         }, colored=not nocolor)
+
+
+@developer.command('netstat', cls=Command)
+def netstat(lockdown):
+    """ Print information about current network activity. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        for event in dvt.network_monitor():
+            print(event)

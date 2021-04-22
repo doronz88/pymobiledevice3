@@ -10,3 +10,4 @@ pygments
 hexdump
 arrow
 daemonize
+recordclass
