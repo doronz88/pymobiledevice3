@@ -33,7 +33,7 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
 # Features
 
 * TCP port forwarding
-    * `pymobiledevice3 lockdown forward src_port dst_port`)
+    * `pymobiledevice3 lockdown forward src_port dst_port`
 * Screenshots
     * `pymobiledevice3 screenshot screen.png`
 * Live and past syslogs
