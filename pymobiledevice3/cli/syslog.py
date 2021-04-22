@@ -32,7 +32,8 @@ def syslog_live_old(lockdown):
 @click.option('--nocolor', is_flag=True, help='disable colors')
 @click.option('--pid', type=click.INT, default=-1, help='pid to filter. -1 for all')
 @click.option('-m', '--match', help='match expression')
-def syslog_live(lockdown, out, nocolor, pid, match):
+@click.option('include_label', '--label', is_flag=True, help='should include label')
+def syslog_live(lockdown, out, nocolor, pid, match, include_label):
     """ view live syslog lines """
 
     log_level_colors = {
@@ -50,6 +51,9 @@ def syslog_live(lockdown, out, nocolor, pid, match):
         image_name = os.path.basename(syslog_entry.image_name)
         message = syslog_entry.message
         process_name = os.path.basename(filename)
+        label = ''
+        if syslog_entry.label is not None:
+            label = f'[{syslog_entry.label.bundle_id}][{syslog_entry.label.identifier}]'
 
         if not nocolor:
             timestamp = colored(str(timestamp), 'green')
@@ -61,12 +65,16 @@ def syslog_live(lockdown, out, nocolor, pid, match):
             if level in syslog_entry:
                 level = colored(level, log_level_colors[level])
 
+            label = colored(label, 'cyan')
             message = colored(syslog_entry['message'], 'white')
 
-        line = '{timestamp} {process_name}{{{image_name}}}[{pid}] <{level}>: {message}'.format(
-            timestamp=timestamp, process_name=process_name, image_name=image_name, pid=pid, level=level,
-            message=message,
-        )
+        line_format = '{timestamp} {process_name}{{{image_name}}}[{pid}] <{level}>: {message}'
+
+        if include_label:
+            line_format += f' {label}'
+
+        line = line_format.format(timestamp=timestamp, process_name=process_name, image_name=image_name, pid=pid,
+                                  level=level, label=label, message=message)
 
         if match and match not in line:
             continue
