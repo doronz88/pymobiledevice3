@@ -1,5 +1,3 @@
-# -*- coding:utf-8 -*-
-
 from pymobiledevice3.services.pcapd import PcapdService
 
 
