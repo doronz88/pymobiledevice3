@@ -1,3 +1,4 @@
+from collections import namedtuple
 import plistlib
 import select
 import socket
@@ -6,6 +7,8 @@ import sys
 
 from pymobiledevice3.exceptions import MuxException, MuxVersionError
 
+MuxDevice = namedtuple('MuxDevice', 'devid usbprod serial location')
+
 
 class SafeStreamSocket:
     def __init__(self, address, family):
@@ -13,12 +16,7 @@ class SafeStreamSocket:
         self.sock.connect(address)
 
     def send(self, msg):
-        totalsent = 0
-        while totalsent < len(msg):
-            sent = self.sock.send(msg[totalsent:])
-            if sent == 0:
-                raise MuxException('socket connection broken')
-            totalsent = totalsent + sent
+        self.sock.sendall(msg)
 
     def recv(self, size):
         msg = b''
@@ -31,18 +29,6 @@ class SafeStreamSocket:
         return msg
 
 
-class MuxDevice(object):
-    def __init__(self, devid, usbprod, serial, location):
-        self.devid = devid
-        self.usbprod = usbprod
-        self.serial = serial
-        self.location = location
-
-    def __str__(self):
-        return '''<MuxDevice: ID %d ProdID 0x%04x Serial '%s' Location 0x%x>''' % (
-            self.devid, self.usbprod, self.serial, self.location)
-
-
 class BinaryProtocol(object):
     TYPE_RESULT = 1
     TYPE_CONNECT = 2
@@ -51,8 +37,8 @@ class BinaryProtocol(object):
     TYPE_DEVICE_REMOVE = 5
     VERSION = 0
 
-    def __init__(self, socket):
-        self.socket = socket
+    def __init__(self, sock):
+        self.socket = sock
         self.connected = False
 
     def _pack(self, req, payload):
@@ -256,14 +242,3 @@ class UsbmuxdClient(MuxConnection):
         pair_record = data['PairRecordData']
         pair_record = plistlib.loads(pair_record)
         return pair_record
-
-
-if __name__ == '__main__':
-    mux = USBMux()
-    print('Waiting for devices...')
-    if not mux.devices:
-        mux.process()
-    while True:
-        for dev in mux.devices:
-            print('Device:', dev)
-        mux.process()
