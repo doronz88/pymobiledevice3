@@ -3,8 +3,9 @@
 import logging
 import plistlib
 import struct
+from datetime import datetime
 
-from construct import Struct, Bytes, Int32ul, CString, Timestamp, Optional, Enum, Byte
+from construct import Struct, Bytes, Int32ul, CString, Optional, Enum, Byte, Adapter
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
@@ -13,12 +14,27 @@ CHUNK_SIZE = 4096
 TIME_FORMAT = '%H:%M:%S'
 SYSLOG_LINE_SPLITTER = '\n\x00'
 
+
+class TimestampAdapter(Adapter):
+    def _decode(self, obj, context, path):
+        return datetime.fromtimestamp(obj.seconds + (obj.microseconds / 1000000))
+
+    def _encode(self, obj, context, path):
+        return list(map(int, obj.split(".")))
+
+
+timestamp_t = Struct(
+    'seconds' / Int32ul,
+    Bytes(4),
+    'microseconds' / Int32ul
+)
+
 syslog_t = Struct(
     Bytes(9),
     'pid' / Int32ul,
     Bytes(42),
-    'timestamp' / Timestamp(Int32ul, 1., 1970),
-    Bytes(9),
+    'timestamp' / TimestampAdapter(timestamp_t),
+    Bytes(1),
     'level' / Enum(Byte, Notice=0, Error=0x10, Fault=0x11),
     Bytes(1),
     Bytes(60),
