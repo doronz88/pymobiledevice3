@@ -2,10 +2,11 @@ import posixpath
 import shlex
 
 import click
+from humanfriendly.tables import format_smart_table
 
 from pymobiledevice3.cli.cli_common import print_object, Command
 from pymobiledevice3.exceptions import DvtDirListError
-from pymobiledevice3.services.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt_secure_socket_proxy import DvtSecureSocketProxyService, ConnectionDetectionEvent
 
 
 @click.group()
@@ -111,6 +112,15 @@ def device_information(lockdown, nocolor):
 @developer.command('netstat', cls=Command)
 def netstat(lockdown):
     """ Print information about current network activity. """
+
+    columns = ['SRC', 'DST']
+    rows = []
+
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         for event in dvt.network_monitor():
-            print(event)
+            if isinstance(event, ConnectionDetectionEvent):
+                rows.append([f'{event.local_address.data.address}:{event.local_address.port}',
+                             f'{event.remote_address.data.address}:{event.remote_address.port}'])
+            else:
+                break
+    print(format_smart_table(rows, columns))

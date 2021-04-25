@@ -1,20 +1,19 @@
-import contextlib
-import logging
 import io
+import ipaddress
+import logging
 import plistlib
-from collections import namedtuple
 from datetime import datetime
 from functools import partial
 
 import IPython
-from pygments import highlight, lexers, formatters
 from bpylist2 import archiver
 from construct import Struct, Int32ul, Int16ul, Int64ul, Const, Prefixed, GreedyBytes, this, Adapter, Select, \
     GreedyRange, Switch, Int8ul, Bytes, Int16ub
+from pygments import highlight, lexers, formatters
 from recordclass import recordclass
 
-from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.exceptions import DvtDirListError, ConnectionFailedError
+from pymobiledevice3.lockdown import LockdownClient
 
 SHELL_USAGE = '''
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
@@ -79,6 +78,42 @@ message_aux_t_struct = Struct(
                          default=GreedyBytes),
     )))
 )
+
+
+class IpAddressAdapter(Adapter):
+    def _decode(self, obj, context, path):
+        return ipaddress.ip_address(obj)
+
+
+address_t = Struct(
+    'len' / Int8ul,
+    'family' / Int8ul,
+    'port' / Int16ub,
+    'data' / Switch(this.len, {
+        0x1c: Struct(
+            'flow_info' / Int32ul,
+            'address' / IpAddressAdapter(Bytes(16)),
+            'scope_id' / Int32ul,
+        ),
+        0x10: Struct(
+            'address' / IpAddressAdapter(Bytes(4)),
+            '_zero' / Bytes(8)
+        )
+    })
+
+)
+
+MESSAGE_TYPE_INTERFACE_DETECTION = 0
+MESSAGE_TYPE_CONNECTION_DETECTION = 1
+MESSAGE_TYPE_CONNECTION_UPDATE = 2
+
+InterfaceDetectionEvent = recordclass('InterfaceDetectionEvent', 'interface_index name')
+ConnectionDetectionEvent = recordclass('ConnectionDetectionEvent',
+                                       'local_address remote_address interface_index pid recv_buffer_size '
+                                       'recv_buffer_used serial_number kind')
+ConnectionUpdateEvent = recordclass('ConnectionUpdateEvent',
+                                    'rx_packets rx_bytes tx_bytes rx_dups rx000 tx_retx min_rtt avg_rtt '
+                                    'connection_serial')
 
 
 class MessageAux:
@@ -146,7 +181,7 @@ class DvtSecureSocketProxyService(object):
             if hasattr(self.service.socket, '_sslobj'):
                 # after the remoteserver protocol is successfully paired, you need to close the ssl protocol
                 # channel and use clear text transmission
-                self._cli.socket._sslobj = None
+                self.service.socket._sslobj = None
         self.channels = {}
         self.cur_channel = 0
         self.cur_message = 0
@@ -247,42 +282,6 @@ class DvtSecureSocketProxyService(object):
         channel = self.make_channel('com.apple.instruments.server.services.networking')
         channel.startMonitoring(expects_reply=False)
 
-        address_t = Struct(
-            'len' / Int8ul,
-            'family' / Int8ul,
-            'port' / Int16ub,
-            'data' / Switch(this.len, {
-                0x1c: Struct(
-                    'flow_info' / Int32ul,
-                    'address' / Bytes(16),
-                    'scope_id' / Int32ul,
-                ),
-                0x10: Struct(
-                    'address' / Bytes(4),
-                    'zero' / Bytes(8)
-                )
-            })
-
-        )
-
-        MESSAGE_TYPE_INTERFACE_DETECTION = 0
-        MESSAGE_TYPE_CONNECTION_DETECTION = 1
-        MESSAGE_TYPE_CONNECTION_UPDATE = 2
-
-        msg_type = {
-            MESSAGE_TYPE_INTERFACE_DETECTION: "interface-detection",
-            MESSAGE_TYPE_CONNECTION_DETECTION: "connection-detected",
-            MESSAGE_TYPE_CONNECTION_UPDATE: "connection-update",
-        }
-
-        InterfaceDetectionEvent = recordclass('InterfaceDetectionEvent', 'interface_index name')
-        ConnectionDetectionEvent = recordclass('ConnectionDetectionEvent',
-                                              'local_address remote_address interface_index pid recv_buffer_size '
-                                              'recv_buffer_used serial_number kind')
-        ConnectionUpdateEvent = recordclass('ConnectionUpdateEvent',
-                                           'rx_packets rx_bytes tx_bytes rx_dups rx000 tx_retx min_rtt avg_rtt '
-                                           'connection_serial')
-
         while True:
             message, _ = self.recv_message()
 
@@ -290,8 +289,6 @@ class DvtSecureSocketProxyService(object):
 
             if message is None:
                 continue
-
-            # print(message)
 
             if message[0] == MESSAGE_TYPE_INTERFACE_DETECTION:
                 event = InterfaceDetectionEvent(*message[1])
