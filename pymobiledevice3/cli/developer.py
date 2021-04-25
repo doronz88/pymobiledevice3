@@ -1,12 +1,13 @@
 import posixpath
 import shlex
+from dataclasses import asdict
 
 import click
 from humanfriendly.tables import format_smart_table
 
 from pymobiledevice3.cli.cli_common import print_object, Command
 from pymobiledevice3.exceptions import DvtDirListError
-from pymobiledevice3.services.dvt_secure_socket_proxy import DvtSecureSocketProxyService, ConnectionDetectionEvent
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService, ConnectionDetectionEvent
 
 
 @click.group()
@@ -124,3 +125,55 @@ def netstat(lockdown):
             else:
                 break
     print(format_smart_table(rows, columns))
+
+
+@developer.group('sysmon')
+def sysmon():
+    """ System monitor options. """
+
+
+@sysmon.command('processes', cls=Command)
+@click.option('-f', '--fields', help='field names splitted by ",".')
+def sysmon_processes(lockdown, fields):
+    """ show currently running processes information. """
+
+    if fields is not None:
+        fields = fields.split(',')
+
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with dvt.sysmontap() as sysmon:
+            for row in sysmon:
+                if 'Processes' in row:
+                    processes = row['Processes'].items()
+                    break
+
+    for pid, process in processes:
+        attrs = dvt.SysmonProcAttributes(*process)
+
+        print(f'{attrs.name} ({attrs.pid})')
+        attrs_dict = asdict(attrs)
+
+        for name, value in attrs_dict.items():
+            if (fields is None) or (name in fields):
+                print(f'\t{name}: {value}')
+
+
+@sysmon.command('system', cls=Command)
+@click.option('-f', '--fields', help='field names splitted by ",".')
+def sysmon_system(lockdown, fields):
+    """ show current system stats. """
+
+    if fields is not None:
+        fields = fields.split(',')
+
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with dvt.sysmontap() as sysmon:
+            for row in sysmon:
+                if 'System' in row:
+                    system = dvt.SysmonSystemAttributes(*row['System'])
+                    break
+
+    attrs_dict = asdict(system)
+    for name, value in attrs_dict.items():
+        if (fields is None) or (name in fields):
+            print(f'{name}: {value}')

@@ -71,12 +71,11 @@ class ServiceConnection(object):
 
     def recvall(self, size):
         data = b''
-        while size > 0:
-            d = self.recv(size)
-            if not d or len(d) == 0:
-                break
-            data += d
-            size -= len(d)
+        while len(data) < size:
+            chunk = self.recv(size - len(data))
+            if chunk is None or len(chunk) == 0:
+                raise ConnectionAbortedError()
+            data += chunk
         return data
 
     def recv_prefixed(self):

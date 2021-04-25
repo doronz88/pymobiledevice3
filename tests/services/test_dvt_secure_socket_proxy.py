@@ -1,6 +1,6 @@
 import pytest
 
-from pymobiledevice3.services.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.exceptions import DvtDirListError
 
 
