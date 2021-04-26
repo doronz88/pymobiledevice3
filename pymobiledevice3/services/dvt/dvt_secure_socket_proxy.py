@@ -3,6 +3,7 @@ import io
 import ipaddress
 import logging
 import plistlib
+from collections import namedtuple
 from datetime import datetime
 from functools import partial
 from pprint import pprint
@@ -147,6 +148,9 @@ class Channel(int):
 
     def __getattr__(self, item):
         return partial(self._service.send_message, self, self._sanitize_name(item))
+
+
+SysmontapResult = namedtuple('SysmontapResult', 'process_attributes_cls system_attributes_cls ctx')
 
 
 class DvtSecureSocketProxyService(object):
@@ -306,14 +310,26 @@ class DvtSecureSocketProxyService(object):
             finally:
                 channel.stopMonitoring()
 
-    def sysmontap(self):
-        return Tap(self, 'com.apple.instruments.server.services.sysmontap', {
+    def sysmontap(self) -> SysmontapResult:
+        process_attributes = list(self._request_information('sysmonProcessAttributes'))
+        system_attributes = list(self._request_information('sysmonSystemAttributes'))
+
+        process_attributes_cls = dataclasses.make_dataclass('SysmonProcessAttributes',
+                                                            [f.replace('_', '') for f in process_attributes])
+        system_attributes_cls = dataclasses.make_dataclass('SysmonSystemAttributes',
+                                                           [f.replace('_', '') for f in system_attributes])
+
+        ctx = Tap(self, 'com.apple.instruments.server.services.sysmontap', {
             'ur': 1000,  # Output frequency ms
             'bm': 0,
-            'procAttrs': self.process_attributes,
-            'sysAttrs': self.system_attributes,
+            'procAttrs': process_attributes,
+            'sysAttrs': system_attributes,
             'cpuUsage': True,
             'sampleInterval': 1000000000})
+
+        return SysmontapResult(process_attributes_cls=process_attributes_cls,
+                               system_attributes_cls=system_attributes_cls,
+                               ctx=ctx)
 
     def perform_handshake(self):
         args = MessageAux()
@@ -414,15 +430,6 @@ class DvtSecureSocketProxyService(object):
 
     def __enter__(self):
         self.perform_handshake()
-
-        # query device for its "queryable" attributes
-        self.process_attributes = list(self._request_information('sysmonProcessAttributes'))
-        self.system_attributes = list(self._request_information('sysmonSystemAttributes'))
-
-        self.SysmonProcAttributes = dataclasses.make_dataclass('SysmonProcAttributes',
-                                                               [f.replace('_', '') for f in self.process_attributes])
-        self.SysmonSystemAttributes = dataclasses.make_dataclass('SysmonSystemAttributes',
-                                                                 [f.replace('_', '') for f in self.system_attributes])
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

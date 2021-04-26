@@ -141,14 +141,15 @@ def sysmon_processes(lockdown, fields):
         fields = fields.split(',')
 
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with dvt.sysmontap() as sysmon:
+        tap = dvt.sysmontap()
+        with tap.ctx as sysmon:
             for row in sysmon:
                 if 'Processes' in row:
                     processes = row['Processes'].items()
                     break
 
     for pid, process in processes:
-        attrs = dvt.SysmonProcAttributes(*process)
+        attrs = tap.process_attributes_cls(*process)
 
         print(f'{attrs.name} ({attrs.pid})')
         attrs_dict = asdict(attrs)
@@ -167,10 +168,11 @@ def sysmon_system(lockdown, fields):
         fields = fields.split(',')
 
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with dvt.sysmontap() as sysmon:
+        tap = dvt.sysmontap()
+        with tap.ctx as sysmon:
             for row in sysmon:
                 if 'System' in row:
-                    system = dvt.SysmonSystemAttributes(*row['System'])
+                    system = tap.system_attributes_cls(*row['System'])
                     break
 
     attrs_dict = asdict(system)
