@@ -74,7 +74,7 @@ def syslog_live(lockdown, out, nocolor, pid, match, include_label):
             line_format += f' {label}'
 
         line = line_format.format(timestamp=timestamp, process_name=process_name, image_name=image_name, pid=pid,
-                                  level=level, label=label, message=message)
+                                  level=level, message=message)
 
         if match and match not in line:
             continue
