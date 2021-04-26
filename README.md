@@ -61,6 +61,8 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
         * `pymobiledevice3 developer kill/launch/....`
     * **Non-chrooted** directory listing
         * `pymobiledevice3 developer ls /`
+    * System monitoring (`top` like)
+        * `pymobiledevice3 developer sysmon processes`
     * Raw shell for experimenting:
         * `pymobiledevice3 developer shell`
 
