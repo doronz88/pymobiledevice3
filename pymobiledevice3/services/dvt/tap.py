@@ -14,7 +14,7 @@ class Tap:
         self._channel.start(expects_reply=False)
 
         # first message is just kind of an ack
-        self._dvt.recv_plist()
+        self._channel.receive()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -22,6 +22,6 @@ class Tap:
 
     def __iter__(self):
         while True:
-            results, _ = self._dvt.recv_plist()
+            results = self._channel.receive()
             for result in results:
                 yield result
