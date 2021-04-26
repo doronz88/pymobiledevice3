@@ -1,19 +1,22 @@
+import dataclasses
 import io
 import ipaddress
 import logging
 import plistlib
 from datetime import datetime
 from functools import partial
+from pprint import pprint
 
 import IPython
 from bpylist2 import archiver
-from construct import Struct, Int32ul, Int16ul, Int64ul, Const, Prefixed, GreedyBytes, this, Adapter, Select, \
-    GreedyRange, Switch, Int8ul, Bytes, Int16ub
+from construct import Struct, Int32ul, this, Adapter, Switch, Int8ul, Bytes, Int16ub
 from pygments import highlight, lexers, formatters
-from recordclass import recordclass
 
 from pymobiledevice3.exceptions import DvtDirListError, ConnectionFailedError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.dvt.structs import MessageAux, dtx_message_payload_header_struct, \
+    dtx_message_header_struct, message_aux_t_struct
+from pymobiledevice3.services.dvt.tap import Tap
 
 SHELL_USAGE = '''
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
@@ -43,41 +46,23 @@ return_value, auxiliary = developer.recv_message()
 '''
 
 
-class BplitAdapter(Adapter):
-    def _decode(self, obj, context, path):
-        return archiver.unarchive(obj)
-
-    def _encode(self, obj, context, path):
-        return archiver.archive(obj)
+class DTSysmonTapMessage:
+    @staticmethod
+    def decode_archive(archive_obj):
+        return archive_obj.decode('DTTapMessagePlist')
 
 
-dtx_message_header_struct = Struct(
-    'magic' / Const(0x1F3D5B79, Int32ul),
-    'cb' / Int32ul,
-    'fragmentId' / Int16ul,
-    'fragmentCount' / Int16ul,
-    'length' / Int32ul,
-    'identifier' / Int32ul,
-    'conversationIndex' / Int32ul,
-    'channelCode' / Int32ul,
-    'expectsReply' / Int32ul,
-)
+class NSNull:
+    @staticmethod
+    def decode_archive(archive_obj):
+        return None
 
-dtx_message_payload_header_struct = Struct(
-    'flags' / Int32ul,
-    'auxiliaryLength' / Int32ul,
-    'totalLength' / Int64ul,
-)
 
-message_aux_t_struct = Struct(
-    'magic' / Select(Const(0x1f0, Int64ul), Const(0x1df0, Int64ul)),
-    'aux' / Prefixed(Int64ul, GreedyRange(Struct(
-        '_empty_dictionary' / Select(Const(0xa, Int32ul), Int32ul),
-        'type' / Int32ul,
-        'value' / Switch(this.type, {2: BplitAdapter(Prefixed(Int32ul, GreedyBytes)), 3: Int32ul, 4: Int64ul},
-                         default=GreedyBytes),
-    )))
-)
+archiver.update_class_map({'DTSysmonTapMessage': DTSysmonTapMessage,
+                           'DTTapHeartbeatMessage': DTSysmonTapMessage,
+                           'DTTapStatusMessage': DTSysmonTapMessage,
+                           'DTKTraceTapMessage': DTSysmonTapMessage,
+                           'NSNull': NSNull})
 
 
 class IpAddressAdapter(Adapter):
@@ -107,33 +92,36 @@ MESSAGE_TYPE_INTERFACE_DETECTION = 0
 MESSAGE_TYPE_CONNECTION_DETECTION = 1
 MESSAGE_TYPE_CONNECTION_UPDATE = 2
 
-InterfaceDetectionEvent = recordclass('InterfaceDetectionEvent', 'interface_index name')
-ConnectionDetectionEvent = recordclass('ConnectionDetectionEvent',
-                                       'local_address remote_address interface_index pid recv_buffer_size '
-                                       'recv_buffer_used serial_number kind')
-ConnectionUpdateEvent = recordclass('ConnectionUpdateEvent',
-                                    'rx_packets rx_bytes tx_bytes rx_dups rx000 tx_retx min_rtt avg_rtt '
-                                    'connection_serial')
+
+@dataclasses.dataclass
+class InterfaceDetectionEvent:
+    interface_index: int
+    name: str
 
 
-class MessageAux:
-    def __init__(self):
-        self.values = []
+@dataclasses.dataclass
+class ConnectionDetectionEvent:
+    local_address: str
+    remote_address: str
+    interface_index: int
+    pid: int
+    recv_buffer_size: int
+    recv_buffer_used: int
+    serial_number: int
+    kind: int
 
-    def append_int(self, value: int):
-        self.values.append({'type': 3, 'value': value})
-        return self
 
-    def append_long(self, value: int):
-        self.values.append({'type': 4, 'value': value})
-        return self
-
-    def append_obj(self, value):
-        self.values.append({'type': 2, 'value': value})
-        return self
-
-    def __bytes__(self):
-        return message_aux_t_struct.build(dict(aux=self.values))
+@dataclasses.dataclass
+class ConnectionUpdateEvent:
+    rx_packets: int
+    rx_bytes: int
+    tx_bytes: int
+    rx_dups: int
+    rx000: int
+    tx_retx: int
+    min_rtt: int
+    avg_rtt: int
+    connection_serial: int
 
 
 class Channel(int):
@@ -182,9 +170,10 @@ class DvtSecureSocketProxyService(object):
                 # after the remoteserver protocol is successfully paired, you need to close the ssl protocol
                 # channel and use clear text transmission
                 self.service.socket._sslobj = None
-        self.channels = {}
-        self.cur_channel = 0
+        self.supported_identifiers = {}
+        self.last_channel_code = 0
         self.cur_message = 0
+        self.channels = {}
 
     def shell(self):
         IPython.embed(
@@ -209,6 +198,19 @@ class DvtSecureSocketProxyService(object):
         ret, aux = self.recv_message()
         if ret is None:
             raise DvtDirListError()
+        return ret
+
+    def execname_for_pid(self, pid: int) -> str:
+        """
+        get full path for given pid
+        :param pid: process pid
+        """
+        channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
+        args = MessageAux().append_int(pid)
+        self.send_message(
+            channel, 'execnameForPid:', args
+        )
+        ret, aux = self.recv_message()
         return ret
 
     def proclist(self):
@@ -293,9 +295,6 @@ class DvtSecureSocketProxyService(object):
             if message[0] == MESSAGE_TYPE_INTERFACE_DETECTION:
                 event = InterfaceDetectionEvent(*message[1])
             elif message[0] == MESSAGE_TYPE_CONNECTION_DETECTION:
-                local_address = address_t.parse(message[1][0])
-                remote_address = address_t.parse(message[1][1])
-
                 event = ConnectionDetectionEvent(*message[1])
                 event.local_address = address_t.parse(event.local_address)
                 event.remote_address = address_t.parse(event.remote_address)
@@ -307,27 +306,40 @@ class DvtSecureSocketProxyService(object):
             finally:
                 channel.stopMonitoring()
 
+    def sysmontap(self):
+        return Tap(self, 'com.apple.instruments.server.services.sysmontap', {
+            'ur': 1000,  # Output frequency ms
+            'bm': 0,
+            'procAttrs': self.process_attributes,
+            'sysAttrs': self.system_attributes,
+            'cpuUsage': True,
+            'sampleInterval': 1000000000})
+
     def perform_handshake(self):
         args = MessageAux()
-        args.append_obj({'com.apple.private.DTXBlockCompression': 2, 'com.apple.private.DTXConnection': 1})
+        args.append_obj({'com.apple.private.DTXBlockCompression': 0, 'com.apple.private.DTXConnection': 1})
         self.send_message(0, '_notifyOfPublishedCapabilities:', args, expects_reply=False)
         ret, aux = self.recv_message()
         if ret != '_notifyOfPublishedCapabilities:':
             raise ValueError('Invalid answer')
         if not len(aux[0]):
             raise ValueError('Invalid answer')
-        self.channels = aux[0].value
+        self.supported_identifiers = aux[0].value
 
     def make_channel(self, identifier):
-        assert identifier in self.channels
-        self.cur_channel += 1
-        code = self.cur_channel
+        assert identifier in self.supported_identifiers
+        if identifier in self.channels:
+            return self.channels[identifier]
+
+        self.last_channel_code += 1
+        code = self.last_channel_code
         args = MessageAux().append_int(code).append_obj(identifier)
         self.send_message(0, '_requestChannelWithCode:identifier:', args)
         ret, aux = self.recv_message()
         assert ret is None
-        assert code > 0
-        return Channel.create(code, self)
+        channel = Channel.create(code, self)
+        self.channels[identifier] = channel
+        return channel
 
     def send_message(self, channel: int, selector: str = None, args: MessageAux = None, expects_reply: bool = True):
         self.cur_message += 1
@@ -366,11 +378,15 @@ class DvtSecureSocketProxyService(object):
             aux = None
         obj_size = pheader.totalLength - pheader.auxiliaryLength
         data = packet_stream.read(obj_size)
-        try:
-            ret = archiver.unarchive(data) if obj_size else None
-        except archiver.MissingClassMapping as e:
-            print(plistlib.loads(data))
-            raise e
+        ret = None
+        if data:
+            try:
+                ret = archiver.unarchive(data) if obj_size else None
+            except archiver.MissingClassMapping as e:
+                pprint(plistlib.loads(data))
+                raise e
+            except plistlib.InvalidFileException:
+                logging.warning(f'got an invalid plist: {data[:40]}')
         return ret, aux
 
     def _request_information(self, selector_name):
@@ -398,6 +414,15 @@ class DvtSecureSocketProxyService(object):
 
     def __enter__(self):
         self.perform_handshake()
+
+        # query device for its "queryable" attributes
+        self.process_attributes = list(self._request_information('sysmonProcessAttributes'))
+        self.system_attributes = list(self._request_information('sysmonSystemAttributes'))
+
+        self.SysmonProcAttributes = dataclasses.make_dataclass('SysmonProcAttributes',
+                                                               [f.replace('_', '') for f in self.process_attributes])
+        self.SysmonSystemAttributes = dataclasses.make_dataclass('SysmonSystemAttributes',
+                                                                 [f.replace('_', '') for f in self.system_attributes])
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
