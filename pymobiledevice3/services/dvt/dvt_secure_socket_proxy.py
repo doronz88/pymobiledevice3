@@ -379,6 +379,18 @@ class DvtSecureSocketProxyService(object):
         self.service.sendall(msg)
 
     def recv_plist(self):
+        data, aux = self.recv_message()
+        if data is not None:
+            try:
+                data = archiver.unarchive(data)
+            except archiver.MissingClassMapping as e:
+                pprint(plistlib.loads(data))
+                raise e
+            except plistlib.InvalidFileException:
+                logging.warning(f'got an invalid plist: {data[:40]}')
+        return data, aux
+
+    def recv_message(self):
         packet_stream = self._recv_packet_fragments()
         pheader = dtx_message_payload_header_struct.parse_stream(packet_stream)
 
@@ -391,17 +403,8 @@ class DvtSecureSocketProxyService(object):
         else:
             aux = None
         obj_size = pheader.totalLength - pheader.auxiliaryLength
-        data = packet_stream.read(obj_size)
-        ret = None
-        if data:
-            try:
-                ret = archiver.unarchive(data) if obj_size else None
-            except archiver.MissingClassMapping as e:
-                pprint(plistlib.loads(data))
-                raise e
-            except plistlib.InvalidFileException:
-                logging.warning(f'got an invalid plist: {data[:40]}')
-        return ret, aux
+        data = packet_stream.read(obj_size) if obj_size else None
+        return data, aux
 
     def _request_information(self, selector_name):
         channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
