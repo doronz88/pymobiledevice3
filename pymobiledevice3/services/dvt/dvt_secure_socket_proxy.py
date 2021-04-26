@@ -314,10 +314,8 @@ class DvtSecureSocketProxyService(object):
         process_attributes = list(self._request_information('sysmonProcessAttributes'))
         system_attributes = list(self._request_information('sysmonSystemAttributes'))
 
-        process_attributes_cls = dataclasses.make_dataclass('SysmonProcessAttributes',
-                                                            [f.replace('_', '') for f in process_attributes])
-        system_attributes_cls = dataclasses.make_dataclass('SysmonSystemAttributes',
-                                                           [f.replace('_', '') for f in system_attributes])
+        process_attributes_cls = dataclasses.make_dataclass('SysmonProcessAttributes', process_attributes)
+        system_attributes_cls = dataclasses.make_dataclass('SysmonSystemAttributes', system_attributes)
 
         ctx = Tap(self, 'com.apple.instruments.server.services.sysmontap', {
             'ur': 1000,  # Output frequency ms
