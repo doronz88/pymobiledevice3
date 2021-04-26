@@ -206,8 +206,8 @@ args = MessageAux().append_obj(80)  # This will kill pid 80
 channel.killPid_(args, expects_reply=False)  # Killing a process doesn't require an answer.
 
 # In some rare cases, you might want to receive the auxiliary and the selector return value.
-# For that cases you can use the recv_message method.
-return_value, auxiliary = developer.recv_message()
+# For that cases you can use the recv_plist method.
+return_value, auxiliary = developer.recv_plist()
 ```
 
 ## Example
