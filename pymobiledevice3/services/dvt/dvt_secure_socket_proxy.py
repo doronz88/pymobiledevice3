@@ -42,8 +42,8 @@ args = MessageAux().append_obj(80) # This will kill pid 80
 channel.killPid_(args, expects_reply=False) # Killing a process doesn't require an answer.
 
 # In some rare cases, you might want to receive the auxiliary and the selector return value.
-# For that cases you can use the recv_message method.
-return_value, auxiliary = developer.recv_message()
+# For that cases you can use the recv_plist method.
+return_value, auxiliary = developer.recv_plist()
 '''
 
 
@@ -133,7 +133,7 @@ class Channel(int):
         return channel
 
     def receive(self):
-        return self._service.recv_message()[0]
+        return self._service.recv_plist()[0]
 
     @staticmethod
     def _sanitize_name(name: str):
@@ -199,7 +199,7 @@ class DvtSecureSocketProxyService(object):
         self.send_message(
             channel, 'directoryListingForPath:', args
         )
-        ret, aux = self.recv_message()
+        ret, aux = self.recv_plist()
         if ret is None:
             raise DvtDirListError()
         return ret
@@ -214,7 +214,7 @@ class DvtSecureSocketProxyService(object):
         self.send_message(
             channel, 'execnameForPid:', args
         )
-        ret, aux = self.recv_message()
+        ret, aux = self.recv_plist()
         return ret
 
     def proclist(self):
@@ -225,7 +225,7 @@ class DvtSecureSocketProxyService(object):
         """
         channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
         self.send_message(channel, 'runningProcesses')
-        ret, aux = self.recv_message()
+        ret, aux = self.recv_plist()
         assert isinstance(ret, list)
         for process in ret:
             if 'startDate' in process:
@@ -241,7 +241,7 @@ class DvtSecureSocketProxyService(object):
         channel = self.make_channel(self.APP_LISTING_IDENTIFIER)
         args = MessageAux().append_obj({}).append_obj('')
         self.send_message(channel, 'installedApplicationsMatching:registerUpdateToken:', args)
-        ret, aux = self.recv_message()
+        ret, aux = self.recv_plist()
         assert isinstance(ret, list)
         return ret
 
@@ -271,7 +271,7 @@ class DvtSecureSocketProxyService(object):
         self.send_message(
             channel, 'launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:', args
         )
-        ret, aux = self.recv_message()
+        ret, aux = self.recv_plist()
         assert ret
         return ret
 
@@ -289,7 +289,7 @@ class DvtSecureSocketProxyService(object):
         channel.startMonitoring(expects_reply=False)
 
         while True:
-            message, _ = self.recv_message()
+            message, _ = self.recv_plist()
 
             event = None
 
@@ -333,7 +333,7 @@ class DvtSecureSocketProxyService(object):
         args = MessageAux()
         args.append_obj({'com.apple.private.DTXBlockCompression': 0, 'com.apple.private.DTXConnection': 1})
         self.send_message(0, '_notifyOfPublishedCapabilities:', args, expects_reply=False)
-        ret, aux = self.recv_message()
+        ret, aux = self.recv_plist()
         if ret != '_notifyOfPublishedCapabilities:':
             raise ValueError('Invalid answer')
         if not len(aux[0]):
@@ -349,7 +349,7 @@ class DvtSecureSocketProxyService(object):
         code = self.last_channel_code
         args = MessageAux().append_int(code).append_obj(identifier)
         self.send_message(0, '_requestChannelWithCode:identifier:', args)
-        ret, aux = self.recv_message()
+        ret, aux = self.recv_plist()
         assert ret is None
         channel = Channel.create(code, self)
         self.channels[identifier] = channel
@@ -378,7 +378,7 @@ class DvtSecureSocketProxyService(object):
         msg = mheader + pheader + aux + sel
         self.service.sendall(msg)
 
-    def recv_message(self):
+    def recv_plist(self):
         packet_stream = self._recv_packet_fragments()
         pheader = dtx_message_payload_header_struct.parse_stream(packet_stream)
 
@@ -406,7 +406,7 @@ class DvtSecureSocketProxyService(object):
     def _request_information(self, selector_name):
         channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
         self.send_message(channel, selector_name)
-        ret, aux = self.recv_message()
+        ret, aux = self.recv_plist()
         assert ret
         return ret
 
