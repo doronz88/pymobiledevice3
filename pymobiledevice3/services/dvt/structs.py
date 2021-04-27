@@ -1,6 +1,6 @@
 from bpylist2 import archiver
 from construct import Struct, Int32ul, Int16ul, Int64ul, Const, Prefixed, GreedyBytes, this, Adapter, Select, \
-    GreedyRange, Switch
+    GreedyRange, Switch, Int32sl
 
 
 class BplitAdapter(Adapter):
@@ -19,7 +19,7 @@ dtx_message_header_struct = Struct(
     'length' / Int32ul,
     'identifier' / Int32ul,
     'conversationIndex' / Int32ul,
-    'channelCode' / Int32ul,
+    'channelCode' / Int32sl,
     'expectsReply' / Int32ul,
 )
 

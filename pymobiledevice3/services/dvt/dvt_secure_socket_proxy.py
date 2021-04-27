@@ -1,23 +1,20 @@
-import dataclasses
+import _queue
 import io
-import ipaddress
 import logging
 import plistlib
 from collections import namedtuple
-from datetime import datetime
 from functools import partial
 from pprint import pprint
+from queue import Queue
 
 import IPython
 from bpylist2 import archiver
-from construct import Struct, Int32ul, this, Adapter, Switch, Int8ul, Bytes, Int16ub
 from pygments import highlight, lexers, formatters
 
-from pymobiledevice3.exceptions import DvtDirListError, ConnectionFailedError
+from pymobiledevice3.exceptions import ConnectionFailedError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.dvt.structs import MessageAux, dtx_message_payload_header_struct, \
     dtx_message_header_struct, message_aux_t_struct
-from pymobiledevice3.services.dvt.tap import Tap
 
 SHELL_USAGE = '''
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
@@ -66,65 +63,6 @@ archiver.update_class_map({'DTSysmonTapMessage': DTSysmonTapMessage,
                            'NSNull': NSNull})
 
 
-class IpAddressAdapter(Adapter):
-    def _decode(self, obj, context, path):
-        return ipaddress.ip_address(obj)
-
-
-address_t = Struct(
-    'len' / Int8ul,
-    'family' / Int8ul,
-    'port' / Int16ub,
-    'data' / Switch(this.len, {
-        0x1c: Struct(
-            'flow_info' / Int32ul,
-            'address' / IpAddressAdapter(Bytes(16)),
-            'scope_id' / Int32ul,
-        ),
-        0x10: Struct(
-            'address' / IpAddressAdapter(Bytes(4)),
-            '_zero' / Bytes(8)
-        )
-    })
-
-)
-
-MESSAGE_TYPE_INTERFACE_DETECTION = 0
-MESSAGE_TYPE_CONNECTION_DETECTION = 1
-MESSAGE_TYPE_CONNECTION_UPDATE = 2
-
-
-@dataclasses.dataclass
-class InterfaceDetectionEvent:
-    interface_index: int
-    name: str
-
-
-@dataclasses.dataclass
-class ConnectionDetectionEvent:
-    local_address: str
-    remote_address: str
-    interface_index: int
-    pid: int
-    recv_buffer_size: int
-    recv_buffer_used: int
-    serial_number: int
-    kind: int
-
-
-@dataclasses.dataclass
-class ConnectionUpdateEvent:
-    rx_packets: int
-    rx_bytes: int
-    tx_bytes: int
-    rx_dups: int
-    rx000: int
-    tx_retx: int
-    min_rtt: int
-    avg_rtt: int
-    connection_serial: int
-
-
 class Channel(int):
     @classmethod
     def create(cls, value: int, service):
@@ -133,7 +71,7 @@ class Channel(int):
         return channel
 
     def receive(self):
-        return self._service.recv_plist()[0]
+        return self._service.recv_plist(self)[0]
 
     @staticmethod
     def _sanitize_name(name: str):
@@ -146,19 +84,37 @@ class Channel(int):
             name = name.replace('_', ':')
         return name
 
+    def __getitem__(self, item):
+        return partial(self._service.send_message, self, item)
+
     def __getattr__(self, item):
-        return partial(self._service.send_message, self, self._sanitize_name(item))
+        return self[self._sanitize_name(item)]
+
+
+class ChannelFragmenter:
+    def __init__(self):
+        self._messages = Queue()
+        self._packet_data = b''
+
+    def get(self):
+        return self._messages.get_nowait()
+
+    def add_fragment(self, mheader, chunk):
+        self._packet_data += chunk
+
+        if mheader.fragmentId == mheader.fragmentCount - 1:
+            # last message
+            self._messages.put(self._packet_data)
+            self._packet_data = b''
 
 
 SysmontapResult = namedtuple('SysmontapResult', 'process_attributes_cls system_attributes_cls ctx')
 
 
 class DvtSecureSocketProxyService(object):
+    BROADCAST_CHANNEL = 0
     INSTRUMENTS_MESSAGE_TYPE = 2
     EXPECTS_REPLY_MASK = 0x1000
-    DEVICEINFO_IDENTIFIER = 'com.apple.instruments.server.services.deviceinfo'
-    APP_LISTING_IDENTIFIER = 'com.apple.instruments.server.services.device.applictionListing'
-    PROCESS_CONTROL_IDENTIFIER = 'com.apple.instruments.server.services.processcontrol'
 
     def __init__(self, lockdown: LockdownClient):
         self.logger = logging.getLogger(__name__)
@@ -177,7 +133,8 @@ class DvtSecureSocketProxyService(object):
         self.supported_identifiers = {}
         self.last_channel_code = 0
         self.cur_message = 0
-        self.channels = {}
+        self.channel_cache = {}
+        self.channel_messages = {self.BROADCAST_CHANNEL: ChannelFragmenter()}
 
     def shell(self):
         IPython.embed(
@@ -186,148 +143,6 @@ class DvtSecureSocketProxyService(object):
                 'developer': self,
                 'MessageAux': MessageAux,
             })
-
-    def ls(self, path: str):
-        """
-        List a directory.
-        :param path: Directory to list.
-        :return: Contents of the directory.
-        :rtype: list[str]
-        """
-        channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
-        args = MessageAux().append_obj(path)
-        self.send_message(
-            channel, 'directoryListingForPath:', args
-        )
-        ret, aux = self.recv_plist()
-        if ret is None:
-            raise DvtDirListError()
-        return ret
-
-    def execname_for_pid(self, pid: int) -> str:
-        """
-        get full path for given pid
-        :param pid: process pid
-        """
-        channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
-        args = MessageAux().append_int(pid)
-        self.send_message(
-            channel, 'execnameForPid:', args
-        )
-        ret, aux = self.recv_plist()
-        return ret
-
-    def proclist(self):
-        """
-        Get the process list from the device.
-        :return: List of process and their attributes.
-        :rtype: list[dict]
-        """
-        channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
-        self.send_message(channel, 'runningProcesses')
-        ret, aux = self.recv_plist()
-        assert isinstance(ret, list)
-        for process in ret:
-            if 'startDate' in process:
-                process['startDate'] = datetime.fromtimestamp(process['startDate'])
-        return ret
-
-    def applist(self):
-        """
-        Get the applications list from the device.
-        :return: List of applications and their attributes.
-        :rtype: list[dict]
-        """
-        channel = self.make_channel(self.APP_LISTING_IDENTIFIER)
-        args = MessageAux().append_obj({}).append_obj('')
-        self.send_message(channel, 'installedApplicationsMatching:registerUpdateToken:', args)
-        ret, aux = self.recv_plist()
-        assert isinstance(ret, list)
-        return ret
-
-    def kill(self, pid: int):
-        """
-        Kill a process.
-        :param pid: PID of process to kill.
-        """
-        channel = self.make_channel(self.PROCESS_CONTROL_IDENTIFIER)
-        self.send_message(channel, 'killPid:', MessageAux().append_obj(pid), False)
-
-    def launch(self, bundle_id: str, arguments=None, kill_existing: bool = True, start_suspended: bool = False) -> int:
-        """
-        Launch a process.
-        :param bundle_id: Bundle id of the process.
-        :param list arguments: List of argument to pass to process.
-        :param kill_existing: Whether to kill an existing instance of this process.
-        :param start_suspended: Same as WaitForDebugger.
-        :return: PID of created process.
-        """
-        arguments = [] if arguments is None else arguments
-        channel = self.make_channel(self.PROCESS_CONTROL_IDENTIFIER)
-        args = MessageAux().append_obj('').append_obj(bundle_id).append_obj({}).append_obj(arguments).append_obj({
-            'StartSuspendedKey': start_suspended,
-            'KillExisting': kill_existing,
-        })
-        self.send_message(
-            channel, 'launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:', args
-        )
-        ret, aux = self.recv_plist()
-        assert ret
-        return ret
-
-    def system_information(self):
-        return self._request_information('systemInformation')
-
-    def hardware_information(self):
-        return self._request_information('hardwareInformation')
-
-    def network_information(self):
-        return self._request_information('networkInformation')
-
-    def network_monitor(self):
-        channel = self.make_channel('com.apple.instruments.server.services.networking')
-        channel.startMonitoring(expects_reply=False)
-
-        while True:
-            message, _ = self.recv_plist()
-
-            event = None
-
-            if message is None:
-                continue
-
-            if message[0] == MESSAGE_TYPE_INTERFACE_DETECTION:
-                event = InterfaceDetectionEvent(*message[1])
-            elif message[0] == MESSAGE_TYPE_CONNECTION_DETECTION:
-                event = ConnectionDetectionEvent(*message[1])
-                event.local_address = address_t.parse(event.local_address)
-                event.remote_address = address_t.parse(event.remote_address)
-            elif message[0] == MESSAGE_TYPE_CONNECTION_UPDATE:
-                event = ConnectionUpdateEvent(*message[1])
-
-            try:
-                yield event
-            finally:
-                channel.stopMonitoring()
-
-    def sysmontap(self) -> SysmontapResult:
-        process_attributes = list(self._request_information('sysmonProcessAttributes'))
-        system_attributes = list(self._request_information('sysmonSystemAttributes'))
-
-        process_attributes_cls = dataclasses.make_dataclass('SysmonProcessAttributes', process_attributes)
-        system_attributes_cls = dataclasses.make_dataclass('SysmonSystemAttributes', system_attributes)
-
-        ctx = Tap(self, 'com.apple.instruments.server.services.sysmontap', {
-            'ur': 1000,  # Output frequency ms
-            'bm': 0,
-            'procAttrs': process_attributes,
-            'sysAttrs': system_attributes,
-            'cpuUsage': True,
-            'sampleInterval': 1000000000})
-
-        return SysmontapResult(process_attributes_cls=process_attributes_cls,
-                               system_attributes_cls=system_attributes_cls,
-                               ctx=ctx)
 
     def perform_handshake(self):
         args = MessageAux()
@@ -340,10 +155,10 @@ class DvtSecureSocketProxyService(object):
             raise ValueError('Invalid answer')
         self.supported_identifiers = aux[0].value
 
-    def make_channel(self, identifier):
+    def make_channel(self, identifier) -> Channel:
         assert identifier in self.supported_identifiers
-        if identifier in self.channels:
-            return self.channels[identifier]
+        if identifier in self.channel_cache:
+            return self.channel_cache[identifier]
 
         self.last_channel_code += 1
         code = self.last_channel_code
@@ -352,7 +167,8 @@ class DvtSecureSocketProxyService(object):
         ret, aux = self.recv_plist()
         assert ret is None
         channel = Channel.create(code, self)
-        self.channels[identifier] = channel
+        self.channel_cache[identifier] = channel
+        self.channel_messages[code] = ChannelFragmenter()
         return channel
 
     def send_message(self, channel: int, selector: str = None, args: MessageAux = None, expects_reply: bool = True):
@@ -378,8 +194,8 @@ class DvtSecureSocketProxyService(object):
         msg = mheader + pheader + aux + sel
         self.service.sendall(msg)
 
-    def recv_plist(self):
-        data, aux = self.recv_message()
+    def recv_plist(self, channel: int = BROADCAST_CHANNEL):
+        data, aux = self.recv_message(channel)
         if data is not None:
             try:
                 data = archiver.unarchive(data)
@@ -390,8 +206,8 @@ class DvtSecureSocketProxyService(object):
                 logging.warning(f'got an invalid plist: {data[:40]}')
         return data, aux
 
-    def recv_message(self):
-        packet_stream = self._recv_packet_fragments()
+    def recv_message(self, channel: int = BROADCAST_CHANNEL):
+        packet_stream = self._recv_packet_fragments(channel)
         pheader = dtx_message_payload_header_struct.parse_stream(packet_stream)
 
         compression = (pheader.flags & 0xFF000) >> 12
@@ -406,28 +222,34 @@ class DvtSecureSocketProxyService(object):
         data = packet_stream.read(obj_size) if obj_size else None
         return data, aux
 
-    def _request_information(self, selector_name):
-        channel = self.make_channel(self.DEVICEINFO_IDENTIFIER)
-        self.send_message(channel, selector_name)
-        ret, aux = self.recv_plist()
-        assert ret
-        return ret
-
-    def _recv_packet_fragments(self):
-        packet_data = b''
+    def _recv_packet_fragments(self, channel: int = BROADCAST_CHANNEL):
         while True:
-            data = self.service.recvall(dtx_message_header_struct.sizeof())
-            mheader = dtx_message_header_struct.parse(data)
-            if not mheader.conversationIndex:
-                if mheader.identifier > self.cur_message:
-                    self.cur_message = mheader.identifier
-            if mheader.fragmentCount > 1 and mheader.fragmentId == 0:
-                # when reading multiple message fragments, the first fragment contains only a message header
-                continue
-            packet_data += self.service.recvall(mheader.length)
-            if mheader.fragmentId == mheader.fragmentCount - 1:
-                break
-        return io.BytesIO(packet_data)
+            try:
+                # if we already have a message for this channel, just return it
+                message = self.channel_messages[channel].get()
+                return io.BytesIO(message)
+            except _queue.Empty:
+                # if no message exists for the given channel code, just keep waiting and receive new messages
+                # until the waited message queue has at least one message
+                data = self.service.recvall(dtx_message_header_struct.sizeof())
+                mheader = dtx_message_header_struct.parse(data)
+
+                # treat both as the negative and positive representation of the channel code in the response
+                # the same when performing fragmentation
+                received_channel_code = abs(mheader.channelCode)
+
+                if received_channel_code not in self.channel_messages:
+                    self.channel_messages[received_channel_code] = ChannelFragmenter()
+
+                if not mheader.conversationIndex:
+                    if mheader.identifier > self.cur_message:
+                        self.cur_message = mheader.identifier
+
+                if mheader.fragmentCount > 1 and mheader.fragmentId == 0:
+                    # when reading multiple message fragments, the first fragment contains only a message header
+                    continue
+
+                self.channel_messages[received_channel_code].add_fragment(mheader, self.service.recvall(mheader.length))
 
     def __enter__(self):
         self.perform_handshake()
