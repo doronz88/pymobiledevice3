@@ -10,7 +10,7 @@ import IPython
 from bpylist2 import archiver
 from pygments import highlight, lexers, formatters
 
-from pymobiledevice3.exceptions import ConnectionFailedError
+from pymobiledevice3.exceptions import ConnectionFailedError, DvtException
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.dvt.structs import MessageAux, dtx_message_payload_header_struct, \
     dtx_message_header_struct, message_aux_t_struct
@@ -55,11 +55,18 @@ class NSNull:
         return None
 
 
+class NSError:
+    @staticmethod
+    def decode_archive(archive_obj):
+        raise DvtException(archive_obj.decode('NSUserInfo')['NSLocalizedDescription'])
+
+
 archiver.update_class_map({'DTSysmonTapMessage': DTSysmonTapMessage,
                            'DTTapHeartbeatMessage': DTSysmonTapMessage,
                            'DTTapStatusMessage': DTSysmonTapMessage,
                            'DTKTraceTapMessage': DTSysmonTapMessage,
-                           'NSNull': NSNull})
+                           'NSNull': NSNull,
+                           'NSError': NSError})
 
 
 class Channel(int):
