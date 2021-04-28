@@ -25,13 +25,13 @@
   - nameForUID:
 @protocol IDEGaugeDataProviderServiceAPI
   - sampleAttributes:forPIDs:
-@protocol DTVMTrackingServiceAuthorizedAPI
+@protocol DTVMTrackingServiceAuthorizedAPI (DTVMTrackingService, com.apple.instruments.server.services.vmtracking)
   - configureLaunchEnvironment:
   - setTargetPid:referenceDate:
   - requestVMSnapshot
   - stopTracking
   - startTracking
-@protocol DTFileBrowserServiceAuthorizedAPI (com.apple.instruments.server.services.filebrowser, appleInternal)
+@protocol DTFileBrowserServiceAuthorizedAPI (DTFileBrowserService, com.apple.instruments.server.services.filebrowser, appleInternal)
   - entriesInPathsArray:
   - dataFromFileAtPath:
   - updateAttributesForItem:
@@ -91,7 +91,7 @@
   - startStreamTransfer:
   - putData:toStreamID:
   - endStreamTransfer:
-@protocol DTFileTransferServiceDebugInboxAuthorizedAPI (com.apple.instruments.server.services.filetransfer)
+@protocol DTFileTransferServiceDebugInboxAuthorizedAPI (DTFileTransferHub, com.apple.instruments.server.services.filetransfer.debuginbox)
   - transferFile:toDebugInboxOfApplicationWithBundleIdentifier:destinationFilename:
   - openFileInDocumentDebugInbox:forApplicationWithBundleIdentifier:withAnnotation:
   - transferData:intoAppContainerForBundleIdentifier:filename:
@@ -109,7 +109,7 @@
   - setSamplingRate:
   - stopSampling
   - cleanup
-@protocol DTTapAuthorizedAPI
+@protocol DTTapAuthorizedAPI (com.apple.instruments.server.services.sysmontap)
   - fetchDataNow
   - pause
   - stop
@@ -124,7 +124,7 @@
 @protocol IDEODRResourceControlServiceAPI
   - ODRPurgeResourcesForBundleIdentifier:
   - ODRPurgeTagID:forBundleIdentifier:
-@protocol DTMobileNotificationsServiceAuthorizedAPI
+@protocol DTMobileNotificationsServiceAuthorizedAPI (com.apple.instruments.server.services.mobilenotifications)
   - setApplicationStateNotificationsEnabled:
   - setMemoryNotificationsEnabled:
 @protocol DTNetworkingServiceAuthorizedAPI

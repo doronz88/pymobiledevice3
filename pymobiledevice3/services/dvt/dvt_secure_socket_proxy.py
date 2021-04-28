@@ -2,7 +2,6 @@ import _queue
 import io
 import logging
 import plistlib
-from collections import namedtuple
 from functools import partial
 from pprint import pprint
 from queue import Queue
@@ -22,7 +21,7 @@ SHELL_USAGE = '''
 # Calling actions is done using a selector and auxiliary (parameters).
 # Receiving answers is done by getting a return value and seldom auxiliary (private / extra parameters).
 # To see the available channels, type the following:
-developer.channels
+developer.supported_identifiers
 
 # In order to send messages, you need to create a channel:
 channel = developer.make_channel('com.apple.instruments.server.services.deviceinfo')
@@ -106,9 +105,6 @@ class ChannelFragmenter:
             # last message
             self._messages.put(self._packet_data)
             self._packet_data = b''
-
-
-SysmontapResult = namedtuple('SysmontapResult', 'process_attributes_cls system_attributes_cls ctx')
 
 
 class DvtSecureSocketProxyService(object):
