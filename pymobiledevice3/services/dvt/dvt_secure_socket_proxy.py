@@ -101,17 +101,24 @@ class ChannelFragmenter:
     def __init__(self):
         self._messages = Queue()
         self._packet_data = b''
+        self._stream_packet_data = b''
 
     def get(self):
         return self._messages.get_nowait()
 
     def add_fragment(self, mheader, chunk):
-        self._packet_data += chunk
-
-        if mheader.fragmentId == mheader.fragmentCount - 1:
-            # last message
-            self._messages.put(self._packet_data)
-            self._packet_data = b''
+        if mheader.channelCode >= 0:
+            self._packet_data += chunk
+            if mheader.fragmentId == mheader.fragmentCount - 1:
+                # last message
+                self._messages.put(self._packet_data)
+                self._packet_data = b''
+        else:
+            self._stream_packet_data += chunk
+            if mheader.fragmentId == mheader.fragmentCount - 1:
+                # last message
+                self._messages.put(self._stream_packet_data)
+                self._stream_packet_data = b''
 
 
 class DvtSecureSocketProxyService(object):
