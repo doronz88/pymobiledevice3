@@ -14,6 +14,6 @@ class ApplicationListing:
         """
         self._channel.installedApplicationsMatching_registerUpdateToken_(
             MessageAux().append_obj({}).append_obj(''))
-        result = self._channel.receive()
+        result = self._channel.receive_plist()
         assert isinstance(result, list)
         return result

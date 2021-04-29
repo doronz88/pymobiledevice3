@@ -29,6 +29,6 @@ class ProcessControl:
             'KillExisting': kill_existing,
         })
         self._channel.launchSuspendedProcessWithDevicePath_bundleIdentifier_environment_arguments_options_(args)
-        result = self._channel.receive()
+        result = self._channel.receive_plist()
         assert result
         return result
