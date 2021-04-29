@@ -4,7 +4,7 @@ import sys
 import os
 
 BASE_DIR = os.path.realpath(os.path.dirname(__file__))
-VERSION = '1.5.1'
+VERSION = '1.5.2'
 
 
 def parse_requirements():
