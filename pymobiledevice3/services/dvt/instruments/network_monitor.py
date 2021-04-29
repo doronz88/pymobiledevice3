@@ -81,7 +81,7 @@ class NetworkMonitor:
 
     def __iter__(self):
         while True:
-            message = self._channel.receive()
+            message = self._channel.receive_plist()
 
             event = None
 

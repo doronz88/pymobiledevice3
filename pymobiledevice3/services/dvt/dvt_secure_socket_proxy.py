@@ -30,7 +30,7 @@ channel = developer.make_channel('com.apple.instruments.server.services.devicein
 channel.runningProcesses()
 
 # If an answer is expected, you can receive it using the receive method:
-processes = channel.receive()
+processes = channel.receive_plist()
 
 # Sometimes the selector requires parameters, You can add them using MessageAux. For example lets kill a process:
 channel = developer.make_channel('com.apple.instruments.server.services.processcontrol')
@@ -43,7 +43,7 @@ return_value, auxiliary = developer.recv_plist()
 '''
 
 
-class DTSysmonTapMessage:
+class DTTapMessage:
     @staticmethod
     def decode_archive(archive_obj):
         return archive_obj.decode('DTTapMessagePlist')
@@ -61,10 +61,11 @@ class NSError:
         raise DvtException(archive_obj.decode('NSUserInfo')['NSLocalizedDescription'])
 
 
-archiver.update_class_map({'DTSysmonTapMessage': DTSysmonTapMessage,
-                           'DTTapHeartbeatMessage': DTSysmonTapMessage,
-                           'DTTapStatusMessage': DTSysmonTapMessage,
-                           'DTKTraceTapMessage': DTSysmonTapMessage,
+archiver.update_class_map({'DTSysmonTapMessage': DTTapMessage,
+                           'DTTapHeartbeatMessage': DTTapMessage,
+                           'DTTapStatusMessage': DTTapMessage,
+                           'DTKTraceTapMessage': DTTapMessage,
+                           'DTActivityTraceTapMessage': DTTapMessage,
                            'NSNull': NSNull,
                            'NSError': NSError})
 
@@ -76,8 +77,11 @@ class Channel(int):
         channel._service = service
         return channel
 
-    def receive(self):
+    def receive_plist(self):
         return self._service.recv_plist(self)[0]
+
+    def receive_message(self):
+        return self._service.recv_message(self)[0]
 
     @staticmethod
     def _sanitize_name(name: str):

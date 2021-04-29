@@ -17,7 +17,7 @@ class DeviceInfo:
         :return: Contents of the directory.
         """
         self._channel.directoryListingForPath_(MessageAux().append_obj(path))
-        result = self._channel.receive()
+        result = self._channel.receive_plist()
         if result is None:
             raise DvtDirListError()
         return result
@@ -28,7 +28,7 @@ class DeviceInfo:
         :param pid: process pid
         """
         self._channel.execnameForPid_(MessageAux().append_obj(pid))
-        return self._channel.receive()
+        return self._channel.receive_plist()
 
     def proclist(self) -> list[dict]:
         """
@@ -36,7 +36,7 @@ class DeviceInfo:
         :return: List of process and their attributes.
         """
         self._channel.runningProcesses()
-        result = self._channel.receive()
+        result = self._channel.receive_plist()
         assert isinstance(result, list)
         for process in result:
             if 'startDate' in process:
@@ -54,4 +54,4 @@ class DeviceInfo:
 
     def request_information(self, selector_name):
         self._channel[selector_name]()
-        return self._channel.receive()
+        return self._channel.receive_plist()

@@ -198,7 +198,7 @@ channel = developer.make_channel('com.apple.instruments.server.services.devicein
 channel.runningProcesses()
 
 # If an answer is expected, you can receive it using the receive method:
-processes = channel.receive()
+processes = channel.receive_plist()
 
 # Sometimes the selector requires parameters, You can add them using MessageAux. For example lets kill a process:
 channel = developer.make_channel('com.apple.instruments.server.services.processcontrol')
