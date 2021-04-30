@@ -144,13 +144,19 @@ def sysmon_processes(lockdown, fields, attributes):
     if fields is not None:
         fields = fields.split(',')
 
+    count = 0
+
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         sysmontap = Sysmontap(dvt)
         with sysmontap as sysmon:
             for row in sysmon:
                 if 'Processes' in row:
                     processes = row['Processes'].items()
-                    break
+                    count += 1
+
+                    if count > 1:
+                        # give some time for cpuUsage field to populate
+                        break
 
         device_info = DeviceInfo(dvt)
         for pid, process in processes:

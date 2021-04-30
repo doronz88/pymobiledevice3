@@ -17,12 +17,12 @@ class Sysmontap(Tap):
         self.system_attributes_cls = dataclasses.make_dataclass('SysmonSystemAttributes', system_attributes)
 
         config = {
-            'ur': 1000,  # Output frequency ms
+            'ur': 500,  # Output frequency ms
             'bm': 0,
             'procAttrs': process_attributes,
             'sysAttrs': system_attributes,
             'cpuUsage': True,
-            'sampleInterval': 1000000000
+            'sampleInterval': 500000000
         }
 
         super().__init__(dvt, self.IDENTIFIER, config)
