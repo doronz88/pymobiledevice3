@@ -7,7 +7,7 @@ class ApplicationListing:
     def __init__(self, dvt):
         self._channel = dvt.make_channel(self.IDENTIFIER)
 
-    def applist(self) -> list[dict]:
+    def applist(self) -> list:
         """
         Get the applications list from the device.
         :return: List of applications and their attributes.
