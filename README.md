@@ -116,16 +116,16 @@ Options:
 Commands:
   afc           FileSystem utils
   apps          application options
-  crash         crash utils
-  developer     developer options
+  crash         crash report options
+  developer     developer options.
   diagnostics   diagnostics options
+  list-devices  list connected devices
   lockdown      lockdown options
   mounter       mounter options
   notification  API for notify_post() & notify_register_dispatch().
   pcap          sniff device traffic
   profile       profile options
   ps            show process list
-  screenshot    take a screenshot in PNG format
   syslog        syslog options
 ```
 
