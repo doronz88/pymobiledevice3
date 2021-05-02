@@ -9,6 +9,7 @@ import click
 from pymobiledevice3.cli.cli_common import print_object, Command
 from pymobiledevice3.exceptions import DvtDirListError, StartServiceError
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMonitor, ConnectionDetectionEvent
@@ -233,3 +234,13 @@ def profile_session(lockdown, nocolor):
         with CoreProfileSessionTap(dvt) as tap:
             for profile in tap:
                 print_object(profile, colored=not nocolor)
+
+
+@developer.command('oslog', cls=Command)
+def developer_oslog(lockdown):
+    """ oslog. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with ActivityTraceTap(dvt) as tap:
+            for line in tap:
+                print(line)
+                # break
