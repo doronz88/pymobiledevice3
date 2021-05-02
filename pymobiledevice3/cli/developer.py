@@ -1,24 +1,26 @@
 # flake8: noqa: C901
 import json
 import logging
+import os
 import posixpath
 import shlex
 from dataclasses import asdict
 
 import click
-
 from pymobiledevice3.cli.cli_common import print_object, Command
 from pymobiledevice3.exceptions import DvtDirListError, StartServiceError
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
+from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap, DgbFuncQual, \
+    ProcessData
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMonitor, ConnectionDetectionEvent
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.screenshot import ScreenshotService
-from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap, DgbFuncQual, \
-    ProcessData
-from pymobiledevice3.lockdown import LockdownClient
+from termcolor import colored
 
 
 @click.group()
@@ -320,3 +322,32 @@ def trace_codes(lockdown, nocolor):
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         device_info = DeviceInfo(dvt)
         print_object({hex(k): v for k, v in device_info.trace_codes().items()}, colored=not nocolor)
+
+
+@developer.command('oslog', cls=Command)
+@click.option('--nocolor', is_flag=True, help='disable colors')
+def developer_oslog(lockdown, nocolor):
+    """ oslog. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with ActivityTraceTap(dvt) as tap:
+            for message in tap:
+                pid = message.process
+                timestamp = message.time
+                message_type = message.message_type
+                sender_image_path = message.sender_image_path
+                image_name = os.path.basename(sender_image_path)
+                subsystem = message.subsystem
+                category = message.category
+
+                try:
+                    formatted_message = decode_message_format(message.message).decode()
+                except Exception:
+                    print('error decoding')
+
+                if not nocolor:
+                    pid = colored(str(pid), 'magenta')
+                    subsystem = colored(subsystem, 'green')
+                    category = colored(category, 'green')
+                    image_name = colored(image_name, 'yellow')
+
+                print(f'[{subsystem}][{category}][{pid}][{image_name}] {formatted_message}')
