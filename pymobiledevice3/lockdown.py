@@ -11,7 +11,8 @@ from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import NoDeviceConnectedError, FatalPairingError, CannotStopSessionError, \
     NotTrustedError, \
-    PairingError, NotPairedError, StartServiceError, DeviceNonConnectedError, PyMobileDevice3Exception
+    PairingError, NotPairedError, StartServiceError, DeviceNonConnectedError, PyMobileDevice3Exception, \
+    PasswordRequiredError
 from pymobiledevice3.service_connection import ServiceConnection
 
 
@@ -297,7 +298,7 @@ class LockdownClient(object):
         ssl_enabled = response.get('EnableServiceSSL', ssl)
         if not response or response.get('Error'):
             if response.get('Error', '') == 'PasswordProtected':
-                raise StartServiceError(
+                raise PasswordRequiredError(
                     'your device is protected with password, please enter password in device and try again')
             raise StartServiceError(response.get("Error"))
         service_connection = ServiceConnection.create(self.udid, response.get('Port'))

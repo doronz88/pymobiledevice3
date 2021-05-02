@@ -12,7 +12,6 @@ from pymobiledevice3.cli.lockdown import cli as lockdown_cli
 from pymobiledevice3.cli.diagnostics import cli as diagnostics_cli
 from pymobiledevice3.cli.syslog import cli as syslog_cli
 from pymobiledevice3.cli.pcap import cli as pcap_cli
-from pymobiledevice3.cli.screenshot import cli as screenshot_cli
 from pymobiledevice3.cli.crash import cli as crash_cli
 from pymobiledevice3.cli.afc import cli as afc_cli
 from pymobiledevice3.cli.ps import cli as ps_cli
@@ -31,7 +30,7 @@ logging.getLogger('humanfriendly.prompts').disabled = True
 def cli():
     cli_commands = click.CommandCollection(sources=[
         developer_cli, mounter_cli, apps_cli, profile_cli, lockdown_cli, diagnostics_cli, syslog_cli, pcap_cli,
-        screenshot_cli, crash_cli, afc_cli, ps_cli, notification_cli, list_devices_cli
+        crash_cli, afc_cli, ps_cli, notification_cli, list_devices_cli
     ])
     cli_commands()
 
