@@ -6,17 +6,16 @@
 - [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
-  * [Sending your own messages](#sending-your-own-messages)
-    + [Lockdown messages](#lockdown-messages)
-    + [Instruments messages](#instruments-messages)
-  * [Example](#example)
+    * [Sending your own messages](#sending-your-own-messages)
+        + [Lockdown messages](#lockdown-messages)
+        + [Instruments messages](#instruments-messages)
+    * [Example](#example)
 - [Lockdown services](#lockdown-services)
-  * [`com.apple.instruments.remoteserver.DVTSecureSocketProxy`](#comappleinstrumentsremoteserverdvtsecuresocketproxy)
-  * [`com.apple.os_trace_relay`](#comappleos_trace_relay)
-  * [`com.apple.mobile.diagnostics_relay`](#comapplemobilediagnostics_relay)
-  * [`com.apple.mobile.file_relay`](#comapplemobilefile_relay)
-  * [`com.apple.pcapd`](#comapplepcapd)
-
+    * [`com.apple.instruments.remoteserver.DVTSecureSocketProxy`](#comappleinstrumentsremoteserverdvtsecuresocketproxy)
+    * [`com.apple.os_trace_relay`](#comappleos_trace_relay)
+    * [`com.apple.mobile.diagnostics_relay`](#comapplemobilediagnostics_relay)
+    * [`com.apple.mobile.file_relay`](#comapplemobilefile_relay)
+    * [`com.apple.pcapd`](#comapplepcapd)
 
 # Description
 
@@ -34,8 +33,6 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
 
 * TCP port forwarding
     * `pymobiledevice3 lockdown forward src_port dst_port`
-* Screenshots
-    * `pymobiledevice3 screenshot screen.png`
 * Live and past syslogs
     * `pymobiledevice3 syslog live`
     * `pymobiledevice3 syslog archive syslogs.pax`
@@ -57,6 +54,8 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
     * `pymobiledevice3 notification post notification_name`
     * `pymobiledevice3 notification observe notification_name`
 * DeveloperDiskImage features:
+    * Screenshots
+        * `pymobiledevice3 developer screenshot screen.png`
     * Process management
         * `pymobiledevice3 developer kill/launch/....`
     * **Non-chrooted** directory listing
@@ -286,11 +285,11 @@ frida -U DTServiceHub
 
 ```javascript
 for (var name in ObjC.protocols) {
-  var protocol = ObjC.protocols[name]
-  if ('DTXAllowedRPC' in protocol.protocols) {
-    console.log('@protocol', name)
-    console.log('  ' + Object.keys(protocol.methods).join('\n  '))
-  }
+    var protocol = ObjC.protocols[name]
+    if ('DTXAllowedRPC' in protocol.protocols) {
+        console.log('@protocol', name)
+        console.log('  ' + Object.keys(protocol.methods).join('\n  '))
+    }
 }
 ```
 

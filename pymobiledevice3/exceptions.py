@@ -26,6 +26,10 @@ class CannotStopSessionError(PyMobileDevice3Exception):
     pass
 
 
+class PasswordRequiredError(PyMobileDevice3Exception):
+    pass
+
+
 class StartServiceError(PyMobileDevice3Exception):
     pass
 

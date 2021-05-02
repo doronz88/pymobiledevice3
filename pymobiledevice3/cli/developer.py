@@ -7,13 +7,14 @@ from dataclasses import asdict
 import click
 
 from pymobiledevice3.cli.cli_common import print_object, Command
-from pymobiledevice3.exceptions import DvtDirListError
+from pymobiledevice3.exceptions import DvtDirListError, StartServiceError
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMonitor, ConnectionDetectionEvent
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
+from pymobiledevice3.services.screenshot import ScreenshotService
 
 
 @click.group()
@@ -24,8 +25,26 @@ def cli():
 
 @cli.group()
 def developer():
-    """ developer options """
+    """
+    developer options.
+
+    These options require the DeveloperDiskImage.dmg to be mounted on the device prior
+    to execution. You can achieve this using:
+
+    pymobiledevice3 mounter mount
+    """
     pass
+
+
+@developer.command(cls=Command)
+@click.argument('out', type=click.File('wb'))
+def screenshot(lockdown, out):
+    """ take a screenshot in PNG format """
+    try:
+        out.write(ScreenshotService(lockdown=lockdown).take_screenshot())
+    except StartServiceError:
+        logging.error('failed to connect to required service. make sure DeveloperDiskImage.dmg has been mounted. '
+                      'You can do so using: pymobiledevice3 mounter mount')
 
 
 @developer.command('proclist', cls=Command)
