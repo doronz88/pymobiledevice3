@@ -45,8 +45,14 @@ def syslog_live(lockdown, out, nocolor, pid, match, insensitive, include_label):
         'Warning': 'yellow',
     }
 
+    # just start the syslog service so we don't filter out a specific pid
+    syslog_service = SyslogService(lockdown=lockdown).watch()
+    next(syslog_service)
+
     for syslog_entry in OsTraceService(lockdown=lockdown).syslog(pid=pid):
-        pid = syslog_entry.pid
+        next(syslog_service)
+
+        syslog_pid = syslog_entry.pid
         timestamp = syslog_entry.timestamp
         level = syslog_entry.level
         filename = syslog_entry.filename
@@ -54,6 +60,10 @@ def syslog_live(lockdown, out, nocolor, pid, match, insensitive, include_label):
         message = syslog_entry.message
         process_name = os.path.basename(filename)
         label = ''
+
+        if (pid != -1) and (syslog_pid != pid):
+            continue
+
         if syslog_entry.label is not None:
             label = f'[{syslog_entry.label.bundle_id}][{syslog_entry.label.identifier}]'
 
@@ -62,7 +72,7 @@ def syslog_live(lockdown, out, nocolor, pid, match, insensitive, include_label):
             process_name = colored(process_name, 'magenta')
             if len(image_name) > 0:
                 image_name = colored(image_name, 'magenta')
-            pid = colored(syslog_entry['pid'], 'cyan')
+            syslog_pid = colored(syslog_entry['pid'], 'cyan')
 
             if level in syslog_entry:
                 level = colored(level, log_level_colors[level])
@@ -75,7 +85,7 @@ def syslog_live(lockdown, out, nocolor, pid, match, insensitive, include_label):
         if include_label:
             line_format += f' {label}'
 
-        line = line_format.format(timestamp=timestamp, process_name=process_name, image_name=image_name, pid=pid,
+        line = line_format.format(timestamp=timestamp, process_name=process_name, image_name=image_name, pid=syslog_pid,
                                   level=level, message=message)
 
         if match is not None:
