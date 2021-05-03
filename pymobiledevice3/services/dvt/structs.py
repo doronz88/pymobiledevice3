@@ -1,6 +1,6 @@
 from bpylist2 import archiver
 from construct import Struct, Int32ul, Int16ul, Int64ul, Const, Prefixed, GreedyBytes, this, Adapter, Select, \
-    GreedyRange, Switch, Int32sl
+    GreedyRange, Switch, Int32sl, Default
 
 
 class BplitAdapter(Adapter):
@@ -30,7 +30,7 @@ dtx_message_payload_header_struct = Struct(
 )
 
 message_aux_t_struct = Struct(
-    'magic' / Select(Const(0x1f0, Int64ul), Const(0x1df0, Int64ul)),
+    'magic' / Default(Int64ul, 0x1f0),
     'aux' / Prefixed(Int64ul, GreedyRange(Struct(
         '_empty_dictionary' / Select(Const(0xa, Int32ul), Int32ul),
         'type' / Int32ul,

@@ -15,6 +15,7 @@ from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMoni
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.screenshot import ScreenshotService
+from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap
 
 
 @click.group()
@@ -222,3 +223,13 @@ def sysmon_system(lockdown, fields):
     for name, value in attrs_dict.items():
         if (fields is None) or (name in fields):
             print(f'{name}: {value}')
+
+
+@developer.command('profile-session', cls=Command)
+@click.option('--nocolor', is_flag=True)
+def profile_session(lockdown, nocolor):
+    """ Print core profiling information. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with CoreProfileSessionTap(dvt) as tap:
+            for profile in tap:
+                print_object(profile, colored=not nocolor)
