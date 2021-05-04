@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-
 import logging
 import plistlib
 import struct
 from datetime import datetime
 
 from construct import Struct, Bytes, Int32ul, CString, Optional, Enum, Byte, Adapter
-
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 
@@ -71,9 +69,14 @@ class OsTraceService(object):
         # ignore first received unknown byte
         self.c.recvall(1)
 
-        response = self.c.recv_prefixed()
-        length = response[0]
-        return plistlib.loads(response[length + 1]), response[length + 1:]
+        plist_response = plistlib.loads(self.c.recv_prefixed())
+
+        # ignore first received unknown byte
+        self.c.recvall(1)
+
+        pax = self.c.recv_prefixed()
+
+        return plist_response, pax
 
     def syslog(self, pid=-1):
         self.c.send_plist({'Request': 'StartActivity', 'MessageFilter': 65535, 'Pid': pid, 'StreamFlags': 60})
