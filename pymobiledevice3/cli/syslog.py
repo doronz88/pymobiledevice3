@@ -45,13 +45,7 @@ def syslog_live(lockdown, out, nocolor, pid, match, insensitive, include_label):
         'Warning': 'yellow',
     }
 
-    # just start the syslog service so we don't filter out a specific pid
-    syslog_service = SyslogService(lockdown=lockdown).watch()
-    next(syslog_service)
-
     for syslog_entry in OsTraceService(lockdown=lockdown).syslog(pid=pid):
-        next(syslog_service)
-
         syslog_pid = syslog_entry.pid
         timestamp = syslog_entry.timestamp
         level = syslog_entry.level

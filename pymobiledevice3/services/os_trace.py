@@ -76,7 +76,7 @@ class OsTraceService(object):
         return plistlib.loads(response[length + 1]), response[length + 1:]
 
     def syslog(self, pid=-1):
-        self.c.send_plist({'Request': 'StartActivity', 'Pid': pid})
+        self.c.send_plist({'Request': 'StartActivity', 'MessageFilter': 65535, 'Pid': pid, 'StreamFlags': 60})
 
         length_length, = struct.unpack('<I', self.c.recvall(4))
         length = int(self.c.recvall(length_length)[::-1].hex(), 16)
