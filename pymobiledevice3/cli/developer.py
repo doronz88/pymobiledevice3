@@ -15,7 +15,8 @@ from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMoni
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.screenshot import ScreenshotService
-from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap
+from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap, DgbFuncQual, \
+    ProcessData
 
 
 @click.group()
@@ -225,11 +226,78 @@ def sysmon_system(lockdown, fields):
             print(f'{name}: {value}')
 
 
-@developer.command('profile-session', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def profile_session(lockdown, nocolor):
+@developer.group('core-profile-session')
+def core_profile_session():
+    """ Core profile session options. """
+
+
+@core_profile_session.command('live', cls=Command)
+@click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
+@click.option('-cf', '--class-filter', type=click.INT, default=None, help='Events class to filter. Omit for all.')
+@click.option('-sf', '--subclass-filter', type=click.INT, default=None, help='Events subclass to filter. Omit for all.')
+@click.option('--pid', type=click.INT, default=None, help='Process ID to filter. Omit for all.')
+@click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
+@click.option('--timestamp/--no-timestamp', default=True, help='Whether to print timestamp or not.')
+@click.option('--event-name/--no-event-name', default=True, help='Whether to print event name or not.')
+@click.option('--func-qual/--no-func-qual', default=True, help='Whether to print function qualifier or not.')
+@click.option('--show-tid/--no-show-tid', default=True, help='Whether to print thread id or not.')
+@click.option('--process-name/--no-process-name', default=True, help='Whether to print process name or not.')
+@click.option('--args/--no-args', default=True, help='Whether to print event arguments or not.')
+def live_profile_session(lockdown, count, class_filter, subclass_filter, pid, tid, timestamp, event_name, func_qual,
+                         show_tid, process_name, args):
     """ Print core profiling information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with CoreProfileSessionTap(dvt) as tap:
-            for profile in tap:
-                print_object(profile, colored=not nocolor)
+        trace_codes_map = DeviceInfo(dvt).trace_codes()
+        with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
+            for event in tap.watch_events(count):
+                if event.eventid in trace_codes_map:
+                    name = trace_codes_map[event.eventid] + f' ({hex(event.eventid)})'
+                else:
+                    # Some event IDs are not public.
+                    name = hex(event.eventid)
+                try:
+                    if tid is not None and event.tid != tid:
+                        continue
+                    try:
+                        process = tap.thread_map[event.tid]
+                    except KeyError:
+                        process = ProcessData(pid=-1, name='')
+                    if pid is not None and process.pid != pid:
+                        continue
+                    formatted_data = f'{event.timestamp:<16}' if timestamp else ''
+                    formatted_data += f'{name:<60}' if event_name else ''
+                    if func_qual:
+                        try:
+                            formatted_data += f'{DgbFuncQual(event.func_qualifier).name:<16}'
+                        except ValueError:
+                            formatted_data += f'''{'Error':<16}'''
+                    formatted_data += f'{hex(event.tid):<12}' if show_tid else ''
+                    if process_name:
+                        process_rep = (f'{process.name} ({process.pid})'
+                                       if process.pid != -1
+                                       else f'Error: tid {event.tid}')
+                        formatted_data += f'{process_rep:<30}' if process_name else ''
+                    formatted_data += f'{str(event.args.data):<34}' if args else ''
+                    print(formatted_data)
+                except (ValueError, KeyError):
+                    pass
+
+
+@core_profile_session.command('save', cls=Command)
+@click.argument('out', type=click.File('wb'))
+@click.option('-cf', '--class-filter', type=click.INT, default=None, help='Events class to filter. Omit for all.')
+@click.option('-sf', '--subclass-filter', type=click.INT, default=None, help='Events subclass to filter. Omit for all.')
+def save_profile_session(lockdown, out, class_filter, subclass_filter):
+    """ Dump core profiling information. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
+            tap.dump(out)
+
+
+@developer.command('trace-codes', cls=Command)
+@click.option('--nocolor', is_flag=True)
+def trace_codes(lockdown, nocolor):
+    """ Print system information. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        device_info = DeviceInfo(dvt)
+        print_object({hex(k): v for k, v in device_info.trace_codes().items()}, colored=not nocolor)
