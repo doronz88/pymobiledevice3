@@ -1,8 +1,24 @@
+import typing
+import enum
+import uuid
+
 from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyBytes, Enum, Switch, Padding, Padded, \
-    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass
+    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Const, Bytes, RawCopy
 
 from pymobiledevice3.services.dvt.tap import Tap
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from collections import namedtuple
+
+# bsd/sys/kdebug.h
+RAW_VERSION2_BYTES = b'\x00\x02\xaa\x55'
+KDBG_CLASS_MASK = 0xff000000
+KDBG_CLASS_OFFSET = 24
+KDBG_SUBCLASS_MASK = 0x00ff0000
+KDBG_SUBCLASS_OFFSET = 16
+KDBG_CODE_MASK = 0x0000fffc
+KDBG_CODE_OFFSET = 2
+KDBG_EVENTID_MASK = 0xfffffffc
+KDBG_FUNC_MASK = 0x00000003
 
 kcdata_types = {
     'KCDATA_TYPE_INVALID': 0x0,
@@ -174,10 +190,6 @@ predefined_names = {
 }
 
 predefined_name_substruct = 'name' / Computed(lambda ctx: predefined_names[ctx._.type])
-
-kcdata_container = Struct(
-    Padding(16),
-)
 
 uint32_desc = Struct(
     'name' / Padded(32, CString('utf8')),
@@ -444,6 +456,39 @@ kcdata_item = Struct(
 
 kcdata = GreedyRange(kcdata_item)
 
+kd_threadmap = Struct(
+    'tid' / Int64ul,
+    'pid' / Int32ul,
+    'process' / FixedSized(20, CString('utf8')),
+)
+
+kd_buf = Struct(
+    'timestamp' / Int64ul,
+    'args' / RawCopy(Array(4, Int64ul)),
+    'tid' / Int64ul,
+    'debugid' / Int32ul,
+    'eventid' / Computed(lambda ctx: ctx.debugid & KDBG_EVENTID_MASK),
+    'class' / Computed(lambda ctx: (ctx.debugid & KDBG_CLASS_MASK) >> KDBG_CLASS_OFFSET),
+    'subclass' / Computed(lambda ctx: (ctx.debugid & KDBG_SUBCLASS_MASK) >> KDBG_SUBCLASS_OFFSET),
+    'code' / Computed(lambda ctx: (ctx.debugid & KDBG_CODE_MASK) >> KDBG_CODE_OFFSET),
+    'func_qualifier' / Computed(lambda ctx: ctx.debugid & KDBG_FUNC_MASK),
+    'cpuid' / Int32ul,
+    'unused' / Int64ul,
+)
+
+kperf_data = Struct(
+    'magic' / Const(RAW_VERSION2_BYTES, Bytes(4)),
+    'number_of_treads' / Int32ul,
+    Padding(8),
+    Padding(4),
+    'is_64bit' / Int32ul,
+    'tick_frequency' / Int64ul,
+    Padding(0x100),
+    'threadmap' / Array(lambda ctx: ctx.number_of_treads, kd_threadmap),
+    '_pad' / GreedyRange(Const(0, Byte)),
+    'traces' / GreedyRange(kd_buf)
+)
+
 
 def clean(d):
     if isinstance(d, dict):
@@ -481,33 +526,93 @@ def jsonify_parsed_stackshot(stackshot, root=None, index=0):
             root[item['data']['name']] = item['data']['obj']
 
 
+ProcessData = namedtuple('namedtuple', ['pid', 'name'])
+
+
+class DgbFuncQual(enum.Enum):
+    DBG_FUNC_NONE = 0
+    DBG_FUNC_START = 1
+    DBG_FUNC_END = 2
+
+
 class CoreProfileSessionTap(Tap):
     IDENTIFIER = 'com.apple.instruments.server.services.coreprofilesessiontap'
+    STACKSHOT_HEADER = Int32ul.build(int(kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT))
 
-    def __init__(self, dvt: DvtSecureSocketProxyService):
+    def __init__(self, dvt: DvtSecureSocketProxyService, class_filter=None, subclass_filter=None):
         self.dvt = dvt
+        self.stack_shot = None
+        self._thread_map = {}
+        self.uuid = str(uuid.uuid4())
+
+        k_filter = 0xffffffff
+        if class_filter is not None:
+            k_filter = class_filter << KDBG_CLASS_OFFSET
+        if subclass_filter is not None:
+            k_filter |= subclass_filter << KDBG_SUBCLASS_OFFSET
 
         config = {
             'tc': [{
                 'csd': 128,  # Callstack frame depth.
-                'kdf2': {67895296, 117440512, 50462720, 67174400, 50397184, 68026368},  # Kdebug filter.
+                'kdf2': {k_filter},  # Kdebug filter, receive all classes.
                 'ta': [[3], [0], [2], [1, 1, 0]],  # Actions.
                 'tk': 3,  # Kind.
-                'uuid': 'E3C5CEBE-A8A8-417C-8DC9-18E721D774B5'  # UUID.
+                'uuid': self.uuid,
             }],  # Triggers configs
             'rp': 100,  # Recording priority
             'bm': 0,  # Buffer mode.
         }
         super().__init__(dvt, self.IDENTIFIER, config)
 
-    def __iter__(self):
+    @property
+    def thread_map(self):
+        return self._thread_map
+
+    @thread_map.setter
+    def thread_map(self, parsed_threadmap):
+        self._thread_map = {}
+        for thread in parsed_threadmap:
+            self._thread_map[thread.tid] = ProcessData(thread.pid, thread.process)
+
+    def dump(self, out: typing.BinaryIO):
+        """
+        Dump data from core profile session to a file.
+        :param out: File object to write data to.
+        """
         while True:
             data = self._channel.receive_message()
-            if not data.startswith(b'\x07\x58\xa2\x59'):
+            if data.startswith(self.STACKSHOT_HEADER) or data.startswith(b'bplist'):
+                # Skip not kernel trace data.
                 continue
-            parsed = kcdata.parse(data)
-            # Required for removing streams from construct output.
-            stackshot = clean(parsed)
-            root = {}
-            jsonify_parsed_stackshot(stackshot, root)
-            yield root
+            print(f'Receiving trace data ({len(data)}B)')
+            out.write(data)
+            out.flush()
+
+    def watch_events(self, events_count=-1):
+        events_index = 0
+        while events_index != events_count:
+            data = self._channel.receive_message()
+            if data.startswith(b'bplist'):
+                continue
+            if data.startswith(self.STACKSHOT_HEADER):
+                self.parse_stackshot(data)
+                continue
+            if data.startswith(RAW_VERSION2_BYTES):
+                parsed = kperf_data.parse(data)
+                self.thread_map = parsed.threadmap
+                traces = parsed.traces
+            else:
+                traces = Array(len(data) // kd_buf.sizeof(), kd_buf).parse(data)
+
+            for event in traces:
+                if events_index == events_count:
+                    break
+                yield event
+                events_index += 1
+
+    def parse_stackshot(self, data):
+        parsed = kcdata.parse(data)
+        # Required for removing streams from construct output.
+        stackshot = clean(parsed)
+        self.stack_shot = {}
+        jsonify_parsed_stackshot(stackshot, self.stack_shot)

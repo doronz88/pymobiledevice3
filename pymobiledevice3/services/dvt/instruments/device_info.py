@@ -52,6 +52,10 @@ class DeviceInfo:
     def network_information(self):
         return self.request_information('networkInformation')
 
+    def trace_codes(self):
+        codes_file = self.request_information('traceCodesFile')
+        return {int(k, 16): v for k, v in map(lambda l: l.split(), codes_file.splitlines())}
+
     def request_information(self, selector_name):
         self._channel[selector_name]()
         return self._channel.receive_plist()
