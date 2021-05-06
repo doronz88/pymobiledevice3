@@ -88,7 +88,7 @@ class LockdownClient(object):
         assert self.query_type() == 'com.apple.mobile.lockdown'
 
         self.all_values = self.get_value()
-        self.udid = self.all_values.get('UniqueDeviceID').replace('-', '')
+        self.udid = self.all_values.get('UniqueDeviceID')
         self.unique_chip_id = self.all_values.get('UniqueChipID')
         self.device_public_key = self.all_values.get('DevicePublicKey')
         self.ios_version = self.all_values.get('ProductVersion')
