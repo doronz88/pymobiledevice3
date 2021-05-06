@@ -71,18 +71,23 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
 
 # Installation
 
-Make sure `swig` is installed for `M2Crypto` installation:
+Make sure `swig` and `openssl` is installed for `M2Crypto` installation:
 
 On MAC:
 
 ```shell
-brew install swig
+brew install swig openssl
+
+LDFLAGS="-L$(brew --prefix openssl)/lib" \
+CFLAGS="-I$(brew --prefix openssl)/include" \
+SWIG_FEATURES="-cpperraswarn -includeall -I$(brew --prefix openssl)/include" \
+python3 -m pip install --user -U m2crypto
 ```
 
 On Linux:
 
 ```shell
-sudo apt install swig
+sudo apt install swig openssl
 ```
 
 Now you can install the last released version using `pip`:
