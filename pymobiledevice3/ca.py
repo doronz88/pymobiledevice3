@@ -84,7 +84,7 @@ def make_cert(req, caPkey):
     certificate = X509.X509()
     # We know we are making CA cert now...
     # Serial defaults to 0.
-    certificate.set_serial_number(ASN1.m2.asn1_integer_new(1))
+    certificate.set_serial_number(1)
     certificate.set_version(2)
     certificate.set_subject(sub)
     issuer = X509.X509_Name()
