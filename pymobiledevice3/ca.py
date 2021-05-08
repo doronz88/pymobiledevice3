@@ -26,7 +26,7 @@ def convert_pkcs1_to_pkcs8_pubkey(bitsdata):
     bitstring.setComponentByPosition(0, univ.Integer(pubkey_pkcs1[0]))
     bitstring.setComponentByPosition(1, univ.Integer(pubkey_pkcs1[1]))
     bitstring = der_encoder.encode(bitstring)
-    bitstring = ''.join([('00000000' + bin(ord(x))[2:])[-8:] for x in list(bitstring)])
+    bitstring = ''.join([('00000000' + bin(x)[2:])[-8:] for x in list(bitstring)])
     bitstring = univ.BitString('\'%s\'B' % bitstring)
     pubkeyid = univ.Sequence()
     pubkeyid.setComponentByPosition(0, univ.ObjectIdentifier('1.2.840.113549.1.1.1'))  # == OID for rsaEncryption
