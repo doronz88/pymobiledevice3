@@ -1,8 +1,7 @@
-from pprint import pprint
 import tempfile
+from pprint import pprint
 
 import click
-from daemonize import Daemonize
 
 from pymobiledevice3.cli.cli_common import Command
 from pymobiledevice3.tcp_forwarder import TcpForwarder
@@ -29,6 +28,11 @@ def lockdown_forward(lockdown, src_port, dst_port, daemonize):
     forwarder = TcpForwarder(lockdown, src_port, dst_port)
 
     if daemonize:
+        try:
+            from daemonize import Daemonize
+        except ImportError:
+            raise NotImplementedError('daemonizing is only supported on unix platforms')
+
         with tempfile.NamedTemporaryFile('wt') as pid_file:
             daemon = Daemonize(app=f'forwarder {src_port}->{dst_port}', pid=pid_file.name, action=forwarder.start)
             daemon.start()

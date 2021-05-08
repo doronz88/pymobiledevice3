@@ -26,7 +26,7 @@ def convert_pkcs1_to_pkcs8_pubkey(bitsdata):
     bitstring.setComponentByPosition(0, univ.Integer(pubkey_pkcs1[0]))
     bitstring.setComponentByPosition(1, univ.Integer(pubkey_pkcs1[1]))
     bitstring = der_encoder.encode(bitstring)
-    bitstring = ''.join([('00000000' + bin(ord(x))[2:])[-8:] for x in list(bitstring)])
+    bitstring = ''.join([('00000000' + bin(x)[2:])[-8:] for x in list(bitstring)])
     bitstring = univ.BitString('\'%s\'B' % bitstring)
     pubkeyid = univ.Sequence()
     pubkeyid.setComponentByPosition(0, univ.ObjectIdentifier('1.2.840.113549.1.1.1'))  # == OID for rsaEncryption
@@ -84,12 +84,12 @@ def make_cert(req, caPkey):
     certificate = X509.X509()
     # We know we are making CA cert now...
     # Serial defaults to 0.
-    certificate.set_serial_number(ASN1.m2.asn1_integer_new(1))
+    certificate.set_serial_number(1)
     certificate.set_version(2)
     certificate.set_subject(sub)
     issuer = X509.X509_Name()
-    issuer['CN'] = 'The Issuer Monkey'
-    issuer['O'] = 'The Organization Otherwise Known as My CA, Inc.'
+    issuer.CN = 'The Issuer Monkey'
+    issuer.O = 'The Organization Otherwise Known as My CA, Inc.'
     certificate.set_issuer(issuer)
     certificate.set_pubkey(pkey)
     not_before = m2.x509_get_not_before(certificate.x509)

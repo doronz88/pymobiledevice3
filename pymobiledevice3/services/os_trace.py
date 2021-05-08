@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-
 import logging
 import plistlib
 import struct
 from datetime import datetime
 
 from construct import Struct, Bytes, Int32ul, CString, Optional, Enum, Byte, Adapter
-
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 
@@ -58,23 +56,36 @@ class OsTraceService(object):
 
     def get_pid_list(self):
         self.c.send_plist({'Request': 'PidList'})
+
+        # ignore first received unknown byte
+        self.c.recvall(1)
+
         response = self.c.recv_prefixed()
-        return plistlib.loads(response[1:])
+        return plistlib.loads(response)
 
     def create_archive(self) -> tuple:
         self.c.send_plist({'Request': 'CreateArchive'})
-        response = self.c.recv_prefixed()
-        length = response[0]
-        return plistlib.loads(response[1:length + 1]), response[length + 1:]
+
+        # ignore first received unknown byte
+        self.c.recvall(1)
+
+        plist_response = plistlib.loads(self.c.recv_prefixed())
+
+        # ignore first received unknown byte
+        self.c.recvall(1)
+
+        pax = self.c.recv_prefixed()
+
+        return plist_response, pax
 
     def syslog(self, pid=-1):
-        self.c.send_plist({'Request': 'StartActivity', 'Pid': pid})
+        self.c.send_plist({'Request': 'StartActivity', 'MessageFilter': 65535, 'Pid': pid, 'StreamFlags': 60})
 
         length_length, = struct.unpack('<I', self.c.recvall(4))
         length = int(self.c.recvall(length_length)[::-1].hex(), 16)
         response = plistlib.loads(self.c.recvall(length))
 
-        if response['Status'] != 'RequestSuccessful':
+        if response.get('Status') != 'RequestSuccessful':
             raise PyMobileDevice3Exception(f'got invalid response: {response}')
 
         while True:

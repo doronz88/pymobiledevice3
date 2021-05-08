@@ -9,8 +9,7 @@ from queue import Queue
 import IPython
 from bpylist2 import archiver
 from pygments import highlight, lexers, formatters
-
-from pymobiledevice3.exceptions import ConnectionFailedError, DvtException
+from pymobiledevice3.exceptions import DvtException, StartServiceError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.dvt.structs import MessageAux, dtx_message_payload_header_struct, \
     dtx_message_header_struct, message_aux_t_struct
@@ -137,7 +136,7 @@ class DvtSecureSocketProxyService(object):
         try:
             # iOS >= 14.0
             self.service = self.lockdown.start_service('com.apple.instruments.remoteserver.DVTSecureSocketProxy')
-        except ConnectionFailedError:
+        except StartServiceError:
             # iOS < 14.0
             self.service = self.lockdown.start_service('com.apple.instruments.remoteserver')
             if hasattr(self.service.socket, '_sslobj'):

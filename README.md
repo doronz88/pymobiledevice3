@@ -6,17 +6,16 @@
 - [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
-  * [Sending your own messages](#sending-your-own-messages)
-    + [Lockdown messages](#lockdown-messages)
-    + [Instruments messages](#instruments-messages)
-  * [Example](#example)
+    * [Sending your own messages](#sending-your-own-messages)
+        + [Lockdown messages](#lockdown-messages)
+        + [Instruments messages](#instruments-messages)
+    * [Example](#example)
 - [Lockdown services](#lockdown-services)
-  * [`com.apple.instruments.remoteserver.DVTSecureSocketProxy`](#comappleinstrumentsremoteserverdvtsecuresocketproxy)
-  * [`com.apple.os_trace_relay`](#comappleos_trace_relay)
-  * [`com.apple.mobile.diagnostics_relay`](#comapplemobilediagnostics_relay)
-  * [`com.apple.mobile.file_relay`](#comapplemobilefile_relay)
-  * [`com.apple.pcapd`](#comapplepcapd)
-
+    * [`com.apple.instruments.remoteserver.DVTSecureSocketProxy`](#comappleinstrumentsremoteserverdvtsecuresocketproxy)
+    * [`com.apple.os_trace_relay`](#comappleos_trace_relay)
+    * [`com.apple.mobile.diagnostics_relay`](#comapplemobilediagnostics_relay)
+    * [`com.apple.mobile.file_relay`](#comapplemobilefile_relay)
+    * [`com.apple.pcapd`](#comapplepcapd)
 
 # Description
 
@@ -34,8 +33,6 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
 
 * TCP port forwarding
     * `pymobiledevice3 lockdown forward src_port dst_port`
-* Screenshots
-    * `pymobiledevice3 screenshot screen.png`
 * Live and past syslogs
     * `pymobiledevice3 syslog live`
     * `pymobiledevice3 syslog archive syslogs.pax`
@@ -57,10 +54,14 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
     * `pymobiledevice3 notification post notification_name`
     * `pymobiledevice3 notification observe notification_name`
 * DeveloperDiskImage features:
+    * Screenshots
+        * `pymobiledevice3 developer screenshot screen.png`
     * Process management
         * `pymobiledevice3 developer kill/launch/....`
     * **Non-chrooted** directory listing
         * `pymobiledevice3 developer ls /`
+    * KDebug messgaes
+        * `pymobiledevice3 developer core-profile-session`
     * System monitoring (`top` like)
         * `pymobiledevice3 developer sysmon processes`
     * Raw shell for experimenting:
@@ -70,18 +71,23 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
 
 # Installation
 
-Make sure `swig` is installed for `M2Crypto` installation:
+Make sure `swig` and `openssl` is installed for `M2Crypto` installation:
 
 On MAC:
 
 ```shell
-brew install swig
+brew install swig openssl
+
+LDFLAGS="-L$(brew --prefix openssl)/lib" \
+CFLAGS="-I$(brew --prefix openssl)/include" \
+SWIG_FEATURES="-cpperraswarn -includeall -I$(brew --prefix openssl)/include" \
+python3 -m pip install --user -U m2crypto
 ```
 
 On Linux:
 
 ```shell
-sudo apt install swig
+sudo apt install swig openssl
 ```
 
 Now you can install the last released version using `pip`:
@@ -117,16 +123,16 @@ Options:
 Commands:
   afc           FileSystem utils
   apps          application options
-  crash         crash utils
-  developer     developer options
+  crash         crash report options
+  developer     developer options.
   diagnostics   diagnostics options
+  list-devices  list connected devices
   lockdown      lockdown options
   mounter       mounter options
   notification  API for notify_post() & notify_register_dispatch().
   pcap          sniff device traffic
   profile       profile options
   ps            show process list
-  screenshot    take a screenshot in PNG format
   syslog        syslog options
 ```
 
@@ -286,11 +292,11 @@ frida -U DTServiceHub
 
 ```javascript
 for (var name in ObjC.protocols) {
-  var protocol = ObjC.protocols[name]
-  if ('DTXAllowedRPC' in protocol.protocols) {
-    console.log('@protocol', name)
-    console.log('  ' + Object.keys(protocol.methods).join('\n  '))
-  }
+    var protocol = ObjC.protocols[name]
+    if ('DTXAllowedRPC' in protocol.protocols) {
+        console.log('@protocol', name)
+        console.log('  ' + Object.keys(protocol.methods).join('\n  '))
+    }
 }
 ```
 
