@@ -66,7 +66,7 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
     * Raw shell for experimenting:
         * `pymobiledevice3 developer shell`
 
-* And some more 😁
+* And some more :)
 
 # Installation
 
