@@ -88,8 +88,8 @@ def make_cert(req, caPkey):
     certificate.set_version(2)
     certificate.set_subject(sub)
     issuer = X509.X509_Name()
-    issuer['CN'] = 'The Issuer Monkey'
-    issuer['O'] = 'The Organization Otherwise Known as My CA, Inc.'
+    issuer.CN = 'The Issuer Monkey'
+    issuer.O = 'The Organization Otherwise Known as My CA, Inc.'
     certificate.set_issuer(issuer)
     certificate.set_pubkey(pkey)
     not_before = m2.x509_get_not_before(certificate.x509)
