@@ -537,7 +537,7 @@ class DgbFuncQual(enum.Enum):
 
 
 class CoreProfileSessionTap(Tap):
-    """
+    r"""
     Kdebug is a kernel facility for tracing events occurring on a system.
     This header defines reserved debugids, which are 32-bit values that describe
     each event:
@@ -607,13 +607,13 @@ class CoreProfileSessionTap(Tap):
         """
         Get a stackshot from the tap.
         """
-        if self.stack_shot:
+        if self.stack_shot is not None:
             # The stackshot is sent one per TAP creation, so we cache it.
             return self.stack_shot
         data = self._channel.receive_message()
         while not data.startswith(self.STACKSHOT_HEADER):
             data = self._channel.receive_message()
-        self.parse_stackshot(data)
+        self.stack_shot = self.parse_stackshot(data)
         return self.stack_shot
 
     def dump(self, out: typing.BinaryIO):
@@ -643,7 +643,7 @@ class CoreProfileSessionTap(Tap):
             if data.startswith(b'bplist'):
                 continue
             if data.startswith(self.STACKSHOT_HEADER):
-                self.parse_stackshot(data)
+                self.stack_shot = self.parse_stackshot(data)
                 continue
             if data.startswith(RAW_VERSION2_BYTES):
                 parsed = kperf_data.parse(data)
@@ -658,13 +658,14 @@ class CoreProfileSessionTap(Tap):
                 yield event
                 events_index += 1
 
-    def parse_stackshot(self, data):
+    @staticmethod
+    def parse_stackshot(data):
         parsed = kcdata.parse(data)
         # Required for removing streams from construct output.
         stackshot = clean(parsed)
-        self.stack_shot = {}
-        jsonify_parsed_stackshot(stackshot, self.stack_shot)
-        self.stack_shot = self.stack_shot[predefined_names[kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT]]
+        parsed_stack_shot = {}
+        jsonify_parsed_stackshot(stackshot, parsed_stack_shot)
+        return parsed_stack_shot[predefined_names[kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT]]
 
     def parse_event_time(self, timestamp):
         time_info = self.stack_shot['mach_timebase_info']
