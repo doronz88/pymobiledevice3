@@ -29,6 +29,11 @@ To understand the bits and bytes of the communication with `lockdownd` you are a
 
 https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lockdown-service-7f2a1dfd07ae
 
+If you would like to contribute, feel free to reports issues, start new discussions, or create pull requests. You can
+also contact us on gitter:
+
+https://gitter.im/pymobiledevice3/community
+
 # Features
 
 * TCP port forwarding
