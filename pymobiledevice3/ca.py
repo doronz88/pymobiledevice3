@@ -12,7 +12,7 @@ Authors: Heikki Toivonen
 """
 import base64
 
-from M2Crypto import RSA, X509, EVP, m2, BIO, ASN1
+from M2Crypto import RSA, X509, EVP, m2, BIO
 from M2Crypto.RSA import load_pub_key_bio
 from pyasn1.type import univ
 from pyasn1.codec.der import encoder as der_encoder
