@@ -1,13 +1,13 @@
 import typing
 import enum
 import uuid
+from collections import namedtuple
 
 from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyBytes, Enum, Switch, Padding, Padded, \
     LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Const, Bytes, RawCopy
 
 from pymobiledevice3.services.dvt.tap import Tap
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
-from collections import namedtuple
 
 # bsd/sys/kdebug.h
 RAW_VERSION2_BYTES = b'\x00\x02\xaa\x55'
@@ -573,6 +573,13 @@ class CoreProfileSessionTap(Tap):
         self._thread_map = {}
         for thread in parsed_threadmap:
             self._thread_map[thread.tid] = ProcessData(thread.pid, thread.process)
+
+    def get_stackshot(self):
+        data = self._channel.receive_message()
+        while not data.startswith(self.STACKSHOT_HEADER):
+            data = self._channel.receive_message()
+        self.parse_stackshot(data)
+        return self.stack_shot
 
     def dump(self, out: typing.BinaryIO):
         """
