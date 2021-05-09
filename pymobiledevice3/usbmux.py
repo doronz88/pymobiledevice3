@@ -84,7 +84,7 @@ class BinaryProtocol(object):
         if version != self.VERSION:
             raise MuxVersionError('Version mismatch: expected %d, got %d' % (self.VERSION, version))
         payload = self._unpack(resp, body[0xc:])
-        return (resp, tag, payload)
+        return resp, tag, payload
 
 
 class PlistProtocol(BinaryProtocol):

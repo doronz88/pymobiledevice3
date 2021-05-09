@@ -1,4 +1,5 @@
 import typing
+from datetime import datetime
 import enum
 import uuid
 from collections import namedtuple
@@ -536,10 +537,38 @@ class DgbFuncQual(enum.Enum):
 
 
 class CoreProfileSessionTap(Tap):
+    """
+    Kdebug is a kernel facility for tracing events occurring on a system.
+    This header defines reserved debugids, which are 32-bit values that describe
+    each event:
+
+    +----------------+----------------+----------------------------+----+
+    |   Class (8)    |  Subclass (8)  |          Code (14)         |Func|
+    |                |                |                            |(2) |
+    +----------------+----------------+----------------------------+----+
+    \_________________________________/
+            ClassSubclass (CSC)
+    \________________________________________________________________00_/
+                                    Eventid
+    \___________________________________________________________________/
+                                    Debugid
+
+    The eventid is a hierarchical ID, indicating which components an event is
+    referring to.  The debugid includes an eventid and two function qualifier
+    bits, to determine the structural significance of an event (whether it
+    starts or ends an interval).
+
+    This tap yields kdebug events.
+    """
     IDENTIFIER = 'com.apple.instruments.server.services.coreprofilesessiontap'
     STACKSHOT_HEADER = Int32ul.build(int(kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT))
 
-    def __init__(self, dvt: DvtSecureSocketProxyService, class_filter=None, subclass_filter=None):
+    def __init__(self, dvt: DvtSecureSocketProxyService, class_filter: int = None, subclass_filter: int = None):
+        """
+        :param dvt: Instruments service proxy.
+        :param class_filter: Event class to include.
+        :param subclass_filter: Event subclass to include.
+        """
         self.dvt = dvt
         self.stack_shot = None
         self._thread_map = {}
@@ -574,7 +603,13 @@ class CoreProfileSessionTap(Tap):
         for thread in parsed_threadmap:
             self._thread_map[thread.tid] = ProcessData(thread.pid, thread.process)
 
-    def get_stackshot(self):
+    def get_stackshot(self) -> typing.Mapping:
+        """
+        Get a stackshot from the tap.
+        """
+        if self.stack_shot:
+            # The stackshot is sent one per TAP creation, so we cache it.
+            return self.stack_shot
         data = self._channel.receive_message()
         while not data.startswith(self.STACKSHOT_HEADER):
             data = self._channel.receive_message()
@@ -595,7 +630,13 @@ class CoreProfileSessionTap(Tap):
             out.write(data)
             out.flush()
 
-    def watch_events(self, events_count=-1):
+    def watch_events(self, events_count: int = -1):
+        """
+        Generator for kdebug events.
+        The yielded event contains timestamp (uptime), args (arguments), tid (thread id), debugid, eventid, class,
+        subclass, code, func_qualifier (function qualifier).
+        :param events_count: Count of events to generate, -1 for unlimited generation.
+        """
         events_index = 0
         while events_index != events_count:
             data = self._channel.receive_message()
@@ -623,3 +664,12 @@ class CoreProfileSessionTap(Tap):
         stackshot = clean(parsed)
         self.stack_shot = {}
         jsonify_parsed_stackshot(stackshot, self.stack_shot)
+        self.stack_shot = self.stack_shot[predefined_names[kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT]]
+
+    def parse_event_time(self, timestamp):
+        time_info = self.stack_shot['mach_timebase_info']
+        offset_usec = (
+                ((timestamp - self.stack_shot['mach_absolute_time']) * time_info['numer']) /
+                (time_info['denom'] * 1000)
+        )
+        return datetime.fromtimestamp((self.stack_shot['usecs_since_epoch'] + offset_usec) / 1000000)
