@@ -1,4 +1,5 @@
 # flake8: noqa: C901
+import json
 import logging
 import posixpath
 import shlex
@@ -17,6 +18,7 @@ from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap, DgbFuncQual, \
     ProcessData
+from pymobiledevice3.lockdown import LockdownClient
 
 
 @click.group()
@@ -83,9 +85,10 @@ def kill(lockdown, pid):
 @click.argument('arguments', type=click.STRING)
 @click.option('--kill-existing/--no-kill-existing', default=True)
 @click.option('--suspended', is_flag=True)
-def launch(lockdown, arguments: str, kill_existing: bool, suspended: bool):
+def launch(lockdown: LockdownClient, arguments: str, kill_existing: bool, suspended: bool):
     """
     Launch a process.
+    :param lockdown: Lockdown client.
     :param arguments: Arguments of process to launch, the first argument is the bundle id.
     :param kill_existing: Whether to kill an existing instance of this process.
     :param suspended: Same as WaitForDebugger.
@@ -264,19 +267,21 @@ def live_profile_session(lockdown, count, class_filter, subclass_filter, pid, ti
                         process = ProcessData(pid=-1, name='')
                     if pid is not None and process.pid != pid:
                         continue
-                    formatted_data = f'{event.timestamp:<16}' if timestamp else ''
-                    formatted_data += f'{name:<60}' if event_name else ''
+                    formatted_data = ''
+                    if timestamp:
+                        formatted_data += f'{str(tap.parse_event_time(event.timestamp)):<27}'
+                    formatted_data += f'{name:<58}' if event_name else ''
                     if func_qual:
                         try:
-                            formatted_data += f'{DgbFuncQual(event.func_qualifier).name:<16}'
+                            formatted_data += f'{DgbFuncQual(event.func_qualifier).name:<15}'
                         except ValueError:
                             formatted_data += f'''{'Error':<16}'''
                     formatted_data += f'{hex(event.tid):<12}' if show_tid else ''
                     if process_name:
-                        process_rep = (f'{process.name} ({process.pid})'
+                        process_rep = (f'{process.name}({process.pid})'
                                        if process.pid != -1
                                        else f'Error: tid {event.tid}')
-                        formatted_data += f'{process_rep:<30}' if process_name else ''
+                        formatted_data += f'{process_rep:<27}' if process_name else ''
                     formatted_data += f'{str(event.args.data):<34}' if args else ''
                     print(formatted_data)
                 except (ValueError, KeyError):
@@ -292,6 +297,20 @@ def save_profile_session(lockdown, out, class_filter, subclass_filter):
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
             tap.dump(out)
+
+
+@core_profile_session.command('stackshot', cls=Command)
+@click.option('--out', type=click.File('w'), default=None)
+@click.option('--nocolor', is_flag=True)
+def stackshot(lockdown, out, nocolor):
+    """ Dump stackshot information. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with CoreProfileSessionTap(dvt) as tap:
+            data = tap.get_stackshot()
+            if out is not None:
+                json.dump(data, out, indent=4)
+            else:
+                print_object(data, colored=not nocolor)
 
 
 @developer.command('trace-codes', cls=Command)
