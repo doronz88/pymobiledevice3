@@ -1,4 +1,5 @@
 # flake8: noqa: C901
+import json
 import logging
 import posixpath
 import shlex
@@ -292,6 +293,20 @@ def save_profile_session(lockdown, out, class_filter, subclass_filter):
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
             tap.dump(out)
+
+
+@core_profile_session.command('stackshot', cls=Command)
+@click.option('--out', type=click.File('w'), default=None)
+@click.option('--nocolor', is_flag=True)
+def stackshot(lockdown, out, nocolor):
+    """ Dump stackshot information. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with CoreProfileSessionTap(dvt) as tap:
+            data = tap.get_stackshot()
+            if out is not None:
+                json.dump(data, out, indent=4)
+            else:
+                print_object(data, colored=not nocolor)
 
 
 @developer.command('trace-codes', cls=Command)
