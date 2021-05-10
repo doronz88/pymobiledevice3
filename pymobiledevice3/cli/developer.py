@@ -353,5 +353,6 @@ def developer_oslog(lockdown, nocolor, pid):
                     subsystem = colored(subsystem, 'green')
                     category = colored(category, 'green')
                     image_name = colored(image_name, 'yellow')
+                    message_type = colored(message_type, 'cyan')
 
-                print(f'[{subsystem}][{category}][{message_pid}][{image_name}] {formatted_message}')
+                print(f'[{subsystem}][{category}][{message_pid}][{image_name}] <{message_type}>: {formatted_message}')
