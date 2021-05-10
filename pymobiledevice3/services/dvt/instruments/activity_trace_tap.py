@@ -217,18 +217,22 @@ class ActivityTraceTap(Tap):
         row = self.stack[-len(columns):]
         self.stack = self.stack[:-len(columns)]
 
-        Message = dataclasses.make_dataclass('message', [c.replace('-', '_') for c in columns])
-        message = Message(*row)
-        message.process = struct.unpack('<I', message.process[0].ljust(4, b'\x00'))[0]
-        message.thread = struct.unpack('<I', message.thread[0].ljust(4, b'\x00'))[0]
+        try:
+            Message = dataclasses.make_dataclass('message', [c.replace('-', '_') for c in columns])
+            message = Message(*row)
+            message.process = struct.unpack('<I', message.process[0].ljust(4, b'\x00'))[0]
+            message.thread = struct.unpack('<I', message.thread[0].ljust(4, b'\x00'))[0]
 
-        string_fields = ('message_type', 'format_string', 'subsystem', 'category', 'sender_image_path')
-        for f in string_fields:
-            if hasattr(message, f):
-                setattr(message, f, decode_str(getattr(message, f)))
+            string_fields = ('message_type', 'format_string', 'subsystem', 'category', 'sender_image_path')
+            for f in string_fields:
+                if hasattr(message, f):
+                    setattr(message, f, decode_str(getattr(message, f)))
 
-        if hasattr(message, 'message'):
-            return message
+            if hasattr(message, 'message'):
+                return message
+        except Exception:
+            # TODO: remove this when reference parsing is fixed
+            print('ERROR')
 
     def _handle_placeholder_count(self, word):
         """ remove `count` last items from stack """

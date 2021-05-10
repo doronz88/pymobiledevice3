@@ -326,12 +326,13 @@ def trace_codes(lockdown, nocolor):
 
 @developer.command('oslog', cls=Command)
 @click.option('--nocolor', is_flag=True, help='disable colors')
-def developer_oslog(lockdown, nocolor):
+@click.option('--pid', type=click.INT)
+def developer_oslog(lockdown, nocolor, pid):
     """ oslog. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with ActivityTraceTap(dvt) as tap:
             for message in tap:
-                pid = message.process
+                message_pid = message.process
                 timestamp = message.time
                 message_type = message.message_type
                 sender_image_path = message.sender_image_path
@@ -339,15 +340,18 @@ def developer_oslog(lockdown, nocolor):
                 subsystem = message.subsystem
                 category = message.category
 
+                if pid is not None and message_pid != pid:
+                    continue
+
                 try:
                     formatted_message = decode_message_format(message.message).decode()
                 except Exception:
                     print('error decoding')
 
                 if not nocolor:
-                    pid = colored(str(pid), 'magenta')
+                    message_pid = colored(str(message_pid), 'magenta')
                     subsystem = colored(subsystem, 'green')
                     category = colored(category, 'green')
                     image_name = colored(image_name, 'yellow')
 
-                print(f'[{subsystem}][{category}][{pid}][{image_name}] {formatted_message}')
+                print(f'[{subsystem}][{category}][{message_pid}][{image_name}] {formatted_message}')
