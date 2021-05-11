@@ -1,10 +1,9 @@
-import _queue
 import io
 import logging
 import plistlib
 from functools import partial
 from pprint import pprint
-from queue import Queue
+from queue import Queue, Empty
 
 import IPython
 from bpylist2 import archiver
@@ -241,7 +240,7 @@ class DvtSecureSocketProxyService(object):
                 # if we already have a message for this channel, just return it
                 message = self.channel_messages[channel].get()
                 return io.BytesIO(message)
-            except _queue.Empty:
+            except Empty:
                 # if no message exists for the given channel code, just keep waiting and receive new messages
                 # until the waited message queue has at least one message
                 data = self.service.recvall(dtx_message_header_struct.sizeof())
