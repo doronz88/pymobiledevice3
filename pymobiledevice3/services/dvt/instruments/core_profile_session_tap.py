@@ -188,6 +188,7 @@ predefined_names = {
     kcdata_types_enum.STACKSHOT_KCTYPE_THREAD_DISPATCH_QUEUE_LABEL: 'dispatch_queue_label',
     kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT: 'kcdata_stackshot',
     kcdata_types_enum.STACKSHOT_KCTYPE_STACKSHOT_FAULT_STATS: 'stackshot_fault_stats',
+    kcdata_types_enum.STACKSHOT_KCTYPE_STACKSHOT_DURATION: 'stackshot_duration',
 }
 
 predefined_name_substruct = 'name' / Computed(lambda ctx: predefined_names[ctx._.type])
@@ -407,6 +408,14 @@ stackshot_fault_stats = Struct(
     )
 )
 
+stackshot_duration = Struct(
+    predefined_name_substruct,
+    'obj' / Struct(
+        'stackshot_duration' / Int64ul,
+        'stackshot_duration_outer' / Int64ul,
+    )
+)
+
 kcdata_types_structures = {
     kcdata_types_enum.KCDATA_TYPE_UINT32_DESC: uint32_desc,
     kcdata_types_enum.KCDATA_TYPE_UINT64_DESC: uint64_desc,
@@ -444,6 +453,7 @@ kcdata_types_structures = {
     kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT: Struct(predefined_name_substruct),
     kcdata_types_enum.KCDATA_TYPE_CONTAINER_END: Pass,
     kcdata_types_enum.KCDATA_TYPE_BUFFER_END: Pass,
+    kcdata_types_enum.STACKSHOT_KCTYPE_STACKSHOT_DURATION: stackshot_duration,
 }
 
 kcdata_item = Struct(
