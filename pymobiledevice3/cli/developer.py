@@ -12,6 +12,7 @@ from pymobiledevice3.exceptions import DvtDirListError, StartServiceError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
+from pymobiledevice3.services.dvt.instruments.kdebug_events_parser import KdebugEventsParser
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap, DgbFuncQual, \
     ProcessData
@@ -313,6 +314,41 @@ def stackshot(lockdown, out, nocolor):
                 json.dump(data, out, indent=4)
             else:
                 print_object(data, colored=not nocolor)
+
+
+@core_profile_session.command('parse-live', cls=Command)
+@click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
+@click.option('-cf', '--class-filter', type=click.INT, default=None, help='Events class to filter. Omit for all.')
+@click.option('-sf', '--subclass-filter', type=click.INT, default=None, help='Events subclass to filter. Omit for all.')
+@click.option('--pid', type=click.INT, default=None, help='Process ID to filter. Omit for all.')
+@click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
+@click.option('--show-tid/--no-show-tid', default=False, help='Whether to print thread id or not.')
+def parse_live_profile_session(lockdown, count, class_filter, subclass_filter, pid, tid, show_tid):
+    """ Parse core profiling information. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        trace_codes_map = DeviceInfo(dvt).trace_codes()
+        with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
+            events_parser = KdebugEventsParser(trace_codes_map)
+            for event in tap.watch_events(count):
+                if tid is not None and event.tid != tid:
+                    continue
+                try:
+                    process = tap.thread_map[event.tid]
+                except KeyError:
+                    process = ProcessData(pid=-1, name='')
+                if pid is not None and process.pid != pid:
+                    continue
+                events_parser.feed(event)
+                parsed = events_parser.fetch()
+                if parsed is None:
+                    continue
+                formatted_data = f'{str(tap.parse_event_time(parsed.ktraces[0].timestamp)):<27}'
+                formatted_data += f'{hex(event.tid):<12}' if show_tid else ''
+                process_rep = (f'{process.name}({process.pid})'
+                               if process.pid != -1
+                               else f'Error: tid {event.tid}')
+                formatted_data += f'{process_rep:<27}'
+                print(formatted_data + str(parsed))
 
 
 @developer.command('trace-codes', cls=Command)

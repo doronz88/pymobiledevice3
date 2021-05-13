@@ -469,7 +469,7 @@ kd_buf = Struct(
     'tid' / Int64ul,
     'debugid' / Int32ul,
     'eventid' / Computed(lambda ctx: ctx.debugid & KDBG_EVENTID_MASK),
-    'class' / Computed(lambda ctx: (ctx.debugid & KDBG_CLASS_MASK) >> KDBG_CLASS_OFFSET),
+    'class_' / Computed(lambda ctx: (ctx.debugid & KDBG_CLASS_MASK) >> KDBG_CLASS_OFFSET),
     'subclass' / Computed(lambda ctx: (ctx.debugid & KDBG_SUBCLASS_MASK) >> KDBG_SUBCLASS_OFFSET),
     'code' / Computed(lambda ctx: (ctx.debugid & KDBG_CODE_MASK) >> KDBG_CODE_OFFSET),
     'func_qualifier' / Computed(lambda ctx: ctx.debugid & KDBG_FUNC_MASK),
@@ -534,6 +534,7 @@ class DgbFuncQual(enum.Enum):
     DBG_FUNC_NONE = 0
     DBG_FUNC_START = 1
     DBG_FUNC_END = 2
+    DBG_FUNC_ALL = 3
 
 
 class CoreProfileSessionTap(Tap):
