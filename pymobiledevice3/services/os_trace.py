@@ -33,7 +33,7 @@ syslog_t = Struct(
     Bytes(42),
     'timestamp' / TimestampAdapter(timestamp_t),
     Bytes(1),
-    'level' / Enum(Byte, Notice=0, Error=0x10, Fault=0x11),
+    'level' / Enum(Byte, Notice=0, Debug=0x02, Error=0x10, Fault=0x11),
     Bytes(1),
     Bytes(60),
     'filename' / CString('utf8'),
