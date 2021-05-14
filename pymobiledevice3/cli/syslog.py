@@ -32,10 +32,10 @@ def syslog_live_old(lockdown):
 @click.option('-o', '--out', type=click.File('wt'), help='log file')
 @click.option('--nocolor', is_flag=True, help='disable colors')
 @click.option('--pid', type=click.INT, default=-1, help='pid to filter. -1 for all')
-@click.option('-m', '--match', help='match expression')
-@click.option('-i', '--insensitive', is_flag=True, help='treat the match expression as case insensitive')
+@click.option('-m', '--match', multiple=True, help='match expression')
+@click.option('-mi', '--match-insensitive', multiple=True, help='insensitive match expression')
 @click.option('include_label', '--label', is_flag=True, help='should include label')
-def syslog_live(lockdown, out, nocolor, pid, match, insensitive, include_label):
+def syslog_live(lockdown, out, nocolor, pid, match, match_insensitive, include_label):
     """ view live syslog lines """
 
     log_level_colors = {
@@ -82,17 +82,33 @@ def syslog_live(lockdown, out, nocolor, pid, match, insensitive, include_label):
         line = line_format.format(timestamp=timestamp, process_name=process_name, image_name=image_name, pid=syslog_pid,
                                   level=level, message=message)
 
+        skip = False
+        
         if match is not None:
-            match_line = line
-            if insensitive:
-                match = match.lower()
-                match_line = line.lower()
-            if match not in match_line:
-                continue
-            else:
-                if not nocolor:
-                    match_line = match_line.replace(match, colored(match, attrs=['bold', 'underline']))
-                    line = match_line
+            for m in match:
+                match_line = line
+                if m not in match_line:
+                    skip = True
+                    break
+                else:
+                    if not nocolor:
+                        match_line = match_line.replace(m, colored(m, attrs=['bold', 'underline']))
+                        line = match_line
+
+        if match_insensitive is not None:
+            for m in match_insensitive:
+                m = m.lower()
+                if m not in line.lower():
+                    skip = True
+                    break
+                else:
+                    if not nocolor:
+                        start = line.lower().index(m)
+                        end = start + len(m)
+                        line = line[:start] + colored(m, attrs=['bold', 'underline']) + line[end:]
+
+        if skip:
+            continue
 
         print(line)
 
