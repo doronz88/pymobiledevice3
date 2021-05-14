@@ -83,7 +83,7 @@ def syslog_live(lockdown, out, nocolor, pid, match, match_insensitive, include_l
                                   level=level, message=message)
 
         skip = False
-        
+
         if match is not None:
             for m in match:
                 match_line = line
