@@ -261,34 +261,31 @@ def live_profile_session(lockdown, count, class_filter, subclass_filter, pid, ti
                 else:
                     # Some event IDs are not public.
                     name = hex(event.eventid)
+                if tid is not None and event.tid != tid:
+                    continue
                 try:
-                    if tid is not None and event.tid != tid:
-                        continue
+                    process = tap.thread_map[event.tid]
+                except KeyError:
+                    process = ProcessData(pid=-1, name='')
+                if pid is not None and process.pid != pid:
+                    continue
+                formatted_data = ''
+                if timestamp:
+                    formatted_data += f'{str(tap.parse_event_time(event.timestamp)):<27}'
+                formatted_data += f'{name:<58}' if event_name else ''
+                if func_qual:
                     try:
-                        process = tap.thread_map[event.tid]
-                    except KeyError:
-                        process = ProcessData(pid=-1, name='')
-                    if pid is not None and process.pid != pid:
-                        continue
-                    formatted_data = ''
-                    if timestamp:
-                        formatted_data += f'{str(tap.parse_event_time(event.timestamp)):<27}'
-                    formatted_data += f'{name:<58}' if event_name else ''
-                    if func_qual:
-                        try:
-                            formatted_data += f'{DgbFuncQual(event.func_qualifier).name:<15}'
-                        except ValueError:
-                            formatted_data += f'''{'Error':<16}'''
-                    formatted_data += f'{hex(event.tid):<12}' if show_tid else ''
-                    if process_name:
-                        process_rep = (f'{process.name}({process.pid})'
-                                       if process.pid != -1
-                                       else f'Error: tid {event.tid}')
-                        formatted_data += f'{process_rep:<27}' if process_name else ''
-                    formatted_data += f'{str(event.args.data):<34}' if args else ''
-                    print(formatted_data)
-                except (ValueError, KeyError):
-                    pass
+                        formatted_data += f'{DgbFuncQual(event.func_qualifier).name:<15}'
+                    except ValueError:
+                        formatted_data += f'''{'Error':<16}'''
+                formatted_data += f'{hex(event.tid):<12}' if show_tid else ''
+                if process_name:
+                    process_rep = (f'{process.name}({process.pid})'
+                                   if process.pid != -1
+                                   else f'Error: tid {event.tid}')
+                    formatted_data += f'{process_rep:<27}' if process_name else ''
+                formatted_data += f'{str(event.args.data):<34}' if args else ''
+                print(formatted_data)
 
 
 @core_profile_session.command('save', cls=Command)

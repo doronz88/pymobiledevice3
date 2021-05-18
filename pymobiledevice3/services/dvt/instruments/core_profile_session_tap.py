@@ -661,7 +661,9 @@ class CoreProfileSessionTap(Tap):
                 self.thread_map = parsed.threadmap
                 traces = parsed.traces
             else:
-                traces = Array(len(data) // kd_buf.sizeof(), kd_buf).parse(data)
+                traces_count = len(data) / kd_buf.sizeof()
+                assert traces_count.is_integer()
+                traces = Array(int(traces_count), kd_buf).parse(data)
 
             for event in traces:
                 if events_index == events_count:
