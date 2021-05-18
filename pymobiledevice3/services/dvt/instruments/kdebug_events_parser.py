@@ -44,10 +44,10 @@ def serialize_open_flags(flags: int) -> List[BscOpenFlags]:
     return call_flags
 
 
-def serialize_open_result(end_event) -> str:
+def serialize_result(end_event, success_name) -> str:
     error_code = end_event.args.value[0]
-    fd = end_event.args.value[1]
-    return f'fd: {fd}' if not error_code else f'errno: {errno.errorcode[error_code]}({error_code})'
+    res = end_event.args.value[1]
+    return f'{success_name}: {res}' if not error_code else f'errno: {errno.errorcode[error_code]}({error_code})'
 
 
 @dataclass
@@ -84,6 +84,39 @@ class BscOpenat:
                 f'''{' | '.join(map(lambda f: f.name, self.flags))}), {self.result}''')
 
 
+@dataclass
+class BscWrite:
+    ktraces: List
+    fd: int
+    address: int
+    size: int
+    result: str
+
+    def __str__(self):
+        return f'write({self.fd}, {hex(self.address)}, {self.size}), {self.result}'
+
+
+@dataclass
+class BscLstat64:
+    ktraces: List
+    path: int
+    result: str
+
+    def __str__(self):
+        rep = f'lstat64("{self.path}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class MachStackHandoff:
+    ktraces: List
+
+    def __str__(self):
+        return 'stack_handoff()'
+
+
 class KdebugEventsParser:
     def __init__(self, trace_codes_map):
         self.trace_codes = trace_codes_map
@@ -93,7 +126,10 @@ class KdebugEventsParser:
             'VFS_LOOKUP': self.handle_vfs_lookup,
             'BSC_open': self.handle_bsc_open,
             'BSC_openat': self.handle_bsc_openat,
-            'User_SVC64_Exc_ARM': self.handle_syscall
+            'User_SVC64_Exc_ARM': self.handle_syscall,
+            'MACH_STKHANDOFF': self.handle_mach_stkhandoff,
+            'BSC_write': self.handle_bsc_write,
+            'BSC_lstat64': self.handle_bsc_lstat64,
         }
 
     def feed(self, event):
@@ -145,14 +181,30 @@ class KdebugEventsParser:
         return VfsLookup(events, vnodeid, path.decode())
 
     def handle_bsc_open(self, events):
-        vnode = self.handle_vfs_lookup([e for e in events if self.trace_codes.get(e.eventid) == 'VFS_LOOKUP'])
+        vnode = self.parse_vnode(events)
         call_flags = serialize_open_flags(events[0].args.value[1])
-        return BscOpen(events, vnode.path, call_flags, serialize_open_result(events[-1]))
+        return BscOpen(events, vnode.path, call_flags, serialize_result(events[-1], 'fd'))
 
     def handle_bsc_openat(self, events):
-        vnode = self.handle_vfs_lookup([e for e in events if self.trace_codes.get(e.eventid) == 'VFS_LOOKUP'])
+        vnode = self.parse_vnode(events)
         call_flags = serialize_open_flags(events[0].args.value[2])
-        return BscOpenat(events, events[0].args.value[0], vnode.path, call_flags, serialize_open_result(events[-1]))
+        return BscOpenat(events, events[0].args.value[0], vnode.path, call_flags, serialize_result(events[-1], 'fd'))
 
     def handle_syscall(self, events):
         return self.parse_event_list(events[1:-1]) if len(events) > 2 else None
+
+    def handle_mach_stkhandoff(self, events):
+        return MachStackHandoff(events)
+
+    def handle_bsc_write(self, events):
+        result = serialize_result(events[-1], 'count')
+        args = events[0].args.value
+        return BscWrite(events, args[0], args[1], args[2], result)
+
+    def handle_bsc_lstat64(self, events):
+        error_code = events[-1].args.value[0]
+        result = f'' if not error_code else f'errno: {errno.errorcode[error_code]}({error_code})'
+        return BscLstat64(events, self.parse_vnode(events).path, result)
+
+    def parse_vnode(self, events):
+        return self.parse_event_list([e for e in events if self.trace_codes.get(e.eventid) == 'VFS_LOOKUP'])
