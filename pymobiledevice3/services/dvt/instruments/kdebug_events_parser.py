@@ -47,7 +47,11 @@ def serialize_open_flags(flags: int) -> List[BscOpenFlags]:
 def serialize_result(end_event, success_name) -> str:
     error_code = end_event.args.value[0]
     res = end_event.args.value[1]
-    return f'{success_name}: {res}' if not error_code else f'errno: {errno.errorcode[error_code]}({error_code})'
+    if error_code in errno.errorcode:
+        err = f'errno: {errno.errorcode[error_code]}({error_code})'
+    else:
+        err = f'errno: {error_code}'
+    return f'{success_name}: {res}' if not error_code else f'errno: {err}'
 
 
 @dataclass
@@ -99,11 +103,24 @@ class BscWrite:
 @dataclass
 class BscLstat64:
     ktraces: List
-    path: int
+    path: str
     result: str
 
     def __str__(self):
         rep = f'lstat64("{self.path}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSysClose:
+    ktraces: List
+    fd: str
+    result: str
+
+    def __str__(self):
+        rep = f'close({self.fd})'
         if self.result:
             rep += f', {self.result}'
         return rep
@@ -130,6 +147,7 @@ class KdebugEventsParser:
             'MACH_STKHANDOFF': self.handle_mach_stkhandoff,
             'BSC_write': self.handle_bsc_write,
             'BSC_lstat64': self.handle_bsc_lstat64,
+            'BSC_sys_close': self.handle_bsc_sys_close,
         }
 
     def feed(self, event):
@@ -206,5 +224,10 @@ class KdebugEventsParser:
         result = f'' if not error_code else f'errno: {errno.errorcode[error_code]}({error_code})'
         return BscLstat64(events, self.parse_vnode(events).path, result)
 
+    def handle_bsc_sys_close(self, events):
+        error_code = events[-1].args.value[0]
+        result = f'' if not error_code else f'errno: {errno.errorcode[error_code]}({error_code})'
+        return BscSysClose(events, events[0].args.value[0], result)
+
     def parse_vnode(self, events):
-        return self.parse_event_list([e for e in events if self.trace_codes.get(e.eventid) == 'VFS_LOOKUP'])
+        return self.handle_vfs_lookup([e for e in events if self.trace_codes.get(e.eventid) == 'VFS_LOOKUP'])
