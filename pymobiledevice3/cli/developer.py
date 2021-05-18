@@ -328,7 +328,10 @@ def parse_live_profile_session(lockdown, count, class_filter, subclass_filter, p
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         trace_codes_map = DeviceInfo(dvt).trace_codes()
         with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
+            print('Receiving Stackshot')
+            tap.get_stackshot()
             events_parser = KdebugEventsParser(trace_codes_map)
+            print('{:^26}|{:^26}|   Event'.format('Time', 'Process'))
             for event in tap.watch_events(count):
                 if tid is not None and event.tid != tid:
                     continue
