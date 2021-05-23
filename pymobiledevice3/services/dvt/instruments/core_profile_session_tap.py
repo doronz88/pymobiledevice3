@@ -1,12 +1,12 @@
 import typing
+import struct
 from datetime import datetime
 import enum
 import uuid
 from collections import namedtuple
 
 from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyBytes, Enum, Switch, Padding, Padded, \
-    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Const, Bytes, RawCopy
-
+    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Const, Bytes, Adapter
 from pymobiledevice3.services.dvt.tap import Tap
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 
@@ -473,6 +473,8 @@ kd_threadmap = Struct(
     'process' / FixedSized(20, CString('utf8')),
 )
 
+"""
+The constrcut version of kdebug event is:
 kd_buf = Struct(
     'timestamp' / Int64ul,
     'args' / RawCopy(Array(4, Int64ul)),
@@ -487,6 +489,19 @@ kd_buf = Struct(
     'unused' / Int64ul,
 )
 
+Unfortunately, it is too slow.
+"""
+
+kd_buf_format = '<Q32sQIIQ'
+kd_buf_size = struct.calcsize(kd_buf_format)
+KdBuf = namedtuple('KdBuf', ['timestamp', 'data', 'values', 'tid', 'debugid', 'eventid', 'func_qualifier'])
+
+
+class KdBufAdapter(Adapter):
+    def _decode(self, obj, context, path):
+        return make_event(obj)
+
+
 kperf_data = Struct(
     'magic' / Const(RAW_VERSION2_BYTES, Bytes(4)),
     'number_of_treads' / Int32ul,
@@ -497,7 +512,7 @@ kperf_data = Struct(
     Padding(0x100),
     'threadmap' / Array(lambda ctx: ctx.number_of_treads, kd_threadmap),
     '_pad' / GreedyRange(Const(0, Byte)),
-    'traces' / GreedyRange(kd_buf)
+    'traces' / GreedyRange(KdBufAdapter(Bytes(kd_buf_size)))
 )
 
 
@@ -535,6 +550,14 @@ def jsonify_parsed_stackshot(stackshot, root=None, index=0):
             return
         else:
             root[item['data']['name']] = item['data']['obj']
+
+
+def make_event(buf):
+    timestamp, args_buf, tid, debugid, cpuid, unused = struct.unpack(kd_buf_format, buf)
+    return KdBuf(
+        timestamp, args_buf, struct.unpack('<QQQQ', args_buf), tid, debugid, debugid & KDBG_EVENTID_MASK,
+                                                                             debugid & KDBG_FUNC_MASK
+    )
 
 
 ProcessData = namedtuple('namedtuple', ['pid', 'name'])
@@ -661,9 +684,12 @@ class CoreProfileSessionTap(Tap):
                 self.thread_map = parsed.threadmap
                 traces = parsed.traces
             else:
-                traces_count = len(data) / kd_buf.sizeof()
+                traces_count = len(data) / kd_buf_size
                 assert traces_count.is_integer()
-                traces = Array(int(traces_count), kd_buf).parse(data)
+                traces = []
+                for i in range(int(traces_count)):
+                    buf = data[i * kd_buf_size: (i + 1) * kd_buf_size]
+                    traces.append(make_event(buf))
 
             for event in traces:
                 if events_index == events_count:

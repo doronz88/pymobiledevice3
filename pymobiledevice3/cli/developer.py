@@ -284,7 +284,7 @@ def live_profile_session(lockdown, count, class_filter, subclass_filter, pid, ti
                                    if process.pid != -1
                                    else f'Error: tid {event.tid}')
                     formatted_data += f'{process_rep:<27}' if process_name else ''
-                formatted_data += f'{str(event.args.data):<34}' if args else ''
+                formatted_data += f'{str(event.data):<34}' if args else ''
                 print(formatted_data)
 
 

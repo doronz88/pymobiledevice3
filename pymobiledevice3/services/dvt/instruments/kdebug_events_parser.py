@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import errno
 import enum
 from typing import List
+from functools import partial
 
 from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import DgbFuncQual
 
@@ -45,8 +46,8 @@ def serialize_open_flags(flags: int) -> List[BscOpenFlags]:
 
 
 def serialize_result(end_event, success_name) -> str:
-    error_code = end_event.args.value[0]
-    res = end_event.args.value[1]
+    error_code = end_event.values[0]
+    res = end_event.values[1]
     if error_code in errno.errorcode:
         err = f'errno: {errno.errorcode[error_code]}({error_code})'
     else:
@@ -118,9 +119,11 @@ class BscSysClose:
     ktraces: List
     fd: str
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        rep = f'close({self.fd})'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        rep = f'close{no_cancel}({self.fd})'
         if self.result:
             rep += f', {self.result}'
         return rep
@@ -148,6 +151,7 @@ class KdebugEventsParser:
             'BSC_write': self.handle_bsc_write,
             'BSC_lstat64': self.handle_bsc_lstat64,
             'BSC_sys_close': self.handle_bsc_sys_close,
+            'BSC_sys_close_nocancel': partial(self.handle_bsc_sys_close, no_cancel=True),
         }
 
     def feed(self, event):
@@ -191,22 +195,22 @@ class KdebugEventsParser:
         vnodeid = 0
         for event in events:
             if event.func_qualifier & DgbFuncQual.DBG_FUNC_START.value:
-                vnodeid = event.args.value[0]
-                path += event.args.data[8:]
+                vnodeid = event.values[0]
+                path += event.data[8:]
             else:
-                path += event.args.data
+                path += event.data
 
         return VfsLookup(events, vnodeid, path.decode())
 
     def handle_bsc_open(self, events):
         vnode = self.parse_vnode(events)
-        call_flags = serialize_open_flags(events[0].args.value[1])
+        call_flags = serialize_open_flags(events[0].values[1])
         return BscOpen(events, vnode.path, call_flags, serialize_result(events[-1], 'fd'))
 
     def handle_bsc_openat(self, events):
         vnode = self.parse_vnode(events)
-        call_flags = serialize_open_flags(events[0].args.value[2])
-        return BscOpenat(events, events[0].args.value[0], vnode.path, call_flags, serialize_result(events[-1], 'fd'))
+        call_flags = serialize_open_flags(events[0].values[2])
+        return BscOpenat(events, events[0].values[0], vnode.path, call_flags, serialize_result(events[-1], 'fd'))
 
     def handle_syscall(self, events):
         return self.parse_event_list(events[1:-1]) if len(events) > 2 else None
@@ -216,18 +220,18 @@ class KdebugEventsParser:
 
     def handle_bsc_write(self, events):
         result = serialize_result(events[-1], 'count')
-        args = events[0].args.value
+        args = events[0].values
         return BscWrite(events, args[0], args[1], args[2], result)
 
     def handle_bsc_lstat64(self, events):
-        error_code = events[-1].args.value[0]
+        error_code = events[-1].values[0]
         result = f'' if not error_code else f'errno: {errno.errorcode[error_code]}({error_code})'
         return BscLstat64(events, self.parse_vnode(events).path, result)
 
-    def handle_bsc_sys_close(self, events):
-        error_code = events[-1].args.value[0]
+    def handle_bsc_sys_close(self, events, no_cancel=False):
+        error_code = events[-1].values[0]
         result = f'' if not error_code else f'errno: {errno.errorcode[error_code]}({error_code})'
-        return BscSysClose(events, events[0].args.value[0], result)
+        return BscSysClose(events, events[0].values[0], result, no_cancel)
 
     def parse_vnode(self, events):
         return self.handle_vfs_lookup([e for e in events if self.trace_codes.get(e.eventid) == 'VFS_LOOKUP'])
