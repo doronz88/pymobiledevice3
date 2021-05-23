@@ -3,9 +3,9 @@ import logging
 import os
 import platform
 import plistlib
-import re
 import sys
 import uuid
+from distutils.version import LooseVersion
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
@@ -14,7 +14,6 @@ from pymobiledevice3.exceptions import NoDeviceConnectedError, FatalPairingError
     PairingError, NotPairedError, StartServiceError, DeviceNonConnectedError, PyMobileDevice3Exception, \
     PasswordRequiredError
 from pymobiledevice3.service_connection import ServiceConnection
-
 
 # we store pairing records and ssl keys in ~/.pymobiledevice3
 HOMEFOLDER = '.pymobiledevice3'
@@ -107,32 +106,6 @@ class LockdownClient(object):
         self.paired = True
         return
 
-    def compare_ios_version(self, ios_version):
-        """
-        currrent_version > ios_version return 1
-        currrent_version = ios_version return 0
-        currrent_version < ios_version return -1
-        :param ios_version:
-        :return: int
-        """
-        version_reg = r'^\d*\.\d*\.?\d*$'
-        if not re.match(version_reg, ios_version):
-            raise PyMobileDevice3Exception('ios_version invalid:%s' % ios_version)
-        a = self.ios_version.split('.')
-        b = ios_version.split('.')
-        length = min(len(a), len(b))
-        for i in range(length):
-            if int(a[i]) < int(b[i]):
-                return -1
-            if int(a[i]) > int(b[i]):
-                return 1
-        if len(a) > len(b):
-            return 1
-        elif len(a) < len(b):
-            return -1
-        else:
-            return 0
-
     def query_type(self):
         self.service.send_plist({'Request': 'QueryType'})
         res = self.service.recv_plist()
@@ -174,7 +147,7 @@ class LockdownClient(object):
             logging.warning(f'Using iTunes pair record: {self.identifier}.plist')
         else:
             logging.warning(f'No iTunes pairing record found for device {self.identifier}')
-            if self.compare_ios_version('13.0') >= 0:
+            if LooseVersion(self.ios_version) >= LooseVersion('13.0'):
                 self.logger.warning('Getting pair record from usbmuxd')
                 client = usbmux.UsbmuxdClient()
                 pair_record = client.get_pair_record(self.udid)
@@ -193,7 +166,7 @@ class LockdownClient(object):
         cert_pem = pair_record['HostCertificate']
         private_key_pem = pair_record['HostPrivateKey']
 
-        if self.compare_ios_version('11.0') < 0:
+        if LooseVersion(self.ios_version) < LooseVersion('11.0'):
             validate_pair = {'Label': self.label, 'Request': 'ValidatePair', 'PairRecord': pair_record}
             self.service.send_plist(validate_pair)
             r = self.service.recv_plist()
