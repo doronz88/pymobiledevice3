@@ -7,6 +7,7 @@ from collections import namedtuple
 
 from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyBytes, Enum, Switch, Padding, Padded, \
     LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Const, Bytes, Adapter
+
 from pymobiledevice3.services.dvt.tap import Tap
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 
@@ -597,27 +598,22 @@ class CoreProfileSessionTap(Tap):
     IDENTIFIER = 'com.apple.instruments.server.services.coreprofilesessiontap'
     STACKSHOT_HEADER = Int32ul.build(int(kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT))
 
-    def __init__(self, dvt: DvtSecureSocketProxyService, class_filter: int = None, subclass_filter: int = None):
+    def __init__(self, dvt: DvtSecureSocketProxyService, filters: typing.Set = None):
         """
         :param dvt: Instruments service proxy.
-        :param class_filter: Event class to include.
-        :param subclass_filter: Event subclass to include.
+        :param filters: Event filters to include, Include all if empty.
         """
         self.dvt = dvt
         self.stack_shot = None
         self._thread_map = {}
         self.uuid = str(uuid.uuid4())
 
-        k_filter = 0xffffffff
-        if class_filter is not None:
-            k_filter = class_filter << KDBG_CLASS_OFFSET
-        if subclass_filter is not None:
-            k_filter |= subclass_filter << KDBG_SUBCLASS_OFFSET
-
+        if filters is None:
+            filters = {0xffffffff}
         config = {
             'tc': [{
                 'csd': 128,  # Callstack frame depth.
-                'kdf2': {k_filter},  # Kdebug filter, receive all classes.
+                'kdf2': filters,  # Kdebug filter, receive all classes.
                 'ta': [[3], [0], [2], [1, 1, 0]],  # Actions.
                 'tk': 3,  # Kind.
                 'uuid': self.uuid,

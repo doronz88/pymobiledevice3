@@ -7,6 +7,8 @@ import shlex
 from dataclasses import asdict
 
 import click
+from termcolor import colored
+
 from pymobiledevice3.cli.cli_common import print_object, Command
 from pymobiledevice3.exceptions import DvtDirListError, StartServiceError
 from pymobiledevice3.lockdown import LockdownClient
@@ -21,7 +23,6 @@ from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMoni
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.screenshot import ScreenshotService
-from termcolor import colored
 
 
 @click.group()
@@ -237,10 +238,23 @@ def core_profile_session():
     """ Core profile session options. """
 
 
+def parse_filters(filters):
+    if not filters:
+        return None
+    parsed = set()
+    for filter_ in filters:
+        print(filter_)
+        if filter_ == 'fs_usage':
+            parsed |= {0x03010000, 0x040c0000}  # VFS_LOOKUP, BSC operations
+        else:
+            parsed.add(int(filter_, 16) << 16)
+
+    return parsed
+
+
 @core_profile_session.command('live', cls=Command)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
-@click.option('-cf', '--class-filter', type=click.INT, default=None, help='Events class to filter. Omit for all.')
-@click.option('-sf', '--subclass-filter', type=click.INT, default=None, help='Events subclass to filter. Omit for all.')
+@click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
 @click.option('--pid', type=click.INT, default=None, help='Process ID to filter. Omit for all.')
 @click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
 @click.option('--timestamp/--no-timestamp', default=True, help='Whether to print timestamp or not.')
@@ -249,12 +263,13 @@ def core_profile_session():
 @click.option('--show-tid/--no-show-tid', default=True, help='Whether to print thread id or not.')
 @click.option('--process-name/--no-process-name', default=True, help='Whether to print process name or not.')
 @click.option('--args/--no-args', default=True, help='Whether to print event arguments or not.')
-def live_profile_session(lockdown, count, class_filter, subclass_filter, pid, tid, timestamp, event_name, func_qual,
+def live_profile_session(lockdown, count, filters, pid, tid, timestamp, event_name, func_qual,
                          show_tid, process_name, args):
     """ Print core profiling information. """
+    filters = parse_filters(filters)
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         trace_codes_map = DeviceInfo(dvt).trace_codes()
-        with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
+        with CoreProfileSessionTap(dvt, filters) as tap:
             for event in tap.watch_events(count):
                 if event.eventid in trace_codes_map:
                     name = trace_codes_map[event.eventid] + f' ({hex(event.eventid)})'
@@ -290,12 +305,12 @@ def live_profile_session(lockdown, count, class_filter, subclass_filter, pid, ti
 
 @core_profile_session.command('save', cls=Command)
 @click.argument('out', type=click.File('wb'))
-@click.option('-cf', '--class-filter', type=click.INT, default=None, help='Events class to filter. Omit for all.')
-@click.option('-sf', '--subclass-filter', type=click.INT, default=None, help='Events subclass to filter. Omit for all.')
-def save_profile_session(lockdown, out, class_filter, subclass_filter):
+@click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
+def save_profile_session(lockdown, out, filters):
     """ Dump core profiling information. """
+    filters = parse_filters(filters)
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
+        with CoreProfileSessionTap(dvt, filters) as tap:
             tap.dump(out)
 
 
@@ -315,16 +330,18 @@ def stackshot(lockdown, out, nocolor):
 
 @core_profile_session.command('parse-live', cls=Command)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
-@click.option('-cf', '--class-filter', type=click.INT, default=None, help='Events class to filter. Omit for all.')
-@click.option('-sf', '--subclass-filter', type=click.INT, default=None, help='Events subclass to filter. Omit for all.')
 @click.option('--pid', type=click.INT, default=None, help='Process ID to filter. Omit for all.')
 @click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
 @click.option('--show-tid/--no-show-tid', default=False, help='Whether to print thread id or not.')
-def parse_live_profile_session(lockdown, count, class_filter, subclass_filter, pid, tid, show_tid):
+@click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
+def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters):
     """ Parse core profiling information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         trace_codes_map = DeviceInfo(dvt).trace_codes()
-        with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
+
+        filters = parse_filters(filters)
+
+        with CoreProfileSessionTap(dvt, filters) as tap:
             print('Receiving Stackshot')
             tap.get_stackshot()
             events_parser = KdebugEventsParser(trace_codes_map)
