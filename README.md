@@ -5,17 +5,18 @@
 - [Description](#description)
 - [Features](#features)
 - [Installation](#installation)
+    * [Lower iOS versions (<13)](#lower-ios-versions---13-)
 - [Usage](#usage)
     * [Sending your own messages](#sending-your-own-messages)
         + [Lockdown messages](#lockdown-messages)
         + [Instruments messages](#instruments-messages)
     * [Example](#example)
 - [Lockdown services](#lockdown-services)
-    * [`com.apple.instruments.remoteserver.DVTSecureSocketProxy`](#comappleinstrumentsremoteserverdvtsecuresocketproxy)
-    * [`com.apple.os_trace_relay`](#comappleos_trace_relay)
-    * [`com.apple.mobile.diagnostics_relay`](#comapplemobilediagnostics_relay)
-    * [`com.apple.mobile.file_relay`](#comapplemobilefile_relay)
-    * [`com.apple.pcapd`](#comapplepcapd)
+    * [`com.apple.instruments.remoteserver.DVTSecureSocketProxy`](#-comappleinstrumentsremoteserverdvtsecuresocketproxy-)
+    * [`com.apple.os_trace_relay`](#-comappleos-trace-relay-)
+    * [`com.apple.mobile.diagnostics_relay`](#-comapplemobilediagnostics-relay-)
+    * [`com.apple.mobile.file_relay`](#-comapplemobilefile-relay-)
+    * [`com.apple.pcapd`](#-comapplepcapd-)
 
 # Description
 
@@ -76,26 +77,7 @@ https://gitter.im/pymobiledevice3/community
 
 # Installation
 
-Make sure `swig` and `openssl` is installed for `M2Crypto` installation:
-
-On MAC:
-
-```shell
-brew install swig openssl
-
-LDFLAGS="-L$(brew --prefix openssl)/lib" \
-CFLAGS="-I$(brew --prefix openssl)/include" \
-SWIG_FEATURES="-cpperraswarn -includeall -I$(brew --prefix openssl)/include" \
-python3 -m pip install --user -U m2crypto
-```
-
-On Linux:
-
-```shell
-sudo apt install swig openssl
-```
-
-Now you can install the last released version using `pip`:
+Install the last released version using `pip`:
 
 ```shell
 python3 -m pip install --user -U pymobiledevice3
@@ -113,6 +95,28 @@ You can also install auto-completion for all available sub-commands by adding th
 
 ```shell
 eval "$(_PYMOBILEDEVICE3_COMPLETE=source_zsh pymobiledevice3)"
+```
+
+## Lower iOS versions (<13)
+
+If you wish to use pymobiledevice3 with iOS versions lower than 13, Make sure to install `M2Crypto`
+(requires `swig` and `openssl`):
+
+On MAC:
+
+```shell
+brew install swig openssl
+
+LDFLAGS="-L$(brew --prefix openssl)/lib" \
+CFLAGS="-I$(brew --prefix openssl)/include" \
+SWIG_FEATURES="-cpperraswarn -includeall -I$(brew --prefix openssl)/include" \
+python3 -m pip install --user -U m2crypto
+```
+
+On Linux:
+
+```shell
+sudo apt install swig openssl
 ```
 
 # Usage
