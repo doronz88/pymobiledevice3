@@ -18,15 +18,15 @@ def print_object(buf, colored=True, default=None):
 
 
 class Command(click.Command):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.params[:0] = [
+            click.Option(('lockdown', '--udid'), callback=self.udid),
+        ]
+
     @staticmethod
     def udid(ctx, param, value):
         if '_PYMOBILEDEVICE3_COMPLETE' in os.environ:
             # prevent lockdown connection establishment when in autocomplete mode
             return
         return LockdownClient(udid=value)
-
-    def __init__(self, *args, **kwargs):
-        super(Command, self).__init__(*args, **kwargs)
-        self.params[:0] = [
-            click.Option(('lockdown', '--udid'), callback=self.udid),
-        ]

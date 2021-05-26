@@ -12,17 +12,27 @@ Authors: Heikki Toivonen
          Mathieu RENARD
 """
 import base64
+import platform
+import sys
 
-from M2Crypto import RSA, X509, EVP, m2, BIO
-from M2Crypto.RSA import load_pub_key_bio
 from pyasn1.type import univ
 from pyasn1.codec.der import encoder as der_encoder
 from pyasn1.codec.der import decoder as der_decoder
 
+from pymobiledevice3.exceptions import FatalPairingError
 
-def convert_pkcs1_to_pkcs8_pubkey(bitsdata):
-    pubkey_pkcs1_b64 = b''.join(bitsdata.split(b'\n')[1:-2])
-    pubkey_pkcs1, restOfInput = der_decoder.decode(base64.b64decode(pubkey_pkcs1_b64))
+try:
+    from M2Crypto import RSA, X509, EVP, m2, BIO
+    from M2Crypto.RSA import load_pub_key_bio
+
+    low_version_support = True
+except ImportError:
+    low_version_support = False
+
+
+def convert_pkcs1_to_pkcs8_pubkey(pkcs1_data: bytes):
+    pubkey_pkcs1_b64 = b''.join(pkcs1_data.split(b'\n')[1:-2])
+    pubkey_pkcs1, _ = der_decoder.decode(base64.b64decode(pubkey_pkcs1_b64))
     bitstring = univ.Sequence()
     bitstring.setComponentByPosition(0, univ.Integer(pubkey_pkcs1[0]))
     bitstring.setComponentByPosition(1, univ.Integer(pubkey_pkcs1[1]))
@@ -112,18 +122,27 @@ def make_cert(req, caPkey):
     return certificate
 
 
-def ca_do_everything(DevicePublicKey):
+def ca_do_everything(device_public_key):
+    if not low_version_support:
+        if sys.platform == 'win32':
+            if '64' in platform.architecture()[0]:
+                m2crypto = 'M2CryptoWin64'
+            else:
+                m2crypto = 'M2CryptoWin32'
+        else:
+            m2crypto = 'M2Crypto'
+        raise FatalPairingError(f'Install {m2crypto} to support lower versions')
     rsa = generate_rsa_key()
-    privateKey = make_pkey(rsa)
-    req = make_request(privateKey, 'The Issuer Monkey')
-    cert = make_cert(req, privateKey)
+    private_key = make_pkey(rsa)
+    req = make_request(private_key, 'The Issuer Monkey')
+    cert = make_cert(req, private_key)
     rsa2 = load_pub_key_bio(BIO.MemoryBuffer(
-        convert_pkcs1_to_pkcs8_pubkey(DevicePublicKey)))
+        convert_pkcs1_to_pkcs8_pubkey(device_public_key)))
     pkey2 = EVP.PKey()
     pkey2.assign_rsa(rsa2)
     req = make_request(pkey2, 'Device')
-    cert2 = make_cert(req, privateKey)
-    return cert.as_pem(), privateKey.as_pem(None), cert2.as_pem()
+    cert2 = make_cert(req, private_key)
+    return cert.as_pem(), private_key.as_pem(None), cert2.as_pem()
 
 
 if __name__ == '__main__':

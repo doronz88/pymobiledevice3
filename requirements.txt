@@ -1,4 +1,3 @@
-M2Crypto
 construct>=2.9.29
 pyasn1
 termcolor
