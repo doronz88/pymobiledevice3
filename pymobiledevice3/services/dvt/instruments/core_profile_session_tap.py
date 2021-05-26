@@ -1,4 +1,5 @@
 import typing
+from functools import lru_cache
 import struct
 from datetime import datetime
 import enum
@@ -629,7 +630,7 @@ class CoreProfileSessionTap(Tap):
 
     @thread_map.setter
     def thread_map(self, parsed_threadmap):
-        self._thread_map = {}
+        self._thread_map.clear()
         for thread in parsed_threadmap:
             self._thread_map[thread.tid] = ProcessData(thread.pid, thread.process)
 
@@ -679,19 +680,18 @@ class CoreProfileSessionTap(Tap):
                 parsed = kperf_data.parse(data)
                 self.thread_map = parsed.threadmap
                 traces = parsed.traces
+                for event in traces:
+                    if events_index == events_count:
+                        break
+                    yield event
+                    events_index += 1
             else:
-                traces_count = len(data) / kd_buf_size
-                assert traces_count.is_integer()
-                traces = []
-                for i in range(int(traces_count)):
+                for i in range(int(len(data) / kd_buf_size)):
                     buf = data[i * kd_buf_size: (i + 1) * kd_buf_size]
-                    traces.append(make_event(buf))
-
-            for event in traces:
-                if events_index == events_count:
-                    break
-                yield event
-                events_index += 1
+                    if events_index == events_count:
+                        break
+                    yield make_event(buf)
+                    events_index += 1
 
     @staticmethod
     def parse_stackshot(data):
@@ -703,9 +703,24 @@ class CoreProfileSessionTap(Tap):
         return parsed_stack_shot[predefined_names[kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT]]
 
     def parse_event_time(self, timestamp):
-        time_info = self.stack_shot['mach_timebase_info']
         offset_usec = (
-                ((timestamp - self.stack_shot['mach_absolute_time']) * time_info['numer']) /
-                (time_info['denom'] * 1000)
+                ((timestamp - self.mach_absolute_time()) * self.numer()) /
+                (self.denom() * 1000)
         )
-        return datetime.fromtimestamp((self.stack_shot['usecs_since_epoch'] + offset_usec) / 1000000)
+        return datetime.fromtimestamp((self.usecs_since_epoch() + offset_usec) / 1000000)
+
+    @lru_cache(0x4000000)
+    def numer(self):
+        return self.stack_shot['mach_timebase_info']['numer']
+
+    @lru_cache(0x4000000)
+    def denom(self):
+        return self.stack_shot['mach_timebase_info']['denom']
+
+    @lru_cache(0x4000000)
+    def mach_absolute_time(self):
+        return self.stack_shot['mach_absolute_time']
+
+    @lru_cache(0x4000000)
+    def usecs_since_epoch(self):
+        return self.stack_shot['usecs_since_epoch']

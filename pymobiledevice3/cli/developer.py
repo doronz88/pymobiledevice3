@@ -1,4 +1,5 @@
 # flake8: noqa: C901
+from functools import partial
 import json
 import logging
 import os
@@ -245,7 +246,7 @@ def parse_filters(filters):
     for filter_ in filters:
         print(filter_)
         if filter_ == 'fs_usage':
-            parsed |= {0x03010000, 0x040c0000}  # VFS_LOOKUP, BSC operations
+            parsed |= {0x03010000, 0x040c0000, 0x07ff0000}  # VFS_LOOKUP, BSC operations, TRACE
         else:
             parsed.add(int(filter_, 16) << 16)
 
@@ -328,6 +329,25 @@ def stackshot(lockdown, out, nocolor):
                 print_object(data, colored=not nocolor)
 
 
+def parse_live_print(tap, pid, show_tid, parsed):
+    tid = parsed.ktraces[0].tid
+    try:
+        process = tap.thread_map[tid]
+    except KeyError:
+        process = ProcessData(pid=-1, name='')
+    if pid is not None and process.pid != pid:
+        return
+    if parsed is None:
+        return
+    formatted_data = f'{str(tap.parse_event_time(parsed.ktraces[0].timestamp)):<27}'
+    formatted_data += f'{tid:>11} ' if show_tid else ''
+    process_rep = (f'{process.name}({process.pid})'
+                   if process.pid != -1
+                   else f'Error: tid {tid}')
+    formatted_data += f'{process_rep:<34}'
+    print(formatted_data + str(parsed))
+
+
 @core_profile_session.command('parse-live', cls=Command)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
 @click.option('--pid', type=click.INT, default=None, help='Process ID to filter. Omit for all.')
@@ -344,28 +364,16 @@ def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters):
         with CoreProfileSessionTap(dvt, filters) as tap:
             print('Receiving Stackshot')
             tap.get_stackshot()
-            events_parser = KdebugEventsParser(trace_codes_map)
-            print('{:^26}|{:^26}|   Event'.format('Time', 'Process'))
+            events_callback = partial(parse_live_print, tap, pid, show_tid)
+            events_parser = KdebugEventsParser(events_callback, trace_codes_map, tap.thread_map)
+            if show_tid:
+                print('{:^26}|{:^11}|{:^33}|   Event'.format('Time', 'Thread', 'Process'))
+            else:
+                print('{:^26}|{:^33}|   Event'.format('Time', 'Process'))
             for event in tap.watch_events(count):
                 if tid is not None and event.tid != tid:
                     continue
-                try:
-                    process = tap.thread_map[event.tid]
-                except KeyError:
-                    process = ProcessData(pid=-1, name='')
-                if pid is not None and process.pid != pid:
-                    continue
                 events_parser.feed(event)
-                parsed = events_parser.fetch()
-                if parsed is None:
-                    continue
-                formatted_data = f'{str(tap.parse_event_time(parsed.ktraces[0].timestamp)):<27}'
-                formatted_data += f'{hex(event.tid):<12}' if show_tid else ''
-                process_rep = (f'{process.name}({process.pid})'
-                               if process.pid != -1
-                               else f'Error: tid {event.tid}')
-                formatted_data += f'{process_rep:<27}'
-                print(formatted_data + str(parsed))
 
 
 @developer.command('trace-codes', cls=Command)
