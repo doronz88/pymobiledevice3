@@ -1,4 +1,5 @@
 # flake8: noqa: C901
+from functools import partial
 import json
 import logging
 import os
@@ -7,6 +8,8 @@ import shlex
 from dataclasses import asdict
 
 import click
+from termcolor import colored
+
 from pymobiledevice3.cli.cli_common import print_object, Command
 from pymobiledevice3.exceptions import DvtDirListError, StartServiceError
 from pymobiledevice3.lockdown import LockdownClient
@@ -21,7 +24,6 @@ from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMoni
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.screenshot import ScreenshotService
-from termcolor import colored
 
 
 @click.group()
@@ -237,10 +239,23 @@ def core_profile_session():
     """ Core profile session options. """
 
 
+def parse_filters(filters):
+    if not filters:
+        return None
+    parsed = set()
+    for filter_ in filters:
+        print(filter_)
+        if filter_ == 'fs_usage':
+            parsed |= {0x03010000, 0x040c0000, 0x07ff0000}  # VFS_LOOKUP, BSC operations, TRACE
+        else:
+            parsed.add(int(filter_, 16) << 16)
+
+    return parsed
+
+
 @core_profile_session.command('live', cls=Command)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
-@click.option('-cf', '--class-filter', type=click.INT, default=None, help='Events class to filter. Omit for all.')
-@click.option('-sf', '--subclass-filter', type=click.INT, default=None, help='Events subclass to filter. Omit for all.')
+@click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
 @click.option('--pid', type=click.INT, default=None, help='Process ID to filter. Omit for all.')
 @click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
 @click.option('--timestamp/--no-timestamp', default=True, help='Whether to print timestamp or not.')
@@ -249,56 +264,54 @@ def core_profile_session():
 @click.option('--show-tid/--no-show-tid', default=True, help='Whether to print thread id or not.')
 @click.option('--process-name/--no-process-name', default=True, help='Whether to print process name or not.')
 @click.option('--args/--no-args', default=True, help='Whether to print event arguments or not.')
-def live_profile_session(lockdown, count, class_filter, subclass_filter, pid, tid, timestamp, event_name, func_qual,
+def live_profile_session(lockdown, count, filters, pid, tid, timestamp, event_name, func_qual,
                          show_tid, process_name, args):
     """ Print core profiling information. """
+    filters = parse_filters(filters)
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         trace_codes_map = DeviceInfo(dvt).trace_codes()
-        with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
+        with CoreProfileSessionTap(dvt, filters) as tap:
             for event in tap.watch_events(count):
                 if event.eventid in trace_codes_map:
                     name = trace_codes_map[event.eventid] + f' ({hex(event.eventid)})'
                 else:
                     # Some event IDs are not public.
                     name = hex(event.eventid)
+                if tid is not None and event.tid != tid:
+                    continue
                 try:
-                    if tid is not None and event.tid != tid:
-                        continue
+                    process = tap.thread_map[event.tid]
+                except KeyError:
+                    process = ProcessData(pid=-1, name='')
+                if pid is not None and process.pid != pid:
+                    continue
+                formatted_data = ''
+                if timestamp:
+                    formatted_data += f'{str(tap.parse_event_time(event.timestamp)):<27}'
+                formatted_data += f'{name:<58}' if event_name else ''
+                if func_qual:
                     try:
-                        process = tap.thread_map[event.tid]
-                    except KeyError:
-                        process = ProcessData(pid=-1, name='')
-                    if pid is not None and process.pid != pid:
-                        continue
-                    formatted_data = ''
-                    if timestamp:
-                        formatted_data += f'{str(tap.parse_event_time(event.timestamp)):<27}'
-                    formatted_data += f'{name:<58}' if event_name else ''
-                    if func_qual:
-                        try:
-                            formatted_data += f'{DgbFuncQual(event.func_qualifier).name:<15}'
-                        except ValueError:
-                            formatted_data += f'''{'Error':<16}'''
-                    formatted_data += f'{hex(event.tid):<12}' if show_tid else ''
-                    if process_name:
-                        process_rep = (f'{process.name}({process.pid})'
-                                       if process.pid != -1
-                                       else f'Error: tid {event.tid}')
-                        formatted_data += f'{process_rep:<27}' if process_name else ''
-                    formatted_data += f'{str(event.args.data):<34}' if args else ''
-                    print(formatted_data)
-                except (ValueError, KeyError):
-                    pass
+                        formatted_data += f'{DgbFuncQual(event.func_qualifier).name:<15}'
+                    except ValueError:
+                        formatted_data += f'''{'Error':<16}'''
+                formatted_data += f'{hex(event.tid):<12}' if show_tid else ''
+                if process_name:
+                    process_rep = (f'{process.name}({process.pid})'
+                                   if process.pid != -1
+                                   else f'Error: tid {event.tid}')
+                    formatted_data += f'{process_rep:<27}' if process_name else ''
+                formatted_data += f'{str(event.data):<34}' if args else ''
+                print(formatted_data)
 
 
 @core_profile_session.command('save', cls=Command)
 @click.argument('out', type=click.File('wb'))
-@click.option('-cf', '--class-filter', type=click.INT, default=None, help='Events class to filter. Omit for all.')
-@click.option('-sf', '--subclass-filter', type=click.INT, default=None, help='Events subclass to filter. Omit for all.')
-def save_profile_session(lockdown, out, class_filter, subclass_filter):
+@click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
+def save_profile_session(lockdown, out, filters):
     """ Dump core profiling information. """
+    filters = parse_filters(filters)
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
+        with CoreProfileSessionTap(dvt, filters) as tap:
             tap.dump(out)
 
 
@@ -316,42 +329,51 @@ def stackshot(lockdown, out, nocolor):
                 print_object(data, colored=not nocolor)
 
 
+def parse_live_print(tap, pid, show_tid, parsed):
+    tid = parsed.ktraces[0].tid
+    try:
+        process = tap.thread_map[tid]
+    except KeyError:
+        process = ProcessData(pid=-1, name='')
+    if pid is not None and process.pid != pid:
+        return
+    if parsed is None:
+        return
+    formatted_data = f'{str(tap.parse_event_time(parsed.ktraces[0].timestamp)):<27}'
+    formatted_data += f'{tid:>11} ' if show_tid else ''
+    process_rep = (f'{process.name}({process.pid})'
+                   if process.pid != -1
+                   else f'Error: tid {tid}')
+    formatted_data += f'{process_rep:<34}'
+    print(formatted_data + str(parsed))
+
+
 @core_profile_session.command('parse-live', cls=Command)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
-@click.option('-cf', '--class-filter', type=click.INT, default=None, help='Events class to filter. Omit for all.')
-@click.option('-sf', '--subclass-filter', type=click.INT, default=None, help='Events subclass to filter. Omit for all.')
 @click.option('--pid', type=click.INT, default=None, help='Process ID to filter. Omit for all.')
 @click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
 @click.option('--show-tid/--no-show-tid', default=False, help='Whether to print thread id or not.')
-def parse_live_profile_session(lockdown, count, class_filter, subclass_filter, pid, tid, show_tid):
+@click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
+def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters):
     """ Parse core profiling information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         trace_codes_map = DeviceInfo(dvt).trace_codes()
-        with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
+
+        filters = parse_filters(filters)
+
+        with CoreProfileSessionTap(dvt, filters) as tap:
             print('Receiving Stackshot')
             tap.get_stackshot()
-            events_parser = KdebugEventsParser(trace_codes_map)
-            print('{:^26}|{:^26}|   Event'.format('Time', 'Process'))
+            events_callback = partial(parse_live_print, tap, pid, show_tid)
+            events_parser = KdebugEventsParser(events_callback, trace_codes_map, tap.thread_map)
+            if show_tid:
+                print('{:^26}|{:^11}|{:^33}|   Event'.format('Time', 'Thread', 'Process'))
+            else:
+                print('{:^26}|{:^33}|   Event'.format('Time', 'Process'))
             for event in tap.watch_events(count):
                 if tid is not None and event.tid != tid:
                     continue
-                try:
-                    process = tap.thread_map[event.tid]
-                except KeyError:
-                    process = ProcessData(pid=-1, name='')
-                if pid is not None and process.pid != pid:
-                    continue
                 events_parser.feed(event)
-                parsed = events_parser.fetch()
-                if parsed is None:
-                    continue
-                formatted_data = f'{str(tap.parse_event_time(parsed.ktraces[0].timestamp)):<27}'
-                formatted_data += f'{hex(event.tid):<12}' if show_tid else ''
-                process_rep = (f'{process.name}({process.pid})'
-                               if process.pid != -1
-                               else f'Error: tid {event.tid}')
-                formatted_data += f'{process_rep:<27}'
-                print(formatted_data + str(parsed))
 
 
 @developer.command('trace-codes', cls=Command)
