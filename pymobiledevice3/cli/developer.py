@@ -6,7 +6,6 @@ import os
 import posixpath
 import shlex
 from dataclasses import asdict
-from datetime import timezone, timedelta
 
 import click
 from termcolor import colored
@@ -277,12 +276,7 @@ def live_profile_session(lockdown, count, filters, pid, tid, timestamp, event_na
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         trace_codes_map = DeviceInfo(dvt).trace_codes()
         print('Receiving time information')
-        mach_absolute_time, numer, denom, _ = DeviceInfo(dvt).mach_time_info()
-        usecs_since_epoch = lockdown.get_value(key='TimeIntervalSince1970') * 1000000
-        time_config = dict(
-            numer=numer, denom=denom, mach_absolute_time=mach_absolute_time, usecs_since_epoch=usecs_since_epoch,
-            timezone=timezone(timedelta(seconds=lockdown.get_value(key='TimeZoneOffsetFromUTC')))
-        )
+        time_config = CoreProfileSessionTap.get_time_config(dvt)
         with CoreProfileSessionTap(dvt, time_config, filters) as tap:
             for event in tap.watch_events(count):
                 if event.eventid in trace_codes_map:
@@ -324,7 +318,7 @@ def save_profile_session(lockdown, out, filters):
     """ Dump core profiling information. """
     filters = parse_filters(filters)
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with CoreProfileSessionTap(dvt, filters) as tap:
+        with CoreProfileSessionTap(dvt, {}, filters) as tap:
             tap.dump(out)
 
 
@@ -334,7 +328,7 @@ def save_profile_session(lockdown, out, filters):
 def stackshot(lockdown, out, nocolor):
     """ Dump stackshot information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with CoreProfileSessionTap(dvt) as tap:
+        with CoreProfileSessionTap(dvt, {}) as tap:
             data = tap.get_stackshot()
             if out is not None:
                 json.dump(data, out, indent=4)
@@ -375,12 +369,7 @@ def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters):
 
         filters = parse_filters(filters)
         print('Receiving time information')
-        mach_absolute_time, numer, denom, _ = DeviceInfo(dvt).mach_time_info()
-        usecs_since_epoch = lockdown.get_value(key='TimeIntervalSince1970') * 1000000
-        time_config = dict(
-            numer=numer, denom=denom, mach_absolute_time=mach_absolute_time, usecs_since_epoch=usecs_since_epoch,
-            timezone=timezone(timedelta(seconds=lockdown.get_value(key='TimeZoneOffsetFromUTC')))
-        )
+        time_config = CoreProfileSessionTap.get_time_config(dvt)
         with CoreProfileSessionTap(dvt, time_config, filters) as tap:
             events_callback = partial(parse_live_print, tap, pid, show_tid)
             events_parser = KdebugEventsParser(events_callback, trace_codes_map, tap.thread_map)

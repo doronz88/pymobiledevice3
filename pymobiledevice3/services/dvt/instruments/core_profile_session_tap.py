@@ -1,7 +1,7 @@
 import typing
 from functools import cached_property
 import struct
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import enum
 import uuid
 from collections import namedtuple
@@ -10,6 +10,7 @@ from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyB
     LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Const, Bytes, Adapter
 
 from pymobiledevice3.services.dvt.tap import Tap
+from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 
 # bsd/sys/kdebug.h
@@ -704,6 +705,15 @@ class CoreProfileSessionTap(Tap):
         parsed_stack_shot = {}
         jsonify_parsed_stackshot(stackshot, parsed_stack_shot)
         return parsed_stack_shot[predefined_names[kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT]]
+
+    @staticmethod
+    def get_time_config(dvt):
+        mach_absolute_time, numer, denom, _ = DeviceInfo(dvt).mach_time_info()
+        usecs_since_epoch = dvt.lockdown.get_value(key='TimeIntervalSince1970') * 1000000
+        return dict(
+            numer=numer, denom=denom, mach_absolute_time=mach_absolute_time, usecs_since_epoch=usecs_since_epoch,
+            timezone=timezone(timedelta(seconds=dvt.lockdown.get_value(key='TimeZoneOffsetFromUTC')))
+        )
 
     def parse_event_time(self, timestamp) -> datetime:
         offset_usec = (

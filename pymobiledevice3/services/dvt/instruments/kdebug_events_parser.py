@@ -26,6 +26,31 @@ class BscOpenFlags(enum.Enum):
     O_CLOEXEC = 0x1000000
 
 
+S_IFMT = 0o170000
+
+
+class StatFlags(enum.Flag):
+    S_IXOTH = 0o1
+    S_IWOTH = 0o2
+    S_IROTH = 0o4
+    S_IXGRP = 0o10
+    S_IWGRP = 0o20
+    S_IRGRP = 0o40
+    S_IXUSR = 0o100
+    S_IWUSR = 0o200
+    S_IRUSR = 0o400
+    S_ISTXT = 0o1000
+    S_ISGID = 0o2000
+    S_ISUID = 0o4000
+    S_IFIFO = 0o10000
+    S_IFCHR = 0o20000
+    S_IFDIR = 0o40000
+    S_IFBLK = 0o60000
+    S_IFREG = 0o100000
+    S_IFLNK = 0o120000
+    S_IFSOCK = 0o140000
+
+
 def serialize_open_flags(flags: int) -> List[BscOpenFlags]:
     call_flags = []
     for flag in (BscOpenFlags.O_RDWR, BscOpenFlags.O_WRONLY):
@@ -44,14 +69,26 @@ def serialize_open_flags(flags: int) -> List[BscOpenFlags]:
     return call_flags
 
 
-def serialize_result(end_event, success_name) -> str:
+def serialize_stat_flags(flags: int) -> List[StatFlags]:
+    stat_flags = []
+    for flag in list(StatFlags):
+        if flag.value & S_IFMT:
+            if flags & S_IFMT == flag.value:
+                stat_flags.append(flag)
+        elif flag.value & flags:
+            stat_flags.append(flag)
+    return stat_flags
+
+
+def serialize_result(end_event, success_name='') -> str:
     error_code = end_event.values[0]
     res = end_event.values[1]
     if error_code in errno.errorcode:
         err = f'errno: {errno.errorcode[error_code]}({error_code})'
     else:
         err = f'errno: {error_code}'
-    return f'{success_name}: {res}' if not error_code else f'errno: {err}'
+    success = f'{success_name}: {res}' if success_name else ''
+    return success if not error_code else f'errno: {err}'
 
 
 @dataclass
@@ -151,6 +188,19 @@ class BscPwrite:
 
 
 @dataclass
+class BscSysFstat64:
+    ktraces: List
+    fd: int
+    result: str
+
+    def __str__(self):
+        rep = f'fstat64({self.fd})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
 class BscLstat64:
     ktraces: List
     path: str
@@ -182,6 +232,103 @@ class BscSysClose:
     def __str__(self):
         no_cancel = '_nocancel' if self.no_cancel else ''
         rep = f'close{no_cancel}({self.fd})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscLink:
+    ktraces: List
+    oldpath: str
+    newpath: str
+    result: str
+
+    def __str__(self):
+        rep = f'link("{self.oldpath}", "{self.newpath}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscUnlink:
+    ktraces: List
+    pathname: str
+    result: str
+
+    def __str__(self):
+        rep = f'unlink("{self.pathname}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscChdir:
+    ktraces: List
+    path: str
+    result: str
+
+    def __str__(self):
+        rep = f'chdir("{self.path}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscFchdir:
+    ktraces: List
+    fd: int
+    result: str
+
+    def __str__(self):
+        rep = f'fchdir({self.fd})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMknod:
+    ktraces: List
+    pathname: str
+    mode: int
+    dev: int
+    result: str
+
+    def __str__(self):
+        rep = f'mknod("{self.pathname}", {self.mode}, {self.dev})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscChmod:
+    ktraces: List
+    pathname: str
+    mode: List
+    result: str
+
+    def __str__(self):
+        rep = f'''chmod("{self.pathname}", {' | '.join(map(lambda f: f.name, self.mode))})'''
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscChown:
+    ktraces: List
+    pathname: str
+    owner: int
+    group: int
+    result: str
+
+    def __str__(self):
+        rep = f'''chown("{self.pathname}", {self.owner}, {self.group})'''
         if self.result:
             rep += f', {self.result}'
         return rep
@@ -257,8 +404,16 @@ class KdebugEventsParser:
             'BSC_write': self.handle_bsc_write,
             'BSC_open': self.handle_bsc_open,
             'BSC_sys_close': self.handle_bsc_sys_close,
+            'BSC_link': self.handle_bsc_link,
+            'BSC_unlink': self.handle_bsc_unlink,
+            'BSC_chdir': self.handle_bsc_chdir,
+            'BSC_fchdir': self.handle_bsc_fchdir,
+            'BSC_mknod': self.handle_bsc_mknod,
+            'BSC_chmod': self.handle_bsc_chmod,
+            'BSC_chown': self.handle_bsc_chown,
             'BSC_pread': self.handle_bsc_pread,
             'BSC_pwrite': self.handle_bsc_pwrite,
+            'BSC_sys_fstat64': self.handle_bsc_sys_fstat64,
             'BSC_lstat64': self.handle_bsc_lstat64,
             'BSC_bsdthread_create': self.handle_bsc_bsdthread_create,
             'BSC_read_nocancel': partial(self.handle_bsc_read, no_cancel=True),
@@ -311,14 +466,19 @@ class KdebugEventsParser:
     def handle_vfs_lookup(events):
         path = b''
         vnodeid = 0
+        lookup_events = []
         for event in events:
+            lookup_events.append(event)
             if event.func_qualifier & DgbFuncQual.DBG_FUNC_START.value:
                 vnodeid = event.values[0]
                 path += event.data[8:]
             else:
                 path += event.data
 
-        return VfsLookup(events, vnodeid, path.replace(b'\x00', b'').decode())
+            if event.func_qualifier & DgbFuncQual.DBG_FUNC_END.value:
+                break
+
+        return VfsLookup(lookup_events, vnodeid, path.replace(b'\x00', b'').decode())
 
     def handle_bsc_open(self, events, no_cancel=False):
         vnode = self.parse_vnode(events)
@@ -347,6 +507,34 @@ class KdebugEventsParser:
         args = events[0].values
         return BscWrite(events, args[0], args[1], args[2], result, no_cancel)
 
+    def handle_bsc_link(self, events):
+        old_vnode = self.parse_vnode(events)
+        new_vnode = self.parse_vnode([e for e in events if e not in old_vnode.ktraces])
+        return BscLink(events, old_vnode.path, new_vnode.path, serialize_result(events[-1]))
+
+    def handle_bsc_unlink(self, events):
+        vnode = self.parse_vnode(events)
+        return BscUnlink(events, vnode.path, serialize_result(events[-1]))
+
+    def handle_bsc_chdir(self, events):
+        vnode = self.parse_vnode(events)
+        return BscChdir(events, vnode.path, serialize_result(events[-1]))
+
+    def handle_bsc_fchdir(self, events):
+        return BscFchdir(events, events[0].values[0], serialize_result(events[-1]))
+
+    def handle_bsc_mknod(self, events):
+        vnode = self.parse_vnode(events)
+        return BscMknod(events, vnode.path, events[0].values[1], events[0].values[2], serialize_result(events[-1]))
+
+    def handle_bsc_chmod(self, events):
+        vnode = self.parse_vnode(events)
+        return BscChmod(events, vnode.path, serialize_stat_flags(events[0].values[1]), serialize_result(events[-1]))
+
+    def handle_bsc_chown(self, events):
+        vnode = self.parse_vnode(events)
+        return BscChown(events, vnode.path, events[0].values[1], events[0].values[2], serialize_result(events[-1]))
+
     def handle_bsc_pread(self, events, no_cancel=False):
         result = serialize_result(events[-1], 'count')
         args = events[0].values
@@ -357,18 +545,17 @@ class KdebugEventsParser:
         args = events[0].values
         return BscPwrite(events, args[0], args[1], args[2], args[3], result, no_cancel)
 
+    def handle_bsc_sys_fstat64(self, events):
+        return BscSysFstat64(events, events[0].values[0], serialize_result(events[-1]))
+
     def handle_bsc_lstat64(self, events):
-        error_code = events[-1].values[0]
-        result = f'' if not error_code else f'errno: {errno.errorcode[error_code]}({error_code})'
-        return BscLstat64(events, self.parse_vnode(events).path, result)
+        return BscLstat64(events, self.parse_vnode(events).path, serialize_result(events[-1]))
 
     def handle_bsc_bsdthread_create(self, events):
         return BscBsdthreadCreate(events, events[-1].values[3])
 
     def handle_bsc_sys_close(self, events, no_cancel=False):
-        error_code = events[-1].values[0]
-        result = f'' if not error_code else f'errno: {errno.errorcode[error_code]}({error_code})'
-        return BscSysClose(events, events[0].values[0], result, no_cancel)
+        return BscSysClose(events, events[0].values[0], serialize_result(events[-1]), no_cancel)
 
     def parse_vnode(self, events):
         return self.handle_vfs_lookup([e for e in events if self.trace_codes.get(e.eventid) == 'VFS_LOOKUP'])
