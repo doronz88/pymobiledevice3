@@ -253,6 +253,11 @@ def parse_filters(filters):
     return parsed
 
 
+def format_timestamp(core_session_tap, timestamp):
+    time_string = core_session_tap.parse_event_time(timestamp).strftime('%Y-%m-%d %H:%M:%S.%f')
+    return f'{time_string:<27}'
+
+
 @core_profile_session.command('live', cls=Command)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
 @click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
@@ -270,7 +275,9 @@ def live_profile_session(lockdown, count, filters, pid, tid, timestamp, event_na
     filters = parse_filters(filters)
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         trace_codes_map = DeviceInfo(dvt).trace_codes()
-        with CoreProfileSessionTap(dvt, filters) as tap:
+        print('Receiving time information')
+        time_config = CoreProfileSessionTap.get_time_config(dvt)
+        with CoreProfileSessionTap(dvt, time_config, filters) as tap:
             for event in tap.watch_events(count):
                 if event.eventid in trace_codes_map:
                     name = trace_codes_map[event.eventid] + f' ({hex(event.eventid)})'
@@ -287,7 +294,7 @@ def live_profile_session(lockdown, count, filters, pid, tid, timestamp, event_na
                     continue
                 formatted_data = ''
                 if timestamp:
-                    formatted_data += f'{str(tap.parse_event_time(event.timestamp)):<27}'
+                    formatted_data += format_timestamp(tap, event.timestamp)
                 formatted_data += f'{name:<58}' if event_name else ''
                 if func_qual:
                     try:
@@ -311,7 +318,7 @@ def save_profile_session(lockdown, out, filters):
     """ Dump core profiling information. """
     filters = parse_filters(filters)
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with CoreProfileSessionTap(dvt, filters) as tap:
+        with CoreProfileSessionTap(dvt, {}, filters) as tap:
             tap.dump(out)
 
 
@@ -321,7 +328,7 @@ def save_profile_session(lockdown, out, filters):
 def stackshot(lockdown, out, nocolor):
     """ Dump stackshot information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with CoreProfileSessionTap(dvt) as tap:
+        with CoreProfileSessionTap(dvt, {}) as tap:
             data = tap.get_stackshot()
             if out is not None:
                 json.dump(data, out, indent=4)
@@ -339,7 +346,8 @@ def parse_live_print(tap, pid, show_tid, parsed):
         return
     if parsed is None:
         return
-    formatted_data = f'{str(tap.parse_event_time(parsed.ktraces[0].timestamp)):<27}'
+
+    formatted_data = format_timestamp(tap, parsed.ktraces[0].timestamp)
     formatted_data += f'{tid:>11} ' if show_tid else ''
     process_rep = (f'{process.name}({process.pid})'
                    if process.pid != -1
@@ -360,10 +368,9 @@ def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters):
         trace_codes_map = DeviceInfo(dvt).trace_codes()
 
         filters = parse_filters(filters)
-
-        with CoreProfileSessionTap(dvt, filters) as tap:
-            print('Receiving Stackshot')
-            tap.get_stackshot()
+        print('Receiving time information')
+        time_config = CoreProfileSessionTap.get_time_config(dvt)
+        with CoreProfileSessionTap(dvt, time_config, filters) as tap:
             events_callback = partial(parse_live_print, tap, pid, show_tid)
             events_parser = KdebugEventsParser(events_callback, trace_codes_map, tap.thread_map)
             if show_tid:

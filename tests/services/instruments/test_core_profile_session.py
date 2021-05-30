@@ -8,7 +8,7 @@ def test_stackshot(lockdown):
     :param pymobiledevice3.lockdown.LockdownClient lockdown: Lockdown client.
     """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with CoreProfileSessionTap(dvt) as tap:
+        with CoreProfileSessionTap(dvt, CoreProfileSessionTap.get_time_config(dvt)) as tap:
             data = tap.get_stackshot()
 
     assert 'Darwin Kernel' in data['osversion']
@@ -24,7 +24,7 @@ def test_watch_events(lockdown):
     """
     events_count = 10
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with CoreProfileSessionTap(dvt) as tap:
+        with CoreProfileSessionTap(dvt, CoreProfileSessionTap.get_time_config(dvt)) as tap:
             events = list(tap.watch_events(events_count))
 
     assert len(events) == events_count

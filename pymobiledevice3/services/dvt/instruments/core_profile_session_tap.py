@@ -1,7 +1,7 @@
 import typing
-from functools import lru_cache
+from functools import cached_property
 import struct
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import enum
 import uuid
 from collections import namedtuple
@@ -10,6 +10,7 @@ from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyB
     LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Const, Bytes, Adapter
 
 from pymobiledevice3.services.dvt.tap import Tap
+from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 
 # bsd/sys/kdebug.h
@@ -599,15 +600,18 @@ class CoreProfileSessionTap(Tap):
     IDENTIFIER = 'com.apple.instruments.server.services.coreprofilesessiontap'
     STACKSHOT_HEADER = Int32ul.build(int(kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT))
 
-    def __init__(self, dvt: DvtSecureSocketProxyService, filters: typing.Set = None):
+    def __init__(self, dvt: DvtSecureSocketProxyService, time_config: typing.Mapping, filters: typing.Set = None):
         """
         :param dvt: Instruments service proxy.
+        :param time_config: Timing information - numer, denom, mach_absolute_time and matching usecs_since_epoch,
+        timezone.
         :param filters: Event filters to include, Include all if empty.
         """
         self.dvt = dvt
         self.stack_shot = None
         self._thread_map = {}
         self.uuid = str(uuid.uuid4())
+        self.time_config = time_config
 
         if filters is None:
             filters = {0xffffffff}
@@ -702,25 +706,37 @@ class CoreProfileSessionTap(Tap):
         jsonify_parsed_stackshot(stackshot, parsed_stack_shot)
         return parsed_stack_shot[predefined_names[kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT]]
 
-    def parse_event_time(self, timestamp):
-        offset_usec = (
-                ((timestamp - self.mach_absolute_time()) * self.numer()) /
-                (self.denom() * 1000)
+    @staticmethod
+    def get_time_config(dvt):
+        mach_absolute_time, numer, denom, _ = DeviceInfo(dvt).mach_time_info()
+        usecs_since_epoch = dvt.lockdown.get_value(key='TimeIntervalSince1970') * 1000000
+        return dict(
+            numer=numer, denom=denom, mach_absolute_time=mach_absolute_time, usecs_since_epoch=usecs_since_epoch,
+            timezone=timezone(timedelta(seconds=dvt.lockdown.get_value(key='TimeZoneOffsetFromUTC')))
         )
-        return datetime.fromtimestamp((self.usecs_since_epoch() + offset_usec) / 1000000)
 
-    @lru_cache(0x4000000)
+    def parse_event_time(self, timestamp) -> datetime:
+        offset_usec = (
+                ((timestamp - self.mach_absolute_time) * self.numer) / self.denom
+        )
+        return datetime.fromtimestamp((self.usecs_since_epoch + offset_usec) / 1000000, tz=self.timezone)
+
+    @cached_property
     def numer(self):
-        return self.stack_shot['mach_timebase_info']['numer']
+        return self.time_config['numer']
 
-    @lru_cache(0x4000000)
+    @cached_property
     def denom(self):
-        return self.stack_shot['mach_timebase_info']['denom']
+        return self.time_config['denom'] * 1000
 
-    @lru_cache(0x4000000)
+    @cached_property
     def mach_absolute_time(self):
-        return self.stack_shot['mach_absolute_time']
+        return self.time_config['mach_absolute_time']
 
-    @lru_cache(0x4000000)
+    @cached_property
     def usecs_since_epoch(self):
-        return self.stack_shot['usecs_since_epoch']
+        return self.time_config['usecs_since_epoch']
+
+    @cached_property
+    def timezone(self):
+        return self.time_config['timezone']
