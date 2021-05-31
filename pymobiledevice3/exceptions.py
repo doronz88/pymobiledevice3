@@ -6,6 +6,10 @@ class DeviceVersionNotSupportedError(PyMobileDevice3Exception):
     pass
 
 
+class DeviceVersionFormatError(PyMobileDevice3Exception):
+    pass
+
+
 class ConnectionFailedError(PyMobileDevice3Exception):
     pass
 
