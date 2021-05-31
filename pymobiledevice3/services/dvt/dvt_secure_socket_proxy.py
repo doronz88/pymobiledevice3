@@ -4,11 +4,13 @@ import plistlib
 from functools import partial
 from pprint import pprint
 from queue import Queue, Empty
+from distutils.version import LooseVersion
 
 import IPython
 from bpylist2 import archiver
 from pygments import highlight, lexers, formatters
-from pymobiledevice3.exceptions import DvtException, StartServiceError
+
+from pymobiledevice3.exceptions import DvtException
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.dvt.structs import MessageAux, dtx_message_payload_header_struct, \
     dtx_message_header_struct, message_aux_t_struct
@@ -124,6 +126,8 @@ class ChannelFragmenter:
 
 
 class DvtSecureSocketProxyService(object):
+    SERVICE_NAME = 'com.apple.instruments.remoteserver.DVTSecureSocketProxy'
+    OLD_SERVICE_NAME = 'com.apple.instruments.remoteserver'
     BROADCAST_CHANNEL = 0
     INSTRUMENTS_MESSAGE_TYPE = 2
     EXPECTS_REPLY_MASK = 0x1000
@@ -132,12 +136,10 @@ class DvtSecureSocketProxyService(object):
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
 
-        try:
-            # iOS >= 14.0
-            self.service = self.lockdown.start_service('com.apple.instruments.remoteserver.DVTSecureSocketProxy')
-        except StartServiceError:
-            # iOS < 14.0
-            self.service = self.lockdown.start_service('com.apple.instruments.remoteserver')
+        if LooseVersion(lockdown.ios_version) >= LooseVersion('14.0'):
+            self.service = self.lockdown.start_developer_service(self.SERVICE_NAME)
+        else:
+            self.service = self.lockdown.start_developer_service(self.OLD_SERVICE_NAME)
             if hasattr(self.service.socket, '_sslobj'):
                 # after the remoteserver protocol is successfully paired, you need to close the ssl protocol
                 # channel and use clear text transmission
