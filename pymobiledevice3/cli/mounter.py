@@ -1,10 +1,12 @@
 from pprint import pprint
 import logging
+import re
 
 import click
 
 from pymobiledevice3.cli.cli_common import Command
 from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
+from pymobiledevice3.exceptions import DeviceVersionFormatError
 
 
 @click.group()
@@ -41,6 +43,13 @@ def mounter_umount(lockdown):
     image_mounter.umount(image_type, mount_path, b'')
 
 
+def sanitize_version(version):
+    try:
+        return re.match('\d*\.\d*', version)[0]
+    except TypeError as e:
+        raise DeviceVersionFormatError from e
+
+
 @mounter.command('mount', cls=Command)
 @click.option('-i', '--image', type=click.Path(exists=True))
 @click.option('-s', '--signature', type=click.Path(exists=True))
@@ -54,11 +63,12 @@ def mounter_mount(lockdown, image, signature, xcode, version):
     image_type = 'Developer'
 
     if image and signature:
-        logging.info('using given image and signature for mount command')
+        logging.debug('using given image and signature for mount command')
     else:
-        logging.info('trying to figure out the best suited DeveloperDiskImage')
+        logging.debug('trying to figure out the best suited DeveloperDiskImage')
         if version is None:
             version = lockdown.ios_version
+        version = sanitize_version(version)
         image = f'{xcode}/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport/{version}/DeveloperDiskImage.dmg'
         signature = f'{image}.signature'
 
@@ -71,3 +81,4 @@ def mounter_mount(lockdown, image, signature, xcode, version):
     image_mounter = MobileImageMounterService(lockdown=lockdown)
     image_mounter.upload_image(image_type, image, signature)
     image_mounter.mount(image_type, signature)
+    logging.info('DeveloperDiskImage mounted successfully')
