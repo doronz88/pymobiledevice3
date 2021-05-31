@@ -10,7 +10,7 @@ class ScreenshotService(object):
     def __init__(self, lockdown: LockdownClient):
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
-        self.service = self.lockdown.start_service(self.SERVICE_NAME)
+        self.service = self.lockdown.start_developer_service(self.SERVICE_NAME)
 
         dl_message_version_exchange = self.service.recv_plist()
         version_major = dl_message_version_exchange[1]

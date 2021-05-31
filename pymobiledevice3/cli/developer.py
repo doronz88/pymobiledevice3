@@ -11,7 +11,7 @@ import click
 from termcolor import colored
 
 from pymobiledevice3.cli.cli_common import print_object, Command
-from pymobiledevice3.exceptions import DvtDirListError, StartServiceError
+from pymobiledevice3.exceptions import DvtDirListError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
@@ -49,11 +49,7 @@ def developer():
 @click.argument('out', type=click.File('wb'))
 def screenshot(lockdown, out):
     """ take a screenshot in PNG format """
-    try:
-        out.write(ScreenshotService(lockdown=lockdown).take_screenshot())
-    except StartServiceError:
-        logging.error('failed to connect to required service. make sure DeveloperDiskImage.dmg has been mounted. '
-                      'You can do so using: pymobiledevice3 mounter mount')
+    out.write(ScreenshotService(lockdown=lockdown).take_screenshot())
 
 
 @developer.command('proclist', cls=Command)

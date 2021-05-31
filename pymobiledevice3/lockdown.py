@@ -12,7 +12,7 @@ from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import NoDeviceConnectedError, FatalPairingError, CannotStopSessionError, \
     NotTrustedError, \
     PairingError, NotPairedError, StartServiceError, DeviceNonConnectedError, PyMobileDevice3Exception, \
-    PasswordRequiredError
+    PasswordRequiredError, ConnectionFailedError
 from pymobiledevice3.service_connection import ServiceConnection
 
 # we store pairing records and ssl keys in ~/.pymobiledevice3
@@ -257,7 +257,7 @@ class LockdownClient(object):
         self.logger.debug(response)
         return response
 
-    def start_service(self, name, ssl=False, escrow_bag=None) -> ServiceConnection:
+    def start_service(self, name, escrow_bag=None) -> ServiceConnection:
         if not self.paired:
             self.logger.info('NotPaired')
             raise NotPairedError()
@@ -268,7 +268,7 @@ class LockdownClient(object):
 
         self.service.send_plist(request)
         response = self.service.recv_plist()
-        ssl_enabled = response.get('EnableServiceSSL', ssl)
+        ssl_enabled = response.get('EnableServiceSSL', False)
         if not response or response.get('Error'):
             if response.get('Error', '') == 'PasswordProtected':
                 raise PasswordRequiredError(
@@ -278,3 +278,13 @@ class LockdownClient(object):
         if ssl_enabled:
             service_connection.ssl_start(self.ssl_file, self.ssl_file)
         return service_connection
+
+    def start_developer_service(self, name, escrow_bag=None) -> ServiceConnection:
+        try:
+            return self.start_service(name, escrow_bag)
+        except (StartServiceError, ConnectionFailedError):
+            self.logger.error(
+                'Failed to connect to required service. Make sure DeveloperDiskImage.dmg has been mounted. '
+                'You can do so using: pymobiledevice3 mounter mount'
+            )
+            raise
