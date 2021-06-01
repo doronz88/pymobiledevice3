@@ -1,4 +1,5 @@
 # flake8: noqa: C901
+from collections import namedtuple
 from functools import partial
 import json
 import logging
@@ -159,12 +160,35 @@ def sysmon():
     """ System monitor options. """
 
 
-@sysmon.command('processes', cls=Command)
+@sysmon.group('process')
+def sysmon_process():
+    """ Process monitor options. """
+
+
+@sysmon_process.command('monitor', cls=Command)
+@click.argument('threshold', type=click.FLOAT)
+def sysmon_process_monitor(lockdown, threshold):
+    """ monitor all most consuming processes by given cpuUsage threshold. """
+
+    Process = namedtuple('process', 'pid name cpuUsage')
+
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with Sysmontap(dvt) as sysmon:
+            for process_snapshot in sysmon.iter_processes():
+                entries = []
+                for process in process_snapshot:
+                    if (process['cpuUsage'] is not None) and (process['cpuUsage'] >= threshold):
+                        entries.append(Process(pid=process['pid'], name=process['name'], cpuUsage=process['cpuUsage']))
+
+                logging.info(entries)
+
+
+@sysmon_process.command('single', cls=Command)
 @click.option('-f', '--fields', help='show only given field names splitted by ",".')
 @click.option('-a', '--attributes', multiple=True,
               help='filter processes by given attribute value given as key=value')
-def sysmon_processes(lockdown, fields, attributes):
-    """ show currently running processes information. """
+def sysmon_process_single(lockdown, fields, attributes):
+    """ show a single snapshot of currently running processes. """
 
     if fields is not None:
         fields = fields.split(',')
@@ -172,40 +196,38 @@ def sysmon_processes(lockdown, fields, attributes):
     count = 0
 
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        sysmontap = Sysmontap(dvt)
-        with sysmontap as sysmon:
-            for row in sysmon:
-                if 'Processes' in row:
-                    processes = row['Processes'].items()
-                    count += 1
-
-                    if count > 1:
-                        # give some time for cpuUsage field to populate
-                        break
-
         device_info = DeviceInfo(dvt)
-        for pid, process in processes:
-            attrs = sysmontap.process_attributes_cls(*process)
 
-            skip = False
-            if attributes is not None:
-                for filter_attr in attributes:
-                    filter_attr, filter_value = filter_attr.split('=')
-                    if str(getattr(attrs, filter_attr)) != filter_value:
-                        skip = True
-                        break
+        with Sysmontap(dvt) as sysmon:
+            for process_snapshot in sysmon.iter_processes():
+                count += 1
 
-            if skip:
-                continue
+                if count < 2:
+                    # first sample doesn't contain an initialized value for cpuUsage
+                    continue
 
-            print(f'{attrs.name} ({attrs.pid})')
-            attrs_dict = asdict(attrs)
+                for process in process_snapshot:
+                    skip = False
+                    if attributes is not None:
+                        for filter_attr in attributes:
+                            filter_attr, filter_value = filter_attr.split('=')
+                            if str(process[filter_attr]) != filter_value:
+                                skip = True
+                                break
 
-            attrs_dict['execname'] = device_info.execname_for_pid(pid)
+                    if skip:
+                        continue
 
-            for name, value in attrs_dict.items():
-                if (fields is None) or (name in fields):
-                    print(f'\t{name}: {value}')
+                    # adding "artificially" the execName field
+                    process['execName'] = device_info.execname_for_pid(process['pid'])
+
+                    print(f'{process["name"]} ({process["pid"]})')
+                    for name, value in process.items():
+                        if (fields is None) or (name in fields):
+                            print(f'\t{name}: {value}')
+
+                # exit after single snapshot
+                return
 
 
 @sysmon.command('system', cls=Command)

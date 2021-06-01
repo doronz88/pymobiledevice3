@@ -26,3 +26,22 @@ class Sysmontap(Tap):
         }
 
         super().__init__(dvt, self.IDENTIFIER, config)
+
+    def __iter__(self):
+        while True:
+            for result in self._channel.receive_plist():
+                yield result
+
+    def iter_processes(self):
+        for row in self:
+            if 'Processes' not in row:
+                continue
+
+            entries = []
+
+            processes = row['Processes'].items()
+            for pid, process_info in processes:
+                entry = dataclasses.asdict(self.process_attributes_cls(*process_info))
+                entries.append(entry)
+
+            yield entries
