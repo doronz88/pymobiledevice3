@@ -263,7 +263,6 @@ Not yet | `com.apple.radios.wirelesstester.root` | `/usr/local/bin/WirelessTeste
 Not yet | `com.apple.springboardservices` | `/usr/libexec/springboardservicesrelay`
 Not yet | `com.apple.thermalmonitor.thermtgraphrelay` | `/usr/libexec/thermtgraphrelay`
 Not yet | `com.apple.webinspector` | `/usr/libexec/webinspectord`
-BUG | `com.apple.iosdiagnostics.relay` | `/usr/libexec/ios_diagnostics_relay` | Failed to connect to it from some reason
 
 ## `com.apple.instruments.remoteserver.DVTSecureSocketProxy`
 
