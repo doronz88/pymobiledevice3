@@ -97,8 +97,9 @@ def pkill(lockdown, expression):
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         process_control = ProcessControl(dvt)
         for pid, process_info in processes.items():
-            if expression in process_info['ProcessName']:
-                logging.info(f'killing {pid}')
+            process_name = process_info['ProcessName']
+            if expression in process_name:
+                logging.info(f'killing {process_name}({pid})')
                 process_control.kill(pid)
 
 
