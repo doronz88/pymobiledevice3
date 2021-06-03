@@ -1,6 +1,5 @@
 import json
 import os
-from pprint import pprint
 
 import click
 from pygments import highlight, lexers, formatters
@@ -8,13 +7,14 @@ from pygments import highlight, lexers, formatters
 from pymobiledevice3.lockdown import LockdownClient
 
 
-def print_object(buf, colored=True, default=None):
+def print_json(buf, colored=True, default=None):
+    formatted_json = json.dumps(buf, sort_keys=True, indent=4, default=default)
     if colored:
-        formatted_json = json.dumps(buf, sort_keys=True, indent=4, default=default)
-        colorful_json = highlight(formatted_json, lexers.JsonLexer(), formatters.TerminalFormatter())
+        colorful_json = highlight(formatted_json, lexers.JsonLexer(),
+                                  formatters.TerminalTrueColorFormatter(style='stata-dark'))
         print(colorful_json)
     else:
-        pprint(buf)
+        print(formatted_json)
 
 
 class Command(click.Command):

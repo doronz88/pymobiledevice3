@@ -1,6 +1,6 @@
 import logging
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.exceptions import PyMobileDevice3Exception, NotMountedError, UnsupportedCommandError
 from pymobiledevice3.lockdown import LockdownClient
 
 
@@ -36,9 +36,12 @@ class MobileImageMounterService(object):
                                  'MountPath': mount_path,
                                  'ImageSignature': signature})
         response = self.service.recv_plist()
-
-        if response.get('Error'):
-            raise PyMobileDevice3Exception('unsupported command')
+        error = response.get('Error')
+        if error:
+            if error == 'UnknownCommand':
+                raise UnsupportedCommandError()
+            else:
+                raise NotMountedError()
 
     def mount(self, image_type, signature):
         """ Upload image into device. """

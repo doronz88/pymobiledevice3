@@ -11,7 +11,7 @@ from dataclasses import asdict
 import click
 from termcolor import colored
 
-from pymobiledevice3.cli.cli_common import print_object, Command
+from pymobiledevice3.cli.cli_common import print_json, Command
 from pymobiledevice3.exceptions import DvtDirListError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
@@ -64,7 +64,7 @@ def proclist(lockdown, nocolor):
             if 'startDate' in process:
                 process['startDate'] = str(process['startDate'])
 
-        print_object(processes, colored=not nocolor)
+        print_json(processes, colored=not nocolor)
 
 
 @developer.command('applist', cls=Command)
@@ -73,7 +73,7 @@ def applist(lockdown, nocolor):
     """ show application list """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         apps = ApplicationListing(dvt).applist()
-        print_object(apps, colored=not nocolor)
+        print_json(apps, colored=not nocolor)
 
 
 @developer.command('kill', cls=Command)
@@ -156,7 +156,7 @@ def device_information(lockdown, nocolor):
     """ Print system information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         device_info = DeviceInfo(dvt)
-        print_object({
+        print_json({
             'system': device_info.system_information(),
             'hardware': device_info.hardware_information(),
             'network': device_info.network_information(),
@@ -371,7 +371,7 @@ def stackshot(lockdown, out, nocolor):
             if out is not None:
                 json.dump(data, out, indent=4)
             else:
-                print_object(data, colored=not nocolor)
+                print_json(data, colored=not nocolor)
 
 
 def parse_live_print(tap, pid, show_tid, parsed):
@@ -427,7 +427,7 @@ def trace_codes(lockdown, nocolor):
     """ Print system information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         device_info = DeviceInfo(dvt)
-        print_object({hex(k): v for k, v in device_info.trace_codes().items()}, colored=not nocolor)
+        print_json({hex(k): v for k, v in device_info.trace_codes().items()}, colored=not nocolor)
 
 
 @developer.command('oslog', cls=Command)

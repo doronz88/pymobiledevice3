@@ -1,8 +1,6 @@
-from pprint import pprint
-
 import click
 
-from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.services.os_trace import OsTraceService
 
 
@@ -13,6 +11,7 @@ def cli():
 
 
 @cli.command(cls=Command)
-def ps(lockdown):
+@click.option('--nocolor', is_flag=True)
+def ps(lockdown, nocolor):
     """ show process list """
-    pprint(OsTraceService(lockdown=lockdown).get_pid_list())
+    print_json(OsTraceService(lockdown=lockdown).get_pid_list(), colored=not nocolor)

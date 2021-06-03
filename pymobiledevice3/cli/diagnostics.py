@@ -2,7 +2,7 @@ from pprint import pprint
 
 import click
 
-from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.services.diagnostics import DiagnosticsService
 
 
@@ -37,9 +37,10 @@ def diagnostics_sleep(lockdown):
 
 
 @diagnostics.command('info', cls=Command)
-def diagnostics_info(lockdown):
+@click.option('--nocolor', is_flag=True)
+def diagnostics_info(lockdown, nocolor):
     """ get diagnostics info """
-    pprint(DiagnosticsService(lockdown=lockdown).info())
+    print_json(DiagnosticsService(lockdown=lockdown).info(), colored=not nocolor)
 
 
 @diagnostics.command('ioregistry', cls=Command)
