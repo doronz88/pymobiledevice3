@@ -1,3 +1,4 @@
+import logging
 import os
 
 import click
@@ -125,8 +126,10 @@ def syslog_live(lockdown, out, nocolor, pid, match, match_insensitive, include_l
 @click.argument('out', type=click.File('wb'))
 def syslog_archive(lockdown, out):
     """
-    create PAX archive.
-    use `pax -r < filename` for extraction.
+    Create PAX archive.
+
+    Use `pax -r < filename` for extraction into a .logarchive file.
+    Then you can just open the directory using the Console application
     """
-    result, tar = OsTraceService(lockdown=lockdown).create_archive()
-    out.write(tar)
+    OsTraceService(lockdown=lockdown).create_archive(out)
+    logging.info(f'PAX file stored into: {out.name}')

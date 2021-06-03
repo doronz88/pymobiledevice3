@@ -3,6 +3,7 @@ import logging
 import plistlib
 import struct
 from datetime import datetime
+from io import BytesIO
 
 from construct import Struct, Bytes, Int32ul, CString, Optional, Enum, Byte, Adapter
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
@@ -63,20 +64,19 @@ class OsTraceService(object):
         response = self.c.recv_prefixed()
         return plistlib.loads(response)
 
-    def create_archive(self) -> tuple:
+    def create_archive(self, out: BytesIO):
         self.c.send_plist({'Request': 'CreateArchive'})
 
-        # ignore first received unknown byte
-        self.c.recvall(1)
+        assert 1 == self.c.recvall(1)[0]
 
-        plist_response = plistlib.loads(self.c.recv_prefixed())
+        assert plistlib.loads(self.c.recv_prefixed()).get('Status') == 'RequestSuccessful', 'Invalid status'
 
-        # ignore first received unknown byte
-        self.c.recvall(1)
-
-        pax = self.c.recv_prefixed()
-
-        return plist_response, pax
+        while True:
+            try:
+                assert 3 == self.c.recvall(1)[0], 'invalid magic'
+            except ConnectionAbortedError:
+                break
+            out.write(self.c.recv_prefixed(endianity='<'))
 
     def syslog(self, pid=-1):
         self.c.send_plist({'Request': 'StartActivity', 'MessageFilter': 65535, 'Pid': pid, 'StreamFlags': 60})

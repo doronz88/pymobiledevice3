@@ -78,13 +78,13 @@ class ServiceConnection(object):
             data += chunk
         return data
 
-    def recv_prefixed(self):
+    def recv_prefixed(self, endianity='>'):
         """ receive a data block prefixed with a u32 length field """
-        response = self.recvall(4)
-        if not response or len(response) != 4:
+        size = self.recvall(4)
+        if not size or len(size) != 4:
             return
-        response = struct.unpack('>L', response)[0]
-        return self.recvall(response)
+        size = struct.unpack(endianity + 'L', size)[0]
+        return self.recvall(size)
 
     def send_prefixed(self, data):
         """ send a data block prefixed with a u32 length field """
