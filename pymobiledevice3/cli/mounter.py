@@ -1,12 +1,12 @@
-from pprint import pprint
 import logging
 import re
 
 import click
 
-from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.cli.cli_common import Command, print_json
+from pymobiledevice3.exceptions import DeviceVersionFormatError, PyMobileDevice3Exception, NotMountedError, \
+    UnsupportedCommandError
 from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
-from pymobiledevice3.exceptions import DeviceVersionFormatError
 
 
 @click.group()
@@ -22,16 +22,31 @@ def mounter():
 
 
 @mounter.command('list', cls=Command)
-def mounter_list(lockdown):
-    """ lookup mounter image type """
-    pprint(MobileImageMounterService(lockdown=lockdown).list_images())
+@click.option('--nocolor', is_flag=True)
+def mounter_list(lockdown, nocolor):
+    """ list all mounted images """
+    output = []
+
+    images = MobileImageMounterService(lockdown=lockdown).list_images()['EntryList']
+    for image in images:
+        image['ImageSignature'] = image['ImageSignature'].hex()
+        output.append(image)
+
+    print_json(output, colored=not nocolor)
 
 
 @mounter.command('lookup', cls=Command)
+@click.option('--nocolor', is_flag=True)
 @click.argument('image_type')
-def mounter_lookup(lockdown, image_type):
+def mounter_lookup(lockdown, nocolor, image_type):
     """ lookup mounter image type """
-    pprint(MobileImageMounterService(lockdown=lockdown).lookup_image(image_type))
+    output = []
+
+    signatures = MobileImageMounterService(lockdown=lockdown).lookup_image(image_type)['ImageSignature']
+    for signature in signatures:
+        output.append(signature.hex())
+
+    print_json(output, colored=not nocolor)
 
 
 @mounter.command('umount', cls=Command)
@@ -40,12 +55,18 @@ def mounter_umount(lockdown):
     image_type = 'Developer'
     mount_path = '/Developer'
     image_mounter = MobileImageMounterService(lockdown=lockdown)
-    image_mounter.umount(image_type, mount_path, b'')
+    try:
+        image_mounter.umount(image_type, mount_path, b'')
+        logging.info('DeveloperDiskImage umounted successfully')
+    except NotMountedError:
+        logging.error('DeveloperDiskImage isn\'t currently mounted')
+    except UnsupportedCommandError:
+        logging.error('Your iOS version doesn\'t support this command')
 
 
 def sanitize_version(version):
     try:
-        return re.match('\d*\.\d*', version)[0]
+        return re.match(r'\d*\.\d*', version)[0]
     except TypeError as e:
         raise DeviceVersionFormatError from e
 
@@ -80,5 +101,11 @@ def mounter_mount(lockdown, image, signature, xcode, version):
 
     image_mounter = MobileImageMounterService(lockdown=lockdown)
     image_mounter.upload_image(image_type, image, signature)
-    image_mounter.mount(image_type, signature)
-    logging.info('DeveloperDiskImage mounted successfully')
+    try:
+        image_mounter.mount(image_type, signature)
+        logging.info('DeveloperDiskImage mounted successfully')
+    except PyMobileDevice3Exception as e:
+        if 'is already mounted' in str(e):
+            logging.error('DeveloperDiskImage is already mounted')
+        else:
+            raise e

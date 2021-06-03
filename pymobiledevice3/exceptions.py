@@ -78,3 +78,13 @@ class DvtException(PyMobileDevice3Exception):
 class DvtDirListError(DvtException):
     """ Raise when directory listing fails. """
     pass
+
+
+class NotMountedError(PyMobileDevice3Exception):
+    """ Given image for umount wasn't mounted in the first place """
+    pass
+
+
+class UnsupportedCommandError(PyMobileDevice3Exception):
+    """ Given command isn't supported for this iOS version """
+    pass
