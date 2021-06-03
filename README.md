@@ -69,7 +69,7 @@ https://gitter.im/pymobiledevice3/community
     * KDebug messgaes
         * `pymobiledevice3 developer core-profile-session`
     * System monitoring (`top` like)
-        * `pymobiledevice3 developer sysmon processes`
+        * `pymobiledevice3 developer sysmon process`
     * Raw shell for experimenting:
         * `pymobiledevice3 developer shell`
 
