@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import errno
 import enum
+from signal import Signals
 from typing import List
 from functools import partial
 
@@ -49,6 +50,47 @@ class StatFlags(enum.Flag):
     S_IFREG = 0o100000
     S_IFLNK = 0o120000
     S_IFSOCK = 0o140000
+
+
+class SocketMsgFlags(enum.Enum):
+    MSG_OOB = 0x1
+    MSG_PEEK = 0x2
+    MSG_DONTROUTE = 0x4
+    MSG_EOR = 0x8
+    MSG_TRUNC = 0x10
+    MSG_CTRUNC = 0x20
+    MSG_WAITALL = 0x40
+    MSG_DONTWAIT = 0x80
+    MSG_EOF = 0x100
+    MSG_WAITSTREAM = 0x200
+    MSG_FLUSH = 0x400
+    MSG_HOLD = 0x800
+    MSG_SEND = 0x1000
+    MSG_HAVEMORE = 0x2000
+    MSG_RCVMORE = 0x4000
+    MSG_COMPAT = 0x8000
+    MSG_NEEDSA = 0x10000
+    MSG_NBIO = 0x20000
+    MSG_SKIPCFIL = 0x40000
+    MSG_USEUPCALL = 0x80000000
+
+
+class BscAccessFlags(enum.Enum):
+    F_OK = 0x0
+    X_OK = 0x1
+    W_OK = 0x2
+    R_OK = 0x4
+
+
+class BscChangeableFlags(enum.Enum):
+    UF_NODUMP = 0x1
+    UF_IMMUTABLE = 0x2
+    UF_APPEND = 0x4
+    UF_OPAQUE = 0x8
+    UF_HIDDEN = 0x8000
+    SF_ARCHIVED = 0x10000
+    SF_IMMUTABLE = 0x20000
+    SF_APPEND = 0x40000
 
 
 def serialize_open_flags(flags: int) -> List[BscOpenFlags]:
@@ -335,6 +377,267 @@ class BscChown:
 
 
 @dataclass
+class BscGetpid:
+    ktraces: List
+    pid: int
+
+    def __str__(self):
+        return f'getpid(), pid: {self.pid}'
+
+
+@dataclass
+class BscSetuid:
+    ktraces: List
+    uid: int
+    result: str
+
+    def __str__(self):
+        rep = f'setuid({self.uid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetuid:
+    ktraces: List
+    uid: int
+
+    def __str__(self):
+        return f'getuid(), uid: {self.uid}'
+
+
+@dataclass
+class BscGeteuid:
+    ktraces: List
+    uid: int
+
+    def __str__(self):
+        return f'geteuid(), uid: {self.uid}'
+
+
+@dataclass
+class BscRecvmsg:
+    ktraces: List
+    socket: int
+    result: str
+    no_cancel: bool = False
+
+    def __str__(self):
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'recvmsg{no_cancel}({self.socket}), {self.result}'
+
+
+@dataclass
+class BscSendmsg:
+    ktraces: List
+    socket: int
+    result: str
+    no_cancel: bool = False
+
+    def __str__(self):
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'sendmsg{no_cancel}({self.socket}), {self.result}'
+
+
+@dataclass
+class BscRecvfrom:
+    ktraces: List
+    socket: int
+    buffer: int
+    length: int
+    flags: List
+    result: str
+    no_cancel: bool = False
+
+    def __str__(self):
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return (f'''recvfrom{no_cancel}({self.socket}, {hex(self.buffer)}, {self.length}, '''
+                f'''{' | '.join(map(lambda f: f.name, self.flags)) if self.flags else '0'}), {self.result}''')
+
+
+@dataclass
+class BscAccept:
+    ktraces: List
+    socket: int
+    result: str
+    no_cancel: bool = False
+
+    def __str__(self):
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'accept{no_cancel}({self.socket}), {self.result}'
+
+
+@dataclass
+class BscGetpeername:
+    ktraces: List
+    socket: int
+    address: int
+    address_len: int
+    result: str
+
+    def __str__(self):
+        rep = f'getpeername({self.socket}, {hex(self.address)}, {hex(self.address_len)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetsockname:
+    ktraces: List
+    socket: int
+    address: int
+    address_len: int
+    result: str
+
+    def __str__(self):
+        rep = f'getsockname({self.socket}, {hex(self.address)}, {hex(self.address_len)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscAccess:
+    ktraces: List
+    path: str
+    amode: List
+    result: str
+
+    def __str__(self):
+        rep = f'''access("{self.path}", {' | '.join(map(lambda f: f.name, self.amode))})'''
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscChflags:
+    ktraces: List
+    path: str
+    flags: List
+    result: str
+
+    def __str__(self):
+        rep = f'''chflags("{self.path}", {' | '.join(map(lambda f: f.name, self.flags))})'''
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscFchflags:
+    ktraces: List
+    fd: int
+    flags: List
+    result: str
+
+    def __str__(self):
+        rep = f'''fchflags({self.fd}, {' | '.join(map(lambda f: f.name, self.flags))})'''
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSync:
+    ktraces: List
+
+    def __str__(self):
+        return 'sync()'
+
+
+@dataclass
+class BscKill:
+    ktraces: List
+    pid: int
+    sig: int
+    result: str
+
+    def __str__(self):
+        rep = f'kill({self.pid}, {self.sig})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetppid:
+    ktraces: List
+    pid: int
+
+    def __str__(self):
+        return f'getppid(), pid: {self.pid}'
+
+
+@dataclass
+class BscSysDup:
+    ktraces: List
+    fildes: int
+    result: str
+
+    def __str__(self):
+        return f'dup({self.fildes}), {self.result}'
+
+
+@dataclass
+class BscPipe:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        return f'pipe(), {self.result}'
+
+
+@dataclass
+class BscGetegid:
+    ktraces: List
+    gid: int
+
+    def __str__(self):
+        return f'getegid(), gid: {self.gid}'
+
+
+@dataclass
+class BscSigaction:
+    ktraces: List
+    sig: Signals
+    act: int
+    oact: int
+    result: str
+
+    def __str__(self):
+        rep = f'sigaction({self.sig.name}, {hex(self.act)}, {hex(self.oact)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetgid:
+    ktraces: List
+    gid: int
+
+    def __str__(self):
+        return f'getgid(), gid: {self.gid}'
+
+
+@dataclass
+class BscObsKillpg:
+    ktraces: List
+    pgrp: int
+    sig: int
+    result: str
+
+    def __str__(self):
+        rep = f'killpg({self.pgrp}, {self.sig})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
 class MachStackHandoff:
     ktraces: List
 
@@ -411,6 +714,27 @@ class KdebugEventsParser:
             'BSC_mknod': self.handle_bsc_mknod,
             'BSC_chmod': self.handle_bsc_chmod,
             'BSC_chown': self.handle_bsc_chown,
+            'BSC_getpid': self.handle_bsc_getpid,
+            'BSC_setuid': self.handle_bsc_setuid,
+            'BSC_getuid': self.handle_bsc_getuid,
+            'BSC_geteuid': self.handle_bsc_geteuid,
+            'BSC_recvmsg': self.handle_bsc_recvmsg,
+            'BSC_sendmsg': self.handle_bsc_sendmsg,
+            'BSC_recvfrom': self.handle_bsc_recvfrom,
+            'BSC_accept': self.handle_bsc_accept,
+            'BSC_getpeername': self.handle_bsc_getpeername,
+            'BSC_getsockname': self.handle_bsc_getsockname,
+            'BSC_access': self.handle_bsc_access,
+            'BSC_chflags': self.handle_bsc_chflags,
+            'BSC_fchflags': self.handle_bsc_fchflags,
+            'BSC_sync': self.handle_bsc_sync,
+            'BSC_kill': self.handle_bsc_kill,
+            'BSC_getppid': self.handle_bsc_getppid,
+            'BSC_sys_dup': self.handle_bsc_sys_dup,
+            'BSC_pipe': self.handle_bsc_pipe,
+            'BSC_getegid': self.handle_bsc_getegid,
+            'BSC_sigaction': self.handle_bsc_sigaction,
+            'BSC_getgid': self.handle_bsc_getgid,
             'BSC_pread': self.handle_bsc_pread,
             'BSC_pwrite': self.handle_bsc_pwrite,
             'BSC_sys_fstat64': self.handle_bsc_sys_fstat64,
@@ -420,6 +744,11 @@ class KdebugEventsParser:
             'BSC_write_nocancel': partial(self.handle_bsc_write, no_cancel=True),
             'BSC_open_nocancel': partial(self.handle_bsc_open, no_cancel=True),
             'BSC_sys_close_nocancel': partial(self.handle_bsc_sys_close, no_cancel=True),
+            'BSC_recvmsg_nocancel': partial(self.handle_bsc_recvmsg, no_cancel=True),
+            'BSC_sendmsg_nocancel': partial(self.handle_bsc_sendmsg, no_cancel=True),
+            'BSC_recvfrom_nocancel': partial(self.handle_bsc_recvfrom, no_cancel=True),
+            'BSC_accept_nocancel': partial(self.handle_bsc_accept, no_cancel=True),
+            'BSC_obs_killpg': self.handle_obs_killpg,
             'BSC_pread_nocancel': partial(self.handle_bsc_pread, no_cancel=True),
             'BSC_pwrite_nocancel': partial(self.handle_bsc_pwrite, no_cancel=True),
             'BSC_openat': self.handle_bsc_openat,
@@ -534,6 +863,90 @@ class KdebugEventsParser:
     def handle_bsc_chown(self, events):
         vnode = self.parse_vnode(events)
         return BscChown(events, vnode.path, events[0].values[1], events[0].values[2], serialize_result(events[-1]))
+
+    def handle_bsc_getpid(self, events):
+        return BscGetpid(events, events[-1].values[1])
+
+    def handle_bsc_setuid(self, events):
+        return BscSetuid(events, events[0].values[0], serialize_result(events[-1]))
+
+    def handle_bsc_getuid(self, events):
+        return BscGetuid(events, events[-1].values[1])
+
+    def handle_bsc_geteuid(self, events):
+        return BscGeteuid(events, events[-1].values[1])
+
+    def handle_bsc_recvmsg(self, events, no_cancel=False):
+        return BscRecvmsg(events, events[0].values[0], serialize_result(events[-1], 'count'), no_cancel)
+
+    def handle_bsc_sendmsg(self, events, no_cancel=False):
+        return BscSendmsg(events, events[0].values[0], serialize_result(events[-1], 'count'), no_cancel)
+
+    def handle_bsc_recvfrom(self, events, no_cancel=False):
+        args = events[0].values
+        flags = [flag for flag in SocketMsgFlags if flag.value & args[3]]
+        return BscRecvfrom(events, args[0], args[1], args[2], flags, serialize_result(events[-1], 'count'), no_cancel)
+
+    def handle_bsc_accept(self, events, no_cancel=False):
+        return BscAccept(events, events[0].values[0], serialize_result(events[-1], 'fd'), no_cancel)
+
+    def handle_bsc_getpeername(self, events):
+        args = events[0].values
+        return BscGetpeername(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_getsockname(self, events):
+        args = events[0].values
+        return BscGetsockname(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_access(self, events):
+        vnode = self.parse_vnode(events)
+        amode = [flag for flag in BscAccessFlags if flag.value & events[0].values[1]]
+        return BscAccess(events, vnode.path, amode, serialize_result(events[-1]))
+
+    def handle_bsc_chflags(self, events):
+        vnode = self.parse_vnode(events)
+        flags = [flag for flag in BscChangeableFlags if flag.value & events[0].values[1]]
+        return BscChflags(events, vnode.path, flags, serialize_result(events[-1]))
+
+    def handle_bsc_fchflags(self, events):
+        flags = [flag for flag in BscChangeableFlags if flag.value & events[0].values[1]]
+        return BscFchflags(events, events[0].values[0], flags, serialize_result(events[-1]))
+
+    def handle_bsc_sync(self, events):
+        return BscSync(events)
+
+    def handle_bsc_kill(self, events):
+        return BscKill(events, events[0].values[0], events[0].values[1], serialize_result(events[-1]))
+
+    def handle_bsc_getppid(self, events):
+        return BscGetppid(events, events[-1].values[1])
+
+    def handle_bsc_sys_dup(self, events):
+        return BscSysDup(events, events[0].values[0], serialize_result(events[-1], 'fd'))
+
+    def handle_bsc_pipe(self, events):
+        error_code = events[-1].values[0]
+        if error_code:
+            if error_code in errno.errorcode:
+                result = f'errno: {errno.errorcode[error_code]}({error_code})'
+            else:
+                result = f'errno: {error_code}'
+        else:
+            result = f'read_fd: {events[-1].values[1]}, write_fd: {events[-1].values[2]}'
+        return BscPipe(events, result)
+
+    def handle_bsc_getegid(self, events):
+        return BscGetegid(events, events[-1].values[1])
+
+    def handle_bsc_sigaction(self, events):
+        args = events[0].values
+        return BscSigaction(events, Signals(args[0]), args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_getgid(self, events):
+        return BscGetgid(events, events[-1].values[1])
+
+    def handle_obs_killpg(self, events):
+        return BscObsKillpg(events, events[0].values[0], events[0].values[1], serialize_result(events[-1]))
 
     def handle_bsc_pread(self, events, no_cancel=False):
         result = serialize_result(events[-1], 'count')
