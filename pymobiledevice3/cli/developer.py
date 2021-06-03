@@ -24,6 +24,7 @@ from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMonitor, ConnectionDetectionEvent
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
+from pymobiledevice3.services.os_trace import OsTraceService
 from pymobiledevice3.services.screenshot import ScreenshotService
 
 
@@ -81,6 +82,24 @@ def kill(lockdown, pid):
     """ Kill a process by its pid. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         ProcessControl(dvt).kill(pid)
+
+
+@developer.command('pkill', cls=Command)
+@click.argument('expression')
+def pkill(lockdown, expression):
+    """ kill all processes containing `expression` in their name. """
+    processes = OsTraceService(lockdown=lockdown).get_pid_list()['Payload']
+    if len(processes) == 0:
+        # no point at trying to use DvtSecureSocketProxyService if no processes
+        # were matched
+        return
+
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        process_control = ProcessControl(dvt)
+        for pid, process_info in processes.items():
+            if expression in process_info['ProcessName']:
+                logging.info(f'killing {pid}')
+                process_control.kill(pid)
 
 
 @developer.command('launch', cls=Command)
