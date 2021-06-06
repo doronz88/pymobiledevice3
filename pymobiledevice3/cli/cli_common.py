@@ -7,7 +7,13 @@ from pygments import highlight, lexers, formatters
 from pymobiledevice3.lockdown import LockdownClient
 
 
-def print_json(buf, colored=True, default=None):
+def default_json_encoder(obj):
+    if isinstance(obj, bytes):
+        return obj.hex()
+    raise TypeError()
+
+
+def print_json(buf, colored=True, default=default_json_encoder):
     formatted_json = json.dumps(buf, sort_keys=True, indent=4, default=default)
     if colored:
         colorful_json = highlight(formatted_json, lexers.JsonLexer(),
