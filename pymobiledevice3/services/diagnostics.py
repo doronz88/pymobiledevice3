@@ -153,12 +153,14 @@ class DiagnosticsService(object):
 
         d['Request'] = 'IORegistry'
 
-        self.service.send_plist(d)
-        response = self.service.recv_plist()
-        if response.get('Status', None) != 'Success':
+        response = self.service.send_recv_plist(d)
+        if response.get('Status') != 'Success':
             raise PyMobileDevice3Exception(f'got invalid response: {response}')
 
         dd = response.get('Diagnostics')
         if dd:
             return dd.get('IORegistry')
         return None
+
+    def get_battery(self):
+        return self.ioregistry(ioclass='IOPMPowerSource')

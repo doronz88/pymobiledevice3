@@ -1,7 +1,8 @@
+import logging
+import time
 from pprint import pprint
 
 import click
-
 from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.services.diagnostics import DiagnosticsService
 
@@ -57,3 +58,34 @@ def diagnostics_ioregistry(lockdown, plane, name, ioclass):
 def diagnostics_mg(lockdown, keys):
     """ get MobileGestalt key values from given list. If empty, return all known. """
     pprint(DiagnosticsService(lockdown=lockdown).mobilegestalt(keys=keys))
+
+
+@diagnostics.group('battery')
+def diagnostics_battery():
+    """ battery options """
+    pass
+
+
+@diagnostics_battery.command('single', cls=Command)
+@click.option('--nocolor', is_flag=True)
+def diagnostics_battery_single(lockdown, nocolor):
+    """ get single snapshot of battery data """
+    raw_info = DiagnosticsService(lockdown=lockdown).get_battery()
+    print_json(raw_info, colored=not nocolor)
+
+
+@diagnostics_battery.command('monitor', cls=Command)
+@click.option('--nocolor', is_flag=True)
+def diagnostics_battery_monitor(lockdown, nocolor):
+    """ monitor battery usage """
+    while True:
+        raw_info = DiagnosticsService(lockdown=lockdown).get_battery()
+        info = {
+            'InstantAmperage': raw_info.get('InstantAmperage'),
+            'Temperature': raw_info.get('Temperature'),
+            'Voltage': raw_info.get('Voltage'),
+            'IsCharging': raw_info.get('IsCharging'),
+            'CurrentCapacity': raw_info.get('CurrentCapacity'),
+        }
+        logging.info(info)
+        time.sleep(1)
