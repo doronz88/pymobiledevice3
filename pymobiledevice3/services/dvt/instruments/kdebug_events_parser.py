@@ -7,6 +7,14 @@ from functools import partial
 
 from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import DgbFuncQual, ProcessData
 
+IOC_REQUEST_PARAMS = {
+    0x20000000: 'IOC_VOID',
+    0x40000000: 'IOC_OUT',
+    0x80000000: 'IOC_IN',
+    0xc0000000: 'IOC_IN | IOC_OUT',
+    0xe0000000: 'IOC_DIRMASK'
+}
+
 
 class BscOpenFlags(enum.Enum):
     O_RDONLY = 0x0000
@@ -93,6 +101,12 @@ class BscChangeableFlags(enum.Enum):
     SF_APPEND = 0x40000
 
 
+class SigprocmaskFlags(enum.Enum):
+    SIG_BLOCK = 1
+    SIG_UNBLOCK = 2
+    SIG_SETMASK = 3
+
+
 def serialize_open_flags(flags: int) -> List[BscOpenFlags]:
     call_flags = []
     for flag in (BscOpenFlags.O_RDWR, BscOpenFlags.O_WRONLY):
@@ -130,7 +144,7 @@ def serialize_result(end_event, success_name='') -> str:
     else:
         err = f'errno: {error_code}'
     success = f'{success_name}: {res}' if success_name else ''
-    return success if not error_code else f'errno: {err}'
+    return success if not error_code else err
 
 
 @dataclass
@@ -261,7 +275,7 @@ class BscBsdthreadCreate:
     pid: int
 
     def __str__(self):
-        return f'thread_create()'
+        return 'thread_create()'
 
 
 @dataclass
@@ -624,6 +638,116 @@ class BscGetgid:
 
 
 @dataclass
+class BscSigprocmap:
+    ktraces: List
+    how: SigprocmaskFlags
+    set: int
+    oset: int
+    result: str
+
+    def __str__(self):
+        rep = f'sigprocmask({self.how.name}, {hex(self.set)}, {hex(self.oset)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetlogin:
+    ktraces: List
+    address: int
+
+    def __str__(self):
+        return f'getlogin(), address: {hex(self.address)}'
+
+
+@dataclass
+class BscSetlogin:
+    ktraces: List
+    address: int
+    result: str
+
+    def __str__(self):
+        rep = f'setlogin({hex(self.address)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscAcct:
+    ktraces: List
+    file: str
+    result: str
+
+    def __str__(self):
+        rep = f'acct("{self.file}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSigpending:
+    ktraces: List
+    set: int
+    result: str
+
+    def __str__(self):
+        rep = f'sigpending({hex(self.set)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSigaltstack:
+    ktraces: List
+    ss_address: int
+    oss_address: int
+    result: str
+
+    def __str__(self):
+        rep = f'sigaltstack({hex(self.ss_address)}, {hex(self.oss_address)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscIoctl:
+    ktraces: List
+    fildes: int
+    request: int
+    arg: int
+    result: str
+
+    def __str__(self):
+        params = IOC_REQUEST_PARAMS[self.request & 0xf0000000]
+        group = chr((self.request >> 8) & 0xff)
+        number = self.request & 0xff
+        length = (self.request >> 16) & 0x1fff
+        ioc = f'''_IOC({params}, '{group}', {number}, {length})'''
+        rep = f'ioctl({self.fildes}, {hex(self.request)} /* {ioc} */, {hex(self.arg)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscReboot:
+    ktraces: List
+    howto: int
+    result: str
+
+    def __str__(self):
+        rep = f'reboot({self.howto})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
 class BscObsKillpg:
     ktraces: List
     pgrp: int
@@ -735,6 +859,14 @@ class KdebugEventsParser:
             'BSC_getegid': self.handle_bsc_getegid,
             'BSC_sigaction': self.handle_bsc_sigaction,
             'BSC_getgid': self.handle_bsc_getgid,
+            'BSC_sigprocmask': self.handle_bsc_sigprocmask,
+            'BSC_getlogin': self.handle_bsc_getlogin,
+            'BSC_setlogin': self.handle_bsc_setlogin,
+            'BSC_acct': self.handle_bsc_acct,
+            'BSC_sigpending': self.handle_bsc_sigpending,
+            'BSC_sigaltstack': self.handle_bsc_sigaltstack,
+            'BSC_ioctl': self.handle_bsc_ioctl,
+            'BSC_reboot': self.handle_bsc_reboot,
             'BSC_pread': self.handle_bsc_pread,
             'BSC_pwrite': self.handle_bsc_pwrite,
             'BSC_sys_fstat64': self.handle_bsc_sys_fstat64,
@@ -901,6 +1033,8 @@ class KdebugEventsParser:
     def handle_bsc_access(self, events):
         vnode = self.parse_vnode(events)
         amode = [flag for flag in BscAccessFlags if flag.value & events[0].values[1]]
+        if not amode:
+            amode = [BscAccessFlags.F_OK]
         return BscAccess(events, vnode.path, amode, serialize_result(events[-1]))
 
     def handle_bsc_chflags(self, events):
@@ -944,6 +1078,32 @@ class KdebugEventsParser:
 
     def handle_bsc_getgid(self, events):
         return BscGetgid(events, events[-1].values[1])
+
+    def handle_bsc_sigprocmask(self, events):
+        args = events[0].values
+        return BscSigprocmap(events, SigprocmaskFlags(args[0]), args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_getlogin(self, events):
+        return BscGetlogin(events, events[0].values[0])
+
+    def handle_bsc_setlogin(self, events):
+        return BscSetlogin(events, events[0].values[0], serialize_result(events[-1]))
+
+    def handle_bsc_acct(self, events):
+        return BscAcct(events, self.parse_vnode(events).path, serialize_result(events[-1]))
+
+    def handle_bsc_sigpending(self, events):
+        return BscSigpending(events, events[0].values[0], serialize_result(events[-1]))
+
+    def handle_bsc_sigaltstack(self, events):
+        return BscSigaltstack(events, events[0].values[0], events[0].values[1], serialize_result(events[-1]))
+
+    def handle_bsc_ioctl(self, events):
+        args = events[0].values
+        return BscIoctl(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_reboot(self, events):
+        return BscReboot(events, events[0].values[0], serialize_result(events[-1]))
 
     def handle_obs_killpg(self, events):
         return BscObsKillpg(events, events[0].values[0], events[0].values[1], serialize_result(events[-1]))
