@@ -78,8 +78,9 @@ def diagnostics_battery_single(lockdown, nocolor):
 @click.option('--nocolor', is_flag=True)
 def diagnostics_battery_monitor(lockdown, nocolor):
     """ monitor battery usage """
+    diagnostics = DiagnosticsService(lockdown=lockdown)
     while True:
-        raw_info = DiagnosticsService(lockdown=lockdown).get_battery()
+        raw_info = diagnostics.get_battery()
         info = {
             'InstantAmperage': raw_info.get('InstantAmperage'),
             'Temperature': raw_info.get('Temperature'),

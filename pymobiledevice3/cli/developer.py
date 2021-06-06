@@ -1,32 +1,32 @@
 # flake8: noqa: C901
-from collections import namedtuple
-from functools import partial
 import json
 import logging
 import os
 import posixpath
 import shlex
+from collections import namedtuple
 from dataclasses import asdict
+from functools import partial
 
 import click
-from termcolor import colored
 from pygments import highlight, lexers, formatters
-
 from pymobiledevice3.cli.cli_common import print_json, Command
 from pymobiledevice3.exceptions import DvtDirListError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
-from pymobiledevice3.services.dvt.instruments.kdebug_events_parser import KdebugEventsParser
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap, DgbFuncQual, \
     ProcessData
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
+from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
+from pymobiledevice3.services.dvt.instruments.kdebug_events_parser import KdebugEventsParser
 from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMonitor, ConnectionDetectionEvent
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.os_trace import OsTraceService
 from pymobiledevice3.services.screenshot import ScreenshotService
+from termcolor import colored
 
 
 @click.group()
@@ -470,3 +470,20 @@ def developer_oslog(lockdown, nocolor, pid):
                     message_type = colored(message_type, 'cyan')
 
                 print(f'[{subsystem}][{category}][{message_pid}][{image_name}] <{message_type}>: {formatted_message}')
+
+
+@developer.command('energy', cls=Command)
+@click.argument('pid-list', nargs=-1)
+def developer_energy(lockdown, pid_list):
+    """ energy monitoring for given pid list. """
+
+    if len(pid_list) == 0:
+        logging.error('pid_list must not be empty')
+        return
+
+    pid_list = [int(pid) for pid in pid_list]
+
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with EnergyMonitor(dvt, pid_list) as energy_monitor:
+            for telemetry in energy_monitor:
+                logging.info(telemetry)
