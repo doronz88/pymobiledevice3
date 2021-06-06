@@ -308,9 +308,10 @@ for (var name in ObjC.protocols) {
 }
 ```
 
-The complete list for the following XCode versions can be found in:
+The complete list for the relevant APIs can be found here:
 
-* [12.4](./DTServices-12.4.txt)
+* [14.2](./DTServices-14.2.txt)
+* [14.5](./DTServices-14.5.txt)
 
 ## `com.apple.os_trace_relay`
 

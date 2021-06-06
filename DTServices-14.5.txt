@@ -1,0 +1,151 @@
+@protocol DTInstrumentServerSimulatorPrivilege
+  - _blessSimulatorHub:
+  - _notifyOfTFPCommunicationsPort:
+@protocol DTDeviceInfoServiceAuthorizedAPI
+  - machTimeInfo
+  - runningProcesses
+  - nameForGID:
+  - execnameForPid:
+  - isRunningPid:
+  - machKernelName
+  - deepSymbolOwnerSignatureForPid:uuid:
+  - symbolicatorSignatureForPid:trackingSelector:
+  - unregisterSignatureTrackingForPid:
+  - enableExpiredPidTracking:
+  - symbolicatorSignaturesForExpiredPids
+  - directoryListingForPath:
+  - iconDescriptionFileForAppPath:
+  - hardwareInformation
+  - traceCodesFile
+  - kpepDatabase
+  - sysmonProcessAttributes
+  - sysmonSystemAttributes
+  - sysmonCoalitionAttributes
+  - networkInformation
+  - systemInformation
+  - nameForUID:
+@protocol IDEGaugeDataProviderServiceAPI
+  - sampleAttributes:forPIDs:
+@protocol DTVMTrackingServiceAuthorizedAPI
+  - configureLaunchEnvironment:
+  - setTargetPid:referenceDate:
+  - requestVMSnapshot
+  - stopTracking
+  - startTracking
+@protocol DTFileBrowserServiceAuthorizedAPI
+  - entriesInPathsArray:
+  - dataFromFileAtPath:
+  - updateAttributesForItem:
+  - fileExistsAtPath:
+  - contentsOfDirectoryAtPath:
+  - entriesAtPath:
+@protocol DTGPUServiceAuthorizedAPI
+  - stopCollectingCounters
+  - requestDeviceGPUInfo
+  - configureCounters:counterProfile:interval:windowLimit:tracingPID:
+  - enableShaderProfiler
+  - startCollectingCounters
+  - flushRemainingData
+@protocol DTAssetResponseServiceProtocol
+  - canContinueServingRequestWithIdentifier:
+@protocol DTXConnectionRemoteReceiveQueueCalls
+  - _notifyCompressionHint:forChannelCode:
+  - _notifyOfPublishedCapabilities:
+  - _requestChannelWithCode:identifier:
+  - _setTracerState:
+  - _channelCanceled:
+@protocol DTApplicationListingServiceRequests
+  - installedApplicationsMatching:registerUpdateToken:
+  - unregisterUpdateToken:
+@protocol DTObjectAllocServiceLegacyAPI
+  - startCollectionWithPid:
+@protocol DTCompanionControlServiceV2API
+  - willInstallWatchAppForCompanionIdentifier:
+  - launchWatchAppForCompanionIdentifier:options:
+  - terminateWatchAppForCompanionIdentifier:options:
+@protocol DTLeaksServiceAuthorizedRPC
+  - requestGraph:options:
+  - requestMallocStackLog:forAddress:size:isLiteZone:
+  - requestVMregionStackLog:forAddress:size:
+@protocol IDEGaugeDataProviderServiceAllowedRPC
+  - stopSamplingForPIDs:
+  - sampleAttributes:forPIDs:
+  - startSamplingForPIDs:
+@protocol DTSamplingServiceAuthorizedAPI
+  - setTargetPid:
+  - setOutputRate:
+  - stopSampling
+  - setSamplingRate:
+  - startSampling
+@protocol DTSpringBoardProcessControlServiceAuthorizedMethods
+  - processIdentifierForBundleIdentifier:
+@protocol DTObjectAllocServiceAuthorizedAPI
+  - stopCollection
+  - preparedEnvironmentForLaunch:eventsMask:
+  - attachToPid:eventsMask:
+@protocol DTInstrumentServerAllowedRPC
+  - setMaxConnectionEnqueue:
+@protocol DTScreenshotRequestServiceAPI
+  - takeScreenshot
+@protocol DTPowerServiceProtocol
+  - openStreamForPath:
+  - startStreamTransfer:
+  - putData:toStreamID:
+  - endStreamTransfer:
+@protocol DTFileTransferServiceDebugInboxAuthorizedAPI
+  - transferFile:toDebugInboxOfApplicationWithBundleIdentifier:destinationFilename:
+  - openFileInDocumentDebugInbox:forApplicationWithBundleIdentifier:withAnnotation:
+  - transferData:intoAppContainerForBundleIdentifier:filename:
+@protocol DTAssetServiceProtocol
+  - startServerForApplicationWithDevicePath:
+  - registerApplicationIdentifier:manifest:
+  - startServer
+@protocol DTGraphicsServiceAuthorizedAPI
+  - startSamplingAtTimeInterval:processIdentifier:
+  - startSamplingAtTimeInterval:
+  - availableStatistics
+  - driverNames
+  - valueForSwitch:
+  - setValue:forSwitchName:
+  - cleanup
+  - stopSampling
+  - setSamplingRate:
+@protocol DTTapAuthorizedAPI
+  - fetchDataNow
+  - setConfig:
+  - pause
+  - stop
+  - start
+  - unpause
+@protocol DTConditionInducerServiceAPI
+  - availableConditionInducers
+  - disableActiveCondition
+  - disableConditionWithIdentifier:
+  - enableConditionWithIdentifier:profileIdentifier:
+@protocol IDEODRResourceControlServiceAPI
+  - ODRPurgeTagID:forBundleIdentifier:
+  - ODRPurgeResourcesForBundleIdentifier:
+@protocol DTMobileNotificationsServiceAuthorizedAPI
+  - setApplicationStateNotificationsEnabled:
+  - setMemoryNotificationsEnabled:
+@protocol DTNetworkingServiceAuthorizedAPI
+  - replayLastRecordedSession
+  - setTargetPID:
+  - startMonitoring
+  - stopMonitoring
+@protocol DTLeaksServiceLegacyRPC
+  - requestLeaksForPid:context:provideBacktraces:
+  - cancelAllRequests
+@protocol DTXPCControlServiceRequests
+  - observeServicesWithIdentifier:requestingProcess:environment:arguments:options:
+  - requestDebugLaunchOfDaemonWithSpecifier:programPath:environment:arguments:options:
+  - stopObservationsForIdentifier:requestingProcess:
+@protocol DTProcessControlServiceAuthorizedMethods
+  - stopObservingPid:
+  - launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:
+  - sendSignal:toPid:
+  - startObservingPid:
+  - suspendPid:
+  - resumePid:
+  - killPid:
+  - sendProcessControlEvent:toPid:
