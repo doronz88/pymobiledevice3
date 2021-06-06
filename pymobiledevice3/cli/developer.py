@@ -10,6 +10,7 @@ from dataclasses import asdict
 
 import click
 from termcolor import colored
+from pygments import highlight, lexers, formatters
 
 from pymobiledevice3.cli.cli_common import print_json, Command
 from pymobiledevice3.exceptions import DvtDirListError
@@ -374,7 +375,7 @@ def stackshot(lockdown, out, nocolor):
                 print_json(data, colored=not nocolor)
 
 
-def parse_live_print(tap, pid, show_tid, parsed):
+def parse_live_print(tap, pid, show_tid, parsed, nocolor):
     tid = parsed.ktraces[0].tid
     try:
         process = tap.thread_map[tid]
@@ -391,7 +392,13 @@ def parse_live_print(tap, pid, show_tid, parsed):
                    if process.pid != -1
                    else f'Error: tid {tid}')
     formatted_data += f'{process_rep:<34}'
-    print(formatted_data + str(parsed))
+    if nocolor:
+        event_rep = str(parsed)
+    else:
+        event_rep = highlight(
+            str(parsed), lexers.CLexer(), formatters.TerminalTrueColorFormatter(style='stata-dark')).strip()
+
+    print(formatted_data + event_rep)
 
 
 @core_profile_session.command('parse-live', cls=Command)
@@ -400,7 +407,8 @@ def parse_live_print(tap, pid, show_tid, parsed):
 @click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
 @click.option('--show-tid/--no-show-tid', default=False, help='Whether to print thread id or not.')
 @click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
-def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters):
+@click.option('--nocolor', is_flag=True, help='disable colors')
+def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters, nocolor):
     """ Parse core profiling information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         trace_codes_map = DeviceInfo(dvt).trace_codes()
@@ -409,7 +417,7 @@ def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters):
         print('Receiving time information')
         time_config = CoreProfileSessionTap.get_time_config(dvt)
         with CoreProfileSessionTap(dvt, time_config, filters) as tap:
-            events_callback = partial(parse_live_print, tap, pid, show_tid)
+            events_callback = partial(parse_live_print, tap, pid, show_tid, nocolor=nocolor)
             events_parser = KdebugEventsParser(events_callback, trace_codes_map, tap.thread_map)
             if show_tid:
                 print('{:^26}|{:^11}|{:^33}|   Event'.format('Time', 'Thread', 'Process'))
