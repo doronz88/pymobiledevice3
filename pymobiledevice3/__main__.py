@@ -14,7 +14,7 @@ from pymobiledevice3.cli.syslog import cli as syslog_cli
 from pymobiledevice3.cli.pcap import cli as pcap_cli
 from pymobiledevice3.cli.crash import cli as crash_cli
 from pymobiledevice3.cli.afc import cli as afc_cli
-from pymobiledevice3.cli.ps import cli as ps_cli
+from pymobiledevice3.cli.processes import cli as ps_cli
 from pymobiledevice3.cli.notification import cli as notification_cli
 from pymobiledevice3.cli.list_devices import cli as list_devices_cli
 
