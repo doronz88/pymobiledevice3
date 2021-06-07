@@ -34,7 +34,7 @@ message_aux_t_struct = Struct(
     'aux' / Prefixed(Int64ul, GreedyRange(Struct(
         '_empty_dictionary' / Select(Const(0xa, Int32ul), Int32ul),
         'type' / Int32ul,
-        'value' / Switch(this.type, {2: BplitAdapter(Prefixed(Int32ul, GreedyBytes)), 3: Int32ul, 4: Int64ul},
+        'value' / Switch(this.type, {2: BplitAdapter(Prefixed(Int32ul, GreedyBytes)), 3: Int32ul, 6: Int64ul},
                          default=GreedyBytes),
     )))
 )
@@ -49,7 +49,7 @@ class MessageAux:
         return self
 
     def append_long(self, value: int):
-        self.values.append({'type': 4, 'value': value})
+        self.values.append({'type': 6, 'value': value})
         return self
 
     def append_obj(self, value):
