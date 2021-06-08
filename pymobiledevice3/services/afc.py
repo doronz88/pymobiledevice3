@@ -210,7 +210,7 @@ class AfcService:
 
             for filename in self.listdir(src):
                 src_filename = posixpath.join(src, filename)
-                dst_filename = os.path.join(dst, filename).removeprefix('/')
+                dst_filename = os.path.join(dst, filename)
 
                 if self.isdir(src_filename):
                     if not os.path.exists(dst_filename):
