@@ -3,77 +3,43 @@
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/doronz88/pymobiledevice3.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/doronz88/pymobiledevice3/context:python)
 
 - [Description](#description)
-- [Features](#features)
 - [Installation](#installation)
     * [Lower iOS versions (<13)](#lower-ios-versions-13)
 - [Usage](#usage)
+    * [Example](#example)
+- [The bits and bytes](#the-bits-and-bytes)
     * [Sending your own messages](#sending-your-own-messages)
         + [Lockdown messages](#lockdown-messages)
         + [Instruments messages](#instruments-messages)
-    * [Example](#example)
-- [Lockdown services](#lockdown-services)
-    * [`com.apple.instruments.remoteserver.DVTSecureSocketProxy`](#comappleinstrumentsremoteserverdvtsecuresocketproxy)
-    * [`com.apple.os_trace_relay`](#comappleos_trace_relay)
-    * [`com.apple.mobile.diagnostics_relay`](#comapplemobilediagnostics_relay)
-    * [`com.apple.mobile.file_relay`](#comapplemobilefile_relay)
-    * [`com.apple.pcapd`](#comapplepcapd)
+    * [Lockdown services](#lockdown-services)
+        + [com.apple.instruments.remoteserver.DVTSecureSocketProxy](#comappleinstrumentsremoteserverdvtsecuresocketproxy)
+        + [com.apple.os_trace_relay](#comappleos_trace_relay)
+        + [com.apple.mobile.diagnostics_relay](#comapplemobilediagnostics_relay)
+        + [com.apple.mobile.file_relay](#comapplemobilefile_relay)
+        + [com.apple.pcapd](#comapplepcapd)
+- [Contributing](#contributing)
 
 # Description
 
-`pymobiledevice3` is a fork from `pymobiledevice`, which is a cross-platform implementation of the mobiledevice library
-that talks the protocols to support iPhone®, iPod Touch®, iPad® and Apple TV® devices.
+`pymobiledevice3` started as a fork of `pymobiledevice`, but became something much more. This tool offers a full python
+implementation to work with iDevices (iPhone, etc...).
 
-This version uses more recent coding standards and adds a lot more features. Also, many of the features not present
-in `libimobiledevice` can be found here.
-
-To understand the bits and bytes of the communication with `lockdownd` you are advised to take a look at this article:
-
-https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lockdown-service-7f2a1dfd07ae
-
-If you would like to contribute, feel free to reports issues, start new discussions, or create pull requests. You can
-also contact us on gitter:
-
-https://gitter.im/pymobiledevice3/community
-
-# Features
+Main features include:
 
 * TCP port forwarding
-    * `pymobiledevice3 lockdown forward src_port dst_port`
-* Live and past syslogs
-    * `pymobiledevice3 syslog live`
-    * `pymobiledevice3 syslog archive syslogs.pax`
-* Profile installation
-    * `pymobiledevice3 profile install/remove/list`
+* Viewing syslog lines (including debug)
+* Profile management
 * Application management
-    * `pymobiledevice3 apps`
 * File system management (AFC)
-    * `pymobiledevice3 afc`
 * Crash reports management
-    * `pymobiledevice3 crash`
 * Network sniffing
-    * `pymobiledevice3 pcap [out.pcap]`
-* Raw shell for experimenting:
-    * `pymobiledevice3 lockdown service service_name`
 * Mounting images
-    * `pymobiledevice3 mounter`
 * Notification listening and triggering (`notify_post()` api)
-    * `pymobiledevice3 notification post notification_name`
-    * `pymobiledevice3 notification observe notification_name`
 * DeveloperDiskImage features:
-    * Screenshots
-        * `pymobiledevice3 developer screenshot screen.png`
+    * Taking screenshots
     * Process management
-        * `pymobiledevice3 developer kill/launch/....`
-    * **Non-chrooted** directory listing
-        * `pymobiledevice3 developer ls /`
-    * KDebug messgaes
-        * `pymobiledevice3 developer core-profile-session`
-    * System monitoring (`top` like)
-        * `pymobiledevice3 developer sysmon process`
-    * Raw shell for experimenting:
-        * `pymobiledevice3 developer shell`
-
-* And some more :)
+    * Sniffing KDebug messages (**strace** capabilities++)
+    * Process monitoring (`top` like)
 
 # Installation
 
@@ -140,8 +106,8 @@ Commands:
   mounter       mounter options
   notification  API for notify_post() & notify_register_dispatch().
   pcap          sniff device traffic
+  processes     processes cli
   profile       profile options
-  ps            show process list
   syslog        syslog options
 ```
 
@@ -155,74 +121,6 @@ lockdown = LockdownClient()
 for line in SyslogService(lockdown=lockdown).watch():
     # just print all syslog lines as is
     print(line)
-```
-
-## Sending your own messages
-
-### Lockdown messages
-
-Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays
-yourself, you can run:
-
-```shell
-pymobiledevice3 lockdown service <service-name>
-```
-
-This will start an IPython shell where you already have the connection established using the `client` variable and you
-can send & receive messages.
-
-```python
-# This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
-
-# For example, you can do the following:
-client.send_plist({"Command": "DoSomething"})
-
-# and view the reply
-print(client.recv_plist())
-
-# or just send raw message
-client.sendall(b"hello")
-
-# and view the result
-print(client.recvall(20))
-```
-
-### Instruments messages
-
-If you want to play with `DTServiceHub` which lies behind the `developer` options, you can also use:
-
-```shell
-pymobiledevice3 developer shell
-```
-
-To also get an IPython shell, which lets you call ObjC methods from the exported objects in the instruments' namespace
-like so:
-
-```python
-# This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
-# Generally speaking, each channel represents a group of actions.
-# Calling actions is done using a selector and auxiliary (parameters).
-# Receiving answers is done by getting a return value and seldom auxiliary (private / extra parameters).
-# To see the available channels, type the following:
-developer.supported_identifiers
-
-# In order to send messages, you need to create a channel:
-channel = developer.make_channel('com.apple.instruments.server.services.deviceinfo')
-
-# After creating the channel you can call allowed selectors:
-channel.runningProcesses()
-
-# If an answer is expected, you can receive it using the receive method:
-processes = channel.receive_plist()
-
-# Sometimes the selector requires parameters, You can add them using MessageAux. For example lets kill a process:
-channel = developer.make_channel('com.apple.instruments.server.services.processcontrol')
-args = MessageAux().append_obj(80)  # This will kill pid 80
-channel.killPid_(args, expects_reply=False)  # Killing a process doesn't require an answer.
-
-# In some rare cases, you might want to receive the auxiliary and the selector return value.
-# For that cases you can use the recv_plist method.
-return_value, auxiliary = developer.recv_plist()
 ```
 
 ## Example
@@ -338,3 +236,81 @@ On older iOS versions, this was the main relay used for file operations, which w
 Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from an iOS
 device. On Mac OSX the virtual interface can be enabled with the rvictl command. This script allows to use this service
 on other systems.
+
+# The bits and bytes
+
+To understand the bits and bytes of the communication with lockdownd you are advised to take a look at this article:
+
+https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lockdown-service-7f2a1dfd07ae
+
+## Sending your own messages
+
+### Lockdown messages
+
+Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays
+yourself, you can run:
+
+```shell
+pymobiledevice3 lockdown service <service-name>
+```
+
+This will start an IPython shell where you already have the connection established using the `client` variable and you
+can send & receive messages.
+
+```python
+# This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
+
+# For example, you can do the following:
+client.send_plist({"Command": "DoSomething"})
+
+# and view the reply
+print(client.recv_plist())
+
+# or just send raw message
+client.sendall(b"hello")
+
+# and view the result
+print(client.recvall(20))
+```
+
+### Instruments messages
+
+If you want to play with `DTServiceHub` which lies behind the `developer` options, you can also use:
+
+```shell
+pymobiledevice3 developer shell
+```
+
+To also get an IPython shell, which lets you call ObjC methods from the exported objects in the instruments' namespace
+like so:
+
+```python
+# This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
+# Generally speaking, each channel represents a group of actions.
+# Calling actions is done using a selector and auxiliary (parameters).
+# Receiving answers is done by getting a return value and seldom auxiliary (private / extra parameters).
+# To see the available channels, type the following:
+developer.supported_identifiers
+
+# In order to send messages, you need to create a channel:
+channel = developer.make_channel('com.apple.instruments.server.services.deviceinfo')
+
+# After creating the channel you can call allowed selectors:
+channel.runningProcesses()
+
+# If an answer is expected, you can receive it using the receive method:
+processes = channel.receive_plist()
+
+# Sometimes the selector requires parameters, You can add them using MessageAux. For example lets kill a process:
+channel = developer.make_channel('com.apple.instruments.server.services.processcontrol')
+args = MessageAux().append_obj(80)  # This will kill pid 80
+channel.killPid_(args, expects_reply=False)  # Killing a process doesn't require an answer.
+
+# In some rare cases, you might want to receive the auxiliary and the selector return value.
+# For that cases you can use the recv_plist method.
+return_value, auxiliary = developer.recv_plist()
+```
+
+# Contributing
+
+See [CONTRIBUTING](CONTRIBUTING.md).
