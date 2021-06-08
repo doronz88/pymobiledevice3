@@ -46,8 +46,8 @@ def crash_shell(lockdown):
     AfcShell(lockdown=lockdown, service_name='com.apple.crashreportcopymobile').cmdloop()
 
 
-@crash.command('mover-ping', cls=Command)
-def crash_mover_ping(lockdown):
-    """ make sure com.apple.crashreportmover is running """
+@crash.command('flush', cls=Command)
+def crash_mover_flush(lockdown):
+    """ trigger com.apple.crashreportmover to flush all products into CrashReports directory """
     ack = b'ping\x00'
     assert ack == lockdown.start_service('com.apple.crashreportmover').recvall(len(ack))
