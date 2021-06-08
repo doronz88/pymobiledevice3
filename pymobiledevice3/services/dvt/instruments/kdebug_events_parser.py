@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import errno
 import enum
 from signal import Signals
+import socket
 from typing import List
 from functools import partial
 
@@ -179,6 +180,103 @@ class FcntlCmd(enum.Enum):
     F_ADDFILESIGS_INFO = 103
     F_ADDFILESUPPL = 104
     F_GETSIGSINFO = 105
+
+
+class PriorityWhich(enum.Enum):
+    PRIO_PROCESS = 0
+    PRIO_PGRP = 1
+    PRIO_USER = 2
+    PRIO_DARWIN_THREAD = 3
+    PRIO_DARWIN_PROCESS = 4
+    PRIO_DARWIN_GPU = 5
+    PRIO_DARWIN_ROLE = 6
+
+
+class SocketOptionName(enum.Enum):
+    SO_DEBUG = 0x1
+    SO_ACCEPTCONN = 0x2
+    SO_REUSEADDR = 0x4
+    SO_KEEPALIVE = 0x8
+    SO_DONTROUTE = 0x10
+    SO_BROADCAST = 0x20
+    SO_USELOOPBACK = 0x40
+    SO_LINGER = 0x80
+    SO_OOBINLINE = 0x100
+    SO_REUSEPORT = 0x200
+    SO_TIMESTAMP = 0x400
+    SO_TIMESTAMP_MONOTONIC = 0x800
+    SO_ACCEPTFILTER = 0x1000
+    SO_SNDBUF = 0x1001
+    SO_RCVBUF = 0x1002
+    SO_SNDLOWAT = 0x1003
+    SO_RCVLOWAT = 0x1004
+    SO_SNDTIMEO = 0x1005
+    SO_RCVTIMEO = 0x1006
+    SO_ERROR = 0x1007
+    SO_TYPE = 0x1008
+    SO_LABEL = 0x1010
+    SO_PEERLABEL = 0x1011
+    SO_NREAD = 0x1020
+    SO_NKE = 0x1021
+    SO_NOSIGPIPE = 0x1022
+    SO_NOADDRERR = 0x1023
+    SO_NWRITE = 0x1024
+    SO_REUSESHAREUID = 0x1025
+    SO_NOTIFYCONFLICT = 0x1026
+    SO_UPCALLCLOSEWAIT = 0x1027
+    SO_LINGER_SEC = 0x1080
+    SO_RESTRICTIONS = 0x1081
+    SO_RANDOMPORT = 0x1082
+    SO_NP_EXTENSIONS = 0x1083
+    SO_EXECPATH = 0x1085
+    SO_TRAFFIC_CLASS = 0x1086
+    SO_RECV_TRAFFIC_CLASS = 0x1087
+    SO_TRAFFIC_CLASS_DBG = 0x1088
+    SO_OPTION_UNUSED_0 = 0x1089
+    SO_PRIVILEGED_TRAFFIC_CLASS = 0x1090
+    SO_DEFUNCTIT = 0x1091
+    SO_DEFUNCTOK = 0x1100
+    SO_ISDEFUNCT = 0x1101
+    SO_OPPORTUNISTIC = 0x1102
+    SO_FLUSH = 0x1103
+    SO_RECV_ANYIF = 0x1104
+    SO_TRAFFIC_MGT_BACKGROUND = 0x1105
+    SO_FLOW_DIVERT_TOKEN = 0x1106
+    SO_DELEGATED = 0x1107
+    SO_DELEGATED_UUID = 0x1108
+    SO_NECP_ATTRIBUTES = 0x1109
+    SO_CFIL_SOCK_ID = 0x1110
+    SO_NECP_CLIENTUUID = 0x1111
+    SO_NUMRCVPKT = 0x1112
+    SO_AWDL_UNRESTRICTED = 0x1113
+    SO_EXTENDED_BK_IDLE = 0x1114
+    SO_MARK_CELLFALLBACK = 0x1115
+    SO_NET_SERVICE_TYPE = 0x1116
+    SO_QOSMARKING_POLICY_OVERRIDE = 0x1117
+    SO_INTCOPROC_ALLOW = 0x1118
+    SO_NETSVC_MARKING_LEVEL = 0x1119
+    SO_NECP_LISTENUUID = 0x1120
+    SO_MPKL_SEND_INFO = 0x1122
+    SO_STATISTICS_EVENT = 0x1123
+    SO_WANT_KEV_SOCKET_CLOSED = 0x1124
+    SO_DONTTRUNC = 0x2000
+    SO_WANTMORE = 0x4000
+    SO_WANTOOBFLAG = 0x8000
+    SO_NOWAKEFROMSLEEP = 0x10000
+    SO_NOAPNFALLBK = 0x20000
+    SO_TIMESTAMP_CONTINUOUS = 0x40000
+
+
+def sockopt_format_level_and_option(level, option_name):
+    if level == socket.SOL_SOCKET:
+        return 'SOL_SOCKET', SocketOptionName(option_name).name
+    else:
+        return level, option_name
+
+
+class RusageWho(enum.Enum):
+    RUSAGE_CHILDREN = -1
+    RUSAGE_SELF = 0
 
 
 def serialize_open_flags(flags: int) -> List[BscOpenFlags]:
@@ -1113,6 +1211,285 @@ class BscSelect:
 
 
 @dataclass
+class BscFsync:
+    ktraces: List
+    fildes: int
+    result: str
+
+    def __str__(self):
+        rep = f'fsync({self.fildes})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSetpriority:
+    ktraces: List
+    which: PriorityWhich
+    who: int
+    prio: int
+    result: str
+
+    def __str__(self):
+        rep = f'setpriority({self.which.name}, {self.who}, {self.prio})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSocket:
+    ktraces: List
+    domain: socket.AddressFamily
+    type: socket.SocketKind
+    protocol: int
+    result: str
+
+    def __str__(self):
+        return f'socket({self.domain.name}, {self.type.name}, {self.protocol}), {self.result}'
+
+
+@dataclass
+class BscConnect:
+    ktraces: List
+    socket: int
+    address: int
+    address_len: int
+    result: str
+
+    def __str__(self):
+        rep = f'connect({self.socket}, {hex(self.address)}, {self.address_len})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetpriority:
+    ktraces: List
+    which: PriorityWhich
+    who: int
+    result: str
+
+    def __str__(self):
+        return f'getpriority({self.which.name}, {self.who}), {self.result}'
+
+
+@dataclass
+class BscBind:
+    ktraces: List
+    socket: int
+    address: int
+    address_len: int
+    result: str
+
+    def __str__(self):
+        rep = f'bind({self.socket}, {hex(self.address)}, {self.address_len})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSetsockopt:
+    ktraces: List
+    socket: int
+    level: int
+    option_name: int
+    option_value: int
+    result: str
+
+    def __str__(self):
+        level, option = sockopt_format_level_and_option(self.level, self.option_name)
+        rep = f'setsockopt({self.socket}, {level}, {option}, {hex(self.option_value)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscListen:
+    ktraces: List
+    socket: int
+    backlog: int
+    result: str
+
+    def __str__(self):
+        rep = f'listen({self.socket}, {self.backlog})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSigsuspend:
+    ktraces: List
+    sigmask: int
+    result: str
+
+    def __str__(self):
+        rep = f'sigsuspend({hex(self.sigmask)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGettimeofday:
+    ktraces: List
+    tv: int
+    tz: int
+    result: str
+
+    def __str__(self):
+        rep = f'gettimeofday({hex(self.tv)}, {hex(self.tz)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetrusage:
+    ktraces: List
+    who: RusageWho
+    r_usage: int
+    result: str
+
+    def __str__(self):
+        rep = f'getrusage({self.who.name}, {self.r_usage})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetsockopt:
+    ktraces: List
+    socket: int
+    level: int
+    option_name: int
+    option_value: int
+    result: str
+
+    def __str__(self):
+        level, option = sockopt_format_level_and_option(self.level, self.option_name)
+        rep = f'getsockopt({self.socket}, {level}, {option}, {hex(self.option_value)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscReadv:
+    ktraces: List
+    d: int
+    iov: int
+    iovcnt: int
+    result: str
+
+    def __str__(self):
+        return f'readv({self.d}, {hex(self.iov)}, {self.iovcnt}), {self.result}'
+
+
+@dataclass
+class BscWritev:
+    ktraces: List
+    fildes: int
+    iov: int
+    iovcnt: int
+    result: str
+
+    def __str__(self):
+        return f'writev({self.fildes}, {hex(self.iov)}, {self.iovcnt}), {self.result}'
+
+
+@dataclass
+class BscSettimeofday:
+    ktraces: List
+    tp: int
+    tzp: int
+    result: str
+
+    def __str__(self):
+        rep = f'settimeofday({hex(self.tp)}, {hex(self.tzp)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscFchown:
+    ktraces: List
+    fildes: int
+    owner: int
+    group: int
+    result: str
+
+    def __str__(self):
+        rep = f'fchown({self.fildes}, {self.owner}, {self.group})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscFchmod:
+    ktraces: List
+    fildes: str
+    mode: List
+    result: str
+
+    def __str__(self):
+        rep = f'''fchmod({self.fildes}, {' | '.join(map(lambda f: f.name, self.mode))})'''
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSetreuid:
+    ktraces: List
+    ruid: int
+    euid: int
+    result: str
+
+    def __str__(self):
+        rep = f'setreuid({self.ruid}, {self.euid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSetregid:
+    ktraces: List
+    rgid: int
+    egid: int
+    result: str
+
+    def __str__(self):
+        rep = f'setregid({self.rgid}, {self.egid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscRename:
+    ktraces: List
+    old: str
+    new: str
+    result: str
+
+    def __str__(self):
+        rep = f'rename("{self.old}", "{self.new}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
 class BscObsKillpg:
     ktraces: List
     pgrp: int
@@ -1255,6 +1632,26 @@ class KdebugEventsParser:
             'BSC_sys_dup2': self.handle_bsc_sys_dup2,
             'BSC_sys_fcntl': self.handle_bsc_sys_fcntl,
             'BSC_select': self.handle_bsc_select,
+            'BSC_fsync': self.handle_bsc_fsync,
+            'BSC_setpriority': self.handle_bsc_setpriority,
+            'BSC_socket': self.handle_bsc_socket,
+            'BSC_connect': self.handle_bsc_connect,
+            'BSC_getpriority': self.handle_bsc_getpriority,
+            'BSC_bind': self.handle_bsc_bind,
+            'BSC_setsockopt': self.handle_bsc_setsockopt,
+            'BSC_listen': self.handle_bsc_listen,
+            'BSC_sigsuspend': self.handle_bsc_sigsuspend,
+            'BSC_gettimeofday': self.handle_bsc_gettimeofday,
+            'BSC_getrusage': self.handle_bsc_getrusage,
+            'BSC_getsockopt': self.handle_bsc_getsockopt,
+            'BSC_readv': self.handle_bsc_readv,
+            'BSC_writev': self.handle_bsc_writev,
+            'BSC_settimeofday': self.handle_bsc_settimeofday,
+            'BSC_fchown': self.handle_bsc_fchown,
+            'BSC_fchmod': self.handle_bsc_fchmod,
+            'BSC_setreuid': self.handle_bsc_setreuid,
+            'BSC_setregid': self.handle_bsc_setregid,
+            'BSC_rename': self.handle_bsc_rename,
             'BSC_pread': self.handle_bsc_pread,
             'BSC_pwrite': self.handle_bsc_pwrite,
             'BSC_sys_fstat64': self.handle_bsc_sys_fstat64,
@@ -1576,6 +1973,86 @@ class KdebugEventsParser:
     def handle_bsc_select(self, events):
         args = events[0].values
         return BscSelect(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_fsync(self, events):
+        return BscFsync(events, events[0].values[0], serialize_result(events[-1]))
+
+    def handle_bsc_setpriority(self, events):
+        args = events[0].values
+        return BscSetpriority(events, PriorityWhich(args[0]), args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_socket(self, events):
+        args = events[0].values
+        return BscSocket(events, socket.AddressFamily(args[0]), socket.SocketKind(args[1]), args[2],
+                         serialize_result(events[-1], 'fd'))
+
+    def handle_bsc_connect(self, events):
+        args = events[0].values
+        return BscConnect(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_getpriority(self, events):
+        args = events[0].values
+        return BscGetpriority(events, PriorityWhich(args[0]), args[1], serialize_result(events[-1], 'priority'))
+
+    def handle_bsc_bind(self, events):
+        args = events[0].values
+        return BscBind(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_setsockopt(self, events):
+        args = events[0].values
+        return BscSetsockopt(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_listen(self, events):
+        args = events[0].values
+        return BscListen(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_sigsuspend(self, events):
+        return BscSigsuspend(events, events[0].values[0], serialize_result(events[-1]))
+
+    def handle_bsc_gettimeofday(self, events):
+        args = events[0].values
+        return BscGettimeofday(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_getrusage(self, events):
+        args = events[0].values
+        return BscGetrusage(events, RusageWho(args[0]), args[1], serialize_result(events[-1]))
+
+    def handle_bsc_getsockopt(self, events):
+        args = events[0].values
+        return BscGetsockopt(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_readv(self, events):
+        args = events[0].values
+        return BscReadv(events, args[0], args[1], args[2], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_writev(self, events):
+        args = events[0].values
+        return BscWritev(events, args[0], args[1], args[2], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_settimeofday(self, events):
+        args = events[0].values
+        return BscSettimeofday(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_fchown(self, events):
+        args = events[0].values
+        return BscFchown(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_fchmod(self, events):
+        args = events[0].values
+        return BscFchmod(events, args[0], serialize_stat_flags(args[1]), serialize_result(events[-1]))
+
+    def handle_bsc_setreuid(self, events):
+        args = events[0].values
+        return BscSetreuid(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_setregid(self, events):
+        args = events[0].values
+        return BscSetregid(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_rename(self, events):
+        old_vnode = self.parse_vnode(events)
+        new_vnode = self.parse_vnode([e for e in events if e not in old_vnode.ktraces])
+        return BscRename(events, old_vnode.path, new_vnode.path, serialize_result(events[-1]))
 
     def handle_obs_killpg(self, events):
         return BscObsKillpg(events, events[0].values[0], events[0].values[1], serialize_result(events[-1]))
