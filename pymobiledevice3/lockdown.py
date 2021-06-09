@@ -141,11 +141,12 @@ class LockdownClient(object):
 
         filename = os.path.join(folder, f'{self.identifier}.plist')
 
-        if os.path.exists(filename):
+        try:
             with open(filename, 'rb') as f:
                 pair_record = plistlib.load(f)
             logging.warning(f'Using iTunes pair record: {self.identifier}.plist')
-        else:
+
+        except (PermissionError, FileNotFoundError):
             logging.warning(f'No iTunes pairing record found for device {self.identifier}')
             if LooseVersion(self.ios_version) >= LooseVersion('13.0'):
                 self.logger.warning('Getting pair record from usbmuxd')
