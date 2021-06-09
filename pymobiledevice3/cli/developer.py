@@ -26,6 +26,7 @@ from pymobiledevice3.services.dvt.instruments.process_control import ProcessCont
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.os_trace import OsTraceService
 from pymobiledevice3.services.screenshot import ScreenshotService
+from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from termcolor import colored
 
 
@@ -487,3 +488,20 @@ def developer_energy(lockdown, pid_list):
         with EnergyMonitor(dvt, pid_list) as energy_monitor:
             for telemetry in energy_monitor:
                 logging.info(telemetry)
+
+
+@developer.command('fetch-symbols', cls=Command)
+@click.argument('out', type=click.Path(dir_okay=True, file_okay=False))
+def developer_fetch_symbols(lockdown, out):
+    """ download the linker and dyld cache to a specified directory """
+    fetch_symbols = DtFetchSymbols(lockdown)
+    files = fetch_symbols.list_files()
+
+    if not os.path.exists(out):
+        os.makedirs(out)
+
+    for i, filename in enumerate(files):
+        filename = os.path.join(out, os.path.basename(filename))
+        with open(filename, 'wb') as f:
+            logging.info(f'writing to: {filename}')
+            fetch_symbols.get_file(i, f)
