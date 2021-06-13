@@ -16,6 +16,7 @@ from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
+from pymobiledevice3.services.dvt.instruments.condition_inducer import ConditionInducer
 from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap, DgbFuncQual, \
     ProcessData
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
@@ -510,21 +511,21 @@ def developer_fetch_symbols(lockdown, out):
 
 
 @developer.group('simulate-location')
-def developer_simulate_location():
+def simulate_location():
     """ simulate-location options. """
     pass
 
 
-@developer_simulate_location.command('clear', cls=Command)
-def developer_simulate_location_clear(lockdown):
+@simulate_location.command('clear', cls=Command)
+def simulate_location_clear(lockdown):
     """ clear simulated location """
     DtSimulateLocation(lockdown).clear()
 
 
-@developer_simulate_location.command('set', cls=Command)
+@simulate_location.command('set', cls=Command)
 @click.argument('latitude', type=click.FLOAT)
 @click.argument('longitude', type=click.FLOAT)
-def developer_simulate_location_set(lockdown, latitude, longitude):
+def simulate_location_set(lockdown, latitude, longitude):
     """
     set a simulated location.
     try:
@@ -533,10 +534,10 @@ def developer_simulate_location_set(lockdown, latitude, longitude):
     DtSimulateLocation(lockdown).set(latitude, longitude)
 
 
-@developer_simulate_location.command('play', cls=Command)
+@simulate_location.command('play', cls=Command)
 @click.argument('filename', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @click.option('--disable-sleep', is_flag=True, default=False)
-def developer_simulate_location_play(lockdown, filename, disable_sleep):
+def simulate_location_play(lockdown, filename, disable_sleep):
     """
     play a .gpx file
     """
@@ -547,3 +548,32 @@ def developer_simulate_location_play(lockdown, filename, disable_sleep):
 def audit(lockdown):
     """ display audit capabilities """
     print_json(Audit(lockdown).device_capabilities())
+
+
+@developer.group('condition')
+def condition():
+    """ condition inducer options. """
+    pass
+
+
+@condition.command('list', cls=Command)
+def condition_list(lockdown):
+    """ list all available conditions """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        print_json(ConditionInducer(dvt).list())
+
+
+@condition.command('clear', cls=Command)
+def condition_clear(lockdown):
+    """ clear current condition """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        ConditionInducer(dvt).clear()
+
+
+@condition.command('set', cls=Command)
+@click.argument('profile_identifier')
+def condition_set(lockdown, profile_identifier):
+    """ set a specific condition """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        ConditionInducer(dvt).set(profile_identifier)
+        input('> Hit RETURN in order to end the current condition')
