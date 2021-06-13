@@ -27,6 +27,7 @@ from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.os_trace import OsTraceService
 from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
+from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from termcolor import colored
 
 
@@ -505,3 +506,37 @@ def developer_fetch_symbols(lockdown, out):
         with open(filename, 'wb') as f:
             logging.info(f'writing to: {filename}')
             fetch_symbols.get_file(i, f)
+
+
+@developer.group('simulate-location')
+def developer_simulate_location():
+    """ simulate-location options. """
+    pass
+
+
+@developer_simulate_location.command('clear', cls=Command)
+def developer_simulate_location_clear(lockdown):
+    """ clear simulated location """
+    DtSimulateLocation(lockdown).clear()
+
+
+@developer_simulate_location.command('set', cls=Command)
+@click.argument('latitude', type=click.FLOAT)
+@click.argument('longitude', type=click.FLOAT)
+def developer_simulate_location_set(lockdown, latitude, longitude):
+    """
+    set a simulated location.
+    try:
+        ... set -- 40.690008 -74.045843 for liberty island
+    """
+    DtSimulateLocation(lockdown).set(latitude, longitude)
+
+
+@developer_simulate_location.command('play', cls=Command)
+@click.argument('filename', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@click.option('--disable-sleep', is_flag=True, default=False)
+def developer_simulate_location_play(lockdown, filename, disable_sleep):
+    """
+    play a .gpx file
+    """
+    DtSimulateLocation(lockdown).play_gpx_file(filename, disable_sleep=disable_sleep)

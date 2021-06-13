@@ -37,6 +37,7 @@ Main features include:
 * Notification listening and triggering (`notify_post()` api)
 * DeveloperDiskImage features:
     * Taking screenshots
+    * Simulate locations
     * Process management
     * Sniffing KDebug messages (**strace** capabilities++)
     * Process monitoring (`top` like)
@@ -129,38 +130,40 @@ for line in SyslogService(lockdown=lockdown).watch():
 
 # Lockdown services
 
-Support | Service | Process | Description
---------|---------|---------|----------------------
-DONE |  `com.apple.afc` | `/usr/libexec/afcd` | File access for `/var/mobile/Media`
-DONE | `com.apple.crashreportcopymobile` | `/usr/libexec/afcd -r` | File access for `/var/mobile/Library/Logs/CrashReports`
-DONE | `com.apple.pcapd` | `/usr/libexec/pcapd` | Sniff device's network traffic
-DONE | `com.apple.syslog_relay` | `/usr/libexec/diagnosticd` | Just streams syslog lines as raw strings
-DONE | `com.apple.os_trace_relay` | `/usr/libexec/diagnosticd` | More extensive syslog monitoring
-DONE | `com.apple.mobile.diagnostics_relay` | `com.apple.mobile.diagnostics_relay` | General diagnostic tools
-DONE | `com.apple.mobile.notification_proxy` | `/usr/libexec/notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()`
-DONE | `com.apple.crashreportmover` | `/usr/libexec/crash_mover` | Just trigger `crash_mover` to move all crash reports into crash directory
-DONE | `com.apple.mobile.MCInstall` | `/usr/libexec/mc_mobile_tunnel` | Profile management
-DONE | `com.apple.mobile.screenshotr` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/XPCServices/com.apple.dt.DTScreenshotService.xpc/com.apple.dt.DTScreenshotService` | Take screenshot into a PNG format
-DONE | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` | Developer instrumentation service
-DONE | `com.apple.mobile.mobile_image_mounter` | `/usr/libexec/mobile_storage_proxy`
-DONE | `com.apple.mobile.house_arrest` | `/usr/libexec/mobile_house_arrest` | Get AFC utils (file management per application bundle)
-DONE | `com.apple.mobile.installation_proxy` | `/usr/libexec/mobile_installation_proxy` | Application managementNot yet | `com.apple.idamd` | `/usr/libexec/idamd` | Allows settings the IDAM configuration (whatever that means...) 
-Not yet | `com.apple.atc` | `/usr/libexec/atc` | AirTraffic related
-Not yet | `com.apple.mobile.assertion_agent` | `/usr/libexec/mobile_assertion_agent` | Create power assertion to prevent different kinds of sleep
-Not yet | `com.apple.ait.aitd` | `/usr/libexec/atc` | AirTraffic related
-Not yet | `com.apple.misagent` | `/usr/libexec/misagent` | Profile related
-Not yet | `com.apple.mobile.file_relay` | `/usr/libexec/mobile_file_relay` | File access for iOS <= 8
-Not yet | `com.apple.mobile.heartbeat` | `/usr/libexec/lockdownd`
-Not yet | `com.apple.mobile.insecure_notification_proxy` | `/usr/libexec/notification_proxy -i` | API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
-Not yet | `com.apple.mobilebackup` | `/usr/libexec/BackupAgent --lockdown`
-Not yet | `com.apple.mobilebackup2` | `/usr/libexec/BackupAgent2 --lockdown`
-Not yet | `com.apple.mobilesync` | `/usr/libexec/SyncAgent --lockdown --oneshot -v`
-Not yet | `com.apple.purpletestr` | `/usr/libexec/PurpleTestr --lockdown --oneshot`
-Not yet | `com.apple.radios.wirelesstester.mobile` | `/usr/local/bin/WirelessTester -l 1 -o /var/mobile/WirelessTester_mobile.log`
-Not yet | `com.apple.radios.wirelesstester.root` | `/usr/local/bin/WirelessTester -l 1 -o /var/mobile/WirelessTester_mobile.log`
-Not yet | `com.apple.springboardservices` | `/usr/libexec/springboardservicesrelay`
-Not yet | `com.apple.thermalmonitor.thermtgraphrelay` | `/usr/libexec/thermtgraphrelay`
-Not yet | `com.apple.webinspector` | `/usr/libexec/webinspectord`
+Support | Service | Description
+--------|---------|----------------------
+DONE |  `com.apple.afc` | File access for `/var/mobile/Media`
+DONE | `com.apple.crashreportcopymobile` | File access for `/var/mobile/Library/Logs/CrashReports`
+DONE | `com.apple.pcapd` | Sniff device's network traffic
+DONE | `com.apple.syslog_relay` | Just streams syslog lines as raw strings
+DONE | `com.apple.os_trace_relay` | More extensive syslog monitoring
+DONE | `com.apple.mobile.diagnostics_relay` | General diagnostic tools
+DONE | `com.apple.mobile.notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()`
+DONE | `com.apple.crashreportmover` | Just trigger `crash_mover` to move all crash reports into crash directory
+DONE | `com.apple.mobile.MCInstall` | Profile management
+DONE | `com.apple.mobile.screenshotr` | Take screenshot into a PNG format
+DONE | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | Developer instrumentation service
+DONE | `com.apple.mobile.mobile_image_mounter` | Image mounter service (used for DeveloperDiskImage mounting)
+DONE | `com.apple.mobile.house_arrest` | Get AFC utils (file management per application bundle)
+DONE | `com.apple.mobile.installation_proxy`|  Application management
+DONE | `com.apple.dt.simulatelocation` | Allows to simulate locations
+Not yet | `com.apple.idamd` | Allows settings the IDAM configuration (whatever that means...)
+Not yet | `com.apple.atc` | AirTraffic related
+Not yet | `com.apple.mobile.assertion_agent` | Create power assertion to prevent different kinds of sleep
+Not yet | `com.apple.ait.aitd` | AirTraffic related
+Not yet | `com.apple.misagent` | Profile related
+Not yet | `com.apple.mobile.file_relay` | File access for iOS <= 8
+Not yet | `com.apple.mobile.heartbeat` | Just a ping to `lockdownd` service
+Not yet | `com.apple.mobile.insecure_notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
+Not yet | `com.apple.mobilebackup` |
+Not yet | `com.apple.mobilebackup2` |
+Not yet | `com.apple.mobilesync` |
+Not yet | `com.apple.purpletestr` |
+Not yet | `com.apple.radios.wirelesstester.mobile` |
+Not yet | `com.apple.radios.wirelesstester.root` |
+Not yet | `com.apple.springboardservices` | Icon related
+Not yet | `com.apple.thermalmonitor.thermtgraphrelay` |
+Not yet | `com.apple.webinspector` | Used to debug WebViews
 
 ## `com.apple.instruments.remoteserver.DVTSecureSocketProxy`
 
