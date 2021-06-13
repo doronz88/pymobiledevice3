@@ -132,18 +132,24 @@ class DvtSecureSocketProxyService(object):
     INSTRUMENTS_MESSAGE_TYPE = 2
     EXPECTS_REPLY_MASK = 0x1000
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownClient, service_name=None, ssl=True):
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
 
-        if LooseVersion(lockdown.ios_version) >= LooseVersion('14.0'):
-            self.service = self.lockdown.start_developer_service(self.SERVICE_NAME)
+        if service_name is None:
+            if LooseVersion(lockdown.ios_version) >= LooseVersion('14.0'):
+                self.service = self.lockdown.start_developer_service(self.SERVICE_NAME)
+            else:
+                self.service = self.lockdown.start_developer_service(self.OLD_SERVICE_NAME)
+                if hasattr(self.service.socket, '_sslobj'):
+                    # after the remoteserver protocol is successfully paired, you need to close the ssl protocol
+                    # channel and use clear text transmission
+                    self.service.socket._sslobj = None
         else:
-            self.service = self.lockdown.start_developer_service(self.OLD_SERVICE_NAME)
-            if hasattr(self.service.socket, '_sslobj'):
-                # after the remoteserver protocol is successfully paired, you need to close the ssl protocol
-                # channel and use clear text transmission
+            self.service = self.lockdown.start_developer_service(service_name)
+            if (not ssl) and hasattr(self.service.socket, '_sslobj'):
                 self.service.socket._sslobj = None
+
         self.supported_identifiers = {}
         self.last_channel_code = 0
         self.cur_message = 0
