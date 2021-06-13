@@ -9,3 +9,4 @@ pygments
 hexdump
 arrow
 daemonize
+gpxpy
