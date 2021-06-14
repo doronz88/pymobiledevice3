@@ -616,10 +616,9 @@ def jsonify_parsed_stackshot(stackshot, root=None, index=0):
 
 def make_event(buf):
     timestamp, args_buf, tid, debugid, cpuid, unused = struct.unpack(kd_buf_format, buf)
-    return KdBuf(
-        timestamp, args_buf, struct.unpack('<QQQQ', args_buf), tid, debugid, debugid & KDBG_EVENTID_MASK,
-                                                                             debugid & KDBG_FUNC_MASK
-    )
+    eventid = debugid & KDBG_EVENTID_MASK
+    qual = debugid & KDBG_FUNC_MASK
+    return KdBuf(timestamp, args_buf, struct.unpack('<QQQQ', args_buf), tid, debugid, eventid, qual)
 
 
 ProcessData = namedtuple('namedtuple', ['pid', 'name'])
