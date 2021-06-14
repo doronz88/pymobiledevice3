@@ -288,7 +288,7 @@ def parse_filters(filters):
     parsed = set()
     for filter_ in filters:
         print(filter_)
-        if filter_ == 'fs_usage':
+        if filter_.lower() == 'bsc':
             parsed |= {0x03010000, 0x040c0000, 0x07ff0000}  # VFS_LOOKUP, BSC operations, TRACE
         else:
             parsed.add(int(filter_, 16) << 16)
