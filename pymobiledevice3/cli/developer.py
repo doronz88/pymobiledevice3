@@ -25,12 +25,16 @@ from pymobiledevice3.services.dvt.instruments.kdebug_events_parser import Kdebug
 from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMonitor, ConnectionDetectionEvent
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
-from pymobiledevice3.services.audit import Audit
+from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 from pymobiledevice3.services.os_trace import OsTraceService
 from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from termcolor import colored
+
+
+def wait_return():
+    input('> Hit RETURN to exit')
 
 
 @click.group()
@@ -544,10 +548,45 @@ def simulate_location_play(lockdown, filename, disable_sleep):
     DtSimulateLocation(lockdown).play_gpx_file(filename, disable_sleep=disable_sleep)
 
 
-@developer.command('audit-capabilities', cls=Command)
-def audit(lockdown):
-    """ display audit capabilities """
-    print_json(Audit(lockdown).device_capabilities())
+@developer.group('accessibility')
+def accessibility():
+    """ accessibility options. """
+    pass
+
+
+@accessibility.command('capabilities', cls=Command)
+def accessibility_capabilities(lockdown):
+    """ display accessibility capabilities """
+    print_json(AccessibilityAudit(lockdown).device_capabilities())
+
+
+@accessibility.group('settings')
+def accessibility_settings():
+    """ accessibility settings. """
+    pass
+
+
+@accessibility_settings.command('show', cls=Command)
+def accessibility_settings_show(lockdown):
+    """ show current settings """
+    print_json(AccessibilityAudit(lockdown).get_current_settings())
+
+
+@accessibility_settings.command('set', cls=Command)
+@click.argument('setting', type=click.Choice(
+    ['INVERT_COLORS', 'INCREASE_CONTRAST', 'REDUCE_TRANSPARENCY', 'REDUCE_MOTION', 'FONT_SIZE']))
+@click.argument('value', type=click.INT)
+def accessibility_settings_set(lockdown, setting, value):
+    """ show current settings """
+    service = AccessibilityAudit(lockdown)
+    service.set_setting(setting, value)
+    wait_return()
+
+
+@accessibility.command('shell', cls=Command)
+def accessibility_shell(lockdown):
+    """ start and ipython accessibility shell """
+    AccessibilityAudit(lockdown).shell()
 
 
 @developer.group('condition')
@@ -576,4 +615,4 @@ def condition_set(lockdown, profile_identifier):
     """ set a specific condition """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         ConditionInducer(dvt).set(profile_identifier)
-        input('> Hit RETURN in order to end the current condition')
+        wait_return()
