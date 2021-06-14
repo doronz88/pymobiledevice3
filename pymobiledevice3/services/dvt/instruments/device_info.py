@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from pymobiledevice3.exceptions import DvtDirListError
-from pymobiledevice3.services.dvt.structs import MessageAux
+from pymobiledevice3.services.remote_server import MessageAux
 
 
 class DeviceInfo:
