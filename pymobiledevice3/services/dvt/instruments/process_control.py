@@ -1,4 +1,4 @@
-from pymobiledevice3.services.dvt.structs import MessageAux
+from pymobiledevice3.services.remote_server import MessageAux
 
 
 class ProcessControl:

@@ -25,7 +25,7 @@ from pymobiledevice3.services.dvt.instruments.kdebug_events_parser import Kdebug
 from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMonitor, ConnectionDetectionEvent
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
-from pymobiledevice3.services.dvt.instruments.audit import Audit
+from pymobiledevice3.services.audit import Audit
 from pymobiledevice3.services.os_trace import OsTraceService
 from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols

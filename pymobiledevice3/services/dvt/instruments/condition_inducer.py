@@ -1,7 +1,7 @@
 import logging
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
-from pymobiledevice3.services.dvt.structs import MessageAux
+from pymobiledevice3.services.remote_server import MessageAux
 
 
 class ConditionInducer:

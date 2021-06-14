@@ -4,7 +4,7 @@ import os
 import struct
 from io import BytesIO
 
-from pymobiledevice3.services.dvt.tap import Tap
+from pymobiledevice3.services.remote_server import Tap
 
 CMD_DEFINE_TABLE = 1
 CMD_END_ROW = 2
@@ -98,10 +98,6 @@ class ActivityTraceTap(Tap):
         self.generation = 0
         self.background = 0
         self.tables = []
-
-    def __enter__(self):
-        super().__enter__()
-        return self
 
     def _get_next_message(self):
         message = b''

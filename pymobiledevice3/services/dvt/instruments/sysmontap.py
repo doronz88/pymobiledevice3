@@ -1,7 +1,7 @@
 import dataclasses
 
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
-from pymobiledevice3.services.dvt.tap import Tap
+from pymobiledevice3.services.remote_server import Tap
 
 
 class Sysmontap(Tap):
