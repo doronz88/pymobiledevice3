@@ -306,6 +306,32 @@ class CsopsOps(enum.Enum):
     CS_OPS_CLEAR_LV = 15
 
 
+class ProcInfoCall(enum.Enum):
+    PROC_INFO_CALL_LISTPIDS = 0x1
+    PROC_INFO_CALL_PIDINFO = 0x2
+    PROC_INFO_CALL_PIDFDINFO = 0x3
+    PROC_INFO_CALL_KERNMSGBUF = 0x4
+    PROC_INFO_CALL_SETCONTROL = 0x5
+    PROC_INFO_CALL_PIDFILEPORTINFO = 0x6
+    PROC_INFO_CALL_TERMINATE = 0x7
+    PROC_INFO_CALL_DIRTYCONTROL = 0x8
+    PROC_INFO_CALL_PIDRUSAGE = 0x9
+    PROC_INFO_CALL_PIDORIGINATORINFO = 0xa
+    PROC_INFO_CALL_LISTCOALITIONS = 0xb
+    PROC_INFO_CALL_CANUSEFGHW = 0xc
+    PROC_INFO_CALL_PIDDYNKQUEUEINFO = 0xd
+    PROC_INFO_CALL_UDATA_INFO = 0xe
+
+
+class FsSnapshotOp(enum.Enum):
+    SNAPSHOT_OP_CREATE = 0x01
+    SNAPSHOT_OP_DELETE = 0x02
+    SNAPSHOT_OP_RENAME = 0x03
+    SNAPSHOT_OP_MOUNT = 0x04
+    SNAPSHOT_OP_REVERT = 0x05
+    SNAPSHOT_OP_ROOT = 0x06
+
+
 def serialize_open_flags(flags: int) -> List[BscOpenFlags]:
     call_flags = []
     for flag in (BscOpenFlags.O_RDWR, BscOpenFlags.O_WRONLY):
@@ -344,6 +370,13 @@ def serialize_result(end_event, success_name='', fmt=lambda x: x) -> str:
         err = f'errno: {error_code}'
     success = f'{success_name}: {fmt(res)}' if success_name else ''
     return success if not error_code else err
+
+
+def serialize_access_flags(flags: int) -> List[BscAccessFlags]:
+    amode = [flag for flag in BscAccessFlags if flag.value & flags]
+    if not amode:
+        amode = [BscAccessFlags.F_OK]
+    return amode
 
 
 @dataclass
@@ -469,12 +502,1836 @@ class BscLstat64:
 
 
 @dataclass
+class BscGetdirentries64:
+    ktraces: List
+    fd: int
+    buf: int
+    bufsize: int
+    position: int
+    result: str
+
+    def __str__(self):
+        return f'getdirentries64({self.fd}, {hex(self.buf)}, {self.bufsize}, {hex(self.position)}), {self.result}'
+
+
+@dataclass
+class BscStatfs64:
+    ktraces: List
+    path: str
+    buf: int
+    result: str
+
+    def __str__(self):
+        rep = f'statfs64("{self.path}", {hex(self.buf)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscFstatfs64:
+    ktraces: List
+    fd: int
+    buf: int
+    result: str
+
+    def __str__(self):
+        rep = f'fstatfs64({self.fd}, {hex(self.buf)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetfsstat64:
+    ktraces: List
+    buf: int
+    bufsize: int
+    flags: int
+    result: str
+
+    def __str__(self):
+        return f'getfsstat64({hex(self.buf)}, {self.bufsize}, {self.flags}), {self.result}'
+
+
+@dataclass
+class BscPthreadFchdir:
+    ktraces: List
+    fd: int
+    result: str
+
+    def __str__(self):
+        rep = f'pthread_fchdir({self.fd})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscAudit:
+    ktraces: List
+    record: int
+    length: int
+    result: str
+
+    def __str__(self):
+        rep = f'audit({hex(self.record)}, {self.length})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscAuditon:
+    ktraces: List
+    cmd: int
+    data: int
+    length: int
+    result: str
+
+    def __str__(self):
+        rep = f'auditon({self.cmd}, {hex(self.data)}, {self.length})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetauid:
+    ktraces: List
+    auid: int
+    result: str
+
+    def __str__(self):
+        rep = f'getauid({hex(self.auid)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSetauid:
+    ktraces: List
+    auid: int
+    result: str
+
+    def __str__(self):
+        rep = f'setauid({hex(self.auid)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
 class BscBsdthreadCreate:
     ktraces: List
     pid: int
 
     def __str__(self):
         return 'thread_create()'
+
+
+@dataclass
+class BscKqueue:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        return f'kqueue(), {self.result}'
+
+
+@dataclass
+class BscKevent:
+    ktraces: List
+    kq: int
+    changelist: int
+    nchanges: int
+    eventlist: int
+    result: str
+
+    def __str__(self):
+        return f'kevent({self.kq}, {hex(self.changelist)}, {self.nchanges}, {hex(self.eventlist)}), {self.result}'
+
+
+@dataclass
+class BscLchown:
+    ktraces: List
+    path: str
+    owner: int
+    group: int
+    result: str
+
+    def __str__(self):
+        rep = f'lchown("{self.path}", {self.owner}, {self.group})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscBsdthreadRegister:
+    ktraces: List
+    threadstart: int
+    wqthread: int
+    pthsize: int
+    dummy_value: int
+    result: str
+
+    def __str__(self):
+        rep = f'thread_register({hex(self.threadstart)}, {hex(self.wqthread)}, {self.pthsize}, {hex(self.dummy_value)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscWorkqOpen:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = f'workq_open()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscWorkqKernreturn:
+    ktraces: List
+    options: int
+    item: int
+    affinity: int
+    prio: int
+    result: str
+
+    def __str__(self):
+        return f'workq_kernreturn({self.options}, {hex(self.item)}, {self.affinity}, {self.prio}), {self.result}'
+
+
+@dataclass
+class BscKevent64:
+    ktraces: List
+    kq: int
+    changelist: int
+    nchanges: int
+    eventlist: int
+    result: str
+
+    def __str__(self):
+        return f'kevent64({self.kq}, {hex(self.changelist)}, {self.nchanges}, {hex(self.eventlist)}), {self.result}'
+
+
+@dataclass
+class BscThreadSelfid:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        return f'thread_selfid(), {self.result}'
+
+
+@dataclass
+class BscKeventQos:
+    ktraces: List
+    kq: int
+    changelist: int
+    nchanges: int
+    eventlist: int
+    result: str
+
+    def __str__(self):
+        return f'kevent_qos({self.kq}, {hex(self.changelist)}, {self.nchanges}, {hex(self.eventlist)}), {self.result}'
+
+
+@dataclass
+class BscKeventId:
+    ktraces: List
+    kq: int
+    changelist: int
+    nchanges: int
+    eventlist: int
+    result: str
+
+    def __str__(self):
+        return f'kevent_id({self.kq}, {hex(self.changelist)}, {self.nchanges}, {hex(self.eventlist)}), {self.result}'
+
+
+@dataclass
+class BscMacSyscall:
+    ktraces: List
+    policy: int
+    call: int
+    arg: int
+    result: str
+
+    def __str__(self):
+        rep = f'mac_syscall({hex(self.policy)}, {self.call}, {hex(self.arg)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscPselect:
+    ktraces: List
+    nfds: int
+    readfds: int
+    writefds: int
+    errorfds: int
+    result: str
+    no_cancel: bool = False
+
+    def __str__(self):
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return (f'pselect{no_cancel}({self.nfds}, {hex(self.readfds)}, {hex(self.writefds)}, {hex(self.errorfds)}),'
+                f' {self.result}')
+
+
+@dataclass
+class BscFsgetpath:
+    ktraces: List
+    buf: int
+    bufsize: int
+    fsid: int
+    objid: int
+    path: str
+    result: str
+
+    def __str__(self):
+        rep = f'fsgetpath({hex(self.buf)}, {self.bufsize}, {hex(self.fsid)}, {self.objid}), {self.result}'
+        if self.path:
+            rep += f' path: "{self.path}"'
+        return rep
+
+
+@dataclass
+class BscSysFileportMakeport:
+    ktraces: List
+    fd: int
+    portnamep: int
+    result: str
+
+    def __str__(self):
+        rep = f'fileport_makeport({self.fd}, {hex(self.portnamep)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSysFileportMakefd:
+    ktraces: List
+    port: int
+    result: str
+
+    def __str__(self):
+        return f'fileport_makefd({self.port}), {self.result}'
+
+
+@dataclass
+class BscAuditSessionPort:
+    ktraces: List
+    asid: int
+    portnamep: int
+    result: str
+
+    def __str__(self):
+        rep = f'audit_session_port({self.asid}, {hex(self.portnamep)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscPidSuspend:
+    ktraces: List
+    pid: int
+    result: str
+
+    def __str__(self):
+        rep = f'pid_suspend({self.pid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscPidResume:
+    ktraces: List
+    pid: int
+    result: str
+
+    def __str__(self):
+        rep = f'pid_resume({self.pid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscPidHibernate:
+    ktraces: List
+    pid: int
+    result: str
+
+    def __str__(self):
+        rep = f'pid_hibernate({self.pid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscPidShutdownSockets:
+    ktraces: List
+    pid: int
+    level: int
+    result: str
+
+    def __str__(self):
+        rep = f'pid_shutdown_sockets({self.pid}, {self.level})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSharedRegionMapAndSlideNp:
+    ktraces: List
+    fd: int
+    count: int
+    mappings: int
+    slide: int
+    result: str
+
+    def __str__(self):
+        rep = f'shared_region_map_and_slide_np({self.fd}, {self.count}, {hex(self.mappings)}, {self.slide})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscKasInfo:
+    ktraces: List
+    selector: int
+    value: int
+    size: int
+    result: str
+
+    def __str__(self):
+        rep = f'kas_info({self.selector}, {hex(self.value)}, {hex(self.size)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMemorystatusControl:
+    ktraces: List
+    command: int
+    pid: int
+    flags: int
+    buffer: int
+    result: str
+
+    def __str__(self):
+        rep = f'memorystatus_control({self.command}, {self.pid}, {self.flags}, {hex(self.buffer)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGuardedOpenNp:
+    ktraces: List
+    path: str
+    guard: int
+    guardflags: int
+    flags: List
+    result: str
+
+    def __str__(self):
+        flags = ' | '.join(map(lambda f: f.name, self.flags))
+        return f'guarded_open_np("{self.path}", {hex(self.guard)}, {self.guardflags}, {flags}), {self.result}'
+
+
+@dataclass
+class BscGuardedCloseNp:
+    ktraces: List
+    fd: int
+    guard: int
+    result: str
+
+    def __str__(self):
+        rep = f'guarded_close_np({self.fd}, {hex(self.guard)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGuardedKqueueNp:
+    ktraces: List
+    guard: int
+    guardflags: int
+    result: str
+
+    def __str__(self):
+        rep = f'guarded_kqueue_np({hex(self.guard)}, {self.guardflags})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscChangeFdguardNp:
+    ktraces: List
+    fd: int
+    guard: int
+    guardflags: int
+    nguard: int
+    result: str
+
+    def __str__(self):
+        rep = f'change_fdguard_np({self.fd}, {hex(self.guard)}, {self.guardflags}, {hex(self.nguard)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscUsrctl:
+    ktraces: List
+    flags: int
+    result: str
+
+    def __str__(self):
+        rep = f'usrctl({self.flags})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscProcRlimitControl:
+    ktraces: List
+    pid: int
+    flavor: int
+    arg: int
+    result: str
+
+    def __str__(self):
+        rep = f'proc_rlimit_control({self.pid}, {self.flavor}, {hex(self.arg)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscConnectx:
+    ktraces: List
+    socket: int
+    endpoints: int
+    associd: int
+    flags: int
+    result: str
+
+    def __str__(self):
+        rep = f'connectx({self.socket}, {hex(self.endpoints)}, {self.associd}, {self.flags})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscDisconnectx:
+    ktraces: List
+    s: int
+    aid: int
+    cid: int
+    result: str
+
+    def __str__(self):
+        rep = f'disconnectx({self.s}, {self.aid}, {self.cid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscPeeloff:
+    ktraces: List
+    s: int
+    aid: int
+    result: str
+
+    def __str__(self):
+        rep = f'peeloff({self.s}, {self.aid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSocketDelegate:
+    ktraces: List
+    domain: socket.AddressFamily
+    type: socket.SocketKind
+    protocol: int
+    epid: int
+    result: str
+
+    def __str__(self):
+        return f'socket_delegate({self.domain.name}, {self.type.name}, {self.protocol}, {self.epid}), {self.result}'
+
+
+@dataclass
+class BscTelemetry:
+    ktraces: List
+    cmd: int
+    deadline: int
+    interval: int
+    leeway: int
+    result: str
+
+    def __str__(self):
+        rep = f'telemetry({self.cmd}, {self.deadline}, {self.interval}, {self.leeway})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscProcUuidPolicy:
+    ktraces: List
+    operation: int
+    uuid: int
+    uuidlen: int
+    flags: int
+    result: str
+
+    def __str__(self):
+        rep = f'proc_uuid_policy({self.operation}, {self.uuid}, {self.uuidlen}, {self.flags})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMemorystatusGetLevel:
+    ktraces: List
+    level: int
+    result: str
+
+    def __str__(self):
+        rep = f'memorystatus_get_level({hex(self.level)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSystemOverride:
+    ktraces: List
+    timeout: int
+    flags: int
+    result: str
+
+    def __str__(self):
+        rep = f'system_override({self.timeout}, {self.flags})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscVfsPurge:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = f'vfs_purge()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSfiCtl:
+    ktraces: List
+    operation: int
+    sfi_class: int
+    time: int
+    out_time: int
+    result: str
+
+    def __str__(self):
+        rep = f'sfi_ctl({self.operation}, {self.sfi_class}, {self.time}, {hex(self.out_time)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSfiPidctl:
+    ktraces: List
+    operation: int
+    pid: int
+    sfi_flags: int
+    out_sfi_flags: int
+    result: str
+
+    def __str__(self):
+        rep = f'sfi_pidctl({self.operation}, {self.pid}, {self.sfi_flags}, {hex(self.out_sfi_flags)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscCoalition:
+    ktraces: List
+    operation: int
+    cid: int
+    flags: int
+    result: str
+
+    def __str__(self):
+        rep = f'coalition({self.operation}, {hex(self.cid)}, {self.flags})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscCoalitionInfo:
+    ktraces: List
+    flavor: int
+    cid: int
+    buffer: int
+    bufsize: int
+    result: str
+
+    def __str__(self):
+        rep = f'coalition_info({self.flavor}, {hex(self.cid)}, {hex(self.buffer)}, {hex(self.bufsize)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscNecpMatchPolicy:
+    ktraces: List
+    parameters: int
+    parameters_size: int
+    returned_result: int
+    result: str
+
+    def __str__(self):
+        rep = f'necp_match_policy({hex(self.parameters)}, {self.parameters_size}, {hex(self.returned_result)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetattrlistbulk:
+    ktraces: List
+    dirfd: int
+    alist: int
+    attributeBuffer: int
+    bufferSize: int
+    result: str
+
+    def __str__(self):
+        return (f'getattrlistbulk({self.dirfd}, {hex(self.alist)}, {hex(self.attributeBuffer)}, {self.bufferSize}),'
+                f' {self.result}')
+
+
+@dataclass
+class BscClonefileat:
+    ktraces: List
+    src_dirfd: int
+    src: str
+    dst_dirfd: int
+    dst: str
+    result: str
+
+    def __str__(self):
+        rep = f'clonefileat({self.src_dirfd}, "{self.src}", {self.dst_dirfd}, "{self.dst}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscRenameat:
+    ktraces: List
+    fromfd: int
+    from_: str
+    tofd: int
+    to: str
+    result: str
+
+    def __str__(self):
+        rep = f'renameat({self.fromfd}, "{self.from_}", {self.tofd}, "{self.to}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscFaccessat:
+    ktraces: List
+    fd: int
+    path: str
+    amode: List
+    flag: int
+    result: str
+
+    def __str__(self):
+        amode = ' | '.join(map(lambda f: f.name, self.amode))
+        rep = f'faccessat({self.fd}, "{self.path}", {amode}, {self.flag})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscFchmodat:
+    ktraces: List
+    fd: int
+    path: str
+    mode: List
+    flag: int
+    result: str
+
+    def __str__(self):
+        mode = ' | '.join(map(lambda f: f.name, self.mode))
+        rep = f'fchmodat({self.fd}, "{self.path}", {mode}, {self.flag})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscFchownat:
+    ktraces: List
+    fd: int
+    path: str
+    uid: int
+    gid: int
+    result: str
+
+    def __str__(self):
+        rep = f'fchownat({self.fd}, "{self.path}", {self.uid}, {self.gid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscFstatat:
+    ktraces: List
+    fd: int
+    path: str
+    ub: int
+    flag: int
+    result: str
+
+    def __str__(self):
+        rep = f'fstatat({self.fd}, "{self.path}", {hex(self.ub)}, {self.flag})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscFstatat64:
+    ktraces: List
+    fd: int
+    path: str
+    ub: int
+    flag: int
+    result: str
+
+    def __str__(self):
+        rep = f'fstatat64({self.fd}, "{self.path}", {hex(self.ub)}, {self.flag})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscLinkat:
+    ktraces: List
+    fd1: int
+    path: str
+    fd2: int
+    link: str
+    result: str
+
+    def __str__(self):
+        rep = f'linkat({self.fd1}, "{self.path}", {self.fd2}, "{self.link}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscUnlinkat:
+    ktraces: List
+    fd: int
+    path: str
+    flag: int
+    result: str
+
+    def __str__(self):
+        rep = f'unlinkat({self.fd}, "{self.path}", {self.flag})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscReadlinkat:
+    ktraces: List
+    fd: int
+    path: str
+    buf: int
+    bufsize: int
+    result: str
+
+    def __str__(self):
+        return f'readlinkat({self.fd}, "{self.path}", {hex(self.buf)}, {self.bufsize}), {self.result}'
+
+
+@dataclass
+class BscSymlinkat:
+    ktraces: List
+    path1: str
+    fd: int
+    path2: str
+    result: str
+
+    def __str__(self):
+        rep = f'symlinkat("{self.path1}", {self.fd}, "{self.path2}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMkdirat:
+    ktraces: List
+    fd: int
+    path: str
+    mode: List
+    result: str
+
+    def __str__(self):
+        mode = ' | '.join(map(lambda f: f.name, self.mode))
+        rep = f'mkdirat({self.fd}, "{self.path}", {mode})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetattrlistat:
+    ktraces: List
+    fd: int
+    path: str
+    alist: int
+    attributeBuffer: int
+    result: str
+
+    def __str__(self):
+        rep = f'getattrlistat({self.fd}, "{self.path}", {hex(self.alist)}, {hex(self.attributeBuffer)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscProcTraceLog:
+    ktraces: List
+    pid: int
+    uniqueid: int
+    result: str
+
+    def __str__(self):
+        rep = f'proc_trace_log({self.pid}, {self.uniqueid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscBsdthreadCtl:
+    ktraces: List
+    cmd: int
+    arg1: int
+    arg2: int
+    arg3: int
+    result: str
+
+    def __str__(self):
+        rep = f'bsdthread_ctl({self.cmd}, {hex(self.arg1)}, {hex(self.arg2)}, {hex(self.arg3)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscOpenbyidNp:
+    ktraces: List
+    fsid: int
+    objid: int
+    oflags: int
+    result: str
+
+    def __str__(self):
+        oflags = ' | '.join(map(lambda f: f.name, self.oflags))
+        return f'openbyid_np({self.fsid}, {self.objid}, {oflags}), {self.result}'
+
+
+@dataclass
+class BscRecvmsgX:
+    ktraces: List
+    s: int
+    msgp: int
+    cnt: int
+    flags: int
+    result: str
+
+    def __str__(self):
+        return f'recvmsg_x({self.s}, {hex(self.msgp)}, {self.cnt}, {self.flags}), {self.result}'
+
+
+@dataclass
+class BscSendmsgX:
+    ktraces: List
+    s: int
+    msgp: int
+    cnt: int
+    flags: int
+    result: str
+
+    def __str__(self):
+        return f'sendmsg_x({self.s}, {hex(self.msgp)}, {self.cnt}, {self.flags}), {self.result}'
+
+
+@dataclass
+class BscThreadSelfusage:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        return f'thread_selfusage(), {self.result}'
+
+
+@dataclass
+class BscCsrctl:
+    ktraces: List
+    op: int
+    useraddr: int
+    usersize: int
+    result: str
+
+    def __str__(self):
+        rep = f'csrctl({self.op}, {hex(self.useraddr)}, {self.usersize})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGuardedOpenDprotectedNp:
+    ktraces: List
+    path: str
+    guard: int
+    guardflags: int
+    flags: List
+    result: str
+
+    def __str__(self):
+        oflags = ' | '.join(map(lambda f: f.name, self.flags))
+        return (f'guarded_open_dprotected_np("{self.path}", {hex(self.guard)}, {self.guardflags}, {oflags})'
+                f', {self.result}')
+
+
+@dataclass
+class BscGuardedWriteNp:
+    ktraces: List
+    fd: int
+    guard: int
+    cbuf: int
+    nbyte: int
+    result: str
+
+    def __str__(self):
+        return f'guarded_write_np({self.fd}, {hex(self.guard)}, {hex(self.cbuf)}, {self.nbyte}), {self.result}'
+
+
+@dataclass
+class BscGuardedPwriteNp:
+    ktraces: List
+    fd: int
+    guard: int
+    buf: int
+    nbyte: int
+    result: str
+
+    def __str__(self):
+        return f'guarded_pwrite_np({self.fd}, {hex(self.guard)}, {hex(self.buf)}, {self.nbyte}), {self.result}'
+
+
+@dataclass
+class BscGuardedWritevNp:
+    ktraces: List
+    fd: int
+    guard: int
+    iovp: int
+    iovcnt: int
+    result: str
+
+    def __str__(self):
+        return f'guarded_writev_np({self.fd}, {hex(self.guard)}, {hex(self.iovp)}, {self.iovcnt}), {self.result}'
+
+
+@dataclass
+class BscRenameatxNp:
+    ktraces: List
+    fromfd: int
+    from_: str
+    tofd: int
+    to: str
+    result: str
+
+    def __str__(self):
+        rep = f'renameatx_np({self.fromfd}, "{self.from_}", {self.tofd}, "{self.to}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMremapEncrypted:
+    ktraces: List
+    addr: int
+    len: int
+    cryptid: int
+    cputype: int
+    result: str
+
+    def __str__(self):
+        rep = f'mremap_encrypted({hex(self.addr)}, {self.len}, {self.cryptid}, {self.cputype})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscNetagentTrigger:
+    ktraces: List
+    agent_uuid: int
+    agent_uuidlen: int
+    result: str
+
+    def __str__(self):
+        rep = f'netagent_trigger({self.agent_uuid}, {self.agent_uuidlen})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscStackSnapshotWithConfig:
+    ktraces: List
+    stackshot_config_version: int
+    stackshot_config: int
+    stackshot_config_size: int
+    result: str
+
+    def __str__(self):
+        rep = (f'stack_snapshot_with_config({self.stackshot_config_version}, {hex(self.stackshot_config)}'
+               f', {self.stackshot_config_size})')
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMicrostackshot:
+    ktraces: List
+    tracebuf: int
+    tracebuf_size: int
+    flags: int
+    result: str
+
+    def __str__(self):
+        return f'microstackshot({hex(self.tracebuf)}, {self.tracebuf_size}, {self.flags}), {self.result}'
+
+
+@dataclass
+class BscGrabPgoData:
+    ktraces: List
+    uuid: int
+    flags: int
+    buffer: int
+    size: int
+    result: str
+
+    def __str__(self):
+        return f'grab_pgo_data({hex(self.uuid)}, {self.flags}, {hex(self.buffer)}, {self.size}), {self.result}'
+
+
+@dataclass
+class BscPersona:
+    ktraces: List
+    operation: int
+    flags: int
+    buffer: int
+    size: int
+    result: str
+
+    def __str__(self):
+        rep = f'persona({self.operation}, {self.flags}, {hex(self.buffer)}, {hex(self.size)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMachEventlinkSignal:
+    ktraces: List
+    eventlink_port: int
+    signal_count: int
+    result: str
+
+    def __str__(self):
+        rep = f'mach_eventlink_signal({self.eventlink_port}, {self.signal_count})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMachEventlinkWaitUntil:
+    ktraces: List
+    eventlink_port: int
+    wait_count: int
+    deadline: int
+    clock_id: int
+    result: str
+
+    def __str__(self):
+        rep = (f'mach_eventlink_wait_until({self.eventlink_port}, {hex(self.wait_count)}, {self.deadline}'
+               f', {self.clock_id})')
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMachEventlinkSignalWaitUntil:
+    ktraces: List
+    eventlink_port: int
+    wait_count: int
+    signal_count: int
+    deadline: int
+    result: str
+
+    def __str__(self):
+        rep = (f'mach_eventlink_signal_wait_until({self.eventlink_port}, {hex(self.wait_count)}, {self.signal_count}'
+               f', {self.deadline})')
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscWorkIntervalCtl:
+    ktraces: List
+    operation: int
+    work_interval_id: int
+    arg: int
+    len: int
+    result: str
+
+    def __str__(self):
+        rep = f'work_interval_ctl({self.operation}, {self.work_interval_id}, {hex(self.arg)}, {self.len})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetentropy:
+    ktraces: List
+    buffer: int
+    size: int
+    result: str
+
+    def __str__(self):
+        rep = f'getentropy({hex(self.buffer)}, {self.size})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscNecpOpen:
+    ktraces: List
+    flags: int
+    result: str
+
+    def __str__(self):
+        return f'necp_open({self.flags}), {self.result}'
+
+
+@dataclass
+class BscNecpClientAction:
+    ktraces: List
+    necp_fd: int
+    action: int
+    client_id: int
+    client_id_len: int
+    result: str
+
+    def __str__(self):
+        return (f'necp_client_action({self.necp_fd}, {self.action}, {hex(self.client_id)}, {self.client_id_len})'
+                f', {self.result}')
+
+
+@dataclass
+class BscNexusOpen:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        return f'nexus_open(), {self.result}'
+
+
+@dataclass
+class BscNexusRegister:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = 'nexus_register()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscNexusDeregister:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = 'nexus_deregister()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscNexusCreate:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = 'nexus_create()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscNexusDestroy:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = 'nexus_destroy()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscNexusGetOpt:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = 'nexus_get_opt()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscNexusSetOpt:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = 'nexus_set_opt()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscChannelOpen:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = 'channel_open()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscChannelGetInfo:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = 'channel_get_info()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscChannelSync:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = 'channel_sync()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscChannelGetOpt:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = 'channel_get_opt()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscChannelSetOpt:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = 'channel_set_opt()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscUlockWait:
+    ktraces: List
+    operation: int
+    addr: int
+    value: int
+    timeout: int
+    result: str
+
+    def __str__(self):
+        return f'ulock_wait({self.operation}, {hex(self.addr)}, {self.value}, {self.timeout}), {self.result}'
+
+
+@dataclass
+class BscUlockWake:
+    ktraces: List
+    operation: int
+    addr: int
+    wake_value: int
+    result: str
+
+    def __str__(self):
+        return f'ulock_wake({self.operation}, {hex(self.addr)}, {self.wake_value}), {self.result}'
+
+
+@dataclass
+class BscFclonefileat:
+    ktraces: List
+    src_fd: int
+    dst_dirfd: int
+    dst: str
+    flags: int
+    result: str
+
+    def __str__(self):
+        rep = f'fclonefileat({self.src_fd}, {self.dst_dirfd}, "{self.dst}", {self.flags})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscFsSnapshot:
+    ktraces: List
+    op: FsSnapshotOp
+    dirfd: int
+    name1: str
+    name2: str
+    result: str
+
+    def __str__(self):
+        rep = f'fs_snapshot({self.op.name}, {self.dirfd}, "{self.name1}", "{self.name2}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscTerminateWithPayload:
+    ktraces: List
+    pid: int
+    reason_namespace: int
+    reason_code: int
+    payload: int
+    result: str
+
+    def __str__(self):
+        rep = (f'terminate_with_payload({self.pid}, {self.reason_namespace}, {hex(self.reason_code)}'
+               f', {hex(self.payload)})')
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscAbortWithPayload:
+    ktraces: List
+    reason_namespace: int
+    reason_code: int
+    payload: int
+    payload_size: int
+
+    def __str__(self):
+        return (f'abort_with_payload({self.reason_namespace}, {hex(self.reason_code)}, {hex(self.payload)}'
+                f', {self.payload_size})')
+
+
+@dataclass
+class BscNecpSessionOpen:
+    ktraces: List
+    flags: int
+    result: str
+
+    def __str__(self):
+        return f'necp_session_open({self.flags}), {self.result}'
+
+
+@dataclass
+class BscNecpSessionAction:
+    ktraces: List
+    necp_fd: int
+    action: int
+    in_buffer: int
+    in_buffer_length: int
+    result: str
+
+    def __str__(self):
+        rep = f'necp_session_action({self.necp_fd}, {self.action}, {hex(self.in_buffer)}, {self.in_buffer_length})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSetattrlistat:
+    ktraces: List
+    fd: int
+    path: str
+    alist: int
+    attributeBuffer: int
+    result: str
+
+    def __str__(self):
+        rep = f'setattrlistat({self.fd}, "{self.path}", {hex(self.alist)}, {hex(self.attributeBuffer)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscNetQosGuideline:
+    ktraces: List
+    param: int
+    param_len: int
+    result: str
+
+    def __str__(self):
+        return f'net_qos_guideline({hex(self.param)}, {self.param_len}), {self.result}'
+
+
+@dataclass
+class BscFmount:
+    ktraces: List
+    type: int
+    fd: int
+    flags: int
+    data: int
+    result: str
+
+    def __str__(self):
+        rep = f'fmount({hex(self.type)}, {self.fd}, {self.flags}, {hex(self.data)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscNtpAdjtime:
+    ktraces: List
+    tp: int
+    result: str
+
+    def __str__(self):
+        return f'ntp_adjtime({hex(self.tp)}), {self.result}'
+
+
+@dataclass
+class BscNtpGettime:
+    ktraces: List
+    ntvp: int
+    result: str
+
+    def __str__(self):
+        rep = f'ntp_gettime({hex(self.ntvp)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscOsFaultWithPayload:
+    ktraces: List
+    reason_namespace: int
+    reason_code: int
+    payload: int
+    payload_size: int
+    result: str
+
+    def __str__(self):
+        rep = (f'os_fault_with_payload({self.reason_namespace}, {hex(self.reason_code)}, {hex(self.payload)}'
+               f', {self.payload_size})')
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscKqueueWorkloopCtl:
+    ktraces: List
+    cmd: int
+    options: int
+    addr: int
+    sz: int
+    result: str
+
+    def __str__(self):
+        rep = f'kqueue_workloop_ctl({self.cmd}, {self.options}, {hex(self.addr)}, {self.sz})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMachBridgeRemoteTime:
+    ktraces: List
+    local_timestamp: int
+    result: str
+
+    def __str__(self):
+        rep = f'mach_bridge_remote_time({self.local_timestamp})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscCoalitionLedger:
+    ktraces: List
+    operation: int
+    cid: int
+    buffer: int
+    bufsize: int
+    result: str
+
+    def __str__(self):
+        rep = f'coalition_ledger({self.operation}, {hex(self.cid)}, {hex(self.buffer)}, {hex(self.bufsize)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscLogData:
+    ktraces: List
+    tag: int
+    flags: int
+    buffer: int
+    size: int
+    result: str
+
+    def __str__(self):
+        rep = f'log_data({self.tag}, {self.flags}, {hex(self.buffer)}, {self.size})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMemorystatusAvailableMemory:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        return f'memorystatus_available_memory(), {self.result}'
+
+
+@dataclass
+class BscSharedRegionMapAndSlide2Np:
+    ktraces: List
+    files_count: int
+    shared_file_np: int
+    mappings_count: int
+    mappings: int
+    result: str
+
+    def __str__(self):
+        rep = (f'shared_region_map_and_slide_2_np({self.files_count}, {hex(self.shared_file_np)},'
+               f' {hex(self.mappings_count)}, {hex(self.mappings)})')
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscPivotRoot:
+    ktraces: List
+    new_rootfs_path_before: str
+    old_rootfs_path_after: str
+    result: str
+
+    def __str__(self):
+        rep = f'pivot_root("{self.new_rootfs_path_before}", "{self.old_rootfs_path_after}")'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscTaskInspectForPid:
+    ktraces: List
+    target_tport: int
+    pid: int
+    t: int
+    result: str
+
+    def __str__(self):
+        rep = f'task_inspect_for_pid({self.target_tport}, {self.pid}, {self.t})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscTaskReadForPid:
+    ktraces: List
+    target_tport: int
+    pid: int
+    t: int
+    result: str
+
+    def __str__(self):
+        rep = f'task_read_for_pid({self.target_tport}, {self.pid}, {self.t})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSysPreadv:
+    ktraces: List
+    fd: int
+    iovp: int
+    iovcnt: int
+    offset: int
+    result: str
+    no_cancel: bool = False
+
+    def __str__(self):
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'preadv{no_cancel}({self.fd}, {hex(self.iovp)}, {self.iovcnt}, {self.offset}), {self.result}'
+
+
+@dataclass
+class BscSysPwritev:
+    ktraces: List
+    fd: int
+    iovp: int
+    iovcnt: int
+    offset: int
+    result: str
+    no_cancel: bool = False
+
+    def __str__(self):
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'pwritev{no_cancel}({self.fd}, {hex(self.iovp)}, {self.iovcnt}, {self.offset}), {self.result}'
+
+
+@dataclass
+class BscUlockWait2:
+    ktraces: List
+    operation: int
+    addr: int
+    value: int
+    timeout: int
+    result: str
+
+    def __str__(self):
+        return f'ulock_wait2({self.operation}, {hex(self.addr)}, {self.value}, {self.timeout}), {self.result}'
+
+
+@dataclass
+class BscProcInfoExtendedId:
+    ktraces: List
+    callnum: int
+    pid: int
+    flavor: int
+    flags: int
+    result: str
+
+    def __str__(self):
+        rep = f'proc_info_extended_id({self.callnum}, {self.pid}, {self.flavor}, {self.flags})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
 
 
 @dataclass
@@ -627,6 +2484,21 @@ class BscGeteuid:
 
     def __str__(self):
         return f'geteuid(), uid: {self.uid}'
+
+
+@dataclass
+class BscWait4:
+    ktraces: List
+    pid: int
+    status: int
+    options: int
+    rusage: int
+    result: str
+    no_cancel: bool = False
+
+    def __str__(self):
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'wait4{no_cancel}({self.pid}, {hex(self.status)}, {self.options}, {hex(self.rusage)}), {self.result}'
 
 
 @dataclass
@@ -1023,9 +2895,11 @@ class BscMsync:
     len_: int
     flags: int
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        rep = f'msync({hex(self.addr)}, {self.len_}, {self.flags})'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        rep = f'msync{no_cancel}({hex(self.addr)}, {self.len_}, {self.flags})'
         if self.result:
             rep += f', {self.result}'
         return rep
@@ -1219,9 +3093,11 @@ class BscSysFcntl:
     cmd: FcntlCmd
     buf: int
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        return f'fcntl({self.fildes}, {self.cmd.name}, {hex(self.buf)}), {self.result}'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'fcntl{no_cancel}({self.fildes}, {self.cmd.name}, {hex(self.buf)}), {self.result}'
 
 
 @dataclass
@@ -1232,9 +3108,12 @@ class BscSelect:
     writefds: int
     errorfds: int
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        return f'select({self.nfds}, {hex(self.readfds)}, {hex(self.writefds)}, {hex(self.errorfds)}), {self.result}'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return (f'select{no_cancel}({self.nfds}, {hex(self.readfds)}, {hex(self.writefds)}, {hex(self.errorfds)}),'
+                f' {self.result}')
 
 
 @dataclass
@@ -1242,9 +3121,11 @@ class BscFsync:
     ktraces: List
     fildes: int
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        rep = f'fsync({self.fildes})'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        rep = f'fsync{no_cancel}({self.fildes})'
         if self.result:
             rep += f', {self.result}'
         return rep
@@ -1284,9 +3165,11 @@ class BscConnect:
     address: int
     address_len: int
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        rep = f'connect({self.socket}, {hex(self.address)}, {self.address_len})'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        rep = f'connect{no_cancel}({self.socket}, {hex(self.address)}, {self.address_len})'
         if self.result:
             rep += f', {self.result}'
         return rep
@@ -1354,9 +3237,11 @@ class BscSigsuspend:
     ktraces: List
     sigmask: int
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        rep = f'sigsuspend({hex(self.sigmask)})'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        rep = f'sigsuspend{no_cancel}({hex(self.sigmask)})'
         if self.result:
             rep += f', {self.result}'
         return rep
@@ -1414,9 +3299,11 @@ class BscReadv:
     iov: int
     iovcnt: int
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        return f'readv({self.d}, {hex(self.iov)}, {self.iovcnt}), {self.result}'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'readv{no_cancel}({self.d}, {hex(self.iov)}, {self.iovcnt}), {self.result}'
 
 
 @dataclass
@@ -1426,9 +3313,11 @@ class BscWritev:
     iov: int
     iovcnt: int
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        return f'writev({self.fildes}, {hex(self.iov)}, {self.iovcnt}), {self.result}'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'writev{no_cancel}({self.fildes}, {hex(self.iov)}, {self.iovcnt}), {self.result}'
 
 
 @dataclass
@@ -1552,9 +3441,11 @@ class BscSendto:
     length: int
     flags: int
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        return f'sendto({self.socket}, {hex(self.buffer)}, {self.length}, {self.flags}), {self.result}'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'sendto{no_cancel}({self.socket}, {hex(self.buffer)}, {self.length}, {self.flags}), {self.result}'
 
 
 @dataclass
@@ -1855,9 +3746,11 @@ class BscWaitid:
     infop: int
     options: int
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        rep = f'waitid({self.idtype}, {self.id}, {hex(self.infop)}, {self.options})'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        rep = f'waitid{no_cancel}({self.idtype}, {self.id}, {hex(self.infop)}, {self.options})'
         if self.result:
             rep += f', {self.result}'
         return rep
@@ -2247,9 +4140,11 @@ class BscPoll:
     nfds: int
     timeout: int
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        return f'poll({hex(self.fds)}, {self.nfds}, {self.timeout}), {self.result}'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'poll{no_cancel}({hex(self.fds)}, {self.nfds}, {self.timeout}), {self.result}'
 
 
 @dataclass
@@ -2593,9 +4488,11 @@ class BscMsgsnd:
     msgsz: int
     msgflg: int
     result: str
+    no_cancel: bool = False
 
     def __str__(self):
-        return f'msgsnd({self.msqid}, {hex(self.msgp)}, {self.msgsz}, {self.msgflg}), {self.result}'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'msgsnd{no_cancel}({self.msqid}, {hex(self.msgp)}, {self.msgsz}, {self.msgflg}), {self.result}'
 
 
 @dataclass
@@ -2606,9 +4503,11 @@ class BscMsgrcv:
     msgsz: int
     msgtyp: int
     result: str
+    no_cancel: bool
 
     def __str__(self):
-        return f'msgrcv({self.msqid}, {hex(self.msgp)}, {self.msgsz}, {self.msgtyp}), {self.result}'
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        return f'msgrcv{no_cancel}({self.msqid}, {hex(self.msgp)}, {self.msgsz}, {self.msgtyp}), {self.result}'
 
 
 @dataclass
@@ -2702,6 +4601,391 @@ class BscSemOpen:
         oflags = ' | '.join(map(lambda f: f.name, self.oflag))
         mode = (', ' + ' | '.join(map(lambda f: f.name, self.mode))) if BscOpenFlags.O_CREAT in self.oflag else ''
         return f'sem_open({hex(self.name)}, {oflags}{mode}), {self.result}'
+
+
+@dataclass
+class BscSemClose:
+    ktraces: List
+    sem: int
+    result: str
+
+    def __str__(self):
+        rep = f'sem_close({self.sem})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSemUnlink:
+    ktraces: List
+    name: int
+    result: str
+
+    def __str__(self):
+        rep = f'sem_unlink({hex(self.name)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSemWait:
+    ktraces: List
+    sem: int
+    result: str
+    no_cancel: bool = False
+
+    def __str__(self):
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        rep = f'sem_wait{no_cancel}({hex(self.sem)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSemTrywait:
+    ktraces: List
+    sem: int
+    result: str
+
+    def __str__(self):
+        rep = f'sem_trywait({hex(self.sem)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSemPost:
+    ktraces: List
+    sem: int
+    result: str
+
+    def __str__(self):
+        rep = f'sem_post({hex(self.sem)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSysctlbyname:
+    ktraces: List
+    name: int
+    oldp: int
+    oldlenp: int
+    newp: int
+    result: str
+
+    def __str__(self):
+        rep = f'sysctlbyname({hex(self.name)}, {hex(self.oldp)}, {hex(self.oldlenp)}, {hex(self.newp)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscAccessExtended:
+    ktraces: List
+    entries: int
+    size: int
+    results: int
+    uid: int
+    result: str
+
+    def __str__(self):
+        rep = f'access_extended({hex(self.entries)}, {self.size}, {hex(self.results)}, {self.uid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGettid:
+    ktraces: List
+    uidp: int
+    gidp: int
+    result: str
+
+    def __str__(self):
+        rep = f'gettid({hex(self.uidp)}, {hex(self.gidp)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSharedRegionCheckNp:
+    ktraces: List
+    startaddress: int
+    result: str
+
+    def __str__(self):
+        rep = f'shared_region_check_np({hex(self.startaddress)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscPsynchMutexwait:
+    ktraces: List
+    mutex: int
+    mgen: int
+    ugen: int
+    tid: int
+    result: str
+
+    def __str__(self):
+        rep = f'psynch_mutexwait({hex(self.mutex)}, {self.mgen}, {self.ugen}, {self.tid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscPsynchMutexdrop:
+    ktraces: List
+    mutex: int
+    mgen: int
+    ugen: int
+    tid: int
+    result: str
+
+    def __str__(self):
+        rep = f'psynch_mutexdrop({hex(self.mutex)}, {self.mgen}, {self.ugen}, {self.tid})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscPsynchCvbroad:
+    ktraces: List
+    cv: int
+    cvlsgen: int
+    cvudgen: int
+    flags: int
+    result: str
+
+    def __str__(self):
+        rep = f'psynch_cvbroad({hex(self.cv)}, {self.cvlsgen}, {self.cvudgen}, {self.flags})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscPsynchCvsignal:
+    ktraces: List
+    cv: int
+    cvlsgen: int
+    cvugen: int
+    thread_port: int
+    result: str
+
+    def __str__(self):
+        rep = f'psynch_cvsignal({hex(self.cv)}, {self.cvlsgen}, {self.cvugen}, {self.thread_port})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscPsynchCvwait:
+    ktraces: List
+    cv: int
+    cvlsgen: int
+    cvugen: int
+    mutex: int
+    result: str
+
+    def __str__(self):
+        rep = f'psynch_cvwait({hex(self.cv)}, {self.cvlsgen}, {self.cvugen}, {hex(self.mutex)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscGetsid:
+    ktraces: List
+    pid: int
+    result: str
+
+    def __str__(self):
+        return f'getsid({self.pid}), {self.result}'
+
+
+@dataclass
+class BscPsynchCvclrprepost:
+    ktraces: List
+    cv: int
+    cvgen: int
+    cvugen: int
+    cvsgen: int
+    result: str
+
+    def __str__(self):
+        rep = f'psynch_cvclrprepost({hex(self.cv)}, {self.cvgen}, {self.cvugen}, {self.cvsgen})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscIopolicysys:
+    ktraces: List
+    cmd: int
+    arg: int
+    result: str
+
+    def __str__(self):
+        return f'iopolicysys({self.cmd}, {hex(self.arg)}), {self.result}'
+
+
+@dataclass
+class BscProcessPolicy:
+    ktraces: List
+    scope: int
+    action: int
+    policy: int
+    policy_subtype: int
+    result: str
+
+    def __str__(self):
+        rep = f'process_policy({self.scope}, {self.action}, {self.policy}, {self.policy_subtype})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMlockall:
+    ktraces: List
+    flags: int
+    result: str
+
+    def __str__(self):
+        rep = f'mlockall({self.flags})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscMunlockall:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        rep = 'munlockall()'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscIssetugid:
+    ktraces: List
+    result: str
+
+    def __str__(self):
+        return f'issetugid(), {self.result}'
+
+
+@dataclass
+class BscPthreadSigmask:
+    ktraces: List
+    how: int
+    set: int
+    oset: int
+    result: str
+
+    def __str__(self):
+        rep = f'pthread_sigmask({self.how}, {hex(self.set)}, {hex(self.oset)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscDisableThreadsignal:
+    ktraces: List
+    value: int
+    result: str
+
+    def __str__(self):
+        rep = f'disable_threadsignal({self.value})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSemwaitSignal:
+    ktraces: List
+    cond_sem: int
+    mutex_sem: int
+    timeout: int
+    relative: int
+    result: str
+    no_cancel: bool = False
+
+    def __str__(self):
+        no_cancel = '_nocancel' if self.no_cancel else ''
+        rep = f'semwait_signal{no_cancel}({self.cond_sem}, {self.mutex_sem}, {self.timeout}, {self.relative})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscProcInfo:
+    ktraces: List
+    callnum: ProcInfoCall
+    pid: int
+    flags: int
+    ext_id: int
+    result: str
+
+    def __str__(self):
+        rep = f'proc_info({self.callnum.name}, {self.pid}, {self.flags}, {self.ext_id})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscSendfile:
+    ktraces: List
+    fd: int
+    s: int
+    offset: int
+    len: int
+    result: str
+
+    def __str__(self):
+        rep = f'sendfile({self.fd}, {self.s}, {self.offset}, {hex(self.len)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
+
+
+@dataclass
+class BscStat64:
+    ktraces: List
+    path: str
+    buf: int
+    result: str
+
+    def __str__(self):
+        rep = f'stat64("{self.path}", {hex(self.buf)})'
+        if self.result:
+            rep += f', {self.result}'
+        return rep
 
 
 @dataclass
@@ -2940,21 +5224,197 @@ class KdebugEventsParser:
             'BSC_shm_open': self.handle_bsc_shm_open,
             'BSC_shm_unlink': self.handle_bsc_shm_unlink,
             'BSC_sem_open': self.handle_bsc_sem_open,
+            'BSC_sem_close': self.handle_bsc_sem_close,
+            'BSC_sem_unlink': self.handle_bsc_sem_unlink,
+            'BSC_sem_wait': self.handle_bsc_sem_wait,
+            'BSC_sem_trywait': self.handle_bsc_sem_trywait,
+            'BSC_sem_post': self.handle_bsc_sem_post,
+            'BSC_sys_sysctlbyname': self.handle_bsc_sys_sysctlbyname,
+            'BSC_access_extended': self.handle_bsc_access_extended,
+            'BSC_gettid': self.handle_bsc_gettid,
+            'BSC_shared_region_check_np': self.handle_bsc_shared_region_check_np,
+            'BSC_psynch_mutexwait': self.handle_bsc_psynch_mutexwait,
+            'BSC_psynch_mutexdrop': self.handle_bsc_psynch_mutexdrop,
+            'BSC_psynch_cvbroad': self.handle_bsc_psynch_cvbroad,
+            'BSC_psynch_cvsignal': self.handle_bsc_psynch_cvsignal,
+            'BSC_psynch_cvwait': self.handle_bsc_psynch_cvwait,
+            'BSC_getsid': self.handle_bsc_getsid,
+            'BSC_psynch_cvclrprepost': self.handle_bsc_psynch_cvclrprepost,
+            'BSC_iopolicysys': self.handle_bsc_iopolicysys,
+            'BSC_process_policy': self.handle_bsc_process_policy,
+            'BSC_mlockall': self.handle_bsc_mlockall,
+            'BSC_munlockall': self.handle_bsc_munlockall,
+            'BSC_issetugid': self.handle_bsc_issetugid,
+            'BSC_pthread_sigmask': self.handle_bsc_pthread_sigmask,
+            'BSC_disable_threadsignal': self.handle_bsc_disable_threadsignal,
+            'BSC_semwait_signal': self.handle_bsc_semwait_signal,
+            'BSC_proc_info': self.handle_bsc_proc_info,
+            'BSC_sendfile': self.handle_bsc_sendfile,
+            'BSC_stat64': self.handle_bsc_stat64,
             'BSC_sys_fstat64': self.handle_bsc_sys_fstat64,
             'BSC_lstat64': self.handle_bsc_lstat64,
+            'BSC_getdirentries64': self.handle_bsc_getdirentries64,
+            'BSC_statfs64': self.handle_bsc_statfs64,
+            'BSC_fstatfs64': self.handle_bsc_fstatfs64,
+            'BSC_getfsstat64': self.handle_bsc_getfsstat64,
+            'BSC_pthread_fchdir': self.handle_bsc_pthread_fchdir,
+            'BSC_audit': self.handle_bsc_audit,
+            'BSC_auditon': self.handle_bsc_auditon,
+            'BSC_getauid': self.handle_bsc_getauid,
+            'BSC_setauid': self.handle_bsc_setauid,
             'BSC_bsdthread_create': self.handle_bsc_bsdthread_create,
+            'BSC_kqueue': self.handle_bsc_kqueue,
+            'BSC_kevent': self.handle_bsc_kevent,
+            'BSC_lchown': self.handle_bsc_lchown,
+            'BSC_bsdthread_register': self.handle_bsc_bsdthread_register,
+            'BSC_workq_open': self.handle_bsc_workq_open,
+            'BSC_workq_kernreturn': self.handle_bsc_workq_kernreturn,
+            'BSC_kevent64': self.handle_bsc_kevent64,
+            'BSC_thread_selfid': self.handle_bsc_thread_selfid,
+            'BSC_kevent_qos': self.handle_bsc_kevent_qos,
+            'BSC_kevent_id': self.handle_bsc_kevent_id,
+            'BSC_mac_syscall': self.handle_bsc_mac_syscall,
+            'BSC_pselect': self.handle_bsc_pselect,
+            'BSC_pselect_nocancel': partial(self.handle_bsc_pselect, no_cancel=True),
             'BSC_read_nocancel': partial(self.handle_bsc_read, no_cancel=True),
             'BSC_write_nocancel': partial(self.handle_bsc_write, no_cancel=True),
             'BSC_open_nocancel': partial(self.handle_bsc_open, no_cancel=True),
             'BSC_sys_close_nocancel': partial(self.handle_bsc_sys_close, no_cancel=True),
+            'BSC_wait4_nocancel': partial(self.handle_bsc_wait4, no_cancel=True),
             'BSC_recvmsg_nocancel': partial(self.handle_bsc_recvmsg, no_cancel=True),
             'BSC_sendmsg_nocancel': partial(self.handle_bsc_sendmsg, no_cancel=True),
             'BSC_recvfrom_nocancel': partial(self.handle_bsc_recvfrom, no_cancel=True),
             'BSC_accept_nocancel': partial(self.handle_bsc_accept, no_cancel=True),
+            'BSC_msync_nocancel': partial(self.handle_bsc_msync, no_cancel=True),
+            'BSC_sys_fcntl_nocancel': partial(self.handle_bsc_sys_fcntl, no_cancel=True),
+            'BSC_select_nocancel': partial(self.handle_bsc_select, no_cancel=True),
+            'BSC_fsync_nocancel': partial(self.handle_bsc_fsync, no_cancel=True),
+            'BSC_connect_nocancel': partial(self.handle_bsc_connect, no_cancel=True),
+            'BSC_sigsuspend_nocancel': partial(self.handle_bsc_sigsuspend, no_cancel=True),
+            'BSC_readv_nocancel': partial(self.handle_bsc_readv, no_cancel=True),
+            'BSC_writev_nocancel': partial(self.handle_bsc_writev, no_cancel=True),
+            'BSC_sendto_nocancel': partial(self.handle_bsc_sendto, no_cancel=True),
             'BSC_pread_nocancel': partial(self.handle_bsc_pread, no_cancel=True),
             'BSC_pwrite_nocancel': partial(self.handle_bsc_pwrite, no_cancel=True),
+            'BSC_waitid_nocancel': partial(self.handle_bsc_waitid, no_cancel=True),
+            'BSC_poll_nocancel': partial(self.handle_bsc_poll, no_cancel=True),
+            'BSC_msgsnd_nocancel': partial(self.handle_bsc_msgsnd, no_cancel=True),
+            'BSC_msgrcv_nocancel': partial(self.handle_bsc_msgrcv, no_cancel=True),
+            'BSC_sem_wait_nocancel': partial(self.handle_bsc_sem_wait, no_cancel=True),
+            'BSC_semwait_signal_nocancel': partial(self.handle_bsc_semwait_signal, no_cancel=True),
+            'BSC_fsgetpath': self.handle_bsc_fsgetpath,
+            'BSC_sys_fileport_makeport': self.handle_bsc_sys_fileport_makeport,
+            'BSC_sys_fileport_makefd': self.handle_bsc_sys_fileport_makefd,
+            'BSC_audit_session_port': self.handle_bsc_audit_session_port,
+            'BSC_pid_suspend': self.handle_bsc_pid_suspend,
+            'BSC_pid_resume': self.handle_bsc_pid_resume,
+            'BSC_pid_hibernate': self.handle_bsc_pid_hibernate,
+            'BSC_pid_shutdown_sockets': self.handle_bsc_pid_shutdown_sockets,
+            'BSC_shared_region_map_and_slide_np': self.handle_bsc_shared_region_map_and_slide_np,
+            'BSC_kas_info': self.handle_bsc_kas_info,
+            'BSC_memorystatus_control': self.handle_bsc_memorystatus_control,
+            'BSC_guarded_open_np': self.handle_bsc_guarded_open_np,
+            'BSC_guarded_close_np': self.handle_bsc_guarded_close_np,
+            'BSC_guarded_kqueue_np': self.handle_bsc_guarded_kqueue_np,
+            'BSC_change_fdguard_np': self.handle_bsc_change_fdguard_np,
+            'BSC_usrctl': self.handle_bsc_usrctl,
+            'BSC_proc_rlimit_control': self.handle_bsc_proc_rlimit_control,
+            'BSC_connectx': self.handle_bsc_connectx,
+            'BSC_disconnectx': self.handle_bsc_disconnectx,
+            'BSC_peeloff': self.handle_bsc_peeloff,
+            'BSC_socket_delegate': self.handle_bsc_socket_delegate,
+            'BSC_telemetry': self.handle_bsc_telemetry,
+            'BSC_proc_uuid_policy': self.handle_bsc_proc_uuid_policy,
+            'BSC_memorystatus_get_level': self.handle_bsc_memorystatus_get_level,
+            'BSC_system_override': self.handle_bsc_system_override,
+            'BSC_vfs_purge': self.handle_bsc_vfs_purge,
+            'BSC_sfi_ctl': self.handle_bsc_sfi_ctl,
+            'BSC_sfi_pidctl': self.handle_bsc_sfi_pidctl,
+            'BSC_coalition': self.handle_bsc_coalition,
+            'BSC_coalition_info': self.handle_bsc_coalition_info,
+            'BSC_necp_match_policy': self.handle_bsc_necp_match_policy,
+            'BSC_getattrlistbulk': self.handle_bsc_getattrlistbulk,
+            'BSC_clonefileat': self.handle_bsc_clonefileat,
             'BSC_openat': self.handle_bsc_openat,
             'BSC_openat_nocancel': partial(self.handle_bsc_openat, no_cancel=True),
+            'BSC_renameat': self.handle_bsc_renameat,
+            'BSC_faccessat': self.handle_bsc_faccessat,
+            'BSC_fchmodat': self.handle_bsc_fchmodat,
+            'BSC_fchownat': self.handle_bsc_fchownat,
+            'BSC_fstatat': self.handle_bsc_fstatat,
+            'BSC_fstatat64': self.handle_bsc_fstatat64,
+            'BSC_linkat': self.handle_bsc_linkat,
+            'BSC_unlinkat': self.handle_bsc_unlinkat,
+            'BSC_readlinkat': self.handle_bsc_readlinkat,
+            'BSC_symlinkat': self.handle_bsc_symlinkat,
+            'BSC_mkdirat': self.handle_bsc_mkdirat,
+            'BSC_getattrlistat': self.handle_bsc_getattrlistat,
+            'BSC_proc_trace_log': self.handle_bsc_proc_trace_log,
+            'BSC_bsdthread_ctl': self.handle_bsc_bsdthread_ctl,
+            'BSC_openbyid_np': self.handle_bsc_openbyid_np,
+            'BSC_recvmsg_x': self.handle_bsc_recvmsg_x,
+            'BSC_sendmsg_x': self.handle_bsc_sendmsg_x,
+            'BSC_thread_selfusage': self.handle_bsc_thread_selfusage,
+            'BSC_csrctl': self.handle_bsc_csrctl,
+            'BSC_guarded_open_dprotected_np': self.handle_bsc_guarded_open_dprotected_np,
+            'BSC_guarded_write_np': self.handle_bsc_guarded_write_np,
+            'BSC_guarded_pwrite_np': self.handle_bsc_guarded_pwrite_np,
+            'BSC_guarded_writev_np': self.handle_bsc_guarded_writev_np,
+            'BSC_renameatx_np': self.handle_bsc_renameatx_np,
+            'BSC_mremap_encrypted': self.handle_bsc_mremap_encrypted,
+            'BSC_netagent_trigger': self.handle_bsc_netagent_trigger,
+            'BSC_stack_snapshot_with_config': self.handle_bsc_stack_snapshot_with_config,
+            'BSC_microstackshot': self.handle_bsc_microstackshot,
+            'BSC_grab_pgo_data': self.handle_bsc_grab_pgo_data,
+            'BSC_persona': self.handle_bsc_persona,
+            'BSC_mach_eventlink_signal': self.handle_bsc_mach_eventlink_signal,
+            'BSC_mach_eventlink_wait_until': self.handle_bsc_mach_eventlink_wait_until,
+            'BSC_mach_eventlink_signal_wait_until': self.handle_bsc_mach_eventlink_signal_wait_until,
+            'BSC_work_interval_ctl': self.handle_bsc_work_interval_ctl,
+            'BSC_getentropy': self.handle_bsc_getentropy,
+            'BSC_necp_open': self.handle_bsc_necp_open,
+            'BSC_necp_client_action': self.handle_bsc_necp_client_action,
+            'BSC_nexus_open': self.handle_bsc_nexus_open,
+            'BSC_nexus_register': self.handle_bsc_nexus_register,
+            'BSC_nexus_deregister': self.handle_bsc_nexus_deregister,
+            'BSC_nexus_create': self.handle_bsc_nexus_create,
+            'BSC_nexus_destroy': self.handle_bsc_nexus_destroy,
+            'BSC_nexus_get_opt': self.handle_bsc_nexus_get_opt,
+            'BSC_nexus_set_opt': self.handle_bsc_nexus_set_opt,
+            'BSC_channel_open': self.handle_bsc_channel_open,
+            'BSC_channel_get_info': self.handle_bsc_channel_get_info,
+            'BSC_channel_sync': self.handle_bsc_channel_sync,
+            'BSC_channel_get_opt': self.handle_bsc_channel_get_opt,
+            'BSC_channel_set_opt': self.handle_bsc_channel_set_opt,
+            'BSC_ulock_wait': self.handle_bsc_ulock_wait,
+            'BSC_ulock_wake': self.handle_bsc_ulock_wake,
+            'BSC_fclonefileat': self.handle_bsc_fclonefileat,
+            'BSC_fs_snapshot': self.handle_bsc_fs_snapshot,
+            'BSC_terminate_with_payload': self.handle_bsc_terminate_with_payload,
+            'BSC_abort_with_payload': self.handle_bsc_abort_with_payload,
+            'BSC_necp_session_open': self.handle_bsc_necp_session_open,
+            'BSC_necp_session_action': self.handle_bsc_necp_session_action,
+            'BSC_setattrlistat': self.handle_bsc_setattrlistat,
+            'BSC_net_qos_guideline': self.handle_bsc_net_qos_guideline,
+            'BSC_fmount': self.handle_bsc_fmount,
+            'BSC_ntp_adjtime': self.handle_bsc_ntp_adjtime,
+            'BSC_ntp_gettime': self.handle_bsc_ntp_gettime,
+            'BSC_os_fault_with_payload': self.handle_bsc_os_fault_with_payload,
+            'BSC_kqueue_workloop_ctl': self.handle_bsc_kqueue_workloop_ctl,
+            'BSC_mach_bridge_remote_time': self.handle_bsc_mach_bridge_remote_time,
+            'BSC_coalition_ledger': self.handle_bsc_coalition_ledger,
+            'BSC_log_data': self.handle_bsc_log_data,
+            'BSC_memorystatus_available_memory': self.handle_bsc_memorystatus_available_memory,
+            'BSC_shared_region_map_and_slide_2_np': self.handle_bsc_shared_region_map_and_slide_2_np,
+            'BSC_pivot_root': self.handle_bsc_pivot_root,
+            'BSC_task_inspect_for_pid': self.handle_bsc_task_inspect_for_pid,
+            'BSC_task_read_for_pid': self.handle_bsc_task_read_for_pid,
+            'BSC_sys_preadv': self.handle_bsc_sys_preadv,
+            'BSC_sys_pwritev': self.handle_bsc_sys_pwritev,
+            'BSC_sys_preadv_nocancel': partial(self.handle_bsc_sys_preadv, no_cancel=True),
+            'BSC_sys_pwritev_nocancel': partial(self.handle_bsc_sys_pwritev, no_cancel=True),
+            'BSC_ulock_wait2': self.handle_bsc_ulock_wait2,
+            'BSC_proc_info_extended_id': self.handle_bsc_proc_info_extended_id,
         }
 
     def feed(self, event):
@@ -3024,17 +5484,6 @@ class KdebugEventsParser:
     def handle_vfs_lookup(self, events):
         return self.parse_vnode(events)
 
-    def handle_bsc_open(self, events, no_cancel=False):
-        vnode = self.parse_vnode(events)
-        call_flags = serialize_open_flags(events[0].values[1])
-        return BscOpen(events, vnode.path, call_flags, serialize_result(events[-1], 'fd'), no_cancel)
-
-    def handle_bsc_openat(self, events, no_cancel=False):
-        vnode = self.parse_vnode(events)
-        call_flags = serialize_open_flags(events[0].values[2])
-        return BscOpenat(events, events[0].values[0], vnode.path, call_flags, serialize_result(events[-1], 'fd'),
-                         no_cancel)
-
     def handle_syscall(self, events):
         return self.parse_event_list(events[1:-1]) if len(events) > 2 else None
 
@@ -3050,6 +5499,14 @@ class KdebugEventsParser:
         result = serialize_result(events[-1], 'count')
         args = events[0].values
         return BscWrite(events, args[0], args[1], args[2], result, no_cancel)
+
+    def handle_bsc_open(self, events, no_cancel=False):
+        vnode = self.parse_vnode(events)
+        call_flags = serialize_open_flags(events[0].values[1])
+        return BscOpen(events, vnode.path, call_flags, serialize_result(events[-1], 'fd'), no_cancel)
+
+    def handle_bsc_sys_close(self, events, no_cancel=False):
+        return BscSysClose(events, events[0].values[0], serialize_result(events[-1]), no_cancel)
 
     def handle_bsc_link(self, events):
         old_vnode = self.parse_vnode(events)
@@ -3091,6 +5548,10 @@ class KdebugEventsParser:
     def handle_bsc_geteuid(self, events):
         return BscGeteuid(events, events[-1].values[1])
 
+    def handle_bsc_wait4(self, events, no_cancel=False):
+        args = events[0].values
+        return BscWait4(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'pid'), no_cancel)
+
     def handle_bsc_recvmsg(self, events, no_cancel=False):
         return BscRecvmsg(events, events[0].values[0], serialize_result(events[-1], 'count'), no_cancel)
 
@@ -3115,9 +5576,7 @@ class KdebugEventsParser:
 
     def handle_bsc_access(self, events):
         vnode = self.parse_vnode(events)
-        amode = [flag for flag in BscAccessFlags if flag.value & events[0].values[1]]
-        if not amode:
-            amode = [BscAccessFlags.F_OK]
+        amode = serialize_access_flags(events[0].values[1])
         return BscAccess(events, vnode.path, amode, serialize_result(events[-1]))
 
     def handle_bsc_chflags(self, events):
@@ -3208,9 +5667,9 @@ class KdebugEventsParser:
     def handle_bsc_chroot(self, events):
         return BscChroot(events, self.parse_vnode(events).path, serialize_result(events[-1]))
 
-    def handle_bsc_msync(self, events):
+    def handle_bsc_msync(self, events, no_cancel=False):
         args = events[0].values
-        return BscMsync(events, args[0], args[1], args[2], serialize_result(events[-1]))
+        return BscMsync(events, args[0], args[1], args[2], serialize_result(events[-1]), no_cancel)
 
     def handle_bsc_vfork(self, events):
         return BscVfork(events)
@@ -3264,16 +5723,17 @@ class KdebugEventsParser:
         args = events[0].values
         return BscSysDup2(events, args[0], args[1], serialize_result(events[-1]))
 
-    def handle_bsc_sys_fcntl(self, events):
+    def handle_bsc_sys_fcntl(self, events, no_cancel=False):
         args = events[0].values
-        return BscSysFcntl(events, args[0], FcntlCmd(args[1]), args[2], serialize_result(events[-1], 'return'))
+        return BscSysFcntl(events, args[0], FcntlCmd(args[1]), args[2], serialize_result(events[-1], 'return'),
+                           no_cancel)
 
-    def handle_bsc_select(self, events):
+    def handle_bsc_select(self, events, no_cancel=False):
         args = events[0].values
-        return BscSelect(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+        return BscSelect(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'), no_cancel)
 
-    def handle_bsc_fsync(self, events):
-        return BscFsync(events, events[0].values[0], serialize_result(events[-1]))
+    def handle_bsc_fsync(self, events, no_cancel=False):
+        return BscFsync(events, events[0].values[0], serialize_result(events[-1]), no_cancel)
 
     def handle_bsc_setpriority(self, events):
         args = events[0].values
@@ -3284,9 +5744,9 @@ class KdebugEventsParser:
         return BscSocket(events, socket.AddressFamily(args[0]), socket.SocketKind(args[1]), args[2],
                          serialize_result(events[-1], 'fd'))
 
-    def handle_bsc_connect(self, events):
+    def handle_bsc_connect(self, events, no_cancel=False):
         args = events[0].values
-        return BscConnect(events, args[0], args[1], args[2], serialize_result(events[-1]))
+        return BscConnect(events, args[0], args[1], args[2], serialize_result(events[-1]), no_cancel)
 
     def handle_bsc_getpriority(self, events):
         args = events[0].values
@@ -3304,8 +5764,8 @@ class KdebugEventsParser:
         args = events[0].values
         return BscListen(events, args[0], args[1], serialize_result(events[-1]))
 
-    def handle_bsc_sigsuspend(self, events):
-        return BscSigsuspend(events, events[0].values[0], serialize_result(events[-1]))
+    def handle_bsc_sigsuspend(self, events, no_cancel=False):
+        return BscSigsuspend(events, events[0].values[0], serialize_result(events[-1]), no_cancel)
 
     def handle_bsc_gettimeofday(self, events):
         args = events[0].values
@@ -3319,13 +5779,13 @@ class KdebugEventsParser:
         args = events[0].values
         return BscGetsockopt(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
 
-    def handle_bsc_readv(self, events):
+    def handle_bsc_readv(self, events, no_cancel=False):
         args = events[0].values
-        return BscReadv(events, args[0], args[1], args[2], serialize_result(events[-1], 'count'))
+        return BscReadv(events, args[0], args[1], args[2], serialize_result(events[-1], 'count'), no_cancel)
 
-    def handle_bsc_writev(self, events):
+    def handle_bsc_writev(self, events, no_cancel=False):
         args = events[0].values
-        return BscWritev(events, args[0], args[1], args[2], serialize_result(events[-1], 'count'))
+        return BscWritev(events, args[0], args[1], args[2], serialize_result(events[-1], 'count'), no_cancel)
 
     def handle_bsc_settimeofday(self, events):
         args = events[0].values
@@ -3362,9 +5822,9 @@ class KdebugEventsParser:
         return BscMkfifo(events, self.parse_vnode(events).path, serialize_stat_flags(args[1]),
                          serialize_result(events[-1]))
 
-    def handle_bsc_sendto(self, events):
+    def handle_bsc_sendto(self, events, no_cancel=False):
         args = events[0].values
-        return BscSendto(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+        return BscSendto(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'), no_cancel)
 
     def handle_bsc_shutdown(self, events):
         args = events[0].values
@@ -3460,9 +5920,9 @@ class KdebugEventsParser:
         args = events[0].values
         return BscCsopsAudittoken(events, args[0], CsopsOps(args[1]), args[2], args[3], serialize_result(events[-1]))
 
-    def handle_bsc_waitid(self, events):
+    def handle_bsc_waitid(self, events, no_cancel=False):
         args = events[0].values
-        return BscWaitid(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+        return BscWaitid(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]), no_cancel)
 
     def handle_bsc_kdebug_typefilter(self, events):
         args = events[0].values
@@ -3579,9 +6039,9 @@ class KdebugEventsParser:
         args = events[0].values
         return BscFsetattrlist(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
 
-    def handle_bsc_poll(self, events):
+    def handle_bsc_poll(self, events, no_cancel=False):
         args = events[0].values
-        return BscPoll(events, args[0], args[1], args[2], serialize_result(events[-1], 'count'))
+        return BscPoll(events, args[0], args[1], args[2], serialize_result(events[-1], 'count'), no_cancel)
 
     def handle_bsc_getxattr(self, events):
         args = events[0].values
@@ -3686,13 +6146,13 @@ class KdebugEventsParser:
         args = events[0].values
         return BscMsgget(events, args[0], args[1], serialize_result(events[-1], 'id'))
 
-    def handle_bsc_msgsnd(self, events):
+    def handle_bsc_msgsnd(self, events, no_cancel=False):
         args = events[0].values
-        return BscMsgsnd(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+        return BscMsgsnd(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'), no_cancel)
 
-    def handle_bsc_msgrcv(self, events):
+    def handle_bsc_msgrcv(self, events, no_cancel=False):
         args = events[0].values
-        return BscMsgrcv(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+        return BscMsgrcv(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'), no_cancel)
 
     def handle_bsc_shmat(self, events):
         args = events[0].values
@@ -3725,17 +6185,657 @@ class KdebugEventsParser:
         sflags = serialize_stat_flags(args[2]) if BscOpenFlags.O_CREAT in oflags else []
         return BscSemOpen(events, args[0], oflags, sflags, serialize_result(events[-1], 'fd'))
 
+    def handle_bsc_sem_close(self, events):
+        args = events[0].values
+        return BscSemClose(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_sem_unlink(self, events):
+        args = events[0].values
+        return BscSemUnlink(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_sem_wait(self, events, no_cancel=False):
+        args = events[0].values
+        return BscSemWait(events, args[0], serialize_result(events[-1]), no_cancel)
+
+    def handle_bsc_sem_trywait(self, events):
+        args = events[0].values
+        return BscSemTrywait(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_sem_post(self, events):
+        args = events[0].values
+        return BscSemPost(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_sys_sysctlbyname(self, events):
+        args = events[0].values
+        return BscSysctlbyname(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_access_extended(self, events):
+        args = events[0].values
+        return BscAccessExtended(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_gettid(self, events):
+        args = events[0].values
+        return BscGettid(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_shared_region_check_np(self, events):
+        args = events[0].values
+        return BscSharedRegionCheckNp(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_psynch_mutexwait(self, events):
+        args = events[0].values
+        return BscPsynchMutexwait(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_psynch_mutexdrop(self, events):
+        args = events[0].values
+        return BscPsynchMutexdrop(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_psynch_cvbroad(self, events):
+        args = events[0].values
+        return BscPsynchCvbroad(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_psynch_cvsignal(self, events):
+        args = events[0].values
+        return BscPsynchCvsignal(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_psynch_cvwait(self, events):
+        args = events[0].values
+        return BscPsynchCvwait(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_getsid(self, events):
+        args = events[0].values
+        return BscGetsid(events, args[0], serialize_result(events[-1], 'sid'))
+
+    def handle_bsc_psynch_cvclrprepost(self, events):
+        args = events[0].values
+        return BscPsynchCvclrprepost(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_iopolicysys(self, events):
+        args = events[0].values
+        return BscIopolicysys(events, args[0], args[1], serialize_result(events[-1], 'return'))
+
+    def handle_bsc_process_policy(self, events):
+        args = events[0].values
+        return BscProcessPolicy(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_mlockall(self, events):
+        return BscMlockall(events, events[0].values[0], serialize_result(events[-1]))
+
+    def handle_bsc_munlockall(self, events):
+        return BscMunlockall(events, serialize_result(events[-1]))
+
+    def handle_bsc_issetugid(self, events):
+        return BscIssetugid(events, serialize_result(events[-1], 'return', bool))
+
+    def handle_bsc_pthread_sigmask(self, events):
+        args = events[0].values
+        return BscPthreadSigmask(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_disable_threadsignal(self, events):
+        return BscDisableThreadsignal(events, events[0].values[0], serialize_result(events[-1]))
+
+    def handle_bsc_semwait_signal(self, events, no_cancel=False):
+        args = events[0].values
+        return BscSemwaitSignal(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]), no_cancel)
+
+    def handle_bsc_proc_info(self, events):
+        args = events[0].values
+        return BscProcInfo(events, ProcInfoCall(args[0]), args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_sendfile(self, events):
+        args = events[0].values
+        return BscSendfile(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_stat64(self, events):
+        return BscStat64(events, self.parse_vnode(events).path, events[0].values[1], serialize_result(events[-1]))
+
     def handle_bsc_sys_fstat64(self, events):
         return BscSysFstat64(events, events[0].values[0], serialize_result(events[-1]))
 
     def handle_bsc_lstat64(self, events):
         return BscLstat64(events, self.parse_vnode(events).path, serialize_result(events[-1]))
 
+    def handle_bsc_getdirentries64(self, events):
+        args = events[0].values
+        return BscGetdirentries64(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_statfs64(self, events):
+        args = events[0].values
+        return BscStatfs64(events, self.parse_vnode(events).path, args[1], serialize_result(events[-1]))
+
+    def handle_bsc_fstatfs64(self, events):
+        args = events[0].values
+        return BscFstatfs64(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_getfsstat64(self, events):
+        args = events[0].values
+        return BscGetfsstat64(events, args[0], args[1], args[2], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_pthread_fchdir(self, events):
+        args = events[0].values
+        return BscPthreadFchdir(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_audit(self, events):
+        args = events[0].values
+        return BscAudit(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_auditon(self, events):
+        args = events[0].values
+        return BscAuditon(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_getauid(self, events):
+        args = events[0].values
+        return BscGetauid(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_setauid(self, events):
+        args = events[0].values
+        return BscSetauid(events, args[0], serialize_result(events[-1]))
+
     def handle_bsc_bsdthread_create(self, events):
         return BscBsdthreadCreate(events, events[-1].values[3])
 
-    def handle_bsc_sys_close(self, events, no_cancel=False):
-        return BscSysClose(events, events[0].values[0], serialize_result(events[-1]), no_cancel)
+    def handle_bsc_kqueue(self, events):
+        return BscKqueue(events, serialize_result(events[-1], 'fd'))
+
+    def handle_bsc_kevent(self, events):
+        args = events[0].values
+        return BscKevent(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_lchown(self, events):
+        args = events[0].values
+        return BscLchown(events, self.parse_vnode(events).path, args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_bsdthread_register(self, events):
+        args = events[0].values
+        return BscBsdthreadRegister(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_workq_open(self, events):
+        return BscWorkqOpen(events, serialize_result(events[-1]))
+
+    def handle_bsc_workq_kernreturn(self, events):
+        args = events[0].values
+        return BscWorkqKernreturn(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'return'))
+
+    def handle_bsc_kevent64(self, events):
+        args = events[0].values
+        return BscKevent64(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_thread_selfid(self, events):
+        return BscThreadSelfid(events, serialize_result(events[-1], 'tid'))
+
+    def handle_bsc_kevent_qos(self, events):
+        args = events[0].values
+        return BscKeventQos(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_kevent_id(self, events):
+        args = events[0].values
+        return BscKeventId(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_mac_syscall(self, events):
+        args = events[0].values
+        return BscMacSyscall(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_pselect(self, events, no_cancel=False):
+        args = events[0].values
+        return BscPselect(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'), no_cancel)
+
+    def handle_bsc_fsgetpath(self, events):
+        args = events[0].values
+        return BscFsgetpath(events, args[0], args[1], args[2], args[3], self.parse_vnode(events).path,
+                            serialize_result(events[-1], 'count'))
+
+    def handle_bsc_sys_fileport_makeport(self, events):
+        args = events[0].values
+        return BscSysFileportMakeport(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_sys_fileport_makefd(self, events):
+        args = events[0].values
+        return BscSysFileportMakefd(events, args[0], serialize_result(events[-1], 'fd'))
+
+    def handle_bsc_audit_session_port(self, events):
+        args = events[0].values
+        return BscAuditSessionPort(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_pid_suspend(self, events):
+        args = events[0].values
+        return BscPidSuspend(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_pid_resume(self, events):
+        args = events[0].values
+        return BscPidResume(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_pid_hibernate(self, events):
+        args = events[0].values
+        return BscPidHibernate(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_pid_shutdown_sockets(self, events):
+        args = events[0].values
+        return BscPidShutdownSockets(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_shared_region_map_and_slide_np(self, events):
+        args = events[0].values
+        return BscSharedRegionMapAndSlideNp(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_kas_info(self, events):
+        args = events[0].values
+        return BscKasInfo(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_memorystatus_control(self, events):
+        args = events[0].values
+        return BscMemorystatusControl(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_guarded_open_np(self, events):
+        args = events[0].values
+        return BscGuardedOpenNp(events, self.parse_vnode(events).path, args[1], args[2], serialize_open_flags(args[3]),
+                                serialize_result(events[-1], 'fd'))
+
+    def handle_bsc_guarded_close_np(self, events):
+        args = events[0].values
+        return BscGuardedCloseNp(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_guarded_kqueue_np(self, events):
+        args = events[0].values
+        return BscGuardedKqueueNp(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_change_fdguard_np(self, events):
+        args = events[0].values
+        return BscChangeFdguardNp(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_usrctl(self, events):
+        args = events[0].values
+        return BscUsrctl(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_proc_rlimit_control(self, events):
+        args = events[0].values
+        return BscProcRlimitControl(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_connectx(self, events):
+        args = events[0].values
+        return BscConnectx(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_disconnectx(self, events):
+        args = events[0].values
+        return BscDisconnectx(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_peeloff(self, events):
+        args = events[0].values
+        return BscPeeloff(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_socket_delegate(self, events):
+        args = events[0].values
+        return BscSocketDelegate(events, socket.AddressFamily(args[0]), socket.SocketKind(args[1]), args[2], args[3],
+                                 serialize_result(events[-1], 'fd'))
+
+    def handle_bsc_telemetry(self, events):
+        args = events[0].values
+        return BscTelemetry(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_proc_uuid_policy(self, events):
+        args = events[0].values
+        return BscProcUuidPolicy(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_memorystatus_get_level(self, events):
+        return BscMemorystatusGetLevel(events, events[0].values[0], serialize_result(events[-1]))
+
+    def handle_bsc_system_override(self, events):
+        args = events[0].values
+        return BscSystemOverride(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_vfs_purge(self, events):
+        return BscVfsPurge(events, serialize_result(events[-1]))
+
+    def handle_bsc_sfi_ctl(self, events):
+        args = events[0].values
+        return BscSfiCtl(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_sfi_pidctl(self, events):
+        args = events[0].values
+        return BscSfiPidctl(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_coalition(self, events):
+        args = events[0].values
+        return BscCoalition(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_coalition_info(self, events):
+        args = events[0].values
+        return BscCoalitionInfo(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_necp_match_policy(self, events):
+        args = events[0].values
+        return BscNecpMatchPolicy(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_getattrlistbulk(self, events):
+        args = events[0].values
+        return BscGetattrlistbulk(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_clonefileat(self, events):
+        src = self.parse_vnode(events)
+        dst = self.parse_vnode([e for e in events if e not in src.ktraces])
+        args = events[0].values
+        return BscClonefileat(events, args[0], src.path, args[2], dst.path, serialize_result(events[-1]))
+
+    def handle_bsc_openat(self, events, no_cancel=False):
+        vnode = self.parse_vnode(events)
+        call_flags = serialize_open_flags(events[0].values[2])
+        return BscOpenat(events, events[0].values[0], vnode.path, call_flags, serialize_result(events[-1], 'fd'),
+                         no_cancel)
+
+    def handle_bsc_renameat(self, events):
+        nodes = self.parse_vnodes(events)
+        args = events[0].values
+        return BscRenameat(events, args[0], nodes[0].path, args[2], nodes[1].path, serialize_result(events[-1]))
+
+    def handle_bsc_faccessat(self, events):
+        vnode = self.parse_vnode(events)
+        args = events[0].values
+        amode = serialize_access_flags(args[2])
+        return BscFaccessat(events, args[0], vnode.path, amode, args[3], serialize_result(events[-1]))
+
+    def handle_bsc_fchmodat(self, events):
+        vnode = self.parse_vnode(events)
+        args = events[0].values
+        mode = serialize_stat_flags(args[2])
+        return BscFchmodat(events, args[0], vnode.path, mode, args[3], serialize_result(events[-1]))
+
+    def handle_bsc_fchownat(self, events):
+        vnode = self.parse_vnode(events)
+        args = events[0].values
+        return BscFchownat(events, args[0], vnode.path, args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_fstatat(self, events):
+        vnode = self.parse_vnode(events)
+        args = events[0].values
+        return BscFstatat(events, args[0], vnode.path, args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_fstatat64(self, events):
+        vnode = self.parse_vnode(events)
+        args = events[0].values
+        return BscFstatat64(events, args[0], vnode.path, args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_linkat(self, events):
+        nodes = self.parse_vnodes(events)
+        path1, path2 = (nodes[0].path, nodes[1].path) if nodes else ('', '')
+        args = events[0].values
+        return BscLinkat(events, args[0], path1, args[2], path2, serialize_result(events[-1]))
+
+    def handle_bsc_unlinkat(self, events):
+        vnode = self.parse_vnode(events)
+        args = events[0].values
+        return BscUnlinkat(events, args[0], vnode.path, args[2], serialize_result(events[-1]))
+
+    def handle_bsc_readlinkat(self, events):
+        vnode = self.parse_vnode(events)
+        args = events[0].values
+        return BscReadlinkat(events, args[0], vnode.path, args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_symlinkat(self, events):
+        nodes = self.parse_vnodes(events)
+        oldpath = nodes[0].path if len(nodes) > 1 else ''
+        args = events[0].values
+        return BscSymlinkat(events, oldpath, args[1], nodes[-1].path, serialize_result(events[-1]))
+
+    def handle_bsc_mkdirat(self, events):
+        vnode = self.parse_vnode(events)
+        args = events[0].values
+        return BscMkdirat(events, args[0], vnode.path, serialize_stat_flags(args[2]), serialize_result(events[-1]))
+
+    def handle_bsc_getattrlistat(self, events):
+        vnode = self.parse_vnode(events)
+        args = events[0].values
+        return BscGetattrlistat(events, args[0], vnode.path, args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_proc_trace_log(self, events):
+        args = events[0].values
+        return BscProcTraceLog(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_bsdthread_ctl(self, events):
+        args = events[0].values
+        return BscBsdthreadCtl(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_openbyid_np(self, events):
+        args = events[0].values
+        return BscOpenbyidNp(events, args[0], args[1], serialize_open_flags(args[2]),
+                             serialize_result(events[-1], 'fd'))
+
+    def handle_bsc_recvmsg_x(self, events):
+        args = events[0].values
+        return BscRecvmsgX(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_sendmsg_x(self, events):
+        args = events[0].values
+        return BscSendmsgX(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_thread_selfusage(self, events):
+        return BscThreadSelfusage(events, serialize_result(events[-1], 'runtime'))
+
+    def handle_bsc_csrctl(self, events):
+        args = events[0].values
+        return BscCsrctl(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_guarded_open_dprotected_np(self, events):
+        vnode = self.parse_vnode(events)
+        args = events[0].values
+        return BscGuardedOpenDprotectedNp(events, vnode.path, args[1], args[2], serialize_open_flags(args[3]),
+                                          serialize_result(events[-1], 'fd'))
+
+    def handle_bsc_guarded_write_np(self, events):
+        args = events[0].values
+        return BscGuardedWriteNp(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_guarded_pwrite_np(self, events):
+        args = events[0].values
+        return BscGuardedPwriteNp(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_guarded_writev_np(self, events):
+        args = events[0].values
+        return BscGuardedWritevNp(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_renameatx_np(self, events):
+        nodes = self.parse_vnodes(events)
+        path1, path2 = (nodes[0].path, nodes[1].path) if nodes else ('', '')
+        args = events[0].values
+        return BscRenameatxNp(events, args[0], path1, args[2], path2, serialize_result(events[-1]))
+
+    def handle_bsc_mremap_encrypted(self, events):
+        args = events[0].values
+        return BscMremapEncrypted(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_netagent_trigger(self, events):
+        args = events[0].values
+        return BscNetagentTrigger(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_stack_snapshot_with_config(self, events):
+        args = events[0].values
+        return BscStackSnapshotWithConfig(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_microstackshot(self, events):
+        args = events[0].values
+        return BscMicrostackshot(events, args[0], args[1], args[2], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_grab_pgo_data(self, events):
+        args = events[0].values
+        return BscGrabPgoData(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'count'))
+
+    def handle_bsc_persona(self, events):
+        args = events[0].values
+        return BscPersona(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_mach_eventlink_signal(self, events):
+        args = events[0].values
+        return BscMachEventlinkSignal(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_mach_eventlink_wait_until(self, events):
+        args = events[0].values
+        return BscMachEventlinkWaitUntil(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_mach_eventlink_signal_wait_until(self, events):
+        args = events[0].values
+        return BscMachEventlinkSignalWaitUntil(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_work_interval_ctl(self, events):
+        args = events[0].values
+        return BscWorkIntervalCtl(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_getentropy(self, events):
+        args = events[0].values
+        return BscGetentropy(events, args[0], args[1], serialize_result(events[-1]))
+
+    def handle_bsc_necp_open(self, events):
+        args = events[0].values
+        return BscNecpOpen(events, args[0], serialize_result(events[-1], 'fd'))
+
+    def handle_bsc_necp_client_action(self, events):
+        args = events[0].values
+        return BscNecpClientAction(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'return'))
+
+    def handle_bsc_nexus_open(self, events):
+        return BscNexusOpen(events, serialize_result(events[-1], 'fd'))
+
+    def handle_bsc_nexus_register(self, events):
+        return BscNexusRegister(events, serialize_result(events[-1]))
+
+    def handle_bsc_nexus_deregister(self, events):
+        return BscNexusDeregister(events, serialize_result(events[-1]))
+
+    def handle_bsc_nexus_create(self, events):
+        return BscNexusCreate(events, serialize_result(events[-1]))
+
+    def handle_bsc_nexus_destroy(self, events):
+        return BscNexusDestroy(events, serialize_result(events[-1]))
+
+    def handle_bsc_nexus_get_opt(self, events):
+        return BscNexusGetOpt(events, serialize_result(events[-1]))
+
+    def handle_bsc_nexus_set_opt(self, events):
+        return BscNexusSetOpt(events, serialize_result(events[-1]))
+
+    def handle_bsc_channel_open(self, events):
+        return BscChannelOpen(events, serialize_result(events[-1]))
+
+    def handle_bsc_channel_get_info(self, events):
+        return BscChannelGetInfo(events, serialize_result(events[-1]))
+
+    def handle_bsc_channel_sync(self, events):
+        return BscChannelSync(events, serialize_result(events[-1]))
+
+    def handle_bsc_channel_get_opt(self, events):
+        return BscChannelGetOpt(events, serialize_result(events[-1]))
+
+    def handle_bsc_channel_set_opt(self, events):
+        return BscChannelSetOpt(events, serialize_result(events[-1]))
+
+    def handle_bsc_ulock_wait(self, events):
+        args = events[0].values
+        return BscUlockWait(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'return'))
+
+    def handle_bsc_ulock_wake(self, events):
+        args = events[0].values
+        return BscUlockWake(events, args[0], args[1], args[2], serialize_result(events[-1], 'return'))
+
+    def handle_bsc_fclonefileat(self, events):
+        args = events[0].values
+        return BscFclonefileat(events, args[0], args[1], self.parse_vnode(events).path, args[3],
+                               serialize_result(events[-1]))
+
+    def handle_bsc_fs_snapshot(self, events):
+        nodes = self.parse_vnodes(events)
+        name2 = nodes[1].path if len(nodes) > 1 else ''
+        args = events[0].values
+        return BscFsSnapshot(events, FsSnapshotOp(args[0]), args[1], nodes[0].path, name2, serialize_result(events[-1]))
+
+    def handle_bsc_terminate_with_payload(self, events):
+        args = events[0].values
+        return BscTerminateWithPayload(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_abort_with_payload(self, events):
+        args = events[0].values
+        return BscAbortWithPayload(events, args[0], args[1], args[2], args[3])
+
+    def handle_bsc_necp_session_open(self, events):
+        args = events[0].values
+        return BscNecpSessionOpen(events, args[0], serialize_result(events[-1], 'fd'))
+
+    def handle_bsc_necp_session_action(self, events):
+        args = events[0].values
+        return BscNecpSessionAction(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_setattrlistat(self, events):
+        args = events[0].values
+        return BscSetattrlistat(events, args[0], self.parse_vnode(events).path, args[2], args[3],
+                                serialize_result(events[-1]))
+
+    def handle_bsc_net_qos_guideline(self, events):
+        args = events[0].values
+        return BscNetQosGuideline(events, args[0], args[1], serialize_result(events[-1], 'background'))
+
+    def handle_bsc_fmount(self, events):
+        args = events[0].values
+        return BscFmount(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_ntp_adjtime(self, events):
+        args = events[0].values
+        return BscNtpAdjtime(events, args[0], serialize_result(events[-1], 'return'))
+
+    def handle_bsc_ntp_gettime(self, events):
+        args = events[0].values
+        return BscNtpGettime(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_os_fault_with_payload(self, events):
+        args = events[0].values
+        return BscOsFaultWithPayload(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_kqueue_workloop_ctl(self, events):
+        args = events[0].values
+        return BscKqueueWorkloopCtl(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_mach_bridge_remote_time(self, events):
+        args = events[0].values
+        return BscMachBridgeRemoteTime(events, args[0], serialize_result(events[-1]))
+
+    def handle_bsc_coalition_ledger(self, events):
+        args = events[0].values
+        return BscCoalitionLedger(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_log_data(self, events):
+        args = events[0].values
+        return BscLogData(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_memorystatus_available_memory(self, events):
+        return BscMemorystatusAvailableMemory(events, serialize_result(events[-1], 'count'))
+
+    def handle_bsc_shared_region_map_and_slide_2_np(self, events):
+        args = events[0].values
+        return BscSharedRegionMapAndSlide2Np(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
+
+    def handle_bsc_pivot_root(self, events):
+        nodes = self.parse_vnodes(events)
+        path1, path2 = (nodes[0].path, nodes[1].path) if nodes else ('', '')
+        return BscPivotRoot(events, path1, path2, serialize_result(events[-1]))
+
+    def handle_bsc_task_inspect_for_pid(self, events):
+        args = events[0].values
+        return BscTaskInspectForPid(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_task_read_for_pid(self, events):
+        args = events[0].values
+        return BscTaskReadForPid(events, args[0], args[1], args[2], serialize_result(events[-1]))
+
+    def handle_bsc_sys_preadv(self, events, no_cancel=False):
+        args = events[0].values
+        return BscSysPreadv(events, args[0], args[1], args[2], ctypes.c_int64(args[0]).value,
+                            serialize_result(events[-1], 'count'), no_cancel)
+
+    def handle_bsc_sys_pwritev(self, events, no_cancel=False):
+        args = events[0].values
+        return BscSysPwritev(events, args[0], args[1], args[2], ctypes.c_int64(args[0]).value,
+                             serialize_result(events[-1], 'count'), no_cancel)
+
+    def handle_bsc_ulock_wait2(self, events):
+        args = events[0].values
+        return BscUlockWait2(events, args[0], args[1], args[2], args[3], serialize_result(events[-1], 'return'))
+
+    def handle_bsc_proc_info_extended_id(self, events):
+        args = events[0].values
+        return BscProcInfoExtendedId(events, args[0], args[1], args[2], args[3], serialize_result(events[-1]))
 
     def handle_trace_data_newthread(self, events):
         result = events[0].values
