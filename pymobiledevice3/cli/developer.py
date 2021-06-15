@@ -569,7 +569,8 @@ def accessibility_settings():
 @accessibility_settings.command('show', cls=Command)
 def accessibility_settings_show(lockdown):
     """ show current settings """
-    print_json(AccessibilityAudit(lockdown).get_current_settings())
+    for setting in AccessibilityAudit(lockdown).get_current_settings():
+        print(setting)
 
 
 @accessibility_settings.command('set', cls=Command)
@@ -587,6 +588,28 @@ def accessibility_settings_set(lockdown, setting, value):
 def accessibility_shell(lockdown):
     """ start and ipython accessibility shell """
     AccessibilityAudit(lockdown).shell()
+
+
+@accessibility.command('notifications', cls=Command)
+@click.option('-c', '--cycle-focus', is_flag=True)
+def accessibility_notifications(lockdown, cycle_focus):
+    """ show notifications """
+
+    def callback(name, data):
+        if name in ('hostAppStateChanged:',
+                    'hostInspectorCurrentElementChanged:',):
+            for focus_item in data:
+                logging.info(focus_item)
+
+            if name == 'hostInspectorCurrentElementChanged:':
+                if cycle_focus:
+                    service.move_focus_next()
+
+    service = AccessibilityAudit(lockdown)
+    service.register_notifications_callback(callback)
+    if cycle_focus:
+        service.move_focus_next()
+    service.listen_for_notifications()
 
 
 @developer.group('condition')

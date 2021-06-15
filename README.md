@@ -41,6 +41,7 @@ Main features include:
     * Process management
     * Sniffing KDebug messages (**strace** capabilities++)
     * Process monitoring (`top` like)
+    * Accessibility features
 
 # Installation
 
