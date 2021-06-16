@@ -27,6 +27,7 @@ from pymobiledevice3.services.dvt.instruments.process_control import ProcessCont
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 from pymobiledevice3.services.os_trace import OsTraceService
+from pymobiledevice3.services.remote_server import RemoteServer
 from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
@@ -56,14 +57,22 @@ def developer():
     pass
 
 
-@developer.command(cls=Command)
-@click.argument('out', type=click.File('wb'))
-def screenshot(lockdown, out):
-    """ take a screenshot in PNG format """
-    out.write(ScreenshotService(lockdown=lockdown).take_screenshot())
+@developer.command('shell', cls=Command)
+@click.argument('service')
+@click.option('-r', '--remove-ssl-context', is_flag=True)
+def developer_shell(lockdown, service, remove_ssl_context):
+    """ Launch developer shell. """
+    with RemoteServer(lockdown, service, remove_ssl_context) as service:
+        service.shell()
 
 
-@developer.command('proclist', cls=Command)
+@developer.group()
+def dvt():
+    """ dvt operations """
+    pass
+
+
+@dvt.command('proclist', cls=Command)
 @click.option('--nocolor', is_flag=True)
 def proclist(lockdown, nocolor):
     """ show process list """
@@ -76,7 +85,7 @@ def proclist(lockdown, nocolor):
         print_json(processes, colored=not nocolor)
 
 
-@developer.command('applist', cls=Command)
+@dvt.command('applist', cls=Command)
 @click.option('--nocolor', is_flag=True)
 def applist(lockdown, nocolor):
     """ show application list """
@@ -85,7 +94,7 @@ def applist(lockdown, nocolor):
         print_json(apps, colored=not nocolor)
 
 
-@developer.command('kill', cls=Command)
+@dvt.command('kill', cls=Command)
 @click.argument('pid', type=click.INT)
 def kill(lockdown, pid):
     """ Kill a process by its pid. """
@@ -93,7 +102,7 @@ def kill(lockdown, pid):
         ProcessControl(dvt).kill(pid)
 
 
-@developer.command('pkill', cls=Command)
+@dvt.command('pkill', cls=Command)
 @click.argument('expression')
 def pkill(lockdown, expression):
     """ kill all processes containing `expression` in their name. """
@@ -112,7 +121,7 @@ def pkill(lockdown, expression):
                 process_control.kill(pid)
 
 
-@developer.command('launch', cls=Command)
+@dvt.command('launch', cls=Command)
 @click.argument('arguments', type=click.STRING)
 @click.option('--kill-existing/--no-kill-existing', default=True)
 @click.option('--suspended', is_flag=True)
@@ -130,8 +139,8 @@ def launch(lockdown: LockdownClient, arguments: str, kill_existing: bool, suspen
         print(f'Process launched with pid {pid}')
 
 
-@developer.command('shell', cls=Command)
-def shell(lockdown):
+@dvt.command('shell', cls=Command)
+def dvt_shell(lockdown):
     """ Launch developer shell. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         dvt.shell()
@@ -150,7 +159,7 @@ def show_dirlist(device_info: DeviceInfo, dirname, recursive=False):
             show_dirlist(device_info, filename, recursive=recursive)
 
 
-@developer.command('ls', cls=Command)
+@dvt.command('ls', cls=Command)
 @click.argument('path', type=click.Path(exists=False))
 @click.option('-r', '--recursive', is_flag=True)
 def ls(lockdown, path, recursive):
@@ -159,7 +168,7 @@ def ls(lockdown, path, recursive):
         show_dirlist(DeviceInfo(dvt), path, recursive=recursive)
 
 
-@developer.command('device-information', cls=Command)
+@dvt.command('device-information', cls=Command)
 @click.option('--nocolor', is_flag=True)
 def device_information(lockdown, nocolor):
     """ Print system information. """
@@ -172,7 +181,7 @@ def device_information(lockdown, nocolor):
         }, colored=not nocolor)
 
 
-@developer.command('netstat', cls=Command)
+@dvt.command('netstat', cls=Command)
 def netstat(lockdown):
     """ Print information about current network activity. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
@@ -184,7 +193,7 @@ def netstat(lockdown):
                         f'{event.remote_address.data.address}:{event.remote_address.port}')
 
 
-@developer.group('sysmon')
+@dvt.group('sysmon')
 def sysmon():
     """ System monitor options. """
 
@@ -281,7 +290,7 @@ def sysmon_system(lockdown, fields):
             print(f'{name}: {value}')
 
 
-@developer.group('core-profile-session')
+@dvt.group('core-profile-session')
 def core_profile_session():
     """ Core profile session options. """
 
@@ -437,7 +446,7 @@ def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters, noc
                 events_parser.feed(event)
 
 
-@developer.command('trace-codes', cls=Command)
+@dvt.command('trace-codes', cls=Command)
 @click.option('--nocolor', is_flag=True)
 def trace_codes(lockdown, nocolor):
     """ Print system information. """
@@ -446,7 +455,7 @@ def trace_codes(lockdown, nocolor):
         print_json({hex(k): v for k, v in device_info.trace_codes().items()}, colored=not nocolor)
 
 
-@developer.command('oslog', cls=Command)
+@dvt.command('oslog', cls=Command)
 @click.option('--nocolor', is_flag=True, help='disable colors')
 @click.option('--pid', type=click.INT)
 def developer_oslog(lockdown, nocolor, pid):
@@ -480,7 +489,7 @@ def developer_oslog(lockdown, nocolor, pid):
                 print(f'[{subsystem}][{category}][{message_pid}][{image_name}] <{message_type}>: {formatted_message}')
 
 
-@developer.command('energy', cls=Command)
+@dvt.command('energy', cls=Command)
 @click.argument('pid-list', nargs=-1)
 def developer_energy(lockdown, pid_list):
     """ energy monitoring for given pid list. """
@@ -639,3 +648,10 @@ def condition_set(lockdown, profile_identifier):
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         ConditionInducer(dvt).set(profile_identifier)
         wait_return()
+
+
+@developer.command(cls=Command)
+@click.argument('out', type=click.File('wb'))
+def screenshot(lockdown, out):
+    """ take a screenshot in PNG format """
+    out.write(ScreenshotService(lockdown=lockdown).take_screenshot())
