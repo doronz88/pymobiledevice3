@@ -13,6 +13,7 @@ from pygments import highlight, lexers, formatters
 from pymobiledevice3.cli.cli_common import print_json, Command
 from pymobiledevice3.exceptions import DvtDirListError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.debugserver_applist import DebugServerAppList
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
@@ -655,3 +656,16 @@ def condition_set(lockdown, profile_identifier):
 def screenshot(lockdown, out):
     """ take a screenshot in PNG format """
     out.write(ScreenshotService(lockdown=lockdown).take_screenshot())
+
+
+@developer.group('debugserver')
+def debugserver():
+    """ debugserver options. """
+    pass
+
+
+@debugserver.command('applist', cls=Command)
+def debugserver_applist(lockdown):
+    """ get applist xml """
+    print_json(DebugServerAppList(lockdown).get())
+
