@@ -9,13 +9,14 @@ from pymobiledevice3.service_connection import ServiceConnection, ConnectionFail
 class TcpForwarder:
     MAX_FORWARDED_CONNECTIONS = 200
 
-    def __init__(self, lockdown: LockdownClient, src_port: int, dst_port: int):
+    def __init__(self, lockdown: LockdownClient, src_port: int, dst_port: int, enable_ssl=False):
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
         self.src_port = src_port
         self.dst_port = dst_port
         self.server_socket = None
         self.inputs = []
+        self.enable_ssl = enable_ssl
 
         # dictionaries containing the required maps to transfer data between each local
         # socket to its remote socket and vice versa
@@ -81,7 +82,12 @@ class TcpForwarder:
         local_connection.setblocking(False)
 
         try:
-            remote_connection = ServiceConnection.create(self.lockdown.udid, self.dst_port).socket
+            service_connection = ServiceConnection.create(self.lockdown.udid, self.dst_port)
+
+            if self.enable_ssl:
+                service_connection.ssl_start(self.lockdown.ssl_file, self.lockdown.ssl_file)
+
+            remote_connection = service_connection.socket
         except ConnectionFailedError:
             self.logger.error(f'failed to connect to port: {self.dst_port}')
             local_connection.close()

@@ -34,6 +34,8 @@ from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from termcolor import colored
 
+from pymobiledevice3.tcp_forwarder import TcpForwarder
+
 
 def wait_return():
     input('> Hit RETURN to exit')
@@ -669,3 +671,19 @@ def debugserver_applist(lockdown):
     """ get applist xml """
     print_json(DebugServerAppList(lockdown).get())
 
+
+@debugserver.command('start-server', cls=Command)
+@click.argument('local_port', type=click.INT)
+def debugserver_shell(lockdown, local_port):
+    """
+    start a debugserver at remote listening on a given port locally.
+
+    Please note the connection must be done soon afterwards using your own lldb client.
+    This can be done using the following commands within lldb shell:
+
+    - platform select remote-ios
+
+    - platform connect connect://localhost:<local_port>
+    """
+    attr = lockdown.get_service_connection_attributes('com.apple.debugserver.DVTSecureSocketProxy')
+    TcpForwarder(lockdown, local_port, attr['Port'], attr.get('EnableServiceSSL', False)).start()
