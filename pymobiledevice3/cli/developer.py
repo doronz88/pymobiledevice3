@@ -13,6 +13,7 @@ from pygments import highlight, lexers, formatters
 from pymobiledevice3.cli.cli_common import print_json, Command
 from pymobiledevice3.exceptions import DvtDirListError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.debugserver_applist import DebugServerAppList
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
@@ -32,6 +33,8 @@ from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from termcolor import colored
+
+from pymobiledevice3.tcp_forwarder import TcpForwarder
 
 
 def wait_return():
@@ -655,3 +658,32 @@ def condition_set(lockdown, profile_identifier):
 def screenshot(lockdown, out):
     """ take a screenshot in PNG format """
     out.write(ScreenshotService(lockdown=lockdown).take_screenshot())
+
+
+@developer.group('debugserver')
+def debugserver():
+    """ debugserver options. """
+    pass
+
+
+@debugserver.command('applist', cls=Command)
+def debugserver_applist(lockdown):
+    """ get applist xml """
+    print_json(DebugServerAppList(lockdown).get())
+
+
+@debugserver.command('start-server', cls=Command)
+@click.argument('local_port', type=click.INT)
+def debugserver_shell(lockdown, local_port):
+    """
+    start a debugserver at remote listening on a given port locally.
+
+    Please note the connection must be done soon afterwards using your own lldb client.
+    This can be done using the following commands within lldb shell:
+
+    - platform select remote-ios
+
+    - platform connect connect://localhost:<local_port>
+    """
+    attr = lockdown.get_service_connection_attributes('com.apple.debugserver.DVTSecureSocketProxy')
+    TcpForwarder(lockdown, local_port, attr['Port'], attr.get('EnableServiceSSL', False)).start()

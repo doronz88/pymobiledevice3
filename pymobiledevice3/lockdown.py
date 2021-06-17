@@ -258,7 +258,7 @@ class LockdownClient(object):
         self.logger.debug(response)
         return response
 
-    def start_service(self, name, escrow_bag=None) -> ServiceConnection:
+    def get_service_connection_attributes(self, name, escrow_bag=None) -> dict:
         if not self.paired:
             self.logger.info('NotPaired')
             raise NotPairedError()
@@ -269,14 +269,17 @@ class LockdownClient(object):
 
         self.service.send_plist(request)
         response = self.service.recv_plist()
-        ssl_enabled = response.get('EnableServiceSSL', False)
         if not response or response.get('Error'):
             if response.get('Error', '') == 'PasswordProtected':
                 raise PasswordRequiredError(
                     'your device is protected with password, please enter password in device and try again')
             raise StartServiceError(response.get("Error"))
-        service_connection = ServiceConnection.create(self.udid, response.get('Port'))
-        if ssl_enabled:
+        return response
+
+    def start_service(self, name, escrow_bag=None) -> ServiceConnection:
+        attr = self.get_service_connection_attributes(name, escrow_bag=escrow_bag)
+        service_connection = ServiceConnection.create(self.udid, attr['Port'])
+        if attr.get('EnableServiceSSL', False):
             service_connection.ssl_start(self.ssl_file, self.ssl_file)
         return service_connection
 
