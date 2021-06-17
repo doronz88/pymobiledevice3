@@ -24,6 +24,7 @@ from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
 from pymobiledevice3.services.dvt.instruments.kdebug_events_parser import KdebugEventsParser
 from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMonitor, ConnectionDetectionEvent
+from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
@@ -461,7 +462,7 @@ def trace_codes(lockdown, nocolor):
 @dvt.command('oslog', cls=Command)
 @click.option('--nocolor', is_flag=True, help='disable colors')
 @click.option('--pid', type=click.INT)
-def developer_oslog(lockdown, nocolor, pid):
+def dvt_oslog(lockdown, nocolor, pid):
     """ oslog. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with ActivityTraceTap(dvt) as tap:
@@ -494,7 +495,7 @@ def developer_oslog(lockdown, nocolor, pid):
 
 @dvt.command('energy', cls=Command)
 @click.argument('pid-list', nargs=-1)
-def developer_energy(lockdown, pid_list):
+def dvt_energy(lockdown, pid_list):
     """ energy monitoring for given pid list. """
 
     if len(pid_list) == 0:
@@ -507,6 +508,15 @@ def developer_energy(lockdown, pid_list):
         with EnergyMonitor(dvt, pid_list) as energy_monitor:
             for telemetry in energy_monitor:
                 logging.info(telemetry)
+
+
+@dvt.command('notifications', cls=Command)
+def dvt_notifications(lockdown):
+    """ monitor memory and app notifications """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with Notifications(dvt) as notifications:
+            for notification in notifications:
+                logging.info(notification)
 
 
 @developer.command('fetch-symbols', cls=Command)
