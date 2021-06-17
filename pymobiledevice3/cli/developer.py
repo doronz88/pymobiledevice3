@@ -22,6 +22,7 @@ from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import Co
     ProcessData
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
+from pymobiledevice3.services.dvt.instruments.graphics import Graphics
 from pymobiledevice3.services.dvt.instruments.kdebug_events_parser import KdebugEventsParser
 from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMonitor, ConnectionDetectionEvent
 from pymobiledevice3.services.dvt.instruments.notifications import Notifications
@@ -517,6 +518,15 @@ def dvt_notifications(lockdown):
         with Notifications(dvt) as notifications:
             for notification in notifications:
                 logging.info(notification)
+
+
+@dvt.command('graphics', cls=Command)
+def dvt_notifications(lockdown):
+    """ monitor graphics statistics """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with Graphics(dvt) as graphics:
+            for stats in graphics:
+                logging.info(stats)
 
 
 @developer.command('fetch-symbols', cls=Command)
