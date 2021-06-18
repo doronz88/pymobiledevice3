@@ -142,12 +142,15 @@ DONE | `com.apple.mobile.diagnostics_relay` | General diagnostic tools
 DONE | `com.apple.mobile.notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()`
 DONE | `com.apple.crashreportmover` | Just trigger `crash_mover` to move all crash reports into crash directory
 DONE | `com.apple.mobile.MCInstall` | Profile management
-DONE | `com.apple.mobile.screenshotr` | Take screenshot into a PNG format
-DONE | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | Developer instrumentation service
 DONE | `com.apple.mobile.mobile_image_mounter` | Image mounter service (used for DeveloperDiskImage mounting)
 DONE | `com.apple.mobile.house_arrest` | Get AFC utils (file management per application bundle)
 DONE | `com.apple.mobile.installation_proxy`|  Application management
-DONE | `com.apple.dt.simulatelocation` | Allows to simulate locations
+DONE | `com.apple.instruments.remoteserver` | Developer instrumentation service, iOS<14  (DeveloperDiskImage)
+DONE | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | Developer instrumentation service, iOS>=14  (DeveloperDiskImage)
+DONE | `com.apple.mobile.screenshotr` | Take screenshot into a PNG format (DeveloperDiskImage)
+DONE | `com.apple.accessibility.axAuditDaemon.remoteserver` | Accessibility features (DeveloperDiskImage)
+DONE | `com.apple.dt.simulatelocation` | Allows to simulate locations (DeveloperDiskImage)
+DONE | `com.apple.dt.fetchsymbols` | Allows fetching of `dyld` and dyld shared cache files (DeveloperDiskImage) 
 Not yet | `com.apple.idamd` | Allows settings the IDAM configuration (whatever that means...)
 Not yet | `com.apple.atc` | AirTraffic related
 Not yet | `com.apple.mobile.assertion_agent` | Create power assertion to prevent different kinds of sleep
