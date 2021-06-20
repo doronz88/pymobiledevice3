@@ -163,10 +163,7 @@ Not yet | `com.apple.mobilebackup` |
 Not yet | `com.apple.mobilebackup2` |
 Not yet | `com.apple.mobilesync` |
 Not yet | `com.apple.purpletestr` |
-Not yet | `com.apple.radios.wirelesstester.mobile` |
-Not yet | `com.apple.radios.wirelesstester.root` |
 Not yet | `com.apple.springboardservices` | Icon related
-Not yet | `com.apple.thermalmonitor.thermtgraphrelay` |
 Not yet | `com.apple.webinspector` | Used to debug WebViews
 
 ## `com.apple.instruments.remoteserver.DVTSecureSocketProxy`
