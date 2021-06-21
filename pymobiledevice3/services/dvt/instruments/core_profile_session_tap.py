@@ -18,7 +18,7 @@ except ImportError:
 
     from threading import RLock
 
-    GenericAlias = type(list[int])
+    GenericAlias = type(typing.List[int])
 
     _NOT_FOUND = object()
 
