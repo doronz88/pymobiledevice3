@@ -1,11 +1,12 @@
-import logging
-
+import IPython
 import click
 
 from pymobiledevice3.cli.cli_common import Command, print_json
-from pymobiledevice3.services.house_arrest import HouseArrestService
-from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.springboard import SpringBoardServicesService
+
+SHELL_USAGE = '''
+Use `service` to access the service features 
+'''
 
 
 @click.group()
@@ -31,6 +32,17 @@ def state():
 def state_get(lockdown, color):
     """ get icon state """
     print_json(SpringBoardServicesService(lockdown=lockdown).get_icon_state(), colored=color)
+
+
+@springboard.command('shell', cls=Command)
+def springboard_shell(lockdown):
+    """ open a shell to communicate with SpringBoardServicesService """
+    service = SpringBoardServicesService(lockdown=lockdown)
+    IPython.embed(
+        header=SHELL_USAGE,
+        user_ns={
+            'service': service,
+        })
 
 
 @springboard.command('icon', cls=Command)
