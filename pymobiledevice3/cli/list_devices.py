@@ -12,8 +12,8 @@ def cli():
 
 
 @cli.command('list-devices')
-@click.option('--nocolor', is_flag=True)
-def list_devices(nocolor):
+@click.option('--color/--no-color', default=True)
+def list_devices(color):
     """ list connected devices """
     mux = usbmux.USBMux()
     mux.process()
@@ -23,4 +23,4 @@ def list_devices(nocolor):
         lockdown = LockdownClient(udid)
         connected_devices.append(lockdown.all_values)
 
-    print_json(connected_devices, colored=not nocolor, default=lambda x: '<non-serializable>')
+    print_json(connected_devices, colored=color, default=lambda x: '<non-serializable>')

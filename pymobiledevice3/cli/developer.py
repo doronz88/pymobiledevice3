@@ -78,8 +78,8 @@ def dvt():
 
 
 @dvt.command('proclist', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def proclist(lockdown, nocolor):
+@click.option('--color/--no-color', default=True)
+def proclist(lockdown, color):
     """ show process list """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         processes = DeviceInfo(dvt).proclist()
@@ -87,16 +87,16 @@ def proclist(lockdown, nocolor):
             if 'startDate' in process:
                 process['startDate'] = str(process['startDate'])
 
-        print_json(processes, colored=not nocolor)
+        print_json(processes, colored=color)
 
 
 @dvt.command('applist', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def applist(lockdown, nocolor):
+@click.option('--color/--no-color', default=True)
+def applist(lockdown, color):
     """ show application list """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         apps = ApplicationListing(dvt).applist()
-        print_json(apps, colored=not nocolor)
+        print_json(apps, colored=color)
 
 
 @dvt.command('kill', cls=Command)
@@ -174,8 +174,8 @@ def ls(lockdown, path, recursive):
 
 
 @dvt.command('device-information', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def device_information(lockdown, nocolor):
+@click.option('--color/--no-color', default=True)
+def device_information(lockdown, color):
     """ Print system information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         device_info = DeviceInfo(dvt)
@@ -183,7 +183,7 @@ def device_information(lockdown, nocolor):
             'system': device_info.system_information(),
             'hardware': device_info.hardware_information(),
             'network': device_info.network_information(),
-        }, colored=not nocolor)
+        }, colored=color)
 
 
 @dvt.command('netstat', cls=Command)
@@ -385,8 +385,8 @@ def save_profile_session(lockdown, out, filters):
 
 @core_profile_session.command('stackshot', cls=Command)
 @click.option('--out', type=click.File('w'), default=None)
-@click.option('--nocolor', is_flag=True)
-def stackshot(lockdown, out, nocolor):
+@click.option('--color/--no-color', default=True)
+def stackshot(lockdown, out, color):
     """ Dump stackshot information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with CoreProfileSessionTap(dvt, {}) as tap:
@@ -394,10 +394,10 @@ def stackshot(lockdown, out, nocolor):
             if out is not None:
                 json.dump(data, out, indent=4)
             else:
-                print_json(data, colored=not nocolor)
+                print_json(data, colored=color)
 
 
-def parse_live_print(tap, pid, show_tid, parsed, nocolor):
+def parse_live_print(tap, pid, show_tid, parsed, color):
     tid = parsed.ktraces[0].tid
     try:
         process = tap.thread_map[tid]
@@ -414,7 +414,7 @@ def parse_live_print(tap, pid, show_tid, parsed, nocolor):
                    if process.pid != -1
                    else f'Error: tid {tid}')
     formatted_data += f'{process_rep:<34}'
-    if nocolor:
+    if not color:
         event_rep = str(parsed)
     else:
         event_rep = highlight(
@@ -429,8 +429,8 @@ def parse_live_print(tap, pid, show_tid, parsed, nocolor):
 @click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
 @click.option('--show-tid/--no-show-tid', default=False, help='Whether to print thread id or not.')
 @click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
-@click.option('--nocolor', is_flag=True, help='disable colors')
-def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters, nocolor):
+@click.option('--color/--no-color', default=True)
+def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters, color):
     """ Parse core profiling information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         trace_codes_map = DeviceInfo(dvt).trace_codes()
@@ -439,7 +439,7 @@ def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters, noc
         print('Receiving time information')
         time_config = CoreProfileSessionTap.get_time_config(dvt)
         with CoreProfileSessionTap(dvt, time_config, filters) as tap:
-            events_callback = partial(parse_live_print, tap, pid, show_tid, nocolor=nocolor)
+            events_callback = partial(parse_live_print, tap, pid, show_tid, color=color)
             events_parser = KdebugEventsParser(events_callback, trace_codes_map, tap.thread_map)
             if show_tid:
                 print('{:^26}|{:^11}|{:^33}|   Event'.format('Time', 'Thread', 'Process'))
@@ -452,18 +452,18 @@ def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters, noc
 
 
 @dvt.command('trace-codes', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def trace_codes(lockdown, nocolor):
+@click.option('--color/--no-color', default=True)
+def trace_codes(lockdown, color):
     """ Print system information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         device_info = DeviceInfo(dvt)
-        print_json({hex(k): v for k, v in device_info.trace_codes().items()}, colored=not nocolor)
+        print_json({hex(k): v for k, v in device_info.trace_codes().items()}, colored=color)
 
 
 @dvt.command('oslog', cls=Command)
-@click.option('--nocolor', is_flag=True, help='disable colors')
+@click.option('--color/--no-color', default=True)
 @click.option('--pid', type=click.INT)
-def dvt_oslog(lockdown, nocolor, pid):
+def dvt_oslog(lockdown, color, pid):
     """ oslog. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with ActivityTraceTap(dvt) as tap:
@@ -484,7 +484,7 @@ def dvt_oslog(lockdown, nocolor, pid):
                 except Exception:
                     print('error decoding')
 
-                if not nocolor:
+                if color:
                     message_pid = colored(str(message_pid), 'magenta')
                     subsystem = colored(subsystem, 'green')
                     category = colored(category, 'green')

@@ -28,7 +28,7 @@ def syslog_live_old(lockdown):
         print(line)
 
 
-def format_line(nocolor, pid, syslog_entry, include_label):
+def format_line(color, pid, syslog_entry, include_label):
     log_level_colors = {
         'Notice': 'white',
         'Error': 'red',
@@ -51,7 +51,7 @@ def format_line(nocolor, pid, syslog_entry, include_label):
     if syslog_entry.label is not None:
         label = f'[{syslog_entry.label.bundle_id}][{syslog_entry.label.identifier}]'
 
-    if not nocolor:
+    if color:
         timestamp = colored(str(timestamp), 'green')
         process_name = colored(process_name, 'magenta')
         if len(image_name) > 0:
@@ -77,16 +77,16 @@ def format_line(nocolor, pid, syslog_entry, include_label):
 
 @syslog.command('live', cls=Command)
 @click.option('-o', '--out', type=click.File('wt'), help='log file')
-@click.option('--nocolor', is_flag=True, help='disable colors')
+@click.option('--color/--no-color', default=True, help='disable colors')
 @click.option('--pid', type=click.INT, default=-1, help='pid to filter. -1 for all')
 @click.option('-m', '--match', multiple=True, help='match expression')
 @click.option('-mi', '--match-insensitive', multiple=True, help='insensitive match expression')
 @click.option('include_label', '--label', is_flag=True, help='should include label')
-def syslog_live(lockdown, out, nocolor, pid, match, match_insensitive, include_label):
+def syslog_live(lockdown, out, color, pid, match, match_insensitive, include_label):
     """ view live syslog lines """
 
     for syslog_entry in OsTraceService(lockdown=lockdown).syslog(pid=pid):
-        line = format_line(nocolor, pid, syslog_entry, include_label)
+        line = format_line(color, pid, syslog_entry, include_label)
 
         skip = False
 
@@ -97,7 +97,7 @@ def syslog_live(lockdown, out, nocolor, pid, match, match_insensitive, include_l
                     skip = True
                     break
                 else:
-                    if not nocolor:
+                    if color:
                         match_line = match_line.replace(m, colored(m, attrs=['bold', 'underline']))
                         line = match_line
 
@@ -108,7 +108,7 @@ def syslog_live(lockdown, out, nocolor, pid, match, match_insensitive, include_l
                     skip = True
                     break
                 else:
-                    if not nocolor:
+                    if color:
                         start = line.lower().index(m)
                         end = start + len(m)
                         line = line[:start] + colored(m, attrs=['bold', 'underline']) + line[end:]

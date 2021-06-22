@@ -22,8 +22,8 @@ def mounter():
 
 
 @mounter.command('list', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def mounter_list(lockdown, nocolor):
+@click.option('--color/--no-color', default=True)
+def mounter_list(lockdown, color):
     """ list all mounted images """
     output = []
 
@@ -32,13 +32,13 @@ def mounter_list(lockdown, nocolor):
         image['ImageSignature'] = image['ImageSignature'].hex()
         output.append(image)
 
-    print_json(output, colored=not nocolor)
+    print_json(output, colored=color)
 
 
 @mounter.command('lookup', cls=Command)
-@click.option('--nocolor', is_flag=True)
+@click.option('--color/--no-color', default=True)
 @click.argument('image_type')
-def mounter_lookup(lockdown, nocolor, image_type):
+def mounter_lookup(lockdown, color, image_type):
     """ lookup mounter image type """
     output = []
 
@@ -46,7 +46,7 @@ def mounter_lookup(lockdown, nocolor, image_type):
     for signature in signatures:
         output.append(signature.hex())
 
-    print_json(output, colored=not nocolor)
+    print_json(output, colored=color)
 
 
 @mounter.command('umount', cls=Command)

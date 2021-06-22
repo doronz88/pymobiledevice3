@@ -38,10 +38,10 @@ def diagnostics_sleep(lockdown):
 
 
 @diagnostics.command('info', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def diagnostics_info(lockdown, nocolor):
+@click.option('--color/--no-color', default=True)
+def diagnostics_info(lockdown, color):
     """ get diagnostics info """
-    print_json(DiagnosticsService(lockdown=lockdown).info(), colored=not nocolor)
+    print_json(DiagnosticsService(lockdown=lockdown).info(), colored=color)
 
 
 @diagnostics.command('ioregistry', cls=Command)
@@ -67,16 +67,15 @@ def diagnostics_battery():
 
 
 @diagnostics_battery.command('single', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def diagnostics_battery_single(lockdown, nocolor):
+@click.option('--color/--no-color', default=True)
+def diagnostics_battery_single(lockdown, color):
     """ get single snapshot of battery data """
     raw_info = DiagnosticsService(lockdown=lockdown).get_battery()
-    print_json(raw_info, colored=not nocolor)
+    print_json(raw_info, colored=color)
 
 
 @diagnostics_battery.command('monitor', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def diagnostics_battery_monitor(lockdown, nocolor):
+def diagnostics_battery_monitor(lockdown):
     """ monitor battery usage """
     diagnostics = DiagnosticsService(lockdown=lockdown)
     while True:
