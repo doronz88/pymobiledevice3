@@ -10,3 +10,4 @@ hexdump
 arrow
 daemonize
 gpxpy
+pykdebugparser>=0.0.3

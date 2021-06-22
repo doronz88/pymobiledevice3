@@ -6,10 +6,9 @@ import posixpath
 import shlex
 from collections import namedtuple
 from dataclasses import asdict
-from functools import partial
 
 import click
-from pygments import highlight, lexers, formatters
+from pykdebugparser.pykdebugparser import PyKdebugParser
 from pymobiledevice3.cli.cli_common import print_json, Command
 from pymobiledevice3.exceptions import DvtDirListError
 from pymobiledevice3.lockdown import LockdownClient
@@ -18,12 +17,10 @@ from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocket
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.condition_inducer import ConditionInducer
-from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap, DgbFuncQual, \
-    ProcessData
+from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
 from pymobiledevice3.services.dvt.instruments.graphics import Graphics
-from pymobiledevice3.services.dvt.instruments.kdebug_events_parser import KdebugEventsParser
 from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMonitor, ConnectionDetectionEvent
 from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
@@ -35,7 +32,6 @@ from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from termcolor import colored
-
 from pymobiledevice3.tcp_forwarder import TcpForwarder
 
 
@@ -314,11 +310,6 @@ def parse_filters(filters):
     return parsed
 
 
-def format_timestamp(core_session_tap, timestamp):
-    time_string = core_session_tap.parse_event_time(timestamp).strftime('%Y-%m-%d %H:%M:%S.%f')
-    return f'{time_string:<27}'
-
-
 @core_profile_session.command('live', cls=Command)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
 @click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
@@ -334,42 +325,29 @@ def live_profile_session(lockdown, count, filters, pid, tid, timestamp, event_na
                          show_tid, process_name, args):
     """ Print core profiling information. """
     filters = parse_filters(filters)
+    parser = PyKdebugParser()
+    parser.filter_tid = tid
+    parser.show_timestamp = timestamp
+    parser.show_name = event_name
+    parser.show_func_qual = func_qual
+    parser.show_tid = show_tid
+    parser.show_process = process_name
+    parser.show_args = args
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         trace_codes_map = DeviceInfo(dvt).trace_codes()
-        print('Receiving time information')
         time_config = CoreProfileSessionTap.get_time_config(dvt)
+        parser.numer = time_config['numer']
+        parser.denom = time_config['denom']
+        parser.mach_absolute_time = time_config['mach_absolute_time']
+        parser.usecs_since_epoch = time_config['usecs_since_epoch']
+        parser.timezone = time_config['timezone']
         with CoreProfileSessionTap(dvt, time_config, filters) as tap:
-            for event in tap.watch_events(count):
-                if event.eventid in trace_codes_map:
-                    name = trace_codes_map[event.eventid] + f' ({hex(event.eventid)})'
-                else:
-                    # Some event IDs are not public.
-                    name = hex(event.eventid)
-                if tid is not None and event.tid != tid:
-                    continue
-                try:
-                    process = tap.thread_map[event.tid]
-                except KeyError:
-                    process = ProcessData(pid=-1, name='')
-                if pid is not None and process.pid != pid:
-                    continue
-                formatted_data = ''
-                if timestamp:
-                    formatted_data += format_timestamp(tap, event.timestamp)
-                formatted_data += f'{name:<58}' if event_name else ''
-                if func_qual:
-                    try:
-                        formatted_data += f'{DgbFuncQual(event.func_qualifier).name:<15}'
-                    except ValueError:
-                        formatted_data += f'''{'Error':<16}'''
-                formatted_data += f'{hex(event.tid):<12}' if show_tid else ''
-                if process_name:
-                    process_rep = (f'{process.name}({process.pid})'
-                                   if process.pid != -1
-                                   else f'Error: tid {event.tid}')
-                    formatted_data += f'{process_rep:<27}' if process_name else ''
-                formatted_data += f'{str(event.data):<34}' if args else ''
-                print(formatted_data)
+            i = 0
+            for event in parser.formatted_kevents(tap.get_kdbuf_stream(), trace_codes_map):
+                print(event)
+                i += 1
+                if i == count:
+                    break
 
 
 @core_profile_session.command('save', cls=Command)
@@ -397,32 +375,6 @@ def stackshot(lockdown, out, color):
                 print_json(data, colored=color)
 
 
-def parse_live_print(tap, pid, show_tid, parsed, color):
-    tid = parsed.ktraces[0].tid
-    try:
-        process = tap.thread_map[tid]
-    except KeyError:
-        process = ProcessData(pid=-1, name='')
-    if pid is not None and process.pid != pid:
-        return
-    if parsed is None:
-        return
-
-    formatted_data = format_timestamp(tap, parsed.ktraces[0].timestamp)
-    formatted_data += f'{tid:>11} ' if show_tid else ''
-    process_rep = (f'{process.name}({process.pid})'
-                   if process.pid != -1
-                   else f'Error: tid {tid}')
-    formatted_data += f'{process_rep:<34}'
-    if not color:
-        event_rep = str(parsed)
-    else:
-        event_rep = highlight(
-            str(parsed), lexers.CLexer(), formatters.TerminalTrueColorFormatter(style='stata-dark')).strip()
-
-    print(formatted_data + event_rep)
-
-
 @core_profile_session.command('parse-live', cls=Command)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
 @click.option('--pid', type=click.INT, default=None, help='Process ID to filter. Omit for all.')
@@ -438,17 +390,27 @@ def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters, col
         filters = parse_filters(filters)
         print('Receiving time information')
         time_config = CoreProfileSessionTap.get_time_config(dvt)
+        parser = PyKdebugParser()
+        parser.numer = time_config['numer']
+        parser.denom = time_config['denom']
+        parser.mach_absolute_time = time_config['mach_absolute_time']
+        parser.usecs_since_epoch = time_config['usecs_since_epoch']
+        parser.timezone = time_config['timezone']
+        parser.filter_tid = tid
+        parser.color = color
+
         with CoreProfileSessionTap(dvt, time_config, filters) as tap:
-            events_callback = partial(parse_live_print, tap, pid, show_tid, color=color)
-            events_parser = KdebugEventsParser(events_callback, trace_codes_map, tap.thread_map)
             if show_tid:
-                print('{:^26}|{:^11}|{:^33}|   Event'.format('Time', 'Thread', 'Process'))
+                print('{:^32}|{:^11}|{:^33}|   Event'.format('Time', 'Thread', 'Process'))
             else:
-                print('{:^26}|{:^33}|   Event'.format('Time', 'Process'))
-            for event in tap.watch_events(count):
-                if tid is not None and event.tid != tid:
-                    continue
-                events_parser.feed(event)
+                print('{:^32}|{:^33}|   Event'.format('Time', 'Process'))
+
+            i = 0
+            for trace in parser.formatted_traces(tap.get_kdbuf_stream(), trace_codes_map):
+                print(trace)
+                i += 1
+                if i == count:
+                    break
 
 
 @dvt.command('trace-codes', cls=Command)

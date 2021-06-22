@@ -1,87 +1,13 @@
 import typing
-import struct
-from datetime import datetime, timezone, timedelta
-import enum
+from datetime import timezone, timedelta
 import uuid
-from collections import namedtuple
+from io import BytesIO
 
 from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyBytes, Enum, Switch, Padding, Padded, \
-    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Const, Bytes, Adapter
-
+    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass
 from pymobiledevice3.services.remote_server import Tap
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
-
-try:
-    from functools import cached_property
-except ImportError:
-
-    from threading import RLock
-
-    GenericAlias = type(typing.List[int])
-
-    _NOT_FOUND = object()
-
-
-    class cached_property:
-        def __init__(self, func):
-            self.func = func
-            self.attrname = None
-            self.__doc__ = func.__doc__
-            self.lock = RLock()
-
-        def __set_name__(self, owner, name):
-            if self.attrname is None:
-                self.attrname = name
-            elif name != self.attrname:
-                raise TypeError(
-                    "Cannot assign the same cached_property to two different names "
-                    f"({self.attrname!r} and {name!r})."
-                )
-
-        def __get__(self, instance, owner=None):
-            if instance is None:
-                return self
-            if self.attrname is None:
-                raise TypeError(
-                    "Cannot use cached_property instance without calling __set_name__ on it.")
-            try:
-                cache = instance.__dict__
-            except AttributeError:  # not all objects have __dict__ (e.g. class defines slots)
-                msg = (
-                    f"No '__dict__' attribute on {type(instance).__name__!r} "
-                    f"instance to cache {self.attrname!r} property."
-                )
-                raise TypeError(msg) from None
-            val = cache.get(self.attrname, _NOT_FOUND)
-            if val is _NOT_FOUND:
-                with self.lock:
-                    # check if another thread filled cache while we awaited lock
-                    val = cache.get(self.attrname, _NOT_FOUND)
-                    if val is _NOT_FOUND:
-                        val = self.func(instance)
-                        try:
-                            cache[self.attrname] = val
-                        except TypeError:
-                            msg = (
-                                f"The '__dict__' attribute on {type(instance).__name__!r} instance "
-                                f"does not support item assignment for caching {self.attrname!r} property."
-                            )
-                            raise TypeError(msg) from None
-            return val
-
-        __class_getitem__ = classmethod(GenericAlias)
-
-# bsd/sys/kdebug.h
-RAW_VERSION2_BYTES = b'\x00\x02\xaa\x55'
-KDBG_CLASS_MASK = 0xff000000
-KDBG_CLASS_OFFSET = 24
-KDBG_SUBCLASS_MASK = 0x00ff0000
-KDBG_SUBCLASS_OFFSET = 16
-KDBG_CODE_MASK = 0x0000fffc
-KDBG_CODE_OFFSET = 2
-KDBG_EVENTID_MASK = 0xfffffffc
-KDBG_FUNC_MASK = 0x00000003
 
 kcdata_types = {
     'KCDATA_TYPE_INVALID': 0x0,
@@ -529,54 +455,6 @@ kcdata_item = Struct(
 
 kcdata = GreedyRange(kcdata_item)
 
-kd_threadmap = Struct(
-    'tid' / Int64ul,
-    'pid' / Int32ul,
-    'process' / FixedSized(20, CString('utf8')),
-)
-
-"""
-The constrcut version of kdebug event is:
-kd_buf = Struct(
-    'timestamp' / Int64ul,
-    'args' / RawCopy(Array(4, Int64ul)),
-    'tid' / Int64ul,
-    'debugid' / Int32ul,
-    'eventid' / Computed(lambda ctx: ctx.debugid & KDBG_EVENTID_MASK),
-    'class_' / Computed(lambda ctx: (ctx.debugid & KDBG_CLASS_MASK) >> KDBG_CLASS_OFFSET),
-    'subclass' / Computed(lambda ctx: (ctx.debugid & KDBG_SUBCLASS_MASK) >> KDBG_SUBCLASS_OFFSET),
-    'code' / Computed(lambda ctx: (ctx.debugid & KDBG_CODE_MASK) >> KDBG_CODE_OFFSET),
-    'func_qualifier' / Computed(lambda ctx: ctx.debugid & KDBG_FUNC_MASK),
-    'cpuid' / Int32ul,
-    'unused' / Int64ul,
-)
-
-Unfortunately, it is too slow.
-"""
-
-kd_buf_format = '<Q32sQIIQ'
-kd_buf_size = struct.calcsize(kd_buf_format)
-KdBuf = namedtuple('KdBuf', ['timestamp', 'data', 'values', 'tid', 'debugid', 'eventid', 'func_qualifier'])
-
-
-class KdBufAdapter(Adapter):
-    def _decode(self, obj, context, path):
-        return make_event(obj)
-
-
-kperf_data = Struct(
-    'magic' / Const(RAW_VERSION2_BYTES, Bytes(4)),
-    'number_of_treads' / Int32ul,
-    Padding(8),
-    Padding(4),
-    'is_64bit' / Int32ul,
-    'tick_frequency' / Int64ul,
-    Padding(0x100),
-    'threadmap' / Array(lambda ctx: ctx.number_of_treads, kd_threadmap),
-    '_pad' / GreedyRange(Const(0, Byte)),
-    'traces' / GreedyRange(KdBufAdapter(Bytes(kd_buf_size)))
-)
-
 
 def clean(d):
     if isinstance(d, dict):
@@ -614,21 +492,31 @@ def jsonify_parsed_stackshot(stackshot, root=None, index=0):
             root[item['data']['name']] = item['data']['obj']
 
 
-def make_event(buf):
-    timestamp, args_buf, tid, debugid, cpuid, unused = struct.unpack(kd_buf_format, buf)
-    eventid = debugid & KDBG_EVENTID_MASK
-    qual = debugid & KDBG_FUNC_MASK
-    return KdBuf(timestamp, args_buf, struct.unpack('<QQQQ', args_buf), tid, debugid, eventid, qual)
+STACKSHOT_HEADER = Int32ul.build(int(kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT))
 
 
-ProcessData = namedtuple('namedtuple', ['pid', 'name'])
+class KdBufStream:
+    def __init__(self, channel):
+        self.channel = channel
+        self.current_chunk = BytesIO()
 
+    def tell(self):
+        return self.current_chunk.tell()
 
-class DgbFuncQual(enum.Enum):
-    DBG_FUNC_NONE = 0
-    DBG_FUNC_START = 1
-    DBG_FUNC_END = 2
-    DBG_FUNC_ALL = 3
+    def seek(self, offset, whence):
+        return self.current_chunk.seek(offset, whence)
+
+    def read(self, size):
+        while size > len(self.current_chunk.getbuffer()) - self.current_chunk.tell():
+            data = self.channel.receive_message()
+            if data.startswith(b'bplist'):
+                continue
+            if data.startswith(STACKSHOT_HEADER):
+                continue
+            else:
+                self.current_chunk = BytesIO(data)
+
+        return self.current_chunk.read(size)
 
 
 class CoreProfileSessionTap(Tap):
@@ -656,7 +544,6 @@ class CoreProfileSessionTap(Tap):
     This tap yields kdebug events.
     """
     IDENTIFIER = 'com.apple.instruments.server.services.coreprofilesessiontap'
-    STACKSHOT_HEADER = Int32ul.build(int(kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT))
 
     def __init__(self, dvt: DvtSecureSocketProxyService, time_config: typing.Mapping, filters: typing.Set = None):
         """
@@ -667,9 +554,7 @@ class CoreProfileSessionTap(Tap):
         """
         self.dvt = dvt
         self.stack_shot = None
-        self._thread_map = {}
         self.uuid = str(uuid.uuid4())
-        self.time_config = time_config
 
         if filters is None:
             filters = {0xffffffff}
@@ -685,16 +570,6 @@ class CoreProfileSessionTap(Tap):
             'bm': 0,  # Buffer mode.
         }
         super().__init__(dvt, self.IDENTIFIER, config)
-
-    @property
-    def thread_map(self):
-        return self._thread_map
-
-    @thread_map.setter
-    def thread_map(self, parsed_threadmap):
-        self._thread_map.clear()
-        for thread in parsed_threadmap:
-            self._thread_map[thread.tid] = ProcessData(thread.pid, thread.process)
 
     def get_stackshot(self) -> typing.Mapping:
         """
@@ -723,37 +598,11 @@ class CoreProfileSessionTap(Tap):
             out.write(data)
             out.flush()
 
-    def watch_events(self, events_count: int = -1):
+    def get_kdbuf_stream(self):
         """
-        Generator for kdebug events.
-        The yielded event contains timestamp (uptime), args (arguments), tid (thread id), debugid, eventid, class,
-        subclass, code, func_qualifier (function qualifier).
-        :param events_count: Count of events to generate, -1 for unlimited generation.
+        Get kd_buf stream.
         """
-        events_index = 0
-        while events_index != events_count:
-            data = self._channel.receive_message()
-            if data.startswith(b'bplist'):
-                continue
-            if data.startswith(self.STACKSHOT_HEADER):
-                self.stack_shot = self.parse_stackshot(data)
-                continue
-            if data.startswith(RAW_VERSION2_BYTES):
-                parsed = kperf_data.parse(data)
-                self.thread_map = parsed.threadmap
-                traces = parsed.traces
-                for event in traces:
-                    if events_index == events_count:
-                        break
-                    yield event
-                    events_index += 1
-            else:
-                for i in range(int(len(data) / kd_buf_size)):
-                    buf = data[i * kd_buf_size: (i + 1) * kd_buf_size]
-                    if events_index == events_count:
-                        break
-                    yield make_event(buf)
-                    events_index += 1
+        return KdBufStream(self._channel)
 
     @staticmethod
     def parse_stackshot(data):
@@ -772,29 +621,3 @@ class CoreProfileSessionTap(Tap):
             numer=numer, denom=denom, mach_absolute_time=mach_absolute_time, usecs_since_epoch=usecs_since_epoch,
             timezone=timezone(timedelta(seconds=dvt.lockdown.get_value(key='TimeZoneOffsetFromUTC')))
         )
-
-    def parse_event_time(self, timestamp) -> datetime:
-        offset_usec = (
-                ((timestamp - self.mach_absolute_time) * self.numer) / self.denom
-        )
-        return datetime.fromtimestamp((self.usecs_since_epoch + offset_usec) / 1000000, tz=self.timezone)
-
-    @cached_property
-    def numer(self):
-        return self.time_config['numer']
-
-    @cached_property
-    def denom(self):
-        return self.time_config['denom'] * 1000
-
-    @cached_property
-    def mach_absolute_time(self):
-        return self.time_config['mach_absolute_time']
-
-    @cached_property
-    def usecs_since_epoch(self):
-        return self.time_config['usecs_since_epoch']
-
-    @cached_property
-    def timezone(self):
-        return self.time_config['timezone']
