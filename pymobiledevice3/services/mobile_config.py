@@ -22,7 +22,9 @@ class MobileConfigService(object):
 
     def install_profile(self, payload):
         self.service.send_plist({'RequestType': 'InstallProfile', 'Payload': payload})
-        return self.service.recv_plist()
+        response = self.service.recv_plist()
+        if response.get('Status') != 'Acknowledged':
+            raise PyMobileDevice3Exception(f'Failed to install given profile: {response}')
 
     def remove_profile(self, ident):
         profiles = self.get_profile_list()
