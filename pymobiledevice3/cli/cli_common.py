@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 
@@ -10,6 +11,8 @@ from pymobiledevice3.lockdown import LockdownClient
 def default_json_encoder(obj):
     if isinstance(obj, bytes):
         return obj.hex()
+    if isinstance(obj, datetime.datetime):
+        return str(obj)
     raise TypeError()
 
 

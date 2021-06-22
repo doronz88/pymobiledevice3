@@ -18,6 +18,7 @@ from pymobiledevice3.cli.processes import cli as ps_cli
 from pymobiledevice3.cli.notification import cli as notification_cli
 from pymobiledevice3.cli.list_devices import cli as list_devices_cli
 from pymobiledevice3.cli.power_assertion import cli as power_assertion_cli
+from pymobiledevice3.cli.springboard import cli as springboard_cli
 
 coloredlogs.install(level=logging.DEBUG)
 
@@ -31,7 +32,7 @@ logging.getLogger('humanfriendly.prompts').disabled = True
 def cli():
     cli_commands = click.CommandCollection(sources=[
         developer_cli, mounter_cli, apps_cli, profile_cli, lockdown_cli, diagnostics_cli, syslog_cli, pcap_cli,
-        crash_cli, afc_cli, ps_cli, notification_cli, list_devices_cli, power_assertion_cli,
+        crash_cli, afc_cli, ps_cli, notification_cli, list_devices_cli, power_assertion_cli, springboard_cli,
     ])
     cli_commands()
 
