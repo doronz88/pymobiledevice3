@@ -1,11 +1,14 @@
 import logging
+from enum import IntEnum
 
 from pymobiledevice3.lockdown import LockdownClient
 
-SB_PORTRAIT = 1
-SB_PORTRAIT_UPSIDE_DOWN = 2
-SB_LANDSCAPE = 3
-SB_LANDSCAPE_HOME_TO_LEFT = 4
+
+class InterfaceOrientation(IntEnum):
+    PORTRAIT = 1
+    PORTRAIT_UPSIDE_DOWN = 2
+    LANDSCAPE = 3
+    LANDSCAPE_HOME_TO_LEFT = 4
 
 
 class SpringBoardServicesService(object):
@@ -21,9 +24,7 @@ class SpringBoardServicesService(object):
         if format_version:
             cmd['formatVersion'] = format_version
 
-        self.service.send_plist(cmd)
-        res = self.service.recv_plist()
-        return res
+        return self.service.send_recv_plist(cmd)
 
     def set_icon_state(self, newstate=None):
         if newstate is None:
@@ -31,29 +32,20 @@ class SpringBoardServicesService(object):
         cmd = {'command': 'setIconState',
                'iconState': newstate}
 
-        self.service.send_plist(cmd)
+        self.service.send_recv_plist(cmd)
 
     def get_icon_pngdata(self, bid):
         cmd = {'command': 'getIconPNGData',
                'bundleId': bid}
 
-        self.service.send_plist(cmd)
-        res = self.service.recv_plist()
-        pngdata = res.get('pngData')
-        if res:
-            return pngdata
-        return None
+        return self.service.send_recv_plist(cmd).get('pngData')
 
     def get_interface_orientation(self):
         cmd = {'command': 'getInterfaceOrientation'}
         self.service.send_plist(cmd)
         res = self.service.recv_plist()
-        return res.get('interfaceOrientation')
+        return InterfaceOrientation(res.get('interfaceOrientation'))
 
     def get_wallpaper_pngdata(self):
         cmd = {'command': 'getHomeScreenWallpaperPNGData'}
-        self.service.send_plist(cmd)
-        res = self.service.recv_plist()
-        if res:
-            return res.get('pngData')
-        return None
+        return self.service.send_recv_plist(cmd).get('pngData')

@@ -35,6 +35,7 @@ Main features include:
 * Network sniffing
 * Mounting images
 * Notification listening and triggering (`notify_post()` api)
+* Querying and setting SpringBoard options
 * DeveloperDiskImage features:
     * Taking screenshots
     * Simulate locations
@@ -98,19 +99,21 @@ Options:
   --help  Show this message and exit.
 
 Commands:
-  afc           FileSystem utils
-  apps          application options
-  crash         crash report options
-  developer     developer options.
-  diagnostics   diagnostics options
-  list-devices  list connected devices
-  lockdown      lockdown options
-  mounter       mounter options
-  notification  API for notify_post() & notify_register_dispatch().
-  pcap          sniff device traffic
-  processes     processes cli
-  profile       profile options
-  syslog        syslog options
+  afc              FileSystem utils
+  apps             application options
+  crash            crash report options
+  developer        developer options.
+  diagnostics      diagnostics options
+  list-devices     list connected devices
+  lockdown         lockdown options
+  mounter          mounter options
+  notification     API for notify_post() & notify_register_dispatch().
+  pcap             sniff device traffic
+  power-assertion  Create a power assertion (wraps...
+  processes        processes cli
+  profile          profile options
+  springboard      springboard options
+  syslog           syslog options
 ```
 
 Or import and use the API yourself:
@@ -142,6 +145,8 @@ DONE | `com.apple.mobile.diagnostics_relay` | General diagnostic tools
 DONE | `com.apple.mobile.notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()`
 DONE | `com.apple.crashreportmover` | Just trigger `crash_mover` to move all crash reports into crash directory
 DONE | `com.apple.mobile.MCInstall` | Profile management
+DONE | `com.apple.mobile.assertion_agent` | Create power assertion to prevent different kinds of sleep
+DONE | `com.apple.springboardservices` | Icon related
 DONE | `com.apple.mobile.mobile_image_mounter` | Image mounter service (used for DeveloperDiskImage mounting)
 DONE | `com.apple.mobile.house_arrest` | Get AFC utils (file management per application bundle)
 DONE | `com.apple.mobile.installation_proxy`|  Application management
@@ -153,7 +158,6 @@ DONE | `com.apple.dt.simulatelocation` | Allows to simulate locations (Developer
 DONE | `com.apple.dt.fetchsymbols` | Allows fetching of `dyld` and dyld shared cache files (DeveloperDiskImage) 
 Not yet | `com.apple.idamd` | Allows settings the IDAM configuration (whatever that means...)
 Not yet | `com.apple.atc` | AirTraffic related
-Not yet | `com.apple.mobile.assertion_agent` | Create power assertion to prevent different kinds of sleep
 Not yet | `com.apple.ait.aitd` | AirTraffic related
 Not yet | `com.apple.misagent` | Profile related
 Not yet | `com.apple.mobile.file_relay` | File access for iOS <= 8
@@ -163,7 +167,6 @@ Not yet | `com.apple.mobilebackup` |
 Not yet | `com.apple.mobilebackup2` |
 Not yet | `com.apple.mobilesync` |
 Not yet | `com.apple.purpletestr` |
-Not yet | `com.apple.springboardservices` | Icon related
 Not yet | `com.apple.webinspector` | Used to debug WebViews
 
 ## `com.apple.instruments.remoteserver.DVTSecureSocketProxy`
