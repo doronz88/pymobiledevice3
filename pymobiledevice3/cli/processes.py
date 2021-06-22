@@ -18,10 +18,10 @@ def processes():
 
 
 @processes.command('ps', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def processes_ps(lockdown, nocolor):
+@click.option('--color/--no-color', default=True)
+def processes_ps(lockdown, color):
     """ show process list """
-    print_json(OsTraceService(lockdown=lockdown).get_pid_list().get('Payload'), colored=not nocolor)
+    print_json(OsTraceService(lockdown=lockdown).get_pid_list().get('Payload'), colored=color)
 
 
 @processes.command('pgrep', cls=Command)

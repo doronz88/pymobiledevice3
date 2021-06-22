@@ -18,8 +18,8 @@ def cli():
 @click.argument('out', type=click.File('wb'), required=False)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of packets to sniff. Omit to endless sniff.')
 @click.option('--process', default=None, help='Process to filter. Omit for all.')
-@click.option('--nocolor', is_flag=True)
-def pcap(lockdown, out, count, process, nocolor):
+@click.option('--color/--no-color', default=True)
+def pcap(lockdown, out, count, process, color):
     """ sniff device traffic """
     service = PcapdService(lockdown=lockdown)
     packets_generator = service.watch(packets_count=count, process=process)
@@ -37,12 +37,12 @@ def pcap(lockdown, out, count, process, nocolor):
             f'Interface: {packet.interface_name} ({packet.interface_type.name}), '
             f'Family: {packet.protocol_family.name}'
         )
-        if nocolor:
+        if not color:
             print(data)
         else:
             print(highlight(data, lexers.HspecLexer(), formatter), end='')
         hex_dump = hexdump.hexdump(packet.data, result='return')
-        if nocolor:
+        if color:
             print(hex_dump, end='\n\n')
         else:
             print(highlight(hex_dump, lexers.HexdumpLexer(), formatter))

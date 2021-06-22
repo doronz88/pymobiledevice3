@@ -18,17 +18,17 @@ def apps():
 
 
 @apps.command('list', cls=Command)
-@click.option('--nocolor', is_flag=True)
+@click.option('--color/--no-color', default=True)
 @click.option('-u', '--user', is_flag=True, help='include user apps')
 @click.option('-s', '--system', is_flag=True, help='include system apps')
-def apps_list(lockdown, nocolor, user, system):
+def apps_list(lockdown, color, user, system):
     """ list installed apps """
     app_types = []
     if user:
         app_types.append('User')
     if system:
         app_types.append('System')
-    print_json(InstallationProxyService(lockdown=lockdown).get_apps(app_types), colored=not nocolor)
+    print_json(InstallationProxyService(lockdown=lockdown).get_apps(app_types), colored=color)
 
 
 @apps.command('uninstall', cls=Command)
