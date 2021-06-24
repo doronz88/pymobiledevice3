@@ -63,7 +63,10 @@ python3 -m pip install --user -U -e .
 You can also install auto-completion for all available sub-commands by adding the following into your `~/.zshrc`:
 
 ```shell
+# python-click<8.0
 eval "$(_PYMOBILEDEVICE3_COMPLETE=source_zsh pymobiledevice3)"
+# python-click>=8.0
+eval "$(_PYMOBILEDEVICE3_COMPLETE=zsh_source pymobiledevice3)"
 ```
 
 ## Lower iOS versions (<13)
@@ -155,7 +158,7 @@ DONE | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | Developer ins
 DONE | `com.apple.mobile.screenshotr` | Take screenshot into a PNG format (DeveloperDiskImage)
 DONE | `com.apple.accessibility.axAuditDaemon.remoteserver` | Accessibility features (DeveloperDiskImage)
 DONE | `com.apple.dt.simulatelocation` | Allows to simulate locations (DeveloperDiskImage)
-DONE | `com.apple.dt.fetchsymbols` | Allows fetching of `dyld` and dyld shared cache files (DeveloperDiskImage) 
+DONE | `com.apple.dt.fetchsymbols` | Allows fetching of `dyld` and dyld shared cache files (DeveloperDiskImage)
 Not yet | `com.apple.idamd` | Allows settings the IDAM configuration (whatever that means...)
 Not yet | `com.apple.atc` | AirTraffic related
 Not yet | `com.apple.ait.aitd` | AirTraffic related
