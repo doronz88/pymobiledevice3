@@ -579,7 +579,7 @@ class CoreProfileSessionTap(Tap):
             # The stackshot is sent one per TAP creation, so we cache it.
             return self.stack_shot
         data = self._channel.receive_message()
-        while not data.startswith(self.STACKSHOT_HEADER):
+        while not data.startswith(STACKSHOT_HEADER):
             data = self._channel.receive_message()
         self.stack_shot = self.parse_stackshot(data)
         return self.stack_shot
@@ -591,7 +591,7 @@ class CoreProfileSessionTap(Tap):
         """
         while True:
             data = self._channel.receive_message()
-            if data.startswith(self.STACKSHOT_HEADER) or data.startswith(b'bplist'):
+            if data.startswith(STACKSHOT_HEADER) or data.startswith(b'bplist'):
                 # Skip not kernel trace data.
                 continue
             print(f'Receiving trace data ({len(data)}B)')
