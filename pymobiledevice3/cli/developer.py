@@ -9,7 +9,7 @@ from dataclasses import asdict
 
 import click
 from pykdebugparser.pykdebugparser import PyKdebugParser
-from pymobiledevice3.cli.cli_common import print_json, Command
+from pymobiledevice3.cli.cli_common import print_json, Command, default_json_encoder
 from pymobiledevice3.exceptions import DvtDirListError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
@@ -370,7 +370,7 @@ def stackshot(lockdown, out, color):
         with CoreProfileSessionTap(dvt, {}) as tap:
             data = tap.get_stackshot()
             if out is not None:
-                json.dump(data, out, indent=4)
+                json.dump(data, out, indent=4, default=default_json_encoder)
             else:
                 print_json(data, colored=color)
 
