@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import uuid
 
 import click
 from pygments import highlight, lexers, formatters
@@ -12,6 +13,8 @@ def default_json_encoder(obj):
     if isinstance(obj, bytes):
         return obj.hex()
     if isinstance(obj, datetime.datetime):
+        return str(obj)
+    if isinstance(obj, uuid.UUID):
         return str(obj)
     raise TypeError()
 

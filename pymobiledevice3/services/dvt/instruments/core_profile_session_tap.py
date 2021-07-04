@@ -581,7 +581,24 @@ class CoreProfileSessionTap(Tap):
         data = self._channel.receive_message()
         while not data.startswith(STACKSHOT_HEADER):
             data = self._channel.receive_message()
-        self.stack_shot = self.parse_stackshot(data)
+        stackshot = self.parse_stackshot(data)
+
+        for pid, snapshot in stackshot['task_snapshots'].items():
+            if 'kernelcache_load_info' in snapshot:
+                # kernel process
+                snapshot['kernelcache_load_info']['imageUUID'] = uuid.UUID(
+                    bytes=bytes(snapshot['kernelcache_load_info']['imageUUID']))
+            else:
+                # user process
+                for loaded_image in snapshot.get('dyld_load_info', []):
+                    loaded_image['imageUUID'] = uuid.UUID(bytes=bytes(loaded_image['imageUUID']))
+
+        if 'shared_cache_dyld_load_info' in stackshot:
+            stackshot['shared_cache_dyld_load_info']['imageUUID'] = uuid.UUID(
+                bytes=bytes(stackshot['shared_cache_dyld_load_info']['imageUUID']))
+
+        self.stack_shot = stackshot
+
         return self.stack_shot
 
     def dump(self, out: typing.BinaryIO):
