@@ -30,7 +30,7 @@ if __name__ == '__main__':
         long_description_content_type='text/markdown',
         cmdclass={},
         packages=find_packages(),
-        package_data={'': ['*.txt', '*.TXT'], },
+        package_data={'': ['*.txt', '*.TXT', '*.json'], },
         data_files=[('.', ['requirements.txt'])],
         author='DoronZ',
         install_requires=parse_requirements(),

@@ -1,13 +1,15 @@
 import typing
-from datetime import timezone, timedelta
 import uuid
+from datetime import timezone, timedelta
 from io import BytesIO
 
 from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyBytes, Enum, Switch, Padding, Padded, \
-    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass
-from pymobiledevice3.services.remote_server import Tap
-from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
+    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Bytes
+
+from pymobiledevice3.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
+from pymobiledevice3.services.remote_server import Tap
 
 kcdata_types = {
     'KCDATA_TYPE_INVALID': 0x0,
@@ -209,7 +211,8 @@ shared_cache_dyld_load_info = Struct(
     predefined_name_substruct,
     'obj' / Struct(
         'imageLoadAddress' / Int64ul,
-        'imageUUID' / Array(16, Byte),
+        '_imageUUID' / Bytes(16),
+        'imageUUID' / Computed(lambda ctx: uuid.UUID(bytes=ctx._imageUUID)),
         'imageSlidBaseAddress' / Int64ul,
     ),
 )
@@ -277,7 +280,8 @@ kernelcache_load_info = Struct(
     predefined_name_substruct,
     'obj' / Struct(
         'imageLoadAddress' / Int64ul,
-        'imageUUID' / Array(16, Byte),
+        '_imageUUID' / Bytes(16),
+        'imageUUID' / Computed(lambda ctx: uuid.UUID(bytes=ctx._imageUUID)),
     ),
 )
 task_snapshot = Struct(
@@ -371,7 +375,8 @@ dyld_load_info64 = Struct(
     predefined_name_substruct,
     'obj' / Struct(
         'imageLoadAddress' / Int64ul,
-        'imageUUID' / Array(16, Byte),
+        '_imageUUID' / Bytes(16),
+        'imageUUID' / Computed(lambda ctx: uuid.UUID(bytes=ctx._imageUUID)),
     ),
 )
 user_stack_frames = Struct(predefined_name_substruct, 'obj' / Struct('lr' / Int64ul))
@@ -583,19 +588,13 @@ class CoreProfileSessionTap(Tap):
             data = self._channel.receive_message()
         stackshot = self.parse_stackshot(data)
 
-        for pid, snapshot in stackshot['task_snapshots'].items():
-            if 'kernelcache_load_info' in snapshot:
-                # kernel process
-                snapshot['kernelcache_load_info']['imageUUID'] = uuid.UUID(
-                    bytes=bytes(snapshot['kernelcache_load_info']['imageUUID']))
-            else:
-                # user process
-                for loaded_image in snapshot.get('dyld_load_info', []):
-                    loaded_image['imageUUID'] = uuid.UUID(bytes=bytes(loaded_image['imageUUID']))
+        dsc_map = get_dsc_map(str(stackshot['shared_cache_dyld_load_info']['imageUUID']))
 
-        if 'shared_cache_dyld_load_info' in stackshot:
-            stackshot['shared_cache_dyld_load_info']['imageUUID'] = uuid.UUID(
-                bytes=bytes(stackshot['shared_cache_dyld_load_info']['imageUUID']))
+        for pid, snapshot in stackshot['task_snapshots'].items():
+            for loaded_image in snapshot.get('dyld_load_info', []):
+                image_uuid = str(loaded_image['imageUUID'])
+                if isinstance(dsc_map, dict) and image_uuid in dsc_map:
+                    loaded_image['imagePath'] = dsc_map[image_uuid]
 
         self.stack_shot = stackshot
 
