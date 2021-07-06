@@ -115,7 +115,7 @@ class NSNull:
 class NSError:
     @staticmethod
     def decode_archive(archive_obj):
-        raise DvtException(archive_obj.decode('NSUserInfo')['NSLocalizedDescription'])
+        raise DvtException(archive_obj.decode('NSUserInfo'))
 
 
 archiver.update_class_map({'DTSysmonTapMessage': DTTapMessage,
