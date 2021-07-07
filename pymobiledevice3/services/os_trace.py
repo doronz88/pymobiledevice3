@@ -2,10 +2,13 @@
 import logging
 import plistlib
 import struct
+import tempfile
 from datetime import datetime
 from io import BytesIO
+from tarfile import TarFile
 
 from construct import Struct, Bytes, Int32ul, CString, Optional, Enum, Byte, Adapter
+
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 
@@ -77,6 +80,14 @@ class OsTraceService(object):
             except ConnectionAbortedError:
                 break
             out.write(self.c.recv_prefixed(endianity='<'))
+
+    def collect(self, out: str):
+        """
+        Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
+        """
+        with tempfile.NamedTemporaryFile() as tar:
+            self.create_archive(tar)
+            TarFile(tar.name).extractall(out)
 
     def syslog(self, pid=-1):
         self.c.send_plist({'Request': 'StartActivity', 'MessageFilter': 65535, 'Pid': pid, 'StreamFlags': 60})
