@@ -431,7 +431,6 @@ def dvt_oslog(lockdown, color, pid):
         with ActivityTraceTap(dvt) as tap:
             for message in tap:
                 message_pid = message.process
-                timestamp = message.time
                 message_type = message.message_type
                 sender_image_path = message.sender_image_path
                 image_name = os.path.basename(sender_image_path)
