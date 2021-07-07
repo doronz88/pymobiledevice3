@@ -122,14 +122,22 @@ def syslog_live(lockdown, out, color, pid, match, match_insensitive, include_lab
             out.write(line)
 
 
-@syslog.command('archive', cls=Command)
-@click.argument('out', type=click.File('wb'))
-def syslog_archive(lockdown, out):
+@syslog.command('collect', cls=Command)
+@click.argument('out', type=click.Path(exists=False, dir_okay=True, file_okay=True))
+def syslog_collect(lockdown, out):
     """
-    Create PAX archive.
+    Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
+    If the filename doesn't exist, system_logs.logarchive will be created in the given directory.
+    """
 
-    Use `pax -r < filename` for extraction into a .logarchive file.
-    Then you can just open the directory using the Console application
-    """
-    OsTraceService(lockdown=lockdown).create_archive(out)
-    logging.info(f'PAX file stored into: {out.name}')
+    if os.path.isdir(out):
+        out = os.path.join(out, 'system_logs.logarchive')
+
+    if not os.path.exists(out):
+        os.makedirs(out)
+
+    if not out.endswith('.logarchive'):
+        logging.warning('given out path doesn\'t end with a .logarchive - consider renaming to be able to view'
+                        'the file with the likes of the Console.app and the `log show` utilities')
+
+    OsTraceService(lockdown=lockdown).collect(out)
