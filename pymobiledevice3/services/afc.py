@@ -389,7 +389,6 @@ class AfcService:
         dirs = []
         files = []
         for fd in self.listdir(dirname):
-            fd = fd.decode('utf-8')
             if fd in ('.', '..', ''):
                 continue
             infos = self.stat(posixpath.join(dirname, fd))
