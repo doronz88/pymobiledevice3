@@ -3,6 +3,7 @@ import plistlib
 import select
 import socket
 import struct
+import time
 import sys
 
 from pymobiledevice3.exceptions import MuxException, MuxVersionError
@@ -180,12 +181,14 @@ class MuxConnection(object):
     def process(self, timeout=None):
         if self.proto.connected:
             raise MuxException('Socket is connected, cannot process listener events')
-        rlo, wlo, xlo = select.select([self.socket.sock], [], [self.socket.sock], timeout)
-        if xlo:
-            self.socket.sock.close()
-            raise MuxException('Exception in listener socket')
-        if rlo:
-            self._processpacket()
+        end = time.time() + timeout
+        while time.time() < end:
+            rlo, wlo, xlo = select.select([self.socket.sock], [], [self.socket.sock], end - time.time())
+            if xlo:
+                self.socket.sock.close()
+                raise MuxException('Exception in listener socket')
+            if rlo:
+                self._processpacket()
 
     def connect(self, device, port):
         ret = self._exchange(self.proto.TYPE_CONNECT,
