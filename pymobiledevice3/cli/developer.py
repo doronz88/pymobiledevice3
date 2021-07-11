@@ -9,6 +9,7 @@ from dataclasses import asdict
 
 import click
 from pykdebugparser.pykdebugparser import PyKdebugParser
+import pymobiledevice3
 from pymobiledevice3.cli.cli_common import print_json, Command, default_json_encoder
 from pymobiledevice3.exceptions import DvtDirListError
 from pymobiledevice3.lockdown import LockdownClient
@@ -323,7 +324,7 @@ def parse_filters(filters):
 @click.option('--args/--no-args', default=True, help='Whether to print event arguments or not.')
 def live_profile_session(lockdown, count, filters, pid, tid, timestamp, event_name, func_qual,
                          show_tid, process_name, args):
-    """ Print core profiling information. """
+    """ Print kevents received from the device in real time. """
     filters = parse_filters(filters)
     parser = PyKdebugParser()
     parser.filter_tid = tid
@@ -383,10 +384,8 @@ def stackshot(lockdown, out, color):
 @click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
 @click.option('--color/--no-color', default=True)
 def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters, color):
-    """ Parse core profiling information. """
+    """ Print traces (syscalls, thread events, etc.) received from the device in real time. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        trace_codes_map = DeviceInfo(dvt).trace_codes()
-
         filters = parse_filters(filters)
         print('Receiving time information')
         time_config = CoreProfileSessionTap.get_time_config(dvt)
@@ -398,6 +397,7 @@ def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters, col
         parser.timezone = time_config['timezone']
         parser.filter_tid = tid
         parser.color = color
+        parser.show_tid = show_tid
 
         with CoreProfileSessionTap(dvt, time_config, filters) as tap:
             if show_tid:
@@ -406,8 +406,61 @@ def parse_live_profile_session(lockdown, count, pid, tid, show_tid, filters, col
                 print('{:^32}|{:^33}|   Event'.format('Time', 'Process'))
 
             i = 0
-            for trace in parser.formatted_traces(tap.get_kdbuf_stream(), trace_codes_map):
+            for trace in parser.formatted_traces(tap.get_kdbuf_stream()):
                 print(trace)
+                i += 1
+                if i == count:
+                    break
+
+
+def get_image_name(dsc_uuid_map, image_uuid, current_dsc_map):
+    if not current_dsc_map:
+        for dsc_mapping in dsc_uuid_map.values():
+            if image_uuid in dsc_mapping:
+                current_dsc_map.update(dsc_mapping)
+
+    return current_dsc_map.get(image_uuid, image_uuid)
+
+
+def format_callstack(callstack, dsc_uuid_map, current_dsc_map):
+    lines = callstack.splitlines()
+    for i, line in enumerate(lines[1:]):
+        if ':' in line:
+            uuid = line.split(':')[0].strip()
+            lines[i + 1] = line.replace(uuid, get_image_name(dsc_uuid_map, uuid, current_dsc_map))
+    return '\n'.join(lines)
+
+
+@core_profile_session.command('callstacks-live', cls=Command)
+@click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
+@click.option('--process', default=None, help='Process to filter. Omit for all.')
+@click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
+@click.option('--show-tid/--no-show-tid', default=False, help='Whether to print thread id or not.')
+@click.option('--color/--no-color', default=True)
+def callstacks_live_profile_session(lockdown, count, process, tid, show_tid, color):
+    """ Print callstacks received from the device in real time. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        print('Receiving time information')
+        time_config = CoreProfileSessionTap.get_time_config(dvt)
+        parser = PyKdebugParser()
+        parser.numer = time_config['numer']
+        parser.denom = time_config['denom']
+        parser.mach_absolute_time = time_config['mach_absolute_time']
+        parser.usecs_since_epoch = time_config['usecs_since_epoch']
+        parser.timezone = time_config['timezone']
+        parser.filter_tid = tid
+        parser.filter_process = process
+        parser.color = color
+        parser.show_tid = show_tid
+
+        with open(os.path.join(pymobiledevice3.__path__[0], 'dsc_uuid_map.json'), 'r') as fd:
+            dsc_uuid_map = json.load(fd)
+
+        current_dsc_map = {}
+        with CoreProfileSessionTap(dvt, time_config) as tap:
+            i = 0
+            for callstack in parser.formatted_callstacks(tap.get_kdbuf_stream()):
+                print(format_callstack(callstack, dsc_uuid_map, current_dsc_map))
                 i += 1
                 if i == count:
                     break
