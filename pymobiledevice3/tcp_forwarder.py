@@ -1,6 +1,7 @@
 import logging
 import socket
 import select
+import threading
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.service_connection import ServiceConnection, ConnectionFailedError
@@ -8,6 +9,7 @@ from pymobiledevice3.service_connection import ServiceConnection, ConnectionFail
 
 class TcpForwarder:
     MAX_FORWARDED_CONNECTIONS = 200
+    TIMEOUT = 1
 
     def __init__(self, lockdown: LockdownClient, src_port: int, dst_port: int, enable_ssl=False):
         self.logger = logging.getLogger(__name__)
@@ -17,6 +19,7 @@ class TcpForwarder:
         self.server_socket = None
         self.inputs = []
         self.enable_ssl = enable_ssl
+        self.stopped = threading.Event()
 
         # dictionaries containing the required maps to transfer data between each local
         # socket to its remote socket and vice versa
@@ -38,7 +41,9 @@ class TcpForwarder:
         while self.inputs:
             # will only perform the socket select on the inputs. the outputs will handled
             # as synchronous blocking
-            readable, writable, exceptional = select.select(self.inputs, [], self.inputs)
+            readable, writable, exceptional = select.select(self.inputs, [], self.inputs, self.TIMEOUT)
+            if self.stopped.is_set():
+                break
 
             for current_sock in readable:
                 if current_sock is self.server_socket:
@@ -104,3 +109,6 @@ class TcpForwarder:
         self.connections[local_connection] = remote_connection
 
         self.logger.info(f'connection established from local to remote port {self.dst_port}')
+
+    def stop(self):
+        self.stopped.set()
