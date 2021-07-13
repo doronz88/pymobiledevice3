@@ -6,7 +6,7 @@ from io import BytesIO
 from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyBytes, Enum, Switch, Padding, Padded, \
     LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Bytes
 
-from pymobiledevice3.dsc_uuid_map import get_dsc_map
+from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.remote_server import Tap
