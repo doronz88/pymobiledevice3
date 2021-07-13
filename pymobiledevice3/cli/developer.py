@@ -453,7 +453,7 @@ def callstacks_live_profile_session(lockdown, count, process, tid, show_tid, col
         parser.color = color
         parser.show_tid = show_tid
 
-        with open(os.path.join(pymobiledevice3.__path__[0], 'dsc_uuid_map.json'), 'r') as fd:
+        with open(os.path.join(pymobiledevice3.__path__[0], 'resources', 'dsc_uuid_map.json'), 'r') as fd:
             dsc_uuid_map = json.load(fd)
 
         current_dsc_map = {}
