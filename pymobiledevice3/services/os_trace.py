@@ -7,8 +7,7 @@ from datetime import datetime
 from io import BytesIO
 from tarfile import TarFile
 
-from construct import Struct, Bytes, Int32ul, CString, Optional, Enum, Byte, Adapter
-
+from construct import Struct, Bytes, Int32ul, CString, Optional, Enum, Byte, Adapter, Int16ul, this, Computed
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 
@@ -31,6 +30,14 @@ timestamp_t = Struct(
     'microseconds' / Int32ul
 )
 
+
+def try_decode(s):
+    try:
+        return s.decode('utf8')
+    except UnicodeDecodeError:
+        return s
+
+
 syslog_t = Struct(
     Bytes(9),
     'pid' / Int32ul,
@@ -38,11 +45,15 @@ syslog_t = Struct(
     'timestamp' / TimestampAdapter(timestamp_t),
     Bytes(1),
     'level' / Enum(Byte, Notice=0, Info=0x01, Debug=0x02, Error=0x10, Fault=0x11),
-    Bytes(1),
-    Bytes(60),
+    Bytes(38),
+    'image_name_size' / Int16ul,
+    'message_size' / Int16ul,
+    Bytes(19),
     'filename' / CString('utf8'),
-    'image_name' / CString('utf8'),
-    'message' / CString('utf8'),
+    '_image_name' / Bytes(this.image_name_size),
+    'image_name' / Computed(lambda ctx: try_decode(ctx._image_name[:-1])),
+    '_message' / Bytes(this.message_size),
+    'message' / Computed(lambda ctx: try_decode(ctx._message[:-1])),
     'label' / Optional(Struct(
         'bundle_id' / CString('utf8'),
         'identifier' / CString('utf8')
