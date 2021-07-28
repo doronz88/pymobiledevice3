@@ -49,7 +49,7 @@ def format_line(color, pid, syslog_entry, include_label):
         return None
 
     if syslog_entry.label is not None:
-        label = f'[{syslog_entry.label.bundle_id}][{syslog_entry.label.identifier}]'
+        label = f'[{syslog_entry.label.subsystem}][{syslog_entry.label.category}]'
 
     if color:
         timestamp = colored(str(timestamp), 'green')

@@ -7,7 +7,8 @@ from datetime import datetime
 from io import BytesIO
 from tarfile import TarFile
 
-from construct import Struct, Bytes, Int32ul, CString, Optional, Enum, Byte, Adapter, Int16ul, this, Computed
+from construct import Struct, Bytes, Int32ul, Optional, Enum, Byte, Adapter, Int16ul, this, Computed, \
+    RepeatUntil
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 
@@ -48,15 +49,21 @@ syslog_t = Struct(
     Bytes(38),
     'image_name_size' / Int16ul,
     'message_size' / Int16ul,
-    Bytes(19),
-    'filename' / CString('utf8'),
+    Bytes(6),
+    '_subsystem_size' / Int32ul,
+    '_category_size' / Int32ul,
+    Bytes(4),
+    '_filename' / RepeatUntil(lambda x, lst, ctx: lst[-1] == 0, Byte),
+    'filename' / Computed(lambda ctx: try_decode(bytearray(ctx._filename[:-1]))),
     '_image_name' / Bytes(this.image_name_size),
     'image_name' / Computed(lambda ctx: try_decode(ctx._image_name[:-1])),
     '_message' / Bytes(this.message_size),
     'message' / Computed(lambda ctx: try_decode(ctx._message[:-1])),
     'label' / Optional(Struct(
-        'bundle_id' / CString('utf8'),
-        'identifier' / CString('utf8')
+        '_subsystem' / Bytes(this._._subsystem_size),
+        'subsystem' / Computed(lambda ctx: try_decode(ctx._subsystem[:-1])),
+        '_category' / Bytes(this._._category_size),
+        'category' / Computed(lambda ctx: try_decode(ctx._category[:-1])),
     )),
 )
 
