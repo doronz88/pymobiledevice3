@@ -6,7 +6,7 @@ import struct
 import time
 import sys
 
-from pymobiledevice3.exceptions import MuxException, MuxVersionError
+from pymobiledevice3.exceptions import MuxException, MuxVersionError, NotPairedError
 
 MuxDevice = namedtuple('MuxDevice', 'devid usbprod serial location')
 
@@ -242,6 +242,8 @@ class UsbmuxdClient(MuxConnection):
         _, recvtag, data = self.proto.get_packet()
         if recvtag != tag:
             raise MuxException('Reply tag mismatch: expected %d, got %d' % (tag, recvtag))
-        pair_record = data['PairRecordData']
+        pair_record = data.get('PairRecordData')
+        if pair_record is None:
+            raise NotPairedError('device should be paired first')
         pair_record = plistlib.loads(pair_record)
         return pair_record
