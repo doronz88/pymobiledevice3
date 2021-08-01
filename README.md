@@ -148,6 +148,7 @@ DONE | `com.apple.mobile.diagnostics_relay` | General diagnostic tools
 DONE | `com.apple.mobile.notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()`
 DONE | `com.apple.crashreportmover` | Just trigger `crash_mover` to move all crash reports into crash directory
 DONE | `com.apple.mobile.MCInstall` | Profile management
+DONE | `com.apple.misagent` | Provisioning Profiles management
 DONE | `com.apple.mobile.assertion_agent` | Create power assertion to prevent different kinds of sleep
 DONE | `com.apple.springboardservices` | Icon related
 DONE | `com.apple.mobile.mobile_image_mounter` | Image mounter service (used for DeveloperDiskImage mounting)
@@ -162,7 +163,6 @@ DONE | `com.apple.dt.fetchsymbols` | Allows fetching of `dyld` and dyld shared c
 Not yet | `com.apple.idamd` | Allows settings the IDAM configuration (whatever that means...)
 Not yet | `com.apple.atc` | AirTraffic related
 Not yet | `com.apple.ait.aitd` | AirTraffic related
-Not yet | `com.apple.misagent` | Profile related
 Not yet | `com.apple.mobile.file_relay` | File access for iOS <= 8
 Not yet | `com.apple.mobile.heartbeat` | Just a ping to `lockdownd` service
 Not yet | `com.apple.mobile.insecure_notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
