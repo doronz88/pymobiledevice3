@@ -63,7 +63,9 @@ class ArgumentError(PyMobileDevice3Exception):
 
 
 class AfcException(PyMobileDevice3Exception):
-    pass
+    def __init__(self, message, status):
+        super(AfcException, self).__init__(message)
+        self.status = status
 
 
 class AfcFileNotFoundError(AfcException):
