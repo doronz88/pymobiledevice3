@@ -3,7 +3,7 @@ from pprint import pprint
 
 import click
 
-from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.tcp_forwarder import TcpForwarder
 
 
@@ -54,6 +54,13 @@ def lockdown_service(lockdown, service_name):
 
 
 @lockdown_group.command('info', cls=Command)
-def lockdown_info(lockdown):
+@click.option('--color/--no-color', default=True)
+def lockdown_info(lockdown, color):
     """ query all lockdown values """
-    pprint(lockdown.all_values)
+    print_json(lockdown.all_values, colored=color)
+
+
+@lockdown_group.command('unpair', cls=Command)
+def lockdown_unpair(lockdown):
+    """ unpair from connected device """
+    lockdown.unpair()

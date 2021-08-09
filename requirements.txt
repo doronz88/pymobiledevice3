@@ -1,5 +1,6 @@
 construct>=2.9.29
 pyasn1
+asn1
 termcolor
 click
 coloredlogs
@@ -11,3 +12,4 @@ arrow
 daemonize
 gpxpy
 pykdebugparser>=1.1.2
+pyusb

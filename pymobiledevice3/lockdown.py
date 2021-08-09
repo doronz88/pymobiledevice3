@@ -225,6 +225,11 @@ class LockdownClient(object):
             self.service.close()
             raise PairingError()
 
+    def unpair(self):
+        req = {'Label': self.label, 'Request': 'Unpair', 'PairRecord': self.pair_record}
+        self.service.send_plist(req)
+        return self.service.recv_plist()
+
     def get_value(self, domain=None, key=None):
         if isinstance(key, str) and hasattr(self, 'record') and hasattr(self.pair_record, key):
             return self.pair_record[key]
