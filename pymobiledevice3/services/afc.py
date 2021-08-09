@@ -173,6 +173,11 @@ afc_fread_req_t = Struct(
     'size' / Int64ul,
 )
 
+afc_lock_t = Struct(
+    'handle' / Int64ul,
+    'op' / Int64ul,
+)
+
 
 def list_to_dict(d):
     d = d.decode('utf-8')
@@ -331,7 +336,7 @@ class AfcService:
             self._dispatch_packet(afc_opcode_t.READ, afc_fread_req_t.build({'handle': handle, 'size': to_read}))
             status, chunk = self._receive_data()
             if status != afc_error_t.SUCCESS:
-                raise AfcException('fread error')
+                raise AfcException('fread error', status)
             sz -= to_read
             data += chunk
         return data
@@ -370,7 +375,7 @@ class AfcService:
                 filename = info['LinkTarget']
 
             if info['st_ifmt'] == 'S_IFDIR':
-                raise AfcException(f'{filename} is a directory')
+                raise AfcException(f'{filename} is a directory', afc_error_t.OBJECT_IS_DIR)
 
             h = self.fopen(filename)
             if not h:
@@ -403,6 +408,9 @@ class AfcService:
             for d in dirs:
                 for walk_result in self.walk(posixpath.join(dirname, d)):
                     yield walk_result
+
+    def lock(self, handle, operation):
+        return self._do_operation(afc_opcode_t.FILE_LOCK, afc_lock_t.build({'handle': handle, 'op': operation}))
 
     def _dispatch_packet(self, operation, data, this_length=0):
         afcpack = Container(magic=AFCMAGIC,
@@ -442,7 +450,7 @@ class AfcService:
             if status == afc_error_t.OBJECT_NOT_FOUND:
                 exception = AfcFileNotFoundError
 
-            raise exception(f'opcode: {opcode} failed with status: {status}')
+            raise exception(f'opcode: {opcode} failed with status: {status}', status)
 
         return data
 
