@@ -87,7 +87,7 @@ class TcpForwarder:
         local_connection.setblocking(False)
 
         try:
-            service_connection = ServiceConnection.create_from_udid(self.lockdown.udid, self.dst_port)
+            service_connection = ServiceConnection.create(self.lockdown.udid, self.dst_port)
 
             if self.enable_ssl:
                 service_connection.ssl_start(self.lockdown.ssl_file, self.lockdown.ssl_file)
