@@ -141,7 +141,7 @@ class DeviceLink:
         for src, dst in message[1].items():
             dest = self.root_path / dst
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(src, dest)
+            shutil.move(self.root_path / src, dest)
         self.status_response(0)
 
     def copy_item(self, message):
