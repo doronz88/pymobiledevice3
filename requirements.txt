@@ -14,3 +14,4 @@ gpxpy
 pykdebugparser>=1.1.2
 pyusb
 tqdm
+cached-property

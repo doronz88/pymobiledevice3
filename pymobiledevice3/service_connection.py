@@ -65,9 +65,9 @@ class ServiceConnection(object):
     def sendall(self, data):
         self.socket.sendall(data)
 
-    def send_recv_plist(self, data):
-        self.send_plist(data)
-        return self.recv_plist()
+    def send_recv_plist(self, data, endianity='>', fmt=plistlib.FMT_XML):
+        self.send_plist(data, endianity=endianity, fmt=fmt)
+        return self.recv_plist(endianity=endianity)
 
     def recvall(self, size):
         data = b''
@@ -94,8 +94,8 @@ class ServiceConnection(object):
         msg = b''.join([hdr, data])
         return self.sendall(msg)
 
-    def recv_plist(self):
-        payload = self.recv_prefixed()
+    def recv_plist(self, endianity='>'):
+        payload = self.recv_prefixed(endianity=endianity)
         if not payload:
             return
         bplist_header = b'bplist00'
@@ -109,9 +109,9 @@ class ServiceConnection(object):
         else:
             raise PyMobileDevice3Exception(f'recv_plist invalid data: {payload[:100].hex()}')
 
-    def send_plist(self, d):
-        payload = plistlib.dumps(d)
-        message = struct.pack(">L", len(payload))
+    def send_plist(self, d, endianity='>', fmt=plistlib.FMT_XML):
+        payload = plistlib.dumps(d, fmt=fmt)
+        message = struct.pack(endianity + 'L', len(payload))
         return self.sendall(message + payload)
 
     def ssl_start(self, keyfile, certfile):

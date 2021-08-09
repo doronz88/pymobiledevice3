@@ -12,7 +12,7 @@ from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import NoDeviceConnectedError, FatalPairingError, CannotStopSessionError, \
     NotTrustedError, \
     PairingError, NotPairedError, StartServiceError, DeviceNonConnectedError, PyMobileDevice3Exception, \
-    PasswordRequiredError, ConnectionFailedError
+    PasswordRequiredError, ConnectionFailedError, IncorrectModeError
 from pymobiledevice3.service_connection import ServiceConnection
 
 # we store pairing records and ssl keys in ~/.pymobiledevice3
@@ -84,7 +84,8 @@ class LockdownClient(object):
         self.paired = False
         self.label = client_name
 
-        assert self.query_type() == 'com.apple.mobile.lockdown'
+        if self.query_type() != 'com.apple.mobile.lockdown':
+            raise IncorrectModeError()
 
         self.all_values = self.get_value()
         self.udid = self.all_values.get('UniqueDeviceID')
@@ -110,6 +111,10 @@ class LockdownClient(object):
         self.service.send_plist({'Request': 'QueryType'})
         res = self.service.recv_plist()
         return res.get('Type')
+
+    @property
+    def ecid(self):
+        return self.all_values['UniqueChipID']
 
     def generate_host_id(self):
         hostname = platform.node()
