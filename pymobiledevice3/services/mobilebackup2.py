@@ -35,7 +35,14 @@ class Mobilebackup2Service:
         self.lockdown = lockdown
         self.service = self.lockdown.start_service(self.SERVICE_NAME)
 
-    def backup(self, full=True, backup_directory=Path('.'), progress_callback=lambda x: None):
+    def backup(self, full: bool = True, backup_directory='.', progress_callback=lambda x: None) -> None:
+        """
+        Backup a device.
+        :param full: Whether to do a full backup. If full is True, any previous backup attempts will be discarded.
+        :param backup_directory: Directory to write backup to.
+        :param progress_callback: Function to be called as the backup progresses.
+        The function shall receive the percentage as a parameter.
+        """
         backup_directory = Path(backup_directory)
         device_directory = backup_directory / self.lockdown.identifier
         device_directory.mkdir(exist_ok=True, mode=0o755, parents=True)
@@ -72,20 +79,29 @@ class Mobilebackup2Service:
                 dl.send_process_message({'MessageName': 'Backup', 'TargetIdentifier': self.lockdown.identifier})
                 dl.dl_loop(progress_callback)
 
-    def restore(self, backup_directory=Path('.'), system=False, reboot=True, copy=True, settings=True, remove=False,
-                password='', progress_callback=lambda x: None):
+    def restore(self, backup_directory='.', system: bool = False, reboot: bool = True, copy: bool = True,
+                settings: bool = True, remove: bool = False, password: str = '', progress_callback=lambda x: None):
+        """
+        Restore a previous backup to the device.
+        :param backup_directory: Path of the backup directory.
+        :param system: Whether to restore system files.
+        :param reboot: Reboot the device when done.
+        :param copy: Create a copy of backup folder before restoring.
+        :param settings: Restore device settings.
+        :param remove: Remove items which aren't being restored.
+        :param password: Password of the backup if it is encrypted.
+        :param progress_callback: Function to be called as the backup progresses.
+        The function shall receive the current percentage of the progress as a parameter.
+        """
         backup_directory = Path(backup_directory)
-        device_directory = backup_directory / self.lockdown.identifier
-        assert device_directory.exists()
+        self._assert_backup_exists(backup_directory, self.lockdown.identifier)
 
         with self.device_link(backup_directory) as dl:
             notification_proxy = NotificationProxyService(self.lockdown)
             afc = AfcService(self.lockdown)
 
             with self._backup_lock(afc, notification_proxy):
-                assert (device_directory / 'Info.plist').exists()
-                manifest_plist_path = device_directory / 'Manifest.plist'
-                assert manifest_plist_path.exists()
+                manifest_plist_path = backup_directory / self.lockdown.identifier / 'Manifest.plist'
                 with open(manifest_plist_path, 'rb') as fd:
                     manifest = plistlib.load(fd)
                 is_encrypted = manifest.get('IsEncrypted', False)
@@ -110,14 +126,28 @@ class Mobilebackup2Service:
                 })
                 dl.dl_loop(progress_callback)
 
-    def info(self, backup_directory=Path('.')):
-        with self.device_link(Path(backup_directory)) as dl:
+    def info(self, backup_directory='.') -> str:
+        """
+        Get information about a backup.
+        :param backup_directory: Path of the backup directory.
+        :return: Information about a backup.
+        """
+        backup_dir = Path(backup_directory)
+        self._assert_backup_exists(backup_dir, self.lockdown.identifier)
+        with self.device_link(backup_dir) as dl:
             dl.send_process_message({'MessageName': 'Info', 'TargetIdentifier': self.lockdown.identifier})
             result = dl.dl_loop()
         return result
 
-    def list(self, backup_directory=Path('.')):
-        with self.device_link(Path(backup_directory)) as dl:
+    def list(self, backup_directory='.') -> str:
+        """
+        List the files in the last backup.
+        :param backup_directory: Path of the backup directory.
+        :return: List of files and additional data about each file, all in a CSV format.
+        """
+        backup_dir = Path(backup_directory)
+        self._assert_backup_exists(backup_dir, self.lockdown.identifier)
+        with self.device_link(backup_dir) as dl:
             dl.send_process_message({
                 'MessageName': 'List', 'TargetIdentifier': self.lockdown.identifier,
                 'SourceIdentifier': self.lockdown.identifier
@@ -125,23 +155,32 @@ class Mobilebackup2Service:
             result = dl.dl_loop()
         return result
 
-    def unback(self, backup_directory=Path('.'), password=''):
-        device_directory = Path(backup_directory) / self.lockdown.identifier
-        assert (device_directory / 'Info.plist').exists()
-        assert (device_directory / 'Manifest.plist').exists()
-        with self.device_link(Path(backup_directory)) as dl:
+    def unback(self, backup_directory='.', password: str = '') -> None:
+        """
+        Unpack a complete backup to its device hierarchy.
+        :param backup_directory: Path of the backup directory.
+        :param password: Password of the backup if it is encrypted.
+        """
+        backup_dir = Path(backup_directory)
+        self._assert_backup_exists(backup_dir, self.lockdown.identifier)
+        with self.device_link(backup_dir) as dl:
             message = {'MessageName': 'Unback', 'TargetIdentifier': self.lockdown.identifier}
             if password:
                 message['Password'] = password
             dl.send_process_message(message)
-            result = dl.dl_loop()
-        return result
+            dl.dl_loop()
 
-    def extract(self, domain_name, relative_path, backup_directory=Path('.'), password=''):
-        device_directory = backup_directory / self.lockdown.identifier
-        assert (device_directory / 'Info.plist').exists()
-        assert (device_directory / 'Manifest.plist').exists()
-        with self.device_link(Path(backup_directory)) as dl:
+    def extract(self, domain_name: str, relative_path: str, backup_directory='.', password: str = '') -> None:
+        """
+        Extract a file from a previous backup.
+        :param domain_name: File's domain name, e.g., SystemPreferencesDomain or HomeDomain.
+        :param relative_path: File path.
+        :param backup_directory: Path of the backup directory.
+        :param password: Password of the last backup if it is encrypted.
+        """
+        backup_dir = Path(backup_directory)
+        self._assert_backup_exists(backup_dir, self.lockdown.identifier)
+        with self.device_link(backup_dir) as dl:
             message = {
                 'MessageName': 'Extract', 'TargetIdentifier': self.lockdown.identifier, 'DomainName': domain_name,
                 'RelativePath': relative_path
@@ -149,10 +188,15 @@ class Mobilebackup2Service:
             if password:
                 message['Password'] = password
             dl.send_process_message(message)
-            result = dl.dl_loop()
-        return result
+            dl.dl_loop()
 
-    def change_password(self, backup_directory=Path('.'), old='', new=''):
+    def change_password(self, backup_directory='.', old: str = '', new: str = '') -> None:
+        """
+        Change backup password.
+        :param backup_directory: Backups directory.
+        :param old: Previous password. Omit when enabling backup encryption.
+        :param new: New password. Omit when disabling backup encryption.
+        """
         with self.device_link(Path(backup_directory)) as dl:
             message = {'MessageName': 'ChangePassword', 'TargetIdentifier': self.lockdown.identifier}
             if old:
@@ -162,12 +206,20 @@ class Mobilebackup2Service:
             dl.send_process_message(message)
             dl.dl_loop()
 
-    def erase_device(self, backup_directory=Path('.')):
+    def erase_device(self, backup_directory='.') -> None:
+        """
+        Erase the device.
+        """
         with self.device_link(Path(backup_directory)) as dl:
             dl.send_process_message({'MessageName': 'EraseDevice', 'TargetIdentifier': self.lockdown.identifier})
             dl.dl_loop()
 
-    def version_exchange(self, dl: DeviceLink, local_versions=None):
+    def version_exchange(self, dl: DeviceLink, local_versions=None) -> None:
+        """
+        Exchange versions with the device and assert that the device supports our version of the protocol.
+        :param dl: Initialized device link.
+        :param local_versions: versions supported by us.
+        """
         if local_versions is None:
             local_versions = SUPPORTED_VERSIONS
         dl.send_process_message({
@@ -176,7 +228,7 @@ class Mobilebackup2Service:
         })
         reply = dl.receive_message()
         assert reply[0] == 'DLMessageProcessMessage' and reply[1]['ErrorCode'] == 0
-        assert reply[1]['ProtocolVersion'] in SUPPORTED_VERSIONS
+        assert reply[1]['ProtocolVersion'] in local_versions
 
     def init_mobile_backup_factory_info(self, afc: AfcService):
         ip = InstallationProxyService(self.lockdown)
@@ -272,6 +324,13 @@ class Mobilebackup2Service:
             afc.lock(lockfile, AFC_LOCK_UN)
             afc.fclose(lockfile)
             notification_proxy.notify_post(NP_SYNC_DID_FINISH)
+
+    @staticmethod
+    def _assert_backup_exists(backup_directory: Path, identifier: str):
+        device_directory = backup_directory / identifier
+        assert (device_directory / 'Info.plist').exists()
+        assert (device_directory / 'Manifest.plist').exists()
+        assert (device_directory / 'Status.plist').exists()
 
     @contextmanager
     def device_link(self, backup_directory):

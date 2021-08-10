@@ -43,6 +43,7 @@ Main features include:
     * Sniffing KDebug messages (**strace** capabilities++)
     * Process monitoring (`top` like)
     * Accessibility features
+* Backup
 
 # Installation
 
@@ -104,17 +105,20 @@ Options:
 Commands:
   afc              FileSystem utils
   apps             application options
+  backup2          backup utils
   crash            crash report options
   developer        developer options.
   diagnostics      diagnostics options
   list-devices     list connected devices
   lockdown         lockdown options
   mounter          mounter options
-  notification     API for notify_post() & notify_register_dispatch().
+  notification     notification options
   pcap             sniff device traffic
   power-assertion  Create a power assertion (wraps...
   processes        processes cli
   profile          profile options
+  provision        privision options
+  restore          restore options
   springboard      springboard options
   syslog           syslog options
 ```
@@ -167,7 +171,7 @@ Not yet | `com.apple.mobile.file_relay` | File access for iOS <= 8
 Not yet | `com.apple.mobile.heartbeat` | Just a ping to `lockdownd` service
 Not yet | `com.apple.mobile.insecure_notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
 Not yet | `com.apple.mobilebackup` |
-Not yet | `com.apple.mobilebackup2` |
+DONE | `com.apple.mobilebackup2` |
 Not yet | `com.apple.mobilesync` |
 Not yet | `com.apple.purpletestr` |
 Not yet | `com.apple.webinspector` | Used to debug WebViews
