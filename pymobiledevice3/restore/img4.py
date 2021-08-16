@@ -1,3 +1,8 @@
+import logging
+
+import asn1
+
+
 def img4_get_component_tag(compname):
     component_tags = {
         'ACIBT': b'acib',
@@ -95,3 +100,57 @@ def img4_get_component_tag(compname):
     }
 
     return component_tags.get(compname)
+
+
+def stitch_component(name, data, blob):
+    logging.info(f'Personalizing IMG4 component {name}...')
+
+    # first we need check if we have to change the tag for the given component
+    decoder = asn1.Decoder()
+    decoder.start(data)
+    decoder.enter()
+
+    decoder.read()
+    tag, value = decoder.read()
+
+    component_name_tag = {
+        'RestoreKernelCache': b'rkrn',
+        'RestoreDeviceTree': b'rdtr',
+        'RestoreSEP': b'rsep',
+        'RestoreLogo': b'rlgo',
+        'RestoreTrustCache': b'rtsc',
+        'RestoreDCP': b'rdcp',
+        'Ap,RestoreTMU': b'rtmu',
+        'Ap,RestoreCIO': b'rcio',
+        'Ap,DCP2': b'dcp2',
+    }
+
+    logging.debug(f'tag: {tag} {value}')
+    if name in component_name_tag:
+        logging.debug('Tag found')
+        data = data.replace(value.encode(), component_name_tag[name], 1)
+
+    # create element header for the "IMG4" magic
+    encoder = asn1.Encoder()
+    encoder.start()
+
+    encoder.enter(asn1.Numbers.Sequence)
+
+    # create element header for the "IMG4" magic
+    encoder.write(b'IMG4', asn1.Numbers.IA5String)
+
+    decoder = asn1.Decoder()
+    decoder.start(data)
+    encoder.write(decoder.read()[1], nr=asn1.Numbers.Sequence, typ=asn1.Types.Constructed)
+
+    encoder.enter(0, cls=asn1.Classes.Context)
+
+    decoder = asn1.Decoder()
+    decoder.start(blob)
+    encoder.write(decoder.read()[1], nr=asn1.Numbers.Sequence, typ=asn1.Types.Constructed)
+
+    encoder.leave()
+
+    encoder.leave()
+
+    return encoder.output()
