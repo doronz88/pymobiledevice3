@@ -16,6 +16,7 @@ from pymobiledevice3.irecv import IRecv
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.restore.asr import ASRClient
 from pymobiledevice3.restore.fdr import start_fdr_thread, fdr_type
+from pymobiledevice3.restore.ipsw.ipsw import IPSW
 from pymobiledevice3.restore.recovery import Recovery
 from pymobiledevice3.restore.restored_client import RestoredClient
 from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
@@ -94,7 +95,7 @@ PROGRESS_BAR_OPERATIONS = {
 class Restore:
     def __init__(self, ipsw: BytesIO, lockdown: LockdownClient = None, irecv: IRecv = None, tss=None, offline=False):
         self.recovery = Recovery(ipsw, lockdown=lockdown, irecv=irecv, tss=tss, offline=offline)
-        self.ipsw = zipfile.ZipFile(ipsw)
+        self.ipsw = IPSW(ipsw)
         self.offline = offline
         self.bbtss = None  # type: Optional[TSSResponse]
         self.tss_recoveryos_root_ticket = None  # type: Optional[TSSResponse]
@@ -113,14 +114,14 @@ class Restore:
         # this step sends requested chunks of data from various offsets to asr so
         # it can validate the filesystem before installing it
         logging.info('validating the filesystem')
-        filesystem = self.ipsw.open(self.recovery.get_component_path('OS'))
-        asr.perform_validation(filesystem)
-        logging.info('filesystem validated')
+        with self.ipsw.open_path(self.recovery.get_component_path('OS')) as filesystem:
+            asr.perform_validation(filesystem)
+            logging.info('filesystem validated')
 
-        # once the target filesystem has been validated, ASR then requests the
-        # entire filesystem to be sent.
-        logging.info('sending filesystem now...')
-        asr.send_payload(filesystem)
+            # once the target filesystem has been validated, ASR then requests the
+            # entire filesystem to be sent.
+            logging.info('sending filesystem now...')
+            asr.send_payload(filesystem)
 
     def get_build_identity_from_request(self, msg):
         args = msg['Arguments']
@@ -157,7 +158,7 @@ class Restore:
             raise PyMobileDevice3Exception('build identity does not contain an "MacOSVariant" element')
 
         # The path of the global manifest is hardcoded. There's no pointer to in the build manifest.
-        return self.ipsw.read(f'Firmware/Manifests/restore/{macos_variant}/apticket.{device_class}.im4m')
+        return self.ipsw.get_global_manifest(macos_variant, device_class)
 
     def send_personalized_boot_object(self, message: dict):
         image_name = message['Arguments']['ImageName']
@@ -167,9 +168,9 @@ class Restore:
         if image_name == '__GlobalManifest__':
             data = self.extract_global_manifest()
         elif image_name == '__RestoreVersion__':
-            data = self.ipsw.read('RestoreVersion.plist')
+            data = self.ipsw.get_restore_version_plist()
         elif image_name == '__SystemVersion__':
-            data = self.ipsw.read('SystemVersion.plist')
+            data = self.ipsw.get_system_version_plist()
         else:
             # Get component path
             path = None
@@ -182,7 +183,7 @@ class Restore:
                 path = self.recovery.build_identity_get_component_path(component)
 
             # Extract component
-            data = self.ipsw.read(component)
+            data = self.ipsw.get_data_from_path(component)
 
             # Personalize IMG40
             data = self.recovery.personalize_component(component_name, data, self.recovery.tss)
@@ -260,29 +261,6 @@ class Restore:
         logging.info('Sending RootTicket now...')
         self._restored.send({'RootTicketData': self.recovery.tss.ap_img4_ticket})
 
-    @staticmethod
-    def get_component_name(filename):
-        names = {
-            'LLB': 'LLB',
-            'iBoot': 'iBoot',
-            'DeviceTree': 'DeviceTree',
-            'applelogo': 'AppleLogo',
-            'liquiddetect': 'Liquid',
-            'lowpowermode': 'LowPowerWallet0',
-            'recoverymode': 'RecoveryMode',
-            'batterylow0': 'BatteryLow0',
-            'batterylow1': 'BatteryLow1',
-            'glyphcharging': 'BatteryCharging',
-            'glyphplugin': 'BatteryPlugin',
-            'batterycharging0': 'BatteryCharging0',
-            'batterycharging1': 'BatteryCharging1',
-            'batteryfull': 'BatteryFull',
-            'needservice': 'NeedService',
-            'SCAB': 'SCAB',
-            'sep-firmware': 'RestoreSEP',
-        }
-        return names.get(filename)
-
     def send_nor(self, message: dict):
         logging.info('About to send NORData...')
         llb_path = self.recovery.get_component_path('LLB')
@@ -294,15 +272,10 @@ class Restore:
         firmware_path = llb_path[:llb_filename_offset - 1]
         logging.info(f'Found firmware path: {firmware_path}')
 
-        manifest_file = f'{firmware_path}/manifest'
         firmware_files = dict()
         try:
-            manifest_data = self.ipsw.read(manifest_file)
-            logging.info(f'Getting firmware manifest from {manifest_file}')
-            for filename in manifest_data.splitlines():
-                filename = filename.strip()
-                component_name = self.get_component_name(filename)
-                firmware_files[component_name] = f'{firmware_path}/{filename}'
+            firmware = self.ipsw.get_firmware(firmware_path)
+            firmware_files = firmware.get_files()
         except KeyError:
             logging.info('Getting firmware manifest from build identity')
             build_id_manifest = self.recovery.build_identity['Manifest']
@@ -316,7 +289,7 @@ class Restore:
                         firmware_files[component] = plist_access_path(manifest_entry, ('Info', 'Path'))
 
         component = 'LLB'
-        component_data = self.ipsw.read(llb_path)
+        component_data = self.ipsw.get_data_from_path(llb_path)
         llb_data = self.recovery.personalize_component(component, component_data, self.recovery.tss)
         req = {'LlbImageData': llb_data}
 
@@ -334,7 +307,7 @@ class Restore:
                 # skip RestoreSEP, it's passed in RestoreSEPImageData
                 continue
 
-            component_data = self.ipsw.read(comppath)
+            component_data = self.ipsw.get_data_from_path(comppath)
             nor_data = self.recovery.personalize_component(component, component_data, self.recovery.tss)
 
             if self.recovery.build_major >= 20:
@@ -351,7 +324,7 @@ class Restore:
         for component in ('RestoreSEP', 'SEP'):
             path = self.recovery.get_component_path(component)
             if path is not None:
-                component_data = self.ipsw.read(path)
+                component_data = self.ipsw.get_data_from_path(path)
                 personalized_data = self.recovery.personalize_component(component, component_data, self.recovery.tss)
                 req[f'{component}ImageData'] = personalized_data
 
@@ -517,7 +490,7 @@ class Restore:
         bbfwpath = self.recovery.build_identity['Manifest']['BasebandFirmware']['Info']['Path']
 
         # extract baseband firmware to temp file
-        bbfw = self.ipsw.read(bbfwpath)
+        bbfw = self.ipsw.get_data_from_path(bbfwpath)
 
         buffer = self.sign_bbfw(bbfw, bbtss, bb_nonce)
 
@@ -567,7 +540,7 @@ class Restore:
                         logging.info(f'found {image_type_k} component \'{component}\'')
 
                     path = self.recovery.build_identity_get_component_path(component)
-                    component_data = self.ipsw.read(path)
+                    component_data = self.ipsw.get_data_from_path(path)
                     data = self.recovery.personalize_component(component, component_data, self.recovery.tss)
                     data_dict[component] = data
 
@@ -609,7 +582,7 @@ class Restore:
                 raise NotImplementedError('Neither \'SE,Firmware\' nor \'SE,UpdatePayload\' found in build identity.')
 
         comp_path = self.recovery.get_component_path(comp_name)
-        component_data = self.ipsw.read(comp_path)
+        component_data = self.ipsw.get_data_from_path(comp_path)
 
         # create SE request
         request = TSSRequest(self.offline)
@@ -666,7 +639,7 @@ class Restore:
         comp_path = self.recovery.get_component_path(comp_name)
 
         # now get actual component data
-        component_data = self.ipsw.read(comp_path)
+        component_data = self.ipsw.get_data_from_path(comp_path)
 
         firmware_data = {
             'YonkersFirmware': component_data,
@@ -706,7 +679,7 @@ class Restore:
         comp_path = self.recovery.get_component_path(comp_name)
 
         # now get actual component data
-        component_data = self.ipsw.read(comp_path)
+        component_data = self.ipsw.get_data_from_path(comp_path)
         component_data = struct.pack('<L', len(component_data)) + b'\x00' * 12
 
         response['FirmwareData'] = component_data
@@ -772,7 +745,7 @@ class Restore:
 
         logging.info(f'About to send {component_name}...')
         path = self.recovery.get_component_path(component)
-        component_data = self.ipsw.read(path)
+        component_data = self.ipsw.get_data_from_path(path)
 
         data = self.recovery.personalize_component(component, component_data, self.recovery.tss)
         logging.info(f'Sending now {component_name}...')
