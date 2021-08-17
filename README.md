@@ -21,8 +21,7 @@
 
 # Description
 
-`pymobiledevice3` started as a fork of `pymobiledevice`, but became something much more. This tool offers a full python
-implementation to work with iDevices (iPhone, etc...).
+`pymobiledevice3` is a pure python3 implementation for working with iDevices (iPhone, etc...).
 
 Main features include:
 
@@ -33,6 +32,7 @@ Main features include:
 * File system management (AFC)
 * Crash reports management
 * Network sniffing
+* Firmware update
 * Mounting images
 * Notification listening and triggering (`notify_post()` api)
 * Querying and setting SpringBoard options
@@ -153,6 +153,7 @@ DONE | `com.apple.mobile.notification_proxy` | API wrapper for `notify_post()` &
 DONE | `com.apple.crashreportmover` | Just trigger `crash_mover` to move all crash reports into crash directory
 DONE | `com.apple.mobile.MCInstall` | Profile management
 DONE | `com.apple.misagent` | Provisioning Profiles management
+DONE | `com.apple.mobilebackup2` | Local backup management
 DONE | `com.apple.mobile.assertion_agent` | Create power assertion to prevent different kinds of sleep
 DONE | `com.apple.springboardservices` | Icon related
 DONE | `com.apple.mobile.mobile_image_mounter` | Image mounter service (used for DeveloperDiskImage mounting)
@@ -170,8 +171,6 @@ Not yet | `com.apple.ait.aitd` | AirTraffic related
 Not yet | `com.apple.mobile.file_relay` | File access for iOS <= 8
 Not yet | `com.apple.mobile.heartbeat` | Just a ping to `lockdownd` service
 Not yet | `com.apple.mobile.insecure_notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
-Not yet | `com.apple.mobilebackup` |
-DONE | `com.apple.mobilebackup2` |
 Not yet | `com.apple.mobilesync` |
 Not yet | `com.apple.purpletestr` |
 Not yet | `com.apple.webinspector` | Used to debug WebViews
