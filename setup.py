@@ -25,7 +25,7 @@ if __name__ == '__main__':
     setup(
         version=VERSION,
         name='pymobiledevice3',
-        description='python implementation for libimobiledevice library',
+        description='Pure python3 implementation for working with iDevices (iPhone, etc...)',
         long_description=get_description(),
         long_description_content_type='text/markdown',
         cmdclass={},
