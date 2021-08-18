@@ -80,7 +80,8 @@ class Mobilebackup2Service:
                 dl.dl_loop(progress_callback)
 
     def restore(self, backup_directory='.', system: bool = False, reboot: bool = True, copy: bool = True,
-                settings: bool = True, remove: bool = False, password: str = '', progress_callback=lambda x: None):
+                settings: bool = True, remove: bool = False, password: str = '', source: str = '',
+                progress_callback=lambda x: None):
         """
         Restore a previous backup to the device.
         :param backup_directory: Path of the backup directory.
@@ -90,18 +91,20 @@ class Mobilebackup2Service:
         :param settings: Restore device settings.
         :param remove: Remove items which aren't being restored.
         :param password: Password of the backup if it is encrypted.
+        :param source: Identifier of device to restore its backup.
         :param progress_callback: Function to be called as the backup progresses.
         The function shall receive the current percentage of the progress as a parameter.
         """
         backup_directory = Path(backup_directory)
-        self._assert_backup_exists(backup_directory, self.lockdown.identifier)
+        source = source if source else self.lockdown.identifier
+        self._assert_backup_exists(backup_directory, source)
 
         with self.device_link(backup_directory) as dl:
             notification_proxy = NotificationProxyService(self.lockdown)
             afc = AfcService(self.lockdown)
 
             with self._backup_lock(afc, notification_proxy):
-                manifest_plist_path = backup_directory / self.lockdown.identifier / 'Manifest.plist'
+                manifest_plist_path = backup_directory / source / 'Manifest.plist'
                 with open(manifest_plist_path, 'rb') as fd:
                     manifest = plistlib.load(fd)
                 is_encrypted = manifest.get('IsEncrypted', False)
@@ -121,70 +124,82 @@ class Mobilebackup2Service:
                 dl.send_process_message({
                     'MessageName': 'Restore',
                     'TargetIdentifier': self.lockdown.identifier,
-                    'SourceIdentifier': self.lockdown.identifier,
+                    'SourceIdentifier': source,
                     'Options': options,
                 })
                 dl.dl_loop(progress_callback)
 
-    def info(self, backup_directory='.') -> str:
+    def info(self, backup_directory='.', source: str = '') -> str:
         """
         Get information about a backup.
         :param backup_directory: Path of the backup directory.
+        :param source: Identifier of device to get info about its backup.
         :return: Information about a backup.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, self.lockdown.identifier)
+        self._assert_backup_exists(backup_dir, source if source else self.lockdown.identifier)
         with self.device_link(backup_dir) as dl:
-            dl.send_process_message({'MessageName': 'Info', 'TargetIdentifier': self.lockdown.identifier})
+            message = {'MessageName': 'Info', 'TargetIdentifier': self.lockdown.identifier}
+            if source:
+                message['SourceIdentifier'] = source
+            dl.send_process_message(message)
             result = dl.dl_loop()
         return result
 
-    def list(self, backup_directory='.') -> str:
+    def list(self, backup_directory='.', source: str = '') -> str:
         """
         List the files in the last backup.
         :param backup_directory: Path of the backup directory.
+        :param source: Identifier of device to list its backup data.
         :return: List of files and additional data about each file, all in a CSV format.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, self.lockdown.identifier)
+        source = source if source else self.lockdown.identifier
+        self._assert_backup_exists(backup_dir, source)
         with self.device_link(backup_dir) as dl:
             dl.send_process_message({
-                'MessageName': 'List', 'TargetIdentifier': self.lockdown.identifier,
-                'SourceIdentifier': self.lockdown.identifier
+                'MessageName': 'List', 'TargetIdentifier': self.lockdown.identifier, 'SourceIdentifier': source,
             })
             result = dl.dl_loop()
         return result
 
-    def unback(self, backup_directory='.', password: str = '') -> None:
+    def unback(self, backup_directory='.', password: str = '', source: str = '') -> None:
         """
         Unpack a complete backup to its device hierarchy.
         :param backup_directory: Path of the backup directory.
         :param password: Password of the backup if it is encrypted.
+        :param source: Identifier of device to unpack its backup.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, self.lockdown.identifier)
+        self._assert_backup_exists(backup_dir, source if source else self.lockdown.identifier)
         with self.device_link(backup_dir) as dl:
             message = {'MessageName': 'Unback', 'TargetIdentifier': self.lockdown.identifier}
+            if source:
+                message['SourceIdentifier'] = source
             if password:
                 message['Password'] = password
             dl.send_process_message(message)
             dl.dl_loop()
 
-    def extract(self, domain_name: str, relative_path: str, backup_directory='.', password: str = '') -> None:
+    def extract(self, domain_name: str, relative_path: str, backup_directory='.', password: str = '',
+                source: str = '') -> None:
         """
         Extract a file from a previous backup.
         :param domain_name: File's domain name, e.g., SystemPreferencesDomain or HomeDomain.
         :param relative_path: File path.
         :param backup_directory: Path of the backup directory.
         :param password: Password of the last backup if it is encrypted.
+        :param source: Identifier of device to extract file from its backup.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, self.lockdown.identifier)
+        self._assert_backup_exists(backup_dir, source if source else self.lockdown.identifier)
         with self.device_link(backup_dir) as dl:
             message = {
                 'MessageName': 'Extract', 'TargetIdentifier': self.lockdown.identifier, 'DomainName': domain_name,
                 'RelativePath': relative_path
             }
+            if source:
+                message['SourceIdentifier'] = source
             if password:
                 message['Password'] = password
             dl.send_process_message(message)

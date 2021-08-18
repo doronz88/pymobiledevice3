@@ -7,6 +7,10 @@ from pymobiledevice3.cli.cli_common import Command
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 from pymobiledevice3.lockdown import LockdownClient
 
+source_option = click.option('--source', default='', help='The UDID of the source device.')
+password_option = click.option('-p', '--password', default='', help='Backup password.')
+backup_directory_arg = click.argument('backup-directory', type=click.Path(exists=True, file_okay=False))
+
 
 @click.group()
 def cli():
@@ -40,14 +44,15 @@ def backup(lockdown: LockdownClient, backup_directory, full):
 
 
 @backup2.command(cls=Command)
-@click.argument('backup-directory', type=click.Path(exists=True, file_okay=False))
+@backup_directory_arg
 @click.option('--system/--no-system', default=False, help='Restore system files.')
 @click.option('--reboot/--no-reboot', default=True, help='Reboot the device when done.')
 @click.option('--copy/--no-copy', default=True, help='Create a copy of backup folder before restoring.')
 @click.option('--settings/--no-settings', default=True, help='Restore device settings.')
 @click.option('--remove/--no-remove', default=False, help='Remove items which aren\'t being restored.')
-@click.option('-p', '--password', type=click.STRING, default='', help='Backup password.')
-def restore(lockdown: LockdownClient, backup_directory, system, reboot, copy, settings, remove, password):
+@password_option
+@source_option
+def restore(lockdown: LockdownClient, backup_directory, system, reboot, copy, settings, remove, password, source):
     """
     Restore a backup to a device.
 
@@ -60,46 +65,51 @@ def restore(lockdown: LockdownClient, backup_directory, system, reboot, copy, se
             pbar.refresh()
 
         backup_client.restore(backup_directory=backup_directory, progress_callback=update_bar, system=system,
-                              reboot=reboot, copy=copy, settings=settings, remove=remove, password=password)
+                              reboot=reboot, copy=copy, settings=settings, remove=remove, password=password,
+                              source=source)
 
 
 @backup2.command(cls=Command)
-@click.argument('backup-directory', type=click.Path(exists=True, file_okay=False))
-def info(lockdown: LockdownClient, backup_directory):
+@backup_directory_arg
+@source_option
+def info(lockdown: LockdownClient, backup_directory, source):
     """
     Print information about a backup.
     """
     backup_client = Mobilebackup2Service(lockdown)
-    print(backup_client.info(backup_directory=backup_directory))
+    print(backup_client.info(backup_directory=backup_directory, source=source))
 
 
 @backup2.command('list', cls=Command)
-@click.argument('backup-directory', type=click.Path(exists=True, file_okay=False))
-def list_(lockdown: LockdownClient, backup_directory):
+@backup_directory_arg
+@source_option
+def list_(lockdown: LockdownClient, backup_directory, source):
     """
     List all file in the backup in a CSV format.
     """
     backup_client = Mobilebackup2Service(lockdown)
-    print(backup_client.list(backup_directory=backup_directory))
+    print(backup_client.list(backup_directory=backup_directory, source=source))
 
 
 @backup2.command(cls=Command)
-@click.argument('backup-directory', type=click.Path(exists=True, file_okay=False))
-@click.option('-p', '--password', type=click.STRING, default='', help='Backup password.')
-def unback(lockdown: LockdownClient, backup_directory, password):
+@backup_directory_arg
+@password_option
+@source_option
+def unback(lockdown: LockdownClient, backup_directory, password, source):
     """
     Convert all files in the backup to the correct directory hierarchy.
     """
     backup_client = Mobilebackup2Service(lockdown)
-    backup_client.unback(backup_directory=backup_directory, password=password)
+    backup_client.unback(backup_directory=backup_directory, password=password, source=source)
 
 
 @backup2.command(cls=Command)
-@click.argument('domain-name', type=click.STRING)
-@click.argument('relative-path', type=click.STRING)
-@click.argument('backup-directory', type=click.Path(exists=True, file_okay=False))
-@click.option('-p', '--password', type=click.STRING, default='', help='Backup password.')
-def extract(lockdown: LockdownClient, domain_name, relative_path, backup_directory, password):
+@click.argument('domain-name')
+@click.argument('relative-path')
+@backup_directory_arg
+@password_option
+@source_option
+def extract(lockdown: LockdownClient, domain_name, relative_path, backup_directory, password, source):
     """
     Extract a file from the backup.
 
@@ -107,13 +117,14 @@ def extract(lockdown: LockdownClient, domain_name, relative_path, backup_directo
     will be extracted to the BACKUP_DIRECTORY.
     """
     backup_client = Mobilebackup2Service(lockdown)
-    backup_client.extract(domain_name, relative_path, backup_directory=backup_directory, password=password)
+    backup_client.extract(domain_name, relative_path, backup_directory=backup_directory, password=password,
+                          source=source)
 
 
 @backup2.command(cls=Command)
 @click.argument('on', type=click.BOOL)
-@click.argument('password', type=click.STRING)
-@click.argument('backup-directory', type=click.Path(exists=True, file_okay=False))
+@click.argument('password')
+@backup_directory_arg
 def encryption(lockdown: LockdownClient, backup_directory, on, password):
     """
     Set backup encryption on / off.
@@ -133,9 +144,9 @@ def encryption(lockdown: LockdownClient, backup_directory, on, password):
 
 
 @backup2.command(cls=Command)
-@click.argument('old-password', type=click.STRING)
-@click.argument('new-password', type=click.STRING)
-@click.argument('backup-directory', type=click.Path(exists=True, file_okay=False))
+@click.argument('old-password')
+@click.argument('new-password')
+@backup_directory_arg
 def change_password(lockdown: LockdownClient, old_password, new_password, backup_directory):
     """
     Change the backup password.
@@ -149,7 +160,7 @@ def change_password(lockdown: LockdownClient, old_password, new_password, backup
 
 
 @backup2.command(cls=Command)
-@click.argument('backup-directory', type=click.Path(exists=True, file_okay=False))
+@backup_directory_arg
 def erase_device(lockdown: LockdownClient, backup_directory):
     """
     Erase all data on the device.
