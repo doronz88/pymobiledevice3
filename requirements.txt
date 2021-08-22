@@ -16,3 +16,4 @@ pyusb
 tqdm
 cached-property
 requests
+pyOpenSSL
