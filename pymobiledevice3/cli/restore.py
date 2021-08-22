@@ -127,7 +127,8 @@ def restore_ramdisk(device, ipsw, tss):
 @click.argument('ipsw', type=click.File('rb'))
 @click.option('--tss', type=click.File('rb'))
 @click.option('--offline', is_flag=True)
-def restore_update(device, ipsw, tss, offline):
+@click.option('--erase', is_flag=True)
+def restore_update(device, ipsw, tss, offline, erase):
     """ perform an upgrade """
     if tss:
         tss = plistlib.load(tss)
@@ -138,4 +139,8 @@ def restore_update(device, ipsw, tss, offline):
         lockdown = device
     elif isinstance(device, IRecv):
         irecv = device
-    Restore(ipsw, lockdown=lockdown, irecv=irecv, tss=tss, offline=offline).update()
+
+    behavior = 'Update'
+    if erase:
+        behavior = 'Erase'
+    Restore(ipsw, lockdown=lockdown, irecv=irecv, tss=tss, offline=offline, behavior=behavior).update()

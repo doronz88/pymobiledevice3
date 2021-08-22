@@ -16,7 +16,7 @@ from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
 
 class Recovery:
     def __init__(self, ipsw: BytesIO, lockdown: LockdownClient = None, irecv: IRecv = None, tss: dict = None,
-                 offline=False):
+                 offline=False, behavior='Update'):
         self.ipsw = zipfile.ZipFile(ipsw)
         self.irecv = irecv  # type: IRecv
         self.lockdown = lockdown  # type: LockdownClient
@@ -39,9 +39,9 @@ class Recovery:
         self.build_manifest = plistlib.loads(self.ipsw.read('BuildManifest.plist'))
         for build_identity in self.build_manifest['BuildIdentities']:
             device_class = build_identity['Info']['DeviceClass'].lower()
-            restore_behavior = build_identity['Info']['RestoreBehavior']
+            restore_behavior = build_identity['Info'].get('RestoreBehavior')
             logging.debug(f'iterating: class: {device_class} behavior: {restore_behavior}')
-            if (device_class == self.hardware_model) and (restore_behavior == 'Update'):
+            if (device_class == self.hardware_model) and (restore_behavior == behavior):
                 self.build_identity = build_identity
                 break
 

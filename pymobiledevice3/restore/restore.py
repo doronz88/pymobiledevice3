@@ -93,8 +93,9 @@ PROGRESS_BAR_OPERATIONS = {
 
 
 class Restore:
-    def __init__(self, ipsw: BytesIO, lockdown: LockdownClient = None, irecv: IRecv = None, tss=None, offline=False):
-        self.recovery = Recovery(ipsw, lockdown=lockdown, irecv=irecv, tss=tss, offline=offline)
+    def __init__(self, ipsw: BytesIO, lockdown: LockdownClient = None, irecv: IRecv = None, tss=None, offline=False,
+                 behavior='Update'):
+        self.recovery = Recovery(ipsw, lockdown=lockdown, irecv=irecv, tss=tss, offline=offline, behavior=behavior)
         self.ipsw = IPSW(ipsw)
         self.offline = offline
         self.bbtss = None  # type: Optional[TSSResponse]

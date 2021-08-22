@@ -10,7 +10,7 @@ class BuildIdentity:
     def __init__(self, build_identity: dict):
         self._build_identity_dict = build_identity
         self.device_class = self._build_identity_dict['Info']['DeviceClass'].lower()
-        self.restore_behavior = self._build_identity_dict['Info']['RestoreBehavior']
+        self.restore_behavior = self._build_identity_dict['Info'].get('RestoreBehavior')
 
     def get_component_path(self, component: str):
         return self._build_identity_dict['Manifest'][component]['Info']['Path']
