@@ -34,19 +34,15 @@ class ServiceConnection(object):
 
     @staticmethod
     def create(udid, port):
-        mux = usbmux.USBMux()
-        mux.process()
         target_device = None
-
         while target_device is None:
-            mux.process()
-            for connected_device in mux.devices:
-                if connected_device.serial == udid:
-                    target_device = connected_device
-                    break
+            matching_devices = [device for device in usbmux.list_devices() if device.serial == udid]
+            if len(matching_devices) == 1:
+                target_device = matching_devices[0]
+                break
 
         try:
-            socket = mux.connect(target_device, port)
+            socket = target_device.connect(port)
         except usbmux.MuxException:
             raise ConnectionFailedError(f'Connection to device port {port} failed')
 
