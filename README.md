@@ -79,11 +79,6 @@ On MAC:
 
 ```shell
 brew install swig openssl
-
-LDFLAGS="-L$(brew --prefix openssl)/lib" \
-CFLAGS="-I$(brew --prefix openssl)/include" \
-SWIG_FEATURES="-cpperraswarn -includeall -I$(brew --prefix openssl)/include" \
-python3 -m pip install --user -U m2crypto
 ```
 
 On Linux:

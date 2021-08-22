@@ -12,22 +12,13 @@ Authors: Heikki Toivonen
          Mathieu RENARD
 """
 import base64
-import platform
-import sys
+from datetime import datetime, timedelta
 
 from pyasn1.type import univ
 from pyasn1.codec.der import encoder as der_encoder
 from pyasn1.codec.der import decoder as der_decoder
-
-from pymobiledevice3.exceptions import FatalPairingError
-
-try:
-    from M2Crypto import RSA, X509, EVP, m2, BIO
-    from M2Crypto.RSA import load_pub_key_bio
-
-    low_version_support = True
-except ImportError:
-    low_version_support = False
+from OpenSSL.crypto import X509, TYPE_RSA, X509Req, PKey, FILETYPE_PEM as PEM
+from OpenSSL.crypto import load_publickey, dump_privatekey, dump_certificate
 
 
 def convert_pkcs1_to_pkcs8_pubkey(pkcs1_data: bytes):
@@ -45,112 +36,45 @@ def convert_pkcs1_to_pkcs8_pubkey(pkcs1_data: bytes):
     pubkey_seq = univ.Sequence()
     pubkey_seq.setComponentByPosition(0, pubkeyid)
     pubkey_seq.setComponentByPosition(1, bitstring)
-    base64.MAXBINSIZE = (64 // 4) * 3
-    res = b'-----BEGIN PUBLIC KEY-----\n'
-    res += base64.b64encode(der_encoder.encode(pubkey_seq))
-    res += b'-----END PUBLIC KEY-----\n'
-    return res
+    pubkey = der_encoder.encode(pubkey_seq)
+    return b'-----BEGIN PUBLIC KEY-----\n' + base64.encodebytes(pubkey) + b'-----END PUBLIC KEY-----\n'
 
 
-def generate_rsa_key():
-    return RSA.gen_key(2048, m2.RSA_F4)
+def x509_time(**kwargs) -> bytes:
+    dt = datetime.utcnow() + timedelta(**kwargs)
+    return dt.strftime('%Y%m%d%H%M%SZ').encode('utf-8')
 
 
-def make_pkey(key):
-    pkey = EVP.PKey()
-    pkey.assign_rsa(key)
-    return pkey
+def make_cert(req: X509Req, ca_pkey: PKey) -> X509:
+    cert = X509()
+    cert.set_serial_number(1)
+    cert.set_version(2)
+    cert.set_subject(req.get_subject())
+    cert.set_pubkey(req.get_pubkey())
+    cert.set_notBefore(x509_time(minutes=-1))
+    cert.set_notAfter(x509_time(days=30))
+    # noinspection PyTypeChecker
+    cert.sign(ca_pkey, 'sha1')
+    return cert
 
 
-def make_request(pkey, cn):
-    req = X509.Request()
+def make_req(pub_key, cn=None) -> X509Req:
+    req = X509Req()
     req.set_version(2)
-    req.set_pubkey(pkey)
-    name = X509.X509_Name()
-    name.CN = cn
-    req.set_subject_name(name)
-    ext1 = X509.new_extension('subjectAltName', 'DNS:foobar.example.com')
-    ext2 = X509.new_extension('nsComment', 'Hello there')
-    extstack = X509.X509_Extension_Stack()
-    extstack.push(ext1)
-    extstack.push(ext2)
-
-    assert (extstack[1].get_name() == 'nsComment')
-
-    req.add_extensions(extstack)
+    req.set_pubkey(pub_key)
+    if cn is not None:
+        subject = req.get_subject()
+        subject.CN = cn.encode('utf-8')
     return req
 
 
-def make_cert(req, caPkey):
-    pkey = req.get_pubkey()
-    # if not req.verify(woop.pkey):
-    if not req.verify(pkey):
-        # XXX What error object should I use?
-        raise ValueError('Error verifying request')
-    sub = req.get_subject()
-    # If this were a real certificate request, you would display
-    # all the relevant data from the request and ask a human operator
-    # if you were sure. Now we just create the certificate blindly based
-    # on the request.
-    certificate = X509.X509()
-    # We know we are making CA cert now...
-    # Serial defaults to 0.
-    certificate.set_serial_number(1)
-    certificate.set_version(2)
-    certificate.set_subject(sub)
-    issuer = X509.X509_Name()
-    issuer.CN = 'The Issuer Monkey'
-    issuer.O = 'The Organization Otherwise Known as My CA, Inc.'
-    certificate.set_issuer(issuer)
-    certificate.set_pubkey(pkey)
-    not_before = m2.x509_get_not_before(certificate.x509)
-    not_after = m2.x509_get_not_after(certificate.x509)
-    m2.x509_gmtime_adj(not_before, 0)
-    days = 30
-    m2.x509_gmtime_adj(not_after, 60 * 60 * 24 * days)
-    certificate.add_ext(
-        X509.new_extension('subjectAltName', 'DNS:foobar.example.com'))
-    ext = X509.new_extension('nsComment', 'M2Crypto generated certificate')
-    ext.set_critical(0)  # Defaults to non-critical, but we can also set it
-    certificate.add_ext(ext)
-    certificate.sign(caPkey, 'sha1')
-
-    assert (certificate.get_ext('subjectAltName').get_name() == 'subjectAltName')
-    assert (certificate.get_ext_at(0).get_name() == 'subjectAltName')
-    assert (certificate.get_ext_at(0).get_value() == 'DNS:foobar.example.com')
-
-    return certificate
-
-
 def ca_do_everything(device_public_key):
-    if not low_version_support:
-        if sys.platform == 'win32':
-            if '64' in platform.architecture()[0]:
-                m2crypto = 'M2CryptoWin64'
-            else:
-                m2crypto = 'M2CryptoWin32'
-        else:
-            m2crypto = 'M2Crypto'
-        raise FatalPairingError(f'Install {m2crypto} to support lower versions')
-    rsa = generate_rsa_key()
-    private_key = make_pkey(rsa)
-    req = make_request(private_key, 'The Issuer Monkey')
-    cert = make_cert(req, private_key)
-    rsa2 = load_pub_key_bio(BIO.MemoryBuffer(
-        convert_pkcs1_to_pkcs8_pubkey(device_public_key)))
-    pkey2 = EVP.PKey()
-    pkey2.assign_rsa(rsa2)
-    req = make_request(pkey2, 'Device')
-    cert2 = make_cert(req, private_key)
-    return cert.as_pem(), private_key.as_pem(None), cert2.as_pem()
-
-
-if __name__ == '__main__':
-    rsa = generate_rsa_key()
-    pkey = make_pkey(rsa)
-    print(pkey.as_pem(None))
-    req = make_request(pkey, 'The Issuer Monkey')
-    cert = make_cert(req, pkey)
-    print(cert.as_text())
-    cert.save_pem('my_ca_cert.pem')
-    rsa.save_key('my_key.pem', None)
+    priv_key = PKey()
+    priv_key.generate_key(TYPE_RSA, 2048)
+    req = make_req(priv_key)
+    cert = make_cert(req, priv_key)
+    dev_key = load_publickey(PEM, convert_pkcs1_to_pkcs8_pubkey(device_public_key))
+    dev_key._only_public = False
+    dev_req = make_req(dev_key, 'Device')
+    dev_cert = make_cert(dev_req, priv_key)
+    return dump_certificate(PEM, cert), dump_privatekey(PEM, priv_key), dump_certificate(PEM, dev_cert)
