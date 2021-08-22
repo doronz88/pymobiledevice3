@@ -56,9 +56,7 @@ def write_home_file(folder_name, filename, data):
 
 
 def list_devices():
-    mux = usbmux.USBMux()
-    mux.process()
-    return [d.serial for d in mux.devices]
+    return [d.serial for d in usbmux.list_devices()]
 
 
 class LockdownClient(object):
@@ -155,7 +153,7 @@ class LockdownClient(object):
             logging.warning(f'No iTunes pairing record found for device {self.identifier}')
             if LooseVersion(self.ios_version) >= LooseVersion('13.0'):
                 self.logger.warning('Getting pair record from usbmuxd')
-                client = usbmux.UsbmuxdClient()
+                client = usbmux.PlistProtocol(usbmux.MuxConnection.create_socket())
                 pair_record = client.get_pair_record(self.udid)
             else:
                 self.logger.warning('Looking for pymobiledevice3 pairing record')

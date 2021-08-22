@@ -15,10 +15,8 @@ def cli():
 @click.option('--color/--no-color', default=True)
 def list_devices(color):
     """ list connected devices """
-    mux = usbmux.USBMux()
-    mux.process()
     connected_devices = []
-    for device in mux.devices:
+    for device in usbmux.list_devices():
         udid = device.serial
         lockdown = LockdownClient(udid)
         connected_devices.append(lockdown.all_values)
