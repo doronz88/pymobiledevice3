@@ -97,6 +97,7 @@ Options:
   --help  Show this message and exit.
 
 Commands:
+  activation       activation options
   afc              FileSystem utils
   apps             application options
   backup2          backup utils
@@ -137,6 +138,7 @@ for line in SyslogService(lockdown=lockdown).watch():
 
 Support | Service | Description
 --------|---------|----------------------
+DONE |  `com.apple.mobileactivationd` | Activation services
 DONE |  `com.apple.afc` | File access for `/var/mobile/Media`
 DONE | `com.apple.crashreportcopymobile` | File access for `/var/mobile/Library/Logs/CrashReports`
 DONE | `com.apple.pcapd` | Sniff device's network traffic
