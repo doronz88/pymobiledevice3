@@ -5,6 +5,7 @@ import platform
 import plistlib
 import sys
 import uuid
+import datetime
 from distutils.version import LooseVersion
 
 from pymobiledevice3 import usbmux
@@ -113,6 +114,10 @@ class LockdownClient(object):
     @property
     def ecid(self):
         return self.all_values['UniqueChipID']
+
+    @property
+    def date(self):
+        return datetime.datetime.fromtimestamp(self.get_value(key='TimeIntervalSince1970'))
 
     def generate_host_id(self):
         hostname = platform.node()

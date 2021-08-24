@@ -64,3 +64,8 @@ def lockdown_info(lockdown, color):
 def lockdown_unpair(lockdown):
     """ unpair from connected device """
     lockdown.unpair()
+
+@lockdown_group.command('date', cls=Command)
+def lockdown_unpair(lockdown):
+    """ get device date """
+    print(lockdown.date)
