@@ -7,6 +7,7 @@ from pathlib import Path
 import time
 
 import requests
+import tqdm
 
 from pymobiledevice3.lockdown import LockdownClient
 
@@ -20,6 +21,7 @@ DEFAULT_HEADERS = {
 }
 
 ACTIVATION_REQUESTS_SUBDIR = Path('activation')
+NONCE_CYCLE_INTERVAL = 60 * 5
 
 
 class MobileActivationService:
@@ -29,6 +31,8 @@ class MobileActivationService:
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
         self.offline = offline
+        self._offline_start = 0
+        self._offline_end = 0
 
     @property
     def state(self):
@@ -36,6 +40,18 @@ class MobileActivationService:
 
     def activate(self):
         blob = self.create_activation_session_info()
+
+        if self.offline:
+            self.logger.info('waiting for the next 5 minutes cycle')
+
+            handshake_request_message = blob['HandshakeRequestMessage']
+            while handshake_request_message == blob['HandshakeRequestMessage']:
+                blob = self.create_activation_session_info()
+
+            self.logger.info('new cycle started! go go go!')
+            self._offline_start = time.time()
+            self._offline_end = self._offline_start + NONCE_CYCLE_INTERVAL
+
         # create drmHandshake request with blob from device
         headers = {'Content-Type': 'application/x-apple-plist'}
         headers.update(DEFAULT_HEADERS)
@@ -108,8 +124,12 @@ class MobileActivationService:
 
         self.logger.info(f'Run the following shell script ({request.name})')
         # Check for plist response.
+        pb = tqdm.tqdm(total=int(self._offline_end - self._offline_start), desc='Time Left')
+        pb.update(int(time.time() - self._offline_start))
         while not response.exists() or b'</plist>' not in response.read_bytes():
             time.sleep(1)
+            pb.update(1)
+        pb.close()
 
         # Check for headers.
         while not headers.exists() or ': ' not in headers.read_text():

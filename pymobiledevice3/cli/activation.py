@@ -1,3 +1,5 @@
+import time
+
 import click
 
 from pymobiledevice3.cli.cli_common import Command
