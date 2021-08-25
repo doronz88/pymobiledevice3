@@ -24,6 +24,7 @@ def img4_get_component_tag(compname):
         'Ap,RestoreCIO': b'rcio',
         'Ap,RestoreTMU': b'rtmu',
         'Ap,Scorpius': b'scpf',
+        'Ap,SystemVolumeCanonicalMetadata': b'msys',
         'Ap,TMU': b'tmuf',
         'Ap,VolumeUUID': b'vuid',
         'AppleLogo': b'logo',
@@ -96,6 +97,7 @@ def img4_get_component_tag(compname):
         'SIO': b'siof',
         'StaticTrustCache': b'trst',
         'SystemLocker': b'lckr',
+        'SystemVolume': b'isys',
         'WCHFirmwareUpdater': b'wchf',
     }
 
