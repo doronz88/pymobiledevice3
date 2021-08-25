@@ -106,7 +106,7 @@ class Recovery:
 
         tss.add_ap_tags(parameters)
 
-        return tss.img4_create_local_manifest()
+        return tss.img4_create_local_manifest(build_identity=self.build_identity)
 
     def tss_parameters_add_from_manifest(self, parameters):
         keys_to_copy = ('UniqueBuildID', 'Ap,OSLongVersion', 'ApChipID', 'ApBoardID', 'ApSecurityDomain',
@@ -159,7 +159,7 @@ class Recovery:
 
         # normal mode; request baseband ticket aswell
         if self.lockdown is not None:
-            pinfo = self.lockdown.get_value(key='FirmwarePreflightInfo')
+            pinfo = self.lockdown.preflight_info
             if pinfo:
                 logging.debug('adding preflight info')
 
@@ -269,6 +269,10 @@ class Recovery:
 
     def send_applelogo(self):
         component = 'RestoreLogo'
+
+        if not self.build_identity_has_component(component):
+            return
+
         self.send_component(component)
         self.irecv.send_command('setpicture 4')
         self.irecv.send_command('bgcolor 0 0 0')

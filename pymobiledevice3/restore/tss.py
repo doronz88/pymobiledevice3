@@ -126,14 +126,16 @@ class TSSRequest:
         # set Nonce for eUICC,Gold component
         node = parameters.get('EUICCGoldNonce')
         if node is not None:
-            n = self._request['eUICC,Gold']
-            n['Nonce'] = node
+            n = self._request.get('eUICC,Gold')
+            if n is not None:
+                n['Nonce'] = node
 
         # set Nonce for eUICC,Main component
         node = parameters.get('EUICCMainNonce')
         if node is not None:
-            n = self._request['eUICC,Main']
-            n['Nonce'] = node
+            n = self._request.get('eUICC,Main')
+            if n is not None:
+                n['Nonce'] = node
 
         if overrides is not None:
             self._request.update(overrides)
@@ -147,6 +149,14 @@ class TSSRequest:
         skipped_keys = ('BasebandFirmware', 'SE,UpdatePayload', 'BaseSystem', 'Diags',)
         for key, manifest_entry in manifest_node.items():
             if key in skipped_keys:
+                continue
+
+            info_dict = manifest_entry.get('Info')
+            if info_dict is None:
+                continue
+
+            if parameters.get('ApSupportsImg4', False) and ('RestoreRequestRules' not in info_dict):
+                logging.debug(f'Skipping "{key}" as it doesn\'t have RestoreRequestRules')
                 continue
 
             if parameters.get('_OnlyFWComponents', False):
@@ -257,12 +267,53 @@ class TSSRequest:
             self._request.update(overrides)
 
     def add_savage_tags(self, parameters: dict, overrides=None, component_name=None):
-        raise NotImplementedError()
+        manifest = parameters['Manifest']
+
+        # add tags indicating we want to get the Savage,Ticket
+        self._request['@BBTicket'] = True
+        self._request['@Savage,Ticket'] = True
+
+        # add Savage,UID
+        self._request['Savage,UID'] = parameters['Savage,UID']
+
+        # add SEP
+        self._request['SEP'] = {'Digest': manifest['SEP']['Digest']}
+
+        keys_to_copy = (
+            'Savage,PatchEpoch', 'Savage,ChipID', 'Savage,AllowOfflineBoot', 'Savage,ReadFWKey',
+            'Savage,ProductionMode', 'Savage,Nonce', 'Savage,Nonce')
+
+        for k in keys_to_copy:
+            if k in parameters:
+                self._request[k] = parameters[k]
+
+        isprod = parameters['Savage,ProductionMode']
+
+        # get the right component name
+        comp_name = 'Savage,B0-Prod-Patch' if isprod else 'Savage,B0-Dev-Patch'
+        node = parameters.get('Savage,Revision')
+
+        if isinstance(node, bytes):
+            savage_rev = node
+            if ((savage_rev[0] | 0x10) & 0xF0) == 0x30:
+                comp_name = 'Savage,B2-Prod-Patch' if isprod else 'Savage,B2-Dev-Patch'
+            elif (savage_rev[0] & 0xF0) == 0xA0:
+                comp_name = 'Savage,BA-Prod-Patch' if isprod else 'Savage,BA-Dev-Patch'
+
+        # add Savage,B?-*-Patch
+        d = dict(manifest[comp_name])
+        d.pop('Info')
+        self._request[comp_name] = d
+
+        if overrides is not None:
+            self._request.update(overrides)
+
+        return comp_name
 
     def add_yonkers_tags(self, parameters: dict, overrides=None):
         manifest = parameters['Manifest']
 
-        # add tags indicating we want to get the SE,Ticket
+        # add tags indicating we want to get the Yonkers,Ticket
         self._request['@BBTicket'] = True
         self._request['@Yonkers,Ticket'] = True
 
@@ -344,7 +395,11 @@ class TSSRequest:
         if overrides:
             self._request.update(overrides)
 
-    def img4_create_local_manifest(self):
+    def img4_create_local_manifest(self, build_identity=None):
+        manifest = None
+        if build_identity is not None:
+            manifest = build_identity['Manifest']
+
         p = asn1.Encoder()
         p.start()
 
@@ -374,9 +429,17 @@ class TSSRequest:
         # now write the components
         for k, v in self._request.items():
             if isinstance(v, dict):
-                comp = img4_get_component_tag(k)
+                # check if component has Img4PayloadType
+                comp = None
+                if manifest is not None:
+                    comp = manifest[k]['Info'].get('Img4PayloadType')
+
+                if comp is None:
+                    comp = img4_get_component_tag(k)
+
                 if comp is None:
                     raise NotImplementedError(f'Unhandled component {k} - can\'t create manifest')
+
                 logging.debug(f'found component {comp} ({k})')
 
         # write manifest body header

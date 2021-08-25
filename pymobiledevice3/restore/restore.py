@@ -91,6 +91,81 @@ PROGRESS_BAR_OPERATIONS = {
     77: 'SEALING_SYSTEM_VOLUME',
 }
 
+# extracted from ac2
+SUPPORTED_DATA_TYPES = {
+    'BasebandBootData': False,
+    'BasebandData': False,
+    'BasebandStackData': False,
+    'BasebandUpdaterOutputData': False,
+    'BuildIdentityDict': False,
+    'BuildIdentityDictV2': False,
+    'DataType': False,
+    'DiagData': False,
+    'EANData': False,
+    'FDRMemoryCommit': False,
+    'FDRTrustData': False,
+    'FUDData': False,
+    'FileData': False,
+    'FileDataDone': False,
+    'FirmwareUpdaterData': False,
+    'GrapeFWData': False,
+    'HPMFWData': False,
+    'HostSystemTime': True,
+    'KernelCache': False,
+    'NORData': False,
+    'NitrogenFWData': True,
+    'OpalFWData': False,
+    'OverlayRootDataCount': False,
+    'OverlayRootDataForKey': True,
+    'PeppyFWData': True,
+    'PersonalizedBootObjectV3': False,
+    'PersonalizedData': True,
+    'ProvisioningData': False,
+    'RamdiskFWData': True,
+    'RecoveryOSASRImage': True,
+    'RecoveryOSAppleLogo': True,
+    'RecoveryOSDeviceTree': True,
+    'RecoveryOSFileAssetImage': True,
+    'RecoveryOSIBEC': True,
+    'RecoveryOSIBootFWFilesImages': True,
+    'RecoveryOSImage': True,
+    'RecoveryOSKernelCache': True,
+    'RecoveryOSLocalPolicy': True,
+    'RecoveryOSOverlayRootDataCount': False,
+    'RecoveryOSRootTicketData': True,
+    'RecoveryOSStaticTrustCache': True,
+    'RecoveryOSVersionData': True,
+    'RootData': False,
+    'RootTicket': False,
+    'S3EOverride': False,
+    'SourceBootObjectV3': False,
+    'SourceBootObjectV4': False,
+    'SsoServiceTicket': False,
+    'StockholmPostflight': False,
+    'SystemImageCanonicalMetadata': False,
+    'SystemImageData': False,
+    'SystemImageRootHash': False,
+    'USBCFWData': False,
+    'USBCOverride': False,
+}
+
+# extracted from ac2
+SUPPORTED_MESSAGE_TYPES = {
+    'BBUpdateStatusMsg': False,
+    'CheckpointMsg': True,
+    'DataRequestMsg': False,
+    'FDRSubmit': True,
+    'MsgType': False,
+    'PreviousRestoreLogMsg': False,
+    'ProgressMsg': False,
+    'ProvisioningAck': False,
+    'ProvisioningInfo': False,
+    'ProvisioningStatusMsg': False,
+    'ReceivedFinalStatusMsg': False,
+    'RestoredCrash': True,
+    'StatusMsg': False,
+}
+
 
 class Restore:
     def __init__(self, ipsw: BytesIO, lockdown: LockdownClient = None, irecv: IRecv = None, tss=None, offline=False,
@@ -102,6 +177,9 @@ class Restore:
         self.tss_recoveryos_root_ticket = None  # type: Optional[TSSResponse]
         self._restored = None  # type: Optional[RestoredClient]
         self._restore_finished = False
+        self._preflight_info = None
+        if lockdown:
+            self._preflight_info = lockdown.preflight_info
         self._pb_verify_restore = None
         self._pb_verify_restore_old_value = None
 
@@ -893,6 +971,19 @@ class Restore:
 
         opts = dict()
         opts['AutoBootDelay'] = 0
+
+        if self._preflight_info:
+            bbus = dict(self._preflight_info)
+            bbus.pop('FusingStatus')
+            bbus.pop('PkHash')
+            opts['BBUpdaterState'] = bbus
+
+            nonce = self._preflight_info.get('Nonce')
+            if nonce is not None:
+                opts['BasebandNonce'] = nonce
+
+        opts['SupportedDataTypes'] = SUPPORTED_DATA_TYPES
+        opts['SupportedMessageTypes'] = SUPPORTED_MESSAGE_TYPES
 
         if self.recovery.build_major >= 20:
             raise NotImplementedError()

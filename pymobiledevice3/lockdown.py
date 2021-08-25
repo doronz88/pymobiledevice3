@@ -119,6 +119,10 @@ class LockdownClient(object):
     def date(self):
         return datetime.datetime.fromtimestamp(self.get_value(key='TimeIntervalSince1970'))
 
+    @property
+    def preflight_info(self):
+        return self.get_value(key='FirmwarePreflightInfo')
+
     def generate_host_id(self):
         hostname = platform.node()
         hostid = uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
