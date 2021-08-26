@@ -11,7 +11,7 @@ from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.restore.img4 import img4_get_component_tag
 
 TSS_CLIENT_VERSION_STRING = 'libauthinstall-776.60.1'
-TICKETS_SUBDIR = Path('tickets')
+TICKETS_SUBDIR = Path('offline_requests')
 
 OFFLINE_REQUEST_SCRIPT = """#!/bin/sh
 curl -d "@{request}" -H 'Cache-Control: no-cache' -H 'Content-type: text/xml; charset="utf-8"' -H 'User-Agent: InetURL/1.0' -H 'Expect: ' 'http://gs.apple.com/TSS/controller?action=2' | tee {response} 
