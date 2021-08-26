@@ -80,6 +80,8 @@ class IRecv:
         while (self._device is None) and (time.time() < end):
             for device in find(find_all=True):
                 try:
+                    if device.manufacturer is None:
+                        continue
                     if not device.manufacturer.startswith('Apple'):
                         continue
                     if 'Recovery Mode' not in device.product:
