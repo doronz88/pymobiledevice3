@@ -1,5 +1,6 @@
 import logging
 import plistlib
+import struct
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -9,6 +10,7 @@ import requests
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.restore.img4 import img4_get_component_tag
+from pymobiledevice3.utils import bytes_to_uint
 
 TSS_CLIENT_VERSION_STRING = 'libauthinstall-776.60.1'
 TICKETS_SUBDIR = Path('offline_requests')
@@ -89,7 +91,7 @@ class TSSRequest:
                     value2 = tss_entry.get(key)
                     if value2:
                         tss_entry.pop(key)
-                    logging.debug(f'DEBUG: Adding {key}={value} to TSS entry')
+                    logging.debug(f'Adding {key}={value} to TSS entry')
                     tss_entry[key] = value
         return tss_entry
 
@@ -393,6 +395,99 @@ class TSSRequest:
         self._request['BasebandFirmware'] = bbfwdict
 
         if overrides:
+            self._request.update(overrides)
+
+    def add_rose_tags(self, parameters: dict, overrides: dict = None):
+        manifest = parameters['Manifest']
+
+        # add tags indicating we want to get the Rap,Ticket
+        self._request['@BBTicket'] = True
+        self._request['@Rap,Ticket'] = True
+
+        keys_to_copy_uint = ('Rap,BoardID', 'Rap,ChipID', 'Rap,ECID', 'Rap,SecurityDomain',)
+
+        for k in keys_to_copy_uint:
+            self._request[k] = bytes_to_uint(parameters[k])
+
+        keys_to_copy_bool = ('Rap,ProductionMode', 'Rap,SecurityMode',)
+
+        for k in keys_to_copy_bool:
+            self._request[k] = bytes_to_uint(parameters[k]) == 1
+
+        nonce = parameters.get('Rap,Nonce')
+        if nonce is not None:
+            self._request['Rap,Nonce'] = nonce
+
+        for comp_name, node in manifest.items():
+            if not comp_name.startswith('Rap,'):
+                continue
+
+            manifest_entry = dict(node)
+
+            # handle RestoreRequestRules
+            rules = manifest_entry['Info'].get('RestoreRequestRules')
+            if rules is not None:
+                self.apply_restore_request_rules(manifest_entry, parameters, rules)
+
+            # Make sure we have a Digest key for Trusted items even if empty
+            trusted = manifest_entry.get('Trusted', False)
+
+            if trusted:
+                digest = manifest_entry.get('Digest')
+                if digest is None:
+                    logging.debug(f'No Digest data, using empty value for entry {comp_name}')
+                    manifest_entry['Digest'] = b''
+
+            manifest_entry.pop('Info')
+
+            # finally add entry to request
+            self._request[comp_name] = manifest_entry
+
+        if overrides is not None:
+            self._request.update(overrides)
+
+    def add_veridian_tags(self, parameters: dict, overrides: dict = None):
+        manifest = parameters['Manifest']
+
+        # add tags indicating we want to get the Rap,Ticket
+        self._request['@BBTicket'] = True
+        self._request['@BMU,Ticket'] = True
+
+        self._request['BMU,ChipID'] = parameters['ChipID']
+        self._request['BMU,UniqueID'] = parameters['UniqueID']
+        self._request['BMU,ProductionMode'] = parameters['ProductionMode']
+
+        nonce = parameters.get('Nonce')
+        if nonce is not None:
+            self._request['BMU,Nonce'] = nonce
+
+        for comp_name, node in manifest.items():
+            if not comp_name.startswith('BMU,'):
+                continue
+
+            manifest_entry = dict(node)
+
+            # handle RestoreRequestRules
+            rules = manifest_entry['Info'].get('RestoreRequestRules')
+            if rules is not None:
+                self.apply_restore_request_rules(manifest_entry, parameters, rules)
+
+            # Make sure we have a Digest key for Trusted items even if empty
+            trusted = manifest_entry.get('Trusted', False)
+
+            if trusted:
+                digest = manifest_entry.get('Digest')
+                if digest is None:
+                    logging.debug(f'No Digest data, using empty value for entry {comp_name}')
+                    manifest_entry['Digest'] = b''
+
+            manifest_entry.pop('Info')
+
+            # finally add entry to request
+            self._request[comp_name] = manifest_entry
+
+
+        if overrides is not None:
             self._request.update(overrides)
 
     def img4_create_local_manifest(self, build_identity=None):

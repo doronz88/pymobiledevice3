@@ -2,6 +2,7 @@ import binascii
 import hashlib
 import logging
 import os
+import plistlib
 import struct
 import tempfile
 import uuid
@@ -20,6 +21,7 @@ from pymobiledevice3.restore.ipsw.ipsw import IPSW
 from pymobiledevice3.restore.recovery import Recovery
 from pymobiledevice3.restore.restored_client import RestoredClient
 from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
+from pymobiledevice3.restore.ftab import Ftab
 from pymobiledevice3.utils import plist_access_path
 
 lpol_file = bytearray([0x30, 0x14, 0x16, 0x04, 0x49, 0x4d, 0x34, 0x50,
@@ -765,11 +767,92 @@ class Restore:
 
         return response
 
-    def restore_get_rose_firmware_data(self, info: dict):
-        raise NotImplementedError()
+    def get_rose_firmware_data(self, info: dict):
+        logging.info(f'get_rose_firmware_data: {info}')
 
-    def restore_get_veridian_firmware_data(self, info: dict):
-        raise NotImplementedError()
+        # create Rose request
+        request = TSSRequest(self.offline)
+        parameters = dict()
+
+        # add manifest for current build_identity to parameters
+        self.recovery.tss_parameters_add_from_manifest(parameters)
+
+        parameters['ApProductionMode'] = True
+
+        if self.recovery.is_image4_supported:
+            parameters['ApSecurityMode'] = True
+            parameters['ApSupportsImg4'] = True
+        else:
+            parameters['ApSupportsImg4'] = False
+
+        # add Rap,* tags from info dictionary to parameters
+        parameters.update(info)
+
+        # add required tags for Rose TSS request
+        request.add_rose_tags(parameters, None)
+
+        logging.info('Sending Rose TSS request...')
+        response = request.send_receive()
+
+        rose_ticket = response.get('Rap,Ticket')
+        if rose_ticket is None:
+            logging.error('No "Rap,Ticket" in TSS response, this might not work')
+
+        comp_name = 'Rap,RTKitOS'
+        comp_path = self.recovery.get_component_path(comp_name)
+        component_data = self.ipsw.get_data_from_path(comp_path)
+
+        ftab = Ftab(component_data)
+
+        comp_name = 'Rap,RestoreRTKitOS'
+        if self.recovery.build_identity_has_component(comp_name):
+            comp_path = self.recovery.build_identity_get_component_path(comp_name)
+            component_data = self.ipsw.get_data_from_path(comp_path)
+            rftab = self.Ftab(component_data)
+
+            component_data = rftab.get_entry_data(b'rrko')
+            if component_data is None:
+                logging.error('Could not find "rrko" entry in ftab. This will probably break things')
+            else:
+                ftab.add_entry(component_data)
+
+        response['FirmwareData'] = ftab.data
+
+        return response
+
+    def get_veridian_firmware_data(self, info: dict):
+        logging.info(f'get_veridian_firmware_data: {info}')
+        comp_name = 'BMU,FirmwareMap'
+
+        # create Veridian request
+        request = TSSRequest(self.offline)
+        parameters = dict()
+
+        # add manifest for current build_identity to parameters
+        self.recovery.tss_parameters_add_from_manifest(parameters)
+
+        # add BMU,* tags from info dictionary to parameters
+        parameters.update(info)
+
+        # add required tags for Veridian TSS request
+        request.add_veridian_tags(parameters, None)
+
+        logging.info('Sending Veridian TSS request...')
+        response = request.send_receive()
+
+        ticket = response.get('BMU,Ticket')
+        if ticket is None:
+            logging.warning('No "BMU,Ticket" in TSS response, this might not work')
+
+        comp_path = self.recovery.get_component_path(comp_name)
+        component_data = self.ipsw.get_data_from_path(comp_path)
+        fw_map = plistlib.loads(component_data)
+        fw_map['fw_map_digest'] = self.recovery.build_identity['Manifest'][comp_name]['Digest']
+
+        bin_plist = plistlib.dumps(fw_map, fmt=plistlib.FMT_BINARY)
+        response['FirmwareData'] = bin_plist
+
+        return response
 
     def send_firmware_updater_data(self, message: dict):
         logging.debug(f'got FirmwareUpdaterData request: {message}')
@@ -799,12 +882,12 @@ class Restore:
                 raise PyMobileDevice3Exception(f'Couldn\'t get {fwtype} firmware data')
 
         elif updater_name == 'Rose':
-            fwdict = self.restore_get_rose_firmware_data(info)
+            fwdict = self.get_rose_firmware_data(info)
             if fwdict is None:
                 raise PyMobileDevice3Exception(f'Couldn\'t get Rose firmware data')
 
         elif updater_name == 'T200':
-            fwdict = self.restore_get_veridian_firmware_data(info)
+            fwdict = self.get_veridian_firmware_data(info)
             if fwdict is None:
                 raise PyMobileDevice3Exception(f'Couldn\'t get Veridian firmware data')
 
