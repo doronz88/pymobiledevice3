@@ -376,6 +376,10 @@ class Recovery:
             logging.info('going into Recovery')
             self.lockdown.enter_recovery()
 
+            # in case lockdown has disconnected while waiting for a ticket
+            self.lockdown = LockdownClient(udid=self.lockdown.udid)
+            self.lockdown.enter_recovery()
+
             self.lockdown = None
             self.irecv = IRecv(self.ecid)
 
