@@ -126,7 +126,12 @@ class FDRClient:
         # Connect: 0 3 hostlen <host> <port>
         if buf[0] == 0 and buf[1] == 3:
             port = struct.unpack('>H', buf[-2:])[0]
-            host = buf[3:].split(b'\x00', 1)[0]
+            hostlen = buf[2]
+            host = buf[3:3 + hostlen]
+
+            # TODO: improve and verify implementation
+            # redirect all connections into localhost
+            host = '127.0.0.1'
             logging.debug(f'FDR {self} Proxy connect request to {host}:{port}')
 
         if host is None:
