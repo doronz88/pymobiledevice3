@@ -129,9 +129,6 @@ class FDRClient:
             hostlen = buf[2]
             host = buf[3:3 + hostlen]
 
-            # TODO: improve and verify implementation
-            # redirect all connections into localhost
-            host = '127.0.0.1'
             logging.debug(f'FDR {self} Proxy connect request to {host}:{port}')
 
         if host is None:
