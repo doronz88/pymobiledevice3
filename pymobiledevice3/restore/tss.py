@@ -486,7 +486,6 @@ class TSSRequest:
             # finally add entry to request
             self._request[comp_name] = manifest_entry
 
-
         if overrides is not None:
             self._request.update(overrides)
 

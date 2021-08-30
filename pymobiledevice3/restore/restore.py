@@ -11,17 +11,15 @@ from io import BytesIO
 from typing import Optional
 
 import tqdm
-
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, NoDeviceConnectedError
-from pymobiledevice3.irecv import IRecv
-from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.restore.asr import ASRClient
+from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.fdr import start_fdr_thread, fdr_type
+from pymobiledevice3.restore.ftab import Ftab
 from pymobiledevice3.restore.ipsw.ipsw import IPSW
 from pymobiledevice3.restore.recovery import Recovery
 from pymobiledevice3.restore.restored_client import RestoredClient
 from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
-from pymobiledevice3.restore.ftab import Ftab
 from pymobiledevice3.utils import plist_access_path
 
 lpol_file = bytearray([0x30, 0x14, 0x16, 0x04, 0x49, 0x4d, 0x34, 0x50,
@@ -170,18 +168,24 @@ SUPPORTED_MESSAGE_TYPES = {
 
 
 class Restore:
-    def __init__(self, ipsw: BytesIO, lockdown: LockdownClient = None, irecv: IRecv = None, tss=None, offline=False,
+    def __init__(self, ipsw: BytesIO, device: Device, tss=None, offline=False,
                  behavior='Update'):
-        self.recovery = Recovery(ipsw, lockdown=lockdown, irecv=irecv, tss=tss, offline=offline, behavior=behavior)
+
         self.ipsw = IPSW(ipsw)
+        self.device = device
+        self.build_identity = self.ipsw.build_manifest.get_build_identity(self.device.hardware_model, behavior)
+
+        self.recovery = Recovery(ipsw, device, tss=tss, offline=offline, behavior=behavior)
         self.offline = offline
         self.bbtss = None  # type: Optional[TSSResponse]
         self.tss_recoveryos_root_ticket = None  # type: Optional[TSSResponse]
         self._restored = None  # type: Optional[RestoredClient]
         self._restore_finished = False
-        self._preflight_info = None
-        if lockdown:
-            self._preflight_info = lockdown.preflight_info
+
+        # query preflight info while device may still be in normal mode
+        self._preflight_info = self.device.preflight_info
+
+        # prepare progress bar for OS component verify
         self._pb_verify_restore = None
         self._pb_verify_restore_old_value = None
 
@@ -195,7 +199,7 @@ class Restore:
         # this step sends requested chunks of data from various offsets to asr so
         # it can validate the filesystem before installing it
         logging.info('validating the filesystem')
-        with self.ipsw.open_path(self.recovery.get_component_path('OS')) as filesystem:
+        with self.ipsw.open_path(self.build_identity.get_component_path('OS')) as filesystem:
             asr.perform_validation(filesystem)
             logging.info('filesystem validated')
 
@@ -209,11 +213,11 @@ class Restore:
         is_recovery = args['IsRecoveryOS']
 
         # TODO: verify
-        return self.recovery.build_identity
+        return self.build_identity
 
     def send_buildidentity(self, message: dict):
         logging.info('About to send BuildIdentity Dict...')
-        req = {'BuildIdentityDict': self.get_build_identity_from_request(message)}
+        req = {'BuildIdentityDict': dict(self.get_build_identity_from_request(message))}
         arguments = message['Arguments']
         variant = arguments.get('Variant')
 
@@ -226,7 +230,7 @@ class Restore:
         self._restored.send(req)
 
     def extract_global_manifest(self):
-        build_info = self.recovery.build_identity.get('Info')
+        build_info = self.build_identity.get('Info')
         if build_info is None:
             raise PyMobileDevice3Exception('build identity does not contain an "Info" element')
 
@@ -243,31 +247,17 @@ class Restore:
 
     def send_personalized_boot_object(self, message: dict):
         image_name = message['Arguments']['ImageName']
-        component_name = component = image_name
+        component_name = image_name
         logging.info(f'About to send {component_name}...')
 
         if image_name == '__GlobalManifest__':
             data = self.extract_global_manifest()
         elif image_name == '__RestoreVersion__':
-            data = self.ipsw.get_restore_version_plist()
+            data = self.ipsw.restore_version
         elif image_name == '__SystemVersion__':
-            data = self.ipsw.get_system_version_plist()
+            data = self.ipsw.system_version
         else:
-            # Get component path
-            path = None
-            if self.recovery.tss:
-                path = self.recovery.tss.get(component, {}).get('Path')
-                if path is None:
-                    logging.debug(f'NOTE: No path for component {component} in TSS, will fetch from build identity')
-
-            if path is None:
-                path = self.recovery.build_identity_get_component_path(component)
-
-            # Extract component
-            data = self.ipsw.get_data_from_path(component)
-
-            # Personalize IMG40
-            data = self.recovery.personalize_component(component_name, data, self.recovery.tss)
+            data = self.build_identity.get_component(component_name, tss=self.recovery.tss).personalized_data
 
         logging.info(f'Sending {component_name} now...')
         chunk_size = 8192
@@ -282,14 +272,14 @@ class Restore:
     def get_recovery_os_local_policy_tss_response(self, args):
         # populate parameters
         parameters = {
-            'ApECID': self.recovery.ecid,
+            'ApECID': self.device.ecid,
             'Ap,LocalBoot': True,
             'ApProductionMode': True,
             'ApSecurityMode': True,
             'ApSupportsImg4': True,
         }
 
-        self.recovery.tss_parameters_add_from_manifest(parameters)
+        self.build_identity.populate_tss_request_parameters(parameters)
 
         # Add Ap,LocalPolicy
         lpol = {
@@ -319,10 +309,10 @@ class Restore:
         component = 'Ap,LocalPolicy'
 
         # The Update mode does not have a specific build identity for the recovery os.
-        self.recovery.tss_localpolicy = self.get_recovery_os_local_policy_tss_response(message['Arguments'])
+        tss_localpolicy = self.get_recovery_os_local_policy_tss_response(message['Arguments'])
 
-        self._restored.send({'Ap,LocalPolicy': self.recovery.personalize_component(component, lpol_file,
-                                                                                   self.recovery.tss_localpolicy)})
+        self._restored.send({'Ap,LocalPolicy': self.build_identity.get_component(component, tss=tss_localpolicy,
+                                                                                 data=lpol_file).personalized_data})
 
     def send_recovery_os_root_ticket(self, message: dict):
         logging.info('About to send RecoveryOSRootTicket...')
@@ -344,7 +334,7 @@ class Restore:
 
     def send_nor(self, message: dict):
         logging.info('About to send NORData...')
-        llb_path = self.recovery.get_component_path('LLB')
+        llb_path = self.build_identity.get_component('LLB', tss=self.recovery.tss).path
         llb_filename_offset = llb_path.find('LLB')
 
         if llb_filename_offset == -1:
@@ -359,7 +349,7 @@ class Restore:
             firmware_files = firmware.get_files()
         except KeyError:
             logging.info('Getting firmware manifest from build identity')
-            build_id_manifest = self.recovery.build_identity['Manifest']
+            build_id_manifest = self.build_identity['Manifest']
             for component, manifest_entry in build_id_manifest.items():
                 if isinstance(manifest_entry, dict):
                     is_fw = plist_access_path(manifest_entry, ('Info', 'IsFirmwarePayload'), bool)
@@ -370,11 +360,11 @@ class Restore:
                         firmware_files[component] = plist_access_path(manifest_entry, ('Info', 'Path'))
 
         component = 'LLB'
-        component_data = self.ipsw.get_data_from_path(llb_path)
-        llb_data = self.recovery.personalize_component(component, component_data, self.recovery.tss)
+        llb_data = self.build_identity.get_component(component, tss=self.recovery.tss,
+                                                     path=llb_path).personalized_data
         req = {'LlbImageData': llb_data}
 
-        if self.recovery.build_major >= 20:
+        if self.ipsw.build_manifest.build_major >= 20:
             # Starting with M1 macs, it seems that NorImageData is now a dict.
             # Sending an array like previous versions results in restore success but the machine will SOS after
             # rebooting.
@@ -388,10 +378,10 @@ class Restore:
                 # skip RestoreSEP, it's passed in RestoreSEPImageData
                 continue
 
-            component_data = self.ipsw.get_data_from_path(comppath)
-            nor_data = self.recovery.personalize_component(component, component_data, self.recovery.tss)
+            nor_data = self.build_identity.get_component(component, tss=self.recovery.tss,
+                                                         path=comppath).personalized_data
 
-            if self.recovery.build_major >= 20:
+            if self.ipsw.build_manifest.build_major >= 20:
                 norimage[component] = nor_data
             else:
                 # make sure iBoot is the first entry in the array
@@ -403,11 +393,9 @@ class Restore:
         req['NorImageData'] = norimage
 
         for component in ('RestoreSEP', 'SEP'):
-            path = self.recovery.get_component_path(component)
-            if path is not None:
-                component_data = self.ipsw.get_data_from_path(path)
-                personalized_data = self.recovery.personalize_component(component, component_data, self.recovery.tss)
-                req[f'{component}ImageData'] = personalized_data
+            comp = self.build_identity.get_component(component, tss=self.recovery.tss)
+            if comp.path:
+                req[f'{component}ImageData'] = comp.personalized_data
 
         logging.info('Sending NORData now...')
         self._restored.send(req)
@@ -540,14 +528,14 @@ class Restore:
 
         if (bb_nonce is None) or (self.bbtss is None):
             # populate parameters
-            parameters = {'ApECID': self.recovery.ecid}
+            parameters = {'ApECID': self.device.ecid}
             if bb_nonce:
                 parameters['BbNonce'] = bb_nonce
             parameters['BbChipID'] = bb_chip_id
             parameters['BbGoldCertId'] = bb_cert_id
             parameters['BbSNUM'] = bb_snum
 
-            self.recovery.tss_parameters_add_from_manifest(parameters)
+            self.build_identity.populate_tss_request_parameters(parameters)
 
             # create baseband request
             request = TSSRequest(self.offline)
@@ -556,7 +544,7 @@ class Restore:
             request.add_common_tags(parameters)
             request.add_baseband_tags(parameters)
 
-            fdr_support = self.recovery.build_identity['Info'].get('FDRSupport', False)
+            fdr_support = self.build_identity['Info'].get('FDRSupport', False)
             if fdr_support:
                 request.update({'ApProductionMode': True, 'ApSecurityMode': True})
 
@@ -568,10 +556,10 @@ class Restore:
                 self.bbtss = bbtss
 
         # get baseband firmware file path from build identity
-        bbfwpath = self.recovery.build_identity['Manifest']['BasebandFirmware']['Info']['Path']
+        bbfwpath = self.build_identity['Manifest']['BasebandFirmware']['Info']['Path']
 
         # extract baseband firmware to temp file
-        bbfw = self.ipsw.get_data_from_path(bbfwpath)
+        bbfw = self.ipsw.read(bbfwpath)
 
         buffer = self.sign_bbfw(bbfw, bbtss, bb_nonce)
 
@@ -605,7 +593,7 @@ class Restore:
         matched_images = []
         data_dict = dict()
 
-        build_id_manifest = self.recovery.build_identity['Manifest']
+        build_id_manifest = self.build_identity['Manifest']
 
         for component, manifest_entry in build_id_manifest.items():
             if not isinstance(manifest_entry, dict):
@@ -620,10 +608,8 @@ class Restore:
                     if image_name is None:
                         logging.info(f'found {image_type_k} component \'{component}\'')
 
-                    path = self.recovery.build_identity_get_component_path(component)
-                    component_data = self.ipsw.get_data_from_path(path)
-                    data = self.recovery.personalize_component(component, component_data, self.recovery.tss)
-                    data_dict[component] = data
+                    data_dict[component] = self.build_identity.get_component(component,
+                                                                             tss=self.recovery.tss).personalized_data
 
         req = dict()
         if want_image_list:
@@ -646,7 +632,7 @@ class Restore:
         if chip_id is None:
             chip_id = info.get('SEChipID')
             if chip_id is None:
-                chip_id = self.recovery.build_identity['Manifest']['SEChipID']
+                chip_id = self.build_identity['Manifest']['SEChipID']
 
         if chip_id == 0x20211:
             comp_name = 'SE,Firmware'
@@ -655,22 +641,21 @@ class Restore:
         else:
             logging.warning(f'Unknown SE,ChipID {chip_id} detected. Restore might fail.')
 
-            if self.recovery.build_identity_has_component('SE,UpdatePayload'):
+            if self.build_identity.has_component('SE,UpdatePayload'):
                 comp_name = 'SE,UpdatePayload'
-            elif self.recovery.build_identity_has_component('SE,Firmware'):
+            elif self.build_identity.has_component('SE,Firmware'):
                 comp_name = 'SE,Firmware'
             else:
                 raise NotImplementedError('Neither \'SE,Firmware\' nor \'SE,UpdatePayload\' found in build identity.')
 
-        comp_path = self.recovery.get_component_path(comp_name)
-        component_data = self.ipsw.get_data_from_path(comp_path)
+        component_data = self.build_identity.get_component(comp_name).data
 
         # create SE request
         request = TSSRequest(self.offline)
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.recovery.tss_parameters_add_from_manifest(parameters)
+        self.build_identity.populate_tss_request_parameters(parameters)
 
         # add SE,* tags from info dictionary to parameters
         parameters.update(info)
@@ -696,7 +681,7 @@ class Restore:
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.recovery.tss_parameters_add_from_manifest(parameters)
+        self.build_identity.populate_tss_request_parameters(parameters)
 
         # add Yonkers,* tags from info dictionary to parameters
         parameters.update(info)
@@ -717,10 +702,8 @@ class Restore:
         else:
             raise PyMobileDevice3Exception('No \'Yonkers,Ticket\' in TSS response, this might not work')
 
-        comp_path = self.recovery.get_component_path(comp_name)
-
         # now get actual component data
-        component_data = self.ipsw.get_data_from_path(comp_path)
+        component_data = self.build_identity.get_component(comp_name).data
 
         firmware_data = {
             'YonkersFirmware': component_data,
@@ -736,7 +719,7 @@ class Restore:
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.recovery.tss_parameters_add_from_manifest(parameters)
+        self.build_identity.populate_tss_request_parameters(parameters)
 
         # add Savage,* tags from info dictionary to parameters
         parameters.update(info)
@@ -757,10 +740,8 @@ class Restore:
         else:
             raise PyMobileDevice3Exception('No \'Savage,Ticket\' in TSS response, this might not work')
 
-        comp_path = self.recovery.get_component_path(comp_name)
-
         # now get actual component data
-        component_data = self.ipsw.get_data_from_path(comp_path)
+        component_data = self.build_identity.get_component(comp_name).data
         component_data = struct.pack('<L', len(component_data)) + b'\x00' * 12
 
         response['FirmwareData'] = component_data
@@ -775,11 +756,11 @@ class Restore:
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.recovery.tss_parameters_add_from_manifest(parameters)
+        self.build_identity.populate_tss_request_parameters(parameters)
 
         parameters['ApProductionMode'] = True
 
-        if self.recovery.is_image4_supported:
+        if self.device.is_image4_supported:
             parameters['ApSecurityMode'] = True
             parameters['ApSupportsImg4'] = True
         else:
@@ -799,22 +780,19 @@ class Restore:
             logging.error('No "Rap,Ticket" in TSS response, this might not work')
 
         comp_name = 'Rap,RTKitOS'
-        comp_path = self.recovery.get_component_path(comp_name)
-        component_data = self.ipsw.get_data_from_path(comp_path)
+        component_data = self.build_identity.get_component(comp_name).data
 
         ftab = Ftab(component_data)
 
         comp_name = 'Rap,RestoreRTKitOS'
-        if self.recovery.build_identity_has_component(comp_name):
-            comp_path = self.recovery.build_identity_get_component_path(comp_name)
-            component_data = self.ipsw.get_data_from_path(comp_path)
-            rftab = self.Ftab(component_data)
+        if self.build_identity.has_component(comp_name):
+            rftab = Ftab(self.build_identity.get_component(comp_name).data)
 
             component_data = rftab.get_entry_data(b'rrko')
             if component_data is None:
                 logging.error('Could not find "rrko" entry in ftab. This will probably break things')
             else:
-                ftab.add_entry(component_data)
+                ftab.add_entry(b'rrko', component_data)
 
         response['FirmwareData'] = ftab.data
 
@@ -829,7 +807,7 @@ class Restore:
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.recovery.tss_parameters_add_from_manifest(parameters)
+        self.build_identity.populate_tss_request_parameters(parameters)
 
         # add BMU,* tags from info dictionary to parameters
         parameters.update(info)
@@ -844,12 +822,11 @@ class Restore:
         if ticket is None:
             logging.warning('No "BMU,Ticket" in TSS response, this might not work')
 
-        comp_path = self.recovery.get_component_path(comp_name)
-        component_data = self.ipsw.get_data_from_path(comp_path)
+        component_data = self.build_identity.get_component(comp_name).data
         fw_map = plistlib.loads(component_data)
-        fw_map['fw_map_digest'] = self.recovery.build_identity['Manifest'][comp_name]['Digest']
+        fw_map['fw_map_digest'] = self.build_identity['Manifest'][comp_name]['Digest']
 
-        bin_plist = plistlib.dumps(fw_map, fmt=plistlib.FMT_BINARY)
+        bin_plist = plistlib.dumps(fw_map, fmt=plistlib.PlistFormat.FMT_BINARY)
         response['FirmwareData'] = bin_plist
 
         return response
@@ -901,17 +878,14 @@ class Restore:
         logging.warning(f'send_firmware_updater_preflight: {message}')
         self._restored.send({})
 
-    def restore_send_component(self, component, component_name=None):
+    def send_component(self, component, component_name=None):
         if component_name is None:
             component_name = component
 
-        logging.info(f'About to send {component_name}...')
-        path = self.recovery.get_component_path(component)
-        component_data = self.ipsw.get_data_from_path(path)
-
-        data = self.recovery.personalize_component(component, component_data, self.recovery.tss)
         logging.info(f'Sending now {component_name}...')
-        self._restored.send({f'{component_name}File': data})
+        self._restored.send(
+            {f'{component_name}File': self.build_identity.get_component(component,
+                                                                        tss=self.recovery.tss).personalized_data})
 
     def handle_data_request_msg(self, message: dict):
         # checks and see what kind of data restored is requests and pass the request to its own handler
@@ -948,8 +922,8 @@ class Restore:
         }
 
         components = {
-            'KernelCache': self.restore_send_component,
-            'DeviceTree': self.restore_send_component,
+            'KernelCache': self.send_component,
+            'DeviceTree': self.send_component,
         }
 
         if data_type in handlers:
@@ -957,9 +931,9 @@ class Restore:
         elif data_type in components:
             components[data_type](data_type)
         elif data_type == 'SystemImageRootHash':
-            self.restore_send_component('SystemVolume', data_type)
+            self.send_component('SystemVolume', data_type)
         elif data_type == 'SystemImageCanonicalMetadata':
-            self.restore_send_component('Ap,SystemVolumeCanonicalMetadata', data_type)
+            self.send_component('Ap,SystemVolumeCanonicalMetadata', data_type)
         elif data_type == 'FUDData':
             self.send_image_data(message, 'FUDImageList', 'IsFUDFirmware', 'FUDImageData')
         elif data_type == 'PersonalizedData':
@@ -1068,7 +1042,7 @@ class Restore:
         opts['SupportedDataTypes'] = SUPPORTED_DATA_TYPES
         opts['SupportedMessageTypes'] = SUPPORTED_MESSAGE_TYPES
 
-        if self.recovery.build_major >= 20:
+        if self.ipsw.build_manifest.build_major >= 20:
             raise NotImplementedError()
         else:
             opts['BootImageType'] = 'UserOrInternal'
@@ -1082,7 +1056,7 @@ class Restore:
             opts['SystemImageType'] = 'User'
             opts['UpdateBaseband'] = False
 
-            sep = self.recovery.build_identity['Manifest']['SEP'].get('Info')
+            sep = self.build_identity['Manifest']['SEP'].get('Info')
             if sep:
                 required_capacity = sep.get('RequiredCapacity')
                 if required_capacity:
@@ -1099,7 +1073,7 @@ class Restore:
         if self.recovery.restore_boot_args:
             opts['RestoreBootArgs'] = self.recovery.restore_boot_args
 
-        spp = self.recovery.build_identity['Info'].get('SystemPartitionPadding')
+        spp = self.build_identity['Info'].get('SystemPartitionPadding')
         if spp:
             spp = dict(spp)
         else:
