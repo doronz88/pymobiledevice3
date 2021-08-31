@@ -1,4 +1,4 @@
-from construct import Struct, Select, Int32ul, Int64ul, Int8ul, Int16ul
+from construct import Select, Int32ul, Int64ul, Int8ul, Int16ul
 
 
 def plist_access_path(d, path: tuple, type_=None, required=False):

@@ -5,14 +5,13 @@ import plistlib
 import IPython
 import click
 from pygments import highlight, lexers, formatters
-
 from pymobiledevice3.cli.cli_common import print_json
 from pymobiledevice3.exceptions import IncorrectModeError
 from pymobiledevice3.irecv import IRecv
 from pymobiledevice3.lockdown import list_devices, LockdownClient
+from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.recovery import Recovery
 from pymobiledevice3.restore.restore import Restore
-from pymobiledevice3.restore.restored_client import RestoredClient
 
 SHELL_USAGE = """
 # use `irecv` variable to access Restore mode API
@@ -100,7 +99,8 @@ def restore_tss(device, ipsw, out, color, offline):
     elif isinstance(device, IRecv):
         irecv = device
 
-    tss = Recovery(ipsw, lockdown=lockdown, irecv=irecv, offline=offline).fetch_tss_record()
+    device = Device(lockdown=lockdown, irecv=irecv)
+    tss = Recovery(ipsw, device, offline=offline).fetch_tss_record()
     if out:
         plistlib.dump(tss, out)
     print_json(tss, colored=color)
@@ -120,7 +120,8 @@ def restore_ramdisk(device, ipsw, tss):
         lockdown = device
     elif isinstance(device, IRecv):
         irecv = device
-    Recovery(ipsw, lockdown=lockdown, irecv=irecv, tss=tss).boot_ramdisk()
+    device = Device(lockdown=lockdown, irecv=irecv)
+    Recovery(ipsw, device, tss=tss).boot_ramdisk()
 
 
 @restore.command('update', cls=Command)
@@ -139,8 +140,9 @@ def restore_update(device, ipsw, tss, offline, erase):
         lockdown = device
     elif isinstance(device, IRecv):
         irecv = device
+    device = Device(lockdown=lockdown, irecv=irecv)
 
     behavior = 'Update'
     if erase:
         behavior = 'Erase'
-    Restore(ipsw, lockdown=lockdown, irecv=irecv, tss=tss, offline=offline, behavior=behavior).update()
+    Restore(ipsw, device, tss=tss, offline=offline, behavior=behavior).update()
