@@ -15,6 +15,20 @@ class BuildManifest:
     def build_major(self):
         return int(self._manifest['ProductBuildVersion'][:2])
 
+    @cached_property
+    def supported_product_types(self):
+        return self._manifest['SupportedProductTypes']
+
+    @cached_property
+    def supported_product_types_family(self):
+        product = self.supported_product_types[0]
+        if product.startswith('iBridge'):
+            return 'iBridge'
+        elif product.startswith('iPhone'):
+            return 'iPhone'
+        else:
+            raise ValueError()
+
     def get_build_identity(self, device_class: str, restore_behavior: str):
         for build_identity in self._build_identities:
             if build_identity.device_class == device_class and build_identity.restore_behavior == restore_behavior:

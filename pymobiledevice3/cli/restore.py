@@ -1,6 +1,7 @@
 import logging
 import os
 import plistlib
+import traceback
 
 import IPython
 import click
@@ -62,12 +63,12 @@ def restore():
 
 
 @restore.command('shell', cls=Command)
-def restore_shell(irecv):
+def restore_shell(device):
     """ create an IPython shell for interacting with iBoot """
     IPython.embed(
         header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.TerminalTrueColorFormatter(style='native')),
         user_ns={
-            'irecv': irecv,
+            'irecv': device,
         })
 
 
@@ -145,4 +146,10 @@ def restore_update(device, ipsw, tss, offline, erase):
     behavior = 'Update'
     if erase:
         behavior = 'Erase'
-    Restore(ipsw, device, tss=tss, offline=offline, behavior=behavior).update()
+
+    try:
+        Restore(ipsw, device, tss=tss, offline=offline, behavior=behavior).update()
+    except Exception:
+        # click may "swallow" several exception types so we try to catch them all here
+        traceback.print_exc()
+        raise

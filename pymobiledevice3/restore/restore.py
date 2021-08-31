@@ -12,6 +12,7 @@ from typing import Optional
 import tqdm
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, NoDeviceConnectedError
 from pymobiledevice3.restore.asr import ASRClient
+from pymobiledevice3.restore.consts import lpol_file, PROGRESS_BAR_OPERATIONS
 from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.fdr import start_fdr_thread, fdr_type
 from pymobiledevice3.restore.ftab import Ftab
@@ -22,84 +23,15 @@ from pymobiledevice3.restore.restored_client import RestoredClient
 from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
 from pymobiledevice3.utils import plist_access_path
 
-lpol_file = bytearray([0x30, 0x14, 0x16, 0x04, 0x49, 0x4d, 0x34, 0x50,
-                       0x16, 0x04, 0x6c, 0x70, 0x6f, 0x6c, 0x16, 0x03,
-                       0x31, 0x2e, 0x30, 0x04, 0x01, 0x00])
-
-PROGRESS_BAR_OPERATIONS = {
-    11: 'CREATE_PARTITION_MAP',
-    12: 'CREATE_FILESYSTEM',
-    13: 'RESTORE_IMAGE',
-    14: 'VERIFY_RESTORE',
-    15: 'CHECK_FILESYSTEMS',
-    16: 'MOUNT_FILESYSTEMS',
-    17: 'FIXUP_VAR',
-    18: 'FLASH_FIRMWARE',
-    19: 'UPDATE_BASEBAND',
-    20: 'SET_BOOT_STAGE',
-    21: 'REBOOT_DEVICE',
-    22: 'SHUTDOWN_DEVICE',
-    23: 'TURN_ON_ACCESSORY_POWER',
-    24: 'CLEAR_BOOTARGS',
-    25: 'MODIFY_BOOTARGS',
-    26: 'INSTALL_ROOT',
-    27: 'INSTALL_KERNELCACHE',
-    28: 'WAIT_FOR_NAND',
-    29: 'UNMOUNT_FILESYSTEMS',
-    30: 'SET_DATETIME',
-    31: 'EXEC_IBOOT',
-    32: 'FINALIZE_NAND_EPOCH_UPDATE',
-    33: 'CHECK_INAPPR_BOOT_PARTITIONS',
-    34: 'CREATE_FACTORY_RESTORE_MARKER',
-    35: 'LOAD_FIRMWARE',
-    36: 'REQUESTING_FUD_DATA',
-    37: 'REMOVING_ACTIVATION_RECORD',
-    38: 'CHECK_BATTERY_VOLTAGE',
-    39: 'WAIT_BATTERY_CHARGE',
-    40: 'CLOSE_MODEM_TICKETS',
-    41: 'MIGRATE_DATA',
-    42: 'WIPE_STORAGE_DEVICE',
-    43: 'SEND_APPLE_LOGO',
-    44: 'CHECK_LOGS',
-    46: 'CLEAR_NVRAM',
-    47: 'UPDATE_GAS_GAUGE',
-    48: 'PREPARE_BASEBAND_UPDATE',
-    49: 'BOOT_BASEBAND',
-    50: 'CREATE_SYSTEM_KEYBAG',
-    51: 'UPDATE_IR_MCU_FIRMWARE',
-    52: 'RESIZE_SYSTEM_PARTITION',
-    53: 'COLLECTING_UPDATER_OUTPUT',
-    54: 'PAIR_STOCKHOLM',
-    55: 'UPDATE_STOCKHOLM',
-    56: 'UPDATE_SWDHID',
-    57: 'CERTIFY_SEP',
-    58: 'UPDATE_NAND_FIRMWARE',
-    59: 'UPDATE_SE_FIRMWARE',
-    60: 'UPDATE_SAVAGE',
-    61: 'INSTALLING_DEVICETREE',
-    62: 'CERTIFY_SAVAGE',
-    63: 'SUBMITTING_PROVINFO',
-    64: 'CERTIFY_YONKERS',
-    65: 'UPDATE_ROSE',
-    66: 'UPDATE_VERIDIAN',
-    67: 'CREATING_PROTECTED_VOLUME',
-    68: 'RESIZING_MAIN_FS_PARTITION',
-    69: 'CREATING_RECOVERY_OS_VOLUME',
-    70: 'INSTALLING_RECOVERY_OS_FILES',
-    71: 'INSTALLING_RECOVERY_OS_IMAGE',
-    74: 'REQUESTING_EAN_DATA',
-    77: 'SEALING_SYSTEM_VOLUME',
-}
-
 known_errors = {
-                0xFFFFFFFFFFFFFFFF: 'verification error',
-                6: 'disk failure',
-                14: 'fail',
-                27: 'failed to mount filesystems',
-                51: 'failed to load SEP firmware',
-                53: 'failed to recover FDR data',
-                1015: 'X-Gold Baseband Update Failed. Defective Unit?',
-            }
+    0xFFFFFFFFFFFFFFFF: 'verification error',
+    6: 'disk failure',
+    14: 'fail',
+    27: 'failed to mount filesystems',
+    51: 'failed to load SEP firmware',
+    53: 'failed to recover FDR data',
+    1015: 'X-Gold Baseband Update Failed. Defective Unit?',
+}
 
 
 class Restore:
@@ -324,7 +256,7 @@ class Restore:
         self._restored.send({'RootTicketData': self.recovery.tss.ap_img4_ticket})
 
     def send_nor(self, message: dict):
-        logging.info('About to send NORData...')
+        logging.info(f'send_nor: {message}')
         llb_path = self.build_identity.get_component('LLB', tss=self.recovery.tss).path
         llb_filename_offset = llb_path.find('LLB')
 
@@ -355,10 +287,23 @@ class Restore:
                                                      path=llb_path).personalized_data
         req = {'LlbImageData': llb_data}
 
+        # Starting at some versions, it seems that NorImageData is now a dict.
+        # Sending an array like previous versions results in restore success but the machine will SOS after
+        # rebooting.
+        norimage_dict = False
+
+        if self.ipsw.build_manifest.supported_product_types_family == 'iBridge' and \
+                self.ipsw.build_manifest.build_major >= 18:
+            # certain T2 versions
+            norimage_dict = True
+
         if self.ipsw.build_manifest.build_major >= 20:
-            # Starting with M1 macs, it seems that NorImageData is now a dict.
-            # Sending an array like previous versions results in restore success but the machine will SOS after
-            # rebooting.
+            # M1
+            norimage_dict = True
+
+        logging.debug(f'sending nor data as dict: {norimage_dict}')
+
+        if norimage_dict:
             norimage = dict()
         else:
             norimage = []
@@ -372,7 +317,7 @@ class Restore:
             nor_data = self.build_identity.get_component(component, tss=self.recovery.tss,
                                                          path=comppath).personalized_data
 
-            if self.ipsw.build_manifest.build_major >= 20:
+            if norimage_dict:
                 norimage[component] = nor_data
             else:
                 # make sure iBoot is the first entry in the array
