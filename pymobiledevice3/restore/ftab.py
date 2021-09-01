@@ -1,4 +1,4 @@
-from construct import Struct, Int32ub, Int32ul, Const, Array, this, Bytes, Computed, Pointer, Default
+from construct import Struct, Int32ub, Int32ul, Const, Array, this, Bytes, Pointer, Default
 
 ftab_entry = Struct(
     'tag' / Bytes(4),

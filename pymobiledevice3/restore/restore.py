@@ -209,10 +209,7 @@ class Restore:
             asr.send_payload(filesystem)
 
     def get_build_identity_from_request(self, msg):
-        args = msg['Arguments']
-        is_recovery = args['IsRecoveryOS']
-
-        # TODO: verify
+        # TODO: extract build identity from msg
         return self.build_identity
 
     def send_buildidentity(self, message: dict):
