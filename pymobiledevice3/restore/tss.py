@@ -1,6 +1,5 @@
 import logging
 import plistlib
-import struct
 import time
 from pathlib import Path
 from uuid import uuid4
