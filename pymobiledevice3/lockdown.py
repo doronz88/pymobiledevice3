@@ -7,6 +7,7 @@ import sys
 import uuid
 import datetime
 from distutils.version import LooseVersion
+from pathlib import Path
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
@@ -17,43 +18,21 @@ from pymobiledevice3.exceptions import NoDeviceConnectedError, FatalPairingError
 from pymobiledevice3.service_connection import ServiceConnection
 
 # we store pairing records and ssl keys in ~/.pymobiledevice3
-HOMEFOLDER = '.pymobiledevice3'
+HOMEFOLDER = Path.home() / '.pymobiledevice3'
 MAXTRIES = 20
 
-
-def read_file(filename):
-    f = open(filename, 'rb')
-    data = f.read()
-    f.close()
-    return data
-
-
-def write_file(filename, data):
-    f = open(filename, 'wb')
-    f.write(data)
-    f.close()
+LOCKDOWN_PATH = {
+    'win32': Path(os.environ.get('ALLUSERSPROFILE', ''), 'Apple', 'Lockdown'),
+    'darwin': Path('/var/db/lockdown/'),
+    'linux': Path('/var/lib/lockdown/'),
+}
 
 
-def get_home_path(folder_name, filename):
-    home = os.path.expanduser('~')
-    folder_path = os.path.join(home, folder_name)
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
-    return os.path.join(folder_path, filename)
-
-
-def read_home_file(folder_name, filename):
-    path = get_home_path(folder_name, filename)
-    if not os.path.exists(path):
-        return None
-    return read_file(path)
-
-
-# return path to HOME+folder_name+filename
-def write_home_file(folder_name, filename, data):
-    filepath = get_home_path(folder_name, filename)
-    write_file(filepath, data)
-    return filepath
+def write_home_file(filename, data):
+    HOMEFOLDER.mkdir(parents=True, exist_ok=True)
+    filepath = HOMEFOLDER / filename
+    filepath.write_bytes(data)
+    return str(filepath)
 
 
 def list_devices():
@@ -79,8 +58,7 @@ class LockdownClient(object):
         self.SessionID = None
         self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
         self.host_id = self.generate_host_id()
-        self.system_buid = self.generate_host_id()
-        self.paired = False
+        self.system_buid = None
         self.label = client_name
 
         if self.query_type() != 'com.apple.mobile.lockdown':
@@ -100,11 +78,9 @@ class LockdownClient(object):
 
         if not self.validate_pairing():
             self.pair()
-            self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
             if not self.validate_pairing():
                 raise FatalPairingError()
-        self.paired = True
-        return
+            self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
 
     def query_type(self):
         self.service.send_plist({'Request': 'QueryType'})
@@ -141,38 +117,45 @@ class LockdownClient(object):
                 raise CannotStopSessionError()
             return res
 
-    def validate_pairing(self):
-        if sys.platform == 'win32':
-            folder = os.path.join(os.environ['ALLUSERSPROFILE'], 'Apple', 'Lockdown')
-        elif sys.platform == 'darwin':
-            folder = '/var/db/lockdown/'
-        elif sys.platform.startswith('linux'):
-            folder = '/var/lib/lockdown/'
-        else:
-            raise NotImplementedError('non-supported platform')
-
-        filename = os.path.join(folder, f'{self.identifier}.plist')
-
+    def get_itunes_pairing_record(self):
+        platform_type = 'linux' if not sys.platform.startswith('linux') else sys.platform
+        filename = LOCKDOWN_PATH[platform_type] / f'{self.identifier}.plist'
         try:
             with open(filename, 'rb') as f:
                 pair_record = plistlib.load(f)
-            logging.warning(f'Using iTunes pair record: {self.identifier}.plist')
-
         except (PermissionError, FileNotFoundError):
             logging.warning(f'No iTunes pairing record found for device {self.identifier}')
-            if LooseVersion(self.ios_version) >= LooseVersion('13.0'):
-                self.logger.warning('Getting pair record from usbmuxd')
-                client = usbmux.PlistProtocol(usbmux.MuxConnection.create_socket())
-                pair_record = client.get_pair_record(self.udid)
-            else:
-                self.logger.warning('Looking for pymobiledevice3 pairing record')
-                record = read_home_file(HOMEFOLDER, f'{self.identifier}.plist')
-                if record:
-                    pair_record = plistlib.loads(record)
-                    self.logger.warning(f'Found pymobiledevice3 pairing record for device {self.udid}')
-                else:
-                    self.logger.error(f'No pymobiledevice3 pairing record found for device {self.identifier}')
-                    return False
+            return None
+        return pair_record
+
+    def get_usbmux_pairing_record(self):
+        self.logger.warning('Getting pair record from usbmuxd')
+        client = usbmux.PlistProtocol(usbmux.MuxConnection.create_socket())
+        try:
+            return client.get_pair_record(self.udid)
+        except PyMobileDevice3Exception:
+            return None
+
+    def get_local_pairing_record(self):
+        self.logger.warning('Looking for pymobiledevice3 pairing record')
+        path = HOMEFOLDER / f'{self.identifier}.plist'
+        if not path.exists():
+            self.logger.error(f'No pymobiledevice3 pairing record found for device {self.identifier}')
+            return None
+        self.logger.warning(f'Found pymobiledevice3 pairing record for device {self.udid}')
+        return plistlib.loads(path.read_bytes())
+
+    def validate_pairing(self):
+        pair_record = self.get_itunes_pairing_record()
+        if pair_record is not None:
+            logging.info(f'Using iTunes pair record: {self.identifier}.plist')
+        elif LooseVersion(self.ios_version) >= LooseVersion('13.0'):
+            pair_record = self.get_usbmux_pairing_record()
+        else:
+            pair_record = self.get_local_pairing_record()
+
+        if pair_record is None:
+            return False
 
         self.pair_record = pair_record
 
@@ -194,19 +177,20 @@ class LockdownClient(object):
         start_session = self.service.recv_plist()
         self.SessionID = start_session.get('SessionID')
         if start_session.get('EnableSessionSSL'):
-            self.ssl_file = self.identifier + '_ssl.txt'
             lf = b'\n'
-            self.ssl_file = write_home_file(HOMEFOLDER, self.ssl_file, cert_pem + lf + private_key_pem)
+            self.ssl_file = write_home_file(f'{self.identifier}_ssl.txt', cert_pem + lf + private_key_pem)
             self.service.ssl_start(self.ssl_file, self.ssl_file)
 
         self.paired = True
         return True
 
     def pair(self):
+        device_id = [d for d in usbmux.list_devices() if d.serial == self.udid][0].devid
         self.device_public_key = self.get_value('', 'DevicePublicKey')
-        if self.device_public_key == '':
+        if self.device_public_key == b'':
             self.logger.error('Unable to retrieve DevicePublicKey')
-            return False
+            self.service.close()
+            raise PairingError()
 
         self.logger.info('Creating host key & certificate')
         cert_pem, private_key_pem, device_certificate = ca_do_everything(self.device_public_key)
@@ -218,24 +202,26 @@ class LockdownClient(object):
                        'RootCertificate': cert_pem,
                        'SystemBUID': '30142955-444094379208051516'}
 
-        pair = {'Label': self.label, 'Request': 'Pair', 'PairRecord': pair_record}
-        self.service.send_plist(pair)
-        pair = self.service.recv_plist()
+        pair = self.service.send_recv_plist({'Label': self.label, 'Request': 'Pair', 'PairRecord': pair_record})
 
-        if pair and (pair.get('Result') == 'Success') or ('EscrowBag' in pair):
-            pair_record['HostPrivateKey'] = private_key_pem
-            pair_record['EscrowBag'] = pair.get('EscrowBag')
-            write_home_file(HOMEFOLDER, '%s.plist' % self.identifier, plistlib.dumps(pair_record))
-            self.paired = True
-            return True
-
-        elif pair and pair.get('Error') == 'PasswordProtected':
+        if pair.get('Error') == 'PasswordProtected':
             self.service.close()
             raise NotTrustedError()
-        else:
+        elif pair.get('Result') != 'Success' and 'EscrowBag' not in pair:
             self.logger.error(pair.get('Error'))
             self.service.close()
             raise PairingError()
+
+        pair_record['HostPrivateKey'] = private_key_pem
+        pair_record['EscrowBag'] = pair.get('EscrowBag')
+        write_home_file(f'{self.identifier}.plist', plistlib.dumps(pair_record))
+
+        record_data = plistlib.dumps(pair_record)
+
+        client = usbmux.PlistProtocol(usbmux.MuxConnection.create_socket())
+        client.save_pair_record(self.udid, device_id, record_data)
+
+        self.paired = True
 
     def unpair(self):
         req = {'Label': self.label, 'Request': 'Unpair', 'PairRecord': self.pair_record}

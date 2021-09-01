@@ -175,6 +175,9 @@ class PlistProtocol(BinaryProtocol):
         pair_record = plistlib.loads(pair_record)
         return pair_record
 
+    def save_pair_record(self, udid, device_id, data):
+        self.send_and_validate('SavePairRecord', {'PairRecordID': udid, 'PairRecordData': data, 'DeviceID': device_id})
+
 
 class MuxConnection(object):
     ITUNES_HOST = ('127.0.0.1', 27015)
