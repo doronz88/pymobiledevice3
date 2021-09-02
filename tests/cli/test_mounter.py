@@ -1,6 +1,6 @@
 import pytest
 
-from pymobiledevice3.cli.mounter import sanitize_version
+from pymobiledevice3.utils import sanitize_ios_version
 
 
 @pytest.mark.parametrize('version, sanitized', [
@@ -10,5 +10,5 @@ from pymobiledevice3.cli.mounter import sanitize_version
     ('9999.9999', '9999.9999'),
     ('9999.9999.9999', '9999.9999'),
 ])
-def test_sanitize_version(version, sanitized):
-    assert sanitize_version(version) == sanitized
+def test_sanitize_ios_version(version, sanitized):
+    assert sanitize_ios_version(version) == sanitized

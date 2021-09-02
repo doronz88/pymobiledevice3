@@ -11,11 +11,9 @@ from pathlib import Path
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
-from pymobiledevice3.exceptions import NoDeviceConnectedError, FatalPairingError, CannotStopSessionError, \
-    NotTrustedError, \
-    PairingError, NotPairedError, StartServiceError, DeviceNonConnectedError, PyMobileDevice3Exception, \
-    PasswordRequiredError, ConnectionFailedError, IncorrectModeError
+from pymobiledevice3.exceptions import *
 from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.utils import sanitize_ios_version
 
 # we store pairing records and ssl keys in ~/.pymobiledevice3
 HOMEFOLDER = Path.home() / '.pymobiledevice3'
@@ -51,7 +49,7 @@ class LockdownClient(object):
             udid = available_udids[0]
         else:
             if udid not in available_udids:
-                raise DeviceNonConnectedError()
+                raise ConnectionFailedError()
 
         self.logger = logging.getLogger(__name__)
         self.paired = False
@@ -60,6 +58,7 @@ class LockdownClient(object):
         self.host_id = self.generate_host_id()
         self.system_buid = None
         self.label = client_name
+        self.pair_record = None
 
         if self.query_type() != 'com.apple.mobile.lockdown':
             raise IncorrectModeError()
@@ -98,6 +97,10 @@ class LockdownClient(object):
     @property
     def preflight_info(self):
         return self.get_value(key='FirmwarePreflightInfo')
+
+    @property
+    def sanitized_ios_version(self):
+        return sanitize_ios_version(self.ios_version)
 
     def generate_host_id(self):
         hostname = platform.node()

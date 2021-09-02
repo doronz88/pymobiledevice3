@@ -1,6 +1,7 @@
 import logging
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, NotMountedError, UnsupportedCommandError
+from pymobiledevice3.exceptions import PyMobileDevice3Exception, NotMountedError, UnsupportedCommandError, \
+    AlreadyMountedError
 from pymobiledevice3.lockdown import LockdownClient
 
 
@@ -52,6 +53,8 @@ class MobileImageMounterService(object):
         status = result.get('Status')
 
         if status != 'Complete':
+            if 'is already mounted' in str(result):
+                raise AlreadyMountedError()
             raise PyMobileDevice3Exception(f'command MountImage failed with: {result}')
 
     def upload_image(self, image_type, image, signature):

@@ -1,11 +1,9 @@
 import logging
-import re
 
 import click
 
 from pymobiledevice3.cli.cli_common import Command, print_json
-from pymobiledevice3.exceptions import DeviceVersionFormatError, PyMobileDevice3Exception, NotMountedError, \
-    UnsupportedCommandError
+from pymobiledevice3.exceptions import NotMountedError, UnsupportedCommandError, AlreadyMountedError
 from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
 
 
@@ -64,13 +62,6 @@ def mounter_umount(lockdown):
         logging.error('Your iOS version doesn\'t support this command')
 
 
-def sanitize_version(version):
-    try:
-        return re.match(r'\d*\.\d*', version)[0]
-    except TypeError as e:
-        raise DeviceVersionFormatError from e
-
-
 @mounter.command('mount', cls=Command)
 @click.option('-i', '--image', type=click.Path(exists=True))
 @click.option('-s', '--signature', type=click.Path(exists=True))
@@ -88,8 +79,7 @@ def mounter_mount(lockdown, image, signature, xcode, version):
     else:
         logging.debug('trying to figure out the best suited DeveloperDiskImage')
         if version is None:
-            version = lockdown.ios_version
-        version = sanitize_version(version)
+            version = lockdown.sanitized_ios_version
         image = f'{xcode}/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport/{version}/DeveloperDiskImage.dmg'
         signature = f'{image}.signature'
 
@@ -104,8 +94,5 @@ def mounter_mount(lockdown, image, signature, xcode, version):
     try:
         image_mounter.mount(image_type, signature)
         logging.info('DeveloperDiskImage mounted successfully')
-    except PyMobileDevice3Exception as e:
-        if 'is already mounted' in str(e):
-            logging.error('DeveloperDiskImage is already mounted')
-        else:
-            raise e
+    except AlreadyMountedError:
+        logging.error('DeveloperDiskImage is already mounted')
