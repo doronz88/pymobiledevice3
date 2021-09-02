@@ -1,6 +1,6 @@
 import logging
 
-from pymobiledevice3.exceptions import NoDeviceConnectedError, DeviceNonConnectedError
+from pymobiledevice3.exceptions import NoDeviceConnectedError, ConnectionFailedError
 from pymobiledevice3.lockdown import list_devices
 from pymobiledevice3.service_connection import ServiceConnection
 
@@ -17,7 +17,7 @@ class RestoredClient(object):
             udid = available_udids[0]
         else:
             if udid not in available_udids:
-                raise DeviceNonConnectedError()
+                raise ConnectionFailedError()
 
         self.logger = logging.getLogger(__name__)
         self.service = ServiceConnection.create(udid, self.SERVICE_PORT)

@@ -6,7 +6,7 @@ import typing
 
 from tqdm import trange
 
-from pymobiledevice3.exceptions import NoDeviceConnectedError, DeviceNonConnectedError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import NoDeviceConnectedError, ConnectionFailedError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import list_devices
 from pymobiledevice3.service_connection import ServiceConnection
 
@@ -31,7 +31,7 @@ class ASRClient(object):
             udid = available_udids[0]
         else:
             if udid not in available_udids:
-                raise DeviceNonConnectedError()
+                raise ConnectionFailedError()
 
         logging.debug('connecting to ASR')
 

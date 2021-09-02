@@ -1,3 +1,12 @@
+__all__ = [
+    'PyMobileDevice3Exception', 'DeviceVersionNotSupportedError', 'IncorrectModeError', 'DeviceVersionFormatError',
+    'ConnectionFailedError', 'NotTrustedError', 'PairingError', 'NotPairedError', 'CannotStopSessionError',
+    'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'MuxException',
+    'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
+    'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError'
+]
+
+
 class PyMobileDevice3Exception(Exception):
     pass
 
@@ -50,10 +59,6 @@ class NoDeviceConnectedError(PyMobileDevice3Exception):
     pass
 
 
-class DeviceNonConnectedError(PyMobileDevice3Exception):
-    pass
-
-
 class MuxException(PyMobileDevice3Exception):
     pass
 
@@ -88,6 +93,11 @@ class DvtDirListError(DvtException):
 
 class NotMountedError(PyMobileDevice3Exception):
     """ Given image for umount wasn't mounted in the first place """
+    pass
+
+
+class AlreadyMountedError(PyMobileDevice3Exception):
+    """ Given image for mount has already been mounted in the first place """
     pass
 
 
