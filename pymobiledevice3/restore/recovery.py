@@ -16,11 +16,7 @@ class Recovery:
         self.ipsw = IPSW(ipsw)
         self.device = device
         self.offline = offline
-
-        if tss is not None:
-            self.tss = TSSResponse(tss)
-        else:
-            self.tss = None
+        self.tss = TSSResponse(tss) if tss is not None else None
 
         if not self.device.is_image4_supported:
             raise NotImplementedError('is_image4_supported is False')

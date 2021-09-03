@@ -18,6 +18,7 @@ from pymobiledevice3.restore.fdr import start_fdr_thread, fdr_type
 from pymobiledevice3.restore.ftab import Ftab
 from pymobiledevice3.restore.ipsw.ipsw import IPSW
 from pymobiledevice3.restore.recovery import Recovery
+from pymobiledevice3.restore.restore_options import RestoreOptions
 from pymobiledevice3.restore.restored_client import RestoredClient
 from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
 from pymobiledevice3.utils import plist_access_path
@@ -91,80 +92,7 @@ PROGRESS_BAR_OPERATIONS = {
     77: 'SEALING_SYSTEM_VOLUME',
 }
 
-# extracted from ac2
-SUPPORTED_DATA_TYPES = {
-    'BasebandBootData': False,
-    'BasebandData': False,
-    'BasebandStackData': False,
-    'BasebandUpdaterOutputData': False,
-    'BuildIdentityDict': False,
-    'BuildIdentityDictV2': False,
-    'DataType': False,
-    'DiagData': False,
-    'EANData': False,
-    'FDRMemoryCommit': False,
-    'FDRTrustData': False,
-    'FUDData': False,
-    'FileData': False,
-    'FileDataDone': False,
-    'FirmwareUpdaterData': False,
-    'GrapeFWData': False,
-    'HPMFWData': False,
-    'HostSystemTime': True,
-    'KernelCache': False,
-    'NORData': False,
-    'NitrogenFWData': True,
-    'OpalFWData': False,
-    'OverlayRootDataCount': False,
-    'OverlayRootDataForKey': True,
-    'PeppyFWData': True,
-    'PersonalizedBootObjectV3': False,
-    'PersonalizedData': True,
-    'ProvisioningData': False,
-    'RamdiskFWData': True,
-    'RecoveryOSASRImage': True,
-    'RecoveryOSAppleLogo': True,
-    'RecoveryOSDeviceTree': True,
-    'RecoveryOSFileAssetImage': True,
-    'RecoveryOSIBEC': True,
-    'RecoveryOSIBootFWFilesImages': True,
-    'RecoveryOSImage': True,
-    'RecoveryOSKernelCache': True,
-    'RecoveryOSLocalPolicy': True,
-    'RecoveryOSOverlayRootDataCount': False,
-    'RecoveryOSRootTicketData': True,
-    'RecoveryOSStaticTrustCache': True,
-    'RecoveryOSVersionData': True,
-    'RootData': False,
-    'RootTicket': False,
-    'S3EOverride': False,
-    'SourceBootObjectV3': False,
-    'SourceBootObjectV4': False,
-    'SsoServiceTicket': False,
-    'StockholmPostflight': False,
-    'SystemImageCanonicalMetadata': False,
-    'SystemImageData': False,
-    'SystemImageRootHash': False,
-    'USBCFWData': False,
-    'USBCOverride': False,
-}
 
-# extracted from ac2
-SUPPORTED_MESSAGE_TYPES = {
-    'BBUpdateStatusMsg': False,
-    'CheckpointMsg': True,
-    'DataRequestMsg': False,
-    'FDRSubmit': True,
-    'MsgType': False,
-    'PreviousRestoreLogMsg': False,
-    'ProgressMsg': False,
-    'ProvisioningAck': False,
-    'ProvisioningInfo': False,
-    'ProvisioningStatusMsg': False,
-    'ReceivedFinalStatusMsg': False,
-    'RestoredCrash': True,
-    'StatusMsg': False,
-}
 
 
 class Restore:
@@ -1001,19 +929,20 @@ class Restore:
         # TODO: implement (can be copied from idevicerestore)
         logging.warning(f'restore_handle_baseband_updater_output_data: {message}')
 
-    def restore_device(self):
-        logging.debug('waiting for device to connect for restored service')
+    def _connect_to_restored_service(self):
         while True:
             try:
                 self._restored = RestoredClient()
                 break
             except NoDeviceConnectedError:
                 pass
+
+    def restore_device(self):
+        logging.debug('waiting for device to connect for restored service')
+        self._connect_to_restored_service()
         logging.info('connected to restored service')
 
-        hardware_info = self._restored.query_value('HardwareInfo')['HardwareInfo']
-
-        logging.info(f'hardware info: {hardware_info}')
+        logging.info(f'hardware info: {self._restored.hardware_info}')
         logging.info(f'version: {self._restored.version}')
 
         if self.recovery.tss.bb_ticket is not None:
@@ -1023,59 +952,13 @@ class Restore:
         logging.info('Starting FDR listener thread')
         start_fdr_thread(fdr_type.FDR_CTRL)
 
-        opts = dict()
-        opts['AutoBootDelay'] = 0
-
-        if self._preflight_info:
-            bbus = dict(self._preflight_info)
-            bbus.pop('FusingStatus')
-            bbus.pop('PkHash')
-            opts['BBUpdaterState'] = bbus
-
-            nonce = self._preflight_info.get('Nonce')
-            if nonce is not None:
-                opts['BasebandNonce'] = nonce
-
-        opts['SupportedDataTypes'] = SUPPORTED_DATA_TYPES
-        opts['SupportedMessageTypes'] = SUPPORTED_MESSAGE_TYPES
-
         if self.ipsw.build_manifest.build_major >= 20:
             raise NotImplementedError()
-        else:
-            opts['BootImageType'] = 'UserOrInternal'
-            opts['DFUFileType'] = 'RELEASE'
-            opts['DataImage'] = False
-            opts['FirmwareDirectory'] = '.'
-            opts['FlashNOR'] = True
-            opts['KernelCacheType'] = 'Release'
-            opts['NORImageType'] = 'production'
-            opts['RestoreBundlePath'] = '/tmp/Per2.tmp'
-            opts['SystemImageType'] = 'User'
-            opts['UpdateBaseband'] = False
 
-            sep = self.build_identity['Manifest']['SEP'].get('Info')
-            if sep:
-                required_capacity = sep.get('RequiredCapacity')
-                if required_capacity:
-                    logging.debug(f'TZ0RequiredCapacity: {required_capacity}')
-                    opts['TZ0RequiredCapacity'] = required_capacity
-            opts['PersonalizedDuringPreflight'] = True
-
-        opts['RootToInstall'] = False
-        guid = str(uuid.uuid4())
-        opts['UUID'] = guid
-        opts['CreateFilesystemPartitions'] = True
-        opts['SystemImage'] = True
-
-        if self.recovery.restore_boot_args:
-            opts['RestoreBootArgs'] = self.recovery.restore_boot_args
-
+        sep = self.build_identity['Manifest']['SEP'].get('Info')
         spp = self.build_identity['Info'].get('SystemPartitionPadding')
-        if spp:
-            spp = dict(spp)
-        else:
-            spp = {'128': 1280, '16': 160, '32': 320, '64': 640, '8': 80}
-        opts['SystemPartitionPadding'] = spp
+        opts = RestoreOptions(preflight_info=self._preflight_info, sep=sep,
+                              restore_boot_args=self.recovery.restore_boot_args, spp=spp)
 
         # start the restore process
         self._restored.start_restore(opts)
