@@ -77,6 +77,7 @@ SUPPORTED_MESSAGE_TYPES = {
     'StatusMsg': False,
 }
 
+
 class RestoreOptions:
 
     def __init__(self, preflight_info=None, sep=None, restore_boot_args=None, spp=None):
