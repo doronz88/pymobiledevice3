@@ -5,7 +5,6 @@ import os
 import plistlib
 import struct
 import tempfile
-import uuid
 import zipfile
 from io import BytesIO
 from typing import Optional
