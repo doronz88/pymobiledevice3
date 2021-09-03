@@ -102,12 +102,12 @@ class RestoreOptions:
         self.SystemImage = True
 
         if preflight_info is not None:
-            bbus = dict(self._preflight_info)
+            bbus = dict(preflight_info)
             bbus.pop('FusingStatus')
             bbus.pop('PkHash')
             self.BBUpdaterState = bbus
 
-            nonce = self._preflight_info.get('Nonce')
+            nonce = preflight_info.get('Nonce')
             if nonce is not None:
                 self.BasebandNonce = nonce
 
