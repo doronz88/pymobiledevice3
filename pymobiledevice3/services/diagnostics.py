@@ -1,4 +1,4 @@
-from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.exceptions import PyMobileDevice3Exception, ConnectionFailedError
 from pymobiledevice3.lockdown import LockdownClient
 
 Requests = """Goodbye
@@ -98,11 +98,15 @@ MobileGestaltKeys = ['BasebandKeyHashInformation',
 
 
 class DiagnosticsService(object):
-    SERVICE_NAME = 'com.apple.mobile.diagnostics_relay'
+    SERVICE_NAME_NEW = 'com.apple.mobile.diagnostics_relay'
+    SERVICE_NAME_OLD = 'com.apple.iosdiagnostics.relay'
 
     def __init__(self, lockdown: LockdownClient):
         self.lockdown = lockdown
-        self.service = self.lockdown.start_service(self.SERVICE_NAME)
+        try:
+            self.service = self.lockdown.start_service(self.SERVICE_NAME_NEW)
+        except ConnectionFailedError:
+            self.service = self.lockdown.start_service(self.SERVICE_NAME_OLD)
         self.packet_num = 0
 
     def mobilegestalt(self, keys=None):
