@@ -2,12 +2,13 @@ import logging
 import time
 from io import BytesIO
 
-from pymobiledevice3.irecv import IRecv
+from usb import USBError
+
+from pymobiledevice3.irecv import IRecv, Mode
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.ipsw.ipsw import IPSW
 from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
-from usb import USBError
 
 
 class Recovery:
@@ -28,9 +29,10 @@ class Recovery:
         self.build_identity = self.ipsw.build_manifest.get_build_identity(self.device.hardware_model, behavior)
         self.restore_boot_args = None
 
-    def reconnect_irecv(self):
-        logging.debug('waiting for device to reconnect in Recovery mode...')
-        self.device.irecv = IRecv(ecid=self.device.ecid)
+    def reconnect_irecv(self, is_recovery=None):
+        logging.debug('waiting for device to reconnect...')
+        self.device.irecv = IRecv(ecid=self.device.ecid, is_recovery=is_recovery)
+        logging.debug(f'connected mode: {self.device.irecv.mode}')
 
     def get_preboard_manifest(self):
         overrides = {
@@ -263,10 +265,36 @@ class Recovery:
 
         self.send_kernelcache()
 
+    def dfu_enter_recovery(self):
+        self.send_component('iBSS')
+        self.reconnect_irecv(is_recovery=True)
+
+        if self.build_identity.build_manifest.build_major > 8:
+            old_nonce = self.device.irecv.ap_nonce
+
+            # reconnect
+            self.reconnect_irecv()
+            nonce = self.device.irecv.ap_nonce
+
+            if old_nonce != nonce:
+                # Welcome iOS5. We have to re-request the TSS with our nonce.
+                self.tss = self.get_tss_response()
+
+        self.device.irecv.set_configuration(1)
+
     def boot_ramdisk(self):
         if self.tss is None:
             logging.info('fetching TSS record')
             self.fetch_tss_record()
+
+        if self.device.irecv and self.device.irecv.mode == Mode.DFU_MODE:
+            # device is currently in DFU mode, place it into recovery mode
+            self.dfu_enter_recovery()
+
+            # Now, before sending iBEC, we must send necessary firmwares on new versions.
+            if self.build_identity.build_manifest.build_major >= 20:
+                # Without this empty policy file & its special signature, iBEC won't start.
+                raise NotImplementedError()
 
         if self.device.lockdown:
             # normal mode
@@ -280,7 +308,7 @@ class Recovery:
             self.device.irecv = IRecv(self.device.ecid)
 
         self.reconnect_irecv()
-        ecid = self.device.irecv.device_info['ECID']
+        ecid = self.device.irecv._device_info['ECID']
         logging.debug(f'ECID: {ecid}')
 
         logging.info('device booted into recovery')

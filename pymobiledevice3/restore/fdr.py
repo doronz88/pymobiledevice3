@@ -138,13 +138,27 @@ class FDRClient:
         sockfd = socket.socket()
         sockfd.connect((host, port))
 
-        while True:
-            buf = self.service.recv(1048576)
-            logging.debug(f'FDR {self} got payload of {len(buf)} bytes, now try to proxy it')
-            logging.debug(f'Sending {len(buf)} bytes of data')
-            sockfd.sendall(buf)
+        sockfd.settimeout(.1)
+        self.service.socket.settimeout(.1)
 
-            buf = sockfd.recv(1048576)
+        while True:
+            buf = b''
+            try:
+                buf = self.service.recv(1048576)
+            except socket.timeout:
+                pass
+
+            if buf:
+                logging.debug(f'FDR {self} got payload of {len(buf)} bytes, now try to proxy it')
+                logging.debug(f'Sending {len(buf)} bytes of data')
+                sockfd.sendall(buf)
+
+            buf = b''
+            try:
+                buf = sockfd.recv(1048576)
+            except socket.timeout:
+                pass
+
             self.service.sendall(buf)
 
     def handle_plist_cmd(self):

@@ -563,8 +563,9 @@ class TSSRequest:
             request_script_path = TICKETS_SUBDIR / f'request_script.sh'
             response_path = TICKETS_SUBDIR / f'response_{unique_identifier}.txt'
 
-            if not request_plist_path.parent.exists():
-                request_plist_path.parent.mkdir()
+            TICKETS_SUBDIR.mkdir(parents=True, exist_ok=True)
+            for file in TICKETS_SUBDIR.iterdir():
+                file.unlink()
 
             with request_plist_path.open('wb') as f:
                 plistlib.dump(self._request, f)
