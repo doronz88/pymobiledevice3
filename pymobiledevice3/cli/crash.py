@@ -9,7 +9,7 @@ from pymobiledevice3.services.afc import AfcShell, AfcService
 
 @click.group()
 def cli():
-    """ apps cli """
+    """ crash cli """
     pass
 
 

@@ -101,6 +101,7 @@ Commands:
   afc              FileSystem utils
   apps             application options
   backup2          backup utils
+  companion        companion options
   crash            crash report options
   developer        developer options.
   diagnostics      diagnostics options
@@ -149,6 +150,7 @@ DONE | `com.apple.mobile.notification_proxy` | API wrapper for `notify_post()` &
 DONE | `com.apple.crashreportmover` | Just trigger `crash_mover` to move all crash reports into crash directory
 DONE | `com.apple.mobile.MCInstall` | Profile management
 DONE | `com.apple.misagent` | Provisioning Profiles management
+DONE | `com.apple.companion_proxy` | Companion features (watches and etc.)
 DONE | `com.apple.mobilebackup2` | Local backup management
 DONE | `com.apple.mobile.assertion_agent` | Create power assertion to prevent different kinds of sleep
 DONE | `com.apple.springboardservices` | Icon related
@@ -174,10 +176,10 @@ Not yet | `com.apple.webinspector` | Used to debug WebViews
 ## `com.apple.instruments.remoteserver.DVTSecureSocketProxy`
 
 Exports several ObjC objects and allows calling their respective selectors.
-The `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` service reads the configuration
-stored from `[[NSUserDefaults standardUserDefaults] boolForKey:@"DTXConnectionTracer"]`
-If the value is true, then `/tmp/DTServiceHub[PID].DTXConnection.RANDOM.log` is created and can be used to debug the transport
-protocol.
+The `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` service reads the
+configuration stored from `[[NSUserDefaults standardUserDefaults] boolForKey:@"DTXConnectionTracer"]`
+If the value is true, then `/tmp/DTServiceHub[PID].DTXConnection.RANDOM.log` is created and can be used to debug the
+transport protocol.
 
 For example:
 
@@ -198,8 +200,8 @@ root@iPhone (/var/root)# tail -f /tmp/DTServiceHub[369].DTXConnection.qNjM2U.log
 For editing the configuration we can simply add the respected key into:
 `/var/mobile/Library/Preferences/.GlobalPreferences.plist` and kill `cfprefsd`
 
-The valid selectors for triggering can be found using the following Frida script the same way Troy Bowman used for iterating
-all classes which implement the protocol `DTXAllowedRPC`:
+The valid selectors for triggering can be found using the following Frida script the same way Troy Bowman used for
+iterating all classes which implement the protocol `DTXAllowedRPC`:
 
 ```shell
 frida -U DTServiceHub
@@ -242,9 +244,9 @@ On older iOS versions, this was the main relay used for file operations, which w
 
 ## `com.apple.pcapd`
 
-Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from an iOS device.
-On Mac OSX the virtual interface can be enabled with the rvictl command. This script allows to use this service on other
-systems.
+Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from an iOS
+device. On Mac OSX the virtual interface can be enabled with the rvictl command. This script allows to use this service
+on other systems.
 
 # The bits and bytes
 
@@ -256,15 +258,15 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
 
 ### Lockdown messages
 
-Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays yourself,
-you can run:
+Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays
+yourself, you can run:
 
 ```shell
 pymobiledevice3 lockdown service <service-name>
 ```
 
-This will start an IPython shell where you already have the connection established using the `client` variable and you can send
-& receive messages.
+This will start an IPython shell where you already have the connection established using the `client` variable and you
+can send & receive messages.
 
 ```python
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
@@ -290,7 +292,8 @@ If you want to play with `DTServiceHub` which lies behind the `developer` option
 pymobiledevice3 developer shell
 ```
 
-To also get an IPython shell, which lets you call ObjC methods from the exported objects in the instruments' namespace like so:
+To also get an IPython shell, which lets you call ObjC methods from the exported objects in the instruments' namespace
+like so:
 
 ```python
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
