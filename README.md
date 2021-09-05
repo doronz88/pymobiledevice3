@@ -138,6 +138,7 @@ for line in SyslogService(lockdown=lockdown).watch():
 
 Support | Service | Description
 --------|---------|----------------------
+DONE | `com.apple.mobile.heartbeat` | Just a ping to `lockdownd` service
 DONE |  `com.apple.mobileactivationd` | Activation services
 DONE |  `com.apple.afc` | File access for `/var/mobile/Media`
 DONE | `com.apple.crashreportcopymobile` | File access for `/var/mobile/Library/Logs/CrashReports`
@@ -165,7 +166,6 @@ Not yet | `com.apple.idamd` | Allows settings the IDAM configuration (whatever t
 Not yet | `com.apple.atc` | AirTraffic related
 Not yet | `com.apple.ait.aitd` | AirTraffic related
 Not yet | `com.apple.mobile.file_relay` | File access for iOS <= 8
-Not yet | `com.apple.mobile.heartbeat` | Just a ping to `lockdownd` service
 Not yet | `com.apple.mobile.insecure_notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
 Not yet | `com.apple.mobilesync` |
 Not yet | `com.apple.purpletestr` |

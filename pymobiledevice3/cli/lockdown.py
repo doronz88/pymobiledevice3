@@ -4,6 +4,7 @@ from pprint import pprint
 import click
 
 from pymobiledevice3.cli.cli_common import Command, print_json
+from pymobiledevice3.services.heartbeat import HeartbeatService
 from pymobiledevice3.tcp_forwarder import TcpForwarder
 
 
@@ -76,3 +77,9 @@ def lockdown_pair(lockdown):
 def lockdown_date(lockdown):
     """ get device date """
     print(lockdown.date)
+
+
+@lockdown_group.command('heartbeat', cls=Command)
+def lockdown_heartbeat(lockdown):
+    """ start heartbeat service """
+    HeartbeatService(lockdown).start()
