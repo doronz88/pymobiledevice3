@@ -110,7 +110,7 @@ class ASRClient(object):
         length = filesystem.tell()
         filesystem.seek(0, os.SEEK_SET)
 
-        for _ in trange(0, length, ASR_PAYLOAD_CHUNK_SIZE):
+        for _ in trange(0, length, ASR_PAYLOAD_CHUNK_SIZE, dynamic_ncols=True):
             chunk = filesystem.read(ASR_PAYLOAD_CHUNK_SIZE)
 
             if self.checksum_chunks:

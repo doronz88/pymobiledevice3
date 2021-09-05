@@ -143,7 +143,7 @@ class IRecv:
 
         num_packets = math.ceil(len(buf) / packet_size)
 
-        for offset in trange(0, len(buf), packet_size):
+        for offset in trange(0, len(buf), packet_size, dynamic_ncols=True):
             # Use bulk transfer for recovery mode and control transfer for DFU and WTF mode
             chunk = buf[offset:offset + packet_size]
             packet_index = offset // packet_size
