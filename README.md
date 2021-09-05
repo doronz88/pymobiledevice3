@@ -133,7 +133,9 @@ for line in SyslogService(lockdown=lockdown).watch():
 
 ## Example
 
-![](https://github.com/doronz88/pymobiledevice3/blob/master/example.gif?raw=true)
+A recorded example can be viewed at:
+
+https://terminalizer.com/view/18920b405193
 
 # Lockdown services
 
