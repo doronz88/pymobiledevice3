@@ -860,7 +860,7 @@ class Restore:
             progress = message['Progress']
 
             if self._pb_verify_restore is None:
-                self._pb_verify_restore = tqdm.tqdm(total=100, desc='verify-restore')
+                self._pb_verify_restore = tqdm.tqdm(total=100, desc='verify-restore', dynamic_ncols=True)
                 self._pb_verify_restore_old_value = 0
 
             self._pb_verify_restore.update(progress - self._pb_verify_restore_old_value)

@@ -35,7 +35,7 @@ def backup(lockdown: LockdownClient, backup_directory, full):
     All backup data will be written to BACKUP_DIRECTORY, under a directory named with the device's udid.
     """
     backup_client = Mobilebackup2Service(lockdown)
-    with tqdm(total=100) as pbar:
+    with tqdm(total=100, dynamic_ncols=True) as pbar:
         def update_bar(percentage):
             pbar.n = percentage
             pbar.refresh()
@@ -59,7 +59,7 @@ def restore(lockdown: LockdownClient, backup_directory, system, reboot, copy, se
     The backup will be restored from a directory with the device udid under BACKUP_DIRECTORY.
     """
     backup_client = Mobilebackup2Service(lockdown)
-    with tqdm(total=100) as pbar:
+    with tqdm(total=100, dynamic_ncols=True) as pbar:
         def update_bar(percentage):
             pbar.n = percentage
             pbar.refresh()

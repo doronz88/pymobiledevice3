@@ -127,7 +127,7 @@ class MobileActivationService:
 
         # Check for plist response.
         if not self._now:
-            pb = tqdm.tqdm(total=int(self._offline_end - self._offline_start), desc='Time Left')
+            pb = tqdm.tqdm(total=int(self._offline_end - self._offline_start), desc='Time Left', dynamic_ncols=True)
             pb.update(int(time.time() - self._offline_start))
             while not response.exists() or b'</plist>' not in response.read_bytes():
                 time.sleep(1)
