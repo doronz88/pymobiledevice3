@@ -3,6 +3,8 @@ import os
 
 BASE_DIR = os.path.realpath(os.path.dirname(__file__))
 VERSION = '1.10.5'
+PACKAGE_NAME = 'pymobiledevice3'
+PACKAGES = [p for p in find_packages() if not p.startswith('tests')]
 
 
 def parse_requirements():
@@ -24,12 +26,12 @@ def get_description():
 if __name__ == '__main__':
     setup(
         version=VERSION,
-        name='pymobiledevice3',
+        name=PACKAGE_NAME,
         description='Pure python3 implementation for working with iDevices (iPhone, etc...)',
         long_description=get_description(),
         long_description_content_type='text/markdown',
         cmdclass={},
-        packages=find_packages(),
+        packages=PACKAGES,
         package_data={'': ['*.txt', '*.TXT', '*.json'], },
         data_files=[('.', ['requirements.txt'])],
         author='DoronZ',
@@ -39,6 +41,7 @@ if __name__ == '__main__':
                                 ],
         },
         classifiers=[
+            'Programming Language :: Python :: 3.6',
             'Programming Language :: Python :: 3.7',
             'Programming Language :: Python :: 3.8',
             'Programming Language :: Python :: 3.9',
