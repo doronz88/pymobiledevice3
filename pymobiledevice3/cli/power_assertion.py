@@ -1,6 +1,6 @@
 import click
 
-from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.cli.cli_common import MyCommand
 from pymobiledevice3.services.power_assertion import PowerAssertionService
 
 
@@ -10,7 +10,7 @@ def cli():
     pass
 
 
-@cli.command('power-assertion', cls=Command)
+@cli.command('power-assertion', cls=MyCommand)
 @click.argument('type', type=click.Choice(
     ['AMDPowerAssertionTypeWirelessSync', 'PreventUserIdleSystemSleep', 'PreventSystemSleep']))
 @click.argument('name')

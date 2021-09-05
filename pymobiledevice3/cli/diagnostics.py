@@ -3,7 +3,7 @@ import time
 from pprint import pprint
 
 import click
-from pymobiledevice3.cli.cli_common import Command, print_json
+from pymobiledevice3.cli.cli_common import MyCommand, print_json
 from pymobiledevice3.services.diagnostics import DiagnosticsService
 
 
@@ -19,32 +19,32 @@ def diagnostics():
     pass
 
 
-@diagnostics.command('restart', cls=Command)
+@diagnostics.command('restart', cls=MyCommand)
 def diagnostics_restart(lockdown):
     """ restart device """
     DiagnosticsService(lockdown=lockdown).restart()
 
 
-@diagnostics.command('shutdown', cls=Command)
+@diagnostics.command('shutdown', cls=MyCommand)
 def diagnostics_shutdown(lockdown):
     """ shutdown device """
     DiagnosticsService(lockdown=lockdown).shutdown()
 
 
-@diagnostics.command('sleep', cls=Command)
+@diagnostics.command('sleep', cls=MyCommand)
 def diagnostics_sleep(lockdown):
     """ put device into sleep """
     DiagnosticsService(lockdown=lockdown).sleep()
 
 
-@diagnostics.command('info', cls=Command)
+@diagnostics.command('info', cls=MyCommand)
 @click.option('--color/--no-color', default=True)
 def diagnostics_info(lockdown, color):
     """ get diagnostics info """
     print_json(DiagnosticsService(lockdown=lockdown).info(), colored=color)
 
 
-@diagnostics.command('ioregistry', cls=Command)
+@diagnostics.command('ioregistry', cls=MyCommand)
 @click.option('--plane')
 @click.option('--name')
 @click.option('--ioclass')
@@ -53,7 +53,7 @@ def diagnostics_ioregistry(lockdown, plane, name, ioclass):
     pprint(DiagnosticsService(lockdown=lockdown).ioregistry(plane=plane, name=name, ioclass=ioclass))
 
 
-@diagnostics.command('mg', cls=Command)
+@diagnostics.command('mg', cls=MyCommand)
 @click.argument('keys', nargs=-1, default=None)
 def diagnostics_mg(lockdown, keys):
     """ get MobileGestalt key values from given list. If empty, return all known. """
@@ -66,7 +66,7 @@ def diagnostics_battery():
     pass
 
 
-@diagnostics_battery.command('single', cls=Command)
+@diagnostics_battery.command('single', cls=MyCommand)
 @click.option('--color/--no-color', default=True)
 def diagnostics_battery_single(lockdown, color):
     """ get single snapshot of battery data """
@@ -74,7 +74,7 @@ def diagnostics_battery_single(lockdown, color):
     print_json(raw_info, colored=color)
 
 
-@diagnostics_battery.command('monitor', cls=Command)
+@diagnostics_battery.command('monitor', cls=MyCommand)
 def diagnostics_battery_monitor(lockdown):
     """ monitor battery usage """
     diagnostics = DiagnosticsService(lockdown=lockdown)

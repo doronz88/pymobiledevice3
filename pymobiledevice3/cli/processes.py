@@ -1,7 +1,7 @@
 import click
 import logging
 
-from pymobiledevice3.cli.cli_common import Command, print_json
+from pymobiledevice3.cli.cli_common import MyCommand, print_json
 from pymobiledevice3.services.os_trace import OsTraceService
 
 
@@ -17,14 +17,14 @@ def processes():
     pass
 
 
-@processes.command('ps', cls=Command)
+@processes.command('ps', cls=MyCommand)
 @click.option('--color/--no-color', default=True)
 def processes_ps(lockdown, color):
     """ show process list """
     print_json(OsTraceService(lockdown=lockdown).get_pid_list().get('Payload'), colored=color)
 
 
-@processes.command('pgrep', cls=Command)
+@processes.command('pgrep', cls=MyCommand)
 @click.argument('expression')
 def processes_pgrep(lockdown, expression):
     """ try to match processes pid by given expression (like pgrep) """

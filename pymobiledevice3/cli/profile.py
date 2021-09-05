@@ -2,7 +2,7 @@ import logging
 
 import click
 
-from pymobiledevice3.cli.cli_common import Command, print_json
+from pymobiledevice3.cli.cli_common import MyCommand, print_json
 from pymobiledevice3.services.mobile_config import MobileConfigService
 
 
@@ -18,13 +18,13 @@ def profile_group():
     pass
 
 
-@profile_group.command('list', cls=Command)
+@profile_group.command('list', cls=MyCommand)
 def profile_list(lockdown):
     """ list installed profiles """
     print_json(MobileConfigService(lockdown=lockdown).get_profile_list())
 
 
-@profile_group.command('install', cls=Command)
+@profile_group.command('install', cls=MyCommand)
 @click.argument('profiles', nargs=-1, type=click.File('rb'))
 def profile_install(lockdown, profiles):
     """ install given profiles """
@@ -34,7 +34,7 @@ def profile_install(lockdown, profiles):
         service.install_profile(profile.read())
 
 
-@profile_group.command('remove', cls=Command)
+@profile_group.command('remove', cls=MyCommand)
 @click.argument('name')
 def profile_remove(lockdown, name):
     """ remove profile by name """

@@ -29,7 +29,7 @@ def print_json(buf, colored=True, default=default_json_encoder):
         print(formatted_json)
 
 
-class Command(click.Command):
+class MyCommand(click.Command):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.params[:0] = [

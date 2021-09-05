@@ -1,6 +1,6 @@
 import click
 
-from pymobiledevice3.cli.cli_common import Command, print_json
+from pymobiledevice3.cli.cli_common import MyCommand, print_json
 from pymobiledevice3.services.companion import CompanionProxyService
 
 
@@ -16,7 +16,7 @@ def companion():
     pass
 
 
-@companion.command('list', cls=Command)
+@companion.command('list', cls=MyCommand)
 @click.option('--color/--no-color', default=True)
 def companion_list(lockdown, color):
     """ list all paired companion devices """

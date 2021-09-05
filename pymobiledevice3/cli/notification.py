@@ -1,7 +1,7 @@
 import logging
 
 import click
-from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.cli.cli_common import MyCommand
 from pymobiledevice3.resources.firmware_notifications import get_notifications
 from pymobiledevice3.services.notification_proxy import NotificationProxyService
 
@@ -18,7 +18,7 @@ def notification():
     pass
 
 
-@notification.command(cls=Command)
+@notification.command(cls=MyCommand)
 @click.argument('names', nargs=-1)
 def post(lockdown, names):
     """ API for notify_post(). """
@@ -27,7 +27,7 @@ def post(lockdown, names):
         service.notify_post(name)
 
 
-@notification.command(cls=Command)
+@notification.command(cls=MyCommand)
 @click.argument('names', nargs=-1)
 def observe(lockdown, names):
     """ API for notify_register_dispatch(). """
@@ -39,7 +39,7 @@ def observe(lockdown, names):
         logging.info(event)
 
 
-@notification.command('observe-all', cls=Command)
+@notification.command('observe-all', cls=MyCommand)
 @click.argument('names', nargs=-1)
 def observe_all(lockdown, names):
     """ attempt to observe all builtin firmware notifications. """

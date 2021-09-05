@@ -3,7 +3,7 @@ import logging
 from tqdm import tqdm
 import click
 
-from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.cli.cli_common import MyCommand
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 from pymobiledevice3.lockdown import LockdownClient
 
@@ -24,7 +24,7 @@ def backup2():
     pass
 
 
-@backup2.command(cls=Command)
+@backup2.command(cls=MyCommand)
 @click.argument('backup-directory', type=click.Path(file_okay=False))
 @click.option('--full', is_flag=True, help=('Whether to do a full backup.'
                                             ' If full is True, any previous backup attempts will be discarded.'))
@@ -43,7 +43,7 @@ def backup(lockdown: LockdownClient, backup_directory, full):
         backup_client.backup(full=full, backup_directory=backup_directory, progress_callback=update_bar)
 
 
-@backup2.command(cls=Command)
+@backup2.command(cls=MyCommand)
 @backup_directory_arg
 @click.option('--system/--no-system', default=False, help='Restore system files.')
 @click.option('--reboot/--no-reboot', default=True, help='Reboot the device when done.')
@@ -69,7 +69,7 @@ def restore(lockdown: LockdownClient, backup_directory, system, reboot, copy, se
                               source=source)
 
 
-@backup2.command(cls=Command)
+@backup2.command(cls=MyCommand)
 @backup_directory_arg
 @source_option
 def info(lockdown: LockdownClient, backup_directory, source):
@@ -80,7 +80,7 @@ def info(lockdown: LockdownClient, backup_directory, source):
     print(backup_client.info(backup_directory=backup_directory, source=source))
 
 
-@backup2.command('list', cls=Command)
+@backup2.command('list', cls=MyCommand)
 @backup_directory_arg
 @source_option
 def list_(lockdown: LockdownClient, backup_directory, source):
@@ -91,7 +91,7 @@ def list_(lockdown: LockdownClient, backup_directory, source):
     print(backup_client.list(backup_directory=backup_directory, source=source))
 
 
-@backup2.command(cls=Command)
+@backup2.command(cls=MyCommand)
 @backup_directory_arg
 @password_option
 @source_option
@@ -103,7 +103,7 @@ def unback(lockdown: LockdownClient, backup_directory, password, source):
     backup_client.unback(backup_directory=backup_directory, password=password, source=source)
 
 
-@backup2.command(cls=Command)
+@backup2.command(cls=MyCommand)
 @click.argument('domain-name')
 @click.argument('relative-path')
 @backup_directory_arg
@@ -121,7 +121,7 @@ def extract(lockdown: LockdownClient, domain_name, relative_path, backup_directo
                           source=source)
 
 
-@backup2.command(cls=Command)
+@backup2.command(cls=MyCommand)
 @click.argument('on', type=click.BOOL)
 @click.argument('password')
 @backup_directory_arg
@@ -143,7 +143,7 @@ def encryption(lockdown: LockdownClient, backup_directory, on, password):
         backup_client.change_password(backup_directory, old=password)
 
 
-@backup2.command(cls=Command)
+@backup2.command(cls=MyCommand)
 @click.argument('old-password')
 @click.argument('new-password')
 @backup_directory_arg
@@ -159,7 +159,7 @@ def change_password(lockdown: LockdownClient, old_password, new_password, backup
     backup_client.change_password(backup_directory, old=old_password, new=new_password)
 
 
-@backup2.command(cls=Command)
+@backup2.command(cls=MyCommand)
 @backup_directory_arg
 def erase_device(lockdown: LockdownClient, backup_directory):
     """

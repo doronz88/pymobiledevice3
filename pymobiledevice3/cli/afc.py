@@ -2,7 +2,7 @@ import posixpath
 
 import click
 
-from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.cli.cli_common import MyCommand
 from pymobiledevice3.services.afc import AfcService, AfcShell
 
 
@@ -18,13 +18,13 @@ def afc():
     pass
 
 
-@afc.command('shell', cls=Command)
+@afc.command('shell', cls=MyCommand)
 def afc_shell(lockdown):
     """ open an AFC shell rooted at /var/mobile/Media """
     AfcShell(lockdown=lockdown, service_name='com.apple.afc').cmdloop()
 
 
-@afc.command('pull', cls=Command)
+@afc.command('pull', cls=MyCommand)
 @click.argument('remote_file', type=click.Path(exists=False))
 @click.argument('local_file', type=click.File('wb'))
 def afc_pull(lockdown, remote_file, local_file):
@@ -32,7 +32,7 @@ def afc_pull(lockdown, remote_file, local_file):
     local_file.write(AfcService(lockdown=lockdown).get_file_contents(remote_file))
 
 
-@afc.command('push', cls=Command)
+@afc.command('push', cls=MyCommand)
 @click.argument('local_file', type=click.File('rb'))
 @click.argument('remote_file', type=click.Path(exists=False))
 def afc_push(lockdown, local_file, remote_file):
@@ -48,7 +48,7 @@ def show_dirlist(afc, dirname, recursive=False):
             show_dirlist(afc, filename, recursive=recursive)
 
 
-@afc.command('ls', cls=Command)
+@afc.command('ls', cls=MyCommand)
 @click.argument('remote_file', type=click.Path(exists=False))
 @click.option('-r', '--recursive', is_flag=True)
 def afc_ls(lockdown, remote_file, recursive):
@@ -56,7 +56,7 @@ def afc_ls(lockdown, remote_file, recursive):
     show_dirlist(AfcService(lockdown=lockdown), remote_file, recursive=recursive)
 
 
-@afc.command('rm', cls=Command)
+@afc.command('rm', cls=MyCommand)
 @click.argument('remote_file', type=click.Path(exists=False))
 def afc_rm(lockdown, remote_file):
     """ remove a file rooted at /var/mobile/Media """

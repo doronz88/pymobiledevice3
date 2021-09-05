@@ -10,7 +10,7 @@ from dataclasses import asdict
 import click
 from pykdebugparser.pykdebugparser import PyKdebugParser
 import pymobiledevice3
-from pymobiledevice3.cli.cli_common import print_json, Command, default_json_encoder
+from pymobiledevice3.cli.cli_common import print_json, MyCommand, default_json_encoder
 from pymobiledevice3.exceptions import DvtDirListError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
@@ -59,7 +59,7 @@ def developer():
     pass
 
 
-@developer.command('shell', cls=Command)
+@developer.command('shell', cls=MyCommand)
 @click.argument('service')
 @click.option('-r', '--remove-ssl-context', is_flag=True)
 def developer_shell(lockdown, service, remove_ssl_context):
@@ -74,7 +74,7 @@ def dvt():
     pass
 
 
-@dvt.command('proclist', cls=Command)
+@dvt.command('proclist', cls=MyCommand)
 @click.option('--color/--no-color', default=True)
 def proclist(lockdown, color):
     """ show process list """
@@ -87,7 +87,7 @@ def proclist(lockdown, color):
         print_json(processes, colored=color)
 
 
-@dvt.command('applist', cls=Command)
+@dvt.command('applist', cls=MyCommand)
 @click.option('--color/--no-color', default=True)
 def applist(lockdown, color):
     """ show application list """
@@ -96,7 +96,7 @@ def applist(lockdown, color):
         print_json(apps, colored=color)
 
 
-@dvt.command('kill', cls=Command)
+@dvt.command('kill', cls=MyCommand)
 @click.argument('pid', type=click.INT)
 def kill(lockdown, pid):
     """ Kill a process by its pid. """
@@ -104,7 +104,7 @@ def kill(lockdown, pid):
         ProcessControl(dvt).kill(pid)
 
 
-@dvt.command('pkill', cls=Command)
+@dvt.command('pkill', cls=MyCommand)
 @click.argument('expression')
 def pkill(lockdown, expression):
     """ kill all processes containing `expression` in their name. """
@@ -123,7 +123,7 @@ def pkill(lockdown, expression):
                 process_control.kill(pid)
 
 
-@dvt.command('launch', cls=Command)
+@dvt.command('launch', cls=MyCommand)
 @click.argument('arguments', type=click.STRING)
 @click.option('--kill-existing/--no-kill-existing', default=True)
 @click.option('--suspended', is_flag=True)
@@ -141,7 +141,7 @@ def launch(lockdown: LockdownClient, arguments: str, kill_existing: bool, suspen
         print(f'Process launched with pid {pid}')
 
 
-@dvt.command('shell', cls=Command)
+@dvt.command('shell', cls=MyCommand)
 def dvt_shell(lockdown):
     """ Launch developer shell. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
@@ -161,7 +161,7 @@ def show_dirlist(device_info: DeviceInfo, dirname, recursive=False):
             show_dirlist(device_info, filename, recursive=recursive)
 
 
-@dvt.command('ls', cls=Command)
+@dvt.command('ls', cls=MyCommand)
 @click.argument('path', type=click.Path(exists=False))
 @click.option('-r', '--recursive', is_flag=True)
 def ls(lockdown, path, recursive):
@@ -170,7 +170,7 @@ def ls(lockdown, path, recursive):
         show_dirlist(DeviceInfo(dvt), path, recursive=recursive)
 
 
-@dvt.command('device-information', cls=Command)
+@dvt.command('device-information', cls=MyCommand)
 @click.option('--color/--no-color', default=True)
 def device_information(lockdown, color):
     """ Print system information. """
@@ -183,7 +183,7 @@ def device_information(lockdown, color):
         }, colored=color)
 
 
-@dvt.command('netstat', cls=Command)
+@dvt.command('netstat', cls=MyCommand)
 def netstat(lockdown):
     """ Print information about current network activity. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
@@ -205,7 +205,7 @@ def sysmon_process():
     """ Process monitor options. """
 
 
-@sysmon_process.command('monitor', cls=Command)
+@sysmon_process.command('monitor', cls=MyCommand)
 @click.argument('threshold', type=click.FLOAT)
 def sysmon_process_monitor(lockdown, threshold):
     """ monitor all most consuming processes by given cpuUsage threshold. """
@@ -223,7 +223,7 @@ def sysmon_process_monitor(lockdown, threshold):
                 logging.info(entries)
 
 
-@sysmon_process.command('single', cls=Command)
+@sysmon_process.command('single', cls=MyCommand)
 @click.option('-f', '--fields', help='show only given field names splitted by ",".')
 @click.option('-a', '--attributes', multiple=True,
               help='filter processes by given attribute value given as key=value')
@@ -270,7 +270,7 @@ def sysmon_process_single(lockdown, fields, attributes):
                 return
 
 
-@sysmon.command('system', cls=Command)
+@sysmon.command('system', cls=MyCommand)
 @click.option('-f', '--fields', help='field names splitted by ",".')
 def sysmon_system(lockdown, fields):
     """ show current system stats. """
@@ -311,7 +311,7 @@ def parse_filters(filters):
     return parsed
 
 
-@core_profile_session.command('live', cls=Command)
+@core_profile_session.command('live', cls=MyCommand)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
 @click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
 @click.option('--pid', type=click.INT, default=None, help='Process ID to filter. Omit for all.')
@@ -351,7 +351,7 @@ def live_profile_session(lockdown, count, filters, pid, tid, timestamp, event_na
                     break
 
 
-@core_profile_session.command('save', cls=Command)
+@core_profile_session.command('save', cls=MyCommand)
 @click.argument('out', type=click.File('wb'))
 @click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
 def save_profile_session(lockdown, out, filters):
@@ -362,7 +362,7 @@ def save_profile_session(lockdown, out, filters):
             tap.dump(out)
 
 
-@core_profile_session.command('stackshot', cls=Command)
+@core_profile_session.command('stackshot', cls=MyCommand)
 @click.option('--out', type=click.File('w'), default=None)
 @click.option('--color/--no-color', default=True)
 def stackshot(lockdown, out, color):
@@ -376,7 +376,7 @@ def stackshot(lockdown, out, color):
                 print_json(data, colored=color)
 
 
-@core_profile_session.command('parse-live', cls=Command)
+@core_profile_session.command('parse-live', cls=MyCommand)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
 @click.option('--pid', type=click.INT, default=None, help='Process ID to filter. Omit for all.')
 @click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
@@ -431,7 +431,7 @@ def format_callstack(callstack, dsc_uuid_map, current_dsc_map):
     return '\n'.join(lines)
 
 
-@core_profile_session.command('callstacks-live', cls=Command)
+@core_profile_session.command('callstacks-live', cls=MyCommand)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
 @click.option('--process', default=None, help='Process to filter. Omit for all.')
 @click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
@@ -466,7 +466,7 @@ def callstacks_live_profile_session(lockdown, count, process, tid, show_tid, col
                     break
 
 
-@dvt.command('trace-codes', cls=Command)
+@dvt.command('trace-codes', cls=MyCommand)
 @click.option('--color/--no-color', default=True)
 def trace_codes(lockdown, color):
     """ Print system information. """
@@ -475,7 +475,7 @@ def trace_codes(lockdown, color):
         print_json({hex(k): v for k, v in device_info.trace_codes().items()}, colored=color)
 
 
-@dvt.command('oslog', cls=Command)
+@dvt.command('oslog', cls=MyCommand)
 @click.option('--color/--no-color', default=True)
 @click.option('--pid', type=click.INT)
 def dvt_oslog(lockdown, color, pid):
@@ -508,7 +508,7 @@ def dvt_oslog(lockdown, color, pid):
                 print(f'[{subsystem}][{category}][{message_pid}][{image_name}] <{message_type}>: {formatted_message}')
 
 
-@dvt.command('energy', cls=Command)
+@dvt.command('energy', cls=MyCommand)
 @click.argument('pid-list', nargs=-1)
 def dvt_energy(lockdown, pid_list):
     """ energy monitoring for given pid list. """
@@ -525,7 +525,7 @@ def dvt_energy(lockdown, pid_list):
                 logging.info(telemetry)
 
 
-@dvt.command('notifications', cls=Command)
+@dvt.command('notifications', cls=MyCommand)
 def dvt_notifications(lockdown):
     """ monitor memory and app notifications """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
@@ -534,7 +534,7 @@ def dvt_notifications(lockdown):
                 logging.info(notification)
 
 
-@dvt.command('graphics', cls=Command)
+@dvt.command('graphics', cls=MyCommand)
 def dvt_notifications(lockdown):
     """ monitor graphics statistics """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
@@ -543,7 +543,7 @@ def dvt_notifications(lockdown):
                 logging.info(stats)
 
 
-@developer.command('fetch-symbols', cls=Command)
+@developer.command('fetch-symbols', cls=MyCommand)
 @click.argument('out', type=click.Path(dir_okay=True, file_okay=False))
 def developer_fetch_symbols(lockdown, out):
     """ download the linker and dyld cache to a specified directory """
@@ -566,13 +566,13 @@ def simulate_location():
     pass
 
 
-@simulate_location.command('clear', cls=Command)
+@simulate_location.command('clear', cls=MyCommand)
 def simulate_location_clear(lockdown):
     """ clear simulated location """
     DtSimulateLocation(lockdown).clear()
 
 
-@simulate_location.command('set', cls=Command)
+@simulate_location.command('set', cls=MyCommand)
 @click.argument('latitude', type=click.FLOAT)
 @click.argument('longitude', type=click.FLOAT)
 def simulate_location_set(lockdown, latitude, longitude):
@@ -584,7 +584,7 @@ def simulate_location_set(lockdown, latitude, longitude):
     DtSimulateLocation(lockdown).set(latitude, longitude)
 
 
-@simulate_location.command('play', cls=Command)
+@simulate_location.command('play', cls=MyCommand)
 @click.argument('filename', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @click.option('--disable-sleep', is_flag=True, default=False)
 def simulate_location_play(lockdown, filename, disable_sleep):
@@ -600,7 +600,7 @@ def accessibility():
     pass
 
 
-@accessibility.command('capabilities', cls=Command)
+@accessibility.command('capabilities', cls=MyCommand)
 def accessibility_capabilities(lockdown):
     """ display accessibility capabilities """
     print_json(AccessibilityAudit(lockdown).device_capabilities())
@@ -612,14 +612,14 @@ def accessibility_settings():
     pass
 
 
-@accessibility_settings.command('show', cls=Command)
+@accessibility_settings.command('show', cls=MyCommand)
 def accessibility_settings_show(lockdown):
     """ show current settings """
     for setting in AccessibilityAudit(lockdown).get_current_settings():
         print(setting)
 
 
-@accessibility_settings.command('set', cls=Command)
+@accessibility_settings.command('set', cls=MyCommand)
 @click.argument('setting', type=click.Choice(
     ['INVERT_COLORS', 'INCREASE_CONTRAST', 'REDUCE_TRANSPARENCY', 'REDUCE_MOTION', 'FONT_SIZE']))
 @click.argument('value', type=click.INT)
@@ -630,13 +630,13 @@ def accessibility_settings_set(lockdown, setting, value):
     wait_return()
 
 
-@accessibility.command('shell', cls=Command)
+@accessibility.command('shell', cls=MyCommand)
 def accessibility_shell(lockdown):
     """ start and ipython accessibility shell """
     AccessibilityAudit(lockdown).shell()
 
 
-@accessibility.command('notifications', cls=Command)
+@accessibility.command('notifications', cls=MyCommand)
 @click.option('-c', '--cycle-focus', is_flag=True)
 def accessibility_notifications(lockdown, cycle_focus):
     """ show notifications """
@@ -664,21 +664,21 @@ def condition():
     pass
 
 
-@condition.command('list', cls=Command)
+@condition.command('list', cls=MyCommand)
 def condition_list(lockdown):
     """ list all available conditions """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         print_json(ConditionInducer(dvt).list())
 
 
-@condition.command('clear', cls=Command)
+@condition.command('clear', cls=MyCommand)
 def condition_clear(lockdown):
     """ clear current condition """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         ConditionInducer(dvt).clear()
 
 
-@condition.command('set', cls=Command)
+@condition.command('set', cls=MyCommand)
 @click.argument('profile_identifier')
 def condition_set(lockdown, profile_identifier):
     """ set a specific condition """
@@ -687,7 +687,7 @@ def condition_set(lockdown, profile_identifier):
         wait_return()
 
 
-@developer.command(cls=Command)
+@developer.command(cls=MyCommand)
 @click.argument('out', type=click.File('wb'))
 def screenshot(lockdown, out):
     """ take a screenshot in PNG format """
@@ -700,13 +700,13 @@ def debugserver():
     pass
 
 
-@debugserver.command('applist', cls=Command)
+@debugserver.command('applist', cls=MyCommand)
 def debugserver_applist(lockdown):
     """ get applist xml """
     print_json(DebugServerAppList(lockdown).get())
 
 
-@debugserver.command('start-server', cls=Command)
+@debugserver.command('start-server', cls=MyCommand)
 @click.argument('local_port', type=click.INT)
 def debugserver_shell(lockdown, local_port):
     """

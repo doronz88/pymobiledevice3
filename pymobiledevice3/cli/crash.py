@@ -3,7 +3,7 @@ import os
 
 import click
 
-from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.cli.cli_common import MyCommand
 from pymobiledevice3.services.afc import AfcShell, AfcService
 
 
@@ -19,14 +19,14 @@ def crash():
     pass
 
 
-@crash.command('clear', cls=Command)
+@crash.command('clear', cls=MyCommand)
 def crash_clear(lockdown):
     """ clear(/remove) all crash reports """
     afc = AfcService(lockdown, service_name='com.apple.crashreportcopymobile')
     afc.rm('/', force=True)
 
 
-@crash.command('pull', cls=Command)
+@crash.command('pull', cls=MyCommand)
 @click.argument('out', type=click.Path(file_okay=False, dir_okay=True, exists=False))
 def crash_pull(lockdown, out):
     """ pull all crash reports """
@@ -40,13 +40,13 @@ def crash_pull(lockdown, out):
     afc.pull('/', out, callback=log)
 
 
-@crash.command('shell', cls=Command)
+@crash.command('shell', cls=MyCommand)
 def crash_shell(lockdown):
     """ start an afc shell """
     AfcShell(lockdown=lockdown, service_name='com.apple.crashreportcopymobile').cmdloop()
 
 
-@crash.command('flush', cls=Command)
+@crash.command('flush', cls=MyCommand)
 def crash_mover_flush(lockdown):
     """ trigger com.apple.crashreportmover to flush all products into CrashReports directory """
     ack = b'ping\x00'

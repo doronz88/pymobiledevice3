@@ -1,6 +1,6 @@
 import click
 
-from pymobiledevice3.cli.cli_common import Command, print_json
+from pymobiledevice3.cli.cli_common import MyCommand, print_json
 from pymobiledevice3.services.misagent import MisagentService
 
 
@@ -16,21 +16,21 @@ def provision():
     pass
 
 
-@provision.command('install', cls=Command)
+@provision.command('install', cls=MyCommand)
 @click.argument('profile', type=click.File('rb'))
 def provision_install(lockdown, profile):
     """ install a provision profile (.mobileprovision file) """
     MisagentService(lockdown=lockdown).install(profile)
 
 
-@provision.command('remove', cls=Command)
+@provision.command('remove', cls=MyCommand)
 @click.argument('profile_id')
 def provision_install(lockdown, profile_id):
     """ remove a provision profile """
     MisagentService(lockdown=lockdown).remove(profile_id)
 
 
-@provision.command('list', cls=Command)
+@provision.command('list', cls=MyCommand)
 @click.option('--color/--no-color', default=True)
 def provision_list(lockdown, color):
     """ list installed provision profiles """

@@ -4,7 +4,7 @@ import click
 from pygments import highlight, lexers, formatters
 import hexdump
 
-from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.cli.cli_common import MyCommand
 from pymobiledevice3.services.pcapd import PcapdService
 
 
@@ -14,7 +14,7 @@ def cli():
     pass
 
 
-@cli.command(cls=Command)
+@cli.command(cls=MyCommand)
 @click.argument('out', type=click.File('wb'), required=False)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of packets to sniff. Omit to endless sniff.')
 @click.option('--process', default=None, help='Process to filter. Omit for all.')

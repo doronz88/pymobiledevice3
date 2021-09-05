@@ -2,7 +2,7 @@ import logging
 
 import click
 
-from pymobiledevice3.cli.cli_common import Command, print_json
+from pymobiledevice3.cli.cli_common import MyCommand, print_json
 from pymobiledevice3.exceptions import NotMountedError, UnsupportedCommandError, AlreadyMountedError
 from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
 
@@ -19,7 +19,7 @@ def mounter():
     pass
 
 
-@mounter.command('list', cls=Command)
+@mounter.command('list', cls=MyCommand)
 @click.option('--color/--no-color', default=True)
 def mounter_list(lockdown, color):
     """ list all mounted images """
@@ -33,7 +33,7 @@ def mounter_list(lockdown, color):
     print_json(output, colored=color)
 
 
-@mounter.command('lookup', cls=Command)
+@mounter.command('lookup', cls=MyCommand)
 @click.option('--color/--no-color', default=True)
 @click.argument('image_type')
 def mounter_lookup(lockdown, color, image_type):
@@ -47,7 +47,7 @@ def mounter_lookup(lockdown, color, image_type):
     print_json(output, colored=color)
 
 
-@mounter.command('umount', cls=Command)
+@mounter.command('umount', cls=MyCommand)
 def mounter_umount(lockdown):
     """ unmount developer image. """
     image_type = 'Developer'
@@ -62,7 +62,7 @@ def mounter_umount(lockdown):
         logging.error('Your iOS version doesn\'t support this command')
 
 
-@mounter.command('mount', cls=Command)
+@mounter.command('mount', cls=MyCommand)
 @click.option('-i', '--image', type=click.Path(exists=True))
 @click.option('-s', '--signature', type=click.Path(exists=True))
 @click.option('-x', '--xcode', type=click.Path(exists=True, dir_okay=True, file_okay=False),

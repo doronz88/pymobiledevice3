@@ -4,7 +4,7 @@ import os
 import click
 from termcolor import colored
 
-from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.cli.cli_common import MyCommand
 from pymobiledevice3.services.os_trace import OsTraceService
 from pymobiledevice3.services.syslog import SyslogService
 
@@ -21,7 +21,7 @@ def syslog():
     pass
 
 
-@syslog.command('live-old', cls=Command)
+@syslog.command('live-old', cls=MyCommand)
 def syslog_live_old(lockdown):
     """ view live syslog lines in raw bytes form from old relay """
     for line in SyslogService(lockdown=lockdown).watch():
@@ -75,7 +75,7 @@ def format_line(color, pid, syslog_entry, include_label):
     return line
 
 
-@syslog.command('live', cls=Command)
+@syslog.command('live', cls=MyCommand)
 @click.option('-o', '--out', type=click.File('wt'), help='log file')
 @click.option('--color/--no-color', default=True, help='disable colors')
 @click.option('--pid', type=click.INT, default=-1, help='pid to filter. -1 for all')
@@ -122,7 +122,7 @@ def syslog_live(lockdown, out, color, pid, match, match_insensitive, include_lab
             out.write(line)
 
 
-@syslog.command('collect', cls=Command)
+@syslog.command('collect', cls=MyCommand)
 @click.argument('out', type=click.Path(exists=False, dir_okay=True, file_okay=True))
 def syslog_collect(lockdown, out):
     """
