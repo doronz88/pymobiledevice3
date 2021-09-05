@@ -5,7 +5,6 @@ import os
 import plistlib
 import struct
 import tempfile
-import uuid
 import zipfile
 from io import BytesIO
 from typing import Optional
@@ -18,6 +17,7 @@ from pymobiledevice3.restore.fdr import start_fdr_thread, fdr_type
 from pymobiledevice3.restore.ftab import Ftab
 from pymobiledevice3.restore.ipsw.ipsw import IPSW
 from pymobiledevice3.restore.recovery import Recovery
+from pymobiledevice3.restore.restore_options import RestoreOptions
 from pymobiledevice3.restore.restored_client import RestoredClient
 from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
 from pymobiledevice3.utils import plist_access_path
@@ -91,80 +91,15 @@ PROGRESS_BAR_OPERATIONS = {
     77: 'SEALING_SYSTEM_VOLUME',
 }
 
-# extracted from ac2
-SUPPORTED_DATA_TYPES = {
-    'BasebandBootData': False,
-    'BasebandData': False,
-    'BasebandStackData': False,
-    'BasebandUpdaterOutputData': False,
-    'BuildIdentityDict': False,
-    'BuildIdentityDictV2': False,
-    'DataType': False,
-    'DiagData': False,
-    'EANData': False,
-    'FDRMemoryCommit': False,
-    'FDRTrustData': False,
-    'FUDData': False,
-    'FileData': False,
-    'FileDataDone': False,
-    'FirmwareUpdaterData': False,
-    'GrapeFWData': False,
-    'HPMFWData': False,
-    'HostSystemTime': True,
-    'KernelCache': False,
-    'NORData': False,
-    'NitrogenFWData': True,
-    'OpalFWData': False,
-    'OverlayRootDataCount': False,
-    'OverlayRootDataForKey': True,
-    'PeppyFWData': True,
-    'PersonalizedBootObjectV3': False,
-    'PersonalizedData': True,
-    'ProvisioningData': False,
-    'RamdiskFWData': True,
-    'RecoveryOSASRImage': True,
-    'RecoveryOSAppleLogo': True,
-    'RecoveryOSDeviceTree': True,
-    'RecoveryOSFileAssetImage': True,
-    'RecoveryOSIBEC': True,
-    'RecoveryOSIBootFWFilesImages': True,
-    'RecoveryOSImage': True,
-    'RecoveryOSKernelCache': True,
-    'RecoveryOSLocalPolicy': True,
-    'RecoveryOSOverlayRootDataCount': False,
-    'RecoveryOSRootTicketData': True,
-    'RecoveryOSStaticTrustCache': True,
-    'RecoveryOSVersionData': True,
-    'RootData': False,
-    'RootTicket': False,
-    'S3EOverride': False,
-    'SourceBootObjectV3': False,
-    'SourceBootObjectV4': False,
-    'SsoServiceTicket': False,
-    'StockholmPostflight': False,
-    'SystemImageCanonicalMetadata': False,
-    'SystemImageData': False,
-    'SystemImageRootHash': False,
-    'USBCFWData': False,
-    'USBCOverride': False,
-}
-
-# extracted from ac2
-SUPPORTED_MESSAGE_TYPES = {
-    'BBUpdateStatusMsg': False,
-    'CheckpointMsg': True,
-    'DataRequestMsg': False,
-    'FDRSubmit': True,
-    'MsgType': False,
-    'PreviousRestoreLogMsg': False,
-    'ProgressMsg': False,
-    'ProvisioningAck': False,
-    'ProvisioningInfo': False,
-    'ProvisioningStatusMsg': False,
-    'ReceivedFinalStatusMsg': False,
-    'RestoredCrash': True,
-    'StatusMsg': False,
-}
+known_errors = {
+                0xFFFFFFFFFFFFFFFF: 'verification error',
+                6: 'disk failure',
+                14: 'fail',
+                27: 'failed to mount filesystems',
+                51: 'failed to load SEP firmware',
+                53: 'failed to recover FDR data',
+                1015: 'X-Gold Baseband Update Failed. Defective Unit?',
+            }
 
 
 class Restore:
@@ -188,6 +123,65 @@ class Restore:
         # prepare progress bar for OS component verify
         self._pb_verify_restore = None
         self._pb_verify_restore_old_value = None
+
+        self._handlers = {
+            # data request messages are sent by restored whenever it requires
+            # files sent to the server by the client. these data requests include
+            # SystemImageData, RootTicket, KernelCache, NORData and BasebandData requests
+            'DataRequestMsg': self.handle_data_request_msg,
+
+            # restore logs are available if a previous restore failed
+            'PreviousRestoreLogMsg': self.handle_previous_restore_log_msg,
+
+            # progress notification messages sent by the restored inform the client
+            # of it's current operation and sometimes percent of progress is complete
+            'ProgressMsg': self.handle_progress_msg,
+
+            # status messages usually indicate the current state of the restored
+            # process or often to signal an error has been encountered
+            'StatusMsg': self.handle_status_msg,
+
+            # checkpoint notifications
+            'CheckpointMsg': self.handle_checkpoint_msg,
+
+            # baseband update message
+            'BBUpdateStatusMsg': self.handle_bb_update_status_msg,
+
+            # baseband updater output data request
+            'BasebandUpdaterOutputData': self.handle_baseband_updater_output_data,
+        }
+
+        self._data_request_handlers = {
+            # this request is sent when restored is ready to receive the filesystem
+            'SystemImageData': self.send_filesystem,
+
+            'BuildIdentityDict': self.send_buildidentity,
+            'PersonalizedBootObjectV3': self.send_personalized_boot_object,
+            'SourceBootObjectV4': self.send_personalized_boot_object,
+            'RecoveryOSLocalPolicy': self.send_restore_local_policy,
+
+            # this request is sent when restored is ready to receive the filesystem
+            'RecoveryOSASRImage': self.send_filesystem,
+
+            # Send RecoveryOS RTD
+            'RecoveryOSRootTicketData': self.send_recovery_os_root_ticket,
+
+            # send RootTicket (== APTicket from the TSS request)
+            'RootTicket': self.send_root_ticket,
+
+            'NORData': self.send_nor,
+            'BasebandData': self.send_baseband_data,
+            'FDRTrustData': self.send_fdr_trust_data,
+            'FirmwareUpdaterData': self.send_firmware_updater_data,
+
+            # TODO: verify
+            'FirmwareUpdaterPreflight': self.send_firmware_updater_preflight,
+        }
+
+        self._data_request_components = {
+            'KernelCache': self.send_component,
+            'DeviceTree': self.send_component,
+        }
 
     def send_filesystem(self, message: dict):
         logging.info('about to send filesystem...')
@@ -891,42 +885,10 @@ class Restore:
         if not isinstance(data_type, str):
             return
 
-        handlers = {
-            # this request is sent when restored is ready to receive the filesystem
-            'SystemImageData': self.send_filesystem,
-
-            'BuildIdentityDict': self.send_buildidentity,
-            'PersonalizedBootObjectV3': self.send_personalized_boot_object,
-            'SourceBootObjectV4': self.send_personalized_boot_object,
-            'RecoveryOSLocalPolicy': self.send_restore_local_policy,
-
-            # this request is sent when restored is ready to receive the filesystem
-            'RecoveryOSASRImage': self.send_filesystem,
-
-            # Send RecoveryOS RTD
-            'RecoveryOSRootTicketData': self.send_recovery_os_root_ticket,
-
-            # send RootTicket (== APTicket from the TSS request)
-            'RootTicket': self.send_root_ticket,
-
-            'NORData': self.send_nor,
-            'BasebandData': self.send_baseband_data,
-            'FDRTrustData': self.send_fdr_trust_data,
-            'FirmwareUpdaterData': self.send_firmware_updater_data,
-
-            # TODO: verify
-            'FirmwareUpdaterPreflight': self.send_firmware_updater_preflight,
-        }
-
-        components = {
-            'KernelCache': self.send_component,
-            'DeviceTree': self.send_component,
-        }
-
-        if data_type in handlers:
-            handlers[data_type](message)
-        elif data_type in components:
-            components[data_type](data_type)
+        if data_type in self._data_request_handlers:
+            self._data_request_handlers[data_type](message)
+        elif data_type in self._data_request_components:
+            self._data_request_components[data_type](data_type)
         elif data_type == 'SystemImageRootHash':
             self.send_component('SystemVolume', data_type)
         elif data_type == 'SystemImageCanonicalMetadata':
@@ -974,16 +936,6 @@ class Restore:
             self._restore_finished = True
             self._restored.send({'MsgType': 'ReceivedFinalStatusMsg'})
         else:
-            known_errors = {
-                0xFFFFFFFFFFFFFFFF: 'verification error',
-                6: 'disk failure',
-                14: 'fail',
-                27: 'failed to mount filesystems',
-                51: 'failed to load SEP firmware',
-                53: 'failed to recover FDR data',
-                1015: 'X-Gold Baseband Update Failed. Defective Unit?',
-            }
-
             if status in known_errors:
                 logging.error(known_errors[status])
             else:
@@ -1001,19 +953,23 @@ class Restore:
         # TODO: implement (can be copied from idevicerestore)
         logging.warning(f'restore_handle_baseband_updater_output_data: {message}')
 
-    def restore_device(self):
-        logging.debug('waiting for device to connect for restored service')
+    def _connect_to_restored_service(self):
         while True:
             try:
                 self._restored = RestoredClient()
                 break
             except NoDeviceConnectedError:
                 pass
+
+    def restore_device(self):
+        if self.ipsw.build_manifest.build_major >= 20:
+            raise NotImplementedError()
+
+        logging.debug('waiting for device to connect for restored service')
+        self._connect_to_restored_service()
         logging.info('connected to restored service')
 
-        hardware_info = self._restored.query_value('HardwareInfo')['HardwareInfo']
-
-        logging.info(f'hardware info: {hardware_info}')
+        logging.info(f'hardware info: {self._restored.hardware_info}')
         logging.info(f'version: {self._restored.version}')
 
         if self.recovery.tss.bb_ticket is not None:
@@ -1023,89 +979,13 @@ class Restore:
         logging.info('Starting FDR listener thread')
         start_fdr_thread(fdr_type.FDR_CTRL)
 
-        opts = dict()
-        opts['AutoBootDelay'] = 0
-
-        if self._preflight_info:
-            bbus = dict(self._preflight_info)
-            bbus.pop('FusingStatus')
-            bbus.pop('PkHash')
-            opts['BBUpdaterState'] = bbus
-
-            nonce = self._preflight_info.get('Nonce')
-            if nonce is not None:
-                opts['BasebandNonce'] = nonce
-
-        opts['SupportedDataTypes'] = SUPPORTED_DATA_TYPES
-        opts['SupportedMessageTypes'] = SUPPORTED_MESSAGE_TYPES
-
-        if self.ipsw.build_manifest.build_major >= 20:
-            raise NotImplementedError()
-        else:
-            opts['BootImageType'] = 'UserOrInternal'
-            opts['DFUFileType'] = 'RELEASE'
-            opts['DataImage'] = False
-            opts['FirmwareDirectory'] = '.'
-            opts['FlashNOR'] = True
-            opts['KernelCacheType'] = 'Release'
-            opts['NORImageType'] = 'production'
-            opts['RestoreBundlePath'] = '/tmp/Per2.tmp'
-            opts['SystemImageType'] = 'User'
-            opts['UpdateBaseband'] = False
-
-            sep = self.build_identity['Manifest']['SEP'].get('Info')
-            if sep:
-                required_capacity = sep.get('RequiredCapacity')
-                if required_capacity:
-                    logging.debug(f'TZ0RequiredCapacity: {required_capacity}')
-                    opts['TZ0RequiredCapacity'] = required_capacity
-            opts['PersonalizedDuringPreflight'] = True
-
-        opts['RootToInstall'] = False
-        guid = str(uuid.uuid4())
-        opts['UUID'] = guid
-        opts['CreateFilesystemPartitions'] = True
-        opts['SystemImage'] = True
-
-        if self.recovery.restore_boot_args:
-            opts['RestoreBootArgs'] = self.recovery.restore_boot_args
-
+        sep = self.build_identity['Manifest']['SEP'].get('Info')
         spp = self.build_identity['Info'].get('SystemPartitionPadding')
-        if spp:
-            spp = dict(spp)
-        else:
-            spp = {'128': 1280, '16': 160, '32': 320, '64': 640, '8': 80}
-        opts['SystemPartitionPadding'] = spp
+        opts = RestoreOptions(preflight_info=self._preflight_info, sep=sep,
+                              restore_boot_args=self.recovery.restore_boot_args, spp=spp)
 
         # start the restore process
         self._restored.start_restore(opts)
-
-        handlers = {
-            # data request messages are sent by restored whenever it requires
-            # files sent to the server by the client. these data requests include
-            # SystemImageData, RootTicket, KernelCache, NORData and BasebandData requests
-            'DataRequestMsg': self.handle_data_request_msg,
-
-            # restore logs are available if a previous restore failed
-            'PreviousRestoreLogMsg': self.handle_previous_restore_log_msg,
-
-            # progress notification messages sent by the restored inform the client
-            # of it's current operation and sometimes percent of progress is complete
-            'ProgressMsg': self.handle_progress_msg,
-
-            # status messages usually indicate the current state of the restored
-            # process or often to signal an error has been encountered
-            'StatusMsg': self.handle_status_msg,
-
-            # checkpoint notifications
-            'CheckpointMsg': self.handle_checkpoint_msg,
-
-            # baseband update message
-            'BBUpdateStatusMsg': self.handle_bb_update_status_msg,
-
-            # baseband updater output data request
-            'BasebandUpdaterOutputData': self.handle_baseband_updater_output_data,
-        }
 
         # this is the restore process loop, it reads each message in from
         # restored and passes that data on to it's specific handler
@@ -1117,8 +997,8 @@ class Restore:
             # discover what kind of message has been received
             message_type = message.get('MsgType')
 
-            if message_type in handlers:
-                handlers[message_type](message)
+            if message_type in self._handlers:
+                self._handlers[message_type](message)
             else:
                 # there might be some other message types i'm not aware of, but I think
                 # at least the "previous error logs" messages usually end up here
