@@ -631,7 +631,10 @@ class CoreProfileSessionTap(Tap):
 
     @staticmethod
     def get_time_config(dvt):
-        mach_absolute_time, numer, denom, _ = DeviceInfo(dvt).mach_time_info()
+        time_info = DeviceInfo(dvt).mach_time_info()
+        mach_absolute_time = time_info[0]
+        numer = time_info[1]
+        denom = time_info[2]
         usecs_since_epoch = dvt.lockdown.get_value(key='TimeIntervalSince1970') * 1000000
         return dict(
             numer=numer, denom=denom, mach_absolute_time=mach_absolute_time, usecs_since_epoch=usecs_since_epoch,
