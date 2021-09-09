@@ -4,7 +4,7 @@ from datetime import timezone, timedelta
 from io import BytesIO
 
 from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyBytes, Enum, Switch, Padding, Padded, \
-    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Bytes
+    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Bytes, GreedyString
 
 from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
@@ -220,7 +220,8 @@ thread_group_snapshot = Struct(
     predefined_name_substruct,
     'obj' / Struct(
         'tgs_id' / Int64ul,
-        'tgs_name' / Padded(16, CString('utf8')),
+        '_tgs_name' / FixedSized(16, GreedyString('utf8')),
+        'tgs_name' / Computed(lambda ctx: ctx._tgs_name.strip('\x00')),
         'tgs_flags' / Int64ul
     ),
 )
