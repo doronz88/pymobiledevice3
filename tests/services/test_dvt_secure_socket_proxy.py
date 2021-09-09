@@ -40,7 +40,7 @@ def test_ls(lockdown):
     """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         ls = set(DeviceInfo(dvt).ls('/'))
-    assert {'usr', 'bin', 'etc', 'var', 'private', 'lib', 'Applications', 'Developer'} <= ls
+    assert {'usr', 'bin', 'etc', 'var', 'private', 'Applications', 'Developer'} <= ls
 
 
 def test_ls_failure(lockdown):
