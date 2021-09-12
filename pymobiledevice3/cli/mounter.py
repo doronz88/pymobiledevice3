@@ -38,13 +38,11 @@ def mounter_list(lockdown, color):
 @click.argument('image_type')
 def mounter_lookup(lockdown, color, image_type):
     """ lookup mounter image type """
-    output = []
-
-    signatures = MobileImageMounterService(lockdown=lockdown).lookup_image(image_type)['ImageSignature']
-    for signature in signatures:
-        output.append(signature.hex())
-
-    print_json(output, colored=color)
+    try:
+        signature = MobileImageMounterService(lockdown=lockdown).lookup_image(image_type)
+        print_json(signature, colored=color)
+    except NotMountedError:
+        logging.error(f'Disk image of type: {image_type} is not mounted')
 
 
 @mounter.command('umount', cls=Command)
@@ -55,7 +53,7 @@ def mounter_umount(lockdown):
     image_mounter = MobileImageMounterService(lockdown=lockdown)
     try:
         image_mounter.umount(image_type, mount_path, b'')
-        logging.info('DeveloperDiskImage umounted successfully')
+        logging.info('DeveloperDiskImage unmounted successfully')
     except NotMountedError:
         logging.error('DeveloperDiskImage isn\'t currently mounted')
     except UnsupportedCommandError:
