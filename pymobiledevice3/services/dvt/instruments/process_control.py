@@ -1,3 +1,5 @@
+import signal
+
 from pymobiledevice3.services.remote_server import MessageAux
 
 
@@ -6,6 +8,15 @@ class ProcessControl:
 
     def __init__(self, dvt):
         self._channel = dvt.make_channel(self.IDENTIFIER)
+
+    def send_signal(self, pid: int, sig: signal.Signals):
+        """
+        Send signal to process
+        :param pid: PID of process to send signal.
+        :param sig: SIGNAL to send
+        """
+        self._channel.sendSignal_toPid_(MessageAux().append_obj(int(sig)).append_obj(pid), expects_reply=True)
+        return self._channel.receive_plist()
 
     def kill(self, pid: int):
         """

@@ -97,6 +97,15 @@ def applist(lockdown, color):
         print_json(apps, colored=color)
 
 
+@dvt.command('send-signal', cls=Command)
+@click.argument('pid', type=click.INT)
+@click.argument('signal', type=click.INT)
+def send_signal(lockdown, pid, signal):
+    """ Send SIGNAL to process by its PID"""
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        ProcessControl(dvt).send_signal(pid, signal)
+
+
 @dvt.command('kill', cls=Command)
 @click.argument('pid', type=click.INT)
 def kill(lockdown, pid):
