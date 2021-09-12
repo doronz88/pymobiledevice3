@@ -1,10 +1,16 @@
 import logging
+import tempfile
+import zipfile
+from pathlib import Path
 
 import click
-
+import requests
 from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.exceptions import NotMountedError, UnsupportedCommandError, AlreadyMountedError
 from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
+from tqdm import tqdm
+
+DEVELOPER_DISK_IMAGE_URL = 'https://github.com/filsv/iPhoneOSDeviceSupport/raw/master/{ios_version}.zip'
 
 
 @click.group()
@@ -60,6 +66,31 @@ def mounter_umount(lockdown):
         logging.error('Your iOS version doesn\'t support this command')
 
 
+def download_file(url, local_filename):
+    logging.debug(f'downloading: {local_filename}')
+    with requests.get(url, stream=True) as r:
+        r.raise_for_status()
+        total_size_in_bytes = int(r.headers.get('content-length', 0))
+
+        with tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True, dynamic_ncols=True) as progress_bar:
+            with open(local_filename, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    progress_bar.update(len(chunk))
+                    f.write(chunk)
+
+    return local_filename
+
+
+def download_developer_disk_image(ios_version, directory):
+    url = DEVELOPER_DISK_IMAGE_URL.format(ios_version=ios_version)
+    with tempfile.NamedTemporaryFile('wb+') as f:
+        download_file(url, f.name)
+        zip_file = zipfile.ZipFile(f)
+
+        # extract to the parent directory since the zip file already contains the ios version in its hierarchy
+        zip_file.extractall(directory.parent)
+
+
 @mounter.command('mount', cls=Command)
 @click.option('-i', '--image', type=click.Path(exists=True))
 @click.option('-s', '--signature', type=click.Path(exists=True))
@@ -71,6 +102,7 @@ def mounter_umount(lockdown):
 def mounter_mount(lockdown, image, signature, xcode, version):
     """ mount developer image. """
     image_type = 'Developer'
+    developer_disk_image_dir = None
 
     if image and signature:
         logging.debug('using given image and signature for mount command')
@@ -80,12 +112,21 @@ def mounter_mount(lockdown, image, signature, xcode, version):
             version = lockdown.sanitized_ios_version
         image = f'{xcode}/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport/{version}/DeveloperDiskImage.dmg'
         signature = f'{image}.signature'
+        developer_disk_image_dir = Path(image).parent
 
-    with open(image, 'rb') as image:
-        image = image.read()
+    image = Path(image)
+    signature = Path(signature)
 
-    with open(signature, 'rb') as signature:
-        signature = signature.read()
+    if not developer_disk_image_dir.exists():
+        try:
+            download_developer_disk_image(version, developer_disk_image_dir)
+        except PermissionError:
+            logging.error(f'DeveloperDiskImage could not be saved to Xcode default path ({developer_disk_image_dir}). '
+                          f'Please make sure your user has the necessary permissions')
+            return
+
+    image = image.read_bytes()
+    signature = signature.read_bytes()
 
     image_mounter = MobileImageMounterService(lockdown=lockdown)
     image_mounter.upload_image(image_type, image, signature)
