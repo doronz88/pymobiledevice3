@@ -72,9 +72,7 @@ def test_applist(lockdown):
         apps = ApplicationListing(dvt).applist()
 
     safari = [app for app in apps if app['BundlePath'] == '/Applications/MobileSafari.app'][0]
-    assert safari['DisplayName'] == 'Safari'
     assert safari['CFBundleIdentifier'] == 'com.apple.mobilesafari'
-    assert safari['ExecutableName'] == 'MobileSafari'
     assert not safari['Placeholder']
     assert safari['Type'] == 'System'
 
@@ -90,8 +88,8 @@ def test_kill(lockdown):
         ProcessControl(dvt).kill(aggregated['pid'])
 
     aggregated_after_kill = get_process_data(lockdown, 'aggregated')
-
-    assert aggregated['startDate'] < aggregated_after_kill['startDate']
+    if 'startDate' in aggregated:
+        assert aggregated['startDate'] < aggregated_after_kill['startDate']
 
 
 def test_launch(lockdown):

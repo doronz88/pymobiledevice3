@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, NotMountedError, UnsupportedCommandError, \
     AlreadyMountedError
@@ -23,12 +24,27 @@ class MobileImageMounterService(object):
 
         return response
 
-    def lookup_image(self, image_type):
+    def lookup_image(self, image_type: str) -> Optional[bytes]:
         """ Lookup mounted image by its name. """
-        self.service.send_plist({'Command': 'LookupImage',
-                                 'ImageType': image_type})
+        response = self.service.send_recv_plist({'Command': 'LookupImage',
+                                                 'ImageType': image_type})
 
-        return self.service.recv_plist()
+        if not response.get('ImagePresent', True):
+            raise NotMountedError()
+
+        signature = response['ImageSignature']
+        if isinstance(signature, list):
+            if not signature:
+                raise NotMountedError()
+            return signature[0]
+        return signature
+
+    def is_image_mounted(self, image_type: str) -> bool:
+        try:
+            self.lookup_image(image_type)
+            return True
+        except NotMountedError:
+            return False
 
     def umount(self, image_type, mount_path, signature):
         """ umount image. """
@@ -46,6 +62,10 @@ class MobileImageMounterService(object):
 
     def mount(self, image_type, signature):
         """ Upload image into device. """
+
+        if self.is_image_mounted(image_type):
+            raise AlreadyMountedError()
+
         self.service.send_plist({'Command': 'MountImage',
                                  'ImageType': image_type,
                                  'ImageSignature': signature})
@@ -53,8 +73,6 @@ class MobileImageMounterService(object):
         status = result.get('Status')
 
         if status != 'Complete':
-            if 'is already mounted' in str(result):
-                raise AlreadyMountedError()
             raise PyMobileDevice3Exception(f'command MountImage failed with: {result}')
 
     def upload_image(self, image_type, image, signature):

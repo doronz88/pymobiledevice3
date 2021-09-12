@@ -1,6 +1,7 @@
 from pymobiledevice3.services.screenshot import ScreenshotService
 
 PNG_HEADER = b'\x89\x50\x4e\x47\x0d\x0a\x1a\x0a'
+TIFF_HEADER = b'\x4D\x4D\x00\x2A'
 
 
 def test_screenshot(lockdown):
@@ -10,4 +11,4 @@ def test_screenshot(lockdown):
     """
     screenshot_taker = ScreenshotService(lockdown)
     screenshot = screenshot_taker.take_screenshot()
-    assert screenshot.startswith(PNG_HEADER)
+    assert screenshot.startswith(PNG_HEADER) or screenshot.startswith(TIFF_HEADER)
