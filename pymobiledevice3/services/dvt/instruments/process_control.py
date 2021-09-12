@@ -9,7 +9,7 @@ class ProcessControl:
     def __init__(self, dvt):
         self._channel = dvt.make_channel(self.IDENTIFIER)
 
-    def send_signal(self, pid: int, sig: signal.Signals):
+    def signal(self, pid: int, sig: signal.Signals):
         """
         Send signal to process
         :param pid: PID of process to send signal.
