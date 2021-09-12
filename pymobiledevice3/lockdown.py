@@ -95,12 +95,26 @@ class LockdownClient(object):
         return datetime.datetime.fromtimestamp(self.get_value(key='TimeIntervalSince1970'))
 
     @property
+    def language(self):
+        return self.get_value(key='Language', domain='com.apple.international')
+
+    @property
+    def locale(self):
+        return self.get_value(key='Locale', domain='com.apple.international')
+
+    @property
     def preflight_info(self):
         return self.get_value(key='FirmwarePreflightInfo')
 
     @property
     def sanitized_ios_version(self):
         return sanitize_ios_version(self.ios_version)
+
+    def set_language(self, language: str):
+        self.set_value(language, key='Language', domain='com.apple.international')
+
+    def set_locale(self, locale: str):
+        self.set_value(locale, key='Locale', domain='com.apple.international')
 
     def generate_host_id(self):
         hostname = platform.node()
