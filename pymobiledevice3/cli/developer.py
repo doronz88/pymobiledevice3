@@ -9,9 +9,11 @@ from dataclasses import asdict
 
 import click
 from pykdebugparser.pykdebugparser import PyKdebugParser
+from termcolor import colored
+
 import pymobiledevice3
 from pymobiledevice3.cli.cli_common import print_json, Command, default_json_encoder
-from pymobiledevice3.exceptions import DvtDirListError
+from pymobiledevice3.exceptions import DvtDirListError, ExtractingStackshotError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
@@ -32,7 +34,6 @@ from pymobiledevice3.services.remote_server import RemoteServer
 from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
-from termcolor import colored
 from pymobiledevice3.tcp_forwarder import TcpForwarder
 
 
@@ -369,7 +370,12 @@ def stackshot(lockdown, out, color):
     """ Dump stackshot information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with CoreProfileSessionTap(dvt, {}) as tap:
-            data = tap.get_stackshot()
+            try:
+                data = tap.get_stackshot()
+            except ExtractingStackshotError:
+                logging.error(f'Extracting stackshot failed')
+                return
+
             if out is not None:
                 json.dump(data, out, indent=4, default=default_json_encoder)
             else:

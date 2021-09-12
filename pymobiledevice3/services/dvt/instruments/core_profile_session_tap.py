@@ -5,7 +5,9 @@ from io import BytesIO
 
 from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyBytes, Enum, Switch, Padding, Padded, \
     LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Bytes, GreedyString
+from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES
 
+from pymobiledevice3.exceptions import ExtractingStackshotError
 from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
@@ -585,8 +587,12 @@ class CoreProfileSessionTap(Tap):
             # The stackshot is sent one per TAP creation, so we cache it.
             return self.stack_shot
         data = self._channel.receive_message()
-        while not data.startswith(STACKSHOT_HEADER):
+        while not data.startswith(STACKSHOT_HEADER) and not data.startswith(RAW_VERSION2_BYTES):
             data = self._channel.receive_message()
+
+        if data.startswith(RAW_VERSION2_BYTES):
+            raise ExtractingStackshotError()
+
         stackshot = self.parse_stackshot(data)
 
         dsc_map = get_dsc_map(str(stackshot['shared_cache_dyld_load_info']['imageUUID']))
