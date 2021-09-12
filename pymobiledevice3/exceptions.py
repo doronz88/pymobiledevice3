@@ -3,7 +3,7 @@ __all__ = [
     'ConnectionFailedError', 'NotTrustedError', 'PairingError', 'NotPairedError', 'CannotStopSessionError',
     'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'MuxException',
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
-    'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError'
+    'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError'
 ]
 
 
@@ -103,4 +103,9 @@ class AlreadyMountedError(PyMobileDevice3Exception):
 
 class UnsupportedCommandError(PyMobileDevice3Exception):
     """ Given command isn't supported for this iOS version """
+    pass
+
+
+class ExtractingStackshotError(PyMobileDevice3Exception):
+    """ Raise when stackshot is not received in the core profile session. """
     pass

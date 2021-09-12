@@ -29,7 +29,7 @@ class MobileImageMounterService(object):
         response = self.service.send_recv_plist({'Command': 'LookupImage',
                                                  'ImageType': image_type})
 
-        if not response.get('ImagePresent', True):
+        if not response or not response.get('ImagePresent', True):
             raise NotMountedError()
 
         signature = response['ImageSignature']
