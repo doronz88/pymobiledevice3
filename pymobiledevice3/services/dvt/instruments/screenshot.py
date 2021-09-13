@@ -1,9 +1,3 @@
-from datetime import datetime
-
-from pymobiledevice3.exceptions import DvtDirListError
-from pymobiledevice3.services.remote_server import MessageAux
-
-
 class Screenshot:
     IDENTIFIER = 'com.apple.instruments.server.services.screenshot'
 
