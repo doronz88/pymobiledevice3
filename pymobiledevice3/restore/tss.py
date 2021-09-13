@@ -11,6 +11,8 @@ from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.restore.img4 import img4_get_component_tag
 from pymobiledevice3.utils import bytes_to_uint
 
+TSS_CONTROLLER_ACTION_URL = 'http://gs.apple.com/TSS/controller?action=2'
+
 TSS_CLIENT_VERSION_STRING = 'libauthinstall-776.60.1'
 TICKETS_SUBDIR = Path('offline_requests')
 
@@ -594,7 +596,7 @@ class TSSRequest:
             content = response_path.read_bytes()
         else:
             logging.info(f'Sending TSS request...')
-            r = requests.post('http://gs.apple.com/TSS/controller?action=2', headers=headers,
+            r = requests.post(TSS_CONTROLLER_ACTION_URL, headers=headers,
                               data=plistlib.dumps(self._request), verify=False)
             content = r.content
 

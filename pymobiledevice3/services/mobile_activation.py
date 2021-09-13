@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 import logging
 import plistlib
-import shlex
 from contextlib import closing
 from pathlib import Path
-import time
 
 import requests
-import tqdm
 
 from pymobiledevice3.lockdown import LockdownClient
 
@@ -27,31 +24,22 @@ NONCE_CYCLE_INTERVAL = 60 * 5
 class MobileActivationService:
     SERVICE_NAME = 'com.apple.mobileactivationd'
 
-    def __init__(self, lockdown: LockdownClient, offline=True, now=False):
+    def __init__(self, lockdown: LockdownClient):
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
-        self.offline = offline
-        self._now = now
-        self._offline_start = 0
-        self._offline_end = 0
 
     @property
     def state(self):
         return self.send_command('GetActivationStateRequest')['Value']
 
+    def wait_for_activation_session(self):
+        blob = self.create_activation_session_info()
+        handshake_request_message = blob['HandshakeRequestMessage']
+        while handshake_request_message == blob['HandshakeRequestMessage']:
+            blob = self.create_activation_session_info()
+
     def activate(self):
         blob = self.create_activation_session_info()
-
-        if self.offline and not self._now:
-            self.logger.info('waiting for the next 5 minutes cycle')
-
-            handshake_request_message = blob['HandshakeRequestMessage']
-            while handshake_request_message == blob['HandshakeRequestMessage']:
-                blob = self.create_activation_session_info()
-
-            self.logger.info('new cycle started! go go go!')
-            self._offline_start = time.time()
-            self._offline_end = self._offline_start + NONCE_CYCLE_INTERVAL
 
         # create drmHandshake request with blob from device
         headers = {'Content-Type': 'application/x-apple-plist'}
@@ -93,57 +81,6 @@ class MobileActivationService:
     def post(self, url, data, headers=None):
         if headers is None:
             headers = DEFAULT_HEADERS
-        if not self.offline:
-            resp = requests.post(url, data=data, headers=headers)
-            return resp.content, resp.headers
-        ACTIVATION_REQUESTS_SUBDIR.mkdir(parents=True, exist_ok=True)
-        for file in ACTIVATION_REQUESTS_SUBDIR.iterdir():
-            file.unlink()
-        curl_arguments = ['curl', '-X', 'POST', '-D', 'headers.txt']
 
-        if isinstance(data, bytes):
-            request_data = ACTIVATION_REQUESTS_SUBDIR / f'request_data_{hash(data)}.plist'
-            request_data.write_bytes(data)
-            curl_arguments.extend(['--data-binary', f'@{request_data.name}'])
-        elif isinstance(data, dict):
-            for key, value, in data.items():
-                request_data = ACTIVATION_REQUESTS_SUBDIR / f'request_data_{hash(value)}.plist'
-                request_data.write_bytes(value)
-                curl_arguments.extend(['-F', f'{key}=@{request_data.name}'])
-
-        for header, value in headers.items():
-            curl_arguments.extend(['-H', f'{header}: {value}'])
-
-        headers = ACTIVATION_REQUESTS_SUBDIR / 'headers.txt'
-        curl_arguments.extend(['-D', headers.name])
-        curl_arguments.append(url)
-
-        response = ACTIVATION_REQUESTS_SUBDIR / f'request_data_{time.time()}.txt'
-        request = ACTIVATION_REQUESTS_SUBDIR / f'request_script.sh'
-        request.write_text(f'#!/bin/sh\n{shlex.join(curl_arguments)} | tee {response.name}\n')
-        request.chmod(0o755)
-
-        self.logger.info(f'Run the following shell script ({request.name})')
-
-        # Check for plist response.
-        if not self._now:
-            pb = tqdm.tqdm(total=int(self._offline_end - self._offline_start), desc='Time Left', dynamic_ncols=True)
-            pb.update(int(time.time() - self._offline_start))
-            while not response.exists() or b'</plist>' not in response.read_bytes():
-                time.sleep(1)
-                pb.update(1)
-            pb.close()
-
-        # Check for headers.
-        while not headers.exists() or ': ' not in headers.read_text():
-            time.sleep(1)
-
-        raw_headers = headers.read_text()
-        parsed_headers = {}
-        for line in raw_headers.splitlines():
-            if ': ' not in line:
-                continue
-            key, value = line.split(': ', 1)
-            parsed_headers[key] = value
-
-        return response.read_bytes(), parsed_headers
+        resp = requests.post(url, data=data, headers=headers)
+        return resp.content, resp.headers
