@@ -9,6 +9,7 @@ from dataclasses import asdict
 
 import click
 from pykdebugparser.pykdebugparser import PyKdebugParser
+from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
 from termcolor import colored
 
 import pymobiledevice3
@@ -194,6 +195,14 @@ def netstat(lockdown: LockdownClient):
                     logging.info(
                         f'Connection detected: {event.local_address.data.address}:{event.local_address.port} -> '
                         f'{event.remote_address.data.address}:{event.remote_address.port}')
+
+
+@dvt.command('screenshot', cls=Command)
+@click.argument('out', type=click.File('wb'))
+def screenshot(lockdown: LockdownClient, out):
+    """ get device screenshot """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        out.write(Screenshot(dvt).get_screenshot())
 
 
 @dvt.group('sysmon')
