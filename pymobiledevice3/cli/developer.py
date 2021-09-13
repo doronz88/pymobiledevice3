@@ -106,9 +106,9 @@ def applist(lockdown, color):
 def send_signal(lockdown, pid, sig, signal_name):
     """ Send SIGNAL to process by its PID """
     if not sig and not signal_name:
-        raise MissingParameter(param_type="argument|option", param_hint="\"SIG|SIGNAL-NAME\"")
+        raise MissingParameter(param_type='argument|option', param_hint='\'SIG|SIGNAL-NAME\'')
     if sig and signal_name:
-        raise UsageError(message="Cannot give SIG and SIGNAL-NAME together")
+        raise UsageError(message='Cannot give SIG and SIGNAL-NAME together')
     sig = sig or signal.Signals[signal_name].value
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         ProcessControl(dvt).signal(pid, sig)

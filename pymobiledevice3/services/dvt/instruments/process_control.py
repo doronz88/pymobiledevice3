@@ -1,5 +1,3 @@
-import signal
-
 from pymobiledevice3.services.remote_server import MessageAux
 
 
