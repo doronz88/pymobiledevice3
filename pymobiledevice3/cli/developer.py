@@ -6,8 +6,10 @@ import posixpath
 import shlex
 from collections import namedtuple
 from dataclasses import asdict
+import signal
 
 import click
+from click.exceptions import MissingParameter, UsageError
 from pykdebugparser.pykdebugparser import PyKdebugParser
 from termcolor import colored
 
@@ -99,9 +101,15 @@ def applist(lockdown, color):
 
 @dvt.command('signal', cls=Command)
 @click.argument('pid', type=click.INT)
-@click.argument('sig', type=click.INT)
-def signal(lockdown, pid, sig):
+@click.argument('sig', type=click.INT, required=False)
+@click.option('-s', '--signal-name', type=click.Choice([s.name for s in signal.Signals]))
+def send_signal(lockdown, pid, sig, signal_name):
     """ Send SIGNAL to process by its PID """
+    if not sig and not signal_name:
+        raise MissingParameter(param_type="argument|option", param_hint="\"SIG|SIGNAL-NAME\"")
+    if sig and signal_name:
+        raise UsageError(message="Cannot give SIG and SIGNAL-NAME together")
+    sig = sig or signal.Signals[signal_name].value
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         ProcessControl(dvt).signal(pid, sig)
 
