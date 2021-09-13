@@ -14,7 +14,7 @@ class PowerAssertionService:
         self.lockdown = lockdown
         self.service = self.lockdown.start_service(self.SERVICE_NAME)
 
-    def create_power_assertion(self, type_, name, timeout, details=None):
+    def create_power_assertion(self, type_: str, name: str, timeout: int, details: str = None):
         msg = {
             'CommandKey': 'CommandCreateAssertion',
             'AssertionTypeKey': type_,

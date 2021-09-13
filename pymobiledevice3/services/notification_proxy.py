@@ -11,12 +11,12 @@ class NotificationProxyService(object):
         self.lockdown = lockdown
         self.service = self.lockdown.start_service(self.SERVICE_NAME)
 
-    def notify_post(self, name):
+    def notify_post(self, name: str):
         """ Send notification to the device's notification_proxy. """
         self.service.send_plist({'Command': 'PostNotification',
                                  'Name': name})
 
-    def notify_register_dispatch(self, name):
+    def notify_register_dispatch(self, name: str):
         """ Tells the device to send a notification on the specified event. """
         self.logger.info('Observing %s', name)
         self.service.send_plist({'Command': 'ObserveNotification',

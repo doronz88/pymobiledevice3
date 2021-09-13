@@ -1,6 +1,7 @@
 import io
 import logging
 import plistlib
+import typing
 from functools import partial
 from pprint import pprint
 from queue import Queue, Empty
@@ -10,7 +11,6 @@ from bpylist2 import archiver
 from construct import Struct, Default, Int64ul, Prefixed, GreedyRange, Select, Const, Int32ul, Switch, this, \
     GreedyBytes, Adapter, Int16ul, Int32sl
 from pygments import highlight, lexers, formatters
-
 from pymobiledevice3.exceptions import DvtException
 from pymobiledevice3.lockdown import LockdownClient
 
@@ -327,7 +327,7 @@ class RemoteServer(object):
 
 
 class Tap:
-    def __init__(self, dvt, channel_name: str, config: dict):
+    def __init__(self, dvt, channel_name: str, config: typing.Mapping):
         self._dvt = dvt
         self._channel_name = channel_name
         self._channel = None

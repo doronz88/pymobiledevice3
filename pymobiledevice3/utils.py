@@ -29,8 +29,15 @@ def bytes_to_uint(b: bytes):
     return Select(u64=Int64ul, u32=Int32ul, u16=Int16ul, u8=Int8ul).parse(b)
 
 
-def sanitize_ios_version(version):
+def sanitize_ios_version(version: str):
     try:
         return re.match(r'\d*\.\d*', version)[0]
     except TypeError as e:
         raise DeviceVersionFormatError from e
+
+
+def try_decode(s: bytes):
+    try:
+        return s.decode('utf8')
+    except UnicodeDecodeError:
+        return s

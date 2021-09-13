@@ -1,4 +1,5 @@
 import logging
+import typing
 from enum import IntEnum
 
 from pymobiledevice3.lockdown import LockdownClient
@@ -19,14 +20,14 @@ class SpringBoardServicesService(object):
         self.lockdown = lockdown
         self.service = self.lockdown.start_service(self.SERVICE_NAME)
 
-    def get_icon_state(self, format_version='2'):
+    def get_icon_state(self, format_version: str = '2'):
         cmd = {'command': 'getIconState'}
         if format_version:
             cmd['formatVersion'] = format_version
 
         return self.service.send_recv_plist(cmd)
 
-    def set_icon_state(self, newstate=None):
+    def set_icon_state(self, newstate: typing.Mapping = None):
         if newstate is None:
             newstate = {}
         cmd = {'command': 'setIconState',
@@ -34,9 +35,9 @@ class SpringBoardServicesService(object):
 
         self.service.send_recv_plist(cmd)
 
-    def get_icon_pngdata(self, bid):
+    def get_icon_pngdata(self, bundle_id: str):
         cmd = {'command': 'getIconPNGData',
-               'bundleId': bid}
+               'bundleId': bundle_id}
 
         return self.service.send_recv_plist(cmd).get('pngData')
 

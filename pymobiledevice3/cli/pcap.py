@@ -5,6 +5,7 @@ from pygments import highlight, lexers, formatters
 import hexdump
 
 from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.pcapd import PcapdService
 
 
@@ -19,7 +20,7 @@ def cli():
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of packets to sniff. Omit to endless sniff.')
 @click.option('--process', default=None, help='Process to filter. Omit for all.')
 @click.option('--color/--no-color', default=True)
-def pcap(lockdown, out, count, process, color):
+def pcap(lockdown: LockdownClient, out, count, process, color):
     """ sniff device traffic """
     service = PcapdService(lockdown=lockdown)
     packets_generator = service.watch(packets_count=count, process=process)

@@ -7,7 +7,7 @@ import struct
 import tempfile
 import zipfile
 from io import BytesIO
-from typing import Optional
+from typing import Optional, Mapping
 
 import tqdm
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, NoDeviceConnectedError
@@ -115,7 +115,7 @@ class Restore:
             'DeviceTree': self.send_component,
         }
 
-    def send_filesystem(self, message: dict):
+    def send_filesystem(self, message: Mapping):
         logging.info('about to send filesystem...')
 
         asr = ASRClient()
@@ -138,9 +138,9 @@ class Restore:
         # TODO: extract build identity from msg
         return self.build_identity
 
-    def send_buildidentity(self, message: dict):
+    def send_buildidentity(self, message: Mapping):
         logging.info('About to send BuildIdentity Dict...')
-        req = {'BuildIdentityDict': dict(self.get_build_identity_from_request(message))}
+        req = {'BuildIdentityDict': Mapping(self.get_build_identity_from_request(message))}
         arguments = message['Arguments']
         variant = arguments.get('Variant')
 
@@ -168,7 +168,7 @@ class Restore:
         # The path of the global manifest is hardcoded. There's no pointer to in the build manifest.
         return self.ipsw.get_global_manifest(macos_variant, device_class)
 
-    def send_personalized_boot_object(self, message: dict):
+    def send_personalized_boot_object(self, message: Mapping):
         image_name = message['Arguments']['ImageName']
         component_name = image_name
         logging.info(f'About to send {component_name}...')
@@ -228,7 +228,7 @@ class Restore:
         logging.info('Requesting SHSH blobs...')
         return request.send_receive()
 
-    def send_restore_local_policy(self, message: dict):
+    def send_restore_local_policy(self, message: Mapping):
         component = 'Ap,LocalPolicy'
 
         # The Update mode does not have a specific build identity for the recovery os.
@@ -237,7 +237,7 @@ class Restore:
         self._restored.send({'Ap,LocalPolicy': self.build_identity.get_component(component, tss=tss_localpolicy,
                                                                                  data=lpol_file).personalized_data})
 
-    def send_recovery_os_root_ticket(self, message: dict):
+    def send_recovery_os_root_ticket(self, message: Mapping):
         logging.info('About to send RecoveryOSRootTicket...')
 
         if self.tss_recoveryos_root_ticket is None:
@@ -246,7 +246,7 @@ class Restore:
         logging.info('Sending RecoveryOSRootTicket now...')
         self._restored.send({'RootTicketData': self.tss_recoveryos_root_ticket.ap_img4_ticket})
 
-    def send_root_ticket(self, message: dict):
+    def send_root_ticket(self, message: Mapping):
         logging.info('About to send RootTicket...')
 
         if self.recovery.tss is None:
@@ -255,7 +255,7 @@ class Restore:
         logging.info('Sending RootTicket now...')
         self._restored.send({'RootTicketData': self.recovery.tss.ap_img4_ticket})
 
-    def send_nor(self, message: dict):
+    def send_nor(self, message: Mapping):
         logging.info(f'send_nor: {message}')
         llb_path = self.build_identity.get_component('LLB', tss=self.recovery.tss).path
         llb_filename_offset = llb_path.find('LLB')
@@ -449,7 +449,7 @@ class Restore:
                 tmp_zip_write.seek(0)
                 return tmp_zip_write.read()
 
-    def send_baseband_data(self, message: dict):
+    def send_baseband_data(self, message: Mapping):
         logging.info(f'About to send BasebandData: {message}')
 
         # NOTE: this function is called 2 or 3 times!
@@ -563,7 +563,7 @@ class Restore:
 
         self._restored.send(req)
 
-    def get_se_firmware_data(self, info: dict):
+    def get_se_firmware_data(self, info: Mapping):
         chip_id = info.get('SE,ChipID')
         if chip_id is None:
             chip_id = info.get('SEChipID')
@@ -611,7 +611,7 @@ class Restore:
 
         return response
 
-    def get_yonkers_firmware_data(self, info: dict):
+    def get_yonkers_firmware_data(self, info: Mapping):
         # create Yonkers request
         request = TSSRequest(self.offline)
         parameters = dict()
@@ -649,7 +649,7 @@ class Restore:
 
         return response
 
-    def get_savage_firmware_data(self, info: dict):
+    def get_savage_firmware_data(self, info: Mapping):
         # create Savage request
         request = TSSRequest(self.offline)
         parameters = dict()
@@ -684,7 +684,7 @@ class Restore:
 
         return response
 
-    def get_rose_firmware_data(self, info: dict):
+    def get_rose_firmware_data(self, info: Mapping):
         logging.info(f'get_rose_firmware_data: {info}')
 
         # create Rose request
@@ -734,7 +734,7 @@ class Restore:
 
         return response
 
-    def get_veridian_firmware_data(self, info: dict):
+    def get_veridian_firmware_data(self, info: Mapping):
         logging.info(f'get_veridian_firmware_data: {info}')
         comp_name = 'BMU,FirmwareMap'
 
@@ -767,7 +767,7 @@ class Restore:
 
         return response
 
-    def send_firmware_updater_data(self, message: dict):
+    def send_firmware_updater_data(self, message: Mapping):
         logging.debug(f'got FirmwareUpdaterData request: {message}')
         arguments = message['Arguments']
         s_type = arguments['MessageArgType']
@@ -810,7 +810,7 @@ class Restore:
         logging.info('Sending FirmwareResponse data now...')
         self._restored.send({'FirmwareResponseData': fwdict})
 
-    def send_firmware_updater_preflight(self, message: dict):
+    def send_firmware_updater_preflight(self, message: Mapping):
         logging.warning(f'send_firmware_updater_preflight: {message}')
         self._restored.send({})
 
@@ -823,7 +823,7 @@ class Restore:
             {f'{component_name}File': self.build_identity.get_component(component,
                                                                         tss=self.recovery.tss).personalized_data})
 
-    def handle_data_request_msg(self, message: dict):
+    def handle_data_request_msg(self, message: Mapping):
         # checks and see what kind of data restored is requests and pass the request to its own handler
         data_type = message.get('DataType')
 
@@ -847,11 +847,11 @@ class Restore:
         else:
             logging.error(f'unknown data request: {message}')
 
-    def handle_previous_restore_log_msg(self, message: dict):
+    def handle_previous_restore_log_msg(self, message: Mapping):
         restorelog = message['PreviousRestoreLog']
         logging.info(f'PreviousRestoreLog: {restorelog}')
 
-    def handle_progress_msg(self, message: dict):
+    def handle_progress_msg(self, message: Mapping):
         operation = message['Operation']
         if operation in PROGRESS_BAR_OPERATIONS:
             message['Operation'] = PROGRESS_BAR_OPERATIONS[operation]
@@ -874,7 +874,7 @@ class Restore:
 
         logging.info(f'progress-bar: {message}')
 
-    def handle_status_msg(self, message: dict):
+    def handle_status_msg(self, message: Mapping):
         logging.info(f'status message: {message}')
         status = message['Status']
         if status == 0:
@@ -886,15 +886,15 @@ class Restore:
             else:
                 logging.error('unknown error')
 
-    def handle_checkpoint_msg(self, message: dict):
+    def handle_checkpoint_msg(self, message: Mapping):
         logging.info(f'checkpoint: {message}')
 
-    def handle_bb_update_status_msg(self, message: dict):
+    def handle_bb_update_status_msg(self, message: Mapping):
         logging.info(f'bb_update_status_msg: {message}')
         if not message['Accepted']:
             raise PyMobileDevice3Exception(str(message))
 
-    def handle_baseband_updater_output_data(self, message: dict):
+    def handle_baseband_updater_output_data(self, message: Mapping):
         # TODO: implement (can be copied from idevicerestore)
         logging.warning(f'restore_handle_baseband_updater_output_data: {message}')
 

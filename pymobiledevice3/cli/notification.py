@@ -2,6 +2,7 @@ import logging
 
 import click
 from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.resources.firmware_notifications import get_notifications
 from pymobiledevice3.services.notification_proxy import NotificationProxyService
 
@@ -20,7 +21,7 @@ def notification():
 
 @notification.command(cls=Command)
 @click.argument('names', nargs=-1)
-def post(lockdown, names):
+def post(lockdown: LockdownClient, names):
     """ API for notify_post(). """
     service = NotificationProxyService(lockdown=lockdown)
     for name in names:
@@ -29,7 +30,7 @@ def post(lockdown, names):
 
 @notification.command(cls=Command)
 @click.argument('names', nargs=-1)
-def observe(lockdown, names):
+def observe(lockdown: LockdownClient, names):
     """ API for notify_register_dispatch(). """
     service = NotificationProxyService(lockdown=lockdown)
     for name in names:
@@ -40,8 +41,7 @@ def observe(lockdown, names):
 
 
 @notification.command('observe-all', cls=Command)
-@click.argument('names', nargs=-1)
-def observe_all(lockdown, names):
+def observe_all(lockdown: LockdownClient):
     """ attempt to observe all builtin firmware notifications. """
     service = NotificationProxyService(lockdown=lockdown)
     for notification in get_notifications():

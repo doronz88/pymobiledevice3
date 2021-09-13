@@ -56,7 +56,7 @@ class ASRClient(object):
             buf += self.service.recv()
         return plistlib.loads(buf)
 
-    def send_plist(self, plist: dict):
+    def send_plist(self, plist: typing.Mapping):
         self.service.sendall(plistlib.dumps(plist))
 
     def send_buffer(self, buf):
