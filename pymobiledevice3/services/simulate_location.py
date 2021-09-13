@@ -19,7 +19,7 @@ class DtSimulateLocation(object):
         service = self.lockdown.start_developer_service(self.SERVICE_NAME)
         service.sendall(struct.pack('>I', 1))
 
-    def set(self, latitude, longitude):
+    def set(self, latitude: float, longitude: float):
         """ stop simulation """
         service = self.lockdown.start_developer_service(self.SERVICE_NAME)
         service.sendall(struct.pack('>I', 0))
@@ -28,7 +28,7 @@ class DtSimulateLocation(object):
         service.sendall(struct.pack('>I', len(latitude)) + latitude)
         service.sendall(struct.pack('>I', len(longitude)) + longitude)
 
-    def play_gpx_file(self, filename, disable_sleep=False):
+    def play_gpx_file(self, filename: str, disable_sleep: bool = False):
         with open(filename) as f:
             gpx = gpxpy.parse(f)
 

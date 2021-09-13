@@ -1,5 +1,6 @@
 import logging
 import time
+import typing
 from io import BytesIO
 
 from usb import USBError
@@ -12,7 +13,7 @@ from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
 
 
 class Recovery:
-    def __init__(self, ipsw: BytesIO, device: Device, tss: dict = None,
+    def __init__(self, ipsw: BytesIO, device: Device, tss: typing.Mapping = None,
                  offline=False, behavior='Update'):
         self.ipsw = IPSW(ipsw)
         self.device = device

@@ -7,6 +7,7 @@ import click
 import requests
 from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.exceptions import NotMountedError, UnsupportedCommandError, AlreadyMountedError
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
 from tqdm import tqdm
 
@@ -27,7 +28,7 @@ def mounter():
 
 @mounter.command('list', cls=Command)
 @click.option('--color/--no-color', default=True)
-def mounter_list(lockdown, color):
+def mounter_list(lockdown: LockdownClient, color):
     """ list all mounted images """
     output = []
 
@@ -42,7 +43,7 @@ def mounter_list(lockdown, color):
 @mounter.command('lookup', cls=Command)
 @click.option('--color/--no-color', default=True)
 @click.argument('image_type')
-def mounter_lookup(lockdown, color, image_type):
+def mounter_lookup(lockdown: LockdownClient, color, image_type):
     """ lookup mounter image type """
     try:
         signature = MobileImageMounterService(lockdown=lockdown).lookup_image(image_type)
@@ -52,7 +53,7 @@ def mounter_lookup(lockdown, color, image_type):
 
 
 @mounter.command('umount', cls=Command)
-def mounter_umount(lockdown):
+def mounter_umount(lockdown: LockdownClient):
     """ unmount developer image. """
     image_type = 'Developer'
     mount_path = '/Developer'
@@ -99,7 +100,7 @@ def download_developer_disk_image(ios_version, directory):
               help='Xcode application path used to figure out automatically the DeveloperDiskImage path')
 @click.option('-v', '--version', help='use a different DeveloperDiskImage version from the one retrieved by lockdown'
                                       'connection')
-def mounter_mount(lockdown, image, signature, xcode, version):
+def mounter_mount(lockdown: LockdownClient, image, signature, xcode, version):
     """ mount developer image. """
     image_type = 'Developer'
     developer_disk_image_dir = None

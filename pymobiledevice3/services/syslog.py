@@ -1,6 +1,7 @@
 import logging
 
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.utils import try_decode
 
 CHUNK_SIZE = 4096
 TIME_FORMAT = '%H:%M:%S'
@@ -39,4 +40,4 @@ class SyslogService(object):
                     if len(line) == 0:
                         continue
 
-                    yield line
+                    yield try_decode(line)

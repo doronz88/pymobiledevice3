@@ -22,8 +22,8 @@ def test_logs_watching_time(lockdown):
     :param pymobiledevice3.lockdown.LockdownClient lockdown: Lockdown client.
     """
     syslog_service = SyslogService(lockdown)
-    first_log = next(syslog_service.watch()).decode()
+    first_log = next(syslog_service.watch())
     time.sleep(2)
     syslog_service = SyslogService(lockdown)
-    second_log = next(syslog_service.watch()).decode()
+    second_log = next(syslog_service.watch())
     assert extract_log_time(first_log) < extract_log_time(second_log)

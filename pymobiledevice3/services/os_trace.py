@@ -3,14 +3,15 @@ import logging
 import plistlib
 import struct
 import tempfile
+import typing
 from datetime import datetime
-from io import BytesIO
 from tarfile import TarFile
 
 from construct import Struct, Bytes, Int32ul, Optional, Enum, Byte, Adapter, Int16ul, this, Computed, \
     RepeatUntil
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.utils import try_decode
 
 CHUNK_SIZE = 4096
 TIME_FORMAT = '%H:%M:%S'
@@ -30,14 +31,6 @@ timestamp_t = Struct(
     Bytes(4),
     'microseconds' / Int32ul
 )
-
-
-def try_decode(s):
-    try:
-        return s.decode('utf8')
-    except UnicodeDecodeError:
-        return s
-
 
 syslog_t = Struct(
     Bytes(9),
@@ -85,7 +78,7 @@ class OsTraceService(object):
         response = self.c.recv_prefixed()
         return plistlib.loads(response)
 
-    def create_archive(self, out: BytesIO):
+    def create_archive(self, out: typing.IO):
         self.c.send_plist({'Request': 'CreateArchive'})
 
         assert 1 == self.c.recvall(1)[0]

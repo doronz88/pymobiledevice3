@@ -1,5 +1,4 @@
 import tempfile
-from pprint import pprint
 
 import click
 from pymobiledevice3.cli.cli_common import Command, print_json
@@ -44,7 +43,7 @@ def lockdown_forward(lockdown: LockdownClient, src_port, dst_port, daemonize):
 @lockdown_group.command('recovery', cls=Command)
 def lockdown_recovery(lockdown: LockdownClient):
     """ enter recovery """
-    pprint(lockdown.enter_recovery())
+    print_json(lockdown.enter_recovery())
 
 
 @lockdown_group.command('service', cls=Command)

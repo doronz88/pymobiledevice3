@@ -2,6 +2,7 @@ import logging
 import os
 
 import click
+from pymobiledevice3.lockdown import LockdownClient
 from termcolor import colored
 
 from pymobiledevice3.cli.cli_common import Command
@@ -22,7 +23,7 @@ def syslog():
 
 
 @syslog.command('live-old', cls=Command)
-def syslog_live_old(lockdown):
+def syslog_live_old(lockdown: LockdownClient):
     """ view live syslog lines in raw bytes form from old relay """
     for line in SyslogService(lockdown=lockdown).watch():
         print(line)
@@ -82,7 +83,7 @@ def format_line(color, pid, syslog_entry, include_label):
 @click.option('-m', '--match', multiple=True, help='match expression')
 @click.option('-mi', '--match-insensitive', multiple=True, help='insensitive match expression')
 @click.option('include_label', '--label', is_flag=True, help='should include label')
-def syslog_live(lockdown, out, color, pid, match, match_insensitive, include_label):
+def syslog_live(lockdown: LockdownClient, out, color, pid, match, match_insensitive, include_label):
     """ view live syslog lines """
 
     for syslog_entry in OsTraceService(lockdown=lockdown).syslog(pid=pid):
@@ -124,7 +125,7 @@ def syslog_live(lockdown, out, color, pid, match, match_insensitive, include_lab
 
 @syslog.command('collect', cls=Command)
 @click.argument('out', type=click.Path(exists=False, dir_okay=True, file_okay=True))
-def syslog_collect(lockdown, out):
+def syslog_collect(lockdown: LockdownClient, out):
     """
     Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
     If the filename doesn't exist, system_logs.logarchive will be created in the given directory.

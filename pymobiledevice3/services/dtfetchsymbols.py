@@ -1,6 +1,6 @@
 import logging
 import struct
-from io import BytesIO
+import typing
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
@@ -20,7 +20,7 @@ class DtFetchSymbols(object):
         service = self._start_command(self.CMD_LIST_FILES_PLIST)
         return service.recv_plist().get('files')
 
-    def get_file(self, fileno: int, stream: BytesIO):
+    def get_file(self, fileno: int, stream: typing.IO):
         service = self._start_command(self.CMD_GET_FILE)
         service.sendall(struct.pack('>I', fileno))
 

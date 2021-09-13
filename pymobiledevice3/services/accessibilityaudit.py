@@ -1,9 +1,11 @@
+import typing
+
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.remote_server import RemoteServer, MessageAux
 
 
 class SerializedObject:
-    def __init__(self, fields: dict):
+    def __init__(self, fields: typing.Mapping):
         self._fields = fields
 
 
@@ -120,10 +122,6 @@ class AccessibilityAudit(RemoteServer):
             plist = self.recv_plist()
 
         return plist
-
-    def kaki(self):
-        while True:
-            print(self.recv_plist())
 
     def device_capabilities(self):
         self.broadcast.deviceCapabilities()
