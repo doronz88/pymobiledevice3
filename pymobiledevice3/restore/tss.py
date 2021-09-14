@@ -19,6 +19,10 @@ curl -d "@{request}" -H 'Cache-Control: no-cache' -H 'Content-type: text/xml; ch
 """
 
 
+def get_with_or_without_comma(obj: typing.Mapping, k: str):
+    return obj.get(k, obj.get(k.replace(',', '')))
+
+
 class TSSResponse(dict):
     @property
     def ap_img4_ticket(self):
@@ -275,7 +279,7 @@ class TSSRequest:
         self._request['@Savage,Ticket'] = True
 
         # add Savage,UID
-        self._request['Savage,UID'] = parameters['Savage,UID']
+        self._request['Savage,UID'] = get_with_or_without_comma(parameters, 'Savage,UID')
 
         # add SEP
         self._request['SEP'] = {'Digest': manifest['SEP']['Digest']}
@@ -285,14 +289,16 @@ class TSSRequest:
             'Savage,ProductionMode', 'Savage,Nonce', 'Savage,Nonce')
 
         for k in keys_to_copy:
-            if k in parameters:
-                self._request[k] = parameters[k]
+            value = get_with_or_without_comma(parameters, k)
+            if value is None:
+                continue
+            self._request[k] = value
 
-        isprod = parameters['Savage,ProductionMode']
+        isprod = get_with_or_without_comma(parameters, 'Savage,ProductionMode')
 
         # get the right component name
         comp_name = 'Savage,B0-Prod-Patch' if isprod else 'Savage,B0-Dev-Patch'
-        node = parameters.get('Savage,Revision')
+        node = get_with_or_without_comma(parameters, 'Savage,Revision')
 
         if isinstance(node, bytes):
             savage_rev = node
@@ -405,15 +411,22 @@ class TSSRequest:
 
         keys_to_copy_uint = ('Rap,BoardID', 'Rap,ChipID', 'Rap,ECID', 'Rap,SecurityDomain',)
 
-        for k in keys_to_copy_uint:
-            self._request[k] = bytes_to_uint(parameters[k])
+        for key in keys_to_copy_uint:
+            value = get_with_or_without_comma(parameters, key)
+
+            if isinstance(value, bytes):
+                self._request[key] = bytes_to_uint(value)
+            else:
+                self._request[key] = value
 
         keys_to_copy_bool = ('Rap,ProductionMode', 'Rap,SecurityMode',)
 
-        for k in keys_to_copy_bool:
-            self._request[k] = bytes_to_uint(parameters[k]) == 1
+        for key in keys_to_copy_bool:
+            value = get_with_or_without_comma(parameters, key)
+            self._request[key] = bytes_to_uint(value) == 1
 
-        nonce = parameters.get('Rap,Nonce')
+        nonce = get_with_or_without_comma(parameters, 'Rap,Nonce')
+
         if nonce is not None:
             self._request['Rap,Nonce'] = nonce
 
