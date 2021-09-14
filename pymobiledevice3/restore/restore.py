@@ -140,7 +140,7 @@ class Restore:
 
     def send_buildidentity(self, message: Mapping):
         logging.info('About to send BuildIdentity Dict...')
-        req = {'BuildIdentityDict': Mapping(self.get_build_identity_from_request(message))}
+        req = {'BuildIdentityDict': dict(self.get_build_identity_from_request(message))}
         arguments = message['Arguments']
         variant = arguments.get('Variant')
 
@@ -516,6 +516,14 @@ class Restore:
         arguments = message['Arguments']
         want_image_list = arguments.get(image_list_k)
         image_name = arguments.get('ImageName')
+        build_id_manifest = self.build_identity['Manifest']
+
+        if not want_image_list and image_name is not None:
+            if image_name not in build_id_manifest:
+                if image_name.startswith('Ap'):
+                    image_name = image_name.replace('Ap', 'Ap,')
+                    if image_name not in build_id_manifest:
+                        raise PyMobileDevice3Exception(f'{image_name} not in build_id_manifest')
 
         if image_type_k is None:
             image_type_k = arguments['ImageType']
@@ -529,8 +537,6 @@ class Restore:
         matched_images = []
         data_dict = dict()
 
-        build_id_manifest = self.build_identity['Manifest']
-
         for component, manifest_entry in build_id_manifest.items():
             if not isinstance(manifest_entry, dict):
                 continue
@@ -543,6 +549,8 @@ class Restore:
                 elif image_name is None or image_name == component:
                     if image_name is None:
                         logging.info(f'found {image_type_k} component \'{component}\'')
+                    else:
+                        logging.info(f'found component \'{component}\'')
 
                     data_dict[component] = self.build_identity.get_component(component,
                                                                              tss=self.recovery.tss).personalized_data
