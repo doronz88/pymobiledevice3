@@ -90,8 +90,7 @@ def restore_exit():
 @click.argument('ipsw', type=click.File('rb'))
 @click.argument('out', type=click.File('wb'), required=False)
 @click.option('--color/--no-color', default=True)
-@click.option('--offline', is_flag=True)
-def restore_tss(device, ipsw, out, color, offline):
+def restore_tss(device, ipsw, out, color):
     """ query SHSH blobs """
     lockdown = None
     irecv = None
@@ -101,7 +100,7 @@ def restore_tss(device, ipsw, out, color, offline):
         irecv = device
 
     device = Device(lockdown=lockdown, irecv=irecv)
-    tss = Recovery(ipsw, device, offline=offline).fetch_tss_record()
+    tss = Recovery(ipsw, device).fetch_tss_record()
     if out:
         plistlib.dump(tss, out)
     print_json(tss, colored=color)
@@ -128,9 +127,8 @@ def restore_ramdisk(device, ipsw, tss):
 @restore.command('update', cls=Command)
 @click.argument('ipsw', type=click.File('rb'))
 @click.option('--tss', type=click.File('rb'))
-@click.option('--offline', is_flag=True)
 @click.option('--erase', is_flag=True)
-def restore_update(device, ipsw, tss, offline, erase):
+def restore_update(device, ipsw, tss, erase):
     """ perform an upgrade """
     if tss:
         tss = plistlib.load(tss)
@@ -148,7 +146,7 @@ def restore_update(device, ipsw, tss, offline, erase):
         behavior = 'Erase'
 
     try:
-        Restore(ipsw, device, tss=tss, offline=offline, behavior=behavior).update()
+        Restore(ipsw, device, tss=tss, behavior=behavior).update()
     except Exception:
         # click may "swallow" several exception types so we try to catch them all here
         traceback.print_exc()
