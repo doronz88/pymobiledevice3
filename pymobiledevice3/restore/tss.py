@@ -1,12 +1,11 @@
 import logging
 import plistlib
-import time
 import typing
-from pathlib import Path
 from uuid import uuid4
 
 import asn1
 import requests
+
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.restore.img4 import img4_get_component_tag
 from pymobiledevice3.utils import bytes_to_uint
@@ -14,11 +13,6 @@ from pymobiledevice3.utils import bytes_to_uint
 TSS_CONTROLLER_ACTION_URL = 'http://gs.apple.com/TSS/controller?action=2'
 
 TSS_CLIENT_VERSION_STRING = 'libauthinstall-776.60.1'
-TICKETS_SUBDIR = Path('offline_requests')
-
-OFFLINE_REQUEST_SCRIPT = """#!/bin/sh
-curl -d "@{request}" -H 'Cache-Control: no-cache' -H 'Content-type: text/xml; charset="utf-8"' -H 'User-Agent: InetURL/1.0' -H 'Expect: ' 'http://gs.apple.com/TSS/controller?action=2' | tee {response} 
-"""
 
 
 def get_with_or_without_comma(obj: typing.Mapping, k: str):
@@ -48,14 +42,13 @@ class TSSResponse(dict):
 
 
 class TSSRequest:
-    def __init__(self, offline=False):
+    def __init__(self):
         self._request = {
             '@BBTicket': True,
             '@HostPlatformInfo': 'mac',
             '@VersionInfo': TSS_CLIENT_VERSION_STRING,
             '@UUID': str(uuid4()).upper(),
         }
-        self._offline = offline
 
     @staticmethod
     def apply_restore_request_rules(tss_entry: typing.Mapping, parameters: typing.Mapping, rules: list):
@@ -572,33 +565,10 @@ class TSSRequest:
             'Expect': '',
         }
 
-        if self._offline:
-            unique_identifier = str(time.time())
-            request_plist_path = TICKETS_SUBDIR / f'request_data_{unique_identifier}.plist'
-            request_script_path = TICKETS_SUBDIR / f'request_script.sh'
-            response_path = TICKETS_SUBDIR / f'response_{unique_identifier}.txt'
-
-            TICKETS_SUBDIR.mkdir(parents=True, exist_ok=True)
-            for file in TICKETS_SUBDIR.iterdir():
-                file.unlink()
-
-            with request_plist_path.open('wb') as f:
-                plistlib.dump(self._request, f)
-
-            request_script_path.write_text(
-                OFFLINE_REQUEST_SCRIPT.format(request=request_plist_path.name, response=response_path.name))
-            request_script_path.chmod(0o755)
-
-            logging.info(f'waiting for {response_path} to be created')
-            while not response_path.exists() or b'</plist>' not in response_path.read_bytes():
-                time.sleep(1)
-
-            content = response_path.read_bytes()
-        else:
-            logging.info(f'Sending TSS request...')
-            r = requests.post(TSS_CONTROLLER_ACTION_URL, headers=headers,
-                              data=plistlib.dumps(self._request), verify=False)
-            content = r.content
+        logging.info(f'Sending TSS request...')
+        r = requests.post(TSS_CONTROLLER_ACTION_URL, headers=headers,
+                          data=plistlib.dumps(self._request), verify=False)
+        content = r.content
 
         if b'MESSAGE=SUCCESS' in content:
             logging.info('response successfully received')

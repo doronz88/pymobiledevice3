@@ -14,10 +14,9 @@ from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
 
 class Recovery:
     def __init__(self, ipsw: BytesIO, device: Device, tss: typing.Mapping = None,
-                 offline=False, behavior='Update'):
+                 behavior='Update'):
         self.ipsw = IPSW(ipsw)
         self.device = device
-        self.offline = offline
         self.tss = TSSResponse(tss) if tss is not None else None
 
         if not self.device.is_image4_supported:
@@ -50,7 +49,7 @@ class Recovery:
 
         self.build_identity.populate_tss_request_parameters(parameters)
 
-        tss = TSSRequest(offline=self.offline)
+        tss = TSSRequest()
         tss.add_common_tags(parameters, overrides)
 
         parameters['_OnlyFWComponents'] = True
@@ -80,7 +79,7 @@ class Recovery:
 
         self.build_identity.populate_tss_request_parameters(parameters)
 
-        tss = TSSRequest(offline=self.offline)
+        tss = TSSRequest()
         tss.add_common_tags(parameters)
         tss.add_ap_tags(parameters)
 

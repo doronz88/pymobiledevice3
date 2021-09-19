@@ -10,6 +10,7 @@ from io import BytesIO
 from typing import Optional, Mapping
 
 import tqdm
+
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, NoDeviceConnectedError
 from pymobiledevice3.restore.asr import ASRClient
 from pymobiledevice3.restore.consts import lpol_file, PROGRESS_BAR_OPERATIONS
@@ -35,15 +36,13 @@ known_errors = {
 
 
 class Restore:
-    def __init__(self, ipsw: BytesIO, device: Device, tss=None, offline=False,
-                 behavior='Update'):
+    def __init__(self, ipsw: BytesIO, device: Device, tss=None, behavior='Update'):
 
         self.ipsw = IPSW(ipsw)
         self.device = device
         self.build_identity = self.ipsw.build_manifest.get_build_identity(self.device.hardware_model, behavior)
 
-        self.recovery = Recovery(ipsw, device, tss=tss, offline=offline, behavior=behavior)
-        self.offline = offline
+        self.recovery = Recovery(ipsw, device, tss=tss, behavior=behavior)
         self.bbtss = None  # type: Optional[TSSResponse]
         self.tss_recoveryos_root_ticket = None  # type: Optional[TSSResponse]
         self._restored = None  # type: Optional[RestoredClient]
@@ -220,7 +219,7 @@ class Restore:
         parameters['Ap,VolumeUUID'] = vol_uuid
 
         # create basic request
-        request = TSSRequest(self.offline)
+        request = TSSRequest()
 
         # add common tags from manifest
         request.add_local_policy_tags(parameters)
@@ -474,7 +473,7 @@ class Restore:
             self.build_identity.populate_tss_request_parameters(parameters)
 
             # create baseband request
-            request = TSSRequest(self.offline)
+            request = TSSRequest()
 
             # add baseband parameters
             request.add_common_tags(parameters)
@@ -595,7 +594,7 @@ class Restore:
         component_data = self.build_identity.get_component(comp_name).data
 
         # create SE request
-        request = TSSRequest(self.offline)
+        request = TSSRequest()
         parameters = dict()
 
         # add manifest for current build_identity to parameters
@@ -621,7 +620,7 @@ class Restore:
 
     def get_yonkers_firmware_data(self, info: Mapping):
         # create Yonkers request
-        request = TSSRequest(self.offline)
+        request = TSSRequest()
         parameters = dict()
 
         # add manifest for current build_identity to parameters
@@ -659,7 +658,7 @@ class Restore:
 
     def get_savage_firmware_data(self, info: Mapping):
         # create Savage request
-        request = TSSRequest(self.offline)
+        request = TSSRequest()
         parameters = dict()
 
         # add manifest for current build_identity to parameters
@@ -696,7 +695,7 @@ class Restore:
         logging.info(f'get_rose_firmware_data: {info}')
 
         # create Rose request
-        request = TSSRequest(self.offline)
+        request = TSSRequest()
         parameters = dict()
 
         # add manifest for current build_identity to parameters
@@ -747,7 +746,7 @@ class Restore:
         comp_name = 'BMU,FirmwareMap'
 
         # create Veridian request
-        request = TSSRequest(self.offline)
+        request = TSSRequest()
         parameters = dict()
 
         # add manifest for current build_identity to parameters
