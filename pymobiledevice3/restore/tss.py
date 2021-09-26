@@ -15,8 +15,11 @@ TSS_CONTROLLER_ACTION_URL = 'http://gs.apple.com/TSS/controller?action=2'
 TSS_CLIENT_VERSION_STRING = 'libauthinstall-776.60.1'
 
 
-def get_with_or_without_comma(obj: typing.Mapping, k: str):
-    return obj.get(k, obj.get(k.replace(',', '')))
+def get_with_or_without_comma(obj: typing.Mapping, k: str, default=None):
+    val = obj.get(k, obj.get(k.replace(',', '')))
+    if val is None and default is not None:
+        val = default
+    return val
 
 
 class TSSResponse(dict):
@@ -327,11 +330,10 @@ class TSSRequest:
             'Yonkers,PatchEpoch', 'Yonkers,ProductionMode', 'Yonkers,ReadECKey', 'Yonkers,ReadFWKey',)
 
         for k in keys_to_copy:
-            if k in parameters:
-                self._request[k] = parameters[k]
+            self._request[k] = get_with_or_without_comma(parameters, k)
 
-        isprod = parameters.get('Yonkers,ProductionMode', 1)
-        fabrevision = parameters.get('Yonkers,FabRevision', 0xffffffffffffffff)
+        isprod = get_with_or_without_comma(parameters, 'Yonkers,ProductionMode', 1)
+        fabrevision = get_with_or_without_comma(parameters, 'Yonkers,FabRevision', 0xffffffffffffffff)
         comp_node = None
         result_comp_name = None
 
