@@ -65,6 +65,7 @@ def img4_get_component_tag(compname):
         'LowPowerWallet1': b'lpw1',
         'LowPowerWallet2': b'lpw2',
         'MacEFI': b'mefi',
+        'MtpFirmware': b'mtpf',
         'Multitouch': b'mtfw',
         'NeedService': b'nsrv',
         'OS': b'OS\0\0',
