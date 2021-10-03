@@ -419,6 +419,17 @@ class AfcService:
                 for walk_result in self.walk(posixpath.join(dirname, d)):
                     yield walk_result
 
+    def dirlist(self, root, depth=-1):
+        for folder, dirs, files in self.walk(root):
+            if folder == root:
+                yield folder
+                if depth == 0:
+                    break
+            if folder != root and depth != -1 and folder.count(posixpath.sep) >= depth:
+                continue
+            for entry in dirs + files:
+                yield posixpath.join(folder, entry)
+
     def lock(self, handle, operation):
         return self._do_operation(afc_opcode_t.FILE_LOCK, afc_lock_t.build({'handle': handle, 'op': operation}))
 

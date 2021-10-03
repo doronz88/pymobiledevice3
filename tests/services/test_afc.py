@@ -302,3 +302,22 @@ def test_file_read_write(afc: AfcService):
 def test_get_file_contents_missing_file(afc: AfcService):
     with pytest.raises(AfcFileNotFoundError):
         afc.get_file_contents('missing_file')
+
+
+def test_dirlist(afc: AfcService):
+    afc.makedirs('test_a/test_b/test_c/test_d')
+    try:
+        assert list(afc.dirlist('/', 0)) == ['/']
+        dirlist = list(afc.dirlist('/', 2))
+        assert '/' in dirlist
+        assert '/test_a' in dirlist
+        assert '/test_a/test_b' in dirlist
+        assert '/test_a/test_b/test_c' not in dirlist
+        assert list(afc.dirlist('test_a', 0)) == ['test_a']
+        dirlist = list(afc.dirlist('test_a', 2))
+        assert 'test_a' in dirlist
+        assert 'test_a/test_b' in dirlist
+        assert 'test_a/test_b/test_c' in dirlist
+        assert 'test_a/test_b/test_c/test_d' not in dirlist
+    finally:
+        afc.rm('test_a')

@@ -1,5 +1,3 @@
-import posixpath
-
 import click
 
 from pymobiledevice3.cli.cli_common import Command
@@ -41,20 +39,13 @@ def afc_push(lockdown: LockdownClient, local_file, remote_file):
     AfcService(lockdown=lockdown).set_file_contents(remote_file, local_file.read())
 
 
-def show_dirlist(afc, dirname, recursive=False):
-    for filename in afc.listdir(dirname):
-        filename = posixpath.join(dirname, filename)
-        print(filename)
-        if recursive and afc.isdir(filename):
-            show_dirlist(afc, filename, recursive=recursive)
-
-
 @afc.command('ls', cls=Command)
 @click.argument('remote_file', type=click.Path(exists=False))
 @click.option('-r', '--recursive', is_flag=True)
 def afc_ls(lockdown: LockdownClient, remote_file, recursive):
     """ perform a dirlist rooted at /var/mobile/Media """
-    show_dirlist(AfcService(lockdown=lockdown), remote_file, recursive=recursive)
+    for path in AfcService(lockdown=lockdown).dirlist(remote_file, -1 if recursive else 1):
+        print(path)
 
 
 @afc.command('rm', cls=Command)

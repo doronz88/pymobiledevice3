@@ -3,6 +3,7 @@ import logging
 
 import click
 import coloredlogs
+
 from pymobiledevice3.cli.activation import cli as activation_cli
 from pymobiledevice3.cli.afc import cli as afc_cli
 from pymobiledevice3.cli.apps import cli as apps_cli
@@ -23,6 +24,7 @@ from pymobiledevice3.cli.provision import cli as provision_cli
 from pymobiledevice3.cli.restore import cli as restore_cli
 from pymobiledevice3.cli.springboard import cli as springboard_cli
 from pymobiledevice3.cli.syslog import cli as syslog_cli
+from pymobiledevice3.exceptions import NoDeviceConnectedError
 
 coloredlogs.install(level=logging.DEBUG)
 
@@ -39,7 +41,10 @@ def cli():
         crash_cli, afc_cli, ps_cli, notification_cli, list_devices_cli, power_assertion_cli, springboard_cli,
         provision_cli, backup_cli, restore_cli, activation_cli, companion_cli
     ])
-    cli_commands()
+    try:
+        cli_commands()
+    except NoDeviceConnectedError:
+        logging.error('Device is not connected')
 
 
 if __name__ == '__main__':
