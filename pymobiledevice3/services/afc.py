@@ -203,6 +203,8 @@ class AfcService:
         if callback is not None:
             callback(src, dst)
 
+        src = self.resolve_path(src)
+
         if not self.isdir(src):
             # normal file
             if os.path.isdir(dst):
@@ -218,6 +220,8 @@ class AfcService:
             for filename in self.listdir(src):
                 src_filename = posixpath.join(src, filename)
                 dst_filename = os.path.join(dst, filename)
+
+                src_filename = self.resolve_path(src_filename)
 
                 if self.isdir(src_filename):
                     if not os.path.exists(dst_filename):
@@ -380,22 +384,30 @@ class AfcService:
             if status != afc_error_t.SUCCESS:
                 raise AfcException(f'failed to write last chunk: {status}', status)
 
-    def get_file_contents(self, filename):
+    def resolve_path(self, filename: str):
         info = self.stat(filename)
-        if info:
-            if info['st_ifmt'] == 'S_IFLNK':
-                filename = info['LinkTarget']
+        if info['st_ifmt'] == 'S_IFLNK':
+            target = info['LinkTarget']
+            if not target.startswith('/'):
+                # relative path
+                filename = posixpath.join(posixpath.dirname(filename), target)
+            else:
+                filename = target
+        return filename
 
-            if info['st_ifmt'] == 'S_IFDIR':
-                raise AfcException(f'{filename} is a directory', afc_error_t.OBJECT_IS_DIR)
+    def get_file_contents(self, filename):
+        filename = self.resolve_path(filename)
+        info = self.stat(filename)
 
-            h = self.fopen(filename)
-            if not h:
-                return
-            d = self.fread(h, int(info['st_size']))
-            self.fclose(h)
-            return d
-        return
+        if info['st_ifmt'] == 'S_IFDIR':
+            raise AfcException(f'{filename} is a directory', afc_error_t.OBJECT_IS_DIR)
+
+        h = self.fopen(filename)
+        if not h:
+            return
+        d = self.fread(h, int(info['st_size']))
+        self.fclose(h)
+        return d
 
     def set_file_contents(self, filename, data):
         h = self.fopen(filename, 'w')
