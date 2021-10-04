@@ -5,8 +5,6 @@ from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcShell
 from pymobiledevice3.services.crash_report import CrashReports
 
-CRASH_MOVER_NAME = 'com.apple.crashreportmover'
-
 
 @click.group()
 def cli():
@@ -27,10 +25,14 @@ def crash_clear(lockdown: LockdownClient):
 
 
 @crash.command('pull', cls=Command)
-@click.argument('out', type=click.Path(file_okay=False, dir_okay=True, exists=False))
-def crash_pull(lockdown: LockdownClient, out):
+@click.argument('out', type=click.Path(file_okay=False))
+@click.argument('remote_file', type=click.Path(), required=False)
+@click.option('-e', '--erase', is_flag=True)
+def crash_pull(lockdown: LockdownClient, out, remote_file, erase):
     """ pull all crash reports """
-    CrashReports(lockdown).pull(out)
+    if remote_file is None:
+        remote_file = '/'
+    CrashReports(lockdown).pull(out, remote_file, erase)
 
 
 @crash.command('shell', cls=Command)
@@ -53,5 +55,4 @@ def crash_ls(lockdown: LockdownClient, remote_file, depth):
 @crash.command('flush', cls=Command)
 def crash_mover_flush(lockdown: LockdownClient):
     """ trigger com.apple.crashreportmover to flush all products into CrashReports directory """
-    ack = b'ping\x00'
-    assert ack == lockdown.start_service(CRASH_MOVER_NAME).recvall(len(ack))
+    CrashReports(lockdown).flush()
