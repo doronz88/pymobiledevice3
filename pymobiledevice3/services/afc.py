@@ -205,6 +205,8 @@ class AfcService:
 
         if not self.isdir(src):
             # normal file
+            if os.path.isdir(dst):
+                dst = os.path.join(dst, src)
             with open(dst, 'wb') as f:
                 f.write(self.get_file_contents(src))
         else:
