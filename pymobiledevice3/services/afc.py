@@ -399,8 +399,8 @@ class AfcService:
         filename = self.resolve_path(filename)
         info = self.stat(filename)
 
-        if info['st_ifmt'] == 'S_IFDIR':
-            raise AfcException(f'{filename} is a directory', afc_error_t.OBJECT_IS_DIR)
+        if info['st_ifmt'] != 'S_IFREG':
+            raise AfcException(f'{filename} isn\'t a file', afc_error_t.INVALID_ARG)
 
         h = self.fopen(filename)
         if not h:
