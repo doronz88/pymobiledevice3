@@ -3,7 +3,7 @@ import click
 from pymobiledevice3.cli.cli_common import Command
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcShell
-from pymobiledevice3.services.crash_report import CrashReports
+from pymobiledevice3.services.crash_reports import CrashReports
 
 
 @click.group()
@@ -56,3 +56,12 @@ def crash_ls(lockdown: LockdownClient, remote_file, depth):
 def crash_mover_flush(lockdown: LockdownClient):
     """ trigger com.apple.crashreportmover to flush all products into CrashReports directory """
     CrashReports(lockdown).flush()
+
+
+@crash.command('watch', cls=Command)
+@click.argument('name', required=False)
+@click.option('-r', '--raw', is_flag=True)
+def crash_mover_flush(lockdown: LockdownClient, name, raw):
+    """ watch for crash report generation """
+    for crash_report in CrashReports(lockdown).watch(name=name, raw=raw):
+        print(crash_report)
