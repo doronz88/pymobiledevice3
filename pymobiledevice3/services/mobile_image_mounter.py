@@ -32,7 +32,7 @@ class MobileImageMounterService(object):
         if not response or not response.get('ImagePresent', True):
             raise NotMountedError()
 
-        signature = response['ImageSignature']
+        signature = response.get('ImageSignature', [])
         if isinstance(signature, list):
             if not signature:
                 raise NotMountedError()
