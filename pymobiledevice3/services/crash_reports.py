@@ -39,6 +39,14 @@ class CrashReport:
                 return field
 
     @cached_property
+    def incident_id(self):
+        return self._metadata['incident_id']
+
+    @cached_property
+    def timestamp(self):
+        return self._metadata['timestamp']
+
+    @cached_property
     def name(self) -> str:
         return self._metadata['name']
 
@@ -117,7 +125,7 @@ class CrashReport:
     @cached_property
     def exception_type(self):
         if self._is_json:
-            return self._data['exception']['type']
+            return self._data['exception'].get('type')
         else:
             return self._parse_field('Exception Type')
 
@@ -150,6 +158,8 @@ class CrashReport:
 
     def __str__(self):
         result = ''
+
+        result += click.style(f'{self.incident_id} {self.timestamp}\n\n', fg='cyan')
 
         result += click.style(f'Exception: {self.exception_type}\n', bold=True)
 
@@ -196,7 +206,8 @@ class CrashReports:
         """
         Clear all crash reports.
         """
-        self.afc.rm('/', force=True)
+        for filename in self.ls('/'):
+            self.afc.rm(filename, force=True)
 
     def ls(self, path: str = '/', depth: int = 1):
         """
