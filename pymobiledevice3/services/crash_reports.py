@@ -1,5 +1,6 @@
 import json
 import logging
+import os.path
 import posixpath
 from collections import namedtuple
 from pathlib import Path
@@ -140,7 +141,7 @@ class CrashReport:
     def application_specific_information(self) -> str:
         result = ''
         if self._is_json:
-            pass
+            return str(self._data.get('asi'))
         else:
             in_frames = False
             for line in self._data.split('\n'):
@@ -170,10 +171,6 @@ class CrashReport:
         if self.application_specific_information:
             result += click.style('Application Specific Information: ', bold=True)
             result += self.application_specific_information
-
-        if self._is_json:
-            if self._data['asi']:
-                result += click.style('ASI: ', bold=True) + str(self._data['asi']) + '\n'
 
         result += '\n'
 
@@ -255,6 +252,11 @@ class CrashReports:
                 continue
 
             filename = posixpath.basename(syslog_entry.message.split()[-1])
+            logging.debug(f'crash report: {filename}')
+
+            if posixpath.splitext(filename)[-1] not in ('.ips', '.panic'):
+                continue
+
             crash_report_raw = self.afc.get_file_contents(filename).decode()
             crash_report = CrashReport(crash_report_raw)
 
