@@ -538,7 +538,7 @@ class AfcShell(Cmd):
             new = args
 
         new = posixpath.normpath(new)
-        if self.afc.listdir(new):
+        if self.afc.exists(new):
             self.curdir = new
             self._update_prompt()
         else:
