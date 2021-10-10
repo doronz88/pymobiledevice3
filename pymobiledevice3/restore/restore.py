@@ -774,6 +774,34 @@ class Restore:
 
         return response
 
+    def get_tcon_firmware_data(self, info: Mapping):
+        logging.info(f'restore_get_tcon_firmware_data: {info}')
+        comp_name = 'Baobab,TCON'
+
+        # create Baobab request
+        request = TSSRequest()
+        parameters = dict()
+
+        # add manifest for current build_identity to parameters
+        self.build_identity.populate_tss_request_parameters(parameters)
+
+        # add Baobab,* tags from info dictionary to parameters
+        parameters.update(info)
+
+        # add required tags for Baobab TSS request
+        request.add_tcon_tags(parameters, None)
+
+        logging.info('Sending Baobab TSS request...')
+        response = request.send_receive()
+
+        ticket = response.get('Baobab,Ticket')
+        if ticket is None:
+            logging.warning('No "Baobab,Ticket" in TSS response, this might not work')
+
+        response['FirmwareData'] = self.build_identity.get_component(comp_name).data
+
+        return response
+
     def send_firmware_updater_data(self, message: Mapping):
         logging.debug(f'got FirmwareUpdaterData request: {message}')
         arguments = message['Arguments']
@@ -810,6 +838,11 @@ class Restore:
             fwdict = self.get_veridian_firmware_data(info)
             if fwdict is None:
                 raise PyMobileDevice3Exception(f'Couldn\'t get Veridian firmware data')
+
+        elif updater_name == 'AppleTCON':
+            fwdict = self.get_tcon_firmware_data(info)
+            if fwdict is None:
+                raise PyMobileDevice3Exception(f'Couldn\'t get TCON firmware data')
 
         else:
             raise PyMobileDevice3Exception(f'Got unknown updater name: {updater_name}')

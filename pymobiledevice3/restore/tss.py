@@ -498,6 +498,51 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
+    def add_tcon_tags(self, parameters: typing.Mapping, overrides: typing.Mapping = None):
+        manifest = parameters['Manifest']
+
+        # add tags indicating we want to get the Baobab,Ticket
+        self._request['@BBTicket'] = True
+        self._request['@Baobab,Ticket'] = True
+
+        keys_to_copy_uint = ('Baobab,BoardID', 'Baobab,ChipID', 'Baobab,Life', 'Baobab,ManifestEpoch',
+                             'Baobab,SecurityDomain',)
+
+        for key in keys_to_copy_uint:
+            value = get_with_or_without_comma(parameters, key)
+
+            if isinstance(value, bytes):
+                self._request[key] = bytes_to_uint(value)
+            else:
+                self._request[key] = value
+
+        isprod = bool(get_with_or_without_comma(parameters, 'Baobab,ProductionMode', False))
+        self._request['Baobab,ProductionMode'] = isprod
+
+        nonce = get_with_or_without_comma(parameters, 'Baobab,UpdateNonce')
+
+        if nonce is not None:
+            self._request['Baobab,UpdateNonce'] = nonce
+
+        ecid = get_with_or_without_comma(parameters, 'Baobab,ECID')
+
+        if ecid is not None:
+            self._request['Baobab,ECID'] = ecid
+
+        for comp_name, node in manifest.items():
+            if not comp_name.startswith('Baobab,'):
+                continue
+
+            manifest_entry = dict(node)
+            manifest_entry.pop('Info')
+            manifest_entry['EPRO'] = isprod
+
+            # finally add entry to request
+            self._request[comp_name] = manifest_entry
+
+        if overrides is not None:
+            self._request.update(overrides)
+
     def img4_create_local_manifest(self, build_identity=None):
         manifest = None
         if build_identity is not None:
