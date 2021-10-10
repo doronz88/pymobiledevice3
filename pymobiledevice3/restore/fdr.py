@@ -138,8 +138,8 @@ class FDRClient:
         sockfd = socket.socket()
         sockfd.connect((host, port))
 
-        sockfd.settimeout(.1)
-        self.service.socket.settimeout(.1)
+        sockfd.settimeout(.01)
+        self.service.socket.settimeout(.01)
 
         while True:
             buf = b''
