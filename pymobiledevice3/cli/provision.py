@@ -1,4 +1,5 @@
 import plistlib
+from pathlib import Path
 
 import click
 
@@ -28,7 +29,7 @@ def provision_install(lockdown: LockdownClient, profile):
 
 @provision.command('remove', cls=Command)
 @click.argument('profile_id')
-def provision_install(lockdown: LockdownClient, profile_id):
+def provision_remove(lockdown: LockdownClient, profile_id):
     """ remove a provision profile """
     MisagentService(lockdown=lockdown).remove(profile_id)
 
@@ -46,3 +47,12 @@ def provision_list(lockdown: LockdownClient, color):
         provision_profiles.append(plistlib.loads(xml))
 
     print_json(provision_profiles, colored=color)
+
+
+@provision.command('dump', cls=Command)
+@click.argument('out', type=click.Path(file_okay=False, dir_okay=True, exists=True))
+def provision_dump(lockdown: LockdownClient, out):
+    """ dump installed provision profiles to specified location """
+    provision_profiles_raw = MisagentService(lockdown=lockdown).copy_all()
+    for i in range(len(provision_profiles_raw)):
+        (Path(out) / f'{i + 1}.mobileprovision').write_bytes(provision_profiles_raw[i])
