@@ -141,12 +141,10 @@ class LockdownClient(object):
             with open(filename, 'rb') as f:
                 pair_record = plistlib.load(f)
         except (PermissionError, FileNotFoundError):
-            logging.warning(f'No iTunes pairing record found for device {self.identifier}')
             return None
         return pair_record
 
     def get_usbmux_pairing_record(self):
-        self.logger.warning('Getting pair record from usbmuxd')
         client = usbmux.PlistProtocol(usbmux.MuxConnection.create_socket())
         try:
             return client.get_pair_record(self.udid)
@@ -159,7 +157,6 @@ class LockdownClient(object):
         if not path.exists():
             self.logger.error(f'No pymobiledevice3 pairing record found for device {self.identifier}')
             return None
-        self.logger.warning(f'Found pymobiledevice3 pairing record for device {self.udid}')
         return plistlib.loads(path.read_bytes())
 
     def validate_pairing(self):
