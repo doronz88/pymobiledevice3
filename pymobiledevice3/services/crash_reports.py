@@ -1,6 +1,5 @@
 import json
 import logging
-import os.path
 import posixpath
 from collections import namedtuple
 from pathlib import Path
