@@ -2,20 +2,20 @@
 
 import logging
 import os
-import plistlib
 import posixpath
-import shlex
 import struct
-from cmd import Cmd
-from pprint import pprint
+import sys
+import tempfile
 from datetime import datetime
 
 import hexdump
+from cmd2 import Cmd, Cmd2ArgumentParser, with_argparser
 from construct import Struct, Const, Int64ul, Container, Enum, Tell, CString, GreedyRange
 from pygments import highlight, lexers, formatters
 
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.utils import try_decode
 
 MAXIMUM_READ_SIZE = 1 << 16
 MODE_MASK = 0o0000777
@@ -318,7 +318,6 @@ class AfcService:
         return stat
 
     def link(self, target, source, type_=afc_link_type_t.SYMLINK):
-        source = source.encode('utf-8')
         return self._do_operation(afc_opcode_t.MAKE_LINK,
                                   afc_make_link_req_t.build({'type': type_, 'target': target, 'source': source}))
 
@@ -493,7 +492,7 @@ class AfcService:
 def safe_cmd(f):
     def safe_f(self, *args, **kwargs):
         try:
-            f(self, *args, **kwargs)
+            return f(self, *args, **kwargs)
         except AfcException as e:
             logging.error(f'{e}')
         except KeyboardInterrupt:
@@ -504,9 +503,66 @@ def safe_cmd(f):
     return safe_f
 
 
+pwd_parser = Cmd2ArgumentParser(description='print working directory')
+
+link_parser = Cmd2ArgumentParser(description='create a symlink')
+link_parser.add_argument('target')
+link_parser.add_argument('source')
+
+edit_parser = Cmd2ArgumentParser(description='edit a given file on remote')
+edit_parser.add_argument('filename')
+
+cd_parser = Cmd2ArgumentParser(description='change working directory')
+cd_parser.add_argument('directory')
+
+ls_parser = Cmd2ArgumentParser(description='list entries in working directory')
+ls_parser.add_argument('directory', default='.', nargs='?')
+
+walk_parser = Cmd2ArgumentParser(
+    description='traverse all entries from given path recursively (by default, from current working directory)')
+walk_parser.add_argument('directory', default='.', nargs='?')
+
+cat_parser = Cmd2ArgumentParser(description='print given filename contents')
+cat_parser.add_argument('filename')
+
+rm_parser = Cmd2ArgumentParser(description='remove given entries')
+rm_parser.add_argument('files', nargs='+')
+
+pull_parser = Cmd2ArgumentParser(description='pull an entry from given path into a local existing directory')
+pull_parser.add_argument('remote_path')
+pull_parser.add_argument('local_path')
+
+push_parser = Cmd2ArgumentParser(description='push an entry from a given local path into remote device at a given path')
+push_parser.add_argument('local_path')
+push_parser.add_argument('remote_path')
+
+head_parser = Cmd2ArgumentParser(description='print first 32 characters of a given entry')
+head_parser.add_argument('filename')
+
+hexdump_parser = Cmd2ArgumentParser(description='print a full hexdump of a given entry')
+hexdump_parser.add_argument('filename')
+
+mkdir_parser = Cmd2ArgumentParser(description='create a directory at a given path')
+mkdir_parser.add_argument('filename')
+
+info_parser = Cmd2ArgumentParser(description='print device info')
+
+mv_parser = Cmd2ArgumentParser(description='move a file from a given source to a given destination')
+mv_parser.add_argument('source')
+mv_parser.add_argument('dest')
+
+stat_parser = Cmd2ArgumentParser(description='print information on a given file')
+stat_parser.add_argument('filename')
+
+
 class AfcShell(Cmd):
     def __init__(self, lockdown: LockdownClient, service_name='com.apple.afc', completekey='tab'):
-        Cmd.__init__(self, completekey=completekey)
+        # bugfix: prevent the Cmd instance from trying to parse click's arguments
+        sys.argv = sys.argv[:1]
+
+        Cmd.__init__(self,
+                     completekey=completekey,
+                     persistent_history_file=os.path.join(tempfile.gettempdir(), f'.{service_name}-history'))
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
         self.service_name = service_name
@@ -516,125 +572,105 @@ class AfcShell(Cmd):
         self.complete_ls = self._complete
         self._update_prompt()
 
-    def do_exit(self, args):
-        return True
-
-    def do_quit(self, args):
-        return True
-
+    @with_argparser(pwd_parser)
     def do_pwd(self, args):
-        print(self.curdir)
+        self.print(self.curdir)
 
-    @safe_cmd
+    @with_argparser(link_parser)
     def do_link(self, args):
-        z = args.split()
-        self.afc.link(z[0], z[1], afc_link_type_t.SYMLINK)
+        self.afc.link(self.relative_path(args.target), self.relative_path(args.source), afc_link_type_t.SYMLINK)
 
-    @safe_cmd
+    @with_argparser(edit_parser)
+    def do_edit(self, args) -> None:
+        remote = self.relative_path(args.filename)
+        with tempfile.NamedTemporaryFile('wb+') as local:
+            if self.afc.exists(remote):
+                local.write(self.afc.get_file_contents(remote))
+                local.seek(0, os.SEEK_SET)
+
+            self.run_editor(local.name)
+            buf = open(local.name, 'rb').read()
+            self.afc.set_file_contents(remote, buf)
+
+    @with_argparser(cd_parser)
     def do_cd(self, args):
-        if not args.startswith('/'):
-            new = posixpath.join(self.curdir, args)
-        else:
-            new = args
-
-        new = posixpath.normpath(new)
-        if self.afc.exists(new):
-            self.curdir = new
+        directory = self.relative_path(args.directory)
+        if self.afc.exists(directory):
+            self.curdir = directory
             self._update_prompt()
         else:
-            self.logger.error('%s does not exist', new)
+            self.print(f'[ERROR] {directory} does not exist')
 
-    @safe_cmd
+    @with_argparser(ls_parser)
     def do_ls(self, args):
-        filename = posixpath.join(self.curdir, args)
-        if self.curdir.endswith('/'):
-            filename = posixpath.join(self.curdir, args)
-        filenames = self.afc.listdir(filename)
+        filenames = self.afc.listdir(self.relative_path(args.directory))
         if filenames:
             for filename in filenames:
-                print(filename)
+                self.print(filename)
 
-    @safe_cmd
+    @with_argparser(walk_parser)
     def do_walk(self, args):
-        dirname = posixpath.join(self.curdir, args)
-        for filename in self.afc.listdir(dirname):
-            filename = posixpath.join(dirname, filename)
-            print(filename)
-            if self.afc.isdir(filename):
-                self.do_walk(filename)
+        for root, dirs, files in self.afc.walk(self.relative_path(args.directory)):
+            for name in files:
+                print(posixpath.join(root, name))
+            for name in dirs:
+                print(posixpath.join(root, name))
 
-    @safe_cmd
+    @with_argparser(cat_parser)
     def do_cat(self, args):
-        data = self.afc.get_file_contents(posixpath.join(self.curdir, args))
-        if data and args.endswith('.plist'):
-            pprint(plistlib.loads(data))
-        else:
-            print(data)
+        data = self.afc.get_file_contents(self.relative_path(args.filename))
+        self.ppaged(try_decode(data))
 
-    @safe_cmd
+    @with_argparser(rm_parser)
     def do_rm(self, args):
-        for filename in shlex.split(args):
-            self.afc.rm(filename)
+        for filename in args.files:
+            self.afc.rm(self.relative_path(filename))
 
-    @safe_cmd
+    @with_argparser(pull_parser)
     def do_pull(self, args):
         def log(src, dst):
-            logging.info(f'{src} --> {dst}')
+            self.print(f'{src} --> {dst}')
 
-        args = shlex.split(args)
-        if len(args) != 2:
-            logging.error('pull expects <src> <dst>')
-            return
-        else:
-            remote_path = args[0]
-            local_path = args[1]
+        self.afc.pull(args.remote_path, args.local_path, callback=log)
 
-        remote_path = posixpath.normpath(posixpath.join(self.curdir, remote_path))
-        self.afc.pull(remote_path, local_path, callback=log)
-
-    @safe_cmd
+    @with_argparser(push_parser)
     def do_push(self, args):
         def log(src, dst):
             logging.info(f'{src} --> {dst}')
 
-        args = shlex.split(args)
-        if len(args) != 2:
-            logging.error('push expects <src> <dst>')
-            return
-        else:
-            local_path = args[0]
-            remote_path = args[1]
+        self.afc.push(args.local_path, self.relative_path(args.remote_path), callback=log)
 
-        remote_path = posixpath.normpath(posixpath.join(self.curdir, remote_path))
-        self.afc.push(local_path, remote_path, callback=log)
-
-    @safe_cmd
+    @with_argparser(head_parser)
     def do_head(self, args):
-        print(self.afc.get_file_contents(posixpath.join(self.curdir, args))[:32])
+        self.print(try_decode(self.afc.get_file_contents(self.relative_path(args.filename))[:32]))
 
-    @safe_cmd
+    @with_argparser(hexdump_parser)
     def do_hexdump(self, args):
-        args = posixpath.join(self.curdir, args)
-        print(hexdump.hexdump(self.afc.get_file_contents(args)))
+        self.print(hexdump.hexdump(self.afc.get_file_contents(self.relative_path(args.filename))))
 
-    @safe_cmd
+    @with_argparser(mkdir_parser)
     def do_mkdir(self, args):
-        self.afc.makedirs(args)
+        self.afc.makedirs(self.relative_path(args.filename))
 
-    @safe_cmd
+    @with_argparser(info_parser)
     def do_info(self, args):
         for k, v in self.afc.get_device_info().items():
-            print(k, '\t:\t', v)
+            self.print(f'{k}: {v}')
 
-    @safe_cmd
+    @with_argparser(mv_parser)
     def do_mv(self, args):
-        t = args.split()
-        return self.afc.rename(t[0], t[1])
+        return self.afc.rename(self.relative_path(args.source), self.relative_path(args.dest))
 
-    @safe_cmd
+    @with_argparser(stat_parser)
     def do_stat(self, args):
-        args = posixpath.join(self.curdir, args)
-        pprint(self.afc.stat(args))
+        for k, v in self.afc.stat(self.relative_path(args.filename)).items():
+            self.print(f'{k}: {v}')
+
+    def print(self, message):
+        print(str(message), file=self.stdout)
+
+    def relative_path(self, filename):
+        return posixpath.join(self.curdir, filename)
 
     def _update_prompt(self):
         self.prompt = highlight(f'[AFC:{self.curdir}]$ ', lexers.BashSessionLexer(),
