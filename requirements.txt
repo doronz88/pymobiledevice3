@@ -17,3 +17,4 @@ tqdm
 cached-property
 requests
 pyOpenSSL
+cmd2
