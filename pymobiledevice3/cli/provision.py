@@ -1,3 +1,4 @@
+import logging
 import plistlib
 from pathlib import Path
 
@@ -38,21 +39,14 @@ def provision_remove(lockdown: LockdownClient, profile_id):
 @click.option('--color/--no-color', default=True)
 def provision_list(lockdown: LockdownClient, color):
     """ list installed provision profiles """
-    provision_profiles_raw = MisagentService(lockdown=lockdown).copy_all()
-    provision_profiles = []
-
-    for p in provision_profiles_raw:
-        xml = b'<?xml' + p.split(b'<?xml', 1)[1]
-        xml = xml.split(b'</plist>')[0] + b'</plist>'
-        provision_profiles.append(plistlib.loads(xml))
-
-    print_json(provision_profiles, colored=color)
+    print_json([p.plist for p in MisagentService(lockdown=lockdown).copy_all()], colored=color)
 
 
 @provision.command('dump', cls=Command)
 @click.argument('out', type=click.Path(file_okay=False, dir_okay=True, exists=True))
 def provision_dump(lockdown: LockdownClient, out):
     """ dump installed provision profiles to specified location """
-    provision_profiles_raw = MisagentService(lockdown=lockdown).copy_all()
-    for i in range(len(provision_profiles_raw)):
-        (Path(out) / f'{i + 1}.mobileprovision').write_bytes(provision_profiles_raw[i])
+    for profile in MisagentService(lockdown=lockdown).copy_all():
+        filename = f'{profile.plist["UUID"]}.mobileprovision'
+        logging.info(f'downloading {filename}')
+        (Path(out) / filename).write_bytes(profile.buf)
