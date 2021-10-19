@@ -165,7 +165,7 @@ class CrashReport:
 
         result += click.style(f'{self.incident_id} {self.timestamp}\n\n', fg='cyan')
 
-        if self.bug_type not in ('309', '327', '385', ):
+        if self.bug_type not in ('109', '309', '327', '385', ):
             # these crashes aren't crash dumps
             return result
 
