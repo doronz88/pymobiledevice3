@@ -35,6 +35,13 @@ def provision_remove(lockdown: LockdownClient, profile_id):
     MisagentService(lockdown=lockdown).remove(profile_id)
 
 
+@provision.command('clear', cls=Command)
+def provision_clear(lockdown: LockdownClient):
+    """ remove all provision profiles """
+    for profile in MisagentService(lockdown=lockdown).copy_all():
+        MisagentService(lockdown=lockdown).remove(profile.plist['UUID'])
+
+
 @provision.command('list', cls=Command)
 @click.option('--color/--no-color', default=True)
 def provision_list(lockdown: LockdownClient, color):
