@@ -673,7 +673,7 @@ class AfcShell(Cmd):
         return posixpath.join(self.curdir, filename)
 
     def _update_prompt(self):
-        self.prompt = highlight(f'[AFC:{self.curdir}]$ ', lexers.BashSessionLexer(),
+        self.prompt = highlight(f'[{self.service_name}:{self.curdir}]$ ', lexers.BashSessionLexer(),
                                 formatters.TerminalTrueColorFormatter(style='solarized-dark')).strip()
 
     def _complete(self, text, line, begidx, endidx):
