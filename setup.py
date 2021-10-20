@@ -45,6 +45,7 @@ if __name__ == '__main__':
             'Programming Language :: Python :: 3.7',
             'Programming Language :: Python :: 3.8',
             'Programming Language :: Python :: 3.9',
+            'Programming Language :: Python :: 3.10',
         ],
         url='https://github.com/doronz88/pymobiledevice3',
         project_urls={
