@@ -54,7 +54,8 @@ class TcpForwarder:
                 if current_sock is self.server_socket:
                     self._handle_server_connection()
                 else:
-                    self._handle_data(current_sock, closed_sockets)
+                    if current_sock not in closed_sockets:
+                        self._handle_data(current_sock, closed_sockets)
 
             for current_sock in exceptional:
                 self._handle_close_or_error(current_sock)
