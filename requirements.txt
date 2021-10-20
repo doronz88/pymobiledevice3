@@ -11,7 +11,7 @@ hexdump
 arrow
 daemonize
 gpxpy
-pykdebugparser>=1.1.3
+pykdebugparser>=1.1.4
 pyusb
 tqdm
 cached-property
