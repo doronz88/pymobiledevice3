@@ -1,6 +1,7 @@
 import tempfile
 
 import click
+
 from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.heartbeat import HeartbeatService
@@ -88,3 +89,13 @@ def lockdown_heartbeat(lockdown: LockdownClient):
 def lockdown_language(lockdown: LockdownClient):
     """ get current language settings """
     print(f'{lockdown.language} {lockdown.locale}')
+
+
+@lockdown_group.command('device-name', cls=Command)
+@click.argument('new_name', required=False)
+def lockdown_device_name(lockdown: LockdownClient, new_name):
+    """ get/set current device name """
+    if new_name:
+        lockdown.set_value(new_name, key='DeviceName')
+    else:
+        print(f'{lockdown.get_value(key="DeviceName")}')
