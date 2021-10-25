@@ -8,4 +8,5 @@ version.txt
 debug/
 *.DS_Store
 tickets
+.idea
 
