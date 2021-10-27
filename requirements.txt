@@ -12,7 +12,7 @@ arrow
 daemonize
 gpxpy
 pykdebugparser>=1.1.4
-pyusb
+pyusb>=1.2.1
 tqdm
 cached-property
 requests
