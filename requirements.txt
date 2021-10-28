@@ -18,3 +18,4 @@ cached-property
 requests
 pyOpenSSL
 cmd2
+packaging

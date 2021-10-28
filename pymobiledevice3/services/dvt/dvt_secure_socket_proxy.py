@@ -1,4 +1,4 @@
-from distutils.version import LooseVersion
+from packaging.version import Version
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.remote_server import RemoteServer
@@ -9,7 +9,7 @@ class DvtSecureSocketProxyService(RemoteServer):
     OLD_SERVICE_NAME = 'com.apple.instruments.remoteserver'
 
     def __init__(self, lockdown: LockdownClient):
-        if LooseVersion(lockdown.ios_version) >= LooseVersion('14.0'):
+        if Version(lockdown.ios_version) >= Version('14.0'):
             service_name = self.SERVICE_NAME
             remove_ssl_context = False
         else:
