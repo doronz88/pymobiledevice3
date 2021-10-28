@@ -51,5 +51,5 @@ if __name__ == '__main__':
         project_urls={
             'pymobiledevice3': 'https://github.com/doronz88/pymobiledevice3'
         },
-        tests_require=['pytest'],
+        tests_require=['pytest', 'cmd2_ext_test'],
     )
