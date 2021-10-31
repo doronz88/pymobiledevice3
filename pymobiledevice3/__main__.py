@@ -45,6 +45,8 @@ def cli():
         cli_commands()
     except NoDeviceConnectedError:
         logging.error('Device is not connected')
+    except ConnectionAbortedError:
+        logging.error('Device was disconnected')
 
 
 if __name__ == '__main__':
