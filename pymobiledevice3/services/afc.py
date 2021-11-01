@@ -247,12 +247,14 @@ class AfcService:
             # normal file
             try:
                 if self.isdir(remote_path):
+                    # Remote is dir.
                     remote_path = posixpath.join(remote_path, os.path.basename(local_path))
             except AfcFileNotFoundError:
+                # Remote is file.
                 remote_parent = posixpath.dirname(remote_path)
                 if not self.exists(remote_parent):
                     raise
-                remote_path = posixpath.join(remote_parent, os.path.basename(local_path))
+                remote_path = posixpath.join(remote_parent, os.path.basename(remote_path))
             with open(local_path, 'rb') as f:
                 self.set_file_contents(remote_path, f.read())
         else:

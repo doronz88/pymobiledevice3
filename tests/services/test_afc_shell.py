@@ -130,6 +130,32 @@ def test_pull_after_cd_single_file_with_prefix(afc_shell, tmp_path: Path):
         afc_shell.afc.rm('temp1')
 
 
+def test_pull_after_cd_single_file_with_rename(afc_shell, tmp_path: Path):
+    """
+    source:
+    temp1
+    └── temp.txt
+
+    cd temp1
+    pull temp.txt target/temp1.txt
+
+    target
+    └── temp1.txt
+    """
+    file_name = 'temp.txt'
+    file_rename = 'temp1.txt'
+    file_data = b'data'
+    afc_shell.afc.makedirs('temp1')
+    afc_shell.afc.set_file_contents(f'temp1/{file_name}', file_data)
+    try:
+        afc_shell.app_cmd('cd temp1')
+        out = afc_shell.app_cmd(f'pull {file_name} {(tmp_path / file_rename).absolute()}')
+        assert not out.stderr
+        assert (tmp_path / file_rename).read_bytes() == file_data
+    finally:
+        afc_shell.afc.rm('temp1')
+
+
 def test_pull_after_cd_recursive(afc_shell, tmp_path: Path):
     """
     source:
@@ -292,6 +318,33 @@ def test_push_after_cd_single_file_with_prefix(afc_shell, tmp_path: Path):
         out = afc_shell.app_cmd(f'push {source_file} temp3/{file_name}')
         assert not out.stderr
         assert afc_shell.afc.get_file_contents(f'temp1/temp2/temp3/{file_name}') == file_data
+    finally:
+        afc_shell.afc.rm('temp1')
+
+
+def test_push_after_cd_single_file_with_rename(afc_shell, tmp_path: Path):
+    """
+    source:
+    temp.txt
+
+    cd temp1
+    push source/temp.txt temp1.txt
+
+    target
+    temp1
+    └── temp1.txt
+    """
+    file_name = 'temp.txt'
+    file_rename = 'temp1.txt'
+    file_data = b'data'
+    source_file = (tmp_path / file_name)
+    source_file.write_bytes(file_data)
+    afc_shell.afc.makedirs('temp1')
+    afc_shell.app_cmd('cd temp1')
+    try:
+        out = afc_shell.app_cmd(f'push {source_file} {file_rename}')
+        assert not out.stderr
+        assert afc_shell.afc.get_file_contents(f'temp1/{file_rename}') == file_data
     finally:
         afc_shell.afc.rm('temp1')
 
