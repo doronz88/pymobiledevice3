@@ -26,7 +26,7 @@ from pymobiledevice3.cli.springboard import cli as springboard_cli
 from pymobiledevice3.cli.syslog import cli as syslog_cli
 from pymobiledevice3.exceptions import NoDeviceConnectedError
 
-coloredlogs.install(level=logging.DEBUG)
+coloredlogs.install(level=logging.INFO)
 
 logging.getLogger('asyncio').disabled = True
 logging.getLogger('parso.cache').disabled = True

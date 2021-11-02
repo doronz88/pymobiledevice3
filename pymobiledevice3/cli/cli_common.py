@@ -5,6 +5,7 @@ import os
 import uuid
 
 import click
+import coloredlogs
 from pygments import highlight, lexers, formatters
 
 from pymobiledevice3.lockdown import LockdownClient
@@ -31,7 +32,7 @@ def print_json(buf, colored=True, default=default_json_encoder):
 
 
 def set_verbosity(ctx, param, value):
-    logging.getLogger().setLevel(logging.INFO - (value * 10))
+    coloredlogs.set_level(logging.INFO - (value * 10))
 
 
 class Command(click.Command):
