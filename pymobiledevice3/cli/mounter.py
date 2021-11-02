@@ -103,7 +103,6 @@ def download_developer_disk_image(ios_version, directory):
 def mounter_mount(lockdown: LockdownClient, image, signature, xcode, version):
     """ mount developer image. """
     image_type = 'Developer'
-    developer_disk_image_dir = None
 
     if image and signature:
         logging.debug('using given image and signature for mount command')
@@ -115,17 +114,16 @@ def mounter_mount(lockdown: LockdownClient, image, signature, xcode, version):
         signature = f'{image}.signature'
         developer_disk_image_dir = Path(image).parent
 
+        if not developer_disk_image_dir.exists():
+            try:
+                download_developer_disk_image(version, developer_disk_image_dir)
+            except PermissionError:
+                logging.error(f'DeveloperDiskImage could not be saved to Xcode default path ({developer_disk_image_dir}). '
+                              f'Please make sure your user has the necessary permissions')
+                return
+
     image = Path(image)
     signature = Path(signature)
-
-    if not developer_disk_image_dir.exists():
-        try:
-            download_developer_disk_image(version, developer_disk_image_dir)
-        except PermissionError:
-            logging.error(f'DeveloperDiskImage could not be saved to Xcode default path ({developer_disk_image_dir}). '
-                          f'Please make sure your user has the necessary permissions')
-            return
-
     image = image.read_bytes()
     signature = signature.read_bytes()
 
