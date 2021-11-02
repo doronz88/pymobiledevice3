@@ -74,9 +74,10 @@ def restore_shell(device):
 
 
 @restore.command('enter', cls=Command)
-def restore_enter(lockdown):
+def restore_enter(device):
     """ enter Recovery mode """
-    lockdown.enter_recovery()
+    if isinstance(device, LockdownClient):
+        device.enter_recovery()
 
 
 @restore.command('exit')
