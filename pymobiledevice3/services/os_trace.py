@@ -78,8 +78,19 @@ class OsTraceService(object):
         response = self.c.recv_prefixed()
         return plistlib.loads(response)
 
-    def create_archive(self, out: typing.IO):
-        self.c.send_plist({'Request': 'CreateArchive'})
+    def create_archive(self, out: typing.IO, size_limit: int = None, age_limit: int = None, start_time: int = None):
+        request = {'Request': 'CreateArchive'}
+
+        if size_limit is not None:
+            request.update({'SizeLimit': size_limit})
+
+        if age_limit is not None:
+            request.update({'AgeLimit': age_limit})
+
+        if start_time is not None:
+            request.update({'StartTime': start_time})
+
+        self.c.send_plist(request)
 
         assert 1 == self.c.recvall(1)[0]
 
@@ -92,12 +103,12 @@ class OsTraceService(object):
                 break
             out.write(self.c.recv_prefixed(endianity='<'))
 
-    def collect(self, out: str):
+    def collect(self, out: str, size_limit: int = None, age_limit: int = None, start_time: int = None):
         """
         Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
         """
         with tempfile.NamedTemporaryFile() as tar:
-            self.create_archive(tar)
+            self.create_archive(tar, size_limit=size_limit, age_limit=age_limit, start_time=start_time)
             TarFile(tar.name).extractall(out)
 
     def syslog(self, pid=-1):
