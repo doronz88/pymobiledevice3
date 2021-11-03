@@ -41,6 +41,7 @@ def cli():
         crash_cli, afc_cli, ps_cli, notification_cli, list_devices_cli, power_assertion_cli, springboard_cli,
         provision_cli, backup_cli, restore_cli, activation_cli, companion_cli
     ])
+    cli_commands.context_settings = dict(help_option_names=['-h', '--help'])
     try:
         cli_commands()
     except NoDeviceConnectedError:
