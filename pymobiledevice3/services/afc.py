@@ -584,12 +584,18 @@ class AfcShell(Cmd):
         self.service_name = service_name
         self.afc = AfcService(self.lockdown, service_name=service_name)
         self.curdir = '/'
-        self.complete_cat = self._complete
-        self.complete_ls = self._complete
-        self.complete_cd = self._complete
-        self.complete_stat = self._complete
-        self.complete_rm = self._complete
-        self.complete_pull = self._complete_first_arg
+        self.complete_edit = self._complete_first_arg
+        self.complete_cd = self._complete_first_arg
+        self.complete_ls = self._complete_first_arg
+        self.complete_walk = self._complete_first_arg
+        self.complete_cat = self._complete_first_arg
+        self.complete_rm = self._complete_first_arg
+        self.complete_pull = self._complete_pull_arg
+        self.complete_push = self._complete_push_arg
+        self.complete_head = self._complete_first_arg
+        self.complete_hexdump = self._complete_first_arg
+        self.complete_mv = self._complete
+        self.complete_stat = self._complete_first_arg
         self._update_prompt()
 
     @with_argparser(pwd_parser)
@@ -667,7 +673,7 @@ class AfcShell(Cmd):
 
     @with_argparser(hexdump_parser)
     def do_hexdump(self, args):
-        self.poutput(hexdump.hexdump(self.afc.get_file_contents(self.relative_path(args.filename))))
+        self.poutput(hexdump.hexdump(self.afc.get_file_contents(self.relative_path(args.filename)), result='return'))
 
     @with_argparser(mkdir_parser)
     def do_mkdir(self, args):
@@ -704,12 +710,35 @@ class AfcShell(Cmd):
         ]
 
     def _complete_first_arg(self, text, line, begidx, endidx):
-        # Make sure this is the first argument
-        try:
-            parts = shlex.split(line[:begidx])
-        except ValueError:
-            # In case it starts with ".
-            parts = shlex.split(line[:begidx - 1])
-        if len(parts) > 1:
+        if self._count_completion_parts(line, begidx) > 1:
             return []
-        return [s for s in self._complete(text, line, begidx, endidx)]
+        return self._complete(text, line, begidx, endidx)
+
+    def _complete_push_arg(self, text, line, begidx, endidx):
+        count = self._count_completion_parts(line, begidx)
+        if count == 1:
+            return self._complete_local(text)
+        elif count == 2:
+            return self._complete(text, line, begidx, endidx)
+        else:
+            return []
+
+    def _complete_pull_arg(self, text, line, begidx, endidx):
+        count = self._count_completion_parts(line, begidx)
+        if count == 1:
+            return self._complete(text, line, begidx, endidx)
+        elif count == 2:
+            return self._complete_local(text)
+        else:
+            return []
+
+    @staticmethod
+    def _complete_local(text: str):
+        path = pathlib.Path(text)
+        path_iter = path.iterdir() if text.endswith(os.path.sep) else path.parent.iterdir()
+        return [str(p) for p in path_iter if str(p).startswith(text)]
+
+    @staticmethod
+    def _count_completion_parts(line, begidx):
+        # Strip the " for paths including spaces.
+        return len(shlex.split(line[:begidx].rstrip('"')))
