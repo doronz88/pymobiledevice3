@@ -21,4 +21,4 @@ def list_devices(color):
         lockdown = LockdownClient(udid)
         connected_devices.append(lockdown.all_values)
 
-    print_json(connected_devices, colored=color, default=lambda x: '<non-serializable>')
+    print_json(connected_devices, colored=color)
