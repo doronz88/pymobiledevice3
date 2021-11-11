@@ -19,7 +19,7 @@ from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, Argum
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.utils import try_decode
 
-MAXIMUM_READ_SIZE = 1 << 16
+MAXIMUM_READ_SIZE = 1 * 1024 ** 2  # 1 MB
 MODE_MASK = 0o0000777
 
 afc_opcode_t = Enum(Int64ul,
