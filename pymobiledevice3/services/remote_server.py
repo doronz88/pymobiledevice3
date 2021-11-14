@@ -270,7 +270,7 @@ class RemoteServer(object):
                 pprint(plistlib.loads(data))
                 raise e
             except plistlib.InvalidFileException:
-                logging.warning(f'got an invalid plist: {data[:40]}')
+                self.logger.warning(f'got an invalid plist: {data[:40]}')
         return data, aux
 
     def recv_message(self, channel: int = BROADCAST_CHANNEL):

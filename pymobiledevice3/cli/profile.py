@@ -6,6 +6,8 @@ from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.mobile_config import MobileConfigService
 
+logger = logging.getLogger(__name__)
+
 
 @click.group()
 def cli():
@@ -31,7 +33,7 @@ def profile_install(lockdown: LockdownClient, profiles):
     """ install given profiles """
     service = MobileConfigService(lockdown=lockdown)
     for profile in profiles:
-        logging.info(f'installing {profile.name}')
+        logger.info(f'installing {profile.name}')
         service.install_profile(profile.read())
 
 

@@ -25,7 +25,7 @@ class DtFetchSymbols(object):
         service.sendall(struct.pack('>I', fileno))
 
         size = struct.unpack('>Q', service.recvall(8))[0]
-        logging.debug(f'file size: {size}')
+        self.logger.debug(f'file size: {size}')
 
         received = 0
         while received < size:

@@ -162,7 +162,7 @@ class LockdownClient(object):
     def validate_pairing(self):
         pair_record = self.get_itunes_pairing_record()
         if pair_record is not None:
-            logging.info(f'Using iTunes pair record: {self.identifier}.plist')
+            self.logger.info(f'Using iTunes pair record: {self.identifier}.plist')
         elif Version(self.ios_version) >= Version('13.0'):
             pair_record = self.get_usbmux_pairing_record()
         else:

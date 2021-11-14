@@ -61,7 +61,7 @@ def crash_mover_flush(lockdown: LockdownClient):
 @crash.command('watch', cls=Command)
 @click.argument('name', required=False)
 @click.option('-r', '--raw', is_flag=True)
-def crash_mover_flush(lockdown: LockdownClient, name, raw):
+def crash_mover_watch(lockdown: LockdownClient, name, raw):
     """ watch for crash report generation """
     for crash_report in CrashReports(lockdown).watch(name=name, raw=raw):
         print(crash_report)

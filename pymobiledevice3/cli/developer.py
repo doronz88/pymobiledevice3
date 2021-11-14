@@ -39,6 +39,8 @@ from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from pymobiledevice3.tcp_forwarder import TcpForwarder
 
+logger = logging.getLogger(__name__)
+
 
 def wait_return():
     input('> Hit RETURN to exit')
@@ -138,7 +140,7 @@ def pkill(lockdown: LockdownClient, expression):
         for pid, process_info in processes.items():
             process_name = process_info['ProcessName']
             if expression in process_name:
-                logging.info(f'killing {process_name}({pid})')
+                logger.info(f'killing {process_name}({pid})')
                 process_control.kill(pid)
 
 
@@ -209,7 +211,7 @@ def netstat(lockdown: LockdownClient):
         with NetworkMonitor(dvt) as monitor:
             for event in monitor:
                 if isinstance(event, ConnectionDetectionEvent):
-                    logging.info(
+                    logger.info(
                         f'Connection detected: {event.local_address.data.address}:{event.local_address.port} -> '
                         f'{event.remote_address.data.address}:{event.remote_address.port}')
 
@@ -247,7 +249,7 @@ def sysmon_process_monitor(lockdown: LockdownClient, threshold):
                     if (process['cpuUsage'] is not None) and (process['cpuUsage'] >= threshold):
                         entries.append(Process(pid=process['pid'], name=process['name'], cpuUsage=process['cpuUsage']))
 
-                logging.info(entries)
+                logger.info(entries)
 
 
 @sysmon_process.command('single', cls=Command)
@@ -398,7 +400,7 @@ def stackshot(lockdown: LockdownClient, out, color):
             try:
                 data = tap.get_stackshot()
             except ExtractingStackshotError:
-                logging.error(f'Extracting stackshot failed')
+                logger.error(f'Extracting stackshot failed')
                 return
 
             if out is not None:
@@ -544,7 +546,7 @@ def dvt_energy(lockdown: LockdownClient, pid_list):
     """ energy monitoring for given pid list. """
 
     if len(pid_list) == 0:
-        logging.error('pid_list must not be empty')
+        logger.error('pid_list must not be empty')
         return
 
     pid_list = [int(pid) for pid in pid_list]
@@ -552,7 +554,7 @@ def dvt_energy(lockdown: LockdownClient, pid_list):
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with EnergyMonitor(dvt, pid_list) as energy_monitor:
             for telemetry in energy_monitor:
-                logging.info(telemetry)
+                logger.info(telemetry)
 
 
 @dvt.command('notifications', cls=Command)
@@ -561,7 +563,7 @@ def dvt_notifications(lockdown: LockdownClient):
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with Notifications(dvt) as notifications:
             for notification in notifications:
-                logging.info(notification)
+                logger.info(notification)
 
 
 @dvt.command('graphics', cls=Command)
@@ -570,7 +572,7 @@ def dvt_notifications(lockdown: LockdownClient):
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with Graphics(dvt) as graphics:
             for stats in graphics:
-                logging.info(stats)
+                logger.info(stats)
 
 
 @developer.command('fetch-symbols', cls=Command)
@@ -586,7 +588,7 @@ def developer_fetch_symbols(lockdown: LockdownClient, out):
     for i, filename in enumerate(files):
         filename = os.path.join(out, os.path.basename(filename))
         with open(filename, 'wb') as f:
-            logging.info(f'writing to: {filename}')
+            logger.info(f'writing to: {filename}')
             fetch_symbols.get_file(i, f)
 
 
@@ -675,7 +677,7 @@ def accessibility_notifications(lockdown: LockdownClient, cycle_focus):
         if name in ('hostAppStateChanged:',
                     'hostInspectorCurrentElementChanged:',):
             for focus_item in data:
-                logging.info(focus_item)
+                logger.info(focus_item)
 
             if name == 'hostInspectorCurrentElementChanged:':
                 if cycle_focus:

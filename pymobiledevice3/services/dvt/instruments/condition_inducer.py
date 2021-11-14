@@ -8,6 +8,7 @@ class ConditionInducer:
     IDENTIFIER = 'com.apple.instruments.server.services.ConditionInducer'
 
     def __init__(self, dvt):
+        self.logger = logging.getLogger(__name__)
         self._channel = dvt.make_channel(self.IDENTIFIER)
 
     def list(self) -> list:
@@ -18,7 +19,7 @@ class ConditionInducer:
         for group in self.list():
             for profile in group.get('profiles'):
                 if profile_identifier == profile.get('identifier'):
-                    logging.info(profile.get('description'))
+                    self.logger.info(profile.get('description'))
                     self._channel.enableConditionWithIdentifier_profileIdentifier_(
                         MessageAux().append_obj(group.get('identifier')).append_obj(profile.get('identifier')))
                     return

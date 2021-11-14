@@ -14,6 +14,8 @@ TSS_CONTROLLER_ACTION_URL = 'http://gs.apple.com/TSS/controller?action=2'
 
 TSS_CLIENT_VERSION_STRING = 'libauthinstall-776.60.1'
 
+logger = logging.getLogger(__name__)
+
 
 def get_with_or_without_comma(obj: typing.Mapping, k: str, default=None):
     val = obj.get(k, obj.get(k.replace(',', '')))
@@ -75,7 +77,7 @@ class TSSRequest:
                 elif key == 'ApInRomDFU':
                     value2 = parameters.get('ApInRomDFU')
                 else:
-                    logging.error(f'Unhandled condition {key} while parsing RestoreRequestRules')
+                    logger.error(f'Unhandled condition {key} while parsing RestoreRequestRules')
                     value2 = None
 
                 if value2:
@@ -92,7 +94,7 @@ class TSSRequest:
                     value2 = tss_entry.get(key)
                     if value2:
                         tss_entry.pop(key)
-                    logging.debug(f'Adding {key}={value} to TSS entry')
+                    logger.debug(f'Adding {key}={value} to TSS entry')
                     tss_entry[key] = value
         return tss_entry
 
@@ -159,17 +161,17 @@ class TSSRequest:
                 continue
 
             if parameters.get('ApSupportsImg4', False) and ('RestoreRequestRules' not in info_dict):
-                logging.debug(f'Skipping "{key}" as it doesn\'t have RestoreRequestRules')
+                logger.debug(f'Skipping "{key}" as it doesn\'t have RestoreRequestRules')
                 continue
 
             if parameters.get('_OnlyFWComponents', False):
                 if not manifest_node.get('Trusted', False):
-                    logging.debug(f'skipping {key} as it is not trusted')
+                    logger.debug(f'skipping {key} as it is not trusted')
                     continue
                 info = manifest_node['Info']
                 if not info['IsFirmwarePayload'] and not info['IsSecondaryFirmwarePayload'] and \
                         not info['IsFUDFirmware']:
-                    logging.debug(f'skipping {key} as it is neither firmware nor secondary nor FUD firmware payload')
+                    logger.debug(f'skipping {key} as it is neither firmware nor secondary nor FUD firmware payload')
                     continue
 
             # copy this entry
@@ -182,7 +184,7 @@ class TSSRequest:
             if 'Info' in manifest_entry and 'RestoreRequestRules' in manifest_entry['Info']:
                 rules = manifest_entry['Info']['RestoreRequestRules']
                 if rules:
-                    logging.debug(f'Applying restore request rules for entry {key}')
+                    logger.debug(f'Applying restore request rules for entry {key}')
                     tss_entry = self.apply_restore_request_rules(tss_entry, parameters, rules)
 
             # Make sure we have a Digest key for Trusted items even if empty
@@ -444,7 +446,7 @@ class TSSRequest:
             if trusted:
                 digest = manifest_entry.get('Digest')
                 if digest is None:
-                    logging.debug(f'No Digest data, using empty value for entry {comp_name}')
+                    logger.debug(f'No Digest data, using empty value for entry {comp_name}')
                     manifest_entry['Digest'] = b''
 
             manifest_entry.pop('Info')
@@ -487,7 +489,7 @@ class TSSRequest:
             if trusted:
                 digest = manifest_entry.get('Digest')
                 if digest is None:
-                    logging.debug(f'No Digest data, using empty value for entry {comp_name}')
+                    logger.debug(f'No Digest data, using empty value for entry {comp_name}')
                     manifest_entry['Digest'] = b''
 
             manifest_entry.pop('Info')
@@ -588,7 +590,7 @@ class TSSRequest:
                 if comp is None:
                     raise NotImplementedError(f'Unhandled component {k} - can\'t create manifest')
 
-                logging.debug(f'found component {comp} ({k})')
+                logger.debug(f'found component {comp} ({k})')
 
         # write manifest body header
         p.write(b'MANB', asn1.Numbers.IA5String)
@@ -612,13 +614,13 @@ class TSSRequest:
             'Expect': '',
         }
 
-        logging.info(f'Sending TSS request...')
+        logger.info('Sending TSS request...')
         r = requests.post(TSS_CONTROLLER_ACTION_URL, headers=headers,
                           data=plistlib.dumps(self._request), verify=False)
         content = r.content
 
         if b'MESSAGE=SUCCESS' in content:
-            logging.info('response successfully received')
+            logger.info('response successfully received')
 
         message = content.split(b'MESSAGE=', 1)[1].split(b'&', 1)[0].decode()
         if message != 'SUCCESS':

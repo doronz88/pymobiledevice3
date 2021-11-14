@@ -15,6 +15,7 @@ from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
 class Recovery:
     def __init__(self, ipsw: BytesIO, device: Device, tss: typing.Mapping = None,
                  behavior='Update'):
+        self.logger = logging.getLogger(__name__)
         self.ipsw = IPSW(ipsw)
         self.device = device
         self.tss = TSSResponse(tss) if tss is not None else None
@@ -22,17 +23,17 @@ class Recovery:
         if not self.device.is_image4_supported:
             raise NotImplementedError('is_image4_supported is False')
 
-        logging.info(f'connected device: <ecid: {self.device.ecid} hardware_model: {self.device.hardware_model} '
-                     f'image4-support: {self.device.is_image4_supported}>')
+        self.logger.info(f'connected device: <ecid: {self.device.ecid} hardware_model: {self.device.hardware_model} '
+                         f'image4-support: {self.device.is_image4_supported}>')
 
-        logging.debug('scanning BuildManifest.plist for the correct BuildIdentity')
+        self.logger.debug('scanning BuildManifest.plist for the correct BuildIdentity')
         self.build_identity = self.ipsw.build_manifest.get_build_identity(self.device.hardware_model, behavior)
         self.restore_boot_args = None
 
     def reconnect_irecv(self, is_recovery=None):
-        logging.debug('waiting for device to reconnect...')
+        self.logger.debug('waiting for device to reconnect...')
         self.device.irecv = IRecv(ecid=self.device.ecid, is_recovery=is_recovery)
-        logging.debug(f'connected mode: {self.device.irecv.mode}')
+        self.logger.debug(f'connected mode: {self.device.irecv.mode}')
 
     def get_preboard_manifest(self):
         overrides = {
@@ -93,7 +94,7 @@ class Recovery:
         if self.device.lockdown is not None:
             pinfo = self.device.lockdown.preflight_info
             if pinfo:
-                logging.debug('adding preflight info')
+                self.logger.debug('adding preflight info')
 
                 node = pinfo.get('Nonce')
                 if node is not None:
@@ -115,7 +116,7 @@ class Recovery:
 
                 euiccchipid = pinfo.get('EUICCChipID')
                 if euiccchipid:
-                    logging.debug('adding EUICCChipID info')
+                    self.logger.debug('adding EUICCChipID info')
                     parameters['eUICC,ChipID'] = euiccchipid
 
                     if euiccchipid >= 5:
@@ -144,7 +145,7 @@ class Recovery:
         if self.ipsw.build_manifest.build_major > 8:
             if self.device.ap_nonce is None:
                 # the first nonce request with older firmware releases can fail and it's OK
-                logging.info('NOTE: Unable to get nonce from device')
+                self.logger.info('NOTE: Unable to get nonce from device')
 
         self.tss = self.get_tss_response()
 
@@ -186,17 +187,17 @@ class Recovery:
             assert isinstance(iboot_stg1, bool)
 
             if iboot and not iboot_stg1:
-                logging.debug(f'{key} is loaded by iBoot')
+                self.logger.debug(f'{key} is loaded by iBoot')
                 self.send_component_and_command(key, 'firmware')
 
     def send_ramdisk(self):
         component = 'RestoreRamDisk'
         ramdisk_size = self.device.irecv.getenv('ramdisk-size')
-        logging.info(f'ramdisk-size: {ramdisk_size}')
+        self.logger.info(f'ramdisk-size: {ramdisk_size}')
 
         self.send_component(component)
         ramdisk_delay = self.device.irecv.getenv('ramdisk-delay')
-        logging.info(f'ramdisk-delay: {ramdisk_delay}')
+        self.logger.info(f'ramdisk-delay: {ramdisk_delay}')
 
         self.device.irecv.send_command('ramdisk')
 
@@ -232,18 +233,18 @@ class Recovery:
 
         # Recovery Mode Environment:
         build_version = self.device.irecv.getenv('build-version')
-        logging.info(f'iBoot build-version={build_version}')
+        self.logger.info(f'iBoot build-version={build_version}')
 
         build_style = self.device.irecv.getenv('build-style')
-        logging.info(f'iBoot build-style={build_style}')
+        self.logger.info(f'iBoot build-style={build_style}')
 
         radio_error = self.device.irecv.getenv('radio-error')
         if radio_error:
             radio_error = int(radio_error)
-            logging.info(f'radio-error: {radio_error}')
+            self.logger.info(f'radio-error: {radio_error}')
             radio_error_string = self.device.irecv.getenv('radio-error-string')
             if radio_error_string:
-                logging.info(f'radio-error-string: {radio_error_string}')
+                self.logger.info(f'radio-error-string: {radio_error_string}')
 
         self.set_autoboot(False)
 
@@ -284,7 +285,7 @@ class Recovery:
 
     def boot_ramdisk(self):
         if self.tss is None:
-            logging.info('fetching TSS record')
+            self.logger.info('fetching TSS record')
             self.fetch_tss_record()
 
         if self.device.irecv and self.device.irecv.mode == Mode.DFU_MODE:
@@ -298,7 +299,7 @@ class Recovery:
 
         if self.device.lockdown:
             # normal mode
-            logging.info('going into Recovery')
+            self.logger.info('going into Recovery')
 
             # in case lockdown has disconnected while waiting for a ticket
             self.device.lockdown = LockdownClient(udid=self.device.lockdown.udid)
@@ -309,9 +310,9 @@ class Recovery:
 
         self.reconnect_irecv()
         ecid = self.device.irecv._device_info['ECID']
-        logging.debug(f'ECID: {ecid}')
+        self.logger.debug(f'ECID: {ecid}')
 
-        logging.info('device booted into recovery')
+        self.logger.info('device booted into recovery')
 
         # now we load the iBEC
         try:

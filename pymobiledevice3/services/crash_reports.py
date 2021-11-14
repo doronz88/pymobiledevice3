@@ -155,7 +155,7 @@ class CrashReport:
 
                     result += line + '\n'
 
-                if line.startswith(f'Application Specific Information:'):
+                if line.startswith('Application Specific Information:'):
                     in_frames = True
 
         return result
@@ -232,7 +232,7 @@ class CrashReports:
         Path(out).mkdir(exist_ok=True, parents=True)
 
         def log(src, dst):
-            logging.info(f'{src} --> {dst}')
+            self.logger.info(f'{src} --> {dst}')
 
         self.afc.pull(entry, out, callback=log)
 
@@ -259,7 +259,7 @@ class CrashReports:
                 continue
 
             filename = posixpath.basename(syslog_entry.message.split()[-1])
-            logging.debug(f'crash report: {filename}')
+            self.logger.debug(f'crash report: {filename}')
 
             if posixpath.splitext(filename)[-1] not in ('.ips', '.panic'):
                 continue

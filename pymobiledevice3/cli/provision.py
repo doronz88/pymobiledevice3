@@ -1,5 +1,4 @@
 import logging
-import plistlib
 from pathlib import Path
 
 import click
@@ -7,6 +6,8 @@ import click
 from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.misagent import MisagentService
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -55,5 +56,5 @@ def provision_dump(lockdown: LockdownClient, out):
     """ dump installed provision profiles to specified location """
     for profile in MisagentService(lockdown=lockdown).copy_all():
         filename = f'{profile.plist["UUID"]}.mobileprovision'
-        logging.info(f'downloading {filename}')
+        logger.info(f'downloading {filename}')
         (Path(out) / filename).write_bytes(profile.buf)

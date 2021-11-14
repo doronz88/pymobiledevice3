@@ -6,6 +6,7 @@ import traceback
 import IPython
 import click
 from pygments import highlight, lexers, formatters
+
 from pymobiledevice3.cli.cli_common import print_json, set_verbosity
 from pymobiledevice3.exceptions import IncorrectModeError
 from pymobiledevice3.irecv import IRecv
@@ -19,6 +20,8 @@ SHELL_USAGE = """
 # for example:
 print(irecv.getenv('build-version'))
 """
+
+logger = logging.getLogger(__name__)
 
 
 class Command(click.Command):
@@ -36,18 +39,18 @@ class Command(click.Command):
             return
 
         ecid = value
-        logging.debug('searching among connected devices via lockdownd')
+        logger.debug('searching among connected devices via lockdownd')
         for udid in list_devices():
             try:
                 lockdown = LockdownClient(udid=udid)
             except IncorrectModeError:
                 continue
             if (ecid is None) or (lockdown.ecid == value):
-                logging.debug('found device')
+                logger.debug('found device')
                 return lockdown
             else:
                 continue
-        logging.debug(f'waiting for device to be available in Recovery mode')
+        logger.debug('waiting for device to be available in Recovery mode')
         return IRecv(ecid=ecid)
 
 

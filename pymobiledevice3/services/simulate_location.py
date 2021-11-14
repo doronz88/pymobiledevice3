@@ -40,8 +40,8 @@ class DtSimulateLocation(object):
                         duration = (point.time - last_time).total_seconds()
                         if duration >= 0:
                             if not disable_sleep:
-                                logging.info(f'waiting for {duration}s')
+                                self.logger.info(f'waiting for {duration}s')
                                 time.sleep(duration)
                     last_time = point.time
-                    logging.info(f'set location to {point.latitude} {point.longitude}')
+                    self.logger.info(f'set location to {point.latitude} {point.longitude}')
                     self.set(point.latitude, point.longitude)

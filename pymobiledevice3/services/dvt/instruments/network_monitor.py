@@ -70,6 +70,7 @@ class NetworkMonitor:
     IDENTIFIER = 'com.apple.instruments.server.services.networking'
 
     def __init__(self, dvt):
+        self.logger = logging.getLogger(__name__)
         self._channel = dvt.make_channel(self.IDENTIFIER)
 
     def __enter__(self):
@@ -97,5 +98,5 @@ class NetworkMonitor:
             elif message[0] == MESSAGE_TYPE_CONNECTION_UPDATE:
                 event = ConnectionUpdateEvent(*message[1])
             else:
-                logging.warning(f'unsupported event type: {message[0]}')
+                self.logger.warning(f'unsupported event type: {message[0]}')
             yield event

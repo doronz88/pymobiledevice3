@@ -6,7 +6,7 @@ from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.springboard import SpringBoardServicesService
 
 SHELL_USAGE = '''
-Use `service` to access the service features 
+Use `service` to access the service features
 '''
 
 
