@@ -1,10 +1,9 @@
-from datetime import datetime
 import pathlib
+from datetime import datetime
 
 import pytest
-
-from pymobiledevice3.services.afc import AfcService, afc_error_t
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError
+from pymobiledevice3.services.afc import AfcService, afc_error_t, MAXIMUM_READ_SIZE
 
 TEST_FILENAME = 'test'
 TEST_FOLDER_NAME = 'test_folder'
@@ -321,3 +320,10 @@ def test_dirlist(afc: AfcService):
         assert 'test_a/test_b/test_c/test_d' not in dirlist
     finally:
         afc.rm('test_a')
+
+
+def test_push_pull_bigger_than_max_chunk(afc: AfcService):
+    contents = b'x' * MAXIMUM_READ_SIZE * 2
+    afc.set_file_contents('test', contents)
+    assert contents == afc.get_file_contents('test')
+    afc.rm('test')

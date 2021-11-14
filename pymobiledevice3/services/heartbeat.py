@@ -6,6 +6,9 @@ from pymobiledevice3.lockdown import LockdownClient
 
 
 class HeartbeatService(object):
+    """
+    Use to keep an active connection with lockdowd
+    """
     SERVICE_NAME = 'com.apple.mobile.heartbeat'
 
     def __init__(self, lockdown: LockdownClient):

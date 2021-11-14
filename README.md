@@ -1,4 +1,3 @@
-
 [![Python application](https://github.com/doronz88/pymobiledevice3/workflows/Python%20application/badge.svg)](https://github.com/doronz88/pymobiledevice3/actions/workflows/python-app.yml "Python application action")
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
 [![Downloads](https://static.pepy.tech/personalized-badge/pymobiledevice3?period=total&units=none&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/pymobiledevice3)
@@ -9,17 +8,15 @@
     * [Lower iOS versions (<13)](#lower-ios-versions-13)
 - [Usage](#usage)
     * [Example](#example)
+- [Lockdown services](#lockdown-services)
+    * [Implemented services](#implemented-services)
+    * [Un-implemented services](#un-implemented-services)
 - [The bits and bytes](#the-bits-and-bytes)
     * [Sending your own messages](#sending-your-own-messages)
         + [Lockdown messages](#lockdown-messages)
         + [Instruments messages](#instruments-messages)
-    * [Lockdown services](#lockdown-services)
-        + [com.apple.instruments.remoteserver.DVTSecureSocketProxy](#comappleinstrumentsremoteserverdvtsecuresocketproxy)
-        + [com.apple.os_trace_relay](#comappleos_trace_relay)
-        + [com.apple.mobile.diagnostics_relay](#comapplemobilediagnostics_relay)
-        + [com.apple.mobile.file_relay](#comapplemobilefile_relay)
-        + [com.apple.pcapd](#comapplepcapd)
 - [Contributing](#contributing)
+-
 
 # Description
 
@@ -141,116 +138,88 @@ https://terminalizer.com/view/18920b405193
 
 # Lockdown services
 
-Support | Service | Description
---------|---------|----------------------
-DONE | `com.apple.mobile.heartbeat` | Just a ping to `lockdownd` service
-DONE |  `com.apple.mobileactivationd` | Activation services
-DONE |  `com.apple.afc` | File access for `/var/mobile/Media`
-DONE | `com.apple.crashreportcopymobile` | File access for `/var/mobile/Library/Logs/CrashReports`
-DONE | `com.apple.pcapd` | Sniff device's network traffic
-DONE | `com.apple.syslog_relay` | Just streams syslog lines as raw strings
-DONE | `com.apple.os_trace_relay` | More extensive syslog monitoring
-DONE | `com.apple.mobile.diagnostics_relay` | General diagnostic tools
-DONE | `com.apple.mobile.notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()`
-DONE | `com.apple.crashreportmover` | Just trigger `crash_mover` to move all crash reports into crash directory
-DONE | `com.apple.mobile.MCInstall` | Profile management
-DONE | `com.apple.misagent` | Provisioning Profiles management
-DONE | `com.apple.companion_proxy` | Companion features (watches and etc.)
-DONE | `com.apple.mobilebackup2` | Local backup management
-DONE | `com.apple.mobile.assertion_agent` | Create power assertion to prevent different kinds of sleep
-DONE | `com.apple.springboardservices` | Icon related
-DONE | `com.apple.mobile.mobile_image_mounter` | Image mounter service (used for DeveloperDiskImage mounting)
-DONE | `com.apple.mobile.house_arrest` | Get AFC utils (file management per application bundle)
-DONE | `com.apple.mobile.installation_proxy`|  Application management
-DONE | `com.apple.instruments.remoteserver` | Developer instrumentation service, iOS<14  (DeveloperDiskImage)
-DONE | `com.apple.instruments.remoteserver.DVTSecureSocketProxy` | Developer instrumentation service, iOS>=14  (DeveloperDiskImage)
-DONE | `com.apple.mobile.screenshotr` | Take screenshot into a PNG format (DeveloperDiskImage)
-DONE | `com.apple.accessibility.axAuditDaemon.remoteserver` | Accessibility features (DeveloperDiskImage)
-DONE | `com.apple.dt.simulatelocation` | Allows to simulate locations (DeveloperDiskImage)
-DONE | `com.apple.dt.fetchsymbols` | Allows fetching of `dyld` and dyld shared cache files (DeveloperDiskImage)
-Not yet | `com.apple.idamd` | Allows settings the IDAM configuration (whatever that means...)
-Not yet | `com.apple.atc` | AirTraffic related
-Not yet | `com.apple.ait.aitd` | AirTraffic related
-Not yet | `com.apple.mobile.file_relay` | File access for iOS <= 8
-Not yet | `com.apple.mobile.insecure_notification_proxy` | API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
-Not yet | `com.apple.mobilesync` |
-Not yet | `com.apple.purpletestr` |
-Not yet | `com.apple.webinspector` | Used to debug WebViews
+## Implemented services
 
-## `com.apple.instruments.remoteserver.DVTSecureSocketProxy`
+This is the list of all the services from `lockdownd` which we reversed and implemented API wrappers for. A click on
+each will lead to each one's implementation, where you can learn more about.
 
-Exports several ObjC objects and allows calling their respective selectors.
-The `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` service reads the
-configuration stored from `[[NSUserDefaults standardUserDefaults] boolForKey:@"DTXConnectionTracer"]`
-If the value is true, then `/tmp/DTServiceHub[PID].DTXConnection.RANDOM.log` is created and can be used to debug the
-transport protocol.
+* [`com.apple.mobile.heartbeat`](pymobiledevice3/services/heartbeat.py)
+    * Just a ping to `lockdownd` service.
+    * Used to keep an active connection with `lockdownd`
+* [`com.apple.mobileactivationd`](pymobiledevice3/services/mobile_activation.py)
+    * Activation services
+* [`com.apple.afc`](pymobiledevice3/services/afc.py)
+    * File access for `/var/mobile/Media`
+    * Based on afcd's protocol
+* [`com.apple.crashreportcopymobile`](pymobiledevice3/services/crash_reports.py)
+    * File access for `/var/mobile/Library/Logs/CrashReports`
+    * Based on afcd's protocol
+* [`com.apple.pcapd`](pymobiledevice3/services/pcapd.py)
+    * Sniff device's network traffic
+* [`com.apple.syslog_relay`](pymobiledevice3/services/syslog.py)
+    * Just streams syslog lines as raw strings
+    * For a more robust structural parsing, it's better to access the `com.apple.os_trace_relay` relay.
+* [`com.apple.os_trace_relay`](pymobiledevice3/services/os_trace.py)
+    * More extensive syslog monitoring
+* [`com.apple.mobile.diagnostics_relay`](pymobiledevice3/services/diagnostics.py)
+    * General diagnostic tools
+* [`com.apple.mobile.notification_proxy`](pymobiledevice3/services/notification_proxy.py)
+    * API wrapper for `notify_post()` & `notify_register_dispatch()`
+* [`com.apple.crashreportmover`](pymobiledevice3/services/crash_reports.py)
+    * Just trigger `crash_mover` to move all crash reports into crash directory
+* [`com.apple.mobile.MCInstall`](pymobiledevice3/services/mobile_config.py)
+    * Profile management (MDM)
+* [`com.apple.misagent`](pymobiledevice3/services/misagent.py)
+    * Provisioning Profiles management
+* [`com.apple.companion_proxy`](pymobiledevice3/services/companion.py)
+    * Companion features (watches and etc.)
+* [`com.apple.mobilebackup2`](pymobiledevice3/services/mobilebackup2.py)
+    * Local backup management
+* [`com.apple.mobile.assertion_agent`](pymobiledevice3/services/power_assertion.py)
+    * Create power assertion to prevent different kinds of sleep
+* [`com.apple.springboardservices`](pymobiledevice3/services/springboard.py)
+    * Play with device's button layout
+* [`com.apple.mobile.mobile_image_mounter`](pymobiledevice3/services/mobile_image_mounter.py)
+    * Image mounter service (used for DeveloperDiskImage mounting)
+* [`com.apple.mobile.house_arrest`](pymobiledevice3/services/house_arrest.py)
+    * Get AFC utils (file management per application bundle)
+* [`com.apple.mobile.installation_proxy`](pymobiledevice3/services/installation_proxy.py)
+    * Application management
+* [`com.apple.instruments.remoteserver`](pymobiledevice3/services/remote_server.py)
+    * Developer instrumentation service, iOS<14  (DeveloperDiskImage)
+* [`com.apple.instruments.remoteserver.DVTSecureSocketProxy`](pymobiledevice3/services/remote_server.py)
+    * Developer instrumentation service, iOS>=14  (DeveloperDiskImage)
+* [`com.apple.mobile.screenshotr`](pymobiledevice3/services/screenshot.py)
+    * Take screenshot into a PNG format (DeveloperDiskImage)
+* [`com.apple.accessibility.axAuditDaemon.remoteserver`](pymobiledevice3/services/accessibilityaudit.py)
+    * Accessibility features (DeveloperDiskImage)
+* [`com.apple.dt.simulatelocation`](pymobiledevice3/services/simulate_location.py)
+    * Allows to simulate locations (DeveloperDiskImage)
+* [`com.apple.dt.fetchsymbols`](pymobiledevice3/services/dtfetchsymbols.py)
+    * Allows fetching of `dyld` and dyld shared cache files (DeveloperDiskImage)
 
-For example:
+## Un-implemented services
 
-```
-root@iPhone (/var/root)# tail -f /tmp/DTServiceHub[369].DTXConnection.qNjM2U.log
-170.887982 x4 resuming [c0]: <DTXConnection 0x100d20670 : x4>
-170.889120 x4   sent   [c0]: < DTXMessage 0x100d52b10 : i2.0 c0 dispatch:[_notifyOfPublishedCapabilities:<NSDictionary 0x100d0e1b0 | 92 key/value pairs>] >
-170.889547 x4 received [c0]: < DTXMessage 0x100d0a550 : i1.0 c0 dispatch:[_notifyOfPublishedCapabilities:<NSDictionary 0x100d16a40 | 2 key/value pairs>] >
-170.892101 x4 received [c0]: < DTXMessage 0x100d0a550 : i3.0e c0 dispatch:[_requestChannelWithCode:[1]identifier :"com.apple.instruments.server.services.deviceinfo"] >
-170.892238 x4   sent   [c0]: < DTXMessage 0x100d61830 : i3.1 c0 >
-170.892973 x4 received [c1f]: < DTXMessage 0x100d0a550 : i4.0e c1 dispatch:[runningProcesses] >
-171.204957 x4   sent   [c1f]: < DTXMessage 0x100c557a0 : i4.1 c1 object:(__NSArrayM*)<NSArray 0x100c199d0 | 245 objects> { <NSDictionary 0x100c167c0 | 5 key/value pairs>, <NSDictionary 0x100d17970 | 5 key/value pairs>, <NSDictionary 0x100d17f40 | 5 key/value pairs>, <NSDictionary 0x100d61750 | 5 key/value pairs>, <NSDictionary 0x100c16760 | 5 key/value pairs>, ...  } >
-171.213326 x4 received [c0]: < DTXMessage : kDTXInterruptionMessage >
-171.213424 x4  handler [c0]: < DTXMessage : i1 kDTXInterruptionMessage >
-171.213477 x4 received [c1f]: < DTXMessage : kDTXInterruptionMessage >
-```
+This is the list of services we haven't dedicated time in implementing. If you feel the need to use one of them or any
+other that is not listed in here, feel free
+to [create us an issue request](https://github.com/doronz88/pymobiledevice3/issues/new?assignees=&labels=&template=feature_request.md&title=)
+.
 
-For editing the configuration we can simply add the respected key into:
-`/var/mobile/Library/Preferences/.GlobalPreferences.plist` and kill `cfprefsd`
-
-The valid selectors for triggering can be found using the following Frida script the same way Troy Bowman used for
-iterating all classes which implement the protocol `DTXAllowedRPC`:
-
-```shell
-frida -U DTServiceHub
-```
-
-```javascript
-for (var name in ObjC.protocols) {
-    var protocol = ObjC.protocols[name]
-    if ('DTXAllowedRPC' in protocol.protocols) {
-        console.log('@protocol', name)
-        console.log('  ' + Object.keys(protocol.methods).join('\n  '))
-    }
-}
-```
-
-The complete list for the relevant APIs can be found here:
-
-* [14.2](./DTServices-14.2.txt)
-* [14.5](./DTServices-14.5.txt)
-
-## `com.apple.os_trace_relay`
-
-Provides API for the following operations:
-
-* Show process list (process name and pid)
-* Stream syslog lines in binary form with optional filtering by pid.
-* Get old stored syslog archive in PAX format (can be extracted using `pax -r < filename`).
-    * Archive contain the contents are the `/var/db/diagnostics` directory
-
-## `com.apple.mobile.diagnostics_relay`
-
-Provides an API to:
-
-* Query MobileGestalt & IORegistry keys.
-* Reboot, shutdown or put the device in sleep mode.
-
-## `com.apple.mobile.file_relay`
-
-On older iOS versions, this was the main relay used for file operations, which was later replaced with AFC.
-
-## `com.apple.pcapd`
-
-Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from an iOS
-device. On Mac OSX the virtual interface can be enabled with the rvictl command. This script allows to use this service
-on other systems.
+* `com.apple.idamd`
+    * Allows settings the IDAM configuration (whatever that means...)
+* `com.apple.atc`
+    * AirTraffic related
+* `com.apple.ait.aitd`
+    * AirTraffic related
+* `com.apple.mobile.file_relay`
+    * On older iOS versions (iOS <= 8), this was the main relay used for file operations, which was later replaced with
+      AFC.
+* `com.apple.mobile.insecure_notification_proxy`
+    * API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
+* `com.apple.mobilesync`
+* `com.apple.purpletestr`
+* `com.apple.webinspector`
+    * Used to debug WebViews
 
 # The bits and bytes
 

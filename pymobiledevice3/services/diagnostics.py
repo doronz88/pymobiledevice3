@@ -98,6 +98,11 @@ MobileGestaltKeys = ['BasebandKeyHashInformation',
 
 
 class DiagnosticsService(object):
+    """
+    Provides an API to:
+    * Query MobileGestalt & IORegistry keys.
+    * Reboot, shutdown or put the device in sleep mode.
+    """
     SERVICE_NAME_NEW = 'com.apple.mobile.diagnostics_relay'
     SERVICE_NAME_OLD = 'com.apple.iosdiagnostics.relay'
 
