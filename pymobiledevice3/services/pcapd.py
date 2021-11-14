@@ -319,6 +319,11 @@ device_packet_struct = Struct(
 
 
 class PcapdService:
+    """
+    Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from
+    an iOS device. On macOS, the virtual interface can be enabled with the rvictl command. This script allows to use
+    this service on other systems.
+    """
     SERVICE_NAME = 'com.apple.pcapd'
 
     def __init__(self, lockdown: LockdownClient):

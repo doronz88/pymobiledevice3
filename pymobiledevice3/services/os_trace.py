@@ -62,6 +62,13 @@ syslog_t = Struct(
 
 
 class OsTraceService(object):
+    """
+    Provides API for the following operations:
+    * Show process list (process name and pid)
+    * Stream syslog lines in binary form with optional filtering by pid.
+    * Get old stored syslog archive in PAX format (can be extracted using `pax -r < filename`).
+        * Archive contain the contents are the `/var/db/diagnostics` directory
+    """
     SERVICE_NAME = 'com.apple.os_trace_relay'
 
     def __init__(self, lockdown: LockdownClient):
