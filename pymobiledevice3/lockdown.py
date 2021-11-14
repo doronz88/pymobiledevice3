@@ -152,7 +152,7 @@ class LockdownClient(object):
             return None
 
     def get_local_pairing_record(self):
-        self.logger.warning('Looking for pymobiledevice3 pairing record')
+        self.logger.debug('Looking for pymobiledevice3 pairing record')
         path = HOMEFOLDER / f'{self.identifier}.plist'
         if not path.exists():
             self.logger.error(f'No pymobiledevice3 pairing record found for device {self.identifier}')
