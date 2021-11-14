@@ -8,6 +8,7 @@ from pymobiledevice3.restore.tss import TSSResponse
 
 class Component:
     def __init__(self, build_identity, name: str, tss: TSSResponse = None, data: bytes = None, path: str = None):
+        self.logger = logging.getLogger(__name__)
         self._tss = tss
         self.build_identity = build_identity
         self.name = name
@@ -24,7 +25,7 @@ class Component:
             path = self._tss.get_path_by_entry(self.name)
 
             if path is None:
-                logging.debug(f'NOTE: No path for component {self.name} in TSS, will fetch from build_identity')
+                self.logger.debug(f'NOTE: No path for component {self.name} in TSS, will fetch from build_identity')
 
         if path is None:
             path = self.build_identity.get_component_path(self.name)

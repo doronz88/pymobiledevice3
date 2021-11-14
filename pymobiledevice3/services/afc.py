@@ -2,12 +2,12 @@
 
 import logging
 import os
+import pathlib
 import posixpath
 import shlex
 import struct
 import sys
 import tempfile
-import pathlib
 from datetime import datetime
 
 import hexdump
@@ -503,20 +503,6 @@ class AfcService:
             raise exception(f'opcode: {opcode} failed with status: {status}', status)
 
         return data
-
-
-def safe_cmd(f):
-    def safe_f(self, *args, **kwargs):
-        try:
-            return f(self, *args, **kwargs)
-        except AfcException as e:
-            logging.error(f'{e}')
-        except KeyboardInterrupt:
-            # reconnect to service
-            self.afc = AfcService(self.lockdown, service_name=self.service_name)
-            logging.warning('user aborted')
-
-    return safe_f
 
 
 pwd_parser = Cmd2ArgumentParser(description='print working directory')

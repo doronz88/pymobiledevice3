@@ -55,6 +55,8 @@ IBOOT_FLAG_EFFECTIVE_PRODUCTION_MODE = 1 << 4
 
 APPLE_VENDOR_ID = 0x05AC
 
+logger = logging.getLogger(__name__)
+
 
 class IRecv:
     def __init__(self, ecid=None, timeout=0xffffffff, is_recovery=None):
@@ -107,12 +109,12 @@ class IRecv:
         return self.ctrl_transfer(0xa1, 3, data_or_wLength=b'\x00' * 6)[4]
 
     def set_interface_altsetting(self, interface=None, alternate_setting=None):
-        logging.debug(f'set_interface_altsetting: {interface} {alternate_setting}')
+        logger.debug(f'set_interface_altsetting: {interface} {alternate_setting}')
         if interface == 1:
             self._device.set_interface_altsetting(interface=interface, alternate_setting=alternate_setting)
 
     def set_configuration(self, configuration=None):
-        logging.debug(f'set_configuration: {configuration}')
+        logger.debug(f'set_configuration: {configuration}')
         if self._device.get_active_configuration().bConfigurationValue != configuration:
             self._device.set_configuration(configuration=configuration)
 
@@ -128,7 +130,7 @@ class IRecv:
         else:
             response = self.ctrl_transfer(0xa1, 5, data_or_wLength=1)
             state = response[0]
-            logging.debug(f'irecv state: {state}')
+            logger.debug(f'irecv state: {state}')
             if state == 2:
                 # DFU IDLE
                 pass
@@ -175,7 +177,7 @@ class IRecv:
                     self.ctrl_transfer(0x21, 1, wValue=packet_index, wIndex=0, data_or_wLength=chunk)
 
         if not self.mode.is_recovery:
-            logging.debug(f'waiting for status == 5')
+            logger.debug('waiting for status == 5')
             while self.status != 5:
                 time.sleep(1)
 
@@ -189,7 +191,7 @@ class IRecv:
 
     def reset(self):
         try:
-            logging.debug('resetting usb device')
+            logger.debug('resetting usb device')
             self._device.reset()
         except USBError:
             pass

@@ -378,8 +378,8 @@ def test_push_after_cd_recursive_current(afc_shell, tmp_path: Path):
     try:
         out = afc_shell.app_cmd(f'push {source_file} .')
         assert not out.stderr
-        assert afc_shell.afc.get_file_contents(f'temp1/temp2/temp3/temp.txt') == b'data'
-        assert afc_shell.afc.get_file_contents(f'temp1/temp2/temp3/temp4/temp1.txt') == b'data1'
+        assert afc_shell.afc.get_file_contents('temp1/temp2/temp3/temp.txt') == b'data'
+        assert afc_shell.afc.get_file_contents('temp1/temp2/temp3/temp4/temp1.txt') == b'data1'
     finally:
         afc_shell.afc.rm('temp1')
 
@@ -412,8 +412,8 @@ def test_push_after_cd_recursive_with_slash_current(afc_shell, tmp_path: Path):
     try:
         out = afc_shell.app_cmd(f'push {source_file}/ .')
         assert not out.stderr
-        assert afc_shell.afc.get_file_contents(f'temp1/temp3/temp.txt') == b'data'
-        assert afc_shell.afc.get_file_contents(f'temp1/temp3/temp4/temp1.txt') == b'data1'
+        assert afc_shell.afc.get_file_contents('temp1/temp3/temp.txt') == b'data'
+        assert afc_shell.afc.get_file_contents('temp1/temp3/temp4/temp1.txt') == b'data1'
     finally:
         afc_shell.afc.rm('temp1')
 
@@ -449,7 +449,7 @@ def test_push_after_cd_recursive_with_prefix(afc_shell, tmp_path: Path):
     try:
         out = afc_shell.app_cmd(f'push {source_file} temp1a/temp1b')
         assert not out.stderr
-        assert afc_shell.afc.get_file_contents(f'temp1/temp1a/temp1b/temp2/temp3/temp.txt') == b'data'
-        assert afc_shell.afc.get_file_contents(f'temp1/temp1a/temp1b/temp2/temp3/temp4/temp1.txt') == b'data1'
+        assert afc_shell.afc.get_file_contents('temp1/temp1a/temp1b/temp2/temp3/temp.txt') == b'data'
+        assert afc_shell.afc.get_file_contents('temp1/temp1a/temp1b/temp2/temp3/temp4/temp1.txt') == b'data1'
     finally:
         afc_shell.afc.rm('temp1')

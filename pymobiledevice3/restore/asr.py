@@ -19,6 +19,8 @@ ASR_PAYLOAD_PACKET_SIZE = 1450
 ASR_PAYLOAD_CHUNK_SIZE = 0x20000
 ASR_CHECKSUM_CHUNK_SIZE = ASR_PAYLOAD_CHUNK_SIZE
 
+logger = logging.getLogger(__name__)
+
 
 class ASRClient(object):
     SERVICE_PORT = ASR_PORT
@@ -33,16 +35,15 @@ class ASRClient(object):
             if udid not in available_udids:
                 raise ConnectionFailedError()
 
-        logging.debug('connecting to ASR')
+        logger.debug('connecting to ASR')
 
-        self.logger = logging.getLogger(__name__)
         self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
 
-        logging.debug('ASR connected')
+        logger.debug('ASR connected')
 
         # receive Initiate command message
         data = self.recv_plist()
-        logging.debug(f'got command: {data}')
+        logger.debug(f'got command: {data}')
 
         command = data.get('Command')
         if command != 'Initiate':

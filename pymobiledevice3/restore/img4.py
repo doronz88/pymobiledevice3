@@ -2,6 +2,8 @@ import logging
 
 import asn1
 
+logger = logging.getLogger(__name__)
+
 
 def img4_get_component_tag(compname):
     component_tags = {
@@ -106,7 +108,7 @@ def img4_get_component_tag(compname):
 
 
 def stitch_component(name, data, blob):
-    logging.info(f'Personalizing IMG4 component {name}...')
+    logger.info(f'Personalizing IMG4 component {name}...')
 
     # first we need check if we have to change the tag for the given component
     decoder = asn1.Decoder()
@@ -128,9 +130,9 @@ def stitch_component(name, data, blob):
         'Ap,DCP2': b'dcp2',
     }
 
-    logging.debug(f'tag: {tag} {value}')
+    logger.debug(f'tag: {tag} {value}')
     if name in component_name_tag:
-        logging.debug('Tag found')
+        logger.debug('Tag found')
         data = data.replace(value.encode(), component_name_tag[name], 1)
 
     # create element header for the "IMG4" magic

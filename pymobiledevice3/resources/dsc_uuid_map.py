@@ -15,6 +15,8 @@ PARTITIONS = ('/System', '/usr', '/Applications', '/private')
 DYLD_UUID_OFFSET = 0x58
 UUID_SIZE = 0x10
 
+logger = logging.getLogger(__name__)
+
 
 def get_dsc_map(dsc_uuid):
     with open(MAP_FILENAME, 'r') as f:
@@ -54,9 +56,9 @@ def main(dsc, dyld_uuid, force):
     dsc_uuid = str(UUID(bytes=dsc[DYLD_UUID_OFFSET:DYLD_UUID_OFFSET + UUID_SIZE]))
 
     if dsc_uuid in uuid_map:
-        logging.warning(f'dsc {dsc_uuid} is already found in dsc_uuid_map')
+        logger.warning(f'dsc {dsc_uuid} is already found in dsc_uuid_map')
         if not force:
-            logging.info('exiting. use --force to force update')
+            logger.info('exiting. use --force to force update')
             return
     else:
         uuid_map[dsc_uuid] = {str(dyld_uuid): '/usr/lib/dyld'}

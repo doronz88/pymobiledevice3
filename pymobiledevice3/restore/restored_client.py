@@ -13,8 +13,8 @@ class RestoredClient(object):
     SERVICE_PORT = 62078
 
     def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME):
-        udid = self._get_or_verify_udid(udid)
         self.logger = logging.getLogger(__name__)
+        udid = self._get_or_verify_udid(udid)
         self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
         self.label = client_name
         self.query_type = self.service.send_recv_plist({'Request': 'QueryType'})
@@ -48,7 +48,7 @@ class RestoredClient(object):
         if opts is not None:
             req['RestoreOptions'] = opts.to_dict()
 
-        logging.debug(f'start_restore request: {req}')
+        self.logger.debug(f'start_restore request: {req}')
 
         return self.service.send_plist(req)
 

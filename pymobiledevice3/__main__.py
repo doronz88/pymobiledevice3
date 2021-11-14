@@ -34,6 +34,8 @@ logging.getLogger('parso.cache.pickle').disabled = True
 logging.getLogger('parso.python.diff').disabled = True
 logging.getLogger('humanfriendly.prompts').disabled = True
 
+logger = logging.getLogger(__name__)
+
 
 def cli():
     cli_commands = click.CommandCollection(sources=[
@@ -45,9 +47,9 @@ def cli():
     try:
         cli_commands()
     except NoDeviceConnectedError:
-        logging.error('Device is not connected')
+        logger.error('Device is not connected')
     except ConnectionAbortedError:
-        logging.error('Device was disconnected')
+        logger.error('Device was disconnected')
 
 
 if __name__ == '__main__':

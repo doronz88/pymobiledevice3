@@ -1,7 +1,8 @@
-
 # extracted from ac2
 import logging
 import uuid
+
+logger = logging.getLogger(__name__)
 
 SUPPORTED_DATA_TYPES = {
     'BasebandBootData': False,
@@ -114,7 +115,7 @@ class RestoreOptions:
         if sep is not None:
             required_capacity = sep.get('RequiredCapacity')
             if required_capacity:
-                logging.debug(f'TZ0RequiredCapacity: {required_capacity}')
+                logger.debug(f'TZ0RequiredCapacity: {required_capacity}')
                 self.TZ0RequiredCapacity = required_capacity
 
         if restore_boot_args is not None:

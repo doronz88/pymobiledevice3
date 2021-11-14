@@ -1,9 +1,12 @@
-import click
 import logging
+
+import click
 
 from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.os_trace import OsTraceService
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -33,4 +36,4 @@ def processes_pgrep(lockdown: LockdownClient, expression):
     for pid, process_info in processes_list.items():
         process_name = process_info.get('ProcessName')
         if expression in process_name:
-            logging.info(f'{pid} {process_name}')
+            logger.info(f'{pid} {process_name}')

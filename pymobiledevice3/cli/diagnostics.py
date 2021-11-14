@@ -7,6 +7,8 @@ from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.diagnostics import DiagnosticsService
 
+logger = logging.getLogger(__name__)
+
 
 @click.group()
 def cli():
@@ -88,5 +90,5 @@ def diagnostics_battery_monitor(lockdown: LockdownClient):
             'IsCharging': raw_info.get('IsCharging'),
             'CurrentCapacity': raw_info.get('CurrentCapacity'),
         }
-        logging.info(info)
+        logger.info(info)
         time.sleep(1)
