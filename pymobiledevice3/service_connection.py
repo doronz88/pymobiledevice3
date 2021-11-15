@@ -6,8 +6,9 @@ from re import sub
 
 import IPython
 from pygments import highlight, lexers, formatters
+
 from pymobiledevice3 import usbmux
-from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception, StartServiceError
+from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception
 
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
@@ -110,18 +111,12 @@ class ServiceConnection(object):
         return self.sendall(message + payload)
 
     def ssl_start(self, keyfile, certfile):
-        protocols = [ssl.PROTOCOL_TLSv1_2, ssl.PROTOCOL_TLSv1_1, ssl.PROTOCOL_TLSv1]
-        for protocol in protocols:
-            # try most recent protocol first, then fallback to each older for each one that fails
-            context = ssl.SSLContext(protocol)
-            context.load_cert_chain(certfile, keyfile)
-            try:
-                self.socket = context.wrap_socket(self.socket)
-                break
-            except ssl.SSLError:
-                pass
-        else:
-            raise StartServiceError('failed to find correct protocol version')
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.set_ciphers('AES256-SHA')
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        context.load_cert_chain(certfile, keyfile)
+        self.socket = context.wrap_socket(self.socket)
 
     def shell(self):
         IPython.embed(
