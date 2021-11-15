@@ -6,9 +6,9 @@ import plistlib
 import sys
 import uuid
 import datetime
-from packaging.version import Version
 from pathlib import Path
 
+from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import *
