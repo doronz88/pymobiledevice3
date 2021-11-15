@@ -1,10 +1,14 @@
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from cmd2_ext_test import ExternalTestMixin
 from cmd2 import CommandResult
+import gnureadline
 
 from pymobiledevice3.services.afc import AfcShell
+
+SINGLE_PARAM_COMMANDS = ['edit', 'cd', 'ls', 'walk', 'cat', 'rm', 'head', 'hexdump', 'stat']
 
 
 class AfcShellTester(ExternalTestMixin, AfcShell):
@@ -13,10 +17,121 @@ class AfcShellTester(ExternalTestMixin, AfcShell):
         super().__init__(*args, **kwargs)
 
 
-@pytest.fixture
+@pytest.fixture(scope='function')
 def afc_shell(lockdown):
     app = AfcShellTester(lockdown)
-    yield app
+    try:
+        yield app
+    finally:
+        app.afc.service.close()
+
+
+def get_completions(line, part, app):
+    def get_line():
+        return line
+
+    def get_begidx():
+        return len(line) - len(part)
+
+    def get_endidx():
+        return len(line)
+
+    with mock.patch.object(gnureadline, 'get_line_buffer', get_line):
+        with mock.patch.object(gnureadline, 'get_begidx', get_begidx):
+            with mock.patch.object(gnureadline, 'get_endidx', get_endidx):
+                app.complete(part, 0)
+
+    return app.completion_matches
+
+
+@pytest.mark.parametrize('command', SINGLE_PARAM_COMMANDS)
+def test_completion(command, afc_shell):
+    filenames = get_completions(f'{command} D', 'D', afc_shell)
+    assert 'DCIM' in filenames
+    assert 'Downloads' in filenames
+    assert 'Books' not in filenames
+
+
+@pytest.mark.parametrize('command', SINGLE_PARAM_COMMANDS)
+def test_completion_empty(command, afc_shell):
+    filenames = get_completions(f'{command} ', '', afc_shell)
+    assert 'DCIM' in filenames
+    assert 'Downloads' in filenames
+    assert 'Books' in filenames
+
+
+@pytest.mark.parametrize('command', SINGLE_PARAM_COMMANDS)
+def test_completion_with_space(command, afc_shell):
+    afc_shell.afc.makedirs('aa bb cc/dd ee ff')
+    try:
+        assert ['"aa bb cc" '] == get_completions(f'{command} aa ', 'aa ', afc_shell)
+        assert ['aa bb cc" '] == get_completions(f'{command} "aa ', 'aa ', afc_shell)
+        assert ['"aa bb cc/dd ee ff" '] == get_completions(f'{command} aa bb cc/dd ee', 'aa bb cc/dd ee', afc_shell)
+    finally:
+        afc_shell.afc.rm('aa bb cc')
+
+
+@pytest.mark.parametrize('command', SINGLE_PARAM_COMMANDS)
+def test_in_folder_completion(command, afc_shell):
+    afc_shell.afc.makedirs('temp1/temp2')
+    afc_shell.afc.makedirs('temp1/temp4')
+    try:
+        assert ['temp1 '] == get_completions(f'{command} temp', 'temp', afc_shell)
+        assert ['temp1/temp2', 'temp1/temp4'] == get_completions(f'{command} temp1/', 'temp1/', afc_shell)
+        assert ['temp1/temp2', 'temp1/temp4'] == get_completions(f'{command} temp1/temp', 'temp1/temp', afc_shell)
+    finally:
+        afc_shell.afc.rm('temp1')
+
+
+@pytest.mark.parametrize('command', SINGLE_PARAM_COMMANDS)
+def test_completion_after_cd(command, afc_shell):
+    afc_shell.afc.makedirs('temp1/temp2')
+    afc_shell.afc.makedirs('temp1/temp4')
+    afc_shell.app_cmd('cd temp1')
+    completions = get_completions(f'{command} temp', 'temp', afc_shell)
+    afc_shell.afc.rm('temp1')
+    assert ['temp2', 'temp4'] == completions
+
+
+@pytest.mark.parametrize('command', SINGLE_PARAM_COMMANDS)
+def test_not_over_completing(command, afc_shell):
+    assert not get_completions(f'{command} DCIM ', '', afc_shell)
+
+
+def test_mv_completion(afc_shell):
+    afc_shell.afc.makedirs('temp1')
+    afc_shell.afc.set_file_contents('temp1/temp.txt', b'data')
+    try:
+        assert get_completions('mv temp1/t', 'temp1/t', afc_shell) == ['temp1/temp.txt ']
+        assert get_completions('mv temp1/temp.txt tem', 'tem', afc_shell) == ['temp1 ']
+    finally:
+        afc_shell.afc.rm('temp1')
+
+
+def test_push_completion(afc_shell, tmp_path: Path):
+    (tmp_path / 'temp1.txt').write_text('hey1')
+    (tmp_path / 'temp2.txt').write_text('hey2')
+    assert get_completions(f'push {tmp_path}', str(tmp_path), afc_shell) == [f'{tmp_path} ']
+    assert get_completions(f'push {tmp_path}/', f'{tmp_path}/', afc_shell) == [f'{tmp_path}/temp1.txt',
+                                                                               f'{tmp_path}/temp2.txt']
+
+    second_completion = get_completions(f'push {tmp_path} D', 'D', afc_shell)
+    assert 'DCIM' in second_completion
+    assert 'Downloads' in second_completion
+    assert 'Books' not in second_completion
+
+
+def test_pull_completion(afc_shell, tmp_path: Path):
+    completions = get_completions('pull D', 'D', afc_shell)
+    assert 'DCIM' in completions
+    assert 'Downloads' in completions
+    assert 'Books' not in completions
+
+    (tmp_path / 'temp1.txt').write_text('hey1')
+    (tmp_path / 'temp2.txt').write_text('hey2')
+    assert get_completions(f'pull DCIM {tmp_path}', str(tmp_path), afc_shell) == [f'{tmp_path} ']
+    assert get_completions(f'pull DCIM {tmp_path}/', f'{tmp_path}/', afc_shell) == [f'{tmp_path}/temp1.txt',
+                                                                                    f'{tmp_path}/temp2.txt']
 
 
 def test_ls(afc_shell):
@@ -26,54 +141,6 @@ def test_ls(afc_shell):
     assert 'DCIM' in filenames
     assert 'Downloads' in filenames
     assert 'Books' in filenames
-
-
-def test_completion(afc_shell):
-    filenames = afc_shell._complete('D', '', 0, 0)
-    assert 'DCIM' in filenames
-    assert 'Downloads' in filenames
-    assert 'Books' not in filenames
-
-
-def test_completion_empty(afc_shell):
-    filenames = afc_shell._complete('', '', 0, 0)
-    assert 'DCIM' in filenames
-    assert 'Downloads' in filenames
-    assert 'Books' in filenames
-
-
-def test_completion_with_space(afc_shell):
-    afc_shell.afc.makedirs('aa bb cc/dd ee ff')
-    filenames_aa = afc_shell._complete('aa ', '', 0, 0)
-    filenames_ee = afc_shell._complete('aa bb cc/dd ee ', '', 0, 0)
-    afc_shell.afc.rm('aa bb cc')
-    assert 'aa bb cc' in filenames_aa
-    assert 'aa bb cc/dd ee ff' in filenames_ee
-
-
-def test_in_folder_completion(afc_shell):
-    afc_shell.afc.makedirs('temp1/temp2')
-    afc_shell.afc.makedirs('temp1/temp4')
-    filenames = afc_shell._complete('temp', '', 0, 0)
-    try:
-        assert 'temp1' in filenames
-        filenames = afc_shell._complete('temp1/temp', '', 0, 0)
-        assert 'temp1/temp2' in filenames
-        assert 'temp1/temp4' in filenames
-    finally:
-        afc_shell.afc.rm('temp1')
-
-
-def test_completion_after_cd(afc_shell):
-    afc_shell.afc.makedirs('temp1/temp2')
-    afc_shell.afc.makedirs('temp1/temp4')
-    afc_shell.app_cmd('cd temp1')
-    filenames = afc_shell._complete('temp', '', 0, 0)
-    try:
-        assert 'temp2' in filenames
-        assert 'temp4' in filenames
-    finally:
-        afc_shell.afc.rm('temp1')
 
 
 def test_pull_after_cd_single_file(afc_shell, tmp_path: Path):
