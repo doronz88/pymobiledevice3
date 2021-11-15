@@ -10,6 +10,8 @@ from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 source_option = click.option('--source', default='', help='The UDID of the source device.')
 password_option = click.option('-p', '--password', default='', help='Backup password.')
 backup_directory_arg = click.argument('backup-directory', type=click.Path(exists=True, file_okay=False))
+backup_directory_option = click.option('-b', '--backup-directory', type=click.Path(exists=True, file_okay=False),
+                                       default='.')
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +128,7 @@ def extract(lockdown: LockdownClient, domain_name, relative_path, backup_directo
 @backup2.command(cls=Command)
 @click.argument('mode', type=click.Choice(['ON', 'OFF']))
 @click.argument('password')
-@backup_directory_arg
+@backup_directory_option
 def encryption(lockdown: LockdownClient, backup_directory, mode, password):
     """
     Set backup encryption on / off.
@@ -149,7 +151,7 @@ def encryption(lockdown: LockdownClient, backup_directory, mode, password):
 @backup2.command(cls=Command)
 @click.argument('old-password')
 @click.argument('new-password')
-@backup_directory_arg
+@backup_directory_option
 def change_password(lockdown: LockdownClient, old_password, new_password, backup_directory):
     """
     Change the backup password.
