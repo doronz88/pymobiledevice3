@@ -2,7 +2,6 @@ import json
 import logging
 import posixpath
 from collections import namedtuple
-from pathlib import Path
 from typing import List, Optional
 
 import click
