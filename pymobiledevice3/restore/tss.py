@@ -12,7 +12,7 @@ from pymobiledevice3.utils import bytes_to_uint
 
 TSS_CONTROLLER_ACTION_URL = 'http://gs.apple.com/TSS/controller?action=2'
 
-TSS_CLIENT_VERSION_STRING = 'libauthinstall-776.60.1'
+TSS_CLIENT_VERSION_STRING = 'libauthinstall-850.0.2'
 
 logger = logging.getLogger(__name__)
 
