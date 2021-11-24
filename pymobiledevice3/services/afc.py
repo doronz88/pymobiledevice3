@@ -239,6 +239,10 @@ class AfcService:
         except AfcFileNotFoundError:
             return False
 
+    def wait_exists(self, filename):
+        while not self.exists(filename):
+            pass
+
     def _push_internal(self, local_path, remote_path, callback=None):
         if callback is not None:
             callback(local_path, remote_path)

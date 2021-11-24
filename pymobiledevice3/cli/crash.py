@@ -65,3 +65,12 @@ def crash_mover_watch(lockdown: LockdownClient, name, raw):
     """ watch for crash report generation """
     for crash_report in CrashReports(lockdown).watch(name=name, raw=raw):
         print(crash_report)
+
+
+@crash.command('sysdiagnose', cls=Command)
+@click.argument('out', type=click.Path(exists=False, dir_okay=False, file_okay=True))
+@click.option('-e', '--erase', is_flag=True, help='erase file after pulling')
+def crash_sysdiagnose(lockdown: LockdownClient, out, erase):
+    """ get a sysdiagnose archive from device (requires user interaction) """
+    print('Press Power+VolUp+VolDown for 0.215 seconds')
+    CrashReports(lockdown).get_new_sysdiagnose(out, erase=erase)
