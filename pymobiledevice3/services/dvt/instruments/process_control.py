@@ -1,3 +1,5 @@
+import typing
+
 from pymobiledevice3.services.remote_server import MessageAux
 
 
@@ -23,17 +25,20 @@ class ProcessControl:
         """
         self._channel.killPid_(MessageAux().append_obj(pid), expects_reply=False)
 
-    def launch(self, bundle_id: str, arguments=None, kill_existing: bool = True, start_suspended: bool = False) -> int:
+    def launch(self, bundle_id: str, arguments=None, kill_existing: bool = True, start_suspended: bool = False,
+               environment: typing.Mapping = None) -> int:
         """
         Launch a process.
         :param bundle_id: Bundle id of the process.
         :param list arguments: List of argument to pass to process.
         :param kill_existing: Whether to kill an existing instance of this process.
         :param start_suspended: Same as WaitForDebugger.
+        :param environment: Environment variables to pass to process.
         :return: PID of created process.
         """
         arguments = [] if arguments is None else arguments
-        args = MessageAux().append_obj('').append_obj(bundle_id).append_obj({}).append_obj(arguments).append_obj({
+        environment = {} if environment is None else environment
+        args = MessageAux().append_obj('').append_obj(bundle_id).append_obj(environment).append_obj(arguments).append_obj({
             'StartSuspendedKey': start_suspended,
             'KillExisting': kill_existing,
         })
