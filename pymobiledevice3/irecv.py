@@ -14,6 +14,8 @@ from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.irecv_devices import IRECV_DEVICES, IRecvDevice
 
 USB_TIMEOUT = 10000
+IRECV_TRANSFER_SIZE_RECOVERY = 0x2000
+IRECV_TRANSFER_SIZE_DFU = 0x800
 
 
 class Mode(Enum):
@@ -122,7 +124,7 @@ class IRecv:
         return self._device.ctrl_transfer(bmRequestType, bRequest, **kwargs)
 
     def send_buffer(self, buf: bytes):
-        packet_size = 0x8000 if self.mode.is_recovery else 0x800
+        packet_size = IRECV_TRANSFER_SIZE_RECOVERY if self.mode.is_recovery else IRECV_TRANSFER_SIZE_DFU
 
         # initiate transfer
         if self.mode.is_recovery:
