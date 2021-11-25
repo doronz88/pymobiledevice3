@@ -277,7 +277,7 @@ class CrashReports:
         :param out: filename
         :param erase: remove after pulling
         """
-        filename = None
+        sysdiagnose_filename = None
 
         for syslog_entry in OsTraceService(lockdown=self.lockdown).syslog():
             if (posixpath.basename(syslog_entry.filename) != 'sysdiagnose') or \
@@ -289,11 +289,12 @@ class CrashReports:
 
             if message.startswith('SDArchive: Successfully created tar at '):
                 self.logger.info('sysdiagnose creation has begun')
-
-            if message.startswith('Results written to '):
-                filename = message.split()[-1].replace('IN_PROGRESS_', '').replace(
-                    '/var/mobile/Library/Logs/CrashReporter/', '/')
+                for filename in self.ls('DiagnosticLogs/sysdiagnose'):
+                    # search for an IN_PROGRESS archive
+                    if 'IN_PROGRESS_' in filename and filename.endswith('.tar.gz'):
+                        sysdiagnose_filename = filename.replace('IN_PROGRESS_', '')
+                        break
                 break
 
-        self.afc.wait_exists(filename)
-        self.pull(out, entry=filename, erase=erase)
+        self.afc.wait_exists(sysdiagnose_filename)
+        self.pull(out, entry=sysdiagnose_filename, erase=erase)
