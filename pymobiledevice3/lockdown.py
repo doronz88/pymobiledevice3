@@ -41,14 +41,14 @@ class LockdownClient(object):
     DEFAULT_CLIENT_NAME = 'pyMobileDevice'
     SERVICE_PORT = 62078
 
-    def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME):
+    def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME, autopair=True):
         available_udids = list_devices()
         if udid is None:
             if len(available_udids) == 0:
                 raise NoDeviceConnectedError()
             udid = available_udids[0]
         else:
-            if udid not in available_udids:
+            if (udid not in available_udids) and (udid.replace('-', '') not in available_udids):
                 raise ConnectionFailedError()
 
         self.logger = logging.getLogger(__name__)
@@ -64,11 +64,12 @@ class LockdownClient(object):
             raise IncorrectModeError()
 
         self.all_values = self.get_value()
-        self.udid = self.all_values.get('UniqueDeviceID')
+        self.udid = self.all_values.get('UniqueDeviceID', udid)
         self.unique_chip_id = self.all_values.get('UniqueChipID')
         self.device_public_key = self.all_values.get('DevicePublicKey')
         self.ios_version = self.all_values.get('ProductVersion')
         self.identifier = self.udid
+
         if not self.identifier:
             if self.unique_chip_id:
                 self.identifier = '%x' % self.unique_chip_id
@@ -76,6 +77,12 @@ class LockdownClient(object):
                 raise PyMobileDevice3Exception('Could not get UDID or ECID, failing')
 
         if not self.validate_pairing():
+            # device is not paired
+
+            if not autopair:
+                # but pairing by default was not requested
+                return
+
             self.pair()
             if not self.validate_pairing():
                 raise FatalPairingError()
@@ -201,7 +208,7 @@ class LockdownClient(object):
     def pair(self):
         device_id = [d for d in usbmux.list_devices() if d.serial == self.udid][0].devid
         self.device_public_key = self.get_value('', 'DevicePublicKey')
-        if self.device_public_key == b'':
+        if not self.device_public_key:
             self.logger.error('Unable to retrieve DevicePublicKey')
             self.service.close()
             raise PairingError()

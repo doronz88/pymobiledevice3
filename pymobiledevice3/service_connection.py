@@ -36,7 +36,8 @@ class ServiceConnection(object):
     def create(udid, port):
         target_device = None
         while target_device is None:
-            matching_devices = [device for device in usbmux.list_devices() if device.serial == udid]
+            matching_devices = [device for device in usbmux.list_devices() if
+                                device.serial in (udid, udid.replace('-', ''))]
             if len(matching_devices) == 1:
                 target_device = matching_devices[0]
                 break
