@@ -234,7 +234,10 @@ class CrashReports:
         self.afc.pull(entry, out, callback=log)
 
         if erase:
-            self.clear()
+            if posixpath.normpath(entry) in ('.', '/'):
+                self.clear()
+            else:
+                self.afc.rm(entry, force=True)
 
     def flush(self):
         """ Trigger com.apple.crashreportmover to flush all products into CrashReports directory """
