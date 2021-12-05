@@ -6,7 +6,6 @@ from typing import List, Optional
 
 import click
 from cached_property import cached_property
-
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.os_trace import OsTraceService
@@ -235,7 +234,7 @@ class CrashReports:
         self.afc.pull(entry, out, callback=log)
 
         if erase:
-            self.afc.rm(entry)
+            self.clear()
 
     def flush(self):
         """ Trigger com.apple.crashreportmover to flush all products into CrashReports directory """
