@@ -291,6 +291,9 @@ class AfcService:
                 raise e
 
     def rm(self, filename, force=False):
+        if force and not self.exists(filename):
+            return
+
         if not self.isdir(filename):
             # single file
             self._rm_single(filename, force=force)

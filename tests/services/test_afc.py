@@ -38,6 +38,12 @@ def test_rm(afc):
     assert TEST_FILENAME not in filenames
 
 
+def test_rm_force_missing_file(afc):
+    with pytest.raises(AfcFileNotFoundError):
+        afc.rm(TEST_FILENAME)
+    afc.rm(TEST_FILENAME, force=True)
+
+
 @pytest.mark.parametrize('path', [
     'file_that_doesnt_exist.txt',
     'missingfolder/file_that_doesnt_exist.txt',
