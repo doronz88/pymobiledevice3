@@ -8,12 +8,17 @@ import shlex
 import struct
 import sys
 import tempfile
+import stat as stat_module
+from collections import namedtuple
 from datetime import datetime
 
 import hexdump
+from click.exceptions import Exit
 from cmd2 import Cmd, Cmd2ArgumentParser, with_argparser
 from construct import Struct, Const, Int64ul, Container, Enum, Tell, CString, GreedyRange
 from pygments import highlight, lexers, formatters
+from pygnuutils.ls import Ls, LsStub
+from pygnuutils.cli.ls import ls as ls_cli
 
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError
 from pymobiledevice3.lockdown import LockdownClient
@@ -21,6 +26,10 @@ from pymobiledevice3.utils import try_decode
 
 MAXIMUM_READ_SIZE = 1 * 1024 ** 2  # 1 MB
 MODE_MASK = 0o0000777
+
+StatResult = namedtuple('StatResult',
+                        ['st_mode', 'st_ino', 'st_dev', 'st_nlink', 'st_uid', 'st_gid', 'st_size', 'st_atime',
+                         'st_mtime', 'st_ctime', 'st_blocks', 'st_blksize', 'st_birthtime'])
 
 afc_opcode_t = Enum(Int64ul,
                     STATUS=0x00000001,
@@ -291,6 +300,9 @@ class AfcService:
                 raise e
 
     def rm(self, filename, force=False):
+        if force and not self.exists(filename):
+            return
+
         if not self.isdir(filename):
             # single file
             self._rm_single(filename, force=force)
@@ -336,6 +348,18 @@ class AfcService:
         stat['st_mtime'] = datetime.fromtimestamp(stat['st_mtime'] / (10 ** 9))
         stat['st_birthtime'] = datetime.fromtimestamp(stat['st_birthtime'] / (10 ** 9))
         return stat
+
+    def os_stat(self, path):
+        stat = self.stat(path)
+        mode = 0
+        for s_mode in ['S_IFDIR', 'S_IFCHR', 'S_IFBLK', 'S_IFREG', 'S_IFIFO', 'S_IFLNK', 'S_IFSOCK']:
+            if stat['st_ifmt'] == s_mode:
+                mode = getattr(stat_module, s_mode)
+        return StatResult(
+            mode, hash(posixpath.normpath(path)), 0, stat['st_nlink'], 0, 0, stat['st_size'],
+            stat['st_mtime'].timestamp(), stat['st_mtime'].timestamp(), stat['st_birthtime'].timestamp(),
+            stat['st_blocks'], 4096, stat['st_birthtime'].timestamp(),
+        )
 
     def link(self, target, source, type_=afc_link_type_t.SYMLINK):
         return self._do_operation(afc_opcode_t.MAKE_LINK,
@@ -521,9 +545,6 @@ edit_parser.add_argument('filename')
 cd_parser = Cmd2ArgumentParser(description='change working directory')
 cd_parser.add_argument('directory')
 
-ls_parser = Cmd2ArgumentParser(description='list entries in working directory')
-ls_parser.add_argument('directory', default='.', nargs='?')
-
 walk_parser = Cmd2ArgumentParser(
     description='traverse all entries from given path recursively (by default, from current working directory)')
 walk_parser.add_argument('directory', default='.', nargs='?')
@@ -561,6 +582,59 @@ stat_parser = Cmd2ArgumentParser(description='print information on a given file'
 stat_parser.add_argument('filename')
 
 
+class AfcLsStub(LsStub):
+    def __init__(self, afc_shell):
+        self.afc_shell = afc_shell
+
+    @property
+    def sep(self):
+        return posixpath.sep
+
+    def join(self, path, *paths):
+        return posixpath.join(path, *paths)
+
+    def abspath(self, path):
+        return posixpath.normpath(path)
+
+    def stat(self, path, dir_fd=None, follow_symlinks=True):
+        if follow_symlinks:
+            path = self.afc_shell.afc.resolve_path(path)
+        return self.afc_shell.afc.os_stat(path)
+
+    def readlink(self, path, dir_fd=None):
+        return self.afc_shell.afc.resolve_path(path)
+
+    def isabs(self, path):
+        return posixpath.isabs(path)
+
+    def dirname(self, path):
+        return posixpath.dirname(path)
+
+    def basename(self, path):
+        return posixpath.basename(path)
+
+    def getgroup(self, st_gid):
+        return '-'
+
+    def getuser(self, st_uid):
+        return '-'
+
+    def now(self):
+        return self.afc_shell.lockdown.date
+
+    def listdir(self, path='.'):
+        return self.afc_shell.afc.listdir(path)
+
+    def system(self):
+        return 'Darwin'
+
+    def getenv(self, key, default=None):
+        return ''
+
+    def print(self, *objects, sep=' ', end='\n', file=sys.stdout, flush=False):
+        self.afc_shell.poutput(objects[0], end=end)
+
+
 class AfcShell(Cmd):
     def __init__(self, lockdown: LockdownClient, service_name='com.apple.afc', completekey='tab'):
         # bugfix: prevent the Cmd instance from trying to parse click's arguments
@@ -576,7 +650,7 @@ class AfcShell(Cmd):
         self.curdir = '/'
         self.complete_edit = self._complete_first_arg
         self.complete_cd = self._complete_first_arg
-        self.complete_ls = self._complete_first_arg
+        self.complete_ls = self._complete
         self.complete_walk = self._complete_first_arg
         self.complete_cat = self._complete_first_arg
         self.complete_rm = self._complete_first_arg
@@ -586,6 +660,9 @@ class AfcShell(Cmd):
         self.complete_hexdump = self._complete_first_arg
         self.complete_mv = self._complete
         self.complete_stat = self._complete_first_arg
+        self.ls = Ls(AfcLsStub(self))
+        self.aliases['ll'] = 'ls -lh'
+        self.aliases['l'] = 'ls -lah'
         self._update_prompt()
 
     @with_argparser(pwd_parser)
@@ -618,12 +695,21 @@ class AfcShell(Cmd):
         else:
             self.poutput(f'[ERROR] {directory} does not exist')
 
-    @with_argparser(ls_parser)
+    def help_ls(self):
+        try:
+            with ls_cli.make_context('ls', ['--help']):
+                pass
+        except Exit:
+            pass
+
     def do_ls(self, args):
-        filenames = self.afc.listdir(self.relative_path(args.directory))
-        if filenames:
-            for filename in filenames:
-                self.poutput(filename)
+        try:
+            with ls_cli.make_context('ls', shlex.split(args)) as ctx:
+                files = list(map(self.relative_path, ctx.params.pop('files')))
+                files = files if files else [self.curdir]
+                self.ls(*files, **ctx.params)
+        except Exit:
+            pass
 
     @with_argparser(walk_parser)
     def do_walk(self, args):

@@ -19,3 +19,4 @@ requests
 pyOpenSSL
 cmd2
 packaging
+pygnuutils>=0.0.3
