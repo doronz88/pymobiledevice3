@@ -71,9 +71,9 @@ class ArgumentError(PyMobileDevice3Exception):
     pass
 
 
-class AfcException(PyMobileDevice3Exception):
+class AfcException(PyMobileDevice3Exception, OSError):
     def __init__(self, message, status):
-        super(AfcException, self).__init__(message)
+        OSError.__init__(self, status, message)
         self.status = status
 
 
