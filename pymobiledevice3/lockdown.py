@@ -206,7 +206,10 @@ class LockdownClient(object):
         return True
 
     def pair(self):
-        device_id = [d for d in usbmux.list_devices() if d.serial == self.udid][0].devid
+        device_id = [
+            d for d in usbmux.list_devices()
+            if d.serial.replace('-', '') == self.udid.replace('-', '')
+        ][0].devid
         self.device_public_key = self.get_value('', 'DevicePublicKey')
         if not self.device_public_key:
             self.logger.error('Unable to retrieve DevicePublicKey')
