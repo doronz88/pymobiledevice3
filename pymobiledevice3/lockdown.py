@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
+import datetime
 import logging
 import os
 import platform
 import plistlib
 import sys
 import uuid
-import datetime
 from pathlib import Path
 
 from packaging.version import Version
+
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import *
@@ -33,24 +34,19 @@ def write_home_file(filename, data):
     return str(filepath)
 
 
-def list_devices():
-    return [d.serial for d in usbmux.list_devices()]
-
-
 class LockdownClient(object):
     DEFAULT_CLIENT_NAME = 'pyMobileDevice'
     SERVICE_PORT = 62078
 
     def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME, autopair=True):
-        available_udids = list_devices()
-        if udid is None:
-            if len(available_udids) == 0:
-                raise NoDeviceConnectedError()
-            udid = available_udids[0]
-        else:
-            if (udid not in available_udids) and (udid.replace('-', '') not in available_udids):
+        device = usbmux.select_device(udid)
+        if device is None:
+            if udid:
                 raise ConnectionFailedError()
+            else:
+                raise NoDeviceConnectedError()
 
+        self.usbmux_device = device
         self.logger = logging.getLogger(__name__)
         self.paired = False
         self.SessionID = None
@@ -64,7 +60,7 @@ class LockdownClient(object):
             raise IncorrectModeError()
 
         self.all_values = self.get_value()
-        self.udid = self.all_values.get('UniqueDeviceID', udid)
+        self.udid = self.all_values.get('UniqueDeviceID', self.usbmux_device.serial)
         self.unique_chip_id = self.all_values.get('UniqueChipID')
         self.device_public_key = self.all_values.get('DevicePublicKey')
         self.ios_version = self.all_values.get('ProductVersion')
@@ -206,10 +202,6 @@ class LockdownClient(object):
         return True
 
     def pair(self):
-        device_id = [
-            d for d in usbmux.list_devices()
-            if d.serial.replace('-', '') == self.udid.replace('-', '')
-        ][0].devid
         self.device_public_key = self.get_value('', 'DevicePublicKey')
         if not self.device_public_key:
             self.logger.error('Unable to retrieve DevicePublicKey')
@@ -243,7 +235,7 @@ class LockdownClient(object):
         record_data = plistlib.dumps(pair_record)
 
         client = usbmux.PlistProtocol(usbmux.MuxConnection.create_socket())
-        client.save_pair_record(self.udid, device_id, record_data)
+        client.save_pair_record(self.udid, self.usbmux_device.devid, record_data)
 
         self.paired = True
 

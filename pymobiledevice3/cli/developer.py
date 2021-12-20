@@ -739,16 +739,16 @@ def debugserver_applist(lockdown: LockdownClient):
 
 @debugserver.command('start-server', cls=Command)
 @click.argument('local_port', type=click.INT)
-def debugserver_shell(lockdown: LockdownClient, local_port):
+def debugserver_start_server(lockdown: LockdownClient, local_port):
     """
     start a debugserver at remote listening on a given port locally.
 
     Please note the connection must be done soon afterwards using your own lldb client.
     This can be done using the following commands within lldb shell:
 
-    - platform select remote-ios
+    (lldb) platform select remote-ios
 
-    - platform connect connect://localhost:<local_port>
+    (lldb) platform connect connect://localhost:<local_port>
     """
     attr = lockdown.get_service_connection_attributes('com.apple.debugserver.DVTSecureSocketProxy')
     TcpForwarder(lockdown, local_port, attr['Port'], attr.get('EnableServiceSSL', False)).start()

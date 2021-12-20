@@ -7,10 +7,11 @@ import IPython
 import click
 from pygments import highlight, lexers, formatters
 
+from pymobiledevice3 import usbmux
 from pymobiledevice3.cli.cli_common import print_json, set_verbosity
 from pymobiledevice3.exceptions import IncorrectModeError
 from pymobiledevice3.irecv import IRecv
-from pymobiledevice3.lockdown import list_devices, LockdownClient
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.recovery import Recovery
 from pymobiledevice3.restore.restore import Restore
@@ -40,9 +41,9 @@ class Command(click.Command):
 
         ecid = value
         logger.debug('searching among connected devices via lockdownd')
-        for udid in list_devices():
+        for device in usbmux.list_devices():
             try:
-                lockdown = LockdownClient(udid=udid)
+                lockdown = LockdownClient(udid=device.serial)
             except IncorrectModeError:
                 continue
             if (ecid is None) or (lockdown.ecid == value):

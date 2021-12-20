@@ -9,6 +9,7 @@ from pygments import highlight, lexers, formatters
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception
+from pymobiledevice3.usbmux import select_device
 
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
@@ -34,14 +35,9 @@ class ServiceConnection(object):
 
     @staticmethod
     def create(udid, port):
-        target_device = None
+        target_device = select_device(udid)
         while target_device is None:
-            matching_devices = [device for device in usbmux.list_devices() if
-                                device.serial in (udid, udid.replace('-', ''))]
-            if len(matching_devices) == 1:
-                target_device = matching_devices[0]
-                break
-
+            target_device = select_device(udid)
         try:
             socket = target_device.connect(port)
         except usbmux.MuxException:
