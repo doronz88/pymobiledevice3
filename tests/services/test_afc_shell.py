@@ -8,7 +8,7 @@ import gnureadline
 
 from pymobiledevice3.services.afc import AfcShell
 
-SINGLE_PARAM_COMMANDS = ['edit', 'cd', 'ls', 'walk', 'cat', 'rm', 'head', 'hexdump', 'stat']
+SINGLE_PARAM_COMMANDS = ['edit', 'cd', 'walk', 'cat', 'rm', 'head', 'hexdump', 'stat']
 
 
 class AfcShellTester(ExternalTestMixin, AfcShell):

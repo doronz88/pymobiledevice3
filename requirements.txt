@@ -16,7 +16,7 @@ pyusb>=1.2.1
 tqdm
 cached-property
 requests
-pyOpenSSL
 cmd2
 packaging
 pygnuutils>=0.0.3
+cryptography
