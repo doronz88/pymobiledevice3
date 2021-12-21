@@ -5,11 +5,12 @@ from pathlib import Path
 
 import click
 import requests
+from tqdm import tqdm
+
 from pymobiledevice3.cli.cli_common import Command, print_json
-from pymobiledevice3.exceptions import NotMountedError, UnsupportedCommandError, AlreadyMountedError
+from pymobiledevice3.exceptions import NotMountedError, UnsupportedCommandError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
-from tqdm import tqdm
 
 DEVELOPER_DISK_IMAGE_URL = 'https://github.com/filsv/iPhoneOSDeviceSupport/raw/master/{ios_version}.zip'
 
@@ -106,6 +107,11 @@ def mounter_mount(lockdown: LockdownClient, image, signature, xcode, version):
     """ mount developer image. """
     image_type = 'Developer'
 
+    image_mounter = MobileImageMounterService(lockdown=lockdown)
+    if image_mounter.is_image_mounted(image_type):
+        logger.error('DeveloperDiskImage is already mounted')
+        return
+
     if image and signature:
         logger.debug('using given image and signature for mount command')
     else:
@@ -130,10 +136,6 @@ def mounter_mount(lockdown: LockdownClient, image, signature, xcode, version):
     image = image.read_bytes()
     signature = signature.read_bytes()
 
-    image_mounter = MobileImageMounterService(lockdown=lockdown)
     image_mounter.upload_image(image_type, image, signature)
-    try:
-        image_mounter.mount(image_type, signature)
-        logger.info('DeveloperDiskImage mounted successfully')
-    except AlreadyMountedError:
-        logger.error('DeveloperDiskImage is already mounted')
+    image_mounter.mount(image_type, signature)
+    logger.info('DeveloperDiskImage mounted successfully')
