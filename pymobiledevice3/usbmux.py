@@ -5,7 +5,7 @@ import sys
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import List
+from typing import List, Optional
 
 from construct import Struct, Prefixed, Int32ul, GreedyBytes, StreamError, Int16ul, CString, Padding, FixedSized
 
@@ -204,7 +204,7 @@ class MuxConnection(object):
             self.socket.sock.settimeout(end - time.time())
             try:
                 type_, data = self.proto.recv_device_state()
-                if type_ == PacketType.Attached:
+                if type_ == PacketType.Attached and data.is_legal:
                     self.devices.append(data)
                 elif type_ == PacketType.Detached:
                     self.devices = [device for device in self.devices if device.devid != data]
@@ -242,8 +242,25 @@ class MuxDevice:
     def connect(self, port) -> socket.socket:
         return create_mux().connect(self, port)
 
+    @property
+    def is_legal(self):
+        return bool(self.usbprod)
+
+    def matches_udid(self, udid):
+        return self.serial.replace('-', '') == udid.replace('-', '')
+
 
 def list_devices() -> List[MuxDevice]:
     mux = create_mux()
     mux.listen_for_devices(0.1)
     return mux.devices
+
+
+def select_device(udid='') -> Optional[MuxDevice]:
+    matching_devices = [
+        device for device in list_devices()
+        if device.is_legal and (not udid or device.matches_udid(udid))
+    ]
+    if not matching_devices:
+        return None
+    return matching_devices[0]

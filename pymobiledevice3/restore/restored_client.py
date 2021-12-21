@@ -2,8 +2,8 @@ import logging
 
 from cached_property import cached_property
 
+from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import NoDeviceConnectedError, ConnectionFailedError
-from pymobiledevice3.lockdown import list_devices
 from pymobiledevice3.restore.restore_options import RestoreOptions
 from pymobiledevice3.service_connection import ServiceConnection
 
@@ -24,15 +24,13 @@ class RestoredClient(object):
 
     @staticmethod
     def _get_or_verify_udid(udid=None):
-        available_udids = list_devices()
-        if udid is None:
-            if len(available_udids) == 0:
-                raise NoDeviceConnectedError()
-            return available_udids[0]
-        else:
-            if udid not in available_udids:
+        device = usbmux.select_device(udid)
+        if device is None:
+            if udid:
                 raise ConnectionFailedError()
-            return udid
+            else:
+                raise NoDeviceConnectedError()
+        return device.serial
 
     def query_value(self, key=None):
         req = {'Request': 'QueryValue', 'Label': self.label}

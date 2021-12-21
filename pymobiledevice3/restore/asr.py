@@ -6,8 +6,8 @@ import typing
 
 from tqdm import trange
 
+from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import NoDeviceConnectedError, ConnectionFailedError, PyMobileDevice3Exception
-from pymobiledevice3.lockdown import list_devices
 from pymobiledevice3.service_connection import ServiceConnection
 
 ASR_VERSION = 1
@@ -26,18 +26,16 @@ class ASRClient(object):
     SERVICE_PORT = ASR_PORT
 
     def __init__(self, udid=None):
-        available_udids = list_devices()
-        if udid is None:
-            if len(available_udids) == 0:
-                raise NoDeviceConnectedError()
-            udid = available_udids[0]
-        else:
-            if udid not in available_udids:
+        device = usbmux.select_device(udid)
+        if device is None:
+            if udid:
                 raise ConnectionFailedError()
+            else:
+                raise NoDeviceConnectedError()
 
         logger.debug('connecting to ASR')
 
-        self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
+        self.service = ServiceConnection.create(device.serial, self.SERVICE_PORT)
 
         logger.debug('ASR connected')
 
@@ -51,7 +49,7 @@ class ASRClient(object):
 
         self.checksum_chunks = data.get('Checksum Chunks', False)
 
-    def recv_plist(self) -> dict:
+    def recv_plist(self) -> typing.Mapping:
         buf = b''
         while not buf.endswith(b'</plist>\n'):
             buf += self.service.recv()

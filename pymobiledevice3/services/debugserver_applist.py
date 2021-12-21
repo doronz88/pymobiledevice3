@@ -1,5 +1,6 @@
 import logging
 import plistlib
+import typing
 
 from pymobiledevice3.lockdown import LockdownClient
 
@@ -14,7 +15,7 @@ class DebugServerAppList(object):
         self.lockdown = lockdown
         self.service = self.lockdown.start_developer_service(self.SERVICE_NAME)
 
-    def get(self) -> dict:
+    def get(self) -> typing.Mapping:
         buf = b''
         while b'</plist>' not in buf:
             buf += self.service.recv(CHUNK_SIZE)

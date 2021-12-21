@@ -5,8 +5,8 @@ import struct
 import threading
 from enum import Enum
 
+from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import NoDeviceConnectedError, ConnectionFailedError, PyMobileDevice3Exception
-from pymobiledevice3.lockdown import list_devices
 from pymobiledevice3.service_connection import ServiceConnection
 
 CTRL_PORT = 0x43a  # 1082
@@ -36,22 +36,20 @@ class FDRClient:
     def __init__(self, type_: fdr_type, udid=None):
         global conn_port
 
-        available_udids = list_devices()
-        if udid is None:
-            if len(available_udids) == 0:
-                raise NoDeviceConnectedError()
-            udid = available_udids[0]
-        else:
-            if udid not in available_udids:
+        device = usbmux.select_device(udid)
+        if device is None:
+            if udid:
                 raise ConnectionFailedError()
+            else:
+                raise NoDeviceConnectedError()
 
         logger.debug('connecting to FDR')
 
         if type_ == fdr_type.FDR_CTRL:
-            self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
+            self.service = ServiceConnection.create(device.serial, self.SERVICE_PORT)
             self.ctrl_handshake()
         else:
-            self.service = ServiceConnection.create(udid, conn_port)
+            self.service = ServiceConnection.create(device.serial, conn_port)
             self.sync_handshake()
 
         logger.debug('FDR connected')

@@ -24,7 +24,7 @@ def list_devices(color, usb):
             if ':' in udid:
                 continue
 
-        lockdown = LockdownClient(udid)
+        lockdown = LockdownClient(udid, autopair=False)
         connected_devices.append(lockdown.all_values)
 
     print_json(connected_devices, colored=color)
