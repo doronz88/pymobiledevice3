@@ -114,7 +114,7 @@ def syslog_live(lockdown: LockdownClient, out, color, pid, match, match_insensit
                     if color:
                         start = line.lower().index(m)
                         end = start + len(m)
-                        line = line[:start] + colored(m, attrs=['bold', 'underline']) + line[end:]
+                        line = line[:start] + colored(line[start:end], attrs=['bold', 'underline']) + line[end:]
 
         if skip:
             continue
