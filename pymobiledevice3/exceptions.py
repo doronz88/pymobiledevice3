@@ -3,7 +3,8 @@ __all__ = [
     'ConnectionFailedError', 'NotTrustedError', 'PairingError', 'NotPairedError', 'CannotStopSessionError',
     'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'MuxException',
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
-    'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError'
+    'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
+    'ConnectionTerminatedError'
 ]
 
 
@@ -108,4 +109,9 @@ class UnsupportedCommandError(PyMobileDevice3Exception):
 
 class ExtractingStackshotError(PyMobileDevice3Exception):
     """ Raise when stackshot is not received in the core profile session. """
+    pass
+
+
+class ConnectionTerminatedError(PyMobileDevice3Exception):
+    """ Raise when a connection is terminated abruptly. """
     pass
