@@ -8,7 +8,7 @@ import IPython
 from pygments import highlight, lexers, formatters
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception, ConnectionTerminatedError
 from pymobiledevice3.usbmux import select_device
 
 SHELL_USAGE = """
@@ -56,7 +56,10 @@ class ServiceConnection(object):
         return self.socket.recv(length)
 
     def sendall(self, data):
-        self.socket.sendall(data)
+        try:
+            self.socket.sendall(data)
+        except ssl.SSLEOFError as e:
+            raise ConnectionTerminatedError from e
 
     def send_recv_plist(self, data, endianity='>', fmt=plistlib.FMT_XML):
         self.send_plist(data, endianity=endianity, fmt=fmt)

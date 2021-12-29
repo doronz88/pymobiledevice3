@@ -5,10 +5,11 @@ import time
 import uuid
 import plistlib
 from datetime import datetime
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, AfcFileNotFoundError, AfcException
+from pymobiledevice3.exceptions import PyMobileDevice3Exception, AfcFileNotFoundError, AfcException, \
+    ConnectionTerminatedError
 from pymobiledevice3.services.afc import AfcService, AFC_LOCK_EX, afc_error_t, AFC_LOCK_UN
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
@@ -225,9 +226,10 @@ class Mobilebackup2Service:
         """
         Erase the device.
         """
-        with self.device_link(Path(backup_directory)) as dl:
-            dl.send_process_message({'MessageName': 'EraseDevice', 'TargetIdentifier': self.lockdown.identifier})
-            dl.dl_loop()
+        with suppress(ConnectionTerminatedError):
+            with self.device_link(Path(backup_directory)) as dl:
+                dl.send_process_message({'MessageName': 'EraseDevice', 'TargetIdentifier': self.lockdown.identifier})
+                dl.dl_loop()
 
     def version_exchange(self, dl: DeviceLink, local_versions=None) -> None:
         """
