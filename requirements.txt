@@ -19,4 +19,4 @@ requests
 cmd2
 packaging
 pygnuutils>=0.0.3
-cryptography
+cryptography>=35.0.0
