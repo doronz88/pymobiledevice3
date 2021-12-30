@@ -3,6 +3,7 @@ import plistlib
 import ssl
 import struct
 from re import sub
+import time
 
 import IPython
 from pygments import highlight, lexers, formatters
@@ -26,6 +27,27 @@ client.send(b"hello")
 # and view the result
 print(client.recvall(20))
 """
+
+
+def build_plist(d, endianity='>', fmt=plistlib.FMT_XML):
+    payload = plistlib.dumps(d, fmt=fmt)
+    message = struct.pack(endianity + 'L', len(payload))
+    return message + payload
+
+
+def parse_plist(payload):
+    if not payload:
+        return
+    bplist_header = b'bplist00'
+    xml_header = b'<?xml'
+    if payload.startswith(bplist_header):
+        return plistlib.loads(payload)
+    elif payload.startswith(xml_header):
+        # HAX lockdown HardwarePlatform with null bytes
+        payload = sub(r'[^\w<>\/ \-_0-9\"\'\\=\.\?\!\+]+', '', payload.decode('utf-8')).encode('utf-8')
+        return plistlib.loads(payload)
+    else:
+        raise PyMobileDevice3Exception(f'recv_plist invalid data: {payload[:100].hex()}')
 
 
 class ServiceConnection(object):
@@ -80,7 +102,12 @@ class ServiceConnection(object):
         if not size or len(size) != 4:
             return
         size = struct.unpack(endianity + 'L', size)[0]
-        return self.recvall(size)
+        while True:
+            try:
+                return self.recvall(size)
+            except (BlockingIOError, ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                # Allow ssl to do stuff
+                time.sleep(0)
 
     def send_prefixed(self, data):
         """ send a data block prefixed with a u32 length field """
@@ -91,24 +118,10 @@ class ServiceConnection(object):
         return self.sendall(msg)
 
     def recv_plist(self, endianity='>'):
-        payload = self.recv_prefixed(endianity=endianity)
-        if not payload:
-            return
-        bplist_header = b'bplist00'
-        xml_header = b'<?xml'
-        if payload.startswith(bplist_header):
-            return plistlib.loads(payload)
-        elif payload.startswith(xml_header):
-            # HAX lockdown HardwarePlatform with null bytes
-            payload = sub(r'[^\w<>\/ \-_0-9\"\'\\=\.\?\!\+]+', '', payload.decode('utf-8')).encode('utf-8')
-            return plistlib.loads(payload)
-        else:
-            raise PyMobileDevice3Exception(f'recv_plist invalid data: {payload[:100].hex()}')
+        return parse_plist(self.recv_prefixed(endianity=endianity))
 
     def send_plist(self, d, endianity='>', fmt=plistlib.FMT_XML):
-        payload = plistlib.dumps(d, fmt=fmt)
-        message = struct.pack(endianity + 'L', len(payload))
-        return self.sendall(message + payload)
+        return self.sendall(build_plist(d, endianity, fmt))
 
     def ssl_start(self, keyfile, certfile):
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)

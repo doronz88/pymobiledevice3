@@ -35,6 +35,10 @@ def set_verbosity(ctx, param, value):
     coloredlogs.set_level(logging.INFO - (value * 10))
 
 
+def wait_return():
+    input('> Hit RETURN to exit')
+
+
 UDID_ENV_VAR = 'PYMOBILEDEVICE3_UDID'
 
 

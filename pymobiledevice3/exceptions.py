@@ -4,7 +4,7 @@ __all__ = [
     'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'MuxException',
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
-    'ConnectionTerminatedError'
+    'ConnectionTerminatedError', 'WirError'
 ]
 
 
@@ -114,4 +114,9 @@ class ExtractingStackshotError(PyMobileDevice3Exception):
 
 class ConnectionTerminatedError(PyMobileDevice3Exception):
     """ Raise when a connection is terminated abruptly. """
+    pass
+
+
+class WirError(PyMobileDevice3Exception):
+    """ Raise when Webinspector WIR command fails. """
     pass

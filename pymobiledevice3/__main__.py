@@ -24,6 +24,7 @@ from pymobiledevice3.cli.provision import cli as provision_cli
 from pymobiledevice3.cli.restore import cli as restore_cli
 from pymobiledevice3.cli.springboard import cli as springboard_cli
 from pymobiledevice3.cli.syslog import cli as syslog_cli
+from pymobiledevice3.cli.webinspector import cli as webinspector_cli
 from pymobiledevice3.exceptions import NoDeviceConnectedError
 
 coloredlogs.install(level=logging.INFO)
@@ -41,7 +42,7 @@ def cli():
     cli_commands = click.CommandCollection(sources=[
         developer_cli, mounter_cli, apps_cli, profile_cli, lockdown_cli, diagnostics_cli, syslog_cli, pcap_cli,
         crash_cli, afc_cli, ps_cli, notification_cli, list_devices_cli, power_assertion_cli, springboard_cli,
-        provision_cli, backup_cli, restore_cli, activation_cli, companion_cli
+        provision_cli, backup_cli, restore_cli, activation_cli, companion_cli, webinspector_cli
     ])
     cli_commands.context_settings = dict(help_option_names=['-h', '--help'])
     try:
