@@ -18,5 +18,5 @@ cached-property
 requests
 cmd2
 packaging
-pygnuutils>=0.0.3
+pygnuutils>=0.0.4
 cryptography>=35.0.0
