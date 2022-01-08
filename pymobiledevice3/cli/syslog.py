@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 @click.group()
 def cli():
-    """ apps cli """
+    """ syslog cli """
     pass
 
 
@@ -143,7 +143,7 @@ def syslog_collect(lockdown: LockdownClient, out, size_limit, age_limit, start_t
         os.makedirs(out)
 
     if not out.endswith('.logarchive'):
-        logger.warning('given out path doesn\'t end with a .logarchive - consider renaming to be able to view'
+        logger.warning('given out path doesn\'t end with a .logarchive - consider renaming to be able to view '
                        'the file with the likes of the Console.app and the `log show` utilities')
 
     OsTraceService(lockdown=lockdown).collect(out, size_limit=size_limit, age_limit=age_limit, start_time=start_time)
