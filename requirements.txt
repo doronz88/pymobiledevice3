@@ -20,3 +20,4 @@ cmd2
 packaging
 pygnuutils>=0.0.4
 cryptography>=35.0.0
+pycrashreport>=0.0.3
