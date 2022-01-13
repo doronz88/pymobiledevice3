@@ -116,6 +116,7 @@ Commands:
   restore          restore options
   springboard      springboard options
   syslog           syslog options
+  webinspector     webinspector options
 ```
 
 Or import and use the API yourself:
