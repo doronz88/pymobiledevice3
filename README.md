@@ -197,6 +197,8 @@ each will lead to each one's implementation, where you can learn more about.
     * Allows to simulate locations (DeveloperDiskImage)
 * [`com.apple.dt.fetchsymbols`](pymobiledevice3/services/dtfetchsymbols.py)
     * Allows fetching of `dyld` and dyld shared cache files (DeveloperDiskImage)
+* [`com.apple.webinspector`](pymobiledevice3/services/webinspector.py)
+    * Used to debug WebViews
 
 ## Un-implemented services
 
@@ -218,8 +220,6 @@ to [create us an issue request](https://github.com/doronz88/pymobiledevice3/issu
     * API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
 * `com.apple.mobilesync`
 * `com.apple.purpletestr`
-* `com.apple.webinspector`
-    * Used to debug WebViews
 
 # The bits and bytes
 

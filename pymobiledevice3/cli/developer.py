@@ -14,7 +14,7 @@ from pykdebugparser.pykdebugparser import PyKdebugParser
 from termcolor import colored
 
 import pymobiledevice3
-from pymobiledevice3.cli.cli_common import print_json, Command, default_json_encoder
+from pymobiledevice3.cli.cli_common import print_json, Command, default_json_encoder, wait_return
 from pymobiledevice3.exceptions import DvtDirListError, ExtractingStackshotError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
@@ -40,10 +40,6 @@ from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from pymobiledevice3.tcp_forwarder import TcpForwarder
 
 logger = logging.getLogger(__name__)
-
-
-def wait_return():
-    input('> Hit RETURN to exit')
 
 
 @click.group()
