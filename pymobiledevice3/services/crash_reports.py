@@ -126,6 +126,7 @@ class CrashReportsShell(AfcShell):
     def __init__(self, lockdown: LockdownClient):
         super().__init__(lockdown, service_name=CrashReportsManager.COPY_MOBILE_NAME)
         self.manager = CrashReportsManager(lockdown)
+        self.complete_parse = self._complete_first_arg
 
     @with_argparser(parse_parser)
     def do_parse(self, args):
