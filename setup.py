@@ -44,6 +44,8 @@ if __name__ == '__main__':
         include_package_data=True,
         data_files=[('.', get_data_files())],
         author='DoronZ',
+        author_email='doron88@gmail.com',
+        license='GNU GENERAL PUBLIC LICENSE - Version 3, 29 June 2007',
         install_requires=parse_requirements(),
         entry_points={
             'console_scripts': ['pymobiledevice3=pymobiledevice3.__main__:cli',
