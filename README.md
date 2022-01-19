@@ -164,7 +164,7 @@ each will lead to each one's implementation, where you can learn more about.
     * More extensive syslog monitoring
 * [`com.apple.mobile.diagnostics_relay`](pymobiledevice3/services/diagnostics.py)
     * General diagnostic tools
-* [`com.apple.mobile.notification_proxy`](pymobiledevice3/services/notification_proxy.py)
+* [`com.apple.mobile.notification_proxy` & `com.apple.mobile.insecure_notification_proxy`](pymobiledevice3/services/notification_proxy.py)
     * API wrapper for `notify_post()` & `notify_register_dispatch()`
 * [`com.apple.crashreportmover`](pymobiledevice3/services/crash_reports.py)
     * Just trigger `crash_mover` to move all crash reports into crash directory
@@ -217,8 +217,6 @@ to [create us an issue request](https://github.com/doronz88/pymobiledevice3/issu
 * `com.apple.mobile.file_relay`
     * On older iOS versions (iOS <= 8), this was the main relay used for file operations, which was later replaced with
       AFC.
-* `com.apple.mobile.insecure_notification_proxy`
-    * API wrapper for `notify_post()` & `notify_register_dispatch()` from whitelist
 * `com.apple.mobilesync`
 * `com.apple.purpletestr`
 
