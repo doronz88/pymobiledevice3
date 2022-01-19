@@ -1,3 +1,5 @@
+import plistlib
+import typing
 from datetime import datetime
 
 from pymobiledevice3.exceptions import DvtDirListError
@@ -55,10 +57,24 @@ class DeviceInfo:
     def mach_time_info(self):
         return self.request_information('machTimeInfo')
 
+    def mach_kernel_name(self) -> str:
+        return self.request_information('machKernelName')
+
+    def kpep_database(self) -> typing.Mapping:
+        return plistlib.loads(self.request_information('kpepDatabase'))
+
     def trace_codes(self):
         codes_file = self.request_information('traceCodesFile')
         return {int(k, 16): v for k, v in map(lambda l: l.split(), codes_file.splitlines())}
 
     def request_information(self, selector_name):
         self._channel[selector_name]()
+        return self._channel.receive_plist()
+
+    def name_for_uid(self, uid: int) -> str:
+        self._channel.nameForUID_(MessageAux().append_obj(uid))
+        return self._channel.receive_plist()
+
+    def name_for_gid(self, gid: int) -> str:
+        self._channel.nameForGID_(MessageAux().append_obj(gid))
         return self._channel.receive_plist()

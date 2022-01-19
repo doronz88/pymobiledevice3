@@ -196,6 +196,8 @@ def device_information(lockdown: LockdownClient, color):
             'system': device_info.system_information(),
             'hardware': device_info.hardware_information(),
             'network': device_info.network_information(),
+            'kernel-name': device_info.mach_kernel_name(),
+            'kpep-database': device_info.kpep_database(),
         }, colored=color)
 
 
@@ -495,11 +497,29 @@ def callstacks_live_profile_session(lockdown: LockdownClient, count, process, ti
 
 @dvt.command('trace-codes', cls=Command)
 @click.option('--color/--no-color', default=True)
-def trace_codes(lockdown: LockdownClient, color):
-    """ Print system information. """
+def dvt_trace_codes(lockdown: LockdownClient, color):
+    """ Print KDebug trace codes. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         device_info = DeviceInfo(dvt)
         print_json({hex(k): v for k, v in device_info.trace_codes().items()}, colored=color)
+
+
+@dvt.command('name-for-uid', cls=Command)
+@click.argument('uid', type=click.INT)
+def dvt_name_for_uid(lockdown: LockdownClient, uid):
+    """ Print the assiciated username for the given uid. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        device_info = DeviceInfo(dvt)
+        print(device_info.name_for_uid(uid))
+
+
+@dvt.command('name-for-gid', cls=Command)
+@click.argument('gid', type=click.INT)
+def dvt_name_for_gid(lockdown: LockdownClient, gid):
+    """ Print the assiciated group name for the given gid. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        device_info = DeviceInfo(dvt)
+        print(device_info.name_for_gid(gid))
 
 
 @dvt.command('oslog', cls=Command)
