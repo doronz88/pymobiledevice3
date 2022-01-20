@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import List
 
 from pymobiledevice3.services.web_protocol.selenium_api import By, SeleniumApi
@@ -37,14 +37,14 @@ class WebDriver(SeleniumApi):
 
     def add_cookie(self, cookie: Cookie):
         """ Adds a cookie to your current session. """
-        self.session.protocol.addSingleCookie(browsingContextHandle=self.session.top_level_handle, cookie=cookie)
+        if isinstance(cookie, Cookie):
+            cookie = asdict(cookie)
+        self.session.add_single_cookie(cookie)
 
     def back(self):
         """ Goes one step backward in the browser history. """
         self.session.wait_for_navigation_to_complete()
-        self.session.protocol.goBackInBrowsingContext(
-            handle=self.session.top_level_handle, pageLoadTimeout=self.session.page_load_timeout
-        )
+        self.session.go_back_in_browsing_context()
         self.session.switch_to_browsing_context('')
 
     def close(self):
@@ -64,11 +64,11 @@ class WebDriver(SeleniumApi):
 
     def delete_all_cookies(self):
         """ Delete all cookies in the scope of the session. """
-        self.session.protocol.deleteAllCookies(browsingContextHandle=self.session.top_level_handle)
+        self.session.delete_all_cookies()
 
     def delete_cookie(self, name: str):
         """ Deletes a single cookie with the given name. """
-        self.session.protocol.deleteSingleCookie(browsingContextHandle=self.session.top_level_handle, cookieName=name)
+        self.session.delete_single_cookie(name)
 
     def execute_async_script(self, script: str, *args):
         """
@@ -99,8 +99,7 @@ class WebDriver(SeleniumApi):
     def forward(self):
         """ Goes one step forward in the browser history. """
         self.session.wait_for_navigation_to_complete()
-        self.session.protocol.goForwardInBrowsingContext(handle=self.session.top_level_handle,
-                                                         pageLoadTimeout=self.session.page_load_timeout)
+        self.session.go_forward_in_browsing_context()
         self.session.switch_to_browsing_context('')
 
     def fullscreen_window(self):
@@ -110,9 +109,7 @@ class WebDriver(SeleniumApi):
     def get(self, url: str):
         """ Loads a web page in the current browser session. """
         self.session.wait_for_navigation_to_complete()
-        self.session.protocol.navigateBrowsingContext(
-            handle=self.session.top_level_handle, pageLoadTimeout=self.session.page_load_timeout, url=url
-        )
+        self.session.navigate_broswing_context(url)
         self.session.switch_to_browsing_context('')
 
     def get_cookie(self, name: str) -> Cookie:
@@ -123,10 +120,7 @@ class WebDriver(SeleniumApi):
 
     def get_cookies(self) -> List[Cookie]:
         """ Returns cookies visible in the current session. """
-        return list(map(
-            Cookie.from_automation,
-            self.session.protocol.getAllCookies(browsingContextHandle=self.session.top_level_handle)['cookies']
-        ))
+        return list(map(Cookie.from_automation, self.session.get_all_cookies()))
 
     @property
     def screenshot_as_base64(self) -> str:
@@ -157,11 +151,11 @@ class WebDriver(SeleniumApi):
 
     def maximize_window(self):
         """ Maximizes the current window. """
-        self.session.protocol.maximizeWindowOfBrowsingContext(handle=self.session.top_level_handle)
+        self.session.maximize_window()
 
     def minimize_window(self):
         """ Invokes the window manager-specific 'minimize' operation. """
-        self.session.protocol.hideWindowOfBrowsingContext(handle=self.session.top_level_handle)
+        self.session.hide_window()
 
     @property
     def page_source(self) -> str:
@@ -171,9 +165,7 @@ class WebDriver(SeleniumApi):
     def refresh(self):
         """ Refreshes the current page. """
         self.session.wait_for_navigation_to_complete()
-        self.session.protocol.reloadBrowsingContext(
-            handle=self.session.top_level_handle, pageLoadTimeout=self.session.page_load_timeout
-        )
+        self.session.reload_browsing_context()
         self.session.switch_to_browsing_context('')
 
     def set_window_position(self, x, y):
@@ -182,13 +174,7 @@ class WebDriver(SeleniumApi):
 
     def set_window_rect(self, x=None, y=None, width=None, height=None):
         """ Sets the x, y coordinates of the window as well as height and width of the current window. """
-        params = {'handle': self.session.top_level_handle}
-        if x is not None and y is not None:
-            params['origin'] = {'x': x, 'y': y}
-        if width is not None and height is not None:
-            params['size'] = {'width': width, 'height': height}
-
-        self.session.protocol.setWindowFrameOfBrowsingContext(**params)
+        self.session.set_window_frame(x, y, width, height)
 
     def set_window_size(self, width, height):
         """ Sets the width and height of the current window. """
@@ -207,5 +193,4 @@ class WebDriver(SeleniumApi):
     @property
     def window_handles(self) -> List[str]:
         """ Returns the handles of all windows within the current session. """
-        result = self.session.protocol.getBrowsingContexts()
-        return [c['handle'] for c in result['contexts']]
+        return self.session.get_window_handles()

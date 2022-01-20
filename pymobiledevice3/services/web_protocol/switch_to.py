@@ -50,10 +50,7 @@ class SwitchTo:
 
     def new_window(self, type_=''):
         """ Switches to a new top-level browsing context. """
-        type_ = type_.capitalize()
-        params = {'presentationHint': type_} if type_ else {}
-        resp = self.session.protocol.createBrowsingContext(**params)
-        self.session.switch_to_window(resp['handle'])
+        self.session.switch_to_window(self.session.create_window(type_))
 
     def parent_frame(self):
         """

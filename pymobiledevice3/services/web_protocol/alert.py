@@ -7,25 +7,20 @@ class Alert:
 
     def accept(self):
         """ Accepts the alert available. """
-        self.session.protocol.acceptCurrentJavaScriptDialog(browsingContextHandle=self.session.top_level_handle)
+        self.session.accept_current_javascript_dialog()
 
     def dismiss(self):
         """ Dismisses the alert available. """
-        self.session.protocol.dismissCurrentJavaScriptDialog(browsingContextHandle=self.session.top_level_handle)
+        self.session.dismiss_current_javascript_dialog()
 
     def send_keys(self, text: str):
         """
         Send Keys to the Alert.
         :param text: Text to send to prompts.
         """
-        self.session.protocol.setUserInputForCurrentJavaScriptPrompt(
-            browsingContextHandle=self.session.top_level_handle, userInput=text
-        )
+        self.session.set_user_input_for_current_javascript_prompt(text)
 
     @property
     def text(self) -> str:
         """ Gets the text of the Alert. """
-        resp = self.session.protocol.messageOfCurrentJavaScriptDialog(
-            browsingContextHandle=self.session.top_level_handle
-        )
-        return resp['message']
+        return self.session.message_of_current_javascript_dialog()

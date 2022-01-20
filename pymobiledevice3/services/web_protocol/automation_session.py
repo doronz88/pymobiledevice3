@@ -177,11 +177,22 @@ class AutomationSession:
         for handle in self.get_window_handles():
             self.protocol.closeBrowsingContext(handle=handle)
 
+    def create_window(self, type_):
+        type_ = type_.capitalize()
+        params = {'presentationHint': type_} if type_ else {}
+        return self.protocol.createBrowsingContext(**params)['handle']
+
     def close_window(self):
         if not self.top_level_handle:
             return
         handle = self.top_level_handle
         self.protocol.closeBrowsingContext(handle=handle)
+
+    def maximize_window(self):
+        self.protocol.maximizeWindowOfBrowsingContext(handle=self.top_level_handle)
+
+    def hide_window(self):
+        self.protocol.hideWindowOfBrowsingContext(handle=self.top_level_handle)
 
     def get_browsing_context(self):
         return self.protocol.getBrowsingContext(handle=self.top_level_handle)['context']
@@ -189,6 +200,26 @@ class AutomationSession:
     def get_window_handles(self):
         contexts = self.protocol.getBrowsingContexts()
         return [c['handle'] for c in contexts['contexts']]
+
+    def set_window_frame(self, x=None, y=None, width=None, height=None):
+        params = {}
+        if x is not None and y is not None:
+            params['origin'] = {'x': x, 'y': y}
+        if width is not None and height is not None:
+            params['size'] = {'width': width, 'height': height}
+        self.protocol.setWindowFrameOfBrowsingContext(handle=self.top_level_handle, **params)
+
+    def add_single_cookie(self, cookie):
+        self.protocol.addSingleCookie(browsingContextHandle=self.top_level_handle, cookie=cookie)
+
+    def delete_all_cookies(self):
+        self.protocol.deleteAllCookies(browsingContextHandle=self.top_level_handle)
+
+    def delete_single_cookie(self, name):
+        self.protocol.deleteSingleCookie(browsingContextHandle=self.top_level_handle, cookieName=name)
+
+    def get_all_cookies(self):
+        return self.protocol.getAllCookies(browsingContextHandle=self.top_level_handle)['cookies']
 
     def execute_script(self, script, args, async_=False):
         parameters = {
@@ -246,7 +277,7 @@ class AutomationSession:
             parameters['frameHandle'] = self.current_handle
         if self.implicit_wait_timeout:
             parameters['callbackTimeout'] = self.implicit_wait_timeout + 1000
-        result = json.loads((self.protocol.evaluateJavaScriptFunction(**parameters))['result'])
+        result = json.loads(self.protocol.evaluateJavaScriptFunction(**parameters)['result'])
         return result
 
     def screenshot_as_base64(self, scroll=False, node_id='', clip=True):
@@ -276,6 +307,26 @@ class AutomationSession:
 
     def switch_to_browsing_context_frame(self, context, frame):
         self.protocol.switchToBrowsingContext(browsingContextHandle=context, frameHandle=frame)
+
+    def navigate_broswing_context(self, url):
+        self.protocol.navigateBrowsingContext(
+            handle=self.top_level_handle, pageLoadTimeout=self.page_load_timeout, url=url
+        )
+
+    def go_back_in_browsing_context(self):
+        self.protocol.goBackInBrowsingContext(
+            handle=self.top_level_handle, pageLoadTimeout=self.page_load_timeout
+        )
+
+    def go_forward_in_browsing_context(self):
+        self.protocol.goForwardInBrowsingContext(
+            handle=self.top_level_handle, pageLoadTimeout=self.page_load_timeout
+        )
+
+    def reload_browsing_context(self):
+        self.protocol.reloadBrowsingContext(
+            handle=self.top_level_handle, pageLoadTimeout=self.page_load_timeout
+        )
 
     def switch_to_frame(self, frame_ordinal=None, frame_handle=None):
         params = {'browsingContextHandle': self.top_level_handle}
@@ -319,3 +370,30 @@ class AutomationSession:
         if self.current_handle:
             params['frameHandle'] = self.current_handle
         self.protocol.waitForNavigationToComplete(**params)
+
+    def accept_current_javascript_dialog(self):
+        self.protocol.acceptCurrentJavaScriptDialog(browsingContextHandle=self.top_level_handle)
+
+    def dismiss_current_javascript_dialog(self):
+        self.protocol.dismissCurrentJavaScriptDialog(browsingContextHandle=self.top_level_handle)
+
+    def set_user_input_for_current_javascript_prompt(self, user_input):
+        self.protocol.setUserInputForCurrentJavaScriptPrompt(
+            browsingContextHandle=self.top_level_handle, userInput=user_input
+        )
+
+    def message_of_current_javascript_dialog(self):
+        return self.protocol.messageOfCurrentJavaScriptDialog(browsingContextHandle=self.top_level_handle)['message']
+
+    def compute_element_layout(self, node_id, scroll_if_needed, coordinate_system):
+        return self.protocol.computeElementLayout(
+            browsingContextHandle=self.top_level_handle, nodeHandle=node_id,
+            scrollIntoViewIfNeeded=scroll_if_needed, coordinateSystem=coordinate_system,
+            frameHandle='' if self.current_handle is None else self.current_handle
+        )
+
+    def select_option_element(self, node_id):
+        self.protocol.selectOptionElement(
+            browsingContextHandle=self.top_level_handle, nodeHandle=node_id,
+            frameHandle='' if self.current_handle is None else self.current_handle
+        )
