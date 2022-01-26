@@ -21,3 +21,9 @@ packaging
 pygnuutils>=0.0.4
 cryptography>=35.0.0
 pycrashreport>=0.0.5
+fastapi[all]
+uvicorn>=0.17.0
+starlette
+wsproto
+nest_asyncio
+Pillow

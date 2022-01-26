@@ -302,6 +302,13 @@ class LockdownClient(object):
             service_connection.ssl_start(self.ssl_file, self.ssl_file)
         return service_connection
 
+    async def aio_start_service(self, name, escrow_bag=None) -> ServiceConnection:
+        attr = self.get_service_connection_attributes(name, escrow_bag=escrow_bag)
+        service_connection = ServiceConnection.create(self.udid, attr['Port'])
+        if attr.get('EnableServiceSSL', False):
+            await service_connection.aio_ssl_start(self.ssl_file, self.ssl_file)
+        return service_connection
+
     def start_developer_service(self, name, escrow_bag=None) -> ServiceConnection:
         try:
             return self.start_service(name, escrow_bag)

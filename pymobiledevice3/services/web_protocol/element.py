@@ -36,8 +36,7 @@ class WebElement(SeleniumApi):
         rect, center, is_obscured = self._compute_layout(use_viewport=True)
         if rect is None or is_obscured or center is None:
             return
-        tag = self.tag_name()
-        if tag == 'option':
+        if self.tag_name == 'option':
             self._select_option_element()
         else:
             self.session.perform_mouse_interaction(center.x, center.y, MouseButton.LEFT, MouseInteraction.SINGLE_CLICK)
@@ -175,11 +174,8 @@ class WebElement(SeleniumApi):
 
     def _compute_layout(self, scroll_if_needed=True, use_viewport=False):
         try:
-            result = self.session.protocol.computeElementLayout(
-                browsingContextHandle=self.session.top_level_handle, nodeHandle=self.node_id,
-                scrollIntoViewIfNeeded=scroll_if_needed, coordinateSystem='LayoutViewport' if use_viewport else 'Page',
-                frameHandle='' if self.session.current_handle is None else self.session.current_handle
-            )
+            result = self.session.compute_element_layout(self.node_id, scroll_if_needed,
+                                                         'LayoutViewport' if use_viewport else 'Page')
         except WirError:
             return
 
@@ -190,10 +186,7 @@ class WebElement(SeleniumApi):
         return rect, center, result['isObscured']
 
     def _select_option_element(self):
-        self.session.protocol.selectOptionElement(
-            browsingContextHandle=self.session.top_level_handle, nodeHandle=self.node_id,
-            frameHandle='' if self.session.current_handle is None else self.session.current_handle
-        )
+        self.session.select_option_element(self.node_id)
 
     def _evaluate_js_function(self, function, *args):
         return self.session.evaluate_js_function(function, self.id_, *args)
