@@ -55,7 +55,10 @@ class TcpForwarder:
                     self._handle_server_connection()
                 else:
                     if current_sock not in closed_sockets:
-                        self._handle_data(current_sock, closed_sockets)
+                        try:
+                            self._handle_data(current_sock, closed_sockets)
+                        except ConnectionResetError:
+                            self._handle_close_or_error(current_sock)
 
             for current_sock in exceptional:
                 self._handle_close_or_error(current_sock)
