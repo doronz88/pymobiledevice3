@@ -143,7 +143,7 @@ class LockdownClient(object):
         try:
             with open(filename, 'rb') as f:
                 pair_record = plistlib.load(f)
-        except (PermissionError, FileNotFoundError):
+        except (PermissionError, FileNotFoundError, plistlib.InvalidFileException):
             return None
         return pair_record
 
