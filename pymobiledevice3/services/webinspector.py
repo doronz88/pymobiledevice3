@@ -11,6 +11,7 @@ from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 from pymobiledevice3.services.web_protocol.automation_session import AutomationSession
+from pymobiledevice3.exceptions import WebInspectorNotEnabled, RemoteAutomationNotEnabled
 
 SAFARI = 'com.apple.mobilesafari'
 
@@ -130,10 +131,14 @@ class WebinspectorService:
         }
         self._recv_task = None  # type: asyncio.Task | None
 
-    def connect(self):
+    def connect(self, timeout=None):
         self.service = self.await_(self.lockdown.aio_start_service(self.SERVICE_NAME))
-        self._recv_task = self.loop.create_task(self._receiving_task())
         self.await_(self._report_identifier())
+        try:
+            self._handle_recv(self.await_(asyncio.wait_for(self._recv_message(), timeout)))
+        except asyncio.TimeoutError as e:
+            raise WebInspectorNotEnabled from e
+        self._recv_task = self.loop.create_task(self._receiving_task())
 
     def close(self):
         self._recv_task.cancel()
@@ -143,14 +148,20 @@ class WebinspectorService:
             pass
         self.await_(self.service.aio_close())
 
-    async def _receiving_task(self):
+    async def _recv_message(self):
         while True:
             try:
-                self._handle_recv(await self.service.aio_recv_plist())
+                return await self.service.aio_recv_plist()
             except asyncio.IncompleteReadError:
                 await asyncio.sleep(0)
 
+    async def _receiving_task(self):
+        while True:
+            self._handle_recv(await self._recv_message())
+
     def automation_session(self, app):
+        if self.state == 'WIRAutomationAvailabilityNotAvailable':
+            raise RemoteAutomationNotEnabled()
         session_id = str(uuid.uuid4()).upper()
         self.await_(self._forward_automation_session_request(session_id, app.id_))
         self.await_(self._forward_get_listing(app.id_))

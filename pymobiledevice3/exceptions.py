@@ -4,7 +4,7 @@ __all__ = [
     'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'MuxException',
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
-    'ConnectionTerminatedError', 'WirError'
+    'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabled', 'RemoteAutomationNotEnabled',
 ]
 
 
@@ -114,6 +114,16 @@ class ExtractingStackshotError(PyMobileDevice3Exception):
 
 class ConnectionTerminatedError(PyMobileDevice3Exception):
     """ Raise when a connection is terminated abruptly. """
+    pass
+
+
+class WebInspectorNotEnabled(PyMobileDevice3Exception):
+    """ Raise when Web Inspector is not enabled. """
+    pass
+
+
+class RemoteAutomationNotEnabled(PyMobileDevice3Exception):
+    """ Raise when Web Inspector remote automation is not enabled. """
     pass
 
 
