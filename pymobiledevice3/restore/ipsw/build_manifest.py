@@ -13,7 +13,14 @@ class BuildManifest:
 
     @cached_property
     def build_major(self):
-        return int(self._manifest['ProductBuildVersion'][:2])
+        build_major = str()
+        for i in self._manifest['ProductBuildVersion']:
+            if i.isdigit():
+                build_major += i
+            else:
+                break
+
+        return int(build_major)
 
     @cached_property
     def supported_product_types(self):
