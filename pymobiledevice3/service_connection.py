@@ -3,7 +3,6 @@ import logging
 import plistlib
 import ssl
 import struct
-from re import sub
 import time
 
 import IPython
@@ -37,18 +36,10 @@ def build_plist(d, endianity='>', fmt=plistlib.FMT_XML):
 
 
 def parse_plist(payload):
-    if not payload:
-        return
-    bplist_header = b'bplist00'
-    xml_header = b'<?xml'
-    if payload.startswith(bplist_header):
+    try:
         return plistlib.loads(payload)
-    elif payload.startswith(xml_header):
-        # HAX lockdown HardwarePlatform with null bytes
-        payload = sub(r'[^\w<>\/ \-_0-9\"\'\\=\.\?\!\+]+', '', payload.decode('utf-8')).encode('utf-8')
-        return plistlib.loads(payload)
-    else:
-        raise PyMobileDevice3Exception(f'recv_plist invalid data: {payload[:100].hex()}')
+    except plistlib.InvalidFileException:
+        raise PyMobileDevice3Exception(f'parse_plist invalid data: {payload[:100].hex()}')
 
 
 def create_context(keyfile, certfile):
