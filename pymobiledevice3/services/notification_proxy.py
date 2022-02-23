@@ -20,7 +20,6 @@ class NotificationProxyService(object):
         """ Send notification to the device's notification_proxy. """
         self.service.send_plist({'Command': 'PostNotification',
                                  'Name': name})
-        print(self.service.recv_plist())
 
     def notify_register_dispatch(self, name: str):
         """ Tells the device to send a notification on the specified event. """
