@@ -8,11 +8,24 @@ from pymobiledevice3.service_connection import ServiceConnection, ConnectionFail
 
 
 class TcpForwarder:
+    """
+    Allows forwarding local tcp connection into the device via a given lockdown connection
+    """
+
     MAX_FORWARDED_CONNECTIONS = 200
     TIMEOUT = 1
 
     def __init__(self, lockdown: LockdownClient, src_port: int, dst_port: int, enable_ssl=False,
                  listening_event: threading.Event = None):
+        """
+        Initialize a new tcp forwarder
+
+        :param lockdown: lockdown connection
+        :param src_port: tcp port to listen on
+        :param dst_port: tcp port to connect to each new connection via the supplied lockdown object
+        :param enable_ssl: enable ssl wrapping for the transferred data
+        :param listening_event: event to fire when the listening occurred
+        """
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
         self.src_port = src_port
@@ -28,9 +41,7 @@ class TcpForwarder:
         self.connections = {}
 
     def start(self, address='0.0.0.0'):
-        """
-        forward each connection from given local machine port to remote device port
-        """
+        """ forward each connection from given local machine port to remote device port """
         # create local tcp server socket
         self.server_socket = socket.socket()
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -122,4 +133,5 @@ class TcpForwarder:
         self.logger.info(f'connection established from local to remote port {self.dst_port}')
 
     def stop(self):
+        """ stop forwarding """
         self.stopped.set()
