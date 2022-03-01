@@ -148,9 +148,12 @@ class LockdownClient(object):
         return pair_record
 
     def get_usbmux_pairing_record(self):
-        client = usbmux.PlistProtocol(usbmux.MuxConnection.create_socket())
+        mux = usbmux.MuxConnection.create_socket()
+        client = usbmux.PlistProtocol(mux)
         try:
-            return client.get_pair_record(self.udid)
+            pairing_record = client.get_pair_record(self.udid)
+            mux.close()
+            return pairing_record
         except PyMobileDevice3Exception:
             return None
 

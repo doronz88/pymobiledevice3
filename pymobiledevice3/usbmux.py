@@ -39,6 +39,9 @@ class SafeStreamSocket:
             msg += chunk
         return msg
 
+    def close(self):
+        self.sock.close()
+
     read = recv
     write = send
 
@@ -225,7 +228,10 @@ class MuxConnection(object):
 
 
 def create_mux() -> MuxConnection:
-    version = BinaryProtocol.get_version(MuxConnection.create_socket())
+    safe_sock = MuxConnection.create_socket()
+    version = BinaryProtocol.get_version(safe_sock)
+    safe_sock.close()
+
     if version == BinaryProtocol.VERSION:
         return MuxConnection(BinaryProtocol)
     elif version == PlistProtocol.VERSION:
@@ -253,7 +259,9 @@ class MuxDevice:
 def list_devices() -> List[MuxDevice]:
     mux = create_mux()
     mux.listen_for_devices(0.1)
-    return mux.devices
+    devices = mux.devices
+    mux.close()
+    return devices
 
 
 def select_device(udid='') -> Optional[MuxDevice]:
