@@ -22,6 +22,7 @@ from pygnuutils.cli.ls import ls as ls_cli
 
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 from pymobiledevice3.utils import try_decode
 
 MAXIMUM_READ_SIZE = 1 * 1024 ** 2  # 1 MB
@@ -202,12 +203,9 @@ def list_to_dict(d):
     return res
 
 
-class AfcService:
+class AfcService(BaseService):
     def __init__(self, lockdown: LockdownClient, service_name='com.apple.afc'):
-        self.logger = logging.getLogger(__name__)
-        self.service_name = service_name
-        self.lockdown = lockdown
-        self.service = self.lockdown.start_service(self.service_name)
+        super().__init__(lockdown, service_name)
         self.packet_num = 0
 
     def pull(self, relative_src, dst, callback=None, src_dir=''):

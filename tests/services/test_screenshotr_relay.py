@@ -9,6 +9,6 @@ def test_screenshot(lockdown):
     Test that taking a screenshot returns a PNG.
     :param pymobiledevice3.lockdown.LockdownClient lockdown: Lockdown client.
     """
-    screenshot_taker = ScreenshotService(lockdown)
-    screenshot = screenshot_taker.take_screenshot()
-    assert screenshot.startswith(PNG_HEADER) or screenshot.startswith(TIFF_HEADER)
+    with ScreenshotService(lockdown) as screenshot_taker:
+        screenshot = screenshot_taker.take_screenshot()
+        assert screenshot.startswith(PNG_HEADER) or screenshot.startswith(TIFF_HEADER)

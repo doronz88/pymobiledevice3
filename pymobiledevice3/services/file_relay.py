@@ -1,6 +1,5 @@
-import logging
-
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 SRCFILES = '''Baseband
 CrashReporter
@@ -23,13 +22,11 @@ tmp
 WirelessAutomation'''
 
 
-class FileRelayService(object):
+class FileRelayService(BaseService):
     SERVICE_NAME = 'com.apple.mobile.file_relay'
 
-    def __init__(self, lockdown: LockdownClient, ):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-        self.service = self.lockdown.start_service(self.SERVICE_NAME)
+    def __init__(self, lockdown: LockdownClient):
+        super().__init__(lockdown, self.SERVICE_NAME)
         self.packet_num = 0
 
     def stop_session(self):

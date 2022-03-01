@@ -1,5 +1,4 @@
 import io
-import logging
 import plistlib
 import typing
 from functools import partial
@@ -11,8 +10,10 @@ from bpylist2 import archiver
 from construct import Struct, Default, Int64ul, Prefixed, GreedyRange, Select, Const, Int32ul, Switch, this, \
     GreedyBytes, Adapter, Int16ul, Int32sl
 from pygments import highlight, lexers, formatters
+
 from pymobiledevice3.exceptions import DvtException
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 SHELL_USAGE = '''
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
@@ -182,7 +183,7 @@ class ChannelFragmenter:
                 self._stream_packet_data = b''
 
 
-class RemoteServer(object):
+class RemoteServer(BaseService):
     """
     Wrapper to Apple's RemoteServer.
     This server exports several ObjC objects allowing calling their respective selectors.
@@ -232,10 +233,8 @@ class RemoteServer(object):
     EXPECTS_REPLY_MASK = 0x1000
 
     def __init__(self, lockdown: LockdownClient, service_name, remove_ssl_context=True):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
+        super().__init__(lockdown, service_name, is_developer_service=True)
 
-        self.service = self.lockdown.start_developer_service(service_name)
         if remove_ssl_context and hasattr(self.service.socket, '_sslobj'):
             self.service.socket._sslobj = None
 
@@ -365,9 +364,6 @@ class RemoteServer(object):
     def __enter__(self):
         self.perform_handshake()
         return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
 
 
 class Tap:

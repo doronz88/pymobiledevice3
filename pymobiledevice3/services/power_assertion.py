@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 
-import logging
 import time
 
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 
-class PowerAssertionService:
+class PowerAssertionService(BaseService):
     SERVICE_NAME = 'com.apple.mobile.assertion_agent'
 
     def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-        self.service = self.lockdown.start_service(self.SERVICE_NAME)
+        super().__init__(lockdown, self.SERVICE_NAME)
 
     def create_power_assertion(self, type_: str, name: str, timeout: int, details: str = None):
         msg = {

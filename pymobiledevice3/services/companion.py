@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-import logging
 import typing
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 
-class CompanionProxyService(object):
+class CompanionProxyService(BaseService):
     SERVICE_NAME = 'com.apple.companion_proxy'
 
     def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
+        super().__init__(lockdown, self.SERVICE_NAME)
 
     def list(self):
         service = self.lockdown.start_service(self.SERVICE_NAME)

@@ -1,16 +1,13 @@
-import logging
-
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 
-class ScreenshotService(object):
+class ScreenshotService(BaseService):
     SERVICE_NAME = 'com.apple.mobile.screenshotr'
 
     def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-        self.service = self.lockdown.start_developer_service(self.SERVICE_NAME)
+        super().__init__(lockdown, self.SERVICE_NAME, is_developer_service=True)
 
         dl_message_version_exchange = self.service.recv_plist()
         version_major = dl_message_version_exchange[1]

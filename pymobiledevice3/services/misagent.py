@@ -4,6 +4,7 @@ from typing import List
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 
 class ProvisioningProfile:
@@ -18,12 +19,11 @@ class ProvisioningProfile:
         return str(self.plist)
 
 
-class MisagentService(object):
+class MisagentService(BaseService):
     SERVICE_NAME = 'com.apple.misagent'
 
     def __init__(self, lockdown: LockdownClient):
-        self.lockdown = lockdown
-        self.service = self.lockdown.start_service(self.SERVICE_NAME)
+        super().__init__(lockdown, self.SERVICE_NAME)
 
     def install(self, plist: BytesIO):
         response = self.service.send_recv_plist({'MessageType': 'Install',

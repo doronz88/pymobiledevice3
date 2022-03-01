@@ -1,9 +1,9 @@
-import posixpath
-import logging
 import os
+import posixpath
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcService
+from pymobiledevice3.services.base_service import BaseService
 
 client_options = {
     'SkipUninstall': False,
@@ -13,13 +13,11 @@ client_options = {
 }
 
 
-class InstallationProxyService(object):
+class InstallationProxyService(BaseService):
     SERVICE_NAME = 'com.apple.mobile.installation_proxy'
 
     def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-        self.service = self.lockdown.start_service(self.SERVICE_NAME)
+        super().__init__(lockdown, self.SERVICE_NAME)
 
     def watch_completion(self, handler=None, *args):
         while True:

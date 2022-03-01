@@ -1,6 +1,5 @@
-import logging
-
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 from pymobiledevice3.utils import try_decode
 
 CHUNK_SIZE = 4096
@@ -8,7 +7,7 @@ TIME_FORMAT = '%H:%M:%S'
 SYSLOG_LINE_SPLITTER = b'\n\x00'
 
 
-class SyslogService(object):
+class SyslogService(BaseService):
     """
     View system logs
     """
@@ -16,9 +15,7 @@ class SyslogService(object):
     SERVICE_NAME = 'com.apple.syslog_relay'
 
     def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-        self.service = self.lockdown.start_service(self.SERVICE_NAME)
+        super().__init__(lockdown, self.SERVICE_NAME)
 
     def watch(self):
         buf = b''
