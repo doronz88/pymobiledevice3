@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-import logging
-from pathlib import Path
+import plistlib
 import time
 import uuid
-import plistlib
-from datetime import datetime
 from contextlib import contextmanager, suppress
+from datetime import datetime
+from pathlib import Path
 
-from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, AfcFileNotFoundError, AfcException, \
     ConnectionTerminatedError
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcService, AFC_LOCK_EX, afc_error_t, AFC_LOCK_UN
+from pymobiledevice3.services.base_service import BaseService
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.notification_proxy import NotificationProxyService
@@ -28,13 +28,11 @@ NP_SYNC_LOCK_REQUEST = 'com.apple.itunes-mobdev.syncLockRequest'
 NP_SYNC_DID_FINISH = 'com.apple.itunes-mobdev.syncDidFinish'
 
 
-class Mobilebackup2Service:
+class Mobilebackup2Service(BaseService):
     SERVICE_NAME = 'com.apple.mobilebackup2'
 
     def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-        self.service = self.lockdown.start_service(self.SERVICE_NAME)
+        super().__init__(lockdown, self.SERVICE_NAME)
 
     def backup(self, full: bool = True, backup_directory='.', progress_callback=lambda x: None) -> None:
         """

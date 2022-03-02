@@ -1,20 +1,16 @@
-import logging
-
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 
-class NotificationProxyService(object):
+class NotificationProxyService(BaseService):
     SERVICE_NAME = 'com.apple.mobile.notification_proxy'
     INSECURE_SERVICE_NAME = 'com.apple.mobile.insecure_notification_proxy'
 
     def __init__(self, lockdown: LockdownClient, insecure=False):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-
         if insecure:
-            self.service = self.lockdown.start_service(self.INSECURE_SERVICE_NAME)
+            super().__init__(lockdown, self.INSECURE_SERVICE_NAME)
         else:
-            self.service = self.lockdown.start_service(self.SERVICE_NAME)
+            super().__init__(lockdown, self.SERVICE_NAME)
 
     def notify_post(self, name: str):
         """ Send notification to the device's notification_proxy. """

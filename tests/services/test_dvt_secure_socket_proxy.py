@@ -16,17 +16,18 @@ IMAGE_TYPE = 'Developer'
 
 @pytest.fixture(scope='module', autouse=True)
 def mount_developer_disk_image():
-    mounter = MobileImageMounterService(lockdown=LockdownClient())
-    if mounter.is_image_mounted('Developer'):
-        return
+    with LockdownClient() as lockdown:
+        with MobileImageMounterService(lockdown=lockdown) as mounter:
+            if mounter.is_image_mounted('Developer'):
+                yield
 
-    image_path = DEVICE_SUPPORT / mounter.lockdown.sanitized_ios_version / 'DeveloperDiskImage.dmg'
-    signature = image_path.with_suffix('.dmg.signature').read_bytes()
-    mounter.upload_image('Developer', image_path.read_bytes(), signature)
-    try:
-        mounter.mount(IMAGE_TYPE, signature)
-    except AlreadyMountedError:
-        pass
+            image_path = DEVICE_SUPPORT / mounter.lockdown.sanitized_ios_version / 'DeveloperDiskImage.dmg'
+            signature = image_path.with_suffix('.dmg.signature').read_bytes()
+            mounter.upload_image('Developer', image_path.read_bytes(), signature)
+            try:
+                mounter.mount(IMAGE_TYPE, signature)
+            except AlreadyMountedError:
+                pass
 
 
 def get_process_data(lockdown, name):

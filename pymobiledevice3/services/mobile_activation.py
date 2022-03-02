@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import logging
 import plistlib
 from contextlib import closing
 from pathlib import Path
@@ -7,6 +6,7 @@ from pathlib import Path
 import requests
 
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 ACTIVATION_USER_AGENT_IOS = 'iOS Device Activator (MobileActivation-20 built on Jan 15 2012 at 19:07:28)'
 ACTIVATION_DEFAULT_URL = 'https://albert.apple.com/deviceservices/deviceActivation'
@@ -21,12 +21,11 @@ ACTIVATION_REQUESTS_SUBDIR = Path('offline_requests')
 NONCE_CYCLE_INTERVAL = 60 * 5
 
 
-class MobileActivationService:
+class MobileActivationService(BaseService):
     SERVICE_NAME = 'com.apple.mobileactivationd'
 
     def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
+        super().__init__(lockdown, self.SERVICE_NAME)
 
     @property
     def state(self):

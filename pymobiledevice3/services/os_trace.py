@@ -11,6 +11,7 @@ from construct import Struct, Bytes, Int32ul, Optional, Enum, Byte, Adapter, Int
     RepeatUntil
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 from pymobiledevice3.utils import try_decode
 
 CHUNK_SIZE = 4096
@@ -61,7 +62,7 @@ syslog_t = Struct(
 )
 
 
-class OsTraceService(object):
+class OsTraceService(BaseService):
     """
     Provides API for the following operations:
     * Show process list (process name and pid)
@@ -72,17 +73,16 @@ class OsTraceService(object):
     SERVICE_NAME = 'com.apple.os_trace_relay'
 
     def __init__(self, lockdown: LockdownClient):
+        super().__init__(lockdown, self.SERVICE_NAME)
         self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-        self.c = self.lockdown.start_service(self.SERVICE_NAME)
 
     def get_pid_list(self):
-        self.c.send_plist({'Request': 'PidList'})
+        self.service.send_plist({'Request': 'PidList'})
 
         # ignore first received unknown byte
-        self.c.recvall(1)
+        self.service.recvall(1)
 
-        response = self.c.recv_prefixed()
+        response = self.service.recv_prefixed()
         return plistlib.loads(response)
 
     def create_archive(self, out: typing.IO, size_limit: int = None, age_limit: int = None, start_time: int = None):
@@ -97,18 +97,18 @@ class OsTraceService(object):
         if start_time is not None:
             request.update({'StartTime': start_time})
 
-        self.c.send_plist(request)
+        self.service.send_plist(request)
 
-        assert 1 == self.c.recvall(1)[0]
+        assert 1 == self.service.recvall(1)[0]
 
-        assert plistlib.loads(self.c.recv_prefixed()).get('Status') == 'RequestSuccessful', 'Invalid status'
+        assert plistlib.loads(self.service.recv_prefixed()).get('Status') == 'RequestSuccessful', 'Invalid status'
 
         while True:
             try:
-                assert 3 == self.c.recvall(1)[0], 'invalid magic'
+                assert 3 == self.service.recvall(1)[0], 'invalid magic'
             except ConnectionAbortedError:
                 break
-            out.write(self.c.recv_prefixed(endianity='<'))
+            out.write(self.service.recv_prefixed(endianity='<'))
 
     def collect(self, out: str, size_limit: int = None, age_limit: int = None, start_time: int = None):
         """
@@ -119,18 +119,18 @@ class OsTraceService(object):
             TarFile(tar.name).extractall(out)
 
     def syslog(self, pid=-1):
-        self.c.send_plist({'Request': 'StartActivity', 'MessageFilter': 65535, 'Pid': pid, 'StreamFlags': 60})
+        self.service.send_plist({'Request': 'StartActivity', 'MessageFilter': 65535, 'Pid': pid, 'StreamFlags': 60})
 
-        length_length, = struct.unpack('<I', self.c.recvall(4))
-        length = int(self.c.recvall(length_length)[::-1].hex(), 16)
-        response = plistlib.loads(self.c.recvall(length))
+        length_length, = struct.unpack('<I', self.service.recvall(4))
+        length = int(self.service.recvall(length_length)[::-1].hex(), 16)
+        response = plistlib.loads(self.service.recvall(length))
 
         if response.get('Status') != 'RequestSuccessful':
             raise PyMobileDevice3Exception(f'got invalid response: {response}')
 
         while True:
-            assert b'\x02' == self.c.recvall(1)
-            length, = struct.unpack('<I', self.c.recvall(4))
-            line = self.c.recvall(length)
+            assert b'\x02' == self.service.recvall(1)
+            length, = struct.unpack('<I', self.service.recvall(4))
+            line = self.service.recvall(length)
             entry = syslog_t.parse(line)
             yield entry

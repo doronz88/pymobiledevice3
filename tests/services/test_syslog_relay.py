@@ -21,9 +21,10 @@ def test_logs_watching_time(lockdown):
     Test that after watching logs 2 seconds after result in logs with later timestamp.
     :param pymobiledevice3.lockdown.LockdownClient lockdown: Lockdown client.
     """
-    syslog_service = SyslogService(lockdown)
-    first_log = next(syslog_service.watch())
-    time.sleep(2)
-    syslog_service = SyslogService(lockdown)
-    second_log = next(syslog_service.watch())
-    assert extract_log_time(first_log) < extract_log_time(second_log)
+    with SyslogService(lockdown) as syslog_service:
+        first_log = next(syslog_service.watch())
+        time.sleep(2)
+
+    with SyslogService(lockdown) as syslog_service:
+        second_log = next(syslog_service.watch())
+        assert extract_log_time(first_log) < extract_log_time(second_log)

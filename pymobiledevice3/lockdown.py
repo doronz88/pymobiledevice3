@@ -84,6 +84,12 @@ class LockdownClient(object):
                 raise FatalPairingError()
             self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def query_type(self):
         self.service.send_plist({'Request': 'QueryType'})
         res = self.service.recv_plist()
@@ -321,3 +327,6 @@ class LockdownClient(object):
                 'You can do so using: pymobiledevice3 mounter mount'
             )
             raise
+
+    def close(self):
+        self.service.close()

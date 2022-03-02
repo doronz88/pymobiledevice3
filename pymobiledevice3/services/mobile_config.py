@@ -1,17 +1,15 @@
 import plistlib
-import logging
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 
-class MobileConfigService(object):
+class MobileConfigService(BaseService):
     SERVICE_NAME = 'com.apple.mobile.MCInstall'
 
     def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-        self.service = lockdown.start_service(self.SERVICE_NAME)
+        super().__init__(lockdown, self.SERVICE_NAME)
 
     def get_profile_list(self):
         self.service.send_plist({'RequestType': 'GetProfileList'})

@@ -12,7 +12,8 @@ TEST_FOLDER_NAME = 'test_folder'
 
 @pytest.fixture(scope='function')
 def afc(lockdown):
-    return AfcService(lockdown)
+    with AfcService(lockdown) as afc:
+        yield afc
 
 
 def test_exists(afc: AfcService):

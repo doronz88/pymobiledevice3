@@ -1,5 +1,6 @@
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, ConnectionFailedError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 Requests = """Goodbye
 All
@@ -97,7 +98,7 @@ MobileGestaltKeys = ['BasebandKeyHashInformation',
                      'ApNonce']
 
 
-class DiagnosticsService(object):
+class DiagnosticsService(BaseService):
     """
     Provides an API to:
     * Query MobileGestalt & IORegistry keys.
@@ -107,11 +108,14 @@ class DiagnosticsService(object):
     SERVICE_NAME_OLD = 'com.apple.iosdiagnostics.relay'
 
     def __init__(self, lockdown: LockdownClient):
-        self.lockdown = lockdown
         try:
-            self.service = self.lockdown.start_service(self.SERVICE_NAME_NEW)
+            service = self.lockdown.start_service(self.SERVICE_NAME_NEW)
+            service_name = self.SERVICE_NAME_NEW
         except ConnectionFailedError:
-            self.service = self.lockdown.start_service(self.SERVICE_NAME_OLD)
+            service = self.lockdown.start_service(self.SERVICE_NAME_OLD)
+            service_name = self.SERVICE_NAME_OLD
+
+        super().__init__(lockdown, service_name, service=service)
         self.packet_num = 0
 
     def mobilegestalt(self, keys=None):

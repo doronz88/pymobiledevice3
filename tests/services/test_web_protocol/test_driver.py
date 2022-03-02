@@ -1,5 +1,3 @@
-import pytest
-
 from pymobiledevice3.services.web_protocol.driver import By
 from tests.services.test_web_protocol.common import LINK_HTML
 
