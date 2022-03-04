@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-import logging
 import time
 
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 
-class HeartbeatService(object):
+class HeartbeatService(BaseService):
     """
     Use to keep an active connection with lockdowd
     """
     SERVICE_NAME = 'com.apple.mobile.heartbeat'
 
     def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
+        super().__init__(lockdown, self.SERVICE_NAME)
 
     def start(self, interval=None):
         start = time.time()

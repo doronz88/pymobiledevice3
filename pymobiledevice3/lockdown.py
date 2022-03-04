@@ -34,6 +34,30 @@ def write_home_file(filename, data):
     return str(filepath)
 
 
+def reconnect_on_remote_close(f):
+    """
+    lockdownd's _socket_select will close the connection after 60 seconds of "radio-silent" (no data has been
+    transmitted). When this happens, we'll attempt to reconnect.
+    """
+
+    def _reconnect_on_remote_close(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except BrokenPipeError:
+            self = args[0]
+
+            # first we release the socket on our end to avoid a ResourceWarning
+            self.close()
+
+            # now we re-establish the connection
+            self.logger.debug('remote device closed the connection. reconnecting...')
+            self.service = ServiceConnection.create(self.udid, self.SERVICE_PORT)
+            self.validate_pairing()
+            return f(*args, **kwargs)
+
+    return _reconnect_on_remote_close
+
+
 class LockdownClient(object):
     DEFAULT_CLIENT_NAME = 'pyMobileDevice'
     SERVICE_PORT = 62078
@@ -130,6 +154,7 @@ class LockdownClient(object):
         hostid = uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
         return str(hostid).upper()
 
+    @reconnect_on_remote_close
     def enter_recovery(self):
         self.service.send_plist({'Request': 'EnterRecovery'})
         return self.service.recv_plist()
@@ -210,6 +235,7 @@ class LockdownClient(object):
         self.paired = True
         return True
 
+    @reconnect_on_remote_close
     def pair(self):
         self.device_public_key = self.get_value('', 'DevicePublicKey')
         if not self.device_public_key:
@@ -248,11 +274,13 @@ class LockdownClient(object):
 
         self.paired = True
 
+    @reconnect_on_remote_close
     def unpair(self):
         req = {'Label': self.label, 'Request': 'Unpair', 'PairRecord': self.pair_record}
         self.service.send_plist(req)
         return self.service.recv_plist()
 
+    @reconnect_on_remote_close
     def get_value(self, domain=None, key=None):
         if isinstance(key, str) and hasattr(self, 'record') and hasattr(self.pair_record, key):
             return self.pair_record[key]
@@ -272,6 +300,7 @@ class LockdownClient(object):
                 return r.data
             return r
 
+    @reconnect_on_remote_close
     def set_value(self, value, domain=None, key=None):
         req = {'Request': 'SetValue', 'Label': self.label}
 
@@ -304,6 +333,7 @@ class LockdownClient(object):
             raise StartServiceError(response.get("Error"))
         return response
 
+    @reconnect_on_remote_close
     def start_service(self, name, escrow_bag=None) -> ServiceConnection:
         attr = self.get_service_connection_attributes(name, escrow_bag=escrow_bag)
         service_connection = ServiceConnection.create(self.udid, attr['Port'])
