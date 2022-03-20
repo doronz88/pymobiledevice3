@@ -1,18 +1,16 @@
-import logging
 import struct
 import time
 
 import gpxpy
-
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 
-class DtSimulateLocation(object):
+class DtSimulateLocation(BaseService):
     SERVICE_NAME = 'com.apple.dt.simulatelocation'
 
     def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
+        super().__init__(lockdown, self.SERVICE_NAME)
 
     def clear(self):
         """ stop simulation """
