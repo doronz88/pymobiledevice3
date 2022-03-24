@@ -109,10 +109,10 @@ class DiagnosticsService(BaseService):
 
     def __init__(self, lockdown: LockdownClient):
         try:
-            service = self.lockdown.start_service(self.SERVICE_NAME_NEW)
+            service = lockdown.start_service(self.SERVICE_NAME_NEW)
             service_name = self.SERVICE_NAME_NEW
         except ConnectionFailedError:
-            service = self.lockdown.start_service(self.SERVICE_NAME_OLD)
+            service = lockdown.start_service(self.SERVICE_NAME_OLD)
             service_name = self.SERVICE_NAME_OLD
 
         super().__init__(lockdown, service_name, service=service)
