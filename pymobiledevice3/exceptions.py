@@ -130,3 +130,8 @@ class RemoteAutomationNotEnabled(PyMobileDevice3Exception):
 class WirError(PyMobileDevice3Exception):
     """ Raise when Webinspector WIR command fails. """
     pass
+
+
+class InternalError(PyMobileDevice3Exception):
+    """ Some internal Apple error """
+    pass

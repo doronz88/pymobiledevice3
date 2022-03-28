@@ -1,7 +1,7 @@
 from typing import Optional
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, NotMountedError, UnsupportedCommandError, \
-    AlreadyMountedError
+    AlreadyMountedError, InternalError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService
 
@@ -55,6 +55,8 @@ class MobileImageMounterService(BaseService):
         if error:
             if error == 'UnknownCommand':
                 raise UnsupportedCommandError()
+            elif error == 'InternalError':
+                raise InternalError()
             else:
                 raise NotMountedError()
 
