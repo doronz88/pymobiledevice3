@@ -37,7 +37,9 @@ def mounter_list(lockdown: LockdownClient, color):
 
     images = MobileImageMounterService(lockdown=lockdown).list_images()['EntryList']
     for image in images:
-        image['ImageSignature'] = image['ImageSignature'].hex()
+        image_signature = image.get('ImageSignature')
+        if image_signature is not None:
+            image['ImageSignature'] = image_signature.hex()
         output.append(image)
 
     print_json(output, colored=color)
