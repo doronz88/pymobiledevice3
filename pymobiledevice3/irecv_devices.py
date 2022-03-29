@@ -408,4 +408,7 @@ IRECV_DEVICES = (
                 display_name='Apple T2 MacBookPro16,3 (j223)'),
     IRecvDevice(product_type='iBridge2,22', hardware_model='j215ap', board_id=0x38, chip_id=0x8012,
                 display_name='Apple T2 MacBookPro16,4 (j215)'),
+    # Apple Displays
+    IRecvDevice(product_type='AppleDisplay2,1', hardware_model='j327ap', board_id=0x22, chip_id=0x8030,
+                display_name='Studio Display'),
 )
