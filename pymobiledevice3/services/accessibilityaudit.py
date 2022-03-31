@@ -13,13 +13,28 @@ class AXAuditInspectorFocus_v1(SerializedObject):
     def __init__(self, fields):
         super().__init__(fields)
 
+    @property
+    def caption(self) -> str:
+        return self._fields.get('CaptionTextValue_v1')
+
+    @property
+    def element(self) -> bytes:
+        return self._fields.get('ElementValue_v1')
+
     def __str__(self):
-        return f'<Focused Element: {self._fields.get("CaptionTextValue_v1")}>'
+        return f'<Focused ElementCaption: {self.caption}>'
 
 
 class AXAuditElement_v1(SerializedObject):
     def __init__(self, fields):
         super().__init__(fields)
+
+    @property
+    def identifier(self) -> bytes:
+        return self._fields['PlatformElementValue_v1'].NSdata
+
+    def __repr__(self):
+        return f'<Element: {self.identifier}>'
 
 
 class AXAuditInspectorSection_v1(SerializedObject):
@@ -85,8 +100,6 @@ class AccessibilityAudit(RemoteServer):
     def __init__(self, lockdown: LockdownClient):
         super().__init__(lockdown, self.SERVICE_NAME, remove_ssl_context=True)
 
-        self._callback = None
-
         self.broadcast.deviceSetAppMonitoringEnabled_(MessageAux().append_obj(True))
         self.recv_response()
 
@@ -99,25 +112,20 @@ class AccessibilityAudit(RemoteServer):
         self.broadcast.deviceInspectorShowIgnoredElements_(MessageAux().append_obj(1))
         self.recv_response()
 
-    def register_notifications_callback(self, callback):
-        self._callback = callback
-
-    def listen_for_notifications(self):
-        if self._callback is not None:
-            while True:
-                notification = self.recv_plist()
-                if notification[1] is None:
-                    continue
-                data = [x['value'] for x in notification[1]]
-                self._callback(notification[0], deserialize_object(data))
+    def iter_notifications(self):
+        while True:
+            notification = self.recv_plist()
+            if notification[1] is None:
+                continue
+            data = [x['value'] for x in notification[1]]
+            yield notification[0], deserialize_object(data)
 
     def recv_response(self):
         plist = self.recv_plist()
 
         while plist[1] is not None:
             # skip notifications, but report them if exists
-            if self._callback is not None:
-                self._callback(plist[0], deserialize_object(plist[1]))
+            yield plist[0], deserialize_object(plist[1])
 
             plist = self.recv_plist()
 
@@ -133,6 +141,62 @@ class AccessibilityAudit(RemoteServer):
 
     def move_focus_next(self):
         self.move_focus(DIRECTION_NEXT)
+
+    def perform_press(self, element: bytes):
+        """ simulate click (can be used only for processes with task_for_pid-allow """
+        element = {
+            'ObjectType': 'AXAuditElement_v1',
+            'Value': {
+                'ObjectType': 'passthrough',
+                'Value': {
+                    'PlatformElementValue_v1': {
+                        'ObjectType': 'passthrough'
+                    },
+                    'Value': element,
+                }
+            }
+        }
+
+        action = {
+            'ObjectType': 'AXAuditElementAttribute_v1',
+            'Value': {
+                'ObjectType': 'passthrough',
+                'Value': {
+                    'AttributeNameValue_v1': {
+                        'ObjectType': 'passthrough',
+                        'Value': 'AXAction-2010',
+                    },
+                    'DisplayAsTree_v1': {
+                        'ObjectType': 'passthrough',
+                        'Value': 0,
+                    },
+                    'HumanReadableNameValue_v1': {
+                        'ObjectType': 'passthrough',
+                        'Value': 'Activate',
+                    },
+                    'IsInternal_v1': {
+                        'ObjectType': 'passthrough',
+                        'Value': 0,
+                    },
+                    'PerformsActionValue_v1': {
+                        'ObjectType': 'passthrough',
+                        'Value': 1,
+                    },
+                    'SettableValue_v1': {
+                        'ObjectType': 'passthrough',
+                        'Value': 0,
+                    },
+                    'ValueTypeValue_v1': {
+                        'ObjectType': 'passthrough',
+                        'Value': 1,
+                    },
+                }
+            }
+        }
+
+        self.broadcast.deviceElement_performAction_withValue_(
+            MessageAux().append_obj(element).append_obj(action).append_obj(0))
+        self.recv_response()
 
     def move_focus(self, direction):
         options = {

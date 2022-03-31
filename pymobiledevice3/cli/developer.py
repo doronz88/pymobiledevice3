@@ -688,7 +688,10 @@ def accessibility_shell(lockdown: LockdownClient):
 def accessibility_notifications(lockdown: LockdownClient, cycle_focus):
     """ show notifications """
 
-    def callback(name, data):
+    service = AccessibilityAudit(lockdown)
+    if cycle_focus:
+        service.move_focus_next()
+    for name, data in service.iter_notifications():
         if name in ('hostAppStateChanged:',
                     'hostInspectorCurrentElementChanged:',):
             for focus_item in data:
@@ -698,11 +701,31 @@ def accessibility_notifications(lockdown: LockdownClient, cycle_focus):
                 if cycle_focus:
                     service.move_focus_next()
 
+
+@accessibility.command('list-items', cls=Command)
+def accessibility_list_items(lockdown: LockdownClient):
+    """ list items available in currently shown menu """
+
     service = AccessibilityAudit(lockdown)
-    service.register_notifications_callback(callback)
-    if cycle_focus:
+    iterator = service.iter_notifications()
+    service.move_focus_next()
+
+    first_item = None
+
+    for name, data in iterator:
+        if name != 'hostInspectorCurrentElementChanged:':
+            continue
+
+        current_item = data[0]
+
+        if first_item is None:
+            first_item = current_item
+        else:
+            if first_item.caption == current_item.caption:
+                return
+
+        print(f'{current_item.caption}: {current_item.element.identifier}')
         service.move_focus_next()
-    service.listen_for_notifications()
 
 
 @developer.group('condition')
