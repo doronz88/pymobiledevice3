@@ -124,6 +124,7 @@ archiver.update_class_map({'DTSysmonTapMessage': DTTapMessage,
                            'DTTapStatusMessage': DTTapMessage,
                            'DTKTraceTapMessage': DTTapMessage,
                            'DTActivityTraceTapMessage': DTTapMessage,
+                           'DTTapMessage': DTTapMessage,
                            'NSNull': NSNull,
                            'NSError': NSError})
 
