@@ -370,7 +370,9 @@ def developer_oslog(lockdown, nocolor, pid):
             for message in tap:
                 message_pid = message.process
                 timestamp = message.time
-                message_type = message.message_type
+                # without message_type maybe signpost have event_type
+                message_type = message.message_type if hasattr(message, 'message_type') else message.event_type \
+                    if hasattr(message, 'event_type') else "unknown"
                 sender_image_path = message.sender_image_path
                 image_name = os.path.basename(sender_image_path)
                 subsystem = message.subsystem
@@ -380,7 +382,8 @@ def developer_oslog(lockdown, nocolor, pid):
                     continue
 
                 try:
-                    formatted_message = decode_message_format(message.message).decode()
+                    formatted_message = decode_message_format(message.message).decode() \
+                        if message.message else message.name
                 except Exception:
                     print('error decoding')
 
