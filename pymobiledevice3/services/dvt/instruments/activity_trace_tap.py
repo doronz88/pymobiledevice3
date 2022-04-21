@@ -85,9 +85,9 @@ class ActivityTraceTap(Tap):
             'pidToInjectCombineDYLIB': "-1",
             'predicate': "(messageType == info OR messageType == debug OR messageType == default OR "
                          "messageType == error OR messageType == fault)",
-            # 'signpostsAndLogs': 1,
-            'signpostsAndLogs': 0,
-            'targetPID': "-3",
+             'signpostsAndLogs': 1,
+#            'signpostsAndLogs': 0,
+            'targetPID': -1, # all Process
             'trackExpiredPIDs': 1,
             'ur': 500,
         }
@@ -219,10 +219,12 @@ class ActivityTraceTap(Tap):
             message.process = struct.unpack('<I', message.process[0].ljust(4, b'\x00'))[0]
             message.thread = struct.unpack('<I', message.thread[0].ljust(4, b'\x00'))[0]
 
-            string_fields = ('message_type', 'format_string', 'subsystem', 'category', 'sender_image_path')
+            string_fields = ('message_type', 'format_string', 'subsystem', 'category', 'sender_image_path',
+                             'event_type', 'name')
             for f in string_fields:
                 if hasattr(message, f):
-                    setattr(message, f, decode_str(getattr(message, f)))
+                    v = getattr(message, f)
+                    setattr(message, f, decode_str(v) if v else v)
 
             if hasattr(message, 'message'):
                 return message

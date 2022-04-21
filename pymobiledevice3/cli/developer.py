@@ -531,7 +531,9 @@ def dvt_oslog(lockdown: LockdownClient, color, pid):
         with ActivityTraceTap(dvt) as tap:
             for message in tap:
                 message_pid = message.process
-                message_type = message.message_type
+                # without message_type maybe signpost have event_type
+                message_type = message.message_type if hasattr(message, 'message_type') else message.event_type \
+                    if hasattr(message, 'event_type') else "unknown"
                 sender_image_path = message.sender_image_path
                 image_name = os.path.basename(sender_image_path)
                 subsystem = message.subsystem
@@ -541,7 +543,8 @@ def dvt_oslog(lockdown: LockdownClient, color, pid):
                     continue
 
                 try:
-                    formatted_message = decode_message_format(message.message).decode()
+                    formatted_message = decode_message_format(message.message).decode() \
+                        if message.message else message.name
                 except Exception:
                     print('error decoding')
 
