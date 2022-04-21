@@ -8,4 +8,5 @@ def lockdown():
     """
     Creates a new lockdown client for each test.
     """
-    return LockdownClient()
+    with LockdownClient() as client:
+        yield client

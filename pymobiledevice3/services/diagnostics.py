@@ -1,5 +1,6 @@
-from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.exceptions import PyMobileDevice3Exception, ConnectionFailedError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 Requests = """Goodbye
 All
@@ -97,12 +98,24 @@ MobileGestaltKeys = ['BasebandKeyHashInformation',
                      'ApNonce']
 
 
-class DiagnosticsService(object):
-    SERVICE_NAME = 'com.apple.mobile.diagnostics_relay'
+class DiagnosticsService(BaseService):
+    """
+    Provides an API to:
+    * Query MobileGestalt & IORegistry keys.
+    * Reboot, shutdown or put the device in sleep mode.
+    """
+    SERVICE_NAME_NEW = 'com.apple.mobile.diagnostics_relay'
+    SERVICE_NAME_OLD = 'com.apple.iosdiagnostics.relay'
 
     def __init__(self, lockdown: LockdownClient):
-        self.lockdown = lockdown
-        self.service = self.lockdown.start_service(self.SERVICE_NAME)
+        try:
+            service = lockdown.start_service(self.SERVICE_NAME_NEW)
+            service_name = self.SERVICE_NAME_NEW
+        except ConnectionFailedError:
+            service = lockdown.start_service(self.SERVICE_NAME_OLD)
+            service_name = self.SERVICE_NAME_OLD
+
+        super().__init__(lockdown, service_name, service=service)
         self.packet_num = 0
 
     def mobilegestalt(self, keys=None):
@@ -153,12 +166,14 @@ class DiagnosticsService(object):
 
         d['Request'] = 'IORegistry'
 
-        self.service.send_plist(d)
-        response = self.service.recv_plist()
-        if response.get('Status', None) != 'Success':
+        response = self.service.send_recv_plist(d)
+        if response.get('Status') != 'Success':
             raise PyMobileDevice3Exception(f'got invalid response: {response}')
 
         dd = response.get('Diagnostics')
         if dd:
             return dd.get('IORegistry')
         return None
+
+    def get_battery(self):
+        return self.ioregistry(ioclass='IOPMPowerSource')

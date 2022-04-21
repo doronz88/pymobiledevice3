@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
-import logging
+import enum
 import socket
 import struct
-import enum
 
 from construct import Struct, Int32ub, Int32ul, Bytes, Byte, this, Padding, Padded, CString
 
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 INTERFACE_NAMES = enum.Enum('InterfaceNames', names={
     'other': 1,
@@ -318,13 +318,16 @@ device_packet_struct = Struct(
 )
 
 
-class PcapdService:
+class PcapdService(BaseService):
+    """
+    Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from
+    an iOS device. On macOS, the virtual interface can be enabled with the rvictl command. This script allows to use
+    this service on other systems.
+    """
     SERVICE_NAME = 'com.apple.pcapd'
 
     def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-        self.service = self.lockdown.start_service(self.SERVICE_NAME)
+        super().__init__(lockdown, self.SERVICE_NAME)
 
     def watch(self, packets_count: int = -1, process: str = None):
         packet_index = 0

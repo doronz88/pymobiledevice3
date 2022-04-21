@@ -1,14 +1,16 @@
-from re import sub
-import plistlib
+import asyncio
 import logging
-import struct
+import plistlib
 import ssl
+import struct
+import time
 
 import IPython
 from pygments import highlight, lexers, formatters
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception, ConnectionTerminatedError
+from pymobiledevice3.usbmux import select_device
 
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
@@ -27,26 +29,42 @@ print(client.recvall(20))
 """
 
 
+def build_plist(d, endianity='>', fmt=plistlib.FMT_XML):
+    payload = plistlib.dumps(d, fmt=fmt)
+    message = struct.pack(endianity + 'L', len(payload))
+    return message + payload
+
+
+def parse_plist(payload):
+    try:
+        return plistlib.loads(payload)
+    except plistlib.InvalidFileException:
+        raise PyMobileDevice3Exception(f'parse_plist invalid data: {payload[:100].hex()}')
+
+
+def create_context(keyfile, certfile):
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.set_ciphers('AES256-SHA')
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    context.load_cert_chain(certfile, keyfile)
+    return context
+
+
 class ServiceConnection(object):
     def __init__(self, socket):
         self.logger = logging.getLogger(__name__)
         self.socket = socket
+        self._reader = None  # type: asyncio.StreamReader
+        self._writer = None  # type: asyncio.StreamWriter
 
     @staticmethod
     def create(udid, port):
-        mux = usbmux.USBMux()
-        mux.process()
-        target_device = None
-
+        target_device = select_device(udid)
         while target_device is None:
-            mux.process()
-            for connected_device in mux.devices:
-                if connected_device.serial == udid:
-                    target_device = connected_device
-                    break
-
+            target_device = select_device(udid)
         try:
-            socket = mux.connect(target_device, port)
+            socket = target_device.connect(port)
         except usbmux.MuxException:
             raise ConnectionFailedError(f'Connection to device port {port} failed')
 
@@ -58,16 +76,27 @@ class ServiceConnection(object):
     def close(self):
         self.socket.close()
 
+    async def aio_close(self):
+        if self._writer is None:
+            return
+        self._writer.close()
+        await self._writer.wait_closed()
+        self._writer = None
+        self._reader = None
+
     def recv(self, length=4096):
         """ socket.recv() normal behavior. attempt to receive a single chunk """
         return self.socket.recv(length)
 
     def sendall(self, data):
-        self.socket.sendall(data)
+        try:
+            self.socket.sendall(data)
+        except ssl.SSLEOFError as e:
+            raise ConnectionTerminatedError from e
 
-    def send_recv_plist(self, data):
-        self.send_plist(data)
-        return self.recv_plist()
+    def send_recv_plist(self, data, endianity='>', fmt=plistlib.FMT_XML):
+        self.send_plist(data, endianity=endianity, fmt=fmt)
+        return self.recv_plist(endianity=endianity)
 
     def recvall(self, size):
         data = b''
@@ -78,13 +107,24 @@ class ServiceConnection(object):
             data += chunk
         return data
 
-    def recv_prefixed(self):
+    def recv_prefixed(self, endianity='>'):
         """ receive a data block prefixed with a u32 length field """
-        response = self.recvall(4)
-        if not response or len(response) != 4:
+        size = self.recvall(4)
+        if not size or len(size) != 4:
             return
-        response = struct.unpack('>L', response)[0]
-        return self.recvall(response)
+        size = struct.unpack(endianity + 'L', size)[0]
+        while True:
+            try:
+                return self.recvall(size)
+            except (BlockingIOError, ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                # Allow ssl to do stuff
+                time.sleep(0)
+
+    async def aio_recv_prefixed(self, endianity='>'):
+        """ receive a data block prefixed with a u32 length field """
+        size = await self._reader.readexactly(4)
+        size = struct.unpack(endianity + 'L', size)[0]
+        return await self._reader.readexactly(size)
 
     def send_prefixed(self, data):
         """ send a data block prefixed with a u32 length field """
@@ -94,30 +134,28 @@ class ServiceConnection(object):
         msg = b''.join([hdr, data])
         return self.sendall(msg)
 
-    def recv_plist(self):
-        payload = self.recv_prefixed()
-        if not payload:
-            return
-        bplist_header = b'bplist00'
-        xml_header = b'<?xml'
-        if payload.startswith(bplist_header):
-            return plistlib.loads(payload)
-        elif payload.startswith(xml_header):
-            # HAX lockdown HardwarePlatform with null bytes
-            payload = sub(r'[^\w<>\/ \-_0-9\"\'\\=\.\?\!\+]+', '', payload.decode('utf-8')).encode('utf-8')
-            return plistlib.loads(payload)
-        else:
-            raise PyMobileDevice3Exception(f'recv_plist invalid data: {payload[:100].hex()}')
+    def recv_plist(self, endianity='>'):
+        return parse_plist(self.recv_prefixed(endianity=endianity))
 
-    def send_plist(self, d):
-        payload = plistlib.dumps(d)
-        message = struct.pack(">L", len(payload))
-        return self.sendall(message + payload)
+    async def aio_recv_plist(self, endianity='>'):
+        return parse_plist(await self.aio_recv_prefixed(endianity))
+
+    def send_plist(self, d, endianity='>', fmt=plistlib.FMT_XML):
+        return self.sendall(build_plist(d, endianity, fmt))
+
+    async def aio_send_plist(self, d, endianity='>', fmt=plistlib.FMT_XML):
+        self._writer.write(build_plist(d, endianity, fmt))
+        await self._writer.drain()
 
     def ssl_start(self, keyfile, certfile):
-        context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
-        context.load_cert_chain(certfile, keyfile)
-        self.socket = context.wrap_socket(self.socket)
+        self.socket = create_context(keyfile, certfile).wrap_socket(self.socket)
+
+    async def aio_ssl_start(self, keyfile, certfile):
+        self._reader, self._writer = await asyncio.open_connection(
+            sock=self.socket,
+            ssl=create_context(keyfile, certfile),
+            server_hostname=''
+        )
 
     def shell(self):
         IPython.embed(

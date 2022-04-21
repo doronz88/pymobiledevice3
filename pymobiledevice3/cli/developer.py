@@ -4,24 +4,42 @@ import logging
 import os
 import posixpath
 import shlex
+import signal
+from collections import namedtuple
 from dataclasses import asdict
 
 import click
-from pymobiledevice3.cli.cli_common import print_object, Command
-from pymobiledevice3.exceptions import DvtDirListError, StartServiceError
+from click.exceptions import MissingParameter, UsageError
+from pykdebugparser.pykdebugparser import PyKdebugParser
+from termcolor import colored
+
+import pymobiledevice3
+from pymobiledevice3.cli.cli_common import print_json, Command, default_json_encoder, wait_return
+from pymobiledevice3.exceptions import DvtDirListError, ExtractingStackshotError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
+from pymobiledevice3.services.debugserver_applist import DebugServerAppList
+from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
-from pymobiledevice3.services.dvt.instruments.kdebug_events_parser import KdebugEventsParser
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
-from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap, DgbFuncQual, \
-    ProcessData
+from pymobiledevice3.services.dvt.instruments.condition_inducer import ConditionInducer
+from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
+from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
+from pymobiledevice3.services.dvt.instruments.graphics import Graphics
 from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMonitor, ConnectionDetectionEvent
+from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
+from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
+from pymobiledevice3.services.os_trace import OsTraceService
+from pymobiledevice3.services.remote_server import RemoteServer
 from pymobiledevice3.services.screenshot import ScreenshotService
-from termcolor import colored
+from pymobiledevice3.services.simulate_location import DtSimulateLocation
+from pymobiledevice3.tcp_forwarder import TcpForwarder
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -43,20 +61,24 @@ def developer():
     pass
 
 
-@developer.command(cls=Command)
-@click.argument('out', type=click.File('wb'))
-def screenshot(lockdown, out):
-    """ take a screenshot in PNG format """
-    try:
-        out.write(ScreenshotService(lockdown=lockdown).take_screenshot())
-    except StartServiceError:
-        logging.error('failed to connect to required service. make sure DeveloperDiskImage.dmg has been mounted. '
-                      'You can do so using: pymobiledevice3 mounter mount')
+@developer.command('shell', cls=Command)
+@click.argument('service')
+@click.option('-r', '--remove-ssl-context', is_flag=True)
+def developer_shell(lockdown: LockdownClient, service, remove_ssl_context):
+    """ Launch developer shell. """
+    with RemoteServer(lockdown, service, remove_ssl_context) as service:
+        service.shell()
 
 
-@developer.command('proclist', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def proclist(lockdown, nocolor):
+@developer.group()
+def dvt():
+    """ dvt operations """
+    pass
+
+
+@dvt.command('proclist', cls=Command)
+@click.option('--color/--no-color', default=True)
+def proclist(lockdown: LockdownClient, color):
     """ show process list """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         processes = DeviceInfo(dvt).proclist()
@@ -64,46 +86,79 @@ def proclist(lockdown, nocolor):
             if 'startDate' in process:
                 process['startDate'] = str(process['startDate'])
 
-        print_object(processes, colored=not nocolor)
+        print_json(processes, colored=color)
 
 
-@developer.command('applist', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def applist(lockdown, nocolor):
+@dvt.command('applist', cls=Command)
+@click.option('--color/--no-color', default=True)
+def applist(lockdown: LockdownClient, color):
     """ show application list """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         apps = ApplicationListing(dvt).applist()
-        print_object(apps, colored=not nocolor)
+        print_json(apps, colored=color)
 
 
-@developer.command('kill', cls=Command)
+@dvt.command('signal', cls=Command)
 @click.argument('pid', type=click.INT)
-def kill(lockdown, pid):
+@click.argument('sig', type=click.INT, required=False)
+@click.option('-s', '--signal-name', type=click.Choice([s.name for s in signal.Signals]))
+def send_signal(lockdown, pid, sig, signal_name):
+    """ Send SIGNAL to process by its PID """
+    if not sig and not signal_name:
+        raise MissingParameter(param_type='argument|option', param_hint='\'SIG|SIGNAL-NAME\'')
+    if sig and signal_name:
+        raise UsageError(message='Cannot give SIG and SIGNAL-NAME together')
+    sig = sig or signal.Signals[signal_name].value
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        ProcessControl(dvt).signal(pid, sig)
+
+
+@dvt.command('kill', cls=Command)
+@click.argument('pid', type=click.INT)
+def kill(lockdown: LockdownClient, pid):
     """ Kill a process by its pid. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         ProcessControl(dvt).kill(pid)
 
 
-@developer.command('launch', cls=Command)
+@dvt.command('pkill', cls=Command)
+@click.argument('expression')
+def pkill(lockdown: LockdownClient, expression):
+    """ kill all processes containing `expression` in their name. """
+    processes = OsTraceService(lockdown=lockdown).get_pid_list()['Payload']
+    if len(processes) == 0:
+        # no point at trying to use DvtSecureSocketProxyService if no processes
+        # were matched
+        return
+
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        process_control = ProcessControl(dvt)
+        for pid, process_info in processes.items():
+            process_name = process_info['ProcessName']
+            if expression in process_name:
+                logger.info(f'killing {process_name}({pid})')
+                process_control.kill(pid)
+
+
+@dvt.command('launch', cls=Command)
 @click.argument('arguments', type=click.STRING)
-@click.option('--kill-existing/--no-kill-existing', default=True)
-@click.option('--suspended', is_flag=True)
-def launch(lockdown: LockdownClient, arguments: str, kill_existing: bool, suspended: bool):
-    """
-    Launch a process.
-    :param lockdown: Lockdown client.
-    :param arguments: Arguments of process to launch, the first argument is the bundle id.
-    :param kill_existing: Whether to kill an existing instance of this process.
-    :param suspended: Same as WaitForDebugger.
-    """
+@click.option('--kill-existing/--no-kill-existing', default=True,
+              help='Whether to kill an existing instance of this process')
+@click.option('--suspended', is_flag=True, help='Same as WaitForDebugger')
+@click.option('--env', multiple=True, type=click.Tuple((str, str)),
+              help='Environment variables to pass to process given as a list of key value')
+def launch(lockdown: LockdownClient, arguments: str, kill_existing: bool, suspended: bool, env: tuple):
+    """ Launch a process. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         parsed_arguments = shlex.split(arguments)
-        pid = ProcessControl(dvt).launch(parsed_arguments[0], parsed_arguments[1:], kill_existing, suspended)
+        pid = ProcessControl(dvt).launch(bundle_id=parsed_arguments[0], arguments=parsed_arguments[1:],
+                                         kill_existing=kill_existing, start_suspended=suspended,
+                                         environment=dict(env))
         print(f'Process launched with pid {pid}')
 
 
-@developer.command('shell', cls=Command)
-def shell(lockdown):
+@dvt.command('shell', cls=Command)
+def dvt_shell(lockdown: LockdownClient):
     """ Launch developer shell. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         dvt.shell()
@@ -122,51 +177,84 @@ def show_dirlist(device_info: DeviceInfo, dirname, recursive=False):
             show_dirlist(device_info, filename, recursive=recursive)
 
 
-@developer.command('ls', cls=Command)
+@dvt.command('ls', cls=Command)
 @click.argument('path', type=click.Path(exists=False))
 @click.option('-r', '--recursive', is_flag=True)
-def ls(lockdown, path, recursive):
+def ls(lockdown: LockdownClient, path, recursive):
     """ List directory. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         show_dirlist(DeviceInfo(dvt), path, recursive=recursive)
 
 
-@developer.command('device-information', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def device_information(lockdown, nocolor):
+@dvt.command('device-information', cls=Command)
+@click.option('--color/--no-color', default=True)
+def device_information(lockdown: LockdownClient, color):
     """ Print system information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         device_info = DeviceInfo(dvt)
-        print_object({
+        print_json({
             'system': device_info.system_information(),
             'hardware': device_info.hardware_information(),
             'network': device_info.network_information(),
-        }, colored=not nocolor)
+            'kernel-name': device_info.mach_kernel_name(),
+            'kpep-database': device_info.kpep_database(),
+        }, colored=color)
 
 
-@developer.command('netstat', cls=Command)
-def netstat(lockdown):
+@dvt.command('netstat', cls=Command)
+def netstat(lockdown: LockdownClient):
     """ Print information about current network activity. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with NetworkMonitor(dvt) as monitor:
             for event in monitor:
                 if isinstance(event, ConnectionDetectionEvent):
-                    logging.info(
+                    logger.info(
                         f'Connection detected: {event.local_address.data.address}:{event.local_address.port} -> '
                         f'{event.remote_address.data.address}:{event.remote_address.port}')
 
 
-@developer.group('sysmon')
+@dvt.command('screenshot', cls=Command)
+@click.argument('out', type=click.File('wb'))
+def screenshot(lockdown: LockdownClient, out):
+    """ get device screenshot """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        out.write(Screenshot(dvt).get_screenshot())
+
+
+@dvt.group('sysmon')
 def sysmon():
     """ System monitor options. """
 
 
-@sysmon.command('processes', cls=Command)
+@sysmon.group('process')
+def sysmon_process():
+    """ Process monitor options. """
+
+
+@sysmon_process.command('monitor', cls=Command)
+@click.argument('threshold', type=click.FLOAT)
+def sysmon_process_monitor(lockdown: LockdownClient, threshold):
+    """ monitor all most consuming processes by given cpuUsage threshold. """
+
+    Process = namedtuple('process', 'pid name cpuUsage')
+
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with Sysmontap(dvt) as sysmon:
+            for process_snapshot in sysmon.iter_processes():
+                entries = []
+                for process in process_snapshot:
+                    if (process['cpuUsage'] is not None) and (process['cpuUsage'] >= threshold):
+                        entries.append(Process(pid=process['pid'], name=process['name'], cpuUsage=process['cpuUsage']))
+
+                logger.info(entries)
+
+
+@sysmon_process.command('single', cls=Command)
 @click.option('-f', '--fields', help='show only given field names splitted by ",".')
 @click.option('-a', '--attributes', multiple=True,
               help='filter processes by given attribute value given as key=value')
-def sysmon_processes(lockdown, fields, attributes):
-    """ show currently running processes information. """
+def sysmon_process_single(lockdown: LockdownClient, fields, attributes):
+    """ show a single snapshot of currently running processes. """
 
     if fields is not None:
         fields = fields.split(',')
@@ -174,45 +262,43 @@ def sysmon_processes(lockdown, fields, attributes):
     count = 0
 
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        sysmontap = Sysmontap(dvt)
-        with sysmontap as sysmon:
-            for row in sysmon:
-                if 'Processes' in row:
-                    processes = row['Processes'].items()
-                    count += 1
-
-                    if count > 1:
-                        # give some time for cpuUsage field to populate
-                        break
-
         device_info = DeviceInfo(dvt)
-        for pid, process in processes:
-            attrs = sysmontap.process_attributes_cls(*process)
 
-            skip = False
-            if attributes is not None:
-                for filter_attr in attributes:
-                    filter_attr, filter_value = filter_attr.split('=')
-                    if str(getattr(attrs, filter_attr)) != filter_value:
-                        skip = True
-                        break
+        with Sysmontap(dvt) as sysmon:
+            for process_snapshot in sysmon.iter_processes():
+                count += 1
 
-            if skip:
-                continue
+                if count < 2:
+                    # first sample doesn't contain an initialized value for cpuUsage
+                    continue
 
-            print(f'{attrs.name} ({attrs.pid})')
-            attrs_dict = asdict(attrs)
+                for process in process_snapshot:
+                    skip = False
+                    if attributes is not None:
+                        for filter_attr in attributes:
+                            filter_attr, filter_value = filter_attr.split('=')
+                            if str(process[filter_attr]) != filter_value:
+                                skip = True
+                                break
 
-            attrs_dict['execname'] = device_info.execname_for_pid(pid)
+                    if skip:
+                        continue
 
-            for name, value in attrs_dict.items():
-                if (fields is None) or (name in fields):
-                    print(f'\t{name}: {value}')
+                    # adding "artificially" the execName field
+                    process['execName'] = device_info.execname_for_pid(process['pid'])
+
+                    print(f'{process["name"]} ({process["pid"]})')
+                    for name, value in process.items():
+                        if (fields is None) or (name in fields):
+                            print(f'\t{name}: {value}')
+
+                # exit after single snapshot
+                return
 
 
 @sysmon.command('system', cls=Command)
 @click.option('-f', '--fields', help='field names splitted by ",".')
-def sysmon_system(lockdown, fields):
+def sysmon_system(lockdown: LockdownClient, fields):
     """ show current system stats. """
 
     if fields is not None:
@@ -232,16 +318,28 @@ def sysmon_system(lockdown, fields):
             print(f'{name}: {value}')
 
 
-@developer.group('core-profile-session')
+@dvt.group('core-profile-session')
 def core_profile_session():
     """ Core profile session options. """
 
 
+def parse_filters(filters):
+    if not filters:
+        return None
+    parsed = set()
+    for filter_ in filters:
+        print(filter_)
+        if filter_.lower() == 'bsc':
+            parsed |= {0x03010000, 0x040c0000, 0x07ff0000}  # VFS_LOOKUP, BSC operations, TRACE
+        else:
+            parsed.add(int(filter_, 16) << 16)
+
+    return parsed
+
+
 @core_profile_session.command('live', cls=Command)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
-@click.option('-cf', '--class-filter', type=click.INT, default=None, help='Events class to filter. Omit for all.')
-@click.option('-sf', '--subclass-filter', type=click.INT, default=None, help='Events subclass to filter. Omit for all.')
-@click.option('--pid', type=click.INT, default=None, help='Process ID to filter. Omit for all.')
+@click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
 @click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
 @click.option('--timestamp/--no-timestamp', default=True, help='Whether to print timestamp or not.')
 @click.option('--event-name/--no-event-name', default=True, help='Whether to print event name or not.')
@@ -249,127 +347,190 @@ def core_profile_session():
 @click.option('--show-tid/--no-show-tid', default=True, help='Whether to print thread id or not.')
 @click.option('--process-name/--no-process-name', default=True, help='Whether to print process name or not.')
 @click.option('--args/--no-args', default=True, help='Whether to print event arguments or not.')
-def live_profile_session(lockdown, count, class_filter, subclass_filter, pid, tid, timestamp, event_name, func_qual,
+def live_profile_session(lockdown: LockdownClient, count, filters, tid, timestamp, event_name, func_qual,
                          show_tid, process_name, args):
-    """ Print core profiling information. """
+    """ Print kevents received from the device in real time. """
+    filters = parse_filters(filters)
+    parser = PyKdebugParser()
+    parser.filter_tid = tid
+    parser.show_timestamp = timestamp
+    parser.show_name = event_name
+    parser.show_func_qual = func_qual
+    parser.show_tid = show_tid
+    parser.show_process = process_name
+    parser.show_args = args
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         trace_codes_map = DeviceInfo(dvt).trace_codes()
-        with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
-            for event in tap.watch_events(count):
-                if event.eventid in trace_codes_map:
-                    name = trace_codes_map[event.eventid] + f' ({hex(event.eventid)})'
-                else:
-                    # Some event IDs are not public.
-                    name = hex(event.eventid)
-                try:
-                    if tid is not None and event.tid != tid:
-                        continue
-                    try:
-                        process = tap.thread_map[event.tid]
-                    except KeyError:
-                        process = ProcessData(pid=-1, name='')
-                    if pid is not None and process.pid != pid:
-                        continue
-                    formatted_data = ''
-                    if timestamp:
-                        formatted_data += f'{str(tap.parse_event_time(event.timestamp)):<27}'
-                    formatted_data += f'{name:<58}' if event_name else ''
-                    if func_qual:
-                        try:
-                            formatted_data += f'{DgbFuncQual(event.func_qualifier).name:<15}'
-                        except ValueError:
-                            formatted_data += f'''{'Error':<16}'''
-                    formatted_data += f'{hex(event.tid):<12}' if show_tid else ''
-                    if process_name:
-                        process_rep = (f'{process.name}({process.pid})'
-                                       if process.pid != -1
-                                       else f'Error: tid {event.tid}')
-                        formatted_data += f'{process_rep:<27}' if process_name else ''
-                    formatted_data += f'{str(event.args.data):<34}' if args else ''
-                    print(formatted_data)
-                except (ValueError, KeyError):
-                    pass
+        time_config = CoreProfileSessionTap.get_time_config(dvt)
+        parser.numer = time_config['numer']
+        parser.denom = time_config['denom']
+        parser.mach_absolute_time = time_config['mach_absolute_time']
+        parser.usecs_since_epoch = time_config['usecs_since_epoch']
+        parser.timezone = time_config['timezone']
+        with CoreProfileSessionTap(dvt, time_config, filters) as tap:
+            i = 0
+            for event in parser.formatted_kevents(tap.get_kdbuf_stream(), trace_codes_map):
+                print(event)
+                i += 1
+                if i == count:
+                    break
 
 
 @core_profile_session.command('save', cls=Command)
 @click.argument('out', type=click.File('wb'))
-@click.option('-cf', '--class-filter', type=click.INT, default=None, help='Events class to filter. Omit for all.')
-@click.option('-sf', '--subclass-filter', type=click.INT, default=None, help='Events subclass to filter. Omit for all.')
-def save_profile_session(lockdown, out, class_filter, subclass_filter):
+@click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
+def save_profile_session(lockdown: LockdownClient, out, filters):
     """ Dump core profiling information. """
+    filters = parse_filters(filters)
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
+        with CoreProfileSessionTap(dvt, {}, filters) as tap:
             tap.dump(out)
 
 
 @core_profile_session.command('stackshot', cls=Command)
 @click.option('--out', type=click.File('w'), default=None)
-@click.option('--nocolor', is_flag=True)
-def stackshot(lockdown, out, nocolor):
+@click.option('--color/--no-color', default=True)
+def stackshot(lockdown: LockdownClient, out, color):
     """ Dump stackshot information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with CoreProfileSessionTap(dvt) as tap:
-            data = tap.get_stackshot()
+        with CoreProfileSessionTap(dvt, {}) as tap:
+            try:
+                data = tap.get_stackshot()
+            except ExtractingStackshotError:
+                logger.error(f'Extracting stackshot failed')
+                return
+
             if out is not None:
-                json.dump(data, out, indent=4)
+                json.dump(data, out, indent=4, default=default_json_encoder)
             else:
-                print_object(data, colored=not nocolor)
+                print_json(data, colored=color)
 
 
 @core_profile_session.command('parse-live', cls=Command)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
-@click.option('-cf', '--class-filter', type=click.INT, default=None, help='Events class to filter. Omit for all.')
-@click.option('-sf', '--subclass-filter', type=click.INT, default=None, help='Events subclass to filter. Omit for all.')
-@click.option('--pid', type=click.INT, default=None, help='Process ID to filter. Omit for all.')
 @click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
 @click.option('--show-tid/--no-show-tid', default=False, help='Whether to print thread id or not.')
-def parse_live_profile_session(lockdown, count, class_filter, subclass_filter, pid, tid, show_tid):
-    """ Parse core profiling information. """
+@click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
+@click.option('--color/--no-color', default=True)
+def parse_live_profile_session(lockdown: LockdownClient, count, tid, show_tid, filters, color):
+    """ Print traces (syscalls, thread events, etc.) received from the device in real time. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        trace_codes_map = DeviceInfo(dvt).trace_codes()
-        with CoreProfileSessionTap(dvt, class_filter, subclass_filter) as tap:
-            events_parser = KdebugEventsParser(trace_codes_map)
-            for event in tap.watch_events(count):
-                if tid is not None and event.tid != tid:
-                    continue
-                try:
-                    process = tap.thread_map[event.tid]
-                except KeyError:
-                    process = ProcessData(pid=-1, name='')
-                if pid is not None and process.pid != pid:
-                    continue
-                events_parser.feed(event)
-                parsed = events_parser.fetch()
-                if parsed is None:
-                    continue
-                formatted_data = f'{str(tap.parse_event_time(parsed.ktraces[0].timestamp)):<27}'
-                formatted_data += f'{hex(event.tid):<12}' if show_tid else ''
-                process_rep = (f'{process.name}({process.pid})'
-                               if process.pid != -1
-                               else f'Error: tid {event.tid}')
-                formatted_data += f'{process_rep:<27}'
-                print(formatted_data + str(parsed))
+        filters = parse_filters(filters)
+        print('Receiving time information')
+        time_config = CoreProfileSessionTap.get_time_config(dvt)
+        parser = PyKdebugParser()
+        parser.numer = time_config['numer']
+        parser.denom = time_config['denom']
+        parser.mach_absolute_time = time_config['mach_absolute_time']
+        parser.usecs_since_epoch = time_config['usecs_since_epoch']
+        parser.timezone = time_config['timezone']
+        parser.filter_tid = tid
+        parser.color = color
+        parser.show_tid = show_tid
+
+        with CoreProfileSessionTap(dvt, time_config, filters) as tap:
+            if show_tid:
+                print('{:^32}|{:^11}|{:^33}|   Event'.format('Time', 'Thread', 'Process'))
+            else:
+                print('{:^32}|{:^33}|   Event'.format('Time', 'Process'))
+
+            i = 0
+            for trace in parser.formatted_traces(tap.get_kdbuf_stream()):
+                print(trace)
+                i += 1
+                if i == count:
+                    break
 
 
-@developer.command('trace-codes', cls=Command)
-@click.option('--nocolor', is_flag=True)
-def trace_codes(lockdown, nocolor):
-    """ Print system information. """
+def get_image_name(dsc_uuid_map, image_uuid, current_dsc_map):
+    if not current_dsc_map:
+        for dsc_mapping in dsc_uuid_map.values():
+            if image_uuid in dsc_mapping:
+                current_dsc_map.update(dsc_mapping)
+
+    return current_dsc_map.get(image_uuid, image_uuid)
+
+
+def format_callstack(callstack, dsc_uuid_map, current_dsc_map):
+    lines = callstack.splitlines()
+    for i, line in enumerate(lines[1:]):
+        if ':' in line:
+            uuid = line.split(':')[0].strip()
+            lines[i + 1] = line.replace(uuid, get_image_name(dsc_uuid_map, uuid, current_dsc_map))
+    return '\n'.join(lines)
+
+
+@core_profile_session.command('callstacks-live', cls=Command)
+@click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
+@click.option('--process', default=None, help='Process to filter. Omit for all.')
+@click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
+@click.option('--show-tid/--no-show-tid', default=False, help='Whether to print thread id or not.')
+@click.option('--color/--no-color', default=True)
+def callstacks_live_profile_session(lockdown: LockdownClient, count, process, tid, show_tid, color):
+    """ Print callstacks received from the device in real time. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        print('Receiving time information')
+        time_config = CoreProfileSessionTap.get_time_config(dvt)
+        parser = PyKdebugParser()
+        parser.numer = time_config['numer']
+        parser.denom = time_config['denom']
+        parser.mach_absolute_time = time_config['mach_absolute_time']
+        parser.usecs_since_epoch = time_config['usecs_since_epoch']
+        parser.timezone = time_config['timezone']
+        parser.filter_tid = tid
+        parser.filter_process = process
+        parser.color = color
+        parser.show_tid = show_tid
+
+        with open(os.path.join(pymobiledevice3.__path__[0], 'resources', 'dsc_uuid_map.json'), 'r') as fd:
+            dsc_uuid_map = json.load(fd)
+
+        current_dsc_map = {}
+        with CoreProfileSessionTap(dvt, time_config) as tap:
+            i = 0
+            for callstack in parser.formatted_callstacks(tap.get_kdbuf_stream()):
+                print(format_callstack(callstack, dsc_uuid_map, current_dsc_map))
+                i += 1
+                if i == count:
+                    break
+
+
+@dvt.command('trace-codes', cls=Command)
+@click.option('--color/--no-color', default=True)
+def dvt_trace_codes(lockdown: LockdownClient, color):
+    """ Print KDebug trace codes. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         device_info = DeviceInfo(dvt)
-        print_object({hex(k): v for k, v in device_info.trace_codes().items()}, colored=not nocolor)
+        print_json({hex(k): v for k, v in device_info.trace_codes().items()}, colored=color)
 
 
-@developer.command('oslog', cls=Command)
-@click.option('--nocolor', is_flag=True, help='disable colors')
+@dvt.command('name-for-uid', cls=Command)
+@click.argument('uid', type=click.INT)
+def dvt_name_for_uid(lockdown: LockdownClient, uid):
+    """ Print the assiciated username for the given uid. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        device_info = DeviceInfo(dvt)
+        print(device_info.name_for_uid(uid))
+
+
+@dvt.command('name-for-gid', cls=Command)
+@click.argument('gid', type=click.INT)
+def dvt_name_for_gid(lockdown: LockdownClient, gid):
+    """ Print the assiciated group name for the given gid. """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        device_info = DeviceInfo(dvt)
+        print(device_info.name_for_gid(gid))
+
+
+@dvt.command('oslog', cls=Command)
+@click.option('--color/--no-color', default=True)
 @click.option('--pid', type=click.INT)
-def developer_oslog(lockdown, nocolor, pid):
+def dvt_oslog(lockdown: LockdownClient, color, pid):
     """ oslog. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with ActivityTraceTap(dvt) as tap:
             for message in tap:
                 message_pid = message.process
-                timestamp = message.time
                 # without message_type maybe signpost have event_type
                 message_type = message.message_type if hasattr(message, 'message_type') else message.event_type \
                     if hasattr(message, 'event_type') else "unknown"
@@ -387,7 +548,7 @@ def developer_oslog(lockdown, nocolor, pid):
                 except Exception:
                     print('error decoding')
 
-                if not nocolor:
+                if color:
                     message_pid = colored(str(message_pid), 'magenta')
                     subsystem = colored(subsystem, 'green')
                     category = colored(category, 'green')
@@ -395,3 +556,241 @@ def developer_oslog(lockdown, nocolor, pid):
                     message_type = colored(message_type, 'cyan')
 
                 print(f'[{subsystem}][{category}][{message_pid}][{image_name}] <{message_type}>: {formatted_message}')
+
+
+@dvt.command('energy', cls=Command)
+@click.argument('pid-list', nargs=-1)
+def dvt_energy(lockdown: LockdownClient, pid_list):
+    """ energy monitoring for given pid list. """
+
+    if len(pid_list) == 0:
+        logger.error('pid_list must not be empty')
+        return
+
+    pid_list = [int(pid) for pid in pid_list]
+
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with EnergyMonitor(dvt, pid_list) as energy_monitor:
+            for telemetry in energy_monitor:
+                logger.info(telemetry)
+
+
+@dvt.command('notifications', cls=Command)
+def dvt_notifications(lockdown: LockdownClient):
+    """ monitor memory and app notifications """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with Notifications(dvt) as notifications:
+            for notification in notifications:
+                logger.info(notification)
+
+
+@dvt.command('graphics', cls=Command)
+def dvt_notifications(lockdown: LockdownClient):
+    """ monitor graphics statistics """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with Graphics(dvt) as graphics:
+            for stats in graphics:
+                logger.info(stats)
+
+
+@developer.command('fetch-symbols', cls=Command)
+@click.argument('out', type=click.Path(dir_okay=True, file_okay=False))
+def developer_fetch_symbols(lockdown: LockdownClient, out):
+    """ download the linker and dyld cache to a specified directory """
+    fetch_symbols = DtFetchSymbols(lockdown)
+    files = fetch_symbols.list_files()
+
+    if not os.path.exists(out):
+        os.makedirs(out)
+
+    for i, filename in enumerate(files):
+        filename = os.path.join(out, os.path.basename(filename))
+        with open(filename, 'wb') as f:
+            logger.info(f'writing to: {filename}')
+            fetch_symbols.get_file(i, f)
+
+
+@developer.group('simulate-location')
+def simulate_location():
+    """ simulate-location options. """
+    pass
+
+
+@simulate_location.command('clear', cls=Command)
+def simulate_location_clear(lockdown: LockdownClient):
+    """ clear simulated location """
+    DtSimulateLocation(lockdown).clear()
+
+
+@simulate_location.command('set', cls=Command)
+@click.argument('latitude', type=click.FLOAT)
+@click.argument('longitude', type=click.FLOAT)
+def simulate_location_set(lockdown: LockdownClient, latitude, longitude):
+    """
+    set a simulated location.
+    try:
+        ... set -- 40.690008 -74.045843 for liberty island
+    """
+    DtSimulateLocation(lockdown).set(latitude, longitude)
+
+
+@simulate_location.command('play', cls=Command)
+@click.argument('filename', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@click.option('--disable-sleep', is_flag=True, default=False)
+def simulate_location_play(lockdown: LockdownClient, filename, disable_sleep):
+    """
+    play a .gpx file
+    """
+    DtSimulateLocation(lockdown).play_gpx_file(filename, disable_sleep=disable_sleep)
+
+
+@developer.group('accessibility')
+def accessibility():
+    """ accessibility options. """
+    pass
+
+
+@accessibility.command('capabilities', cls=Command)
+def accessibility_capabilities(lockdown: LockdownClient):
+    """ display accessibility capabilities """
+    print_json(AccessibilityAudit(lockdown).device_capabilities())
+
+
+@accessibility.group('settings')
+def accessibility_settings():
+    """ accessibility settings. """
+    pass
+
+
+@accessibility_settings.command('show', cls=Command)
+def accessibility_settings_show(lockdown: LockdownClient):
+    """ show current settings """
+    for setting in AccessibilityAudit(lockdown).get_current_settings():
+        print(setting)
+
+
+@accessibility_settings.command('set', cls=Command)
+@click.argument('setting', type=click.Choice(
+    ['INVERT_COLORS', 'INCREASE_CONTRAST', 'REDUCE_TRANSPARENCY', 'REDUCE_MOTION', 'FONT_SIZE']))
+@click.argument('value', type=click.INT)
+def accessibility_settings_set(lockdown: LockdownClient, setting, value):
+    """ show current settings """
+    service = AccessibilityAudit(lockdown)
+    service.set_setting(setting, value)
+    wait_return()
+
+
+@accessibility.command('shell', cls=Command)
+def accessibility_shell(lockdown: LockdownClient):
+    """ start and ipython accessibility shell """
+    AccessibilityAudit(lockdown).shell()
+
+
+@accessibility.command('notifications', cls=Command)
+@click.option('-c', '--cycle-focus', is_flag=True)
+def accessibility_notifications(lockdown: LockdownClient, cycle_focus):
+    """ show notifications """
+
+    service = AccessibilityAudit(lockdown)
+    if cycle_focus:
+        service.move_focus_next()
+    for name, data in service.iter_notifications():
+        if name in ('hostAppStateChanged:',
+                    'hostInspectorCurrentElementChanged:',):
+            for focus_item in data:
+                logger.info(focus_item)
+
+            if name == 'hostInspectorCurrentElementChanged:':
+                if cycle_focus:
+                    service.move_focus_next()
+
+
+@accessibility.command('list-items', cls=Command)
+def accessibility_list_items(lockdown: LockdownClient):
+    """ list items available in currently shown menu """
+
+    service = AccessibilityAudit(lockdown)
+    iterator = service.iter_notifications()
+    service.move_focus_next()
+
+    first_item = None
+
+    for name, data in iterator:
+        if name != 'hostInspectorCurrentElementChanged:':
+            continue
+
+        current_item = data[0]
+
+        if first_item is None:
+            first_item = current_item
+        else:
+            if first_item.caption == current_item.caption:
+                return
+
+        print(f'{current_item.caption}: {current_item.element.identifier}')
+        service.move_focus_next()
+
+
+@developer.group('condition')
+def condition():
+    """ condition inducer options. """
+    pass
+
+
+@condition.command('list', cls=Command)
+def condition_list(lockdown: LockdownClient):
+    """ list all available conditions """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        print_json(ConditionInducer(dvt).list())
+
+
+@condition.command('clear', cls=Command)
+def condition_clear(lockdown: LockdownClient):
+    """ clear current condition """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        ConditionInducer(dvt).clear()
+
+
+@condition.command('set', cls=Command)
+@click.argument('profile_identifier')
+def condition_set(lockdown: LockdownClient, profile_identifier):
+    """ set a specific condition """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        ConditionInducer(dvt).set(profile_identifier)
+        wait_return()
+
+
+@developer.command(cls=Command)
+@click.argument('out', type=click.File('wb'))
+def screenshot(lockdown: LockdownClient, out):
+    """ take a screenshot in PNG format """
+    out.write(ScreenshotService(lockdown=lockdown).take_screenshot())
+
+
+@developer.group('debugserver')
+def debugserver():
+    """ debugserver options. """
+    pass
+
+
+@debugserver.command('applist', cls=Command)
+def debugserver_applist(lockdown: LockdownClient):
+    """ get applist xml """
+    print_json(DebugServerAppList(lockdown).get())
+
+
+@debugserver.command('start-server', cls=Command)
+@click.argument('local_port', type=click.INT)
+def debugserver_start_server(lockdown: LockdownClient, local_port):
+    """
+    start a debugserver at remote listening on a given port locally.
+
+    Please note the connection must be done soon afterwards using your own lldb client.
+    This can be done using the following commands within lldb shell:
+
+    (lldb) platform select remote-ios
+
+    (lldb) platform connect connect://localhost:<local_port>
+    """
+    attr = lockdown.get_service_connection_attributes('com.apple.debugserver.DVTSecureSocketProxy')
+    TcpForwarder(lockdown, local_port, attr['Port'], attr.get('EnableServiceSSL', False)).start()

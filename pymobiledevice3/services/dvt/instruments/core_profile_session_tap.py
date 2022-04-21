@@ -1,25 +1,17 @@
 import typing
-from datetime import datetime
-import enum
 import uuid
-from collections import namedtuple
+from datetime import timezone, timedelta
+from io import BytesIO
 
 from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyBytes, Enum, Switch, Padding, Padded, \
-    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Const, Bytes, RawCopy
+    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Bytes, GreedyString
+from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES
 
-from pymobiledevice3.services.dvt.tap import Tap
+from pymobiledevice3.exceptions import ExtractingStackshotError
+from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
-
-# bsd/sys/kdebug.h
-RAW_VERSION2_BYTES = b'\x00\x02\xaa\x55'
-KDBG_CLASS_MASK = 0xff000000
-KDBG_CLASS_OFFSET = 24
-KDBG_SUBCLASS_MASK = 0x00ff0000
-KDBG_SUBCLASS_OFFSET = 16
-KDBG_CODE_MASK = 0x0000fffc
-KDBG_CODE_OFFSET = 2
-KDBG_EVENTID_MASK = 0xfffffffc
-KDBG_FUNC_MASK = 0x00000003
+from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
+from pymobiledevice3.services.remote_server import Tap
 
 kcdata_types = {
     'KCDATA_TYPE_INVALID': 0x0,
@@ -221,7 +213,8 @@ shared_cache_dyld_load_info = Struct(
     predefined_name_substruct,
     'obj' / Struct(
         'imageLoadAddress' / Int64ul,
-        'imageUUID' / Array(16, Byte),
+        '_imageUUID' / Bytes(16),
+        'imageUUID' / Computed(lambda ctx: uuid.UUID(bytes=ctx._imageUUID)),
         'imageSlidBaseAddress' / Int64ul,
     ),
 )
@@ -229,7 +222,8 @@ thread_group_snapshot = Struct(
     predefined_name_substruct,
     'obj' / Struct(
         'tgs_id' / Int64ul,
-        'tgs_name' / Padded(16, CString('utf8')),
+        '_tgs_name' / FixedSized(16, GreedyString('utf8')),
+        'tgs_name' / Computed(lambda ctx: ctx._tgs_name.strip('\x00')),
         'tgs_flags' / Int64ul
     ),
 )
@@ -289,7 +283,8 @@ kernelcache_load_info = Struct(
     predefined_name_substruct,
     'obj' / Struct(
         'imageLoadAddress' / Int64ul,
-        'imageUUID' / Array(16, Byte),
+        '_imageUUID' / Bytes(16),
+        'imageUUID' / Computed(lambda ctx: uuid.UUID(bytes=ctx._imageUUID)),
     ),
 )
 task_snapshot = Struct(
@@ -383,7 +378,8 @@ dyld_load_info64 = Struct(
     predefined_name_substruct,
     'obj' / Struct(
         'imageLoadAddress' / Int64ul,
-        'imageUUID' / Array(16, Byte),
+        '_imageUUID' / Bytes(16),
+        'imageUUID' / Computed(lambda ctx: uuid.UUID(bytes=ctx._imageUUID)),
     ),
 )
 user_stack_frames = Struct(predefined_name_substruct, 'obj' / Struct('lr' / Int64ul))
@@ -467,39 +463,6 @@ kcdata_item = Struct(
 
 kcdata = GreedyRange(kcdata_item)
 
-kd_threadmap = Struct(
-    'tid' / Int64ul,
-    'pid' / Int32ul,
-    'process' / FixedSized(20, CString('utf8')),
-)
-
-kd_buf = Struct(
-    'timestamp' / Int64ul,
-    'args' / RawCopy(Array(4, Int64ul)),
-    'tid' / Int64ul,
-    'debugid' / Int32ul,
-    'eventid' / Computed(lambda ctx: ctx.debugid & KDBG_EVENTID_MASK),
-    'class_' / Computed(lambda ctx: (ctx.debugid & KDBG_CLASS_MASK) >> KDBG_CLASS_OFFSET),
-    'subclass' / Computed(lambda ctx: (ctx.debugid & KDBG_SUBCLASS_MASK) >> KDBG_SUBCLASS_OFFSET),
-    'code' / Computed(lambda ctx: (ctx.debugid & KDBG_CODE_MASK) >> KDBG_CODE_OFFSET),
-    'func_qualifier' / Computed(lambda ctx: ctx.debugid & KDBG_FUNC_MASK),
-    'cpuid' / Int32ul,
-    'unused' / Int64ul,
-)
-
-kperf_data = Struct(
-    'magic' / Const(RAW_VERSION2_BYTES, Bytes(4)),
-    'number_of_treads' / Int32ul,
-    Padding(8),
-    Padding(4),
-    'is_64bit' / Int32ul,
-    'tick_frequency' / Int64ul,
-    Padding(0x100),
-    'threadmap' / Array(lambda ctx: ctx.number_of_treads, kd_threadmap),
-    '_pad' / GreedyRange(Const(0, Byte)),
-    'traces' / GreedyRange(kd_buf)
-)
-
 
 def clean(d):
     if isinstance(d, dict):
@@ -537,14 +500,31 @@ def jsonify_parsed_stackshot(stackshot, root=None, index=0):
             root[item['data']['name']] = item['data']['obj']
 
 
-ProcessData = namedtuple('namedtuple', ['pid', 'name'])
+STACKSHOT_HEADER = Int32ul.build(int(kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT))
 
 
-class DgbFuncQual(enum.Enum):
-    DBG_FUNC_NONE = 0
-    DBG_FUNC_START = 1
-    DBG_FUNC_END = 2
-    DBG_FUNC_ALL = 3
+class KdBufStream:
+    def __init__(self, channel):
+        self.channel = channel
+        self.current_chunk = BytesIO()
+
+    def tell(self):
+        return self.current_chunk.tell()
+
+    def seek(self, offset, whence):
+        return self.current_chunk.seek(offset, whence)
+
+    def read(self, size):
+        while size > len(self.current_chunk.getbuffer()) - self.current_chunk.tell():
+            data = self.channel.receive_message()
+            if data.startswith(b'bplist'):
+                continue
+            if data.startswith(STACKSHOT_HEADER):
+                continue
+            else:
+                self.current_chunk = BytesIO(data)
+
+        return self.current_chunk.read(size)
 
 
 class CoreProfileSessionTap(Tap):
@@ -572,29 +552,24 @@ class CoreProfileSessionTap(Tap):
     This tap yields kdebug events.
     """
     IDENTIFIER = 'com.apple.instruments.server.services.coreprofilesessiontap'
-    STACKSHOT_HEADER = Int32ul.build(int(kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT))
 
-    def __init__(self, dvt: DvtSecureSocketProxyService, class_filter: int = None, subclass_filter: int = None):
+    def __init__(self, dvt: DvtSecureSocketProxyService, time_config: typing.Mapping, filters: typing.Set = None):
         """
         :param dvt: Instruments service proxy.
-        :param class_filter: Event class to include.
-        :param subclass_filter: Event subclass to include.
+        :param time_config: Timing information - numer, denom, mach_absolute_time and matching usecs_since_epoch,
+        timezone.
+        :param filters: Event filters to include, Include all if empty.
         """
         self.dvt = dvt
         self.stack_shot = None
-        self._thread_map = {}
         self.uuid = str(uuid.uuid4())
 
-        k_filter = 0xffffffff
-        if class_filter is not None:
-            k_filter = class_filter << KDBG_CLASS_OFFSET
-        if subclass_filter is not None:
-            k_filter |= subclass_filter << KDBG_SUBCLASS_OFFSET
-
+        if filters is None:
+            filters = {0xffffffff}
         config = {
             'tc': [{
                 'csd': 128,  # Callstack frame depth.
-                'kdf2': {k_filter},  # Kdebug filter, receive all classes.
+                'kdf2': filters,  # Kdebug filter, receive all classes.
                 'ta': [[3], [0], [2], [1, 1, 0]],  # Actions.
                 'tk': 3,  # Kind.
                 'uuid': self.uuid,
@@ -604,16 +579,6 @@ class CoreProfileSessionTap(Tap):
         }
         super().__init__(dvt, self.IDENTIFIER, config)
 
-    @property
-    def thread_map(self):
-        return self._thread_map
-
-    @thread_map.setter
-    def thread_map(self, parsed_threadmap):
-        self._thread_map = {}
-        for thread in parsed_threadmap:
-            self._thread_map[thread.tid] = ProcessData(thread.pid, thread.process)
-
     def get_stackshot(self) -> typing.Mapping:
         """
         Get a stackshot from the tap.
@@ -622,9 +587,24 @@ class CoreProfileSessionTap(Tap):
             # The stackshot is sent one per TAP creation, so we cache it.
             return self.stack_shot
         data = self._channel.receive_message()
-        while not data.startswith(self.STACKSHOT_HEADER):
+        while not data.startswith(STACKSHOT_HEADER) and not data.startswith(RAW_VERSION2_BYTES):
             data = self._channel.receive_message()
-        self.stack_shot = self.parse_stackshot(data)
+
+        if data.startswith(RAW_VERSION2_BYTES):
+            raise ExtractingStackshotError()
+
+        stackshot = self.parse_stackshot(data)
+
+        dsc_map = get_dsc_map(str(stackshot['shared_cache_dyld_load_info']['imageUUID']))
+
+        for pid, snapshot in stackshot['task_snapshots'].items():
+            for loaded_image in snapshot.get('dyld_load_info', []):
+                image_uuid = str(loaded_image['imageUUID'])
+                if isinstance(dsc_map, dict) and image_uuid in dsc_map:
+                    loaded_image['imagePath'] = dsc_map[image_uuid]
+
+        self.stack_shot = stackshot
+
         return self.stack_shot
 
     def dump(self, out: typing.BinaryIO):
@@ -634,40 +614,18 @@ class CoreProfileSessionTap(Tap):
         """
         while True:
             data = self._channel.receive_message()
-            if data.startswith(self.STACKSHOT_HEADER) or data.startswith(b'bplist'):
+            if data.startswith(STACKSHOT_HEADER) or data.startswith(b'bplist'):
                 # Skip not kernel trace data.
                 continue
             print(f'Receiving trace data ({len(data)}B)')
             out.write(data)
             out.flush()
 
-    def watch_events(self, events_count: int = -1):
+    def get_kdbuf_stream(self):
         """
-        Generator for kdebug events.
-        The yielded event contains timestamp (uptime), args (arguments), tid (thread id), debugid, eventid, class,
-        subclass, code, func_qualifier (function qualifier).
-        :param events_count: Count of events to generate, -1 for unlimited generation.
+        Get kd_buf stream.
         """
-        events_index = 0
-        while events_index != events_count:
-            data = self._channel.receive_message()
-            if data.startswith(b'bplist'):
-                continue
-            if data.startswith(self.STACKSHOT_HEADER):
-                self.stack_shot = self.parse_stackshot(data)
-                continue
-            if data.startswith(RAW_VERSION2_BYTES):
-                parsed = kperf_data.parse(data)
-                self.thread_map = parsed.threadmap
-                traces = parsed.traces
-            else:
-                traces = Array(len(data) // kd_buf.sizeof(), kd_buf).parse(data)
-
-            for event in traces:
-                if events_index == events_count:
-                    break
-                yield event
-                events_index += 1
+        return KdBufStream(self._channel)
 
     @staticmethod
     def parse_stackshot(data):
@@ -678,10 +636,14 @@ class CoreProfileSessionTap(Tap):
         jsonify_parsed_stackshot(stackshot, parsed_stack_shot)
         return parsed_stack_shot[predefined_names[kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT]]
 
-    def parse_event_time(self, timestamp):
-        time_info = self.stack_shot['mach_timebase_info']
-        offset_usec = (
-                ((timestamp - self.stack_shot['mach_absolute_time']) * time_info['numer']) /
-                (time_info['denom'] * 1000)
+    @staticmethod
+    def get_time_config(dvt):
+        time_info = DeviceInfo(dvt).mach_time_info()
+        mach_absolute_time = time_info[0]
+        numer = time_info[1]
+        denom = time_info[2]
+        usecs_since_epoch = dvt.lockdown.get_value(key='TimeIntervalSince1970') * 1000000
+        return dict(
+            numer=numer, denom=denom, mach_absolute_time=mach_absolute_time, usecs_since_epoch=usecs_since_epoch,
+            timezone=timezone(timedelta(seconds=dvt.lockdown.get_value(key='TimeZoneOffsetFromUTC')))
         )
-        return datetime.fromtimestamp((self.stack_shot['usecs_since_epoch'] + offset_usec) / 1000000)

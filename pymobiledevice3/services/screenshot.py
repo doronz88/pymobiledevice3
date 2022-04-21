@@ -1,21 +1,18 @@
-import logging
-
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.base_service import BaseService
 
 
-class ScreenshotService(object):
+class ScreenshotService(BaseService):
     SERVICE_NAME = 'com.apple.mobile.screenshotr'
 
     def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-        self.service = self.lockdown.start_service(self.SERVICE_NAME)
+        super().__init__(lockdown, self.SERVICE_NAME, is_developer_service=True)
 
         dl_message_version_exchange = self.service.recv_plist()
         version_major = dl_message_version_exchange[1]
-        self.service.send_plist(['DLMessageVersionExchange', 'DLVersionsOk', version_major])
-        dl_message_device_ready = self.service.recv_plist()
+        dl_message_device_ready = self.service.send_recv_plist(
+            ['DLMessageVersionExchange', 'DLVersionsOk', version_major])
         if dl_message_device_ready[0] != 'DLMessageDeviceReady':
             raise PyMobileDevice3Exception('Screenshotr didn\'t return ready state')
 

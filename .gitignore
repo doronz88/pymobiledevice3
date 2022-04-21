@@ -1,10 +1,9 @@
-*.pyc
+.DS_Store
 .idea/
 venv/
 build/
 dist/
-*.egg-info/
 version.txt
 debug/
-*.DS_Store
-
+*.pyc
+*.egg-info/

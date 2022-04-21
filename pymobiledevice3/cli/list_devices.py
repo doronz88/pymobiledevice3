@@ -1,7 +1,7 @@
 import click
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.cli.cli_common import print_object
+from pymobiledevice3.cli.cli_common import print_json
 from pymobiledevice3.lockdown import LockdownClient
 
 
@@ -12,15 +12,19 @@ def cli():
 
 
 @cli.command('list-devices')
-@click.option('--nocolor', is_flag=True)
-def list_devices(nocolor):
+@click.option('--color/--no-color', default=True)
+@click.option('-u', '--usb', is_flag=True, help='show only usb devices')
+def list_devices(color, usb):
     """ list connected devices """
-    mux = usbmux.USBMux()
-    mux.process()
     connected_devices = []
-    for device in mux.devices:
+    for device in usbmux.list_devices():
         udid = device.serial
-        lockdown = LockdownClient(udid)
+
+        if usb:
+            if ':' in udid:
+                continue
+
+        lockdown = LockdownClient(udid, autopair=False)
         connected_devices.append(lockdown.all_values)
 
-    print_object(connected_devices, colored=not nocolor, default=lambda x: '<non-serializable>')
+    print_json(connected_devices, colored=color)
