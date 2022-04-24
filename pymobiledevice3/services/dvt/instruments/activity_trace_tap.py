@@ -38,31 +38,35 @@ def ignored_null(s: bytes) -> bytes:
     return s
 
 
-def decode_message_format(message):
-    s = b''
+def decode_message_format(message) -> str:
+    s = ''
     for type_, data in message:
-        data = ignored_null(data)
+        if data:
+            data = ignored_null(data)
         type_ = decode_str(type_)
 
         if type_ == 'address':
             type_ = 'uint64-hex'
 
-        if type_ == 'narrative-text':
-            s += ignored_null(data)
-        elif type_ == 'string':
-            s += ignored_null(data)
+        if type_ in ('narrative-text', 'string'):
+            if data is None:
+                s += '<None>'
+            else:
+                s += data.decode()
         elif type_.startswith('uint64'):
             uint64 = struct.unpack('<Q', data.ljust(8, b'\x00'))[0]
             if 'hex' in type_:
                 uint64 = hex(uint64)[2:]
                 if 'lowercase' in type_:
                     uint64 = uint64.lower()
-            s += str(uint64).encode()
+            s += str(uint64)
         elif 'decimal' in type_:
             uint64 = struct.unpack('<Q', data.ljust(8, b'\x00'))[0]
-            s += str(uint64).encode()
+            s += str(uint64)
         elif type_ == 'data':
-            s += b''.join(data).hex().encode()
+            s += b''.join(data).hex()
+        elif type_ == 'uuid':
+            s += b''.join(data).hex()
         else:
             s += data
     return s
@@ -82,12 +86,11 @@ class ActivityTraceTap(Tap):
             'machTimebaseDenom': 3,
             'machTimebaseNumer': 125,
             'onlySignposts': 0,
-            'pidToInjectCombineDYLIB': "-1",
-            'predicate': "(messageType == info OR messageType == debug OR messageType == default OR "
-                         "messageType == error OR messageType == fault)",
-             'signpostsAndLogs': 1,
-#            'signpostsAndLogs': 0,
-            'targetPID': -1, # all Process
+            'pidToInjectCombineDYLIB': '-1',
+            'predicate': '(messageType == info OR messageType == debug OR messageType == default OR '
+                         'messageType == error OR messageType == fault)',
+            'signpostsAndLogs': 1,
+            'targetPID': -1,  # all Process
             'trackExpiredPIDs': 1,
             'ur': 500,
         }
@@ -137,12 +140,14 @@ class ActivityTraceTap(Tap):
             word = self._read_word()
             count += 1
             bit_count += 14
+
         imm = (imm << 14) | (word & 0x3fff)
         bit_count += 14
 
         imm <<= (8 - bit_count % 8)
+        bit_count += 8 - bit_count % 8
 
-        result = imm.to_bytes(math.ceil(len(bin(imm)[2:]) / 8), 'big')
+        result = imm.to_bytes(math.ceil(bit_count / 8), 'big')
         self.stack.append(result)
 
         return result
@@ -183,14 +188,13 @@ class ActivityTraceTap(Tap):
 
     def _handle_debug(self, word):
         """ pop last pushed item from stack """
-        # TODO: fix asserts
-        # debug_id = word & 0xff
-        # item = self.stack[-1]
-        #
-        # reference = int.from_bytes(item, byteorder='little')
-        #
-        # assert reference == len(self.stack) - 1, f'assert debug {debug_id} got reference: {hex(reference)} instead of:' \
-        #                                          f'{len(self.stack) - 1}  {item}'
+        debug_id = word & 0xff
+        item = self.stack[-1]
+
+        reference = int.from_bytes(item, byteorder='little')
+
+        assert reference == len(self.stack) - 1, \
+            f'assert debug {debug_id} got reference: {hex(reference)} instead of: {len(self.stack) - 1}  {item}'
         self.stack = self.stack[:-1]
 
     def _handle_copy(self, word):
@@ -213,24 +217,20 @@ class ActivityTraceTap(Tap):
         row = self.stack[-len(columns):]
         self.stack = self.stack[:-len(columns)]
 
-        try:
-            Message = dataclasses.make_dataclass('message', [c.replace('-', '_') for c in columns])
-            message = Message(*row)
-            message.process = struct.unpack('<I', message.process[0].ljust(4, b'\x00'))[0]
-            message.thread = struct.unpack('<I', message.thread[0].ljust(4, b'\x00'))[0]
+        Message = dataclasses.make_dataclass('message', [c.replace('-', '_') for c in columns])
+        message = Message(*row)
+        message.process = struct.unpack('<I', message.process[0].ljust(4, b'\x00'))[0]
+        message.thread = struct.unpack('<I', message.thread[0].ljust(4, b'\x00'))[0]
 
-            string_fields = ('message_type', 'format_string', 'subsystem', 'category', 'sender_image_path',
-                             'event_type', 'name')
-            for f in string_fields:
-                if hasattr(message, f):
-                    v = getattr(message, f)
-                    setattr(message, f, decode_str(v) if v else v)
+        string_fields = ('message_type', 'format_string', 'subsystem', 'category', 'sender_image_path',
+                         'event_type', 'name')
+        for f in string_fields:
+            if hasattr(message, f):
+                v = getattr(message, f)
+                setattr(message, f, decode_str(v) if v else v)
 
-            if hasattr(message, 'message'):
-                return message
-        except Exception:
-            # TODO: remove this when reference parsing is fixed
-            print('ERROR')
+        if hasattr(message, 'message'):
+            return message
 
     def _handle_placeholder_count(self, word):
         """ remove `count` last items from stack """
@@ -239,7 +239,7 @@ class ActivityTraceTap(Tap):
             self.stack = self.stack[:-count]
 
     def _handle_convert_mach_continuous(self, word):
-        """ push an item and pop it. effictively do nothing """
+        """ push an item and pop it. effectively do nothing """
         pass
 
     def _parse(self):

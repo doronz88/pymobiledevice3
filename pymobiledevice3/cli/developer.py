@@ -533,7 +533,7 @@ def dvt_oslog(lockdown: LockdownClient, color, pid):
                 message_pid = message.process
                 # without message_type maybe signpost have event_type
                 message_type = message.message_type if hasattr(message, 'message_type') else message.event_type \
-                    if hasattr(message, 'event_type') else "unknown"
+                    if hasattr(message, 'event_type') else 'unknown'
                 sender_image_path = message.sender_image_path
                 image_name = os.path.basename(sender_image_path)
                 subsystem = message.subsystem
@@ -542,11 +542,10 @@ def dvt_oslog(lockdown: LockdownClient, color, pid):
                 if pid is not None and message_pid != pid:
                     continue
 
-                try:
-                    formatted_message = decode_message_format(message.message).decode() \
-                        if message.message else message.name
-                except Exception:
-                    print('error decoding')
+                if message.message:
+                    formatted_message = decode_message_format(message.message)
+                else:
+                    formatted_message = message.name
 
                 if color:
                     message_pid = colored(str(message_pid), 'magenta')
@@ -555,7 +554,8 @@ def dvt_oslog(lockdown: LockdownClient, color, pid):
                     image_name = colored(image_name, 'yellow')
                     message_type = colored(message_type, 'cyan')
 
-                print(f'[{subsystem}][{category}][{message_pid}][{image_name}] <{message_type}>: {formatted_message}')
+                print(f'[{subsystem}][{category}][{message_pid}][{image_name}] '
+                      f'<{message_type}>: {formatted_message}')
 
 
 @dvt.command('energy', cls=Command)
