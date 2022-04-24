@@ -142,7 +142,7 @@ def syslog_live(lockdown: LockdownClient, out, color, pid, match, match_insensit
         print(line)
 
         if out:
-            out.write(line)
+            print(line, file=out)
 
 
 @syslog.command('collect', cls=Command)
