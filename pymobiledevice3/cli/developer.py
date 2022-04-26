@@ -11,6 +11,7 @@ from dataclasses import asdict
 import click
 from click.exceptions import MissingParameter, UsageError
 from pykdebugparser.pykdebugparser import PyKdebugParser
+from pymobiledevice3.services.device_arbitration import DtDeviceArbitration
 from termcolor import colored
 
 import pymobiledevice3
@@ -794,3 +795,33 @@ def debugserver_start_server(lockdown: LockdownClient, local_port):
     """
     attr = lockdown.get_service_connection_attributes('com.apple.debugserver.DVTSecureSocketProxy')
     TcpForwarder(lockdown, local_port, attr['Port'], attr.get('EnableServiceSSL', False)).start()
+
+
+@developer.group('arbitration')
+def arbitration():
+    """ arbitration options. """
+    pass
+
+
+@arbitration.command('version', cls=Command)
+@click.option('--color/--no-color', default=True)
+def version(lockdown: LockdownClient, color):
+    """ get arbitration version """
+    with DtDeviceArbitration(lockdown) as device_arbitration:
+        print_json(device_arbitration.version, colored=color)
+
+
+@arbitration.command('check-in', cls=Command)
+@click.argument('hostname')
+@click.option('-f', '--force', default=False, is_flag=True)
+def check_in(lockdown: LockdownClient, hostname, force):
+    """ owner check-in """
+    with DtDeviceArbitration(lockdown) as device_arbitration:
+        device_arbitration.check_in(hostname, force=force)
+
+
+@arbitration.command('check-out', cls=Command)
+def check_out(lockdown: LockdownClient):
+    """ owner check-out """
+    with DtDeviceArbitration(lockdown) as device_arbitration:
+        device_arbitration.check_out()
