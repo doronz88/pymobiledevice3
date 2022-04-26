@@ -5,6 +5,7 @@ __all__ = [
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
     'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabled', 'RemoteAutomationNotEnabled',
+    'ArbitrationError',
 ]
 
 
@@ -134,4 +135,9 @@ class WirError(PyMobileDevice3Exception):
 
 class InternalError(PyMobileDevice3Exception):
     """ Some internal Apple error """
+    pass
+
+
+class ArbitrationError(PyMobileDevice3Exception):
+    """ Arbitration failed """
     pass
