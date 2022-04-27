@@ -2,6 +2,7 @@
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
 [![Downloads](https://static.pepy.tech/personalized-badge/pymobiledevice3?period=total&units=none&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/pymobiledevice3)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/doronz88/pymobiledevice3.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/doronz88/pymobiledevice3/context:python)
+[![Twitter](https://img.shields.io/twitter/url/https/twitter.com/daniel1paulus.svg?style=social&label=Follow%20%40doronz88)](https://twitter.com/doronz88)
 
 - [Description](#description)
 - [Installation](#installation)
@@ -20,7 +21,8 @@
 
 # Description
 
-`pymobiledevice3` is a pure python3 implementation for working with iDevices (iPhone, etc...). This means this tool is both
+`pymobiledevice3` is a pure python3 implementation for working with iDevices (iPhone, etc...). This means this tool is
+both
 architecture and platform generic and is supported and tested on:
 
 * Windows
@@ -99,7 +101,8 @@ https://github.com/doronz88/pymobiledevice3/issues/171
 
 # Usage
 
-The CLI subcommands are divided roughly by the protocol layer used for interacting in the device. For example, all features
+The CLI subcommands are divided roughly by the protocol layer used for interacting in the device. For example, all
+features
 derived from the DeveloperDiskImage will be accessible from the `developer`
 subcommand. This also means that every feature which isn't there won't require it.
 
@@ -216,7 +219,8 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
 
 ### Implemented services
 
-This is the list of all the services from `lockdownd` which we reversed and implemented API wrappers for. A click on each will
+This is the list of all the services from `lockdownd` which we reversed and implemented API wrappers for. A click on
+each will
 lead to each one's implementation, where you can learn more about.
 
 * [`com.apple.mobile.heartbeat`](pymobiledevice3/services/heartbeat.py)
@@ -278,7 +282,8 @@ lead to each one's implementation, where you can learn more about.
 
 ### Un-implemented services
 
-This is the list of services we haven't dedicated time in implementing. If you feel the need to use one of them or any other
+This is the list of services we haven't dedicated time in implementing. If you feel the need to use one of them or any
+other
 that is not listed in here, feel free
 to [create us an issue request](https://github.com/doronz88/pymobiledevice3/issues/new?assignees=&labels=&template=feature_request.md&title=)
 .
@@ -290,7 +295,8 @@ to [create us an issue request](https://github.com/doronz88/pymobiledevice3/issu
 * `com.apple.ait.aitd`
     * AirTraffic related
 * `com.apple.mobile.file_relay`
-    * On older iOS versions (iOS <= 8), this was the main relay used for file operations, which was later replaced with AFC.
+    * On older iOS versions (iOS <= 8), this was the main relay used for file operations, which was later replaced with
+      AFC.
 * `com.apple.mobilesync`
 * `com.apple.purpletestr`
 
@@ -298,14 +304,16 @@ to [create us an issue request](https://github.com/doronz88/pymobiledevice3/issu
 
 #### Lockdown messages
 
-Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays yourself,
+Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays
+yourself,
 you can run:
 
 ```shell
 pymobiledevice3 lockdown service <service-name>
 ```
 
-This will start an IPython shell where you already have the connection established using the `client` variable and you can send
+This will start an IPython shell where you already have the connection established using the `client` variable and you
+can send
 & receive messages.
 
 ```python
@@ -332,7 +340,8 @@ If you want to play with `DTServiceHub` which lies behind the `developer` option
 pymobiledevice3 developer shell
 ```
 
-To also get an IPython shell, which lets you call ObjC methods from the exported objects in the instruments' namespace like so:
+To also get an IPython shell, which lets you call ObjC methods from the exported objects in the instruments' namespace
+like so:
 
 ```python
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
