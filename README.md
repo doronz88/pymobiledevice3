@@ -55,7 +55,7 @@ Main features include:
 Install the last released version using `pip`:
 
 ```shell
-python3 -m pip install --user -U pymobiledevice3
+python3 -m pip install -U pymobiledevice3
 ```
 
 Or install the latest version from sources:
@@ -63,7 +63,7 @@ Or install the latest version from sources:
 ```shell
 git clone git@github.com:doronz88/pymobiledevice3.git
 cd pymobiledevice3
-python3 -m pip install --user -U -e .
+python3 -m pip install -U -e .
 ```
 
 You can also install auto-completion for all available sub-commands by adding the following into your `~/.zshrc`:
