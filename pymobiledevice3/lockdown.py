@@ -14,6 +14,7 @@ from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import *
 from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.usbmux import PlistMuxConnection
 from pymobiledevice3.utils import sanitize_ios_version
 
 # we store pairing records and ssl keys in ~/.pymobiledevice3
@@ -179,14 +180,12 @@ class LockdownClient(object):
         return pair_record
 
     def get_usbmux_pairing_record(self):
-        mux = usbmux.MuxConnection.create_socket()
-        client = usbmux.PlistProtocol(mux)
-        try:
-            pairing_record = client.get_pair_record(self.udid)
-            mux.close()
-            return pairing_record
-        except PyMobileDevice3Exception:
+        mux = usbmux.create_mux()
+        if not isinstance(mux, PlistMuxConnection):
             return None
+        pairing_record = mux.get_pair_record(self.udid)
+        mux.close()
+        return pairing_record
 
     def get_local_pairing_record(self):
         self.logger.debug('Looking for pymobiledevice3 pairing record')
@@ -269,8 +268,9 @@ class LockdownClient(object):
 
         record_data = plistlib.dumps(pair_record)
 
-        client = usbmux.PlistProtocol(usbmux.MuxConnection.create_socket())
-        client.save_pair_record(self.udid, self.usbmux_device.devid, record_data)
+        client = usbmux.create_mux()
+        if isinstance(client, PlistMuxConnection):
+            client.save_pair_record(self.udid, self.usbmux_device.devid, record_data)
 
         self.paired = True
 
