@@ -2,6 +2,8 @@
 import logging
 import uuid
 
+from pymobiledevice3.restore.ipsw.build_identity import BuildIdentity
+
 logger = logging.getLogger(__name__)
 
 SUPPORTED_DATA_TYPES = {
@@ -9,6 +11,7 @@ SUPPORTED_DATA_TYPES = {
     'BasebandData': False,
     'BasebandStackData': False,
     'BasebandUpdaterOutputData': False,
+    'BootabilityBundle': False,
     'BuildIdentityDict': False,
     'BuildIdentityDictV2': False,
     'DataType': False,
@@ -81,26 +84,9 @@ SUPPORTED_MESSAGE_TYPES = {
 
 class RestoreOptions:
 
-    def __init__(self, preflight_info=None, sep=None, restore_boot_args=None, spp=None):
+    def __init__(self, preflight_info=None, sep=None, macos_variant=None, build_identity: BuildIdentity = None,
+                 restore_boot_args=None, spp=None, restore_behavior: str = None, msp=None):
         self.AutoBootDelay = 0
-        self.SupportedDataTypes = SUPPORTED_DATA_TYPES
-        self.SupportedMessageTypes = SUPPORTED_MESSAGE_TYPES
-        self.BootImageType = 'UserOrInternal'
-        self.DFUFileType = 'RELEASE'
-        self.DataImage = False
-        self.FirmwareDirectory = '.'
-        self.FlashNOR = True
-        self.KernelCacheType = 'Release'
-        self.NORImageType = 'production'
-        self.RestoreBundlePath = '/tmp/Per2.tmp'
-        self.SystemImageType = 'User'
-        self.UpdateBaseband = False
-        self.PersonalizedDuringPreflight = True
-        self.RootToInstall = False
-        guid = str(uuid.uuid4())
-        self.UUID = guid
-        self.CreateFilesystemPartitions = True
-        self.SystemImage = True
 
         if preflight_info is not None:
             bbus = dict(preflight_info)
@@ -112,11 +98,69 @@ class RestoreOptions:
             if nonce is not None:
                 self.BasebandNonce = nonce
 
-        if sep is not None:
-            required_capacity = sep.get('RequiredCapacity')
-            if required_capacity:
-                logger.debug(f'TZ0RequiredCapacity: {required_capacity}')
-                self.TZ0RequiredCapacity = required_capacity
+        self.SupportedDataTypes = SUPPORTED_DATA_TYPES
+        self.SupportedMessageTypes = SUPPORTED_MESSAGE_TYPES
+
+        # FIXME: Should be adjusted for update behaviors
+        if macos_variant:
+            self.AddSystemPartitionPadding = True
+            self.AllowUntetheredRestore = False
+            self.AuthInstallEnableSso = False
+
+            macos_variant = build_identity.macos_variant
+            if macos_variant is not None:
+                self.AuthInstallRecoveryOSVariant = macos_variant
+
+            self.AuthInstallRestoreBehavior = restore_behavior
+            self.AutoBootDelay = 0
+            self.BasebandUpdaterOutputPath = True
+            self.DisableUserAuthentication = True
+            self.FitSystemPartitionToContent = True
+            self.FlashNOR = True
+            self.FormatForAPFS = True
+            self.FormatForLwVM = False
+            self.InstallDiags = False
+            self.InstallRecoveryOS = True
+            self.MacOSSwapPerformed = True
+            self.MacOSVariantPresent = True
+            self.MinimumBatteryVoltage = 0  # FIXME: Should be adjusted for M1 macbooks (if needed)
+            self.RecoveryOSUnpack = True
+            self.ShouldRestoreSystemImage = True
+            self.SkipPreflightPersonalization = False
+            self.UpdateBaseband = True
+
+            # FIXME: I don't know where this number comes from yet.
+            #  It seems like it matches this part of the build identity:
+            # 	<key>OSVarContentSize</key>
+            # 	<integer>573751296</integer>
+            # It did work with multiple macOS versions
+            self.recoveryOSPartitionSize = 58201
+            if msp:
+                self.SystemPartitionSize = msp
+        else:
+            self.BootImageType = 'UserOrInternal'
+            self.DFUFileType = 'RELEASE'
+            self.DataImage = False
+            self.FirmwareDirectory = '.'
+            self.FlashNOR = True
+            self.KernelCacheType = 'Release'
+            self.NORImageType = 'production'
+            self.RestoreBundlePath = '/tmp/Per2.tmp'
+            self.SystemImageType = 'User'
+            self.UpdateBaseband = False
+
+            if sep is not None:
+                required_capacity = sep.get('RequiredCapacity')
+                if required_capacity:
+                    logger.debug(f'TZ0RequiredCapacity: {required_capacity}')
+                    self.TZ0RequiredCapacity = required_capacity
+
+            self.PersonalizedDuringPreflight = True
+
+        self.RootToInstall = False
+        self.UUID = str(uuid.uuid4()).upper()
+        self.CreateFilesystemPartitions = True
+        self.SystemImage = True
 
         if restore_boot_args is not None:
             self.RestoreBootArgs = restore_boot_args

@@ -5,23 +5,26 @@ import os
 import plistlib
 import struct
 import tempfile
+import traceback
 import zipfile
 from io import BytesIO
 from typing import Optional, Mapping
 
-import tqdm
+from tqdm import tqdm, trange
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, NoDeviceConnectedError
+from pymobiledevice3.exceptions import PyMobileDevice3Exception, NoDeviceConnectedError, ConnectionFailedError
 from pymobiledevice3.restore.asr import ASRClient
+from pymobiledevice3.restore.base_restore import BaseRestore, RESTORE_VARIANT_MACOS_RECOVERY_OS, \
+    RESTORE_VARIANT_ERASE_INSTALL, RESTORE_VARIANT_UPGRADE_INSTALL
 from pymobiledevice3.restore.consts import lpol_file, PROGRESS_BAR_OPERATIONS
 from pymobiledevice3.restore.device import Device
-from pymobiledevice3.restore.fdr import start_fdr_thread, fdr_type
+from pymobiledevice3.restore.fdr import start_fdr_thread, fdr_type, FDRClient
 from pymobiledevice3.restore.ftab import Ftab
-from pymobiledevice3.restore.ipsw.ipsw import IPSW
-from pymobiledevice3.restore.recovery import Recovery
+from pymobiledevice3.restore.recovery import Recovery, Behavior
 from pymobiledevice3.restore.restore_options import RestoreOptions
 from pymobiledevice3.restore.restored_client import RestoredClient
 from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
+from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.utils import plist_access_path
 
 known_errors = {
@@ -35,18 +38,18 @@ known_errors = {
 }
 
 
-class Restore:
-    def __init__(self, ipsw: BytesIO, device: Device, tss=None, behavior='Update'):
-        self.logger = logging.getLogger(__name__)
-        self.ipsw = IPSW(ipsw)
-        self.device = device
-        self.build_identity = self.ipsw.build_manifest.get_build_identity(self.device.hardware_model, behavior)
-
+class Restore(BaseRestore):
+    def __init__(self, ipsw: BytesIO, device: Device, tss=None, behavior: Behavior = Behavior.Update, ignore_fdr=False):
+        super().__init__(ipsw, device, tss, behavior, logger=logging.getLogger(__name__))
         self.recovery = Recovery(ipsw, device, tss=tss, behavior=behavior)
         self.bbtss = None  # type: Optional[TSSResponse]
-        self.tss_recoveryos_root_ticket = None  # type: Optional[TSSResponse]
         self._restored = None  # type: Optional[RestoredClient]
         self._restore_finished = False
+
+        # used when ignore_fdr=True, to store an active FDR connection just to make the device believe it can actually
+        # perform an FDR communication, but without really establishing any
+        self._fdr = None  # type: Optional[ServiceConnection]
+        self._ignore_fdr = ignore_fdr
 
         # query preflight info while device may still be in normal mode
         self._preflight_info = self.device.preflight_info
@@ -87,8 +90,8 @@ class Restore:
             'SystemImageData': self.send_filesystem,
 
             'BuildIdentityDict': self.send_buildidentity,
-            'PersonalizedBootObjectV3': self.send_personalized_boot_object,
-            'SourceBootObjectV4': self.send_personalized_boot_object,
+            'PersonalizedBootObjectV3': self.send_personalized_boot_object_v3,
+            'SourceBootObjectV4': self.send_source_boot_object_v4,
             'RecoveryOSLocalPolicy': self.send_restore_local_policy,
 
             # this request is sent when restored is ready to receive the filesystem
@@ -117,13 +120,20 @@ class Restore:
     def send_filesystem(self, message: Mapping):
         self.logger.info('about to send filesystem...')
 
-        asr = ASRClient()
+        self.logger.info('connecting to ASR...')
+        while True:
+            try:
+                asr = ASRClient(self._restored.udid)
+                break
+            except ConnectionFailedError:
+                pass
 
         self.logger.info('connected to ASR')
 
-        # this step sends requested chunks of data from various offsets to asr so
+        # this step sends requested chunks of data from various offsets to asr, so
         # it can validate the filesystem before installing it
         self.logger.info('validating the filesystem')
+
         with self.ipsw.open_path(self.build_identity.get_component_path('OS')) as filesystem:
             asr.perform_validation(filesystem)
             self.logger.info('filesystem validated')
@@ -134,8 +144,7 @@ class Restore:
             asr.send_payload(filesystem)
 
     def get_build_identity_from_request(self, msg):
-        # TODO: extract build identity from msg
-        return self.build_identity
+        return self.get_build_identity(msg['Arguments']['IsRecoveryOS'])
 
     def send_buildidentity(self, message: Mapping):
         self.logger.info('About to send BuildIdentity Dict...')
@@ -167,7 +176,8 @@ class Restore:
         # The path of the global manifest is hardcoded. There's no pointer to in the build manifest.
         return self.ipsw.get_global_manifest(macos_variant, device_class)
 
-    def send_personalized_boot_object(self, message: Mapping):
+    def send_personalized_boot_object_v3(self, message: Mapping):
+        self.logger.info(f'send_personalized_boot_object_v3: {message}')
         image_name = message['Arguments']['ImageName']
         component_name = image_name
         self.logger.info(f'About to send {component_name}...')
@@ -183,7 +193,7 @@ class Restore:
 
         self.logger.info(f'Sending {component_name} now...')
         chunk_size = 8192
-        for i in range(0, len(data), chunk_size):
+        for i in trange(0, len(data), chunk_size):
             self._restored.send({'FileData': data[i:i + chunk_size]})
 
         # Send FileDataDone
@@ -191,7 +201,35 @@ class Restore:
 
         self.logger.info(f'Done sending {component_name}')
 
-    def get_recovery_os_local_policy_tss_response(self, args):
+    def send_source_boot_object_v4(self, message: Mapping):
+        self.logger.info(f'send_source_boot_object_v4: {message}')
+        image_name = message['Arguments']['ImageName']
+        component_name = image_name
+        self.logger.info(f'About to send {component_name}...')
+
+        if image_name == '__GlobalManifest__':
+            data = self.extract_global_manifest()
+        elif image_name == '__RestoreVersion__':
+            data = self.ipsw.restore_version
+        elif image_name == '__SystemVersion__':
+            data = self.ipsw.system_version
+        else:
+            data = self.build_identity.get_component(component_name, tss=self.recovery.tss).data
+
+        self.logger.info(f'Sending {component_name} now...')
+        chunk_size = 8192
+        for i in trange(0, len(data), chunk_size):
+            self._restored.send({'FileData': data[i:i + chunk_size]})
+
+        # Send FileDataDone
+        self._restored.send({'FileDataDone': True})
+
+        self.logger.info(f'Done sending {component_name}')
+
+    def get_recovery_os_local_policy_tss_response(self, args, build_identity=None):
+        if build_identity is None:
+            build_identity = self.build_identity
+
         # populate parameters
         parameters = {
             'ApECID': self.device.ecid,
@@ -201,7 +239,7 @@ class Restore:
             'ApSupportsImg4': True,
         }
 
-        self.build_identity.populate_tss_request_parameters(parameters)
+        build_identity.populate_tss_request_parameters(parameters)
 
         # Add Ap,LocalPolicy
         lpol = {
@@ -227,23 +265,46 @@ class Restore:
         self.logger.info('Requesting SHSH blobs...')
         return request.send_receive()
 
+    def get_build_identity(self, is_recovery_os: bool):
+        if is_recovery_os:
+            variant = RESTORE_VARIANT_MACOS_RECOVERY_OS
+        elif self.build_identity.restore_behavior == Behavior.Erase:
+            variant = RESTORE_VARIANT_ERASE_INSTALL
+        else:
+            variant = RESTORE_VARIANT_UPGRADE_INSTALL
+
+        return self.ipsw.build_manifest.get_build_identity(self.device.hardware_model, variant=variant)
+
     def send_restore_local_policy(self, message: Mapping):
         component = 'Ap,LocalPolicy'
 
         # The Update mode does not have a specific build identity for the recovery os.
-        tss_localpolicy = self.get_recovery_os_local_policy_tss_response(message['Arguments'])
+        build_identity = self.get_build_identity(self.build_identity.restore_behavior == Behavior.Erase)
+        tss_localpolicy = self.get_recovery_os_local_policy_tss_response(message['Arguments'],
+                                                                         build_identity=build_identity)
 
-        self._restored.send({'Ap,LocalPolicy': self.build_identity.get_component(component, tss=tss_localpolicy,
-                                                                                 data=lpol_file).personalized_data})
+        self._restored.send({'Ap,LocalPolicy': build_identity.get_component(component, tss=tss_localpolicy,
+                                                                            data=lpol_file).personalized_data})
 
     def send_recovery_os_root_ticket(self, message: Mapping):
         self.logger.info('About to send RecoveryOSRootTicket...')
 
-        if self.tss_recoveryos_root_ticket is None:
+        if self.recovery.tss_recoveryos_root_ticket is None:
             raise PyMobileDevice3Exception('Cannot send RootTicket without TSS')
 
+        if self.device.is_image4_supported:
+            data = self.recovery.tss_recoveryos_root_ticket.ap_img4_ticket
+        else:
+            data = self.recovery.tss.ap_ticket
+
+        req = {}
+        if data:
+            req['RootTicketData'] = data
+        else:
+            self.logger.warning('not sending RootTicketData (no data present)')
+
         self.logger.info('Sending RecoveryOSRootTicket now...')
-        self._restored.send({'RootTicketData': self.tss_recoveryos_root_ticket.ap_img4_ticket})
+        self._restored.send(req)
 
     def send_root_ticket(self, message: Mapping):
         self.logger.info('About to send RootTicket...')
@@ -255,9 +316,14 @@ class Restore:
         self._restored.send({'RootTicketData': self.recovery.tss.ap_img4_ticket})
 
     def send_nor(self, message: Mapping):
-        self.logger.info(f'send_nor: {message}')
+        self.logger.info('About to send NORData...')
+        flash_version_1 = False
         llb_path = self.build_identity.get_component('LLB', tss=self.recovery.tss).path
         llb_filename_offset = llb_path.find('LLB')
+
+        arguments = message.get('Arguments')
+        if arguments:
+            flash_version_1 = arguments.get('FlashVersion1', False)
 
         if llb_filename_offset == -1:
             raise PyMobileDevice3Exception('Unable to extract firmware path from LLB filename')
@@ -279,31 +345,20 @@ class Restore:
                     is_secondary_fw = plist_access_path(manifest_entry, ('Info', 'IsSecondaryFirmwarePayload'), bool)
 
                     if is_fw or (is_secondary_fw and loaded_by_iboot):
-                        firmware_files[component] = plist_access_path(manifest_entry, ('Info', 'Path'))
+                        comp_path = plist_access_path(manifest_entry, ('Info', 'Path'))
+                        if comp_path:
+                            firmware_files[component] = comp_path
+
+        if not firmware_files:
+            raise PyMobileDevice3Exception('Unable to get list of firmware files.')
 
         component = 'LLB'
         llb_data = self.build_identity.get_component(component, tss=self.recovery.tss,
                                                      path=llb_path).personalized_data
         req = {'LlbImageData': llb_data}
 
-        # Starting at some versions, it seems that NorImageData is now a dict.
-        # Sending an array like previous versions results in restore success but the machine will SOS after
-        # rebooting.
-        norimage_dict = False
-
-        if self.ipsw.build_manifest.supported_product_types_family == 'iBridge' and \
-                self.ipsw.build_manifest.build_major >= 18:
-            # certain T2 versions
-            norimage_dict = True
-
-        if self.ipsw.build_manifest.build_major >= 20:
-            # M1
-            norimage_dict = True
-
-        self.logger.debug(f'sending nor data as dict: {norimage_dict}')
-
-        if norimage_dict:
-            norimage = dict()
+        if flash_version_1:
+            norimage = {}
         else:
             norimage = []
 
@@ -316,11 +371,11 @@ class Restore:
             nor_data = self.build_identity.get_component(component, tss=self.recovery.tss,
                                                          path=comppath).personalized_data
 
-            if norimage_dict:
+            if flash_version_1:
                 norimage[component] = nor_data
             else:
                 # make sure iBoot is the first entry in the array
-                if 'iBoot' == component:
+                if component.startswith('iBoot'):
                     norimage = [nor_data] + norimage
                 else:
                     norimage.append(nor_data)
@@ -504,7 +559,7 @@ class Restore:
     def send_fdr_trust_data(self, message):
         self.logger.info('About to send FDR Trust data...')
 
-        # TODO: FIXME: What should we send here?
+        # FIXME: What should we send here?
         # Sending an empty dict makes it continue with FDR
         # and this is what iTunes seems to be doing too
         self.logger.info('Sending FDR Trust data now...')
@@ -569,6 +624,26 @@ class Restore:
                 self.logger.info(f'Sending {image_type_k} now...')
 
         self._restored.send(req)
+
+    def send_bootability_bundle_data(self, message):
+        logging.debug(f'send_bootability_bundle_data: {message}')
+        data_port = message['DataPort']
+        self.logger.info('Connecting to BootabilityBundle data port')
+
+        while True:
+            try:
+                client = ServiceConnection.create(self._restored.udid, data_port)
+                break
+            except ConnectionFailedError:
+                logging.debug('Retrying connection...')
+
+        if not client:
+            raise ConnectionFailedError(f'failed to establish connection to {data_port}')
+
+        self.logger.info('Connected to BootabilityBundle data port')
+
+        client.sendall(self.ipsw.bootability)
+        client.close()
 
     def get_se_firmware_data(self, info: Mapping):
         chip_id = info.get('SE,ChipID')
@@ -802,6 +877,80 @@ class Restore:
 
         return response
 
+    def get_timer_firmware_data(self, info: Mapping):
+        self.logger.info(f'get_timer_firmware_data: {info}')
+
+        ftab = None
+
+        # create Timer request
+        request = TSSRequest()
+        parameters = dict()
+
+        # add manifest for current build_identity to parameters
+        self.build_identity.populate_tss_request_parameters(parameters)
+
+        parameters['ApProductionMode'] = True
+        if self.device.is_image4_supported:
+            parameters['ApSecurityMode'] = True
+            parameters['ApSupportsImg4'] = True
+        else:
+            parameters['ApSupportsImg4'] = False
+
+        # add Timer,* tags from info dictionary to parameters
+        info_array = info['InfoArray']
+        info_dict = info_array[0]
+        hwid = info_dict['HardwareID']
+        tag = info_dict['TagNumber']
+        parameters['TagNumber'] = tag
+        ticket_name = info_dict['TicketName']
+        parameters['TicketName'] = ticket_name
+        parameters[f'Timer,ChipID,{tag}'] = hwid['ChipID']
+        parameters[f'Timer,BoardID,{tag}'] = hwid['BoardID']
+        parameters[f'Timer,ECID,{tag}'] = hwid['ECID']
+        parameters[f'Timer,Nonce,{tag}'] = hwid['Nonce']
+        parameters[f'Timer,SecurityMode,{tag}'] = hwid['SecurityMode']
+        parameters[f'Timer,SecurityDomain,{tag}'] = hwid['SecurityDomain']
+        parameters[f'Timer,ProductionMode,{tag}'] = hwid['ProductionMode']
+
+        ap_info = info['APInfo']
+        parameters.update(ap_info)
+
+        # add required tags for Timer TSS request
+        request.add_timer_tags(parameters, None)
+
+        self.logger.info(f'Sending {ticket_name} TSS request...')
+        response = request.send_receive()
+
+        ticket = response.get(ticket_name)
+        if ticket is None:
+            self.logger.warning(f'No "{ticket_name}" in TSS response, this might not work')
+
+        comp_name = f'Timer,RTKitOS,{tag}'
+        if self.build_identity.has_component(comp_name):
+            ftab = Ftab(self.build_identity.get_component(comp_name).data)
+            if ftab.tag != b'rkos':
+                self.logger.warning(f'Unexpected tag {ftab.tag}. continuing anyway.')
+        else:
+            self.logger.info(f'NOTE: Build identity does not have a "{comp_name}" component.')
+
+        comp_name = f'Timer,RestoreRTKitOS,{tag}'
+        if self.build_identity.has_component(comp_name):
+            rftab = Ftab(self.build_identity.get_component(comp_name).data)
+
+            component_data = rftab.get_entry_data(b'rrko')
+            if component_data is None:
+                self.logger.error('Could not find "rrko" entry in ftab. This will probably break things')
+            else:
+                if ftab is None:
+                    raise PyMobileDevice3Exception('ftab is None')
+                ftab.add_entry(b'rrko', component_data)
+        else:
+            self.logger.info(f'NOTE: Build identity does not have a "{comp_name}" component.')
+
+        response['FirmwareData'] = ftab.data
+
+        return response
+
     def send_firmware_updater_data(self, message: Mapping):
         self.logger.debug(f'got FirmwareUpdaterData request: {message}')
         arguments = message['Arguments']
@@ -844,6 +993,11 @@ class Restore:
             if fwdict is None:
                 raise PyMobileDevice3Exception('Couldn\'t get TCON firmware data')
 
+        elif updater_name == 'AppleTypeCRetimer':
+            fwdict = self.get_timer_firmware_data(info)
+            if fwdict is None:
+                raise PyMobileDevice3Exception('Couldn\'t get AppleTypeCRetimer firmware data')
+
         else:
             raise PyMobileDevice3Exception('Got unknown updater name: {updater_name}')
 
@@ -864,6 +1018,8 @@ class Restore:
                                                                         tss=self.recovery.tss).personalized_data})
 
     def handle_data_request_msg(self, message: Mapping):
+        self.logger.info(f'handle_data_request_msg: {message}')
+
         # checks and see what kind of data restored is requests and pass the request to its own handler
         data_type = message.get('DataType')
 
@@ -884,6 +1040,8 @@ class Restore:
             self.send_image_data(message, 'ImageList', None, 'ImageData')
         elif data_type == 'EANData':
             self.send_image_data(message, 'EANImageList', 'IsEarlyAccessFirmware', 'EANData')
+        elif data_type == 'BootabilityBundle':
+            self.send_bootability_bundle_data(message)
         else:
             self.logger.error(f'unknown data request: {message}')
 
@@ -900,7 +1058,7 @@ class Restore:
             progress = message['Progress']
 
             if self._pb_verify_restore is None:
-                self._pb_verify_restore = tqdm.tqdm(total=100, desc='verify-restore', dynamic_ncols=True)
+                self._pb_verify_restore = tqdm(total=100, desc='verify-restore', dynamic_ncols=True)
                 self._pb_verify_restore_old_value = 0
 
             self._pb_verify_restore.update(progress - self._pb_verify_restore_old_value)
@@ -935,8 +1093,9 @@ class Restore:
             raise PyMobileDevice3Exception(str(message))
 
     def handle_baseband_updater_output_data(self, message: Mapping):
-        # TODO: implement (can be copied from idevicerestore)
-        self.logger.warning(f'restore_handle_baseband_updater_output_data: {message}')
+        # TODO: consider implementing
+        #       this can be used to get debug logs from baseband updater
+        self.logger.debug(f'restore_handle_baseband_updater_output_data: {message}')
 
     def _connect_to_restored_service(self):
         while True:
@@ -947,33 +1106,36 @@ class Restore:
                 pass
 
     def restore_device(self):
-        if self.ipsw.build_manifest.build_major >= 20:
-            raise NotImplementedError()
-
         self.logger.debug('waiting for device to connect for restored service')
         self._connect_to_restored_service()
-        self.logger.info('connected to restored service')
 
         self.logger.info(f'hardware info: {self._restored.hardware_info}')
         self.logger.info(f'version: {self._restored.version}')
+        self.logger.info(f'saved_debug_info: {self._restored.saved_debug_info}')
 
         if self.recovery.tss.bb_ticket is not None:
             # initial TSS response contains a baseband ticket
             self.bbtss = self.recovery.tss
 
-        self.logger.info('Starting FDR listener thread')
-        start_fdr_thread(fdr_type.FDR_CTRL)
+        if self._ignore_fdr:
+            self.logger.info('Establishing a mock FDR listener')
+            self._fdr = ServiceConnection.create(self._restored.udid, FDRClient.SERVICE_PORT)
+        else:
+            self.logger.info('Starting FDR listener thread')
+            start_fdr_thread(fdr_type.FDR_CTRL)
 
         sep = self.build_identity['Manifest']['SEP'].get('Info')
         spp = self.build_identity['Info'].get('SystemPartitionPadding')
-        opts = RestoreOptions(preflight_info=self._preflight_info, sep=sep,
-                              restore_boot_args=self.recovery.restore_boot_args, spp=spp)
+        opts = RestoreOptions(preflight_info=self._preflight_info, sep=sep, macos_variant=self.macos_variant,
+                              build_identity=self.build_identity, restore_boot_args=self.recovery.restore_boot_args,
+                              spp=spp, restore_behavior=self.build_identity.restore_behavior,
+                              msp=self.build_identity.minimum_system_partition)
 
         # start the restore process
         self._restored.start_restore(opts)
 
         # this is the restore process loop, it reads each message in from
-        # restored and passes that data on to it's specific handler
+        # restored and passes that data on to its specific handler
         while not self._restore_finished:
             # finally, if any of these message handlers returned -1 then we encountered
             # an unrecoverable error, so we need to bail.
@@ -983,7 +1145,10 @@ class Restore:
             message_type = message.get('MsgType')
 
             if message_type in self._handlers:
-                self._handlers[message_type](message)
+                try:
+                    self._handlers[message_type](message)
+                except Exception:
+                    traceback.print_exc()
             else:
                 # there might be some other message types i'm not aware of, but I think
                 # at least the "previous error logs" messages usually end up here

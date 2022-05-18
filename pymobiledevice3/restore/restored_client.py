@@ -14,8 +14,8 @@ class RestoredClient(object):
 
     def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME):
         self.logger = logging.getLogger(__name__)
-        udid = self._get_or_verify_udid(udid)
-        self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
+        self.udid = self._get_or_verify_udid(udid)
+        self.service = ServiceConnection.create(self.udid, self.SERVICE_PORT)
         self.label = client_name
         self.query_type = self.service.send_recv_plist({'Request': 'QueryType'})
         self.version = self.query_type.get('RestoreProtocolVersion')
@@ -62,3 +62,7 @@ class RestoredClient(object):
     @cached_property
     def hardware_info(self):
         return self.query_value('HardwareInfo')['HardwareInfo']
+
+    @property
+    def saved_debug_info(self):
+        return self.query_value('SavedDebugInfo')['SavedDebugInfo']
