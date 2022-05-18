@@ -5,7 +5,7 @@ __all__ = [
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
     'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabled', 'RemoteAutomationNotEnabled',
-    'ArbitrationError',
+    'ArbitrationError', 'NoSuchBuildIdentityError',
 ]
 
 
@@ -140,4 +140,9 @@ class InternalError(PyMobileDevice3Exception):
 
 class ArbitrationError(PyMobileDevice3Exception):
     """ Arbitration failed """
+    pass
+
+
+class NoSuchBuildIdentityError(PyMobileDevice3Exception):
+    """ Failed to find BuildIdentity with desired parameters """
     pass

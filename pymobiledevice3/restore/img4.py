@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 import asn1
 
@@ -107,33 +108,68 @@ def img4_get_component_tag(compname):
     return component_tags.get(compname)
 
 
-def stitch_component(name, data, blob):
+def asn1_find_element(index: int, type_: int, data: bytes) -> Optional[int]:
+    el_type = 0
+
+    # verify data integrity
+    off = 0
+    if data[off] != (asn1.Types.Constructed | asn1.Numbers.Sequence):
+        return None
+    off += 1
+
+    # check data size
+    offsets = {0x84: 4, 0x83: 3, 0x82: 2, 0x81: 1}
+    off += 1 + offsets.get(data[off], 0)
+
+    # find the element we are searching
+    for i in range(0, index + 1):
+        el_type = data[off]
+        off += 1
+        el_size = data[off]
+        off += 1
+
+        if i == index:
+            break
+
+        off += el_size
+
+    # check element type
+    if el_type != type_:
+        return None
+
+    return off
+
+
+def stitch_component(name: str, data: bytes, blob: bytes):
     logger.info(f'Personalizing IMG4 component {name}...')
 
     # first we need check if we have to change the tag for the given component
-    decoder = asn1.Decoder()
-    decoder.start(data)
-    decoder.enter()
+    tag_off = asn1_find_element(1, asn1.Numbers.IA5String, data)
 
-    decoder.read()
-    tag, value = decoder.read()
-
-    component_name_tag = {
-        'RestoreKernelCache': b'rkrn',
-        'RestoreDeviceTree': b'rdtr',
-        'RestoreSEP': b'rsep',
-        'RestoreLogo': b'rlgo',
-        'RestoreTrustCache': b'rtsc',
-        'RestoreDCP': b'rdcp',
-        'Ap,RestoreTMU': b'rtmu',
-        'Ap,RestoreCIO': b'rcio',
-        'Ap,DCP2': b'dcp2',
-    }
-
-    logger.debug(f'tag: {tag} {value}')
-    if name in component_name_tag:
+    if tag_off is not None:
         logger.debug('Tag found')
-        data = data.replace(value.encode(), component_name_tag[name], 1)
+        component_name_tag = {
+            'RestoreKernelCache': b'rkrn',
+            'RestoreDeviceTree': b'rdtr',
+            'RestoreSEP': b'rsep',
+            'RestoreLogo': b'rlgo',
+            'RestoreTrustCache': b'rtsc',
+            'RestoreDCP': b'rdcp',
+            'Ap,RestoreTMU': b'rtmu',
+            'Ap,RestoreCIO': b'rcio',
+            'Ap,DCP2': b'dcp2',
+        }
+        if name in component_name_tag:
+            first_len = len(data)
+
+            data = bytearray(data)
+            chunk = component_name_tag[name]
+            data[tag_off:tag_off + len(chunk)] = chunk
+            data = bytes(data)
+
+            assert len(data) == first_len
+    else:
+        logging.warning('not asn1 sequence')
 
     # create element header for the "IMG4" magic
     encoder = asn1.Encoder()

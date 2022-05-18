@@ -17,16 +17,29 @@ class BuildIdentity(UserDict):
     def restore_behavior(self):
         return self['Info'].get('RestoreBehavior')
 
+    @cached_property
+    def variant(self):
+        return self['Info'].get('Variant')
+
+    @cached_property
+    def macos_variant(self):
+        return self['Info'].get('MacOSVariant')
+
+    @cached_property
+    def minimum_system_partition(self):
+        return self['Info'].get('MinimumSystemPartition')
+
     def get_component_path(self, component: str):
         return self['Manifest'][component]['Info']['Path']
 
     def has_component(self, name: str):
-        return name in self
+        return name in self['Manifest']
 
     def get_component(self, name: str, **args) -> Component:
         return Component(self, name, **args)
 
     def populate_tss_request_parameters(self, parameters):
+        """ equivalent to idevicerestore:tss_parameters_add_from_manifest """
         keys_to_copy = ('UniqueBuildID', 'Ap,OSLongVersion', 'ApChipID', 'ApBoardID', 'ApSecurityDomain',
                         'BMU,BoardID', 'BMU,ChipID', 'BbChipID', 'BbProvisioningManifestKeyHash',
                         'BbActivationManifestKeyHash', 'BbCalibrationManifestKeyHash',
@@ -34,7 +47,8 @@ class BuildIdentity(UserDict):
                         'Savage,ChipID', 'Savage,PatchEpoch', 'Yonkers,BoardID', 'Yonkers,ChipID',
                         'Yonkers,PatchEpoch', 'Rap,BoardID', 'Rap,ChipID', 'Rap,SecurityDomain', 'Baobab,BoardID',
                         'Baobab,ChipID', 'Baobab,ManifestEpoch', 'Baobab,SecurityDomain', 'eUICC,ChipID',
-                        'PearlCertificationRootPub', 'Manifest')
+                        'PearlCertificationRootPub', 'Timer,BoardID,1', 'Timer,BoardID,2', 'Timer,ChipID,1',
+                        'Timer,ChipID,2', 'Timer,SecurityDomain,1', 'Timer,SecurityDomain,2', 'Manifest')
 
         for k in keys_to_copy:
             try:

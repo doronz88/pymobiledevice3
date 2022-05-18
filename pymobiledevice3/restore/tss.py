@@ -106,18 +106,129 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
+    def add_ap_recovery_tags(self, parameters: typing.Mapping, overrides=None):
+        skip_keys = ('BasebandFirmware', 'SE,UpdatePayload', 'BaseSystem', 'ANS', 'Ap,AudioBootChime', 'Ap,CIO',
+                     'Ap,RestoreCIO', 'Ap,RestoreTMU', 'Ap,TMU', 'Ap,rOSLogo1', 'Ap,rOSLogo2', 'AppleLogo', 'DCP',
+                     'LLB', 'RecoveryMode', 'RestoreANS', 'RestoreDCP', 'RestoreDeviceTree', 'RestoreKernelCache',
+                     'RestoreLogo', 'RestoreRamDisk', 'RestoreSEP', 'SEP', 'ftap', 'ftsp', 'iBEC', 'iBSS', 'rfta',
+                     'rfts', 'Diags')
+
+        # add components to request
+        manifest = parameters['Manifest']
+        for key, manifest_entry in manifest.items():
+            if key in skip_keys:
+                continue
+            info = manifest_entry.get('Info')
+            if not info:
+                continue
+            if parameters.get('_OnlyFWComponents', False):
+                if not manifest_entry.get('Trusted', False):
+                    logger.debug(f'skipping {key} as it is not trusted')
+                    continue
+                info = manifest_entry['Info']
+                if not info['IsFirmwarePayload'] and not info['IsSecondaryFirmwarePayload'] and \
+                        not info['IsFUDFirmware']:
+                    logger.debug(f'skipping {key} as it is neither firmware nor secondary nor FUD firmware payload')
+                    continue
+
+            # copy this entry
+            tss_entry = dict(manifest_entry)
+
+            # remove obsolete Info node
+            tss_entry.pop('Info')
+
+            # handle RestoreRequestRules
+            if 'Info' in manifest_entry and 'RestoreRequestRules' in manifest_entry['Info']:
+                rules = manifest_entry['Info']['RestoreRequestRules']
+                if rules:
+                    logger.debug(f'Applying restore request rules for entry {key}')
+                    tss_entry = self.apply_restore_request_rules(tss_entry, parameters, rules)
+
+            # Make sure we have a Digest key for Trusted items even if empty
+            node = manifest_entry.get('Trusted', False)
+            if node:
+                if manifest_entry.get('Digest') is None:
+                    tss_entry['Digest'] = bytes()
+
+            self._request[key] = tss_entry
+
+        if overrides:
+            self._request.update(overrides)
+
+    def add_timer_tags(self, parameters: typing.Mapping, overrides=None):
+        manifest = parameters['Manifest']
+
+        # add tags indicating we want to get the Timer ticket
+        self._request['@BBTicket'] = True
+
+        key = f'@{parameters["TicketName"]}'
+        self._request[key] = True
+
+        tag = parameters['TagNumber']
+
+        keys_to_copy_uint = (f'Timer,BoardID,{tag}', f'Timer,ChipID,{tag}', f'Timer,SecurityDomain,{tag}',
+                             f'Timer,ECID,{tag}',)
+
+        for key in keys_to_copy_uint:
+            value = parameters.get(key)
+
+            if isinstance(value, bytes):
+                self._request[key] = bytes_to_uint(value)
+            else:
+                self._request[key] = value
+
+        keys_to_copy_bool = (f'Timer,ProductionMode,{tag}', f'Timer,SecurityMode,{tag}',)
+
+        for key in keys_to_copy_bool:
+            value = parameters.get(key)
+            self._request[key] = bytes_to_uint(value) == 1
+
+        nonce = parameters.get(parameters, f'Timer,Nonce,{tag}')
+
+        if nonce is not None:
+            self._request[f'Timer,Nonce,{tag}'] = nonce
+
+        for comp_name, node in manifest.items():
+            if not comp_name.startswith('Timer,'):
+                continue
+
+            manifest_entry = dict(node)
+
+            # handle RestoreRequestRules
+            rules = manifest_entry['Info'].get('RestoreRequestRules')
+            if rules is not None:
+                self.apply_restore_request_rules(manifest_entry, parameters, rules)
+
+            # Make sure we have a Digest key for Trusted items even if empty
+            trusted = manifest_entry.get('Trusted', False)
+
+            if trusted:
+                digest = manifest_entry.get('Digest')
+                if digest is None:
+                    logger.debug(f'No Digest data, using empty value for entry {comp_name}')
+                    manifest_entry['Digest'] = b''
+
+            manifest_entry.pop('Info')
+
+            # finally add entry to request
+            self._request[comp_name] = manifest_entry
+
+        if overrides is not None:
+            self._request.update(overrides)
+
     def add_local_policy_tags(self, parameters: typing.Mapping):
         self._request['@ApImg4Ticket'] = True
 
         keys_to_copy = (
-            'Ap,LocalBoot', 'Ap,LocalPolicy', 'Ap,NextStageIM4MHash', 'Ap,NextStageIM4MHash',
-            'Ap,RecoveryOSPolicyNonceHash', 'Ap,VolumeUUID', 'ApECID', 'ApChipID', 'ApBoardID', 'ApSecurityDomain'
-                                                                                                'ApNonce',
-            'ApSecurityMode', 'ApProductionMode')
+            'Ap,LocalBoot', 'Ap,LocalPolicy', 'Ap,NextStageIM4MHash', 'Ap,RecoveryOSPolicyNonceHash', 'Ap,VolumeUUID',
+            'ApECID', 'ApChipID', 'ApBoardID', 'ApSecurityDomain', 'ApNonce', 'ApSecurityMode', 'ApProductionMode')
 
         for k in keys_to_copy:
             if k in parameters:
-                self._request[k] = parameters[k]
+                v = parameters[k]
+                if isinstance(v, str) and v.startswith('0x'):
+                    v = int(v, 16)
+                self._request[k] = v
 
     def add_vinyl_tags(self, parameters: typing.Mapping, overrides=None):
         self._request['@BBTicket'] = True
@@ -615,6 +726,7 @@ class TSSRequest:
         }
 
         logger.info('Sending TSS request...')
+        logger.debug(self._request)
         r = requests.post(TSS_CONTROLLER_ACTION_URL, headers=headers,
                           data=plistlib.dumps(self._request), verify=False)
         content = r.content

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import logging
+import traceback
 
 import click
 import coloredlogs
@@ -52,6 +53,8 @@ def cli():
         logger.error('Device is not connected')
     except ConnectionAbortedError:
         logger.error('Device was disconnected')
+    except BrokenPipeError:
+        traceback.print_exc()
 
 
 if __name__ == '__main__':

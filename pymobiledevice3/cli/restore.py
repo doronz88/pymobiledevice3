@@ -13,7 +13,7 @@ from pymobiledevice3.exceptions import IncorrectModeError
 from pymobiledevice3.irecv import IRecv
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.restore.device import Device
-from pymobiledevice3.restore.recovery import Recovery
+from pymobiledevice3.restore.recovery import Recovery, Behavior
 from pymobiledevice3.restore.restore import Restore
 
 SHELL_USAGE = """
@@ -133,8 +133,10 @@ def restore_ramdisk(device, ipsw, tss):
 @restore.command('update', cls=Command)
 @click.argument('ipsw', type=click.File('rb'))
 @click.option('--tss', type=click.File('rb'))
-@click.option('--erase', is_flag=True)
-def restore_update(device, ipsw, tss, erase):
+@click.option('--erase', is_flag=True, help='use the Erase BuildIdentity (full factory-reset)')
+@click.option('--ignore-fdr', is_flag=True, help='only establish an FDR service connection, but don\'t proxy any '
+                                                 'traffic')
+def restore_update(device, ipsw, tss, erase, ignore_fdr):
     """ perform an upgrade """
     if tss:
         tss = plistlib.load(tss)
@@ -147,12 +149,12 @@ def restore_update(device, ipsw, tss, erase):
         irecv = device
     device = Device(lockdown=lockdown, irecv=irecv)
 
-    behavior = 'Update'
+    behavior = Behavior.Update
     if erase:
-        behavior = 'Erase'
+        behavior = Behavior.Erase
 
     try:
-        Restore(ipsw, device, tss=tss, behavior=behavior).update()
+        Restore(ipsw, device, tss=tss, behavior=behavior, ignore_fdr=ignore_fdr).update()
     except Exception:
         # click may "swallow" several exception types so we try to catch them all here
         traceback.print_exc()

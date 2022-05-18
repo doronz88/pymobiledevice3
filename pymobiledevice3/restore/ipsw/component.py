@@ -1,4 +1,5 @@
 import logging
+import os.path
 
 from cached_property import cached_property
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
@@ -38,6 +39,7 @@ class Component:
     @cached_property
     def data(self):
         if self._data is None:
+            self.logger.debug(f'Extracting {os.path.basename(self.path)} ({self.path})')
             return self.build_identity.build_manifest.ipsw.read(self.path)
         return self._data
 

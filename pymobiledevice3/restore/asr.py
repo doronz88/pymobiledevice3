@@ -6,8 +6,7 @@ import typing
 
 from tqdm import trange
 
-from pymobiledevice3 import usbmux
-from pymobiledevice3.exceptions import NoDeviceConnectedError, ConnectionFailedError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.service_connection import ServiceConnection
 
 ASR_VERSION = 1
@@ -23,21 +22,14 @@ logger = logging.getLogger(__name__)
 
 
 class ASRClient(object):
+    """
+    ASR — Apple Software Restore
+    """
+
     SERVICE_PORT = ASR_PORT
 
-    def __init__(self, udid=None):
-        device = usbmux.select_device(udid)
-        if device is None:
-            if udid:
-                raise ConnectionFailedError()
-            else:
-                raise NoDeviceConnectedError()
-
-        logger.debug('connecting to ASR')
-
-        self.service = ServiceConnection.create(device.serial, self.SERVICE_PORT)
-
-        logger.debug('ASR connected')
+    def __init__(self, udid: str):
+        self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
 
         # receive Initiate command message
         data = self.recv_plist()
@@ -48,6 +40,7 @@ class ASRClient(object):
             raise PyMobileDevice3Exception(f'invalid command received: {command}')
 
         self.checksum_chunks = data.get('Checksum Chunks', False)
+        logger.debug(f'Checksum Chunks: {self.checksum_chunks}')
 
     def recv_plist(self) -> typing.Mapping:
         buf = b''
@@ -56,12 +49,13 @@ class ASRClient(object):
         return plistlib.loads(buf)
 
     def send_plist(self, plist: typing.Mapping):
+        logger.debug(plistlib.dumps(plist).decode())
         self.service.sendall(plistlib.dumps(plist))
 
-    def send_buffer(self, buf):
+    def send_buffer(self, buf: bytes):
         self.service.sendall(buf)
 
-    def handle_oob_data_request(self, packet, filesystem: typing.IO):
+    def handle_oob_data_request(self, packet: typing.Mapping, filesystem: typing.IO):
         oob_length = packet['OOB Length']
         oob_offset = packet['OOB Offset']
         filesystem.seek(oob_offset, os.SEEK_SET)
@@ -96,6 +90,7 @@ class ASRClient(object):
 
         while True:
             packet = self.recv_plist()
+            logger.debug(f'perform_validation: {packet}')
             command = packet['Command']
 
             if command == 'Payload':
@@ -103,6 +98,9 @@ class ASRClient(object):
 
             elif command == 'OOBData':
                 self.handle_oob_data_request(packet, filesystem)
+
+            else:
+                raise PyMobileDevice3Exception(f'unknown packet: {packet}')
 
     def send_payload(self, filesystem: typing.IO):
         filesystem.seek(0, os.SEEK_END)

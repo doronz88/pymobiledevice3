@@ -52,6 +52,7 @@ def create_context(keyfile, certfile):
 
 
 class ServiceConnection(object):
+    """ wrapper for usbmux tcp-relay connections """
     def __init__(self, socket):
         self.logger = logging.getLogger(__name__)
         self.socket = socket
@@ -59,10 +60,8 @@ class ServiceConnection(object):
         self._writer = None  # type: asyncio.StreamWriter
 
     @staticmethod
-    def create(udid, port):
+    def create(udid: str, port: int):
         target_device = select_device(udid)
-        while target_device is None:
-            target_device = select_device(udid)
         try:
             socket = target_device.connect(port)
         except usbmux.MuxException:

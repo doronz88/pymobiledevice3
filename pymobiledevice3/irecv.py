@@ -14,7 +14,7 @@ from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.irecv_devices import IRECV_DEVICES, IRecvDevice
 
 USB_TIMEOUT = 10000
-IRECV_TRANSFER_SIZE_RECOVERY = 0x2000
+IRECV_TRANSFER_SIZE_RECOVERY = 0x8000
 IRECV_TRANSFER_SIZE_DFU = 0x800
 
 
@@ -200,8 +200,8 @@ class IRecv:
 
         self._reinit(ecid=self.ecid)
 
-    def send_command(self, cmd: str, timeout=USB_TIMEOUT):
-        self._device.ctrl_transfer(0x40, 0, 0, 0, cmd.encode() + b'\0', timeout=timeout)
+    def send_command(self, cmd: str, timeout=USB_TIMEOUT, b_request=0):
+        self._device.ctrl_transfer(0x40, b_request, 0, 0, cmd.encode() + b'\0', timeout=timeout)
 
     def getenv(self, name):
         try:
