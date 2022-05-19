@@ -7,6 +7,7 @@ import plistlib
 import sys
 import uuid
 from pathlib import Path
+from typing import Mapping
 
 from packaging.version import Version
 
@@ -52,7 +53,8 @@ def reconnect_on_remote_close(f):
 
             # now we re-establish the connection
             self.logger.debug('remote device closed the connection. reconnecting...')
-            self.service = ServiceConnection.create(self.udid, self.SERVICE_PORT)
+            self.service = ServiceConnection.create(self.udid, self.SERVICE_PORT,
+                                                    connection_type=self.usbmux_device.connection_type)
             self.validate_pairing()
             return f(*args, **kwargs)
 
@@ -63,8 +65,8 @@ class LockdownClient(object):
     DEFAULT_CLIENT_NAME = 'pyMobileDevice'
     SERVICE_PORT = 62078
 
-    def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME, autopair=True):
-        device = usbmux.select_device(udid)
+    def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME, autopair=True, connection_type=None):
+        device = usbmux.select_device(udid, connection_type=connection_type)
         if device is None:
             if udid:
                 raise ConnectionFailedError()
@@ -75,7 +77,7 @@ class LockdownClient(object):
         self.logger = logging.getLogger(__name__)
         self.paired = False
         self.SessionID = None
-        self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
+        self.service = ServiceConnection.create(udid, self.SERVICE_PORT, connection_type=device.connection_type)
         self.host_id = self.generate_host_id()
         self.system_buid = None
         self.label = client_name
@@ -107,7 +109,8 @@ class LockdownClient(object):
             self.pair()
             if not self.validate_pairing():
                 raise FatalPairingError()
-            self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
+            self.service = ServiceConnection.create(udid, self.SERVICE_PORT,
+                                                    connection_type=self.usbmux_device.connection_type)
 
     def __enter__(self):
         return self
@@ -119,6 +122,21 @@ class LockdownClient(object):
         self.service.send_plist({'Request': 'QueryType'})
         res = self.service.recv_plist()
         return res.get('Type')
+
+    @property
+    def device_info(self) -> Mapping:
+        result = dict(self.all_values)
+        result.update({'ConnectionType': self.usbmux_device.connection_type, 'Serial': self.usbmux_device.serial})
+        result.update(self.get_value('com.apple.mobile.wireless_lockdown'))
+        return result
+
+    @property
+    def enable_wifi_connections(self):
+        return self.get_value('com.apple.mobile.wireless_lockdown').get('EnableWifiConnections', False)
+
+    @enable_wifi_connections.setter
+    def enable_wifi_connections(self, value: bool):
+        self.set_value(value, 'com.apple.mobile.wireless_lockdown', 'EnableWifiConnections')
 
     @property
     def ecid(self):
@@ -336,14 +354,16 @@ class LockdownClient(object):
     @reconnect_on_remote_close
     def start_service(self, name, escrow_bag=None) -> ServiceConnection:
         attr = self.get_service_connection_attributes(name, escrow_bag=escrow_bag)
-        service_connection = ServiceConnection.create(self.udid, attr['Port'])
+        service_connection = ServiceConnection.create(self.udid, attr['Port'],
+                                                      connection_type=self.usbmux_device.connection_type)
         if attr.get('EnableServiceSSL', False):
             service_connection.ssl_start(self.ssl_file, self.ssl_file)
         return service_connection
 
     async def aio_start_service(self, name, escrow_bag=None) -> ServiceConnection:
         attr = self.get_service_connection_attributes(name, escrow_bag=escrow_bag)
-        service_connection = ServiceConnection.create(self.udid, attr['Port'])
+        service_connection = ServiceConnection.create(self.udid, attr['Port'],
+                                                      connection_type=self.usbmux_device.connection_type)
         if attr.get('EnableServiceSSL', False):
             await service_connection.aio_ssl_start(self.ssl_file, self.ssl_file)
         return service_connection

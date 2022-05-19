@@ -99,3 +99,15 @@ def lockdown_device_name(lockdown: LockdownClient, new_name):
         lockdown.set_value(new_name, key='DeviceName')
     else:
         print(f'{lockdown.get_value(key="DeviceName")}')
+
+
+@lockdown_group.command('wifi-connections', cls=Command)
+@click.argument('state', type=click.Choice(['on', 'off']), required=False)
+def lockdown_wifi_connections(lockdown: LockdownClient, state):
+    """ get/set wifi connections state """
+    if not state:
+        # show current state
+        print_json(lockdown.enable_wifi_connections)
+    else:
+        # enable/disable
+        lockdown.enable_wifi_connections = state == 'on'
