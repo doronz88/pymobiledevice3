@@ -62,7 +62,7 @@ def test_rm_file_doesnt_exist(afc: AfcService, path):
 def test_get_device_info(afc: AfcService):
     device_info = afc.get_device_info()
     assert device_info['Model'].startswith('iPhone')
-    assert device_info['FSTotalBytes'] > device_info['FSFreeBytes']
+    assert int(device_info['FSTotalBytes']) > int(device_info['FSFreeBytes'])
 
 
 def test_listdir(afc):
