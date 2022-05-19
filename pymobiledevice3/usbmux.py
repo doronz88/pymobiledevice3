@@ -78,18 +78,21 @@ usbmuxd_response = Prefixed(Int32ul, Struct(
 @dataclass
 class MuxDevice:
     devid: int
-    usbprod: int
     serial: str
-    location: int
+    connection_type: str
 
     def connect(self, port) -> socket.socket:
         return create_mux().connect(self, port)
 
     @property
-    def is_legal(self):
-        return bool(self.usbprod)
+    def is_usb(self) -> bool:
+        return self.connection_type == 'USB'
 
-    def matches_udid(self, udid):
+    @property
+    def is_network(self) -> bool:
+        return self.connection_type == 'Network'
+
+    def matches_udid(self, udid: str) -> bool:
         return self.serial.replace('-', '') == udid.replace('-', '')
 
 
@@ -283,8 +286,8 @@ class BinaryMuxConnection(MuxConnection):
     def _receive_device_state_update(self):
         response = self._receive()
         if response.header.message == usbmuxd_msgtype.ADD:
-            self._add_device(MuxDevice(response.data.device_id, response.data.product_id, response.data.serial_number,
-                                       response.data.location))
+            # old protocol only supported USB devices
+            self._add_device(MuxDevice(response.data.device_id, response.data.serial_number, 'USB'))
         elif response.header.message == usbmuxd_msgtype.REMOVE:
             self._remove_device(response.data.device_id)
         else:
@@ -313,9 +316,8 @@ class PlistMuxConnection(BinaryMuxConnection):
         self._send({'MessageType': 'ListDevices'})
         for response in self._receive(self._tag - 1)['DeviceList']:
             if response['MessageType'] == 'Attached':
-                super()._add_device(MuxDevice(response['DeviceID'], response['Properties']['ProductID'],
-                                              response['Properties']['SerialNumber'],
-                                              response['Properties']['LocationID']))
+                super()._add_device(MuxDevice(response['DeviceID'], response['Properties']['SerialNumber'],
+                                              response['Properties']['ConnectionType']))
             elif response['MessageType'] == 'Detached':
                 super()._remove_device(response['DeviceID'])
             else:
@@ -371,11 +373,26 @@ def list_devices() -> List[MuxDevice]:
     return devices
 
 
-def select_device(udid='') -> Optional[MuxDevice]:
-    matching_devices = [
-        device for device in list_devices()
-        if device.is_legal and (not udid or device.matches_udid(udid))
-    ]
-    if not matching_devices:
-        return None
-    return matching_devices[0]
+def select_device(udid: str = None, connection_type: str = None) -> Optional[MuxDevice]:
+    """
+    select a UsbMux device according to given arguments.
+    if more than one device could be selected, always prefer the usb one.
+    """
+    tmp = None
+    for device in list_devices():
+        if connection_type is not None and device.connection_type != connection_type:
+            # if a specific connection_type was desired and not of this one then skip
+            continue
+
+        if udid is not None and not device.matches_udid(udid):
+            # if a specific udid was desired and not of this one then skip
+            continue
+
+        # save best result as a temporary
+        tmp = device
+
+        if device.is_usb:
+            # always prefer usb connection
+            return device
+
+    return tmp

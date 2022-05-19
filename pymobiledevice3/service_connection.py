@@ -60,8 +60,8 @@ class ServiceConnection(object):
         self._writer = None  # type: asyncio.StreamWriter
 
     @staticmethod
-    def create(udid: str, port: int):
-        target_device = select_device(udid)
+    def create(udid: str, port: int, connection_type=None):
+        target_device = select_device(udid, connection_type=connection_type)
         try:
             socket = target_device.connect(port)
         except usbmux.MuxException:
