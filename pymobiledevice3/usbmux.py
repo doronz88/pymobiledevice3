@@ -139,9 +139,9 @@ class MuxConnection:
     @staticmethod
     def create_usbmux_socket() -> SafeStreamSocket:
         if sys.platform in ['win32', 'cygwin']:
-            return SafeStreamSocket(MuxConnection.ITUNES_HOST, socket.SOCK_STREAM)
+            return SafeStreamSocket(MuxConnection.ITUNES_HOST, socket.AF_INET)
         else:
-            return SafeStreamSocket(MuxConnection.USBMUXD_PIPE, socket.SOCK_STREAM)
+            return SafeStreamSocket(MuxConnection.USBMUXD_PIPE, socket.AF_UNIX)
 
     @staticmethod
     def create():
