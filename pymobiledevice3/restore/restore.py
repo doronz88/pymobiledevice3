@@ -144,7 +144,7 @@ class Restore(BaseRestore):
             asr.send_payload(filesystem)
 
     def get_build_identity_from_request(self, msg):
-        return self.get_build_identity(msg['Arguments']['IsRecoveryOS'])
+        return self.get_build_identity(msg['Arguments'].get('IsRecoveryOS', False))
 
     def send_buildidentity(self, message: Mapping):
         self.logger.info('About to send BuildIdentity Dict...')
@@ -177,7 +177,7 @@ class Restore(BaseRestore):
         return self.ipsw.get_global_manifest(macos_variant, device_class)
 
     def send_personalized_boot_object_v3(self, message: Mapping):
-        self.logger.info(f'send_personalized_boot_object_v3: {message}')
+        self.logger.info(f'send_personalized_boot_object_v3')
         image_name = message['Arguments']['ImageName']
         component_name = image_name
         self.logger.info(f'About to send {component_name}...')
@@ -202,7 +202,7 @@ class Restore(BaseRestore):
         self.logger.info(f'Done sending {component_name}')
 
     def send_source_boot_object_v4(self, message: Mapping):
-        self.logger.info(f'send_source_boot_object_v4: {message}')
+        self.logger.info(f'send_source_boot_object_v4')
         image_name = message['Arguments']['ImageName']
         component_name = image_name
         self.logger.info(f'About to send {component_name}...')
@@ -214,7 +214,8 @@ class Restore(BaseRestore):
         elif image_name == '__SystemVersion__':
             data = self.ipsw.system_version
         else:
-            data = self.build_identity.get_component(component_name, tss=self.recovery.tss).data
+            data = self.get_build_identity_from_request(message)\
+                .get_component(component_name, tss=self.recovery.tss).data
 
         self.logger.info(f'Sending {component_name} now...')
         chunk_size = 8192
