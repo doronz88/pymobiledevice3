@@ -52,8 +52,9 @@ class BaseRestore:
 
         self.macos_variant = None
         try:
-            self.macos_variant = self.ipsw.build_manifest.get_build_identity(self.device.hardware_model,
-                                                                             variant=RESTORE_VARIANT_MACOS_RECOVERY_OS)
+            self.macos_variant = self.ipsw.build_manifest.get_build_identity(
+                self.device.hardware_model,
+                variant=RESTORE_VARIANT_MACOS_RECOVERY_OS)
             self.logger.info('Performing macOS restore')
         except NoSuchBuildIdentityError:
             pass

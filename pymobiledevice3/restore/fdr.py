@@ -107,7 +107,7 @@ class FDRClient:
         logger.debug(f'got proxy command with {len(buf)} bytes')
 
         # Just return success here unconditionally because we don't know
-        # anything else and we will eventually abort on failure anyway
+        # anything else, and we will eventually abort on failure anyway
         self.service.sendall(struct.pack('<H', 5))
 
         if len(buf) < 3:
