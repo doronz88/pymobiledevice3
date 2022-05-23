@@ -11,7 +11,7 @@ from construct import Struct, Default, Int64ul, Prefixed, GreedyRange, Select, C
     GreedyBytes, Adapter, Int16ul, Int32sl
 from pygments import highlight, lexers, formatters
 
-from pymobiledevice3.exceptions import DvtException
+from pymobiledevice3.exceptions import DvtException, UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService
 
@@ -116,6 +116,9 @@ class NSNull:
 class NSError:
     @staticmethod
     def decode_archive(archive_obj):
+        user_info = archive_obj.decode('NSUserInfo')
+        if user_info.get('NSLocalizedDescription', '').endswith(' - it does not respond to the selector'):
+            raise UnrecognizedSelectorError(user_info)
         raise DvtException(archive_obj.decode('NSUserInfo'))
 
 
