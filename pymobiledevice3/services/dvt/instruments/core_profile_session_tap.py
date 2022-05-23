@@ -218,14 +218,31 @@ shared_cache_dyld_load_info = Struct(
         'imageSlidBaseAddress' / Int64ul,
     ),
 )
+
+thread_group_snapshot_trace_v2 = Struct(
+    'tgs_id' / Int64ul,
+    '_tgs_name' / FixedSized(16, GreedyString('utf8')),
+    'tgs_name' / Computed(lambda ctx: ctx._tgs_name.strip('\x00')),
+    'tgs_flags' / Int64ul,
+)
+
+thread_group_snapshot_trace_v3 = Struct(
+    'tgs_id' / Int64ul,
+    '_tgs_name' / FixedSized(16, GreedyString('utf8')),
+    'tgs_flags' / Int64ul,
+    '_tgs_name_cont' / FixedSized(16, GreedyString('utf8')),
+    'tgs_name' / Computed(lambda ctx: ctx._tgs_name.strip('\x00') + ctx._tgs_name_cont.strip('\x00')),
+)
+
 thread_group_snapshot = Struct(
     predefined_name_substruct,
-    'obj' / Struct(
-        'tgs_id' / Int64ul,
-        '_tgs_name' / FixedSized(16, GreedyString('utf8')),
-        'tgs_name' / Computed(lambda ctx: ctx._tgs_name.strip('\x00')),
-        'tgs_flags' / Int64ul
-    ),
+    'obj' / Switch(
+        lambda ctx: ctx._._.size // ctx._.count,
+        {
+            thread_group_snapshot_trace_v2.sizeof(): thread_group_snapshot_trace_v2,
+            thread_group_snapshot_trace_v3.sizeof(): thread_group_snapshot_trace_v3,
+        }
+    )
 )
 type_array_pad0 = Struct(
     'flags_type' / Computed(lambda ctx: (ctx._.flags >> 32) & 0xffffffff),
