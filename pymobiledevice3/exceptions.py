@@ -88,6 +88,11 @@ class DvtException(PyMobileDevice3Exception):
     pass
 
 
+class UnrecognizedSelectorError(DvtException):
+    """ Attempted to call an unrecognized selector from DVT. """
+    pass
+
+
 class DvtDirListError(DvtException):
     """ Raise when directory listing fails. """
     pass

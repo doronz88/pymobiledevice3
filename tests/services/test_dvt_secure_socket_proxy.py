@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from pymobiledevice3.exceptions import DvtDirListError, AlreadyMountedError
+from pymobiledevice3.exceptions import DvtDirListError, AlreadyMountedError, UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
@@ -114,8 +114,11 @@ def test_system_information(lockdown):
     Test getting system information.
     :param pymobiledevice3.lockdown.LockdownClient lockdown: Lockdown client.
     """
-    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        system_info = DeviceInfo(dvt).system_information()
+    try:
+        with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+            system_info = DeviceInfo(dvt).system_information()
+    except UnrecognizedSelectorError:
+        pytest.skip('device doesn\'t support this method')
     assert '_deviceDescription' in system_info and system_info['_deviceDescription'].startswith('Build Version')
 
 
