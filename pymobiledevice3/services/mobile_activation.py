@@ -21,11 +21,17 @@ ACTIVATION_REQUESTS_SUBDIR = Path('offline_requests')
 NONCE_CYCLE_INTERVAL = 60 * 5
 
 
-class MobileActivationService(BaseService):
+class MobileActivationService:
+    """
+    Perform device activation
+
+    There is no point in inheriting from BaseService since we'll need a new lockdown connection
+    for each request.
+    """
     SERVICE_NAME = 'com.apple.mobileactivationd'
 
     def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, self.SERVICE_NAME)
+        self.lockdown = lockdown
 
     @property
     def state(self):
