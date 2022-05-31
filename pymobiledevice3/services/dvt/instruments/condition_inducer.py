@@ -22,6 +22,8 @@ class ConditionInducer:
                     self.logger.info(profile.get('description'))
                     self._channel.enableConditionWithIdentifier_profileIdentifier_(
                         MessageAux().append_obj(group.get('identifier')).append_obj(profile.get('identifier')))
+                    # wait for response which may be a raised NSError
+                    self._channel.receive_plist()
                     return
         raise PyMobileDevice3Exception('Invalid profile identifier')
 
