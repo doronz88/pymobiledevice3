@@ -6,7 +6,6 @@ from pathlib import Path
 import requests
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
 
 ACTIVATION_USER_AGENT_IOS = 'iOS Device Activator (MobileActivation-20 built on Jan 15 2012 at 19:07:28)'
 ACTIVATION_DEFAULT_URL = 'https://albert.apple.com/deviceservices/deviceActivation'

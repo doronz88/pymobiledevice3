@@ -7,6 +7,7 @@ import shlex
 import signal
 from collections import namedtuple
 from dataclasses import asdict
+from pathlib import Path
 
 import click
 from click.exceptions import MissingParameter, UsageError
@@ -600,14 +601,20 @@ def developer_fetch_symbols(lockdown: LockdownClient, out):
     """ download the linker and dyld cache to a specified directory """
     fetch_symbols = DtFetchSymbols(lockdown)
     files = fetch_symbols.list_files()
+    out = Path(out)
 
     if not os.path.exists(out):
         os.makedirs(out)
 
-    for i, filename in enumerate(files):
-        filename = os.path.join(out, os.path.basename(filename))
-        with open(filename, 'wb') as f:
-            logger.info(f'writing to: {filename}')
+    for file in files:
+        file = out / Path(file).parts[-1]
+        file.unlink(missing_ok=True)
+
+    for i, file in enumerate(files):
+        file = out / Path(file).parts[-1]
+        file = os.path.join(out, os.path.basename(file))
+        with open(file, 'ab') as f:
+            logger.info(f'writing to: {file}')
             fetch_symbols.get_file(i, f)
 
 

@@ -16,7 +16,7 @@ class DtFetchSymbols(object):
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
 
-    def list_files(self) -> bytes:
+    def list_files(self) -> typing.List[str]:
         service = self._start_command(self.CMD_LIST_FILES_PLIST)
         return service.recv_plist().get('files')
 
