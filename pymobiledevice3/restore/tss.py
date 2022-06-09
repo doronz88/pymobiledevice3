@@ -12,7 +12,7 @@ from pymobiledevice3.utils import bytes_to_uint
 
 TSS_CONTROLLER_ACTION_URL = 'http://gs.apple.com/TSS/controller?action=2'
 
-TSS_CLIENT_VERSION_STRING = 'libauthinstall-850.0.2'
+TSS_CLIENT_VERSION_STRING = 'libauthinstall-911'
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ class TSSRequest:
         self._request = {
             '@BBTicket': True,
             '@HostPlatformInfo': 'mac',
+            '@Locality': 'en_US',
             '@VersionInfo': TSS_CLIENT_VERSION_STRING,
             '@UUID': str(uuid4()).upper(),
         }
@@ -97,6 +98,12 @@ class TSSRequest:
                     logger.debug(f'Adding {key}={value} to TSS entry')
                     tss_entry[key] = value
         return tss_entry
+
+    def add_tags(self, parameters: typing.Mapping):
+        for key, value in parameters.items():
+            if isinstance(value, str) and value.startswith('0x'):
+                value = int(value, 16)
+            self._request[key] = value
 
     def add_common_tags(self, parameters: typing.Mapping, overrides=None):
         keys = ('ApECID', 'UniqueBuildID', 'ApChipID', 'ApBoardID', 'ApSecurityDomain')

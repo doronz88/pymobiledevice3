@@ -62,6 +62,12 @@ SUPPORTED_DATA_TYPES = {
     'SystemImageRootHash': False,
     'USBCFWData': False,
     'USBCOverride': False,
+    'FirmwareUpdaterPreflight': True,
+    'ReceiptManifest': True,
+    'FirmwareUpdaterDataV2': False,
+    'RestoreLocalPolicy': True,
+    'AuthInstallCACert': True,
+    'OverlayRootDataForKeyIndex': True,
 }
 
 # extracted from ac2
