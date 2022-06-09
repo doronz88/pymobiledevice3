@@ -36,6 +36,7 @@ logging.getLogger('parso.cache.pickle').disabled = True
 logging.getLogger('parso.python.diff').disabled = True
 logging.getLogger('humanfriendly.prompts').disabled = True
 logging.getLogger('blib2to3.pgen2.driver').disabled = True
+logging.getLogger('urllib3.connectionpool').disabled = True
 
 logger = logging.getLogger(__name__)
 

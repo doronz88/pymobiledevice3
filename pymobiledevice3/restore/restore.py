@@ -177,7 +177,7 @@ class Restore(BaseRestore):
         return self.ipsw.get_global_manifest(macos_variant, device_class)
 
     def send_personalized_boot_object_v3(self, message: Mapping):
-        self.logger.info(f'send_personalized_boot_object_v3')
+        self.logger.debug('send_personalized_boot_object_v3')
         image_name = message['Arguments']['ImageName']
         component_name = image_name
         self.logger.info(f'About to send {component_name}...')
@@ -202,7 +202,7 @@ class Restore(BaseRestore):
         self.logger.info(f'Done sending {component_name}')
 
     def send_source_boot_object_v4(self, message: Mapping):
-        self.logger.info(f'send_source_boot_object_v4')
+        self.logger.debug('send_source_boot_object_v4')
         image_name = message['Arguments']['ImageName']
         component_name = image_name
         self.logger.info(f'About to send {component_name}...')
@@ -214,7 +214,7 @@ class Restore(BaseRestore):
         elif image_name == '__SystemVersion__':
             data = self.ipsw.system_version
         else:
-            data = self.get_build_identity_from_request(message)\
+            data = self.get_build_identity_from_request(message) \
                 .get_component(component_name, tss=self.recovery.tss).data
 
         self.logger.info(f'Sending {component_name} now...')
@@ -627,7 +627,7 @@ class Restore(BaseRestore):
         self._restored.send(req)
 
     def send_bootability_bundle_data(self, message):
-        logging.debug(f'send_bootability_bundle_data: {message}')
+        self.logger.debug(f'send_bootability_bundle_data: {message}')
         data_port = message['DataPort']
         self.logger.info('Connecting to BootabilityBundle data port')
 
@@ -636,7 +636,7 @@ class Restore(BaseRestore):
                 client = ServiceConnection.create(self._restored.udid, data_port)
                 break
             except ConnectionFailedError:
-                logging.debug('Retrying connection...')
+                self.logger.debug('Retrying connection...')
 
         if not client:
             raise ConnectionFailedError(f'failed to establish connection to {data_port}')
@@ -645,6 +645,10 @@ class Restore(BaseRestore):
 
         client.sendall(self.ipsw.bootability)
         client.close()
+
+    def send_manifest(self):
+        self.logger.debug('send_manifest')
+        self._restored.send({'ReceiptManifest': self.build_identity.manifest})
 
     def get_se_firmware_data(self, info: Mapping):
         chip_id = info.get('SE,ChipID')
@@ -878,6 +882,31 @@ class Restore(BaseRestore):
 
         return response
 
+    def get_cryptex1_firmware_data(self, info: Mapping, arguments: Mapping):
+        self.logger.info(f'get_cryptex1_firmware_data: {arguments}')
+        request = TSSRequest()
+        parameters = dict()
+
+        # add manifest for current build_identity to parameters
+        self.build_identity.populate_tss_request_parameters(
+            parameters, arguments['DeviceGeneratedTags']['BuildIdentityTags'])
+
+        parameters['ApProductionMode'] = arguments['MessageArgInfo']['ApProductionMode']
+        parameters['ApSecurityMode'] = True
+
+        parameters.update(arguments['DeviceGeneratedRequest'])
+        request.add_common_tags(info)
+        request.update(parameters)
+
+        self.logger.info('Sending Cryptex1 TSS request...')
+        response = request.send_receive()
+
+        ticket = response.get('Cryptex1,Ticket')
+        if ticket is None:
+            self.logger.warning('No "Cryptex1,Ticket" in TSS response, this might not work')
+
+        return response
+
     def get_timer_firmware_data(self, info: Mapping):
         self.logger.info(f'get_timer_firmware_data: {info}')
 
@@ -999,8 +1028,13 @@ class Restore(BaseRestore):
             if fwdict is None:
                 raise PyMobileDevice3Exception('Couldn\'t get AppleTypeCRetimer firmware data')
 
+        elif updater_name == 'Cryptex1':
+            fwdict = self.get_cryptex1_firmware_data(info, arguments)
+            if fwdict is None:
+                raise PyMobileDevice3Exception('Couldn\'t get Cryptex1 firmware data')
+
         else:
-            raise PyMobileDevice3Exception('Got unknown updater name: {updater_name}')
+            raise PyMobileDevice3Exception(f'Got unknown updater name: {updater_name}')
 
         self.logger.info('Sending FirmwareResponse data now...')
         self._restored.send({'FirmwareResponseData': fwdict})
@@ -1043,6 +1077,10 @@ class Restore(BaseRestore):
             self.send_image_data(message, 'EANImageList', 'IsEarlyAccessFirmware', 'EANData')
         elif data_type == 'BootabilityBundle':
             self.send_bootability_bundle_data(message)
+        elif data_type == 'ReceiptManifest':
+            self.send_manifest()
+        elif data_type == 'BasebandUpdaterOutputData':
+            self.handle_baseband_updater_output_data(message)
         else:
             self.logger.error(f'unknown data request: {message}')
 
@@ -1074,8 +1112,16 @@ class Restore(BaseRestore):
         self.logger.info(f'progress-bar: {message}')
 
     def handle_status_msg(self, message: Mapping):
-        self.logger.info(f'status message: {message}')
+        self.logger.debug(f'status message: {message}')
         status = message['Status']
+        log = message.get('Log')
+
+        if log:
+            # this is the true device log that may inform us for anything that went wrong
+            # we want it to be output into the stdout in multiline, so we can inspect it using
+            # easier shell commands
+            print(log)
+
         if status == 0:
             self._restore_finished = True
             self._restored.send({'MsgType': 'ReceivedFinalStatusMsg'})
@@ -1094,9 +1140,35 @@ class Restore(BaseRestore):
             raise PyMobileDevice3Exception(str(message))
 
     def handle_baseband_updater_output_data(self, message: Mapping):
-        # TODO: consider implementing
-        #       this can be used to get debug logs from baseband updater
         self.logger.debug(f'restore_handle_baseband_updater_output_data: {message}')
+        data_port = message['DataPort']
+
+        self.logger.info('Connecting to baseband updater data port')
+
+        while True:
+            try:
+                client = ServiceConnection.create(self._restored.udid, data_port)
+                break
+            except ConnectionFailedError:
+                self.logger.debug('Retrying connection...')
+
+        if not client:
+            raise ConnectionFailedError(f'failed to establish connection to {data_port}')
+
+        self.logger.info('Connected to BasebandUpdaterOutputData data port')
+
+        filename = f'updater_output-{self._restored.udid}.cpio'
+        self.logger.info(f'Writing updater output into: {filename}')
+
+        with open(filename, 'wb') as f:
+            while True:
+                buf = client.recv()
+                if not buf:
+                    break
+                f.write(buf)
+
+        self.logger.debug('Closing connection of BasebandUpdaterOutputData data port')
+        client.close()
 
     def _connect_to_restored_service(self):
         while True:

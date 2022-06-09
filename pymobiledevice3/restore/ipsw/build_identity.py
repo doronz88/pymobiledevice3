@@ -1,4 +1,5 @@
 from collections import UserDict
+from typing import List, Mapping
 
 from cached_property import cached_property
 from pymobiledevice3.restore.ipsw.component import Component
@@ -26,31 +27,39 @@ class BuildIdentity(UserDict):
         return self['Info'].get('MacOSVariant')
 
     @cached_property
+    def manifest(self):
+        return self['Manifest']
+
+    @cached_property
     def minimum_system_partition(self):
         return self['Info'].get('MinimumSystemPartition')
 
     def get_component_path(self, component: str):
-        return self['Manifest'][component]['Info']['Path']
+        return self.manifest[component]['Info']['Path']
 
     def has_component(self, name: str):
-        return name in self['Manifest']
+        return name in self.manifest
 
     def get_component(self, name: str, **args) -> Component:
         return Component(self, name, **args)
 
-    def populate_tss_request_parameters(self, parameters):
+    def populate_tss_request_parameters(self, parameters: Mapping, additional_keys: List[str] = None):
         """ equivalent to idevicerestore:tss_parameters_add_from_manifest """
-        keys_to_copy = ('UniqueBuildID', 'Ap,OSLongVersion', 'ApChipID', 'ApBoardID', 'ApSecurityDomain',
-                        'BMU,BoardID', 'BMU,ChipID', 'BbChipID', 'BbProvisioningManifestKeyHash',
-                        'BbActivationManifestKeyHash', 'BbCalibrationManifestKeyHash',
-                        'BbFactoryActivationManifestKeyHash', 'BbFDRSecurityKeyHash', 'BbSkeyId', 'SE,ChipID',
-                        'Savage,ChipID', 'Savage,PatchEpoch', 'Yonkers,BoardID', 'Yonkers,ChipID',
-                        'Yonkers,PatchEpoch', 'Rap,BoardID', 'Rap,ChipID', 'Rap,SecurityDomain', 'Baobab,BoardID',
-                        'Baobab,ChipID', 'Baobab,ManifestEpoch', 'Baobab,SecurityDomain', 'eUICC,ChipID',
-                        'PearlCertificationRootPub', 'Timer,BoardID,1', 'Timer,BoardID,2', 'Timer,ChipID,1',
-                        'Timer,ChipID,2', 'Timer,SecurityDomain,1', 'Timer,SecurityDomain,2', 'Manifest')
+        key_list = ['ApBoardID', 'ApChipID']
+        if additional_keys is None:
+            key_list += ['UniqueBuildID', 'Ap,OSLongVersion', 'ApChipID', 'ApBoardID', 'ApSecurityDomain',
+                         'BMU,BoardID', 'BMU,ChipID', 'BbChipID', 'BbProvisioningManifestKeyHash',
+                         'BbActivationManifestKeyHash', 'BbCalibrationManifestKeyHash',
+                         'BbFactoryActivationManifestKeyHash', 'BbFDRSecurityKeyHash', 'BbSkeyId', 'SE,ChipID',
+                         'Savage,ChipID', 'Savage,PatchEpoch', 'Yonkers,BoardID', 'Yonkers,ChipID',
+                         'Yonkers,PatchEpoch', 'Rap,BoardID', 'Rap,ChipID', 'Rap,SecurityDomain', 'Baobab,BoardID',
+                         'Baobab,ChipID', 'Baobab,ManifestEpoch', 'Baobab,SecurityDomain', 'eUICC,ChipID',
+                         'PearlCertificationRootPub', 'Timer,BoardID,1', 'Timer,BoardID,2', 'Timer,ChipID,1',
+                         'Timer,ChipID,2', 'Timer,SecurityDomain,1', 'Timer,SecurityDomain,2', 'Manifest', ]
+        else:
+            key_list += additional_keys
 
-        for k in keys_to_copy:
+        for k in key_list:
             try:
                 v = self[k]
                 if isinstance(v, str) and v.startswith('0x'):
