@@ -5,7 +5,7 @@ __all__ = [
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
     'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabled', 'RemoteAutomationNotEnabled',
-    'ArbitrationError', 'NoSuchBuildIdentityError',
+    'ArbitrationError', 'NoSuchBuildIdentityError', 'InternalError', 'DeveloperModeIsNotEnabledError',
 ]
 
 
@@ -150,4 +150,9 @@ class ArbitrationError(PyMobileDevice3Exception):
 
 class NoSuchBuildIdentityError(PyMobileDevice3Exception):
     """ Failed to find BuildIdentity with desired parameters """
+    pass
+
+
+class DeveloperModeIsNotEnabledError(PyMobileDevice3Exception):
+    """ Raise when mounting failed because developer mode is not enabled. """
     pass
