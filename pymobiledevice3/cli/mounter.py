@@ -92,9 +92,7 @@ def download_developer_disk_image(ios_version, directory):
     with tempfile.NamedTemporaryFile('wb+') as f:
         download_file(url, f.name)
         zip_file = zipfile.ZipFile(f)
-
-        # extract to the parent directory since the zip file already contains the ios version in its hierarchy
-        zip_file.extractall(directory.parent)
+        zip_file.extractall(directory)
 
 
 @mounter.command('mount', cls=Command)
