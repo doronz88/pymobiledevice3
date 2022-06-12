@@ -1,7 +1,7 @@
 from typing import Optional
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, NotMountedError, UnsupportedCommandError, \
-    AlreadyMountedError, InternalError
+    AlreadyMountedError, InternalError, DeveloperModeIsNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService
 
@@ -70,6 +70,10 @@ class MobileImageMounterService(BaseService):
                                  'ImageType': image_type,
                                  'ImageSignature': signature})
         result = self.service.recv_plist()
+
+        if 'Developer mode is not enabled' in result.get('DetailedError', ''):
+            raise DeveloperModeIsNotEnabledError()
+
         status = result.get('Status')
 
         if status != 'Complete':
