@@ -17,7 +17,7 @@ from termcolor import colored
 
 import pymobiledevice3
 from pymobiledevice3.cli.cli_common import print_json, Command, default_json_encoder, wait_return
-from pymobiledevice3.exceptions import DvtDirListError, ExtractingStackshotError
+from pymobiledevice3.exceptions import DvtDirListError, ExtractingStackshotError, UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
@@ -194,13 +194,17 @@ def device_information(lockdown: LockdownClient, color):
     """ Print system information. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         device_info = DeviceInfo(dvt)
-        print_json({
-            'system': device_info.system_information(),
+        info = {
             'hardware': device_info.hardware_information(),
             'network': device_info.network_information(),
             'kernel-name': device_info.mach_kernel_name(),
             'kpep-database': device_info.kpep_database(),
-        }, colored=color)
+        }
+        try:
+            info['system'] = device_info.system_information()
+        except UnrecognizedSelectorError:
+            pass
+        print_json(info, colored=color)
 
 
 @dvt.command('netstat', cls=Command)
