@@ -7,12 +7,12 @@ import shlex
 import signal
 from collections import namedtuple
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 
 import click
 from click.exceptions import MissingParameter, UsageError
 from pykdebugparser.pykdebugparser import PyKdebugParser
-from pymobiledevice3.services.device_arbitration import DtDeviceArbitration
 from termcolor import colored
 
 import pymobiledevice3
@@ -21,6 +21,7 @@ from pymobiledevice3.exceptions import DvtDirListError, ExtractingStackshotError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
+from pymobiledevice3.services.device_arbitration import DtDeviceArbitration
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
@@ -544,6 +545,7 @@ def dvt_oslog(lockdown: LockdownClient, color, pid):
                 image_name = os.path.basename(sender_image_path)
                 subsystem = message.subsystem
                 category = message.category
+                timestamp = datetime.now()
 
                 if pid is not None and message_pid != pid:
                     continue
@@ -554,13 +556,14 @@ def dvt_oslog(lockdown: LockdownClient, color, pid):
                     formatted_message = message.name
 
                 if color:
+                    timestamp = colored(str(timestamp), attrs=['bold'])
                     message_pid = colored(str(message_pid), 'magenta')
                     subsystem = colored(subsystem, 'green')
                     category = colored(category, 'green')
                     image_name = colored(image_name, 'yellow')
                     message_type = colored(message_type, 'cyan')
 
-                print(f'[{subsystem}][{category}][{message_pid}][{image_name}] '
+                print(f'[{timestamp}][{subsystem}][{category}][{message_pid}][{image_name}] '
                       f'<{message_type}>: {formatted_message}')
 
 
