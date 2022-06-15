@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Mapping
 
 from construct import Struct, Prefixed, Int32ul, GreedyBytes, StreamError, Int16ul, CString, Padding, FixedSized, \
-    Enum, Const, Switch, this
+    Enum, Const, Switch, this, EnumIntegerString
 
 from pymobiledevice3.exceptions import MuxException, MuxVersionError, NotPairedError
 
@@ -145,17 +145,17 @@ class MuxConnection:
 
     @staticmethod
     def create():
-        # first attempt to connect with possibly the wrong version header (binary protocol)
+        # first attempt to connect with possibly the wrong version header (plist protocol)
         sock = MuxConnection.create_usbmux_socket()
         message = usbmuxd_request.build({
-            'header': {'version': usbmuxd_version.BINARY, 'message': usbmuxd_msgtype.LISTEN, 'tag': 1},
+            'header': {'version': usbmuxd_version.PLIST, 'message': usbmuxd_msgtype.LISTEN, 'tag': 1},
             'data': b''
         })
         sock.send(message)
 
         response = usbmuxd_response.parse_stream(sock)
 
-        if response.header.message == usbmuxd_msgtype.PLIST:
+        if response.header.version == usbmuxd_version.BINARY:
             # if we sent a bad request, we should re-create the socket in the correct version this time
             sock.close()
             sock = MuxConnection.create_usbmux_socket()
