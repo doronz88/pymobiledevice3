@@ -2,10 +2,10 @@
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
 [![Downloads](https://static.pepy.tech/personalized-badge/pymobiledevice3?period=total&units=none&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/pymobiledevice3)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/doronz88/pymobiledevice3.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/doronz88/pymobiledevice3/context:python)
+
 - [Description](#description)
 - [Installation](#installation)
     * [Lower iOS versions (<13)](#lower-ios-versions---13-)
-        + [Known issues using OpenSSL](#known-issues-using-openssl)
 - [Usage](#usage)
     * [Example](#example)
 - [The bits and bytes](#the-bits-and-bytes)
@@ -20,8 +20,7 @@
 # Description
 
 `pymobiledevice3` is a pure python3 implementation for working with iDevices (iPhone, etc...). This means this tool is
-both
-architecture and platform generic and is supported and tested on:
+both architecture and platform generic and is supported and tested on:
 
 * Windows
 * Linux
@@ -91,17 +90,10 @@ On Linux:
 sudo apt install openssl
 ```
 
-### Known issues using OpenSSL
-
-Please refer to the following closed issue if you are receiving errors from the OpenSSL library:
-
-https://github.com/doronz88/pymobiledevice3/issues/171
-
 # Usage
 
 The CLI subcommands are divided roughly by the protocol layer used for interacting in the device. For example, all
-features
-derived from the DeveloperDiskImage will be accessible from the `developer`
+features derived from the DeveloperDiskImage will be accessible from the `developer`
 subcommand. This also means that every feature which isn't there won't require it.
 
 This is the main CLI usage:
@@ -218,8 +210,7 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
 ### Implemented services
 
 This is the list of all the services from `lockdownd` which we reversed and implemented API wrappers for. A click on
-each will
-lead to each one's implementation, where you can learn more about.
+each will lead to each one's implementation, where you can learn more about.
 
 * [`com.apple.mobile.heartbeat`](pymobiledevice3/services/heartbeat.py)
     * Just a ping to `lockdownd` service.
@@ -281,8 +272,7 @@ lead to each one's implementation, where you can learn more about.
 ### Un-implemented services
 
 This is the list of services we haven't dedicated time in implementing. If you feel the need to use one of them or any
-other
-that is not listed in here, feel free
+other that is not listed in here, feel free
 to [create us an issue request](https://github.com/doronz88/pymobiledevice3/issues/new?assignees=&labels=&template=feature_request.md&title=)
 .
 
@@ -303,16 +293,14 @@ to [create us an issue request](https://github.com/doronz88/pymobiledevice3/issu
 #### Lockdown messages
 
 Every such subcommand may wrap several relay requests underneath. If you wish to try and play with some the relays
-yourself,
-you can run:
+yourself, you can run:
 
 ```shell
 pymobiledevice3 lockdown service <service-name>
 ```
 
 This will start an IPython shell where you already have the connection established using the `client` variable and you
-can send
-& receive messages.
+can send & receive messages.
 
 ```python
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
