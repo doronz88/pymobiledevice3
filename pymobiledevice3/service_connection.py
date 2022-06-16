@@ -44,7 +44,7 @@ def parse_plist(payload):
 
 def create_context(keyfile, certfile):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.set_ciphers('AES256-SHA')
+    context.set_ciphers('ALL:@SECLEVEL=0')
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     context.load_cert_chain(certfile, keyfile)
