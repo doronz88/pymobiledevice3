@@ -246,9 +246,9 @@ class BinaryMuxConnection(MuxConnection):
         if response.header.message != usbmuxd_msgtype.RESULT:
             raise MuxException(f'unexpected message type received: {response}')
 
-        result = self._receive().result
-        if result != usbmuxd_result.OK:
-            raise MuxException(f'failed to connect to device: {device_id} at port: {port}. reason: {result}')
+        if response.data.result != usbmuxd_result.OK:
+            raise MuxException(f'failed to connect to device: {device_id} at port: {port}. reason: '
+                               f'{response.data.result}')
 
     def _send(self, data: Mapping):
         self._assert_not_connected()
@@ -263,11 +263,9 @@ class BinaryMuxConnection(MuxConnection):
         return response
 
     def _send_receive(self, message_type: int):
-        self._send(usbmuxd_request.build(
-            {'header': {'version': self._version, 'message': message_type, 'tag': self._tag},
-             'data': b''}))
+        self._send({'header': {'version': self._version, 'message': message_type, 'tag': self._tag},
+                    'data': b''})
         response = self._receive(self._tag - 1)
-
         if response.header.message != usbmuxd_msgtype.RESULT:
             raise MuxException(f'unexpected message type received: {response}')
 
