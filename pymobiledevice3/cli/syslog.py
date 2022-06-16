@@ -1,12 +1,13 @@
 import logging
 import os
+import posixpath
 import re
 
 import click
-from pymobiledevice3.lockdown import LockdownClient
 from termcolor import colored
 
 from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.os_trace import OsTraceService
 from pymobiledevice3.services.syslog import SyslogService
 
@@ -44,9 +45,9 @@ def format_line(color, pid, syslog_entry, include_label):
     timestamp = syslog_entry.timestamp
     level = syslog_entry.level
     filename = syslog_entry.filename
-    image_name = os.path.basename(syslog_entry.image_name)
+    image_name = posixpath.basename(syslog_entry.image_name)
     message = syslog_entry.message
-    process_name = os.path.basename(filename)
+    process_name = posixpath.basename(filename)
     label = ''
 
     if (pid != -1) and (syslog_pid != pid):
@@ -83,12 +84,14 @@ def format_line(color, pid, syslog_entry, include_label):
 @click.option('-o', '--out', type=click.File('wt'), help='log file')
 @click.option('--color/--no-color', default=True, help='disable colors')
 @click.option('--pid', type=click.INT, default=-1, help='pid to filter. -1 for all')
+@click.option('-pn', '--process-name', help='process name to filter')
 @click.option('-m', '--match', multiple=True, help='match expression')
 @click.option('-mi', '--match-insensitive', multiple=True, help='insensitive match expression')
 @click.option('include_label', '--label', is_flag=True, help='should include label')
 @click.option('-e', '--regex', multiple=True, help='filter only lines matching given regex')
 @click.option('-ei', '--insensitive-regex', multiple=True, help='filter only lines matching given regex (insensitive)')
-def syslog_live(lockdown: LockdownClient, out, color, pid, match, match_insensitive, include_label, regex, insensitive_regex):
+def syslog_live(lockdown: LockdownClient, out, color, pid, process_name, match, match_insensitive, include_label, regex,
+                insensitive_regex):
     """ view live syslog lines """
 
     match_regex = [re.compile(f'.*({r}).*') for r in regex]
@@ -100,6 +103,10 @@ def syslog_live(lockdown: LockdownClient, out, color, pid, match, match_insensit
         return None
 
     for syslog_entry in OsTraceService(lockdown=lockdown).syslog(pid=pid):
+        if process_name:
+            if posixpath.basename(syslog_entry.filename) != process_name:
+                continue
+
         line = format_line(color, pid, syslog_entry, include_label)
 
         skip = False
