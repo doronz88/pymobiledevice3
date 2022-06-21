@@ -7,6 +7,7 @@ import coloredlogs
 
 from pymobiledevice3.cli.activation import cli as activation_cli
 from pymobiledevice3.cli.afc import cli as afc_cli
+from pymobiledevice3.cli.amfi import cli as amfi_cli
 from pymobiledevice3.cli.apps import cli as apps_cli
 from pymobiledevice3.cli.backup import cli as backup_cli
 from pymobiledevice3.cli.companion_proxy import cli as companion_cli
@@ -45,7 +46,7 @@ def cli():
     cli_commands = click.CommandCollection(sources=[
         developer_cli, mounter_cli, apps_cli, profile_cli, lockdown_cli, diagnostics_cli, syslog_cli, pcap_cli,
         crash_cli, afc_cli, ps_cli, notification_cli, list_devices_cli, power_assertion_cli, springboard_cli,
-        provision_cli, backup_cli, restore_cli, activation_cli, companion_cli, webinspector_cli
+        provision_cli, backup_cli, restore_cli, activation_cli, companion_cli, webinspector_cli, amfi_cli
     ])
     cli_commands.context_settings = dict(help_option_names=['-h', '--help'])
     try:

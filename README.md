@@ -268,6 +268,8 @@ each will lead to each one's implementation, where you can learn more about.
     * Allows fetching of `dyld` and dyld shared cache files (DeveloperDiskImage)
 * [`com.apple.webinspector`](pymobiledevice3/services/webinspector.py)
     * Used to debug WebViews
+* [`com.apple.amfi.lockdown`](pymobiledevice3/services/amfi.py)
+    * Used to enable developer-mode
 
 ### Un-implemented services
 

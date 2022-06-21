@@ -9,7 +9,8 @@ import IPython
 from pygments import highlight, lexers, formatters
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception, ConnectionTerminatedError
+from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception, ConnectionTerminatedError, \
+    NoDeviceConnectedError
 from pymobiledevice3.usbmux import select_device
 
 SHELL_USAGE = """
@@ -62,6 +63,8 @@ class ServiceConnection(object):
     @staticmethod
     def create(udid: str, port: int, connection_type=None):
         target_device = select_device(udid, connection_type=connection_type)
+        if target_device is None:
+            raise NoDeviceConnectedError()
         try:
             socket = target_device.connect(port)
         except usbmux.MuxException:
