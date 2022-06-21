@@ -1,6 +1,5 @@
 import logging
 import time
-from pprint import pprint
 
 import click
 from pymobiledevice3.cli.cli_common import Command, print_json
@@ -51,16 +50,18 @@ def diagnostics_info(lockdown: LockdownClient, color):
 @click.option('--plane')
 @click.option('--name')
 @click.option('--ioclass')
-def diagnostics_ioregistry(lockdown: LockdownClient, plane, name, ioclass):
+@click.option('--color/--no-color', default=True)
+def diagnostics_ioregistry(lockdown: LockdownClient, plane, name, ioclass, color):
     """ get ioregistry info """
-    pprint(DiagnosticsService(lockdown=lockdown).ioregistry(plane=plane, name=name, ioclass=ioclass))
+    print_json(DiagnosticsService(lockdown=lockdown).ioregistry(plane=plane, name=name, ioclass=ioclass), colored=color)
 
 
 @diagnostics.command('mg', cls=Command)
 @click.argument('keys', nargs=-1, default=None)
-def diagnostics_mg(lockdown: LockdownClient, keys):
+@click.option('--color/--no-color', default=True)
+def diagnostics_mg(lockdown: LockdownClient, keys, color):
     """ get MobileGestalt key values from given list. If empty, return all known. """
-    pprint(DiagnosticsService(lockdown=lockdown).mobilegestalt(keys=keys))
+    print_json(DiagnosticsService(lockdown=lockdown).mobilegestalt(keys=keys), colored=color)
 
 
 @diagnostics.group('battery')
