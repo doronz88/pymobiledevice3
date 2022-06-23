@@ -882,7 +882,7 @@ class Restore(BaseRestore):
 
         return response
 
-    def get_cryptex1_firmware_data(self, info: Mapping, arguments: Mapping):
+    def get_cryptex1_firmware_data(self, updater_name: str, info: Mapping, arguments: Mapping):
         self.logger.info(f'get_cryptex1_firmware_data: {arguments}')
         request = TSSRequest()
         parameters = dict()
@@ -893,17 +893,19 @@ class Restore(BaseRestore):
 
         parameters['ApProductionMode'] = arguments['MessageArgInfo']['ApProductionMode']
         parameters['ApSecurityMode'] = True
+        response_ticket = arguments['DeviceGeneratedTags']['ResponseTags'][0]
 
         parameters.update(arguments['DeviceGeneratedRequest'])
         request.add_common_tags(info)
         request.update(parameters)
 
-        self.logger.info('Sending Cryptex1 TSS request...')
+        self.logger.info(f'Sending {updater_name} TSS request...')
         response = request.send_receive()
 
-        ticket = response.get('Cryptex1,Ticket')
+        ticket = response.get(response_ticket)
         if ticket is None:
-            self.logger.warning('No "Cryptex1,Ticket" in TSS response, this might not work')
+            self.logger.warning(f'No "{response_ticket}" in TSS response, this might not work')
+            self.logger.debug(response)
 
         return response
 
@@ -1028,10 +1030,10 @@ class Restore(BaseRestore):
             if fwdict is None:
                 raise PyMobileDevice3Exception('Couldn\'t get AppleTypeCRetimer firmware data')
 
-        elif updater_name == 'Cryptex1':
-            fwdict = self.get_cryptex1_firmware_data(info, arguments)
+        elif updater_name in ('Cryptex1', 'Cryptex1LocalPolicy'):
+            fwdict = self.get_cryptex1_firmware_data(updater_name, info, arguments)
             if fwdict is None:
-                raise PyMobileDevice3Exception('Couldn\'t get Cryptex1 firmware data')
+                raise PyMobileDevice3Exception(f'Couldn\'t get {updater_name} firmware data')
 
         else:
             raise PyMobileDevice3Exception(f'Got unknown updater name: {updater_name}')
