@@ -13,7 +13,7 @@ from pymobiledevice3.lockdown import LockdownClient
 
 def default_json_encoder(obj):
     if isinstance(obj, bytes):
-        return obj.hex()
+        return f'<{obj.hex()}>'
     if isinstance(obj, datetime.datetime):
         return str(obj)
     if isinstance(obj, uuid.UUID):
