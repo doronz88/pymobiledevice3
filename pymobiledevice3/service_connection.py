@@ -45,7 +45,10 @@ def parse_plist(payload):
 
 def create_context(keyfile, certfile):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.set_ciphers('ALL:!aNULL:!eNULL')
+    if ssl.OPENSSL_VERSION.lower().startswith('openssl'):
+        context.set_ciphers('ALL:!aNULL:!eNULL:@SECLEVEL=0')
+    else:
+        context.set_ciphers('ALL:!aNULL:!eNULL')
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     context.load_cert_chain(certfile, keyfile)
@@ -54,6 +57,7 @@ def create_context(keyfile, certfile):
 
 class ServiceConnection(object):
     """ wrapper for usbmux tcp-relay connections """
+
     def __init__(self, socket):
         self.logger = logging.getLogger(__name__)
         self.socket = socket
