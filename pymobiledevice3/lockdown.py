@@ -61,6 +61,41 @@ def reconnect_on_remote_close(f):
     return _reconnect_on_remote_close
 
 
+DOMAINS = ['com.apple.disk_usage',
+           'com.apple.disk_usage.factory',
+           'com.apple.mobile.battery',
+           # FIXME: For some reason lockdownd segfaults on this, works sometimes tho
+           # 'com.apple.mobile.debug',
+           'com.apple.iqagent',
+           'com.apple.purplebuddy',
+           'com.apple.PurpleBuddy',
+           'com.apple.mobile.chaperone',
+           'com.apple.mobile.third_party_termination',
+           'com.apple.mobile.lockdownd',
+           'com.apple.mobile.lockdown_cache',
+           'com.apple.xcode.developerdomain',
+           'com.apple.international',
+           'com.apple.mobile.data_sync',
+           'com.apple.mobile.tethered_sync',
+           'com.apple.mobile.mobile_application_usage',
+           'com.apple.mobile.backup',
+           'com.apple.mobile.nikita',
+           'com.apple.mobile.restriction',
+           'com.apple.mobile.user_preferences',
+           'com.apple.mobile.sync_data_class',
+           'com.apple.mobile.software_behavior',
+           'com.apple.mobile.iTunes.SQLMusicLibraryPostProcessCommands',
+           'com.apple.mobile.iTunes.accessories',
+           'com.apple.mobile.internal',  # < iOS 4.0+
+           'com.apple.mobile.wireless_lockdown',  # < iOS 4.0+
+           'com.apple.fairplay',
+           'com.apple.iTunes',
+           'com.apple.mobile.iTunes.store',
+           'com.apple.mobile.iTunes',
+           'com.apple.fmip',
+           'com.apple.Accessibility', ]
+
+
 class LockdownClient(object):
     DEFAULT_CLIENT_NAME = 'pymobiledevice3'
     SERVICE_PORT = 62078
@@ -122,15 +157,26 @@ class LockdownClient(object):
         self.close()
 
     def query_type(self):
-        self.service.send_plist({'Request': 'QueryType'})
-        res = self.service.recv_plist()
-        return res.get('Type')
+        return self.service.send_recv_plist({'Label': self.label, 'Request': 'QueryType'}).get('Type')
 
     @property
-    def device_info(self) -> Mapping:
-        result = dict(self.all_values)
-        result.update({'ConnectionType': self.usbmux_device.connection_type, 'Serial': self.usbmux_device.serial})
-        result.update(self.get_value('com.apple.mobile.wireless_lockdown'))
+    def all_domains(self) -> Mapping:
+        result = self.all_values
+
+        for domain in DOMAINS:
+            result.update(self.get_value(domain))
+
+        return result
+
+    @property
+    def short_info(self) -> Mapping:
+        keys_to_copy = ['DeviceClass', 'DeviceName', 'BuildVersion', 'ProductVersion', 'ProductType']
+        result = {
+            'ConnectionType': self.usbmux_device.connection_type,
+            'Serial': self.usbmux_device.serial,
+        }
+        for key in keys_to_copy:
+            result[key] = self.all_values.get(key)
         return result
 
     @property
@@ -243,9 +289,9 @@ class LockdownClient(object):
 
         self.host_id = pair_record.get('HostID', self.host_id)
         self.system_buid = pair_record.get('SystemBUID', self.system_buid)
-        d = {'Label': self.label, 'Request': 'StartSession', 'HostID': self.host_id, 'SystemBUID': self.system_buid}
-        self.service.send_plist(d)
-        start_session = self.service.recv_plist()
+        start_session = self.service.send_recv_plist(
+            {'Label': self.label, 'Request': 'StartSession', 'HostID': self.host_id, 'SystemBUID': self.system_buid}
+        )
         self.SessionID = start_session.get('SessionID')
         if start_session.get('EnableSessionSSL'):
             lf = b'\n'
@@ -273,7 +319,8 @@ class LockdownClient(object):
                        'RootCertificate': cert_pem,
                        'SystemBUID': '30142955-444094379208051516'}
 
-        pair = self.service.send_recv_plist({'Label': self.label, 'Request': 'Pair', 'PairRecord': pair_record})
+        pair = self.service.send_recv_plist({'Label': self.label, 'Request': 'Pair', 'PairRecord': pair_record,
+                                             'ProtocolVersion': '2', 'PairingOptions': {'ExtendedPairingErrors': True}})
 
         if pair.get('Error') == 'PasswordProtected':
             self.service.close()
@@ -296,25 +343,23 @@ class LockdownClient(object):
         self.paired = True
 
     @reconnect_on_remote_close
-    def unpair(self):
-        req = {'Label': self.label, 'Request': 'Unpair', 'PairRecord': self.pair_record}
-        self.service.send_plist(req)
-        return self.service.recv_plist()
+    def unpair(self) -> Mapping:
+        req = {'Label': self.label, 'Request': 'Unpair', 'PairRecord': self.pair_record, 'ProtocolVersion': '2'}
+        return self.service.send_recv_plist(req)
 
     @reconnect_on_remote_close
     def get_value(self, domain=None, key=None):
         if isinstance(key, str) and hasattr(self, 'record') and hasattr(self.pair_record, key):
             return self.pair_record[key]
 
-        req = {'Request': 'GetValue', 'Label': self.label}
+        req = {'Label': self.label, 'Request': 'GetValue'}
 
         if domain:
             req['Domain'] = domain
         if key:
             req['Key'] = key
 
-        self.service.send_plist(req)
-        res = self.service.recv_plist()
+        res = self.service.send_recv_plist(req)
         if res:
             r = res.get('Value')
             if hasattr(r, 'data'):

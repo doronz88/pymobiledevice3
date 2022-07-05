@@ -28,6 +28,6 @@ def list_devices(color, usb, network):
             continue
 
         lockdown = LockdownClient(udid, autopair=False, connection_type=device.connection_type)
-        connected_devices.append(lockdown.device_info)
+        connected_devices.append(lockdown.short_info)
 
     print_json(connected_devices, colored=color)
