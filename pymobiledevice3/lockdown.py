@@ -62,7 +62,7 @@ def reconnect_on_remote_close(f):
 
 
 class LockdownClient(object):
-    DEFAULT_CLIENT_NAME = 'pyMobileDevice'
+    DEFAULT_CLIENT_NAME = 'pymobiledevice3'
     SERVICE_PORT = 62078
 
     def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME, autopair=True, connection_type=None):
@@ -111,6 +111,9 @@ class LockdownClient(object):
                 raise FatalPairingError()
             self.service = ServiceConnection.create(udid, self.SERVICE_PORT,
                                                     connection_type=self.usbmux_device.connection_type)
+
+        # reload data after pairing
+        self.all_values = self.get_value()
 
     def __enter__(self):
         return self
