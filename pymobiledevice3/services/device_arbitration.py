@@ -1,4 +1,6 @@
-from pymobiledevice3.exceptions import ArbitrationError
+from typing import Mapping
+
+from pymobiledevice3.exceptions import ArbitrationError, DeviceAlreadyInUseError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService
 
@@ -10,7 +12,7 @@ class DtDeviceArbitration(BaseService):
         super().__init__(lockdown, self.SERVICE_NAME, is_developer_service=True)
 
     @property
-    def version(self):
+    def version(self) -> Mapping:
         return self.service.send_recv_plist({'command': 'version'})
 
     def check_in(self, hostname: str, force: bool = False):
@@ -19,7 +21,7 @@ class DtDeviceArbitration(BaseService):
             request['command'] = 'force-check-in'
         response = self.service.send_recv_plist(request)
         if response.get('result') != 'success':
-            raise ArbitrationError(f'failed with: {response}')
+            raise DeviceAlreadyInUseError(response)
 
     def check_out(self):
         request = {'command': 'check-out'}
