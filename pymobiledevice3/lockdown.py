@@ -247,14 +247,6 @@ class LockdownClient(object):
             return None
         return pair_record
 
-    def get_usbmux_pairing_record(self):
-        mux = usbmux.create_mux()
-        if not isinstance(mux, PlistMuxConnection):
-            return None
-        pairing_record = mux.get_pair_record(self.udid)
-        mux.close()
-        return pairing_record
-
     def get_local_pairing_record(self):
         self.logger.debug('Looking for pymobiledevice3 pairing record')
         path = HOMEFOLDER / f'{self.identifier}.plist'
@@ -267,10 +259,13 @@ class LockdownClient(object):
         pair_record = self.get_itunes_pairing_record()
         if pair_record is not None:
             self.logger.info(f'Using iTunes pair record: {self.identifier}.plist')
-        elif Version(self.ios_version) >= Version('13.0'):
-            pair_record = self.get_usbmux_pairing_record()
+
+        mux = usbmux.create_mux()
+        if isinstance(mux, PlistMuxConnection):
+            pair_record = mux.get_pair_record(self.udid)
         else:
             pair_record = self.get_local_pairing_record()
+        mux.close()
 
         if pair_record is None:
             return False
