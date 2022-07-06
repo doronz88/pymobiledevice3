@@ -6,6 +6,7 @@ __all__ = [
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
     'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabled', 'RemoteAutomationNotEnabled',
     'ArbitrationError', 'NoSuchBuildIdentityError', 'InternalError', 'DeveloperModeIsNotEnabledError',
+    'DeviceAlreadyInUseError',
 ]
 
 
@@ -146,6 +147,22 @@ class InternalError(PyMobileDevice3Exception):
 class ArbitrationError(PyMobileDevice3Exception):
     """ Arbitration failed """
     pass
+
+
+class DeviceAlreadyInUseError(ArbitrationError):
+    """ Device is already checked-in by someone """
+
+    @property
+    def message(self):
+        return self.args[0].get('message')
+
+    @property
+    def owner(self):
+        return self.args[0].get('owner')
+
+    @property
+    def result(self):
+        return self.args[0].get('result')
 
 
 class NoSuchBuildIdentityError(PyMobileDevice3Exception):

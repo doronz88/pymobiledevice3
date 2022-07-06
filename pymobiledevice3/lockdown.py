@@ -217,10 +217,11 @@ class LockdownClient(object):
     def set_locale(self, locale: str):
         self.set_value(locale, key='Locale', domain='com.apple.international')
 
-    def generate_host_id(self):
+    @staticmethod
+    def generate_host_id() -> str:
         hostname = platform.node()
-        hostid = uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
-        return str(hostid).upper()
+        host_id = uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
+        return str(host_id).upper()
 
     @reconnect_on_remote_close
     def enter_recovery(self):

@@ -17,7 +17,8 @@ from termcolor import colored
 
 import pymobiledevice3
 from pymobiledevice3.cli.cli_common import print_json, Command, default_json_encoder, wait_return
-from pymobiledevice3.exceptions import DvtDirListError, ExtractingStackshotError, UnrecognizedSelectorError
+from pymobiledevice3.exceptions import DvtDirListError, ExtractingStackshotError, UnrecognizedSelectorError, \
+    DeviceAlreadyInUseError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
@@ -831,7 +832,11 @@ def version(lockdown: LockdownClient, color):
 def check_in(lockdown: LockdownClient, hostname, force):
     """ owner check-in """
     with DtDeviceArbitration(lockdown) as device_arbitration:
-        device_arbitration.check_in(hostname, force=force)
+        try:
+            device_arbitration.check_in(hostname, force=force)
+            wait_return()
+        except DeviceAlreadyInUseError as e:
+            logger.error(e.message)
 
 
 @arbitration.command('check-out', cls=Command)
