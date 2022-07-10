@@ -5,6 +5,7 @@ import click
 import pcapy
 
 BPLIST_MAGIC = b'bplist'
+PLIST_MAGIC = b'<plist'
 
 
 @click.command()
@@ -17,6 +18,16 @@ def main(pcap, out):
         if BPLIST_MAGIC in packet:
             try:
                 plist = plistlib.loads(packet[packet.find(BPLIST_MAGIC):])
+                print(plist)
+                out.write('---\n')
+                out.write(pprint.pformat(plist))
+                out.write('\n---\n')
+            except plistlib.InvalidFileException:
+                pass
+        if PLIST_MAGIC in packet:
+            try:
+                plist = plistlib.loads(packet[packet.find(PLIST_MAGIC):])
+                print(plist)
                 out.write('---\n')
                 out.write(pprint.pformat(plist))
                 out.write('\n---\n')
