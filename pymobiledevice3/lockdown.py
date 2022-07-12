@@ -111,7 +111,7 @@ class LockdownClient(object):
         self.usbmux_device = device
         self.logger = logging.getLogger(__name__)
         self.paired = False
-        self.SessionID = None
+        self.session_id = None
         self.service = ServiceConnection.create(udid, self.SERVICE_PORT, connection_type=device.connection_type)
         self.host_id = self.generate_host_id()
         self.system_buid = None
@@ -156,8 +156,8 @@ class LockdownClient(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    def query_type(self):
-        return self.service.send_recv_plist({'Label': self.label, 'Request': 'QueryType'}).get('Type')
+    def query_type(self) -> str:
+        return self._request('QueryType').get('Type')
 
     @property
     def all_domains(self) -> Mapping:
@@ -225,17 +225,15 @@ class LockdownClient(object):
 
     @reconnect_on_remote_close
     def enter_recovery(self):
-        self.service.send_plist({'Request': 'EnterRecovery'})
-        return self.service.recv_plist()
+        return self._request('EnterRecovery')
 
     def stop_session(self):
-        if self.SessionID and self.service:
-            self.service.send_plist({'Label': self.label, 'Request': 'StopSession', 'SessionID': self.SessionID})
-            self.SessionID = None
-            res = self.service.recv_plist()
-            if not res or res.get('Result') != 'Success':
+        if self.session_id and self.service:
+            response = self._request('StopSession', {'SessionID': self.session_id})
+            self.session_id = None
+            if not response or response.get('Result') != 'Success':
                 raise CannotStopSessionError()
-            return res
+            return response
 
     def get_itunes_pairing_record(self):
         platform_type = 'linux' if not sys.platform.startswith('linux') else sys.platform
@@ -276,19 +274,15 @@ class LockdownClient(object):
         private_key_pem = pair_record['HostPrivateKey']
 
         if Version(self.ios_version) < Version('11.0'):
-            validate_pair = {'Label': self.label, 'Request': 'ValidatePair', 'PairRecord': pair_record}
-            self.service.send_plist(validate_pair)
-            r = self.service.recv_plist()
-            if (not r) or ('Error' in r):
-                self.logger.error('ValidatePair fail', validate_pair)
+            response = self._request('ValidatePair', {'PairRecord': pair_record})
+            if (not response) or ('Error' in response):
+                self.logger.error('ValidatePair fail', response)
                 return False
 
         self.host_id = pair_record.get('HostID', self.host_id)
         self.system_buid = pair_record.get('SystemBUID', self.system_buid)
-        start_session = self.service.send_recv_plist(
-            {'Label': self.label, 'Request': 'StartSession', 'HostID': self.host_id, 'SystemBUID': self.system_buid}
-        )
-        self.SessionID = start_session.get('SessionID')
+        start_session = self._request('StartSession', {'HostID': self.host_id, 'SystemBUID': self.system_buid})
+        self.session_id = start_session.get('SessionID')
         if start_session.get('EnableSessionSSL'):
             lf = b'\n'
             self.ssl_file = write_home_file(f'{self.identifier}_ssl.txt', cert_pem + lf + private_key_pem)
@@ -315,8 +309,8 @@ class LockdownClient(object):
                        'RootCertificate': cert_pem,
                        'SystemBUID': '30142955-444094379208051516'}
 
-        pair = self.service.send_recv_plist({'Label': self.label, 'Request': 'Pair', 'PairRecord': pair_record,
-                                             'ProtocolVersion': '2', 'PairingOptions': {'ExtendedPairingErrors': True}})
+        pair = self._request('Pair', {'PairRecord': pair_record, 'ProtocolVersion': '2',
+                                      'PairingOptions': {'ExtendedPairingErrors': True}})
 
         if pair.get('Error') == 'PasswordProtected':
             self.service.close()
@@ -340,22 +334,18 @@ class LockdownClient(object):
 
     @reconnect_on_remote_close
     def unpair(self) -> Mapping:
-        req = {'Label': self.label, 'Request': 'Unpair', 'PairRecord': self.pair_record, 'ProtocolVersion': '2'}
-        return self.service.send_recv_plist(req)
+        return self._request('Unpair', {'PairRecord': self.pair_record, 'ProtocolVersion': '2'})
 
     @reconnect_on_remote_close
-    def get_value(self, domain=None, key=None):
-        if isinstance(key, str) and hasattr(self, 'record') and hasattr(self.pair_record, key):
-            return self.pair_record[key]
-
-        req = {'Label': self.label, 'Request': 'GetValue'}
+    def get_value(self, domain: str = None, key: str = None):
+        options = {}
 
         if domain:
-            req['Domain'] = domain
+            options['Domain'] = domain
         if key:
-            req['Key'] = key
+            options['Key'] = key
 
-        res = self.service.send_recv_plist(req)
+        res = self._request('GetValue', options)
         if res:
             r = res.get('Value')
             if hasattr(r, 'data'):
@@ -363,36 +353,43 @@ class LockdownClient(object):
             return r
 
     @reconnect_on_remote_close
-    def set_value(self, value, domain=None, key=None):
-        req = {'Request': 'SetValue', 'Label': self.label}
+    def remove_value(self, domain: str = None, key: str = None) -> Mapping:
+        options = {}
 
         if domain:
-            req['Domain'] = domain
+            options['Domain'] = domain
         if key:
-            req['Key'] = key
+            options['Key'] = key
 
-        req['Value'] = value
-        self.service.send_plist(req)
-        response = self.service.recv_plist()
-        self.logger.debug(response)
-        return response
+        return self._request('RemoveValue', options)
 
-    def get_service_connection_attributes(self, name, escrow_bag=None) -> dict:
+    @reconnect_on_remote_close
+    def set_value(self, value, domain: str = None, key: str = None) -> Mapping:
+        options = {}
+
+        if domain:
+            options['Domain'] = domain
+        if key:
+            options['Key'] = key
+
+        options['Value'] = value
+        return self._request('SetValue', options)
+
+    def get_service_connection_attributes(self, name, escrow_bag=None) -> Mapping:
         if not self.paired:
             self.logger.info('NotPaired')
             raise NotPairedError()
 
-        request = {'Label': self.label, 'Request': 'StartService', 'Service': name}
+        options = {'Service': name}
         if escrow_bag is not None:
-            request['EscrowBag'] = escrow_bag
+            options['EscrowBag'] = escrow_bag
 
-        self.service.send_plist(request)
-        response = self.service.recv_plist()
+        response = self._request('StartService', options)
         if not response or response.get('Error'):
             if response.get('Error', '') == 'PasswordProtected':
                 raise PasswordRequiredError(
                     'your device is protected with password, please enter password in device and try again')
-            raise StartServiceError(response.get("Error"))
+            raise StartServiceError(response.get('Error'))
         return response
 
     @reconnect_on_remote_close
@@ -424,3 +421,9 @@ class LockdownClient(object):
 
     def close(self):
         self.service.close()
+
+    def _request(self, request: str, options: Mapping = None) -> Mapping:
+        request = {'Label': self.label, 'Request': request}
+        if options:
+            request.update(options)
+        return self.service.send_recv_plist(request)
