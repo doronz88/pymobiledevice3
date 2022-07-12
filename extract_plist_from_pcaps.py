@@ -1,5 +1,7 @@
+#!/usr/local/bin/python3
 import plistlib
 import pprint
+import xml
 
 import click
 import pcapy
@@ -31,7 +33,7 @@ def main(pcap, out):
                 out.write('---\n')
                 out.write(pprint.pformat(plist))
                 out.write('\n---\n')
-            except plistlib.InvalidFileException:
+            except xml.parsers.expat.ExpatError:
                 pass
 
 
