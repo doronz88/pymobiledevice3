@@ -58,3 +58,12 @@ class Command(click.Command):
             # prevent lockdown connection establishment when in autocomplete mode
             return
         return LockdownClient(udid=value)
+
+
+class CommandWithoutAutopair(Command):
+    @staticmethod
+    def udid(ctx, param, value):
+        if '_PYMOBILEDEVICE3_COMPLETE' in os.environ:
+            # prevent lockdown connection establishment when in autocomplete mode
+            return
+        return LockdownClient(udid=value, autopair=False)
