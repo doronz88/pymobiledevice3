@@ -6,7 +6,8 @@ __all__ = [
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
     'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabled', 'RemoteAutomationNotEnabled',
     'ArbitrationError', 'NoSuchBuildIdentityError', 'InternalError', 'DeveloperModeIsNotEnabledError',
-    'DeviceAlreadyInUseError',
+    'DeviceAlreadyInUseError', 'LockdownError', 'PairingDialogResponsePendingError', 'UserDeniedPairingError',
+    'InvalidHostIDError',
 ]
 
 
@@ -46,7 +47,7 @@ class CannotStopSessionError(PyMobileDevice3Exception):
     pass
 
 
-class PasswordRequiredError(PyMobileDevice3Exception):
+class PasswordRequiredError(PairingError):
     pass
 
 
@@ -172,4 +173,22 @@ class NoSuchBuildIdentityError(PyMobileDevice3Exception):
 
 class DeveloperModeIsNotEnabledError(PyMobileDevice3Exception):
     """ Raise when mounting failed because developer mode is not enabled. """
+    pass
+
+
+class LockdownError(PyMobileDevice3Exception):
+    """ lockdown general error """
+    pass
+
+
+class PairingDialogResponsePendingError(PairingError):
+    """ User hasn't yet confirmed the device is trusted """
+    pass
+
+
+class UserDeniedPairingError(PairingError):
+    pass
+
+
+class InvalidHostIDError(PairingError):
     pass

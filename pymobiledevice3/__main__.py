@@ -27,7 +27,8 @@ from pymobiledevice3.cli.restore import cli as restore_cli
 from pymobiledevice3.cli.springboard import cli as springboard_cli
 from pymobiledevice3.cli.syslog import cli as syslog_cli
 from pymobiledevice3.cli.webinspector import cli as webinspector_cli
-from pymobiledevice3.exceptions import NoDeviceConnectedError
+from pymobiledevice3.exceptions import NoDeviceConnectedError, NotPairedError, UserDeniedPairingError, \
+    PairingDialogResponsePendingError
 
 coloredlogs.install(level=logging.INFO)
 
@@ -55,6 +56,12 @@ def cli():
         logger.error('Device is not connected')
     except ConnectionAbortedError:
         logger.error('Device was disconnected')
+    except NotPairedError:
+        logger.error('Device is not paired')
+    except UserDeniedPairingError:
+        logger.error('User refused to trust this computer')
+    except PairingDialogResponsePendingError:
+        logger.error('Waiting for user dialog approval')
     except BrokenPipeError:
         traceback.print_exc()
 

@@ -2,7 +2,7 @@ import tempfile
 
 import click
 
-from pymobiledevice3.cli.cli_common import Command, print_json
+from pymobiledevice3.cli.cli_common import Command, print_json, CommandWithoutAutopair
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.heartbeat import HeartbeatService
 from pymobiledevice3.tcp_forwarder import TcpForwarder
@@ -62,13 +62,13 @@ def lockdown_info(lockdown: LockdownClient, all, color):
     print_json(lockdown.all_domains if all else lockdown.all_values, colored=color)
 
 
-@lockdown_group.command('unpair', cls=Command)
+@lockdown_group.command('unpair', cls=CommandWithoutAutopair)
 def lockdown_unpair(lockdown: LockdownClient):
     """ unpair from connected device """
     lockdown.unpair()
 
 
-@lockdown_group.command('pair', cls=Command)
+@lockdown_group.command('pair', cls=CommandWithoutAutopair)
 def lockdown_pair(lockdown: LockdownClient):
     """ pair device """
     lockdown.pair()

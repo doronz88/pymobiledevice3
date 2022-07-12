@@ -5,7 +5,9 @@ import os
 import platform
 import plistlib
 import sys
+import time
 import uuid
+from contextlib import suppress
 from pathlib import Path
 from typing import Mapping
 
@@ -14,6 +16,7 @@ from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import *
+from pymobiledevice3.exceptions import LockdownError
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
 from pymobiledevice3.utils import sanitize_ios_version
@@ -100,7 +103,8 @@ class LockdownClient(object):
     DEFAULT_CLIENT_NAME = 'pymobiledevice3'
     SERVICE_PORT = 62078
 
-    def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME, autopair=True, connection_type=None):
+    def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME, autopair=True, connection_type=None,
+                 pair_timeout: int = None):
         device = usbmux.select_device(udid, connection_type=connection_type)
         if device is None:
             if udid:
@@ -141,11 +145,11 @@ class LockdownClient(object):
                 # but pairing by default was not requested
                 return
 
-            self.pair()
+            self.pair(timeout=pair_timeout)
+
+            # get session_id
             if not self.validate_pairing():
                 raise FatalPairingError()
-            self.service = ServiceConnection.create(udid, self.SERVICE_PORT,
-                                                    connection_type=self.usbmux_device.connection_type)
 
         # reload data after pairing
         self.all_values = self.get_value()
@@ -256,7 +260,7 @@ class LockdownClient(object):
     def validate_pairing(self):
         pair_record = self.get_itunes_pairing_record()
         if pair_record is not None:
-            self.logger.info(f'Using iTunes pair record: {self.identifier}.plist')
+            self.logger.debug(f'Using iTunes pair record: {self.identifier}.plist')
 
         mux = usbmux.create_mux()
         if isinstance(mux, PlistMuxConnection):
@@ -274,14 +278,20 @@ class LockdownClient(object):
         private_key_pem = pair_record['HostPrivateKey']
 
         if Version(self.ios_version) < Version('11.0'):
-            response = self._request('ValidatePair', {'PairRecord': pair_record})
-            if (not response) or ('Error' in response):
-                self.logger.error('ValidatePair fail', response)
+            try:
+                self._request('ValidatePair', {'PairRecord': pair_record})
+            except PairingError:
                 return False
 
         self.host_id = pair_record.get('HostID', self.host_id)
         self.system_buid = pair_record.get('SystemBUID', self.system_buid)
-        start_session = self._request('StartSession', {'HostID': self.host_id, 'SystemBUID': self.system_buid})
+
+        try:
+            start_session = self._request('StartSession', {'HostID': self.host_id, 'SystemBUID': self.system_buid})
+        except InvalidHostIDError:
+            # no host id means there is no such pairing record
+            return False
+
         self.session_id = start_session.get('SessionID')
         if start_session.get('EnableSessionSSL'):
             lf = b'\n'
@@ -292,7 +302,7 @@ class LockdownClient(object):
         return True
 
     @reconnect_on_remote_close
-    def pair(self):
+    def pair(self, timeout: int = None):
         self.device_public_key = self.get_value('', 'DevicePublicKey')
         if not self.device_public_key:
             self.logger.error('Unable to retrieve DevicePublicKey')
@@ -309,16 +319,10 @@ class LockdownClient(object):
                        'RootCertificate': cert_pem,
                        'SystemBUID': '30142955-444094379208051516'}
 
-        pair = self._request('Pair', {'PairRecord': pair_record, 'ProtocolVersion': '2',
-                                      'PairingOptions': {'ExtendedPairingErrors': True}})
+        pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2',
+                        'PairingOptions': {'ExtendedPairingErrors': True}}
 
-        if pair.get('Error') == 'PasswordProtected':
-            self.service.close()
-            raise NotTrustedError()
-        elif pair.get('Result') != 'Success' and 'EscrowBag' not in pair:
-            self.logger.error(pair.get('Error'))
-            self.service.close()
-            raise PairingError()
+        pair = self._request_pair(pair_options)
 
         pair_record['HostPrivateKey'] = private_key_pem
         pair_record['EscrowBag'] = pair.get('EscrowBag')
@@ -329,12 +333,13 @@ class LockdownClient(object):
         client = usbmux.create_mux()
         if isinstance(client, PlistMuxConnection):
             client.save_pair_record(self.udid, self.usbmux_device.devid, record_data)
+        client.close()
 
         self.paired = True
 
     @reconnect_on_remote_close
     def unpair(self) -> Mapping:
-        return self._request('Unpair', {'PairRecord': self.pair_record, 'ProtocolVersion': '2'})
+        return self._request('Unpair', {'PairRecord': self.pair_record, 'ProtocolVersion': '2'}, verify_request=False)
 
     @reconnect_on_remote_close
     def get_value(self, domain: str = None, key: str = None):
@@ -377,7 +382,6 @@ class LockdownClient(object):
 
     def get_service_connection_attributes(self, name, escrow_bag=None) -> Mapping:
         if not self.paired:
-            self.logger.info('NotPaired')
             raise NotPairedError()
 
         options = {'Service': name}
@@ -422,8 +426,40 @@ class LockdownClient(object):
     def close(self):
         self.service.close()
 
-    def _request(self, request: str, options: Mapping = None) -> Mapping:
-        request = {'Label': self.label, 'Request': request}
+    def _request(self, request: str, options: Mapping = None, verify_request: bool = True) -> Mapping:
+        message = {'Label': self.label, 'Request': request}
         if options:
-            request.update(options)
-        return self.service.send_recv_plist(request)
+            message.update(options)
+        response = self.service.send_recv_plist(message)
+
+        if verify_request and response['Request'] != request:
+            raise LockdownError(f'incorrect response returned. got {response["Request"]} instead of {request}')
+
+        error = response.get('Error')
+        if error is not None:
+            exception_errors = {'PasswordProtected': PasswordRequiredError,
+                                'PairingDialogResponsePending': PairingDialogResponsePendingError,
+                                'UserDeniedPairing': UserDeniedPairingError,
+                                'InvalidHostID': InvalidHostIDError, }
+            raise exception_errors.get(error, LockdownError)(error)
+
+        # iOS < 5: 'Error' is not present, so we need to check the 'Result' instead
+        if response.get('Result') == 'Failure':
+            raise LockdownError()
+
+        return response
+
+    def _request_pair(self, pair_options: Mapping, timeout: int = None):
+        try:
+            return self._request('Pair', pair_options)
+        except PairingDialogResponsePendingError:
+            if timeout == 0:
+                raise
+
+        self.logger.info('waiting user pairing dialog...')
+        start = time.time()
+        while timeout is None or time.time() <= start + timeout:
+            with suppress(PairingDialogResponsePendingError):
+                return self._request('Pair', pair_options)
+            time.sleep(1)
+        raise PairingDialogResponsePendingError()
