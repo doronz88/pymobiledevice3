@@ -322,7 +322,7 @@ class LockdownClient(object):
         pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2',
                         'PairingOptions': {'ExtendedPairingErrors': True}}
 
-        pair = self._request_pair(pair_options)
+        pair = self._request_pair(pair_options, timeout=timeout)
 
         pair_record['HostPrivateKey'] = private_key_pem
         pair_record['EscrowBag'] = pair.get('EscrowBag')
