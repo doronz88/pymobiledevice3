@@ -141,6 +141,7 @@ class LockdownClient(object):
         self.unique_chip_id = self.all_values.get('UniqueChipID')
         self.device_public_key = self.all_values.get('DevicePublicKey')
         self.product_version = self.all_values.get('ProductVersion')
+        self.product_type = self.all_values.get('ProductType')
         self.identifier = self.udid
 
         if not self.identifier:
@@ -164,6 +165,10 @@ class LockdownClient(object):
 
         # reload data after pairing
         self.all_values = self.get_value()
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__} ID:{self.identifier} VERSION:{self.product_version} ' \
+               f'TYPE:{self.product_type} PAIRED:{self.paired}>'
 
     def __enter__(self):
         return self
