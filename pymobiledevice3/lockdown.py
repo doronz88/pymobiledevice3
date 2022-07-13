@@ -103,8 +103,18 @@ class LockdownClient(object):
     DEFAULT_CLIENT_NAME = 'pymobiledevice3'
     SERVICE_PORT = 62078
 
-    def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME, autopair=True, connection_type=None,
-                 pair_timeout: int = None):
+    def __init__(self, udid: str = None, client_name: str = DEFAULT_CLIENT_NAME, autopair: bool = True,
+                 connection_type: str = None, pair_timeout: int = None, hostname: str = None,
+                 pair_record: Mapping = None):
+        """
+        :param udid: serial number for device to connect to
+        :param client_name: user agent to use when identifying for lockdownd
+        :param autopair: should automatically attempt pairing with device
+        :param connection_type: can be either "USB" or "Network" to specify what connection type to use
+        :param pair_timeout: if autopair, use this timeout for user's Trust dialog. If None, will wait forever
+        :param hostname: use given hostname to generate the HostID inside the pair record
+        :param pair_record: use this pair record instead of the one already stored
+        """
         device = usbmux.select_device(udid, connection_type=connection_type)
         if device is None:
             if udid:
@@ -117,10 +127,11 @@ class LockdownClient(object):
         self.paired = False
         self.session_id = None
         self.service = ServiceConnection.create(udid, self.SERVICE_PORT, connection_type=device.connection_type)
-        self.host_id = self.generate_host_id()
+        self.host_id = self.generate_host_id(hostname)
         self.system_buid = None
         self.label = client_name
-        self.pair_record = None
+        self.pair_record = pair_record
+        self.ssl_file = None
 
         if self.query_type() != 'com.apple.mobile.lockdown':
             raise IncorrectModeError()
@@ -222,8 +233,8 @@ class LockdownClient(object):
         self.set_value(locale, key='Locale', domain='com.apple.international')
 
     @staticmethod
-    def generate_host_id() -> str:
-        hostname = platform.node()
+    def generate_host_id(hostname: str = None) -> str:
+        hostname = platform.node() if hostname is None else hostname
         host_id = uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
         return str(host_id).upper()
 
@@ -257,34 +268,23 @@ class LockdownClient(object):
             return None
         return plistlib.loads(path.read_bytes())
 
-    def validate_pairing(self):
-        pair_record = self.get_itunes_pairing_record()
-        if pair_record is not None:
-            self.logger.debug(f'Using iTunes pair record: {self.identifier}.plist')
+    def validate_pairing(self) -> bool:
+        self._init_preferred_pair_record()
 
-        mux = usbmux.create_mux()
-        if isinstance(mux, PlistMuxConnection):
-            pair_record = mux.get_pair_record(self.udid)
-        else:
-            pair_record = self.get_local_pairing_record()
-        mux.close()
-
-        if pair_record is None:
+        if self.pair_record is None:
             return False
 
-        self.pair_record = pair_record
-
-        cert_pem = pair_record['HostCertificate']
-        private_key_pem = pair_record['HostPrivateKey']
+        cert_pem = self.pair_record['HostCertificate']
+        private_key_pem = self.pair_record['HostPrivateKey']
 
         if Version(self.ios_version) < Version('11.0'):
             try:
-                self._request('ValidatePair', {'PairRecord': pair_record})
+                self._request('ValidatePair', {'PairRecord': self.pair_record})
             except PairingError:
                 return False
 
-        self.host_id = pair_record.get('HostID', self.host_id)
-        self.system_buid = pair_record.get('SystemBUID', self.system_buid)
+        self.host_id = self.pair_record.get('HostID', self.host_id)
+        self.system_buid = self.pair_record.get('SystemBUID', self.system_buid)
 
         try:
             start_session = self._request('StartSession', {'HostID': self.host_id, 'SystemBUID': self.system_buid})
@@ -326,6 +326,7 @@ class LockdownClient(object):
 
         pair_record['HostPrivateKey'] = private_key_pem
         pair_record['EscrowBag'] = pair.get('EscrowBag')
+        self.pair_record = pair_record
         write_home_file(f'{self.identifier}.plist', plistlib.dumps(pair_record))
 
         record_data = plistlib.dumps(pair_record)
@@ -441,6 +442,7 @@ class LockdownClient(object):
                                 'PairingDialogResponsePending': PairingDialogResponsePendingError,
                                 'UserDeniedPairing': UserDeniedPairingError,
                                 'InvalidHostID': InvalidHostIDError, }
+                                # 'SetProhibited': SetProhibitedError, }
             raise exception_errors.get(error, LockdownError)(error)
 
         # iOS < 5: 'Error' is not present, so we need to check the 'Result' instead
@@ -463,3 +465,24 @@ class LockdownClient(object):
                 return self._request('Pair', pair_options)
             time.sleep(1)
         raise PairingDialogResponsePendingError()
+
+    def _init_preferred_pair_record(self):
+        if self.pair_record is not None:
+            # if already have one, use it
+            return
+
+        pair_record = self.get_itunes_pairing_record()
+        if pair_record is not None:
+            self.logger.debug(f'Using iTunes pair record: {self.identifier}.plist')
+
+        mux = usbmux.create_mux()
+        if isinstance(mux, PlistMuxConnection):
+            pair_record = mux.get_pair_record(self.udid)
+        else:
+            pair_record = self.get_local_pairing_record()
+        mux.close()
+
+        if pair_record is None:
+            return
+
+        self.pair_record = pair_record
