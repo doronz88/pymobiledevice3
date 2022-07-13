@@ -269,7 +269,10 @@ class LockdownClient(object):
         return plistlib.loads(path.read_bytes())
 
     def validate_pairing(self) -> bool:
-        self._init_preferred_pair_record()
+        try:
+            self._init_preferred_pair_record()
+        except NotPairedError:
+            return False
 
         if self.pair_record is None:
             return False
