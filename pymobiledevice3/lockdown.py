@@ -195,6 +195,26 @@ class LockdownClient(object):
         return result
 
     @property
+    def share_iphone_analytics_enabled(self) -> bool:
+        return self.get_value('com.apple.MobileDeviceCrashCopy', 'ShouldSubmit')
+
+    @property
+    def voice_over(self) -> bool:
+        return bool(self.get_value('com.apple.Accessibility').get('VoiceOverTouchEnabledByiTunes', 0))
+
+    @voice_over.setter
+    def voice_over(self, value: bool):
+        self.set_value(int(value), 'com.apple.Accessibility', 'VoiceOverTouchEnabledByiTunes')
+
+    @property
+    def invert_display(self) -> bool:
+        return bool(self.get_value('com.apple.Accessibility').get('InvertDisplayEnabledByiTunes', 0))
+
+    @invert_display.setter
+    def invert_display(self, value: bool):
+        self.set_value(int(value), 'com.apple.Accessibility', 'InvertDisplayEnabledByiTunes')
+
+    @property
     def enable_wifi_connections(self):
         return self.get_value('com.apple.mobile.wireless_lockdown').get('EnableWifiConnections', False)
 
