@@ -49,7 +49,7 @@ def reconnect_on_remote_close(f):
     def _reconnect_on_remote_close(*args, **kwargs):
         try:
             return f(*args, **kwargs)
-        except BrokenPipeError:
+        except (BrokenPipeError, ConnectionTerminatedError):
             self = args[0]
 
             # first we release the socket on our end to avoid a ResourceWarning
