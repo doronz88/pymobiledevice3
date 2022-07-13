@@ -9,7 +9,7 @@ class DvtSecureSocketProxyService(RemoteServer):
     OLD_SERVICE_NAME = 'com.apple.instruments.remoteserver'
 
     def __init__(self, lockdown: LockdownClient):
-        if Version(lockdown.ios_version) >= Version('14.0'):
+        if Version(lockdown.product_version) >= Version('14.0'):
             service_name = self.SERVICE_NAME
             remove_ssl_context = False
         else:

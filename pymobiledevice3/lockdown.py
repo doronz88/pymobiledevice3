@@ -140,7 +140,7 @@ class LockdownClient(object):
         self.udid = self.all_values.get('UniqueDeviceID', self.usbmux_device.serial)
         self.unique_chip_id = self.all_values.get('UniqueChipID')
         self.device_public_key = self.all_values.get('DevicePublicKey')
-        self.ios_version = self.all_values.get('ProductVersion')
+        self.product_version = self.all_values.get('ProductVersion')
         self.identifier = self.udid
 
         if not self.identifier:
@@ -224,7 +224,7 @@ class LockdownClient(object):
 
     @property
     def sanitized_ios_version(self):
-        return sanitize_ios_version(self.ios_version)
+        return sanitize_ios_version(self.product_version)
 
     def set_language(self, language: str):
         self.set_value(language, key='Language', domain='com.apple.international')
@@ -277,7 +277,7 @@ class LockdownClient(object):
         cert_pem = self.pair_record['HostCertificate']
         private_key_pem = self.pair_record['HostPrivateKey']
 
-        if Version(self.ios_version) < Version('11.0'):
+        if Version(self.product_version) < Version('11.0'):
             try:
                 self._request('ValidatePair', {'PairRecord': self.pair_record})
             except PairingError:
