@@ -62,6 +62,34 @@ def lockdown_info(lockdown: LockdownClient, all, color):
     print_json(lockdown.all_domains if all else lockdown.all_values, colored=color)
 
 
+@lockdown_group.command('get', cls=Command)
+@click.argument('domain', required=False)
+@click.argument('key', required=False)
+@click.option('--color/--no-color', default=True)
+def lockdown_get(lockdown: LockdownClient, domain, key, color):
+    """ query lockdown values by their domain and key names """
+    print_json(lockdown.get_value(domain=domain, key=key), colored=color)
+
+
+@lockdown_group.command('set', cls=Command)
+@click.argument('value')
+@click.argument('domain', required=False)
+@click.argument('key', required=False)
+@click.option('--color/--no-color', default=True)
+def lockdown_set(lockdown: LockdownClient, value, domain, key, color):
+    """ set a lockdown value using python's eval() """
+    print_json(lockdown.set_value(value=eval(value), domain=domain, key=key), colored=color)
+
+
+@lockdown_group.command('remove', cls=Command)
+@click.argument('domain')
+@click.argument('key')
+@click.option('--color/--no-color', default=True)
+def lockdown_remove(lockdown: LockdownClient, domain, key, color):
+    """ remove a domain/key pair """
+    print_json(lockdown.remove_value(domain=domain, key=key), colored=color)
+
+
 @lockdown_group.command('unpair', cls=CommandWithoutAutopair)
 def lockdown_unpair(lockdown: LockdownClient):
     """ unpair from connected device """

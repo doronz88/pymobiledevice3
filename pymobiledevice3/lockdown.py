@@ -16,14 +16,15 @@ from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import *
-from pymobiledevice3.exceptions import LockdownError
+from pymobiledevice3.exceptions import LockdownError, SetProhibitedError
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
 from pymobiledevice3.utils import sanitize_ios_version
 
+SYSTEM_BUID = '30142955-444094379208051516'
+
 # we store pairing records and ssl keys in ~/.pymobiledevice3
 HOMEFOLDER = Path.home() / '.pymobiledevice3'
-MAXTRIES = 20
 
 LOCKDOWN_PATH = {
     'win32': Path(os.environ.get('ALLUSERSPROFILE', ''), 'Apple', 'Lockdown'),
@@ -128,7 +129,7 @@ class LockdownClient(object):
         self.session_id = None
         self.service = ServiceConnection.create(udid, self.SERVICE_PORT, connection_type=device.connection_type)
         self.host_id = self.generate_host_id(hostname)
-        self.system_buid = None
+        self.system_buid = SYSTEM_BUID
         self.label = client_name
         self.pair_record = pair_record
         self.ssl_file = None
@@ -146,7 +147,7 @@ class LockdownClient(object):
 
         if not self.identifier:
             if self.unique_chip_id:
-                self.identifier = '%x' % self.unique_chip_id
+                self.identifier = f'{self.unique_chip_id:x}'
             else:
                 raise PyMobileDevice3Exception('Could not get UDID or ECID, failing')
 
@@ -184,7 +185,7 @@ class LockdownClient(object):
         result = self.all_values
 
         for domain in DOMAINS:
-            result.update(self.get_value(domain))
+            result.update({domain: self.get_value(domain)})
 
         return result
 
@@ -345,7 +346,7 @@ class LockdownClient(object):
                        'HostCertificate': cert_pem,
                        'HostID': self.host_id,
                        'RootCertificate': cert_pem,
-                       'SystemBUID': '30142955-444094379208051516'}
+                       'SystemBUID': self.system_buid}
 
         pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2',
                         'PairingOptions': {'ExtendedPairingErrors': True}}
@@ -469,8 +470,9 @@ class LockdownClient(object):
             exception_errors = {'PasswordProtected': PasswordRequiredError,
                                 'PairingDialogResponsePending': PairingDialogResponsePendingError,
                                 'UserDeniedPairing': UserDeniedPairingError,
-                                'InvalidHostID': InvalidHostIDError, }
-                                # 'SetProhibited': SetProhibitedError, }
+                                'InvalidHostID': InvalidHostIDError,
+                                'SetProhibited': SetProhibitedError,
+                                'MissingValue': MissingValueError, }
             raise exception_errors.get(error, LockdownError)(error)
 
         # iOS < 5: 'Error' is not present, so we need to check the 'Result' instead

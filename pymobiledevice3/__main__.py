@@ -28,7 +28,7 @@ from pymobiledevice3.cli.springboard import cli as springboard_cli
 from pymobiledevice3.cli.syslog import cli as syslog_cli
 from pymobiledevice3.cli.webinspector import cli as webinspector_cli
 from pymobiledevice3.exceptions import NoDeviceConnectedError, NotPairedError, UserDeniedPairingError, \
-    PairingDialogResponsePendingError
+    PairingDialogResponsePendingError, SetProhibitedError, MissingValueError
 
 coloredlogs.install(level=logging.INFO)
 
@@ -62,6 +62,10 @@ def cli():
         logger.error('User refused to trust this computer')
     except PairingDialogResponsePendingError:
         logger.error('Waiting for user dialog approval')
+    except SetProhibitedError:
+        logger.error('lockdownd denied the access')
+    except MissingValueError:
+        logger.error('No such value')
     except BrokenPipeError:
         traceback.print_exc()
 

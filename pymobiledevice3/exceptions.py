@@ -7,7 +7,7 @@ __all__ = [
     'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabled', 'RemoteAutomationNotEnabled',
     'ArbitrationError', 'NoSuchBuildIdentityError', 'InternalError', 'DeveloperModeIsNotEnabledError',
     'DeviceAlreadyInUseError', 'LockdownError', 'PairingDialogResponsePendingError', 'UserDeniedPairingError',
-    'InvalidHostIDError',
+    'InvalidHostIDError', 'SetProhibitedError', 'MissingValueError',
 ]
 
 
@@ -181,6 +181,10 @@ class LockdownError(PyMobileDevice3Exception):
     pass
 
 
+class SetProhibitedError(LockdownError):
+    pass
+
+
 class PairingDialogResponsePendingError(PairingError):
     """ User hasn't yet confirmed the device is trusted """
     pass
@@ -191,4 +195,9 @@ class UserDeniedPairingError(PairingError):
 
 
 class InvalidHostIDError(PairingError):
+    pass
+
+
+class MissingValueError(LockdownError):
+    """ raised when attempting to query non-existent domain/key """
     pass
