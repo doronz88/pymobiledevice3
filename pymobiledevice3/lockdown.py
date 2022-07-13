@@ -16,14 +16,15 @@ from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import *
-from pymobiledevice3.exceptions import LockdownError
+from pymobiledevice3.exceptions import LockdownError, SetProhibitedError
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
 from pymobiledevice3.utils import sanitize_ios_version
 
+SYSTEM_BUID = '30142955-444094379208051516'
+
 # we store pairing records and ssl keys in ~/.pymobiledevice3
 HOMEFOLDER = Path.home() / '.pymobiledevice3'
-MAXTRIES = 20
 
 LOCKDOWN_PATH = {
     'win32': Path(os.environ.get('ALLUSERSPROFILE', ''), 'Apple', 'Lockdown'),
@@ -48,7 +49,7 @@ def reconnect_on_remote_close(f):
     def _reconnect_on_remote_close(*args, **kwargs):
         try:
             return f(*args, **kwargs)
-        except BrokenPipeError:
+        except (BrokenPipeError, ConnectionTerminatedError):
             self = args[0]
 
             # first we release the socket on our end to avoid a ResourceWarning
@@ -128,7 +129,7 @@ class LockdownClient(object):
         self.session_id = None
         self.service = ServiceConnection.create(udid, self.SERVICE_PORT, connection_type=device.connection_type)
         self.host_id = self.generate_host_id(hostname)
-        self.system_buid = None
+        self.system_buid = SYSTEM_BUID
         self.label = client_name
         self.pair_record = pair_record
         self.ssl_file = None
@@ -140,12 +141,13 @@ class LockdownClient(object):
         self.udid = self.all_values.get('UniqueDeviceID', self.usbmux_device.serial)
         self.unique_chip_id = self.all_values.get('UniqueChipID')
         self.device_public_key = self.all_values.get('DevicePublicKey')
-        self.ios_version = self.all_values.get('ProductVersion')
+        self.product_version = self.all_values.get('ProductVersion')
+        self.product_type = self.all_values.get('ProductType')
         self.identifier = self.udid
 
         if not self.identifier:
             if self.unique_chip_id:
-                self.identifier = '%x' % self.unique_chip_id
+                self.identifier = f'{self.unique_chip_id:x}'
             else:
                 raise PyMobileDevice3Exception('Could not get UDID or ECID, failing')
 
@@ -165,6 +167,10 @@ class LockdownClient(object):
         # reload data after pairing
         self.all_values = self.get_value()
 
+    def __repr__(self):
+        return f'<{self.__class__.__name__} ID:{self.identifier} VERSION:{self.product_version} ' \
+               f'TYPE:{self.product_type} PAIRED:{self.paired}>'
+
     def __enter__(self):
         return self
 
@@ -179,7 +185,7 @@ class LockdownClient(object):
         result = self.all_values
 
         for domain in DOMAINS:
-            result.update(self.get_value(domain))
+            result.update({domain: self.get_value(domain)})
 
         return result
 
@@ -193,6 +199,26 @@ class LockdownClient(object):
         for key in keys_to_copy:
             result[key] = self.all_values.get(key)
         return result
+
+    @property
+    def share_iphone_analytics_enabled(self) -> bool:
+        return self.get_value('com.apple.MobileDeviceCrashCopy', 'ShouldSubmit')
+
+    @property
+    def voice_over(self) -> bool:
+        return bool(self.get_value('com.apple.Accessibility').get('VoiceOverTouchEnabledByiTunes', 0))
+
+    @voice_over.setter
+    def voice_over(self, value: bool):
+        self.set_value(int(value), 'com.apple.Accessibility', 'VoiceOverTouchEnabledByiTunes')
+
+    @property
+    def invert_display(self) -> bool:
+        return bool(self.get_value('com.apple.Accessibility').get('InvertDisplayEnabledByiTunes', 0))
+
+    @invert_display.setter
+    def invert_display(self, value: bool):
+        self.set_value(int(value), 'com.apple.Accessibility', 'InvertDisplayEnabledByiTunes')
 
     @property
     def enable_wifi_connections(self):
@@ -224,7 +250,7 @@ class LockdownClient(object):
 
     @property
     def sanitized_ios_version(self):
-        return sanitize_ios_version(self.ios_version)
+        return sanitize_ios_version(self.product_version)
 
     def set_language(self, language: str):
         self.set_value(language, key='Language', domain='com.apple.international')
@@ -269,7 +295,10 @@ class LockdownClient(object):
         return plistlib.loads(path.read_bytes())
 
     def validate_pairing(self) -> bool:
-        self._init_preferred_pair_record()
+        try:
+            self._init_preferred_pair_record()
+        except NotPairedError:
+            return False
 
         if self.pair_record is None:
             return False
@@ -277,7 +306,7 @@ class LockdownClient(object):
         cert_pem = self.pair_record['HostCertificate']
         private_key_pem = self.pair_record['HostPrivateKey']
 
-        if Version(self.ios_version) < Version('11.0'):
+        if Version(self.product_version) < Version('11.0'):
             try:
                 self._request('ValidatePair', {'PairRecord': self.pair_record})
             except PairingError:
@@ -317,7 +346,7 @@ class LockdownClient(object):
                        'HostCertificate': cert_pem,
                        'HostID': self.host_id,
                        'RootCertificate': cert_pem,
-                       'SystemBUID': '30142955-444094379208051516'}
+                       'SystemBUID': self.system_buid}
 
         pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2',
                         'PairingOptions': {'ExtendedPairingErrors': True}}
@@ -441,8 +470,9 @@ class LockdownClient(object):
             exception_errors = {'PasswordProtected': PasswordRequiredError,
                                 'PairingDialogResponsePending': PairingDialogResponsePendingError,
                                 'UserDeniedPairing': UserDeniedPairingError,
-                                'InvalidHostID': InvalidHostIDError, }
-                                # 'SetProhibited': SetProhibitedError, }
+                                'InvalidHostID': InvalidHostIDError,
+                                'SetProhibited': SetProhibitedError,
+                                'MissingValue': MissingValueError, }
             raise exception_errors.get(error, LockdownError)(error)
 
         # iOS < 5: 'Error' is not present, so we need to check the 'Result' instead
