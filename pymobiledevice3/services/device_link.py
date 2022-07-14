@@ -1,5 +1,6 @@
 import datetime
 import ctypes
+import logging
 import shutil
 import os
 import struct
@@ -25,6 +26,8 @@ ERRNO_TO_DEVICE_ERROR = {
     28: -15,
 }
 
+logger = logging.getLogger(__name__)
+
 
 class DeviceLink:
     def __init__(self, service, root_path: Path):
@@ -39,6 +42,7 @@ class DeviceLink:
             'DLMessageDownloadFiles': self.download_files,
             'DLContentsOfDirectory': self.contents_of_directory,
             'DLMessageCopyItem': self.copy_item,
+            'DLMessagePurgeDiskSpace': self.unsupported_command,
         }
 
     def dl_loop(self, progress_callback=lambda x: None):
@@ -153,6 +157,10 @@ class DeviceLink:
         else:
             shutil.copy(src, dest)
         self.status_response(0)
+
+    def unsupported_command(self, message):
+        self.status_response(-1, 'Operation not supported')
+        logger.warning(f'device asked to purge contents: {message}. we\'ll ignore this')
 
     def remove_items(self, message):
         for path in message[1]:
