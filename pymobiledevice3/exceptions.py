@@ -7,7 +7,7 @@ __all__ = [
     'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabled', 'RemoteAutomationNotEnabled',
     'ArbitrationError', 'NoSuchBuildIdentityError', 'InternalError', 'DeveloperModeIsNotEnabledError',
     'DeviceAlreadyInUseError', 'LockdownError', 'PairingDialogResponsePendingError', 'UserDeniedPairingError',
-    'InvalidHostIDError', 'SetProhibitedError', 'MissingValueError',
+    'InvalidHostIDError', 'SetProhibitedError', 'MissingValueError', 'PasscodeRequiredError',
 ]
 
 
@@ -200,4 +200,9 @@ class InvalidHostIDError(PairingError):
 
 class MissingValueError(LockdownError):
     """ raised when attempting to query non-existent domain/key """
+    pass
+
+
+class PasscodeRequiredError(LockdownError):
+    """ passcode must be present for this action """
     pass
