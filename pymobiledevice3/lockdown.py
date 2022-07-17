@@ -16,7 +16,7 @@ from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import *
-from pymobiledevice3.exceptions import LockdownError, SetProhibitedError
+from pymobiledevice3.exceptions import LockdownError, SetProhibitedError, PasscodeRequiredError
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
 from pymobiledevice3.utils import sanitize_ios_version
@@ -219,6 +219,17 @@ class LockdownClient(object):
     @invert_display.setter
     def invert_display(self, value: bool):
         self.set_value(int(value), 'com.apple.Accessibility', 'InvertDisplayEnabledByiTunes')
+
+    @property
+    def enable_wifi_pairing(self) -> bool:
+        return self.get_value('com.apple.mobile.wireless_lockdown').get('EnableWifiPairing', False)
+
+    @enable_wifi_pairing.setter
+    def enable_wifi_pairing(self, value: bool):
+        try:
+            self.set_value(value, 'com.apple.mobile.wireless_lockdown', 'EnableWifiPairing')
+        except MissingValueError as e:
+            raise PasscodeRequiredError from e
 
     @property
     def enable_wifi_connections(self):
