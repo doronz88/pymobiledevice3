@@ -9,6 +9,7 @@ from collections import namedtuple
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from typing import List
 
 import click
 from click.exceptions import MissingParameter, UsageError
@@ -16,7 +17,7 @@ from pykdebugparser.pykdebugparser import PyKdebugParser
 from termcolor import colored
 
 import pymobiledevice3
-from pymobiledevice3.cli.cli_common import print_json, Command, default_json_encoder, wait_return
+from pymobiledevice3.cli.cli_common import print_json, Command, default_json_encoder, wait_return, BASED_INT
 from pymobiledevice3.exceptions import DvtDirListError, ExtractingStackshotError, UnrecognizedSelectorError, \
     DeviceAlreadyInUseError
 from pymobiledevice3.lockdown import LockdownClient
@@ -43,6 +44,7 @@ from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from pymobiledevice3.tcp_forwarder import TcpForwarder
 
+BSC_SUBCLASS = 0x40c
 logger = logging.getLogger(__name__)
 
 
@@ -331,23 +333,32 @@ def core_profile_session():
     """ Core profile session options. """
 
 
-def parse_filters(filters):
-    if not filters:
+bsc_filter = click.option('--bsc/--no-bsc', default=False, help='Whether to print BSC events or not.')
+class_filter = click.option('-cf', '--class-filters', multiple=True, type=BASED_INT,
+                            help='Events class filter. Omit for all.')
+subclass_filter = click.option('-sf', '--subclass-filters', multiple=True, type=BASED_INT,
+                               help='Events subclass filter. Omit for all.')
+
+
+def parse_filters(subclasses: List[int], classes: List[int]):
+    if not subclasses and not classes:
         return None
     parsed = set()
-    for filter_ in filters:
-        print(filter_)
-        if filter_.lower() == 'bsc':
+    for subclass in subclasses:
+        if subclass == BSC_SUBCLASS:
             parsed |= {0x03010000, 0x040c0000, 0x07ff0000}  # VFS_LOOKUP, BSC operations, TRACE
         else:
-            parsed.add(int(filter_, 16) << 16)
-
+            parsed.add(subclass << 16)
+    for class_ in classes:
+        parsed.add((class_ << 24) | 0x00ff0000)
     return parsed
 
 
 @core_profile_session.command('live', cls=Command)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
-@click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
+@bsc_filter
+@class_filter
+@subclass_filter
 @click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
 @click.option('--timestamp/--no-timestamp', default=True, help='Whether to print timestamp or not.')
 @click.option('--event-name/--no-event-name', default=True, help='Whether to print event name or not.')
@@ -355,11 +366,16 @@ def parse_filters(filters):
 @click.option('--show-tid/--no-show-tid', default=True, help='Whether to print thread id or not.')
 @click.option('--process-name/--no-process-name', default=True, help='Whether to print process name or not.')
 @click.option('--args/--no-args', default=True, help='Whether to print event arguments or not.')
-def live_profile_session(lockdown: LockdownClient, count, filters, tid, timestamp, event_name, func_qual,
-                         show_tid, process_name, args):
+def live_profile_session(lockdown: LockdownClient, count, bsc, class_filters, subclass_filters, tid, timestamp,
+                         event_name, func_qual, show_tid, process_name, args):
     """ Print kevents received from the device in real time. """
-    filters = parse_filters(filters)
+
     parser = PyKdebugParser()
+    parser.filter_class = class_filters
+    if bsc:
+        subclass_filters = list(subclass_filters) + [BSC_SUBCLASS]
+    parser.filter_subclass = subclass_filters
+    filters = parse_filters(subclass_filters, class_filters)
     parser.filter_tid = tid
     parser.show_timestamp = timestamp
     parser.show_name = event_name
@@ -386,10 +402,14 @@ def live_profile_session(lockdown: LockdownClient, count, filters, tid, timestam
 
 @core_profile_session.command('save', cls=Command)
 @click.argument('out', type=click.File('wb'))
-@click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
-def save_profile_session(lockdown: LockdownClient, out, filters):
+@bsc_filter
+@class_filter
+@subclass_filter
+def save_profile_session(lockdown: LockdownClient, out, bsc, class_filters, subclass_filters):
     """ Dump core profiling information. """
-    filters = parse_filters(filters)
+    if bsc:
+        subclass_filters = list(subclass_filters) + [BSC_SUBCLASS]
+    filters = parse_filters(subclass_filters, class_filters)
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         with CoreProfileSessionTap(dvt, {}, filters) as tap:
             tap.dump(out)
@@ -418,21 +438,30 @@ def stackshot(lockdown: LockdownClient, out, color):
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of events to print. Omit to endless sniff.')
 @click.option('--tid', type=click.INT, default=None, help='Thread ID to filter. Omit for all.')
 @click.option('--show-tid/--no-show-tid', default=False, help='Whether to print thread id or not.')
-@click.option('-f', '--filters', multiple=True, help='Events filter. Omit for all.')
+@bsc_filter
+@class_filter
+@subclass_filter
+@click.option('--process', default=None, help='Process ID / name to filter. Omit for all.')
 @click.option('--color/--no-color', default=True)
-def parse_live_profile_session(lockdown: LockdownClient, count, tid, show_tid, filters, color):
+def parse_live_profile_session(lockdown: LockdownClient, count, tid, show_tid, bsc, class_filters, subclass_filters,
+                               process, color):
     """ Print traces (syscalls, thread events, etc.) received from the device in real time. """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        filters = parse_filters(filters)
         print('Receiving time information')
         time_config = CoreProfileSessionTap.get_time_config(dvt)
         parser = PyKdebugParser()
+        parser.filter_class = list(class_filters)
+        if bsc:
+            subclass_filters = list(subclass_filters) + [BSC_SUBCLASS]
+        parser.filter_subclass = subclass_filters
+        filters = parse_filters(subclass_filters, class_filters)
         parser.numer = time_config['numer']
         parser.denom = time_config['denom']
         parser.mach_absolute_time = time_config['mach_absolute_time']
         parser.usecs_since_epoch = time_config['usecs_since_epoch']
         parser.timezone = time_config['timezone']
         parser.filter_tid = tid
+        parser.filter_process = process
         parser.color = color
         parser.show_tid = show_tid
 

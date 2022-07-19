@@ -67,3 +67,16 @@ class CommandWithoutAutopair(Command):
             # prevent lockdown connection establishment when in autocomplete mode
             return
         return LockdownClient(udid=value, autopair=False)
+
+
+class BasedIntParamType(click.ParamType):
+    name = 'based int'
+
+    def convert(self, value, param, ctx):
+        try:
+            return int(value, 0)
+        except ValueError:
+            self.fail(f'{value!r} is not a valid int.', param, ctx)
+
+
+BASED_INT = BasedIntParamType()
