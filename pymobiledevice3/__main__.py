@@ -28,7 +28,7 @@ from pymobiledevice3.cli.springboard import cli as springboard_cli
 from pymobiledevice3.cli.syslog import cli as syslog_cli
 from pymobiledevice3.cli.webinspector import cli as webinspector_cli
 from pymobiledevice3.exceptions import NoDeviceConnectedError, NotPairedError, UserDeniedPairingError, \
-    PairingDialogResponsePendingError, SetProhibitedError, MissingValueError
+    PairingDialogResponsePendingError, SetProhibitedError, MissingValueError, DeviceHasPasscodeSetError
 
 coloredlogs.install(level=logging.INFO)
 
@@ -66,6 +66,8 @@ def cli():
         logger.error('lockdownd denied the access')
     except MissingValueError:
         logger.error('No such value')
+    except DeviceHasPasscodeSetError:
+        logger.error('Cannot enable developer-mode when passcode is set')
     except BrokenPipeError:
         traceback.print_exc()
 

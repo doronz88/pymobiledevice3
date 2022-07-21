@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import logging
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, NoDeviceConnectedError, ConnectionFailedError
+import construct
+
+from pymobiledevice3.exceptions import PyMobileDevice3Exception, NoDeviceConnectedError, ConnectionFailedError, \
+    DeviceHasPasscodeSetError, AmfiError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.heartbeat import HeartbeatService
 
@@ -28,6 +31,13 @@ class AmfiService:
         """
         service = self._lockdown.start_service(self.SERVICE_NAME)
         resp = service.send_recv_plist({'action': 1})
+        error = resp.get('Error')
+
+        if error is not None:
+            if error == 'Device has a passcode set':
+                raise DeviceHasPasscodeSetError()
+            raise AmfiError(error)
+
         if not resp['success']:
             raise PyMobileDevice3Exception(f'enable_developer_mode(): {resp}')
 
