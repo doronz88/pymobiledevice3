@@ -45,6 +45,8 @@ from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from pymobiledevice3.tcp_forwarder import TcpForwarder
 
 BSC_SUBCLASS = 0x40c
+BSC_CLASS = 0x4
+VFS_AND_TRACES_SET = {0x03010000, 0x07ff0000}
 logger = logging.getLogger(__name__)
 
 
@@ -346,10 +348,11 @@ def parse_filters(subclasses: List[int], classes: List[int]):
     parsed = set()
     for subclass in subclasses:
         if subclass == BSC_SUBCLASS:
-            parsed |= {0x03010000, 0x040c0000, 0x07ff0000}  # VFS_LOOKUP, BSC operations, TRACE
-        else:
-            parsed.add(subclass << 16)
+            parsed |= VFS_AND_TRACES_SET
+        parsed.add(subclass << 16)
     for class_ in classes:
+        if class_ == BSC_CLASS:
+            parsed |= VFS_AND_TRACES_SET
         parsed.add((class_ << 24) | 0x00ff0000)
     return parsed
 
