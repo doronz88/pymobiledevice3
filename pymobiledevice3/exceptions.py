@@ -7,7 +7,8 @@ __all__ = [
     'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabled', 'RemoteAutomationNotEnabled',
     'ArbitrationError', 'NoSuchBuildIdentityError', 'InternalError', 'DeveloperModeIsNotEnabledError',
     'DeviceAlreadyInUseError', 'LockdownError', 'PairingDialogResponsePendingError', 'UserDeniedPairingError',
-    'InvalidHostIDError', 'SetProhibitedError', 'MissingValueError', 'PasscodeRequiredError',
+    'InvalidHostIDError', 'SetProhibitedError', 'MissingValueError', 'PasscodeRequiredError', 'AmfiError',
+    'DeviceHasPasscodeSetError',
 ]
 
 
@@ -205,4 +206,12 @@ class MissingValueError(LockdownError):
 
 class PasscodeRequiredError(LockdownError):
     """ passcode must be present for this action """
+    pass
+
+
+class AmfiError(PyMobileDevice3Exception):
+    pass
+
+
+class DeviceHasPasscodeSetError(AmfiError):
     pass
