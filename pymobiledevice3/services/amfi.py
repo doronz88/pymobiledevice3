@@ -43,7 +43,7 @@ class AmfiService:
             try:
                 self._lockdown = LockdownClient(self._lockdown.udid)
                 break
-            except (NoDeviceConnectedError, ConnectionFailedError):
+            except (NoDeviceConnectedError, ConnectionFailedError, construct.core.StreamError):
                 pass
 
         self.enable_developer_mode_post_restart()
