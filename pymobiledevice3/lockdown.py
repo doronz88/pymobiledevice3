@@ -9,10 +9,9 @@ import time
 import uuid
 from contextlib import suppress
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Union, Optional
 
 from packaging.version import Version
-
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import *
@@ -31,13 +30,6 @@ LOCKDOWN_PATH = {
     'darwin': Path('/var/db/lockdown/'),
     'linux': Path('/var/lib/lockdown/'),
 }
-
-
-def write_home_file(filename, data):
-    HOMEFOLDER.mkdir(parents=True, exist_ok=True)
-    filepath = HOMEFOLDER / filename
-    filepath.write_bytes(data)
-    return str(filepath)
 
 
 def reconnect_on_remote_close(f):
@@ -106,7 +98,8 @@ class LockdownClient(object):
 
     def __init__(self, udid: str = None, client_name: str = DEFAULT_CLIENT_NAME, autopair: bool = True,
                  connection_type: str = None, pair_timeout: int = None, hostname: str = None,
-                 pair_record: Mapping = None):
+                 pair_record: Mapping = None, pair_not_valid_before: datetime.datetime = None,
+                 pair_not_valid_after: datetime.datetime = None, pairing_records_cache_folder: Path = HOMEFOLDER):
         """
         :param udid: serial number for device to connect to
         :param client_name: user agent to use when identifying for lockdownd
@@ -115,6 +108,8 @@ class LockdownClient(object):
         :param pair_timeout: if autopair, use this timeout for user's Trust dialog. If None, will wait forever
         :param hostname: use given hostname to generate the HostID inside the pair record
         :param pair_record: use this pair record instead of the one already stored
+        :param pair_not_valid_before: when pairing use certificate validity starting at this date
+        :param pair_not_valid_after: when pairing use certificate validity ending at this date
         """
         device = usbmux.select_device(udid, connection_type=connection_type)
         if device is None:
@@ -132,6 +127,12 @@ class LockdownClient(object):
         self.system_buid = SYSTEM_BUID
         self.label = client_name
         self.pair_record = pair_record
+        self.pair_not_valid_before = pair_not_valid_before
+        self.pair_not_valid_after = pair_not_valid_after
+        # TODO: consider supporting a "no storage" option (pairing_records_cache_folder = None) when SSL backend
+        #       supports in-memory files.
+        #       https://github.com/doronz88/pymobiledevice3/issues/294#issuecomment-1184609286
+        self.pairing_records_cache_folder = pairing_records_cache_folder
         self.ssl_file = None
 
         if self.query_type() != 'com.apple.mobile.lockdown':
@@ -287,7 +288,7 @@ class LockdownClient(object):
                 raise CannotStopSessionError()
             return response
 
-    def get_itunes_pairing_record(self):
+    def get_itunes_pairing_record(self) -> Optional[Mapping]:
         platform_type = 'linux' if not sys.platform.startswith('linux') else sys.platform
         filename = LOCKDOWN_PATH[platform_type] / f'{self.identifier}.plist'
         try:
@@ -299,7 +300,7 @@ class LockdownClient(object):
 
     def get_local_pairing_record(self):
         self.logger.debug('Looking for pymobiledevice3 pairing record')
-        path = HOMEFOLDER / f'{self.identifier}.plist'
+        path = self.pairing_records_cache_folder / f'{self.identifier}.plist'
         if not path.exists():
             self.logger.error(f'No pymobiledevice3 pairing record found for device {self.identifier}')
             return None
@@ -335,7 +336,7 @@ class LockdownClient(object):
         self.session_id = start_session.get('SessionID')
         if start_session.get('EnableSessionSSL'):
             lf = b'\n'
-            self.ssl_file = write_home_file(f'{self.identifier}_ssl.txt', cert_pem + lf + private_key_pem)
+            self.ssl_file = self._write_storage_file(f'{self.identifier}_ssl.txt', cert_pem + lf + private_key_pem)
             self.service.ssl_start(self.ssl_file, self.ssl_file)
 
         self.paired = True
@@ -350,7 +351,9 @@ class LockdownClient(object):
             raise PairingError()
 
         self.logger.info('Creating host key & certificate')
-        cert_pem, private_key_pem, device_certificate = ca_do_everything(self.device_public_key)
+        cert_pem, private_key_pem, device_certificate = ca_do_everything(self.device_public_key,
+                                                                         not_valid_before=self.pair_not_valid_before,
+                                                                         not_valid_after=self.pair_not_valid_after)
 
         pair_record = {'DevicePublicKey': self.device_public_key,
                        'DeviceCertificate': device_certificate,
@@ -367,7 +370,7 @@ class LockdownClient(object):
         pair_record['HostPrivateKey'] = private_key_pem
         pair_record['EscrowBag'] = pair.get('EscrowBag')
         self.pair_record = pair_record
-        write_home_file(f'{self.identifier}.plist', plistlib.dumps(pair_record))
+        self._write_storage_file(f'{self.identifier}.plist', plistlib.dumps(pair_record))
 
         record_data = plistlib.dumps(pair_record)
 
@@ -470,6 +473,12 @@ class LockdownClient(object):
 
     def close(self):
         self.service.close()
+
+    def _write_storage_file(self, filename: Union[Path, str], data: bytes) -> str:
+        self.pairing_records_cache_folder.mkdir(parents=True, exist_ok=True)
+        filepath = self.pairing_records_cache_folder / filename
+        filepath.write_bytes(data)
+        return str(filepath)
 
     def _request(self, request: str, options: Mapping = None, verify_request: bool = True) -> Mapping:
         message = {'Label': self.label, 'Request': request}
