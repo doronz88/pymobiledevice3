@@ -86,7 +86,10 @@ class ServiceConnection(object):
         if self._writer is None:
             return
         self._writer.close()
-        await self._writer.wait_closed()
+        try:
+            await self._writer.wait_closed()
+        except ssl.SSLError:
+            pass
         self._writer = None
         self._reader = None
 
