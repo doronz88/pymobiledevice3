@@ -15,3 +15,4 @@ def test_opening_app(lockdown):
         assert pages[safari.name]
     finally:
         inspector.close()
+        inspector.loop.close()

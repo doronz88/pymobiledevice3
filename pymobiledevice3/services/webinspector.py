@@ -103,12 +103,11 @@ class WebinspectorService:
     def __init__(self, lockdown: LockdownClient, loop=None):
         if loop is None:
             try:
-                # When deprecating python3.6, replace with get_running_loop.
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
             except RuntimeError:
                 loop = asyncio.new_event_loop()
-
-        nest_asyncio.apply()
+                asyncio.set_event_loop(loop)
+        nest_asyncio.apply(loop)
         self.loop = loop
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
