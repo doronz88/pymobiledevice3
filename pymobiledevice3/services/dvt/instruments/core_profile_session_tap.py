@@ -101,6 +101,8 @@ kcdata_types = {
 
     'STACKSHOT_KCTYPE_TASK_DELTA_SNAPSHOT': 0x940,
     'STACKSHOT_KCTYPE_THREAD_DELTA_SNAPSHOT': 0x941,
+    'STACKSHOT_KCTYPE_UNKNOWN_0x942': 0x942,
+    'STACKSHOT_KCTYPE_UNKNOWN_0x943': 0x943,
 
     'KCDATA_TYPE_BUFFER_END': 0xF19158ED,
 
@@ -181,6 +183,7 @@ predefined_names = {
     kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT: 'kcdata_stackshot',
     kcdata_types_enum.STACKSHOT_KCTYPE_STACKSHOT_FAULT_STATS: 'stackshot_fault_stats',
     kcdata_types_enum.STACKSHOT_KCTYPE_STACKSHOT_DURATION: 'stackshot_duration',
+    kcdata_types_enum.STACKSHOT_KCTYPE_LOADINFO64_TEXT_EXEC: 'dyld_load_info_text_exec',
 }
 
 predefined_name_substruct = 'name' / Computed(lambda ctx: predefined_names[ctx._.type])
@@ -293,7 +296,7 @@ type_array_padc = Struct(
 )
 type_container_begin = Struct(
     'obj' / kcdata_types_enum,
-    'name' / Computed(lambda ctx: predefined_names[ctx.obj]),
+    'name' / Computed(lambda ctx: predefined_names.get(ctx.obj, 'unknown')),
     'unique_id' / Computed(lambda ctx: ctx._.flags),
 )
 kernelcache_load_info = Struct(
@@ -429,6 +432,15 @@ stackshot_duration = Struct(
     )
 )
 
+loadinfo64_text_exec = Struct(
+    predefined_name_substruct,
+    'obj' / Struct(
+        'imageLoadAddress' / Int64ul,
+        '_imageUUID' / Bytes(16),
+        'imageUUID' / Computed(lambda ctx: uuid.UUID(bytes=ctx._imageUUID)),
+    ),
+)
+
 kcdata_types_structures = {
     kcdata_types_enum.KCDATA_TYPE_UINT32_DESC: uint32_desc,
     kcdata_types_enum.KCDATA_TYPE_UINT64_DESC: uint64_desc,
@@ -467,6 +479,7 @@ kcdata_types_structures = {
     kcdata_types_enum.KCDATA_TYPE_CONTAINER_END: Pass,
     kcdata_types_enum.KCDATA_TYPE_BUFFER_END: Pass,
     kcdata_types_enum.STACKSHOT_KCTYPE_STACKSHOT_DURATION: stackshot_duration,
+    kcdata_types_enum.STACKSHOT_KCTYPE_LOADINFO64_TEXT_EXEC: loadinfo64_text_exec,
 }
 
 kcdata_item = Struct(
@@ -514,7 +527,8 @@ def jsonify_parsed_stackshot(stackshot, root=None, index=0):
         elif item['type'] == kcdata_types_enum.KCDATA_TYPE_BUFFER_END:
             return
         else:
-            root[item['data']['name']] = item['data']['obj']
+            if isinstance(item['data'], dict):
+                root[item['data']['name']] = item['data']['obj']
 
 
 STACKSHOT_HEADER = Int32ul.build(int(kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT))
