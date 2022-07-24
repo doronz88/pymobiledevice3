@@ -18,3 +18,4 @@ def webdriver(lockdown: LockdownClient):
         yield driver
     finally:
         inspector.close()
+        inspector.loop.close()

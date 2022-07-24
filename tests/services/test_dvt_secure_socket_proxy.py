@@ -74,10 +74,10 @@ def test_applist(lockdown):
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         apps = ApplicationListing(dvt).applist()
 
-    safari = [app for app in apps if app['BundlePath'] == '/Applications/MobileSafari.app'][0]
-    assert safari['CFBundleIdentifier'] == 'com.apple.mobilesafari'
-    assert not safari['Placeholder']
-    assert safari['Type'] == 'System'
+    safari = [app for app in apps if app['DisplayName'] == 'StocksWidget'][0]
+    assert safari['CFBundleIdentifier'] == 'com.apple.stocks.widget'
+    assert safari['Restricted'] == 1
+    assert safari['Type'] == 'PluginKit'
 
 
 def test_kill(lockdown):
