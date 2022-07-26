@@ -5,6 +5,7 @@ import os
 import platform
 import plistlib
 import sys
+import tempfile
 import time
 import uuid
 from contextlib import suppress
@@ -125,7 +126,6 @@ class LockdownClient(object):
         self.label = client_name
         self.pair_record = pair_record
         self.pairing_records_cache_folder = pairing_records_cache_folder
-        self.ssl_file = None
 
         if self.query_type() != 'com.apple.mobile.lockdown':
             raise IncorrectModeError()
@@ -327,9 +327,10 @@ class LockdownClient(object):
 
         self.session_id = start_session.get('SessionID')
         if start_session.get('EnableSessionSSL'):
-            lf = b'\n'
-            self.ssl_file = self._write_storage_file(f'{self.identifier}_ssl.txt', cert_pem + lf + private_key_pem)
-            self.service.ssl_start(self.ssl_file, self.ssl_file)
+            with tempfile.NamedTemporaryFile('w+b') as f:
+                f.write(cert_pem + b'\n' + private_key_pem)
+                f.flush()
+                self.service.ssl_start(f.name, f.name)
 
         self.paired = True
         return True
