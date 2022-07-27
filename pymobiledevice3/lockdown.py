@@ -8,7 +8,7 @@ import sys
 import tempfile
 import time
 import uuid
-from contextlib import suppress
+from contextlib import suppress, contextmanager
 from pathlib import Path
 from typing import Mapping, Union, Optional
 
@@ -307,9 +307,6 @@ class LockdownClient(object):
         if self.pair_record is None:
             return False
 
-        cert_pem = self.pair_record['HostCertificate']
-        private_key_pem = self.pair_record['HostPrivateKey']
-
         if Version(self.product_version) < Version('11.0'):
             try:
                 self._request('ValidatePair', {'PairRecord': self.pair_record})
@@ -327,10 +324,8 @@ class LockdownClient(object):
 
         self.session_id = start_session.get('SessionID')
         if start_session.get('EnableSessionSSL'):
-            with tempfile.NamedTemporaryFile('w+b') as f:
-                f.write(cert_pem + b'\n' + private_key_pem)
-                f.flush()
-                self.service.ssl_start(f.name, f.name)
+            with self._ssl_file() as f:
+                self.service.ssl_start(f)
 
         self.paired = True
         return True
@@ -441,15 +436,18 @@ class LockdownClient(object):
         service_connection = ServiceConnection.create(self.udid, attr['Port'],
                                                       connection_type=self.usbmux_device.connection_type)
         if attr.get('EnableServiceSSL', False):
-            service_connection.ssl_start(self.ssl_file, self.ssl_file)
+            with self._ssl_file() as f:
+                service_connection.ssl_start(f)
         return service_connection
 
     async def aio_start_service(self, name, escrow_bag=None) -> ServiceConnection:
         attr = self.get_service_connection_attributes(name, escrow_bag=escrow_bag)
         service_connection = ServiceConnection.create(self.udid, attr['Port'],
                                                       connection_type=self.usbmux_device.connection_type)
+
         if attr.get('EnableServiceSSL', False):
-            await service_connection.aio_ssl_start(self.ssl_file, self.ssl_file)
+            with self._ssl_file() as f:
+                service_connection.aio_ssl_start(f)
         return service_connection
 
     def start_developer_service(self, name, escrow_bag=None) -> ServiceConnection:
@@ -530,3 +528,13 @@ class LockdownClient(object):
             return
 
         self.pair_record = pair_record
+
+    @contextmanager
+    def _ssl_file(self) -> str:
+        cert_pem = self.pair_record['HostCertificate']
+        private_key_pem = self.pair_record['HostPrivateKey']
+
+        with tempfile.NamedTemporaryFile('w+b') as f:
+            f.write(cert_pem + b'\n' + private_key_pem)
+            f.flush()
+            yield f.name

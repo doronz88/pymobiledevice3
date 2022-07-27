@@ -43,7 +43,7 @@ def parse_plist(payload):
         raise PyMobileDevice3Exception(f'parse_plist invalid data: {payload[:100].hex()}')
 
 
-def create_context(keyfile, certfile):
+def create_context(certfile, keyfile=None):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     if ssl.OPENSSL_VERSION.lower().startswith('openssl'):
         context.set_ciphers('ALL:!aNULL:!eNULL:@SECLEVEL=0')
@@ -156,13 +156,13 @@ class ServiceConnection(object):
         self._writer.write(build_plist(d, endianity, fmt))
         await self._writer.drain()
 
-    def ssl_start(self, keyfile, certfile):
-        self.socket = create_context(keyfile, certfile).wrap_socket(self.socket)
+    def ssl_start(self, certfile, keyfile=None):
+        self.socket = create_context(certfile, keyfile=keyfile).wrap_socket(self.socket)
 
-    async def aio_ssl_start(self, keyfile, certfile):
+    async def aio_ssl_start(self, certfile, keyfile=None):
         self._reader, self._writer = await asyncio.open_connection(
             sock=self.socket,
-            ssl=create_context(keyfile, certfile),
+            ssl=create_context(certfile, keyfile=keyfile),
             server_hostname=''
         )
 
