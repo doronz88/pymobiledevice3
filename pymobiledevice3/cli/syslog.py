@@ -146,10 +146,10 @@ def syslog_live(lockdown: LockdownClient, out, color, pid, process_name, match, 
         if skip:
             continue
 
-        print(line)
+        print(line, flush=True)
 
         if out:
-            print(line, file=out)
+            print(line, file=out, flush=True)
 
 
 @syslog.command('collect', cls=Command)
