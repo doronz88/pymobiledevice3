@@ -447,7 +447,7 @@ class LockdownClient(object):
 
         if attr.get('EnableServiceSSL', False):
             with self._ssl_file() as f:
-                service_connection.aio_ssl_start(f)
+                await service_connection.aio_ssl_start(f)
         return service_connection
 
     def start_developer_service(self, name, escrow_bag=None) -> ServiceConnection:
