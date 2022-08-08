@@ -534,7 +534,13 @@ class LockdownClient(object):
         cert_pem = self.pair_record['HostCertificate']
         private_key_pem = self.pair_record['HostPrivateKey']
 
-        with tempfile.NamedTemporaryFile('w+b') as f:
+        # use delete=False and manage the deletion ourselves because Windows
+        # cannot use in-use files
+        with tempfile.NamedTemporaryFile('w+b', delete=False) as f:
             f.write(cert_pem + b'\n' + private_key_pem)
-            f.flush()
-            yield f.name
+            filename = f.name
+
+        try:
+            yield filename
+        finally:
+            os.unlink(filename)
