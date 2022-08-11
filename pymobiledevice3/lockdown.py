@@ -324,7 +324,7 @@ class LockdownClient(object):
 
         self.session_id = start_session.get('SessionID')
         if start_session.get('EnableSessionSSL'):
-            with self._ssl_file() as f:
+            with self.ssl_file() as f:
                 self.service.ssl_start(f)
 
         self.paired = True
@@ -436,7 +436,7 @@ class LockdownClient(object):
         service_connection = ServiceConnection.create(self.udid, attr['Port'],
                                                       connection_type=self.usbmux_device.connection_type)
         if attr.get('EnableServiceSSL', False):
-            with self._ssl_file() as f:
+            with self.ssl_file() as f:
                 service_connection.ssl_start(f)
         return service_connection
 
@@ -446,7 +446,7 @@ class LockdownClient(object):
                                                       connection_type=self.usbmux_device.connection_type)
 
         if attr.get('EnableServiceSSL', False):
-            with self._ssl_file() as f:
+            with self.ssl_file() as f:
                 await service_connection.aio_ssl_start(f)
         return service_connection
 
@@ -462,6 +462,22 @@ class LockdownClient(object):
 
     def close(self):
         self.service.close()
+
+    @contextmanager
+    def ssl_file(self) -> str:
+        cert_pem = self.pair_record['HostCertificate']
+        private_key_pem = self.pair_record['HostPrivateKey']
+
+        # use delete=False and manage the deletion ourselves because Windows
+        # cannot use in-use files
+        with tempfile.NamedTemporaryFile('w+b', delete=False) as f:
+            f.write(cert_pem + b'\n' + private_key_pem)
+            filename = f.name
+
+        try:
+            yield filename
+        finally:
+            os.unlink(filename)
 
     def _write_storage_file(self, filename: Union[Path, str], data: bytes) -> None:
         self.pairing_records_cache_folder.mkdir(parents=True, exist_ok=True)
@@ -528,19 +544,3 @@ class LockdownClient(object):
             return
 
         self.pair_record = pair_record
-
-    @contextmanager
-    def _ssl_file(self) -> str:
-        cert_pem = self.pair_record['HostCertificate']
-        private_key_pem = self.pair_record['HostPrivateKey']
-
-        # use delete=False and manage the deletion ourselves because Windows
-        # cannot use in-use files
-        with tempfile.NamedTemporaryFile('w+b', delete=False) as f:
-            f.write(cert_pem + b'\n' + private_key_pem)
-            filename = f.name
-
-        try:
-            yield filename
-        finally:
-            os.unlink(filename)
