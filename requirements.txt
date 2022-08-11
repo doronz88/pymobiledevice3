@@ -17,6 +17,8 @@ tqdm
 cached-property
 requests
 cmd2
+gnureadline
+pyreadline3
 packaging
 pygnuutils>=0.0.5
 cryptography>=35.0.0
