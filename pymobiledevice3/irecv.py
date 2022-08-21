@@ -120,8 +120,8 @@ class IRecv:
         if self._device.get_active_configuration().bConfigurationValue != configuration:
             self._device.set_configuration(configuration=configuration)
 
-    def ctrl_transfer(self, bmRequestType, bRequest, **kwargs):
-        return self._device.ctrl_transfer(bmRequestType, bRequest, **kwargs)
+    def ctrl_transfer(self, bmRequestType, bRequest, timeout=USB_TIMEOUT, **kwargs):
+        return self._device.ctrl_transfer(bmRequestType, bRequest, timeout=timeout, **kwargs)
 
     def send_buffer(self, buf: bytes):
         packet_size = IRECV_TRANSFER_SIZE_RECOVERY if self.mode.is_recovery else IRECV_TRANSFER_SIZE_DFU

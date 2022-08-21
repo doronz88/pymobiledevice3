@@ -292,6 +292,10 @@ class TSSRequest:
                     logger.debug(f'skipping {key} as it is neither firmware nor secondary nor FUD firmware payload')
                     continue
 
+            if info_dict.get('IsFTAB'):
+                logger.debug(f'Skipping IsFTAB')
+                continue
+
             # copy this entry
             tss_entry = dict(manifest_entry)
 

@@ -1,5 +1,4 @@
 construct>=2.9.29
-pyasn1
 asn1
 termcolor
 click
