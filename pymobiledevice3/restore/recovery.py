@@ -298,7 +298,7 @@ class Recovery(BaseRestore):
             assert isinstance(iboot_stg1, bool)
 
             if iboot and iboot_stg1:
-                self.logger.debug(f'{key} is loaded by iBoot')
+                self.logger.debug(f'{key} is loaded by iBoot Stage 1')
                 self.send_component_and_command(key, 'firmware')
 
     def send_ramdisk(self):
