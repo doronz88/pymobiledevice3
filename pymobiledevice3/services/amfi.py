@@ -4,7 +4,7 @@ import logging
 import construct
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, NoDeviceConnectedError, ConnectionFailedError, \
-    DeviceHasPasscodeSetError, AmfiError
+    DeviceHasPasscodeSetError, AmfiError, DeveloperModeError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.heartbeat import HeartbeatService
 
@@ -38,8 +38,8 @@ class AmfiService:
                 raise DeviceHasPasscodeSetError()
             raise AmfiError(error)
 
-        if not resp['success']:
-            raise PyMobileDevice3Exception(f'enable_developer_mode(): {resp}')
+        if not resp.get('success'):
+            raise DeveloperModeError(f'enable_developer_mode(): {resp}')
 
         if not enable_post_restart:
             return
@@ -62,5 +62,5 @@ class AmfiService:
         """ answer the prompt that appears after the restart with "yes" """
         service = self._lockdown.start_service(self.SERVICE_NAME)
         resp = service.send_recv_plist({'action': 2})
-        if not resp['success']:
-            raise PyMobileDevice3Exception(f'enable_developer_mode_post_restart() failed: {resp}')
+        if not resp.get('success'):
+            raise DeveloperModeError(f'enable_developer_mode_post_restart() failed: {resp}')

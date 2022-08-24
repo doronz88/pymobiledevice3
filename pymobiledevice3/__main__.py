@@ -28,7 +28,8 @@ from pymobiledevice3.cli.springboard import cli as springboard_cli
 from pymobiledevice3.cli.syslog import cli as syslog_cli
 from pymobiledevice3.cli.webinspector import cli as webinspector_cli
 from pymobiledevice3.exceptions import NoDeviceConnectedError, NotPairedError, UserDeniedPairingError, \
-    PairingDialogResponsePendingError, SetProhibitedError, MissingValueError, DeviceHasPasscodeSetError
+    PairingDialogResponsePendingError, SetProhibitedError, MissingValueError, DeviceHasPasscodeSetError, \
+    DeveloperModeError
 
 coloredlogs.install(level=logging.INFO)
 
@@ -68,6 +69,8 @@ def cli():
         logger.error('No such value')
     except DeviceHasPasscodeSetError:
         logger.error('Cannot enable developer-mode when passcode is set')
+    except DeveloperModeError as e:
+        logger.error(f'Failed to enable developer-mode. Error: {e}')
     except BrokenPipeError:
         traceback.print_exc()
 
