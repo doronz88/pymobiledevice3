@@ -8,7 +8,7 @@ __all__ = [
     'ArbitrationError', 'NoSuchBuildIdentityError', 'InternalError', 'DeveloperModeIsNotEnabledError',
     'DeviceAlreadyInUseError', 'LockdownError', 'PairingDialogResponsePendingError', 'UserDeniedPairingError',
     'InvalidHostIDError', 'SetProhibitedError', 'MissingValueError', 'PasscodeRequiredError', 'AmfiError',
-    'DeviceHasPasscodeSetError', 'NotificationTimeoutError',
+    'DeviceHasPasscodeSetError', 'NotificationTimeoutError', 'DeveloperModeError',
 ]
 
 
@@ -174,6 +174,11 @@ class NoSuchBuildIdentityError(PyMobileDevice3Exception):
 
 class DeveloperModeIsNotEnabledError(PyMobileDevice3Exception):
     """ Raise when mounting failed because developer mode is not enabled. """
+    pass
+
+
+class DeveloperModeError(PyMobileDevice3Exception):
+    """ Raise when amfid failed to enable developer mode. """
     pass
 
 
