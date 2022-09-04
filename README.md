@@ -34,7 +34,7 @@ Main features include:
 * Application management
 * File system management (AFC)
 * Crash reports management
-* Network sniffing
+* Network sniffing (PCAP)
 * Firmware update
 * Mounting images
 * Notification listening and triggering (`notify_post()` api)
@@ -47,6 +47,7 @@ Main features include:
     * Sniffing KDebug messages (**strace** capabilities++)
     * Process monitoring (`top` like)
     * Accessibility features
+    * Sniffing oslog which includes both syslog and signposts
 * Backup
 
 # Installation
@@ -183,6 +184,8 @@ There is A LOT you may do on the device using `pymobiledevice3`. This is just a 
             * `pymobiledevice3 developer screenshot /path/to/screen.png`
         * View detailed process list (including ppid, uid, guid, sandboxed, etc...):
             * `pymobiledevice3 developer dvt sysmon process single`
+        * Sniffing oslog:
+            * `pymobiledevice3 developer dvt oslog`
         * Kill a process:
             * `pymobiledevice3 developer dvt kill PID`
         * List files in a given directory (un-chrooted):

@@ -1,4 +1,6 @@
-from typing import Union
+import socket
+
+from typing import Union, Generator, Mapping
 
 from pymobiledevice3.exceptions import NotificationTimeoutError
 from pymobiledevice3.lockdown import LockdownClient
@@ -18,20 +20,20 @@ class NotificationProxyService(BaseService):
         if timeout is not None:
             self.service.socket.settimeout(timeout)
 
-    def notify_post(self, name: str):
+    def notify_post(self, name: str) -> None:
         """ Send notification to the device's notification_proxy. """
         self.service.send_plist({'Command': 'PostNotification',
                                  'Name': name})
 
-    def notify_register_dispatch(self, name: str):
+    def notify_register_dispatch(self, name: str) -> None:
         """ Tells the device to send a notification on the specified event. """
         self.logger.info(f'Observing {name}')
         self.service.send_plist({'Command': 'ObserveNotification',
                                  'Name': name})
 
-    def receive_notification(self):
+    def receive_notification(self) -> Generator[Mapping, None, None]:
         while True:
             try:
                 yield self.service.recv_plist()
-            except TimeoutError as e:
+            except socket.timeout as e:
                 raise NotificationTimeoutError from e
