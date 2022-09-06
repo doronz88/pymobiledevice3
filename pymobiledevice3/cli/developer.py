@@ -635,9 +635,22 @@ def dvt_notifications(lockdown: LockdownClient):
                 logger.info(stats)
 
 
-@developer.command('fetch-symbols', cls=Command)
+@developer.group('fetch-symbols')
+def fetch_symbols():
+    """ fetch-symbols options. """
+    pass
+
+
+@fetch_symbols.command('list', cls=Command)
+@click.option('--color/--no-color', default=True)
+def fetch_symbols_list(lockdown: LockdownClient, color: bool):
+    """ list of files to be downloaded """
+    print_json(DtFetchSymbols(lockdown).list_files(), colored=color)
+
+
+@fetch_symbols.command('download', cls=Command)
 @click.argument('out', type=click.Path(dir_okay=True, file_okay=False))
-def developer_fetch_symbols(lockdown: LockdownClient, out):
+def fetch_symbols_download(lockdown: LockdownClient, out):
     """ download the linker and dyld cache to a specified directory """
     fetch_symbols = DtFetchSymbols(lockdown)
     files = fetch_symbols.list_files()
@@ -646,14 +659,22 @@ def developer_fetch_symbols(lockdown: LockdownClient, out):
     if not os.path.exists(out):
         os.makedirs(out)
 
-    for file in files:
-        file = out / Path(file).parts[-1]
-        file.unlink(missing_ok=True)
+    downloaded_files = set()
 
     for i, file in enumerate(files):
-        file = out / Path(file).parts[-1]
-        file = os.path.join(out, os.path.basename(file))
+        if file.startswith('/'):
+            # trim root to allow relative download
+            file = file[1:]
+        file = out / file
+
+        if file not in downloaded_files:
+            # first time the file was seen in list, means we can safely remove any old copy if any
+            file.unlink(missing_ok=True)
+
+        downloaded_files.add(file)
+        file.parent.mkdir(parents=True, exist_ok=True)
         with open(file, 'ab') as f:
+            # same file may appear twice, so we'll need to append data into it
             logger.info(f'writing to: {file}')
             fetch_symbols.get_file(i, f)
 
