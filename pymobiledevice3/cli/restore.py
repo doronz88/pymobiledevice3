@@ -43,7 +43,7 @@ class Command(click.Command):
         logger.debug('searching among connected devices via lockdownd')
         for device in usbmux.list_devices():
             try:
-                lockdown = LockdownClient(udid=device.serial)
+                lockdown = LockdownClient(serial=device.serial)
             except IncorrectModeError:
                 continue
             if (ecid is None) or (lockdown.ecid == value):

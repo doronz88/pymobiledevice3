@@ -46,10 +46,10 @@ class FDRClient:
         logger.debug('connecting to FDR')
 
         if type_ == fdr_type.FDR_CTRL:
-            self.service = ServiceConnection.create(device.serial, self.SERVICE_PORT)
+            self.service = ServiceConnection.create_using_usbmux(device.serial, self.SERVICE_PORT)
             self.ctrl_handshake()
         else:
-            self.service = ServiceConnection.create(device.serial, conn_port)
+            self.service = ServiceConnection.create_using_usbmux(device.serial, conn_port)
             self.sync_handshake()
 
         logger.debug('FDR connected')

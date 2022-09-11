@@ -14,8 +14,7 @@ class MobileImageMounterService(BaseService):
 
     def list_images(self):
         """ Lookup mounted image by its name. """
-        self.service.send_plist({'Command': 'CopyDevices'})
-        response = self.service.recv_plist()
+        response = self.service.send_recv_plist({'Command': 'CopyDevices'})
 
         if response.get('Error'):
             raise PyMobileDevice3Exception('unsupported command')

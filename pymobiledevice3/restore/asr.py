@@ -29,7 +29,7 @@ class ASRClient(object):
     SERVICE_PORT = ASR_PORT
 
     def __init__(self, udid: str):
-        self.service = ServiceConnection.create(udid, self.SERVICE_PORT)
+        self.service = ServiceConnection.create_using_usbmux(udid, self.SERVICE_PORT)
 
         # receive Initiate command message
         data = self.recv_plist()

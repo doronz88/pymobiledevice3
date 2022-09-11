@@ -441,7 +441,7 @@ class Recovery(BaseRestore):
             self.logger.info('going into Recovery')
 
             # in case lockdown has disconnected while waiting for a ticket
-            self.device.lockdown = LockdownClient(udid=self.device.lockdown.udid)
+            self.device.lockdown = LockdownClient(serial=self.device.lockdown.udid)
             self.device.lockdown.enter_recovery()
 
             self.device.lockdown = None

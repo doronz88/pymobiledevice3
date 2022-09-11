@@ -27,7 +27,7 @@ def list_devices(color, usb, network):
         if network and not device.is_network:
             continue
 
-        lockdown = LockdownClient(udid, autopair=False, connection_type=device.connection_type)
+        lockdown = LockdownClient(udid, autopair=False, usbmux_connection_type=device.connection_type)
         connected_devices.append(lockdown.short_info)
 
     print_json(connected_devices, colored=color)
