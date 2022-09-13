@@ -21,27 +21,6 @@ def lockdown_group():
     pass
 
 
-@lockdown_group.command('forward', cls=Command)
-@click.argument('src_port', type=click.IntRange(1, 0xffff))
-@click.argument('dst_port', type=click.IntRange(1, 0xffff))
-@click.option('-d', '--daemonize', is_flag=True)
-def lockdown_forward(lockdown: LockdownClient, src_port, dst_port, daemonize):
-    """ forward tcp port """
-    forwarder = TcpForwarder(lockdown, src_port, dst_port)
-
-    if daemonize:
-        try:
-            from daemonize import Daemonize
-        except ImportError:
-            raise NotImplementedError('daemonizing is only supported on unix platforms')
-
-        with tempfile.NamedTemporaryFile('wt') as pid_file:
-            daemon = Daemonize(app=f'forwarder {src_port}->{dst_port}', pid=pid_file.name, action=forwarder.start)
-            daemon.start()
-    else:
-        forwarder.start()
-
-
 @lockdown_group.command('recovery', cls=Command)
 def lockdown_recovery(lockdown: LockdownClient):
     """ enter recovery """
