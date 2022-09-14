@@ -166,6 +166,7 @@ class LockdownClient(object):
 
         # reload data after pairing
         self.all_values = self.get_value()
+        self.udid = self.all_values.get('UniqueDeviceID')
 
     def __repr__(self) -> str:
         return f'<{self.__class__.__name__} ID:{self.identifier} VERSION:{self.product_version} ' \
