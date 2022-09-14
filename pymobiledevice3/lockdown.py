@@ -300,6 +300,10 @@ class LockdownClient(object):
 
     def get_local_pairing_record(self) -> Optional[Mapping]:
         self.logger.debug('Looking for pymobiledevice3 pairing record')
+
+        if self.pairing_records_cache_folder is None:
+            return None
+
         path = self.pairing_records_cache_folder / f'{self.identifier}.plist'
         if not path.exists():
             self.logger.debug(f'No pymobiledevice3 pairing record found for device {self.identifier}')
@@ -491,6 +495,8 @@ class LockdownClient(object):
             os.unlink(filename)
 
     def _write_storage_file(self, filename: Union[Path, str], data: bytes) -> None:
+        if self.pairing_records_cache_folder is None:
+            return
         self.pairing_records_cache_folder.mkdir(parents=True, exist_ok=True)
         filepath = self.pairing_records_cache_folder / filename
         filepath.write_bytes(data)
