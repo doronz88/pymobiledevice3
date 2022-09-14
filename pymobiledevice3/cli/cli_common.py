@@ -57,7 +57,7 @@ class Command(click.Command):
         if '_PYMOBILEDEVICE3_COMPLETE' in os.environ:
             # prevent lockdown connection establishment when in autocomplete mode
             return
-        return LockdownClient(udid=value)
+        return LockdownClient(serial=value)
 
 
 class CommandWithoutAutopair(Command):
@@ -66,7 +66,7 @@ class CommandWithoutAutopair(Command):
         if '_PYMOBILEDEVICE3_COMPLETE' in os.environ:
             # prevent lockdown connection establishment when in autocomplete mode
             return
-        return LockdownClient(udid=value, autopair=False)
+        return LockdownClient(serial=value, autopair=False)
 
 
 class BasedIntParamType(click.ParamType):

@@ -109,8 +109,8 @@ class TcpForwarder:
         local_connection.setblocking(False)
 
         try:
-            service_connection = ServiceConnection.create(
-                self.lockdown.udid, self.dst_port, connection_type=self.lockdown.usbmux_device.connection_type)
+            service_connection = ServiceConnection.create_using_usbmux(
+                self.lockdown.udid, self.dst_port, connection_type=self.lockdown.usbmux_connection_type)
 
             if self.enable_ssl:
                 with self.lockdown.ssl_file() as ssl_file:

@@ -100,21 +100,21 @@ subcommand. This also means that every feature which isn't there won't require i
 This is the main CLI usage:
 
 ```
-Usage: pymobiledevice3 [OPTIONS] COMMAND [ARGS]...
+Usage: python -m pymobiledevice3 [OPTIONS] COMMAND [ARGS]...
 
 Options:
-  --help  Show this message and exit.
+  -h, --help  Show this message and exit.
 
 Commands:
   activation       activation options
   afc              FileSystem utils
+  amfi             amfi options
   apps             application options
   backup2          backup utils
   companion        companion options
   crash            crash report options
   developer        developer options.
   diagnostics      diagnostics options
-  list-devices     list connected devices
   lockdown         lockdown options
   mounter          mounter options
   notification     notification options
@@ -126,6 +126,7 @@ Commands:
   restore          restore options
   springboard      springboard options
   syslog           syslog options
+  usbmuxd          usbmuxd options
   webinspector     webinspector options
 ```
 
