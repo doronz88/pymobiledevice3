@@ -2,9 +2,9 @@ import logging
 import select
 import socket
 import threading
+from typing import Set
 
-from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.service_connection import ServiceConnection, ConnectionFailedError
+from pymobiledevice3 import usbmux
 
 
 class TcpForwarder:
@@ -15,19 +15,19 @@ class TcpForwarder:
     MAX_FORWARDED_CONNECTIONS = 200
     TIMEOUT = 1
 
-    def __init__(self, lockdown: LockdownClient, src_port: int, dst_port: int, enable_ssl=False,
+    def __init__(self, serial: str, src_port: int, dst_port: int, enable_ssl=False,
                  listening_event: threading.Event = None):
         """
         Initialize a new tcp forwarder
 
-        :param lockdown: lockdown connection
+        :param serial: usbmux serial to identify the device
         :param src_port: tcp port to listen on
         :param dst_port: tcp port to connect to each new connection via the supplied lockdown object
         :param enable_ssl: enable ssl wrapping for the transferred data
         :param listening_event: event to fire when the listening occurred
         """
         self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
+        self.serial = serial
         self.src_port = src_port
         self.dst_port = dst_port
         self.server_socket = None
@@ -40,7 +40,7 @@ class TcpForwarder:
         # socket to its remote socket and vice versa
         self.connections = {}
 
-    def start(self, address='0.0.0.0'):
+    def start(self, address='0.0.0.0') -> None:
         """ forward each connection from given local machine port to remote device port """
         # create local tcp server socket
         self.server_socket = socket.socket()
@@ -74,8 +74,8 @@ class TcpForwarder:
             for current_sock in exceptional:
                 self._handle_close_or_error(current_sock)
 
-    def _handle_close_or_error(self, from_sock):
-        """ if an error occurred its time to close the two sockets """
+    def _handle_close_or_error(self, from_sock: socket.socket) -> None:
+        """ if an error occurred it's time to close the two sockets """
         other_sock = self.connections[from_sock]
 
         other_sock.close()
@@ -85,7 +85,7 @@ class TcpForwarder:
 
         self.logger.info(f'connection {other_sock} was closed')
 
-    def _handle_data(self, from_sock, closed_sockets):
+    def _handle_data(self, from_sock: socket.socket, closed_sockets: Set[socket.socket]) -> None:
         data = from_sock.recv(1024)
 
         if len(data) == 0:
@@ -103,22 +103,15 @@ class TcpForwarder:
         other_sock.sendall(data)
         other_sock.setblocking(False)
 
-    def _handle_server_connection(self):
+    def _handle_server_connection(self) -> None:
         """ accept the connection from local machine and attempt to connect at remote """
         local_connection, client_address = self.server_socket.accept()
         local_connection.setblocking(False)
 
         try:
-            service_connection = ServiceConnection.create_using_usbmux(
-                self.lockdown.udid, self.dst_port, connection_type=self.lockdown.usbmux_connection_type)
-
-            if self.enable_ssl:
-                with self.lockdown.ssl_file() as ssl_file:
-                    service_connection.ssl_start(ssl_file)
-
-            remote_connection = service_connection.socket
-        except ConnectionFailedError:
-            self.logger.error(f'failed to connect to port: {self.dst_port}')
+            remote_connection = usbmux.select_device(self.serial).connect(self.dst_port)
+        except usbmux.MuxException:
+            self.logger.error(f'failed to connect to port: {self.dst_port} for desired serial: {self.serial}')
             local_connection.close()
             return
 
@@ -134,6 +127,6 @@ class TcpForwarder:
 
         self.logger.info(f'connection established from local to remote port {self.dst_port}')
 
-    def stop(self):
+    def stop(self) -> None:
         """ stop forwarding """
         self.stopped.set()

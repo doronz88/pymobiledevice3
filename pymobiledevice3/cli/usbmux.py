@@ -21,13 +21,14 @@ def usbmux_cli():
     pass
 
 
-@usbmux_cli.command('forward', cls=Command)
+@usbmux_cli.command('forward')
 @click.argument('src_port', type=click.IntRange(1, 0xffff))
 @click.argument('dst_port', type=click.IntRange(1, 0xffff))
+@click.option('-s', '--serial', help='usbmux serial')
 @click.option('-d', '--daemonize', is_flag=True)
-def usbmux_forward(lockdown: LockdownClient, src_port, dst_port, daemonize):
+def usbmux_forward(src_port, dst_port, serial, daemonize):
     """ forward tcp port """
-    forwarder = TcpForwarder(lockdown, src_port, dst_port)
+    forwarder = TcpForwarder(serial, src_port, dst_port)
 
     if daemonize:
         try:
