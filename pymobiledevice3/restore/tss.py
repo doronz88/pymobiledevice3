@@ -12,7 +12,7 @@ from pymobiledevice3.utils import bytes_to_uint
 
 TSS_CONTROLLER_ACTION_URL = 'http://gs.apple.com/TSS/controller?action=2'
 
-TSS_CLIENT_VERSION_STRING = 'libauthinstall-911'
+TSS_CLIENT_VERSION_STRING = 'libauthinstall-914.40.2.0.1'
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,6 @@ class TSSRequest:
         self._request = {
             '@BBTicket': True,
             '@HostPlatformInfo': 'mac',
-            '@Locality': 'en_US',
             '@VersionInfo': TSS_CLIENT_VERSION_STRING,
             '@UUID': str(uuid4()).upper(),
         }
@@ -274,6 +273,9 @@ class TSSRequest:
             if key in skipped_keys:
                 continue
 
+            if key.startswith('Cryptex1,'):
+                continue
+
             info_dict = manifest_entry.get('Info')
             if info_dict is None:
                 continue
@@ -328,7 +330,7 @@ class TSSRequest:
     def add_ap_img4_tags(self, parameters):
         keys_to_copy = (
             'ApNonce', 'Ap,OSLongVersion', 'ApSecurityMode', 'ApProductionMode', 'ApSepNonce',
-            'PearlCertificationRootPub')
+            'PearlCertificationRootPub', 'NeRDEpoch', )
         for k in keys_to_copy:
             if k in parameters:
                 v = parameters[k]
