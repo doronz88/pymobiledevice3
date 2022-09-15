@@ -182,6 +182,10 @@ class LockdownClient(object):
         return self._request('QueryType').get('Type')
 
     @property
+    def wifi_mac_address(self) -> str:
+        return self.all_values.get('WiFiAddress')
+
+    @property
     def all_domains(self) -> Mapping:
         result = self.all_values
 
@@ -358,6 +362,8 @@ class LockdownClient(object):
                        'HostCertificate': cert_pem,
                        'HostID': self.host_id,
                        'RootCertificate': cert_pem,
+                       'RootPrivateKey': private_key_pem,
+                       'WiFiMACAddress': self.wifi_mac_address,
                        'SystemBUID': self.system_buid}
 
         pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2',
