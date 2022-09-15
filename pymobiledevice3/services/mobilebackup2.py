@@ -43,7 +43,7 @@ class Mobilebackup2Service(BaseService):
         The function shall receive the percentage as a parameter.
         """
         backup_directory = Path(backup_directory)
-        device_directory = backup_directory / self.lockdown.identifier
+        device_directory = backup_directory / self.lockdown.udid
         device_directory.mkdir(exist_ok=True, mode=0o755, parents=True)
 
         with self.device_link(backup_directory) as dl:
@@ -75,7 +75,7 @@ class Mobilebackup2Service(BaseService):
                     manifest_path.unlink(missing_ok=True)
                 (device_directory / 'Manifest.plist').touch()
 
-                dl.send_process_message({'MessageName': 'Backup', 'TargetIdentifier': self.lockdown.identifier})
+                dl.send_process_message({'MessageName': 'Backup', 'TargetIdentifier': self.lockdown.udid})
                 dl.dl_loop(progress_callback)
 
     def restore(self, backup_directory='.', system: bool = False, reboot: bool = True, copy: bool = True,
@@ -95,7 +95,7 @@ class Mobilebackup2Service(BaseService):
         The function shall receive the current percentage of the progress as a parameter.
         """
         backup_directory = Path(backup_directory)
-        source = source if source else self.lockdown.identifier
+        source = source if source else self.lockdown.udid
         self._assert_backup_exists(backup_directory, source)
 
         with self.device_link(backup_directory) as dl:
@@ -122,7 +122,7 @@ class Mobilebackup2Service(BaseService):
                         return
                 dl.send_process_message({
                     'MessageName': 'Restore',
-                    'TargetIdentifier': self.lockdown.identifier,
+                    'TargetIdentifier': self.lockdown.udid,
                     'SourceIdentifier': source,
                     'Options': options,
                 })
@@ -136,9 +136,9 @@ class Mobilebackup2Service(BaseService):
         :return: Information about a backup.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, source if source else self.lockdown.identifier)
+        self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
         with self.device_link(backup_dir) as dl:
-            message = {'MessageName': 'Info', 'TargetIdentifier': self.lockdown.identifier}
+            message = {'MessageName': 'Info', 'TargetIdentifier': self.lockdown.udid}
             if source:
                 message['SourceIdentifier'] = source
             dl.send_process_message(message)
@@ -153,11 +153,11 @@ class Mobilebackup2Service(BaseService):
         :return: List of files and additional data about each file, all in a CSV format.
         """
         backup_dir = Path(backup_directory)
-        source = source if source else self.lockdown.identifier
+        source = source if source else self.lockdown.udid
         self._assert_backup_exists(backup_dir, source)
         with self.device_link(backup_dir) as dl:
             dl.send_process_message({
-                'MessageName': 'List', 'TargetIdentifier': self.lockdown.identifier, 'SourceIdentifier': source,
+                'MessageName': 'List', 'TargetIdentifier': self.lockdown.udid, 'SourceIdentifier': source,
             })
             result = dl.dl_loop()
         return result
@@ -170,9 +170,9 @@ class Mobilebackup2Service(BaseService):
         :param source: Identifier of device to unpack its backup.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, source if source else self.lockdown.identifier)
+        self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
         with self.device_link(backup_dir) as dl:
-            message = {'MessageName': 'Unback', 'TargetIdentifier': self.lockdown.identifier}
+            message = {'MessageName': 'Unback', 'TargetIdentifier': self.lockdown.udid}
             if source:
                 message['SourceIdentifier'] = source
             if password:
@@ -191,10 +191,10 @@ class Mobilebackup2Service(BaseService):
         :param source: Identifier of device to extract file from its backup.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, source if source else self.lockdown.identifier)
+        self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
         with self.device_link(backup_dir) as dl:
             message = {
-                'MessageName': 'Extract', 'TargetIdentifier': self.lockdown.identifier, 'DomainName': domain_name,
+                'MessageName': 'Extract', 'TargetIdentifier': self.lockdown.udid, 'DomainName': domain_name,
                 'RelativePath': relative_path
             }
             if source:
@@ -212,7 +212,7 @@ class Mobilebackup2Service(BaseService):
         :param new: New password. Omit when disabling backup encryption.
         """
         with self.device_link(Path(backup_directory)) as dl:
-            message = {'MessageName': 'ChangePassword', 'TargetIdentifier': self.lockdown.identifier}
+            message = {'MessageName': 'ChangePassword', 'TargetIdentifier': self.lockdown.udid}
             if old:
                 message['OldPassword'] = old
             if new:
@@ -226,7 +226,7 @@ class Mobilebackup2Service(BaseService):
         """
         with suppress(ConnectionTerminatedError):
             with self.device_link(Path(backup_directory)) as dl:
-                dl.send_process_message({'MessageName': 'EraseDevice', 'TargetIdentifier': self.lockdown.identifier})
+                dl.send_process_message({'MessageName': 'EraseDevice', 'TargetIdentifier': self.lockdown.udid})
                 dl.dl_loop()
 
     def version_exchange(self, dl: DeviceLink, local_versions=None) -> None:
@@ -279,7 +279,7 @@ class Mobilebackup2Service(BaseService):
         ret = {
             'iTunes Version': min_itunes_version if min_itunes_version else '10.0.1',
             'iTunes Files': files,
-            'Unique Identifier': self.lockdown.identifier.upper(),
+            'Unique Identifier': self.lockdown.udid.upper(),
             'Target Type': 'Device',
             'Target Identifier': root_node['UniqueDeviceID'],
             'Serial Number': root_node['SerialNumber'],

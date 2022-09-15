@@ -1,9 +1,15 @@
+import logging
+
+import plistlib
+
 import click
 
 from pymobiledevice3.cli.cli_common import Command, print_json, CommandWithoutAutopair
 from pymobiledevice3.exceptions import PasscodeRequiredError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.heartbeat import HeartbeatService
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -77,6 +83,16 @@ def lockdown_unpair(lockdown: LockdownClient):
 def lockdown_pair(lockdown: LockdownClient):
     """ pair device """
     lockdown.pair()
+
+
+@lockdown_group.command('save-pair-record', cls=CommandWithoutAutopair)
+@click.argument('output', type=click.File('wb'))
+def lockdown_save_pair_record(lockdown: LockdownClient, output):
+    """ save pair record to specified location """
+    if lockdown.pair_record is None:
+        logger.error('no pairing record was found')
+        return
+    plistlib.dump(lockdown.pair_record, output)
 
 
 @lockdown_group.command('date', cls=Command)

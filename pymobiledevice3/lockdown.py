@@ -166,6 +166,7 @@ class LockdownClient(object):
 
         # reload data after pairing
         self.all_values = self.get_value()
+        self.udid = self.all_values.get('UniqueDeviceID')
 
     def __repr__(self) -> str:
         return f'<{self.__class__.__name__} ID:{self.identifier} VERSION:{self.product_version} ' \
@@ -179,6 +180,10 @@ class LockdownClient(object):
 
     def query_type(self) -> str:
         return self._request('QueryType').get('Type')
+
+    @property
+    def wifi_mac_address(self) -> str:
+        return self.all_values.get('WiFiAddress')
 
     @property
     def all_domains(self) -> Mapping:
@@ -299,6 +304,10 @@ class LockdownClient(object):
 
     def get_local_pairing_record(self) -> Optional[Mapping]:
         self.logger.debug('Looking for pymobiledevice3 pairing record')
+
+        if self.pairing_records_cache_folder is None:
+            return None
+
         path = self.pairing_records_cache_folder / f'{self.identifier}.plist'
         if not path.exists():
             self.logger.debug(f'No pymobiledevice3 pairing record found for device {self.identifier}')
@@ -353,6 +362,8 @@ class LockdownClient(object):
                        'HostCertificate': cert_pem,
                        'HostID': self.host_id,
                        'RootCertificate': cert_pem,
+                       'RootPrivateKey': private_key_pem,
+                       'WiFiMACAddress': self.wifi_mac_address,
                        'SystemBUID': self.system_buid}
 
         pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2',
@@ -490,6 +501,8 @@ class LockdownClient(object):
             os.unlink(filename)
 
     def _write_storage_file(self, filename: Union[Path, str], data: bytes) -> None:
+        if self.pairing_records_cache_folder is None:
+            return
         self.pairing_records_cache_folder.mkdir(parents=True, exist_ok=True)
         filepath = self.pairing_records_cache_folder / filename
         filepath.write_bytes(data)
