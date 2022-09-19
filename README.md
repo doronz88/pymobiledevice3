@@ -283,9 +283,10 @@ to [create us an issue request](https://github.com/doronz88/pymobiledevice3/issu
 .
 
 * `com.apple.idamd`
-    * Allows settings the IDAM configuration (whatever that means...)
+    * Allows settings the IDAM configuration (something to do with loading of AppleUSBDeviceAudioDevice)
 * `com.apple.atc`
     * AirTraffic related
+* `com.apple.atc2`
 * `com.apple.ait.aitd`
     * AirTraffic related
 * `com.apple.mobile.file_relay`
@@ -293,6 +294,9 @@ to [create us an issue request](https://github.com/doronz88/pymobiledevice3/issu
       AFC.
 * `com.apple.mobilesync`
 * `com.apple.purpletestr`
+* `com.apple.commcenter.mobile-helper-cbupdateservice`
+* `com.apple.carkit.service`
+    * Used to transfer data to accessories. Data is transferred using iAP2 packets.
 
 ### Sending your own messages
 
