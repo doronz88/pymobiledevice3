@@ -15,8 +15,10 @@ from typing import Mapping, Union, Optional
 from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
-from pymobiledevice3.exceptions import *
-from pymobiledevice3.exceptions import LockdownError, SetProhibitedError, PasscodeRequiredError
+from pymobiledevice3.exceptions import LockdownError, SetProhibitedError, PasscodeRequiredError, \
+    ConnectionTerminatedError, IncorrectModeError, FatalPairingError, MissingValueError, CannotStopSessionError, \
+    NotPairedError, PairingError, InvalidHostIDError, PasswordRequiredError, StartServiceError, \
+    PairingDialogResponsePendingError, UserDeniedPairingError, ConnectionFailedError
 from pymobiledevice3.service_connection import ServiceConnection, Medium
 from pymobiledevice3.usbmux import PlistMuxConnection
 from pymobiledevice3.utils import sanitize_ios_version
@@ -562,7 +564,7 @@ class LockdownClient(object):
         pair_record = self.get_itunes_pairing_record()
 
         if pair_record is not None:
-            self.logger.debug(f'Using iTunes pair record')
+            self.logger.debug('Using iTunes pair record')
             self.pair_record = pair_record
             return
 

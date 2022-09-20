@@ -170,7 +170,7 @@ class ServiceConnection(object):
         msg = b''.join([hdr, data])
         return self.sendall(msg)
 
-    def recv_plist(self, endianity='>') -> bytes:
+    def recv_plist(self, endianity='>') -> Mapping:
         return parse_plist(self.recv_prefixed(endianity=endianity))
 
     async def aio_recv_plist(self, endianity='>') -> bytes:

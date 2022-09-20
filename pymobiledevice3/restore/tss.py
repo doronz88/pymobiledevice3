@@ -293,7 +293,7 @@ class TSSRequest:
                     continue
 
             if info_dict.get('IsFTAB'):
-                logger.debug(f'Skipping IsFTAB')
+                logger.debug('Skipping IsFTAB')
                 continue
 
             # copy this entry
