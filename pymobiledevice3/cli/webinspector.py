@@ -94,7 +94,7 @@ driver.find_element(By.TAG_NAME, 'input')
 
 # You can also add cookies:
 driver.add_cookie(
-    Cookie(name='tz', value='UTC', domain='.github.com', path='/', expires=0, httpOnly=False, secure=True, 
+    Cookie(name='tz', value='UTC', domain='.github.com', path='/', expires=0, httpOnly=False, secure=True,
     session=True, sameSite='None')
 )
 
