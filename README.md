@@ -289,14 +289,22 @@ to [create us an issue request](https://github.com/doronz88/pymobiledevice3/issu
 * `com.apple.atc2`
 * `com.apple.ait.aitd`
     * AirTraffic related
-* `com.apple.mobile.file_relay`
+* `com.apple.mobile.file_relay` (Deprecated)
     * On older iOS versions (iOS <= 8), this was the main relay used for file operations, which was later replaced with
       AFC.
 * `com.apple.mobilesync`
-* `com.apple.purpletestr`
+* `com.apple.purpletestr` (Deprecated)
+* `com.apple.PurpleReverseProxy.Conn`
+    * Something to do with tethering internet connection to restored devices
+* `com.apple.PurpleReverseProxy.Ctrl`
+    * Something to do with tethering internet connection to restored devices
+* `com.apple.dt.remotepairingdeviced.lockdown`
 * `com.apple.commcenter.mobile-helper-cbupdateservice`
 * `com.apple.carkit.service`
     * Used to transfer data to accessories. Data is transferred using iAP2 packets.
+* `com.apple.bluetooth.BTPacketLogger`
+* `com.apple.streaming_zip_conduit`
+    * Another relay used to install IPAs
 
 ### Sending your own messages
 
