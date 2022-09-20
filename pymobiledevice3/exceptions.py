@@ -8,7 +8,7 @@ __all__ = [
     'ArbitrationError', 'NoSuchBuildIdentityError', 'InternalError', 'DeveloperModeIsNotEnabledError',
     'DeviceAlreadyInUseError', 'LockdownError', 'PairingDialogResponsePendingError', 'UserDeniedPairingError',
     'InvalidHostIDError', 'SetProhibitedError', 'MissingValueError', 'PasscodeRequiredError', 'AmfiError',
-    'DeviceHasPasscodeSetError', 'NotificationTimeoutError', 'DeveloperModeError',
+    'DeviceHasPasscodeSetError', 'NotificationTimeoutError', 'DeveloperModeError', 'ProfileError',
 ]
 
 
@@ -223,4 +223,8 @@ class DeviceHasPasscodeSetError(AmfiError):
 
 
 class NotificationTimeoutError(PyMobileDevice3Exception, TimeoutError):
+    pass
+
+
+class ProfileError(PyMobileDevice3Exception):
     pass
