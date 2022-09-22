@@ -99,13 +99,16 @@ def download_developer_disk_image(ios_version, directory):
 @click.option('-i', '--image', type=click.Path(exists=True))
 @click.option('-s', '--signature', type=click.Path(exists=True))
 @click.option('-x', '--xcode', type=click.Path(exists=True, dir_okay=True, file_okay=False),
-              default='/Applications/Xcode.app',
               help='Xcode application path used to figure out automatically the DeveloperDiskImage path')
 @click.option('-v', '--version', help='use a different DeveloperDiskImage version from the one retrieved by lockdown'
                                       'connection')
 def mounter_mount(lockdown: LockdownClient, image, signature, xcode, version):
     """ mount developer image. """
     image_type = 'Developer'
+
+    if xcode is None:
+        # avoid "default"-ing this option, because Windows and Linux won't have this path
+        xcode = '/Applications/Xcode.app'
 
     image_mounter = MobileImageMounterService(lockdown=lockdown)
     if image_mounter.is_image_mounted(image_type):
