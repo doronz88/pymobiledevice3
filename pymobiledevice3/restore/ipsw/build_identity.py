@@ -54,8 +54,9 @@ class BuildIdentity(UserDict):
                          'Savage,ChipID', 'Savage,PatchEpoch', 'Yonkers,BoardID', 'Yonkers,ChipID',
                          'Yonkers,PatchEpoch', 'Rap,BoardID', 'Rap,ChipID', 'Rap,SecurityDomain', 'Baobab,BoardID',
                          'Baobab,ChipID', 'Baobab,ManifestEpoch', 'Baobab,SecurityDomain', 'eUICC,ChipID',
-                         'PearlCertificationRootPub', 'Timer,BoardID,1', 'Timer,BoardID,2', 'Timer,ChipID,1',
-                         'Timer,ChipID,2', 'Timer,SecurityDomain,1', 'Timer,SecurityDomain,2', 'Manifest', ]
+                         'PearlCertificationRootPub', 'NeRDEpoch', 'Timer,BoardID,1', 'Timer,BoardID,2',
+                         'Timer,ChipID,1', 'Timer,ChipID,2', 'Timer,SecurityDomain,1', 'Timer,SecurityDomain,2',
+                         'Manifest', ]
         else:
             key_list += additional_keys
 

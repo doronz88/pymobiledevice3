@@ -8,11 +8,11 @@ import requests
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.restore.img4 import img4_get_component_tag
-from pymobiledevice3.utils import bytes_to_uint
+from pymobiledevice3.utils import bytes_to_uint, plist_access_path
 
 TSS_CONTROLLER_ACTION_URL = 'http://gs.apple.com/TSS/controller?action=2'
 
-TSS_CLIENT_VERSION_STRING = 'libauthinstall-911'
+TSS_CLIENT_VERSION_STRING = 'libauthinstall-914.40.2.0.1'
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +49,7 @@ class TSSResponse(dict):
 class TSSRequest:
     def __init__(self):
         self._request = {
-            '@BBTicket': True,
             '@HostPlatformInfo': 'mac',
-            '@Locality': 'en_US',
             '@VersionInfo': TSS_CLIENT_VERSION_STRING,
             '@UUID': str(uuid4()).upper(),
         }
@@ -241,10 +239,23 @@ class TSSRequest:
         self._request['@BBTicket'] = True
         self._request['@eUICC,Ticket'] = True
 
+        self._request['eUICC,ApProductionMode'] = parameters.get('eUICC,ApProductionMode',
+                                                                 parameters.get('ApProductionMode'))
+
         keys = ('eUICC,ChipID', 'eUICC,EID', 'eUICC,RootKeyIdentifier')
         for k in keys:
             if k in parameters:
                 self._request[k] = parameters[k]
+
+        if self._request.get('eUICC,Gold') is None:
+            n = plist_access_path(parameters, ('Manifest', 'eUICC,Gold'))
+            if n:
+                self._request['eUICC,Gold'] = {'Digest': n['Digest']}
+
+        if self._request.get('eUICC,Main') is None:
+            n = plist_access_path(parameters, ('Manifest', 'eUICC,Main'))
+            if n:
+                self._request['eUICC,Main'] = {'Digest': n['Digest']}
 
         # set Nonce for eUICC,Gold component
         node = parameters.get('EUICCGoldNonce')
@@ -272,6 +283,9 @@ class TSSRequest:
         skipped_keys = ('BasebandFirmware', 'SE,UpdatePayload', 'BaseSystem', 'Diags',)
         for key, manifest_entry in manifest_node.items():
             if key in skipped_keys:
+                continue
+
+            if key.startswith('Cryptex1,'):
                 continue
 
             info_dict = manifest_entry.get('Info')
@@ -328,7 +342,7 @@ class TSSRequest:
     def add_ap_img4_tags(self, parameters):
         keys_to_copy = (
             'ApNonce', 'Ap,OSLongVersion', 'ApSecurityMode', 'ApProductionMode', 'ApSepNonce',
-            'PearlCertificationRootPub')
+            'PearlCertificationRootPub', 'NeRDEpoch',)
         for k in keys_to_copy:
             if k in parameters:
                 v = parameters[k]
