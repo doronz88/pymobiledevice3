@@ -8,7 +8,7 @@ import requests
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.restore.img4 import img4_get_component_tag
-from pymobiledevice3.utils import bytes_to_uint
+from pymobiledevice3.utils import bytes_to_uint, plist_access_path
 
 TSS_CONTROLLER_ACTION_URL = 'http://gs.apple.com/TSS/controller?action=2'
 
@@ -239,10 +239,23 @@ class TSSRequest:
         self._request['@BBTicket'] = True
         self._request['@eUICC,Ticket'] = True
 
+        self._request['eUICC,ApProductionMode'] = parameters.get('eUICC,ApProductionMode',
+                                                                 parameters.get('ApProductionMode'))
+
         keys = ('eUICC,ChipID', 'eUICC,EID', 'eUICC,RootKeyIdentifier')
         for k in keys:
             if k in parameters:
                 self._request[k] = parameters[k]
+
+        if self._request.get('eUICC,Gold') is None:
+            n = plist_access_path(parameters, ('Manifest', 'eUICC,Gold'))
+            if n:
+                self._request['eUICC,Gold'] = {'Digest': n['Digest']}
+
+        if self._request.get('eUICC,Main') is None:
+            n = plist_access_path(parameters, ('Manifest', 'eUICC,Main'))
+            if n:
+                self._request['eUICC,Main'] = {'Digest': n['Digest']}
 
         # set Nonce for eUICC,Gold component
         node = parameters.get('EUICCGoldNonce')
@@ -329,7 +342,7 @@ class TSSRequest:
     def add_ap_img4_tags(self, parameters):
         keys_to_copy = (
             'ApNonce', 'Ap,OSLongVersion', 'ApSecurityMode', 'ApProductionMode', 'ApSepNonce',
-            'PearlCertificationRootPub', 'NeRDEpoch', )
+            'PearlCertificationRootPub', 'NeRDEpoch',)
         for k in keys_to_copy:
             if k in parameters:
                 v = parameters[k]
