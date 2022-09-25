@@ -208,7 +208,7 @@ class Recovery(BaseRestore):
         self.build_identity.populate_tss_request_parameters(parameters)
 
         # create basic request
-        # Adds @BBTicket, @HostPlatformInfo, @VersionInfo, @UUID
+        # Adds @HostPlatformInfo, @VersionInfo, @UUID
         request = TSSRequest()
 
         # add common tags from manifest

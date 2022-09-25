@@ -49,7 +49,6 @@ class TSSResponse(dict):
 class TSSRequest:
     def __init__(self):
         self._request = {
-            '@BBTicket': True,
             '@HostPlatformInfo': 'mac',
             '@VersionInfo': TSS_CLIENT_VERSION_STRING,
             '@UUID': str(uuid4()).upper(),
