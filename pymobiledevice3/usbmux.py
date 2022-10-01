@@ -9,7 +9,7 @@ from typing import List, Optional, Mapping
 from construct import Struct, Prefixed, Int32ul, GreedyBytes, StreamError, Int16ul, CString, Padding, FixedSized, \
     Enum, Const, Switch, this
 
-from pymobiledevice3.exceptions import MuxException, MuxVersionError, NotPairedError
+from pymobiledevice3.exceptions import MuxException, MuxVersionError, NotPairedError, UsbmuxConnectionError
 
 usbmuxd_version = Enum(Int32ul,
                        BINARY=0,
@@ -138,10 +138,13 @@ class MuxConnection:
 
     @staticmethod
     def create_usbmux_socket() -> SafeStreamSocket:
-        if sys.platform in ['win32', 'cygwin']:
-            return SafeStreamSocket(MuxConnection.ITUNES_HOST, socket.AF_INET)
-        else:
-            return SafeStreamSocket(MuxConnection.USBMUXD_PIPE, socket.AF_UNIX)
+        try:
+            if sys.platform in ['win32', 'cygwin']:
+                return SafeStreamSocket(MuxConnection.ITUNES_HOST, socket.AF_INET)
+            else:
+                return SafeStreamSocket(MuxConnection.USBMUXD_PIPE, socket.AF_UNIX)
+        except ConnectionRefusedError as e:
+            raise UsbmuxConnectionError from e
 
     @staticmethod
     def create():
