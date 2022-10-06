@@ -68,3 +68,7 @@ class BuildIdentity(UserDict):
                 parameters[k] = v
             except KeyError:
                 pass
+
+        requires_uid_mode = self['Info'].get('RequiresUIDMode')
+        if requires_uid_mode is not None:
+            parameters['RequiresUIDMode'] = requires_uid_mode

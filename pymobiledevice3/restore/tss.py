@@ -350,6 +350,14 @@ class TSSRequest:
                     k = 'SepNonce'
                 self._request[k] = v
 
+        uid_mode = parameters.get('UID_MODE')
+        requires_uid_mode = parameters.get('RequiresUIDMode')
+        if uid_mode is not None:
+            self._request['UID_MODE'] = uid_mode
+        elif requires_uid_mode is not None:
+            # The logic here is missing why this value is expected to be 'false'
+            self._request['UID_MODE'] = False
+
         self._request['@ApImg4Ticket'] = True
 
     def add_se_tags(self, parameters: typing.Mapping, overrides=None):
