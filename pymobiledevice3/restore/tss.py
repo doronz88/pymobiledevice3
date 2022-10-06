@@ -359,6 +359,7 @@ class TSSRequest:
             self._request['UID_MODE'] = False
 
         self._request['@ApImg4Ticket'] = True
+        self._request['@BBTicket'] = True
 
     def add_se_tags(self, parameters: typing.Mapping, overrides=None):
         manifest = parameters['Manifest']
