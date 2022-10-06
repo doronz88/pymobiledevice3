@@ -258,7 +258,7 @@ class Recovery(BaseRestore):
     def send_ibec(self):
         component = 'iBEC'
         self.send_component(component)
-        self.device.irecv.send_command('go')
+        self.device.irecv.send_command('go', b_request=1)
         self.device.irecv.ctrl_transfer(0x21, 1)
 
     def send_applelogo(self, allow_missing=True):
@@ -327,7 +327,7 @@ class Recovery(BaseRestore):
             self.device.irecv.send_command(f'setenv boot-args {self.restore_boot_args}')
 
         try:
-            self.device.irecv.send_command('bootx')
+            self.device.irecv.send_command('bootx', b_request=1)
         except USBError:
             pass
 
