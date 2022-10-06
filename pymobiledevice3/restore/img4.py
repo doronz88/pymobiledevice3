@@ -1,7 +1,9 @@
+import asn1
 import logging
+import struct
 from typing import Optional
 
-import asn1
+from pymobiledevice3.exceptions import PyMobileDevice3Exception
 
 logger = logging.getLogger(__name__)
 
@@ -152,8 +154,10 @@ def asn1_find_element(index: int, type_: int, data: bytes) -> Optional[int]:
     return off
 
 
-def stitch_component(name: str, data: bytes, blob: bytes):
+def stitch_component(name: str, data: bytes, tss):
     logger.info(f'Personalizing IMG4 component {name}...')
+
+    blob = tss.ap_img4_ticket
 
     # first we need check if we have to change the tag for the given component
     tag_off = asn1_find_element(1, asn1.Numbers.IA5String, data)
@@ -201,6 +205,39 @@ def stitch_component(name: str, data: bytes, blob: bytes):
     decoder = asn1.Decoder()
     decoder.start(blob)
     encoder.write(decoder.read()[1], nr=asn1.Numbers.Sequence, typ=asn1.Types.Constructed)
+
+    # hack if we have a *-TBM entry for the give
+    tbm_dict = tss.get(f'{name}-TBM')
+    if tbm_dict is not None:
+        # now construct IM4R
+        encoder.enter(asn1.Numbers.Boolean, cls=asn1.Classes.Context)
+        encoder.enter(asn1.Numbers.Sequence)
+        encoder.write(b'IMG4', asn1.Numbers.IA5String)
+        encoder.enter(asn1.Numbers.Set)
+
+        ucon_data = tbm_dict.get('ucon')
+        if ucon_data is None:
+            raise PyMobileDevice3Exception('Missing ucon data in TBM dictionary')
+
+        ucer_data = tbm_dict.get('ucer')
+        if ucer_data is None:
+            raise PyMobileDevice3Exception('Missing ucer data in TBM dictionary')
+
+        for tbm_component in (b'ucon', b'ucer'):
+            # write priv ucon element
+            encoder.write(struct.unpack('<', tbm_component)[0], nr=asn1.Types.Primitive, cls=asn1.Classes.Private)
+
+            # write ucon IA5STRING and ucon data
+            encoder.enter(0, cls=asn1.Numbers.Sequence)
+            encoder.enter(asn1.Numbers.OctetString)
+            encoder.write(tbm_component, asn1.Numbers.IA5String)
+            encoder.leave()
+            encoder.write(ucon_data)
+            encoder.leave()
+
+        encoder.leave()
+        encoder.leave()
+        encoder.leave()
 
     encoder.leave()
 
