@@ -49,4 +49,4 @@ class Component:
             raise PyMobileDevice3Exception(f'TSS ticket must be supplied for personalizing component: {self.name}')
 
         # stitch ApImg4Ticket into IMG4 file
-        return stitch_component(self.name, self.data, self._tss.ap_img4_ticket)
+        return stitch_component(self.name, self.data, self._tss)

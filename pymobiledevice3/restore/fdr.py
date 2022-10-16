@@ -157,7 +157,9 @@ class FDRClient:
             except socket.timeout:
                 pass
 
-            self.service.sendall(buf)
+            if buf:
+                logger.debug(f'received {len(buf)} bytes')
+                self.service.sendall(buf)
 
     def handle_plist_cmd(self):
         d = self.recv_plist()

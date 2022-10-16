@@ -258,7 +258,7 @@ class Recovery(BaseRestore):
     def send_ibec(self):
         component = 'iBEC'
         self.send_component(component)
-        self.device.irecv.send_command('go')
+        self.device.irecv.send_command('go', b_request=1)
         self.device.irecv.ctrl_transfer(0x21, 1)
 
     def send_applelogo(self, allow_missing=True):
@@ -327,7 +327,7 @@ class Recovery(BaseRestore):
             self.device.irecv.send_command(f'setenv boot-args {self.restore_boot_args}')
 
         try:
-            self.device.irecv.send_command('bootx')
+            self.device.irecv.send_command('bootx', b_request=1)
         except USBError:
             pass
 
@@ -343,7 +343,11 @@ class Recovery(BaseRestore):
         # upload data to make device boot restore mode
 
         # Recovery Mode Environment:
-        build_version = self.device.irecv.getenv('build-version')
+        build_version = None
+        while not build_version:
+            # sometimes we manage to connect before iBEC actually started running
+            build_version = self.device.irecv.getenv('build-version')
+            self.reconnect_irecv()
         self.logger.info(f'iBoot build-version={build_version}')
 
         build_style = self.device.irecv.getenv('build-style')

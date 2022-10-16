@@ -72,7 +72,7 @@ def cli():
     except DeveloperModeError as e:
         logger.error(f'Failed to enable developer-mode. Error: {e}')
     except UsbmuxConnectionError:
-        logger.error(f'Failed to connect to usbmuxd socket. Make sure it\'s running.')
+        logger.error('Failed to connect to usbmuxd socket. Make sure it\'s running.')
     except BrokenPipeError:
         traceback.print_exc()
 
