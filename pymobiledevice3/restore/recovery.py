@@ -343,7 +343,11 @@ class Recovery(BaseRestore):
         # upload data to make device boot restore mode
 
         # Recovery Mode Environment:
-        build_version = self.device.irecv.getenv('build-version')
+        build_version = None
+        while not build_version:
+            # sometimes we manage to connect before iBEC actually started running
+            build_version = self.device.irecv.getenv('build-version')
+            self.reconnect_irecv()
         self.logger.info(f'iBoot build-version={build_version}')
 
         build_style = self.device.irecv.getenv('build-style')
