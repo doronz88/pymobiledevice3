@@ -748,7 +748,11 @@ class TSSRequest:
 
         return p.output()
 
-    def update(self, options):
+    def remove_key(self, key: str) -> None:
+        if key in self._request:
+            self._request.pop(key)
+
+    def update(self, options) -> None:
         self._request.update(options)
 
     def send_receive(self) -> TSSResponse:

@@ -891,6 +891,7 @@ class Restore(BaseRestore):
         self.build_identity.populate_tss_request_parameters(
             parameters, arguments['DeviceGeneratedTags']['BuildIdentityTags'])
 
+        parameters['@BBTicket'] = True
         parameters['ApProductionMode'] = arguments['MessageArgInfo']['ApProductionMode']
         parameters['ApSecurityMode'] = True
         response_ticket = arguments['DeviceGeneratedTags']['ResponseTags'][0]
@@ -898,6 +899,9 @@ class Restore(BaseRestore):
         parameters.update(arguments['DeviceGeneratedRequest'])
         request.add_common_tags(info)
         request.update(parameters)
+
+        for redacted_field in ('RequiresUIDMode', ):
+            request.remove_key(redacted_field)
 
         self.logger.info(f'Sending {updater_name} TSS request...')
         response = request.send_receive()
