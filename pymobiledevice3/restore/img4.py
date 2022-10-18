@@ -225,7 +225,7 @@ def stitch_component(name: str, data: bytes, tss):
 
         for tbm_component in (b'ucon', b'ucer'):
             # write priv ucon element
-            encoder.write(struct.unpack('<', tbm_component)[0], nr=asn1.Types.Primitive, cls=asn1.Classes.Private)
+            encoder.write(tbm_component, nr=asn1.Types.Primitive, cls=asn1.Classes.Private)
 
             # write ucon IA5STRING and ucon data
             encoder.enter(0, cls=asn1.Numbers.Sequence)
