@@ -345,9 +345,13 @@ class Recovery(BaseRestore):
         # Recovery Mode Environment:
         build_version = None
         while not build_version:
+            self.logger.debug('build-version not yet supported. reconnecting...')
+            time.sleep(1)
+
             # sometimes we manage to connect before iBEC actually started running
             build_version = self.device.irecv.getenv('build-version')
             self.reconnect_irecv()
+
         self.logger.info(f'iBoot build-version={build_version}')
 
         build_style = self.device.irecv.getenv('build-style')
