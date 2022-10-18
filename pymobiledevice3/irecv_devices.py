@@ -104,9 +104,9 @@ IRECV_DEVICES = (
                 display_name='iPhone 14'),
     IRecvDevice(product_type='iPhone14,8', hardware_model='d28ap', board_id=0x1A, chip_id=0x8110,
                 display_name='iPhone 14 Plus'),
-    IRecvDevice(product_type='iPhone15,2', hardware_model='d73ap', board_id=0x0C, chip_id=0x8110,
+    IRecvDevice(product_type='iPhone15,2', hardware_model='d73ap', board_id=0x0C, chip_id=0x8120,
                 display_name='iPhone 14 Pro'),
-    IRecvDevice(product_type='iPhone15,3', hardware_model='d74ap', board_id=0x0E, chip_id=0x8110,
+    IRecvDevice(product_type='iPhone15,3', hardware_model='d74ap', board_id=0x0E, chip_id=0x8120,
                 display_name='iPhone 14 Pro Max'),
     # iPod
     IRecvDevice(product_type='iPod1,1', hardware_model='n45ap', board_id=0x02, chip_id=0x8900,
