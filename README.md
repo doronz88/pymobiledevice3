@@ -1,7 +1,6 @@
 [![Python application](https://github.com/doronz88/pymobiledevice3/workflows/Python%20application/badge.svg)](https://github.com/doronz88/pymobiledevice3/actions/workflows/python-app.yml "Python application action")
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
 [![Downloads](https://static.pepy.tech/personalized-badge/pymobiledevice3?period=total&units=none&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/pymobiledevice3)
-[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/doronz88/pymobiledevice3.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/doronz88/pymobiledevice3/context:python)
 
 - [Description](#description)
 - [Installation](#installation)

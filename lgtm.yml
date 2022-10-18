@@ -1,3 +1,0 @@
-queries:
-  - exclude: py/clear-text-logging-sensitive-data
-  - exclude: py/insecure-protocol
