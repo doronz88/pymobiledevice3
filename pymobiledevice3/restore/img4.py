@@ -206,40 +206,32 @@ def stitch_component(name: str, data: bytes, tss):
     decoder.start(blob)
     encoder.write(decoder.read()[1], nr=asn1.Numbers.Sequence, typ=asn1.Types.Constructed)
 
+    encoder.leave()
+
     # hack if we have a *-TBM entry for the give
     tbm_dict = tss.get(f'{name}-TBM')
     if tbm_dict is not None:
         # now construct IM4R
         encoder.enter(asn1.Numbers.Boolean, cls=asn1.Classes.Context)
         encoder.enter(asn1.Numbers.Sequence)
-        encoder.write(b'IMG4', asn1.Numbers.IA5String)
+        encoder.write(b'IM4R', asn1.Numbers.IA5String)
         encoder.enter(asn1.Numbers.Set)
-
-        ucon_data = tbm_dict.get('ucon')
-        if ucon_data is None:
-            raise PyMobileDevice3Exception('Missing ucon data in TBM dictionary')
-
-        ucer_data = tbm_dict.get('ucer')
-        if ucer_data is None:
-            raise PyMobileDevice3Exception('Missing ucer data in TBM dictionary')
 
         for tbm_component in (b'ucon', b'ucer'):
             # write priv ucon element
-            encoder.write(tbm_component, nr=asn1.Types.Primitive, cls=asn1.Classes.Private)
+            encoder.enter(struct.unpack('>I', tbm_component)[0], cls=asn1.Classes.Private)
 
             # write ucon IA5STRING and ucon data
-            encoder.enter(0, cls=asn1.Numbers.Sequence)
-            encoder.enter(asn1.Numbers.OctetString)
+            encoder.enter(asn1.Numbers.Sequence)
             encoder.write(tbm_component, asn1.Numbers.IA5String)
+            encoder.write(tbm_dict[tbm_component.decode()])
             encoder.leave()
-            encoder.write(ucon_data)
+
             encoder.leave()
 
         encoder.leave()
         encoder.leave()
         encoder.leave()
-
-    encoder.leave()
 
     encoder.leave()
 
