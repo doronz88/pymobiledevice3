@@ -1,5 +1,6 @@
 import logging
 import plistlib
+import select
 import socket
 import struct
 import threading
@@ -17,6 +18,7 @@ HELLOCMD = b'HelloConn\0'
 FDR_SYNC_MSG = 0x1
 FDR_PROXY_MSG = 0x105
 FDR_PLIST_MSG = 0xbbaa
+CHUNK_SIZE = 1048576
 
 conn_port = None
 
@@ -136,30 +138,33 @@ class FDRClient:
         sockfd = socket.socket()
         sockfd.connect((host, port))
 
-        sockfd.settimeout(.01)
-        self.service.socket.settimeout(.01)
-
         while True:
-            buf = b''
-            try:
-                buf = self.service.recv(1048576)
-            except socket.timeout:
-                pass
+            readable, writable, exceptional = select.select([sockfd, self.service.socket],
+                                                            [],
+                                                            [sockfd, self.service.socket])
 
-            if buf:
-                logger.debug(f'FDR {self} got payload of {len(buf)} bytes, now try to proxy it')
-                logger.debug(f'Sending {len(buf)} bytes of data')
-                sockfd.sendall(buf)
+            for current_sock in readable:
+                if current_sock == self.service.socket:
+                    buf = self.service.recv(CHUNK_SIZE)
 
-            buf = b''
-            try:
-                buf = sockfd.recv(1048576)
-            except socket.timeout:
-                pass
+                    logger.debug(f'FDR {self} got payload of {len(buf)} bytes, now try to proxy it')
+                    logger.debug(f'Sending {len(buf)} bytes of data')
 
-            if buf:
-                logger.debug(f'received {len(buf)} bytes')
-                self.service.sendall(buf)
+                    sockfd.sendall(buf)
+                else:
+                    buf = sockfd.recv(CHUNK_SIZE)
+                    logger.debug(f'Received {len(buf)} bytes')
+                    self.service.sendall(buf)
+
+            if exceptional:
+                if exceptional[0] == sockfd:
+                    logger.debug(f'Remote closed the connection')
+                else:
+                    logger.debug(f'Local service closed the connection')
+                break
+
+        sockfd.close()
+        self.service.close()
 
     def handle_plist_cmd(self):
         d = self.recv_plist()
