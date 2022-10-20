@@ -161,12 +161,10 @@ class MuxConnection:
         sock.close()
         sock = MuxConnection.create_usbmux_socket()
 
-        if response.header.version == usbmuxd_version.BINARY:
+        if response.header.message != usbmuxd_msgtype.PLIST:
             return BinaryMuxConnection(sock)
-        elif response.header.version == usbmuxd_version.PLIST:
+        else:
             return PlistMuxConnection(sock)
-
-        raise MuxVersionError(f'usbmuxd returned unsupported version: {response.version}')
 
     def __init__(self, sock: SafeStreamSocket):
         self._sock = sock
