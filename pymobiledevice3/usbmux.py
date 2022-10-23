@@ -298,10 +298,12 @@ class PlistMuxConnection(BinaryMuxConnection):
         super().__init__(sock)
         self._version = usbmuxd_version.PLIST
 
-    def listen(self):
+    def listen(self) -> None:
         self._send_receive({'MessageType': 'Listen'})
 
     def get_pair_record(self, serial: str) -> Mapping:
+        # serials are saved inside usbmuxd without '-'
+        serial = serial.replace('-', '')
         self._send({'MessageType': 'ReadPairRecord', 'PairRecordID': serial})
         response = self._receive(self._tag - 1)
         pair_record = response.get('PairRecordData')
@@ -309,7 +311,7 @@ class PlistMuxConnection(BinaryMuxConnection):
             raise NotPairedError('device should be paired first')
         return plistlib.loads(pair_record)
 
-    def get_device_list(self, timeout: float = None):
+    def get_device_list(self, timeout: float = None) -> None:
         """ get device list synchronously without waiting the timeout """
         self.devices = []
         self._send({'MessageType': 'ListDevices'})
@@ -328,6 +330,8 @@ class PlistMuxConnection(BinaryMuxConnection):
         return self._receive(self._tag - 1)['BUID']
 
     def save_pair_record(self, serial: str, device_id: int, record_data: bytes):
+        # serials are saved inside usbmuxd without '-'
+        serial = serial.replace('-', '')
         self._send_receive({'MessageType': 'SavePairRecord',
                             'PairRecordID': serial,
                             'PairRecordData': record_data,
