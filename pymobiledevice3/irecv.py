@@ -10,7 +10,7 @@ from tqdm import trange
 from usb.core import find, Device, USBError
 from usb.util import get_string
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.exceptions import PyMobileDevice3Exception, IRecvNoDeviceConnectedError
 from pymobiledevice3.irecv_devices import IRECV_DEVICES, IRecvDevice
 
 USB_TIMEOUT = 10000
@@ -82,6 +82,14 @@ class IRecv:
     @property
     def board_id(self):
         return int(self._device_info['BDID'], 16)
+
+    @property
+    def serial_number(self) -> int:
+        return int(self._device_info['SRNM'], 16)
+
+    @property
+    def iboot_version(self) -> str:
+        return self._device_info['SRTG']
 
     @property
     def is_image4_supported(self):
@@ -225,6 +233,8 @@ class IRecv:
         self._device_info = {}
         self.mode = None
         self._find(ecid=ecid, timeout=timeout, is_recovery=is_recovery)
+        if self._device is None:
+            raise IRecvNoDeviceConnectedError('Failed to find a connected iDevice')
         self._populate_device_info()
 
         self.ap_nonce = self._copy_nonce_with_tag('NONC')
@@ -279,7 +289,7 @@ class IRecv:
     def _populate_device_info(self):
         for component in self._device.serial_number.split(' '):
             k, v = component.split(':')
-            if k == 'SRNM' and '[' in v:
+            if k in ('SRNM', 'SRTG') and '[' in v:
                 # trim the `[]`
                 v = v[1:-1]
             self._device_info[k] = v
