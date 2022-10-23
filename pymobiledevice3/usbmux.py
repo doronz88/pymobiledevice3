@@ -303,7 +303,6 @@ class PlistMuxConnection(BinaryMuxConnection):
 
     def get_pair_record(self, serial: str) -> Mapping:
         # serials are saved inside usbmuxd without '-'
-        serial = serial.replace('-', '')
         self._send({'MessageType': 'ReadPairRecord', 'PairRecordID': serial})
         response = self._receive(self._tag - 1)
         pair_record = response.get('PairRecordData')
@@ -331,7 +330,6 @@ class PlistMuxConnection(BinaryMuxConnection):
 
     def save_pair_record(self, serial: str, device_id: int, record_data: bytes):
         # serials are saved inside usbmuxd without '-'
-        serial = serial.replace('-', '')
         self._send_receive({'MessageType': 'SavePairRecord',
                             'PairRecordID': serial,
                             'PairRecordData': record_data,

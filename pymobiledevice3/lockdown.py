@@ -130,7 +130,7 @@ class LockdownClient(object):
         self.paired = False
         self.session_id = None
         self.host_id = self.generate_host_id(local_hostname)
-        self.system_buid = SYSTEM_BUID
+        self.system_buid = self.get_system_buid()
         self.label = client_name
         self.pair_record = pair_record
         self.pairing_records_cache_folder = pairing_records_cache_folder
@@ -285,6 +285,15 @@ class LockdownClient(object):
     @reconnect_on_remote_close
     def enter_recovery(self):
         return self._request('EnterRecovery')
+
+    def get_system_buid(self) -> str:
+        result = SYSTEM_BUID
+        if self.medium == Medium.USBMUX:
+            client = usbmux.create_mux()
+            if isinstance(client, PlistMuxConnection):
+                result = client.get_buid()
+            client.close()
+        return result
 
     def stop_session(self) -> Mapping:
         if self.session_id and self.service:
