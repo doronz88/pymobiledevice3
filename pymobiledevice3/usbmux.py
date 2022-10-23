@@ -3,13 +3,11 @@ import plistlib
 import socket
 import sys
 import time
-from dataclasses import dataclass
-from typing import List, Optional, Mapping
-
 from construct import Struct, Prefixed, Int32ul, GreedyBytes, StreamError, Int16ul, CString, Padding, FixedSized, \
     Enum, Const, Switch, this
-
+from dataclasses import dataclass
 from pymobiledevice3.exceptions import MuxException, MuxVersionError, NotPairedError, UsbmuxConnectionError
+from typing import List, Optional, Mapping
 
 usbmuxd_version = Enum(Int32ul,
                        BINARY=0,
@@ -150,9 +148,10 @@ class MuxConnection:
     def create():
         # first attempt to connect with possibly the wrong version header (plist protocol)
         sock = MuxConnection.create_usbmux_socket()
+
         message = usbmuxd_request.build({
-            'header': {'version': usbmuxd_version.PLIST, 'message': usbmuxd_msgtype.LISTEN, 'tag': 1},
-            'data': b''
+            'header': {'version': usbmuxd_version.PLIST, 'message': usbmuxd_msgtype.PLIST, 'tag': 1},
+            'data': plistlib.dumps({'MessageType': 'ReadBUID'})
         })
         sock.send(message)
         response = usbmuxd_response.parse_stream(sock)
