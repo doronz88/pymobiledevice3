@@ -2,6 +2,7 @@ import logging
 import os.path
 
 from cached_property import cached_property
+
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.restore.img4 import stitch_component
 from pymobiledevice3.restore.tss import TSSResponse
