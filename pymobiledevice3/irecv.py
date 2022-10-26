@@ -4,14 +4,12 @@ import math
 import struct
 import time
 from enum import Enum
-from typing import Optional
-
-from tqdm import trange
-from usb.core import find, Device, USBError
-from usb.util import get_string
-
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, IRecvNoDeviceConnectedError
 from pymobiledevice3.irecv_devices import IRECV_DEVICES, IRecvDevice
+from tqdm import trange
+from typing import Optional
+from usb.core import find, Device, USBError
+from usb.util import get_string
 
 USB_TIMEOUT = 10000
 IRECV_TRANSFER_SIZE_RECOVERY = 0x8000
@@ -296,6 +294,12 @@ class IRecv:
 
     def __str__(self):
         return str(self._device_info)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        del self._device
 
 
 def main():
