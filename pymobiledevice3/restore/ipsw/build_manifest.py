@@ -38,7 +38,7 @@ class BuildManifest:
             raise ValueError()
 
     def get_build_identity(self, device_class: str, restore_behavior: str = None, variant: str = None):
-        for build_identity in self._build_identities:
+        for build_identity in self.build_identities:
             if variant is not None:
                 if variant not in build_identity.variant:
                     continue
@@ -54,6 +54,6 @@ class BuildManifest:
         raise NoSuchBuildIdentityError('failed to find the correct BuildIdentity from the BuildManifest')
 
     def _parse_build_identities(self):
-        self._build_identities = []
+        self.build_identities = []
         for build_identity in self._manifest['BuildIdentities']:
-            self._build_identities.append(BuildIdentity(self, build_identity))
+            self.build_identities.append(BuildIdentity(self, build_identity))
