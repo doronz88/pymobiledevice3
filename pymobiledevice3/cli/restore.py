@@ -15,6 +15,7 @@ from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.recovery import Recovery, Behavior
 from pymobiledevice3.restore.restore import Restore
+from pymobiledevice3.services.diagnostics import DiagnosticsService
 
 SHELL_USAGE = """
 # use `irecv` variable to access Restore mode API
@@ -90,6 +91,16 @@ def restore_exit():
     irecv = IRecv()
     irecv.set_autoboot(True)
     irecv.reboot()
+
+
+@restore.command('restart', cls=Command)
+def restore_restart(device):
+    """ restarts device """
+    if isinstance(device, LockdownClient):
+        with DiagnosticsService(device) as diagnostics:
+            diagnostics.restart()
+    else:
+        device.reboot()
 
 
 @restore.command('tss', cls=Command)
