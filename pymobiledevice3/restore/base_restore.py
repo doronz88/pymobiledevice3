@@ -1,3 +1,5 @@
+from zipfile import ZipFile
+
 import logging
 import typing
 from enum import Enum
@@ -22,7 +24,7 @@ class BaseRestore:
     def __init__(self, ipsw: BytesIO, device: Device, tss: typing.Mapping = None,
                  behavior: Behavior = Behavior.Update, logger=None):
         self.logger = logging.getLogger(self.__class__.__name__) if logger is None else logger
-        self.ipsw = IPSW(ipsw)
+        self.ipsw = IPSW(ZipFile(ipsw))
         self.device = device
         self.tss = TSSResponse(tss) if tss is not None else None
 

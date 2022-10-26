@@ -1,7 +1,6 @@
 import logging
 import zipfile
 from contextlib import contextmanager
-from io import BytesIO
 
 from cached_property import cached_property
 from construct import Const, Default, PaddedString, Struct
@@ -25,8 +24,8 @@ cpio_odc_header = Struct(
 
 
 class IPSW:
-    def __init__(self, file: BytesIO):
-        self._archive = zipfile.ZipFile(file)
+    def __init__(self, archive: zipfile.ZipFile):
+        self._archive = archive
         self.logger = logging.getLogger(__file__)
         self.build_manifest = BuildManifest(self, self._archive.read('BuildManifest.plist'))
 

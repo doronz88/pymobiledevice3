@@ -9,7 +9,7 @@ __all__ = [
     'DeviceAlreadyInUseError', 'LockdownError', 'PairingDialogResponsePendingError', 'UserDeniedPairingError',
     'InvalidHostIDError', 'SetProhibitedError', 'MissingValueError', 'PasscodeRequiredError', 'AmfiError',
     'DeviceHasPasscodeSetError', 'NotificationTimeoutError', 'DeveloperModeError', 'ProfileError',
-    'UsbmuxConnectionError',
+    'UsbmuxConnectionError', 'IRecvError', 'IRecvNoDeviceConnectedError',
 ]
 
 
@@ -233,4 +233,12 @@ class ProfileError(PyMobileDevice3Exception):
 
 class UsbmuxConnectionError(PyMobileDevice3Exception):
     """ error connecting to usbmuxd socket """
+    pass
+
+
+class IRecvError(PyMobileDevice3Exception):
+    pass
+
+
+class IRecvNoDeviceConnectedError(IRecvError):
     pass

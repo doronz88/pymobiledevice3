@@ -3,8 +3,6 @@ import logging
 import struct
 from typing import Optional
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception
-
 logger = logging.getLogger(__name__)
 
 

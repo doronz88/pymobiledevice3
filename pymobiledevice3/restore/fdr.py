@@ -158,9 +158,9 @@ class FDRClient:
 
             if exceptional:
                 if exceptional[0] == sockfd:
-                    logger.debug(f'Remote closed the connection')
+                    logger.debug('Remote closed the connection')
                 else:
-                    logger.debug(f'Local service closed the connection')
+                    logger.debug('Local service closed the connection')
                 break
 
         sockfd.close()
