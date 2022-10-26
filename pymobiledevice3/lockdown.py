@@ -19,6 +19,7 @@ from pymobiledevice3.exceptions import LockdownError, SetProhibitedError, Passco
     ConnectionTerminatedError, IncorrectModeError, FatalPairingError, MissingValueError, CannotStopSessionError, \
     NotPairedError, PairingError, InvalidHostIDError, PasswordRequiredError, StartServiceError, \
     PairingDialogResponsePendingError, UserDeniedPairingError, ConnectionFailedError
+from pymobiledevice3.irecv_devices import IRECV_DEVICES
 from pymobiledevice3.service_connection import ServiceConnection, Medium
 from pymobiledevice3.usbmux import PlistMuxConnection
 from pymobiledevice3.utils import sanitize_ios_version
@@ -269,6 +270,22 @@ class LockdownClient(object):
     @property
     def sanitized_ios_version(self) -> str:
         return sanitize_ios_version(self.product_version)
+
+    @property
+    def hardware_model(self) -> str:
+        for irecv_device in IRECV_DEVICES:
+            if irecv_device.product_type == self.product_type:
+                return irecv_device.hardware_model
+
+    def board_id(self) -> int:
+        for irecv_device in IRECV_DEVICES:
+            if irecv_device.product_type == self.product_type:
+                return irecv_device.board_id
+
+    def chip_id(self) -> int:
+        for irecv_device in IRECV_DEVICES:
+            if irecv_device.product_type == self.product_type:
+                return irecv_device.chip_id
 
     def set_language(self, language: str) -> None:
         self.set_value(language, key='Language', domain='com.apple.international')
