@@ -112,7 +112,6 @@ class DeviceLink:
         self.status_response(0, status_dict=data)
 
     def upload_files(self, message):
-        real_size = 0
         while True:
             device_name = self._prefixed_recv()
             if not device_name:
@@ -121,15 +120,13 @@ class DeviceLink:
             size, = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
             code, = struct.unpack(CODE_FORMAT, self.service.recvall(struct.calcsize(CODE_FORMAT)))
             size -= struct.calcsize(CODE_FORMAT)
-            data = b''
-            while size and code == CODE_FILE_DATA:
-                real_size += size
-                data += self.service.recvall(size)
-                size, = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
-                code, = struct.unpack(CODE_FORMAT, self.service.recvall(struct.calcsize(CODE_FORMAT)))
-                size -= struct.calcsize(CODE_FORMAT)
+            with open(self.root_path / file_name, 'wb') as fd:
+                while size and code == CODE_FILE_DATA:
+                    fd.write(self.service.recvall(size))
+                    size, = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
+                    code, = struct.unpack(CODE_FORMAT, self.service.recvall(struct.calcsize(CODE_FORMAT)))
+                    size -= struct.calcsize(CODE_FORMAT)
             assert code == CODE_SUCCESS
-            (self.root_path / file_name).write_bytes(data)
         self.status_response(0)
 
     def get_free_disk_space(self, message):
