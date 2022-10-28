@@ -277,11 +277,13 @@ class LockdownClient(object):
             if irecv_device.product_type == self.product_type:
                 return irecv_device.hardware_model
 
+    @property
     def board_id(self) -> int:
         for irecv_device in IRECV_DEVICES:
             if irecv_device.product_type == self.product_type:
                 return irecv_device.board_id
 
+    @property
     def chip_id(self) -> int:
         for irecv_device in IRECV_DEVICES:
             if irecv_device.product_type == self.product_type:
