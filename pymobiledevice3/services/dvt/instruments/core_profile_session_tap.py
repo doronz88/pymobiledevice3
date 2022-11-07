@@ -1,3 +1,4 @@
+import time
 import typing
 import uuid
 from datetime import timezone, timedelta
@@ -638,12 +639,14 @@ class CoreProfileSessionTap(Tap):
 
         return self.stack_shot
 
-    def dump(self, out: typing.BinaryIO):
+    def dump(self, out: typing.BinaryIO, timeout: int = None):
         """
         Dump data from core profile session to a file.
         :param out: File object to write data to.
+        :param timeout: Timeout for data dumping, in seconds.
         """
-        while True:
+        start = time.time()
+        while timeout is None or time.time() <= start + timeout:
             data = self._channel.receive_message()
             if data.startswith(STACKSHOT_HEADER) or data.startswith(b'bplist'):
                 # Skip not kernel trace data.
