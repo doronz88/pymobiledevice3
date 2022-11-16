@@ -64,3 +64,7 @@ class AmfiService:
         resp = service.send_recv_plist({'action': 2})
         if not resp.get('success'):
             raise DeveloperModeError(f'enable_developer_mode_post_restart() failed: {resp}')
+
+    def status_developer_mode(self) -> bool:
+        return self._lockdown.get_value('com.apple.security.mac.amfi', 'DeveloperModeStatus')
+
