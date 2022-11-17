@@ -107,8 +107,9 @@ class CrashReportsManager:
                 self.logger.info('sysdiagnose creation has begun')
                 for filename in self.ls('DiagnosticLogs/sysdiagnose'):
                     # search for an IN_PROGRESS archive
-                    if 'IN_PROGRESS_' in filename and filename.endswith('.tar.gz'):
+                    if 'IN_PROGRESS_' in filename:
                         sysdiagnose_filename = filename.replace('IN_PROGRESS_', '')
+                        sysdiagnose_filename = f'{posixpath.splitext(sysdiagnose_filename)[0]}.tar.gz'
                         break
                 break
 
