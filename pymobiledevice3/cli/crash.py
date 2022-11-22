@@ -18,9 +18,13 @@ def crash():
 
 
 @crash.command('clear', cls=Command)
-def crash_clear(lockdown: LockdownClient):
+@click.option('-f', '--flush', is_flag=True, default=False, help='flush before clear')
+def crash_clear(lockdown: LockdownClient, flush):
     """ clear(/remove) all crash reports """
-    CrashReportsManager(lockdown).clear()
+    crash_manager = CrashReportsManager(lockdown)
+    if flush:
+        crash_manager.flush()
+    crash_manager.clear()
 
 
 @crash.command('pull', cls=Command)
