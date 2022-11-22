@@ -272,6 +272,12 @@ class LockdownClient(object):
         return sanitize_ios_version(self.product_version)
 
     @property
+    def display_name(self) -> str:
+        for irecv_device in IRECV_DEVICES:
+            if irecv_device.product_type == self.product_type:
+                return irecv_device.display_name
+
+    @property
     def hardware_model(self) -> str:
         for irecv_device in IRECV_DEVICES:
             if irecv_device.product_type == self.product_type:

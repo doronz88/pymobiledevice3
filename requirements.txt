@@ -26,3 +26,4 @@ starlette
 wsproto
 nest_asyncio
 Pillow
+inquirer
