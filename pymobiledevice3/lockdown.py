@@ -295,6 +295,10 @@ class LockdownClient(object):
             if irecv_device.product_type == self.product_type:
                 return irecv_device.chip_id
 
+    @property
+    def developer_mode_status(self) -> bool:
+        return self.get_value('com.apple.security.mac.amfi', 'DeveloperModeStatus')
+
     def set_language(self, language: str) -> None:
         self.set_value(language, key='Language', domain='com.apple.international')
 
