@@ -396,3 +396,15 @@ def select_device(udid: str = None, connection_type: str = None) -> Optional[Mux
             return device
 
     return tmp
+
+
+def select_devices_by_connection_type(connection_type: str) -> List[MuxDevice]:
+    """
+    select all UsbMux devices by connection type
+    """
+    tmp = []
+    for device in list_devices():
+        if device.connection_type == connection_type:
+            tmp.append(device)
+
+    return tmp
