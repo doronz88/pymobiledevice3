@@ -9,7 +9,7 @@ __all__ = [
     'DeviceAlreadyInUseError', 'LockdownError', 'PairingDialogResponsePendingError', 'UserDeniedPairingError',
     'InvalidHostIDError', 'SetProhibitedError', 'MissingValueError', 'PasscodeRequiredError', 'AmfiError',
     'DeviceHasPasscodeSetError', 'NotificationTimeoutError', 'DeveloperModeError', 'ProfileError',
-    'UsbmuxConnectionError', 'IRecvError', 'IRecvNoDeviceConnectedError',
+    'UsbmuxConnectionError', 'IRecvError', 'IRecvNoDeviceConnectedError', 'NoDeviceSelectedError',
 ]
 
 
@@ -241,4 +241,8 @@ class IRecvError(PyMobileDevice3Exception):
 
 
 class IRecvNoDeviceConnectedError(IRecvError):
+    pass
+
+
+class NoDeviceSelectedError(PyMobileDevice3Exception):
     pass

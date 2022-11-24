@@ -10,6 +10,7 @@ import inquirer
 from inquirer.themes import GreenPassion
 from pygments import highlight, lexers, formatters
 
+from pymobiledevice3.exceptions import NoDeviceSelectedError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.usbmux import select_devices_by_connection_type
 
@@ -88,8 +89,12 @@ class Command(click.Command):
             device_info = DeviceInfo(lockdown_client)
             devices_options.append(device_info)
 
-        device_question = [inquirer.List('device', message='choose device', choices=devices_options)]
-        return inquirer.prompt(device_question, theme=GreenPassion())['device'].lockdown_client
+        device_question = [inquirer.List('device', message='choose device', choices=devices_options, carousel=True)]
+        try:
+            result = inquirer.prompt(device_question, theme=GreenPassion(), raise_keyboard_interrupt=True)
+            return result['device'].lockdown_client
+        except KeyboardInterrupt as e:
+            raise NoDeviceSelectedError from e
 
 
 class CommandWithoutAutopair(Command):
