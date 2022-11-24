@@ -29,7 +29,7 @@ from pymobiledevice3.cli.syslog import cli as syslog_cli
 from pymobiledevice3.cli.webinspector import cli as webinspector_cli
 from pymobiledevice3.exceptions import NoDeviceConnectedError, NotPairedError, UserDeniedPairingError, \
     PairingDialogResponsePendingError, SetProhibitedError, MissingValueError, DeviceHasPasscodeSetError, \
-    DeveloperModeError, UsbmuxConnectionError
+    DeveloperModeError, UsbmuxConnectionError, NoDeviceSelectedError
 
 coloredlogs.install(level=logging.INFO)
 
@@ -73,6 +73,8 @@ def cli():
         logger.error(f'Failed to enable developer-mode. Error: {e}')
     except UsbmuxConnectionError:
         logger.error('Failed to connect to usbmuxd socket. Make sure it\'s running.')
+    except NoDeviceSelectedError:
+        return
     except BrokenPipeError:
         traceback.print_exc()
 
