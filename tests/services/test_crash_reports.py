@@ -1,0 +1,73 @@
+import glob
+import shutil
+
+import pytest
+
+from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.crash_reports import CrashReportsManager
+
+BASENAME = '__pymobiledevice3_tests'
+PATH_COMPONENT = f'/{BASENAME}'
+
+
+@pytest.fixture(scope='function')
+def crash_manager(lockdown):
+    with CrashReportsManager(lockdown) as crash_manager:
+        yield crash_manager
+
+
+@pytest.fixture(scope='module', autouse=True)
+def delete_test_dir():
+    yield
+    with LockdownClient() as lockdown_client:
+        with CrashReportsManager(lockdown_client) as crash_manager:
+            crash_manager.afc.rm(BASENAME)
+
+
+def test_ls_default(crash_manager):
+    crash_manager.afc.makedirs(PATH_COMPONENT)
+    assert PATH_COMPONENT in crash_manager.ls()
+
+
+def test_ls_path(crash_manager):
+    crash_manager.afc.makedirs(PATH_COMPONENT * 2)
+    assert (PATH_COMPONENT * 2) in crash_manager.ls(path=PATH_COMPONENT)
+
+
+@pytest.mark.parametrize('depth', [2, 3, 4])
+def test_ls_depth(crash_manager, depth):
+    path = PATH_COMPONENT * depth
+    path_list = [PATH_COMPONENT * i for i in range(1, depth + 1)]
+    crash_manager.afc.makedirs(path)
+    crash_list = crash_manager.ls(depth=depth)
+    for item in path_list:
+        assert item in crash_list
+
+
+def test_ls_depth_minus_one(crash_manager):
+    path_list = [PATH_COMPONENT, PATH_COMPONENT * 2, PATH_COMPONENT * 3]
+    crash_manager.afc.makedirs(path_list[-1])
+    crash_list = crash_manager.ls(depth=-1)
+    for path in path_list:
+        assert path in crash_list
+
+
+def test_clear(crash_manager):
+    crash_manager.afc.makedirs(PATH_COMPONENT)
+    # true indication device time we can assure that every other file should create after it
+    test_dir_birth_time = crash_manager.afc.stat(PATH_COMPONENT)['st_birthtime']
+    crash_manager.clear()
+    crash_dirlist = crash_manager.ls(depth=-1)
+    assert PATH_COMPONENT not in crash_dirlist
+    for path in crash_dirlist:
+        if crash_manager.APPSTORED_PATH != path:
+            assert crash_manager.afc.stat(path)['st_birthtime'] > test_dir_birth_time
+
+
+def test_pull(crash_manager):
+    crash_manager.afc.makedirs(PATH_COMPONENT)
+    dir_list = crash_manager.ls(depth=-1)
+    crash_manager.pull(BASENAME)
+    pulled_list = [file[len(BASENAME):] for file in glob.glob(f'{BASENAME}/**', recursive=True)][1:]  # ignore root path
+    assert sorted(dir_list) == sorted(pulled_list)
+    shutil.rmtree(BASENAME)
