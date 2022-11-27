@@ -17,7 +17,7 @@ cached-property
 requests
 cmd2
 packaging
-pygnuutils>=0.0.5
+pygnuutils>=0.0.6
 cryptography>=35.0.0
 pycrashreport>=0.0.9
 fastapi[all]
