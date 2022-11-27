@@ -10,6 +10,7 @@ __all__ = [
     'InvalidHostIDError', 'SetProhibitedError', 'MissingValueError', 'PasscodeRequiredError', 'AmfiError',
     'DeviceHasPasscodeSetError', 'NotificationTimeoutError', 'DeveloperModeError', 'ProfileError',
     'UsbmuxConnectionError', 'IRecvError', 'IRecvNoDeviceConnectedError', 'NoDeviceSelectedError',
+    'MessageNotSupportedError',
 ]
 
 
@@ -245,4 +246,8 @@ class IRecvNoDeviceConnectedError(IRecvError):
 
 
 class NoDeviceSelectedError(PyMobileDevice3Exception):
+    pass
+
+
+class MessageNotSupportedError(PyMobileDevice3Exception):
     pass
