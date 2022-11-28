@@ -1,4 +1,4 @@
-from typing import Mapping
+from typing import Mapping, List
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, NotMountedError, UnsupportedCommandError, \
     AlreadyMountedError, InternalError, DeveloperModeIsNotEnabledError, MessageNotSupportedError
@@ -12,14 +12,12 @@ class MobileImageMounterService(BaseService):
     def __init__(self, lockdown: LockdownClient):
         super().__init__(lockdown, self.SERVICE_NAME)
 
-    def list_images(self):
-        """ Lookup mounted image by its name. """
-        response = self.service.send_recv_plist({'Command': 'CopyDevices'})
-
-        if response.get('Error'):
-            raise PyMobileDevice3Exception('unsupported command')
-
-        return response
+    def copy_devices(self) -> List[Mapping]:
+        """ Copy mounted devices list. """
+        try:
+            return self.service.send_recv_plist({'Command': 'CopyDevices'})['EntryList']
+        except KeyError as e:
+            raise MessageNotSupportedError from e
 
     def lookup_image(self, image_type: str) -> bytes:
         """ Lookup mounted image by its name. """

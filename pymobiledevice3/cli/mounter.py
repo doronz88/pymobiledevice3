@@ -41,7 +41,7 @@ def mounter_list(lockdown: LockdownClient, color):
     """ list all mounted images """
     output = []
 
-    images = MobileImageMounterService(lockdown=lockdown).list_images()['EntryList']
+    images = MobileImageMounterService(lockdown=lockdown).copy_devices()
     for image in images:
         image_signature = image.get('ImageSignature')
         if image_signature is not None:
