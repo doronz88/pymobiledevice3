@@ -5,20 +5,21 @@ import os
 import pathlib
 import posixpath
 import shlex
+import stat as stat_module
 import struct
 import sys
 import tempfile
-import stat as stat_module
 from collections import namedtuple
 from datetime import datetime
+from typing import List
 
 import hexdump
 from click.exceptions import Exit
 from cmd2 import Cmd, Cmd2ArgumentParser, with_argparser
 from construct import Struct, Const, Int64ul, Container, Enum, Tell, CString, GreedyRange
 from pygments import highlight, lexers, formatters
-from pygnuutils.ls import Ls, LsStub
 from pygnuutils.cli.ls import ls as ls_cli
+from pygnuutils.ls import Ls, LsStub
 
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError
 from pymobiledevice3.lockdown import LockdownClient
@@ -290,30 +291,70 @@ class AfcService(BaseService):
             remote_path = posixpath.join(remote_path, os.path.basename(local_path))
         self._push_internal(local_path, remote_path, callback)
 
-    def _rm_single(self, filename, force=False):
+    def _rm_single(self, filename: str, force: bool = False) -> bool:
+        """ remove single file or directory
+
+         return if succeed or raise exception depending on force parameter.
+
+        :param filename: path to directory or a file
+        :param force: True for ignore exception and return False
+        :return: if succeed
+        :rtype: bool
+        """
         try:
             self._do_operation(afc_opcode_t.REMOVE_PATH, afc_rm_req_t.build({'filename': filename}))
-        except AfcException as e:
-            if not force:
-                raise e
+            return True
+        except AfcException:
+            if force:
+                return False
+            raise
 
-    def rm(self, filename, force=False):
-        if force and not self.exists(filename):
-            return
+    def rm(self, filename: str, force: bool = False) -> List[str]:
+        """ recursive removal of a directory or a file
 
+        if did not succeed, return list of undeleted filenames or raise exception depending on force parameter.
+
+        :param filename: path to directory or a file
+        :param force: True for ignore exception and return list of undeleted paths
+        :return: list of undeleted paths
+        :rtype: list[str]
+        """
+        if not self.exists(filename):
+            if not self._rm_single(filename, force=force):
+                return [filename]
+
+        # single file
         if not self.isdir(filename):
-            # single file
-            self._rm_single(filename, force=force)
-            return
+            if self._rm_single(filename, force=force):
+                return []
+            return [filename]
 
-        # directory
+        # directory content
+        undeleted_items = []
         for entry in self.listdir(filename):
             current_filename = posixpath.join(filename, entry)
             if self.isdir(current_filename):
-                self.rm(current_filename, force=force)
+                ret_undeleted_items = self.rm(current_filename, force=True)
+                undeleted_items.extend(ret_undeleted_items)
             else:
-                self._rm_single(current_filename, force=force)
-        return self._rm_single(filename, force=force)
+                if not self._rm_single(current_filename, force=True):
+                    undeleted_items.append(current_filename)
+
+        # directory path
+        try:
+            if not self._rm_single(filename, force=force):
+                undeleted_items.append(filename)
+                return undeleted_items
+        except AfcException:
+            if undeleted_items:
+                undeleted_items.append(filename)
+            else:
+                raise
+
+        if undeleted_items:
+            raise AfcException(f'Failed to delete paths: {undeleted_items}', None)
+
+        return []
 
     def get_device_info(self):
         return list_to_dict(self._do_operation(afc_opcode_t.GET_DEVINFO))
