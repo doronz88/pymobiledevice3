@@ -4,6 +4,7 @@ import posixpath
 from cmd2 import with_argparser, Cmd2ArgumentParser
 from pycrashreport.crash_report import CrashReport
 
+from pymobiledevice3.exceptions import AfcException
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcService, AfcShell
 from pymobiledevice3.services.os_trace import OsTraceService
@@ -12,6 +13,7 @@ from pymobiledevice3.services.os_trace import OsTraceService
 class CrashReportsManager:
     COPY_MOBILE_NAME = 'com.apple.crashreportcopymobile'
     CRASH_MOVER_NAME = 'com.apple.crashreportmover'
+    APPSTORED_PATH = '/com.apple.appstored'
 
     def __init__(self, lockdown: LockdownClient):
         self.logger = logging.getLogger(__name__)
@@ -31,8 +33,15 @@ class CrashReportsManager:
         """
         Clear all crash reports.
         """
+        undeleted_items = []
         for filename in self.ls('/'):
-            self.afc.rm(filename, force=True)
+            undeleted_items.extend(self.afc.rm(filename, force=True))
+
+        for item in undeleted_items:
+            # special case of file that sometimes created automatically right after delete,
+            # and then we can't delete the folder because it's not empty
+            if item != self.APPSTORED_PATH:
+                raise AfcException(f'failed to clear crash reports directory, undeleted items: {undeleted_items}', None)
 
     def ls(self, path: str = '/', depth: int = 1):
         """
