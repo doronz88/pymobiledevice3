@@ -186,7 +186,7 @@ def show_dirlist(device_info: DeviceInfo, dirname, recursive=False):
 
 
 @dvt.command('ls', cls=Command)
-@click.argument('path', type=click.Path(exists=False))
+@click.argument('path', type=click.Path(exists=False, readable=False))
 @click.option('-r', '--recursive', is_flag=True)
 def ls(lockdown: LockdownClient, path, recursive):
     """ List directory. """
