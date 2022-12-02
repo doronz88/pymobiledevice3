@@ -18,6 +18,15 @@ class CrashReportsManager:
         self.lockdown = lockdown
         self.afc = AfcService(lockdown, service_name=self.COPY_MOBILE_NAME)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def close(self) -> None:
+        self.afc.close()
+
     def clear(self):
         """
         Clear all crash reports.
