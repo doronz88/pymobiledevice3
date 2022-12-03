@@ -1,9 +1,11 @@
 import logging
 import posixpath
+from typing import List, Generator
 
 from cmd2 import with_argparser, Cmd2ArgumentParser
 from pycrashreport.crash_report import CrashReport
 
+from pymobiledevice3.exceptions import AfcException
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcService, AfcShell
 from pymobiledevice3.services.os_trace import OsTraceService
@@ -12,29 +14,46 @@ from pymobiledevice3.services.os_trace import OsTraceService
 class CrashReportsManager:
     COPY_MOBILE_NAME = 'com.apple.crashreportcopymobile'
     CRASH_MOVER_NAME = 'com.apple.crashreportmover'
+    APPSTORED_PATH = '/com.apple.appstored'
 
     def __init__(self, lockdown: LockdownClient):
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
         self.afc = AfcService(lockdown, service_name=self.COPY_MOBILE_NAME)
 
-    def clear(self):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def close(self) -> None:
+        self.afc.close()
+
+    def clear(self) -> None:
         """
         Clear all crash reports.
         """
+        undeleted_items = []
         for filename in self.ls('/'):
-            self.afc.rm(filename, force=True)
+            undeleted_items.extend(self.afc.rm(filename, force=True))
 
-    def ls(self, path: str = '/', depth: int = 1):
+        for item in undeleted_items:
+            # special case of file that sometimes created automatically right after delete,
+            # and then we can't delete the folder because it's not empty
+            if item != self.APPSTORED_PATH:
+                raise AfcException(f'failed to clear crash reports directory, undeleted items: {undeleted_items}', None)
+
+    def ls(self, path: str = '/', depth: int = 1) -> List[str]:
         """
-        List file and folder in the crash reports directory.
-        :param path: Path to list, relative to the crash reports directory.
+        List file and folder in the crash report's directory.
+        :param path: Path to list, relative to the crash report's directory.
         :param depth: Listing depth, -1 to list infinite.
         :return: List of files listed.
         """
-        return list(self.afc.dirlist(path, depth))[1:]
+        return list(self.afc.dirlist(path, depth))[1:]  # skip the root path '/'
 
-    def pull(self, out: str, entry: str = '/', erase: bool = False):
+    def pull(self, out: str, entry: str = '/', erase: bool = False) -> None:
         """
         Pull crash reports from the device.
         :param out: Directory to pull crash reports to.
@@ -53,12 +72,12 @@ class CrashReportsManager:
             else:
                 self.afc.rm(entry, force=True)
 
-    def flush(self):
+    def flush(self) -> None:
         """ Trigger com.apple.crashreportmover to flush all products into CrashReports directory """
         ack = b'ping\x00'
         assert ack == self.lockdown.start_service(self.CRASH_MOVER_NAME).recvall(len(ack))
 
-    def watch(self, name: str = None, raw: bool = False):
+    def watch(self, name: str = None, raw: bool = False) -> Generator[str, None, None]:
         """
         Monitor creation of new crash reports for a given process name.
 
@@ -87,7 +106,7 @@ class CrashReportsManager:
                 else:
                     yield crash_report
 
-    def get_new_sysdiagnose(self, out: str, erase: bool = True):
+    def get_new_sysdiagnose(self, out: str, erase: bool = True) -> None:
         """
         Monitor the creation of a newly created sysdiagnose archive and pull it
         :param out: filename
@@ -130,9 +149,9 @@ class CrashReportsShell(AfcShell):
         self.complete_parse = self._complete_first_arg
 
     @with_argparser(parse_parser)
-    def do_parse(self, args):
+    def do_parse(self, args) -> None:
         self.poutput(CrashReport(self.afc.get_file_contents(args.filename).decode(), filename=args.filename))
 
     @with_argparser(clear_parser)
-    def do_clear(self, args):
+    def do_clear(self, args) -> None:
         self.manager.clear()
