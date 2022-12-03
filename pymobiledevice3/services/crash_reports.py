@@ -1,5 +1,6 @@
 import logging
 import posixpath
+from typing import List, Generator
 
 from cmd2 import with_argparser, Cmd2ArgumentParser
 from pycrashreport.crash_report import CrashReport
@@ -29,7 +30,7 @@ class CrashReportsManager:
     def close(self) -> None:
         self.afc.close()
 
-    def clear(self):
+    def clear(self) -> None:
         """
         Clear all crash reports.
         """
@@ -43,16 +44,16 @@ class CrashReportsManager:
             if item != self.APPSTORED_PATH:
                 raise AfcException(f'failed to clear crash reports directory, undeleted items: {undeleted_items}', None)
 
-    def ls(self, path: str = '/', depth: int = 1):
+    def ls(self, path: str = '/', depth: int = 1) -> List[str]:
         """
-        List file and folder in the crash reports directory.
-        :param path: Path to list, relative to the crash reports directory.
+        List file and folder in the crash report's directory.
+        :param path: Path to list, relative to the crash report's directory.
         :param depth: Listing depth, -1 to list infinite.
         :return: List of files listed.
         """
-        return list(self.afc.dirlist(path, depth))[1:]
+        return list(self.afc.dirlist(path, depth))[1:]  # skip the root path '/'
 
-    def pull(self, out: str, entry: str = '/', erase: bool = False):
+    def pull(self, out: str, entry: str = '/', erase: bool = False) -> None:
         """
         Pull crash reports from the device.
         :param out: Directory to pull crash reports to.
@@ -71,12 +72,12 @@ class CrashReportsManager:
             else:
                 self.afc.rm(entry, force=True)
 
-    def flush(self):
+    def flush(self) -> None:
         """ Trigger com.apple.crashreportmover to flush all products into CrashReports directory """
         ack = b'ping\x00'
         assert ack == self.lockdown.start_service(self.CRASH_MOVER_NAME).recvall(len(ack))
 
-    def watch(self, name: str = None, raw: bool = False):
+    def watch(self, name: str = None, raw: bool = False) -> Generator[str, None, None]:
         """
         Monitor creation of new crash reports for a given process name.
 
@@ -105,7 +106,7 @@ class CrashReportsManager:
                 else:
                     yield crash_report
 
-    def get_new_sysdiagnose(self, out: str, erase: bool = True):
+    def get_new_sysdiagnose(self, out: str, erase: bool = True) -> None:
         """
         Monitor the creation of a newly created sysdiagnose archive and pull it
         :param out: filename
@@ -148,9 +149,9 @@ class CrashReportsShell(AfcShell):
         self.complete_parse = self._complete_first_arg
 
     @with_argparser(parse_parser)
-    def do_parse(self, args):
+    def do_parse(self, args) -> None:
         self.poutput(CrashReport(self.afc.get_file_contents(args.filename).decode(), filename=args.filename))
 
     @with_argparser(clear_parser)
-    def do_clear(self, args):
+    def do_clear(self, args) -> None:
         self.manager.clear()
