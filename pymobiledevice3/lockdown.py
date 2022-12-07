@@ -18,7 +18,7 @@ from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import LockdownError, SetProhibitedError, PasscodeRequiredError, \
     ConnectionTerminatedError, IncorrectModeError, FatalPairingError, MissingValueError, CannotStopSessionError, \
     NotPairedError, PairingError, InvalidHostIDError, PasswordRequiredError, StartServiceError, \
-    PairingDialogResponsePendingError, UserDeniedPairingError, ConnectionFailedError
+    PairingDialogResponsePendingError, UserDeniedPairingError, ConnectionFailedError, InvalidServiceError
 from pymobiledevice3.irecv_devices import IRECV_DEVICES
 from pymobiledevice3.service_connection import ServiceConnection, Medium
 from pymobiledevice3.usbmux import PlistMuxConnection
@@ -563,7 +563,8 @@ class LockdownClient(object):
                                 'UserDeniedPairing': UserDeniedPairingError,
                                 'InvalidHostID': InvalidHostIDError,
                                 'SetProhibited': SetProhibitedError,
-                                'MissingValue': MissingValueError, }
+                                'MissingValue': MissingValueError,
+                                'InvalidService': InvalidServiceError, }
             raise exception_errors.get(error, LockdownError)(error)
 
         # iOS < 5: 'Error' is not present, so we need to check the 'Result' instead

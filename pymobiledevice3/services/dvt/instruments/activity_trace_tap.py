@@ -64,11 +64,11 @@ def decode_message_format(message) -> str:
             uint64 = struct.unpack('<Q', data.ljust(8, b'\x00'))[0]
             s += str(uint64)
         elif type_ in ('data', 'uuid'):
-            s += b''.join(data).hex()
-        elif type_ == 'errno-value':
-            s += str(data)
+            if data is not None:
+                s += b''.join(data).hex()
         else:
-            s += data
+            # by default, make sure the data can be concatenated
+            s += str(data)
     return s
 
 
