@@ -7,7 +7,7 @@ import asn1
 import requests
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
-from pymobiledevice3.restore.img4 import img4_get_component_tag
+from pymobiledevice3.restore.img4 import COMPONENT_FOURCC
 from pymobiledevice3.utils import bytes_to_uint, plist_access_path
 
 TSS_CONTROLLER_ACTION_URL = 'http://gs.apple.com/TSS/controller?action=2'
@@ -730,7 +730,7 @@ class TSSRequest:
                     comp = manifest[k]['Info'].get('Img4PayloadType')
 
                 if comp is None:
-                    comp = img4_get_component_tag(k)
+                    comp = COMPONENT_FOURCC.get(k)
 
                 if comp is None:
                     raise NotImplementedError(f'Unhandled component {k} - can\'t create manifest')

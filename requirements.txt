@@ -27,3 +27,4 @@ wsproto
 nest_asyncio
 Pillow
 inquirer
+pyimg4>=0.7

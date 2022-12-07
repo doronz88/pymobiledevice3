@@ -1,17 +1,17 @@
 import asyncio
-from dataclasses import dataclass, fields
-from enum import Enum
+import json
 import logging
 import uuid
-import json
+from dataclasses import dataclass, fields
+from enum import Enum
 
 import nest_asyncio
 
+from pymobiledevice3.exceptions import WebInspectorNotEnabled, RemoteAutomationNotEnabled
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.service_connection import ServiceConnection
-from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 from pymobiledevice3.services.web_protocol.automation_session import AutomationSession
-from pymobiledevice3.exceptions import WebInspectorNotEnabled, RemoteAutomationNotEnabled
+from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 
 SAFARI = 'com.apple.mobilesafari'
 
@@ -111,7 +111,7 @@ class WebinspectorService:
         self.loop = loop
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
-        self.service = None  # type: ServiceConnection
+        self.service: ServiceConnection = None
         self.connection_id = str(uuid.uuid4()).upper()
         self.state = None
         self.connected_application = {}
@@ -128,7 +128,7 @@ class WebinspectorService:
             '_rpc_applicationSentData:': self._handle_application_sent_data,
             '_rpc_applicationDisconnected:': self._handle_application_disconnected,
         }
-        self._recv_task = None  # type: asyncio.Task | None
+        self._recv_task: asyncio.Task | None = None
 
     def connect(self, timeout=None):
         self.service = self.await_(self.lockdown.aio_start_service(self.SERVICE_NAME))
