@@ -65,10 +65,9 @@ def decode_message_format(message) -> str:
             s += str(uint64)
         elif type_ in ('data', 'uuid'):
             s += b''.join(data).hex()
-        elif type_ == 'errno-value':
-            s += str(data)
         else:
-            s += data
+            # by default, make sure the data can be concatenated
+            s += str(data)
     return s
 
 
