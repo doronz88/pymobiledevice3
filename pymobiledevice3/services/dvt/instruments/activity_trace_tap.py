@@ -63,10 +63,10 @@ def decode_message_format(message) -> str:
         elif 'decimal' in type_:
             uint64 = struct.unpack('<Q', data.ljust(8, b'\x00'))[0]
             s += str(uint64)
-        elif type_ == 'data':
+        elif type_ in ('data', 'uuid'):
             s += b''.join(data).hex()
-        elif type_ == 'uuid':
-            s += b''.join(data).hex()
+        elif type_ == 'errno-value':
+            s += str(data)
         else:
             s += data
     return s
@@ -219,7 +219,7 @@ class ActivityTraceTap(Tap):
 
         Message = dataclasses.make_dataclass('message', [c.replace('-', '_') for c in columns])
         message = Message(*row)
-        message.process = struct.unpack('<I', message.process[0].ljust(4, b'\x00'))[0]
+        message.process = 0 if message.process is None else struct.unpack('<I', message.process[0].ljust(4, b'\x00'))[0]
         message.thread = struct.unpack('<I', message.thread[0].ljust(4, b'\x00'))[0]
 
         string_fields = ('message_type', 'format_string', 'subsystem', 'category', 'sender_image_path',
