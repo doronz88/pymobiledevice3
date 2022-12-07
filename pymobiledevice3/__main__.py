@@ -30,7 +30,7 @@ from pymobiledevice3.cli.webinspector import cli as webinspector_cli
 from pymobiledevice3.exceptions import NoDeviceConnectedError, NotPairedError, UserDeniedPairingError, \
     PairingDialogResponsePendingError, SetProhibitedError, MissingValueError, DeviceHasPasscodeSetError, \
     DeveloperModeError, UsbmuxConnectionError, NoDeviceSelectedError, MessageNotSupportedError, InternalError, \
-    InvalidServiceError
+    DeveloperModeIsNotEnabledError, InvalidServiceError
 
 coloredlogs.install(level=logging.INFO)
 
@@ -78,6 +78,9 @@ def cli():
         logger.error('Message not supported for this iOS version')
     except InternalError:
         logger.error('Internal Error')
+    except DeveloperModeIsNotEnabledError:
+        logger.error('Developer Mode is disabled. You can try to enable it using: '
+                     'python3 -m pymobiledevice3 amfi enable-developer-mode')
     except InvalidServiceError:
         logger.error('Failed to access an invalid lockdown service, possibly from DeveloperDiskImage.dmg or a Cryptex. '
                      'You may try: python3 -m pymobiledevice3 mounter auto-mount')
