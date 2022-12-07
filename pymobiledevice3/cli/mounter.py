@@ -1,13 +1,9 @@
-import plistlib
-
-from typing import IO
-
-import os
-
 import logging
+import plistlib
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import IO
 
 import click
 import requests

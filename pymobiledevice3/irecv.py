@@ -4,12 +4,14 @@ import math
 import struct
 import time
 from enum import Enum
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, IRecvNoDeviceConnectedError
-from pymobiledevice3.irecv_devices import IRECV_DEVICES, IRecvDevice
-from tqdm import trange
 from typing import Optional
+
+from tqdm import trange
 from usb.core import find, Device, USBError
 from usb.util import get_string
+
+from pymobiledevice3.exceptions import PyMobileDevice3Exception, IRecvNoDeviceConnectedError
+from pymobiledevice3.irecv_devices import IRECV_DEVICES, IRecvDevice
 
 USB_TIMEOUT = 10000
 IRECV_TRANSFER_SIZE_RECOVERY = 0x8000
@@ -60,9 +62,9 @@ logger = logging.getLogger(__name__)
 
 class IRecv:
     def __init__(self, ecid=None, timeout=0xffffffff, is_recovery=None):
-        self.mode = None  # type: Optional[Mode]
+        self.mode: Optional[Mode] = None
         self._device_info = {}
-        self._device = None  # type: Optional[Device]
+        self._device: Optional[Device] = None
         self._reinit(ecid=ecid, timeout=timeout, is_recovery=is_recovery)
 
     @property

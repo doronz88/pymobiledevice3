@@ -42,13 +42,13 @@ class Restore(BaseRestore):
     def __init__(self, ipsw: BytesIO, device: Device, tss=None, behavior: Behavior = Behavior.Update, ignore_fdr=False):
         super().__init__(ipsw, device, tss, behavior, logger=logging.getLogger(__name__))
         self.recovery = Recovery(ipsw, device, tss=tss, behavior=behavior)
-        self.bbtss = None  # type: Optional[TSSResponse]
-        self._restored = None  # type: Optional[RestoredClient]
+        self.bbtss: Optional[TSSResponse] = None
+        self._restored: Optional[RestoredClient] = None
         self._restore_finished = False
 
         # used when ignore_fdr=True, to store an active FDR connection just to make the device believe it can actually
         # perform an FDR communication, but without really establishing any
-        self._fdr = None  # type: Optional[ServiceConnection]
+        self._fdr: Optional[ServiceConnection] = None
         self._ignore_fdr = ignore_fdr
 
         # query preflight info while device may still be in normal mode
@@ -900,7 +900,7 @@ class Restore(BaseRestore):
         request.add_common_tags(info)
         request.update(parameters)
 
-        for redacted_field in ('RequiresUIDMode', ):
+        for redacted_field in ('RequiresUIDMode',):
             request.remove_key(redacted_field)
 
         self.logger.info(f'Sending {updater_name} TSS request...')
