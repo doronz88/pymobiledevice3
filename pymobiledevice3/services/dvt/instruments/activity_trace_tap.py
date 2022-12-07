@@ -63,10 +63,10 @@ def decode_message_format(message) -> str:
         elif 'decimal' in type_:
             uint64 = struct.unpack('<Q', data.ljust(8, b'\x00'))[0]
             s += str(uint64)
-        elif type_ == 'data':
+        elif type_ in ('data', 'uuid'):
             s += b''.join(data).hex()
-        elif type_ == 'uuid':
-            s += b''.join(data).hex()
+        elif type_ == 'errno-value':
+            s += str(data)
         else:
             s += data
     return s
