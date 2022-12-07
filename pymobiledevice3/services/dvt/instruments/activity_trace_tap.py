@@ -64,7 +64,8 @@ def decode_message_format(message) -> str:
             uint64 = struct.unpack('<Q', data.ljust(8, b'\x00'))[0]
             s += str(uint64)
         elif type_ in ('data', 'uuid'):
-            s += b''.join(data).hex()
+            if data is not None:
+                s += b''.join(data).hex()
         else:
             # by default, make sure the data can be concatenated
             s += str(data)
