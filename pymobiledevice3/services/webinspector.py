@@ -12,6 +12,7 @@ from pymobiledevice3.exceptions import WebInspectorNotEnabled, RemoteAutomationN
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.web_protocol.automation_session import AutomationSession
+from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 
 SAFARI = 'com.apple.mobilesafari'
@@ -172,6 +173,10 @@ class WebinspectorService:
             self.await_(asyncio.sleep(0))
         return AutomationSession(SessionProtocol(self, session_id, app, page))
 
+    async def inspector_session(self, app: Application, page: Page) -> InspectorSession:
+        session_id = str(uuid.uuid4()).upper()
+        return await InspectorSession.create(SessionProtocol(self, session_id, app, page, method_prefix=''))
+
     def get_open_pages(self):
         apps = {}
         self.await_(asyncio.gather(*[self._forward_get_listing(app) for app in self.connected_application]))
@@ -188,7 +193,7 @@ class WebinspectorService:
     async def send_socket_data(self, session_id, app_id, page_id, data):
         await self._forward_socket_data(session_id, app_id, page_id, data)
 
-    async def start_cdp(self, session_id, app_id, page_id):
+    async def setup_inspector_socket(self, session_id, app_id, page_id):
         await self._forward_socket_setup(session_id, app_id, page_id, pause=False)
 
     def find_page_id(self, page_id):

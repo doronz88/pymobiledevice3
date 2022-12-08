@@ -165,7 +165,7 @@ class CdpTarget:
         """
         :param pymobiledevice3.services.web_protocol.session_protocol.SessionProtocol protocol: Session protocol.
         """
-        await protocol.inspector.start_cdp(protocol.id_, protocol.app.id_, protocol.page.id_)
+        await protocol.inspector.setup_inspector_socket(protocol.id_, protocol.app.id_, protocol.page.id_)
         while not protocol.inspector.wir_events:
             await asyncio.sleep(0)
         created = protocol.inspector.wir_events.pop(0)

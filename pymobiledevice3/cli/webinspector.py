@@ -1,16 +1,16 @@
 import asyncio
 
-import click
 import IPython
+import click
 import uvicorn
 from pygments import highlight, lexers, formatters
 
 from pymobiledevice3.cli.cli_common import Command, wait_return
 from pymobiledevice3.exceptions import WirError
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI
-from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
 from pymobiledevice3.services.web_protocol.cdp_server import app
+from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
+from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI
 
 
 @click.group()
