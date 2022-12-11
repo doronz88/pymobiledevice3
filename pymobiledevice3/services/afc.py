@@ -675,7 +675,7 @@ class AfcLsStub(LsStub):
 
 
 class AfcShell(Cmd):
-    def __init__(self, lockdown: LockdownClient, service_name='com.apple.afc', completekey='tab'):
+    def __init__(self, lockdown: LockdownClient, service_name='com.apple.afc', completekey='tab', afc_service=None):
         # bugfix: prevent the Cmd instance from trying to parse click's arguments
         sys.argv = sys.argv[:1]
 
@@ -685,7 +685,7 @@ class AfcShell(Cmd):
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
         self.service_name = service_name
-        self.afc = AfcService(self.lockdown, service_name=service_name)
+        self.afc = afc_service or AfcService(self.lockdown, service_name=service_name)
         self.curdir = '/'
         self.complete_edit = self._complete_first_arg
         self.complete_cd = self._complete_first_arg
