@@ -25,4 +25,4 @@ class HouseArrestService(AfcService):
     def shell(self, application_id, cmd='VendContainer'):
         res = self.send_command(application_id, cmd)
         if res:
-            AfcShell(self.lockdown).cmdloop()
+            AfcShell(self.lockdown, afc_service=self).cmdloop()
