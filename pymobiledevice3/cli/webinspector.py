@@ -1,17 +1,22 @@
 import asyncio
+import logging
 
 import IPython
 import click
+import inquirer
 import uvicorn
+from inquirer.themes import GreenPassion
 from pygments import highlight, lexers, formatters
 
 from pymobiledevice3.cli.cli_common import Command, wait_return
-from pymobiledevice3.exceptions import WirError
+from pymobiledevice3.cli.cli_common import print_json
+from pymobiledevice3.exceptions import WirError, InspectorEvaluateError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
-from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI
+from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI, Application, Page
 
+logger = logging.getLogger(__name__)
 
 @click.group()
 def cli():
@@ -23,6 +28,12 @@ def cli():
 def webinspector():
     """ webinspector options """
     pass
+
+
+def reload_pages(inspector: WebinspectorService):
+    inspector.get_open_pages()
+    # Best effort.
+    inspector.flush_input(2)
 
 
 @webinspector.command(cls=Command)
@@ -38,9 +49,7 @@ def opened_tabs(lockdown: LockdownClient, verbose):
     inspector.connect()
     while not inspector.connected_application:
         inspector.flush_input()
-    inspector.get_open_pages()
-    # Best effort.
-    inspector.flush_input(2)
+    reload_pages(inspector)
     for app_id, app_ in inspector.connected_application.items():
         if app_id not in inspector.application_pages:
             continue
@@ -157,6 +166,50 @@ def jsshell(lockdown: LockdownClient, url):
     finally:
         session.stop_session()
         inspector.close()
+
+
+async def inspector_js_loop(inspector: WebinspectorService, app: Application, page: Page):
+    inspector_session = await inspector.inspector_session(app, page)
+    await inspector_session.runtime_enable()
+    while True:
+        exp = input('> ')
+        try:
+            print_json(await inspector_session.runtime_evaluate(exp))
+        except InspectorEvaluateError:
+            pass
+        except NotImplementedError:
+            pass
+
+
+@webinspector.command(cls=Command)
+@click.option('-t', '--timeout', default=3, show_default=True, type=float)
+def inspector_jsshell(lockdown: LockdownClient, timeout):
+    """
+    Opt in:
+
+        Settings -> Safari -> Advanced -> Web Inspector
+    """
+    inspector = WebinspectorService(lockdown=lockdown)
+    inspector.connect(timeout)
+    try:
+        safari_app = inspector.open_app(SAFARI)
+    except TimeoutError:
+        logger.error(f'Unable to launch application by bundle `{SAFARI}`')
+        return
+
+    reload_pages(inspector)
+    available_pages = (list(inspector.get_open_pages().get('Safari', [])))
+    if not available_pages:
+        logger.error('Unable to find available pages (try to unlock device)')
+        return
+    else:
+        page_query = [inquirer.List('page', message='choose page', choices=available_pages, carousel=True)]
+        try:
+            page = inquirer.prompt(page_query, theme=GreenPassion(), raise_keyboard_interrupt=True)['page']
+        except KeyboardInterrupt:
+            raise
+
+    asyncio.run(inspector_js_loop(inspector, safari_app, page))
 
 
 udid = ''

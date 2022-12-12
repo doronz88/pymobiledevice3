@@ -71,6 +71,9 @@ class Page:
         for field in fields(self):
             setattr(self, field.name, getattr(new_p, field.name))
 
+    def __str__(self):
+        return f'id: {self.id_}, title: {self.web_title}, url: {self.web_url}'
+
 
 @dataclass
 class Application:
