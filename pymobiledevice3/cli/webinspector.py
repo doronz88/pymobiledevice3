@@ -140,7 +140,8 @@ def shell(lockdown: LockdownClient):
 
 @webinspector.command(cls=Command)
 @click.argument('url', required=False, default='')
-def automation_jsshell(lockdown: LockdownClient, url):
+@click.option('-t', '--timeout', default=3, show_default=True, type=float)
+def automation_jsshell(lockdown: LockdownClient, url, timeout):
     """
     Opt in:
 
@@ -149,7 +150,7 @@ def automation_jsshell(lockdown: LockdownClient, url):
         Settings -> Safari -> Advanced -> Remote Automation
     """
     inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect()
+    inspector.connect(timeout)
     safari = inspector.open_app(SAFARI)
     session = inspector.automation_session(safari)
     driver = WebDriver(session)
