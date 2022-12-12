@@ -140,7 +140,7 @@ def shell(lockdown: LockdownClient):
 
 @webinspector.command(cls=Command)
 @click.argument('url', required=False, default='')
-def jsshell(lockdown: LockdownClient, url):
+def automation_jsshell(lockdown: LockdownClient, url):
     """
     Opt in:
 
