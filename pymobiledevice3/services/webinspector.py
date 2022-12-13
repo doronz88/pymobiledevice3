@@ -4,6 +4,7 @@ import logging
 import uuid
 from dataclasses import dataclass, fields
 from enum import Enum
+from typing import Union
 
 import nest_asyncio
 
@@ -179,10 +180,10 @@ class WebinspectorService:
                 apps[self.connected_application[app].name] = self.application_pages[app].values()
         return apps
 
-    def open_app(self, bundle) -> Application:
+    def open_app(self, bundle: str, timeout: Union[float, int] = 3) -> Application:
         self.await_(self._request_application_launch(bundle))
         self.get_open_pages()
-        return self.await_(self._wait_for_application(bundle))
+        return self.await_(asyncio.wait_for(self._wait_for_application(bundle), timeout=timeout))
 
     async def send_socket_data(self, session_id, app_id, page_id, data):
         await self._forward_socket_data(session_id, app_id, page_id, data)
