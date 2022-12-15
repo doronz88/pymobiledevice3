@@ -90,7 +90,9 @@ class ActivityTraceTap(Tap):
             'predicate': '(messageType == info OR messageType == debug OR messageType == default OR '
                          'messageType == error OR messageType == fault)',
             'signpostsAndLogs': 1,
+            'trackPidToExecNameMapping': True,
             'enableHTTPArchiveLogging': enable_http_archive_logging,
+            'targetPID': -3,  # all Process
             'trackExpiredPIDs': 1,
             'ur': 500,
         }
