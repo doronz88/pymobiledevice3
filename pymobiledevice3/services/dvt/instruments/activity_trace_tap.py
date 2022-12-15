@@ -75,7 +75,7 @@ def decode_message_format(message) -> str:
 class ActivityTraceTap(Tap):
     IDENTIFIER = 'com.apple.instruments.server.services.activitytracetap'
 
-    def __init__(self, dvt):
+    def __init__(self, dvt, enable_http_archive_logging=False):
         # TODO:
         #   reverse: [DTOSLogLoader _handleRecord:], DTTableRowEncoder::*
         #   to understand each row's structure.
@@ -90,7 +90,9 @@ class ActivityTraceTap(Tap):
             'predicate': '(messageType == info OR messageType == debug OR messageType == default OR '
                          'messageType == error OR messageType == fault)',
             'signpostsAndLogs': 1,
-            'targetPID': -1,  # all Process
+            'trackPidToExecNameMapping': True,
+            'enableHTTPArchiveLogging': enable_http_archive_logging,
+            'targetPID': -3,  # all Process
             'trackExpiredPIDs': 1,
             'ur': 500,
         }
