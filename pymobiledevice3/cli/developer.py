@@ -897,3 +897,11 @@ def check_out(lockdown: LockdownClient):
     """ owner check-out """
     with DtDeviceArbitration(lockdown) as device_arbitration:
         device_arbitration.check_out()
+
+
+@dvt.command('har', cls=Command)
+def dvt_har(lockdown: LockdownClient):
+    """ enable har-logging """
+    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+        with ActivityTraceTap(dvt, enable_http_archive_logging=True):
+            wait_return()
