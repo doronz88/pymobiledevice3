@@ -40,6 +40,13 @@ class InspectorSession:
         self.message_id = 1
         self._dispatch_message_responses = {}
 
+        self.response_methods = {
+            'Target.targetCreated': self._target_created,
+            'Target.targetDestroyed': self._target_destroyed,
+            'Target.dispatchMessageFromTarget': self._target_dispatch_message_from_target,
+            'Target.didCommitProvisionalTarget': self._target_did_commit_provisional_target,
+        }
+
         self.remote_object_types = {
             'object': self._parse_object,
             'function': self._parse_undefined,
@@ -66,6 +73,10 @@ class InspectorSession:
         logger.info(f'Created: {target_id}')
         target = cls(protocol, target_id)
         return target
+
+    def set_target_id(self, target_id):
+        self.target_id = target_id
+        logger.info(f'Changed to: {target_id}')
 
     async def runtime_enable(self):
         await self.send_and_receive({'method': 'Runtime.enable', 'params': {}})
@@ -114,8 +125,8 @@ class InspectorSession:
 
             response = self.protocol.inspector.wir_events.pop(0)
             response_method = response['method']
-            if response_method == 'Target.dispatchMessageFromTarget':
-                self._target_dispatch_message_from_target(response)
+            if response_method in self.response_methods:
+                self.response_methods[response_method](response)
             else:
                 logger.error(self.__ERROR_SUPPORT_MESSAGE, response)
                 raise RuntimeError(self.__ERROR_SUPPORT_MESSAGE)
@@ -126,9 +137,19 @@ class InspectorSession:
                 return self._dispatch_message_responses.pop(message_id)
             await asyncio.sleep(0)
 
+    # -- RESPONSE METHODS
     def _target_dispatch_message_from_target(self, response: Mapping):
         receive_message_id = json.loads(response['params']['message'])['id']
         self._dispatch_message_responses[receive_message_id] = response
+
+    def _target_created(self, response: Mapping):
+        pass
+
+    def _target_destroyed(self, response: Mapping):
+        pass
+
+    def _target_did_commit_provisional_target(self, response: Mapping):
+        self.set_target_id(response['params']['newTargetId'])
 
     # -- PARSE OBJECTS
     def _parse_target_dispatch_message(self, response: Mapping):
