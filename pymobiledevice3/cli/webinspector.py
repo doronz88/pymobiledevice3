@@ -6,10 +6,17 @@ import click
 import inquirer
 import uvicorn
 from inquirer.themes import GreenPassion
+from prompt_toolkit import PromptSession
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.lexers import PygmentsLexer
+from prompt_toolkit.patch_stdout import patch_stdout
+from prompt_toolkit.styles import style_from_pygments_cls
 from pygments import highlight, lexers, formatters
+from pygments.styles import get_style_by_name
 
 from pymobiledevice3.cli.cli_common import Command, wait_return
-from pymobiledevice3.cli.cli_common import print_json
+from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import WirError, InspectorEvaluateError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_server import app
@@ -17,6 +24,7 @@ from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
 from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI, Application, Page
 
 logger = logging.getLogger(__name__)
+
 
 @click.group()
 def cli():
@@ -172,12 +180,28 @@ def automation_jsshell(lockdown: LockdownClient, url, timeout):
 async def inspector_js_loop(inspector: WebinspectorService, app: Application, page: Page):
     inspector_session = await inspector.inspector_session(app, page)
     await inspector_session.runtime_enable()
+
+    webinspector_history_path = get_home_folder() / 'webinspector_history'
+    session = PromptSession(lexer=PygmentsLexer(lexers.JavascriptLexer), auto_suggest=AutoSuggestFromHistory(),
+                            style=style_from_pygments_cls(get_style_by_name('stata-dark')),
+                            history=FileHistory(str(webinspector_history_path)))
     while True:
-        exp = input('> ')
         try:
-            print_json(await inspector_session.runtime_evaluate(exp))
-        except InspectorEvaluateError:
+            with patch_stdout(True):
+                exp = await session.prompt_async('> ')
+
+            if not exp.strip():
+                continue
+
+            result = await inspector_session.runtime_evaluate(exp)
+            colorful_result = highlight(f'{result}', lexers.JavascriptLexer(),
+                                        formatters.TerminalTrueColorFormatter(style='stata-dark'))
+            print(colorful_result, end='')
+
+        except (KeyboardInterrupt, InspectorEvaluateError):  # KeyboardInterrupt Control-C
             pass
+        except EOFError:  # Control-D
+            return
 
 
 @webinspector.command(cls=Command)
