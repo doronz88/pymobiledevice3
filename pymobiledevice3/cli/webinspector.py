@@ -18,7 +18,7 @@ from pygments.styles import get_style_by_name
 from pymobiledevice3.cli.cli_common import Command, wait_return
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import WirError, InspectorEvaluateError, LaunchApplicationTimeoutError, \
-    WebInspectorNotEnabledError
+    WebInspectorNotEnabledError, RemoteAutomationNotEnabled
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
@@ -176,8 +176,14 @@ def automation_jsshell(lockdown: LockdownClient, url, timeout):
         inspector.connect(timeout)
     except WebInspectorNotEnabledError:
         raise
+
     safari = inspector.open_app(SAFARI)
-    session = inspector.automation_session(safari)
+    try:
+        session = inspector.automation_session(safari)
+    except RemoteAutomationNotEnabled:
+        logger.error('Remote automation is not enable')
+        return
+
     driver = WebDriver(session)
     try:
         driver.start_session()
