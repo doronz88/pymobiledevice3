@@ -17,7 +17,6 @@ from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI, A
 
 logger = logging.getLogger(__name__)
 
-
 @click.group()
 def cli():
     """ webinspector cli """
@@ -175,7 +174,9 @@ async def inspector_js_loop(inspector: WebinspectorService, app: Application, pa
     while True:
         exp = input('> ')
         try:
-            print(await inspector_session.runtime_evaluate(exp))
+            result = await inspector_session.runtime_evaluate(exp)
+            if result:
+                print(result)
         except InspectorEvaluateError:
             pass
         except NotImplementedError:
