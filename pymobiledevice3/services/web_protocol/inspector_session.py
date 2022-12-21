@@ -20,6 +20,13 @@ class InspectorSession:
         self.message_id = 1
         self._dispatch_message_responses = {}
 
+        self.response_methods = {
+            'Target.targetCreated': self._target_created,
+            'Target.targetDestroyed': self._target_destroyed,
+            'Target.dispatchMessageFromTarget': self._target_dispatch_message_from_target,
+            'Target.didCommitProvisionalTarget': self._target_did_commit_provisional_target,
+        }
+
         self._receive_task = asyncio.create_task(self._receive_loop())
 
     @classmethod
@@ -37,6 +44,10 @@ class InspectorSession:
         logger.info(f'Created: {target_id}')
         target = cls(protocol, target_id)
         return target
+
+    def set_target_id(self, target_id):
+        self.target_id = target_id
+        logger.info(f'Changed to: {target_id}')
 
     async def runtime_enable(self):
         await self.send_and_receive({'method': 'Runtime.enable', 'params': {}})
@@ -83,10 +94,10 @@ class InspectorSession:
 
             response = self.protocol.inspector.wir_events.pop(0)
             response_method = response['method']
-            if response_method == 'Target.dispatchMessageFromTarget':
-                self._target_dispatch_message_from_target(response)
+            if response_method in self.response_methods:
+                self.response_methods[response_method](response)
             else:
-                logger.error('Message is not supported')
+                logger.error('Unknown response method')
 
     async def receive_response_by_id(self, message_id: int) -> Mapping:
         while True:
@@ -112,6 +123,16 @@ class InspectorSession:
         else:
             return result['value']
 
+    # response methods
     def _target_dispatch_message_from_target(self, response: Mapping):
         receive_message_id = json.loads(response['params']['message'])['id']
         self._dispatch_message_responses[receive_message_id] = response
+
+    def _target_created(self, response: Mapping):
+        pass
+
+    def _target_destroyed(self, response: Mapping):
+        pass
+
+    def _target_did_commit_provisional_target(self, response: Mapping):
+        self.set_target_id(response['params']['newTargetId'])
