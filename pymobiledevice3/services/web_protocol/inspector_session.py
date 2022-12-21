@@ -1,7 +1,8 @@
 import asyncio
 import json
 import logging
-from typing import Mapping
+from ast import literal_eval
+from typing import Mapping, List, Union
 
 from pymobiledevice3.exceptions import InspectorEvaluateError
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
@@ -9,7 +10,26 @@ from pymobiledevice3.services.web_protocol.session_protocol import SessionProtoc
 logger = logging.getLogger(__name__)
 
 
+class JsStr:
+
+    def __init__(self, string: str):
+        self.string = string
+
+    def __repr__(self):
+        return f'"{self.string}"'
+
+
+class JsDictKey:
+
+    def __init__(self, object):
+        self.object = object
+
+    def __repr__(self):
+        return str(self.object)
+
+
 class InspectorSession:
+    __ERROR_SUPPORT_MESSAGE = 'Message is not supported'
 
     def __init__(self, protocol: SessionProtocol, target_id: str):
         """
@@ -19,6 +39,15 @@ class InspectorSession:
         self.target_id = target_id
         self.message_id = 1
         self._responses_cache = {}
+
+        self.remote_object_types = {
+            'object': self._parse_object,
+            'function': self._parse_undefined,
+            'undefined': self._parse_undefined,
+            'string': self._parse_string,
+            'number': self._parse_int,
+            'boolean': self._parse_boolean,
+        }
 
     @classmethod
     async def create(cls, protocol: SessionProtocol):
@@ -40,6 +69,14 @@ class InspectorSession:
         await self.send_and_receive({'method': 'Runtime.enable', 'params': {}})
 
     async def runtime_evaluate(self, exp: str):
+        # if the expression is dict, it's needed to be in ()
+        try:
+            json_exp = literal_eval(exp)
+            if isinstance(json_exp, dict):
+                exp = f'({exp})'
+        except Exception:
+            pass
+
         response = await self.send_and_receive({'method': 'Runtime.evaluate',
                                                 'params': {
                                                     'expression': exp,
@@ -55,20 +92,7 @@ class InspectorSession:
                                                     'uniqueContextId': '0.1'}
                                                 })
 
-        result = json.loads(response['params']['message'])['result']['result']
-        if result.get('subtype', '') == 'error':
-            details = result['description']
-            logger.error(details)
-            raise InspectorEvaluateError(details)
-        elif result['type'] == 'undefined':
-            pass
-        else:
-            try:
-                return result['value']
-            except KeyError as e:
-                error_message = 'Message is not supported'
-                logger.error(error_message)
-                raise NotImplementedError(error_message) from e
+        return self._parse_target_dispatch_message(response)
 
     async def send_and_receive(self, message: Mapping) -> Mapping:
         message_id = await self.send_message_to_target(message)
@@ -97,3 +121,71 @@ class InspectorSession:
                 return response
 
             self._responses_cache[receive_message_id] = response
+
+    # -- PARSE OBJECTS
+    def _parse_target_dispatch_message(self, response: Mapping):
+        print(response)
+        result = json.loads(response['params']['message'])['result']['result']
+
+        if result.get('subtype', '') == 'error':
+            details = result['description']
+            logger.error(details)
+            raise InspectorEvaluateError(details)
+        elif result['type'] == 'undefined':
+            pass
+        else:
+            return self.remote_object_types[result['type']](result)
+
+    @staticmethod
+    def _parse_string(result: Mapping) -> JsStr:
+        return JsStr(result['value'])
+
+    @staticmethod
+    def _parse_int(result: Mapping) -> int:
+        return int(result['value'])
+
+    @staticmethod
+    def _parse_boolean(result: Mapping) -> str:
+        value = result['value']
+        if value:
+            return 'true'
+        else:
+            return 'false'
+
+    @staticmethod
+    def _parse_undefined(result: Mapping) -> None:
+        pass
+
+    def _parse_object(self, result: Mapping) -> Union[List, Mapping]:
+        if result.get('subtype', '') == 'array':
+            return self._parse_array(result)
+
+        result_class_name = result.get('className', '')
+        if result_class_name == 'Object' or not result_class_name:
+            return self._parse_dict(result)
+        else:
+            logger.error(self.__ERROR_SUPPORT_MESSAGE)
+            raise NotImplementedError(self.__ERROR_SUPPORT_MESSAGE)
+
+    def _get_object_preview(self, result: Mapping) -> Mapping:
+        if result.get('preview', False):
+            return result.get('preview')
+        elif result.get('valuePreview', False):
+            return result.get('valuePreview')
+        else:
+            logger.error(self.__ERROR_SUPPORT_MESSAGE)
+            raise NotImplementedError(self.__ERROR_SUPPORT_MESSAGE)
+
+    def _parse_dict(self, result: Mapping) -> Mapping:
+        preview = self._get_object_preview(result)
+        result_dict = {}
+        for entry in preview['properties']:
+            result_dict[JsDictKey(entry['name'])] = self.remote_object_types[entry['type']](entry)
+        return result_dict
+
+    def _parse_array(self, result: Mapping) -> List:
+        preview = self._get_object_preview(result)
+        result_array = []
+        for entry in preview['properties']:
+            result_array.append(self.remote_object_types[entry['type']](entry))
+        return result_array

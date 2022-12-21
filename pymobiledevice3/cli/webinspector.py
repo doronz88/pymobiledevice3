@@ -9,7 +9,6 @@ from inquirer.themes import GreenPassion
 from pygments import highlight, lexers, formatters
 
 from pymobiledevice3.cli.cli_common import Command, wait_return
-from pymobiledevice3.cli.cli_common import print_json
 from pymobiledevice3.exceptions import WirError, InspectorEvaluateError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_server import app
@@ -17,6 +16,7 @@ from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
 from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI, Application, Page
 
 logger = logging.getLogger(__name__)
+
 
 @click.group()
 def cli():
@@ -175,7 +175,7 @@ async def inspector_js_loop(inspector: WebinspectorService, app: Application, pa
     while True:
         exp = input('> ')
         try:
-            print_json(await inspector_session.runtime_evaluate(exp))
+            print(await inspector_session.runtime_evaluate(exp))
         except InspectorEvaluateError:
             pass
         except NotImplementedError:
