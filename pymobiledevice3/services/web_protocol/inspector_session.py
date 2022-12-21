@@ -18,7 +18,9 @@ class InspectorSession:
         self.protocol = protocol
         self.target_id = target_id
         self.message_id = 1
-        self._responses_cache = {}
+        self._dispatch_message_responses = {}
+
+        self._receive_task = asyncio.create_task(self._receive_loop())
 
     @classmethod
     async def create(cls, protocol: SessionProtocol):
@@ -65,7 +67,7 @@ class InspectorSession:
 
     async def send_and_receive(self, message: Mapping) -> Mapping:
         message_id = await self.send_message_to_target(message)
-        return await self.receive_message(message_id)
+        return await self.receive_response_by_id(message_id)
 
     async def send_message_to_target(self, message: Mapping) -> int:
         message['id'] = self.message_id
@@ -74,20 +76,23 @@ class InspectorSession:
                                          message=json.dumps(message))
         return message['id']
 
-    async def receive_message(self, message_id: int) -> Mapping:
+    async def _receive_loop(self):
         while True:
-            if message_id in self._responses_cache:
-                return self._responses_cache.pop(message_id)
-
             while not self.protocol.inspector.wir_events:
                 await asyncio.sleep(0)
 
             response = self.protocol.inspector.wir_events.pop(0)
-            message = json.loads(response['params'].get('message', '{}'))
+            response_method = response['method']
+            if response_method == 'Target.dispatchMessageFromTarget':
+                self._target_dispatch_message_from_target(response)
+            else:
+                logger.error('Message is not supported')
 
-            receive_message_id = message.get('id', None)
-            if receive_message_id == message_id:
-                return response
+    async def receive_response_by_id(self, message_id: int) -> Mapping:
+        while True:
+            if message_id in self._dispatch_message_responses:
+                return self._dispatch_message_responses.pop(message_id)
+            await asyncio.sleep(0)
 
     @staticmethod
     def _parse_runtime_evaluate(response: Mapping):
@@ -106,3 +111,7 @@ class InspectorSession:
             pass
         else:
             return result['value']
+
+    def _target_dispatch_message_from_target(self, response: Mapping):
+        receive_message_id = json.loads(response['params']['message'])['id']
+        self._dispatch_message_responses[receive_message_id] = response
