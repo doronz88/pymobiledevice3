@@ -6,16 +6,26 @@ import click
 import inquirer
 import uvicorn
 from inquirer.themes import GreenPassion
+from prompt_toolkit import PromptSession
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.lexers import PygmentsLexer
+from prompt_toolkit.patch_stdout import patch_stdout
+from prompt_toolkit.styles import style_from_pygments_cls
 from pygments import highlight, lexers, formatters
+from pygments.styles import get_style_by_name
 
 from pymobiledevice3.cli.cli_common import Command, wait_return
+from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import WirError, InspectorEvaluateError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
 from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI, Application, Page
 
+WEBINSPECTOR_HISTORY_PATH = get_home_folder() / 'webinspector_history'
 logger = logging.getLogger(__name__)
+
 
 @click.group()
 def cli():
@@ -171,16 +181,27 @@ def automation_jsshell(lockdown: LockdownClient, url, timeout):
 async def inspector_js_loop(inspector: WebinspectorService, app: Application, page: Page):
     inspector_session = await inspector.inspector_session(app, page)
     await inspector_session.runtime_enable()
+
+    session = PromptSession(lexer=PygmentsLexer(lexers.JavascriptLexer), auto_suggest=AutoSuggestFromHistory(),
+                            style=style_from_pygments_cls(get_style_by_name('stata-dark')),
+                            history=FileHistory(str(WEBINSPECTOR_HISTORY_PATH)))
     while True:
-        exp = input('> ')
         try:
+            with patch_stdout(True):
+                exp = await session.prompt_async('> ')
+
             result = await inspector_session.runtime_evaluate(exp)
             if result:
-                print(result)
-        except InspectorEvaluateError:
+                colorful_result = highlight(f'{result}', lexers.JavascriptLexer(),
+                                            formatters.TerminalTrueColorFormatter(style='stata-dark'))
+                print(colorful_result)
+
+        except (KeyboardInterrupt, InspectorEvaluateError, NotImplementedError):  # KeyboardInterrupt control-c
             pass
-        except NotImplementedError:
-            pass
+        except EOFError:  # EOFError control-d
+            return
+
+        await asyncio.sleep(0)
 
 
 @webinspector.command(cls=Command)
