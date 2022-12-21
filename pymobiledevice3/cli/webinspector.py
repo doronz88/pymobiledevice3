@@ -17,7 +17,8 @@ from pygments.styles import get_style_by_name
 
 from pymobiledevice3.cli.cli_common import Command, wait_return
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import WirError, InspectorEvaluateError, LaunchApplicationTimeoutError
+from pymobiledevice3.exceptions import WirError, InspectorEvaluateError, LaunchApplicationTimeoutError, \
+    WebInspectorNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
@@ -47,7 +48,8 @@ def reload_pages(inspector: WebinspectorService):
 
 @webinspector.command(cls=Command)
 @click.option('-v', '--verbose', is_flag=True)
-def opened_tabs(lockdown: LockdownClient, verbose):
+@click.option('-t', '--timeout', default=3, show_default=True, type=float)
+def opened_tabs(lockdown: LockdownClient, verbose, timeout):
     """
     Show All opened tabs.
     Opt in:
@@ -55,7 +57,10 @@ def opened_tabs(lockdown: LockdownClient, verbose):
         Settings -> Safari -> Advanced -> Web Inspector
     """
     inspector = WebinspectorService(lockdown=lockdown, loop=asyncio.get_event_loop())
-    inspector.connect()
+    try:
+        inspector.connect(timeout)
+    except WebInspectorNotEnabledError:
+        raise
     while not inspector.connected_application:
         inspector.flush_input()
     reload_pages(inspector)
@@ -76,7 +81,8 @@ def opened_tabs(lockdown: LockdownClient, verbose):
 
 @webinspector.command(cls=Command)
 @click.argument('url')
-def launch(lockdown: LockdownClient, url):
+@click.option('-t', '--timeout', default=3, show_default=True, type=float)
+def launch(lockdown: LockdownClient, url, timeout):
     """
     Open a specific URL in Safari.
     Opt in:
@@ -86,7 +92,10 @@ def launch(lockdown: LockdownClient, url):
         Settings -> Safari -> Advanced -> Remote Automation
     """
     inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect()
+    try:
+        inspector.connect(timeout)
+    except WebInspectorNotEnabledError:
+        raise
     safari = inspector.open_app(SAFARI)
     session = inspector.automation_session(safari)
     driver = WebDriver(session)
@@ -121,7 +130,8 @@ driver.add_cookie(
 
 
 @webinspector.command(cls=Command)
-def shell(lockdown: LockdownClient):
+@click.option('-t', '--timeout', default=3, show_default=True, type=float)
+def shell(lockdown: LockdownClient, timeout):
     """
     Opt in:
 
@@ -130,7 +140,10 @@ def shell(lockdown: LockdownClient):
         Settings -> Safari -> Advanced -> Remote Automation
     """
     inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect()
+    try:
+        inspector.connect(timeout)
+    except WebInspectorNotEnabledError:
+        raise
     safari = inspector.open_app(SAFARI)
     session = inspector.automation_session(safari)
     driver = WebDriver(session)
@@ -159,7 +172,10 @@ def automation_jsshell(lockdown: LockdownClient, url, timeout):
         Settings -> Safari -> Advanced -> Remote Automation
     """
     inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect(timeout)
+    try:
+        inspector.connect(timeout)
+    except WebInspectorNotEnabledError:
+        raise
     safari = inspector.open_app(SAFARI)
     session = inspector.automation_session(safari)
     driver = WebDriver(session)
@@ -213,10 +229,10 @@ def inspector_jsshell(lockdown: LockdownClient, timeout):
         Settings -> Safari -> Advanced -> Web Inspector
     """
     inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect(timeout)
     try:
+        inspector.connect(timeout)
         safari_app = inspector.open_app(SAFARI)
-    except LaunchApplicationTimeoutError:
+    except (WebInspectorNotEnabledError, LaunchApplicationTimeoutError):
         raise
 
     reload_pages(inspector)
