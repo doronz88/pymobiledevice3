@@ -10,6 +10,7 @@ __all__ = [
     'MissingValueError', 'PasscodeRequiredError', 'AmfiError', 'DeviceHasPasscodeSetError', 'NotificationTimeoutError',
     'DeveloperModeError', 'ProfileError', 'UsbmuxConnectionError', 'IRecvError', 'IRecvNoDeviceConnectedError',
     'NoDeviceSelectedError', 'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
+    'LaunchingApplicationError',
 ]
 
 
@@ -252,4 +253,8 @@ class InvalidServiceError(LockdownError):
 
 
 class InspectorEvaluateError(PyMobileDevice3Exception):
+    pass
+
+
+class LaunchingApplicationError(PyMobileDevice3Exception):
     pass
