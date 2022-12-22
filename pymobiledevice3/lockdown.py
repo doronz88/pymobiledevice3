@@ -15,6 +15,7 @@ from typing import Mapping, Union, Optional
 from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
+from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import LockdownError, SetProhibitedError, PasscodeRequiredError, \
     ConnectionTerminatedError, IncorrectModeError, FatalPairingError, MissingValueError, CannotStopSessionError, \
     NotPairedError, PairingError, InvalidHostIDError, PasswordRequiredError, StartServiceError, \
@@ -25,9 +26,6 @@ from pymobiledevice3.usbmux import PlistMuxConnection
 from pymobiledevice3.utils import sanitize_ios_version
 
 SYSTEM_BUID = '30142955-444094379208051516'
-
-# we store pairing records and ssl keys in ~/.pymobiledevice3
-HOMEFOLDER = Path.home() / '.pymobiledevice3'
 
 LOCKDOWN_PATH = {
     'win32': Path(os.environ.get('ALLUSERSPROFILE', ''), 'Apple', 'Lockdown'),
@@ -103,7 +101,7 @@ class LockdownClient(object):
     def __init__(self, serial: str = None, hostname: str = None, client_name: str = DEFAULT_CLIENT_NAME,
                  autopair: bool = True, usbmux_connection_type: str = None, pair_timeout: int = None,
                  local_hostname: str = None, pair_record: Mapping = None,
-                 pairing_records_cache_folder: Path = HOMEFOLDER):
+                 pairing_records_cache_folder: Path = None):
         """
         :param serial: serial number for device to connect to (over usbmuxd)
         :param hostname: connect to given hostname using TCP instead of usbmuxd
@@ -134,7 +132,12 @@ class LockdownClient(object):
         self.system_buid = self.get_system_buid()
         self.label = client_name
         self.pair_record = pair_record
-        self.pairing_records_cache_folder = pairing_records_cache_folder
+
+        if pairing_records_cache_folder is None:
+            self.pairing_records_cache_folder = get_home_folder()
+        else:
+            self.pairing_records_cache_folder = pairing_records_cache_folder
+            self.pairing_records_cache_folder.mkdir(parents=True, exist_ok=True)
 
         if self.query_type() != 'com.apple.mobile.lockdown':
             raise IncorrectModeError()
@@ -541,9 +544,6 @@ class LockdownClient(object):
             os.unlink(filename)
 
     def _write_storage_file(self, filename: Union[Path, str], data: bytes) -> None:
-        if self.pairing_records_cache_folder is None:
-            return
-        self.pairing_records_cache_folder.mkdir(parents=True, exist_ok=True)
         filepath = self.pairing_records_cache_folder / filename
         filepath.write_bytes(data)
 

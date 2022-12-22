@@ -10,6 +10,7 @@ import requests
 from tqdm import tqdm
 
 from pymobiledevice3.cli.cli_common import Command, print_json
+from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import NotMountedError, UnsupportedCommandError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
@@ -140,7 +141,7 @@ def mounter_auto_mount(lockdown: LockdownClient, xcode: str, version: str):
         # avoid "default"-ing this option, because Windows and Linux won't have this path
         xcode = Path('/Applications/Xcode.app')
         if not (xcode.exists()):
-            xcode = Path('~/.pymobiledevice3/Xcode.app').expanduser()
+            xcode = get_home_folder() / 'Xcode.app'
             xcode.mkdir(parents=True, exist_ok=True)
 
     image_mounter = MobileImageMounterService(lockdown=lockdown)
