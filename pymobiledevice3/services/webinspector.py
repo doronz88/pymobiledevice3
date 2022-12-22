@@ -8,7 +8,7 @@ from typing import Union
 
 import nest_asyncio
 
-from pymobiledevice3.exceptions import WebInspectorNotEnabled, RemoteAutomationNotEnabled
+from pymobiledevice3.exceptions import WebInspectorNotEnabledError, RemoteAutomationNotEnabled
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.web_protocol.automation_session import AutomationSession
@@ -141,7 +141,7 @@ class WebinspectorService:
         try:
             self._handle_recv(self.await_(asyncio.wait_for(self._recv_message(), timeout)))
         except asyncio.TimeoutError as e:
-            raise WebInspectorNotEnabled from e
+            raise WebInspectorNotEnabledError from e
         self._recv_task = self.loop.create_task(self._receiving_task())
 
     def close(self):
