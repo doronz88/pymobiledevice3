@@ -15,6 +15,7 @@ from typing import Mapping, Union, Optional
 from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
+from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import LockdownError, SetProhibitedError, PasscodeRequiredError, \
     ConnectionTerminatedError, IncorrectModeError, FatalPairingError, MissingValueError, CannotStopSessionError, \
     NotPairedError, PairingError, InvalidHostIDError, PasswordRequiredError, StartServiceError, \
@@ -25,9 +26,6 @@ from pymobiledevice3.usbmux import PlistMuxConnection
 from pymobiledevice3.utils import sanitize_ios_version
 
 SYSTEM_BUID = '30142955-444094379208051516'
-
-# we store pairing records and ssl keys in ~/.pymobiledevice3
-HOMEFOLDER = Path.home() / '.pymobiledevice3'
 
 LOCKDOWN_PATH = {
     'win32': Path(os.environ.get('ALLUSERSPROFILE', ''), 'Apple', 'Lockdown'),
@@ -103,7 +101,7 @@ class LockdownClient(object):
     def __init__(self, serial: str = None, hostname: str = None, client_name: str = DEFAULT_CLIENT_NAME,
                  autopair: bool = True, usbmux_connection_type: str = None, pair_timeout: int = None,
                  local_hostname: str = None, pair_record: Mapping = None,
-                 pairing_records_cache_folder: Path = HOMEFOLDER):
+                 pairing_records_cache_folder: Path = get_home_folder()):
         """
         :param serial: serial number for device to connect to (over usbmuxd)
         :param hostname: connect to given hostname using TCP instead of usbmuxd
