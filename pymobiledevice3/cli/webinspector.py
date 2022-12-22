@@ -17,7 +17,7 @@ from pygments.styles import get_style_by_name
 
 from pymobiledevice3.cli.cli_common import Command, wait_return
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import WirError, InspectorEvaluateError
+from pymobiledevice3.exceptions import WirError, InspectorEvaluateError, LaunchApplicationTimeoutError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
@@ -216,9 +216,8 @@ def inspector_jsshell(lockdown: LockdownClient, timeout):
     inspector.connect(timeout)
     try:
         safari_app = inspector.open_app(SAFARI)
-    except TimeoutError:
-        logger.error(f'Unable to launch application by bundle `{SAFARI}`')
-        return
+    except LaunchApplicationTimeoutError:
+        raise
 
     reload_pages(inspector)
     available_pages = (list(inspector.get_open_pages().get('Safari', [])))

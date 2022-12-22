@@ -8,7 +8,8 @@ from typing import Union
 
 import nest_asyncio
 
-from pymobiledevice3.exceptions import WebInspectorNotEnabledError, RemoteAutomationNotEnabled
+from pymobiledevice3.exceptions import WebInspectorNotEnabledError, RemoteAutomationNotEnabled, \
+    LaunchApplicationTimeoutError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.web_protocol.automation_session import AutomationSession
@@ -191,7 +192,10 @@ class WebinspectorService:
     def open_app(self, bundle: str, timeout: Union[float, int] = 3) -> Application:
         self.await_(self._request_application_launch(bundle))
         self.get_open_pages()
-        return self.await_(asyncio.wait_for(self._wait_for_application(bundle), timeout=timeout))
+        try:
+            return self.await_(asyncio.wait_for(self._wait_for_application(bundle), timeout=timeout))
+        except TimeoutError:
+            raise LaunchApplicationTimeoutError()
 
     async def send_socket_data(self, session_id, app_id, page_id, data):
         await self._forward_socket_data(session_id, app_id, page_id, data)
