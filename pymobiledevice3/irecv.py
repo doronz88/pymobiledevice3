@@ -125,8 +125,13 @@ class IRecv:
 
     def set_configuration(self, configuration=None):
         logger.debug(f'set_configuration: {configuration}')
-        if self._device.get_active_configuration().bConfigurationValue != configuration:
-            self._device.set_configuration(configuration=configuration)
+        try:
+            if self._device.get_active_configuration().bConfigurationValue == configuration:
+                return
+        except USBError:
+            pass
+
+        self._device.set_configuration(configuration=configuration)
 
     def ctrl_transfer(self, bmRequestType, bRequest, timeout=USB_TIMEOUT, **kwargs):
         return self._device.ctrl_transfer(bmRequestType, bRequest, timeout=timeout, **kwargs)
