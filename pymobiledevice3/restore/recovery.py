@@ -2,7 +2,7 @@ import hashlib
 import logging
 import time
 import typing
-from io import BytesIO
+from zipfile import ZipFile
 
 from usb import USBError
 
@@ -20,7 +20,7 @@ RESTORE_VARIANT_MACOS_RECOVERY_OS = 'macOS Customer'
 
 
 class Recovery(BaseRestore):
-    def __init__(self, ipsw: BytesIO, device: Device, tss: typing.Mapping = None, behavior: Behavior = Behavior.Update):
+    def __init__(self, ipsw: ZipFile, device: Device, tss: typing.Mapping = None, behavior: Behavior = Behavior.Update):
         super().__init__(ipsw, device, tss, behavior, logger=logging.getLogger(__name__))
         self.tss_localpolicy = None
         self.tss_recoveryos_root_ticket = None

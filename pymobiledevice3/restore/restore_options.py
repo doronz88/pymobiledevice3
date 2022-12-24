@@ -2,7 +2,7 @@
 import logging
 import uuid
 
-from pymobiledevice3.restore.ipsw.build_identity import BuildIdentity
+from ipsw_parser.build_identity import BuildIdentity
 
 logger = logging.getLogger(__name__)
 

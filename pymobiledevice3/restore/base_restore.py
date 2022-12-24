@@ -1,13 +1,13 @@
-from zipfile import ZipFile
-
 import logging
 import typing
 from enum import Enum
-from io import BytesIO
+from zipfile import ZipFile
 
-from pymobiledevice3.exceptions import NoSuchBuildIdentityError, PyMobileDevice3Exception
+from ipsw_parser.exceptions import NoSuchBuildIdentityError
+from ipsw_parser.ipsw import IPSW
+
+from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.restore.device import Device
-from pymobiledevice3.restore.ipsw.ipsw import IPSW
 from pymobiledevice3.restore.tss import TSSResponse
 
 RESTORE_VARIANT_ERASE_INSTALL = 'Erase Install (IPSW)'
@@ -21,10 +21,10 @@ class Behavior(Enum):
 
 
 class BaseRestore:
-    def __init__(self, ipsw: BytesIO, device: Device, tss: typing.Mapping = None,
+    def __init__(self, ipsw: ZipFile, device: Device, tss: typing.Mapping = None,
                  behavior: Behavior = Behavior.Update, logger=None):
         self.logger = logging.getLogger(self.__class__.__name__) if logger is None else logger
-        self.ipsw = IPSW(ZipFile(ipsw))
+        self.ipsw = IPSW(ipsw)
         self.device = device
         self.tss = TSSResponse(tss) if tss is not None else None
 

@@ -5,12 +5,11 @@ __all__ = [
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
     'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabled', 'RemoteAutomationNotEnabled',
-    'ArbitrationError', 'NoSuchBuildIdentityError', 'InternalError', 'DeveloperModeIsNotEnabledError',
-    'DeviceAlreadyInUseError', 'LockdownError', 'PairingDialogResponsePendingError', 'UserDeniedPairingError',
-    'InvalidHostIDError', 'SetProhibitedError', 'MissingValueError', 'PasscodeRequiredError', 'AmfiError',
-    'DeviceHasPasscodeSetError', 'NotificationTimeoutError', 'DeveloperModeError', 'ProfileError',
-    'UsbmuxConnectionError', 'IRecvError', 'IRecvNoDeviceConnectedError', 'NoDeviceSelectedError',
-    'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
+    'ArbitrationError', 'InternalError', 'DeveloperModeIsNotEnabledError', 'DeviceAlreadyInUseError', 'LockdownError',
+    'PairingDialogResponsePendingError', 'UserDeniedPairingError', 'InvalidHostIDError', 'SetProhibitedError',
+    'MissingValueError', 'PasscodeRequiredError', 'AmfiError', 'DeviceHasPasscodeSetError', 'NotificationTimeoutError',
+    'DeveloperModeError', 'ProfileError', 'UsbmuxConnectionError', 'IRecvError', 'IRecvNoDeviceConnectedError',
+    'NoDeviceSelectedError', 'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
 ]
 
 
@@ -167,11 +166,6 @@ class DeviceAlreadyInUseError(ArbitrationError):
     @property
     def result(self):
         return self.args[0].get('result')
-
-
-class NoSuchBuildIdentityError(PyMobileDevice3Exception):
-    """ Failed to find BuildIdentity with desired parameters """
-    pass
 
 
 class DeveloperModeIsNotEnabledError(PyMobileDevice3Exception):

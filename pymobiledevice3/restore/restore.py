@@ -7,7 +7,6 @@ import struct
 import tempfile
 import traceback
 import zipfile
-from io import BytesIO
 from typing import Optional, Mapping
 
 from tqdm import tqdm, trange
@@ -39,7 +38,8 @@ known_errors = {
 
 
 class Restore(BaseRestore):
-    def __init__(self, ipsw: BytesIO, device: Device, tss=None, behavior: Behavior = Behavior.Update, ignore_fdr=False):
+    def __init__(self, ipsw: zipfile.ZipFile, device: Device, tss=None, behavior: Behavior = Behavior.Update,
+                 ignore_fdr=False):
         super().__init__(ipsw, device, tss, behavior, logger=logging.getLogger(__name__))
         self.recovery = Recovery(ipsw, device, tss=tss, behavior=behavior)
         self.bbtss: Optional[TSSResponse] = None
