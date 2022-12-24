@@ -7,7 +7,7 @@ import click
 import inquirer
 import uvicorn
 from inquirer.themes import GreenPassion
-from prompt_toolkit import PromptSession
+from prompt_toolkit import PromptSession, HTML
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.lexers import PygmentsLexer
@@ -211,7 +211,7 @@ async def inspector_js_loop(inspector: WebinspectorService, app: Application, pa
     while True:
         try:
             with patch_stdout(True):
-                exp = await session.prompt_async('> ')
+                exp = await session.prompt_async(HTML('<style fg="cyan"><b>&gt;</b></style> '))
 
             if not exp.strip():
                 continue
