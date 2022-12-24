@@ -2,10 +2,12 @@ import logging
 import os
 import plistlib
 import traceback
+from zipfile import ZipFile
 
 import IPython
 import click
 from pygments import highlight, lexers, formatters
+from remotezip import RemoteZip
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.cli.cli_common import print_json, set_verbosity
@@ -124,12 +126,21 @@ def restore_tss(device, ipsw, out, color):
 
 
 @restore.command('ramdisk', cls=Command)
-@click.argument('ipsw', type=click.File('rb'))
+@click.argument('ipsw')
 @click.option('--tss', type=click.File('rb'))
 def restore_ramdisk(device, ipsw, tss):
-    """ don't perform an actual restore. just enter the update ramdisk """
+    """
+    don't perform an actual restore. just enter the update ramdisk
+
+    ipsw can be either a filename or an url
+    """
     if tss:
         tss = plistlib.load(tss)
+
+    if ipsw.startswith('http://') or ipsw.startswith('https://'):
+        ipsw = RemoteZip(ipsw)
+    else:
+        ipsw = ZipFile(ipsw)
 
     lockdown = None
     irecv = None
@@ -142,15 +153,24 @@ def restore_ramdisk(device, ipsw, tss):
 
 
 @restore.command('update', cls=Command)
-@click.argument('ipsw', type=click.File('rb'))
+@click.argument('ipsw')
 @click.option('--tss', type=click.File('rb'))
 @click.option('--erase', is_flag=True, help='use the Erase BuildIdentity (full factory-reset)')
 @click.option('--ignore-fdr', is_flag=True, help='only establish an FDR service connection, but don\'t proxy any '
                                                  'traffic')
-def restore_update(device, ipsw, tss, erase, ignore_fdr):
-    """ perform an upgrade """
+def restore_update(device, ipsw: str, tss, erase, ignore_fdr):
+    """
+    perform an update
+
+    ipsw can be either a filename or an url
+    """
     if tss:
         tss = plistlib.load(tss)
+
+    if ipsw.startswith('http://') or ipsw.startswith('https://'):
+        ipsw = RemoteZip(ipsw)
+    else:
+        ipsw = ZipFile(ipsw)
 
     lockdown = None
     irecv = None
