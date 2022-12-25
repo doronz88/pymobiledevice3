@@ -76,6 +76,9 @@ class InspectorSession:
 
         return self._parse_runtime_evaluate(response)
 
+    async def navigate_to_url(self, url: str):
+        return await self.runtime_evaluate(exp=f'window.location = "{url}"')
+
     async def send_and_receive(self, message: Mapping) -> Mapping:
         message_id = await self.send_message_to_target(message)
         return await self.receive_response_by_id(message_id)
