@@ -903,5 +903,7 @@ def check_out(lockdown: LockdownClient):
 def dvt_har(lockdown: LockdownClient):
     """ enable har-logging """
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
-        with ActivityTraceTap(dvt, enable_http_archive_logging=True):
-            wait_return()
+        print('> Press Ctrl-C to abort')
+        with ActivityTraceTap(dvt, enable_http_archive_logging=True) as tap:
+            while True:
+                tap.channel.receive_message()

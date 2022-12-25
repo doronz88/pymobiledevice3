@@ -108,7 +108,7 @@ class ActivityTraceTap(Tap):
         message = b''
         while message.startswith(b'bplist') or len(message) == 0:
             # ignore heartbeat messages
-            message = self._channel.receive_message()
+            message = self.channel.receive_message()
         self._set_current_message(message)
 
     def _set_current_message(self, message):

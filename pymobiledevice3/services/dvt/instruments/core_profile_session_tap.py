@@ -618,9 +618,9 @@ class CoreProfileSessionTap(Tap):
         if self.stack_shot is not None:
             # The stackshot is sent one per TAP creation, so we cache it.
             return self.stack_shot
-        data = self._channel.receive_message()
+        data = self.channel.receive_message()
         while not data.startswith(STACKSHOT_HEADER) and not data.startswith(RAW_VERSION2_BYTES):
-            data = self._channel.receive_message()
+            data = self.channel.receive_message()
 
         if data.startswith(RAW_VERSION2_BYTES):
             raise ExtractingStackshotError()
@@ -647,7 +647,7 @@ class CoreProfileSessionTap(Tap):
         """
         start = time.time()
         while timeout is None or time.time() <= start + timeout:
-            data = self._channel.receive_message()
+            data = self.channel.receive_message()
             if data.startswith(STACKSHOT_HEADER) or data.startswith(b'bplist'):
                 # Skip not kernel trace data.
                 continue
@@ -659,7 +659,7 @@ class CoreProfileSessionTap(Tap):
         """
         Get kd_buf stream.
         """
-        return KdBufStream(self._channel)
+        return KdBufStream(self.channel)
 
     @staticmethod
     def parse_stackshot(data):
