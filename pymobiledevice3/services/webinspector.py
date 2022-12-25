@@ -8,7 +8,7 @@ from typing import Union
 
 import nest_asyncio
 
-from pymobiledevice3.exceptions import WebInspectorNotEnabledError, RemoteAutomationNotEnabled, \
+from pymobiledevice3.exceptions import WebInspectorNotEnabledError, RemoteAutomationNotEnabledError, \
     LaunchingApplicationError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.service_connection import ServiceConnection
@@ -166,7 +166,7 @@ class WebinspectorService:
 
     def automation_session(self, app):
         if self.state == 'WIRAutomationAvailabilityNotAvailable':
-            raise RemoteAutomationNotEnabled()
+            raise RemoteAutomationNotEnabledError()
         session_id = str(uuid.uuid4()).upper()
         self.await_(self._forward_automation_session_request(session_id, app.id_))
         self.await_(self._forward_get_listing(app.id_))

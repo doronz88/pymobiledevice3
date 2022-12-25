@@ -4,7 +4,7 @@ __all__ = [
     'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'MuxException',
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
-    'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabledError', 'RemoteAutomationNotEnabled',
+    'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabledError', 'RemoteAutomationNotEnabledError',
     'ArbitrationError', 'InternalError', 'DeveloperModeIsNotEnabledError', 'DeviceAlreadyInUseError', 'LockdownError',
     'PairingDialogResponsePendingError', 'UserDeniedPairingError', 'InvalidHostIDError', 'SetProhibitedError',
     'MissingValueError', 'PasscodeRequiredError', 'AmfiError', 'DeviceHasPasscodeSetError', 'NotificationTimeoutError',
@@ -133,7 +133,7 @@ class WebInspectorNotEnabledError(PyMobileDevice3Exception):
     pass
 
 
-class RemoteAutomationNotEnabled(PyMobileDevice3Exception):
+class RemoteAutomationNotEnabledError(PyMobileDevice3Exception):
     """ Raise when Web Inspector remote automation is not enabled. """
     pass
 

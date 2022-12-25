@@ -19,7 +19,7 @@ from pygments.styles import get_style_by_name
 from pymobiledevice3.cli.cli_common import Command, wait_return
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import WirError, InspectorEvaluateError, LaunchingApplicationError, \
-    WebInspectorNotEnabledError, RemoteAutomationNotEnabled
+    WebInspectorNotEnabledError, RemoteAutomationNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
@@ -48,7 +48,7 @@ def catch_errors(func):
             logger.error('Unable to launch application (try to unlock device)')
         except WebInspectorNotEnabledError:
             logger.error('Web inspector is not enable')
-        except RemoteAutomationNotEnabled:
+        except RemoteAutomationNotEnabledError:
             logger.error('Remote automation is not enable')
 
     return update_wrapper(catch_function, func)
