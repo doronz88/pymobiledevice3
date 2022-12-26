@@ -247,10 +247,7 @@ def inspector_jsshell(lockdown: LockdownClient, timeout):
         return
     else:
         page_query = [inquirer.List('page', message='choose page', choices=available_pages, carousel=True)]
-        try:
-            page = inquirer.prompt(page_query, theme=GreenPassion(), raise_keyboard_interrupt=True)['page']
-        except KeyboardInterrupt:
-            raise
+        page = inquirer.prompt(page_query, theme=GreenPassion(), raise_keyboard_interrupt=True)['page']
 
     asyncio.run(inspector_js_loop(inspector, safari_app, page))
 
