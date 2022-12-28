@@ -168,13 +168,18 @@ There is A LOT you may do on the device using `pymobiledevice3`. This is just a 
     * `pymobiledevice3 backup2 backup --full DIRECTORY`
 * Restore a given backup:
     * `pymobiledevice3 backup2 restore DIRECTORY`
-* The following will require the Remote Automation & Web Inspector features to be turned on:
+* The following will require Web Inspector feature to be turned on:
+    * Get interactive JavaScript shell on any open tab:
+        * `pymobiledevice3 webinspector js_shell`
     * List currently opened tabs is device's browser:
         * `pymobiledevice3 webinspector opened-tabs`
-    * Launch an automation session to view a given URL:
-        * `pymobiledevice3 webinspector launch URL`
-    * Get a a selenium-like shell:
-        * `pymobiledevice3 webinspector shell`
+    * The following will require also the Remote Automation feature to be turned on:
+        * Get interactive JavaScript shell on new remote automation tab:
+            * `pymobiledevice3 webinspector js_shell --automation` 
+        * Launch an automation session to view a given URL:
+            * `pymobiledevice3 webinspector launch URL`
+        * Get a a selenium-like shell:
+            * `pymobiledevice3 webinspector shell`
 * Mount DeveloperDiskImage:
     * `pymobiledevice3 mounter mount`
     * The following will assume the DeveloperDiskImage is already mounted:
