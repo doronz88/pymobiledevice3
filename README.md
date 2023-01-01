@@ -163,7 +163,7 @@ There is A LOT you may do on the device using `pymobiledevice3`. This is just a 
 * List all installed applications and their details:
     * `pymobiledevice3 apps list --user --system`
 * Create a TCP tunnel from your HOST to the device:
-    * `pymobiledevice3 lockdown forward HOST_PORT DEVICE_PORT`
+    * `pymobiledevice3 lockdown usbmux HOST_PORT DEVICE_PORT`
 * Create a full backup of the device:
     * `pymobiledevice3 backup2 backup --full DIRECTORY`
 * Restore a given backup:
