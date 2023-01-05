@@ -178,8 +178,6 @@ async def inspector_js_loop(inspector: WebinspectorService, app: Application, pa
             print_json(await inspector_session.runtime_evaluate(exp))
         except InspectorEvaluateError:
             pass
-        except NotImplementedError:
-            pass
 
 
 @webinspector.command(cls=Command)

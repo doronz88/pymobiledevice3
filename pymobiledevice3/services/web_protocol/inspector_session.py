@@ -40,14 +40,20 @@ class InspectorSession:
         await self.send_and_receive({'method': 'Runtime.enable', 'params': {}})
 
     async def runtime_evaluate(self, exp: str):
+        # if the expression is dict, it's needed to be in ()
+        exp = exp.strip()
+        if exp:
+            if exp[0] == '{' and exp[-1] == '}':
+                exp = f'({exp})'
+
         response = await self.send_and_receive({'method': 'Runtime.evaluate',
                                                 'params': {
                                                     'expression': exp,
                                                     'objectGroup': 'console',
                                                     'includeCommandLineAPI': True,
                                                     'silent': False,
-                                                    'returnByValue': False,
-                                                    'generatePreview': True,
+                                                    'returnByValue': True,
+                                                    'generatePreview': False,
                                                     'userGesture': True,
                                                     'awaitPromise': False,
                                                     'replMode': True,
@@ -55,20 +61,7 @@ class InspectorSession:
                                                     'uniqueContextId': '0.1'}
                                                 })
 
-        result = json.loads(response['params']['message'])['result']['result']
-        if result.get('subtype', '') == 'error':
-            details = result['description']
-            logger.error(details)
-            raise InspectorEvaluateError(details)
-        elif result['type'] == 'undefined':
-            pass
-        else:
-            try:
-                return result['value']
-            except KeyError as e:
-                error_message = 'Message is not supported'
-                logger.error(error_message)
-                raise NotImplementedError(error_message) from e
+        return self._parse_runtime_evaluate(response)
 
     async def send_and_receive(self, message: Mapping) -> Mapping:
         message_id = await self.send_message_to_target(message)
@@ -96,4 +89,20 @@ class InspectorSession:
             if receive_message_id == message_id:
                 return response
 
-            self._responses_cache[receive_message_id] = response
+    @staticmethod
+    def _parse_runtime_evaluate(response: Mapping):
+        message = json.loads(response['params']['message'])
+        if 'error' in message:
+            details = message['error']['message']
+            logger.error(details)
+            raise InspectorEvaluateError(details)
+
+        result = message['result']['result']
+        if result.get('subtype', '') == 'error':
+            details = result['description']
+            logger.error(details)
+            raise InspectorEvaluateError(details)
+        elif result['type'] == 'undefined':
+            pass
+        else:
+            return result['value']
