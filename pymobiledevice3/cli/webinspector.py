@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from functools import update_wrapper
 
 import IPython
 import click
@@ -17,7 +18,8 @@ from pygments.styles import get_style_by_name
 
 from pymobiledevice3.cli.cli_common import Command, wait_return
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import WirError, InspectorEvaluateError, LaunchingApplicationError
+from pymobiledevice3.exceptions import WirError, InspectorEvaluateError, LaunchingApplicationError, \
+    RemoteAutomationNotEnabled
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
@@ -36,6 +38,18 @@ def cli():
 def webinspector():
     """ webinspector options """
     pass
+
+
+def catch_errors(func):
+    def catch_function(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except LaunchingApplicationError:
+            logger.error('Unable to launch application (try to unlock device)')
+        except RemoteAutomationNotEnabled:
+            logger.error('Remote automation is not enable')
+
+    return update_wrapper(catch_function, func)
 
 
 def reload_pages(inspector: WebinspectorService):
@@ -75,6 +89,7 @@ def opened_tabs(lockdown: LockdownClient, verbose):
 
 @webinspector.command(cls=Command)
 @click.argument('url')
+@catch_errors
 def launch(lockdown: LockdownClient, url):
     """
     Open a specific URL in Safari.
@@ -120,6 +135,7 @@ driver.add_cookie(
 
 
 @webinspector.command(cls=Command)
+@catch_errors
 def shell(lockdown: LockdownClient):
     """
     Opt in:
@@ -149,6 +165,7 @@ def shell(lockdown: LockdownClient):
 @webinspector.command(cls=Command)
 @click.argument('url', required=False, default='')
 @click.option('-t', '--timeout', default=3, show_default=True, type=float)
+@catch_errors
 def automation_jsshell(lockdown: LockdownClient, url, timeout):
     """
     Opt in:
@@ -206,6 +223,7 @@ async def inspector_js_loop(inspector: WebinspectorService, app: Application, pa
 
 @webinspector.command(cls=Command)
 @click.option('-t', '--timeout', default=3, show_default=True, type=float)
+@catch_errors
 def inspector_jsshell(lockdown: LockdownClient, timeout):
     """
     Opt in:
@@ -214,11 +232,7 @@ def inspector_jsshell(lockdown: LockdownClient, timeout):
     """
     inspector = WebinspectorService(lockdown=lockdown)
     inspector.connect(timeout)
-    try:
-        safari_app = inspector.open_app(SAFARI)
-    except LaunchingApplicationError:
-        logger.error(f'Unable to launch application by bundle `{SAFARI}`')
-        return
+    safari_app = inspector.open_app(SAFARI)
 
     reload_pages(inspector)
     available_pages = (list(inspector.get_open_pages().get('Safari', [])))
