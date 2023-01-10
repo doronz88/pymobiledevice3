@@ -8,7 +8,8 @@ from typing import Union
 
 import nest_asyncio
 
-from pymobiledevice3.exceptions import WebInspectorNotEnabled, RemoteAutomationNotEnabled
+from pymobiledevice3.exceptions import WebInspectorNotEnabledError, RemoteAutomationNotEnabledError, \
+    LaunchingApplicationError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.web_protocol.automation_session import AutomationSession
@@ -141,7 +142,7 @@ class WebinspectorService:
         try:
             self._handle_recv(self.await_(asyncio.wait_for(self._recv_message(), timeout)))
         except asyncio.TimeoutError as e:
-            raise WebInspectorNotEnabled from e
+            raise WebInspectorNotEnabledError from e
         self._recv_task = self.loop.create_task(self._receiving_task())
 
     def close(self):
@@ -165,7 +166,7 @@ class WebinspectorService:
 
     def automation_session(self, app):
         if self.state == 'WIRAutomationAvailabilityNotAvailable':
-            raise RemoteAutomationNotEnabled()
+            raise RemoteAutomationNotEnabledError()
         session_id = str(uuid.uuid4()).upper()
         self.await_(self._forward_automation_session_request(session_id, app.id_))
         self.await_(self._forward_get_listing(app.id_))
@@ -191,7 +192,10 @@ class WebinspectorService:
     def open_app(self, bundle: str, timeout: Union[float, int] = 3) -> Application:
         self.await_(self._request_application_launch(bundle))
         self.get_open_pages()
-        return self.await_(asyncio.wait_for(self._wait_for_application(bundle), timeout=timeout))
+        try:
+            return self.await_(asyncio.wait_for(self._wait_for_application(bundle), timeout=timeout))
+        except TimeoutError:
+            raise LaunchingApplicationError()
 
     async def send_socket_data(self, session_id, app_id, page_id, data):
         await self._forward_socket_data(session_id, app_id, page_id, data)

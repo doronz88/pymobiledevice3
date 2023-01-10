@@ -4,12 +4,13 @@ __all__ = [
     'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'MuxException',
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
-    'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabled', 'RemoteAutomationNotEnabled',
+    'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabledError', 'RemoteAutomationNotEnabledError',
     'ArbitrationError', 'InternalError', 'DeveloperModeIsNotEnabledError', 'DeviceAlreadyInUseError', 'LockdownError',
     'PairingDialogResponsePendingError', 'UserDeniedPairingError', 'InvalidHostIDError', 'SetProhibitedError',
     'MissingValueError', 'PasscodeRequiredError', 'AmfiError', 'DeviceHasPasscodeSetError', 'NotificationTimeoutError',
     'DeveloperModeError', 'ProfileError', 'UsbmuxConnectionError', 'IRecvError', 'IRecvNoDeviceConnectedError',
     'NoDeviceSelectedError', 'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
+    'LaunchingApplicationError',
 ]
 
 
@@ -127,12 +128,12 @@ class ConnectionTerminatedError(PyMobileDevice3Exception):
     pass
 
 
-class WebInspectorNotEnabled(PyMobileDevice3Exception):
+class WebInspectorNotEnabledError(PyMobileDevice3Exception):
     """ Raise when Web Inspector is not enabled. """
     pass
 
 
-class RemoteAutomationNotEnabled(PyMobileDevice3Exception):
+class RemoteAutomationNotEnabledError(PyMobileDevice3Exception):
     """ Raise when Web Inspector remote automation is not enabled. """
     pass
 
@@ -252,4 +253,8 @@ class InvalidServiceError(LockdownError):
 
 
 class InspectorEvaluateError(PyMobileDevice3Exception):
+    pass
+
+
+class LaunchingApplicationError(PyMobileDevice3Exception):
     pass
