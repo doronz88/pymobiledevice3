@@ -28,6 +28,19 @@ from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI, A
 logger = logging.getLogger(__name__)
 
 
+def get_prompt_session() -> PromptSession:
+    webinspector_history_file = get_home_folder() / 'webinspector_history'
+    return PromptSession(lexer=PygmentsLexer(lexers.JavascriptLexer), auto_suggest=AutoSuggestFromHistory(),
+                         style=style_from_pygments_cls(get_style_by_name('stata-dark')),
+                         history=FileHistory(str(webinspector_history_file)))
+
+
+def print_colorful_javascript(result: str):
+    colorful_result = highlight(f'{result}', lexers.JavascriptLexer(),
+                                formatters.TerminalTrueColorFormatter(style='stata-dark'))
+    print(colorful_result, end='')
+
+
 @click.group()
 def cli():
     """ webinspector cli """
@@ -169,22 +182,38 @@ def shell(lockdown: LockdownClient, timeout):
 
 
 def automation_js_shell(inspector: WebinspectorService, app: Application, url: str = ''):
-    session = inspector.automation_session(app)
+    automation_session = inspector.automation_session(app)
 
-    driver = WebDriver(session)
+    driver = WebDriver(automation_session)
     try:
         driver.start_session()
         if url:
             driver.get(url)
-        while True:
-            exp = input('> ')
-            try:
-                print(driver.execute_script(f'return {exp}'))
-            except WirError as e:
-                print(e)
+
+        asyncio.run(automation_js_loop(driver))
     finally:
-        session.stop_session()
+        automation_session.stop_session()
         inspector.close()
+
+
+async def automation_js_loop(driver: WebDriver):
+    prompt_session = get_prompt_session()
+    while True:
+        try:
+            with patch_stdout(True):
+                exp = await prompt_session.prompt_async(HTML('<style fg="cyan"><b>&gt;</b></style> '))
+
+            if not exp.strip():
+                continue
+
+            result = driver.execute_script(f'return {exp}')
+            print_colorful_javascript(result)
+        except WirError as e:
+            logger.error(e)
+        except KeyboardInterrupt:
+            pass
+        except EOFError:  # Control-D
+            break
 
 
 def inspector_js_shell(inspector: WebinspectorService, app: Application, url: str = ''):
@@ -206,22 +235,17 @@ async def inspector_js_loop(inspector: WebinspectorService, app: Application, pa
     if url:
         await inspector_session.navigate_to_url(url)
 
-    webinspector_history_path = get_home_folder() / 'webinspector_history'
-    session = PromptSession(lexer=PygmentsLexer(lexers.JavascriptLexer), auto_suggest=AutoSuggestFromHistory(),
-                            style=style_from_pygments_cls(get_style_by_name('stata-dark')),
-                            history=FileHistory(str(webinspector_history_path)))
+    prompt_session = get_prompt_session()
     while True:
         try:
             with patch_stdout(True):
-                exp = await session.prompt_async(HTML('<style fg="cyan"><b>&gt;</b></style> '))
+                exp = await prompt_session.prompt_async(HTML('<style fg="cyan"><b>&gt;</b></style> '))
 
             if not exp.strip():
                 continue
 
             result = await inspector_session.runtime_evaluate(exp)
-            colorful_result = highlight(f'{result}', lexers.JavascriptLexer(),
-                                        formatters.TerminalTrueColorFormatter(style='stata-dark'))
-            print(colorful_result, end='')
+            print_colorful_javascript(result)
 
         except (KeyboardInterrupt, InspectorEvaluateError):  # KeyboardInterrupt Control-C
             pass
