@@ -22,6 +22,10 @@ class SyslogService(BaseService):
         while True:
             # read in chunks till we have at least one syslog line
             chunk = self.service.recv(CHUNK_SIZE)
+
+            if len(chunk) == 0:
+                raise ConnectionAbortedError()
+
             buf += chunk
 
             # SYSLOG_LINE_SPLITTER is used to split each syslog line
