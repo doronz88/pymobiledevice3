@@ -24,7 +24,7 @@ fastapi[all]
 uvicorn>=0.15.0
 starlette
 wsproto
-nest_asyncio
+nest_asyncio>=1.5.5
 Pillow
 inquirer
 pyimg4>=0.7
