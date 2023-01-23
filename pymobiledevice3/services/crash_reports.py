@@ -1,9 +1,10 @@
 import logging
 import posixpath
+from io import StringIO
 from typing import List, Generator
 
 from cmd2 import with_argparser, Cmd2ArgumentParser
-from pycrashreport.crash_report import CrashReport
+from pycrashreport.crash_report import get_crash_report_from_buf
 
 from pymobiledevice3.exceptions import AfcException
 from pymobiledevice3.lockdown import LockdownClient
@@ -98,7 +99,7 @@ class CrashReportsManager:
                 continue
 
             crash_report_raw = self.afc.get_file_contents(filename).decode()
-            crash_report = CrashReport(crash_report_raw, filename=filename)
+            crash_report = get_crash_report_from_buf(crash_report_raw, filename=filename)
 
             if name is None or crash_report.name == name:
                 if raw:
@@ -150,7 +151,8 @@ class CrashReportsShell(AfcShell):
 
     @with_argparser(parse_parser)
     def do_parse(self, args) -> None:
-        self.poutput(CrashReport(self.afc.get_file_contents(args.filename).decode(), filename=args.filename))
+        self.poutput(
+            get_crash_report_from_buf(self.afc.get_file_contents(args.filename).decode(), filename=args.filename))
 
     @with_argparser(clear_parser)
     def do_clear(self, args) -> None:
