@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, AfcFileNotFoundError, AfcException, \
-    ConnectionTerminatedError
+    ConnectionTerminatedError, LockdownError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcService, AFC_LOCK_EX, afc_error_t, AFC_LOCK_UN
 from pymobiledevice3.services.base_service import BaseService
@@ -33,6 +33,13 @@ class Mobilebackup2Service(BaseService):
 
     def __init__(self, lockdown: LockdownClient):
         super().__init__(lockdown, self.SERVICE_NAME)
+
+    @property
+    def will_encrypt(self):
+        try:
+            return self.lockdown.get_value('com.apple.mobile.backup', 'WillEncrypt')
+        except LockdownError:
+            return False
 
     def backup(self, full: bool = True, backup_directory='.', progress_callback=lambda x: None) -> None:
         """

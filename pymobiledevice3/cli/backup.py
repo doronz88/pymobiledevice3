@@ -136,12 +136,11 @@ def encryption(lockdown: LockdownClient, backup_directory, mode, password):
     When on, PASSWORD will be the new backup password.
     When off, PASSWORD is the current backup password.
     """
-    will_encrypt = lockdown.get_value('com.apple.mobile.backup', 'WillEncrypt')
+    backup_client = Mobilebackup2Service(lockdown)
     should_encrypt = mode == 'ON'
-    if should_encrypt == will_encrypt:
+    if should_encrypt == backup_client.will_encrypt:
         logger.error('Encryption already ' + ('on!' if should_encrypt else 'off!'))
         return
-    backup_client = Mobilebackup2Service(lockdown)
     if should_encrypt:
         backup_client.change_password(backup_directory, new=password)
     else:
@@ -156,11 +155,10 @@ def change_password(lockdown: LockdownClient, old_password, new_password, backup
     """
     Change the backup password.
     """
-    will_encrypt = lockdown.get_value('com.apple.mobile.backup', 'WillEncrypt')
-    if not will_encrypt:
+    backup_client = Mobilebackup2Service(lockdown)
+    if not backup_client.will_encrypt:
         logger.error('Encryption is not turned on!')
         return
-    backup_client = Mobilebackup2Service(lockdown)
     backup_client.change_password(backup_directory, old=old_password, new=new_password)
 
 
