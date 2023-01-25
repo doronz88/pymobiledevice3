@@ -4,7 +4,7 @@ import logging
 import uuid
 from dataclasses import dataclass, fields
 from enum import Enum
-from typing import Union
+from typing import Union, Mapping, Optional, Tuple
 
 import nest_asyncio
 
@@ -19,7 +19,7 @@ from pymobiledevice3.services.web_protocol.session_protocol import SessionProtoc
 SAFARI = 'com.apple.mobilesafari'
 
 
-def key_to_pid(key):
+def key_to_pid(key: str) -> int:
     return int(key.split(':')[1])
 
 
@@ -53,7 +53,7 @@ class Page:
     automation_connection_id: str = ''
 
     @classmethod
-    def from_page_dictionary(cls, page_dict):
+    def from_page_dictionary(cls, page_dict: Mapping) -> 'Page':
         p = cls(page_dict['WIRPageIdentifierKey'], WirTypes(page_dict['WIRTypeKey']))
         if p.type_ in (WirTypes.WEB, WirTypes.WEB_PAGE):
             p.web_title = page_dict['WIRTitleKey']
@@ -67,7 +67,7 @@ class Page:
                 p.automation_connection_id = page_dict['WIRConnectionIdentifierKey']
         return p
 
-    def update(self, page_dict):
+    def update(self, page_dict: Mapping):
         new_p = self.from_page_dictionary(page_dict)
         for field in fields(self):
             setattr(self, field.name, getattr(new_p, field.name))
@@ -89,7 +89,7 @@ class Application:
     host: str = ''
 
     @classmethod
-    def from_application_dictionary(cls, app_dict):
+    def from_application_dictionary(cls, app_dict) -> 'Application':
         return cls(
             app_dict['WIRApplicationIdentifierKey'],
             app_dict['WIRApplicationBundleIdentifierKey'],
@@ -117,7 +117,7 @@ class WebinspectorService:
         self.loop = loop
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
-        self.service: ServiceConnection = None
+        self.service: Optional[ServiceConnection] = None
         self.connection_id = str(uuid.uuid4()).upper()
         self.state = None
         self.connected_application = {}
@@ -134,9 +134,9 @@ class WebinspectorService:
             '_rpc_applicationSentData:': self._handle_application_sent_data,
             '_rpc_applicationDisconnected:': self._handle_application_disconnected,
         }
-        self._recv_task: asyncio.Task | None = None
+        self._recv_task: Optional[asyncio.Task] = None
 
-    def connect(self, timeout=None):
+    def connect(self, timeout: Union[float, int] = None):
         self.service = self.await_(self.lockdown.aio_start_service(self.SERVICE_NAME))
         self.await_(self._report_identifier())
         try:
@@ -164,7 +164,7 @@ class WebinspectorService:
         while True:
             self._handle_recv(await self._recv_message())
 
-    def automation_session(self, app):
+    def automation_session(self, app: Application) -> AutomationSession:
         if self.state == 'WIRAutomationAvailabilityNotAvailable':
             raise RemoteAutomationNotEnabledError()
         session_id = str(uuid.uuid4()).upper()
@@ -181,7 +181,7 @@ class WebinspectorService:
         session_id = str(uuid.uuid4()).upper()
         return await InspectorSession.create(SessionProtocol(self, session_id, app, page, method_prefix=''))
 
-    def get_open_pages(self):
+    def get_open_pages(self) -> Mapping:
         apps = {}
         self.await_(asyncio.gather(*[self._forward_get_listing(app) for app in self.connected_application]))
         for app in self.connected_application:
@@ -197,19 +197,19 @@ class WebinspectorService:
         except TimeoutError:
             raise LaunchingApplicationError()
 
-    async def send_socket_data(self, session_id, app_id, page_id, data):
+    async def send_socket_data(self, session_id: str, app_id: str, page_id: int, data: Mapping):
         await self._forward_socket_data(session_id, app_id, page_id, data)
 
-    async def setup_inspector_socket(self, session_id, app_id, page_id):
+    async def setup_inspector_socket(self, session_id: str, app_id: str, page_id: int):
         await self._forward_socket_setup(session_id, app_id, page_id, pause=False)
 
-    def find_page_id(self, page_id):
+    def find_page_id(self, page_id: str) -> Tuple[Application, Page]:
         for app_id in self.application_pages:
             for page in self.application_pages[app_id]:
                 if page == page_id:
                     return self.connected_application[app_id], self.application_pages[app_id][page_id]
 
-    def flush_input(self, duration=0):
+    def flush_input(self, duration: Union[float, int] = 0):
         return self.await_(asyncio.sleep(duration))
 
     def await_(self, awaitable):
@@ -268,10 +268,10 @@ class WebinspectorService:
         self.logger.debug(f'Listing app with id {app_id}')
         await self._send_message('_rpc_forwardGetListing:', {'WIRApplicationIdentifierKey': app_id})
 
-    async def _request_application_launch(self, bundle):
+    async def _request_application_launch(self, bundle: str):
         await self._send_message('_rpc_requestApplicationLaunch:', {'WIRApplicationBundleIdentifierKey': bundle})
 
-    async def _forward_automation_session_request(self, session_id, app_id):
+    async def _forward_automation_session_request(self, session_id: str, app_id: str):
         await self._send_message('_rpc_forwardAutomationSessionRequest:', {
             'WIRApplicationIdentifierKey': app_id,
             'WIRSessionCapabilitiesKey': {
@@ -281,7 +281,7 @@ class WebinspectorService:
             'WIRSessionIdentifierKey': session_id
         })
 
-    async def _forward_socket_setup(self, session_id, app_id, page_id, pause=True):
+    async def _forward_socket_setup(self, session_id: str, app_id: str, page_id: int, pause: bool = True):
         message = {
             'WIRApplicationIdentifierKey': app_id,
             'WIRPageIdentifierKey': page_id,
@@ -291,7 +291,7 @@ class WebinspectorService:
             message['WIRAutomaticallyPause'] = False
         await self._send_message('_rpc_forwardSocketSetup:', message)
 
-    async def _forward_socket_data(self, session_id, app_id, page_id, data):
+    async def _forward_socket_data(self, session_id: str, app_id: str, page_id: int, data: Mapping):
         await self._send_message('_rpc_forwardSocketData:', {
             'WIRApplicationIdentifierKey': app_id,
             'WIRPageIdentifierKey': page_id,
@@ -299,26 +299,26 @@ class WebinspectorService:
             'WIRSocketDataKey': json.dumps(data).encode(),
         })
 
-    async def _forward_indicate_web_view(self, app_id, page_id, enable: bool):
+    async def _forward_indicate_web_view(self, app_id: str, page_id: int, enable: bool):
         await self._send_message('_rpc_forwardIndicateWebView'), {
             'WIRApplicationIdentifierKey': app_id,
             'WIRPageIdentifierKey': page_id,
             'WIRIndicateEnabledKey': enable,
         }
 
-    async def _send_message(self, selector, args=None):
+    async def _send_message(self, selector: str, args=None):
         if args is None:
             args = {}
         args['WIRConnectionIdentifierKey'] = self.connection_id
         await self.service.aio_send_plist({'__selector': selector, '__argument': args})
 
-    def _page_by_automation_session(self, session_id):
+    def _page_by_automation_session(self, session_id: str) -> Page:
         for app_id in self.application_pages:
             for page in self.application_pages[app_id]:
                 if page.type_ == WirTypes.AUTOMATION and page.automation_session_id == session_id:
                     return page
 
-    async def _wait_for_page(self, session_id):
+    async def _wait_for_page(self, session_id: str):
         while True:
             for app in self.application_pages.values():
                 for page in app.values():
@@ -326,7 +326,7 @@ class WebinspectorService:
                         return page
             await asyncio.sleep(0)
 
-    async def _wait_for_application(self, bundle='', app_id=''):
+    async def _wait_for_application(self, bundle: str = '', app_id: str = '') -> Application:
         while True:
             for app in self.connected_application.values():
                 if bundle and app.bundle == bundle:
