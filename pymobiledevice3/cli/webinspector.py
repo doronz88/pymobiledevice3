@@ -115,9 +115,7 @@ def launch(lockdown: LockdownClient, url, timeout):
 
         Settings -> Safari -> Advanced -> Remote Automation
     """
-    inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect(timeout)
-    safari = inspector.open_app(SAFARI)
+    inspector, safari = create_webinspector_and_launch_app(lockdown, timeout, SAFARI)
     session = inspector.automation_session(safari)
     driver = WebDriver(session)
     print('Starting session')
@@ -161,9 +159,7 @@ def shell(lockdown: LockdownClient, timeout):
 
         Settings -> Safari -> Advanced -> Remote Automation
     """
-    inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect(timeout)
-    safari = inspector.open_app(SAFARI)
+    inspector, safari = create_webinspector_and_launch_app(lockdown, timeout, SAFARI)
     session = inspector.automation_session(safari)
     driver = WebDriver(session)
     try:
