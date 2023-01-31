@@ -1,6 +1,9 @@
 import asyncio
 import logging
+from abc import ABC, abstractmethod
+from contextlib import asynccontextmanager
 from functools import update_wrapper
+from typing import Optional, Type
 
 import IPython
 import click
@@ -23,22 +26,10 @@ from pymobiledevice3.exceptions import WirError, InspectorEvaluateError, Launchi
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
-from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI, Application, Page
+from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
+from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI, Page
 
 logger = logging.getLogger(__name__)
-
-
-def get_prompt_session() -> PromptSession:
-    webinspector_history_file = get_home_folder() / 'webinspector_history'
-    return PromptSession(lexer=PygmentsLexer(lexers.JavascriptLexer), auto_suggest=AutoSuggestFromHistory(),
-                         style=style_from_pygments_cls(get_style_by_name('stata-dark')),
-                         history=FileHistory(str(webinspector_history_file)))
-
-
-def print_colorful_javascript(result: str):
-    colorful_result = highlight(f'{result}', lexers.JavascriptLexer(),
-                                formatters.TerminalTrueColorFormatter(style='stata-dark'))
-    print(colorful_result, end='')
 
 
 @click.group()
@@ -71,6 +62,13 @@ def reload_pages(inspector: WebinspectorService):
     inspector.get_open_pages()
     # Best effort.
     inspector.flush_input(2)
+
+
+def create_webinspector_and_launch_app(lockdown: LockdownClient, timeout: float, app: str):
+    inspector = WebinspectorService(lockdown=lockdown)
+    inspector.connect(timeout)
+    application = inspector.open_app(app)
+    return inspector, application
 
 
 @webinspector.command(cls=Command)
@@ -117,9 +115,7 @@ def launch(lockdown: LockdownClient, url, timeout):
 
         Settings -> Safari -> Advanced -> Remote Automation
     """
-    inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect(timeout)
-    safari = inspector.open_app(SAFARI)
+    inspector, safari = create_webinspector_and_launch_app(lockdown, timeout, SAFARI)
     session = inspector.automation_session(safari)
     driver = WebDriver(session)
     print('Starting session')
@@ -163,9 +159,7 @@ def shell(lockdown: LockdownClient, timeout):
 
         Settings -> Safari -> Advanced -> Remote Automation
     """
-    inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect(timeout)
-    safari = inspector.open_app(SAFARI)
+    inspector, safari = create_webinspector_and_launch_app(lockdown, timeout, SAFARI)
     session = inspector.automation_session(safari)
     driver = WebDriver(session)
     try:
@@ -179,78 +173,6 @@ def shell(lockdown: LockdownClient, timeout):
     finally:
         session.stop_session()
         inspector.close()
-
-
-def automation_js_shell(inspector: WebinspectorService, app: Application, url: str = ''):
-    automation_session = inspector.automation_session(app)
-
-    driver = WebDriver(automation_session)
-    try:
-        driver.start_session()
-        if url:
-            driver.get(url)
-
-        asyncio.run(automation_js_loop(driver))
-    finally:
-        automation_session.stop_session()
-        inspector.close()
-
-
-async def automation_js_loop(driver: WebDriver):
-    prompt_session = get_prompt_session()
-    while True:
-        try:
-            with patch_stdout(True):
-                exp = await prompt_session.prompt_async(HTML('<style fg="cyan"><b>&gt;</b></style> '))
-
-            if not exp.strip():
-                continue
-
-            result = driver.execute_script(f'return {exp}')
-            print_colorful_javascript(result)
-        except WirError as e:
-            logger.error(e)
-        except KeyboardInterrupt:
-            pass
-        except EOFError:  # Control-D
-            break
-
-
-def inspector_js_shell(inspector: WebinspectorService, app: Application, url: str = ''):
-    reload_pages(inspector)
-    available_pages = list(inspector.get_open_pages().get('Safari', []))
-    if not available_pages:
-        logger.error('Unable to find available pages (try to unlock device)')
-        return
-    else:
-        page_query = [inquirer.List('page', message='choose page', choices=available_pages, carousel=True)]
-        page = inquirer.prompt(page_query, theme=GreenPassion(), raise_keyboard_interrupt=True)['page']
-
-    asyncio.run(inspector_js_loop(inspector, app, page, url))
-
-
-async def inspector_js_loop(inspector: WebinspectorService, app: Application, page: Page, url: str = ''):
-    inspector_session = await inspector.inspector_session(app, page)
-    await inspector_session.runtime_enable()
-    if url:
-        await inspector_session.navigate_to_url(url)
-
-    prompt_session = get_prompt_session()
-    while True:
-        try:
-            with patch_stdout(True):
-                exp = await prompt_session.prompt_async(HTML('<style fg="cyan"><b>&gt;</b></style> '))
-
-            if not exp.strip():
-                continue
-
-            result = await inspector_session.runtime_evaluate(exp)
-            print_colorful_javascript(result)
-
-        except (KeyboardInterrupt, InspectorEvaluateError):  # KeyboardInterrupt Control-C
-            pass
-        except EOFError:  # Control-D
-            return
 
 
 @webinspector.command(cls=Command)
@@ -268,14 +190,9 @@ def js_shell(lockdown: LockdownClient, timeout, automation, url):
 
         Settings -> Safari -> Advanced -> Remote Automation
     """
-    inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect(timeout)
-    safari_app = inspector.open_app(SAFARI)
 
-    if automation:
-        automation_js_shell(inspector, safari_app, url)
-    else:
-        inspector_js_shell(inspector, safari_app, url)
+    js_shell_class = AutomationJsShell if automation else InspectorJsShell
+    asyncio.run(run_js_shell(js_shell_class, lockdown, timeout, url))
 
 
 udid = ''
@@ -295,3 +212,127 @@ def cdp(lockdown: LockdownClient, host, port):
     udid = lockdown.udid
     uvicorn.run('pymobiledevice3.cli.webinspector:create_app', host=host, port=port, factory=True,
                 ws_ping_timeout=None, ws='wsproto', loop='asyncio')
+
+
+class JsShell(ABC):
+
+    def __init__(self):
+        super().__init__()
+        self.prompt_session = PromptSession(lexer=PygmentsLexer(lexers.JavascriptLexer),
+                                            auto_suggest=AutoSuggestFromHistory(),
+                                            style=style_from_pygments_cls(get_style_by_name('stata-dark')),
+                                            history=FileHistory(self.webinspector_history_path()))
+
+    @classmethod
+    @abstractmethod
+    def create(cls, lockdown: LockdownClient, timeout: float, app: str):
+        pass
+
+    @abstractmethod
+    async def evaluate_expression(self, exp):
+        pass
+
+    @abstractmethod
+    async def navigate(self, url: str):
+        pass
+
+    async def js_iter(self):
+        with patch_stdout(True):
+            exp = await self.prompt_session.prompt_async(HTML('<style fg="cyan"><b>&gt;</b></style> '))
+
+        if not exp.strip():
+            return
+
+        result = await self.evaluate_expression(exp)
+        colorful_result = highlight(f'{result}', lexers.JavascriptLexer(),
+                                    formatters.TerminalTrueColorFormatter(style='stata-dark'))
+        print(colorful_result, end='')
+
+    async def start(self, url: str = ''):
+        if url:
+            await self.navigate(url)
+        while True:
+            try:
+                await self.js_iter()
+            except WirError as e:
+                logger.error(e)
+            except (KeyboardInterrupt, InspectorEvaluateError):  # KeyboardInterrupt Control-C
+                pass
+            except EOFError:  # Control-D
+                return
+
+    @staticmethod
+    def webinspector_history_path() -> str:
+        return str(get_home_folder() / 'webinspector_history')
+
+
+class AutomationJsShell(JsShell):
+
+    def __init__(self, driver: WebDriver):
+        super().__init__()
+        self.driver = driver
+
+    @classmethod
+    @asynccontextmanager
+    async def create(cls, lockdown: LockdownClient, timeout: float, app: str) -> 'AutomationJsShell':
+        inspector, application = create_webinspector_and_launch_app(lockdown, timeout, app)
+        automation_session = inspector.automation_session(application)
+        driver = WebDriver(automation_session)
+        driver.start_session()
+        try:
+            yield cls(driver)
+        finally:
+            automation_session.stop_session()
+            inspector.close()
+
+    async def evaluate_expression(self, exp: str):
+        return self.driver.execute_script(f'return {exp}')
+
+    async def navigate(self, url: str):
+        self.driver.get(url)
+
+
+class InspectorJsShell(JsShell):
+
+    def __init__(self, inspector_session: InspectorSession):
+        super().__init__()
+        self.inspector_session = inspector_session
+
+    @classmethod
+    @asynccontextmanager
+    async def create(cls, lockdown: LockdownClient, timeout: float, app: str) -> 'InspectorJsShell':
+        inspector, application = create_webinspector_and_launch_app(lockdown, timeout, app)
+        page = InspectorJsShell.query_page(inspector)
+        if page is None:
+            raise click.exceptions.Exit()
+
+        inspector_session = await inspector.inspector_session(application, page)
+        await inspector_session.runtime_enable()
+        try:
+            yield cls(inspector_session)
+        finally:
+            inspector.close()
+
+    async def evaluate_expression(self, exp: str):
+        return await self.inspector_session.runtime_evaluate(exp)
+
+    async def navigate(self, url: str):
+        await self.inspector_session.navigate_to_url(url)
+
+    @staticmethod
+    def query_page(inspector: WebinspectorService) -> Optional[Page]:
+        reload_pages(inspector)
+        available_pages = list(inspector.get_open_pages().get('Safari', []))
+        if not available_pages:
+            logger.error('Unable to find available pages (try to unlock device)')
+            return
+
+        page_query = [inquirer.List('page', message='choose page', choices=available_pages, carousel=True)]
+        page = inquirer.prompt(page_query, theme=GreenPassion(), raise_keyboard_interrupt=True)['page']
+        return page
+
+
+async def run_js_shell(js_shell_class: Type[JsShell], lockdown: LockdownClient,
+                       timeout: float, url: str):
+    async with js_shell_class.create(lockdown, timeout, SAFARI) as js_shell_instance:
+        await js_shell_instance.start(url)
