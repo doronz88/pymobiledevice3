@@ -123,8 +123,7 @@ AFC_LOCK_SH = 1 | 4  # /**< shared lock */
 AFC_LOCK_EX = 2 | 4  # /**< exclusive lock */
 AFC_LOCK_UN = 8 | 4  # /**< unlock */
 
-# not really necessary
-MAXIMUM_WRITE_SIZE = 1 << 32
+MAXIMUM_WRITE_SIZE = 1 << 30
 
 AFCMAGIC = b'CFA6LPAA'
 
