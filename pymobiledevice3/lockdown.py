@@ -8,20 +8,21 @@ import sys
 import tempfile
 import time
 import uuid
-from contextlib import suppress, contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Mapping, Union, Optional
+from typing import Mapping, Optional, Union
 
 from packaging.version import Version
+
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import LockdownError, SetProhibitedError, PasscodeRequiredError, \
-    ConnectionTerminatedError, IncorrectModeError, FatalPairingError, MissingValueError, CannotStopSessionError, \
-    NotPairedError, PairingError, InvalidHostIDError, PasswordRequiredError, StartServiceError, \
-    PairingDialogResponsePendingError, UserDeniedPairingError, ConnectionFailedError, InvalidServiceError
+from pymobiledevice3.exceptions import CannotStopSessionError, ConnectionFailedError, ConnectionTerminatedError, \
+    FatalPairingError, IncorrectModeError, InvalidHostIDError, InvalidServiceError, LockdownError, MissingValueError, \
+    NotPairedError, PairingDialogResponsePendingError, PairingError, PasscodeRequiredError, PasswordRequiredError, \
+    SetProhibitedError, StartServiceError, UserDeniedPairingError
 from pymobiledevice3.irecv_devices import IRECV_DEVICES
-from pymobiledevice3.service_connection import ServiceConnection, Medium
+from pymobiledevice3.service_connection import Medium, ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
 from pymobiledevice3.utils import sanitize_ios_version
 

@@ -4,7 +4,7 @@ from datetime import datetime
 import pytest
 
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError
-from pymobiledevice3.services.afc import AfcService, afc_error_t, MAXIMUM_READ_SIZE
+from pymobiledevice3.services.afc import MAXIMUM_READ_SIZE, AfcService, afc_error_t
 
 TEST_FILENAME = 'test'
 TEST_FOLDER_NAME = 'test_folder'

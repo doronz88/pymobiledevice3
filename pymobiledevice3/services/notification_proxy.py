@@ -1,6 +1,5 @@
 import socket
-
-from typing import Union, Generator, Mapping
+from typing import Generator, Mapping, Union
 
 from pymobiledevice3.exceptions import NotificationTimeoutError
 from pymobiledevice3.lockdown import LockdownClient

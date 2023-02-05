@@ -2,7 +2,7 @@ import pytest
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.driver import WebDriver
-from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI
+from pymobiledevice3.services.webinspector import SAFARI, WebinspectorService
 
 
 @pytest.fixture

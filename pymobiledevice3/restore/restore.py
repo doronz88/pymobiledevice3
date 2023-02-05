@@ -7,19 +7,19 @@ import struct
 import tempfile
 import traceback
 import zipfile
-from typing import Optional, Mapping
+from typing import Mapping, Optional
 
 from tqdm import tqdm, trange
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, NoDeviceConnectedError, ConnectionFailedError
+from pymobiledevice3.exceptions import ConnectionFailedError, NoDeviceConnectedError, PyMobileDevice3Exception
 from pymobiledevice3.restore.asr import ASRClient
-from pymobiledevice3.restore.base_restore import BaseRestore, RESTORE_VARIANT_MACOS_RECOVERY_OS, \
-    RESTORE_VARIANT_ERASE_INSTALL, RESTORE_VARIANT_UPGRADE_INSTALL
-from pymobiledevice3.restore.consts import lpol_file, PROGRESS_BAR_OPERATIONS
+from pymobiledevice3.restore.base_restore import RESTORE_VARIANT_ERASE_INSTALL, RESTORE_VARIANT_MACOS_RECOVERY_OS, \
+    RESTORE_VARIANT_UPGRADE_INSTALL, BaseRestore
+from pymobiledevice3.restore.consts import PROGRESS_BAR_OPERATIONS, lpol_file
 from pymobiledevice3.restore.device import Device
-from pymobiledevice3.restore.fdr import start_fdr_thread, fdr_type, FDRClient
+from pymobiledevice3.restore.fdr import FDRClient, fdr_type, start_fdr_thread
 from pymobiledevice3.restore.ftab import Ftab
-from pymobiledevice3.restore.recovery import Recovery, Behavior
+from pymobiledevice3.restore.recovery import Behavior, Recovery
 from pymobiledevice3.restore.restore_options import RestoreOptions
 from pymobiledevice3.restore.restored_client import RestoredClient
 from pymobiledevice3.restore.tss import TSSRequest, TSSResponse

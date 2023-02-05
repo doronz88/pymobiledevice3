@@ -7,7 +7,7 @@ import threading
 from enum import Enum
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.exceptions import NoDeviceConnectedError, ConnectionFailedError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import ConnectionFailedError, NoDeviceConnectedError, PyMobileDevice3Exception
 from pymobiledevice3.service_connection import ServiceConnection
 
 CTRL_PORT = 0x43a  # 1082

@@ -17,9 +17,9 @@ from pykdebugparser.pykdebugparser import PyKdebugParser
 from termcolor import colored
 
 import pymobiledevice3
-from pymobiledevice3.cli.cli_common import print_json, Command, default_json_encoder, wait_return, BASED_INT
-from pymobiledevice3.exceptions import DvtDirListError, ExtractingStackshotError, UnrecognizedSelectorError, \
-    DeviceAlreadyInUseError
+from pymobiledevice3.cli.cli_common import BASED_INT, Command, default_json_encoder, print_json, wait_return
+from pymobiledevice3.exceptions import DeviceAlreadyInUseError, DvtDirListError, ExtractingStackshotError, \
+    UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
@@ -33,7 +33,7 @@ from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import Co
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
 from pymobiledevice3.services.dvt.instruments.graphics import Graphics
-from pymobiledevice3.services.dvt.instruments.network_monitor import NetworkMonitor, ConnectionDetectionEvent
+from pymobiledevice3.services.dvt.instruments.network_monitor import ConnectionDetectionEvent, NetworkMonitor
 from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot

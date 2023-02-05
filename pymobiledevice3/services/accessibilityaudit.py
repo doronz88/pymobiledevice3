@@ -1,7 +1,7 @@
 import typing
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.remote_server import RemoteServer, MessageAux
+from pymobiledevice3.services.remote_server import MessageAux, RemoteServer
 
 
 class SerializedObject:

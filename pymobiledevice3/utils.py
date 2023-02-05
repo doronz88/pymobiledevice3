@@ -1,6 +1,6 @@
 import re
 
-from construct import Select, Int32ul, Int64ul, Int8ul, Int16ul
+from construct import Int8ul, Int16ul, Int32ul, Int64ul, Select
 
 from pymobiledevice3.exceptions import DeviceVersionFormatError
 

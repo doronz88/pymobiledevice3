@@ -8,7 +8,7 @@ import click
 import coloredlogs
 import inquirer
 from inquirer.themes import GreenPassion
-from pygments import highlight, lexers, formatters
+from pygments import formatters, highlight, lexers
 
 from pymobiledevice3.exceptions import NoDeviceSelectedError
 from pymobiledevice3.lockdown import LockdownClient

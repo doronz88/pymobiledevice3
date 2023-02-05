@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 BASE_DIR = Path(__file__).parent.resolve(strict=True)
 VERSION = '1.36.3'

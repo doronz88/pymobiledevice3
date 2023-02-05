@@ -1,9 +1,9 @@
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import List
 
-from pymobiledevice3.services.web_protocol.selenium_api import By, SeleniumApi
 from pymobiledevice3.services.web_protocol.automation_session import RESOURCES, Point, Rect, Size
 from pymobiledevice3.services.web_protocol.element import WebElement
+from pymobiledevice3.services.web_protocol.selenium_api import By, SeleniumApi
 from pymobiledevice3.services.web_protocol.switch_to import SwitchTo
 
 ENTER_FULLSCREEN = (RESOURCES / 'enter_fullscreen.js').read_text()

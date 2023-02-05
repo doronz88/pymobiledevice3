@@ -16,8 +16,8 @@ from typing import List
 import hexdump
 from click.exceptions import Exit
 from cmd2 import Cmd, Cmd2ArgumentParser, with_argparser
-from construct import Struct, Const, Int64ul, Container, Enum, Tell, CString, GreedyRange
-from pygments import highlight, lexers, formatters
+from construct import Const, Container, CString, Enum, GreedyRange, Int64ul, Struct, Tell
+from pygments import formatters, highlight, lexers
 from pygnuutils.cli.ls import ls as ls_cli
 from pygnuutils.ls import Ls, LsStub
 

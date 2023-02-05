@@ -4,9 +4,9 @@ import plistlib
 import traceback
 from zipfile import ZipFile
 
-import IPython
 import click
-from pygments import highlight, lexers, formatters
+import IPython
+from pygments import formatters, highlight, lexers
 from remotezip import RemoteZip
 
 from pymobiledevice3 import usbmux
@@ -15,7 +15,7 @@ from pymobiledevice3.exceptions import IncorrectModeError
 from pymobiledevice3.irecv import IRecv
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.restore.device import Device
-from pymobiledevice3.restore.recovery import Recovery, Behavior
+from pymobiledevice3.restore.recovery import Behavior, Recovery
 from pymobiledevice3.restore.restore import Restore
 from pymobiledevice3.services.diagnostics import DiagnosticsService
 

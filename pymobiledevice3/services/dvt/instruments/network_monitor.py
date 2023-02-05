@@ -2,7 +2,7 @@ import dataclasses
 import ipaddress
 import logging
 
-from construct import Struct, Int32ul, this, Adapter, Switch, Int8ul, Int16ub, Bytes
+from construct import Adapter, Bytes, Int8ul, Int16ub, Int32ul, Struct, Switch, this
 
 
 class IpAddressAdapter(Adapter):

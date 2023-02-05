@@ -1,6 +1,6 @@
 from typing import List, Mapping, Optional
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, ConnectionFailedError
+from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService
 

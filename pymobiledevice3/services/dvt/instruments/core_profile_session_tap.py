@@ -1,11 +1,11 @@
 import time
 import typing
 import uuid
-from datetime import timezone, timedelta
+from datetime import timedelta, timezone
 from io import BytesIO
 
-from construct import Struct, Int32ul, Int64ul, FixedSized, GreedyRange, GreedyBytes, Enum, Switch, Padding, Padded, \
-    LazyBound, CString, Computed, Array, this, Byte, Int16ul, Pass, Bytes, GreedyString
+from construct import Array, Byte, Bytes, Computed, CString, Enum, FixedSized, GreedyBytes, GreedyRange, GreedyString, \
+    Int16ul, Int32ul, Int64ul, LazyBound, Padded, Padding, Pass, Struct, Switch, this
 from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES
 
 from pymobiledevice3.exceptions import ExtractingStackshotError

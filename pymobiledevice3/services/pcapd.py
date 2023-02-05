@@ -4,7 +4,7 @@ import enum
 import socket
 import struct
 
-from construct import Struct, Int32ub, Int32ul, Bytes, Byte, this, Padding, Padded, CString
+from construct import Byte, Bytes, CString, Int32ub, Int32ul, Padded, Padding, Struct, this
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService

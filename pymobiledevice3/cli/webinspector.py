@@ -5,29 +5,29 @@ from contextlib import asynccontextmanager
 from functools import update_wrapper
 from typing import Optional, Type
 
-import IPython
 import click
 import inquirer
+import IPython
 import uvicorn
 from inquirer.themes import GreenPassion
-from prompt_toolkit import PromptSession, HTML
+from prompt_toolkit import HTML, PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.lexers import PygmentsLexer
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import style_from_pygments_cls
-from pygments import highlight, lexers, formatters
+from pygments import formatters, highlight, lexers
 from pygments.styles import get_style_by_name
 
 from pymobiledevice3.cli.cli_common import Command, wait_return
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import WirError, InspectorEvaluateError, LaunchingApplicationError, \
-    WebInspectorNotEnabledError, RemoteAutomationNotEnabledError
+from pymobiledevice3.exceptions import InspectorEvaluateError, LaunchingApplicationError, \
+    RemoteAutomationNotEnabledError, WebInspectorNotEnabledError, WirError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_server import app
-from pymobiledevice3.services.web_protocol.driver import WebDriver, Cookie, By
+from pymobiledevice3.services.web_protocol.driver import By, Cookie, WebDriver
 from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
-from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI, Page
+from pymobiledevice3.services.webinspector import SAFARI, Page, WebinspectorService
 
 logger = logging.getLogger(__name__)
 

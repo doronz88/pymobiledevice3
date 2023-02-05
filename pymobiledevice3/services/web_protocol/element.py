@@ -1,6 +1,6 @@
 from pymobiledevice3.exceptions import WirError
-from pymobiledevice3.services.web_protocol.automation_session import RESOURCES, Point, Size, Rect, MouseButton, \
-    MouseInteraction, VIRTUAL_KEYS, KeyboardInteractionType, MODIFIER_TO_KEY
+from pymobiledevice3.services.web_protocol.automation_session import MODIFIER_TO_KEY, RESOURCES, VIRTUAL_KEYS, \
+    KeyboardInteractionType, MouseButton, MouseInteraction, Point, Rect, Size
 from pymobiledevice3.services.web_protocol.selenium_api import By, SeleniumApi
 
 IS_EDITABLE = (RESOURCES / 'is_editable.js').read_text()

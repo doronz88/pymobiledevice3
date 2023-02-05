@@ -1,8 +1,8 @@
 import logging
 import posixpath
-from typing import List, Generator
+from typing import Generator, List
 
-from cmd2 import with_argparser, Cmd2ArgumentParser
+from cmd2 import Cmd2ArgumentParser, with_argparser
 from pycrashreport.crash_report import get_crash_report_from_buf
 
 from pymobiledevice3.exceptions import AfcException
