@@ -106,7 +106,7 @@ def restore_restart(device):
 
 
 @restore.command('tss', cls=Command)
-@click.argument('ipsw', type=click.File('rb'))
+@click.argument('ipsw')
 @click.argument('out', type=click.File('wb'), required=False)
 @click.option('--color/--no-color', default=True)
 def restore_tss(device, ipsw, out, color):
@@ -117,6 +117,11 @@ def restore_tss(device, ipsw, out, color):
         lockdown = device
     elif isinstance(device, IRecv):
         irecv = device
+
+    if ipsw.startswith('http://') or ipsw.startswith('https://'):
+        ipsw = RemoteZip(ipsw)
+    else:
+        ipsw = ZipFile(ipsw)
 
     device = Device(lockdown=lockdown, irecv=irecv)
     tss = Recovery(ipsw, device).fetch_tss_record()
