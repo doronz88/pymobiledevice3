@@ -246,7 +246,7 @@ class BinaryMuxConnection(MuxConnection):
                                'tag': self._tag},
                     'data': {'device_id': device_id, 'port': port},
                     })
-        response = self._receive()
+        response = self.receive()
         if response.header.message != usbmuxd_msgtype.RESULT:
             raise MuxException(f'unexpected message type received: {response}')
 
@@ -259,7 +259,7 @@ class BinaryMuxConnection(MuxConnection):
         self._sock.send(usbmuxd_request.build(data))
         self._tag += 1
 
-    def _receive(self, expected_tag: int = None):
+    def receive(self, expected_tag: int = None):
         self._assert_not_connected()
         response = usbmuxd_response.parse_stream(self._sock)
         if expected_tag and response.header.tag != expected_tag:
@@ -269,7 +269,7 @@ class BinaryMuxConnection(MuxConnection):
     def _send_receive(self, message_type: int):
         self._send({'header': {'version': self._version, 'message': message_type, 'tag': self._tag},
                     'data': b''})
-        response = self._receive(self._tag - 1)
+        response = self.receive(self._tag - 1)
         if response.header.message != usbmuxd_msgtype.RESULT:
             raise MuxException(f'unexpected message type received: {response}')
 
@@ -284,7 +284,7 @@ class BinaryMuxConnection(MuxConnection):
         self.devices = [device for device in self.devices if device.devid != device_id]
 
     def _receive_device_state_update(self):
-        response = self._receive()
+        response = self.receive()
         if response.header.message == usbmuxd_msgtype.ADD:
             # old protocol only supported USB devices
             self._add_device(MuxDevice(response.data.device_id, response.data.serial_number, 'USB'))
@@ -305,7 +305,7 @@ class PlistMuxConnection(BinaryMuxConnection):
     def get_pair_record(self, serial: str) -> Mapping:
         # serials are saved inside usbmuxd without '-'
         self._send({'MessageType': 'ReadPairRecord', 'PairRecordID': serial})
-        response = self._receive(self._tag - 1)
+        response = self.receive(self._tag - 1)
         pair_record = response.get('PairRecordData')
         if pair_record is None:
             raise NotPairedError('device should be paired first')
@@ -315,7 +315,7 @@ class PlistMuxConnection(BinaryMuxConnection):
         """ get device list synchronously without waiting the timeout """
         self.devices = []
         self._send({'MessageType': 'ListDevices'})
-        for response in self._receive(self._tag - 1)['DeviceList']:
+        for response in self.receive(self._tag - 1)['DeviceList']:
             if response['MessageType'] == 'Attached':
                 super()._add_device(MuxDevice(response['DeviceID'], response['Properties']['SerialNumber'],
                                               response['Properties']['ConnectionType']))
@@ -327,7 +327,7 @@ class PlistMuxConnection(BinaryMuxConnection):
     def get_buid(self) -> str:
         """ get SystemBUID """
         self._send({'MessageType': 'ReadBUID'})
-        return self._receive(self._tag - 1)['BUID']
+        return self.receive(self._tag - 1)['BUID']
 
     def save_pair_record(self, serial: str, device_id: int, record_data: bytes):
         # serials are saved inside usbmuxd without '-'
@@ -348,15 +348,15 @@ class PlistMuxConnection(BinaryMuxConnection):
                        'data': plistlib.dumps(request),
                        })
 
-    def _receive(self, expected_tag: int = None) -> Mapping:
-        response = super()._receive(expected_tag=expected_tag)
+    def receive(self, expected_tag: int = None) -> Mapping:
+        response = super().receive(expected_tag=expected_tag)
         if response.header.message != usbmuxd_msgtype.PLIST:
             raise MuxException(f'Received non-plist type {response}')
         return plistlib.loads(response.data)
 
     def _send_receive(self, data: Mapping):
         self._send(data)
-        response = self._receive(self._tag - 1)
+        response = self.receive(self._tag - 1)
         if response['MessageType'] != 'Result':
             raise MuxException(f'got an invalid message: {response}')
         if response['Number'] != 0:
