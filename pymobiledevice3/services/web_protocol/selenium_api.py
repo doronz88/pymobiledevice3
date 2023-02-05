@@ -1,4 +1,4 @@
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 from base64 import b64decode
 
 from pymobiledevice3.services.web_protocol.automation_session import By

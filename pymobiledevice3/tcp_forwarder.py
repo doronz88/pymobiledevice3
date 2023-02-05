@@ -4,7 +4,7 @@ import socket
 import threading
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.service_connection import ServiceConnection, ConnectionFailedError
+from pymobiledevice3.service_connection import ConnectionFailedError, ServiceConnection
 
 
 class TcpForwarder:

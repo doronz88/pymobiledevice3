@@ -1,5 +1,5 @@
-from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap
 
 
 def test_stackshot(lockdown):

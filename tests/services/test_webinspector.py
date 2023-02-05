@@ -1,4 +1,4 @@
-from pymobiledevice3.services.webinspector import WebinspectorService, SAFARI
+from pymobiledevice3.services.webinspector import SAFARI, WebinspectorService
 
 
 def test_opening_app(lockdown):

@@ -1,10 +1,10 @@
 from pathlib import Path
 from unittest import mock
 
-import pytest
-from cmd2_ext_test import ExternalTestMixin
-from cmd2 import CommandResult
 import gnureadline
+import pytest
+from cmd2 import CommandResult
+from cmd2_ext_test import ExternalTestMixin
 
 from pymobiledevice3.services.afc import AfcShell
 

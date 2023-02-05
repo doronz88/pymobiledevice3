@@ -3,8 +3,8 @@ import logging
 
 import construct
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, NoDeviceConnectedError, ConnectionFailedError, \
-    DeviceHasPasscodeSetError, AmfiError, DeveloperModeError
+from pymobiledevice3.exceptions import AmfiError, ConnectionFailedError, DeveloperModeError, \
+    DeviceHasPasscodeSetError, NoDeviceConnectedError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.heartbeat import HeartbeatService
 

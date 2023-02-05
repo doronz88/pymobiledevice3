@@ -7,10 +7,10 @@ from enum import Enum
 from typing import Optional
 
 from tqdm import trange
-from usb.core import find, Device, USBError
+from usb.core import Device, USBError, find
 from usb.util import get_string
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, IRecvNoDeviceConnectedError
+from pymobiledevice3.exceptions import IRecvNoDeviceConnectedError, PyMobileDevice3Exception
 from pymobiledevice3.irecv_devices import IRECV_DEVICES, IRecvDevice
 
 USB_TIMEOUT = 10000

@@ -2,6 +2,7 @@ import struct
 import time
 
 import gpxpy
+
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService
 

@@ -6,10 +6,10 @@ from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, AfcFileNotFoundError, AfcException, \
-    ConnectionTerminatedError, LockdownError
+from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ConnectionTerminatedError, LockdownError, \
+    PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.afc import AfcService, AFC_LOCK_EX, afc_error_t, AFC_LOCK_UN
+from pymobiledevice3.services.afc import AFC_LOCK_EX, AFC_LOCK_UN, AfcService, afc_error_t
 from pymobiledevice3.services.base_service import BaseService
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.installation_proxy import InstallationProxyService

@@ -3,11 +3,13 @@ import plistlib
 import socket
 import sys
 import time
-from construct import Struct, Prefixed, Int32ul, GreedyBytes, StreamError, Int16ul, CString, Padding, FixedSized, \
-    Enum, Const, Switch, this
 from dataclasses import dataclass
+from typing import List, Mapping, Optional
+
+from construct import Const, CString, Enum, FixedSized, GreedyBytes, Int16ul, Int32ul, Padding, Prefixed, StreamError, \
+    Struct, Switch, this
+
 from pymobiledevice3.exceptions import MuxException, MuxVersionError, NotPairedError, UsbmuxConnectionError
-from typing import List, Optional, Mapping
 
 usbmuxd_version = Enum(Int32ul,
                        BINARY=0,

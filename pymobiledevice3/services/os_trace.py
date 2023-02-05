@@ -7,8 +7,8 @@ import typing
 from datetime import datetime
 from tarfile import TarFile
 
-from construct import Struct, Bytes, Int32ul, Optional, Enum, Byte, Adapter, Int16ul, this, Computed, \
-    RepeatUntil
+from construct import Adapter, Byte, Bytes, Computed, Enum, Int16ul, Int32ul, Optional, RepeatUntil, Struct, this
+
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService

@@ -4,9 +4,9 @@ import plistlib
 import traceback
 from zipfile import ZipFile
 
-import IPython
 import click
-from pygments import highlight, lexers, formatters
+import IPython
+from pygments import formatters, highlight, lexers
 from remotezip import RemoteZip
 
 from pymobiledevice3 import usbmux
@@ -15,7 +15,7 @@ from pymobiledevice3.exceptions import IncorrectModeError
 from pymobiledevice3.irecv import IRecv
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.restore.device import Device
-from pymobiledevice3.restore.recovery import Recovery, Behavior
+from pymobiledevice3.restore.recovery import Behavior, Recovery
 from pymobiledevice3.restore.restore import Restore
 from pymobiledevice3.services.diagnostics import DiagnosticsService
 
@@ -106,7 +106,7 @@ def restore_restart(device):
 
 
 @restore.command('tss', cls=Command)
-@click.argument('ipsw', type=click.File('rb'))
+@click.argument('ipsw')
 @click.argument('out', type=click.File('wb'), required=False)
 @click.option('--color/--no-color', default=True)
 def restore_tss(device, ipsw, out, color):
@@ -117,6 +117,11 @@ def restore_tss(device, ipsw, out, color):
         lockdown = device
     elif isinstance(device, IRecv):
         irecv = device
+
+    if ipsw.startswith('http://') or ipsw.startswith('https://'):
+        ipsw = RemoteZip(ipsw)
+    else:
+        ipsw = ZipFile(ipsw)
 
     device = Device(lockdown=lockdown, irecv=irecv)
     tss = Recovery(ipsw, device).fetch_tss_record()

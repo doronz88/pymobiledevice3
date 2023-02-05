@@ -14,7 +14,6 @@ from pymobiledevice3.cli.companion_proxy import cli as companion_cli
 from pymobiledevice3.cli.crash import cli as crash_cli
 from pymobiledevice3.cli.developer import cli as developer_cli
 from pymobiledevice3.cli.diagnostics import cli as diagnostics_cli
-from pymobiledevice3.cli.usbmux import cli as usbmux_cli
 from pymobiledevice3.cli.lockdown import cli as lockdown_cli
 from pymobiledevice3.cli.mounter import cli as mounter_cli
 from pymobiledevice3.cli.notification import cli as notification_cli
@@ -26,11 +25,12 @@ from pymobiledevice3.cli.provision import cli as provision_cli
 from pymobiledevice3.cli.restore import cli as restore_cli
 from pymobiledevice3.cli.springboard import cli as springboard_cli
 from pymobiledevice3.cli.syslog import cli as syslog_cli
+from pymobiledevice3.cli.usbmux import cli as usbmux_cli
 from pymobiledevice3.cli.webinspector import cli as webinspector_cli
-from pymobiledevice3.exceptions import NoDeviceConnectedError, NotPairedError, UserDeniedPairingError, \
-    PairingDialogResponsePendingError, SetProhibitedError, MissingValueError, DeviceHasPasscodeSetError, \
-    DeveloperModeError, UsbmuxConnectionError, NoDeviceSelectedError, MessageNotSupportedError, InternalError, \
-    DeveloperModeIsNotEnabledError, InvalidServiceError
+from pymobiledevice3.exceptions import DeveloperModeError, DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, \
+    InternalError, InvalidServiceError, MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, \
+    NoDeviceSelectedError, NotPairedError, PairingDialogResponsePendingError, SetProhibitedError, \
+    UsbmuxConnectionError, UserDeniedPairingError
 
 coloredlogs.install(level=logging.INFO)
 

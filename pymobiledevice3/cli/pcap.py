@@ -1,8 +1,8 @@
 from datetime import datetime
 
 import click
-from pygments import highlight, lexers, formatters
 import hexdump
+from pygments import formatters, highlight, lexers
 
 from pymobiledevice3.cli.cli_common import Command
 from pymobiledevice3.lockdown import LockdownClient

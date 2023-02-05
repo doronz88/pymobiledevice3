@@ -1,9 +1,9 @@
 import asyncio
-from datetime import datetime
 import hashlib
 import json
-from functools import partial
 import logging
+from datetime import datetime
+from functools import partial
 
 from pymobiledevice3.services.web_protocol.cdp_screencast import ScreenCast
 

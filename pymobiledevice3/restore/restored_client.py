@@ -3,7 +3,7 @@ import logging
 from cached_property import cached_property
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.exceptions import NoDeviceConnectedError, ConnectionFailedError
+from pymobiledevice3.exceptions import ConnectionFailedError, NoDeviceConnectedError
 from pymobiledevice3.restore.restore_options import RestoreOptions
 from pymobiledevice3.service_connection import ServiceConnection
 

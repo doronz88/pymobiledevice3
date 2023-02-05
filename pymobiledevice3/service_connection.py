@@ -6,15 +6,15 @@ import ssl
 import struct
 import time
 from enum import Enum, auto
-from typing import Optional, Mapping
+from typing import Mapping, Optional
 
 import IPython
-from pygments import highlight, lexers, formatters
+from pygments import formatters, highlight, lexers
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception, ConnectionTerminatedError, \
-    NoDeviceConnectedError
-from pymobiledevice3.usbmux import select_device, MuxDevice
+from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError, NoDeviceConnectedError, \
+    PyMobileDevice3Exception
+from pymobiledevice3.usbmux import MuxDevice, select_device
 
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.

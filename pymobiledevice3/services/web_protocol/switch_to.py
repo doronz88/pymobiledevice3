@@ -1,6 +1,6 @@
+from pymobiledevice3.services.web_protocol.alert import Alert
 from pymobiledevice3.services.web_protocol.automation_session import By
 from pymobiledevice3.services.web_protocol.element import WebElement
-from pymobiledevice3.services.web_protocol.alert import Alert
 
 
 class SwitchTo:

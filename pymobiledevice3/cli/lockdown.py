@@ -1,10 +1,9 @@
 import logging
-
 import plistlib
 
 import click
 
-from pymobiledevice3.cli.cli_common import Command, print_json, CommandWithoutAutopair
+from pymobiledevice3.cli.cli_common import Command, CommandWithoutAutopair, print_json
 from pymobiledevice3.exceptions import PasscodeRequiredError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.heartbeat import HeartbeatService

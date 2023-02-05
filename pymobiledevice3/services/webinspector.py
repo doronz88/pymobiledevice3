@@ -4,12 +4,12 @@ import logging
 import uuid
 from dataclasses import dataclass, fields
 from enum import Enum
-from typing import Union, Mapping, Optional, Tuple
+from typing import Mapping, Optional, Tuple, Union
 
 import nest_asyncio
 
-from pymobiledevice3.exceptions import WebInspectorNotEnabledError, RemoteAutomationNotEnabledError, \
-    LaunchingApplicationError
+from pymobiledevice3.exceptions import LaunchingApplicationError, RemoteAutomationNotEnabledError, \
+    WebInspectorNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.web_protocol.automation_session import AutomationSession

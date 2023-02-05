@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from pymobiledevice3.exceptions import DvtDirListError, AlreadyMountedError, UnrecognizedSelectorError
+from pymobiledevice3.exceptions import AlreadyMountedError, DvtDirListError, UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
