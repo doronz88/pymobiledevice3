@@ -1,6 +1,5 @@
 import logging
 import posixpath
-from io import StringIO
 from typing import List, Generator
 
 from cmd2 import with_argparser, Cmd2ArgumentParser
