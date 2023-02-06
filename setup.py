@@ -3,7 +3,7 @@ from pathlib import Path
 from setuptools import find_packages, setup
 
 BASE_DIR = Path(__file__).parent.resolve(strict=True)
-VERSION = '1.36.4'
+VERSION = '1.36.5'
 PACKAGE_NAME = 'pymobiledevice3'
 PACKAGES = [p for p in find_packages() if not p.startswith('tests')]
 
