@@ -101,16 +101,9 @@ class AccessibilityAudit(RemoteServer):
         super().__init__(lockdown, self.SERVICE_NAME, remove_ssl_context=True)
 
         self.broadcast.deviceSetAppMonitoringEnabled_(MessageAux().append_obj(True))
-        self.recv_response()
-
         self.broadcast.deviceInspectorSetMonitoredEventType_(MessageAux().append_obj(0))
-        self.recv_response()
-
         self.broadcast.deviceInspectorShowVisuals_(MessageAux().append_obj(1))
-        self.recv_response()
-
         self.broadcast.deviceInspectorShowIgnoredElements_(MessageAux().append_obj(1))
-        self.recv_response()
 
     def iter_notifications(self):
         while True:
@@ -120,24 +113,29 @@ class AccessibilityAudit(RemoteServer):
             data = [x['value'] for x in notification[1]]
             yield notification[0], deserialize_object(data)
 
-    def recv_response(self):
-        plist = self.recv_plist()
+    def recv_response(self) -> typing.Generator[typing.Tuple, None, None]:
+        """
+        Responses are tuples in the one of the following forms:
 
-        while plist[1] is not None:
-            # skip notifications, but report them if exists
+        - (None, None)
+        - (eventName, eventData)
+        - (eventData, None)
+        """
+        while True:
+            plist = self.recv_plist()
             yield plist[0], deserialize_object(plist[1])
 
-            plist = self.recv_plist()
-
-        return plist
-
-    def device_capabilities(self):
+    def device_capabilities(self) -> typing.List[str]:
         self.broadcast.deviceCapabilities()
-        return self.recv_response()[0]
+        for response in self.recv_response():
+            if isinstance(response[0], list):
+                return response[0]
 
-    def get_current_settings(self):
+    def get_current_settings(self) -> typing.List[AXAuditDeviceSetting_v1]:
         self.broadcast.deviceAccessibilitySettings()
-        return deserialize_object(self.recv_response()[0])
+        for response in self.recv_response():
+            if isinstance(response[0], dict):
+                return deserialize_object(response[0])
 
     def move_focus_next(self):
         self.move_focus(DIRECTION_NEXT)

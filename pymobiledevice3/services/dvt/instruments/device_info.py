@@ -65,7 +65,7 @@ class DeviceInfo:
 
     def trace_codes(self):
         codes_file = self.request_information('traceCodesFile')
-        return {int(k, 16): v for k, v in map(lambda l: l.split(), codes_file.splitlines())}
+        return {int(k, 16): v for k, v in map(lambda line: line.split(), codes_file.splitlines())}
 
     def request_information(self, selector_name):
         self._channel[selector_name]()
