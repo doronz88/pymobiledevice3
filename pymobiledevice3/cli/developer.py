@@ -5,6 +5,7 @@ import os
 import posixpath
 import shlex
 import signal
+import time
 from collections import namedtuple
 from dataclasses import asdict
 from datetime import datetime
@@ -722,7 +723,7 @@ def accessibility():
 @accessibility.command('capabilities', cls=Command)
 def accessibility_capabilities(lockdown: LockdownClient):
     """ display accessibility capabilities """
-    print_json(AccessibilityAudit(lockdown).device_capabilities())
+    print_json(AccessibilityAudit(lockdown).capabilities)
 
 
 @accessibility.group('settings')
@@ -734,7 +735,7 @@ def accessibility_settings():
 @accessibility_settings.command('show', cls=Command)
 def accessibility_settings_show(lockdown: LockdownClient):
     """ show current settings """
-    for setting in AccessibilityAudit(lockdown).get_current_settings():
+    for setting in AccessibilityAudit(lockdown).settings:
         print(setting)
 
 
@@ -756,22 +757,15 @@ def accessibility_shell(lockdown: LockdownClient):
 
 
 @accessibility.command('notifications', cls=Command)
-@click.option('-c', '--cycle-focus', is_flag=True)
-def accessibility_notifications(lockdown: LockdownClient, cycle_focus):
+def accessibility_notifications(lockdown: LockdownClient):
     """ show notifications """
 
     service = AccessibilityAudit(lockdown)
-    if cycle_focus:
-        service.move_focus_next()
-    for name, data in service.iter_notifications():
-        if name in ('hostAppStateChanged:',
-                    'hostInspectorCurrentElementChanged:',):
-            for focus_item in data:
+    for event in service.iter_events():
+        if event.name in ('hostAppStateChanged:',
+                          'hostInspectorCurrentElementChanged:',):
+            for focus_item in event.data:
                 logger.info(focus_item)
-
-            if name == 'hostInspectorCurrentElementChanged:':
-                if cycle_focus:
-                    service.move_focus_next()
 
 
 @accessibility.command('list-items', cls=Command)
@@ -779,16 +773,20 @@ def accessibility_list_items(lockdown: LockdownClient):
     """ list items available in currently shown menu """
 
     service = AccessibilityAudit(lockdown)
-    iterator = service.iter_notifications()
+    iterator = service.iter_events()
+
+    # every focus change is expected publish a "hostInspectorCurrentElementChanged:"
     service.move_focus_next()
 
     first_item = None
 
-    for name, data in iterator:
-        if name != 'hostInspectorCurrentElementChanged:':
+    for event in iterator:
+        if event.name != 'hostInspectorCurrentElementChanged:':
+            # ignore any other events
             continue
 
-        current_item = data[0]
+        # each such event should contain exactly one element that became in focus
+        current_item = event.data[0]
 
         if first_item is None:
             first_item = current_item
