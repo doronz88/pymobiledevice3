@@ -1,4 +1,8 @@
 import typing
+from dataclasses import dataclass
+from enum import Enum
+
+from packaging.version import Version
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.remote_server import MessageAux, RemoteServer
@@ -56,9 +60,16 @@ class AXAuditDeviceSetting_v1(SerializedObject):
             if k not in self._fields:
                 self._fields[k] = None
 
-    def __str__(self):
-        return f'<AXAuditDeviceSetting_v1 {self._fields["IdentiifierValue_v1"]} = ' \
-               f'{self._fields["CurrentValueNumber_v1"]}>'
+    @property
+    def key(self) -> str:
+        return self._fields['IdentiifierValue_v1']
+
+    @property
+    def value(self) -> typing.Any:
+        return self._fields['CurrentValueNumber_v1']
+
+    def __str__(self) -> str:
+        return f'<AXAuditDeviceSetting_v1 {self.key} = {self.value}>'
 
 
 SERIALIZABLE_OBJECTS = {
@@ -69,10 +80,18 @@ SERIALIZABLE_OBJECTS = {
     'AXAuditElementAttribute_v1': AXAuditElementAttribute_v1,
 }
 
-DIRECTION_PREV = 3
-DIRECTION_NEXT = 4
-DIRECTION_FIRST = 5
-DIRECTION_LAST = 6
+
+@dataclass
+class Event:
+    name: str
+    data: SerializedObject
+
+
+class Direction(Enum):
+    Previous = 3
+    Next = 4
+    First = 5
+    Last = 6
 
 
 def deserialize_object(d):
@@ -100,47 +119,56 @@ class AccessibilityAudit(RemoteServer):
     def __init__(self, lockdown: LockdownClient):
         super().__init__(lockdown, self.SERVICE_NAME, remove_ssl_context=True)
 
-        self.broadcast.deviceSetAppMonitoringEnabled_(MessageAux().append_obj(True))
-        self.broadcast.deviceInspectorSetMonitoredEventType_(MessageAux().append_obj(0))
-        self.broadcast.deviceInspectorShowVisuals_(MessageAux().append_obj(1))
-        self.broadcast.deviceInspectorShowIgnoredElements_(MessageAux().append_obj(1))
+        # flush previously received messages
+        self.recv_plist()
+        if Version(lockdown.product_version) >= Version('15.0'):
+            self.recv_plist()
 
-    def iter_notifications(self):
-        while True:
-            notification = self.recv_plist()
-            if notification[1] is None:
-                continue
-            data = [x['value'] for x in notification[1]]
-            yield notification[0], deserialize_object(data)
-
-    def recv_response(self) -> typing.Generator[typing.Tuple, None, None]:
-        """
-        Responses are tuples in the one of the following forms:
-
-        - (None, None)
-        - (eventName, eventData)
-        - (eventData, None)
-        """
-        while True:
-            plist = self.recv_plist()
-            yield plist[0], deserialize_object(plist[1])
-
-    def device_capabilities(self) -> typing.List[str]:
+    @property
+    def capabilities(self) -> typing.List[str]:
         self.broadcast.deviceCapabilities()
-        for response in self.recv_response():
-            if isinstance(response[0], list):
-                return response[0]
+        return self.recv_plist()[0]
 
-    def get_current_settings(self) -> typing.List[AXAuditDeviceSetting_v1]:
+    @property
+    def settings(self) -> typing.List[AXAuditDeviceSetting_v1]:
         self.broadcast.deviceAccessibilitySettings()
-        for response in self.recv_response():
-            if isinstance(response[0], dict):
-                return deserialize_object(response[0])
+        return deserialize_object(self.recv_plist()[0])
 
-    def move_focus_next(self):
-        self.move_focus(DIRECTION_NEXT)
+    def perform_handshake(self) -> None:
+        # this service acts differently from others, requiring no handshake
+        pass
 
-    def perform_press(self, element: bytes):
+    def set_app_monitoring_enabled(self, value: bool) -> None:
+        self.broadcast.deviceSetAppMonitoringEnabled_(MessageAux().append_obj(value), expects_reply=False)
+
+    def set_monitored_event_type(self, event_type: int = None) -> None:
+        if event_type is None:
+            event_type = 0
+        self.broadcast.deviceInspectorSetMonitoredEventType_(MessageAux().append_obj(event_type), expects_reply=False)
+
+    def set_show_ignored_elements(self, value: bool) -> None:
+        self.broadcast.deviceInspectorShowIgnoredElements_(MessageAux().append_obj(int(value)), expects_reply=False)
+
+    def set_show_visuals(self, value: bool) -> None:
+        self.broadcast.deviceInspectorShowVisuals_(MessageAux().append_obj(int(value)), expects_reply=False)
+
+    def iter_events(self, app_monitoring_enabled=True, monitored_event_type: int = None) -> \
+            typing.Generator[Event, None, None]:
+
+        self.set_app_monitoring_enabled(app_monitoring_enabled)
+        self.set_monitored_event_type(monitored_event_type)
+
+        while True:
+            message = self.recv_plist()
+            if message[1] is None:
+                continue
+            data = [x['value'] for x in message[1]]
+            yield Event(name=message[0], data=deserialize_object(data))
+
+    def move_focus_next(self) -> None:
+        self.move_focus(Direction.Next)
+
+    def perform_press(self, element: bytes) -> None:
         """ simulate click (can be used only for processes with task_for_pid-allow """
         element = {
             'ObjectType': 'AXAuditElement_v1',
@@ -193,10 +221,9 @@ class AccessibilityAudit(RemoteServer):
         }
 
         self.broadcast.deviceElement_performAction_withValue_(
-            MessageAux().append_obj(element).append_obj(action).append_obj(0))
-        self.recv_response()
+            MessageAux().append_obj(element).append_obj(action).append_obj(0), expects_reply=False)
 
-    def move_focus(self, direction):
+    def move_focus(self, direction: Direction) -> None:
         options = {
             'ObjectType': 'passthrough',
             'Value': {
@@ -206,7 +233,7 @@ class AccessibilityAudit(RemoteServer):
                 },
                 'direction': {
                     'ObjectType': 'passthrough',
-                    'Value': direction,
+                    'Value': direction.value,
                 },
                 'includeContainers': {
                     'ObjectType': 'passthrough',
@@ -215,10 +242,9 @@ class AccessibilityAudit(RemoteServer):
             }
         }
 
-        self.broadcast.deviceInspectorMoveWithOptions_(MessageAux().append_obj(options))
-        self.recv_response()
+        self.broadcast.deviceInspectorMoveWithOptions_(MessageAux().append_obj(options), expects_reply=False)
 
-    def set_setting(self, name, value):
+    def set_setting(self, name: str, value: typing.Any) -> None:
         setting = {'ObjectType': 'AXAuditDeviceSetting_v1',
                    'Value': {'ObjectType': 'passthrough',
                              'Value': {'CurrentValueNumber_v1': {'ObjectType': 'passthrough',
@@ -229,5 +255,5 @@ class AccessibilityAudit(RemoteServer):
                                        'SettingTypeValue_v1': {'ObjectType': 'passthrough', 'Value': 3},
                                        'SliderTickMarksValue_v1': {'ObjectType': 'passthrough', 'Value': 0}}}}
         self.broadcast.deviceUpdateAccessibilitySetting_withValue_(
-            MessageAux().append_obj(setting).append_obj({'ObjectType': 'passthrough', 'Value': value}))
-        self.recv_response()
+            MessageAux().append_obj(setting).append_obj({'ObjectType': 'passthrough', 'Value': value}),
+            expects_reply=False)
