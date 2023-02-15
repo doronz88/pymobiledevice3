@@ -2,6 +2,8 @@ import typing
 from dataclasses import dataclass
 from enum import Enum
 
+from packaging.version import Version
+
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.remote_server import MessageAux, RemoteServer
 
@@ -119,7 +121,8 @@ class AccessibilityAudit(RemoteServer):
 
         # flush previously received messages
         self.recv_plist()
-        self.recv_plist()
+        if Version(lockdown.product_version) >= Version('15.0'):
+            self.recv_plist()
 
     @property
     def capabilities(self) -> typing.List[str]:
