@@ -433,7 +433,11 @@ class LockdownClient(object):
         pair = self._request_pair(pair_options, timeout=timeout)
 
         pair_record['HostPrivateKey'] = private_key_pem
-        pair_record['EscrowBag'] = pair.get('EscrowBag')
+        escrow_bag = pair.get('EscrowBag')
+
+        if escrow_bag is not None:
+            pair_record['EscrowBag'] = pair.get('EscrowBag')
+
         self.pair_record = pair_record
         self._write_storage_file(f'{self.identifier}.plist', plistlib.dumps(pair_record))
 
