@@ -9,6 +9,7 @@ import tempfile
 import time
 import uuid
 from contextlib import contextmanager, suppress
+from enum import Enum
 from pathlib import Path
 from typing import Mapping, Optional, Union
 
@@ -93,6 +94,15 @@ DOMAINS = ['com.apple.disk_usage',
            'com.apple.mobile.iTunes',
            'com.apple.fmip',
            'com.apple.Accessibility', ]
+
+
+class DeviceClass(Enum):
+    iPhone = 'iPhone'
+    iPad = 'iPad'
+    iPod = 'iPod'
+    Watch = 'Watch'
+    AppleTV = 'AppleTV'
+    Unknown = 'Unknown'
 
 
 class LockdownClient(object):
@@ -187,6 +197,13 @@ class LockdownClient(object):
 
     def query_type(self) -> str:
         return self._request('QueryType').get('Type')
+
+    @property
+    def device_class(self) -> DeviceClass:
+        try:
+            return DeviceClass(self.all_values.get('DeviceClass'))
+        except ValueError:
+            return DeviceClass('Unknown')
 
     @property
     def wifi_mac_address(self) -> str:
