@@ -384,7 +384,7 @@ class LockdownClient(object):
         if self.pair_record is None:
             return False
 
-        if Version(self.product_version) < Version('11.0'):
+        if (Version(self.product_version) < Version('7.0')) and (self.device_class != DeviceClass.Watch):
             try:
                 self._request('ValidatePair', {'PairRecord': self.pair_record})
             except PairingError:
