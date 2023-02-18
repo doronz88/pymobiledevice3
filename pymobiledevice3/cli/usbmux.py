@@ -4,7 +4,7 @@ import tempfile
 import click
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.cli.cli_common import Command, print_json
+from pymobiledevice3.cli.cli_common import print_json
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.tcp_forwarder import TcpForwarder
 
@@ -23,13 +23,14 @@ def usbmux_cli():
     pass
 
 
-@usbmux_cli.command('forward', cls=Command)
+@usbmux_cli.command('forward')
 @click.argument('src_port', type=click.IntRange(1, 0xffff))
 @click.argument('dst_port', type=click.IntRange(1, 0xffff))
+@click.option('--serial', help='device serial number')
 @click.option('-d', '--daemonize', is_flag=True)
-def usbmux_forward(lockdown: LockdownClient, src_port, dst_port, daemonize):
+def usbmux_forward(src_port: int, dst_port: int, serial: str, daemonize: bool):
     """ forward tcp port """
-    forwarder = TcpForwarder(lockdown, src_port, dst_port)
+    forwarder = TcpForwarder(src_port, dst_port, serial=serial)
 
     if daemonize:
         try:
