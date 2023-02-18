@@ -82,8 +82,13 @@ class MuxDevice:
     serial: str
     connection_type: str
 
-    def connect(self, port) -> socket.socket:
-        return create_mux().connect(self, port)
+    def connect(self, port: int) -> socket.socket:
+        mux = create_mux()
+        try:
+            return mux.connect(self, port)
+        except:  # noqa: E722
+            mux.close()
+            raise
 
     @property
     def is_usb(self) -> bool:
