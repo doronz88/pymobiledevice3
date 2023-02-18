@@ -78,6 +78,10 @@ class TcpForwarder:
             for current_sock in exceptional:
                 self._handle_close_or_error(current_sock)
 
+        # on stop, close all currently opened sockets
+        for current_sock in self.inputs:
+            current_sock.close()
+
     def _handle_close_or_error(self, from_sock):
         """ if an error occurred its time to close the two sockets """
         other_sock = self.connections[from_sock]
