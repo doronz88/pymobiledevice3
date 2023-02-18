@@ -9,6 +9,7 @@ import tempfile
 import time
 import uuid
 from contextlib import contextmanager, suppress
+from enum import Enum
 from pathlib import Path
 from typing import Mapping, Optional, Union
 
@@ -93,6 +94,15 @@ DOMAINS = ['com.apple.disk_usage',
            'com.apple.mobile.iTunes',
            'com.apple.fmip',
            'com.apple.Accessibility', ]
+
+
+class DeviceClass(Enum):
+    iPhone = 'iPhone'
+    iPad = 'iPad'
+    iPod = 'iPod'
+    Watch = 'Watch'
+    AppleTV = 'AppleTV'
+    Unknown = 'Unknown'
 
 
 class LockdownClient(object):
@@ -187,6 +197,13 @@ class LockdownClient(object):
 
     def query_type(self) -> str:
         return self._request('QueryType').get('Type')
+
+    @property
+    def device_class(self) -> DeviceClass:
+        try:
+            return DeviceClass(self.all_values.get('DeviceClass'))
+        except ValueError:
+            return DeviceClass('Unknown')
 
     @property
     def wifi_mac_address(self) -> str:
@@ -367,7 +384,7 @@ class LockdownClient(object):
         if self.pair_record is None:
             return False
 
-        if Version(self.product_version) < Version('11.0'):
+        if (Version(self.product_version) < Version('7.0')) and (self.device_class != DeviceClass.Watch):
             try:
                 self._request('ValidatePair', {'PairRecord': self.pair_record})
             except PairingError:
@@ -416,7 +433,11 @@ class LockdownClient(object):
         pair = self._request_pair(pair_options, timeout=timeout)
 
         pair_record['HostPrivateKey'] = private_key_pem
-        pair_record['EscrowBag'] = pair.get('EscrowBag')
+        escrow_bag = pair.get('EscrowBag')
+
+        if escrow_bag is not None:
+            pair_record['EscrowBag'] = pair.get('EscrowBag')
+
         self.pair_record = pair_record
         self._write_storage_file(f'{self.identifier}.plist', plistlib.dumps(pair_record))
 

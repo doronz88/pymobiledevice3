@@ -29,8 +29,8 @@ from pymobiledevice3.cli.usbmux import cli as usbmux_cli
 from pymobiledevice3.cli.webinspector import cli as webinspector_cli
 from pymobiledevice3.exceptions import DeveloperModeError, DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, \
     InternalError, InvalidServiceError, MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, \
-    NoDeviceSelectedError, NotPairedError, PairingDialogResponsePendingError, SetProhibitedError, \
-    UsbmuxConnectionError, UserDeniedPairingError
+    NoDeviceSelectedError, NotPairedError, PairingDialogResponsePendingError, PasswordRequiredError, \
+    SetProhibitedError, UsbmuxConnectionError, UserDeniedPairingError
 
 coloredlogs.install(level=logging.INFO)
 
@@ -86,6 +86,8 @@ def cli():
                      'You may try: python3 -m pymobiledevice3 mounter auto-mount')
     except NoDeviceSelectedError:
         return
+    except PasswordRequiredError:
+        logger.error('Device is password protected. Please unlock and retry')
     except BrokenPipeError:
         traceback.print_exc()
 
