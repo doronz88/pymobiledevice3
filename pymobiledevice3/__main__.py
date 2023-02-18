@@ -27,10 +27,10 @@ from pymobiledevice3.cli.springboard import cli as springboard_cli
 from pymobiledevice3.cli.syslog import cli as syslog_cli
 from pymobiledevice3.cli.usbmux import cli as usbmux_cli
 from pymobiledevice3.cli.webinspector import cli as webinspector_cli
-from pymobiledevice3.exceptions import DeveloperModeError, DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, \
-    InternalError, InvalidServiceError, MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, \
-    NoDeviceSelectedError, NotPairedError, PairingDialogResponsePendingError, PasswordRequiredError, \
-    SetProhibitedError, UsbmuxConnectionError, UserDeniedPairingError
+from pymobiledevice3.exceptions import ConnectionFailedError, DeveloperModeError, DeveloperModeIsNotEnabledError, \
+    DeviceHasPasscodeSetError, InternalError, InvalidServiceError, MessageNotSupportedError, MissingValueError, \
+    NoDeviceConnectedError, NoDeviceSelectedError, NotPairedError, PairingDialogResponsePendingError, \
+    PasswordRequiredError, SetProhibitedError, UserDeniedPairingError
 
 coloredlogs.install(level=logging.INFO)
 
@@ -72,7 +72,7 @@ def cli():
         logger.error('Cannot enable developer-mode when passcode is set')
     except DeveloperModeError as e:
         logger.error(f'Failed to enable developer-mode. Error: {e}')
-    except UsbmuxConnectionError:
+    except ConnectionFailedError:
         logger.error('Failed to connect to usbmuxd socket. Make sure it\'s running.')
     except MessageNotSupportedError:
         logger.error('Message not supported for this iOS version')

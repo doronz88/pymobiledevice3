@@ -9,7 +9,8 @@ from typing import List, Mapping, Optional
 from construct import Const, CString, Enum, FixedSized, GreedyBytes, Int16ul, Int32ul, Padding, Prefixed, StreamError, \
     Struct, Switch, this
 
-from pymobiledevice3.exceptions import MuxException, MuxVersionError, NotPairedError, UsbmuxConnectionError
+from pymobiledevice3.exceptions import BadCommandError, BadDevError, ConnectionFailedError, MuxException, \
+    MuxVersionError, NotPairedError
 
 usbmuxd_version = Enum(Int32ul,
                        BINARY=0,
@@ -143,8 +144,8 @@ class MuxConnection:
                 return SafeStreamSocket(MuxConnection.ITUNES_HOST, socket.AF_INET)
             else:
                 return SafeStreamSocket(MuxConnection.USBMUXD_PIPE, socket.AF_UNIX)
-        except ConnectionRefusedError as e:
-            raise UsbmuxConnectionError from e
+        except ConnectionRefusedError:
+            raise ConnectionFailedError()
 
     @staticmethod
     def create():
@@ -209,6 +210,16 @@ class MuxConnection:
         if self._connected:
             raise MuxException('Mux is connected, cannot issue control packets')
 
+    def _raise_mux_exception(self, result: int, message: str = None):
+        exceptions = {
+            int(usbmuxd_result.BADCOMMAND): BadCommandError,
+            int(usbmuxd_result.BADDEV): BadDevError,
+            int(usbmuxd_result.CONNREFUSED): ConnectionFailedError,
+            int(usbmuxd_result.BADVERSION): MuxVersionError,
+        }
+        exception = exceptions.get(result, MuxException)
+        raise exception(message)
+
 
 class BinaryMuxConnection(MuxConnection):
     """ old binary protocol """
@@ -251,8 +262,9 @@ class BinaryMuxConnection(MuxConnection):
             raise MuxException(f'unexpected message type received: {response}')
 
         if response.data.result != usbmuxd_result.OK:
-            raise MuxException(f'failed to connect to device: {device_id} at port: {port}. reason: '
-                               f'{response.data.result}')
+            raise self._raise_mux_exception(int(response.data.result),
+                                            f'failed to connect to device: {device_id} at port: {port}. reason: '
+                                            f'{response.data.result}')
 
     def _send(self, data: Mapping):
         self._assert_not_connected()
@@ -275,7 +287,7 @@ class BinaryMuxConnection(MuxConnection):
 
         result = response.data.result
         if result != usbmuxd_result.OK:
-            raise MuxException(f'{message_type} failed: error {result}')
+            raise self._raise_mux_exception(int(result), f'{message_type} failed: error {result}')
 
     def _add_device(self, device: MuxDevice):
         self.devices.append(device)
@@ -360,7 +372,7 @@ class PlistMuxConnection(BinaryMuxConnection):
         if response['MessageType'] != 'Result':
             raise MuxException(f'got an invalid message: {response}')
         if response['Number'] != 0:
-            raise MuxException(f'got an error message: {response}')
+            raise self._raise_mux_exception(response['Number'], f'got an error message: {response}')
 
 
 def create_mux() -> MuxConnection:

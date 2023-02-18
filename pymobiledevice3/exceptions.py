@@ -1,6 +1,6 @@
 __all__ = [
     'PyMobileDevice3Exception', 'DeviceVersionNotSupportedError', 'IncorrectModeError', 'DeviceVersionFormatError',
-    'ConnectionFailedError', 'NotTrustedError', 'PairingError', 'NotPairedError', 'CannotStopSessionError',
+    'NotTrustedError', 'PairingError', 'NotPairedError', 'CannotStopSessionError',
     'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'MuxException',
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
@@ -8,9 +8,9 @@ __all__ = [
     'ArbitrationError', 'InternalError', 'DeveloperModeIsNotEnabledError', 'DeviceAlreadyInUseError', 'LockdownError',
     'PairingDialogResponsePendingError', 'UserDeniedPairingError', 'InvalidHostIDError', 'SetProhibitedError',
     'MissingValueError', 'PasscodeRequiredError', 'AmfiError', 'DeviceHasPasscodeSetError', 'NotificationTimeoutError',
-    'DeveloperModeError', 'ProfileError', 'UsbmuxConnectionError', 'IRecvError', 'IRecvNoDeviceConnectedError',
+    'DeveloperModeError', 'ProfileError', 'IRecvError', 'IRecvNoDeviceConnectedError',
     'NoDeviceSelectedError', 'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
-    'LaunchingApplicationError',
+    'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError',
 ]
 
 
@@ -27,10 +27,6 @@ class IncorrectModeError(PyMobileDevice3Exception):
 
 
 class DeviceVersionFormatError(PyMobileDevice3Exception):
-    pass
-
-
-class ConnectionFailedError(PyMobileDevice3Exception):
     pass
 
 
@@ -71,6 +67,18 @@ class MuxException(PyMobileDevice3Exception):
 
 
 class MuxVersionError(MuxException):
+    pass
+
+
+class BadCommandError(MuxException):
+    pass
+
+
+class BadDevError(MuxException):
+    pass
+
+
+class ConnectionFailedError(MuxException):
     pass
 
 
@@ -224,11 +232,6 @@ class NotificationTimeoutError(PyMobileDevice3Exception, TimeoutError):
 
 
 class ProfileError(PyMobileDevice3Exception):
-    pass
-
-
-class UsbmuxConnectionError(PyMobileDevice3Exception):
-    """ error connecting to usbmuxd socket """
     pass
 
 
