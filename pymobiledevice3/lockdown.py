@@ -97,12 +97,12 @@ DOMAINS = ['com.apple.disk_usage',
 
 
 class DeviceClass(Enum):
-    iPhone = 'iPhone'
-    iPad = 'iPad'
-    iPod = 'iPod'
-    Watch = 'Watch'
-    AppleTV = 'AppleTV'
-    Unknown = 'Unknown'
+    IPHONE = 'iPhone'
+    IPAD = 'iPad'
+    IPOD = 'iPod'
+    WATCH = 'Watch'
+    APPLE_TV = 'AppleTV'
+    UNKNOWN = 'Unknown'
 
 
 class LockdownClient(object):
@@ -384,7 +384,7 @@ class LockdownClient(object):
         if self.pair_record is None:
             return False
 
-        if (Version(self.product_version) < Version('7.0')) and (self.device_class != DeviceClass.Watch):
+        if (Version(self.product_version) < Version('7.0')) and (self.device_class != DeviceClass.WATCH):
             try:
                 self._request('ValidatePair', {'PairRecord': self.pair_record})
             except PairingError:
