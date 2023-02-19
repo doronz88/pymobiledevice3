@@ -18,10 +18,10 @@ from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import CannotStopSessionError, ConnectionFailedError, ConnectionTerminatedError, \
-    FatalPairingError, IncorrectModeError, InvalidHostIDError, InvalidServiceError, LockdownError, MissingValueError, \
-    NotPairedError, PairingDialogResponsePendingError, PairingError, PasscodeRequiredError, PasswordRequiredError, \
-    SetProhibitedError, StartServiceError, UserDeniedPairingError
+from pymobiledevice3.exceptions import CannotStopSessionError, ConnectionTerminatedError, FatalPairingError, \
+    IncorrectModeError, InvalidHostIDError, InvalidServiceError, LockdownError, MissingValueError, NotPairedError, \
+    PairingDialogResponsePendingError, PairingError, PasscodeRequiredError, PasswordRequiredError, SetProhibitedError, \
+    StartServiceError, UserDeniedPairingError
 from pymobiledevice3.irecv_devices import IRECV_DEVICES
 from pymobiledevice3.service_connection import Medium, ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
@@ -97,12 +97,12 @@ DOMAINS = ['com.apple.disk_usage',
 
 
 class DeviceClass(Enum):
-    iPhone = 'iPhone'
-    iPad = 'iPad'
-    iPod = 'iPod'
-    Watch = 'Watch'
-    AppleTV = 'AppleTV'
-    Unknown = 'Unknown'
+    IPHONE = 'iPhone'
+    IPAD = 'iPad'
+    IPOD = 'iPod'
+    WATCH = 'Watch'
+    APPLE_TV = 'AppleTV'
+    UNKNOWN = 'Unknown'
 
 
 class LockdownClient(object):
@@ -384,7 +384,7 @@ class LockdownClient(object):
         if self.pair_record is None:
             return False
 
-        if (Version(self.product_version) < Version('7.0')) and (self.device_class != DeviceClass.Watch):
+        if (Version(self.product_version) < Version('7.0')) and (self.device_class != DeviceClass.WATCH):
             try:
                 self._request('ValidatePair', {'PairRecord': self.pair_record})
             except PairingError:
@@ -539,7 +539,7 @@ class LockdownClient(object):
     def start_developer_service(self, name, escrow_bag=None) -> ServiceConnection:
         try:
             return self.start_service(name, escrow_bag)
-        except (StartServiceError, ConnectionFailedError):
+        except StartServiceError:
             self.logger.error(
                 'Failed to connect to required service. Make sure DeveloperDiskImage.dmg has been mounted. '
                 'You can do so using: pymobiledevice3 mounter mount'

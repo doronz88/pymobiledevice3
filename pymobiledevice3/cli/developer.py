@@ -860,7 +860,8 @@ def debugserver_start_server(lockdown: LockdownClient, local_port):
     (lldb) platform connect connect://localhost:<local_port>
     """
     attr = lockdown.get_service_connection_attributes('com.apple.debugserver.DVTSecureSocketProxy')
-    TcpForwarder(lockdown, local_port, attr['Port'], attr.get('EnableServiceSSL', False)).start()
+    TcpForwarder(local_port, attr['Port'], serial=lockdown.identifier,
+                 enable_ssl=attr.get('EnableServiceSSL', False)).start()
 
 
 @developer.group('arbitration')
