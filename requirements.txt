@@ -28,5 +28,5 @@ nest_asyncio>=1.5.5
 Pillow
 inquirer
 pyimg4>=0.7
-ipsw_parser>=1.1.0
+ipsw_parser>=1.1.2
 remotezip
