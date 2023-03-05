@@ -20,8 +20,8 @@ from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import CannotStopSessionError, ConnectionTerminatedError, FatalPairingError, \
     IncorrectModeError, InvalidHostIDError, InvalidServiceError, LockdownError, MissingValueError, NotPairedError, \
-    PairingDialogResponsePendingError, PairingError, PasscodeRequiredError, PasswordRequiredError, SetProhibitedError, \
-    StartServiceError, UserDeniedPairingError
+    PairingDialogResponsePendingError, PairingError, PasswordRequiredError, SetProhibitedError, StartServiceError, \
+    UserDeniedPairingError
 from pymobiledevice3.irecv_devices import IRECV_DEVICES
 from pymobiledevice3.service_connection import Medium, ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
@@ -248,17 +248,6 @@ class LockdownClient(object):
     @invert_display.setter
     def invert_display(self, value: bool) -> None:
         self.set_value(int(value), 'com.apple.Accessibility', 'InvertDisplayEnabledByiTunes')
-
-    @property
-    def enable_wifi_pairing(self) -> bool:
-        return self.get_value('com.apple.mobile.wireless_lockdown').get('EnableWifiPairing', False)
-
-    @enable_wifi_pairing.setter
-    def enable_wifi_pairing(self, value: bool) -> None:
-        try:
-            self.set_value(value, 'com.apple.mobile.wireless_lockdown', 'EnableWifiPairing')
-        except MissingValueError as e:
-            raise PasscodeRequiredError from e
 
     @property
     def enable_wifi_connections(self) -> bool:
