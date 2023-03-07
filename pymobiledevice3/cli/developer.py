@@ -740,13 +740,16 @@ def accessibility_settings_show(lockdown: LockdownClient):
 
 
 @accessibility_settings.command('set', cls=Command)
-@click.argument('setting', type=click.Choice(
-    ['INVERT_COLORS', 'INCREASE_CONTRAST', 'REDUCE_TRANSPARENCY', 'REDUCE_MOTION', 'FONT_SIZE']))
-@click.argument('value', type=click.INT)
+@click.argument('setting')
+@click.argument('value')
 def accessibility_settings_set(lockdown: LockdownClient, setting, value):
-    """ show current settings """
+    """
+    change current settings
+
+    in order to list all available use the "show" command
+    """
     service = AccessibilityAudit(lockdown)
-    service.set_setting(setting, value)
+    service.set_setting(setting, eval(value))
     wait_return()
 
 
