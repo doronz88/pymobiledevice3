@@ -19,7 +19,7 @@ cmd2
 packaging
 pygnuutils>=0.0.6
 cryptography>=35.0.0
-pycrashreport>=1.0.5
+pycrashreport>=1.0.6
 fastapi[all]
 uvicorn>=0.15.0
 starlette
