@@ -263,17 +263,15 @@ def sysmon_process_monitor(lockdown: LockdownClient, threshold):
 
 
 @sysmon_process.command('single', cls=Command)
-@click.option('-f', '--fields', help='show only given field names splitted by ",".')
 @click.option('-a', '--attributes', multiple=True,
               help='filter processes by given attribute value given as key=value')
-def sysmon_process_single(lockdown: LockdownClient, fields, attributes):
+@click.option('--color/--no-color', default=True)
+def sysmon_process_single(lockdown: LockdownClient, attributes: List[str], color: bool):
     """ show a single snapshot of currently running processes. """
-
-    if fields is not None:
-        fields = fields.split(',')
 
     count = 0
 
+    result = []
     with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
         device_info = DeviceInfo(dvt)
 
@@ -299,14 +297,11 @@ def sysmon_process_single(lockdown: LockdownClient, fields, attributes):
 
                     # adding "artificially" the execName field
                     process['execName'] = device_info.execname_for_pid(process['pid'])
-
-                    print(f'{process["name"]} ({process["pid"]})')
-                    for name, value in process.items():
-                        if (fields is None) or (name in fields):
-                            print(f'\t{name}: {value}')
+                    result.append(process)
 
                 # exit after single snapshot
-                return
+                break
+    print_json(result, colored=color)
 
 
 @sysmon.command('system', cls=Command)
