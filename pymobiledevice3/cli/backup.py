@@ -126,7 +126,7 @@ def extract(lockdown: LockdownClient, domain_name, relative_path, backup_directo
 
 
 @backup2.command(cls=Command)
-@click.argument('mode', type=click.Choice(['ON', 'OFF']))
+@click.argument('mode', type=click.Choice(['ON', 'OFF'], case_sensitive=False))
 @click.argument('password')
 @backup_directory_option
 def encryption(lockdown: LockdownClient, backup_directory, mode, password):
