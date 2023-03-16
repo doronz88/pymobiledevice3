@@ -15,6 +15,7 @@ class CrashReportsManager:
     COPY_MOBILE_NAME = 'com.apple.crashreportcopymobile'
     CRASH_MOVER_NAME = 'com.apple.crashreportmover'
     APPSTORED_PATH = '/com.apple.appstored'
+    IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS = ['.tmp', '.tar.gz']
 
     def __init__(self, lockdown: LockdownClient):
         self.logger = logging.getLogger(__name__)
@@ -127,9 +128,13 @@ class CrashReportsManager:
                 for filename in self.ls('DiagnosticLogs/sysdiagnose'):
                     # search for an IN_PROGRESS archive
                     if 'IN_PROGRESS_' in filename:
-                        sysdiagnose_filename = filename.replace('IN_PROGRESS_', '')
-                        sysdiagnose_filename = f'{posixpath.splitext(sysdiagnose_filename)[0]}.tar.gz'
-                        break
+                        for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
+                            if filename.endswith(ext):
+                                sysdiagnose_filename = filename.rsplit(ext)[0]
+                                sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
+                                sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
+                                print('filename', sysdiagnose_filename)
+                                break
                 break
 
         self.afc.wait_exists(sysdiagnose_filename)
