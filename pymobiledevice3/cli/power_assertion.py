@@ -1,3 +1,5 @@
+import time
+
 import click
 
 from pymobiledevice3.cli.cli_common import Command
@@ -19,4 +21,6 @@ def cli():
 @click.argument('details', required=False)
 def power_assertion(lockdown: LockdownClient, type, name, timeout, details):
     """ Create a power assertion (wraps IOPMAssertionCreateWithName()) """
-    PowerAssertionService(lockdown).create_power_assertion(type, name, timeout, details)
+    with PowerAssertionService(lockdown).create_power_assertion(type, name, timeout, details):
+        print('> Hit Ctrl+C to exit')
+        time.sleep(timeout)
