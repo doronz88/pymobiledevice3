@@ -2,6 +2,7 @@ import logging
 import select
 import socket
 import threading
+from typing import Set
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import ConnectionFailedError
@@ -17,8 +18,8 @@ class TcpForwarder:
     MAX_FORWARDED_CONNECTIONS = 200
     TIMEOUT = 1
 
-    def __init__(self, src_port: int, dst_port: int, serial: str = None, enable_ssl=False,
-                 listening_event: threading.Event = None, usbmux_connection_type: str = None):
+    def __init__(self, src_port: int, dst_port: int, serial: str = None, enable_ssl: bool = False,
+                 listening_event: threading.Event = None, usbmux_connection_type: str = None) -> None:
         """
         Initialize a new tcp forwarder
 
@@ -44,7 +45,7 @@ class TcpForwarder:
         # socket to its remote socket and vice versa
         self.connections = {}
 
-    def start(self, address='0.0.0.0'):
+    def start(self, address: str = '0.0.0.0') -> None:
         """ forward each connection from given local machine port to remote device port """
         # create local tcp server socket
         self.server_socket = socket.socket()
@@ -82,8 +83,12 @@ class TcpForwarder:
         for current_sock in self.inputs:
             current_sock.close()
 
-    def _handle_close_or_error(self, from_sock):
-        """ if an error occurred its time to close the two sockets """
+    def stop(self) -> None:
+        """ stop forwarding """
+        self.stopped.set()
+
+    def _handle_close_or_error(self, from_sock: socket.socket) -> None:
+        """ if an error occurred it's time to close the two sockets """
         other_sock = self.connections[from_sock]
 
         other_sock.close()
@@ -93,7 +98,7 @@ class TcpForwarder:
 
         self.logger.info(f'connection {other_sock} was closed')
 
-    def _handle_data(self, from_sock, closed_sockets):
+    def _handle_data(self, from_sock: socket.socket, closed_sockets: Set) -> None:
         data = from_sock.recv(1024)
 
         if len(data) == 0:
@@ -111,7 +116,7 @@ class TcpForwarder:
         other_sock.sendall(data)
         other_sock.setblocking(False)
 
-    def _handle_server_connection(self):
+    def _handle_server_connection(self) -> None:
         """ accept the connection from local machine and attempt to connect at remote """
         local_connection, client_address = self.server_socket.accept()
         local_connection.setblocking(False)
@@ -149,7 +154,3 @@ class TcpForwarder:
         self.connections[local_connection] = remote_connection
 
         self.logger.info(f'connection established from local to remote port {self.dst_port}')
-
-    def stop(self):
-        """ stop forwarding """
-        self.stopped.set()
