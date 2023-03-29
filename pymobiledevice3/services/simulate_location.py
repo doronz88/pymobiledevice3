@@ -10,15 +10,15 @@ from pymobiledevice3.services.base_service import BaseService
 class DtSimulateLocation(BaseService):
     SERVICE_NAME = 'com.apple.dt.simulatelocation'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownClient) -> None:
         super().__init__(lockdown, self.SERVICE_NAME)
 
-    def clear(self):
+    def clear(self) -> None:
         """ stop simulation """
         service = self.lockdown.start_developer_service(self.SERVICE_NAME)
         service.sendall(struct.pack('>I', 1))
 
-    def set(self, latitude: float, longitude: float):
+    def set(self, latitude: float, longitude: float) -> None:
         """ stop simulation """
         service = self.lockdown.start_developer_service(self.SERVICE_NAME)
         service.sendall(struct.pack('>I', 0))
@@ -27,7 +27,7 @@ class DtSimulateLocation(BaseService):
         service.sendall(struct.pack('>I', len(latitude)) + latitude)
         service.sendall(struct.pack('>I', len(longitude)) + longitude)
 
-    def play_gpx_file(self, filename: str, disable_sleep: bool = False):
+    def play_gpx_file(self, filename: str, disable_sleep: bool = False) -> None:
         with open(filename) as f:
             gpx = gpxpy.parse(f)
 
