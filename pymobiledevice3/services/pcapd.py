@@ -3,6 +3,7 @@
 import enum
 import socket
 import struct
+from typing import BinaryIO, Container, Generator
 
 from construct import Byte, Bytes, CString, Int32ub, Int32ul, Padded, Padding, Struct, this
 
@@ -326,10 +327,10 @@ class PcapdService(BaseService):
     """
     SERVICE_NAME = 'com.apple.pcapd'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownClient) -> None:
         super().__init__(lockdown, self.SERVICE_NAME)
 
-    def watch(self, packets_count: int = -1, process: str = None):
+    def watch(self, packets_count: int = -1, process: str = None) -> Generator[Container, None, None]:
         packet_index = 0
         while packet_index != packets_count:
             d = self.service.recv_plist()
@@ -353,7 +354,7 @@ class PcapdService(BaseService):
             packet_index += 1
 
     @staticmethod
-    def write_to_pcap(out, packet_generator):
+    def write_to_pcap(out: BinaryIO, packet_generator: Generator) -> None:
         out.write(PCAP_HEADER)
         for packet in packet_generator:
             length = len(packet.data)
