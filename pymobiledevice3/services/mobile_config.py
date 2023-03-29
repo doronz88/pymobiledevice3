@@ -14,7 +14,7 @@ class Purpose(Enum):
 class MobileConfigService(BaseService):
     SERVICE_NAME = 'com.apple.mobile.MCInstall'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownClient) -> None:
         super().__init__(lockdown, self.SERVICE_NAME)
 
     def hello(self) -> None:
