@@ -126,7 +126,7 @@ def extract(lockdown: LockdownClient, domain_name, relative_path, backup_directo
 
 
 @backup2.command(cls=Command)
-@click.argument('mode', type=click.Choice(['ON', 'OFF'], case_sensitive=False))
+@click.argument('mode', type=click.Choice(['on', 'off'], case_sensitive=False))
 @click.argument('password')
 @backup_directory_option
 def encryption(lockdown: LockdownClient, backup_directory, mode, password):
@@ -137,7 +137,7 @@ def encryption(lockdown: LockdownClient, backup_directory, mode, password):
     When off, PASSWORD is the current backup password.
     """
     backup_client = Mobilebackup2Service(lockdown)
-    should_encrypt = mode == 'ON'
+    should_encrypt = mode.lower() == 'on'
     if should_encrypt == backup_client.will_encrypt:
         logger.error('Encryption already ' + ('on!' if should_encrypt else 'off!'))
         return
