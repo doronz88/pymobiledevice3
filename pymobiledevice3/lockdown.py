@@ -10,8 +10,9 @@ import time
 import uuid
 from contextlib import contextmanager, suppress
 from enum import Enum
+from functools import wraps
 from pathlib import Path
-from typing import Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Union
 
 from packaging.version import Version
 
@@ -42,6 +43,7 @@ def reconnect_on_remote_close(f):
     transmitted). When this happens, we'll attempt to reconnect.
     """
 
+    @wraps(f)
     def _reconnect_on_remote_close(*args, **kwargs):
         try:
             return f(*args, **kwargs)
@@ -112,7 +114,7 @@ class LockdownClient(object):
     def __init__(self, serial: str = None, hostname: str = None, client_name: str = DEFAULT_CLIENT_NAME,
                  autopair: bool = True, usbmux_connection_type: str = None, pair_timeout: int = None,
                  local_hostname: str = None, pair_record: Mapping = None,
-                 pairing_records_cache_folder: Path = None):
+                 pairing_records_cache_folder: Path = None) -> None:
         """
         :param serial: serial number for device to connect to (over usbmuxd)
         :param hostname: connect to given hostname using TCP instead of usbmuxd
@@ -322,7 +324,7 @@ class LockdownClient(object):
         return str(host_id).upper()
 
     @reconnect_on_remote_close
-    def enter_recovery(self):
+    def enter_recovery(self) -> Mapping:
         return self._request('EnterRecovery')
 
     def get_system_buid(self) -> str:
@@ -481,7 +483,7 @@ class LockdownClient(object):
         return self._request('RemoveValue', options)
 
     @reconnect_on_remote_close
-    def set_value(self, value, domain: str = None, key: str = None) -> Mapping:
+    def set_value(self, value: Any, domain: str = None, key: str = None) -> Mapping:
         options = {}
 
         if domain:
@@ -492,7 +494,7 @@ class LockdownClient(object):
         options['Value'] = value
         return self._request('SetValue', options)
 
-    def get_service_connection_attributes(self, name, escrow_bag=None) -> Mapping:
+    def get_service_connection_attributes(self, name: str, escrow_bag: bytes = None) -> Mapping:
         if not self.paired:
             raise NotPairedError()
 
@@ -512,7 +514,7 @@ class LockdownClient(object):
         return ServiceConnection.create(self.medium, self.identifier, port, self.usbmux_connection_type)
 
     @reconnect_on_remote_close
-    def start_service(self, name: str, escrow_bag=None) -> ServiceConnection:
+    def start_service(self, name: str, escrow_bag: bytes = None) -> ServiceConnection:
         attr = self.get_service_connection_attributes(name, escrow_bag=escrow_bag)
         service_connection = self._create_service_connection(attr['Port'])
 
@@ -521,7 +523,7 @@ class LockdownClient(object):
                 service_connection.ssl_start(f)
         return service_connection
 
-    async def aio_start_service(self, name: str, escrow_bag=None) -> ServiceConnection:
+    async def aio_start_service(self, name: str, escrow_bag: bytes = None) -> ServiceConnection:
         attr = self.get_service_connection_attributes(name, escrow_bag=escrow_bag)
         service_connection = self._create_service_connection(attr['Port'])
 
