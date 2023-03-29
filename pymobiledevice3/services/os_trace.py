@@ -6,6 +6,7 @@ import tempfile
 import typing
 from datetime import datetime
 from tarfile import TarFile
+from typing import Container, Generator, Mapping
 
 from construct import Adapter, Byte, Bytes, Computed, Enum, Int16ul, Int32ul, Optional, RepeatUntil, Struct, this
 
@@ -64,19 +65,19 @@ syslog_t = Struct(
 
 class OsTraceService(BaseService):
     """
-    Provides API for the following operations:
-    * Show process list (process name and pid)
-    * Stream syslog lines in binary form with optional filtering by pid.
-    * Get old stored syslog archive in PAX format (can be extracted using `pax -r < filename`).
-        * Archive contain the contents are the `/var/db/diagnostics` directory
+        Provides API for the following operations:
+            * Show process list (process name and pid)
+            * Stream syslog lines in binary form with optional filtering by pid.
+            * Get old stored syslog archive in PAX format (can be extracted using `pax -r < filename`).
+                * Archive contain the contents are the `/var/db/diagnostics` directory
     """
     SERVICE_NAME = 'com.apple.os_trace_relay'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownClient) -> None:
         super().__init__(lockdown, self.SERVICE_NAME)
         self.logger = logging.getLogger(__name__)
 
-    def get_pid_list(self):
+    def get_pid_list(self) -> Mapping:
         self.service.send_plist({'Request': 'PidList'})
 
         # ignore first received unknown byte
@@ -85,7 +86,8 @@ class OsTraceService(BaseService):
         response = self.service.recv_prefixed()
         return plistlib.loads(response)
 
-    def create_archive(self, out: typing.IO, size_limit: int = None, age_limit: int = None, start_time: int = None):
+    def create_archive(self, out: typing.IO, size_limit: int = None, age_limit: int = None,
+                       start_time: int = None) -> None:
         request = {'Request': 'CreateArchive'}
 
         if size_limit is not None:
@@ -118,7 +120,7 @@ class OsTraceService(BaseService):
             self.create_archive(tar, size_limit=size_limit, age_limit=age_limit, start_time=start_time)
             TarFile(tar.name).extractall(out)
 
-    def syslog(self, pid=-1):
+    def syslog(self, pid: int = -1) -> Generator[Container, None, None]:
         self.service.send_plist({'Request': 'StartActivity', 'MessageFilter': 65535, 'Pid': pid, 'StreamFlags': 60})
 
         length_length, = struct.unpack('<I', self.service.recvall(4))
