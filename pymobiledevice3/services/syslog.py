@@ -1,3 +1,5 @@
+from typing import Generator, Union
+
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService
 from pymobiledevice3.utils import try_decode
@@ -14,10 +16,10 @@ class SyslogService(BaseService):
 
     SERVICE_NAME = 'com.apple.syslog_relay'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownClient) -> None:
         super().__init__(lockdown, self.SERVICE_NAME)
 
-    def watch(self):
+    def watch(self) -> Generator[Union[bytes, str], None, None]:
         buf = b''
         while True:
             # read in chunks till we have at least one syslog line
