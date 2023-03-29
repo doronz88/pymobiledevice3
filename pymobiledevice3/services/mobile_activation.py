@@ -2,6 +2,7 @@
 import plistlib
 from contextlib import closing
 from pathlib import Path
+from typing import Any, Mapping, Tuple
 
 import requests
 
@@ -29,20 +30,20 @@ class MobileActivationService:
     """
     SERVICE_NAME = 'com.apple.mobileactivationd'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownClient) -> None:
         self.lockdown = lockdown
 
     @property
-    def state(self):
+    def state(self) -> str:
         return self.send_command('GetActivationStateRequest')['Value']
 
-    def wait_for_activation_session(self):
+    def wait_for_activation_session(self) -> None:
         blob = self.create_activation_session_info()
         handshake_request_message = blob['HandshakeRequestMessage']
         while handshake_request_message == blob['HandshakeRequestMessage']:
             blob = self.create_activation_session_info()
 
-    def activate(self):
+    def activate(self) -> None:
         blob = self.create_activation_session_info()
 
         # create drmHandshake request with blob from device
@@ -56,16 +57,16 @@ class MobileActivationService:
         assert headers['Content-Type'] == 'text/xml'
         self.activate_with_session(content, headers)
 
-    def deactivate(self):
+    def deactivate(self) -> Mapping:
         return self.send_command('DeactivateRequest')
 
-    def create_activation_session_info(self):
+    def create_activation_session_info(self) -> Any:
         return self.send_command('CreateTunnel1SessionInfoRequest')['Value']
 
-    def create_activation_info_with_session(self, handshake_response):
+    def create_activation_info_with_session(self, handshake_response: bytes) -> Any:
         return self.send_command('CreateTunnel1ActivationInfoRequest', handshake_response)['Value']
 
-    def activate_with_session(self, activation_record, headers):
+    def activate_with_session(self, activation_record: Mapping, headers: Mapping) -> Mapping:
         data = {
             'Command': 'HandleActivationInfoWithSessionRequest',
             'Value': activation_record,
@@ -75,14 +76,14 @@ class MobileActivationService:
         with closing(LockdownClient(self.lockdown.udid).start_service(self.SERVICE_NAME)) as service:
             return service.send_recv_plist(data)
 
-    def send_command(self, command, value=''):
+    def send_command(self, command: str, value: Any = '') -> Mapping:
         data = {'Command': command}
         if value:
             data['Value'] = value
         with closing(LockdownClient(self.lockdown.udid).start_service(self.SERVICE_NAME)) as service:
             return service.send_recv_plist(data)
 
-    def post(self, url, data, headers=None):
+    def post(self, url: str, data: Any, headers: Any = None) -> Tuple[bytes, Mapping[str, str]]:
         if headers is None:
             headers = DEFAULT_HEADERS
 
