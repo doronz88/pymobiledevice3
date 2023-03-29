@@ -1,11 +1,12 @@
 import re
+from typing import Any, Mapping, Union
 
 from construct import Int8ul, Int16ul, Int32ul, Int64ul, Select
 
 from pymobiledevice3.exceptions import DeviceVersionFormatError
 
 
-def plist_access_path(d, path: tuple, type_=None, required=False):
+def plist_access_path(d: Mapping, path: tuple, type_=None, required=False) -> Any:
     for component in path:
         d = d.get(component)
         if d is None:
@@ -25,18 +26,18 @@ def plist_access_path(d, path: tuple, type_=None, required=False):
     return d
 
 
-def bytes_to_uint(b: bytes):
+def bytes_to_uint(b: bytes) -> int:
     return Select(u64=Int64ul, u32=Int32ul, u16=Int16ul, u8=Int8ul).parse(b)
 
 
-def sanitize_ios_version(version: str):
+def sanitize_ios_version(version: str) -> str:
     try:
         return re.match(r'\d*\.\d*', version)[0]
     except TypeError as e:
         raise DeviceVersionFormatError from e
 
 
-def try_decode(s: bytes):
+def try_decode(s: bytes) -> Union[str, bytes]:
     try:
         return s.decode('utf8')
     except UnicodeDecodeError:
