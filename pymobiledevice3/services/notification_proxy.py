@@ -10,7 +10,7 @@ class NotificationProxyService(BaseService):
     SERVICE_NAME = 'com.apple.mobile.notification_proxy'
     INSECURE_SERVICE_NAME = 'com.apple.mobile.insecure_notification_proxy'
 
-    def __init__(self, lockdown: LockdownClient, insecure=False, timeout: Union[float, int] = None):
+    def __init__(self, lockdown: LockdownClient, insecure: bool = False, timeout: Union[float, int] = None) -> None:
         if insecure:
             super().__init__(lockdown, self.INSECURE_SERVICE_NAME)
         else:
