@@ -1,5 +1,5 @@
-import typing
 from enum import IntEnum
+from typing import List, Mapping
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService
@@ -15,17 +15,17 @@ class InterfaceOrientation(IntEnum):
 class SpringBoardServicesService(BaseService):
     SERVICE_NAME = 'com.apple.springboardservices'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownClient) -> None:
         super().__init__(lockdown, self.SERVICE_NAME)
 
-    def get_icon_state(self, format_version: str = '2'):
+    def get_icon_state(self, format_version: str = '2') -> List:
         cmd = {'command': 'getIconState'}
         if format_version:
             cmd['formatVersion'] = format_version
 
         return self.service.send_recv_plist(cmd)
 
-    def set_icon_state(self, newstate: typing.Mapping = None):
+    def set_icon_state(self, newstate: Mapping = None) -> None:
         if newstate is None:
             newstate = {}
         cmd = {'command': 'setIconState',
@@ -33,13 +33,13 @@ class SpringBoardServicesService(BaseService):
 
         self.service.send_recv_plist(cmd)
 
-    def get_icon_pngdata(self, bundle_id: str):
+    def get_icon_pngdata(self, bundle_id: str) -> bytes:
         cmd = {'command': 'getIconPNGData',
                'bundleId': bundle_id}
 
         return self.service.send_recv_plist(cmd).get('pngData')
 
-    def get_interface_orientation(self):
+    def get_interface_orientation(self) -> InterfaceOrientation:
         cmd = {'command': 'getInterfaceOrientation'}
         self.service.send_plist(cmd)
         res = self.service.recv_plist()
