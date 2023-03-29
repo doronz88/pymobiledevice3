@@ -32,20 +32,20 @@ print(client.recvall(20))
 """
 
 
-def build_plist(d, endianity='>', fmt=plistlib.FMT_XML):
+def build_plist(d: Mapping, endianity: str = '>', fmt: plistlib.PlistFormat = plistlib.FMT_XML) -> bytes:
     payload = plistlib.dumps(d, fmt=fmt)
     message = struct.pack(endianity + 'L', len(payload))
     return message + payload
 
 
-def parse_plist(payload):
+def parse_plist(payload: bytes) -> Mapping:
     try:
         return plistlib.loads(payload)
     except plistlib.InvalidFileException:
         raise PyMobileDevice3Exception(f'parse_plist invalid data: {payload[:100].hex()}')
 
 
-def create_context(certfile, keyfile=None):
+def create_context(certfile: str, keyfile: str = None) -> ssl.SSLContext:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     if ssl.OPENSSL_VERSION.lower().startswith('openssl'):
         context.set_ciphers('ALL:!aNULL:!eNULL:@SECLEVEL=0')
@@ -65,7 +65,7 @@ class Medium(Enum):
 class ServiceConnection(object):
     """ wrapper for usbmux tcp-relay connections """
 
-    def __init__(self, sock: socket.socket, mux_device: MuxDevice = None):
+    def __init__(self, sock: socket.socket, mux_device: MuxDevice = None) -> None:
         self.logger = logging.getLogger(__name__)
         self.socket = sock
 
@@ -115,7 +115,7 @@ class ServiceConnection(object):
         self._writer = None
         self._reader = None
 
-    def recv(self, length=4096) -> bytes:
+    def recv(self, length: int = 4096) -> bytes:
         """ socket.recv() normal behavior. attempt to receive a single chunk """
         return self.socket.recv(length)
 
@@ -125,7 +125,8 @@ class ServiceConnection(object):
         except ssl.SSLEOFError as e:
             raise ConnectionTerminatedError from e
 
-    def send_recv_plist(self, data: Mapping, endianity='>', fmt=plistlib.FMT_XML) -> Mapping:
+    def send_recv_plist(self, data: Mapping, endianity: str = '>',
+                        fmt: plistlib.PlistFormat = plistlib.FMT_XML) -> Mapping:
         self.send_plist(data, endianity=endianity, fmt=fmt)
         return self.recv_plist(endianity=endianity)
 
@@ -138,8 +139,8 @@ class ServiceConnection(object):
             data += chunk
         return data
 
-    def recv_prefixed(self, endianity='>') -> bytes:
-        """ receive a data block prefixed with a u32 length field """
+    def recv_prefixed(self, endianity: str = '>') -> bytes:
+        """ receive a data block prefixed with an u32 length field """
         size = self.recvall(4)
         if not size or len(size) != 4:
             return b''
@@ -151,37 +152,39 @@ class ServiceConnection(object):
                 # Allow ssl to do stuff
                 time.sleep(0)
 
-    async def aio_recv_prefixed(self, endianity='>') -> bytes:
-        """ receive a data block prefixed with a u32 length field """
+    async def aio_recv_prefixed(self, endianity: str = '>') -> bytes:
+        """ receive a data block prefixed with an u32 length field """
         size = await self._reader.readexactly(4)
         size = struct.unpack(endianity + 'L', size)[0]
         return await self._reader.readexactly(size)
 
     def send_prefixed(self, data: bytes) -> None:
-        """ send a data block prefixed with a u32 length field """
+        """ send a data block prefixed with an u32 length field """
         if isinstance(data, str):
             data = data.encode()
         hdr = struct.pack('>L', len(data))
         msg = b''.join([hdr, data])
         return self.sendall(msg)
 
-    def recv_plist(self, endianity='>') -> Mapping:
+    def recv_plist(self, endianity: str = '>') -> Mapping:
         return parse_plist(self.recv_prefixed(endianity=endianity))
 
-    async def aio_recv_plist(self, endianity='>') -> bytes:
+    async def aio_recv_plist(self, endianity: str = '>') -> Mapping:
         return parse_plist(await self.aio_recv_prefixed(endianity))
 
-    def send_plist(self, d, endianity='>', fmt=plistlib.FMT_XML) -> None:
+    def send_plist(self, d: Mapping, endianity: str = '>',
+                   fmt: plistlib.PlistFormat = plistlib.FMT_XML) -> None:
         return self.sendall(build_plist(d, endianity, fmt))
 
-    async def aio_send_plist(self, d, endianity='>', fmt=plistlib.FMT_XML) -> None:
+    async def aio_send_plist(self, d: Mapping, endianity: str = '>',
+                             fmt: plistlib.PlistFormat = plistlib.FMT_XML) -> None:
         self._writer.write(build_plist(d, endianity, fmt))
         await self._writer.drain()
 
-    def ssl_start(self, certfile, keyfile=None) -> None:
+    def ssl_start(self, certfile: str, keyfile: str = None) -> None:
         self.socket = create_context(certfile, keyfile=keyfile).wrap_socket(self.socket)
 
-    async def aio_ssl_start(self, certfile, keyfile=None) -> None:
+    async def aio_ssl_start(self, certfile: str, keyfile: str = None) -> None:
         self._reader, self._writer = await asyncio.open_connection(
             sock=self.socket,
             ssl=create_context(certfile, keyfile=keyfile),
