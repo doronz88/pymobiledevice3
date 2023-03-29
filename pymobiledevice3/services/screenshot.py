@@ -6,7 +6,7 @@ from pymobiledevice3.services.base_service import BaseService
 class ScreenshotService(BaseService):
     SERVICE_NAME = 'com.apple.mobile.screenshotr'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownClient) -> None:
         super().__init__(lockdown, self.SERVICE_NAME, is_developer_service=True)
 
         dl_message_version_exchange = self.service.recv_plist()
