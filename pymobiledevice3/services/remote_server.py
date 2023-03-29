@@ -1,9 +1,9 @@
 import io
 import plistlib
-import typing
 from functools import partial
 from pprint import pprint
 from queue import Empty, Queue
+from typing import Any, Container, List, Mapping
 
 import IPython
 from bpylist2 import archiver
@@ -47,10 +47,10 @@ return_value, auxiliary = developer.recv_plist()
 
 
 class BplitAdapter(Adapter):
-    def _decode(self, obj, context, path):
+    def _decode(self, obj: bytes, context: Container, path: str) -> Any:
         return archiver.unarchive(obj)
 
-    def _encode(self, obj, context, path):
+    def _encode(self, obj: Any, context: Container, path: str):
         return archiver.archive(obj)
 
 
@@ -85,15 +85,15 @@ class MessageAux:
     def __init__(self):
         self.values = []
 
-    def append_int(self, value: int):
+    def append_int(self, value: int) -> 'MessageAux':
         self.values.append({'type': 3, 'value': value})
         return self
 
-    def append_long(self, value: int):
+    def append_long(self, value: int) -> 'MessageAux':
         self.values.append({'type': 6, 'value': value})
         return self
 
-    def append_obj(self, value):
+    def append_obj(self, value: Any) -> 'MessageAux':
         self.values.append({'type': 2, 'value': value})
         return self
 
@@ -103,19 +103,19 @@ class MessageAux:
 
 class DTTapMessage:
     @staticmethod
-    def decode_archive(archive_obj):
+    def decode_archive(archive_obj: Any) -> Any:
         return archive_obj.decode('DTTapMessagePlist')
 
 
 class NSNull:
     @staticmethod
-    def decode_archive(archive_obj):
+    def decode_archive(archive_obj: Any) -> None:
         return None
 
 
 class NSError:
     @staticmethod
-    def decode_archive(archive_obj):
+    def decode_archive(archive_obj: Any) -> None:
         user_info = archive_obj.decode('NSUserInfo')
         if user_info.get('NSLocalizedDescription', '').endswith(' - it does not respond to the selector'):
             raise UnrecognizedSelectorError(user_info)
@@ -134,15 +134,15 @@ archiver.update_class_map({'DTSysmonTapMessage': DTTapMessage,
 
 class Channel(int):
     @classmethod
-    def create(cls, value: int, service):
+    def create(cls, value: int, service) -> 'Channel':
         channel = cls(value)
         channel._service = service
         return channel
 
-    def receive_plist(self):
+    def receive_plist(self) -> List[str]:
         return self._service.recv_plist(self)[0]
 
-    def receive_message(self):
+    def receive_message(self) -> Any:
         return self._service.recv_message(self)[0]
 
     @staticmethod
@@ -164,15 +164,15 @@ class Channel(int):
 
 
 class ChannelFragmenter:
-    def __init__(self):
+    def __init__(self) -> None:
         self._messages = Queue()
         self._packet_data = b''
         self._stream_packet_data = b''
 
-    def get(self):
+    def get(self) -> bytes:
         return self._messages.get_nowait()
 
-    def add_fragment(self, mheader, chunk):
+    def add_fragment(self, mheader: Container, chunk: bytes) -> None:
         if mheader.channelCode >= 0:
             self._packet_data += chunk
             if mheader.fragmentId == mheader.fragmentCount - 1:
@@ -188,55 +188,55 @@ class ChannelFragmenter:
 
 
 class RemoteServer(BaseService):
-    """
-    Wrapper to Apple's RemoteServer.
-    This server exports several ObjC objects allowing calling their respective selectors.
-    The `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` service reads the
-    configuration stored from `[[NSUserDefaults standardUserDefaults] boolForKey:@"DTXConnectionTracer"]`
-    If the value is true, then `/tmp/DTServiceHub[PID].DTXConnection.RANDOM.log` is created and can be used to debug the
-    transport protocol.
+    r"""
+    .. raw:: text
+        This server exports several ObjC objects allowing calling their respective selectors.
+        The `/Developer/Library/PrivateFrameworks/DVTInstrumentsFoundation.framework/DTServiceHub` service reads the
+        configuration stored from `[[NSUserDefaults standardUserDefaults] boolForKey:@"DTXConnectionTracer"]`
+        If the value is true, then `/tmp/DTServiceHub[PID].DTXConnection.RANDOM.log` is created and can be used to debug the
+        transport protocol.
 
-    For example:
+        For example:
 
-    ```
-    root@iPhone (/var/root)# tail -f /tmp/DTServiceHub[369].DTXConnection.qNjM2U.log
-    170.887982 x4 resuming [c0]: <DTXConnection 0x100d20670 : x4>
-    170.889120 x4   sent   [c0]: < DTXMessage 0x100d52b10 : i2.0 c0 dispatch:[_notifyOfPublishedCapabilities:<NSDictionary 0x100d0e1b0 | 92 key/value pairs>] >
-    170.889547 x4 received [c0]: < DTXMessage 0x100d0a550 : i1.0 c0 dispatch:[_notifyOfPublishedCapabilities:<NSDictionary 0x100d16a40 | 2 key/value pairs>] >
-    170.892101 x4 received [c0]: < DTXMessage 0x100d0a550 : i3.0e c0 dispatch:[_requestChannelWithCode:[1]identifier :"com.apple.instruments.server.services.deviceinfo"] >
-    170.892238 x4   sent   [c0]: < DTXMessage 0x100d61830 : i3.1 c0 >
-    170.892973 x4 received [c1f]: < DTXMessage 0x100d0a550 : i4.0e c1 dispatch:[runningProcesses] >
-    171.204957 x4   sent   [c1f]: < DTXMessage 0x100c557a0 : i4.1 c1 object:(__NSArrayM*)<NSArray 0x100c199d0 | 245 objects> { <NSDictionary 0x100c167c0 | 5 key/value pairs>, <NSDictionary 0x100d17970 | 5 key/value pairs>, <NSDictionary 0x100d17f40 | 5 key/value pairs>, <NSDictionary 0x100d61750 | 5 key/value pairs>, <NSDictionary 0x100c16760 | 5 key/value pairs>, ...  } >
-    171.213326 x4 received [c0]: < DTXMessage : kDTXInterruptionMessage >
-    171.213424 x4  handler [c0]: < DTXMessage : i1 kDTXInterruptionMessage >
-    171.213477 x4 received [c1f]: < DTXMessage : kDTXInterruptionMessage >
-    ```
+        ```
+        root@iPhone (/var/root)# tail -f /tmp/DTServiceHub[369].DTXConnection.qNjM2U.log
+        170.887982 x4 resuming [c0]: <DTXConnection 0x100d20670 : x4>
+        170.889120 x4   sent   [c0]: < DTXMessage 0x100d52b10 : i2.0 c0 dispatch:[_notifyOfPublishedCapabilities:<NSDictionary 0x100d0e1b0 | 92 key/value pairs>] >
+        170.889547 x4 received [c0]: < DTXMessage 0x100d0a550 : i1.0 c0 dispatch:[_notifyOfPublishedCapabilities:<NSDictionary 0x100d16a40 | 2 key/value pairs>] >
+        170.892101 x4 received [c0]: < DTXMessage 0x100d0a550 : i3.0e c0 dispatch:[_requestChannelWithCode:[1]identifier :"com.apple.instruments.server.services.deviceinfo"] >
+        170.892238 x4   sent   [c0]: < DTXMessage 0x100d61830 : i3.1 c0 >
+        170.892973 x4 received [c1f]: < DTXMessage 0x100d0a550 : i4.0e c1 dispatch:[runningProcesses] >
+        171.204957 x4   sent   [c1f]: < DTXMessage 0x100c557a0 : i4.1 c1 object:(__NSArrayM*)<NSArray 0x100c199d0 | 245 objects> { <NSDictionary 0x100c167c0 | 5 key/value pairs>, <NSDictionary 0x100d17970 | 5 key/value pairs>, <NSDictionary 0x100d17f40 | 5 key/value pairs>, <NSDictionary 0x100d61750 | 5 key/value pairs>, <NSDictionary 0x100c16760 | 5 key/value pairs>, ...  } >
+        171.213326 x4 received [c0]: < DTXMessage : kDTXInterruptionMessage >
+        171.213424 x4  handler [c0]: < DTXMessage : i1 kDTXInterruptionMessage >
+        171.213477 x4 received [c1f]: < DTXMessage : kDTXInterruptionMessage >
+        ```
 
-    For editing the configuration we can simply add the respected key into:
-    `/var/mobile/Library/Preferences/.GlobalPreferences.plist` and kill `cfprefsd`
+        For editing the configuration we can simply add the respected key into:
+        `/var/mobile/Library/Preferences/.GlobalPreferences.plist` and kill `cfprefsd`
 
-    The valid selectors for triggering can be found using the following Frida script the same way Troy Bowman used for
-    iterating all classes which implement the protocol `DTXAllowedRPC`:
+        The valid selectors for triggering can be found using the following Frida script the same way Troy Bowman used for
+        iterating all classes which implement the protocol `DTXAllowedRPC`:
 
-    ```shell
-    frida -U DTServiceHub
-    ```
+        ```shell
+        frida -U DTServiceHub
+        ```
 
-    ```javascript
-    for (var name in ObjC.protocols) {
-        var protocol = ObjC.protocols[name]
-        if ('DTXAllowedRPC' in protocol.protocols) {
-            console.log('@protocol', name)
-            console.log('  ' + Object.keys(protocol.methods).join('\n  '))
+        ```javascript
+        for (var name in ObjC.protocols) {
+            var protocol = ObjC.protocols[name]
+            if ('DTXAllowedRPC' in protocol.protocols) {
+                console.log('@protocol', name)
+                console.log('  ' + Object.keys(protocol.methods).join('\n  '))
+            }
         }
-    }
-    ```
+        ```
     """
     BROADCAST_CHANNEL = 0
     INSTRUMENTS_MESSAGE_TYPE = 2
     EXPECTS_REPLY_MASK = 0x1000
 
-    def __init__(self, lockdown: LockdownClient, service_name, remove_ssl_context=True):
+    def __init__(self, lockdown: LockdownClient, service_name: str, remove_ssl_context: bool = True) -> None:
         super().__init__(lockdown, service_name, is_developer_service=True)
 
         if remove_ssl_context and hasattr(self.service.socket, '_sslobj'):
@@ -249,7 +249,7 @@ class RemoteServer(BaseService):
         self.channel_messages = {self.BROADCAST_CHANNEL: ChannelFragmenter()}
         self.broadcast = Channel.create(0, self)
 
-    def shell(self):
+    def shell(self) -> None:
         IPython.embed(
             header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.TerminalTrueColorFormatter(style='native')),
             user_ns={
@@ -258,7 +258,7 @@ class RemoteServer(BaseService):
                 'MessageAux': MessageAux,
             })
 
-    def perform_handshake(self):
+    def perform_handshake(self) -> None:
         args = MessageAux()
         args.append_obj({'com.apple.private.DTXBlockCompression': 0, 'com.apple.private.DTXConnection': 1})
         self.send_message(0, '_notifyOfPublishedCapabilities:', args, expects_reply=False)
@@ -269,7 +269,7 @@ class RemoteServer(BaseService):
             raise ValueError('Invalid answer')
         self.supported_identifiers = aux[0].value
 
-    def make_channel(self, identifier) -> Channel:
+    def make_channel(self, identifier: str) -> Channel:
         assert identifier in self.supported_identifiers
         if identifier in self.channel_cache:
             return self.channel_cache[identifier]
@@ -285,7 +285,8 @@ class RemoteServer(BaseService):
         self.channel_messages[code] = ChannelFragmenter()
         return channel
 
-    def send_message(self, channel: int, selector: str = None, args: MessageAux = None, expects_reply: bool = True):
+    def send_message(self, channel: int, selector: str = None, args: MessageAux = None,
+                     expects_reply: bool = True) -> None:
         self.cur_message += 1
 
         aux = bytes(args) if args is not None else b''
@@ -308,7 +309,7 @@ class RemoteServer(BaseService):
         msg = mheader + pheader + aux + sel
         self.service.sendall(msg)
 
-    def recv_plist(self, channel: int = BROADCAST_CHANNEL):
+    def recv_plist(self, channel: int = BROADCAST_CHANNEL) -> Any:
         data, aux = self.recv_message(channel)
         if data is not None:
             try:
@@ -320,7 +321,7 @@ class RemoteServer(BaseService):
                 self.logger.warning(f'got an invalid plist: {data[:40]}')
         return data, aux
 
-    def recv_message(self, channel: int = BROADCAST_CHANNEL):
+    def recv_message(self, channel: int = BROADCAST_CHANNEL) -> Any:
         packet_stream = self._recv_packet_fragments(channel)
         pheader = dtx_message_payload_header_struct.parse_stream(packet_stream)
 
@@ -336,7 +337,7 @@ class RemoteServer(BaseService):
         data = packet_stream.read(obj_size) if obj_size else None
         return data, aux
 
-    def _recv_packet_fragments(self, channel: int = BROADCAST_CHANNEL):
+    def _recv_packet_fragments(self, channel: int = BROADCAST_CHANNEL) -> io.BytesIO:
         while True:
             try:
                 # if we already have a message for this channel, just return it
@@ -365,19 +366,19 @@ class RemoteServer(BaseService):
 
                 self.channel_messages[received_channel_code].add_fragment(mheader, self.service.recvall(mheader.length))
 
-    def __enter__(self):
+    def __enter__(self) -> 'RemoteServer':
         self.perform_handshake()
         return self
 
 
 class Tap:
-    def __init__(self, dvt, channel_name: str, config: typing.Mapping):
+    def __init__(self, dvt: RemoteServer, channel_name: str, config: Mapping) -> None:
         self._dvt = dvt
         self._channel_name = channel_name
         self._config = config
         self.channel = None
 
-    def __enter__(self):
+    def __enter__(self) -> 'Tap':
         self.channel = self._dvt.make_channel(self._channel_name)
         self.channel.setConfig_(MessageAux().append_obj(self._config), expects_reply=False)
         self.channel.start(expects_reply=False)
