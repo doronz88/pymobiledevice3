@@ -9,7 +9,7 @@ from pymobiledevice3.services.base_service import BaseService
 class MobileImageMounterService(BaseService):
     SERVICE_NAME = 'com.apple.mobile.mobile_image_mounter'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownClient) -> None:
         super().__init__(lockdown, self.SERVICE_NAME)
 
     def copy_devices(self) -> List[Mapping]:
