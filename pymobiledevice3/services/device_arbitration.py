@@ -15,7 +15,7 @@ class DtDeviceArbitration(BaseService):
     def version(self) -> Mapping:
         return self.service.send_recv_plist({'command': 'version'})
 
-    def check_in(self, hostname: str, force: bool = False):
+    def check_in(self, hostname: str, force: bool = False) -> None:
         request = {'command': 'check-in', 'hostname': hostname}
         if force:
             request['command'] = 'force-check-in'
@@ -23,7 +23,7 @@ class DtDeviceArbitration(BaseService):
         if response.get('result') != 'success':
             raise DeviceAlreadyInUseError(response)
 
-    def check_out(self):
+    def check_out(self) -> None:
         request = {'command': 'check-out'}
         response = self.service.send_recv_plist(request)
         if response.get('result') != 'success':
