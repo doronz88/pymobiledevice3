@@ -1,3 +1,5 @@
+from typing import List, Optional
+
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService
 
@@ -29,11 +31,11 @@ class FileRelayService(BaseService):
         super().__init__(lockdown, self.SERVICE_NAME)
         self.packet_num = 0
 
-    def stop_session(self):
+    def stop_session(self) -> None:
         self.logger.info('Disconecting...')
         self.service.close()
 
-    def request_sources(self, sources=None):
+    def request_sources(self, sources: List = None) -> Optional[str]:
         if sources is None:
             sources = ['UserDatabases']
         self.service.send_plist({'Sources': sources})
