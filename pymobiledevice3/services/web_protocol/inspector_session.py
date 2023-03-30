@@ -1,17 +1,16 @@
 import asyncio
 import json
 import logging
-from typing import Mapping
+from typing import Any, Mapping
 
 from pymobiledevice3.exceptions import InspectorEvaluateError
-from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 
 logger = logging.getLogger(__name__)
 
 
 class InspectorSession:
 
-    def __init__(self, protocol: SessionProtocol, target_id: str):
+    def __init__(self, protocol, target_id: str) -> None:
         """
         :param pymobiledevice3.services.web_protocol.session_protocol.SessionProtocol protocol: Session protocol.
         """
@@ -30,7 +29,7 @@ class InspectorSession:
         self._receive_task = asyncio.create_task(self._receive_loop())
 
     @classmethod
-    async def create(cls, protocol: SessionProtocol):
+    async def create(cls, protocol) -> 'InspectorSession':
         """
         :param pymobiledevice3.services.web_protocol.session_protocol.SessionProtocol protocol: Session protocol.
         """
@@ -45,14 +44,14 @@ class InspectorSession:
         target = cls(protocol, target_id)
         return target
 
-    def set_target_id(self, target_id):
+    def set_target_id(self, target_id: str) -> None:
         self.target_id = target_id
         logger.info(f'Changed to: {target_id}')
 
-    async def runtime_enable(self):
+    async def runtime_enable(self) -> None:
         await self.send_and_receive({'method': 'Runtime.enable', 'params': {}})
 
-    async def runtime_evaluate(self, exp: str):
+    async def runtime_evaluate(self, exp: str) -> Any:
         # if the expression is dict, it's needed to be in ()
         exp = exp.strip()
         if exp:
@@ -73,10 +72,9 @@ class InspectorSession:
                                                     'allowUnsafeEvalBlockedByCSP': False,
                                                     'uniqueContextId': '0.1'}
                                                 })
-
         return self._parse_runtime_evaluate(response)
 
-    async def navigate_to_url(self, url: str):
+    async def navigate_to_url(self, url: str) -> str:
         return await self.runtime_evaluate(exp=f'window.location = "{url}"')
 
     async def send_and_receive(self, message: Mapping) -> Mapping:
@@ -90,7 +88,7 @@ class InspectorSession:
                                          message=json.dumps(message))
         return message['id']
 
-    async def _receive_loop(self):
+    async def _receive_loop(self) -> None:
         while True:
             while not self.protocol.inspector.wir_events:
                 await asyncio.sleep(0)
@@ -109,7 +107,7 @@ class InspectorSession:
             await asyncio.sleep(0)
 
     @staticmethod
-    def _parse_runtime_evaluate(response: Mapping):
+    def _parse_runtime_evaluate(response: Mapping) -> Any:
         message = json.loads(response['params']['message'])
         if 'error' in message:
             details = message['error']['message']
@@ -127,15 +125,15 @@ class InspectorSession:
             return result['value']
 
     # response methods
-    def _target_dispatch_message_from_target(self, response: Mapping):
+    def _target_dispatch_message_from_target(self, response: Mapping) -> None:
         receive_message_id = json.loads(response['params']['message'])['id']
         self._dispatch_message_responses[receive_message_id] = response
 
-    def _target_created(self, response: Mapping):
+    def _target_created(self, response: Mapping) -> None:
         pass
 
-    def _target_destroyed(self, response: Mapping):
+    def _target_destroyed(self, response: Mapping) -> None:
         pass
 
-    def _target_did_commit_provisional_target(self, response: Mapping):
+    def _target_did_commit_provisional_target(self, response: Mapping) -> None:
         self.set_target_id(response['params']['newTargetId'])
