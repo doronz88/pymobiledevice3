@@ -1,6 +1,6 @@
-import typing
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Generator, List, Mapping, Union
 
 from packaging.version import Version
 
@@ -9,12 +9,12 @@ from pymobiledevice3.services.remote_server import MessageAux, RemoteServer
 
 
 class SerializedObject:
-    def __init__(self, fields: typing.Mapping):
+    def __init__(self, fields: Mapping):
         self._fields = fields
 
 
 class AXAuditInspectorFocus_v1(SerializedObject):
-    def __init__(self, fields):
+    def __init__(self, fields: Mapping) -> None:
         super().__init__(fields)
 
     @property
@@ -30,7 +30,7 @@ class AXAuditInspectorFocus_v1(SerializedObject):
 
 
 class AXAuditElement_v1(SerializedObject):
-    def __init__(self, fields):
+    def __init__(self, fields: Mapping) -> None:
         super().__init__(fields)
 
     @property
@@ -42,19 +42,19 @@ class AXAuditElement_v1(SerializedObject):
 
 
 class AXAuditInspectorSection_v1(SerializedObject):
-    def __init__(self, fields):
+    def __init__(self, fields: Mapping) -> None:
         super().__init__(fields)
 
 
 class AXAuditElementAttribute_v1(SerializedObject):
-    def __init__(self, fields):
+    def __init__(self, fields: Mapping) -> None:
         super().__init__(fields)
 
 
 class AXAuditDeviceSetting_v1(SerializedObject):
     FIELDS = ('IdentiifierValue_v1', 'CurrentValueNumber_v1')
 
-    def __init__(self, fields):
+    def __init__(self, fields: Mapping) -> None:
         super().__init__(fields)
         for k in self.FIELDS:
             if k not in self._fields:
@@ -65,7 +65,7 @@ class AXAuditDeviceSetting_v1(SerializedObject):
         return self._fields['IdentiifierValue_v1']
 
     @property
-    def value(self) -> typing.Any:
+    def value(self) -> Any:
         return self._fields['CurrentValueNumber_v1']
 
     def __str__(self) -> str:
@@ -94,7 +94,7 @@ class Direction(Enum):
     Last = 6
 
 
-def deserialize_object(d):
+def deserialize_object(d: Union[Mapping, List]) -> Union[List, Mapping, SerializedObject]:
     if not isinstance(d, dict):
         if isinstance(d, list):
             return [deserialize_object(x) for x in d]
@@ -125,12 +125,12 @@ class AccessibilityAudit(RemoteServer):
             self.recv_plist()
 
     @property
-    def capabilities(self) -> typing.List[str]:
+    def capabilities(self) -> Any:
         self.broadcast.deviceCapabilities()
         return self.recv_plist()[0]
 
     @property
-    def settings(self) -> typing.List[AXAuditDeviceSetting_v1]:
+    def settings(self) -> List[AXAuditDeviceSetting_v1]:
         self.broadcast.deviceAccessibilitySettings()
         return deserialize_object(self.recv_plist()[0])
 
@@ -152,8 +152,8 @@ class AccessibilityAudit(RemoteServer):
     def set_show_visuals(self, value: bool) -> None:
         self.broadcast.deviceInspectorShowVisuals_(MessageAux().append_obj(int(value)), expects_reply=False)
 
-    def iter_events(self, app_monitoring_enabled=True, monitored_event_type: int = None) -> \
-            typing.Generator[Event, None, None]:
+    def iter_events(self, app_monitoring_enabled: bool = True, monitored_event_type: int = None) -> Generator[
+        Event, None, None]:
 
         self.set_app_monitoring_enabled(app_monitoring_enabled)
         self.set_monitored_event_type(monitored_event_type)
@@ -244,7 +244,7 @@ class AccessibilityAudit(RemoteServer):
 
         self.broadcast.deviceInspectorMoveWithOptions_(MessageAux().append_obj(options), expects_reply=False)
 
-    def set_setting(self, name: str, value: typing.Any) -> None:
+    def set_setting(self, name: str, value: Any) -> None:
         setting = {'ObjectType': 'AXAuditDeviceSetting_v1',
                    'Value': {'ObjectType': 'passthrough',
                              'Value': {'CurrentValueNumber_v1': {'ObjectType': 'passthrough',
