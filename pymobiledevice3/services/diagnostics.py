@@ -1,7 +1,7 @@
 from typing import List, Mapping, Optional
 
 from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import Any, LockdownClient
 from pymobiledevice3.services.base_service import BaseService
 
 MobileGestaltKeys = ['BasebandKeyHashInformation',
@@ -124,19 +124,19 @@ class DiagnosticsService(BaseService):
             raise PyMobileDevice3Exception(f'failed to perform action: {action}')
         return response.get('Diagnostics')
 
-    def restart(self):
+    def restart(self) -> None:
         self.action('Restart')
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         self.action('Shutdown')
 
-    def sleep(self):
+    def sleep(self) -> None:
         self.action('Sleep')
 
     def info(self, diag_type: str = 'All') -> Mapping:
         return self.action(diag_type)
 
-    def ioregistry(self, plane: str = None, name: str = None, ioclass: str = None):
+    def ioregistry(self, plane: str = None, name: str = None, ioclass: str = None) -> Any:
         d = {}
 
         if plane:
