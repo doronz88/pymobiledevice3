@@ -11,12 +11,12 @@ import sys
 import tempfile
 from collections import namedtuple
 from datetime import datetime
-from typing import List
+from typing import IO, Any, Callable, Generator, List, Mapping, Optional, Tuple
 
 import hexdump
 from click.exceptions import Exit
 from cmd2 import Cmd, Cmd2ArgumentParser, with_argparser
-from construct import Const, Container, CString, Enum, GreedyRange, Int64ul, Struct, Tell
+from construct import Const, Container, CString, Enum, EnumIntegerString, GreedyRange, Int64ul, Struct, Tell
 from pygments import formatters, highlight, lexers
 from pygnuutils.cli.ls import ls as ls_cli
 from pygnuutils.ls import Ls, LsStub
@@ -208,7 +208,7 @@ class AfcService(BaseService):
         super().__init__(lockdown, service_name)
         self.packet_num = 0
 
-    def pull(self, relative_src, dst, callback=None, src_dir=''):
+    def pull(self, relative_src: str, dst: str, callback: Callable = None, src_dir: str = '') -> None:
         src = posixpath.join(src_dir, relative_src)
         if callback is not None:
             callback(src, dst)
@@ -239,7 +239,7 @@ class AfcService(BaseService):
 
                 self.pull(src_filename, str(dst_path), callback=callback)
 
-    def exists(self, filename):
+    def exists(self, filename: str) -> bool:
         try:
             self.stat(filename)
             return True
@@ -250,7 +250,7 @@ class AfcService(BaseService):
         while not self.exists(filename):
             pass
 
-    def _push_internal(self, local_path, remote_path, callback=None):
+    def _push_internal(self, local_path: str, remote_path: str, callback: Callable = None) -> None:
         if callback is not None:
             callback(local_path, remote_path)
 
@@ -285,7 +285,7 @@ class AfcService(BaseService):
 
                 self._push_internal(local_filename, remote_filename, callback=callback)
 
-    def push(self, local_path, remote_path, callback=None):
+    def push(self, local_path: str, remote_path: str, callback: Callable = None) -> None:
         if os.path.isdir(local_path):
             remote_path = posixpath.join(remote_path, os.path.basename(local_path))
         self._push_internal(local_path, remote_path, callback)
@@ -355,21 +355,21 @@ class AfcService(BaseService):
 
         return []
 
-    def get_device_info(self):
+    def get_device_info(self) -> Mapping:
         return list_to_dict(self._do_operation(afc_opcode_t.GET_DEVINFO))
 
-    def listdir(self, filename):
+    def listdir(self, filename: str) -> List[str]:
         data = self._do_operation(afc_opcode_t.READ_DIR, afc_read_dir_req_t.build({'filename': filename}))
         return afc_read_dir_resp_t.parse(data).filenames[2:]  # skip the . and ..
 
-    def makedirs(self, filename):
+    def makedirs(self, filename: str) -> bytes:
         return self._do_operation(afc_opcode_t.MAKE_DIR, afc_mkdir_req_t.build({'filename': filename}))
 
-    def isdir(self, filename) -> bool:
+    def isdir(self, filename: str) -> bool:
         stat = self.stat(filename)
         return stat.get('st_ifmt') == 'S_IFDIR'
 
-    def stat(self, filename):
+    def stat(self, filename: str) -> Mapping:
         try:
             stat = list_to_dict(
                 self._do_operation(afc_opcode_t.GET_FILE_INFO, afc_stat_t.build({'filename': filename})))
@@ -387,7 +387,7 @@ class AfcService(BaseService):
         stat['st_birthtime'] = datetime.fromtimestamp(stat['st_birthtime'] / (10 ** 9))
         return stat
 
-    def os_stat(self, path):
+    def os_stat(self, path: str) -> 'StatResult':
         stat = self.stat(path)
         mode = 0
         for s_mode in ['S_IFDIR', 'S_IFCHR', 'S_IFBLK', 'S_IFREG', 'S_IFIFO', 'S_IFLNK', 'S_IFSOCK']:
@@ -399,11 +399,11 @@ class AfcService(BaseService):
             stat['st_blocks'], 4096, stat['st_birthtime'].timestamp(),
         )
 
-    def link(self, target, source, type_=afc_link_type_t.SYMLINK):
-        return self._do_operation(afc_opcode_t.MAKE_LINK,
-                                  afc_make_link_req_t.build({'type': type_, 'target': target, 'source': source}))
+    def link(self, target: str, source: str, type_: afc_link_type_t = afc_link_type_t.SYMLINK) -> None:
+        self._do_operation(afc_opcode_t.MAKE_LINK,
+                           afc_make_link_req_t.build({'type': type_, 'target': target, 'source': source}))
 
-    def fopen(self, filename, mode='r'):
+    def fopen(self, filename: str, mode: str = 'r') -> int:
         if mode not in AFC_FOPEN_TEXTUAL_MODES:
             raise ArgumentError(f'mode can be only one of: {AFC_FOPEN_TEXTUAL_MODES.keys()}')
 
@@ -411,19 +411,19 @@ class AfcService(BaseService):
                                   afc_fopen_req_t.build({'mode': AFC_FOPEN_TEXTUAL_MODES[mode], 'filename': filename}))
         return afc_fopen_resp_t.parse(data).handle
 
-    def fclose(self, handle):
-        return self._do_operation(afc_opcode_t.FILE_CLOSE, afc_fclose_req_t.build({'handle': handle}))
+    def fclose(self, handle: int) -> None:
+        self._do_operation(afc_opcode_t.FILE_CLOSE, afc_fclose_req_t.build({'handle': handle}))
 
-    def rename(self, source, target):
+    def rename(self, source: str, target: str) -> None:
         try:
-            return self._do_operation(afc_opcode_t.RENAME_PATH,
-                                      afc_rename_req_t.build({'source': source, 'target': target}))
+            self._do_operation(afc_opcode_t.RENAME_PATH,
+                               afc_rename_req_t.build({'source': source, 'target': target}))
         except AfcException as e:
             if self.exists(source):
                 raise
             raise AfcFileNotFoundError(e.args[0], e.status) from e
 
-    def fread(self, handle, sz):
+    def fread(self, handle: int, sz: int) -> bytes:
         data = b''
         while sz > 0:
             if sz > MAXIMUM_READ_SIZE:
@@ -438,7 +438,7 @@ class AfcService(BaseService):
             data += chunk
         return data
 
-    def fwrite(self, handle, data, chunk_size=MAXIMUM_WRITE_SIZE):
+    def fwrite(self, handle: int, data: bytes, chunk_size: int = MAXIMUM_WRITE_SIZE) -> None:
         file_handle = struct.pack('<Q', handle)
         chunks_count = len(data) // chunk_size
         b = b''
@@ -465,7 +465,7 @@ class AfcService(BaseService):
             if status != afc_error_t.SUCCESS:
                 raise AfcException(f'failed to write last chunk: {status}', status)
 
-    def resolve_path(self, filename: str):
+    def resolve_path(self, filename: str) -> str:
         info = self.stat(filename)
         if info['st_ifmt'] == 'S_IFLNK':
             target = info['LinkTarget']
@@ -476,7 +476,7 @@ class AfcService(BaseService):
                 filename = target
         return filename
 
-    def get_file_contents(self, filename):
+    def get_file_contents(self, filename: str) -> Optional[bytes]:
         filename = self.resolve_path(filename)
         info = self.stat(filename)
 
@@ -490,12 +490,12 @@ class AfcService(BaseService):
         self.fclose(h)
         return d
 
-    def set_file_contents(self, filename, data):
+    def set_file_contents(self, filename: str, data: bytes) -> None:
         h = self.fopen(filename, 'w')
         self.fwrite(h, data)
         self.fclose(h)
 
-    def walk(self, dirname):
+    def walk(self, dirname: str) -> Generator[Tuple[str, List[str], List[str]], None, None]:
         dirs = []
         files = []
         for fd in self.listdir(dirname):
@@ -514,7 +514,7 @@ class AfcService(BaseService):
                 for walk_result in self.walk(posixpath.join(dirname, d)):
                     yield walk_result
 
-    def dirlist(self, root, depth=-1):
+    def dirlist(self, root: str, depth: int = -1) -> Generator[str, None, None]:
         for folder, dirs, files in self.walk(root):
             if folder == root:
                 yield folder
@@ -525,10 +525,10 @@ class AfcService(BaseService):
             for entry in dirs + files:
                 yield posixpath.join(folder, entry)
 
-    def lock(self, handle, operation):
-        return self._do_operation(afc_opcode_t.FILE_LOCK, afc_lock_t.build({'handle': handle, 'op': operation}))
+    def lock(self, handle: int, operation: EnumIntegerString) -> None:
+        self._do_operation(afc_opcode_t.FILE_LOCK, afc_lock_t.build({'handle': handle, 'op': operation}))
 
-    def _dispatch_packet(self, operation, data, this_length=0):
+    def _dispatch_packet(self, operation: EnumIntegerString, data: bytes, this_length: int = 0) -> None:
         afcpack = Container(magic=AFCMAGIC,
                             entire_length=afc_header_t.sizeof() + len(data),
                             this_length=afc_header_t.sizeof() + len(data),
@@ -540,7 +540,7 @@ class AfcService(BaseService):
         self.packet_num += 1
         self.service.sendall(header + data)
 
-    def _receive_data(self):
+    def _receive_data(self) -> Tuple[EnumIntegerString, bytes]:
         res = self.service.recvall(afc_header_t.sizeof())
         status = afc_error_t.SUCCESS
         data = ''
@@ -557,7 +557,7 @@ class AfcService(BaseService):
                 pass
         return status, data
 
-    def _do_operation(self, opcode: afc_opcode_t, data: bytes = b''):
+    def _do_operation(self, opcode: afc_opcode_t, data: bytes = b'') -> bytes:
         self._dispatch_packet(opcode, data)
         status, data = self._receive_data()
 
@@ -621,60 +621,63 @@ stat_parser.add_argument('filename')
 
 
 class AfcLsStub(LsStub):
-    def __init__(self, afc_shell):
+    def __init__(self, afc_shell: 'AfcShell') -> None:
         self.afc_shell = afc_shell
 
     @property
-    def sep(self):
+    def sep(self) -> str:
         return posixpath.sep
 
-    def join(self, path, *paths):
+    def join(self, path: str, *paths: List[str]) -> str:
         return posixpath.join(path, *paths)
 
-    def abspath(self, path):
+    def abspath(self, path: str) -> str:
         return posixpath.normpath(path)
 
-    def stat(self, path, dir_fd=None, follow_symlinks=True):
+    def stat(self, path: str,
+             dir_fd: int = None, follow_symlinks: bool = True) -> StatResult:
         if follow_symlinks:
             path = self.afc_shell.afc.resolve_path(path)
         return self.afc_shell.afc.os_stat(path)
 
-    def readlink(self, path, dir_fd=None):
+    def readlink(self, path: str, dir_fd: int = None) -> str:
         return self.afc_shell.afc.resolve_path(path)
 
-    def isabs(self, path):
+    def isabs(self, path: str) -> bool:
         return posixpath.isabs(path)
 
-    def dirname(self, path):
+    def dirname(self, path: str) -> str:
         return posixpath.dirname(path)
 
-    def basename(self, path):
+    def basename(self, path: str) -> str:
         return posixpath.basename(path)
 
-    def getgroup(self, st_gid):
+    def getgroup(self, st_gid: int) -> str:
         return '-'
 
-    def getuser(self, st_uid):
+    def getuser(self, st_uid: int) -> str:
         return '-'
 
-    def now(self):
+    def now(self) -> datetime:
         return self.afc_shell.lockdown.date
 
-    def listdir(self, path='.'):
+    def listdir(self, path: str = '.') -> List[str]:
         return self.afc_shell.afc.listdir(path)
 
-    def system(self):
+    def system(self) -> str:
         return 'Darwin'
 
-    def getenv(self, key, default=None):
+    def getenv(self, key: str, default: str = None) -> str:
         return ''
 
-    def print(self, *objects, sep=' ', end='\n', file=sys.stdout, flush=False):
+    def print(self, *objects: List, sep: str = ' ', end: str = '\n', file: IO = sys.stdout,
+              flush: bool = False) -> None:
         self.afc_shell.poutput(objects[0], end=end)
 
 
 class AfcShell(Cmd):
-    def __init__(self, lockdown: LockdownClient, service_name='com.apple.afc', completekey='tab', afc_service=None):
+    def __init__(self, lockdown: LockdownClient, service_name: str = 'com.apple.afc', completekey: str = 'tab',
+                 afc_service: AfcService = None) -> None:
         # bugfix: prevent the Cmd instance from trying to parse click's arguments
         sys.argv = sys.argv[:1]
 
@@ -704,15 +707,15 @@ class AfcShell(Cmd):
         self._update_prompt()
 
     @with_argparser(pwd_parser)
-    def do_pwd(self, args):
+    def do_pwd(self, args: Any) -> None:
         self.poutput(self.curdir)
 
     @with_argparser(link_parser)
-    def do_link(self, args):
+    def do_link(self, args: List) -> None:
         self.afc.link(self.relative_path(args.target), self.relative_path(args.source), afc_link_type_t.SYMLINK)
 
     @with_argparser(edit_parser)
-    def do_edit(self, args) -> None:
+    def do_edit(self, args: List) -> None:
         remote = self.relative_path(args.filename)
         with tempfile.NamedTemporaryFile('wb+') as local:
             if self.afc.exists(remote):
@@ -724,7 +727,7 @@ class AfcShell(Cmd):
             self.afc.set_file_contents(remote, buf)
 
     @with_argparser(cd_parser)
-    def do_cd(self, args):
+    def do_cd(self, args: List) -> None:
         directory = self.relative_path(args.directory)
         directory = posixpath.normpath(directory)
         if self.afc.exists(directory):
@@ -733,14 +736,14 @@ class AfcShell(Cmd):
         else:
             self.poutput(f'[ERROR] {directory} does not exist')
 
-    def help_ls(self):
+    def help_ls(self) -> None:
         try:
             with ls_cli.make_context('ls', ['--help']):
                 pass
         except Exit:
             pass
 
-    def do_ls(self, args):
+    def do_ls(self, args: List) -> None:
         try:
             with ls_cli.make_context('ls', shlex.split(args)) as ctx:
                 files = list(map(self.relative_path, ctx.params.pop('files')))
@@ -750,7 +753,7 @@ class AfcShell(Cmd):
             pass
 
     @with_argparser(walk_parser)
-    def do_walk(self, args):
+    def do_walk(self, args: List) -> None:
         for root, dirs, files in self.afc.walk(self.relative_path(args.directory)):
             for name in files:
                 self.poutput(posixpath.join(root, name))
@@ -758,63 +761,63 @@ class AfcShell(Cmd):
                 self.poutput(posixpath.join(root, name))
 
     @with_argparser(cat_parser)
-    def do_cat(self, args):
+    def do_cat(self, args: List) -> None:
         data = self.afc.get_file_contents(self.relative_path(args.filename))
         self.ppaged(try_decode(data))
 
     @with_argparser(rm_parser)
-    def do_rm(self, args):
+    def do_rm(self, args: List) -> None:
         for filename in args.files:
             self.afc.rm(self.relative_path(filename))
 
     @with_argparser(pull_parser)
-    def do_pull(self, args):
+    def do_pull(self, args: List) -> None:
         def log(src, dst):
             self.poutput(f'{src} --> {dst}')
 
         self.afc.pull(args.remote_path, args.local_path, callback=log, src_dir=self.curdir)
 
     @with_argparser(push_parser)
-    def do_push(self, args):
+    def do_push(self, args: List) -> None:
         def log(src, dst):
             self.poutput(f'{src} --> {dst}')
 
         self.afc.push(args.local_path, self.relative_path(args.remote_path), callback=log)
 
     @with_argparser(head_parser)
-    def do_head(self, args):
+    def do_head(self, args: List) -> None:
         self.poutput(try_decode(self.afc.get_file_contents(self.relative_path(args.filename))[:32]))
 
     @with_argparser(hexdump_parser)
-    def do_hexdump(self, args):
+    def do_hexdump(self, args: List) -> None:
         self.poutput(hexdump.hexdump(self.afc.get_file_contents(self.relative_path(args.filename)), result='return'))
 
     @with_argparser(mkdir_parser)
-    def do_mkdir(self, args):
+    def do_mkdir(self, args: List) -> None:
         self.afc.makedirs(self.relative_path(args.filename))
 
     @with_argparser(info_parser)
-    def do_info(self, args):
+    def do_info(self, args: List) -> None:
         for k, v in self.afc.get_device_info().items():
             self.poutput(f'{k}: {v}')
 
     @with_argparser(mv_parser)
-    def do_mv(self, args):
+    def do_mv(self, args: List) -> bytes:
         return self.afc.rename(self.relative_path(args.source), self.relative_path(args.dest))
 
     @with_argparser(stat_parser)
-    def do_stat(self, args):
+    def do_stat(self, args: List) -> None:
         for k, v in self.afc.stat(self.relative_path(args.filename)).items():
             self.poutput(f'{k}: {v}')
 
-    def relative_path(self, filename):
+    def relative_path(self, filename: str) -> str:
         return posixpath.join(self.curdir, filename)
 
-    def _update_prompt(self):
+    def _update_prompt(self) -> None:
         self.prompt = highlight(f'[{self.service_name}:{self.curdir}]$ ', lexers.BashSessionLexer(),
                                 formatters.TerminalTrueColorFormatter(style='solarized-dark')).strip()
 
-    def _complete(self, text, line, begidx, endidx):
+    def _complete(self, text: str, line: int, begidx: int, endidx: int) -> List:
         curdir_diff = posixpath.dirname(text)
         dirname = posixpath.join(self.curdir, curdir_diff)
         prefix = posixpath.basename(text)
@@ -823,12 +826,12 @@ class AfcShell(Cmd):
             if filename.startswith(prefix)
         ]
 
-    def _complete_first_arg(self, text, line, begidx, endidx):
+    def _complete_first_arg(self, text: str, line: int, begidx: int, endidx: int) -> List:
         if self._count_completion_parts(line, begidx) > 1:
             return []
         return self._complete(text, line, begidx, endidx)
 
-    def _complete_push_arg(self, text, line, begidx, endidx):
+    def _complete_push_arg(self, text: str, line: int, begidx: int, endidx: int) -> List:
         count = self._count_completion_parts(line, begidx)
         if count == 1:
             return self._complete_local(text)
@@ -837,7 +840,7 @@ class AfcShell(Cmd):
         else:
             return []
 
-    def _complete_pull_arg(self, text, line, begidx, endidx):
+    def _complete_pull_arg(self, text: str, line: int, begidx: int, endidx: int) -> List:
         count = self._count_completion_parts(line, begidx)
         if count == 1:
             return self._complete(text, line, begidx, endidx)
@@ -847,12 +850,12 @@ class AfcShell(Cmd):
             return []
 
     @staticmethod
-    def _complete_local(text: str):
+    def _complete_local(text: str) -> List:
         path = pathlib.Path(text)
         path_iter = path.iterdir() if text.endswith(os.path.sep) else path.parent.iterdir()
         return [str(p) for p in path_iter if str(p).startswith(text)]
 
     @staticmethod
-    def _count_completion_parts(line, begidx):
+    def _count_completion_parts(line: int, begidx: int) -> int:
         # Strip the " for paths including spaces.
         return len(shlex.split(line[:begidx].rstrip('"')))
