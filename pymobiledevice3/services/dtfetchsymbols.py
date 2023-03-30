@@ -4,6 +4,7 @@ import typing
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.service_connection import ServiceConnection
 
 
 class DtFetchSymbols(object):
@@ -20,7 +21,7 @@ class DtFetchSymbols(object):
         service = self._start_command(self.CMD_LIST_FILES_PLIST)
         return service.recv_plist().get('files')
 
-    def get_file(self, fileno: int, stream: typing.IO):
+    def get_file(self, fileno: int, stream: typing.IO) -> None:
         service = self._start_command(self.CMD_GET_FILE)
         service.sendall(struct.pack('>I', fileno))
 
@@ -33,7 +34,7 @@ class DtFetchSymbols(object):
             stream.write(buf)
             received += len(buf)
 
-    def _start_command(self, cmd: bytes):
+    def _start_command(self, cmd: bytes) -> ServiceConnection:
         service = self.lockdown.start_developer_service(self.SERVICE_NAME)
         service.sendall(cmd)
 
