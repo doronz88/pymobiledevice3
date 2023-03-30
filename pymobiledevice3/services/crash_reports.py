@@ -1,6 +1,6 @@
 import logging
 import posixpath
-from typing import Generator, List
+from typing import Any, Generator, List
 
 from cmd2 import Cmd2ArgumentParser, with_argparser
 from pycrashreport.crash_report import get_crash_report_from_buf
@@ -62,7 +62,7 @@ class CrashReportsManager:
         :param erase: Whether to erase the original file from the CrashReports directory.
         """
 
-        def log(src, dst):
+        def log(src: str, dst: str) -> None:
             self.logger.info(f'{src} --> {dst}')
 
         self.afc.pull(entry, out, callback=log)
@@ -154,10 +154,10 @@ class CrashReportsShell(AfcShell):
         self.complete_parse = self._complete_first_arg
 
     @with_argparser(parse_parser)
-    def do_parse(self, args) -> None:
+    def do_parse(self, args: Any) -> None:
         self.poutput(
             get_crash_report_from_buf(self.afc.get_file_contents(args.filename).decode(), filename=args.filename))
 
     @with_argparser(clear_parser)
-    def do_clear(self, args) -> None:
+    def do_clear(self, args: Any) -> None:
         self.manager.clear()
