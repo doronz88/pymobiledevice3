@@ -1,7 +1,7 @@
 from dataclasses import asdict, dataclass
-from typing import List
+from typing import Any, List, Optional
 
-from pymobiledevice3.services.web_protocol.automation_session import RESOURCES, Point, Rect, Size
+from pymobiledevice3.services.web_protocol.automation_session import RESOURCES, AutomationSession, Point, Rect, Size
 from pymobiledevice3.services.web_protocol.element import WebElement
 from pymobiledevice3.services.web_protocol.selenium_api import By, SeleniumApi
 from pymobiledevice3.services.web_protocol.switch_to import SwitchTo
@@ -28,31 +28,29 @@ class Cookie:
 
 
 class WebDriver(SeleniumApi):
-    def __init__(self, session):
-        """
-        :param pymobiledevice3.services.web_protocol.automation_session.AutomationSession session: Automation session.
-        """
+    def __init__(self, session: AutomationSession) -> None:
+
         self.session = session
         self.switch_to = SwitchTo(session)
 
-    def add_cookie(self, cookie: Cookie):
+    def add_cookie(self, cookie: Cookie) -> None:
         """ Adds a cookie to your current session. """
         if isinstance(cookie, Cookie):
             cookie = asdict(cookie)
         self.session.add_single_cookie(cookie)
 
-    def back(self):
+    def back(self) -> None:
         """ Goes one step backward in the browser history. """
         self.session.wait_for_navigation_to_complete()
         self.session.go_back_in_browsing_context()
         self.session.switch_to_browsing_context('')
 
-    def close(self):
+    def close(self) -> None:
         """ Closes the current window. """
         self.session.close_window()
 
     @property
-    def current_url(self):
+    def current_url(self) -> str:
         """ Gets the URL of the current page. """
         self.session.wait_for_navigation_to_complete()
         return self.session.get_browsing_context()['url']
@@ -62,7 +60,7 @@ class WebDriver(SeleniumApi):
         """ Returns the handle of the current window. """
         return self.session.get_browsing_context()['handle']
 
-    def delete_all_cookies(self):
+    def delete_all_cookies(self) -> None:
         """ Delete all cookies in the scope of the session. """
         self.session.delete_all_cookies()
 
@@ -70,7 +68,7 @@ class WebDriver(SeleniumApi):
         """ Deletes a single cookie with the given name. """
         self.session.delete_single_cookie(name)
 
-    def execute_async_script(self, script: str, *args):
+    def execute_async_script(self, script: str, *args: Any) -> Any:
         """
         Asynchronously Executes JavaScript in the current window/frame.
         :param script: The JavaScript to execute.
@@ -78,7 +76,7 @@ class WebDriver(SeleniumApi):
         """
         return self.session.execute_script(script, args, async_=True)
 
-    def execute_script(self, script: str, *args):
+    def execute_script(self, script: str, *args: Any) -> Any:
         """
         Synchronously Executes JavaScript in the current window/frame.
         :param script: The JavaScript to execute.
@@ -86,7 +84,7 @@ class WebDriver(SeleniumApi):
         """
         return self.session.execute_script(script, args)
 
-    def find_element(self, by=By.ID, value=None) -> WebElement:
+    def find_element(self, by=By.ID, value=None) -> Optional[WebElement]:
         """ Find an element given a By strategy and locator. """
         elem = self.session.find_elements(by, value)
         return None if elem is None else WebElement(self.session, elem)
@@ -96,17 +94,17 @@ class WebDriver(SeleniumApi):
         elements = self.session.find_elements(by, value, single=False)
         return list(map(lambda elem: WebElement(self.session, elem), elements))
 
-    def forward(self):
+    def forward(self) -> None:
         """ Goes one step forward in the browser history. """
         self.session.wait_for_navigation_to_complete()
         self.session.go_forward_in_browsing_context()
         self.session.switch_to_browsing_context('')
 
-    def fullscreen_window(self):
+    def fullscreen_window(self) -> None:
         """ Invokes the window manager-specific 'full screen' operation. """
         self.session.evaluate_js_function(ENTER_FULLSCREEN, implicit_callback=True)
 
-    def get(self, url: str):
+    def get(self, url: str) -> None:
         """ Loads a web page in the current browser session. """
         self.session.wait_for_navigation_to_complete()
         self.session.navigate_broswing_context(url)
@@ -145,15 +143,15 @@ class WebDriver(SeleniumApi):
         rect = self.get_window_rect()
         return Size(height=rect.height, width=rect.width)
 
-    def implicitly_wait(self, time_to_wait):
+    def implicitly_wait(self, time_to_wait: int) -> None:
         """ Sets a sticky timeout to implicitly wait for an element to be found, or a command to complete. """
         self.session.implicit_wait_timeout = time_to_wait * 1000
 
-    def maximize_window(self):
+    def maximize_window(self) -> None:
         """ Maximizes the current window. """
         self.session.maximize_window()
 
-    def minimize_window(self):
+    def minimize_window(self) -> None:
         """ Invokes the window manager-specific 'minimize' operation. """
         self.session.hide_window()
 
@@ -162,25 +160,25 @@ class WebDriver(SeleniumApi):
         """ Gets the source of the current page. """
         return self.session.evaluate_js_function('function() { return document.documentElement.outerHTML; }')
 
-    def refresh(self):
+    def refresh(self) -> None:
         """ Refreshes the current page. """
         self.session.wait_for_navigation_to_complete()
         self.session.reload_browsing_context()
         self.session.switch_to_browsing_context('')
 
-    def set_window_position(self, x, y):
+    def set_window_position(self, x: int, y: int) -> None:
         """ Sets the x,y position of the current window. """
         self.set_window_rect(x=int(x, 0), y=int(y, 0))
 
-    def set_window_rect(self, x=None, y=None, width=None, height=None):
+    def set_window_rect(self, x: int = None, y: int = None, width: int = None, height: int = None) -> None:
         """ Sets the x, y coordinates of the window as well as height and width of the current window. """
         self.session.set_window_frame(x, y, width, height)
 
-    def set_window_size(self, width, height):
+    def set_window_size(self, width: int, height: int) -> None:
         """ Sets the width and height of the current window. """
         self.set_window_rect(width=int(width, 0), height=int(height, 0))
 
-    def start_session(self):
+    def start_session(self) -> None:
         """ Creates a new session. """
         self.session.start_session()
 
