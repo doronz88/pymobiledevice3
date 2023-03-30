@@ -11,10 +11,10 @@ class HeartbeatService(BaseService):
     """
     SERVICE_NAME = 'com.apple.mobile.heartbeat'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownClient) -> None:
         super().__init__(lockdown, self.SERVICE_NAME)
 
-    def start(self, interval=None):
+    def start(self, interval: int = None) -> None:
         start = time.time()
         service = self.lockdown.start_service(self.SERVICE_NAME)
 
