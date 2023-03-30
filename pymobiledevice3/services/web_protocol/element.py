@@ -1,6 +1,8 @@
+from typing import Any, List, Mapping, Optional, Tuple, Union
+
 from pymobiledevice3.exceptions import WirError
 from pymobiledevice3.services.web_protocol.automation_session import MODIFIER_TO_KEY, RESOURCES, VIRTUAL_KEYS, \
-    KeyboardInteractionType, MouseButton, MouseInteraction, Point, Rect, Size
+    AutomationSession, KeyboardInteractionType, MouseButton, MouseInteraction, Point, Rect, Size
 from pymobiledevice3.services.web_protocol.selenium_api import By, SeleniumApi
 
 IS_EDITABLE = (RESOURCES / 'is_editable.js').read_text()
@@ -13,7 +15,7 @@ FOCUS = (RESOURCES / 'focus.js').read_text()
 
 
 class WebElement(SeleniumApi):
-    def __init__(self, session, id_):
+    def __init__(self, session: AutomationSession, id_: Mapping) -> None:
         """
         :param pymobiledevice3.services.web_protocol.automation_session.AutomationSession session: Automation session.
         :param dict id_: Element id.
@@ -22,7 +24,7 @@ class WebElement(SeleniumApi):
         self.id_ = id_
         self.node_id = id_[f'session-node-{self.session.id_}']
 
-    def clear(self):
+    def clear(self) -> None:
         """ Clears the text if it's a text entry element. """
         if not self.is_editable():
             return
@@ -31,7 +33,7 @@ class WebElement(SeleniumApi):
             return
         self._evaluate_js_function(ELEMENT_CLEAR)
 
-    def click(self):
+    def click(self) -> None:
         """ Clicks the element. """
         rect, center, is_obscured = self._compute_layout(use_viewport=True)
         if rect is None or is_obscured or center is None:
@@ -41,12 +43,12 @@ class WebElement(SeleniumApi):
         else:
             self.session.perform_mouse_interaction(center.x, center.y, MouseButton.LEFT, MouseInteraction.SINGLE_CLICK)
 
-    def find_element(self, by=By.ID, value=None):
+    def find_element(self, by: By = By.ID, value: str = None) -> Optional['WebElement']:
         """ Find an element given a By strategy and locator. """
         elem = self.session.find_elements(by, value, root=self.id_)
         return None if elem is None else WebElement(self.session, elem)
 
-    def find_elements(self, by=By.ID, value=None):
+    def find_elements(self, by: By = By.ID, value: str = None) -> List[Optional['WebElement']]:
         """ Find elements given a By strategy and locator. """
         elements = self.session.find_elements(by, value, single=False, root=self.id_)
         return list(map(lambda elem: WebElement(self.session, elem), elements))
@@ -99,7 +101,7 @@ class WebElement(SeleniumApi):
         """ Gets the screenshot of the current element as a base64 encoded string. """
         return self.session.screenshot_as_base64(scroll=True, node_id=self.node_id)
 
-    def send_keys(self, value):
+    def send_keys(self, value: str) -> None:
         """
         Simulates typing into the element.
         :param value: A string for typing, or setting form fields.
@@ -128,7 +130,7 @@ class WebElement(SeleniumApi):
         rect = self.rect
         return Size(height=rect.height, width=rect.width)
 
-    def submit(self):
+    def submit(self) -> None:
         """ Submits a form. """
         form = self.find_element(By.XPATH, "./ancestor-or-self::form")
         submit_code = (
@@ -150,7 +152,7 @@ class WebElement(SeleniumApi):
             'function(element) { return element.innerText.replace(/^[^\\S\\xa0]+|[^\\S\\xa0]+$/g, "") }'
         )
 
-    def touch(self):
+    def touch(self) -> None:
         """ Simulate touch interaction on the element. """
         rect, center, is_obscured = self._compute_layout(use_viewport=True)
         self.session.perform_interaction_sequence(
@@ -160,7 +162,7 @@ class WebElement(SeleniumApi):
             ]}]
         )
 
-    def value_of_css_property(self, property_name) -> str:
+    def value_of_css_property(self, property_name: str) -> str:
         """ The value of a CSS property. """
         return self._evaluate_js_function(
             'function(element) {'
@@ -172,7 +174,7 @@ class WebElement(SeleniumApi):
         """ Returns whether the element is editable. """
         return self._evaluate_js_function(IS_EDITABLE)
 
-    def _compute_layout(self, scroll_if_needed=True, use_viewport=False):
+    def _compute_layout(self, scroll_if_needed: bool = True, use_viewport: bool = False) -> Union[None, Tuple]:
         try:
             result = self.session.compute_element_layout(self.node_id, scroll_if_needed,
                                                          'LayoutViewport' if use_viewport else 'Page')
@@ -185,10 +187,10 @@ class WebElement(SeleniumApi):
         center = Point(x=result['inViewCenterPoint']['x'], y=result['inViewCenterPoint']['y'])
         return rect, center, result['isObscured']
 
-    def _select_option_element(self):
+    def _select_option_element(self) -> None:
         self.session.select_option_element(self.node_id)
 
-    def _evaluate_js_function(self, function, *args):
+    def _evaluate_js_function(self, function: str, *args: Any) -> Any:
         return self.session.evaluate_js_function(function, self.id_, *args)
 
     def __eq__(self, other):
