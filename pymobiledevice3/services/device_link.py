@@ -4,8 +4,10 @@ import os
 import shutil
 import struct
 from pathlib import Path
+from typing import Callable, Mapping
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.service_connection import ServiceConnection
 
 SIZE_FORMAT = '>I'
 CODE_FORMAT = '>B'
@@ -27,7 +29,7 @@ ERRNO_TO_DEVICE_ERROR = {
 
 
 class DeviceLink:
-    def __init__(self, service, root_path: Path):
+    def __init__(self, service: ServiceConnection, root_path: Path) -> None:
         self.service = service
         self.root_path = root_path
         self._dl_handlers = {
@@ -41,7 +43,7 @@ class DeviceLink:
             'DLMessageCopyItem': self.copy_item,
         }
 
-    def dl_loop(self, progress_callback=lambda x: None):
+    def dl_loop(self, progress_callback: Callable = lambda x: None) -> None:
         while True:
             message = self.receive_message()
             command = message[0]
@@ -59,7 +61,7 @@ class DeviceLink:
                     raise PyMobileDevice3Exception(f'Device link error: {message[1]}')
             self._dl_handlers[command](message)
 
-    def version_exchange(self):
+    def version_exchange(self) -> None:
         dl_message_version_exchange = self.receive_message()
         version_major = dl_message_version_exchange[1]
         self.service.send_plist(['DLMessageVersionExchange', 'DLVersionsOk', version_major])
@@ -67,10 +69,10 @@ class DeviceLink:
         if dl_message_device_ready[0] != 'DLMessageDeviceReady':
             raise PyMobileDevice3Exception('Device link didn\'t return ready state')
 
-    def send_process_message(self, message):
+    def send_process_message(self, message: Mapping) -> None:
         self.service.send_plist(['DLMessageProcessMessage', message])
 
-    def download_files(self, message):
+    def download_files(self, message: Mapping) -> None:
         status = {}
         for file in message[1]:
             self.service.sendall(struct.pack(SIZE_FORMAT, len(file)))
@@ -95,7 +97,7 @@ class DeviceLink:
         else:
             self.status_response(0)
 
-    def contents_of_directory(self, message):
+    def contents_of_directory(self, message: Mapping) -> None:
         data = {}
         path = self.root_path / message[1]
         for file in path.iterdir():
@@ -111,7 +113,7 @@ class DeviceLink:
             }
         self.status_response(0, status_dict=data)
 
-    def upload_files(self, message):
+    def upload_files(self, message: Mapping) -> None:
         while True:
             device_name = self._prefixed_recv()
             if not device_name:
@@ -129,19 +131,19 @@ class DeviceLink:
             assert code == CODE_SUCCESS
         self.status_response(0)
 
-    def get_free_disk_space(self, message):
+    def get_free_disk_space(self, message: Mapping) -> None:
         vfs = os.statvfs(self.root_path)
         freespace = vfs.f_bavail * vfs.f_bsize
         self.status_response(0, status_dict=freespace)
 
-    def move_items(self, message):
+    def move_items(self, message: Mapping) -> None:
         for src, dst in message[1].items():
             dest = self.root_path / dst
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(self.root_path / src, dest)
         self.status_response(0)
 
-    def copy_item(self, message):
+    def copy_item(self, message: Mapping) -> None:
         src = self.root_path / message[1]
         dest = self.root_path / message[2]
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -151,7 +153,7 @@ class DeviceLink:
             shutil.copy(src, dest)
         self.status_response(0)
 
-    def remove_items(self, message):
+    def remove_items(self, message: Mapping) -> None:
         for path in message[1]:
             rm_path = self.root_path / path
             if rm_path.is_dir():
@@ -160,24 +162,24 @@ class DeviceLink:
                 rm_path.unlink(missing_ok=True)
         self.status_response(0)
 
-    def create_directory(self, message):
+    def create_directory(self, message: Mapping) -> None:
         path = message[1]
         (self.root_path / path).mkdir(parents=True, exist_ok=True)
         self.status_response(0)
 
-    def status_response(self, status_code, status_str='', status_dict=None):
+    def status_response(self, status_code: int, status_str: str = '', status_dict: Mapping = None) -> None:
         self.service.send_plist([
             'DLMessageStatusResponse', ctypes.c_uint64(status_code).value,
             status_str if status_str else '___EmptyParameterString___',
             status_dict if status_dict is not None else {},
         ])
 
-    def receive_message(self):
+    def receive_message(self) -> Mapping:
         return self.service.recv_plist()
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         self.service.send_plist(['DLMessageDisconnect', '___EmptyParameterString___'])
 
-    def _prefixed_recv(self):
+    def _prefixed_recv(self) -> str:
         size, = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
         return self.service.recvall(size).decode()
