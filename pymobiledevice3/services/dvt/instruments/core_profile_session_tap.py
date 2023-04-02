@@ -1,8 +1,8 @@
 import time
-import typing
 import uuid
 from datetime import timedelta, timezone
 from io import BytesIO
+from typing import Any, BinaryIO, List, Mapping, Optional, Set, Union
 
 from construct import Array, Byte, Bytes, Computed, CString, Enum, FixedSized, GreedyBytes, GreedyRange, GreedyString, \
     Int16ul, Int32ul, Int64ul, LazyBound, Padded, Padding, Pass, Struct, Switch, this
@@ -12,7 +12,7 @@ from pymobiledevice3.exceptions import ExtractingStackshotError
 from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
-from pymobiledevice3.services.remote_server import Tap
+from pymobiledevice3.services.remote_server import Channel, Tap
 
 kcdata_types = {
     'KCDATA_TYPE_INVALID': 0x0,
@@ -495,7 +495,7 @@ kcdata_item = Struct(
 kcdata = GreedyRange(kcdata_item)
 
 
-def clean(d):
+def clean(d: Any) -> Union[List, Mapping]:
     if isinstance(d, dict):
         return {k: clean(v) for k, v in d.items() if not k.startswith('_')}
     elif isinstance(d, list):
@@ -504,7 +504,7 @@ def clean(d):
         return d
 
 
-def jsonify_parsed_stackshot(stackshot, root=None, index=0):
+def jsonify_parsed_stackshot(stackshot: List, root: Union[List, Mapping] = None, index: int = 0) -> Optional[int]:
     current_index = index
     while True:
         item = stackshot[current_index]
@@ -536,17 +536,17 @@ STACKSHOT_HEADER = Int32ul.build(int(kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACK
 
 
 class KdBufStream:
-    def __init__(self, channel):
+    def __init__(self, channel: Channel) -> None:
         self.channel = channel
         self.current_chunk = BytesIO()
 
-    def tell(self):
+    def tell(self) -> int:
         return self.current_chunk.tell()
 
-    def seek(self, offset, whence):
+    def seek(self, offset: int, whence: int) -> int:
         return self.current_chunk.seek(offset, whence)
 
-    def read(self, size):
+    def read(self, size: int) -> bytes:
         while size > len(self.current_chunk.getbuffer()) - self.current_chunk.tell():
             data = self.channel.receive_message()
             if data.startswith(b'bplist'):
@@ -561,31 +561,32 @@ class KdBufStream:
 
 class CoreProfileSessionTap(Tap):
     r"""
-    Kdebug is a kernel facility for tracing events occurring on a system.
-    This header defines reserved debugids, which are 32-bit values that describe
-    each event:
+    .. raw:: text
+        Kdebug is a kernel facility for tracing events occurring on a system.
+        This header defines reserved debugids, which are 32-bit values that describe
+        each event:
 
-    +----------------+----------------+----------------------------+----+
-    |   Class (8)    |  Subclass (8)  |          Code (14)         |Func|
-    |                |                |                            |(2) |
-    +----------------+----------------+----------------------------+----+
-    \_________________________________/
-            ClassSubclass (CSC)
-    \________________________________________________________________00_/
-                                    Eventid
-    \___________________________________________________________________/
-                                    Debugid
+        +----------------+----------------+----------------------------+----+
+        |   Class (8)    |  Subclass (8)  |          Code (14)         |Func|
+        |                |                |                            |(2) |
+        +----------------+----------------+----------------------------+----+
+        \_________________________________/
+                ClassSubclass (CSC)
+        \___________________________________________________________________/
+                                        Eventid
+        \___________________________________________________________________/
+                                        Debugid
 
-    The eventid is a hierarchical ID, indicating which components an event is
-    referring to.  The debugid includes an eventid and two function qualifier
-    bits, to determine the structural significance of an event (whether it
-    starts or ends an interval).
+        The eventid is a hierarchical ID, indicating which components an event is
+        referring to.  The debugid includes an eventid and two function qualifier
+        bits, to determine the structural significance of an event (whether it
+        starts or ends an interval).
 
-    This tap yields kdebug events.
+        This tap yields kdebug events.
     """
     IDENTIFIER = 'com.apple.instruments.server.services.coreprofilesessiontap'
 
-    def __init__(self, dvt: DvtSecureSocketProxyService, time_config: typing.Mapping, filters: typing.Set = None):
+    def __init__(self, dvt: DvtSecureSocketProxyService, time_config: Mapping, filters: Set = None):
         """
         :param dvt: Instruments service proxy.
         :param time_config: Timing information - numer, denom, mach_absolute_time and matching usecs_since_epoch,
@@ -611,7 +612,7 @@ class CoreProfileSessionTap(Tap):
         }
         super().__init__(dvt, self.IDENTIFIER, config)
 
-    def get_stackshot(self) -> typing.Mapping:
+    def get_stackshot(self) -> Mapping:
         """
         Get a stackshot from the tap.
         """
@@ -639,9 +640,10 @@ class CoreProfileSessionTap(Tap):
 
         return self.stack_shot
 
-    def dump(self, out: typing.BinaryIO, timeout: int = None):
+    def dump(self, out: BinaryIO, timeout: int = None) -> None:
         """
         Dump data from core profile session to a file.
+
         :param out: File object to write data to.
         :param timeout: Timeout for data dumping, in seconds.
         """
@@ -655,14 +657,14 @@ class CoreProfileSessionTap(Tap):
             out.write(data)
             out.flush()
 
-    def get_kdbuf_stream(self):
+    def get_kdbuf_stream(self) -> KdBufStream:
         """
         Get kd_buf stream.
         """
         return KdBufStream(self.channel)
 
     @staticmethod
-    def parse_stackshot(data):
+    def parse_stackshot(data: bytes) -> Any:
         parsed = kcdata.parse(data)
         # Required for removing streams from construct output.
         stackshot = clean(parsed)
@@ -671,7 +673,7 @@ class CoreProfileSessionTap(Tap):
         return parsed_stack_shot[predefined_names[kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT]]
 
     @staticmethod
-    def get_time_config(dvt):
+    def get_time_config(dvt: DvtSecureSocketProxyService) -> Mapping[str, Any]:
         time_info = DeviceInfo(dvt).mach_time_info()
         mach_absolute_time = time_info[0]
         numer = time_info[1]
