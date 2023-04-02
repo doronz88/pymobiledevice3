@@ -1,15 +1,16 @@
-import typing
+from typing import List, Mapping
 
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.remote_server import MessageAux
 
 
 class ProcessControl:
     IDENTIFIER = 'com.apple.instruments.server.services.processcontrol'
 
-    def __init__(self, dvt):
+    def __init__(self, dvt: DvtSecureSocketProxyService) -> None:
         self._channel = dvt.make_channel(self.IDENTIFIER)
 
-    def signal(self, pid: int, sig: int):
+    def signal(self, pid: int, sig: int) -> Mapping:
         """
         Send signal to process
         :param pid: PID of process to send signal.
@@ -18,15 +19,15 @@ class ProcessControl:
         self._channel.sendSignal_toPid_(MessageAux().append_obj(sig).append_obj(pid), expects_reply=True)
         return self._channel.receive_plist()
 
-    def kill(self, pid: int):
+    def kill(self, pid: int) -> None:
         """
         Kill a process.
         :param pid: PID of process to kill.
         """
         self._channel.killPid_(MessageAux().append_obj(pid), expects_reply=False)
 
-    def launch(self, bundle_id: str, arguments=None, kill_existing: bool = True, start_suspended: bool = False,
-               environment: typing.Mapping = None) -> int:
+    def launch(self, bundle_id: str, arguments: List[str] = None, kill_existing: bool = True,
+               start_suspended: bool = False, environment: Mapping = None) -> int:
         """
         Launch a process.
         :param bundle_id: Bundle id of the process.
@@ -38,7 +39,8 @@ class ProcessControl:
         """
         arguments = [] if arguments is None else arguments
         environment = {} if environment is None else environment
-        args = MessageAux().append_obj('').append_obj(bundle_id).append_obj(environment).append_obj(arguments).append_obj({
+        args = MessageAux().append_obj('').append_obj(bundle_id).append_obj(environment).append_obj(
+            arguments).append_obj({
             'StartSuspendedKey': start_suspended,
             'KillExisting': kill_existing,
         })
