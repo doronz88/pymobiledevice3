@@ -1,5 +1,7 @@
 import dataclasses
+from typing import Generator, List, Mapping
 
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.remote_server import Tap
 
@@ -7,7 +9,7 @@ from pymobiledevice3.services.remote_server import Tap
 class Sysmontap(Tap):
     IDENTIFIER = 'com.apple.instruments.server.services.sysmontap'
 
-    def __init__(self, dvt):
+    def __init__(self, dvt: DvtSecureSocketProxyService):
         self._device_info = DeviceInfo(dvt)
 
         process_attributes = list(self._device_info.request_information('sysmonProcessAttributes'))
@@ -32,7 +34,7 @@ class Sysmontap(Tap):
             for result in self.channel.receive_plist():
                 yield result
 
-    def iter_processes(self):
+    def iter_processes(self) -> Generator[List[Mapping], None, None]:
         for row in self:
             if 'Processes' not in row:
                 continue
