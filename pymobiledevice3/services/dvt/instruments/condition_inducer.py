@@ -1,13 +1,14 @@
 import logging
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.remote_server import MessageAux
 
 
 class ConditionInducer:
     IDENTIFIER = 'com.apple.instruments.server.services.ConditionInducer'
 
-    def __init__(self, dvt):
+    def __init__(self, dvt: DvtSecureSocketProxyService) -> None:
         self.logger = logging.getLogger(__name__)
         self._channel = dvt.make_channel(self.IDENTIFIER)
 
@@ -15,7 +16,7 @@ class ConditionInducer:
         self._channel.availableConditionInducers()
         return self._channel.receive_plist()
 
-    def set(self, profile_identifier):
+    def set(self, profile_identifier: str) -> None:
         for group in self.list():
             for profile in group.get('profiles'):
                 if profile_identifier == profile.get('identifier'):
@@ -27,5 +28,5 @@ class ConditionInducer:
                     return
         raise PyMobileDevice3Exception('Invalid profile identifier')
 
-    def clear(self):
+    def clear(self) -> None:
         self._channel.disableActiveCondition()
