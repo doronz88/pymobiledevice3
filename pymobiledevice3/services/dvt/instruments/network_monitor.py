@@ -4,6 +4,8 @@ import logging
 
 from construct import Adapter, Bytes, Int8ul, Int16ub, Int32ul, Struct, Switch, this
 
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+
 
 class IpAddressAdapter(Adapter):
     def _decode(self, obj, context, path):
@@ -69,7 +71,7 @@ class ConnectionUpdateEvent:
 class NetworkMonitor:
     IDENTIFIER = 'com.apple.instruments.server.services.networking'
 
-    def __init__(self, dvt):
+    def __init__(self, dvt: DvtSecureSocketProxyService) -> None:
         self.logger = logging.getLogger(__name__)
         self._channel = dvt.make_channel(self.IDENTIFIER)
 
