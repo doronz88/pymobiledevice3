@@ -1,19 +1,22 @@
+from pymobiledevice3.services.web_protocol.automation_session import AutomationSession
+
+
 class Alert:
-    def __init__(self, session):
+    def __init__(self, session: AutomationSession) -> None:
         """
         :param pymobiledevice3.services.web_protocol.automation_session.AutomationSession session: Automation session.
         """
         self.session = session
 
-    def accept(self):
+    def accept(self) -> None:
         """ Accepts the alert available. """
         self.session.accept_current_javascript_dialog()
 
-    def dismiss(self):
+    def dismiss(self) -> None:
         """ Dismisses the alert available. """
         self.session.dismiss_current_javascript_dialog()
 
-    def send_keys(self, text: str):
+    def send_keys(self, text: str) -> None:
         """
         Send Keys to the Alert.
         :param text: Text to send to prompts.
