@@ -1,10 +1,13 @@
+from typing import List
+
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.remote_server import MessageAux
 
 
 class EnergyMonitor:
     IDENTIFIER = 'com.apple.xcode.debug-gauge-data-providers.Energy'
 
-    def __init__(self, dvt, pid_list: list):
+    def __init__(self, dvt: DvtSecureSocketProxyService, pid_list: List[int]) -> None:
         self._channel = dvt.make_channel(self.IDENTIFIER)
         self._pid_list = pid_list
 
