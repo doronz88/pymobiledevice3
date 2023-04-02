@@ -2,12 +2,13 @@ import asyncio
 from base64 import b64decode, b64encode
 from datetime import datetime
 from io import BytesIO
+from typing import Tuple
 
 from PIL import Image
 
 
 class ScreenCast:
-    def __init__(self, target, format_: str, quality: int, max_width: int, max_height: int):
+    def __init__(self, target, format_: str, quality: int, max_width: int, max_height: int) -> None:
         """
         :param pymobiledevice3.services.web_protocol.cdp_target.CdpTarget target:
         :param format_: Image compression format. Allowed values: jpeg, png.
@@ -61,7 +62,7 @@ class ScreenCast:
         self._run = True
         self.recording_task = asyncio.create_task(self.recording_loop(message_id))
 
-    async def stop(self):
+    async def stop(self) -> None:
         """ Stop sending screenshots to the devtools. """
         self._run = False
         self.recording_task.cancel()
@@ -71,7 +72,7 @@ class ScreenCast:
             pass
         self.recording_task = None
 
-    def ack(self, frame_id: int):
+    def ack(self, frame_id: int) -> None:
         """ Handle acknowledgement for screencast frames. """
         self.frames_acked.append(frame_id)
 
@@ -88,7 +89,7 @@ class ScreenCast:
         resized_img.save(resized, format='jpeg', quality='maximum')
         return b64encode(resized.getvalue()).decode()
 
-    async def get_offsets(self, message_id: int):
+    async def get_offsets(self, message_id: int) -> Tuple:
         """
         Get the offset of the screenshot from the start of the page.
         :param message_id: Message id to use when requesting WIR data concerning the screencast.
@@ -103,7 +104,7 @@ class ScreenCast:
             return 0, 0, 0
         return tuple(map(int, frame_size.split(',')))
 
-    async def recording_loop(self, message_id):
+    async def recording_loop(self, message_id: int) -> None:
         """
         Fetch screenshots and send to devtools.
         :param message_id: Message id to use when requesting WIR data concerning the screencast.
