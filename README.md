@@ -1,6 +1,7 @@
 [![Python application](https://github.com/doronz88/pymobiledevice3/workflows/Python%20application/badge.svg)](https://github.com/doronz88/pymobiledevice3/actions/workflows/python-app.yml "Python application action")
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
 [![Downloads](https://static.pepy.tech/personalized-badge/pymobiledevice3?period=total&units=none&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/pymobiledevice3)
+[![Documentation Status](https://readthedocs.org/projects/pymobiledevice3/badge/?version=latest)](https://pymobiledevice3.readthedocs.io/?badge=latest)
 
 - [Description](#description)
 - [Installation](#installation)
@@ -224,63 +225,63 @@ https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lo
 This is the list of all the services from `lockdownd` which we reversed and implemented API wrappers for. A click on
 each will lead to each one's implementation, where you can learn more about.
 
-* [`com.apple.mobile.heartbeat`](pymobiledevice3/services/heartbeat.py)
+* [`com.apple.mobile.heartbeat`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.heartbeat.html)
     * Just a ping to `lockdownd` service.
     * Used to keep an active connection with `lockdownd`
-* [`com.apple.mobileactivationd`](pymobiledevice3/services/mobile_activation.py)
+* [`com.apple.mobileactivationd`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.mobile_activation.html)
     * Activation services
-* [`com.apple.afc`](pymobiledevice3/services/afc.py)
+* [`com.apple.afc`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.afc.html)
     * File access for `/var/mobile/Media`
     * Based on afcd's protocol
-* [`com.apple.crashreportcopymobile`](pymobiledevice3/services/crash_reports.py)
+* [`com.apple.crashreportcopymobile`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.crash_reports.html)
     * File access for `/var/mobile/Library/Logs/CrashReports`
     * Based on afcd's protocol
-* [`com.apple.pcapd`](pymobiledevice3/services/pcapd.py)
+* [`com.apple.pcapd`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.pcapd.html)
     * Sniff device's network traffic
-* [`com.apple.syslog_relay`](pymobiledevice3/services/syslog.py)
+* [`com.apple.syslog_relay`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.syslog.html)
     * Just streams syslog lines as raw strings
     * For a more robust structural parsing, it's better to access the `com.apple.os_trace_relay` relay.
-* [`com.apple.os_trace_relay`](pymobiledevice3/services/os_trace.py)
+* [`com.apple.os_trace_relay`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.os_trace.html)
     * More extensive syslog monitoring
-* [`com.apple.mobile.diagnostics_relay`](pymobiledevice3/services/diagnostics.py)
+* [`com.apple.mobile.diagnostics_relay`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.diagnostics.html)
     * General diagnostic tools
-* [`com.apple.mobile.notification_proxy` & `com.apple.mobile.insecure_notification_proxy`](pymobiledevice3/services/notification_proxy.py)
+* [`com.apple.mobile.notification_proxy` & `com.apple.mobile.insecure_notification_proxy`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.notification_proxy.html)
     * API wrapper for `notify_post()` & `notify_register_dispatch()`
-* [`com.apple.crashreportmover`](pymobiledevice3/services/crash_reports.py)
+* [`com.apple.crashreportmover`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.crash_reports.html)
     * Just trigger `crash_mover` to move all crash reports into crash directory
-* [`com.apple.mobile.MCInstall`](pymobiledevice3/services/mobile_config.py)
+* [`com.apple.mobile.MCInstall`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.mobile_config.html)
     * Profile management (MDM)
-* [`com.apple.misagent`](pymobiledevice3/services/misagent.py)
+* [`com.apple.misagent`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.misagent.html)
     * Provisioning Profiles management
-* [`com.apple.companion_proxy`](pymobiledevice3/services/companion.py)
+* [`com.apple.companion_proxy`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.companion.html)
     * Companion features (watches and etc.)
-* [`com.apple.mobilebackup2`](pymobiledevice3/services/mobilebackup2.py)
+* [`com.apple.mobilebackup2`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.mobilebackup2.html)
     * Local backup management
-* [`com.apple.mobile.assertion_agent`](pymobiledevice3/services/power_assertion.py)
+* [`com.apple.mobile.assertion_agent`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.power_assertion.html)
     * Create power assertion to prevent different kinds of sleep
-* [`com.apple.springboardservices`](pymobiledevice3/services/springboard.py)
+* [`com.apple.springboardservices`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.springboard.html)
     * Play with device's button layout
-* [`com.apple.mobile.mobile_image_mounter`](pymobiledevice3/services/mobile_image_mounter.py)
+* [`com.apple.mobile.mobile_image_mounter`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.mobile_image_mounter.html)
     * Image mounter service (used for DeveloperDiskImage mounting)
-* [`com.apple.mobile.house_arrest`](pymobiledevice3/services/house_arrest.py)
+* [`com.apple.mobile.house_arrest`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.house_arrest.html)
     * Get AFC utils (file management per application bundle)
-* [`com.apple.mobile.installation_proxy`](pymobiledevice3/services/installation_proxy.py)
+* [`com.apple.mobile.installation_proxy`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.installation_proxy.html)
     * Application management
-* [`com.apple.instruments.remoteserver`](pymobiledevice3/services/remote_server.py)
+* [`com.apple.instruments.remoteserver`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.remote_server.html)
     * Developer instrumentation service, iOS<14  (DeveloperDiskImage)
-* [`com.apple.instruments.remoteserver.DVTSecureSocketProxy`](pymobiledevice3/services/remote_server.py)
+* [`com.apple.instruments.remoteserver.DVTSecureSocketProxy`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.remote_server.html)
     * Developer instrumentation service, iOS>=14  (DeveloperDiskImage)
-* [`com.apple.mobile.screenshotr`](pymobiledevice3/services/screenshot.py)
+* [`com.apple.mobile.screenshotr`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.screenshot.html)
     * Take screenshot into a PNG format (DeveloperDiskImage)
-* [`com.apple.accessibility.axAuditDaemon.remoteserver`](pymobiledevice3/services/accessibilityaudit.py)
+* [`com.apple.accessibility.axAuditDaemon.remoteserver`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.accessibilityaudit.html)
     * Accessibility features (DeveloperDiskImage)
-* [`com.apple.dt.simulatelocation`](pymobiledevice3/services/simulate_location.py)
+* [`com.apple.dt.simulatelocation`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.simulate_location.html)
     * Allows to simulate locations (DeveloperDiskImage)
-* [`com.apple.dt.fetchsymbols`](pymobiledevice3/services/dtfetchsymbols.py)
+* [`com.apple.dt.fetchsymbols`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.dtfetchsymbols.html)
     * Allows fetching of `dyld` and dyld shared cache files (DeveloperDiskImage)
-* [`com.apple.webinspector`](pymobiledevice3/services/webinspector.py)
+* [`com.apple.webinspector`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.webinspector.html)
     * Used to debug WebViews
-* [`com.apple.amfi.lockdown`](pymobiledevice3/services/amfi.py)
+* [`com.apple.amfi.lockdown`](https://pymobiledevice3.readthedocs.io/en/latest/api_reference/pymobiledevice3.services.amfi.html)
     * Used to enable developer-mode
 
 ### Un-implemented services
@@ -325,7 +326,7 @@ yourself, you can run:
 pymobiledevice3 lockdown service <service-name>
 ```
 
-This will start an IPython shell where you already have the connection established using the `client` variable and you
+This will start an IPython shell where you already have the connection established using the `client` variable, and you
 can send & receive messages.
 
 ```python
@@ -381,7 +382,3 @@ channel.killPid_(args, expects_reply=False)  # Killing a process doesn't require
 # For that cases you can use the recv_plist method.
 return_value, auxiliary = developer.recv_plist()
 ```
-
-# Contributing
-
-See [CONTRIBUTING](CONTRIBUTING.md).
