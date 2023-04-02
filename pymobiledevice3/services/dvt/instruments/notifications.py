@@ -1,10 +1,11 @@
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.remote_server import MessageAux
 
 
 class Notifications:
     IDENTIFIER = 'com.apple.instruments.server.services.mobilenotifications'
 
-    def __init__(self, dvt):
+    def __init__(self, dvt: DvtSecureSocketProxyService) -> None:
         self._dvt = dvt
         self._channel = dvt.make_channel(self.IDENTIFIER)
 
