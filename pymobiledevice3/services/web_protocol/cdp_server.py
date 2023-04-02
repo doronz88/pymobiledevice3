@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from typing import Any, List, Mapping
 
 from fastapi import FastAPI, WebSocket
 from fastapi.logger import logger
@@ -12,12 +13,12 @@ app = FastAPI()
 
 
 @app.on_event("startup")
-async def startup_event():
+async def startup_event() -> None:
     app.state.inspector.connect()
 
 
 @app.get('/json')
-async def available_targets():
+async def available_targets() -> List[Mapping[str, Any]]:
     app.state.inspector.get_open_pages()
     targets = []
     for app_id in app.state.inspector.application_pages:
@@ -37,7 +38,7 @@ async def available_targets():
 
 
 @app.get('/json/version')
-def version():
+def version() -> Mapping:
     return {
         'Browser': 'Safari',
         'Protocol-Version': '1.1',
@@ -48,13 +49,13 @@ def version():
     }
 
 
-async def from_cdp(target: CdpTarget, websocket):
+async def from_cdp(target: CdpTarget, websocket: WebSocket) -> None:
     async for message in websocket.iter_json():
         logger.debug(f'CDP INPUT:  {message}')
         await target.send(message)
 
 
-async def to_cdp(target: CdpTarget, websocket):
+async def to_cdp(target: CdpTarget, websocket: WebSocket) -> None:
     while True:
         message = await target.receive()
         logger.debug(f'CDP OUTPUT:  {message}')
@@ -62,7 +63,7 @@ async def to_cdp(target: CdpTarget, websocket):
 
 
 @app.websocket('/devtools/page/{page_id}')
-async def page_debugger(websocket: WebSocket, page_id: str):
+async def page_debugger(websocket: WebSocket, page_id: int) -> None:
     application, page = app.state.inspector.find_page_id(page_id)
     session_id = str(uuid.uuid4()).upper()
     protocol = SessionProtocol(app.state.inspector, session_id, application, page, method_prefix='')
