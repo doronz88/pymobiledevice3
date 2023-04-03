@@ -4,7 +4,6 @@ import plistlib
 import click
 
 from pymobiledevice3.cli.cli_common import Command, CommandWithoutAutopair, print_json
-from pymobiledevice3.exceptions import PasscodeRequiredError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.heartbeat import HeartbeatService
 
@@ -131,10 +130,4 @@ def lockdown_wifi_connections(lockdown: LockdownClient, state):
         print_json(lockdown.get_value(domain='com.apple.mobile.wireless_lockdown'))
     else:
         # enable/disable
-        state = state == 'on'
-        try:
-            # required when passcode is set, but cannot be set if not defined
-            lockdown.enable_wifi_pairing = state
-        except PasscodeRequiredError:
-            pass
-        lockdown.enable_wifi_connections = state
+        lockdown.enable_wifi_connections = state == 'on'
