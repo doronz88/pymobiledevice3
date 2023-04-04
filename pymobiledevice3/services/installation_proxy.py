@@ -166,8 +166,7 @@ class InstallationProxyService(BaseService):
         if app_types is None:
             app_types = ['User']
         return [app['CFBundleIdentifier']
-                for app in self.get_apps()
-                if app.get('ApplicationType') in app_types]
+                for app in self.get_apps(app_types)]
 
     def close(self):
         self.service.close()
