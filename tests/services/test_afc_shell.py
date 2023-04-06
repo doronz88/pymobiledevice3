@@ -6,7 +6,7 @@ import pytest
 from cmd2 import CommandResult
 from cmd2_ext_test import ExternalTestMixin
 
-from pymobiledevice3.services.afc import AfcShell
+from pymobiledevice3.cli.afc import AfcShell
 
 SINGLE_PARAM_COMMANDS = ['edit', 'cd', 'walk', 'cat', 'rm', 'head', 'hexdump', 'stat']
 

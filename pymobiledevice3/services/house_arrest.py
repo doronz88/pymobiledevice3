@@ -2,6 +2,8 @@ import logging
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcService, AfcShell
+from pymobiledevice3.cli.afc import AfcShell
+
 
 
 class HouseArrestService(AfcService):
