@@ -93,15 +93,14 @@ class InstallationProxyService(BaseService):
 
         return self.service.send_recv_plist(cmd).get('LookupResult')
 
-    def browse(self, bundle_identifier: str, options: Mapping = None, attributes: List[str] = None) -> List[Mapping]:
+    def browse(self, options: Mapping = None, attributes: List[str] = None) -> List[Mapping]:
         if options is None:
             options = {}
         if attributes:
             options['ReturnAttributes'] = attributes
 
         cmd = {'Command': 'Browse',
-               'ClientOptions': options,
-               'ApplicationIdentifier': bundle_identifier}
+               'ClientOptions': options}
 
         self.service.send_plist(cmd)
 
