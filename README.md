@@ -27,6 +27,7 @@ both architecture and platform generic and is supported and tested on:
 
 Main features include:
 
+* Device discovery over bonjour
 * TCP port forwarding
 * Viewing syslog lines (including debug)
 * Profile management
@@ -110,6 +111,7 @@ Commands:
   amfi             amfi options
   apps             application options
   backup2          backup utils
+  bonjour          bonjour options
   companion        companion options
   crash            crash report options
   developer        developer options.
@@ -125,7 +127,7 @@ Commands:
   restore          restore options
   springboard      springboard options
   syslog           syslog options
-  usbmuxd          usbmuxd options
+  usbmux           usbmuxd options
   webinspector     webinspector options
 ```
 
@@ -150,6 +152,8 @@ There is A LOT you may do on the device using `pymobiledevice3`. This is just a 
 
 * Listing connected devices:
     * `pymobiledevice3 list-devices`
+* Discover network devices using bonjour:
+    * `pymobiledevice3 bonjour browse`
 * View all syslog lines (including debug messages):
     * `pymobiledevice3 syslog live`
 * Filter out only messages containing the word "SpringBoard":
