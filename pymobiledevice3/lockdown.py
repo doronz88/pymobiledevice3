@@ -447,7 +447,7 @@ class LockdownClient(object):
             self._request('Unpair', {'PairRecord': pair_record, 'ProtocolVersion': '2'}, verify_request=False)
         else:
             self._request('Unpair', {'PairRecord': self.pair_record, 'ProtocolVersion': '2'},
-                                 verify_request=False)
+                          verify_request=False)
 
     @reconnect_on_remote_close
     def reset_pairing(self):

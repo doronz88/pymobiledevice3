@@ -261,3 +261,7 @@ class InspectorEvaluateError(PyMobileDevice3Exception):
 
 class LaunchingApplicationError(PyMobileDevice3Exception):
     pass
+
+
+class AppInstallError(PyMobileDevice3Exception):
+    pass
