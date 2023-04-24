@@ -1,9 +1,11 @@
 from pymobiledevice3.services.webinspector import SAFARI, WebinspectorService
 
+TIMEOUT = 10
+
 
 def test_opening_app(lockdown):
     inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect()
+    inspector.connect(timeout=TIMEOUT)
     safari = inspector.open_app(SAFARI)
     pages = inspector.get_open_pages()
     # Might take a while to update.
