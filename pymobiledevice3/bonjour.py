@@ -59,6 +59,7 @@ class BonjourListener(ServiceListener):
                 if lockdown.paired:
                     break
         except ConnectionRefusedError:
+            logger.debug('Service failed to establish a lockdown connection')
             return
 
         self.discovered_devices[name] = BonjourDevice(name=name, mac_address=name.split('@')[0], ipv4=ipv4, ipv6=ipv6,
