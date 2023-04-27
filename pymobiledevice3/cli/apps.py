@@ -22,13 +22,16 @@ def apps():
 @click.option('--color/--no-color', default=True)
 @click.option('-u', '--user', is_flag=True, help='include user apps')
 @click.option('-s', '--system', is_flag=True, help='include system apps')
-def apps_list(lockdown: LockdownClient, color, user, system):
+@click.option('--hidden', is_flag=True, help='include hidden apps')
+def apps_list(lockdown: LockdownClient, color, user, system, hidden):
     """ list installed apps """
     app_types = []
     if user:
         app_types.append('User')
     if system:
         app_types.append('System')
+    if hidden:
+        app_types.append('Hidden')
     print_json(InstallationProxyService(lockdown=lockdown).get_apps(app_types), colored=color)
 
 
