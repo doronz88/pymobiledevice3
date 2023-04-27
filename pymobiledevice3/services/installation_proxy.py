@@ -7,13 +7,6 @@ from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.base_service import BaseService
 
-client_options = {
-    'SkipUninstall': False,
-    'ApplicationSINF': False,
-    'iTunesMetadata': False,
-    'ReturnAttributes': False
-}
-
 
 class InstallationProxyService(BaseService):
     SERVICE_NAME = 'com.apple.mobile.installation_proxy'
