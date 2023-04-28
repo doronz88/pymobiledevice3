@@ -7,12 +7,7 @@ from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.base_service import BaseService
 
-client_options = {
-    'SkipUninstall': False,
-    'ApplicationSINF': False,
-    'iTunesMetadata': False,
-    'ReturnAttributes': False
-}
+GET_APPS_ADDITIONAL_INFO = {'ReturnAttributes': ['CFBundleIdentifier', 'StaticDiskUsage', 'DynamicDiskUsage']}
 
 
 class InstallationProxyService(BaseService):
@@ -126,11 +121,16 @@ class InstallationProxyService(BaseService):
         cmd = {'Command': 'Lookup', 'ClientOptions': options}
         return self.service.send_recv_plist(cmd).get('LookupResult')
 
-    def get_apps(self, app_types: List[str] = None) -> List[Mapping]:
+    def get_apps(self, app_types: List[str] = None) -> Mapping[str, Mapping]:
         """ get applications according to given criteria """
-        lookup_result = self.lookup().values()
-        result = []
-        for app in lookup_result:
+        result = self.lookup()
+        # query for additional info
+        additional_info = self.lookup(GET_APPS_ADDITIONAL_INFO)
+        for bundle_identifier, app in additional_info.items():
+            result[bundle_identifier].update(app)
+        # filter results
+        filtered_result = {}
+        for bundle_identifier, app in result.items():
             if (app_types is None) or (app['ApplicationType'] in app_types):
-                result.append(app)
-        return result
+                filtered_result[bundle_identifier] = app
+        return filtered_result
