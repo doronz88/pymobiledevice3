@@ -151,7 +151,7 @@ https://terminalizer.com/view/18920b405193
 There is A LOT you may do on the device using `pymobiledevice3`. This is just a TL;DR of some common operations:
 
 * Listing connected devices:
-    * `pymobiledevice3 list-devices`
+    * `pymobiledevice3 usbmux list`
 * Discover network devices using bonjour:
     * `pymobiledevice3 bonjour browse`
 * View all syslog lines (including debug messages):
