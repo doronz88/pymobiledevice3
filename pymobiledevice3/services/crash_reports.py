@@ -133,7 +133,6 @@ class CrashReportsManager:
                                 sysdiagnose_filename = filename.rsplit(ext)[0]
                                 sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
                                 sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
-                                print('filename', sysdiagnose_filename)
                                 break
                 break
 
