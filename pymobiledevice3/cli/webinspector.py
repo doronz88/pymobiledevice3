@@ -77,9 +77,10 @@ def create_webinspector_and_launch_app(lockdown: LockdownClient, timeout: float,
 @catch_errors
 def opened_tabs(lockdown: LockdownClient, verbose, timeout):
     """
-    Show All opened tabs.
-    Opt in:
+    Show all currently opened tabs.
 
+    \b
+    Opt-in:
         Settings -> Safari -> Advanced -> Web Inspector
     """
     inspector = WebinspectorService(lockdown=lockdown, loop=asyncio.get_event_loop())
@@ -108,11 +109,11 @@ def opened_tabs(lockdown: LockdownClient, verbose, timeout):
 @catch_errors
 def launch(lockdown: LockdownClient, url, timeout):
     """
-    Open a specific URL in Safari.
-    Opt in:
+    Create a specific URL in Safari.
 
+    \b
+    Opt-in:
         Settings -> Safari -> Advanced -> Web Inspector
-
         Settings -> Safari -> Advanced -> Remote Automation
     """
     inspector, safari = create_webinspector_and_launch_app(lockdown, timeout, SAFARI)
@@ -153,10 +154,11 @@ driver.add_cookie(
 @catch_errors
 def shell(lockdown: LockdownClient, timeout):
     """
-    Opt in:
+    Create an IPython shell for interacting with a WebView.
 
+    \b
+    Opt-in:
         Settings -> Safari -> Advanced -> Web Inspector
-
         Settings -> Safari -> Advanced -> Remote Automation
     """
     inspector, safari = create_webinspector_and_launch_app(lockdown, timeout, SAFARI)
@@ -182,12 +184,15 @@ def shell(lockdown: LockdownClient, timeout):
 @catch_errors
 def js_shell(lockdown: LockdownClient, timeout, automation, url):
     """
-    Opt in:
+    Create a javascript shell. This interpreter runs on your local machine,
+    but evaluates each expression on the remote
 
+    \b
+    Opt-in:
         Settings -> Safari -> Advanced -> Web Inspector
 
+    \b
     for automation also enable:
-
         Settings -> Safari -> Advanced -> Remote Automation
     """
 
@@ -208,6 +213,13 @@ def create_app():
 @click.option('--host', default='127.0.0.1')
 @click.option('--port', type=click.INT, default=9222)
 def cdp(lockdown: LockdownClient, host, port):
+    """
+    Start a CDP server for debugging WebViews.
+
+    \b
+    In order to debug the WebView that way, open in Google Chrome:
+        chrome://inspect/#devices
+    """
     global udid
     udid = lockdown.udid
     uvicorn.run('pymobiledevice3.cli.webinspector:create_app', host=host, port=port, factory=True,
@@ -215,7 +227,6 @@ def cdp(lockdown: LockdownClient, host, port):
 
 
 class JsShell(ABC):
-
     def __init__(self):
         super().__init__()
         self.prompt_session = PromptSession(lexer=PygmentsLexer(lexers.JavascriptLexer),
@@ -267,7 +278,6 @@ class JsShell(ABC):
 
 
 class AutomationJsShell(JsShell):
-
     def __init__(self, driver: WebDriver):
         super().__init__()
         self.driver = driver
@@ -293,7 +303,6 @@ class AutomationJsShell(JsShell):
 
 
 class InspectorJsShell(JsShell):
-
     def __init__(self, inspector_session: InspectorSession):
         super().__init__()
         self.inspector_session = inspector_session
