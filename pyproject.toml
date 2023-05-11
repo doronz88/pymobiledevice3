@@ -1,0 +1,51 @@
+[project]
+name = "pymobiledevice3"
+version = "1.42.0"
+description = "Pure python3 implementation for working with iDevices (iPhone, etc...)"
+readme = "README.md"
+requires-python = ">=3.7"
+license = { file = "LICENSE" }
+keywords = ["ios", "protocol", "lockdownd", "instruments", "automation", "cli", "afc"]
+authors = [
+    { name = "doronz88", email = "doron88@gmail.com" },
+    { name = "matan", email = "matan1008@gmail.com" }
+]
+maintainers = [
+    { name = "doronz88", email = "doron88@gmail.com" },
+    { name = "matan", email = "matan1008@gmail.com" }
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: GNU GENERAL PUBLIC LICENSE - Version 3, 29 June 2007",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+test = ["pytest", "cmd2_ext_test"]
+
+[project.urls]
+"Homepage" = "https://github.com/doronz88/pymobiledevice3"
+"Bug Reports" = "https://github.com/doronz88/pymobiledevice3/issues"
+
+[project.scripts]
+pymobiledevice3 = "pymobiledevice3.__main__:cli"
+
+[tool.setuptools]
+package-data = { "pymobiledevice3" = ["resources/webinspector/*.js", "resources/dsc_uuid_map.json", "resources/notifications.txt"] }
+
+[tool.setuptools.packages.find]
+exclude = ["docs*", "tests*"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[build-system]
+requires = ["setuptools>=43.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
