@@ -3,7 +3,7 @@ import logging
 
 import construct
 
-from pymobiledevice3.exceptions import AmfiError, ConnectionFailedError, DeveloperModeError, \
+from pymobiledevice3.exceptions import AmfiError, BadDevError, ConnectionFailedError, DeveloperModeError, \
     DeviceHasPasscodeSetError, NoDeviceConnectedError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.heartbeat import HeartbeatService
@@ -53,7 +53,7 @@ class AmfiService:
             try:
                 self._lockdown = LockdownClient(self._lockdown.udid)
                 break
-            except (NoDeviceConnectedError, ConnectionFailedError, construct.core.StreamError):
+            except (NoDeviceConnectedError, ConnectionFailedError, BadDevError, construct.core.StreamError):
                 pass
 
         self.enable_developer_mode_post_restart()
