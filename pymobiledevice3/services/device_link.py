@@ -1,6 +1,5 @@
 import ctypes
 import datetime
-import os
 import shutil
 import struct
 from pathlib import Path
@@ -130,8 +129,7 @@ class DeviceLink:
         self.status_response(0)
 
     def get_free_disk_space(self, message):
-        vfs = os.statvfs(self.root_path)
-        freespace = vfs.f_bavail * vfs.f_bsize
+        freespace = shutil.disk_usage(self.root_path).free
         self.status_response(0, status_dict=freespace)
 
     def move_items(self, message):
