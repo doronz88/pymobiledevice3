@@ -6,6 +6,7 @@ import uuid
 
 import click
 import coloredlogs
+import hexdump
 import inquirer
 from inquirer.themes import GreenPassion
 from pygments import formatters, highlight, lexers
@@ -33,6 +34,14 @@ def print_json(buf, colored=True, default=default_json_encoder):
         print(colorful_json)
     else:
         print(formatted_json)
+
+
+def print_hex(data, colored=True):
+    hex_dump = hexdump.hexdump(data, result='return')
+    if colored:
+        print(highlight(hex_dump, lexers.HexdumpLexer(), formatters.TerminalTrueColorFormatter(style='native')))
+    else:
+        print(hex_dump, end='\n\n')
 
 
 def set_verbosity(ctx, param, value):
