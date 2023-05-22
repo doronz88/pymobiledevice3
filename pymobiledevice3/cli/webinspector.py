@@ -109,7 +109,7 @@ def opened_tabs(lockdown: LockdownClient, verbose, timeout):
 @catch_errors
 def launch(lockdown: LockdownClient, url, timeout):
     """
-    Create a specific URL in Safari.
+    Launch a specific URL in Safari.
 
     \b
     Opt-in:
