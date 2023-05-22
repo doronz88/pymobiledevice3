@@ -1,4 +1,6 @@
+import struct
 from datetime import datetime
+from typing import IO
 
 import click
 import hexdump
@@ -6,7 +8,7 @@ from pygments import formatters, highlight, lexers
 
 from pymobiledevice3.cli.cli_common import Command
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.pcapd import PcapdService
+from pymobiledevice3.services.pcapd import PACKET_HEADER, PCAP_HEADER, PcapdService
 
 
 @click.group()
@@ -20,13 +22,13 @@ def cli():
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of packets to sniff. Omit to endless sniff.')
 @click.option('--process', default=None, help='Process to filter. Omit for all.')
 @click.option('--color/--no-color', default=True)
-def pcap(lockdown: LockdownClient, out, count, process, color):
+def pcap(lockdown: LockdownClient, out: IO, count: int, process: str, color: bool):
     """ sniff device traffic """
     service = PcapdService(lockdown=lockdown)
     packets_generator = service.watch(packets_count=count, process=process)
+
     if out is not None:
-        service.write_to_pcap(out, packets_generator)
-        return
+        out.write(PCAP_HEADER)
 
     formatter = formatters.TerminalTrueColorFormatter(style='native')
 
@@ -44,6 +46,12 @@ def pcap(lockdown: LockdownClient, out, count, process, color):
             print(highlight(data, lexers.HspecLexer(), formatter), end='')
         hex_dump = hexdump.hexdump(packet.data, result='return')
         if color:
-            print(hex_dump, end='\n\n')
-        else:
             print(highlight(hex_dump, lexers.HexdumpLexer(), formatter))
+        else:
+            print(hex_dump, end='\n\n')
+
+        if out is not None:
+            length = len(packet.data)
+            pkthdr = struct.pack(PACKET_HEADER, packet.seconds, packet.microseconds, length, length)
+            data = pkthdr + packet.data
+            out.write(data)

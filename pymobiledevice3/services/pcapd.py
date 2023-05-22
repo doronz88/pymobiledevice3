@@ -3,8 +3,9 @@
 import enum
 import socket
 import struct
+from typing import Generator
 
-from construct import Byte, Bytes, CString, Int32ub, Int32ul, Padded, Padding, Struct, this
+from construct import Byte, Bytes, Container, CString, Int16ub, Int32ub, Int32ul, Padded, Seek, Struct, this
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService
@@ -321,7 +322,7 @@ device_packet_struct = Struct(
 
 class PcapdService(BaseService):
     """
-    Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from
+    Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks traffic from
     an iOS device. On macOS, the virtual interface can be enabled with the rvictl command. This script allows to use
     this service on other systems.
     """
@@ -330,7 +331,7 @@ class PcapdService(BaseService):
     def __init__(self, lockdown: LockdownClient):
         super().__init__(lockdown, self.SERVICE_NAME)
 
-    def watch(self, packets_count: int = -1, process: str = None):
+    def watch(self, packets_count: int = -1, process: str = None) -> Generator[Container, None, None]:
         packet_index = 0
         while packet_index != packets_count:
             d = self.service.recv_plist()
@@ -352,12 +353,3 @@ class PcapdService(BaseService):
             yield packet
 
             packet_index += 1
-
-    @staticmethod
-    def write_to_pcap(out, packet_generator):
-        out.write(PCAP_HEADER)
-        for packet in packet_generator:
-            length = len(packet.data)
-            pkthdr = struct.pack(PACKET_HEADER, packet.seconds, packet.microseconds, length, length)
-            data = pkthdr + packet.data
-            out.write(data)
