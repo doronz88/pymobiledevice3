@@ -301,8 +301,8 @@ device_packet_struct = Struct(
     'header_version' / Byte,
     'packet_length' / Int32ub,
     'interface_type' / Byte,
-    Padding(2),
-    Padding(1),
+    'unit' / Int16ub,
+    'io' / Byte,
     'protocol_family' / Int32ub,
     'frame_pre_length' / Int32ub,
     'frame_post_length' / Int32ub,
@@ -314,7 +314,8 @@ device_packet_struct = Struct(
     'ecomm' / Padded(17, CString('utf8')),
     'seconds' / Int32ub,
     'microseconds' / Int32ub,
-    'data' / Bytes(this.packet_length)
+    Seek(this.header_length),
+    'data' / Bytes(this.packet_length),
 )
 
 
