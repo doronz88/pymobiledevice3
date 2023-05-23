@@ -353,3 +353,12 @@ class PcapdService(BaseService):
             yield packet
 
             packet_index += 1
+
+    @staticmethod
+    def write_to_pcap(out, packet_generator):
+        out.write(PCAP_HEADER)
+        for packet in packet_generator:
+            length = len(packet.data)
+            pkthdr = struct.pack(PACKET_HEADER, packet.seconds, packet.microseconds, length, length)
+            data = pkthdr + packet.data
+            out.write(data)
