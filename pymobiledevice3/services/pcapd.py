@@ -3,8 +3,9 @@
 import enum
 import socket
 import struct
+from typing import Generator
 
-from construct import Byte, Bytes, CString, Int32ub, Int32ul, Padded, Padding, Struct, this
+from construct import Byte, Bytes, Container, CString, Int16ub, Int32ub, Int32ul, Padded, Seek, Struct, this
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.base_service import BaseService
@@ -301,8 +302,8 @@ device_packet_struct = Struct(
     'header_version' / Byte,
     'packet_length' / Int32ub,
     'interface_type' / Byte,
-    Padding(2),
-    Padding(1),
+    'unit' / Int16ub,
+    'io' / Byte,
     'protocol_family' / Int32ub,
     'frame_pre_length' / Int32ub,
     'frame_post_length' / Int32ub,
@@ -314,13 +315,14 @@ device_packet_struct = Struct(
     'ecomm' / Padded(17, CString('utf8')),
     'seconds' / Int32ub,
     'microseconds' / Int32ub,
-    'data' / Bytes(this.packet_length)
+    Seek(this.header_length),
+    'data' / Bytes(this.packet_length),
 )
 
 
 class PcapdService(BaseService):
     """
-    Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks trafic from
+    Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks traffic from
     an iOS device. On macOS, the virtual interface can be enabled with the rvictl command. This script allows to use
     this service on other systems.
     """
@@ -329,7 +331,7 @@ class PcapdService(BaseService):
     def __init__(self, lockdown: LockdownClient):
         super().__init__(lockdown, self.SERVICE_NAME)
 
-    def watch(self, packets_count: int = -1, process: str = None):
+    def watch(self, packets_count: int = -1, process: str = None) -> Generator[Container, None, None]:
         packet_index = 0
         while packet_index != packets_count:
             d = self.service.recv_plist()
