@@ -222,36 +222,48 @@ class AfcService(LockdownService):
         super().__init__(lockdown, service_name)
         self.packet_num = 0
 
-    def pull(self, src: str, dst: str, callback=None):
+    def pull(self, src: str, dst: str, callback: Optional[Callable] = None):
         """ pull a file/directory from given path into a local file/directory """
-        if callback is not None:
-            callback(src, dst)
-
         src = self.resolve_path(src)
+
+        dst_path = pathlib.Path(dst).expanduser().resolve()
+        if not dst_path.parent.is_dir():
+            raise FileNotFoundError(f'pull: {dst_path}: No such file or directory')
 
         if not self.isdir(src):
             # normal file
-            if os.path.isdir(dst):
-                dst = os.path.join(dst, os.path.basename(src))
-            with open(dst, 'wb') as f:
-                f.write(self.get_file_contents(src))
+
+            if dst.endswith((os.path.sep, posixpath.sep)) and not dst_path.is_dir():
+                raise NotADirectoryError(f'pull: directory {dst_path} does not exist')
+
+            if dst_path.is_dir():
+                dst_path /= os.path.basename(src)
+
+            dst_path.write_bytes(self.get_file_contents(src))
+
+            if callback is not None:
+                callback(src, dst)
         else:
             # directory
-            dst_path = pathlib.Path(dst) / os.path.basename(src)
-            dst_path.mkdir(parents=True, exist_ok=True)
+            if dst_path.is_file():
+                if dst.endswith((os.path.sep, posixpath.sep)):
+                    raise NotADirectoryError(f'pull: {dst_path} is not a directory')
+                raise IsADirectoryError(f'pull: {src} is a directory (not copied).')
 
-            for filename in self.listdir(src):
-                src_filename = posixpath.join(src, filename)
-                dst_filename = dst_path / filename
+            if dst_path.exists() and not src.endswith(posixpath.sep):
+                dst_path /= os.path.basename(src)
 
-                src_filename = self.resolve_path(src_filename)
+            try:
+                dst_path.mkdir()
+            except FileExistsError:
+                pass
+            else:
+                if callback is not None:
+                    callback(src, dst_path)
 
-                if self.isdir(src_filename):
-                    dst_filename.mkdir(exist_ok=True)
-                    self.pull(src_filename, str(dst_path), callback=callback)
-                    continue
-
-                self.pull(src_filename, str(dst_path), callback=callback)
+            for entry in self.listdir(src):
+                src_entry = pathlib.PurePosixPath(src, entry)
+                self.pull(str(src_entry), str(dst_path), callback=callback)
 
     @path_to_str()
     def exists(self, filename):
