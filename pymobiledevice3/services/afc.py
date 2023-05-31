@@ -222,22 +222,22 @@ class AfcService(LockdownService):
         super().__init__(lockdown, service_name)
         self.packet_num = 0
 
-    def pull(self, relative_src: str, dst: str, match: Optional[Pattern] = None, callback: Optional[Callable] = None,
-             src_dir: str = '') -> None:
-        src = self.resolve_path(posixpath.join(src_dir, relative_src))
+    def pull(self, src: str, dst: str, callback=None):
+        """ pull a file/directory from given path into a local file/directory """
+        if callback is not None:
+            callback(src, dst)
+
+        src = self.resolve_path(src)
 
         if not self.isdir(src):
             # normal file
             if os.path.isdir(dst):
-                dst = os.path.join(dst, os.path.basename(relative_src))
+                dst = os.path.join(dst, os.path.basename(src))
             with open(dst, 'wb') as f:
                 f.write(self.get_file_contents(src))
-            os.utime(dst, (os.stat(dst).st_atime, self.stat(src)['st_mtime'].timestamp()))
-            if callback is not None:
-                callback(src, dst)
         else:
             # directory
-            dst_path = pathlib.Path(dst) / os.path.basename(relative_src)
+            dst_path = pathlib.Path(dst) / os.path.basename(src)
             dst_path.mkdir(parents=True, exist_ok=True)
 
             for filename in self.listdir(src):
@@ -245,9 +245,6 @@ class AfcService(LockdownService):
                 dst_filename = dst_path / filename
 
                 src_filename = self.resolve_path(src_filename)
-
-                if match is not None and not match.match(posixpath.basename(src_filename)):
-                    continue
 
                 if self.isdir(src_filename):
                     dst_filename.mkdir(exist_ok=True)
@@ -854,11 +851,14 @@ class AfcShell:
         for filename in file:
             self.afc.rm(self.relative_path(filename))
 
-    def _do_pull(self, remote_path: Annotated[str, Arg(completer=path_completer)], local_path: str):
+    def _do_pull(self, remote_relative_path: Annotated[str, Arg(completer=path_completer)], local_path: str):
         def log(src, dst):
             print(f'{src} --> {dst}')
 
-        self.afc.pull(remote_path, local_path, callback=log, src_dir=self.cwd)
+        remote_path = str(pathlib.PurePosixPath(self.curdir).joinpath(remote_relative_path))
+        if remote_relative_path.endswith(posixpath.sep):  # add trailing slash if exist because pathlib remove it
+            remote_path += posixpath.sep
+        self.afc.pull(remote_path, local_path, callback=log)
 
     def _do_push(self, local_path: str, remote_path: Annotated[str, Arg(completer=path_completer)]):
         def log(src, dst):
