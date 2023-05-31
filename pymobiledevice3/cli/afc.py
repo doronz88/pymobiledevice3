@@ -1,9 +1,14 @@
+import logging
+
 import click
 
 from pymobiledevice3.cli.cli_common import Command
+from pymobiledevice3.exceptions import AfcFileNotFoundError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -24,11 +29,15 @@ def afc_shell(service_provider: LockdownClient):
 
 
 @afc.command('pull', cls=Command)
-@click.argument('remote_file', type=click.Path(exists=False))
-@click.argument('local_file', type=click.Path(exists=False))
-def afc_pull(service_provider: LockdownServiceProvider, remote_file: str, local_file: str) -> None:
+@click.argument('remote_path', type=click.Path(exists=False))
+@click.argument('local_path', type=click.Path(exists=False))
+def afc_pull(service_provider: LockdownServiceProvider, remote_path: str, local_path: str) -> None:
     """ pull remote file from /var/mobile/Media """
-    AfcService(lockdown=service_provider).pull(remote_file, local_file)
+    """ pull a remote file/directory from /var/mobile/Media into local file/directory """
+    try:
+        AfcService(lockdown=service_provider).pull(remote_path, local_path)
+    except (FileNotFoundError, AfcFileNotFoundError, NotADirectoryError, IsADirectoryError) as e:
+        logger.error(e)
 
 
 @afc.command('push', cls=Command)
