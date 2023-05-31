@@ -34,8 +34,11 @@ def afc_shell(service_provider: LockdownClient):
 def afc_pull(service_provider: LockdownServiceProvider, remote_path: str, local_path: str) -> None:
     """ pull remote file from /var/mobile/Media """
     """ pull a remote file/directory from /var/mobile/Media into local file/directory """
+    def log(src, dst):
+        logger.info(f'{src} --> {dst}')
+
     try:
-        AfcService(lockdown=service_provider).pull(remote_path, local_path)
+        AfcService(lockdown=service_provider).pull(remote_path, local_path, callback=log)
     except (FileNotFoundError, AfcFileNotFoundError, NotADirectoryError, IsADirectoryError) as e:
         logger.error(e)
 
