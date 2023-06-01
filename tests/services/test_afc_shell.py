@@ -165,6 +165,7 @@ def test_pull_after_cd_single_file(afc_shell, tmp_path: Path):
         afc_shell.app_cmd('cd temp1')
         out = afc_shell.app_cmd(f'pull {file_name} {tmp_path.absolute()}')
         assert not out.stderr
+        assert len(list(tmp_path.iterdir())) == 1
         assert (tmp_path / file_name).read_bytes() == file_data
     finally:
         afc_shell.afc.rm('temp1')
@@ -192,6 +193,7 @@ def test_pull_after_cd_single_file_with_prefix(afc_shell, tmp_path: Path):
         afc_shell.app_cmd('cd temp1')
         out = afc_shell.app_cmd(f'pull temp2/temp3/{file_name} {tmp_path.absolute()}')
         assert not out.stderr
+        assert len(list(tmp_path.iterdir())) == 1
         assert (tmp_path / file_name).read_bytes() == file_data
     finally:
         afc_shell.afc.rm('temp1')
@@ -210,15 +212,16 @@ def test_pull_after_cd_single_file_with_rename(afc_shell, tmp_path: Path):
     └── temp1.txt
     """
     file_name = 'temp.txt'
-    file_rename = 'temp1.txt'
+    new_file_path = tmp_path / 'temp1.txt'
     file_data = b'data'
     afc_shell.afc.makedirs('temp1')
     afc_shell.afc.set_file_contents(f'temp1/{file_name}', file_data)
     try:
         afc_shell.app_cmd('cd temp1')
-        out = afc_shell.app_cmd(f'pull {file_name} {(tmp_path / file_rename).absolute()}')
+        out = afc_shell.app_cmd(f'pull {file_name} {new_file_path.absolute()}')
         assert not out.stderr
-        assert (tmp_path / file_rename).read_bytes() == file_data
+        assert len(list(tmp_path.iterdir())) == 1
+        assert new_file_path.read_bytes() == file_data
     finally:
         afc_shell.afc.rm('temp1')
 
@@ -229,18 +232,18 @@ def test_pull_after_cd_recursive(afc_shell, tmp_path: Path):
     temp1
     └── temp2
         └── temp3
-            ├── temp4
-            │   └── temp1.txt
-            └── temp.txt
+            ├── temp.txt
+            └── temp4
+                └── temp1.txt
 
     cd temp1/temp2
     pull temp3 target
 
     target
     └── temp3
-        ├── temp4
-        │   └── temp1.txt
-        └── temp.txt
+        ├── temp.txt
+        └── temp4
+            └── temp1.txt
     """
     file_name = 'temp.txt'
     file_name1 = 'temp.txt'
@@ -253,10 +256,15 @@ def test_pull_after_cd_recursive(afc_shell, tmp_path: Path):
         afc_shell.app_cmd('cd temp1/temp2')
         out = afc_shell.app_cmd(f'pull temp3 {tmp_path.absolute()}')
         assert not out.stderr
-        assert (tmp_path / 'temp3' / file_name).read_bytes() == file_data
-        assert len(list((tmp_path / 'temp3').iterdir())) == 2
-        assert (tmp_path / 'temp3' / 'temp4' / file_name1).read_bytes() == file_data1
-        assert len(list((tmp_path / 'temp3' / 'temp4').iterdir())) == 1
+        assert len(list(tmp_path.iterdir())) == 1
+
+        temp3 = tmp_path / 'temp3'
+        assert len(list(temp3.iterdir())) == 2
+        assert (temp3 / file_name).read_bytes() == file_data
+
+        temp4 = temp3 / 'temp4'
+        assert len(list(temp4.iterdir())) == 1
+        assert (temp4 / file_name1).read_bytes() == file_data1
     finally:
         afc_shell.afc.rm('temp1')
 
@@ -267,17 +275,18 @@ def test_pull_after_cd_recursive_current(afc_shell, tmp_path: Path):
     temp1
     └── temp2
         └── temp3
-            ├── temp4
-            │   └── temp1.txt
-            └── temp.txt
+            ├── temp.txt
+            └── temp4
+                └── temp1.txt
 
     cd temp1/temp2/temp3
     pull . target
 
     target
-    ├── temp4
-    │   └── temp1.txt
-    └── temp.txt
+    └── temp3
+        ├── temp.txt
+        └── temp4
+            └── temp1.txt
     """
     file_name = 'temp.txt'
     file_name1 = 'temp1.txt'
@@ -290,10 +299,15 @@ def test_pull_after_cd_recursive_current(afc_shell, tmp_path: Path):
         afc_shell.app_cmd('cd temp1/temp2/temp3')
         out = afc_shell.app_cmd(f'pull . {tmp_path.absolute()}')
         assert not out.stderr
-        assert (tmp_path / file_name).read_bytes() == file_data
-        assert len(list(tmp_path.iterdir())) == 2
-        assert (tmp_path / 'temp4' / file_name1).read_bytes() == file_data1
-        assert len(list((tmp_path / 'temp4').iterdir())) == 1
+        assert len(list(tmp_path.iterdir())) == 1
+
+        temp3 = tmp_path / 'temp3'
+        assert len(list(temp3.iterdir())) == 2
+        assert (temp3 / file_name).read_bytes() == file_data
+
+        temp4 = temp3 / 'temp4'
+        assert len(list(temp4.iterdir())) == 1
+        assert (temp4 / file_name1).read_bytes() == file_data1
     finally:
         afc_shell.afc.rm('temp1')
 
@@ -304,18 +318,18 @@ def test_pull_after_cd_recursive_with_prefix(afc_shell, tmp_path: Path):
     temp1
     └── temp2
         └── temp3
-            ├── temp4
-            │   └── temp1.txt
-            └── temp.txt
+            ├── temp.txt
+            └── temp4
+                └── temp1.txt
 
     cd temp1
     pull temp2/temp3 target
 
     target
     └── temp3
-        ├── temp4
-        │   └── temp1.txt
-        └── temp.txt
+        ├── temp.txt
+        └── temp4
+            └── temp1.txt
     """
     file_name = 'temp.txt'
     file_name1 = 'temp.txt'
@@ -328,10 +342,15 @@ def test_pull_after_cd_recursive_with_prefix(afc_shell, tmp_path: Path):
         afc_shell.app_cmd('cd temp1')
         out = afc_shell.app_cmd(f'pull temp2/temp3 {tmp_path.absolute()}')
         assert not out.stderr
-        assert (tmp_path / 'temp3' / file_name).read_bytes() == file_data
-        assert len(list((tmp_path / 'temp3').iterdir())) == 2
-        assert (tmp_path / 'temp3' / 'temp4' / file_name1).read_bytes() == file_data1
-        assert len(list((tmp_path / 'temp3' / 'temp4').iterdir())) == 1
+        assert len(list(tmp_path.iterdir())) == 1
+
+        temp3 = tmp_path / 'temp3'
+        assert len(list(temp3.iterdir())) == 2
+        assert (temp3 / file_name).read_bytes() == file_data
+
+        temp4 = temp3 / 'temp4'
+        assert len(list(temp4.iterdir())) == 1
+        assert (temp4 / file_name1).read_bytes() == file_data1
     finally:
         afc_shell.afc.rm('temp1')
 
