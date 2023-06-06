@@ -10,6 +10,8 @@ from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcService, AfcShell
 from pymobiledevice3.services.os_trace import OsTraceService
 
+SYSDIAGNOSE_PROCESS_NAMES = ('sysdiagnose', 'sysdiagnosed')
+
 
 class CrashReportsManager:
     COPY_MOBILE_NAME = 'com.apple.crashreportcopymobile'
@@ -116,8 +118,8 @@ class CrashReportsManager:
         sysdiagnose_filename = None
 
         for syslog_entry in OsTraceService(lockdown=self.lockdown).syslog():
-            if (posixpath.basename(syslog_entry.filename) != 'sysdiagnose') or \
-                    (posixpath.basename(syslog_entry.image_name) != 'sysdiagnose'):
+            if (posixpath.basename(syslog_entry.filename) not in SYSDIAGNOSE_PROCESS_NAMES) or \
+                    (posixpath.basename(syslog_entry.image_name) not in SYSDIAGNOSE_PROCESS_NAMES):
                 # filter only sysdianose lines
                 continue
 
