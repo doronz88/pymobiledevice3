@@ -121,6 +121,11 @@ class AlreadyMountedError(PyMobileDevice3Exception):
     pass
 
 
+class MissingManifestError(PyMobileDevice3Exception):
+    """ No manifest could be found """
+    pass
+
+
 class UnsupportedCommandError(PyMobileDevice3Exception):
     """ Given command isn't supported for this iOS version """
     pass

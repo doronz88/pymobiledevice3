@@ -77,6 +77,7 @@ def cli():
         logger.error('Failed to connect to usbmuxd socket. Make sure it\'s running.')
     except MessageNotSupportedError:
         logger.error('Message not supported for this iOS version')
+        traceback.print_exc()
     except InternalError:
         logger.error('Internal Error')
     except DeveloperModeIsNotEnabledError:
