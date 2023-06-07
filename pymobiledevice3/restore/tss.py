@@ -55,7 +55,8 @@ class TSSRequest:
         }
 
     @staticmethod
-    def apply_restore_request_rules(tss_entry: typing.Mapping, parameters: typing.Mapping, rules: list):
+    def apply_restore_request_rules(tss_entry: typing.MutableMapping, parameters: typing.MutableMapping,
+                                    rules: typing.List):
         for rule in rules:
             conditions_fulfilled = True
             conditions = rule['Conditions']
