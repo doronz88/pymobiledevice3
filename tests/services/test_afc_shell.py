@@ -1,9 +1,9 @@
 import os
 import pathlib
+import sys
 from pathlib import Path
 from unittest import mock
 
-import gnureadline
 import pytest
 from cmd2 import CommandResult
 from cmd2_ext_test import ExternalTestMixin
@@ -28,19 +28,15 @@ def afc_shell(lockdown):
         app.afc.service.close()
 
 
-def get_completions(line, part, app):
-    def get_line():
-        return line
+def get_completions(line: str, part: str, app: AfcShellTester) -> list[str]:
+    if sys.platform in ['win32', 'cygwin']:
+        import readline
+    else:
+        import gnureadline as readline
 
-    def get_begidx():
-        return len(line) - len(part)
-
-    def get_endidx():
-        return len(line)
-
-    with mock.patch.object(gnureadline, 'get_line_buffer', get_line):
-        with mock.patch.object(gnureadline, 'get_begidx', get_begidx):
-            with mock.patch.object(gnureadline, 'get_endidx', get_endidx):
+    with mock.patch.object(readline, 'get_line_buffer', lambda: line):
+        with mock.patch.object(readline, 'get_begidx', lambda: len(line) - len(part)):
+            with mock.patch.object(readline, 'get_endidx', lambda: len(line)):
                 app.complete(part, 0)
 
     return app.completion_matches
