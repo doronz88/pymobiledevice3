@@ -165,8 +165,8 @@ class TestPull:
         (tmp_path / 'temp1.txt').write_text('hey1')
         (tmp_path / 'temp2.txt').write_text('hey2')
         assert get_completions(f'pull DCIM {tmp_path}', str(tmp_path), afc_shell) == [f'{tmp_path} ']
-        assert get_completions(f'pull DCIM {tmp_path}/', f'{tmp_path}/', afc_shell) == [f'{tmp_path}/temp1.txt',
-                                                                                        f'{tmp_path}/temp2.txt']
+        assert get_completions(f'pull DCIM {tmp_path}/', f'{tmp_path}{os.path.sep}', afc_shell) == \
+               [f'{tmp_path}{os.path.sep}temp1.txt', f'{tmp_path}{os.path.sep}temp2.txt']
 
     def test_pull_afc_file_not_found_error(self, afc_shell, tmp_path: Path):
         """
