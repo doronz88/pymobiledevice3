@@ -1,8 +1,8 @@
 import json
 import logging
-import plistlib
+from functools import update_wrapper
 from pathlib import Path
-from typing import IO, List
+from typing import List
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -12,14 +12,27 @@ from tqdm import tqdm
 
 from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import NotMountedError, UnsupportedCommandError
+from pymobiledevice3.exceptions import AlreadyMountedError, NotMountedError, UnsupportedCommandError
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
+from pymobiledevice3.services.mobile_image_mounter import DeveloperDiskImageMounter, MobileImageMounterService, \
+    PersonalizedImageMounter
 
 DISK_IMAGE_TREE = 'https://api.github.com/repos/pdso/DeveloperDiskImage/git/trees/master'
 DEVELOPER_DISK_IMAGE_URL = 'https://github.com/pdso/DeveloperDiskImage/raw/master/{ios_version}/{file_name}'
 
 logger = logging.getLogger(__name__)
+
+
+def catch_errors(func):
+    def catch_function(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except AlreadyMountedError:
+            logger.error('Given image was already mounted')
+        except UnsupportedCommandError:
+            logger.error('Your iOS version doesn\'t support this command')
+
+    return update_wrapper(catch_function, func)
 
 
 @click.group()
@@ -62,19 +75,26 @@ def mounter_lookup(lockdown: LockdownClient, color, image_type):
         logger.error(f'Disk image of type: {image_type} is not mounted')
 
 
-@mounter.command('umount', cls=Command)
-@click.option('-t', '--image-type', type=click.Choice(['Developer', 'Cryptex']), default='Developer')
-@click.option('-p', '--mount-path', help='Only needed for older iOS version', default='/Developer')
-def mounter_umount(lockdown: LockdownClient, image_type: str, mount_path: str):
-    """ unmount developer image. """
-    image_mounter = MobileImageMounterService(lockdown=lockdown)
+@mounter.command('umount-developer', cls=Command)
+@catch_errors
+def mounter_umount_developer(lockdown: LockdownClient):
+    """ unmount Developer image """
     try:
-        image_mounter.umount(mount_path, image_type=image_type, signature=b'')
-        logger.info('DeveloperDiskImage unmounted successfully')
+        DeveloperDiskImageMounter(lockdown=lockdown).umount()
+        logger.info('Developer image unmounted successfully')
     except NotMountedError:
-        logger.error('DeveloperDiskImage isn\'t currently mounted')
-    except UnsupportedCommandError:
-        logger.error('Your iOS version doesn\'t support this command')
+        logger.error('Developer image isn\'t currently mounted')
+
+
+@mounter.command('umount-personalized', cls=Command)
+@catch_errors
+def mounter_umount_personalized(lockdown: LockdownClient):
+    """ unmount Personalized image """
+    try:
+        PersonalizedImageMounter(lockdown=lockdown).umount()
+        logger.info('Personalized image unmounted successfully')
+    except NotMountedError:
+        logger.error('Personalized image isn\'t currently mounted')
 
 
 def download_file(url, local_filename):
@@ -98,34 +118,25 @@ def get_all_versions() -> List[str]:
     return [item.get('path') for item in json_data.get('tree')][0:-3]
 
 
-@mounter.command('mount', cls=Command)
-@click.argument('image-path', type=click.Path(exists=True))
-@click.argument('signature', type=click.Path(exists=True))
-@click.argument('image-type', type=click.Choice(['Developer', 'Cryptex']), default='Developer')
-@click.option('--trust-cache', type=click.File('rb'), help='Used only for Cryptex images')
-@click.option('--info-plist', type=click.File('rb'), help='Used only for Cryptex images')
-def mounter_mount(lockdown: LockdownClient, image_path: str, signature: str, image_type: str, trust_cache: IO = None,
-                  info_plist: IO = None):
-    """ mount developer image. """
-    image_mounter = MobileImageMounterService(lockdown=lockdown)
-    if image_mounter.is_image_mounted(image_type):
-        logger.error(f'{image_type} is already mounted')
-        return
+@mounter.command('mount-developer', cls=Command)
+@click.argument('image', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@click.argument('signature', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@catch_errors
+def mounter_mount_developer(lockdown: LockdownClient, image: str, signature: str):
+    """ mount developer image """
+    DeveloperDiskImageMounter(lockdown=lockdown).mount(Path(image), Path(signature))
+    logger.info('Developer image mounted successfully')
 
-    if trust_cache is not None:
-        trust_cache = trust_cache.read()
 
-    if info_plist is not None:
-        info_plist = plistlib.load(info_plist)
-
-    image_path = Path(image_path)
-    signature = Path(signature)
-    image_path = image_path.read_bytes()
-    signature = signature.read_bytes()
-
-    image_mounter.upload_image(image_type, image_path, signature)
-    image_mounter.mount(image_type, signature, trust_cache=trust_cache, info_plist=info_plist)
-    logger.info(f'{image_type} mounted successfully')
+@mounter.command('mount-personalized', cls=Command)
+@click.argument('image', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@click.argument('trust-cache', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@click.argument('build-manifest', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@catch_errors
+def mounter_mount_personalized(lockdown: LockdownClient, image: str, trust_cache: str, build_manifest: str):
+    """ mount personalized image """
+    PersonalizedImageMounter(lockdown=lockdown).mount(Path(image), Path(build_manifest), Path(trust_cache))
+    logger.info('Personalized image mounted successfully')
 
 
 @mounter.command('auto-mount', cls=Command)
@@ -144,7 +155,7 @@ def mounter_auto_mount(lockdown: LockdownClient, xcode: str, version: str):
             xcode = get_home_folder() / 'Xcode.app'
             xcode.mkdir(parents=True, exist_ok=True)
 
-    image_mounter = MobileImageMounterService(lockdown=lockdown)
+    image_mounter = DeveloperDiskImageMounter(lockdown=lockdown)
     if image_mounter.is_image_mounted(image_type):
         logger.error('DeveloperDiskImage is already mounted')
         return
@@ -185,11 +196,7 @@ def mounter_auto_mount(lockdown: LockdownClient, xcode: str, version: str):
             f'Please make sure your user has the necessary permissions')
         return
 
-    image_path = image_path.read_bytes()
-    signature = signature.read_bytes()
-
-    image_mounter.upload_image(image_type, image_path, signature)
-    image_mounter.mount(image_type, signature)
+    image_mounter.mount(image_path, signature)
     logger.info('DeveloperDiskImage mounted successfully')
 
 
@@ -201,10 +208,11 @@ def mounter_query_developer_mode_status(lockdown: LockdownClient, color):
 
 
 @mounter.command('query-nonce', cls=Command)
+@click.option('--image-type')
 @click.option('--color/--no-color', default=True)
-def mounter_query_nonce(lockdown: LockdownClient, color):
+def mounter_query_nonce(lockdown: LockdownClient, image_type: str, color: bool):
     """ Query nonce """
-    print_json(MobileImageMounterService(lockdown=lockdown).query_nonce(), colored=color)
+    print_json(MobileImageMounterService(lockdown=lockdown).query_nonce(image_type), colored=color)
 
 
 @mounter.command('query-personalization-identifiers', cls=Command)
@@ -214,13 +222,23 @@ def mounter_query_personalization_identifiers(lockdown: LockdownClient, color):
     print_json(MobileImageMounterService(lockdown=lockdown).query_personalization_identifiers(), colored=color)
 
 
+@mounter.command('query-personalization-manifest', cls=Command)
+@click.option('--color/--no-color', default=True)
+def mounter_query_personalization_manifest(lockdown: LockdownClient, color):
+    """ Query personalization manifest """
+    result = []
+    mounter = MobileImageMounterService(lockdown=lockdown)
+    for device in mounter.copy_devices():
+        result.append(mounter.query_personalization_manifest(device['PersonalizedImageType'], device['ImageSignature']))
+    print_json(result, colored=color)
+
+
 @mounter.command('roll-personalization-nonce', cls=Command)
 def mounter_roll_personalization_nonce(lockdown: LockdownClient):
     MobileImageMounterService(lockdown=lockdown).roll_personalization_nonce()
 
 
 @mounter.command('roll-cryptex-nonce', cls=Command)
-@click.option('--color/--no-color', default=True)
 def mounter_roll_cryptex_nonce(lockdown: LockdownClient):
     """ Roll cryptex nonce (will reboot) """
     MobileImageMounterService(lockdown=lockdown).roll_cryptex_nonce()

@@ -8,7 +8,7 @@ from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocket
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
-from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
+from pymobiledevice3.services.mobile_image_mounter import DeveloperDiskImageMounter
 
 DEVICE_SUPPORT = Path('/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport')
 IMAGE_TYPE = 'Developer'
@@ -17,15 +17,12 @@ IMAGE_TYPE = 'Developer'
 @pytest.fixture(scope='module', autouse=True)
 def mount_developer_disk_image():
     with LockdownClient() as lockdown:
-        with MobileImageMounterService(lockdown=lockdown) as mounter:
+        with DeveloperDiskImageMounter(lockdown=lockdown) as mounter:
             if mounter.is_image_mounted('Developer'):
                 yield
-
             image_path = DEVICE_SUPPORT / mounter.lockdown.sanitized_ios_version / 'DeveloperDiskImage.dmg'
-            signature = image_path.with_suffix('.dmg.signature').read_bytes()
-            mounter.upload_image('Developer', image_path.read_bytes(), signature)
             try:
-                mounter.mount(IMAGE_TYPE, signature)
+                mounter.mount(image_path, image_path.with_suffix('.dmg.signature'))
             except AlreadyMountedError:
                 pass
 
