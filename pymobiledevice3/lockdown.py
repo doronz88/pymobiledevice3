@@ -10,6 +10,7 @@ import time
 import uuid
 from contextlib import contextmanager, suppress
 from enum import Enum
+from functools import wraps
 from pathlib import Path
 from typing import Mapping, Optional, Union
 
@@ -42,6 +43,7 @@ def reconnect_on_remote_close(f):
     transmitted). When this happens, we'll attempt to reconnect.
     """
 
+    @wraps(f)
     def _reconnect_on_remote_close(*args, **kwargs):
         try:
             return f(*args, **kwargs)
