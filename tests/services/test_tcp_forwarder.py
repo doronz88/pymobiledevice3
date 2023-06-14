@@ -3,7 +3,7 @@ from socket import socket
 
 import pytest
 
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import SERVICE_PORT, LockdownClient
 from pymobiledevice3.tcp_forwarder import TcpForwarder
 
 FREE_PORT = 3582
@@ -15,7 +15,7 @@ def attempt_local_connection(port: int):
     client.close()
 
 
-@pytest.mark.parametrize('dst_port', [FREE_PORT, LockdownClient.SERVICE_PORT])
+@pytest.mark.parametrize('dst_port', [FREE_PORT, SERVICE_PORT])
 def test_tcp_forwarder_bad_port(lockdown: LockdownClient, dst_port: int):
     # start forwarder
     listening_event = threading.Event()

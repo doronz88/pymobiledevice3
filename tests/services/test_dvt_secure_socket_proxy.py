@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from pymobiledevice3.exceptions import AlreadyMountedError, DvtDirListError, UnrecognizedSelectorError
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
@@ -16,7 +16,7 @@ IMAGE_TYPE = 'Developer'
 
 @pytest.fixture(scope='module', autouse=True)
 def mount_developer_disk_image():
-    with LockdownClient() as lockdown:
+    with create_using_usbmux() as lockdown:
         with DeveloperDiskImageMounter(lockdown=lockdown) as mounter:
             if mounter.is_image_mounted('Developer'):
                 yield

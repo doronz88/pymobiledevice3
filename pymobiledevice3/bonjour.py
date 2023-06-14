@@ -6,7 +6,7 @@ from typing import List, Mapping
 
 from zeroconf import InterfaceChoice, InterfacesType, IPVersion, ServiceBrowser, ServiceListener, Zeroconf
 
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import LockdownClient, create_using_tcp
 
 SERVICE_NAME = '_apple-mobdev2._tcp.local.'
 
@@ -52,10 +52,10 @@ class BonjourListener(ServiceListener):
         ipv6 = [socket.inet_ntop(socket.AF_INET6, address) for address in info.addresses_by_version(IPVersion.V6Only)]
 
         try:
-            lockdown = LockdownClient(hostname=ipv4[0], autopair=False)
+            lockdown = create_using_tcp(hostname=ipv4[0], autopair=False)
 
             for pair_record in self.pair_records:
-                lockdown = LockdownClient(hostname=ipv4[0], autopair=False, pair_record=pair_record)
+                lockdown = create_using_tcp(hostname=ipv4[0], autopair=False, pair_record=pair_record)
                 if lockdown.paired:
                     break
         except ConnectionRefusedError:
