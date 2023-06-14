@@ -145,8 +145,6 @@ class MobileImageMounterService(BaseService):
             # The response "ImageSignature" is actually an IM4M
             return response['ImageSignature']
         except KeyError:
-            if response.get('Error') == 'InternalError':
-                raise InternalError(response)
             raise MissingManifestError()
 
     def roll_personalization_nonce(self) -> None:
