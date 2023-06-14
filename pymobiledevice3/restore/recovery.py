@@ -88,7 +88,7 @@ class Recovery(BaseRestore):
 
         # normal mode; request baseband ticket as well
         if self.device.lockdown is not None:
-            pinfo = self.device.lockdown.preflight_info
+            pinfo = self.device.preflight_info
             if pinfo:
                 self.logger.debug('adding preflight info')
 
