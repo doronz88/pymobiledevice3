@@ -37,6 +37,21 @@ def profile_install(lockdown: LockdownClient, profiles):
         service.install_profile(profile.read())
 
 
+@profile_group.command('install-silent', cls=Command)
+@click.option('--keystore', type=click.File('rb'), required=True,
+              help="A PKCS#12 keystore containing the certificate and private key which can supervise the device.")
+@click.option('--keystore-password', prompt=True, required=True, hide_input=True,
+              help="The password for the PKCS#12 keystore.")
+@click.argument('profiles', nargs=-1, type=click.File('rb'))
+def profile_install_silent(lockdown: LockdownClient, profiles, keystore, keystore_password):
+    """ install given profiles without user interaction (requires the device to be supervised) """
+    service = MobileConfigService(lockdown=lockdown)
+    for profile in profiles:
+        logger.info(f'installing {profile.name}')
+        service.install_profile_silent(
+            profile.read(), keystore.read(), keystore_password)
+
+
 @profile_group.command('cloud-configuration', cls=Command)
 @click.option('--color/--no-color', default=True)
 def profile_cloud_configuration(lockdown: LockdownClient, color):
