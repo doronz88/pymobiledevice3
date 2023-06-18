@@ -61,8 +61,8 @@ def get_preferred_pair_record(identifier: str, pairing_records_cache_folder: Pat
         with usbmux.create_mux() as mux:
             if isinstance(mux, PlistMuxConnection):
                 pair_record = mux.get_pair_record(identifier)
-    if pair_record is not None:
-        return pair_record
+                if pair_record is not None:
+                    return pair_record
 
     # iTunes
     pair_record = get_itunes_pairing_record(identifier)
