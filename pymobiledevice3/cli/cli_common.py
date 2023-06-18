@@ -12,7 +12,7 @@ from inquirer.themes import GreenPassion
 from pygments import formatters, highlight, lexers
 
 from pymobiledevice3.exceptions import NoDeviceSelectedError
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.usbmux import select_devices_by_connection_type
 
 
@@ -86,15 +86,15 @@ class Command(click.Command):
             return
 
         if value is not None:
-            return LockdownClient(serial=value)
+            return create_using_usbmux(serial=value)
 
         devices = select_devices_by_connection_type(connection_type='USB')
         if len(devices) <= 1:
-            return LockdownClient()
+            return create_using_usbmux()
 
         devices_options = []
         for device in devices:
-            lockdown_client = LockdownClient(serial=device.serial)
+            lockdown_client = create_using_usbmux(serial=device.serial)
             device_info = DeviceInfo(lockdown_client)
             devices_options.append(device_info)
 
@@ -112,7 +112,7 @@ class CommandWithoutAutopair(Command):
         if '_PYMOBILEDEVICE3_COMPLETE' in os.environ:
             # prevent lockdown connection establishment when in autocomplete mode
             return
-        return LockdownClient(serial=value, autopair=False)
+        return create_using_usbmux(serial=value, autopair=False)
 
 
 class BasedIntParamType(click.ParamType):

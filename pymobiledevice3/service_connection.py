@@ -62,7 +62,7 @@ class Medium(Enum):
     USBMUX = auto()
 
 
-class ServiceConnection(object):
+class ServiceConnection:
     """ wrapper for usbmux tcp-relay connections """
 
     def __init__(self, sock: socket.socket, mux_device: MuxDevice = None):
@@ -77,8 +77,7 @@ class ServiceConnection(object):
 
     @staticmethod
     def create_using_tcp(hostname: str, port: int) -> 'ServiceConnection':
-        sock = socket.socket()
-        sock.connect((hostname, port))
+        sock = socket.create_connection((hostname, port))
         return ServiceConnection(sock)
 
     @staticmethod

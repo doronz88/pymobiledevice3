@@ -2,65 +2,32 @@
 import datetime
 import logging
 import os
-import platform
 import plistlib
-import sys
 import tempfile
 import time
-import uuid
+from abc import ABC, abstractmethod
 from contextlib import contextmanager, suppress
 from enum import Enum
+from functools import wraps
 from pathlib import Path
-from typing import Mapping, Optional, Union
+from typing import Dict, Mapping
 
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
-from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import CannotStopSessionError, ConnectionTerminatedError, FatalPairingError, \
     IncorrectModeError, InvalidHostIDError, InvalidServiceError, LockdownError, MissingValueError, NotPairedError, \
     PairingDialogResponsePendingError, PairingError, PasswordRequiredError, SetProhibitedError, StartServiceError, \
     UserDeniedPairingError
 from pymobiledevice3.irecv_devices import IRECV_DEVICES
-from pymobiledevice3.service_connection import Medium, ServiceConnection
+from pymobiledevice3.pair_records import create_pairing_records_cache_folder, generate_host_id, \
+    get_preferred_pair_record
+from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
 from pymobiledevice3.utils import sanitize_ios_version
 
 SYSTEM_BUID = '30142955-444094379208051516'
-
-LOCKDOWN_PATH = {
-    'win32': Path(os.environ.get('ALLUSERSPROFILE', ''), 'Apple', 'Lockdown'),
-    'darwin': Path('/var/db/lockdown/'),
-    'linux': Path('/var/lib/lockdown/'),
-}
-
-
-def reconnect_on_remote_close(f):
-    """
-    lockdownd's _socket_select will close the connection after 60 seconds of "radio-silent" (no data has been
-    transmitted). When this happens, we'll attempt to reconnect.
-    """
-
-    def _reconnect_on_remote_close(*args, **kwargs):
-        try:
-            return f(*args, **kwargs)
-        except (BrokenPipeError, ConnectionTerminatedError):
-            self = args[0]
-
-            # first we release the socket on our end to avoid a ResourceWarning
-            self.close()
-
-            # now we re-establish the connection
-            self.logger.debug('remote device closed the connection. reconnecting...')
-            self.service = ServiceConnection.create(self.medium, self.identifier, self.SERVICE_PORT,
-                                                    connection_type=self.usbmux_connection_type)
-            self.validate_pairing()
-            return f(*args, **kwargs)
-
-    return _reconnect_on_remote_close
-
-
 DOMAINS = ['com.apple.disk_usage',
            'com.apple.disk_usage.factory',
            'com.apple.mobile.battery',
@@ -95,6 +62,9 @@ DOMAINS = ['com.apple.disk_usage',
            'com.apple.fmip',
            'com.apple.Accessibility', ]
 
+DEFAULT_LABEL = 'pymobiledevice3'
+SERVICE_PORT = 62078
+
 
 class DeviceClass(Enum):
     IPHONE = 'iPhone'
@@ -105,50 +75,58 @@ class DeviceClass(Enum):
     UNKNOWN = 'Unknown'
 
 
-class LockdownClient(object):
-    DEFAULT_CLIENT_NAME = 'pymobiledevice3'
-    SERVICE_PORT = 62078
+def _reconnect_on_remote_close(f):
+    """
+    lockdownd's _socket_select will close the connection after 60 seconds of "radio-silent" (no data has been
+    transmitted). When this happens, we'll attempt to reconnect.
+    """
 
-    def __init__(self, serial: str = None, hostname: str = None, client_name: str = DEFAULT_CLIENT_NAME,
-                 autopair: bool = True, usbmux_connection_type: str = None, pair_timeout: int = None,
-                 local_hostname: str = None, pair_record: Mapping = None,
-                 pairing_records_cache_folder: Path = None):
+    @wraps(f)
+    def _inner_reconnect_on_remote_close(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except (BrokenPipeError, ConnectionTerminatedError):
+            self = args[0]
+
+            # first we release the socket on our end to avoid a ResourceWarning
+            self.close()
+
+            # now we re-establish the connection
+            self.logger.debug('remote device closed the connection. reconnecting...')
+            self.service = self._create_service_connection(self.port)
+            self.validate_pairing()
+            return f(*args, **kwargs)
+
+    return _inner_reconnect_on_remote_close
+
+
+class LockdownClient(ABC):
+    def __init__(self, service: ServiceConnection, host_id: str, identifier: str = None, label: str = DEFAULT_LABEL,
+                 system_buid: str = SYSTEM_BUID, pair_record: Mapping = None, pairing_records_cache_folder: Path = None,
+                 port: int = SERVICE_PORT):
         """
-        :param serial: serial number for device to connect to (over usbmuxd)
-        :param hostname: connect to given hostname using TCP instead of usbmuxd
-        :param client_name: user agent to use when identifying for lockdownd
-        :param autopair: should automatically attempt pairing with device
-        :param usbmux_connection_type: can be either "USB" or "Network" to specify what connection type to use
-        :param pair_timeout: if autopair, use this timeout for user's Trust dialog. If None, will wait forever
-        :param local_hostname: use given hostname to generate the HostID inside the pair record
-        :param pair_record: use this pair record instead of the one already stored
+        Create a LockdownClient instance
+
+        :param service: lockdownd connection handler
+        :param host_id: Used as the host identifier for the handshake
+        :param identifier: Used as an identifier to look for the device pair record
+        :param label: lockdownd user-agent
+        :param system_buid: System's unique identifier
+        :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
+        :param pairing_records_cache_folder: Use the following location to search and save pair records
+        :param port: lockdownd service port
         """
-        self.identifier = None
-        self.usbmux_connection_type = usbmux_connection_type
-
-        if hostname is not None:
-            self.medium = Medium.TCP
-            self.identifier = hostname
-        else:
-            self.medium = Medium.USBMUX
-            self.identifier = serial
-
-        self.service = ServiceConnection.create(self.medium, self.identifier, self.SERVICE_PORT,
-                                                connection_type=self.usbmux_connection_type)
-
         self.logger = logging.getLogger(__name__)
+        self.service = service
+        self.identifier = identifier
+        self.label = label
+        self.host_id = host_id
+        self.system_buid = system_buid
+        self.pair_record = pair_record
         self.paired = False
         self.session_id = None
-        self.host_id = self.generate_host_id(local_hostname)
-        self.system_buid = self.get_system_buid()
-        self.label = client_name
-        self.pair_record = pair_record
-
-        if pairing_records_cache_folder is None:
-            self.pairing_records_cache_folder = get_home_folder()
-        else:
-            self.pairing_records_cache_folder = pairing_records_cache_folder
-            self.pairing_records_cache_folder.mkdir(parents=True, exist_ok=True)
+        self.pairing_records_cache_folder = pairing_records_cache_folder
+        self.port = port
 
         if self.query_type() != 'com.apple.mobile.lockdown':
             raise IncorrectModeError()
@@ -160,30 +138,40 @@ class LockdownClient(object):
         self.product_version = self.all_values.get('ProductVersion')
         self.product_type = self.all_values.get('ProductType')
 
-        if self.identifier is None and self.medium == Medium.USBMUX:
-            # attempt get identifier from mux device serial
-            self.identifier = self.service.mux_device.serial
+    @classmethod
+    def create(cls, service: ServiceConnection, identifier: str = None, system_buid: str = SYSTEM_BUID,
+               label: str = DEFAULT_LABEL, autopair: bool = True, pair_timeout: int = None, local_hostname: str = None,
+               pair_record: Mapping = None, pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT,
+               **cls_specific_args):
+        """
+        Create a LockdownClient instance
 
-        if self.identifier is None and self.udid is not None:
-            # attempt get identifier from queried udid
-            self.identifier = self.udid
+        :param service: lockdownd connection handler
+        :param identifier: Used as an identifier to look for the device pair record
+        :param system_buid: System's unique identifier
+        :param label: lockdownd user-agent
+        :param autopair: Attempt to pair with device (blocking) if not already paired
+        :param pair_timeout: Timeout for autopair
+        :param local_hostname: Used as a seed to generate the HostID
+        :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
+        :param pairing_records_cache_folder: Use the following location to search and save pair records
+        :param port: lockdownd service port
+        :param cls_specific_args: Additional members to pass into LockdownClient subclasses
+        :return: LockdownClient subclass
+        """
+        host_id = generate_host_id(local_hostname)
 
-        if not self.validate_pairing():
-            # device is not paired
+        pairing_records_cache_folder = create_pairing_records_cache_folder(pairing_records_cache_folder)
+        if pair_record is None:
+            pair_record = get_preferred_pair_record(identifier, pairing_records_cache_folder)
 
-            if not autopair:
-                # but pairing by default was not requested
-                return
+        lockdown_client = cls(
+            service, host_id=host_id, identifier=identifier, label=label, system_buid=system_buid,
+            pair_record=pair_record, pairing_records_cache_folder=pairing_records_cache_folder, port=port,
+            **cls_specific_args)
 
-            self.pair(timeout=pair_timeout)
-
-            # get session_id
-            if not self.validate_pairing():
-                raise FatalPairingError()
-
-        # reload data after pairing
-        self.all_values = self.get_value()
-        self.udid = self.all_values.get('UniqueDeviceID')
+        lockdown_client._handle_autopair(autopair, pair_timeout)
+        return lockdown_client
 
     def __repr__(self) -> str:
         return f'<{self.__class__.__name__} ID:{self.identifier} VERSION:{self.product_version} ' \
@@ -194,9 +182,6 @@ class LockdownClient(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
-
-    def query_type(self) -> str:
-        return self._request('QueryType').get('Type')
 
     @property
     def device_class(self) -> DeviceClass:
@@ -219,10 +204,9 @@ class LockdownClient(object):
         return result
 
     @property
-    def short_info(self) -> Mapping:
+    def short_info(self) -> Dict:
         keys_to_copy = ['DeviceClass', 'DeviceName', 'BuildVersion', 'ProductVersion', 'ProductType']
         result = {
-            'ConnectionType': self.usbmux_connection_type,
             'Identifier': self.identifier,
         }
         for key in keys_to_copy:
@@ -309,30 +293,18 @@ class LockdownClient(object):
     def developer_mode_status(self) -> bool:
         return self.get_value('com.apple.security.mac.amfi', 'DeveloperModeStatus')
 
+    def query_type(self) -> str:
+        return self._request('QueryType').get('Type')
+
     def set_language(self, language: str) -> None:
         self.set_value(language, key='Language', domain='com.apple.international')
 
     def set_locale(self, locale: str) -> None:
         self.set_value(locale, key='Locale', domain='com.apple.international')
 
-    @staticmethod
-    def generate_host_id(hostname: str = None) -> str:
-        hostname = platform.node() if hostname is None else hostname
-        host_id = uuid.uuid3(uuid.NAMESPACE_DNS, hostname)
-        return str(host_id).upper()
-
-    @reconnect_on_remote_close
+    @_reconnect_on_remote_close
     def enter_recovery(self):
         return self._request('EnterRecovery')
-
-    def get_system_buid(self) -> str:
-        result = SYSTEM_BUID
-        if self.medium == Medium.USBMUX:
-            client = usbmux.create_mux()
-            if isinstance(client, PlistMuxConnection):
-                result = client.get_buid()
-            client.close()
-        return result
 
     def stop_session(self) -> Mapping:
         if self.session_id and self.service:
@@ -342,33 +314,9 @@ class LockdownClient(object):
                 raise CannotStopSessionError()
             return response
 
-    def get_itunes_pairing_record(self) -> Optional[Mapping]:
-        platform_type = 'linux' if not sys.platform.startswith('linux') else sys.platform
-        filename = LOCKDOWN_PATH[platform_type] / f'{self.identifier}.plist'
-        try:
-            with open(filename, 'rb') as f:
-                pair_record = plistlib.load(f)
-        except (PermissionError, FileNotFoundError, plistlib.InvalidFileException):
-            return None
-        return pair_record
-
-    def get_local_pairing_record(self) -> Optional[Mapping]:
-        self.logger.debug('Looking for pymobiledevice3 pairing record')
-
-        if self.pairing_records_cache_folder is None:
-            return None
-
-        path = self.pairing_records_cache_folder / f'{self.identifier}.plist'
-        if not path.exists():
-            self.logger.debug(f'No pymobiledevice3 pairing record found for device {self.identifier}')
-            return None
-        return plistlib.loads(path.read_bytes())
-
     def validate_pairing(self) -> bool:
-        try:
-            self._init_preferred_pair_record()
-        except NotPairedError:
-            return False
+        if self.pair_record is None:
+            self.fetch_pair_record()
 
         if self.pair_record is None:
             return False
@@ -394,9 +342,14 @@ class LockdownClient(object):
                 self.service.ssl_start(f)
 
         self.paired = True
+
+        # reload data after pairing
+        self.all_values = self.get_value()
+        self.udid = self.all_values.get('UniqueDeviceID')
+
         return True
 
-    @reconnect_on_remote_close
+    @_reconnect_on_remote_close
     def pair(self, timeout: int = None) -> None:
         self.device_public_key = self.get_value('', 'DevicePublicKey')
         if not self.device_public_key:
@@ -428,32 +381,19 @@ class LockdownClient(object):
             pair_record['EscrowBag'] = pair.get('EscrowBag')
 
         self.pair_record = pair_record
-        self._write_storage_file(f'{self.identifier}.plist', plistlib.dumps(pair_record))
-
-        record_data = plistlib.dumps(pair_record)
-
-        if self.medium == Medium.USBMUX:
-            client = usbmux.create_mux()
-            if isinstance(client, PlistMuxConnection):
-                client.save_pair_record(self.identifier, self.service.mux_device.devid, record_data)
-            client.close()
-
+        self.save_pair_record()
         self.paired = True
 
-    @reconnect_on_remote_close
+    @_reconnect_on_remote_close
     def unpair(self, host_id: str = None) -> None:
-        if host_id is not None:
-            pair_record = {'HostID': host_id}
-            self._request('Unpair', {'PairRecord': pair_record, 'ProtocolVersion': '2'}, verify_request=False)
-        else:
-            self._request('Unpair', {'PairRecord': self.pair_record, 'ProtocolVersion': '2'},
-                          verify_request=False)
+        pair_record = self.pair_record if host_id is None else {'HostID': host_id}
+        self._request('Unpair', {'PairRecord': pair_record, 'ProtocolVersion': '2'}, verify_request=False)
 
-    @reconnect_on_remote_close
+    @_reconnect_on_remote_close
     def reset_pairing(self):
         return self._request('ResetPairing', {'FullReset': True})
 
-    @reconnect_on_remote_close
+    @_reconnect_on_remote_close
     def get_value(self, domain: str = None, key: str = None):
         options = {}
 
@@ -469,7 +409,7 @@ class LockdownClient(object):
                 return r.data
             return r
 
-    @reconnect_on_remote_close
+    @_reconnect_on_remote_close
     def remove_value(self, domain: str = None, key: str = None) -> Mapping:
         options = {}
 
@@ -480,7 +420,7 @@ class LockdownClient(object):
 
         return self._request('RemoveValue', options)
 
-    @reconnect_on_remote_close
+    @_reconnect_on_remote_close
     def set_value(self, value, domain: str = None, key: str = None) -> Mapping:
         options = {}
 
@@ -508,10 +448,7 @@ class LockdownClient(object):
             raise StartServiceError(response.get('Error'))
         return response
 
-    def _create_service_connection(self, port: int) -> ServiceConnection:
-        return ServiceConnection.create(self.medium, self.identifier, port, self.usbmux_connection_type)
-
-    @reconnect_on_remote_close
+    @_reconnect_on_remote_close
     def start_service(self, name: str, escrow_bag=None) -> ServiceConnection:
         attr = self.get_service_connection_attributes(name, escrow_bag=escrow_bag)
         service_connection = self._create_service_connection(attr['Port'])
@@ -559,9 +496,23 @@ class LockdownClient(object):
         finally:
             os.unlink(filename)
 
-    def _write_storage_file(self, filename: Union[Path, str], data: bytes) -> None:
-        filepath = self.pairing_records_cache_folder / filename
-        filepath.write_bytes(data)
+    def _handle_autopair(self, autopair: bool, timeout: int) -> None:
+        if self.validate_pairing():
+            return
+
+        # device is not paired yet
+        if not autopair:
+            # but pairing by default was not requested
+            return
+        self.pair(timeout=timeout)
+        # get session_id
+        if not self.validate_pairing():
+            raise FatalPairingError()
+
+    @abstractmethod
+    def _create_service_connection(self, port: int) -> ServiceConnection:
+        """ Used to establish a new ServiceConnection to a given port """
+        pass
 
     def _request(self, request: str, options: Mapping = None, verify_request: bool = True) -> Mapping:
         message = {'Label': self.label, 'Request': request}
@@ -604,39 +555,115 @@ class LockdownClient(object):
             time.sleep(1)
         raise PairingDialogResponsePendingError()
 
-    def _init_preferred_pair_record(self) -> None:
+    def fetch_pair_record(self) -> None:
+        self.pair_record = get_preferred_pair_record(self.identifier, self.pairing_records_cache_folder)
+
+    def save_pair_record(self) -> None:
+        pair_record_file = self.pairing_records_cache_folder / f'{self.identifier}.plist'
+        pair_record_file.write_bytes(plistlib.dumps(self.pair_record))
+
+
+class UsbmuxLockdownClient(LockdownClient):
+    @property
+    def short_info(self) -> Dict:
+        short_info = super().short_info
+        short_info['ConnectionType'] = self.service.mux_device.connection_type
+        return short_info
+
+    def _create_service_connection(self, port: int) -> ServiceConnection:
+        return ServiceConnection.create_using_usbmux(self.identifier, port, self.service.mux_device.connection_type)
+
+
+class PlistUsbmuxLockdownClient(UsbmuxLockdownClient):
+    def save_pair_record(self) -> None:
+        super().save_pair_record()
+        record_data = plistlib.dumps(self.pair_record)
+        with usbmux.create_mux() as client:
+            client.save_pair_record(self.identifier, self.service.mux_device.devid, record_data)
+
+
+class TcpLockdownClient(LockdownClient):
+    def __init__(self, service: ServiceConnection, host_id: str, hostname: str, identifier: str = None,
+                 label: str = DEFAULT_LABEL, system_buid: str = SYSTEM_BUID, pair_record: Mapping = None,
+                 pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT):
         """
-        look for an existing pair record to connected device by following order:
-        - iTunes
-        - usbmuxd
-        - local storage
+        Create a LockdownClient instance
+
+        :param service: lockdownd connection handler
+        :param host_id: Used as the host identifier for the handshake
+        :param hostname: The target hostname
+        :param identifier: Used as an identifier to look for the device pair record
+        :param label: lockdownd user-agent
+        :param system_buid: System's unique identifier
+        :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
+        :param pairing_records_cache_folder: Use the following location to search and save pair records
+        :param port: lockdownd service port
         """
-        if self.pair_record is not None:
-            # if already have one, use it
-            return
+        super().__init__(service, host_id, identifier, label, system_buid, pair_record, pairing_records_cache_folder,
+                         port)
+        self.hostname = hostname
 
-        # first, look for an iTunes pair record
-        pair_record = self.get_itunes_pairing_record()
+    def _create_service_connection(self, port: int) -> ServiceConnection:
+        return ServiceConnection.create_using_tcp(self.hostname, port)
 
-        if pair_record is not None:
-            self.logger.debug('Using iTunes pair record')
-            self.pair_record = pair_record
-            return
 
-        # second, look for usbmuxd pair record
-        mux = usbmux.create_mux()
-        if self.medium == Medium.USBMUX and isinstance(mux, PlistMuxConnection):
-            pair_record = mux.get_pair_record(self.identifier)
-        mux.close()
+def create_using_usbmux(serial: str = None, identifier: str = None, label: str = DEFAULT_LABEL, autopair: bool = True,
+                        connection_type: str = None, pair_timeout: int = None, local_hostname: str = None,
+                        pair_record: Mapping = None, pairing_records_cache_folder: Path = None,
+                        port: int = SERVICE_PORT) -> UsbmuxLockdownClient:
+    """
+    Create a UsbmuxLockdownClient instance
 
-        if pair_record is not None:
-            self.logger.debug(f'Using usbmuxd pair record for identifier: {self.identifier}')
-            self.pair_record = pair_record
-            return
+    :param serial: Usbmux serial identifier
+    :param identifier: Used as an identifier to look for the device pair record
+    :param label: lockdownd user-agent
+    :param autopair: Attempt to pair with device (blocking) if not already paired
+    :param connection_type: Force a specific type of usbmux connection (USB/Network)
+    :param pair_timeout: Timeout for autopair
+    :param local_hostname: Used as a seed to generate the HostID
+    :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
+    :param pairing_records_cache_folder: Use the following location to search and save pair records
+    :param port: lockdownd service port
+    :return: UsbmuxLockdownClient instance
+    """
+    service = ServiceConnection.create_using_usbmux(serial, port, connection_type=connection_type)
+    cls = UsbmuxLockdownClient
+    with usbmux.create_mux() as client:
+        if isinstance(client, PlistMuxConnection):
+            # Only the Plist version of usbmuxd supports this message type
+            system_buid = client.get_buid()
+            cls = PlistUsbmuxLockdownClient
 
-        # lastly, look for a local pair record
-        pair_record = self.get_local_pairing_record()
+    if identifier is None:
+        # attempt get identifier from mux device serial
+        identifier = service.mux_device.serial
 
-        if pair_record is not None:
-            self.logger.debug(f'Using local pair record: {self.identifier}.plist')
-            self.pair_record = pair_record
+    return cls.create(
+        service, identifier=identifier, label=label, system_buid=system_buid, local_hostname=local_hostname,
+        pair_record=pair_record, pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout,
+        autopair=autopair)
+
+
+def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT_LABEL, autopair: bool = True,
+                     pair_timeout: int = None, local_hostname: str = None, pair_record: Mapping = None,
+                     pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT) -> TcpLockdownClient:
+    """
+    Create a TcpLockdownClient instance
+
+    :param hostname: The target device hostname
+    :param identifier: Used as an identifier to look for the device pair record
+    :param label: lockdownd user-agent
+    :param autopair: Attempt to pair with device (blocking) if not already paired
+    :param pair_timeout: Timeout for autopair
+    :param local_hostname: Used as a seed to generate the HostID
+    :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
+    :param pairing_records_cache_folder: Use the following location to search and save pair records
+    :param port: lockdownd service port
+    :return: TcpLockdownClient instance
+    """
+    service = ServiceConnection.create_using_tcp(hostname, port)
+    client = TcpLockdownClient.create(
+        service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
+        pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
+        port=port, hostname=hostname)
+    return client

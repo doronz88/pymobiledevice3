@@ -1,6 +1,5 @@
 import logging
-
-from cached_property import cached_property
+from functools import cached_property
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import ConnectionFailedError, NoDeviceConnectedError

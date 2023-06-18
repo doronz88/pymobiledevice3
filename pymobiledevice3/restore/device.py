@@ -1,6 +1,5 @@
 from contextlib import suppress
-
-from cached_property import cached_property
+from functools import cached_property
 
 from pymobiledevice3.exceptions import MissingValueError
 from pymobiledevice3.irecv import IRecv

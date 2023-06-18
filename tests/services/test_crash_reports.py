@@ -3,7 +3,7 @@ import shutil
 
 import pytest
 
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.services.crash_reports import CrashReportsManager
 
 BASENAME = '__pymobiledevice3_tests'
@@ -19,7 +19,7 @@ def crash_manager(lockdown):
 @pytest.fixture(scope='module', autouse=True)
 def delete_test_dir():
     yield
-    with LockdownClient() as lockdown_client:
+    with create_using_usbmux() as lockdown_client:
         with CrashReportsManager(lockdown_client) as crash_manager:
             crash_manager.afc.rm(BASENAME)
 

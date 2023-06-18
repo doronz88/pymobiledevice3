@@ -225,6 +225,12 @@ class MuxConnection:
         exception = exceptions.get(result, MuxException)
         raise exception(message)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
 
 class BinaryMuxConnection(MuxConnection):
     """ old binary protocol """
