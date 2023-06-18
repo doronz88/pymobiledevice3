@@ -134,10 +134,10 @@ Commands:
 Or import the modules and use the API yourself:
 
 ```python
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.services.syslog import SyslogService
 
-lockdown = LockdownClient()
+lockdown = create_using_usbmux()
 for line in SyslogService(lockdown=lockdown).watch():
     # just print all syslog lines as is
     print(line)
