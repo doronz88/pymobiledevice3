@@ -17,9 +17,9 @@ from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import CannotStopSessionError, ConnectionTerminatedError, FatalPairingError, \
-    IncorrectModeError, InvalidHostIDError, InvalidServiceError, LockdownError, MissingValueError, NotPairedError, \
-    PairingDialogResponsePendingError, PairingError, PasswordRequiredError, SetProhibitedError, StartServiceError, \
-    UserDeniedPairingError
+    IncorrectModeError, InvalidConnectionError, InvalidHostIDError, InvalidServiceError, LockdownError, \
+    MissingValueError, NotPairedError, PairingDialogResponsePendingError, PairingError, PasswordRequiredError, \
+    SetProhibitedError, StartServiceError, UserDeniedPairingError
 from pymobiledevice3.irecv_devices import IRECV_DEVICES
 from pymobiledevice3.pair_records import create_pairing_records_cache_folder, generate_host_id, \
     get_preferred_pair_record
@@ -160,10 +160,7 @@ class LockdownClient(ABC):
         :return: LockdownClient subclass
         """
         host_id = generate_host_id(local_hostname)
-
         pairing_records_cache_folder = create_pairing_records_cache_folder(pairing_records_cache_folder)
-        if pair_record is None:
-            pair_record = get_preferred_pair_record(identifier, pairing_records_cache_folder)
 
         lockdown_client = cls(
             service, host_id=host_id, identifier=identifier, label=label, system_buid=system_buid,
@@ -332,7 +329,7 @@ class LockdownClient(ABC):
 
         try:
             start_session = self._request('StartSession', {'HostID': self.host_id, 'SystemBUID': self.system_buid})
-        except InvalidHostIDError:
+        except (InvalidHostIDError, InvalidConnectionError):
             # no host id means there is no such pairing record
             return False
 
@@ -531,7 +528,8 @@ class LockdownClient(ABC):
                                 'InvalidHostID': InvalidHostIDError,
                                 'SetProhibited': SetProhibitedError,
                                 'MissingValue': MissingValueError,
-                                'InvalidService': InvalidServiceError, }
+                                'InvalidService': InvalidServiceError,
+                                'InvalidConnection': InvalidConnectionError, }
             raise exception_errors.get(error, LockdownError)(error)
 
         # iOS < 5: 'Error' is not present, so we need to check the 'Result' instead
@@ -556,7 +554,8 @@ class LockdownClient(ABC):
         raise PairingDialogResponsePendingError()
 
     def fetch_pair_record(self) -> None:
-        self.pair_record = get_preferred_pair_record(self.identifier, self.pairing_records_cache_folder)
+        if self.identifier is not None:
+            self.pair_record = get_preferred_pair_record(self.identifier, self.pairing_records_cache_folder)
 
     def save_pair_record(self) -> None:
         pair_record_file = self.pairing_records_cache_folder / f'{self.identifier}.plist'

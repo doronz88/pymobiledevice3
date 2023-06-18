@@ -219,6 +219,10 @@ class MissingValueError(LockdownError):
     pass
 
 
+class InvalidConnectionError(LockdownError):
+    pass
+
+
 class PasscodeRequiredError(LockdownError):
     """ passcode must be present for this action """
     pass
