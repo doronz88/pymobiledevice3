@@ -8,7 +8,7 @@ from usb import USBError
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.irecv import IRecv, Mode
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.restore.base_restore import BaseRestore, Behavior
 from pymobiledevice3.restore.consts import lpol_file
 from pymobiledevice3.restore.device import Device
@@ -449,7 +449,7 @@ class Recovery(BaseRestore):
             self.logger.info('going into Recovery')
 
             # in case lockdown has disconnected while waiting for a ticket
-            self.device.lockdown = LockdownClient(serial=self.device.lockdown.udid)
+            self.device.lockdown = create_using_usbmux(serial=self.device.lockdown.udid)
             self.device.lockdown.enter_recovery()
 
             self.device.lockdown = None

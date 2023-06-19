@@ -5,7 +5,7 @@ import construct
 
 from pymobiledevice3.exceptions import AmfiError, BadDevError, ConnectionFailedError, DeveloperModeError, \
     DeviceHasPasscodeSetError, NoDeviceConnectedError, PyMobileDevice3Exception
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.services.heartbeat import HeartbeatService
 
 
@@ -51,7 +51,7 @@ class AmfiService:
 
         while True:
             try:
-                self._lockdown = LockdownClient(self._lockdown.udid)
+                self._lockdown = create_using_usbmux(self._lockdown.udid)
                 break
             except (NoDeviceConnectedError, ConnectionFailedError, BadDevError, construct.core.StreamError):
                 pass
