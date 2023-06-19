@@ -23,7 +23,7 @@ from pymobiledevice3.cli.cli_common import Command, wait_return
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import InspectorEvaluateError, LaunchingApplicationError, \
     RemoteAutomationNotEnabledError, WebInspectorNotEnabledError, WirError
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.web_protocol.driver import By, Cookie, WebDriver
 from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
@@ -204,7 +204,7 @@ udid = ''
 
 
 def create_app():
-    inspector = WebinspectorService(lockdown=LockdownClient(udid))
+    inspector = WebinspectorService(lockdown=create_using_usbmux(udid))
     app.state.inspector = inspector
     return app
 
