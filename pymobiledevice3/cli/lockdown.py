@@ -72,9 +72,10 @@ def lockdown_remove(lockdown: LockdownClient, domain, key, color):
 
 
 @lockdown_group.command('unpair', cls=CommandWithoutAutopair)
-def lockdown_unpair(lockdown: LockdownClient):
+@click.argument('host_id', required=False)
+def lockdown_unpair(lockdown: LockdownClient, host_id: str = None):
     """ unpair from connected device """
-    lockdown.unpair()
+    lockdown.unpair(host_id=host_id)
 
 
 @lockdown_group.command('pair', cls=CommandWithoutAutopair)
