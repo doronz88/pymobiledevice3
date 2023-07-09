@@ -32,3 +32,5 @@ remotezip
 zeroconf
 ifaddr
 hyperframe
+srptools
+aioquic
