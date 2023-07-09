@@ -23,6 +23,7 @@ from pymobiledevice3.cli.power_assertion import cli as power_assertion_cli
 from pymobiledevice3.cli.processes import cli as ps_cli
 from pymobiledevice3.cli.profile import cli as profile_cli
 from pymobiledevice3.cli.provision import cli as provision_cli
+from pymobiledevice3.cli.remote import cli as remote_cli
 from pymobiledevice3.cli.restore import cli as restore_cli
 from pymobiledevice3.cli.springboard import cli as springboard_cli
 from pymobiledevice3.cli.syslog import cli as syslog_cli
@@ -35,7 +36,9 @@ from pymobiledevice3.exceptions import ConnectionFailedError, DeveloperModeError
 
 coloredlogs.install(level=logging.INFO)
 
+logging.getLogger('quic').disabled = True
 logging.getLogger('asyncio').disabled = True
+logging.getLogger('zeroconf').disabled = True
 logging.getLogger('parso.cache').disabled = True
 logging.getLogger('parso.cache.pickle').disabled = True
 logging.getLogger('parso.python.diff').disabled = True
@@ -50,7 +53,8 @@ def cli():
     cli_commands = click.CommandCollection(sources=[
         developer_cli, mounter_cli, apps_cli, profile_cli, lockdown_cli, diagnostics_cli, syslog_cli, pcap_cli,
         crash_cli, afc_cli, ps_cli, notification_cli, usbmux_cli, power_assertion_cli, springboard_cli,
-        provision_cli, backup_cli, restore_cli, activation_cli, companion_cli, webinspector_cli, amfi_cli, bonjour_cli
+        provision_cli, backup_cli, restore_cli, activation_cli, companion_cli, webinspector_cli, amfi_cli, bonjour_cli,
+        remote_cli
     ])
     cli_commands.context_settings = dict(help_option_names=['-h', '--help'])
     try:
