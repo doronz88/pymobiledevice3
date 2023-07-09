@@ -7,8 +7,8 @@ import uuid
 import click
 import coloredlogs
 import hexdump
-import inquirer
-from inquirer.themes import GreenPassion
+import inquirer3
+from inquirer3.themes import GreenPassion
 from pygments import formatters, highlight, lexers
 
 from pymobiledevice3.exceptions import NoDeviceSelectedError
@@ -98,9 +98,9 @@ class Command(click.Command):
             device_info = DeviceInfo(lockdown_client)
             devices_options.append(device_info)
 
-        device_question = [inquirer.List('device', message='choose device', choices=devices_options, carousel=True)]
+        device_question = [inquirer3.List('device', message='choose device', choices=devices_options, carousel=True)]
         try:
-            result = inquirer.prompt(device_question, theme=GreenPassion(), raise_keyboard_interrupt=True)
+            result = inquirer3.prompt(device_question, theme=GreenPassion(), raise_keyboard_interrupt=True)
             return result['device'].lockdown_client
         except KeyboardInterrupt as e:
             raise NoDeviceSelectedError from e

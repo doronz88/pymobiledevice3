@@ -25,7 +25,7 @@ starlette
 wsproto
 nest_asyncio>=1.5.5
 Pillow
-inquirer
+inquirer3>=0.1.0
 pyimg4>=0.7
 ipsw_parser>=1.1.2
 remotezip
