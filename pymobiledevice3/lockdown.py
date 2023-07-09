@@ -666,3 +666,35 @@ def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT
         pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
         port=port, hostname=hostname)
     return client
+
+
+def create_using_remote(hostname: str, identifier: str = None, label: str = DEFAULT_LABEL, autopair: bool = True,
+                        pair_timeout: int = None, local_hostname: str = None, pair_record: Mapping = None,
+                        pairing_records_cache_folder: Path = None,
+                        port: int = SERVICE_PORT) -> TcpLockdownClient:
+    """
+    Create a TcpLockdownClient instance over RSD
+
+    :param hostname: The target device hostname
+    :param identifier: Used as an identifier to look for the device pair record
+    :param label: lockdownd user-agent
+    :param autopair: Attempt to pair with device (blocking) if not already paired
+    :param pair_timeout: Timeout for autopair
+    :param local_hostname: Used as a seed to generate the HostID
+    :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
+    :param pairing_records_cache_folder: Use the following location to search and save pair records
+    :param port: lockdownd service port
+    :return: TcpLockdownClient instance
+    """
+    service = ServiceConnection.create_using_tcp(hostname, port)
+    service.send_plist({'Label': label, 'ProtocolVersion': '2', 'Request': 'RSDCheckin'})
+
+    # we expect two responses after the first request
+    service.recv_plist()
+    service.recv_plist()
+
+    client = TcpLockdownClient.create(
+        service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
+        pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
+        port=port, hostname=hostname)
+    return client
