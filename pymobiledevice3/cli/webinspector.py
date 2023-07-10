@@ -6,10 +6,10 @@ from functools import update_wrapper
 from typing import Optional, Type
 
 import click
-import inquirer
+import inquirer3
 import IPython
 import uvicorn
-from inquirer.themes import GreenPassion
+from inquirer3.themes import GreenPassion
 from prompt_toolkit import HTML, PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.history import FileHistory
@@ -336,8 +336,8 @@ class InspectorJsShell(JsShell):
             logger.error('Unable to find available pages (try to unlock device)')
             return
 
-        page_query = [inquirer.List('page', message='choose page', choices=available_pages, carousel=True)]
-        page = inquirer.prompt(page_query, theme=GreenPassion(), raise_keyboard_interrupt=True)['page']
+        page_query = [inquirer3.List('page', message='choose page', choices=available_pages, carousel=True)]
+        page = inquirer3.prompt(page_query, theme=GreenPassion(), raise_keyboard_interrupt=True)['page']
         return page
 
 
