@@ -1,24 +1,16 @@
-import json
 import logging
 from functools import update_wrapper
 from pathlib import Path
-from typing import List
 from urllib.error import URLError
-from urllib.request import urlopen
 
 import click
-import requests
-from tqdm import tqdm
 
 from pymobiledevice3.cli.cli_common import Command, print_json
-from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import AlreadyMountedError, NotMountedError, UnsupportedCommandError
+from pymobiledevice3.exceptions import AlreadyMountedError, DeveloperDiskImageNotFoundError, NotMountedError, \
+    UnsupportedCommandError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.mobile_image_mounter import DeveloperDiskImageMounter, MobileImageMounterService, \
-    PersonalizedImageMounter
-
-DISK_IMAGE_TREE = 'https://api.github.com/repos/pdso/DeveloperDiskImage/git/trees/master'
-DEVELOPER_DISK_IMAGE_URL = 'https://github.com/pdso/DeveloperDiskImage/raw/master/{ios_version}/{file_name}'
+    PersonalizedImageMounter, auto_mount
 
 logger = logging.getLogger(__name__)
 
@@ -97,27 +89,6 @@ def mounter_umount_personalized(lockdown: LockdownClient):
         logger.error('Personalized image isn\'t currently mounted')
 
 
-def download_file(url, local_filename):
-    logger.debug(f'downloading: {local_filename}')
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
-        total_size_in_bytes = int(r.headers.get('content-length', 0))
-
-        with tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True, dynamic_ncols=True) as progress_bar:
-            with open(local_filename, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    progress_bar.update(len(chunk))
-                    f.write(chunk)
-
-    return local_filename
-
-
-def get_all_versions() -> List[str]:
-    data = urlopen(DISK_IMAGE_TREE).read()
-    json_data = json.loads(data)
-    return [item.get('path') for item in json_data.get('tree')][0:-3]
-
-
 @mounter.command('mount-developer', cls=Command)
 @click.argument('image', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @click.argument('signature', type=click.Path(exists=True, file_okay=True, dir_okay=False))
@@ -146,58 +117,19 @@ def mounter_mount_personalized(lockdown: LockdownClient, image: str, trust_cache
                                       'connection')
 def mounter_auto_mount(lockdown: LockdownClient, xcode: str, version: str):
     """ auto-detect correct DeveloperDiskImage and mount it """
-    image_type = 'Developer'
-
-    if xcode is None:
-        # avoid "default"-ing this option, because Windows and Linux won't have this path
-        xcode = Path('/Applications/Xcode.app')
-        if not (xcode.exists()):
-            xcode = get_home_folder() / 'Xcode.app'
-            xcode.mkdir(parents=True, exist_ok=True)
-
-    image_mounter = DeveloperDiskImageMounter(lockdown=lockdown)
-    if image_mounter.is_image_mounted(image_type):
-        logger.error('DeveloperDiskImage is already mounted')
-        return
-
-    logger.debug('trying to figure out the best suited DeveloperDiskImage')
-    if version is None:
-        version = lockdown.sanitized_ios_version
-    image_dir = f'{xcode}/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport/{version}'
-    image_path = f'{image_dir}/DeveloperDiskImage.dmg'
-    signature = f'{image_path}.signature'
-    developer_disk_image_dir = Path(image_path).parent
-
-    image_path = Path(image_path)
-    signature = Path(signature)
-
-    if not image_path.exists():
-        try:
-            available_versions = get_all_versions()
-            if version not in available_versions:
-                logger.error(
-                    f'Unable to find DeveloperDiskImage for {version}. available versions: {available_versions}')
-                return
-        except URLError:
-            logger.warning('failed to query DeveloperDiskImage versions')
-
     try:
-        developer_disk_image_dir.mkdir(exist_ok=True)
-
-        if not image_path.exists():
-            download_file(DEVELOPER_DISK_IMAGE_URL.format(ios_version=version, file_name=image_path.name), image_path)
-
-        if not signature.exists():
-            download_file(DEVELOPER_DISK_IMAGE_URL.format(ios_version=version, file_name=signature.name), signature)
-
-    except PermissionError:
+        auto_mount(lockdown, xcode=xcode, version=version)
+        logger.info('DeveloperDiskImage mounted successfully')
+    except URLError:
+        logger.warning('failed to query DeveloperDiskImage versions')
+    except DeveloperDiskImageNotFoundError:
+        logger.error('Unable to find the correct DeveloperDiskImage')
+    except AlreadyMountedError:
+        logger.error('DeveloperDiskImage already mounted')
+    except PermissionError as e:
         logger.error(
-            f'DeveloperDiskImage could not be saved to Xcode default path ({developer_disk_image_dir}). '
+            f'DeveloperDiskImage could not be saved to Xcode default path ({e.filename}). '
             f'Please make sure your user has the necessary permissions')
-        return
-
-    image_mounter.mount(image_path, signature)
-    logger.info('DeveloperDiskImage mounted successfully')
 
 
 @mounter.command('query-developer-mode-status', cls=Command)
