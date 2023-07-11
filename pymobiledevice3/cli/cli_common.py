@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import uuid
+from typing import List, Optional
 
 import click
 import coloredlogs
@@ -55,18 +56,13 @@ def wait_return():
 UDID_ENV_VAR = 'PYMOBILEDEVICE3_UDID'
 
 
-class DeviceInfo:
-    def __init__(self, lockdown_client: LockdownClient):
-        self.lockdown_client = lockdown_client
-        self.product_version = self.lockdown_client.product_version
-        self.serial = self.lockdown_client.identifier
-        self.display_name = self.lockdown_client.display_name
-
-    def __str__(self):
-        if self.display_name is None:
-            return f'Unknown device, ios version: {self.product_version}, serial: {self.serial}'
-        else:
-            return f'{self.display_name}, ios version: {self.product_version}, serial: {self.serial}'
+def prompt_device_list(device_list: List):
+    device_question = [inquirer3.List('device', message='choose device', choices=device_list, carousel=True)]
+    try:
+        result = inquirer3.prompt(device_question, theme=GreenPassion(), raise_keyboard_interrupt=True)
+        return result['device']
+    except KeyboardInterrupt:
+        raise NoDeviceSelectedError()
 
 
 class Command(click.Command):
@@ -80,7 +76,7 @@ class Command(click.Command):
         ]
 
     @staticmethod
-    def udid(ctx, param, value):
+    def udid(ctx, param: str, value: str) -> Optional[LockdownClient]:
         if '_PYMOBILEDEVICE3_COMPLETE' in os.environ:
             # prevent lockdown connection establishment when in autocomplete mode
             return
@@ -92,18 +88,7 @@ class Command(click.Command):
         if len(devices) <= 1:
             return create_using_usbmux()
 
-        devices_options = []
-        for device in devices:
-            lockdown_client = create_using_usbmux(serial=device.serial)
-            device_info = DeviceInfo(lockdown_client)
-            devices_options.append(device_info)
-
-        device_question = [inquirer3.List('device', message='choose device', choices=devices_options, carousel=True)]
-        try:
-            result = inquirer3.prompt(device_question, theme=GreenPassion(), raise_keyboard_interrupt=True)
-            return result['device'].lockdown_client
-        except KeyboardInterrupt as e:
-            raise NoDeviceSelectedError from e
+        return prompt_device_list([create_using_usbmux(serial=device.serial) for device in devices])
 
 
 class CommandWithoutAutopair(Command):

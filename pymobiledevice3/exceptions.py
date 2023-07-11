@@ -141,6 +141,11 @@ class ConnectionTerminatedError(PyMobileDevice3Exception):
     pass
 
 
+class StreamClosedError(ConnectionTerminatedError):
+    """ Raise when trying to send a message on a closed stream. """
+    pass
+
+
 class WebInspectorNotEnabledError(PyMobileDevice3Exception):
     """ Raise when Web Inspector is not enabled. """
     pass

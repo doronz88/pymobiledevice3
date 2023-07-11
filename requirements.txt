@@ -30,3 +30,7 @@ pyimg4>=0.7
 ipsw_parser>=1.1.2
 remotezip
 zeroconf
+ifaddr
+hyperframe
+srptools
+aioquic
