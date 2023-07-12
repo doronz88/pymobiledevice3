@@ -25,6 +25,7 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from opack import dumps
 from srptools import SRPClientSession, SRPContext
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
 
@@ -268,10 +269,15 @@ class CoreDeviceTunnelService:
 
         self.signature = self.ed25519_private_key.sign(signbuf)
 
-        # TODO: use opack when its done
-        device_info = b'\xe7FaltIRK\x80\xe9\xe8-\xc0jIykVoT\x00\x19\xb1\xc7{FbtAddrQ11:22:33:44:55:66Cmacv\x14\x98wi' \
-                      b'\rq[remotepairing_serial_numberLAAAAAAAAAAAAIaccountIDa$11111111-1111-1111-1111-111111111111' \
-                      b'EmodelJMacmini9,1DnameQUser\xe2\x80\x99s Mac mini'
+        device_info = dumps({
+            'altIRK': b'\xe9\xe8-\xc0jIykVoT\x00\x19\xb1\xc7{',
+            'btAddr': '11:22:33:44:55:66',
+            'mac': b'\x11\x22\x33\x44\x55\x66',
+            'remotepairing_serial_number': 'AAAAAAAAAAAA',
+            'accountID': self.identifier,
+            'model': 'computer-model',
+            'name': platform.node()
+        })
 
         tlv = PairingDataComponentTLVBuf.build([
             {'type': PairingDataComponentType.IDENTIFIER, 'data': self.identifier.encode()},
