@@ -3,9 +3,13 @@ import plistlib
 from pathlib import Path
 from typing import List, Mapping
 
-from pymobiledevice3.exceptions import AlreadyMountedError, DeveloperModeIsNotEnabledError, InternalError, \
-    MessageNotSupportedError, MissingManifestError, NotMountedError, PyMobileDevice3Exception, \
-    UnsupportedCommandError
+from developer_disk_image.repo import DeveloperDiskImageRepository
+from packaging.version import Version
+
+from pymobiledevice3.common import get_home_folder
+from pymobiledevice3.exceptions import AlreadyMountedError, DeveloperDiskImageNotFoundError, \
+    DeveloperModeIsNotEnabledError, InternalError, MessageNotSupportedError, MissingManifestError, NotMountedError, \
+    PyMobileDevice3Exception, UnsupportedCommandError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.restore.tss import TSSRequest
 from pymobiledevice3.services.base_service import BaseService
@@ -277,3 +281,69 @@ class PersonalizedImageMounter(MobileImageMounterService):
 
         response = request.send_receive()
         return response['ApImg4Ticket']
+
+
+def auto_mount_developer(lockdown: LockdownClient, xcode: str = None, version: str = None) -> None:
+    """ auto-detect correct DeveloperDiskImage and mount it """
+    if xcode is None:
+        # avoid "default"-ing this option, because Windows and Linux won't have this path
+        xcode = Path('/Applications/Xcode.app')
+        if not (xcode.exists()):
+            xcode = get_home_folder() / 'Xcode.app'
+            xcode.mkdir(parents=True, exist_ok=True)
+
+    image_mounter = DeveloperDiskImageMounter(lockdown=lockdown)
+    if image_mounter.is_image_mounted('Developer'):
+        raise AlreadyMountedError()
+
+    if version is None:
+        version = lockdown.sanitized_ios_version
+    image_dir = f'{xcode}/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport/{version}'
+    image_path = f'{image_dir}/DeveloperDiskImage.dmg'
+    signature = f'{image_path}.signature'
+    developer_disk_image_dir = Path(image_path).parent
+
+    image_path = Path(image_path)
+    signature = Path(signature)
+
+    if not image_path.exists():
+        # download the DeveloperDiskImage from our repository
+        repo = DeveloperDiskImageRepository.create()
+        developer_disk_image = repo.get_developer_disk_image(version)
+
+        if developer_disk_image is None:
+            raise DeveloperDiskImageNotFoundError()
+
+        # write it filesystem
+        developer_disk_image_dir.mkdir(exist_ok=True, parents=True)
+        image_path.write_bytes(developer_disk_image.image)
+        signature.write_bytes(developer_disk_image.signature)
+
+    image_mounter.mount(image_path, signature)
+
+
+def auto_mount_personalized(lockdown: LockdownClient) -> None:
+    local_path = get_home_folder() / 'Xcode_iOS_DDI_Personalized'
+    local_path.mkdir(parents=True, exist_ok=True)
+
+    image = local_path / 'Image.dmg'
+    build_manifest = local_path / 'BuildManifest.plist'
+    trustcache = local_path / 'Image.trustcache'
+
+    if not image.exists():
+        # download the Personalized image from our repository
+        repo = DeveloperDiskImageRepository.create()
+        personalized_image = repo.get_personalized_disk_image()
+
+        image.write_bytes(personalized_image.image)
+        build_manifest.write_bytes(personalized_image.build_manifest)
+        trustcache.write_bytes(personalized_image.trustcache)
+
+    PersonalizedImageMounter(lockdown=lockdown).mount(image, build_manifest, trustcache)
+
+
+def auto_mount(lockdown: LockdownClient, xcode: str = None, version: str = None) -> None:
+    if Version(lockdown.product_version) < Version('17.0'):
+        auto_mount_developer(lockdown, xcode=xcode, version=version)
+    else:
+        auto_mount_personalized(lockdown)

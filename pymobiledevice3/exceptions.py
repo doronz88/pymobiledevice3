@@ -192,6 +192,11 @@ class DeveloperModeIsNotEnabledError(PyMobileDevice3Exception):
     pass
 
 
+class DeveloperDiskImageNotFoundError(PyMobileDevice3Exception):
+    """ Failed to locate the correct DeveloperDiskImage.dmg """
+    pass
+
+
 class DeveloperModeError(PyMobileDevice3Exception):
     """ Raise when amfid failed to enable developer mode. """
     pass
