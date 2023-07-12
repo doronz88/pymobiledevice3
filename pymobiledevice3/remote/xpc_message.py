@@ -56,7 +56,9 @@ XpcString = Aligned(4, Prefixed(Int32ul, CString('utf8')))
 XpcUuid = Bytes(16)
 XpcFd = Int32ul
 XpcShmem = Struct('length' / Int32ul, Int32ul)
-XpcArray = Prefixed(Int32ul, LazyBound(lambda: XpcObject))
+XpcArray = Prefixed(Int32ul, Struct(
+    'count' / Int32ul,
+    'entries' / Array(this.count, LazyBound(lambda: XpcObject))))
 XpcDictionaryEntry = Struct(
     'key' / AlignedString,
     'value' / LazyBound(lambda: XpcObject),
@@ -82,7 +84,7 @@ XpcObject = Struct(
         XpcMessageType.FD: XpcFd,
         XpcMessageType.SHMEM: XpcShmem,
         XpcMessageType.ARRAY: XpcArray,
-    }, default=Probe(lookahead=20)),
+    }, default=Probe(lookahead=1000)),
 )
 XpcPayload = Struct(
     'magic' / Hex(Const(0x42133742, Int32ul)),
@@ -121,7 +123,7 @@ def _decode_xpc_dictionary(xpc_object) -> Mapping:
 def _decode_xpc_array(xpc_object) -> List:
     result = []
     for entry in xpc_object.data.entries:
-        result.append(_decode_xpc_object(entry.value))
+        result.append(_decode_xpc_object(entry))
     return result
 
 
