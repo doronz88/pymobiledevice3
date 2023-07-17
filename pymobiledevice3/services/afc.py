@@ -11,7 +11,7 @@ import sys
 import tempfile
 from collections import namedtuple
 from datetime import datetime
-from typing import List
+from typing import List, Optional, Callable
 
 import hexdump
 from click.exceptions import Exit
@@ -208,36 +208,48 @@ class AfcService(BaseService):
         super().__init__(lockdown, service_name)
         self.packet_num = 0
 
-    def pull(self, relative_src, dst, callback=None, src_dir=''):
-        src = posixpath.join(src_dir, relative_src)
-        if callback is not None:
-            callback(src, dst)
-
+    def pull(self, src: str, dst: str, callback: Optional[Callable] = None):
+        """ pull a file/directory from given path into a local file/directory """
         src = self.resolve_path(src)
+
+        dst_path = pathlib.Path(dst).expanduser().resolve()
+        if not dst_path.parent.is_dir():
+            raise FileNotFoundError(f'pull: {dst_path}: No such file or directory')
 
         if not self.isdir(src):
             # normal file
-            if os.path.isdir(dst):
-                dst = os.path.join(dst, os.path.basename(relative_src))
-            with open(dst, 'wb') as f:
-                f.write(self.get_file_contents(src))
+
+            if dst.endswith((os.path.sep, posixpath.sep)) and not dst_path.is_dir():
+                raise NotADirectoryError(f'pull: directory {dst_path} does not exist')
+
+            if dst_path.is_dir():
+                dst_path /= os.path.basename(src)
+
+            dst_path.write_bytes(self.get_file_contents(src))
+
+            if callback is not None:
+                callback(src, dst)
         else:
             # directory
-            dst_path = pathlib.Path(dst) / os.path.basename(relative_src)
-            dst_path.mkdir(parents=True, exist_ok=True)
+            if dst_path.is_file():
+                if dst.endswith((os.path.sep, posixpath.sep)):
+                    raise NotADirectoryError(f'pull: {dst_path} is not a directory')
+                raise IsADirectoryError(f'pull: {src} is a directory (not copied).')
 
-            for filename in self.listdir(src):
-                src_filename = posixpath.join(src, filename)
-                dst_filename = dst_path / filename
+            if dst_path.exists() and not src.endswith(posixpath.sep):
+                dst_path /= os.path.basename(src)
 
-                src_filename = self.resolve_path(src_filename)
+            try:
+                dst_path.mkdir()
+            except FileExistsError:
+                pass
+            else:
+                if callback is not None:
+                    callback(src, dst_path)
 
-                if self.isdir(src_filename):
-                    dst_filename.mkdir(exist_ok=True)
-                    self.pull(src_filename, str(dst_path), callback=callback)
-                    continue
-
-                self.pull(src_filename, str(dst_path), callback=callback)
+            for entry in self.listdir(src):
+                src_entry = pathlib.PurePosixPath(src, entry)
+                self.pull(str(src_entry), str(dst_path), callback=callback)
 
     def exists(self, filename):
         try:
@@ -593,7 +605,7 @@ cat_parser.add_argument('filename')
 rm_parser = Cmd2ArgumentParser(description='remove given entries')
 rm_parser.add_argument('files', nargs='+')
 
-pull_parser = Cmd2ArgumentParser(description='pull an entry from given path into a local existing directory')
+pull_parser = Cmd2ArgumentParser(description='pull a file/directory from given path into a local file/directory')
 pull_parser.add_argument('remote_path')
 pull_parser.add_argument('local_path')
 
@@ -772,7 +784,10 @@ class AfcShell(Cmd):
         def log(src, dst):
             self.poutput(f'{src} --> {dst}')
 
-        self.afc.pull(args.remote_path, args.local_path, callback=log, src_dir=self.curdir)
+        remote_path = str(pathlib.PurePosixPath(self.curdir).joinpath(args.remote_path))
+        if args.remote_path.endswith(posixpath.sep):  # add trailing slash if exist because pathlib remove it
+            remote_path += posixpath.sep
+        self.afc.pull(remote_path, args.local_path, callback=log)
 
     @with_argparser(push_parser)
     def do_push(self, args):
