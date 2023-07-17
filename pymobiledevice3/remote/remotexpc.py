@@ -40,7 +40,6 @@ class RemoteXPCConnection:
     def send_request(self, data: Mapping) -> None:
         self.sock.sendall(
             DataFrame(stream_id=1, data=create_xpc_wrapper(data, message_id=self.next_message_id[1])).serialize())
-        self.next_message_id[1] += 1
 
     def receive_response(self):
         while True:
