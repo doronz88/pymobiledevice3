@@ -20,7 +20,7 @@ class RemoteXPCConnection:
     def __init__(self, address: Tuple[str, int]):
         self.address = address
         self.sock: Optional[socket.socket] = None
-        self.next_message_id = 0
+        self.next_message_id: Mapping[int: int] = {1: 0, 3: 0}
         self.peer_info = None
 
     def __enter__(self) -> 'RemoteXPCConnection':
@@ -39,7 +39,8 @@ class RemoteXPCConnection:
 
     def send_request(self, data: Mapping) -> None:
         self.sock.sendall(
-            DataFrame(stream_id=1, data=create_xpc_wrapper(data, message_id=self.next_message_id)).serialize())
+            DataFrame(stream_id=1, data=create_xpc_wrapper(data, message_id=self.next_message_id[1])).serialize())
+        self.next_message_id[1] += 1
 
     def receive_response(self):
         while True:
@@ -54,7 +55,7 @@ class RemoteXPCConnection:
             if xpc_message.payload.obj.data.entries is None:
                 continue
 
-            self.next_message_id = xpc_message.message_id + 1
+            self.next_message_id[frame.stream_id] = xpc_message.message_id + 1
             return get_object_from_xpc_wrapper(frame.data)
 
     def send_receive_request(self, data: Mapping):
@@ -75,11 +76,11 @@ class RemoteXPCConnection:
         # send first actual requests
         self.send_request({})
         self._send_frame(DataFrame(stream_id=1, data=XpcWrapper.build({'size': 0, 'flags': 0x0201, 'payload': None})))
-        self.next_message_id += 1
+        self.next_message_id[1] += 1
         self._send_frame(HeadersFrame(stream_id=3, flags=['END_HEADERS']))
         self._send_frame(
             DataFrame(stream_id=3, data=XpcWrapper.build({'size': 0, 'flags': 0x00400001, 'payload': None})))
-        self.next_message_id += 1
+        self.next_message_id[3] += 1
 
         assert isinstance(self._receive_frame(), SettingsFrame)
 
