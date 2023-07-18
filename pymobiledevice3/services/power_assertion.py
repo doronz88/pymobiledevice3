@@ -2,14 +2,19 @@
 import contextlib
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 
-class PowerAssertionService(BaseService):
+class PowerAssertionService(LockdownService):
+    RSD_SERVICE_NAME = 'com.apple.mobile.assertion_agent.shim.remote'
     SERVICE_NAME = 'com.apple.mobile.assertion_agent'
 
-    def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, self.SERVICE_NAME)
+    def __init__(self, lockdown: LockdownServiceProvider):
+        if isinstance(lockdown, LockdownClient):
+            super().__init__(lockdown, self.SERVICE_NAME)
+        else:
+            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     @contextlib.contextmanager
     def create_power_assertion(self, type_: str, name: str, timeout: int, details: str = None):

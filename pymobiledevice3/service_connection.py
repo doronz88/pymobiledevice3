@@ -62,7 +62,7 @@ class Medium(Enum):
     USBMUX = auto()
 
 
-class ServiceConnection:
+class LockdownServiceConnection:
     """ wrapper for usbmux tcp-relay connections """
 
     def __init__(self, sock: socket.socket, mux_device: MuxDevice = None):
@@ -76,26 +76,26 @@ class ServiceConnection:
         self._writer = None  # type: Optional[asyncio.StreamWriter]
 
     @staticmethod
-    def create_using_tcp(hostname: str, port: int) -> 'ServiceConnection':
+    def create_using_tcp(hostname: str, port: int) -> 'LockdownServiceConnection':
         sock = socket.create_connection((hostname, port))
-        return ServiceConnection(sock)
+        return LockdownServiceConnection(sock)
 
     @staticmethod
-    def create_using_usbmux(udid: Optional[str], port: int, connection_type: str = None) -> 'ServiceConnection':
+    def create_using_usbmux(udid: Optional[str], port: int, connection_type: str = None) -> 'LockdownServiceConnection':
         target_device = select_device(udid, connection_type=connection_type)
         if target_device is None:
             if udid:
                 raise ConnectionFailedError()
             raise NoDeviceConnectedError()
         sock = target_device.connect(port)
-        return ServiceConnection(sock, mux_device=target_device)
+        return LockdownServiceConnection(sock, mux_device=target_device)
 
     @staticmethod
-    def create(medium: Medium, identifier: str, port: int, connection_type: str = None) -> 'ServiceConnection':
+    def create(medium: Medium, identifier: str, port: int, connection_type: str = None) -> 'LockdownServiceConnection':
         if medium == Medium.TCP:
-            return ServiceConnection.create_using_tcp(identifier, port)
+            return LockdownServiceConnection.create_using_tcp(identifier, port)
         else:
-            return ServiceConnection.create_using_usbmux(identifier, port, connection_type=connection_type)
+            return LockdownServiceConnection.create_using_usbmux(identifier, port, connection_type=connection_type)
 
     def setblocking(self, blocking: bool) -> None:
         self.socket.setblocking(blocking)
@@ -186,6 +186,9 @@ class ServiceConnection:
             ssl=create_context(certfile, keyfile=keyfile),
             server_hostname=''
         )
+
+    async def aio_start(self) -> None:
+        self._reader, self._writer = await asyncio.open_connection(sock=self.socket)
 
     def shell(self) -> None:
         IPython.embed(

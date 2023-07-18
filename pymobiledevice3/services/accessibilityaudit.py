@@ -5,6 +5,7 @@ from enum import Enum
 from packaging.version import Version
 
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.remote_server import MessageAux, RemoteServer
 
 
@@ -115,9 +116,13 @@ def deserialize_object(d):
 
 class AccessibilityAudit(RemoteServer):
     SERVICE_NAME = 'com.apple.accessibility.axAuditDaemon.remoteserver'
+    RSD_SERVICE_NAME = 'com.apple.accessibility.axAuditDaemon.remoteserver.shim.remote'
 
-    def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, self.SERVICE_NAME, remove_ssl_context=True)
+    def __init__(self, lockdown: LockdownServiceProvider):
+        if isinstance(lockdown, LockdownClient):
+            super().__init__(lockdown, self.SERVICE_NAME, remove_ssl_context=True, is_developer_service=False)
+        else:
+            super().__init__(lockdown, self.RSD_SERVICE_NAME, remove_ssl_context=True, is_developer_service=False)
 
         # flush previously received messages
         self.recv_plist()

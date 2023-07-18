@@ -2,7 +2,8 @@ from typing import List, Mapping, Optional
 
 from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 MobileGestaltKeys = ['BasebandKeyHashInformation',
                      'BasebandFirmwareManifestData',
@@ -87,22 +88,27 @@ MobileGestaltKeys = ['BasebandKeyHashInformation',
                      'ApNonce']
 
 
-class DiagnosticsService(BaseService):
+class DiagnosticsService(LockdownService):
     """
     Provides an API to:
     * Query MobileGestalt & IORegistry keys.
     * Reboot, shutdown or put the device in sleep mode.
     """
-    SERVICE_NAME_NEW = 'com.apple.mobile.diagnostics_relay'
-    SERVICE_NAME_OLD = 'com.apple.iosdiagnostics.relay'
+    RSD_SERVICE_NAME = 'com.apple.mobile.diagnostics_relay.shim.remote'
+    SERVICE_NAME = 'com.apple.mobile.diagnostics_relay'
+    OLD_SERVICE_NAME = 'com.apple.iosdiagnostics.relay'
 
-    def __init__(self, lockdown: LockdownClient):
-        try:
-            service = lockdown.start_service(self.SERVICE_NAME_NEW)
-            service_name = self.SERVICE_NAME_NEW
-        except ConnectionFailedError:
-            service = lockdown.start_service(self.SERVICE_NAME_OLD)
-            service_name = self.SERVICE_NAME_OLD
+    def __init__(self, lockdown: LockdownServiceProvider):
+        if isinstance(lockdown, LockdownClient):
+            try:
+                service = lockdown.start_lockdown_service(self.SERVICE_NAME)
+                service_name = self.SERVICE_NAME
+            except ConnectionFailedError:
+                service = lockdown.start_lockdown_service(self.OLD_SERVICE_NAME)
+                service_name = self.OLD_SERVICE_NAME
+        else:
+            service = None
+            service_name = self.RSD_SERVICE_NAME
 
         super().__init__(lockdown, service_name, service=service)
 

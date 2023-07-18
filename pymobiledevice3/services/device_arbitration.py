@@ -2,10 +2,10 @@ from typing import Mapping
 
 from pymobiledevice3.exceptions import ArbitrationError, DeviceAlreadyInUseError
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 
-class DtDeviceArbitration(BaseService):
+class DtDeviceArbitration(LockdownService):
     SERVICE_NAME = 'com.apple.dt.devicearbitration'
 
     def __init__(self, lockdown: LockdownClient):

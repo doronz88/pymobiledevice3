@@ -1,17 +1,17 @@
-import logging
-
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell
 
 
 class HouseArrestService(AfcService):
     SERVICE_NAME = 'com.apple.mobile.house_arrest'
+    RSD_SERVICE_NAME = 'com.apple.mobile.house_arrest.shim.remote'
 
-    def __init__(self, lockdown: LockdownClient):
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-        service_name = self.SERVICE_NAME
-        super(HouseArrestService, self).__init__(self.lockdown, service_name)
+    def __init__(self, lockdown: LockdownServiceProvider):
+        if isinstance(lockdown, LockdownClient):
+            super().__init__(lockdown, self.SERVICE_NAME)
+        else:
+            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     def send_command(self, bundle_id, cmd='VendContainer'):
         self.service.send_plist({'Command': cmd, 'Identifier': bundle_id})

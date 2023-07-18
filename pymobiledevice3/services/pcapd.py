@@ -8,7 +8,8 @@ from typing import Generator
 from construct import Byte, Bytes, Container, CString, Int16ub, Int32ub, Int32ul, Padded, Seek, Struct, this
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 INTERFACE_NAMES = enum.Enum('InterfaceNames', names={
     'other': 1,
@@ -320,16 +321,20 @@ device_packet_struct = Struct(
 )
 
 
-class PcapdService(BaseService):
+class PcapdService(LockdownService):
     """
     Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks traffic from
     an iOS device. On macOS, the virtual interface can be enabled with the rvictl command. This script allows to use
     this service on other systems.
     """
+    RSD_SERVICE_NAME = 'com.apple.pcapd.shim.remote'
     SERVICE_NAME = 'com.apple.pcapd'
 
-    def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, self.SERVICE_NAME)
+    def __init__(self, lockdown: LockdownServiceProvider):
+        if isinstance(lockdown, LockdownClient):
+            super().__init__(lockdown, self.SERVICE_NAME)
+        else:
+            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     def watch(self, packets_count: int = -1, process: str = None) -> Generator[Container, None, None]:
         packet_index = 0

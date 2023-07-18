@@ -7,6 +7,7 @@ from pycrashreport.crash_report import get_crash_report_from_buf
 
 from pymobiledevice3.exceptions import AfcException
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell
 from pymobiledevice3.services.os_trace import OsTraceService
 
@@ -15,14 +16,26 @@ SYSDIAGNOSE_PROCESS_NAMES = ('sysdiagnose', 'sysdiagnosed')
 
 class CrashReportsManager:
     COPY_MOBILE_NAME = 'com.apple.crashreportcopymobile'
+    RSD_COPY_MOBILE_NAME = 'com.apple.crashreportcopymobile.shim.remote'
+
     CRASH_MOVER_NAME = 'com.apple.crashreportmover'
+    RSD_CRASH_MOVER_NAME = 'com.apple.crashreportmover.shim.remote'
+
     APPSTORED_PATH = '/com.apple.appstored'
     IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS = ['.tmp', '.tar.gz']
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownServiceProvider):
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
-        self.afc = AfcService(lockdown, service_name=self.COPY_MOBILE_NAME)
+
+        if isinstance(lockdown, LockdownClient):
+            self.copy_mobile_service_name = self.COPY_MOBILE_NAME
+            self.crash_mover_service_name = self.CRASH_MOVER_NAME
+        else:
+            self.copy_mobile_service_name = self.RSD_COPY_MOBILE_NAME
+            self.crash_mover_service_name = self.RSD_CRASH_MOVER_NAME
+
+        self.afc = AfcService(lockdown, service_name=self.copy_mobile_service_name)
 
     def __enter__(self):
         return self
@@ -78,7 +91,7 @@ class CrashReportsManager:
     def flush(self) -> None:
         """ Trigger com.apple.crashreportmover to flush all products into CrashReports directory """
         ack = b'ping\x00'
-        assert ack == self.lockdown.start_service(self.CRASH_MOVER_NAME).recvall(len(ack))
+        assert ack == self.lockdown.start_lockdown_service(self.crash_mover_service_name).recvall(len(ack))
 
     def watch(self, name: str = None, raw: bool = False) -> Generator[str, None, None]:
         """
@@ -149,9 +162,9 @@ clear_parser = Cmd2ArgumentParser(description='remove all crash reports')
 
 
 class CrashReportsShell(AfcShell):
-    def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, service_name=CrashReportsManager.COPY_MOBILE_NAME)
+    def __init__(self, lockdown: LockdownServiceProvider):
         self.manager = CrashReportsManager(lockdown)
+        super().__init__(lockdown, service_name=self.manager.copy_mobile_service_name)
         self.complete_parse = self._complete_first_arg
 
     @with_argparser(parse_parser)

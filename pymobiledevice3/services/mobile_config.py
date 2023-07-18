@@ -9,18 +9,22 @@ from cryptography.hazmat.primitives.serialization.pkcs12 import load_pkcs12
 
 from pymobiledevice3.exceptions import ProfileError
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 
 class Purpose(Enum):
     PostSetupInstallation = 'PostSetupInstallation'
 
 
-class MobileConfigService(BaseService):
+class MobileConfigService(LockdownService):
     SERVICE_NAME = 'com.apple.mobile.MCInstall'
+    RSD_SERVICE_NAME = 'com.apple.mobile.MCInstall.shim.remote'
 
     def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, self.SERVICE_NAME)
+        if isinstance(lockdown, LockdownClient):
+            super().__init__(lockdown, self.SERVICE_NAME)
+        else:
+            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     def hello(self) -> None:
         self._send_recv({'RequestType': 'HelloHostIdentifier'})

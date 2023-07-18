@@ -11,7 +11,8 @@ import nest_asyncio
 from pymobiledevice3.exceptions import LaunchingApplicationError, RemoteAutomationNotEnabledError, \
     WebInspectorNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.service_connection import LockdownServiceConnection
 from pymobiledevice3.services.web_protocol.automation_session import AutomationSession
 from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
@@ -105,8 +106,9 @@ class Application:
 
 class WebinspectorService:
     SERVICE_NAME = 'com.apple.webinspector'
+    RSD_SERVICE_NAME = 'com.apple.webinspector.shim.remote'
 
-    def __init__(self, lockdown: LockdownClient, loop=None):
+    def __init__(self, lockdown: LockdownServiceProvider, loop=None):
         if loop is None:
             try:
                 loop = asyncio.get_running_loop()
@@ -114,10 +116,16 @@ class WebinspectorService:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
         nest_asyncio.apply(loop)
+
+        if isinstance(lockdown, LockdownClient):
+            self.service_name = self.SERVICE_NAME
+        else:
+            self.service_name = self.RSD_SERVICE_NAME
+
         self.loop = loop
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
-        self.service: Optional[ServiceConnection] = None
+        self.service: Optional[LockdownServiceConnection] = None
         self.connection_id = str(uuid.uuid4()).upper()
         self.state = None
         self.connected_application = {}
@@ -137,7 +145,7 @@ class WebinspectorService:
         self._recv_task: Optional[asyncio.Task] = None
 
     def connect(self, timeout: Union[float, int] = None):
-        self.service = self.await_(self.lockdown.aio_start_service(self.SERVICE_NAME))
+        self.service = self.await_(self.lockdown.aio_start_lockdown_service(self.service_name))
         self.await_(self._report_identifier())
         try:
             self._handle_recv(self.await_(asyncio.wait_for(self._recv_message(), timeout)))

@@ -6,7 +6,7 @@ import threading
 from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import ConnectionFailedError
 from pymobiledevice3.lockdown import create_using_usbmux
-from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.service_connection import LockdownServiceConnection
 
 
 class TcpForwarder:
@@ -120,7 +120,7 @@ class TcpForwarder:
             if self.enable_ssl:
                 # use the lockdown pairing record
                 lockdown = create_using_usbmux(self.serial, connection_type=self.usbmux_connection_type)
-                service_connection = ServiceConnection.create_using_usbmux(
+                service_connection = LockdownServiceConnection.create_using_usbmux(
                     self.serial, self.dst_port, connection_type=self.usbmux_connection_type)
 
                 with lockdown.ssl_file() as ssl_file:

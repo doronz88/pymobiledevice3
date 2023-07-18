@@ -4,7 +4,7 @@ from functools import cached_property
 from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import ConnectionFailedError, NoDeviceConnectedError
 from pymobiledevice3.restore.restore_options import RestoreOptions
-from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.service_connection import LockdownServiceConnection
 
 
 class RestoredClient(object):
@@ -14,7 +14,7 @@ class RestoredClient(object):
     def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME):
         self.logger = logging.getLogger(__name__)
         self.udid = self._get_or_verify_udid(udid)
-        self.service = ServiceConnection.create_using_usbmux(self.udid, self.SERVICE_PORT)
+        self.service = LockdownServiceConnection.create_using_usbmux(self.udid, self.SERVICE_PORT)
         self.label = client_name
         self.query_type = self.service.send_recv_plist({'Request': 'QueryType'})
         self.version = self.query_type.get('RestoreProtocolVersion')

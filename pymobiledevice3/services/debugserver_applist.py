@@ -2,12 +2,12 @@ import plistlib
 import typing
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 CHUNK_SIZE = 200
 
 
-class DebugServerAppList(BaseService):
+class DebugServerAppList(LockdownService):
     SERVICE_NAME = 'com.apple.debugserver.DVTSecureSocketProxy.applist'
 
     def __init__(self, lockdown: LockdownClient):

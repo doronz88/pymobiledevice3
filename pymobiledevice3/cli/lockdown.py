@@ -32,7 +32,7 @@ def lockdown_recovery(lockdown: LockdownClient):
 @click.argument('service_name')
 def lockdown_service(lockdown: LockdownClient, service_name):
     """ send-receive raw service messages """
-    lockdown.start_service(service_name).shell()
+    lockdown.start_lockdown_service(service_name).shell()
 
 
 @lockdown_group.command('info', cls=Command)

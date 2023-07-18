@@ -10,7 +10,7 @@ __all__ = [
     'MissingValueError', 'PasscodeRequiredError', 'AmfiError', 'DeviceHasPasscodeSetError', 'NotificationTimeoutError',
     'DeveloperModeError', 'ProfileError', 'IRecvError', 'IRecvNoDeviceConnectedError',
     'NoDeviceSelectedError', 'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
-    'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError',
+    'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError', 'CoreDeviceError'
 ]
 
 
@@ -283,4 +283,8 @@ class LaunchingApplicationError(PyMobileDevice3Exception):
 
 
 class AppInstallError(PyMobileDevice3Exception):
+    pass
+
+
+class CoreDeviceError(PyMobileDevice3Exception):
     pass

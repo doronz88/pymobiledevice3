@@ -3,27 +3,32 @@ import typing
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 
-class CompanionProxyService(BaseService):
+class CompanionProxyService(LockdownService):
     SERVICE_NAME = 'com.apple.companion_proxy'
+    RSD_SERVICE_NAME = 'com.apple.companion_proxy.shim.remote'
 
-    def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, self.SERVICE_NAME)
+    def __init__(self, lockdown: LockdownServiceProvider):
+        if isinstance(lockdown, LockdownClient):
+            super().__init__(lockdown, self.SERVICE_NAME)
+        else:
+            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     def list(self):
-        service = self.lockdown.start_service(self.SERVICE_NAME)
+        service = self.lockdown.start_lockdown_service(self.service_name)
         return service.send_recv_plist({'Command': 'GetDeviceRegistry'}).get('PairedDevicesArray', [])
 
     def listen_for_devices(self):
-        service = self.lockdown.start_service(self.SERVICE_NAME)
+        service = self.lockdown.start_lockdown_service(self.service_name)
         service.send_plist({'Command': 'StartListeningForDevices'})
         while True:
             yield service.recv_plist()
 
     def get_value(self, udid: str, key: str):
-        service = self.lockdown.start_service(self.SERVICE_NAME)
+        service = self.lockdown.start_lockdown_service(self.service_name)
         response = service.send_recv_plist({'Command': 'GetValueFromRegistry',
                                             'GetValueGizmoUDIDKey': udid,
                                             'GetValueKeyKey': key})
@@ -36,7 +41,7 @@ class CompanionProxyService(BaseService):
         raise PyMobileDevice3Exception(error)
 
     def start_forwarding_service_port(self, remote_port: int, service_name: str = None, options: typing.Mapping = None):
-        service = self.lockdown.start_service(self.SERVICE_NAME)
+        service = self.lockdown.start_lockdown_service(self.service_name)
 
         request = {'Command': 'StartForwardingServicePort',
                    'GizmoRemotePortNumber': remote_port,
@@ -52,7 +57,7 @@ class CompanionProxyService(BaseService):
         return service.send_recv_plist(request).get('CompanionProxyServicePort')
 
     def stop_forwarding_service_port(self, remote_port: int):
-        service = self.lockdown.start_service(self.SERVICE_NAME)
+        service = self.lockdown.start_lockdown_service(self.service_name)
 
         request = {'Command': 'StopForwardingServicePort',
                    'GizmoRemotePortNumber': remote_port}
