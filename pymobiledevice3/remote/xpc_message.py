@@ -36,9 +36,10 @@ XpcMessageType = Enum(Hex(Int32ul),
                       )
 XpcFlags = FlagsEnum(Hex(Int32ul),
                      ALWAYS_SET=0x00000001,
+                     PING=0x00000002,
                      DATA_PRESENT=0x00000100,
-                     HEARTBEAT_REQUEST=0x00010000,
-                     HEARTBEAT_RESPONSE=0x00020000,
+                     WANTING_REPLY=0x00010000,
+                     REPLY=0x00020000,
                      FILE_TX_STREAM_REQUEST=0x00100000,
                      FILE_TX_STREAM_RESPONSE=0x00200000,
                      INIT_HANDSHAKE=0x00400000,
@@ -252,10 +253,12 @@ def _build_xpc_object(payload: Any) -> Mapping:
     return builder(payload)
 
 
-def create_xpc_wrapper(d: Mapping, message_id: int = 0) -> bytes:
+def create_xpc_wrapper(d: Mapping, message_id: int = 0, wanting_reply: bool = False) -> bytes:
     flags = XpcFlags.ALWAYS_SET
     if len(d.keys()) > 0:
         flags |= XpcFlags.DATA_PRESENT
+    if wanting_reply:
+        flags |= XpcFlags.WANTING_REPLY
 
     xpc_payload = {
         'message_id': message_id,
