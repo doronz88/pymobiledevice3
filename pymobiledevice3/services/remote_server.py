@@ -12,8 +12,8 @@ from construct import Adapter, Const, Default, GreedyBytes, GreedyRange, Int16ul
 from pygments import formatters, highlight, lexers
 
 from pymobiledevice3.exceptions import DvtException, UnrecognizedSelectorError
-from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 SHELL_USAGE = '''
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
@@ -187,7 +187,7 @@ class ChannelFragmenter:
                 self._stream_packet_data = b''
 
 
-class RemoteServer(BaseService):
+class RemoteServer(LockdownService):
     """
     Wrapper to Apple's RemoteServer.
     This server exports several ObjC objects allowing calling their respective selectors.
@@ -236,8 +236,9 @@ class RemoteServer(BaseService):
     INSTRUMENTS_MESSAGE_TYPE = 2
     EXPECTS_REPLY_MASK = 0x1000
 
-    def __init__(self, lockdown: LockdownClient, service_name, remove_ssl_context=True):
-        super().__init__(lockdown, service_name, is_developer_service=True)
+    def __init__(self, lockdown: LockdownServiceProvider, service_name, remove_ssl_context: bool = True,
+                 is_developer_service: bool = True):
+        super().__init__(lockdown, service_name, is_developer_service=is_developer_service)
 
         if remove_ssl_context and hasattr(self.service.socket, '_sslobj'):
             self.service.socket._sslobj = None

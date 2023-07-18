@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import logging
 import plistlib
 import struct
 import tempfile
@@ -11,7 +10,8 @@ from construct import Adapter, Byte, Bytes, Computed, Enum, Int16ul, Int32ul, Op
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.utils import try_decode
 
 CHUNK_SIZE = 4096
@@ -62,7 +62,7 @@ syslog_t = Struct(
 )
 
 
-class OsTraceService(BaseService):
+class OsTraceService(LockdownService):
     """
     Provides API for the following operations:
     * Show process list (process name and pid)
@@ -71,10 +71,13 @@ class OsTraceService(BaseService):
         * Archive contain the contents are the `/var/db/diagnostics` directory
     """
     SERVICE_NAME = 'com.apple.os_trace_relay'
+    RSD_SERVICE_NAME = 'com.apple.os_trace_relay.shim.remote'
 
-    def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, self.SERVICE_NAME)
-        self.logger = logging.getLogger(__name__)
+    def __init__(self, lockdown: LockdownServiceProvider):
+        if isinstance(lockdown, LockdownClient):
+            super().__init__(lockdown, self.SERVICE_NAME)
+        else:
+            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     def get_pid_list(self):
         self.service.send_plist({'Request': 'PidList'})

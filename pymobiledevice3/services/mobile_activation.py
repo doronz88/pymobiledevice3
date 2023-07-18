@@ -72,14 +72,14 @@ class MobileActivationService:
         }
         if headers:
             data['ActivationResponseHeaders'] = dict(headers)
-        with closing(create_using_usbmux(self.lockdown.udid).start_service(self.SERVICE_NAME)) as service:
+        with closing(create_using_usbmux(self.lockdown.udid).start_lockdown_service(self.SERVICE_NAME)) as service:
             return service.send_recv_plist(data)
 
     def send_command(self, command, value=''):
         data = {'Command': command}
         if value:
             data['Value'] = value
-        with closing(create_using_usbmux(self.lockdown.udid).start_service(self.SERVICE_NAME)) as service:
+        with closing(create_using_usbmux(self.lockdown.udid).start_lockdown_service(self.SERVICE_NAME)) as service:
             return service.send_recv_plist(data)
 
     def post(self, url, data, headers=None):

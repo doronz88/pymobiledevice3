@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import click
 import coloredlogs
@@ -14,6 +14,7 @@ from pygments import formatters, highlight, lexers
 
 from pymobiledevice3.exceptions import NoDeviceSelectedError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.usbmux import select_devices_by_connection_type
 
 
@@ -69,17 +70,28 @@ class Command(click.Command):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.params[:0] = [
+            click.Option(('lockdown', '--rsd'), type=(str, int), callback=self.rsd,
+                         help='RSD hostname and port number'),
             click.Option(('lockdown', '--udid'), envvar=UDID_ENV_VAR, callback=self.udid,
                          help=f'Device unique identifier. You may pass {UDID_ENV_VAR} environment variable to pass this'
                               f' option as well'),
             click.Option(('verbosity', '-v', '--verbose'), count=True, callback=set_verbosity, expose_value=False),
         ]
+        self.lockdown_service_provider = None
 
-    @staticmethod
-    def udid(ctx, param: str, value: str) -> Optional[LockdownClient]:
+    def rsd(self, ctx, param: str, value: Optional[Tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
+        if value is not None:
+            with RemoteServiceDiscoveryService(value) as rsd:
+                self.lockdown_service_provider = rsd
+                return self.lockdown_service_provider
+
+    def udid(self, ctx, param: str, value: str) -> Optional[LockdownClient]:
         if '_PYMOBILEDEVICE3_COMPLETE' in os.environ:
             # prevent lockdown connection establishment when in autocomplete mode
             return
+
+        if self.lockdown_service_provider is not None:
+            return self.lockdown_service_provider
 
         if value is not None:
             return create_using_usbmux(serial=value)

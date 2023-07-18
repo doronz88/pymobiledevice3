@@ -34,7 +34,7 @@ class DtFetchSymbols(object):
             received += len(buf)
 
     def _start_command(self, cmd: bytes):
-        service = self.lockdown.start_developer_service(self.SERVICE_NAME)
+        service = self.lockdown.start_lockdown_developer_service(self.SERVICE_NAME)
         service.sendall(cmd)
 
         # receive same command as an ack

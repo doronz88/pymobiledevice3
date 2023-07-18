@@ -18,7 +18,7 @@ class AmfiService:
 
     def create_amfi_show_override_path_file(self):
         """ create an empty file at AMFIShowOverridePath """
-        service = self._lockdown.start_service(self.SERVICE_NAME)
+        service = self._lockdown.start_lockdown_service(self.SERVICE_NAME)
         resp = service.send_recv_plist({'action': 0})
         if not resp['status']:
             raise PyMobileDevice3Exception(f'create_AMFIShowOverridePath() failed with: {resp}')
@@ -29,7 +29,7 @@ class AmfiService:
         if enable_post_restart is True, then wait for device restart to answer the final prompt
         with "yes"
         """
-        service = self._lockdown.start_service(self.SERVICE_NAME)
+        service = self._lockdown.start_lockdown_service(self.SERVICE_NAME)
         resp = service.send_recv_plist({'action': 1})
         error = resp.get('Error')
 
@@ -60,7 +60,7 @@ class AmfiService:
 
     def enable_developer_mode_post_restart(self):
         """ answer the prompt that appears after the restart with "yes" """
-        service = self._lockdown.start_service(self.SERVICE_NAME)
+        service = self._lockdown.start_lockdown_service(self.SERVICE_NAME)
         resp = service.send_recv_plist({'action': 2})
         if not resp.get('success'):
             raise DeveloperModeError(f'enable_developer_mode_post_restart() failed: {resp}')

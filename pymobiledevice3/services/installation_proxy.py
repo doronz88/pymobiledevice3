@@ -5,16 +5,20 @@ from typing import Callable, List, Mapping
 from pymobiledevice3.exceptions import AppInstallError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AfcService
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 GET_APPS_ADDITIONAL_INFO = {'ReturnAttributes': ['CFBundleIdentifier', 'StaticDiskUsage', 'DynamicDiskUsage']}
 
 
-class InstallationProxyService(BaseService):
+class InstallationProxyService(LockdownService):
     SERVICE_NAME = 'com.apple.mobile.installation_proxy'
+    RSD_SERVICE_NAME = 'com.apple.mobile.installation_proxy.shim.remote'
 
     def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, self.SERVICE_NAME)
+        if isinstance(lockdown, LockdownClient):
+            super().__init__(lockdown, self.SERVICE_NAME)
+        else:
+            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     def _watch_completion(self, handler: Callable = None, *args) -> None:
         while True:

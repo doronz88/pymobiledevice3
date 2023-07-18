@@ -126,7 +126,7 @@ class CoreDeviceTunnelService:
         self.signature = None
 
     def connect(self, autopair: bool = True) -> None:
-        self.service = self.rsd.connect_to_service('com.apple.internal.dt.coredevice.untrusted.tunnelservice')
+        self.service = self.rsd.start_remote_service('com.apple.internal.dt.coredevice.untrusted.tunnelservice')
         self.version = self.service.receive_response()['ServiceVersion']
 
         self._attempt_pair_verify()

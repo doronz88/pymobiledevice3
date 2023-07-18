@@ -12,15 +12,19 @@ from pymobiledevice3.exceptions import AlreadyMountedError, DeveloperDiskImageNo
     PyMobileDevice3Exception, UnsupportedCommandError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.restore.tss import TSSRequest
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 
-class MobileImageMounterService(BaseService):
+class MobileImageMounterService(LockdownService):
     # implemented in /usr/libexec/mobile_storage_proxy
     SERVICE_NAME = 'com.apple.mobile.mobile_image_mounter'
+    RSD_SERVICE_NAME = 'com.apple.mobile.mobile_image_mounter.shim.remote'
 
     def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, self.SERVICE_NAME)
+        if isinstance(lockdown, LockdownClient):
+            super().__init__(lockdown, self.SERVICE_NAME)
+        else:
+            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     def copy_devices(self) -> List[Mapping]:
         """ Copy mounted devices list. """
@@ -197,7 +201,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
         try:
             manifest = self.query_personalization_manifest('DeveloperDiskImage', hashlib.sha384(image).digest())
         except MissingManifestError:
-            self.service = self.lockdown.start_service(self.SERVICE_NAME)
+            self.service = self.lockdown.start_lockdown_service(self.SERVICE_NAME)
             manifest = self.get_manifest_from_tss(plistlib.loads(build_manifest.read_bytes()))
 
         self.upload_image(self.IMAGE_TYPE, image, manifest)

@@ -23,7 +23,7 @@ from pymobiledevice3.restore.recovery import Behavior, Recovery
 from pymobiledevice3.restore.restore_options import RestoreOptions
 from pymobiledevice3.restore.restored_client import RestoredClient
 from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
-from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.service_connection import LockdownServiceConnection
 from pymobiledevice3.utils import plist_access_path
 
 known_errors = {
@@ -48,7 +48,7 @@ class Restore(BaseRestore):
 
         # used when ignore_fdr=True, to store an active FDR connection just to make the device believe it can actually
         # perform an FDR communication, but without really establishing any
-        self._fdr: Optional[ServiceConnection] = None
+        self._fdr: Optional[LockdownServiceConnection] = None
         self._ignore_fdr = ignore_fdr
 
         # query preflight info while device may still be in normal mode
@@ -633,7 +633,7 @@ class Restore(BaseRestore):
 
         while True:
             try:
-                client = ServiceConnection.create_using_usbmux(self._restored.udid, data_port)
+                client = LockdownServiceConnection.create_using_usbmux(self._restored.udid, data_port)
                 break
             except ConnectionFailedError:
                 self.logger.debug('Retrying connection...')
@@ -1153,7 +1153,7 @@ class Restore(BaseRestore):
 
         while True:
             try:
-                client = ServiceConnection.create_using_usbmux(self._restored.udid, data_port)
+                client = LockdownServiceConnection.create_using_usbmux(self._restored.udid, data_port)
                 break
             except ConnectionFailedError:
                 self.logger.debug('Retrying connection...')
@@ -1198,7 +1198,7 @@ class Restore(BaseRestore):
 
         if self._ignore_fdr:
             self.logger.info('Establishing a mock FDR listener')
-            self._fdr = ServiceConnection.create_using_usbmux(self._restored.udid, FDRClient.SERVICE_PORT)
+            self._fdr = LockdownServiceConnection.create_using_usbmux(self._restored.udid, FDRClient.SERVICE_PORT)
         else:
             self.logger.info('Starting FDR listener thread')
             start_fdr_thread(fdr_type.FDR_CTRL)

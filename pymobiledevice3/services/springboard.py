@@ -2,7 +2,8 @@ import typing
 from enum import IntEnum
 
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 
 class InterfaceOrientation(IntEnum):
@@ -12,11 +13,15 @@ class InterfaceOrientation(IntEnum):
     LANDSCAPE_HOME_TO_LEFT = 4
 
 
-class SpringBoardServicesService(BaseService):
+class SpringBoardServicesService(LockdownService):
+    RSD_SERVICE_NAME = 'com.apple.springboardservices.shim.remote'
     SERVICE_NAME = 'com.apple.springboardservices'
 
-    def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, self.SERVICE_NAME)
+    def __init__(self, lockdown: LockdownServiceProvider):
+        if isinstance(lockdown, LockdownClient):
+            super().__init__(lockdown, self.SERVICE_NAME)
+        else:
+            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     def get_icon_state(self, format_version: str = '2'):
         cmd = {'command': 'getIconState'}

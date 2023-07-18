@@ -10,9 +10,9 @@ from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, Conne
     PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import AFC_LOCK_EX, AFC_LOCK_UN, AfcService, afc_error_t
-from pymobiledevice3.services.base_service import BaseService
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
+from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.services.notification_proxy import NotificationProxyService
 from pymobiledevice3.services.springboard import SpringBoardServicesService
 
@@ -28,7 +28,7 @@ NP_SYNC_LOCK_REQUEST = 'com.apple.itunes-mobdev.syncLockRequest'
 NP_SYNC_DID_FINISH = 'com.apple.itunes-mobdev.syncDidFinish'
 
 
-class Mobilebackup2Service(BaseService):
+class Mobilebackup2Service(LockdownService):
     SERVICE_NAME = 'com.apple.mobilebackup2'
 
     def __init__(self, lockdown: LockdownClient):

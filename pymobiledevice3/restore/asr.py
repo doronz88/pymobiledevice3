@@ -7,7 +7,7 @@ import typing
 from tqdm import trange
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
-from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.service_connection import LockdownServiceConnection
 
 ASR_VERSION = 1
 ASR_STREAM_ID = 1
@@ -29,7 +29,7 @@ class ASRClient(object):
     SERVICE_PORT = ASR_PORT
 
     def __init__(self, udid: str):
-        self.service = ServiceConnection.create_using_usbmux(udid, self.SERVICE_PORT)
+        self.service = LockdownServiceConnection.create_using_usbmux(udid, self.SERVICE_PORT)
 
         # receive Initiate command message
         data = self.recv_plist()

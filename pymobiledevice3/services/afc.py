@@ -23,7 +23,8 @@ from pygnuutils.ls import Ls, LsStub
 
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.utils import try_decode
 
 MAXIMUM_READ_SIZE = 1 * 1024 ** 2  # 1 MB
@@ -203,8 +204,16 @@ def list_to_dict(d):
     return res
 
 
-class AfcService(BaseService):
-    def __init__(self, lockdown: LockdownClient, service_name='com.apple.afc'):
+class AfcService(LockdownService):
+    SERVICE_NAME = 'com.apple.afc'
+    RSD_SERVICE_NAME = 'com.apple.afc.shim.remote'
+
+    def __init__(self, lockdown: LockdownServiceProvider, service_name: str = None):
+        if service_name is None:
+            if isinstance(lockdown, LockdownClient):
+                service_name = self.SERVICE_NAME
+            else:
+                service_name = self.RSD_SERVICE_NAME
         super().__init__(lockdown, service_name)
         self.packet_num = 0
 
@@ -674,16 +683,17 @@ class AfcLsStub(LsStub):
 
 
 class AfcShell(Cmd):
-    def __init__(self, lockdown: LockdownClient, service_name='com.apple.afc', completekey='tab', afc_service=None):
+    def __init__(self, lockdown: LockdownServiceProvider, service_name: str = None, completekey: str = 'tab',
+                 afc_service: LockdownService = None):
         # bugfix: prevent the Cmd instance from trying to parse click's arguments
         sys.argv = sys.argv[:1]
 
         Cmd.__init__(self,
                      completekey=completekey,
                      persistent_history_file=os.path.join(tempfile.gettempdir(), f'.{service_name}-history'))
+
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
-        self.service_name = service_name
         self.afc = afc_service or AfcService(self.lockdown, service_name=service_name)
         self.curdir = '/'
         self.complete_edit = self._complete_first_arg
@@ -811,7 +821,7 @@ class AfcShell(Cmd):
         return posixpath.join(self.curdir, filename)
 
     def _update_prompt(self):
-        self.prompt = highlight(f'[{self.service_name}:{self.curdir}]$ ', lexers.BashSessionLexer(),
+        self.prompt = highlight(f'[{self.afc.service_name}:{self.curdir}]$ ', lexers.BashSessionLexer(),
                                 formatters.TerminalTrueColorFormatter(style='solarized-dark')).strip()
 
     def _complete(self, text, line, begidx, endidx):

@@ -1,5 +1,5 @@
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.base_service import BaseService
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 SRCFILES = '''Baseband
 CrashReporter
@@ -22,7 +22,7 @@ tmp
 WirelessAutomation'''
 
 
-class FileRelayService(BaseService):
+class FileRelayService(LockdownService):
     SERVICE_NAME = 'com.apple.mobile.file_relay'
 
     def __init__(self, lockdown: LockdownClient):
