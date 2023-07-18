@@ -36,9 +36,10 @@ XpcMessageType = Enum(Hex(Int32ul),
                       )
 XpcFlags = FlagsEnum(Hex(Int32ul),
                      ALWAYS_SET=0x00000001,
+                     PING=0x00000002,
                      DATA_PRESENT=0x00000100,
-                     HEARTBEAT_REQUEST=0x00010000,
-                     HEARTBEAT_RESPONSE=0x00020000,
+                     WANTING_REPLY=0x00010000,
+                     REPLY=0x00020000,
                      FILE_TX_STREAM_REQUEST=0x00100000,
                      FILE_TX_STREAM_RESPONSE=0x00200000,
                      INIT_HANDSHAKE=0x00400000,
@@ -116,14 +117,14 @@ def _decode_xpc_dictionary(xpc_object) -> Mapping:
         return {}
     result = {}
     for entry in xpc_object.data.entries:
-        result[entry.key] = _decode_xpc_object(entry.value)
+        result[entry.key] = decode_xpc_object(entry.value)
     return result
 
 
 def _decode_xpc_array(xpc_object) -> List:
     result = []
     for entry in xpc_object.data.entries:
-        result.append(_decode_xpc_object(entry))
+        result.append(decode_xpc_object(entry))
     return result
 
 
@@ -151,7 +152,7 @@ def _decode_xpc_data(xpc_object) -> bytes:
     return xpc_object.data
 
 
-def _decode_xpc_object(xpc_object) -> Any:
+def decode_xpc_object(xpc_object) -> Any:
     decoders = {
         XpcMessageType.DICTIONARY: _decode_xpc_dictionary,
         XpcMessageType.ARRAY: _decode_xpc_array,
@@ -168,13 +169,6 @@ def _decode_xpc_object(xpc_object) -> Any:
     return decoder(xpc_object)
 
 
-def get_object_from_xpc_wrapper(payload: bytes):
-    payload = XpcWrapper.parse(payload).message.payload
-    if payload is None:
-        return None
-    return _decode_xpc_object(payload.obj)
-
-
 def _build_xpc_array(payload: List) -> Mapping:
     entries = []
     for entry in payload:
@@ -182,7 +176,10 @@ def _build_xpc_array(payload: List) -> Mapping:
         entries.append(entry)
     return {
         'type': XpcMessageType.ARRAY,
-        'data': entries
+        'data': {
+            'count': len(entries),
+            'entries': entries
+        }
     }
 
 
@@ -252,10 +249,12 @@ def _build_xpc_object(payload: Any) -> Mapping:
     return builder(payload)
 
 
-def create_xpc_wrapper(d: Mapping, message_id: int = 0) -> bytes:
+def create_xpc_wrapper(d: Mapping, message_id: int = 0, wanting_reply: bool = False) -> bytes:
     flags = XpcFlags.ALWAYS_SET
     if len(d.keys()) > 0:
         flags |= XpcFlags.DATA_PRESENT
+    if wanting_reply:
+        flags |= XpcFlags.WANTING_REPLY
 
     xpc_payload = {
         'message_id': message_id,

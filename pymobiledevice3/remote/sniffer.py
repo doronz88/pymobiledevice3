@@ -14,7 +14,7 @@ from scapy.packet import Packet
 from scapy.sendrecv import sniff
 
 from pymobiledevice3.remote.core_device_tunnel_service import PairingDataComponentTLVBuf
-from pymobiledevice3.remote.xpc_message import get_object_from_xpc_wrapper
+from pymobiledevice3.remote.xpc_message import XpcWrapper, decode_xpc_object
 
 logger = logging.getLogger()
 
@@ -130,7 +130,10 @@ class RemoteXPCSniffer:
     def _handle_data_frame(self, stream: H2Stream, frame: DataFrame) -> None:
         previous_frame_data = self._previous_frame_data.get(stream.key, b'')
         try:
-            xpc_message = get_object_from_xpc_wrapper(previous_frame_data + frame.data)
+            payload = XpcWrapper.parse(previous_frame_data + frame.data).message.payload
+            if payload is None:
+                return None
+            xpc_message = decode_xpc_object(payload.obj)
         except ConstError:  # if we don't know what this payload is
             logger.debug(
                 f'New Data frame {stream.src}->{stream.dst} on HTTP/2 stream {frame.stream_id} TCP port {stream.dport}')
