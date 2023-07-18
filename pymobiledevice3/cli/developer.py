@@ -22,6 +22,11 @@ from pymobiledevice3.cli.cli_common import BASED_INT, Command, default_json_enco
 from pymobiledevice3.exceptions import DeviceAlreadyInUseError, DvtDirListError, ExtractingStackshotError, \
     UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.remote.core_device.app_service import AppServiceService
+from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
+from pymobiledevice3.remote.core_device.diagnostics_service import DiagnosticsServiceService
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
 from pymobiledevice3.services.device_arbitration import DtDeviceArbitration
@@ -646,7 +651,7 @@ def fetch_symbols_list(lockdown: LockdownClient, color: bool):
 
 @fetch_symbols.command('download', cls=Command)
 @click.argument('out', type=click.Path(dir_okay=True, file_okay=False))
-def fetch_symbols_download(lockdown: LockdownClient, out):
+def fetch_symbols_download(lockdown: LockdownServiceProvider, out):
     """ download the linker and dyld cache to a specified directory """
     fetch_symbols = DtFetchSymbols(lockdown)
     files = fetch_symbols.list_files()
@@ -904,3 +909,67 @@ def dvt_har(lockdown: LockdownClient):
         with ActivityTraceTap(dvt, enable_http_archive_logging=True) as tap:
             while True:
                 tap.channel.receive_message()
+
+
+@developer.group()
+def core_device():
+    """ core-device options """
+    pass
+
+
+@core_device.command('list-processes', cls=Command)
+@click.option('--color/--no-color', default=True)
+def core_device_list_processes(lockdown: RemoteServiceDiscoveryService, color: bool):
+    """ Get process list """
+    with AppServiceService(lockdown) as app_service:
+        print_json(app_service.list_processes(), colored=color)
+
+
+@core_device.command('uninstall', cls=Command)
+@click.argument('bundle_identifier')
+def core_device_uninstall_app(lockdown: RemoteServiceDiscoveryService, bundle_identifier: str):
+    """ Uninstall application """
+    with AppServiceService(lockdown) as app_service:
+        app_service.uninstall_app(bundle_identifier)
+
+
+@core_device.command('send-signal-to-process', cls=Command)
+@click.argument('pid', type=click.INT)
+@click.argument('signal', type=click.INT)
+@click.option('--color/--no-color', default=True)
+def core_device_send_signal_to_process(lockdown: RemoteServiceDiscoveryService, pid: int, signal: int, color: bool):
+    """ Send signal to process """
+    with AppServiceService(lockdown) as app_service:
+        print_json(app_service.send_signal_to_process(pid, signal), colored=color)
+
+
+@core_device.command('get-device-info', cls=Command)
+@click.option('--color/--no-color', default=True)
+def core_device_get_device_info(lockdown: RemoteServiceDiscoveryService, color: bool):
+    """ Get device information """
+    with DeviceInfoService(lockdown) as app_service:
+        print_json(app_service.get_device_info(), colored=color)
+
+
+@core_device.command('get-lockstate', cls=Command)
+@click.option('--color/--no-color', default=True)
+def core_device_get_lockstate(lockdown: RemoteServiceDiscoveryService, color: bool):
+    """ Get lockstate """
+    with DeviceInfoService(lockdown) as app_service:
+        print_json(app_service.get_lockstate(), colored=color)
+
+
+@core_device.command('test', cls=Command)
+@click.option('--color/--no-color', default=True)
+def test(lockdown: RemoteServiceDiscoveryService, color: bool):
+    """ Get application list """
+    with DiagnosticsServiceService(lockdown) as app_service:
+        print_json(app_service.test(), colored=color)
+
+
+@core_device.command('list-apps', cls=Command)
+@click.option('--color/--no-color', default=True)
+def core_device_list_apps(lockdown: RemoteServiceDiscoveryService, color: bool):
+    """ Get application list """
+    with AppServiceService(lockdown) as app_service:
+        print_json(app_service.list_apps(), colored=color)
