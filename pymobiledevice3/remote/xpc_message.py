@@ -117,14 +117,14 @@ def _decode_xpc_dictionary(xpc_object) -> Mapping:
         return {}
     result = {}
     for entry in xpc_object.data.entries:
-        result[entry.key] = _decode_xpc_object(entry.value)
+        result[entry.key] = decode_xpc_object(entry.value)
     return result
 
 
 def _decode_xpc_array(xpc_object) -> List:
     result = []
     for entry in xpc_object.data.entries:
-        result.append(_decode_xpc_object(entry))
+        result.append(decode_xpc_object(entry))
     return result
 
 
@@ -152,7 +152,7 @@ def _decode_xpc_data(xpc_object) -> bytes:
     return xpc_object.data
 
 
-def _decode_xpc_object(xpc_object) -> Any:
+def decode_xpc_object(xpc_object) -> Any:
     decoders = {
         XpcMessageType.DICTIONARY: _decode_xpc_dictionary,
         XpcMessageType.ARRAY: _decode_xpc_array,
@@ -167,13 +167,6 @@ def _decode_xpc_object(xpc_object) -> Any:
     if decoder is None:
         raise TypeError(f'deserialize error: {xpc_object}')
     return decoder(xpc_object)
-
-
-def get_object_from_xpc_wrapper(payload: bytes):
-    payload = XpcWrapper.parse(payload).message.payload
-    if payload is None:
-        return None
-    return _decode_xpc_object(payload.obj)
 
 
 def _build_xpc_array(payload: List) -> Mapping:
