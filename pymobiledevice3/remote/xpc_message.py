@@ -183,7 +183,10 @@ def _build_xpc_array(payload: List) -> Mapping:
         entries.append(entry)
     return {
         'type': XpcMessageType.ARRAY,
-        'data': entries
+        'data': {
+            'count': len(entries),
+            'entries': entries
+        }
     }
 
 
