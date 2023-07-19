@@ -241,6 +241,13 @@ def _build_xpc_data(payload: bool) -> Mapping:
     }
 
 
+def _build_xpc_double(payload: float) -> Mapping:
+    return {
+        'type': XpcMessageType.DOUBLE,
+        'data': payload,
+    }
+
+
 def _build_xpc_uint64(payload: XpcUInt64Type) -> Mapping:
     return {
         'type': XpcMessageType.UINT64,
@@ -263,6 +270,7 @@ def _build_xpc_object(payload: Any) -> Mapping:
         str: _build_xpc_string,
         bytes: _build_xpc_data,
         bytearray: _build_xpc_data,
+        float: _build_xpc_double,
         'XpcUInt64Type': _build_xpc_uint64,
         'XpcInt64Type': _build_xpc_int64,
     }
