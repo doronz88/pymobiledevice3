@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Any, List, Mapping
 
 from construct import Aligned, Array, Bytes, Const, CString, Default, Double, Enum, ExprAdapter, FlagsEnum, \
@@ -152,6 +153,11 @@ def _decode_xpc_data(xpc_object) -> bytes:
     return xpc_object.data
 
 
+def _decode_xpc_date(xpc_object) -> datetime:
+    # Convert from nanoseconds to seconds
+    return datetime.fromtimestamp(xpc_object.data / 1000000000)
+
+
 def decode_xpc_object(xpc_object) -> Any:
     decoders = {
         XpcMessageType.DICTIONARY: _decode_xpc_dictionary,
@@ -162,6 +168,7 @@ def decode_xpc_object(xpc_object) -> Any:
         XpcMessageType.UUID: _decode_xpc_uuid,
         XpcMessageType.STRING: _decode_xpc_string,
         XpcMessageType.DATA: _decode_xpc_data,
+        XpcMessageType.DATE: _decode_xpc_date,
     }
     decoder = decoders.get(xpc_object.type)
     if decoder is None:
