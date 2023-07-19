@@ -1,3 +1,4 @@
+import dataclasses
 import uuid
 from datetime import datetime
 from typing import Any, List, Mapping
@@ -69,6 +70,10 @@ XpcDictionary = Prefixed(Int32ul, Struct(
     'count' / Hex(Int32ul),
     'entries' / If(this.count > 0, Array(this.count, XpcDictionaryEntry)),
 ))
+XpcFileTransfer = Struct(
+    'msg_id' / Int64ul,
+    'data' / LazyBound(lambda: XpcObject),
+)
 XpcObject = Struct(
     'type' / XpcMessageType,
     'data' / Switch(this.type, {
@@ -86,6 +91,7 @@ XpcObject = Struct(
         XpcMessageType.FD: XpcFd,
         XpcMessageType.SHMEM: XpcShmem,
         XpcMessageType.ARRAY: XpcArray,
+        XpcMessageType.FILE_TRANSFER: XpcFileTransfer,
     }, default=Probe(lookahead=1000)),
 )
 XpcPayload = Struct(
@@ -111,6 +117,11 @@ class XpcInt64Type(int):
 
 class XpcUInt64Type(int):
     pass
+
+
+@dataclasses.dataclass
+class FileTransferType:
+    transfer_size: int
 
 
 def _decode_xpc_dictionary(xpc_object) -> Mapping:
@@ -158,6 +169,10 @@ def _decode_xpc_date(xpc_object) -> datetime:
     return datetime.fromtimestamp(xpc_object.data / 1000000000)
 
 
+def _decode_xpc_file_transfer(xpc_object) -> FileTransferType:
+    return FileTransferType(transfer_size=_decode_xpc_dictionary(xpc_object.data.data)['s'])
+
+
 def decode_xpc_object(xpc_object) -> Any:
     decoders = {
         XpcMessageType.DICTIONARY: _decode_xpc_dictionary,
@@ -169,6 +184,7 @@ def decode_xpc_object(xpc_object) -> Any:
         XpcMessageType.STRING: _decode_xpc_string,
         XpcMessageType.DATA: _decode_xpc_data,
         XpcMessageType.DATE: _decode_xpc_date,
+        XpcMessageType.FILE_TRANSFER: _decode_xpc_file_transfer,
     }
     decoder = decoders.get(xpc_object.type)
     if decoder is None:
