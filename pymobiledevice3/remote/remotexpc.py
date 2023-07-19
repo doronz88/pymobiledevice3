@@ -1,13 +1,13 @@
 import socket
 from socket import create_connection
-from typing import Mapping, Optional, Tuple
+from typing import Generator, Mapping, Optional, Tuple
 
 from construct import StreamError
 from hyperframe.frame import DataFrame, Frame, GoAwayFrame, HeadersFrame, RstStreamFrame, SettingsFrame, \
     WindowUpdateFrame
 
 from pymobiledevice3.exceptions import StreamClosedError
-from pymobiledevice3.remote.xpc_message import XpcWrapper, create_xpc_wrapper, decode_xpc_object
+from pymobiledevice3.remote.xpc_message import XpcFlags, XpcWrapper, create_xpc_wrapper, decode_xpc_object
 
 # Extracted by sniffing `remoted` traffic via Wireshark
 DEFAULT_SETTINGS_MAX_CONCURRENT_STREAMS = 100
@@ -18,6 +18,7 @@ FRAME_HEADER_SIZE = 9
 HTTP2_MAGIC = b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n'
 
 ROOT_CHANNEL = 1
+FILE_TRANSFER_CHANNEL = 2
 REPLY_CHANNEL = 3
 
 
@@ -26,7 +27,7 @@ class RemoteXPCConnection:
         self._previous_frame_data = b''
         self.address = address
         self.sock: Optional[socket.socket] = None
-        self.next_message_id: Mapping[int: int] = {ROOT_CHANNEL: 0, REPLY_CHANNEL: 0}
+        self.next_message_id: Mapping[int: int] = {ROOT_CHANNEL: 0, FILE_TRANSFER_CHANNEL: 0, REPLY_CHANNEL: 0}
         self.peer_info = None
 
     def __enter__(self) -> 'RemoteXPCConnection':
@@ -48,15 +49,30 @@ class RemoteXPCConnection:
             data, message_id=self.next_message_id[ROOT_CHANNEL], wanting_reply=wanting_reply)
         self.sock.sendall(DataFrame(stream_id=ROOT_CHANNEL, data=xpc_wrapper).serialize())
 
-    def receive_response(self):
+    def receive_file(self, total_size: int) -> Generator[bytes, None, None]:
+        size = 0
+        while size < total_size:
+            frame = self._receive_next_data_frame()
+            assert frame.stream_id == FILE_TRANSFER_CHANNEL
+            size += len(frame.data)
+            yield frame.data
+
+    def receive_complete_file(self, total_size: int) -> bytes:
+        buf = b''
+        for chunk in self.receive_file(total_size):
+            buf += chunk
+        return buf
+
+    def receive_response(self) -> Mapping:
         while True:
-            frame = self._receive_frame()
-            if isinstance(frame, GoAwayFrame):
-                raise StreamClosedError(f'Got {frame}')
-            if isinstance(frame, RstStreamFrame):
-                raise StreamClosedError(f'Got {frame}')
-            if not isinstance(frame, DataFrame):
+            frame = self._receive_next_data_frame()
+
+            if frame.stream_id == FILE_TRANSFER_CHANNEL:
+                xpc_message = XpcWrapper.parse(self._previous_frame_data + frame.data).message
+                self._open_channel(frame.stream_id, XpcFlags.FILE_TX_STREAM_RESPONSE)
+                self.next_message_id[frame.stream_id] = xpc_message.message_id + 1
                 continue
+
             try:
                 xpc_message = XpcWrapper.parse(self._previous_frame_data + frame.data).message
                 self._previous_frame_data = b''
@@ -90,18 +106,38 @@ class RemoteXPCConnection:
         self._send_frame(DataFrame(stream_id=ROOT_CHANNEL,
                                    data=XpcWrapper.build({'size': 0, 'flags': 0x0201, 'payload': None})))
         self.next_message_id[ROOT_CHANNEL] += 1
-        self._send_frame(HeadersFrame(stream_id=REPLY_CHANNEL, flags=['END_HEADERS']))
-        self._send_frame(
-            DataFrame(stream_id=REPLY_CHANNEL,
-                      data=XpcWrapper.build({'size': 0, 'flags': 0x00400001, 'payload': None})))
+        self._open_channel(REPLY_CHANNEL, XpcFlags.INIT_HANDSHAKE)
+        # self._send_frame(HeadersFrame(stream_id=REPLY_CHANNEL, flags=['END_HEADERS']))
+        # self._send_frame(
+        #     DataFrame(stream_id=REPLY_CHANNEL,
+        #               data=XpcWrapper.build({'size': 0, 'flags': 0x00400001, 'payload': None})))
         self.next_message_id[REPLY_CHANNEL] += 1
 
         assert isinstance(self._receive_frame(), SettingsFrame)
 
         self._send_frame(SettingsFrame(flags=['ACK']))
 
+    def _open_channel(self, stream_id: int, flags: int):
+        flags |= XpcFlags.ALWAYS_SET
+        self._send_frame(HeadersFrame(stream_id=stream_id, flags=['END_HEADERS']))
+        self._send_frame(
+            DataFrame(stream_id=stream_id, data=XpcWrapper.build({'size': 0, 'flags': flags, 'payload': None})))
+
     def _send_frame(self, frame: Frame) -> None:
         self.sock.sendall(frame.serialize())
+
+    def _receive_next_data_frame(self) -> DataFrame:
+        while True:
+            frame = self._receive_frame()
+
+            if isinstance(frame, GoAwayFrame):
+                raise StreamClosedError(f'Got {frame}')
+            if isinstance(frame, RstStreamFrame):
+                raise StreamClosedError(f'Got {frame}')
+            if not isinstance(frame, DataFrame):
+                continue
+
+            return frame
 
     def _receive_frame(self) -> Frame:
         buf = self._recvall(FRAME_HEADER_SIZE)
