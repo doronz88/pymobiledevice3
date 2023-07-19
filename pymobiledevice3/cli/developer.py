@@ -5,7 +5,6 @@ import os
 import posixpath
 import shlex
 import signal
-import time
 from collections import namedtuple
 from dataclasses import asdict
 from datetime import datetime
@@ -18,10 +17,14 @@ from pykdebugparser.pykdebugparser import PyKdebugParser
 from termcolor import colored
 
 import pymobiledevice3
-from pymobiledevice3.cli.cli_common import BASED_INT, Command, default_json_encoder, print_json, wait_return
+from pymobiledevice3.cli.cli_common import BASED_INT, Command, RSDCommand, default_json_encoder, print_json, wait_return
 from pymobiledevice3.exceptions import DeviceAlreadyInUseError, DvtDirListError, ExtractingStackshotError, \
     UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.remote.core_device.app_service import AppServiceService
+from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
 from pymobiledevice3.services.device_arbitration import DtDeviceArbitration
@@ -442,7 +445,8 @@ def stackshot(service_provider: LockdownClient, out, color):
 @subclass_filter
 @click.option('--process', default=None, help='Process ID / name to filter. Omit for all.')
 @click.option('--color/--no-color', default=True)
-def parse_live_profile_session(service_provider: LockdownClient, count, tid, show_tid, bsc, class_filters, subclass_filters,
+def parse_live_profile_session(service_provider: LockdownClient, count, tid, show_tid, bsc, class_filters,
+                               subclass_filters,
                                process, color):
     """ Print traces (syscalls, thread events, etc.) received from the device in real time. """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
@@ -904,3 +908,60 @@ def dvt_har(service_provider: LockdownClient):
         with ActivityTraceTap(dvt, enable_http_archive_logging=True) as tap:
             while True:
                 tap.channel.receive_message()
+
+
+@developer.group()
+def core_device():
+    """ core-device options """
+    pass
+
+
+@core_device.command('list-processes', cls=RSDCommand)
+@click.option('--color/--no-color', default=True)
+def core_device_list_processes(service_provider: RemoteServiceDiscoveryService, color: bool):
+    """ Get process list """
+    with AppServiceService(service_provider) as app_service:
+        print_json(app_service.list_processes(), colored=color)
+
+
+@core_device.command('uninstall', cls=RSDCommand)
+@click.argument('bundle_identifier')
+def core_device_uninstall_app(service_provider: RemoteServiceDiscoveryService, bundle_identifier: str):
+    """ Uninstall application """
+    with AppServiceService(service_provider) as app_service:
+        app_service.uninstall_app(bundle_identifier)
+
+
+@core_device.command('send-signal-to-process', cls=RSDCommand)
+@click.argument('pid', type=click.INT)
+@click.argument('signal', type=click.INT)
+@click.option('--color/--no-color', default=True)
+def core_device_send_signal_to_process(service_provider: RemoteServiceDiscoveryService, pid: int, signal: int,
+                                       color: bool):
+    """ Send signal to process """
+    with AppServiceService(service_provider) as app_service:
+        print_json(app_service.send_signal_to_process(pid, signal), colored=color)
+
+
+@core_device.command('get-device-info', cls=RSDCommand)
+@click.option('--color/--no-color', default=True)
+def core_device_get_device_info(service_provider: RemoteServiceDiscoveryService, color: bool):
+    """ Get device information """
+    with DeviceInfoService(service_provider) as app_service:
+        print_json(app_service.get_device_info(), colored=color)
+
+
+@core_device.command('get-lockstate', cls=RSDCommand)
+@click.option('--color/--no-color', default=True)
+def core_device_get_lockstate(service_provider: RemoteServiceDiscoveryService, color: bool):
+    """ Get lockstate """
+    with DeviceInfoService(service_provider) as app_service:
+        print_json(app_service.get_lockstate(), colored=color)
+
+
+@core_device.command('list-apps', cls=RSDCommand)
+@click.option('--color/--no-color', default=True)
+def core_device_list_apps(service_provider: RemoteServiceDiscoveryService, color: bool):
+    """ Get application list """
+    with AppServiceService(service_provider) as app_service:
+        print_json(app_service.list_apps(), colored=color)
