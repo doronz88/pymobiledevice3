@@ -1,4 +1,6 @@
+import dataclasses
 import uuid
+from datetime import datetime
 from typing import Any, List, Mapping
 
 from construct import Aligned, Array, Bytes, Const, CString, Default, Double, Enum, ExprAdapter, FlagsEnum, \
@@ -68,6 +70,10 @@ XpcDictionary = Prefixed(Int32ul, Struct(
     'count' / Hex(Int32ul),
     'entries' / If(this.count > 0, Array(this.count, XpcDictionaryEntry)),
 ))
+XpcFileTransfer = Struct(
+    'msg_id' / Int64ul,
+    'data' / LazyBound(lambda: XpcObject),
+)
 XpcObject = Struct(
     'type' / XpcMessageType,
     'data' / Switch(this.type, {
@@ -85,6 +91,7 @@ XpcObject = Struct(
         XpcMessageType.FD: XpcFd,
         XpcMessageType.SHMEM: XpcShmem,
         XpcMessageType.ARRAY: XpcArray,
+        XpcMessageType.FILE_TRANSFER: XpcFileTransfer,
     }, default=Probe(lookahead=1000)),
 )
 XpcPayload = Struct(
@@ -110,6 +117,11 @@ class XpcInt64Type(int):
 
 class XpcUInt64Type(int):
     pass
+
+
+@dataclasses.dataclass
+class FileTransferType:
+    transfer_size: int
 
 
 def _decode_xpc_dictionary(xpc_object) -> Mapping:
@@ -152,6 +164,15 @@ def _decode_xpc_data(xpc_object) -> bytes:
     return xpc_object.data
 
 
+def _decode_xpc_date(xpc_object) -> datetime:
+    # Convert from nanoseconds to seconds
+    return datetime.fromtimestamp(xpc_object.data / 1000000000)
+
+
+def _decode_xpc_file_transfer(xpc_object) -> FileTransferType:
+    return FileTransferType(transfer_size=_decode_xpc_dictionary(xpc_object.data.data)['s'])
+
+
 def decode_xpc_object(xpc_object) -> Any:
     decoders = {
         XpcMessageType.DICTIONARY: _decode_xpc_dictionary,
@@ -162,6 +183,8 @@ def decode_xpc_object(xpc_object) -> Any:
         XpcMessageType.UUID: _decode_xpc_uuid,
         XpcMessageType.STRING: _decode_xpc_string,
         XpcMessageType.DATA: _decode_xpc_data,
+        XpcMessageType.DATE: _decode_xpc_date,
+        XpcMessageType.FILE_TRANSFER: _decode_xpc_file_transfer,
     }
     decoder = decoders.get(xpc_object.type)
     if decoder is None:
@@ -218,6 +241,13 @@ def _build_xpc_data(payload: bool) -> Mapping:
     }
 
 
+def _build_xpc_double(payload: float) -> Mapping:
+    return {
+        'type': XpcMessageType.DOUBLE,
+        'data': payload,
+    }
+
+
 def _build_xpc_uint64(payload: XpcUInt64Type) -> Mapping:
     return {
         'type': XpcMessageType.UINT64,
@@ -240,6 +270,7 @@ def _build_xpc_object(payload: Any) -> Mapping:
         str: _build_xpc_string,
         bytes: _build_xpc_data,
         bytearray: _build_xpc_data,
+        float: _build_xpc_double,
         'XpcUInt64Type': _build_xpc_uint64,
         'XpcInt64Type': _build_xpc_int64,
     }
