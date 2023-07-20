@@ -54,7 +54,8 @@ def diagnostics_info(service_provider: LockdownClient, color):
 @click.option('--color/--no-color', default=True)
 def diagnostics_ioregistry(service_provider: LockdownClient, plane, name, ioclass, color):
     """ get ioregistry info """
-    print_json(DiagnosticsService(lockdown=service_provider).ioregistry(plane=plane, name=name, ioclass=ioclass), colored=color)
+    print_json(DiagnosticsService(lockdown=service_provider).ioregistry(plane=plane, name=name, ioclass=ioclass),
+               colored=color)
 
 
 @diagnostics.command('mg', cls=Command)

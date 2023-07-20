@@ -66,24 +66,23 @@ def prompt_device_list(device_list: List):
         raise NoDeviceSelectedError()
 
 
-class Command(click.Command):
+class BaseCommand(click.Command):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.params[:0] = [
-            click.Option(('service_provider', '--rsd'), type=(str, int), callback=self.rsd,
-                         help='RSD hostname and port number'),
-            click.Option(('service_provider', '--udid'), envvar=UDID_ENV_VAR, callback=self.udid,
-                         help=f'Device unique identifier. You may pass {UDID_ENV_VAR} environment variable to pass this'
-                              f' option as well'),
             click.Option(('verbosity', '-v', '--verbose'), count=True, callback=set_verbosity, expose_value=False),
         ]
         self.service_provider = None
 
-    def rsd(self, ctx, param: str, value: Optional[Tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
-        if value is not None:
-            with RemoteServiceDiscoveryService(value) as rsd:
-                self.service_provider = rsd
-                return self.service_provider
+
+class LockdownCommand(BaseCommand):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.params[:0] = [
+            click.Option(('service_provider', '--udid'), envvar=UDID_ENV_VAR, callback=self.udid,
+                         help=f'Device unique identifier. You may pass {UDID_ENV_VAR} environment variable to pass this'
+                              f' option as well'),
+        ]
 
     def udid(self, ctx, param: str, value: str) -> Optional[LockdownClient]:
         if '_PYMOBILEDEVICE3_COMPLETE' in os.environ:
@@ -101,6 +100,28 @@ class Command(click.Command):
             return create_using_usbmux()
 
         return prompt_device_list([create_using_usbmux(serial=device.serial) for device in devices])
+
+
+class RSDCommand(BaseCommand):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.params[:0] = [
+            click.Option(('service_provider', '--rsd'), type=(str, int), callback=self.rsd, required=True,
+                         help='RSD hostname and port number'),
+        ]
+
+    def rsd(self, ctx, param: str, value: Optional[Tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
+        if value is not None:
+            with RemoteServiceDiscoveryService(value) as rsd:
+                self.service_provider = rsd
+                return self.service_provider
+
+
+class Command(RSDCommand, LockdownCommand):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # make the RSD optional
+        self.params[0].required = False
 
 
 class CommandWithoutAutopair(Command):
