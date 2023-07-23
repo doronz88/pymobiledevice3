@@ -231,7 +231,7 @@ class RemoteServer(LockdownService):
         }
     }
     ```
-    """
+    """  # noqa: E501
     BROADCAST_CHANNEL = 0
     INSTRUMENTS_MESSAGE_TYPE = 2
     EXPECTS_REPLY_MASK = 0x1000
