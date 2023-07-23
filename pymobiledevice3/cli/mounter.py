@@ -41,11 +41,11 @@ def mounter():
 
 @mounter.command('list', cls=Command)
 @click.option('--color/--no-color', default=True)
-def mounter_list(lockdown: LockdownClient, color):
+def mounter_list(service_provider: LockdownClient, color):
     """ list all mounted images """
     output = []
 
-    images = MobileImageMounterService(lockdown=lockdown).copy_devices()
+    images = MobileImageMounterService(lockdown=service_provider).copy_devices()
     for image in images:
         image_signature = image.get('ImageSignature')
         if image_signature is not None:
@@ -58,10 +58,10 @@ def mounter_list(lockdown: LockdownClient, color):
 @mounter.command('lookup', cls=Command)
 @click.option('--color/--no-color', default=True)
 @click.argument('image_type')
-def mounter_lookup(lockdown: LockdownClient, color, image_type):
+def mounter_lookup(service_provider: LockdownClient, color, image_type):
     """ lookup mounter image type """
     try:
-        signature = MobileImageMounterService(lockdown=lockdown).lookup_image(image_type)
+        signature = MobileImageMounterService(lockdown=service_provider).lookup_image(image_type)
         print_json(signature, colored=color)
     except NotMountedError:
         logger.error(f'Disk image of type: {image_type} is not mounted')
@@ -69,10 +69,10 @@ def mounter_lookup(lockdown: LockdownClient, color, image_type):
 
 @mounter.command('umount-developer', cls=Command)
 @catch_errors
-def mounter_umount_developer(lockdown: LockdownClient):
+def mounter_umount_developer(service_provider: LockdownClient):
     """ unmount Developer image """
     try:
-        DeveloperDiskImageMounter(lockdown=lockdown).umount()
+        DeveloperDiskImageMounter(lockdown=service_provider).umount()
         logger.info('Developer image unmounted successfully')
     except NotMountedError:
         logger.error('Developer image isn\'t currently mounted')
@@ -80,10 +80,10 @@ def mounter_umount_developer(lockdown: LockdownClient):
 
 @mounter.command('umount-personalized', cls=Command)
 @catch_errors
-def mounter_umount_personalized(lockdown: LockdownClient):
+def mounter_umount_personalized(service_provider: LockdownClient):
     """ unmount Personalized image """
     try:
-        PersonalizedImageMounter(lockdown=lockdown).umount()
+        PersonalizedImageMounter(lockdown=service_provider).umount()
         logger.info('Personalized image unmounted successfully')
     except NotMountedError:
         logger.error('Personalized image isn\'t currently mounted')
@@ -93,9 +93,9 @@ def mounter_umount_personalized(lockdown: LockdownClient):
 @click.argument('image', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @click.argument('signature', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @catch_errors
-def mounter_mount_developer(lockdown: LockdownClient, image: str, signature: str):
+def mounter_mount_developer(service_provider: LockdownClient, image: str, signature: str):
     """ mount developer image """
-    DeveloperDiskImageMounter(lockdown=lockdown).mount(Path(image), Path(signature))
+    DeveloperDiskImageMounter(lockdown=service_provider).mount(Path(image), Path(signature))
     logger.info('Developer image mounted successfully')
 
 
@@ -104,9 +104,9 @@ def mounter_mount_developer(lockdown: LockdownClient, image: str, signature: str
 @click.argument('trust-cache', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @click.argument('build-manifest', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @catch_errors
-def mounter_mount_personalized(lockdown: LockdownClient, image: str, trust_cache: str, build_manifest: str):
+def mounter_mount_personalized(service_provider: LockdownClient, image: str, trust_cache: str, build_manifest: str):
     """ mount personalized image """
-    PersonalizedImageMounter(lockdown=lockdown).mount(Path(image), Path(build_manifest), Path(trust_cache))
+    PersonalizedImageMounter(lockdown=service_provider).mount(Path(image), Path(build_manifest), Path(trust_cache))
     logger.info('Personalized image mounted successfully')
 
 
@@ -115,10 +115,10 @@ def mounter_mount_personalized(lockdown: LockdownClient, image: str, trust_cache
               help='Xcode application path used to figure out automatically the DeveloperDiskImage path')
 @click.option('-v', '--version', help='use a different DeveloperDiskImage version from the one retrieved by lockdown'
                                       'connection')
-def mounter_auto_mount(lockdown: LockdownClient, xcode: str, version: str):
+def mounter_auto_mount(service_provider: LockdownClient, xcode: str, version: str):
     """ auto-detect correct DeveloperDiskImage and mount it """
     try:
-        auto_mount(lockdown, xcode=xcode, version=version)
+        auto_mount(service_provider, xcode=xcode, version=version)
         logger.info('DeveloperDiskImage mounted successfully')
     except URLError:
         logger.warning('failed to query DeveloperDiskImage versions')
@@ -134,43 +134,43 @@ def mounter_auto_mount(lockdown: LockdownClient, xcode: str, version: str):
 
 @mounter.command('query-developer-mode-status', cls=Command)
 @click.option('--color/--no-color', default=True)
-def mounter_query_developer_mode_status(lockdown: LockdownClient, color):
+def mounter_query_developer_mode_status(service_provider: LockdownClient, color):
     """ Query developer mode status """
-    print_json(MobileImageMounterService(lockdown=lockdown).query_developer_mode_status(), colored=color)
+    print_json(MobileImageMounterService(lockdown=service_provider).query_developer_mode_status(), colored=color)
 
 
 @mounter.command('query-nonce', cls=Command)
 @click.option('--image-type')
 @click.option('--color/--no-color', default=True)
-def mounter_query_nonce(lockdown: LockdownClient, image_type: str, color: bool):
+def mounter_query_nonce(service_provider: LockdownClient, image_type: str, color: bool):
     """ Query nonce """
-    print_json(MobileImageMounterService(lockdown=lockdown).query_nonce(image_type), colored=color)
+    print_json(MobileImageMounterService(lockdown=service_provider).query_nonce(image_type), colored=color)
 
 
 @mounter.command('query-personalization-identifiers', cls=Command)
 @click.option('--color/--no-color', default=True)
-def mounter_query_personalization_identifiers(lockdown: LockdownClient, color):
+def mounter_query_personalization_identifiers(service_provider: LockdownClient, color):
     """ Query personalization identifiers """
-    print_json(MobileImageMounterService(lockdown=lockdown).query_personalization_identifiers(), colored=color)
+    print_json(MobileImageMounterService(lockdown=service_provider).query_personalization_identifiers(), colored=color)
 
 
 @mounter.command('query-personalization-manifest', cls=Command)
 @click.option('--color/--no-color', default=True)
-def mounter_query_personalization_manifest(lockdown: LockdownClient, color):
+def mounter_query_personalization_manifest(service_provider: LockdownClient, color):
     """ Query personalization manifest """
     result = []
-    mounter = MobileImageMounterService(lockdown=lockdown)
+    mounter = MobileImageMounterService(lockdown=service_provider)
     for device in mounter.copy_devices():
         result.append(mounter.query_personalization_manifest(device['PersonalizedImageType'], device['ImageSignature']))
     print_json(result, colored=color)
 
 
 @mounter.command('roll-personalization-nonce', cls=Command)
-def mounter_roll_personalization_nonce(lockdown: LockdownClient):
-    MobileImageMounterService(lockdown=lockdown).roll_personalization_nonce()
+def mounter_roll_personalization_nonce(service_provider: LockdownClient):
+    MobileImageMounterService(lockdown=service_provider).roll_personalization_nonce()
 
 
 @mounter.command('roll-cryptex-nonce', cls=Command)
-def mounter_roll_cryptex_nonce(lockdown: LockdownClient):
+def mounter_roll_cryptex_nonce(service_provider: LockdownClient):
     """ Roll cryptex nonce (will reboot) """
-    MobileImageMounterService(lockdown=lockdown).roll_cryptex_nonce()
+    MobileImageMounterService(lockdown=service_provider).roll_cryptex_nonce()

@@ -25,26 +25,26 @@ def remote_cli():
 
 @remote_cli.command('rsd-info', cls=Command)
 @click.option('--color/--no-color', default=True)
-def rsd_info(lockdown: RemoteServiceDiscoveryService, color: bool):
+def rsd_info(service_provider: RemoteServiceDiscoveryService, color: bool):
     """ show info extracted from RSD peer """
-    print_json(lockdown.peer_info, colored=color)
+    print_json(service_provider.peer_info, colored=color)
 
 
 @remote_cli.command('create-listener', cls=Command)
 @click.option('-p', '--protocol', type=click.Choice(['quic', 'udp']))
 @click.option('--color/--no-color', default=True)
-def create_listener(lockdown: RemoteServiceDiscoveryService, protocol: str, color: bool):
+def create_listener(service_provider: RemoteServiceDiscoveryService, protocol: str, color: bool):
     """ start a remote listener """
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    with create_core_device_tunnel_service(lockdown, autopair=True) as service:
+    with create_core_device_tunnel_service(service_provider, autopair=True) as service:
         print_json(service.create_listener(private_key, protocol=protocol), colored=color)
 
 
 @remote_cli.command('start-quic-tunnel', cls=Command)
 @click.option('--color/--no-color', default=True)
-def start_quic_tunnel(lockdown: RemoteServiceDiscoveryService, color: bool):
+def start_quic_tunnel(service_provider: RemoteServiceDiscoveryService, color: bool):
     """ start quic tunnel """
     logger.critical('This is a WIP command. Will only print the required parameters for the quic connection')
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    with create_core_device_tunnel_service(lockdown, autopair=True) as service:
+    with create_core_device_tunnel_service(service_provider, autopair=True) as service:
         print_json(asyncio.run(service.start_quic_tunnel(private_key)), colored=color)

@@ -32,13 +32,13 @@ def backup2():
 @click.argument('backup-directory', type=click.Path(file_okay=False))
 @click.option('--full', is_flag=True, help=('Whether to do a full backup.'
                                             ' If full is True, any previous backup attempts will be discarded.'))
-def backup(lockdown: LockdownClient, backup_directory, full):
+def backup(service_provider: LockdownClient, backup_directory, full):
     """
     Backup device.
 
     All backup data will be written to BACKUP_DIRECTORY, under a directory named with the device's udid.
     """
-    backup_client = Mobilebackup2Service(lockdown)
+    backup_client = Mobilebackup2Service(service_provider)
     with tqdm(total=100, dynamic_ncols=True) as pbar:
         def update_bar(percentage):
             pbar.n = percentage
@@ -56,13 +56,13 @@ def backup(lockdown: LockdownClient, backup_directory, full):
 @click.option('--remove/--no-remove', default=False, help='Remove items which aren\'t being restored.')
 @password_option
 @source_option
-def restore(lockdown: LockdownClient, backup_directory, system, reboot, copy, settings, remove, password, source):
+def restore(service_provider: LockdownClient, backup_directory, system, reboot, copy, settings, remove, password, source):
     """
     Restore a backup to a device.
 
     The backup will be restored from a directory with the device udid under BACKUP_DIRECTORY.
     """
-    backup_client = Mobilebackup2Service(lockdown)
+    backup_client = Mobilebackup2Service(service_provider)
     with tqdm(total=100, dynamic_ncols=True) as pbar:
         def update_bar(percentage):
             pbar.n = percentage
@@ -76,22 +76,22 @@ def restore(lockdown: LockdownClient, backup_directory, system, reboot, copy, se
 @backup2.command(cls=Command)
 @backup_directory_arg
 @source_option
-def info(lockdown: LockdownClient, backup_directory, source):
+def info(service_provider: LockdownClient, backup_directory, source):
     """
     Print information about a backup.
     """
-    backup_client = Mobilebackup2Service(lockdown)
+    backup_client = Mobilebackup2Service(service_provider)
     print(backup_client.info(backup_directory=backup_directory, source=source))
 
 
 @backup2.command('list', cls=Command)
 @backup_directory_arg
 @source_option
-def list_(lockdown: LockdownClient, backup_directory, source):
+def list_(service_provider: LockdownClient, backup_directory, source):
     """
     List all file in the backup in a CSV format.
     """
-    backup_client = Mobilebackup2Service(lockdown)
+    backup_client = Mobilebackup2Service(service_provider)
     print(backup_client.list(backup_directory=backup_directory, source=source))
 
 
@@ -99,11 +99,11 @@ def list_(lockdown: LockdownClient, backup_directory, source):
 @backup_directory_arg
 @password_option
 @source_option
-def unback(lockdown: LockdownClient, backup_directory, password, source):
+def unback(service_provider: LockdownClient, backup_directory, password, source):
     """
     Convert all files in the backup to the correct directory hierarchy.
     """
-    backup_client = Mobilebackup2Service(lockdown)
+    backup_client = Mobilebackup2Service(service_provider)
     backup_client.unback(backup_directory=backup_directory, password=password, source=source)
 
 
@@ -113,14 +113,14 @@ def unback(lockdown: LockdownClient, backup_directory, password, source):
 @backup_directory_arg
 @password_option
 @source_option
-def extract(lockdown: LockdownClient, domain_name, relative_path, backup_directory, password, source):
+def extract(service_provider: LockdownClient, domain_name, relative_path, backup_directory, password, source):
     """
     Extract a file from the backup.
 
     The file that belongs to the domain DOMAIN_NAME and located on the device in the path RELATIVE_PATH,
     will be extracted to the BACKUP_DIRECTORY.
     """
-    backup_client = Mobilebackup2Service(lockdown)
+    backup_client = Mobilebackup2Service(service_provider)
     backup_client.extract(domain_name, relative_path, backup_directory=backup_directory, password=password,
                           source=source)
 
@@ -129,14 +129,14 @@ def extract(lockdown: LockdownClient, domain_name, relative_path, backup_directo
 @click.argument('mode', type=click.Choice(['on', 'off'], case_sensitive=False))
 @click.argument('password')
 @backup_directory_option
-def encryption(lockdown: LockdownClient, backup_directory, mode, password):
+def encryption(service_provider: LockdownClient, backup_directory, mode, password):
     """
     Set backup encryption on / off.
 
     When on, PASSWORD will be the new backup password.
     When off, PASSWORD is the current backup password.
     """
-    backup_client = Mobilebackup2Service(lockdown)
+    backup_client = Mobilebackup2Service(service_provider)
     should_encrypt = mode.lower() == 'on'
     if should_encrypt == backup_client.will_encrypt:
         logger.error('Encryption already ' + ('on!' if should_encrypt else 'off!'))
@@ -151,11 +151,11 @@ def encryption(lockdown: LockdownClient, backup_directory, mode, password):
 @click.argument('old-password')
 @click.argument('new-password')
 @backup_directory_option
-def change_password(lockdown: LockdownClient, old_password, new_password, backup_directory):
+def change_password(service_provider: LockdownClient, old_password, new_password, backup_directory):
     """
     Change the backup password.
     """
-    backup_client = Mobilebackup2Service(lockdown)
+    backup_client = Mobilebackup2Service(service_provider)
     if not backup_client.will_encrypt:
         logger.error('Encryption is not turned on!')
         return
@@ -164,9 +164,9 @@ def change_password(lockdown: LockdownClient, old_password, new_password, backup
 
 @backup2.command(cls=Command)
 @backup_directory_arg
-def erase_device(lockdown: LockdownClient, backup_directory):
+def erase_device(service_provider: LockdownClient, backup_directory):
     """
     Erase all data on the device.
     """
-    backup_client = Mobilebackup2Service(lockdown)
+    backup_client = Mobilebackup2Service(service_provider)
     backup_client.erase_device(backup_directory)

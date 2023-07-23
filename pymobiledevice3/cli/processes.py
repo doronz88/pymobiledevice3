@@ -23,16 +23,16 @@ def processes():
 
 @processes.command('ps', cls=Command)
 @click.option('--color/--no-color', default=True)
-def processes_ps(lockdown: LockdownClient, color):
+def processes_ps(service_provider: LockdownClient, color):
     """ show process list """
-    print_json(OsTraceService(lockdown=lockdown).get_pid_list().get('Payload'), colored=color)
+    print_json(OsTraceService(lockdown=service_provider).get_pid_list().get('Payload'), colored=color)
 
 
 @processes.command('pgrep', cls=Command)
 @click.argument('expression')
-def processes_pgrep(lockdown: LockdownClient, expression):
+def processes_pgrep(service_provider: LockdownClient, expression):
     """ try to match processes pid by given expression (like pgrep) """
-    processes_list = OsTraceService(lockdown=lockdown).get_pid_list().get('Payload')
+    processes_list = OsTraceService(lockdown=service_provider).get_pid_list().get('Payload')
     for pid, process_info in processes_list.items():
         process_name = process_info.get('ProcessName')
         if expression in process_name:

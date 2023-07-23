@@ -18,22 +18,22 @@ def activation():
 
 
 @activation.command(cls=Command)
-def state(lockdown: LockdownClient):
+def state(service_provider: LockdownClient):
     """ Get current activation state """
-    print(MobileActivationService(lockdown).state)
+    print(MobileActivationService(service_provider).state)
 
 
 @activation.command(cls=Command)
 @click.option('--now', is_flag=True, help='when --offline is used, dont wait for next nonce cycle')
-def activate(lockdown: LockdownClient, now):
+def activate(service_provider: LockdownClient, now):
     """ Activate device """
-    activation_service = MobileActivationService(lockdown)
+    activation_service = MobileActivationService(service_provider)
     if not now:
         activation_service.wait_for_activation_session()
     activation_service.activate()
 
 
 @activation.command(cls=Command)
-def deactivate(lockdown: LockdownClient):
+def deactivate(service_provider: LockdownClient):
     """ Deactivate device """
-    MobileActivationService(lockdown).deactivate()
+    MobileActivationService(service_provider).deactivate()

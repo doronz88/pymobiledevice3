@@ -70,28 +70,28 @@ class Command(click.Command):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.params[:0] = [
-            click.Option(('lockdown', '--rsd'), type=(str, int), callback=self.rsd,
+            click.Option(('service_provider', '--rsd'), type=(str, int), callback=self.rsd,
                          help='RSD hostname and port number'),
-            click.Option(('lockdown', '--udid'), envvar=UDID_ENV_VAR, callback=self.udid,
+            click.Option(('service_provider', '--udid'), envvar=UDID_ENV_VAR, callback=self.udid,
                          help=f'Device unique identifier. You may pass {UDID_ENV_VAR} environment variable to pass this'
                               f' option as well'),
             click.Option(('verbosity', '-v', '--verbose'), count=True, callback=set_verbosity, expose_value=False),
         ]
-        self.lockdown_service_provider = None
+        self.service_provider = None
 
     def rsd(self, ctx, param: str, value: Optional[Tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
         if value is not None:
             with RemoteServiceDiscoveryService(value) as rsd:
-                self.lockdown_service_provider = rsd
-                return self.lockdown_service_provider
+                self.service_provider = rsd
+                return self.service_provider
 
     def udid(self, ctx, param: str, value: str) -> Optional[LockdownClient]:
         if '_PYMOBILEDEVICE3_COMPLETE' in os.environ:
             # prevent lockdown connection establishment when in autocomplete mode
             return
 
-        if self.lockdown_service_provider is not None:
-            return self.lockdown_service_provider
+        if self.service_provider is not None:
+            return self.service_provider
 
         if value is not None:
             return create_using_usbmux(serial=value)

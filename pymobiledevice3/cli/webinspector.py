@@ -75,7 +75,7 @@ def create_webinspector_and_launch_app(lockdown: LockdownClient, timeout: float,
 @click.option('-v', '--verbose', is_flag=True)
 @click.option('-t', '--timeout', default=3, show_default=True, type=float)
 @catch_errors
-def opened_tabs(lockdown: LockdownClient, verbose, timeout):
+def opened_tabs(service_provider: LockdownClient, verbose, timeout):
     """
     Show all currently opened tabs.
 
@@ -83,7 +83,7 @@ def opened_tabs(lockdown: LockdownClient, verbose, timeout):
     Opt-in:
         Settings -> Safari -> Advanced -> Web Inspector
     """
-    inspector = WebinspectorService(lockdown=lockdown, loop=asyncio.get_event_loop())
+    inspector = WebinspectorService(lockdown=service_provider, loop=asyncio.get_event_loop())
     inspector.connect(timeout)
     while not inspector.connected_application:
         inspector.flush_input()
@@ -107,7 +107,7 @@ def opened_tabs(lockdown: LockdownClient, verbose, timeout):
 @click.argument('url')
 @click.option('-t', '--timeout', default=3, show_default=True, type=float)
 @catch_errors
-def launch(lockdown: LockdownClient, url, timeout):
+def launch(service_provider: LockdownClient, url, timeout):
     """
     Launch a specific URL in Safari.
 
@@ -116,7 +116,7 @@ def launch(lockdown: LockdownClient, url, timeout):
         Settings -> Safari -> Advanced -> Web Inspector
         Settings -> Safari -> Advanced -> Remote Automation
     """
-    inspector, safari = create_webinspector_and_launch_app(lockdown, timeout, SAFARI)
+    inspector, safari = create_webinspector_and_launch_app(service_provider, timeout, SAFARI)
     session = inspector.automation_session(safari)
     driver = WebDriver(session)
     print('Starting session')
@@ -152,7 +152,7 @@ driver.add_cookie(
 @webinspector.command(cls=Command)
 @click.option('-t', '--timeout', default=3, show_default=True, type=float)
 @catch_errors
-def shell(lockdown: LockdownClient, timeout):
+def shell(service_provider: LockdownClient, timeout):
     """
     Create an IPython shell for interacting with a WebView.
 
@@ -161,7 +161,7 @@ def shell(lockdown: LockdownClient, timeout):
         Settings -> Safari -> Advanced -> Web Inspector
         Settings -> Safari -> Advanced -> Remote Automation
     """
-    inspector, safari = create_webinspector_and_launch_app(lockdown, timeout, SAFARI)
+    inspector, safari = create_webinspector_and_launch_app(service_provider, timeout, SAFARI)
     session = inspector.automation_session(safari)
     driver = WebDriver(session)
     try:
@@ -182,7 +182,7 @@ def shell(lockdown: LockdownClient, timeout):
 @click.option('--automation', is_flag=True, help='Use remote automation')
 @click.argument('url', required=False, default='')
 @catch_errors
-def js_shell(lockdown: LockdownClient, timeout, automation, url):
+def js_shell(service_provider: LockdownClient, timeout, automation, url):
     """
     Create a javascript shell. This interpreter runs on your local machine,
     but evaluates each expression on the remote
@@ -197,7 +197,7 @@ def js_shell(lockdown: LockdownClient, timeout, automation, url):
     """
 
     js_shell_class = AutomationJsShell if automation else InspectorJsShell
-    asyncio.run(run_js_shell(js_shell_class, lockdown, timeout, url))
+    asyncio.run(run_js_shell(js_shell_class, service_provider, timeout, url))
 
 
 udid = ''
@@ -212,7 +212,7 @@ def create_app():
 @webinspector.command(cls=Command)
 @click.option('--host', default='127.0.0.1')
 @click.option('--port', type=click.INT, default=9222)
-def cdp(lockdown: LockdownClient, host, port):
+def cdp(service_provider: LockdownClient, host, port):
     """
     Start a CDP server for debugging WebViews.
 
@@ -221,7 +221,7 @@ def cdp(lockdown: LockdownClient, host, port):
         chrome://inspect/#devices
     """
     global udid
-    udid = lockdown.udid
+    udid = service_provider.udid
     uvicorn.run('pymobiledevice3.cli.webinspector:create_app', host=host, port=port, factory=True,
                 ws_ping_timeout=None, ws='wsproto', loop='asyncio')
 

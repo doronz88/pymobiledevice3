@@ -25,9 +25,9 @@ def notification():
 @notification.command(cls=Command)
 @click.argument('names', nargs=-1)
 @click.option('--insecure', is_flag=True, help='use the insecure relay meant for untrusted clients instead')
-def post(lockdown: LockdownClient, names, insecure):
+def post(service_provider: LockdownClient, names, insecure):
     """ API for notify_post(). """
-    service = NotificationProxyService(lockdown=lockdown, insecure=insecure)
+    service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
     for name in names:
         service.notify_post(name)
 
@@ -35,9 +35,9 @@ def post(lockdown: LockdownClient, names, insecure):
 @notification.command(cls=Command)
 @click.argument('names', nargs=-1)
 @click.option('--insecure', is_flag=True, help='use the insecure relay meant for untrusted clients instead')
-def observe(lockdown: LockdownClient, names, insecure):
+def observe(service_provider: LockdownClient, names, insecure):
     """ API for notify_register_dispatch(). """
-    service = NotificationProxyService(lockdown=lockdown, insecure=insecure)
+    service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
     for name in names:
         service.notify_register_dispatch(name)
 
@@ -47,9 +47,9 @@ def observe(lockdown: LockdownClient, names, insecure):
 
 @notification.command('observe-all', cls=Command)
 @click.option('--insecure', is_flag=True, help='use the insecure relay meant for untrusted clients instead')
-def observe_all(lockdown: LockdownClient, insecure):
+def observe_all(service_provider: LockdownClient, insecure):
     """ attempt to observe all builtin firmware notifications. """
-    service = NotificationProxyService(lockdown=lockdown, insecure=insecure)
+    service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
     for notification in get_notifications():
         service.notify_register_dispatch(notification)
 

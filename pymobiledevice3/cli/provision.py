@@ -24,37 +24,37 @@ def provision():
 
 @provision.command('install', cls=Command)
 @click.argument('profile', type=click.File('rb'))
-def provision_install(lockdown: LockdownClient, profile):
+def provision_install(service_provider: LockdownClient, profile):
     """ install a provision profile (.mobileprovision file) """
-    MisagentService(lockdown=lockdown).install(profile)
+    MisagentService(lockdown=service_provider).install(profile)
 
 
 @provision.command('remove', cls=Command)
 @click.argument('profile_id')
-def provision_remove(lockdown: LockdownClient, profile_id):
+def provision_remove(service_provider: LockdownClient, profile_id):
     """ remove a provision profile """
-    MisagentService(lockdown=lockdown).remove(profile_id)
+    MisagentService(lockdown=service_provider).remove(profile_id)
 
 
 @provision.command('clear', cls=Command)
-def provision_clear(lockdown: LockdownClient):
+def provision_clear(service_provider: LockdownClient):
     """ remove all provision profiles """
-    for profile in MisagentService(lockdown=lockdown).copy_all():
-        MisagentService(lockdown=lockdown).remove(profile.plist['UUID'])
+    for profile in MisagentService(lockdown=service_provider).copy_all():
+        MisagentService(lockdown=service_provider).remove(profile.plist['UUID'])
 
 
 @provision.command('list', cls=Command)
 @click.option('--color/--no-color', default=True)
-def provision_list(lockdown: LockdownClient, color):
+def provision_list(service_provider: LockdownClient, color):
     """ list installed provision profiles """
-    print_json([p.plist for p in MisagentService(lockdown=lockdown).copy_all()], colored=color)
+    print_json([p.plist for p in MisagentService(lockdown=service_provider).copy_all()], colored=color)
 
 
 @provision.command('dump', cls=Command)
 @click.argument('out', type=click.Path(file_okay=False, dir_okay=True, exists=True))
-def provision_dump(lockdown: LockdownClient, out):
+def provision_dump(service_provider: LockdownClient, out):
     """ dump installed provision profiles to specified location """
-    for profile in MisagentService(lockdown=lockdown).copy_all():
+    for profile in MisagentService(lockdown=service_provider).copy_all():
         filename = f'{profile.plist["UUID"]}.mobileprovision'
         logger.info(f'downloading {filename}')
         (Path(out) / filename).write_bytes(profile.buf)

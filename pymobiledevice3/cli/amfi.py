@@ -22,13 +22,13 @@ def amfi():
 
 
 @amfi.command(cls=Command)
-def enable_developer_mode(lockdown: LockdownClient):
+def enable_developer_mode(service_provider: LockdownClient):
     """ enable developer mode """
-    AmfiService(lockdown).enable_developer_mode()
+    AmfiService(service_provider).enable_developer_mode()
 
 
 @amfi.command(cls=Command)
 @click.option('--color/--no-color', default=True)
-def developer_mode_status(lockdown: LockdownClient, color):
+def developer_mode_status(service_provider: LockdownClient, color):
     """ query developer mode status """
-    print_json(lockdown.developer_mode_status, colored=color)
+    print_json(service_provider.developer_mode_status, colored=color)

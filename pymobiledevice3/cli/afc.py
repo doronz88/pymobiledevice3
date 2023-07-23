@@ -18,38 +18,38 @@ def afc():
 
 
 @afc.command('shell', cls=Command)
-def afc_shell(lockdown: LockdownClient):
+def afc_shell(service_provider: LockdownClient):
     """ open an AFC shell rooted at /var/mobile/Media """
-    AfcShell(lockdown=lockdown).cmdloop()
+    AfcShell(lockdown=service_provider).cmdloop()
 
 
 @afc.command('pull', cls=Command)
 @click.argument('remote_file', type=click.Path(exists=False))
 @click.argument('local_file', type=click.File('wb'))
-def afc_pull(lockdown: LockdownClient, remote_file, local_file):
+def afc_pull(service_provider: LockdownClient, remote_file, local_file):
     """ pull remote file from /var/mobile/Media """
-    local_file.write(AfcService(lockdown=lockdown).get_file_contents(remote_file))
+    local_file.write(AfcService(lockdown=service_provider).get_file_contents(remote_file))
 
 
 @afc.command('push', cls=Command)
 @click.argument('local_file', type=click.File('rb'))
 @click.argument('remote_file', type=click.Path(exists=False))
-def afc_push(lockdown: LockdownClient, local_file, remote_file):
+def afc_push(service_provider: LockdownClient, local_file, remote_file):
     """ push local file into /var/mobile/Media """
-    AfcService(lockdown=lockdown).set_file_contents(remote_file, local_file.read())
+    AfcService(lockdown=service_provider).set_file_contents(remote_file, local_file.read())
 
 
 @afc.command('ls', cls=Command)
 @click.argument('remote_file', type=click.Path(exists=False))
 @click.option('-r', '--recursive', is_flag=True)
-def afc_ls(lockdown: LockdownClient, remote_file, recursive):
+def afc_ls(service_provider: LockdownClient, remote_file, recursive):
     """ perform a dirlist rooted at /var/mobile/Media """
-    for path in AfcService(lockdown=lockdown).dirlist(remote_file, -1 if recursive else 1):
+    for path in AfcService(lockdown=service_provider).dirlist(remote_file, -1 if recursive else 1):
         print(path)
 
 
 @afc.command('rm', cls=Command)
 @click.argument('remote_file', type=click.Path(exists=False))
-def afc_rm(lockdown: LockdownClient, remote_file):
+def afc_rm(service_provider: LockdownClient, remote_file):
     """ remove a file rooted at /var/mobile/Media """
-    AfcService(lockdown=lockdown).rm(remote_file)
+    AfcService(lockdown=service_provider).rm(remote_file)

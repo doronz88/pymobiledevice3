@@ -19,9 +19,9 @@ def crash():
 
 @crash.command('clear', cls=Command)
 @click.option('-f', '--flush', is_flag=True, default=False, help='flush before clear')
-def crash_clear(lockdown: LockdownClient, flush):
+def crash_clear(service_provider: LockdownClient, flush):
     """ clear(/remove) all crash reports """
-    crash_manager = CrashReportsManager(lockdown)
+    crash_manager = CrashReportsManager(service_provider)
     if flush:
         crash_manager.flush()
     crash_manager.clear()
@@ -31,49 +31,49 @@ def crash_clear(lockdown: LockdownClient, flush):
 @click.argument('out', type=click.Path(file_okay=False))
 @click.argument('remote_file', type=click.Path(), required=False)
 @click.option('-e', '--erase', is_flag=True)
-def crash_pull(lockdown: LockdownClient, out, remote_file, erase):
+def crash_pull(service_provider: LockdownClient, out, remote_file, erase):
     """ pull all crash reports """
     if remote_file is None:
         remote_file = '/'
-    CrashReportsManager(lockdown).pull(out, remote_file, erase)
+    CrashReportsManager(service_provider).pull(out, remote_file, erase)
 
 
 @crash.command('shell', cls=Command)
-def crash_shell(lockdown: LockdownClient):
+def crash_shell(service_provider: LockdownClient):
     """ start an afc shell """
-    CrashReportsShell(lockdown=lockdown).cmdloop()
+    CrashReportsShell(lockdown=service_provider).cmdloop()
 
 
 @crash.command('ls', cls=Command)
 @click.argument('remote_file', type=click.Path(), required=False)
 @click.option('-d', '--depth', type=click.INT, default=1)
-def crash_ls(lockdown: LockdownClient, remote_file, depth):
+def crash_ls(service_provider: LockdownClient, remote_file, depth):
     """ List  """
     if remote_file is None:
         remote_file = '/'
-    for path in CrashReportsManager(lockdown).ls(remote_file, depth):
+    for path in CrashReportsManager(service_provider).ls(remote_file, depth):
         print(path)
 
 
 @crash.command('flush', cls=Command)
-def crash_mover_flush(lockdown: LockdownClient):
+def crash_mover_flush(service_provider: LockdownClient):
     """ trigger com.apple.crashreportmover to flush all products into CrashReports directory """
-    CrashReportsManager(lockdown).flush()
+    CrashReportsManager(service_provider).flush()
 
 
 @crash.command('watch', cls=Command)
 @click.argument('name', required=False)
 @click.option('-r', '--raw', is_flag=True)
-def crash_mover_watch(lockdown: LockdownClient, name, raw):
+def crash_mover_watch(service_provider: LockdownClient, name, raw):
     """ watch for crash report generation """
-    for crash_report in CrashReportsManager(lockdown).watch(name=name, raw=raw):
+    for crash_report in CrashReportsManager(service_provider).watch(name=name, raw=raw):
         print(crash_report)
 
 
 @crash.command('sysdiagnose', cls=Command)
 @click.argument('out', type=click.Path(exists=False, dir_okay=False, file_okay=True))
 @click.option('-e', '--erase', is_flag=True, help='erase file after pulling')
-def crash_sysdiagnose(lockdown: LockdownClient, out, erase):
+def crash_sysdiagnose(service_provider: LockdownClient, out, erase):
     """ get a sysdiagnose archive from device (requires user interaction) """
     print('Press Power+VolUp+VolDown for 0.215 seconds')
-    CrashReportsManager(lockdown).get_new_sysdiagnose(out, erase=erase)
+    CrashReportsManager(service_provider).get_new_sysdiagnose(out, erase=erase)
