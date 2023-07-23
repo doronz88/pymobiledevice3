@@ -61,8 +61,7 @@ class AppServiceService(CoreDeviceService):
                 'standardIOUsesPseudoterminals': True,
                 'startStopped': False,
                 'user': {
-                    'shortName': 'short-name',
-
+                    'active': True,
                 },
                 'platformSpecificOptions': plistlib.dumps({}),
             },
