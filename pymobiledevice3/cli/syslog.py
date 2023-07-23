@@ -27,9 +27,9 @@ def syslog():
 
 
 @syslog.command('live-old', cls=Command)
-def syslog_live_old(lockdown: LockdownClient):
+def syslog_live_old(service_provider: LockdownClient):
     """ view live syslog lines in raw bytes form from old relay """
-    for line in SyslogService(lockdown=lockdown).watch():
+    for line in SyslogService(lockdown=service_provider).watch():
         print(line)
 
 
@@ -90,7 +90,7 @@ def format_line(color, pid, syslog_entry, include_label):
 @click.option('include_label', '--label', is_flag=True, help='should include label')
 @click.option('-e', '--regex', multiple=True, help='filter only lines matching given regex')
 @click.option('-ei', '--insensitive-regex', multiple=True, help='filter only lines matching given regex (insensitive)')
-def syslog_live(lockdown: LockdownClient, out, color, pid, process_name, match, match_insensitive, include_label, regex,
+def syslog_live(service_provider: LockdownClient, out, color, pid, process_name, match, match_insensitive, include_label, regex,
                 insensitive_regex):
     """ view live syslog lines """
 
@@ -102,7 +102,7 @@ def syslog_live(lockdown: LockdownClient, out, color, pid, process_name, match, 
             return line.replace(m.group(1), colored(m.group(1), attrs=['bold', 'underline']))
         return None
 
-    for syslog_entry in OsTraceService(lockdown=lockdown).syslog(pid=pid):
+    for syslog_entry in OsTraceService(lockdown=service_provider).syslog(pid=pid):
         if process_name:
             if posixpath.basename(syslog_entry.filename) != process_name:
                 continue
@@ -157,7 +157,7 @@ def syslog_live(lockdown: LockdownClient, out, color, pid, process_name, match, 
 @click.option('--size-limit', type=click.INT)
 @click.option('--age-limit', type=click.INT)
 @click.option('--start-time', type=click.INT)
-def syslog_collect(lockdown: LockdownClient, out, size_limit, age_limit, start_time):
+def syslog_collect(service_provider: LockdownClient, out, size_limit, age_limit, start_time):
     """
     Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
     If the filename doesn't exist, system_logs.logarchive will be created in the given directory.
@@ -173,4 +173,4 @@ def syslog_collect(lockdown: LockdownClient, out, size_limit, age_limit, start_t
         logger.warning('given out path doesn\'t end with a .logarchive - consider renaming to be able to view '
                        'the file with the likes of the Console.app and the `log show` utilities')
 
-    OsTraceService(lockdown=lockdown).collect(out, size_limit=size_limit, age_limit=age_limit, start_time=start_time)
+    OsTraceService(lockdown=service_provider).collect(out, size_limit=size_limit, age_limit=age_limit, start_time=start_time)

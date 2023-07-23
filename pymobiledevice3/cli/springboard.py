@@ -30,15 +30,15 @@ def state():
 
 @state.command('get', cls=Command)
 @click.option('--color/--no-color', default=True)
-def state_get(lockdown: LockdownClient, color):
+def state_get(service_provider: LockdownClient, color):
     """ get icon state """
-    print_json(SpringBoardServicesService(lockdown=lockdown).get_icon_state(), colored=color)
+    print_json(SpringBoardServicesService(lockdown=service_provider).get_icon_state(), colored=color)
 
 
 @springboard.command('shell', cls=Command)
-def springboard_shell(lockdown: LockdownClient):
+def springboard_shell(service_provider: LockdownClient):
     """ open a shell to communicate with SpringBoardServicesService """
-    service = SpringBoardServicesService(lockdown=lockdown)
+    service = SpringBoardServicesService(lockdown=service_provider)
     IPython.embed(
         header=SHELL_USAGE,
         user_ns={
@@ -49,9 +49,9 @@ def springboard_shell(lockdown: LockdownClient):
 @springboard.command('icon', cls=Command)
 @click.argument('bundle_id')
 @click.argument('out', type=click.File('wb'))
-def springboard_icon(lockdown: LockdownClient, bundle_id, out):
+def springboard_icon(service_provider: LockdownClient, bundle_id, out):
     """ get application's icon """
-    out.write(SpringBoardServicesService(lockdown=lockdown).get_icon_pngdata(bundle_id))
+    out.write(SpringBoardServicesService(lockdown=service_provider).get_icon_pngdata(bundle_id))
 
 
 @springboard.command('orientation', cls=Command)
@@ -62,6 +62,6 @@ def springboard_orientation(lockdown: LockdownClient):
 
 @springboard.command('wallpaper', cls=Command)
 @click.argument('out', type=click.File('wb'))
-def springboard_wallpaper(lockdown: LockdownClient, out):
+def springboard_wallpaper(service_provider: LockdownClient, out):
     """ get wallpapaer """
-    out.write(SpringBoardServicesService(lockdown=lockdown).get_wallpaper_pngdata())
+    out.write(SpringBoardServicesService(lockdown=service_provider).get_wallpaper_pngdata())

@@ -41,9 +41,9 @@ def print_packet(packet, color: bool):
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of packets to sniff. Omit to endless sniff.')
 @click.option('--process', default=None, help='Process to filter. Omit for all.')
 @click.option('--color/--no-color', default=True)
-def pcap(lockdown: LockdownClient, out: IO, count: int, process: str, color: bool):
+def pcap(service_provider: LockdownClient, out: IO, count: int, process: str, color: bool):
     """ sniff device traffic """
-    service = PcapdService(lockdown=lockdown)
+    service = PcapdService(lockdown=service_provider)
     packets_generator = service.watch(packets_count=count, process=process)
 
     if out is not None:

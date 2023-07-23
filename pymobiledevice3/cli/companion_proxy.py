@@ -19,6 +19,6 @@ def companion():
 
 @companion.command('list', cls=Command)
 @click.option('--color/--no-color', default=True)
-def companion_list(lockdown: LockdownClient, color):
+def companion_list(service_provider: LockdownClient, color):
     """ list all paired companion devices """
-    print_json(CompanionProxyService(lockdown).list(), colored=color, default=lambda x: '<non-serializable>')
+    print_json(CompanionProxyService(service_provider).list(), colored=color, default=lambda x: '<non-serializable>')
