@@ -6,7 +6,7 @@ from typing import Any, List, Mapping
 from construct import Aligned, Array, Bytes, Const, CString, Default, Double, Enum, ExprAdapter, FlagsEnum, \
     GreedyBytes, Hex, If, Int32ul, Int64sl, Int64ul, LazyBound
 from construct import Optional as ConstructOptional
-from construct import Prefixed, Probe, Struct, Switch, this
+from construct import Pass, Prefixed, Probe, Struct, Switch, this
 
 XpcMessageType = Enum(Hex(Int32ul),
                       NULL=0x00001000,
@@ -47,7 +47,7 @@ XpcFlags = FlagsEnum(Hex(Int32ul),
                      INIT_HANDSHAKE=0x00400000,
                      )
 AlignedString = Aligned(4, CString('utf8'))
-XpcNull = None
+XpcNull = Pass
 XpcBool = Int32ul
 XpcInt64 = Int64sl
 XpcUInt64 = Int64ul
@@ -173,6 +173,14 @@ def _decode_xpc_file_transfer(xpc_object) -> FileTransferType:
     return FileTransferType(transfer_size=_decode_xpc_dictionary(xpc_object.data.data)['s'])
 
 
+def _decode_xpc_double(xpc_object) -> float:
+    return xpc_object.data
+
+
+def _decode_xpc_null(xpc_object) -> None:
+    return None
+
+
 def decode_xpc_object(xpc_object) -> Any:
     decoders = {
         XpcMessageType.DICTIONARY: _decode_xpc_dictionary,
@@ -185,6 +193,8 @@ def decode_xpc_object(xpc_object) -> Any:
         XpcMessageType.DATA: _decode_xpc_data,
         XpcMessageType.DATE: _decode_xpc_date,
         XpcMessageType.FILE_TRANSFER: _decode_xpc_file_transfer,
+        XpcMessageType.DOUBLE: _decode_xpc_double,
+        XpcMessageType.NULL: _decode_xpc_null,
     }
     decoder = decoders.get(xpc_object.type)
     if decoder is None:
@@ -248,6 +258,20 @@ def _build_xpc_double(payload: float) -> Mapping:
     }
 
 
+def _build_xpc_uuid(payload: uuid.UUID) -> Mapping:
+    return {
+        'type': XpcMessageType.UUID,
+        'data': payload.bytes,
+    }
+
+
+def _build_xpc_null(payload: None) -> Mapping:
+    return {
+        'type': XpcMessageType.NULL,
+        'data': None,
+    }
+
+
 def _build_xpc_uint64(payload: XpcUInt64Type) -> Mapping:
     return {
         'type': XpcMessageType.UINT64,
@@ -263,6 +287,8 @@ def _build_xpc_int64(payload: XpcInt64Type) -> Mapping:
 
 
 def _build_xpc_object(payload: Any) -> Mapping:
+    if payload is None:
+        return _build_xpc_null(payload)
     payload_builders = {
         list: _build_xpc_array,
         dict: _build_xpc_dictionary,
@@ -271,6 +297,7 @@ def _build_xpc_object(payload: Any) -> Mapping:
         bytes: _build_xpc_data,
         bytearray: _build_xpc_data,
         float: _build_xpc_double,
+        uuid.UUID: _build_xpc_uuid,
         'XpcUInt64Type': _build_xpc_uint64,
         'XpcInt64Type': _build_xpc_int64,
     }

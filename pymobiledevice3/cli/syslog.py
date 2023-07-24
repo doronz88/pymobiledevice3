@@ -90,7 +90,8 @@ def format_line(color, pid, syslog_entry, include_label):
 @click.option('include_label', '--label', is_flag=True, help='should include label')
 @click.option('-e', '--regex', multiple=True, help='filter only lines matching given regex')
 @click.option('-ei', '--insensitive-regex', multiple=True, help='filter only lines matching given regex (insensitive)')
-def syslog_live(service_provider: LockdownClient, out, color, pid, process_name, match, match_insensitive, include_label, regex,
+def syslog_live(service_provider: LockdownClient, out, color, pid, process_name, match, match_insensitive,
+                include_label, regex,
                 insensitive_regex):
     """ view live syslog lines """
 
@@ -173,4 +174,5 @@ def syslog_collect(service_provider: LockdownClient, out, size_limit, age_limit,
         logger.warning('given out path doesn\'t end with a .logarchive - consider renaming to be able to view '
                        'the file with the likes of the Console.app and the `log show` utilities')
 
-    OsTraceService(lockdown=service_provider).collect(out, size_limit=size_limit, age_limit=age_limit, start_time=start_time)
+    OsTraceService(lockdown=service_provider).collect(out, size_limit=size_limit, age_limit=age_limit,
+                                                      start_time=start_time)
