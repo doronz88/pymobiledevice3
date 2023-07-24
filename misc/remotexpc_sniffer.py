@@ -7,13 +7,13 @@ import coloredlogs
 from construct import ConstError, StreamError
 from hexdump import hexdump
 from hyperframe.frame import DataFrame, Frame, GoAwayFrame, HeadersFrame
-from remotexpc import HTTP2_MAGIC
 from scapy.layers.inet import IP, TCP
 from scapy.layers.inet6 import IPv6
 from scapy.packet import Packet
 from scapy.sendrecv import sniff
 
 from pymobiledevice3.remote.core_device_tunnel_service import PairingDataComponentTLVBuf
+from pymobiledevice3.remote.remotexpc import HTTP2_MAGIC
 from pymobiledevice3.remote.xpc_message import XpcWrapper, decode_xpc_object
 
 logger = logging.getLogger()

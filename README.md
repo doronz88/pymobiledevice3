@@ -179,18 +179,18 @@ There is A LOT you may do on the device using `pymobiledevice3`. This is just a 
         * `pymobiledevice3 webinspector opened-tabs`
     * The following will require also the Remote Automation feature to be turned on:
         * Get interactive JavaScript shell on new remote automation tab:
-            * `pymobiledevice3 webinspector js_shell --automation` 
+            * `pymobiledevice3 webinspector js_shell --automation`
         * Launch an automation session to view a given URL:
             * `pymobiledevice3 webinspector launch URL`
         * Get a a selenium-like shell:
             * `pymobiledevice3 webinspector shell`
-* Mount DeveloperDiskImage:
-    * `pymobiledevice3 mounter mount`
+* Mount DeveloperDiskImage (On iOS>=17.0, each command will require an additional `--rsd` option):
+    * `pymobiledevice3 mounter auto-mount`
     * The following will assume the DeveloperDiskImage is already mounted:
         * Simulate an `x y` location:
             * `pymobiledevice3 developer simulate-location set x y`
         * Taking a screenshot from the device:
-            * `pymobiledevice3 developer screenshot /path/to/screen.png`
+            * `pymobiledevice3 developer dvt screenshot /path/to/screen.png`
         * View detailed process list (including ppid, uid, guid, sandboxed, etc...):
             * `pymobiledevice3 developer dvt sysmon process single`
         * Sniffing oslog:
