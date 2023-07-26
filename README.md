@@ -189,6 +189,8 @@ There is A LOT you may do on the device using `pymobiledevice3`. This is just a 
     * The following will assume the DeveloperDiskImage is already mounted:
         * Simulate an `x y` location:
             * `pymobiledevice3 developer simulate-location set x y`
+            * Or the following for iOS>=17.0:
+                * `pymobiledevice3 developer dvt simulate-location set --rsd HOST PORT -- x y`
         * Taking a screenshot from the device:
             * `pymobiledevice3 developer dvt screenshot /path/to/screen.png`
         * View detailed process list (including ppid, uid, guid, sandboxed, etc...):

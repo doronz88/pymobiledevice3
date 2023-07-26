@@ -21,7 +21,6 @@ from pymobiledevice3.cli.cli_common import BASED_INT, Command, RSDCommand, defau
 from pymobiledevice3.exceptions import DeviceAlreadyInUseError, DvtDirListError, ExtractingStackshotError, \
     UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -37,6 +36,7 @@ from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import Co
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
 from pymobiledevice3.services.dvt.instruments.graphics import Graphics
+from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
 from pymobiledevice3.services.dvt.instruments.network_monitor import ConnectionDetectionEvent, NetworkMonitor
 from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
@@ -908,6 +908,32 @@ def dvt_har(service_provider: LockdownClient):
         with ActivityTraceTap(dvt, enable_http_archive_logging=True) as tap:
             while True:
                 tap.channel.receive_message()
+
+
+@dvt.group('simulate-location')
+def dvt_simulate_location():
+    """ simulate-location options. """
+    pass
+
+
+@dvt_simulate_location.command('clear', cls=Command)
+def dvt_simulate_location_clear(service_provider: LockdownClient):
+    """ clear simulated location """
+    with DvtSecureSocketProxyService(service_provider) as dvt:
+        LocationSimulation(dvt).stop()
+
+
+@dvt_simulate_location.command('set', cls=Command)
+@click.argument('latitude', type=click.FLOAT)
+@click.argument('longitude', type=click.FLOAT)
+def dvt_simulate_location_set(service_provider: LockdownClient, latitude, longitude):
+    """
+    set a simulated location.
+    try:
+        ... set -- 40.690008 -74.045843 for liberty island
+    """
+    with DvtSecureSocketProxyService(service_provider) as dvt:
+        LocationSimulation(dvt).simulate_location(latitude, longitude)
 
 
 @developer.group()
