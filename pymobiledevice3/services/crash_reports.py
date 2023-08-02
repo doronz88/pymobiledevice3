@@ -1,5 +1,6 @@
 import logging
 import posixpath
+import time
 from typing import Generator, List
 
 from cmd2 import Cmd2ArgumentParser, with_argparser
@@ -12,6 +13,9 @@ from pymobiledevice3.services.afc import AfcService, AfcShell
 from pymobiledevice3.services.os_trace import OsTraceService
 
 SYSDIAGNOSE_PROCESS_NAMES = ('sysdiagnose', 'sysdiagnosed')
+
+# on iOS17, we need to wait for a moment before tryint to fetch the sysdiagnose archive
+IOS17_SYSDIAGNOSE_DELAY = 1
 
 
 class CrashReportsManager:
@@ -152,6 +156,7 @@ class CrashReportsManager:
                 break
 
         self.afc.wait_exists(sysdiagnose_filename)
+        time.sleep(IOS17_SYSDIAGNOSE_DELAY)
         self.pull(out, entry=sysdiagnose_filename, erase=erase)
 
 
