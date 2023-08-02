@@ -380,8 +380,11 @@ class Recovery(BaseRestore):
         self.send_component_and_command('RestoreDeviceTree', 'devicetree')
 
         if self.build_identity.has_component('RestoreSEP'):
-            # send rsepfirmware and load it
-            self.send_component_and_command('RestoreSEP', 'rsepfirmware')
+            # attempt to send rsepfirmware and load it, otherwise continue
+            try:
+                self.send_component_and_command('RestoreSEP', 'rsepfirmware')
+            except USBError:
+                pass
 
         self.send_kernelcache()
 
