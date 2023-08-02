@@ -2,6 +2,7 @@ import ctypes
 import datetime
 import shutil
 import struct
+import warnings
 from pathlib import Path
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
@@ -9,6 +10,7 @@ from pymobiledevice3.exceptions import PyMobileDevice3Exception
 SIZE_FORMAT = '>I'
 CODE_FORMAT = '>B'
 CODE_FILE_DATA = 0xc
+CODE_ERROR_REMOTE = 0xb
 CODE_ERROR_LOCAL = 0x6
 CODE_SUCCESS = 0
 FILE_TRANSFER_TERMINATOR = b'\x00\x00\x00\x00'
@@ -125,6 +127,12 @@ class DeviceLink:
                     size, = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
                     code, = struct.unpack(CODE_FORMAT, self.service.recvall(struct.calcsize(CODE_FORMAT)))
                     size -= struct.calcsize(CODE_FORMAT)
+            if code == CODE_ERROR_REMOTE:
+                # iOS 17 beta devices give this error for: backup_manifest.db
+                error_message = self.service.recvall(size).decode()
+                warnings.warn(f'Failed to fully upload: {file_name}. Device file name: {device_name}. Reason: '
+                              f'{error_message}')
+                continue
             assert code == CODE_SUCCESS
         self.status_response(0)
 
