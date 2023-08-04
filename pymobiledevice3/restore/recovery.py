@@ -390,7 +390,9 @@ class Recovery(BaseRestore):
 
     def dfu_enter_recovery(self):
         self.send_component('iBSS')
-        self.reconnect_irecv(is_recovery=True)
+        self.reconnect_irecv()
+        if 'SRTG' in self.device.irecv._device_info:
+            raise PyMobileDevice3Exception('Device failed to enter recovery')
 
         if self.build_identity.build_manifest.build_major > 8:
             old_nonce = self.device.irecv.ap_nonce
