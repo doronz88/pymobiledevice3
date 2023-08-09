@@ -151,7 +151,7 @@ class RemoteXPCSniffer:
         if xpc_message is None:
             return
 
-        logger.info(f'As Python Object: {pformat(xpc_message)}')
+        logger.info(f'As Python Object (#{frame.stream_id}): {pformat(xpc_message)}')
 
         # print `pairingData` if exists, since it contains an inner struct
         if 'value' not in xpc_message:
