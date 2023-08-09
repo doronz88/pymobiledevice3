@@ -1,11 +1,16 @@
 import logging
 from abc import abstractmethod
+from typing import Optional
 
 from pymobiledevice3.exceptions import StartServiceError
 from pymobiledevice3.service_connection import LockdownServiceConnection
 
 
 class LockdownServiceProvider:
+    def __init__(self):
+        self.udid: Optional[str] = None
+        self.product_type: Optional[str] = None
+
     @property
     @abstractmethod
     def product_version(self) -> str:
