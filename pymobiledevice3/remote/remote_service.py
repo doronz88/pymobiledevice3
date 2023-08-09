@@ -14,6 +14,7 @@ class RemoteService:
 
     def connect(self) -> None:
         self.service = self.rsd.start_remote_service(self.service_name)
+        self.service.connect()
 
     def __enter__(self):
         self.connect()

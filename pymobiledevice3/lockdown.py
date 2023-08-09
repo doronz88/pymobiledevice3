@@ -103,9 +103,8 @@ def _reconnect_on_remote_close(f):
 
 class LockdownClient(ABC, LockdownServiceProvider):
     def __init__(self, service: LockdownServiceConnection, host_id: str, identifier: str = None,
-                 label: str = DEFAULT_LABEL,
-                 system_buid: str = SYSTEM_BUID, pair_record: Mapping = None, pairing_records_cache_folder: Path = None,
-                 port: int = SERVICE_PORT):
+                 label: str = DEFAULT_LABEL, system_buid: str = SYSTEM_BUID, pair_record: Mapping = None,
+                 pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT):
         """
         Create a LockdownClient instance
 
@@ -118,6 +117,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         :param pairing_records_cache_folder: Use the following location to search and save pair records
         :param port: lockdownd service port
         """
+        super().__init__()
         self.logger = logging.getLogger(__name__)
         self.service = service
         self.identifier = identifier

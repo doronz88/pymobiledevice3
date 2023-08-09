@@ -24,6 +24,7 @@ RSD_PORT = 58783
 
 class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def __init__(self, address: Tuple[str, int]):
+        super().__init__()
         self.service = RemoteXPCConnection(address)
         self.peer_info = None
 
@@ -34,6 +35,8 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def connect(self) -> None:
         self.service.connect()
         self.peer_info = self.service.receive_response()
+        self.udid = self.peer_info['Properties']['UniqueDeviceID']
+        self.product_type = self.peer_info['Properties']['ProductType']
 
     def start_lockdown_service_without_checkin(self, name: str) -> LockdownServiceConnection:
         return LockdownServiceConnection.create_using_tcp(self.service.address[0], self._get_service_port(name))
@@ -68,7 +71,6 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
 
     def start_remote_service(self, name: str) -> RemoteXPCConnection:
         service = RemoteXPCConnection((self.service.address[0], self._get_service_port(name)))
-        service.connect()
         return service
 
     def start_service(self, name: str) -> Union[RemoteXPCConnection, LockdownServiceConnection]:
@@ -83,6 +85,10 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.service.close()
+
+    def __repr__(self) -> str:
+        return (f'<{self.__class__.__name__} PRODUCT:{self.product_type} VERSION:{self.product_version} '
+                f'UDID:{self.udid}>')
 
     def _get_service_port(self, name: str) -> int:
         service = self.peer_info['Services'].get(name)
