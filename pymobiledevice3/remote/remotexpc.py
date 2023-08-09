@@ -2,12 +2,15 @@ import socket
 from socket import create_connection
 from typing import Generator, Mapping, Optional, Tuple
 
+import IPython
 from construct import StreamError
 from hyperframe.frame import DataFrame, Frame, GoAwayFrame, HeadersFrame, RstStreamFrame, SettingsFrame, \
     WindowUpdateFrame
+from pygments import formatters, highlight, lexers
 
 from pymobiledevice3.exceptions import StreamClosedError
-from pymobiledevice3.remote.xpc_message import XpcFlags, XpcWrapper, create_xpc_wrapper, decode_xpc_object
+from pymobiledevice3.remote.xpc_message import XpcFlags, XpcInt64Type, XpcUInt64Type, XpcWrapper, create_xpc_wrapper, \
+    decode_xpc_object
 
 # Extracted by sniffing `remoted` traffic via Wireshark
 DEFAULT_SETTINGS_MAX_CONCURRENT_STREAMS = 100
@@ -20,6 +23,13 @@ HTTP2_MAGIC = b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n'
 ROOT_CHANNEL = 1
 FILE_TRANSFER_CHANNEL = 2
 REPLY_CHANNEL = 3
+
+SHELL_USAGE = """
+# This shell allows you to communicate directly with every RemoteXPC service.
+
+# For example, you can do the following:
+resp = client.send_receive_request({"Command": "DoSomething"})
+"""
 
 
 class RemoteXPCConnection:
@@ -83,6 +93,16 @@ class RemoteXPCConnection:
     def send_receive_request(self, data: Mapping):
         self.send_request(data, wanting_reply=True)
         return self.receive_response()
+
+    def shell(self) -> None:
+        IPython.embed(
+            header=highlight(SHELL_USAGE, lexers.PythonLexer(),
+                             formatters.TerminalTrueColorFormatter(style='native')),
+            user_ns={
+                'client': self,
+                'XpcInt64Type': XpcInt64Type,
+                'XpcUInt64Type': XpcUInt64Type,
+            })
 
     def _do_handshake(self) -> None:
         self.sock.sendall(HTTP2_MAGIC)
