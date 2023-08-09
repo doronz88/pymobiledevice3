@@ -21,7 +21,7 @@ class HeartbeatService(LockdownService):
 
     def start(self, interval=None):
         start = time.time()
-        service = self.lockdown.start_lockdown_service(self.SERVICE_NAME)
+        service = self.lockdown.start_lockdown_service(self.service_name)
 
         while True:
             response = service.recv_plist()
