@@ -21,7 +21,6 @@ FRAME_HEADER_SIZE = 9
 HTTP2_MAGIC = b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n'
 
 ROOT_CHANNEL = 1
-FILE_TRANSFER_CHANNEL = 2
 REPLY_CHANNEL = 3
 
 SHELL_USAGE = """
@@ -37,7 +36,7 @@ class RemoteXPCConnection:
         self._previous_frame_data = b''
         self.address = address
         self.sock: Optional[socket.socket] = None
-        self.next_message_id: Mapping[int: int] = {ROOT_CHANNEL: 0, FILE_TRANSFER_CHANNEL: 0, REPLY_CHANNEL: 0}
+        self.next_message_id: Mapping[int: int] = {ROOT_CHANNEL: 0, REPLY_CHANNEL: 0}
         self.peer_info = None
 
     def __enter__(self) -> 'RemoteXPCConnection':
@@ -59,12 +58,22 @@ class RemoteXPCConnection:
             data, message_id=self.next_message_id[ROOT_CHANNEL], wanting_reply=wanting_reply)
         self.sock.sendall(DataFrame(stream_id=ROOT_CHANNEL, data=xpc_wrapper).serialize())
 
-    def iter_file_chunks(self, total_size: int) -> Generator[bytes, None, None]:
-        self._open_channel(FILE_TRANSFER_CHANNEL, XpcFlags.FILE_TX_STREAM_RESPONSE)
+    def iter_file_chunks(self, total_size: int, file_idx: int = 0) -> Generator[bytes, None, None]:
+        stream_id = (file_idx + 1) * 2
+        self._open_channel(stream_id, XpcFlags.FILE_TX_STREAM_RESPONSE)
         size = 0
         while size < total_size:
             frame = self._receive_next_data_frame()
-            assert frame.stream_id == FILE_TRANSFER_CHANNEL
+
+            if 'END_STREAM' in frame.flags:
+                continue
+
+            if frame.stream_id != stream_id:
+                xpc_wrapper = XpcWrapper.parse(frame.data)
+                if xpc_wrapper.flags.FILE_TX_STREAM_REQUEST:
+                    continue
+
+            assert frame.stream_id == stream_id, f'got {frame.stream_id} instead of {stream_id}'
             size += len(frame.data)
             yield frame.data
 
@@ -146,6 +155,10 @@ class RemoteXPCConnection:
                 raise StreamClosedError(f'Got {frame}')
             if not isinstance(frame, DataFrame):
                 continue
+
+            if frame.stream_id % 2 == 0 and frame.body_len > 0:
+                self._send_frame(WindowUpdateFrame(stream_id=0, window_increment=frame.body_len))
+                self._send_frame(WindowUpdateFrame(stream_id=frame.stream_id, window_increment=frame.body_len))
 
             return frame
 
