@@ -13,6 +13,7 @@ from typing import List
 
 import click
 from click.exceptions import MissingParameter, UsageError
+from packaging.version import Version
 from pykdebugparser.pykdebugparser import PyKdebugParser
 from termcolor import colored
 
@@ -21,6 +22,7 @@ from pymobiledevice3.cli.cli_common import BASED_INT, Command, RSDCommand, defau
 from pymobiledevice3.exceptions import DeviceAlreadyInUseError, DvtDirListError, ExtractingStackshotError, \
     UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -43,6 +45,7 @@ from pymobiledevice3.services.dvt.instruments.process_control import ProcessCont
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.os_trace import OsTraceService
+from pymobiledevice3.services.remote_fetch_symbols import RemoteFetchSymbolsService
 from pymobiledevice3.services.remote_server import RemoteServer
 from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
@@ -643,40 +646,48 @@ def fetch_symbols():
 
 @fetch_symbols.command('list', cls=Command)
 @click.option('--color/--no-color', default=True)
-def fetch_symbols_list(service_provider: LockdownClient, color: bool):
+def fetch_symbols_list(service_provider: LockdownServiceProvider, color: bool):
     """ list of files to be downloaded """
-    print_json(DtFetchSymbols(service_provider).list_files(), colored=color)
+    if Version(service_provider.product_version) < Version('17.0'):
+        print_json(DtFetchSymbols(service_provider).list_files(), colored=color)
+    else:
+        with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
+            print_json([f.file_path for f in fetch_symbols.get_dsc_file_list()], colored=color)
 
 
 @fetch_symbols.command('download', cls=Command)
 @click.argument('out', type=click.Path(dir_okay=True, file_okay=False))
-def fetch_symbols_download(service_provider: LockdownClient, out):
+def fetch_symbols_download(service_provider: LockdownServiceProvider, out):
     """ download the linker and dyld cache to a specified directory """
-    fetch_symbols = DtFetchSymbols(service_provider)
-    files = fetch_symbols.list_files()
+
     out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
 
-    if not os.path.exists(out):
-        os.makedirs(out)
+    if Version(service_provider.product_version) < Version('17.0'):
+        fetch_symbols = DtFetchSymbols(service_provider)
+        files = fetch_symbols.list_files()
 
-    downloaded_files = set()
+        downloaded_files = set()
 
-    for i, file in enumerate(files):
-        if file.startswith('/'):
-            # trim root to allow relative download
-            file = file[1:]
-        file = out / file
+        for i, file in enumerate(files):
+            if file.startswith('/'):
+                # trim root to allow relative download
+                file = file[1:]
+            file = out / file
 
-        if file not in downloaded_files:
-            # first time the file was seen in list, means we can safely remove any old copy if any
-            file.unlink(missing_ok=True)
+            if file not in downloaded_files:
+                # first time the file was seen in list, means we can safely remove any old copy if any
+                file.unlink(missing_ok=True)
 
-        downloaded_files.add(file)
-        file.parent.mkdir(parents=True, exist_ok=True)
-        with open(file, 'ab') as f:
-            # same file may appear twice, so we'll need to append data into it
-            logger.info(f'writing to: {file}')
-            fetch_symbols.get_file(i, f)
+            downloaded_files.add(file)
+            file.parent.mkdir(parents=True, exist_ok=True)
+            with open(file, 'ab') as f:
+                # same file may appear twice, so we'll need to append data into it
+                logger.info(f'writing to: {file}')
+                fetch_symbols.get_file(i, f)
+    else:
+        with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
+            fetch_symbols.download(out)
 
 
 @developer.group('simulate-location')
