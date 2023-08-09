@@ -36,3 +36,4 @@ srptools
 aioquic
 developer_disk_image>=0.0.2
 opack
+psutil
