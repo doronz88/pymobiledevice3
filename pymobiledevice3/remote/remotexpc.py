@@ -2,12 +2,15 @@ import socket
 from socket import create_connection
 from typing import Generator, Mapping, Optional, Tuple
 
+import IPython
 from construct import StreamError
 from hyperframe.frame import DataFrame, Frame, GoAwayFrame, HeadersFrame, RstStreamFrame, SettingsFrame, \
     WindowUpdateFrame
+from pygments import formatters, highlight, lexers
 
 from pymobiledevice3.exceptions import StreamClosedError
-from pymobiledevice3.remote.xpc_message import XpcFlags, XpcWrapper, create_xpc_wrapper, decode_xpc_object
+from pymobiledevice3.remote.xpc_message import XpcFlags, XpcInt64Type, XpcUInt64Type, XpcWrapper, create_xpc_wrapper, \
+    decode_xpc_object
 
 # Extracted by sniffing `remoted` traffic via Wireshark
 DEFAULT_SETTINGS_MAX_CONCURRENT_STREAMS = 100
@@ -18,8 +21,14 @@ FRAME_HEADER_SIZE = 9
 HTTP2_MAGIC = b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n'
 
 ROOT_CHANNEL = 1
-FILE_TRANSFER_CHANNEL = 2
 REPLY_CHANNEL = 3
+
+SHELL_USAGE = """
+# This shell allows you to communicate directly with every RemoteXPC service.
+
+# For example, you can do the following:
+resp = client.send_receive_request({"Command": "DoSomething"})
+"""
 
 
 class RemoteXPCConnection:
@@ -27,7 +36,7 @@ class RemoteXPCConnection:
         self._previous_frame_data = b''
         self.address = address
         self.sock: Optional[socket.socket] = None
-        self.next_message_id: Mapping[int: int] = {ROOT_CHANNEL: 0, FILE_TRANSFER_CHANNEL: 0, REPLY_CHANNEL: 0}
+        self.next_message_id: Mapping[int: int] = {ROOT_CHANNEL: 0, REPLY_CHANNEL: 0}
         self.peer_info = None
 
     def __enter__(self) -> 'RemoteXPCConnection':
@@ -49,12 +58,22 @@ class RemoteXPCConnection:
             data, message_id=self.next_message_id[ROOT_CHANNEL], wanting_reply=wanting_reply)
         self.sock.sendall(DataFrame(stream_id=ROOT_CHANNEL, data=xpc_wrapper).serialize())
 
-    def iter_file_chunks(self, total_size: int) -> Generator[bytes, None, None]:
-        self._open_channel(FILE_TRANSFER_CHANNEL, XpcFlags.FILE_TX_STREAM_RESPONSE)
+    def iter_file_chunks(self, total_size: int, file_idx: int = 0) -> Generator[bytes, None, None]:
+        stream_id = (file_idx + 1) * 2
+        self._open_channel(stream_id, XpcFlags.FILE_TX_STREAM_RESPONSE)
         size = 0
         while size < total_size:
             frame = self._receive_next_data_frame()
-            assert frame.stream_id == FILE_TRANSFER_CHANNEL
+
+            if 'END_STREAM' in frame.flags:
+                continue
+
+            if frame.stream_id != stream_id:
+                xpc_wrapper = XpcWrapper.parse(frame.data)
+                if xpc_wrapper.flags.FILE_TX_STREAM_REQUEST:
+                    continue
+
+            assert frame.stream_id == stream_id, f'got {frame.stream_id} instead of {stream_id}'
             size += len(frame.data)
             yield frame.data
 
@@ -83,6 +102,16 @@ class RemoteXPCConnection:
     def send_receive_request(self, data: Mapping):
         self.send_request(data, wanting_reply=True)
         return self.receive_response()
+
+    def shell(self) -> None:
+        IPython.embed(
+            header=highlight(SHELL_USAGE, lexers.PythonLexer(),
+                             formatters.TerminalTrueColorFormatter(style='native')),
+            user_ns={
+                'client': self,
+                'XpcInt64Type': XpcInt64Type,
+                'XpcUInt64Type': XpcUInt64Type,
+            })
 
     def _do_handshake(self) -> None:
         self.sock.sendall(HTTP2_MAGIC)
@@ -126,6 +155,10 @@ class RemoteXPCConnection:
                 raise StreamClosedError(f'Got {frame}')
             if not isinstance(frame, DataFrame):
                 continue
+
+            if frame.stream_id % 2 == 0 and frame.body_len > 0:
+                self._send_frame(WindowUpdateFrame(stream_id=0, window_increment=frame.body_len))
+                self._send_frame(WindowUpdateFrame(stream_id=frame.stream_id, window_increment=frame.body_len))
 
             return frame
 
