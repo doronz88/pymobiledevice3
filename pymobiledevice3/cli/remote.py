@@ -87,7 +87,14 @@ async def start_quic_tunnel(service_provider: RemoteServiceDiscoveryService, sec
 @click.option('--secrets', type=click.File('wt'), help='TLS keyfile for decrypting with Wireshark')
 def cli_start_quic_tunnel(secrets: TextIO):
     """ start quic tunnel """
-    rsd = prompt_device_list(get_device_list())
+    devices = get_device_list()
+    if not devices:
+        print('No device could be found')
+        return
+    if len(devices) == 1:
+        rsd = devices[0]
+    else:
+        rsd = prompt_device_list(devices)
     asyncio.run(start_quic_tunnel(rsd, secrets), debug=True)
 
 
