@@ -9,16 +9,18 @@ from pymobiledevice3.cli.cli_common import RSDCommand, print_json
 from pymobiledevice3.remote.bonjour import get_remoted_addresses
 from pymobiledevice3.remote.core_device_tunnel_service import create_core_device_tunnel_service
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
+from pymobiledevice3.remote.utils import stop_remoted
 
 logger = logging.getLogger(__name__)
 
 
 def get_device_list() -> List[RemoteServiceDiscoveryService]:
     result = []
-    for address in get_remoted_addresses():
-        rsd = RemoteServiceDiscoveryService((address, RSD_PORT))
-        rsd.connect()
-        result.append(rsd)
+    with stop_remoted():
+        for address in get_remoted_addresses():
+            rsd = RemoteServiceDiscoveryService((address, RSD_PORT))
+            rsd.connect()
+            result.append(rsd)
     return result
 
 
