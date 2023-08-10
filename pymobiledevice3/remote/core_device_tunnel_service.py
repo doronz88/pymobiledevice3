@@ -107,11 +107,12 @@ class RemotePairingTunnel(QuicConnectionProtocol):
         return CDTunnelPacket.build({'body': json.dumps(data).encode()})
 
 
-class CoreDeviceTunnelService:
+class CoreDeviceTunnelService(RemoteService):
+    SERVICE_NAME = 'com.apple.internal.dt.coredevice.untrusted.tunnelservice'
     WIRE_PROTOCOL_VERSION = 19
 
     def __init__(self, rsd: RemoteServiceDiscoveryService):
-        self._logger = logging.getLogger(__name__)
+        super().__init__(rsd, self.SERVICE_NAME)
         self._sequence_number = 0
         self._encrypted_sequence_number = 0
         self.rsd = rsd
@@ -126,7 +127,7 @@ class CoreDeviceTunnelService:
         self.signature = None
 
     def connect(self, autopair: bool = True) -> None:
-        self.service = self.rsd.start_remote_service('com.apple.internal.dt.coredevice.untrusted.tunnelservice')
+        super().connect()
         self.version = self.service.receive_response()['ServiceVersion']
 
         self._attempt_pair_verify()
@@ -158,15 +159,15 @@ class CoreDeviceTunnelService:
         host = self.service.address[0]
         port = parameters['port']
 
-        self._logger.debug(f'Connecting to {host}:{port}')
+        self.logger.debug(f'Connecting to {host}:{port}')
         async with aioquic_connect(
                 host,
                 port,
                 configuration=configuration,
                 create_protocol=RemotePairingTunnel,
         ) as client:
-            self._logger.debug('quic connected')
             return await client.request_tunnel_establish()
+            self.logger.debug('quic connected')
 
     def save_pair_record(self) -> None:
         self.pair_record_path.write_bytes(
