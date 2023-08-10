@@ -17,7 +17,7 @@ requests
 cmd2
 packaging
 pygnuutils>=0.0.7
-cryptography>=35.0.0
+cryptography>=41.0.1
 pycrashreport>=1.0.6
 fastapi[all]
 uvicorn>=0.15.0
@@ -33,6 +33,9 @@ zeroconf
 ifaddr
 hyperframe
 srptools
-aioquic
+aioquic-pmd3>=0.0.1 ; platform_system != "Windows"
 developer_disk_image>=0.0.2
 opack
+psutil
+pytun-pmd3>=0.0.2 ; platform_system != "Windows"
+aiofiles
