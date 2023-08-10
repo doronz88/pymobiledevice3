@@ -789,41 +789,7 @@ The response is just what the invoked function returned.
 
 ## Using `pymobiledevice3` as a client
 
-### Handshake & Pairing
-
-`pymobiledevice3` also includes its own implementation of connecting to `remoted` and performing an RSD handshake.
-You can try it yourself:
-
-```shell
-pymobiledevice3 remote rsd-info --rsd HOST PORT
-```
-
-However, it seems trying to connect from the same host will resolve in a "fight" between `remoted`
-and `pymobiledevice3`. The following message will appear on device syslog:
-
-```
-2023-07-23 22:11:18.608538 remoted{remoted}[50] <Notice>: ncmhost-3> Canceling existing connection to replace it
-```
-
-This will trigger a `close()` on `remoted`'s FD, so it'll try to re-connect - which will now `close()` our socket. To
-overcome this, we stopped the local `remoted` daemon:
-
-```shell
-sudo pkill -SIGSTOP remoted
-```
-
-> **NOTE:** This "fight" will only happen for connections from the USB Ethernet interface. Connections from the created
-> trusted tunnel device should work without any interference.
-
-Now we can initiate a pair:
-
-```shell
-# will trigger a pair (wait user consent)
-pymobiledevice3 remote create-listener
-```
-
-For the QUIC tunnel we still require additional work. Until then, you may reuse the [existing tunnel created by the
-macOS](#reusing-the-macos-trusted-tunnel).
+See [main documentation](/README.md#working-with-developer-tools-ios--170) for details.
 
 ### Accessing services over RemoteXPC
 

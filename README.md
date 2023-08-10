@@ -2,10 +2,13 @@
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
 [![Downloads](https://static.pepy.tech/personalized-badge/pymobiledevice3?period=total&units=none&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/pymobiledevice3)
 
+- [News](#news)
 - [Description](#description)
 - [Installation](#installation)
-    * [Lower iOS versions (<13)](#lower-ios-versions---13-)
+    * [Lower iOS versions (<13)](#lower-ios-versions-13)
 - [Usage](#usage)
+    * [Python API](#python-api)
+    * [Working with developer tools (iOS >= 17.0)](#working-with-developer-tools-ios--170)
     * [Example](#example)
 - [The bits and bytes](#the-bits-and-bytes)
     * [Lockdown services](#lockdown-services)
@@ -15,6 +18,10 @@
             - [Lockdown messages](#lockdown-messages)
             - [Instruments messages](#instruments-messages)
 - [Contributing](#contributing)
+
+# News
+
+See [NEWS](NEWS.md).
 
 # Description
 
@@ -124,6 +131,7 @@ Commands:
   processes        processes cli
   profile          profile options
   provision        privision options
+  remote           remote options
   restore          restore options
   springboard      springboard options
   syslog           syslog options
@@ -131,7 +139,9 @@ Commands:
   webinspector     webinspector options
 ```
 
-Or import the modules and use the API yourself:
+## Python API
+
+You could also import the modules and use the API yourself:
 
 ```python
 from pymobiledevice3.lockdown import create_using_usbmux
@@ -141,6 +151,40 @@ lockdown = create_using_usbmux()
 for line in SyslogService(lockdown=lockdown).watch():
     # just print all syslog lines as is
     print(line)
+```
+
+## Working with developer tools (iOS >= 17.0)
+
+> **NOTE:** Currently, this is only supported on macOS
+
+Starting at iOS 17.0, Apple introduced the new CoreDevice framework to work with iOS devices. This framework relies on
+the [RemoteXPC](misc/RemoteXPC.md) protocol. In order to communicate with the developer services you'll be required to
+first create [trusted tunnel](misc/RemoteXPC.md#trusted-tunnel) as follows:
+
+```shell
+sudo python3 -m pymobiledevice3 remote start-quic-tunnel
+```
+
+The root permissions are required since this will create a new TUN/TAP device which is a high privilege operation.
+The output should be something similar to:
+
+```
+Interface: utun6
+RSD Address: fd7b:e5b:6f53::1
+RSD Port: 64337
+Use the follow connection option:
+--rsd fd7b:e5b:6f53::1 64337
+```
+
+Now, (almost) all of pymobiledevice3 accept an additional `--rsd` option for connecting to the service over this new
+tunnel. You can now try to execute any of them as follows:
+
+```shell
+# Accessing the DVT services
+python3 -m pymobiledevice3 developer dvt ls / --rsd fd7b:e5b:6f53::1 64337
+
+# Or any of the "normal" ones
+python3 -m pymobiledevice3 syslog live --rsd fd7b:e5b:6f53::1 64337
 ```
 
 ## Example
