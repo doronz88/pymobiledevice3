@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import List, TextIO
 
 import click
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -10,6 +11,15 @@ from pymobiledevice3.remote.core_device_tunnel_service import create_core_device
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
 
 logger = logging.getLogger(__name__)
+
+
+def get_device_list() -> List[RemoteServiceDiscoveryService]:
+    result = []
+    for address in get_remoted_addresses():
+        rsd = RemoteServiceDiscoveryService((address, RSD_PORT))
+        rsd.connect()
+        result.append(rsd)
+    return result
 
 
 @click.group()
@@ -29,13 +39,12 @@ def remote_cli():
 def browse(color: bool):
     """ browse devices using bonjour """
     devices = []
-    for address in get_remoted_addresses():
-        with RemoteServiceDiscoveryService((address, RSD_PORT)) as rsd:
-            devices.append({'address': address,
-                            'port': RSD_PORT,
-                            'UniqueDeviceID': rsd.peer_info['Properties']['UniqueDeviceID'],
-                            'ProductType': rsd.peer_info['Properties']['ProductType'],
-                            'OSVersion': rsd.peer_info['Properties']['OSVersion']})
+    for rsd in get_device_list():
+        devices.append({'address': rsd.service.address[0],
+                        'port': RSD_PORT,
+                        'UniqueDeviceID': rsd.peer_info['Properties']['UniqueDeviceID'],
+                        'ProductType': rsd.peer_info['Properties']['ProductType'],
+                        'OSVersion': rsd.peer_info['Properties']['OSVersion']})
     print_json(devices, colored=color)
 
 
