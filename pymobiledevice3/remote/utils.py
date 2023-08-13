@@ -12,8 +12,11 @@ def _get_remoted_process() -> psutil.Process:
         if process.pid == 0:
             # skip kernel task
             continue
-        if process.exe() == REMOTED_PATH:
-            return process
+        try:
+            if process.exe() == REMOTED_PATH:
+                return process
+        except psutil.ZombieProcess:
+            continue
 
 
 @contextlib.contextmanager
