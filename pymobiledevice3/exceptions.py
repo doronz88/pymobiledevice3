@@ -10,7 +10,8 @@ __all__ = [
     'MissingValueError', 'PasscodeRequiredError', 'AmfiError', 'DeviceHasPasscodeSetError', 'NotificationTimeoutError',
     'DeveloperModeError', 'ProfileError', 'IRecvError', 'IRecvNoDeviceConnectedError',
     'NoDeviceSelectedError', 'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
-    'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError', 'CoreDeviceError'
+    'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError', 'CoreDeviceError',
+    'AccessDeniedError'
 ]
 
 
@@ -287,4 +288,9 @@ class AppInstallError(PyMobileDevice3Exception):
 
 
 class CoreDeviceError(PyMobileDevice3Exception):
+    pass
+
+
+class AccessDeniedError(PyMobileDevice3Exception):
+    """ Need extra permissions to execute this command """
     pass
