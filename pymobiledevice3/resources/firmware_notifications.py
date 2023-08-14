@@ -1,6 +1,7 @@
 import logging
 import os
 import plistlib
+from typing import List
 
 import click
 import coloredlogs
@@ -15,8 +16,9 @@ def get_notifications():
         return f.read().decode().split('\n')
 
 
-def save_notifications(notifications):
+def save_notifications(notifications: List[str]):
     with open(NOTIFICATIONS_FILENAME, 'wb') as f:
+        notifications.sort()
         f.write('\n'.join(notifications).encode())
 
 
@@ -54,7 +56,7 @@ def main(root_fs):
                 logging.info(f'adding notification: {notification}')
                 notifications.add(notification)
 
-    save_notifications(notifications)
+    save_notifications(list(notifications))
 
 
 if __name__ == '__main__':
