@@ -4,6 +4,8 @@ from typing import Generator
 
 import psutil
 
+from pymobiledevice3.exceptions import AccessDeniedError
+
 REMOTED_PATH = '/usr/libexec/remoted'
 
 
@@ -32,7 +34,10 @@ def stop_remoted() -> Generator[None, None, None]:
         yield
         return
 
-    remoted.suspend()
+    try:
+        remoted.suspend()
+    except psutil.AccessDenied:
+        raise AccessDeniedError()
     try:
         yield
     finally:
