@@ -233,10 +233,11 @@ thread_group_snapshot_trace_v2 = Struct(
 
 thread_group_snapshot_trace_v3 = Struct(
     'tgs_id' / Int64ul,
-    '_tgs_name' / FixedSized(16, GreedyString('utf8')),
+    '_tgs_name' / Bytes(16),
     'tgs_flags' / Int64ul,
-    '_tgs_name_cont' / FixedSized(16, GreedyString('utf8')),
-    'tgs_name' / Computed(lambda ctx: ctx._tgs_name.strip('\x00') + ctx._tgs_name_cont.strip('\x00')),
+    '_tgs_name_cont' / Bytes(16),
+    'tgs_name' / Computed(
+        lambda ctx: (ctx._tgs_name.strip(b'\x00') + ctx._tgs_name_cont.strip(b'\x00')).decode('utf-8')),
 )
 
 thread_group_snapshot = Struct(
