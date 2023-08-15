@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import platform
 from typing import List, TextIO
 
 import click
@@ -14,7 +15,8 @@ try:
     from pymobiledevice3.remote.core_device_tunnel_service import create_core_device_tunnel_service
 except ImportError:
     # isn't supported on Windows
-    pass
+    if platform.system() != 'Windows':
+        raise
 
 logger = logging.getLogger(__name__)
 
