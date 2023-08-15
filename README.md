@@ -5,7 +5,7 @@
 - [News](#news)
 - [Description](#description)
 - [Installation](#installation)
-    * [Lower iOS versions (<13)](#lower-ios-versions-13)
+    * [OpenSSL libraries](#openssl-libraries)
 - [Usage](#usage)
     * [Python API](#python-api)
     * [Working with developer tools (iOS >= 17.0)](#working-with-developer-tools-ios--170)
@@ -82,19 +82,24 @@ eval "$(_PYMOBILEDEVICE3_COMPLETE=source_zsh pymobiledevice3)"
 eval "$(_PYMOBILEDEVICE3_COMPLETE=zsh_source pymobiledevice3)"
 ```
 
-## Lower iOS versions (<13)
+## OpenSSL libraries
 
-If you wish to use pymobiledevice3 with iOS versions lower than 13, Make sure to install `openssl`:
+Currently, openssl is explicitly required if using on older iOS version (<13) or creating a QUIC tunnel (iOS>=17).
 
-On MAC:
+On macOS:
 
 ```shell
+# for iOS>=17 support
+brew install openssl@3
+
+# for iOS<13 support
 brew install openssl
 ```
 
 On Linux:
 
 ```shell
+# for iOS<13 support
 sudo apt install openssl
 ```
 
