@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import platform
 from typing import List, TextIO
 
 import click
@@ -11,14 +10,15 @@ from pymobiledevice3.remote.bonjour import get_remoted_addresses
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
 from pymobiledevice3.remote.utils import stop_remoted
 
+logger = logging.getLogger(__name__)
+
 try:
     from pymobiledevice3.remote.core_device_tunnel_service import create_core_device_tunnel_service
 except ImportError:
-    # isn't supported on Windows
-    if platform.system() != 'Windows':
-        raise
-
-logger = logging.getLogger(__name__)
+    logger.warning(
+        'create_core_device_tunnel_service failed to be imported. Some feature may not work.\n'
+        'You can debug this by trying the import yourself:\n\n'
+        'from pymobiledevice3.remote.core_device_tunnel_service import create_core_device_tunnel_service')
 
 
 def get_device_list() -> List[RemoteServiceDiscoveryService]:
