@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import uuid
-from typing import List, Optional, Tuple
+from typing import Callable, List, Mapping, Optional, Tuple
 
 import click
 import coloredlogs
@@ -66,6 +66,20 @@ def prompt_device_list(device_list: List):
         raise NoDeviceSelectedError()
 
 
+def choose_service_provider(callback: Callable):
+    def wrap_callback_calling(**kwargs: Mapping):
+        service_provider = None
+        lockdown_service_provider = kwargs.pop('lockdown_service_provider', None)
+        rsd_service_provider = kwargs.pop('rsd_service_provider', None)
+        if lockdown_service_provider is not None:
+            service_provider = lockdown_service_provider
+        if rsd_service_provider is not None:
+            service_provider = rsd_service_provider
+        callback(service_provider=service_provider, **kwargs)
+
+    return wrap_callback_calling
+
+
 class BaseCommand(click.Command):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -73,13 +87,14 @@ class BaseCommand(click.Command):
             click.Option(('verbosity', '-v', '--verbose'), count=True, callback=set_verbosity, expose_value=False),
         ]
         self.service_provider = None
+        self.callback = choose_service_provider(self.callback)
 
 
 class LockdownCommand(BaseCommand):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.params[:0] = [
-            click.Option(('service_provider', '--udid'), envvar=UDID_ENV_VAR, callback=self.udid,
+            click.Option(('lockdown_service_provider', '--udid'), envvar=UDID_ENV_VAR, callback=self.udid,
                          help=f'Device unique identifier. You may pass {UDID_ENV_VAR} environment variable to pass this'
                               f' option as well'),
         ]
@@ -106,7 +121,7 @@ class RSDCommand(BaseCommand):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.params[:0] = [
-            click.Option(('service_provider', '--rsd'), type=(str, int), callback=self.rsd, required=True,
+            click.Option(('rsd_service_provider', '--rsd'), type=(str, int), callback=self.rsd, required=True,
                          help='RSD hostname and port number'),
         ]
 
