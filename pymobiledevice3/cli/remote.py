@@ -6,6 +6,7 @@ import click
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from pymobiledevice3.cli.cli_common import RSDCommand, print_json, prompt_device_list
+from pymobiledevice3.exceptions import NoDeviceConnectedError
 from pymobiledevice3.remote.bonjour import get_remoted_addresses
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
 from pymobiledevice3.remote.utils import stop_remoted
@@ -92,17 +93,32 @@ async def start_quic_tunnel(service_provider: RemoteServiceDiscoveryService, sec
 
 
 @remote_cli.command('start-quic-tunnel')
+@click.option('--udid', help='UDID for a specific device to look for')
 @click.option('--secrets', type=click.File('wt'), help='TLS keyfile for decrypting with Wireshark')
-def cli_start_quic_tunnel(secrets: TextIO):
+def cli_start_quic_tunnel(udid: str, secrets: TextIO):
     """ start quic tunnel """
     devices = get_device_list()
     if not devices:
-        print('No device could be found')
-        return
+        # no devices were found
+        raise NoDeviceConnectedError()
     if len(devices) == 1:
+        # only one device found
         rsd = devices[0]
     else:
-        rsd = prompt_device_list(devices)
+        # several devices were found
+        if udid is not None:
+            # show prompt if non explicitly selected
+            rsd = prompt_device_list(devices)
+        else:
+            rsd = [device for device in devices if device.udid == udid]
+            if len(rsd) > 0:
+                rsd = rsd[0]
+            else:
+                raise NoDeviceConnectedError()
+
+    if udid is not None and rsd.udid != udid:
+        raise NoDeviceConnectedError()
+
     asyncio.run(start_quic_tunnel(rsd, secrets), debug=True)
 
 
