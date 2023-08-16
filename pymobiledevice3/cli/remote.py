@@ -71,6 +71,12 @@ async def start_quic_tunnel(service_provider: RemoteServiceDiscoveryService, sec
             if secrets is not None:
                 print(click.style('Secrets: ', bold=True, fg='magenta') +
                       click.style(secrets.name, bold=True, fg='white'))
+            print(click.style('UDID: ', bold=True, fg='yellow') +
+                  click.style(service_provider.udid, bold=True, fg='white'))
+            print(click.style('ProductType: ', bold=True, fg='yellow') +
+                  click.style(service_provider.product_type, bold=True, fg='white'))
+            print(click.style('ProductVersion: ', bold=True, fg='yellow') +
+                  click.style(service_provider.product_version, bold=True, fg='white'))
             print(click.style('Interface: ', bold=True, fg='yellow') +
                   click.style(tunnel_result.interface, bold=True, fg='white'))
             print(click.style('RSD Address: ', bold=True, fg='yellow') +
