@@ -200,8 +200,7 @@ def offline(file: str):
 def live(iface: str):
     """ Parse RemoteXPC live from a given network interface """
     sniffer = RemoteXPCSniffer()
-    for p in sniff(iface=iface):
-        sniffer.process_packet(p)
+    sniff(iface=iface, prn=sniffer.process_packet)
 
 
 if __name__ == '__main__':
