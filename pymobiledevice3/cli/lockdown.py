@@ -5,6 +5,7 @@ import click
 
 from pymobiledevice3.cli.cli_common import Command, CommandWithoutAutopair, print_json
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.heartbeat import HeartbeatService
 
 logger = logging.getLogger(__name__)
@@ -30,9 +31,16 @@ def lockdown_recovery(service_provider: LockdownClient):
 
 @lockdown_group.command('service', cls=Command)
 @click.argument('service_name')
-def lockdown_service(service_provider: LockdownClient, service_name):
-    """ send-receive raw service messages """
+def lockdown_service(service_provider: LockdownServiceProvider, service_name):
+    """ send-receive raw service messages with a given service name"""
     service_provider.start_lockdown_service(service_name).shell()
+
+
+@lockdown_group.command('developer-service', cls=Command)
+@click.argument('service_name')
+def lockdown_developer_service(service_provider: LockdownServiceProvider, service_name):
+    """ send-receive raw service messages with a given developer service name """
+    service_provider.start_lockdown_developer_service(service_name).shell()
 
 
 @lockdown_group.command('info', cls=Command)

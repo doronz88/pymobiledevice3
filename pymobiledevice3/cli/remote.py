@@ -122,9 +122,9 @@ def cli_start_quic_tunnel(udid: str, secrets: TextIO):
     asyncio.run(start_quic_tunnel(rsd, secrets), debug=True)
 
 
-@remote_cli.command('shell', cls=RSDCommand)
-@click.argument('service')
-def cli_shell(service_provider: RemoteServiceDiscoveryService, service: str):
+@remote_cli.command('service', cls=RSDCommand)
+@click.argument('service_name')
+def cli_service(service_provider: RemoteServiceDiscoveryService, service_name: str):
     """ start an ipython shell for interacting with given service """
-    with service_provider.start_remote_service(service) as service:
+    with service_provider.start_remote_service(service_name) as service:
         service.shell()
