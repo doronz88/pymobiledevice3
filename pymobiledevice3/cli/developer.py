@@ -945,6 +945,7 @@ def dvt_simulate_location_set(service_provider: LockdownClient, latitude, longit
     """
     with DvtSecureSocketProxyService(service_provider) as dvt:
         LocationSimulation(dvt).simulate_location(latitude, longitude)
+        wait_return()
 
 
 @developer.group()
