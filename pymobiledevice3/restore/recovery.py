@@ -454,7 +454,7 @@ class Recovery(BaseRestore):
             self.logger.info('going into Recovery')
 
             # in case lockdown has disconnected while waiting for a ticket
-            self.device.lockdown = create_using_usbmux(serial=self.device.lockdown.udid)
+            self.device.lockdown = create_using_usbmux(serial=self.device.lockdown.udid, connection_type='USB')
             self.device.lockdown.enter_recovery()
 
             self.device.lockdown = None
