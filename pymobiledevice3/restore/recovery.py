@@ -390,7 +390,11 @@ class Recovery(BaseRestore):
 
     def dfu_enter_recovery(self):
         self.send_component('iBSS')
-        self.reconnect_irecv()
+        try:
+            self.reconnect_irecv()
+        except:
+            self.reconnect_irecv(is_recovery=True)
+
         if 'SRTG' in self.device.irecv._device_info:
             raise PyMobileDevice3Exception('Device failed to enter recovery')
 
@@ -416,18 +420,22 @@ class Recovery(BaseRestore):
                 self.device.irecv.send_command('setenvnp boot-args rd=md0 nand-enable-reformat=1 -progress -restore')
                 self.send_applelogo(allow_missing=False)
 
+            mode = self.device.irecv.mode
             # send iBEC
             self.send_component('iBEC')
 
-            if self.device.irecv and self.device.irecv.mode.is_recovery:
+            if self.device.irecv and mode.is_recovery:
                 time.sleep(1)
                 self.device.irecv.send_command('go', b_request=1)
 
                 if self.build_identity.build_manifest.build_major < 20:
-                    self.device.irecv.ctrl_transfer(0x21, 1, timeout=5000)
+                    try:
+                        self.device.irecv.ctrl_transfer(0x21, 1, timeout=5000)
+                    except USBError:
+                        pass
 
-        self.logger.debug('Waiting for device to disconnect...')
-        time.sleep(10)
+                self.logger.debug('Waiting for device to disconnect...')
+                time.sleep(10)
 
         self.logger.debug('Waiting for device to reconnect in recovery mode...')
         self.reconnect_irecv(is_recovery=True)
