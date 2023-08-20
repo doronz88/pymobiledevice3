@@ -48,10 +48,12 @@ class FDRClient:
         logger.debug('connecting to FDR')
 
         if type_ == fdr_type.FDR_CTRL:
-            self.service = LockdownServiceConnection.create_using_usbmux(device.serial, self.SERVICE_PORT)
+            self.service = LockdownServiceConnection.create_using_usbmux(
+                device.serial, self.SERVICE_PORT, connection_type='USB'
+            )
             self.ctrl_handshake()
         else:
-            self.service = LockdownServiceConnection.create_using_usbmux(device.serial, conn_port)
+            self.service = LockdownServiceConnection.create_using_usbmux(device.serial, conn_port, connection_type='USB')
             self.sync_handshake()
 
         logger.debug('FDR connected')

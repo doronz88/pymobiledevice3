@@ -14,7 +14,7 @@ class RestoredClient(object):
     def __init__(self, udid=None, client_name=DEFAULT_CLIENT_NAME):
         self.logger = logging.getLogger(__name__)
         self.udid = self._get_or_verify_udid(udid)
-        self.service = LockdownServiceConnection.create_using_usbmux(self.udid, self.SERVICE_PORT)
+        self.service = LockdownServiceConnection.create_using_usbmux(self.udid, self.SERVICE_PORT, connection_type='USB')
         self.label = client_name
         self.query_type = self.service.send_recv_plist({'Request': 'QueryType'})
         self.version = self.query_type.get('RestoreProtocolVersion')

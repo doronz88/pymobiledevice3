@@ -633,7 +633,7 @@ class Restore(BaseRestore):
 
         while True:
             try:
-                client = LockdownServiceConnection.create_using_usbmux(self._restored.udid, data_port)
+                client = LockdownServiceConnection.create_using_usbmux(self._restored.udid, data_port, connection_type='USB')
                 break
             except ConnectionFailedError:
                 self.logger.debug('Retrying connection...')
@@ -1153,7 +1153,7 @@ class Restore(BaseRestore):
 
         while True:
             try:
-                client = LockdownServiceConnection.create_using_usbmux(self._restored.udid, data_port)
+                client = LockdownServiceConnection.create_using_usbmux(self._restored.udid, data_port, connection_type='USB')
                 break
             except ConnectionFailedError:
                 self.logger.debug('Retrying connection...')
@@ -1198,7 +1198,9 @@ class Restore(BaseRestore):
 
         if self._ignore_fdr:
             self.logger.info('Establishing a mock FDR listener')
-            self._fdr = LockdownServiceConnection.create_using_usbmux(self._restored.udid, FDRClient.SERVICE_PORT)
+            self._fdr = LockdownServiceConnection.create_using_usbmux(
+                self._restored.udid, FDRClient.SERVICE_PORT, connection_type='USB'
+            )
         else:
             self.logger.info('Starting FDR listener thread')
             start_fdr_thread(fdr_type.FDR_CTRL)

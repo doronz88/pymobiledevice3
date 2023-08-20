@@ -29,7 +29,7 @@ class ASRClient(object):
     SERVICE_PORT = ASR_PORT
 
     def __init__(self, udid: str):
-        self.service = LockdownServiceConnection.create_using_usbmux(udid, self.SERVICE_PORT)
+        self.service = LockdownServiceConnection.create_using_usbmux(udid, self.SERVICE_PORT, connection_type='USB')
 
         # receive Initiate command message
         data = self.recv_plist()
