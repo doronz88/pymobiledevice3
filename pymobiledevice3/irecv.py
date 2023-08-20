@@ -207,6 +207,7 @@ class IRecv:
     def reset(self):
         try:
             logger.debug('resetting usb device')
+            logger.info('If the restore hangs here, disconnect & reconnect the device')
             self._device.reset()
         except USBError:
             pass
