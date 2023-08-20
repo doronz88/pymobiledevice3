@@ -445,19 +445,7 @@ class Recovery(BaseRestore):
             self.logger.info('fetching TSS record')
             self.fetch_tss_record()
 
-        if self.device.irecv:
-            if self.device.irecv.mode == Mode.DFU_MODE:
-                # device is currently in DFU mode, place it into recovery mode
-                self.dfu_enter_recovery()
-            elif self.device.irecv.mode.is_recovery:
-                # now we load the iBEC
-                try:
-                    self.send_ibec()
-                except USBError:
-                    pass
-
-                self.reconnect_irecv()
-        elif self.device.lockdown:
+        if self.device.lockdown:
             # normal mode
             self.logger.info('going into Recovery')
 
@@ -469,13 +457,18 @@ class Recovery(BaseRestore):
             self.device.irecv = IRecv(self.device.ecid)
             self.reconnect_irecv()
 
+        if self.device.irecv.mode == Mode.DFU_MODE:
+            # device is currently in DFU mode, place it into recovery mode
+            self.dfu_enter_recovery()
+
+        elif self.device.irecv.mode.is_recovery:
             # now we load the iBEC
             try:
                 self.send_ibec()
             except USBError:
                 pass
 
-            self.reconnect_irecv()
+            self.reconnect_irecv(is_recovery=True)
 
         self.logger.info('device booted into recovery')
 
