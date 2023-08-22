@@ -49,7 +49,7 @@ from pymobiledevice3.services.remote_fetch_symbols import RemoteFetchSymbolsServ
 from pymobiledevice3.services.remote_server import RemoteServer
 from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
-from pymobiledevice3.tcp_forwarder import TcpForwarder
+from pymobiledevice3.tcp_forwarder import LockdownTcpForwarder
 
 BSC_SUBCLASS = 0x40c
 BSC_CLASS = 0x4
@@ -872,9 +872,13 @@ def debugserver_start_server(service_provider: LockdownClient, local_port):
 
     (lldb) platform connect connect://localhost:<local_port>
     """
-    attr = service_provider.get_service_connection_attributes('com.apple.debugserver.DVTSecureSocketProxy')
-    TcpForwarder(local_port, attr['Port'], serial=service_provider.identifier,
-                 enable_ssl=attr.get('EnableServiceSSL', False)).start()
+
+    if Version(service_provider.product_version) < Version('17.0'):
+        service_name = 'com.apple.debugserver.DVTSecureSocketProxy'
+    else:
+        service_name = 'com.apple.internal.dt.remote.debugproxy'
+
+    LockdownTcpForwarder(service_provider, local_port, service_name).start()
 
 
 @developer.group('arbitration')
