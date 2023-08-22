@@ -1181,7 +1181,7 @@ class Restore(BaseRestore):
             try:
                 self._restored = RestoredClient()
                 break
-            except NoDeviceConnectedError:
+            except (ConnectionFailedError, NoDeviceConnectedError):
                 pass
 
     def restore_device(self):
