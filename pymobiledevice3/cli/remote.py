@@ -106,7 +106,7 @@ def cli_start_quic_tunnel(udid: str, secrets: TextIO):
         rsd = devices[0]
     else:
         # several devices were found
-        if udid is not None:
+        if udid is None:
             # show prompt if non explicitly selected
             rsd = prompt_device_list(devices)
         else:
