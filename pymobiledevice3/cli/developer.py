@@ -9,7 +9,7 @@ from collections import namedtuple
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import click
 from click.exceptions import MissingParameter, UsageError
@@ -860,10 +860,11 @@ def debugserver_applist(service_provider: LockdownClient):
 
 
 @debugserver.command('start-server', cls=Command)
-@click.argument('local_port', type=click.INT)
-def debugserver_start_server(service_provider: LockdownClient, local_port):
+@click.argument('local_port', type=click.INT, required=False)
+def debugserver_start_server(service_provider: LockdownClient, local_port: Optional[int] = None):
     """
-    start a debugserver at remote listening on a given port locally.
+    if local_port is provided, start a debugserver at remote listening on a given port locally.
+    if local_port is not provided and iOS version >= 17.0 then just print the connect string
 
     Please note the connection must be done soon afterwards using your own lldb client.
     This can be done using the following commands within lldb shell:
@@ -878,7 +879,13 @@ def debugserver_start_server(service_provider: LockdownClient, local_port):
     else:
         service_name = 'com.apple.internal.dt.remote.debugproxy'
 
-    LockdownTcpForwarder(service_provider, local_port, service_name).start()
+    if local_port is not None:
+        LockdownTcpForwarder(service_provider, local_port, service_name).start()
+    elif Version(service_provider.product_version) >= Version('17.0'):
+        debugserver_port = service_provider.get_service_port(service_name)
+        print(f"Connect with: platform connect connect://[{service_provider.service.address[0]}]:{debugserver_port}")
+    else:
+        print("local_port is required for iOS < 17.0")
 
 
 @developer.group('arbitration')

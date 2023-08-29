@@ -39,7 +39,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         self.product_type = self.peer_info['Properties']['ProductType']
 
     def start_lockdown_service_without_checkin(self, name: str) -> LockdownServiceConnection:
-        return LockdownServiceConnection.create_using_tcp(self.service.address[0], self._get_service_port(name))
+        return LockdownServiceConnection.create_using_tcp(self.service.address[0], self.get_service_port(name))
 
     def start_lockdown_service(self, name: str, escrow_bag: bytes = None) -> LockdownServiceConnection:
         service = self.start_lockdown_service_without_checkin(name)
@@ -70,7 +70,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             raise
 
     def start_remote_service(self, name: str) -> RemoteXPCConnection:
-        service = RemoteXPCConnection((self.service.address[0], self._get_service_port(name)))
+        service = RemoteXPCConnection((self.service.address[0], self.get_service_port(name)))
         return service
 
     def start_service(self, name: str) -> Union[RemoteXPCConnection, LockdownServiceConnection]:
@@ -78,6 +78,13 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         service_properties = service.get('Properties', {})
         use_remote_xpc = service_properties.get('UsesRemoteXPC', False)
         return self.start_remote_service(name) if use_remote_xpc else self.start_lockdown_service(name)
+
+    def get_service_port(self, name: str) -> int:
+        """takes a service name and returns the port that service is running on if the service exists"""
+        service = self.peer_info['Services'].get(name)
+        if service is None:
+            raise InvalidServiceError(f'No such service: {name}')
+        return int(service['Port'])
 
     def __enter__(self) -> 'RemoteServiceDiscoveryService':
         self.connect()
@@ -89,12 +96,6 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def __repr__(self) -> str:
         return (f'<{self.__class__.__name__} PRODUCT:{self.product_type} VERSION:{self.product_version} '
                 f'UDID:{self.udid}>')
-
-    def _get_service_port(self, name: str) -> int:
-        service = self.peer_info['Services'].get(name)
-        if service is None:
-            raise InvalidServiceError(f'No such service: {name}')
-        return int(service['Port'])
 
 
 def get_remoted_devices(timeout: int = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevice]:
