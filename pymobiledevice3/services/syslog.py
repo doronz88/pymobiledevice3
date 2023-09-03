@@ -16,11 +16,11 @@ class SyslogService(LockdownService):
     SERVICE_NAME = 'com.apple.syslog_relay'
     RSD_SERVICE_NAME = 'com.apple.syslog_relay.shim.remote'
 
-    def __init__(self, lockdown: LockdownServiceProvider):
-        if isinstance(lockdown, LockdownClient):
-            super().__init__(lockdown, self.SERVICE_NAME)
+    def __init__(self, service_provider: LockdownServiceProvider):
+        if isinstance(service_provider, LockdownClient):
+            super().__init__(service_provider, self.SERVICE_NAME)
         else:
-            super().__init__(lockdown, self.RSD_SERVICE_NAME)
+            super().__init__(service_provider, self.RSD_SERVICE_NAME)
 
     def watch(self):
         buf = b''

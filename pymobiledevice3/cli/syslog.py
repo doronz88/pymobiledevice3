@@ -29,7 +29,7 @@ def syslog():
 @syslog.command('live-old', cls=Command)
 def syslog_live_old(service_provider: LockdownClient):
     """ view live syslog lines in raw bytes form from old relay """
-    for line in SyslogService(lockdown=service_provider).watch():
+    for line in SyslogService(service_provider=service_provider).watch():
         print(line)
 
 
