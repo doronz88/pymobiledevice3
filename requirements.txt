@@ -33,7 +33,7 @@ zeroconf
 ifaddr
 hyperframe
 srptools
-aioquic-pmd3>=0.0.1 ; platform_system != "Windows"
+aioquic-pmd3>=0.0.2 ; platform_system != "Windows"
 developer_disk_image>=0.0.2
 opack
 psutil

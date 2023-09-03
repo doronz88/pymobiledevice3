@@ -84,22 +84,17 @@ eval "$(_PYMOBILEDEVICE3_COMPLETE=zsh_source pymobiledevice3)"
 
 ## OpenSSL libraries
 
-Currently, openssl is explicitly required if using on older iOS version (<13) or creating a QUIC tunnel (iOS>=17).
+Currently, openssl is explicitly required if using on older iOS version (<13).
 
 On macOS:
 
 ```shell
-# for iOS>=17 support
-brew install openssl@3
-
-# for iOS<13 support
 brew install openssl
 ```
 
 On Linux:
 
 ```shell
-# for iOS<13 support
 sudo apt install openssl
 ```
 
