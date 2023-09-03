@@ -16,13 +16,6 @@ from ssl import VerifyMode
 from typing import AsyncGenerator, List, Mapping, Optional, TextIO, cast
 
 import aiofiles
-from aioquic_pmd3.asyncio import QuicConnectionProtocol
-from aioquic_pmd3.asyncio.client import connect as aioquic_connect
-from aioquic_pmd3.asyncio.protocol import QuicStreamHandler
-from aioquic_pmd3.quic import packet_builder
-from aioquic_pmd3.quic.configuration import QuicConfiguration
-from aioquic_pmd3.quic.connection import QuicConnection
-from aioquic_pmd3.quic.events import ConnectionTerminated, DatagramFrameReceived, QuicEvent, StreamDataReceived
 from construct import Const, Container, Enum, GreedyBytes, GreedyRange, Int8ul, Int16ub, Int64ul, Prefixed, Struct
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives._serialization import Encoding, PublicFormat
@@ -33,6 +26,13 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from opack import dumps
 from pytun_pmd3 import TunTapDevice
+from qh3.asyncio import QuicConnectionProtocol
+from qh3.asyncio.client import connect as aioquic_connect
+from qh3.asyncio.protocol import QuicStreamHandler
+from qh3.quic import packet_builder
+from qh3.quic.configuration import QuicConfiguration
+from qh3.quic.connection import QuicConnection
+from qh3.quic.events import ConnectionTerminated, DatagramFrameReceived, QuicEvent, StreamDataReceived
 from srptools import SRPClientSession, SRPContext
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
 
