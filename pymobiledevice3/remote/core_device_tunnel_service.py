@@ -113,7 +113,7 @@ class RemotePairingTunnel(QuicConnectionProtocol):
             while True:
                 packet = await f.read(read_size)
                 assert packet.startswith(LOOKBACK_HEADER)
-                packet = packet.removeprefix(LOOKBACK_HEADER)
+                packet = packet[len(LOOKBACK_HEADER):]
                 self._quic.send_datagram_frame(packet)
                 self.transmit()
 
