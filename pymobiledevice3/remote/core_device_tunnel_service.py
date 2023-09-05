@@ -221,6 +221,7 @@ class CoreDeviceTunnelService(RemoteService):
             certificate=cert,
             private_key=private_key,
             verify_mode=VerifyMode.CERT_NONE,
+            verify_hostname=False,
             max_datagram_frame_size=RemotePairingTunnel.MAX_QUIC_DATAGRAM,
             idle_timeout=RemotePairingTunnel.MAX_IDLE_TIMEOUT
         )
