@@ -1,4 +1,8 @@
+import asyncio
 import re
+import traceback
+from functools import wraps
+from typing import Callable
 
 from construct import Int8ul, Int16ul, Int32ul, Int64ul, Select
 
@@ -41,3 +45,16 @@ def try_decode(s: bytes):
         return s.decode('utf8')
     except UnicodeDecodeError:
         return s
+
+
+def asyncio_print_traceback(f: Callable):
+    @wraps(f)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await f(*args, **kwargs)
+        except Exception as e:  # noqa: E72
+            if not isinstance(e, asyncio.CancelledError):
+                traceback.print_exc()
+            raise
+
+    return wrapper

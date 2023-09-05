@@ -41,6 +41,7 @@ from pymobiledevice3.pair_records import create_pairing_records_cache_folder, ge
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
+from pymobiledevice3.utils import asyncio_print_traceback
 
 LOOKBACK_HEADER = struct.pack('>I', AF_INET6)
 
@@ -107,6 +108,7 @@ class RemotePairingTunnel(QuicConnectionProtocol):
         self._tun_read_task = None
         self.tun = None
 
+    @asyncio_print_traceback
     async def tun_read_task(self) -> None:
         read_size = self.tun.mtu + len(LOOKBACK_HEADER)
         async with aiofiles.open(self.tun.fileno(), 'rb', opener=lambda path, flags: path, buffering=0) as f:
@@ -126,6 +128,7 @@ class RemotePairingTunnel(QuicConnectionProtocol):
         self.transmit()
         return await self._queue.get()
 
+    @asyncio_print_traceback
     async def keep_alive_task(self, interval: float) -> None:
         while True:
             await self.ping()
