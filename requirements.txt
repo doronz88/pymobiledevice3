@@ -33,7 +33,7 @@ zeroconf
 ifaddr
 hyperframe
 srptools
-qh3>=0.11.4
+qh3>=0.11.5
 developer_disk_image>=0.0.2
 opack
 psutil
