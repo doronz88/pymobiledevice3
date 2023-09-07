@@ -17,7 +17,7 @@ def _get_remoted_process() -> psutil.Process:
         try:
             if process.exe() == REMOTED_PATH:
                 return process
-        except psutil.ZombieProcess:
+        except (psutil.ZombieProcess, psutil.NoSuchProcess):
             continue
 
 
