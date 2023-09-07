@@ -37,6 +37,7 @@ from srptools import SRPClientSession, SRPContext
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
 
 from pymobiledevice3.ca import make_cert
+from pymobiledevice3.exceptions import PyMobileDevice3Exception, UserDeniedPairingError
 from pymobiledevice3.pair_records import create_pairing_records_cache_folder, generate_host_id
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -288,6 +289,7 @@ class CoreDeviceTunnelService(RemoteService):
                                  'kind': 'setupManualPairing',
                                  'sendingHost': platform.node(),
                                  'startNewSession': True})
+        self.logger.info('Waiting user pairing consent')
         assert 'awaitingUserConsent' in self._receive_plain_response()['event']['_0']
         response = self._receive_pairing_data()
         data = self.decode_tlv(PairingDataComponentTLVBuf.parse(
@@ -509,7 +511,15 @@ class CoreDeviceTunnelService(RemoteService):
         self._send_plain_request({'event': {'_0': {'pairingData': {'_0': pairing_data}}}})
 
     def _receive_pairing_data(self) -> Mapping:
-        return self._receive_plain_response()['event']['_0']['pairingData']['_0']['data']
+        response = self._receive_plain_response()['event']['_0']
+        if 'pairingData' in response:
+            return response['pairingData']['_0']['data']
+        if 'pairingRejectedWithError' in response:
+            raise UserDeniedPairingError(response['pairingRejectedWithError']
+                                         .get('wrappedError', {})
+                                         .get('userInfo', {})
+                                         .get('NSLocalizedDescription'))
+        raise PyMobileDevice3Exception(f'Got an unknown state message: {response}')
 
     def _send_receive_plain_request(self, plain_request: Mapping):
         self._send_plain_request(plain_request)
