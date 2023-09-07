@@ -7,6 +7,7 @@ import json
 import platform
 import plistlib
 import struct
+import sys
 from asyncio import CancelledError
 from collections import namedtuple
 from contextlib import asynccontextmanager, suppress
@@ -44,7 +45,10 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.utils import asyncio_print_traceback
 
-LOOKBACK_HEADER = struct.pack('>I', AF_INET6)
+if sys.platform == 'darwin':
+    LOOKBACK_HEADER = struct.pack('>I', AF_INET6)
+else:
+    LOOKBACK_HEADER = b'\x00\x00\x86\xdd'
 
 # The iOS device uses an MTU of 1500, so we'll have to increase the default QUIC MTU
 packet_builder.PACKET_MAX_SIZE = 1452  # 1500 - 40byte ipv6 - 8 byte udp
@@ -138,7 +142,8 @@ class RemotePairingTunnel(QuicConnectionProtocol):
     def start_tunnel(self, address: str, mtu: int) -> None:
         self.tun = TunTapDevice()
         self.tun.mtu = mtu
-        self.tun.addr6 = address
+        self.tun.addr = address
+        self.tun.up()
         self._keep_alive_task = asyncio.create_task(self.keep_alive_task(self.MAX_IDLE_TIMEOUT / 2))
         self._tun_read_task = asyncio.create_task(self.tun_read_task())
 
@@ -149,6 +154,8 @@ class RemotePairingTunnel(QuicConnectionProtocol):
             await self._keep_alive_task
         with suppress(CancelledError):
             await self._tun_read_task
+        if sys.platform != 'darwin':
+            self.tun.down()
         self.tun = None
 
     def quic_event_received(self, event: QuicEvent) -> None:
