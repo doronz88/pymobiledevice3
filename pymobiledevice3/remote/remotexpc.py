@@ -169,7 +169,10 @@ class RemoteXPCConnection:
         return frame
 
     def _recvall(self, size: int) -> bytes:
-        buf = b''
-        while len(buf) < size:
-            buf += self.sock.recv(size - len(buf))
-        return buf
+        data = b''
+        while len(data) < size:
+            chunk = self.sock.recv(size - len(data))
+            if chunk is None or len(chunk) == 0:
+                raise ConnectionAbortedError()
+            data += chunk
+        return data
