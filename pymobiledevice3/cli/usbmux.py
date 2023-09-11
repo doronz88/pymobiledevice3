@@ -30,7 +30,7 @@ def usbmux_cli():
 @click.option('-d', '--daemonize', is_flag=True)
 def usbmux_forward(src_port: int, dst_port: int, serial: str, daemonize: bool):
     """ forward tcp port """
-    forwarder = UsbmuxTcpForwarder(serial, src_port, dst_port)
+    forwarder = UsbmuxTcpForwarder(serial, dst_port, src_port)
 
     if daemonize:
         try:
