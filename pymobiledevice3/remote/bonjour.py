@@ -24,6 +24,12 @@ class RemotedListener(ServiceListener):
                 if entry.type == _TYPE_AAAA:
                     self.addresses.append(inet_ntop(AF_INET6, entry.address) + '%' + self.adapter.nice_name)
 
+    def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+        pass
+
+    def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+        pass
+
 
 @dataclasses.dataclass
 class BonjourQuery:

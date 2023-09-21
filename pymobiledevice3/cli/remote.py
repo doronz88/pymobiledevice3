@@ -27,7 +27,10 @@ def get_device_list() -> List[RemoteServiceDiscoveryService]:
     with stop_remoted():
         for address in get_remoted_addresses():
             rsd = RemoteServiceDiscoveryService((address, RSD_PORT))
-            rsd.connect()
+            try:
+                rsd.connect()
+            except ConnectionRefusedError:
+                continue
             result.append(rsd)
     return result
 
