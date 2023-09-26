@@ -18,6 +18,7 @@
             - [Lockdown messages](#lockdown-messages)
             - [Instruments messages](#instruments-messages)
 - [Contributing](#contributing)
+- [Useful info](#Useful-info)
 
 # News
 
@@ -446,3 +447,7 @@ return_value, auxiliary = developer.recv_plist()
 # Contributing
 
 See [CONTRIBUTING](CONTRIBUTING.md).
+
+# Useful info
+
+Please see [misc](misc)
