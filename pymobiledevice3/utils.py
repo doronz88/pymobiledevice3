@@ -1,12 +1,9 @@
 import asyncio
-import re
 import traceback
 from functools import wraps
 from typing import Callable
 
 from construct import Int8ul, Int16ul, Int32ul, Int64ul, Select
-
-from pymobiledevice3.exceptions import DeviceVersionFormatError
 
 
 def plist_access_path(d, path: tuple, type_=None, required=False):
@@ -31,13 +28,6 @@ def plist_access_path(d, path: tuple, type_=None, required=False):
 
 def bytes_to_uint(b: bytes):
     return Select(u64=Int64ul, u32=Int32ul, u16=Int16ul, u8=Int8ul).parse(b)
-
-
-def sanitize_ios_version(version: str):
-    try:
-        return re.match(r'\d*\.\d*', version)[0]
-    except TypeError as e:
-        raise DeviceVersionFormatError from e
 
 
 def try_decode(s: bytes):

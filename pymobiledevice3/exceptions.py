@@ -1,5 +1,5 @@
 __all__ = [
-    'PyMobileDevice3Exception', 'DeviceVersionNotSupportedError', 'IncorrectModeError', 'DeviceVersionFormatError',
+    'PyMobileDevice3Exception', 'DeviceVersionNotSupportedError', 'IncorrectModeError',
     'NotTrustedError', 'PairingError', 'NotPairedError', 'CannotStopSessionError',
     'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'MuxException',
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
@@ -24,10 +24,6 @@ class DeviceVersionNotSupportedError(PyMobileDevice3Exception):
 
 
 class IncorrectModeError(PyMobileDevice3Exception):
-    pass
-
-
-class DeviceVersionFormatError(PyMobileDevice3Exception):
     pass
 
 

@@ -20,7 +20,7 @@ def mount_developer_disk_image():
         with DeveloperDiskImageMounter(lockdown=lockdown) as mounter:
             if mounter.is_image_mounted('Developer'):
                 yield
-            image_path = DEVICE_SUPPORT / mounter.lockdown.sanitized_ios_version / 'DeveloperDiskImage.dmg'
+            image_path = DEVICE_SUPPORT / mounter.lockdown.product_version / 'DeveloperDiskImage.dmg'
             try:
                 mounter.mount(image_path, image_path.with_suffix('.dmg.signature'))
             except AlreadyMountedError:
