@@ -9,6 +9,7 @@ from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.exceptions import AlreadyMountedError, DeveloperDiskImageNotFoundError, NotMountedError, \
     UnsupportedCommandError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.mobile_image_mounter import DeveloperDiskImageMounter, MobileImageMounterService, \
     PersonalizedImageMounter, auto_mount
 
@@ -115,7 +116,7 @@ def mounter_mount_personalized(service_provider: LockdownClient, image: str, tru
               help='Xcode application path used to figure out automatically the DeveloperDiskImage path')
 @click.option('-v', '--version', help='use a different DeveloperDiskImage version from the one retrieved by lockdown'
                                       'connection')
-def mounter_auto_mount(service_provider: LockdownClient, xcode: str, version: str):
+def mounter_auto_mount(service_provider: LockdownServiceProvider, xcode: str, version: str):
     """ auto-detect correct DeveloperDiskImage and mount it """
     try:
         auto_mount(service_provider, xcode=xcode, version=version)
