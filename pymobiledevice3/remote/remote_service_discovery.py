@@ -32,6 +32,10 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def product_version(self) -> str:
         return self.peer_info['Properties']['OSVersion']
 
+    @property
+    def ecid(self) -> int:
+        return self.peer_info['Properties']['UniqueChipID']
+
     def connect(self) -> None:
         self.service.connect()
         self.peer_info = self.service.receive_response()
