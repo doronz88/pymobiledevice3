@@ -26,7 +26,6 @@ from pymobiledevice3.pair_records import create_pairing_records_cache_folder, ge
     get_preferred_pair_record
 from pymobiledevice3.service_connection import LockdownServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
-from pymobiledevice3.utils import sanitize_ios_version
 
 SYSTEM_BUID = '30142955-444094379208051516'
 DOMAINS = ['com.apple.disk_usage',
@@ -262,10 +261,6 @@ class LockdownClient(ABC, LockdownServiceProvider):
     @property
     def preflight_info(self) -> Mapping:
         return self.get_value(key='FirmwarePreflightInfo')
-
-    @property
-    def sanitized_ios_version(self) -> str:
-        return sanitize_ios_version(self.product_version)
 
     @property
     def display_name(self) -> str:

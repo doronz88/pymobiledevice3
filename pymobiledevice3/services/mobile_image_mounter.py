@@ -202,7 +202,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
         try:
             manifest = self.query_personalization_manifest('DeveloperDiskImage', hashlib.sha384(image).digest())
         except MissingManifestError:
-            self.service = self.lockdown.start_lockdown_service(self.SERVICE_NAME)
+            self.service = self.lockdown.start_lockdown_service(self.service_name)
             manifest = self.get_manifest_from_tss(plistlib.loads(build_manifest.read_bytes()))
 
         self.upload_image(self.IMAGE_TYPE, image, manifest)
@@ -288,7 +288,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
         return response['ApImg4Ticket']
 
 
-def auto_mount_developer(lockdown: LockdownClient, xcode: str = None, version: str = None) -> None:
+def auto_mount_developer(lockdown: LockdownServiceProvider, xcode: str = None, version: str = None) -> None:
     """ auto-detect correct DeveloperDiskImage and mount it """
     if xcode is None:
         # avoid "default"-ing this option, because Windows and Linux won't have this path
@@ -302,7 +302,7 @@ def auto_mount_developer(lockdown: LockdownClient, xcode: str = None, version: s
         raise AlreadyMountedError()
 
     if version is None:
-        version = lockdown.sanitized_ios_version
+        version = lockdown.product_version
     image_dir = f'{xcode}/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport/{version}'
     image_path = f'{image_dir}/DeveloperDiskImage.dmg'
     signature = f'{image_path}.signature'
@@ -327,7 +327,7 @@ def auto_mount_developer(lockdown: LockdownClient, xcode: str = None, version: s
     image_mounter.mount(image_path, signature)
 
 
-def auto_mount_personalized(lockdown: LockdownClient) -> None:
+def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
     local_path = get_home_folder() / 'Xcode_iOS_DDI_Personalized'
     local_path.mkdir(parents=True, exist_ok=True)
 
@@ -347,7 +347,7 @@ def auto_mount_personalized(lockdown: LockdownClient) -> None:
     PersonalizedImageMounter(lockdown=lockdown).mount(image, build_manifest, trustcache)
 
 
-def auto_mount(lockdown: LockdownClient, xcode: str = None, version: str = None) -> None:
+def auto_mount(lockdown: LockdownServiceProvider, xcode: str = None, version: str = None) -> None:
     if Version(lockdown.product_version) < Version('17.0'):
         auto_mount_developer(lockdown, xcode=xcode, version=version)
     else:

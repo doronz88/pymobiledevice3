@@ -16,6 +16,11 @@ class LockdownServiceProvider:
     def product_version(self) -> str:
         pass
 
+    @property
+    @abstractmethod
+    def ecid(self) -> int:
+        pass
+
     @abstractmethod
     def start_lockdown_service(self, name: str, escrow_bag: bytes = None) -> LockdownServiceConnection:
         pass
