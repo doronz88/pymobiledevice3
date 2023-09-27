@@ -17,16 +17,18 @@ class LockdownServiceProvider:
         pass
 
     @abstractmethod
-    def start_lockdown_service(self, name: str, escrow_bag: bytes = None) -> LockdownServiceConnection:
+    def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
         pass
 
     @abstractmethod
-    async def aio_start_lockdown_service(self, name: str, escrow_bag: bytes = None) -> LockdownServiceConnection:
+    async def aio_start_lockdown_service(
+            self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
         pass
 
-    def start_lockdown_developer_service(self, name, escrow_bag: bytes = None) -> LockdownServiceConnection:
+    def start_lockdown_developer_service(
+            self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
         try:
-            return self.start_lockdown_service(name, escrow_bag=escrow_bag)
+            return self.start_lockdown_service(name, include_escrow_bag=include_escrow_bag)
         except StartServiceError:
             logging.getLogger(self.__module__).error(
                 'Failed to connect to required service. Make sure DeveloperDiskImage.dmg has been mounted. '

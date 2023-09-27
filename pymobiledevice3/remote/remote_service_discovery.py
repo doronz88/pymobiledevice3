@@ -41,11 +41,11 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def start_lockdown_service_without_checkin(self, name: str) -> LockdownServiceConnection:
         return LockdownServiceConnection.create_using_tcp(self.service.address[0], self.get_service_port(name))
 
-    def start_lockdown_service(self, name: str, escrow_bag: bytes = None) -> LockdownServiceConnection:
+    def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
         service = self.start_lockdown_service_without_checkin(name)
         checkin = {'Label': 'pymobiledevice3', 'ProtocolVersion': '2', 'Request': 'RSDCheckin'}
-        if escrow_bag is not None:
-            checkin['EscrowBag'] = escrow_bag
+        if include_escrow_bag:
+            raise NotImplementedError('EscrowBag over RemoteXPC is not yet supported')
         response = service.send_recv_plist(checkin)
         if response['Request'] != 'RSDCheckin':
             raise PyMobileDevice3Exception(f'Invalid response for RSDCheckIn: {response}. Expected "RSDCheckIn"')
@@ -54,12 +54,13 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             raise PyMobileDevice3Exception(f'Invalid response for RSDCheckIn: {response}. Expected "ServiceService"')
         return service
 
-    async def aio_start_lockdown_service(self, name: str, escrow_bag: bytes = None) -> LockdownServiceConnection:
-        service = self.start_lockdown_service(name, escrow_bag=escrow_bag)
+    async def aio_start_lockdown_service(
+            self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
+        service = self.start_lockdown_service(name, include_escrow_bag=include_escrow_bag)
         await service.aio_start()
         return service
 
-    def start_lockdown_developer_service(self, name, escrow_bag: bytes = None) -> LockdownServiceConnection:
+    def start_lockdown_developer_service(self, name, include_escrow_bag: bool = False) -> LockdownServiceConnection:
         try:
             return self.start_lockdown_service_without_checkin(name)
         except StartServiceError:
