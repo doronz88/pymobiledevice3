@@ -429,13 +429,13 @@ class LockdownClient(ABC, LockdownServiceProvider):
         options['Value'] = value
         return self._request('SetValue', options)
 
-    def get_service_connection_attributes(self, name, escrow_bag=None) -> Mapping:
+    def get_service_connection_attributes(self, name: str, include_escrow_bag: bool = False) -> Mapping:
         if not self.paired:
             raise NotPairedError()
 
         options = {'Service': name}
-        if escrow_bag is not None:
-            options['EscrowBag'] = escrow_bag
+        if include_escrow_bag:
+            options['EscrowBag'] = self.pair_record['EscrowBag']
 
         response = self._request('StartService', options)
         if not response or response.get('Error'):
@@ -446,8 +446,8 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return response
 
     @_reconnect_on_remote_close
-    def start_lockdown_service(self, name: str, escrow_bag: bytes = None) -> LockdownServiceConnection:
-        attr = self.get_service_connection_attributes(name, escrow_bag=escrow_bag)
+    def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
+        attr = self.get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
         service_connection = self._create_service_connection(attr['Port'])
 
         if attr.get('EnableServiceSSL', False):
@@ -455,8 +455,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
                 service_connection.ssl_start(f)
         return service_connection
 
-    async def aio_start_lockdown_service(self, name: str, escrow_bag: bytes = None) -> LockdownServiceConnection:
-        attr = self.get_service_connection_attributes(name, escrow_bag=escrow_bag)
+    async def aio_start_lockdown_service(
+            self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
+        attr = self.get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
         service_connection = self._create_service_connection(attr['Port'])
 
         if attr.get('EnableServiceSSL', False):

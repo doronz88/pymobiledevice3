@@ -32,7 +32,7 @@ class Mobilebackup2Service(LockdownService):
     SERVICE_NAME = 'com.apple.mobilebackup2'
 
     def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, self.SERVICE_NAME)
+        super().__init__(lockdown, self.SERVICE_NAME, include_escrow_bag=True)
 
     @property
     def will_encrypt(self):

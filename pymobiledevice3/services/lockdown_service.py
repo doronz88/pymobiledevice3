@@ -6,7 +6,7 @@ from pymobiledevice3.service_connection import LockdownServiceConnection
 
 class LockdownService:
     def __init__(self, lockdown: LockdownServiceProvider, service_name: str, is_developer_service=False,
-                 service: LockdownServiceConnection = None):
+                 service: LockdownServiceConnection = None, include_escrow_bag: bool = False):
         """
         :param lockdown: server provider
         :param service_name: wrapped service name - will attempt
@@ -17,7 +17,7 @@ class LockdownService:
         if service is None:
             start_service = lockdown.start_lockdown_developer_service if is_developer_service else \
                 lockdown.start_lockdown_service
-            service = start_service(service_name)
+            service = start_service(service_name, include_escrow_bag=include_escrow_bag)
 
         self.service_name = service_name
         self.lockdown = lockdown
