@@ -9,7 +9,7 @@ from pymobiledevice3.exceptions import AccessDeniedError
 REMOTED_PATH = '/usr/libexec/remoted'
 
 
-def _get_remoted_process() -> psutil.Process:
+def get_remoted_process() -> psutil.Process:
     for process in psutil.process_iter():
         if process.pid == 0:
             # skip kernel task
@@ -21,24 +21,42 @@ def _get_remoted_process() -> psutil.Process:
             continue
 
 
-@contextlib.contextmanager
-def stop_remoted() -> Generator[None, None, None]:
+def stop_remoted_if_required() -> None:
     if platform.system() != 'Darwin':
         # only Darwin systems require it
-        yield
         return
 
-    remoted = _get_remoted_process()
+    remoted = get_remoted_process()
     if remoted.status() == 'stopped':
         # process already stopped, we don't need to do anything
-        yield
         return
 
     try:
         remoted.suspend()
     except psutil.AccessDenied:
         raise AccessDeniedError()
+
+
+def resume_remoted_if_required() -> None:
+    if platform.system() != 'Darwin':
+        # only Darwin systems require it
+        return
+
+    remoted = get_remoted_process()
+    if remoted.status() == 'running':
+        # process already running, we don't need to do anything
+        return
+
+    try:
+        remoted.resume()
+    except psutil.AccessDenied:
+        raise AccessDeniedError()
+
+
+@contextlib.contextmanager
+def stop_remoted() -> Generator[None, None, None]:
+    stop_remoted_if_required()
     try:
         yield
     finally:
-        remoted.resume()
+        resume_remoted_if_required()
