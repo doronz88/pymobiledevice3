@@ -27,6 +27,9 @@ def stop_remoted_if_required() -> None:
         return
 
     remoted = get_remoted_process()
+    if remoted is None:
+        yield
+        return
     if remoted.status() == 'stopped':
         # process already stopped, we don't need to do anything
         return
