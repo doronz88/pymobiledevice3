@@ -290,3 +290,7 @@ class CoreDeviceError(PyMobileDevice3Exception):
 class AccessDeniedError(PyMobileDevice3Exception):
     """ Need extra permissions to execute this command """
     pass
+
+
+class NoSuchBuildIdentityError(PyMobileDevice3Exception):
+    pass
