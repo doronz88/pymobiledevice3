@@ -8,8 +8,8 @@ from packaging.version import Version
 
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import AlreadyMountedError, DeveloperDiskImageNotFoundError, \
-    DeveloperModeIsNotEnabledError, InternalError, MessageNotSupportedError, MissingManifestError, NotMountedError, \
-    PyMobileDevice3Exception, UnsupportedCommandError
+    DeveloperModeIsNotEnabledError, InternalError, MessageNotSupportedError, MissingManifestError, \
+    NoSuchBuildIdentityError, NotMountedError, PyMobileDevice3Exception, UnsupportedCommandError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.restore.tss import TSSRequest
@@ -233,6 +233,8 @@ class PersonalizedImageMounter(MobileImageMounterService):
                     int(tmp_build_identity['ApChipID'], 0) == chip_id:
                 build_identity = tmp_build_identity
                 break
+        else:
+            raise NoSuchBuildIdentityError(f'Could not find the manifest for board {board_id} and chip {chip_id}')
         manifest = build_identity['Manifest']
 
         parameters = {
