@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Mapping
+from typing import Mapping, Optional
 
 from pymobiledevice3.exceptions import InspectorEvaluateError
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class InspectorSession:
 
-    def __init__(self, protocol: SessionProtocol, target_id: str):
+    def __init__(self, protocol: SessionProtocol, target_id: Optional[str] = None):
         """
         :param pymobiledevice3.services.web_protocol.session_protocol.SessionProtocol protocol: Session protocol.
         """
@@ -30,18 +30,21 @@ class InspectorSession:
         self._receive_task = asyncio.create_task(self._receive_loop())
 
     @classmethod
-    async def create(cls, protocol: SessionProtocol):
+    async def create(cls, protocol: SessionProtocol, wait_target: bool = True):
         """
         :param pymobiledevice3.services.web_protocol.session_protocol.SessionProtocol protocol: Session protocol.
+        :param bool wait_target: Wait for target. If not, all operations won't have a window context to operate in
         """
         await protocol.inspector.setup_inspector_socket(protocol.id_, protocol.app.id_, protocol.page.id_)
-        while not protocol.inspector.wir_events:
-            await asyncio.sleep(0)
-        created = protocol.inspector.wir_events.pop(0)
-        while 'targetInfo' not in created['params']:
+        target_id = None
+        if wait_target:
+            while not protocol.inspector.wir_events:
+                await asyncio.sleep(0)
             created = protocol.inspector.wir_events.pop(0)
-        target_id = created['params']['targetInfo']['targetId']
-        logger.info(f'Created: {target_id}')
+            while 'targetInfo' not in created['params']:
+                created = protocol.inspector.wir_events.pop(0)
+            target_id = created['params']['targetInfo']['targetId']
+            logger.info(f'Created: {target_id}')
         target = cls(protocol, target_id)
         return target
 
@@ -50,7 +53,11 @@ class InspectorSession:
         logger.info(f'Changed to: {target_id}')
 
     async def runtime_enable(self):
-        await self.send_and_receive({'method': 'Runtime.enable', 'params': {}})
+        command = {'method': 'Runtime.enable', 'params': {}}
+        if self.target_id is None:
+            await self.protocol.send_command(command)
+        else:
+            await self.send_and_receive(command)
 
     async def runtime_evaluate(self, exp: str):
         # if the expression is dict, it's needed to be in ()
@@ -80,8 +87,12 @@ class InspectorSession:
         return await self.runtime_evaluate(exp=f'window.location = "{url}"')
 
     async def send_and_receive(self, message: Mapping) -> Mapping:
-        message_id = await self.send_message_to_target(message)
-        return await self.receive_response_by_id(message_id)
+        if self.target_id is None:
+            message_id = await self.protocol.send_command(message['method'], **message.get('params', {}))
+            return await self.protocol.wait_for_message(message_id)
+        else:
+            message_id = await self.send_message_to_target(message)
+            return await self.receive_response_by_id(message_id)
 
     async def send_message_to_target(self, message: Mapping) -> int:
         message['id'] = self.message_id
@@ -108,9 +119,11 @@ class InspectorSession:
                 return self._dispatch_message_responses.pop(message_id)
             await asyncio.sleep(0)
 
-    @staticmethod
-    def _parse_runtime_evaluate(response: Mapping):
-        message = json.loads(response['params']['message'])
+    def _parse_runtime_evaluate(self, response: Mapping):
+        if self.target_id is None:
+            message = response
+        else:
+            message = json.loads(response['params']['message'])
         if 'error' in message:
             details = message['error']['message']
             logger.error(details)

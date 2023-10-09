@@ -185,9 +185,10 @@ class WebinspectorService:
             self.await_(asyncio.sleep(0))
         return AutomationSession(SessionProtocol(self, session_id, app, page))
 
-    async def inspector_session(self, app: Application, page: Page) -> InspectorSession:
+    async def inspector_session(self, app: Application, page: Page, wait_target: bool = True) -> InspectorSession:
         session_id = str(uuid.uuid4()).upper()
-        return await InspectorSession.create(SessionProtocol(self, session_id, app, page, method_prefix=''))
+        return await InspectorSession.create(SessionProtocol(self, session_id, app, page, method_prefix=''),
+                                             wait_target=wait_target)
 
     def get_open_pages(self) -> Mapping:
         apps = {}
