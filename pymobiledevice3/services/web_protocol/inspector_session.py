@@ -134,6 +134,8 @@ class InspectorSession:
             details = result['description']
             logger.error(details)
             raise InspectorEvaluateError(details)
+        elif result['type'] == 'bigint':
+            return result['description']
         elif result['type'] == 'undefined':
             pass
         else:
