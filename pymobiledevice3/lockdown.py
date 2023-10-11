@@ -299,6 +299,12 @@ class LockdownClient(ABC, LockdownServiceProvider):
     def set_locale(self, locale: str) -> None:
         self.set_value(locale, key='Locale', domain='com.apple.international')
 
+    def set_timezone(self, timezone: str) -> None:
+        self.set_value(timezone, key='TimeZone')
+
+    def set_uses24hClock(self, value: bool) -> None:
+        self.set_value(value, key='Uses24HourClock')
+
     @_reconnect_on_remote_close
     def enter_recovery(self):
         return self._request('EnterRecovery')
