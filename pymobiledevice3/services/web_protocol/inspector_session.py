@@ -7,6 +7,14 @@ from pymobiledevice3.exceptions import InspectorEvaluateError
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 
 logger = logging.getLogger(__name__)
+webinspector_logger = logging.getLogger('webinspector.console')
+
+webinspector_logger_handlers = {
+    'info': webinspector_logger.info,
+    'error': webinspector_logger.error,
+    'debug': webinspector_logger.debug,
+    'warning': webinspector_logger.warning,
+}
 
 
 class InspectorSession:
@@ -25,6 +33,7 @@ class InspectorSession:
             'Target.targetDestroyed': self._target_destroyed,
             'Target.dispatchMessageFromTarget': self._target_dispatch_message_from_target,
             'Target.didCommitProvisionalTarget': self._target_did_commit_provisional_target,
+            'Console.messageAdded': self._console_message_added,
         }
 
         self._receive_task = asyncio.create_task(self._receive_loop())
@@ -52,12 +61,17 @@ class InspectorSession:
         self.target_id = target_id
         logger.info(f'Changed to: {target_id}')
 
+    async def console_enable(self):
+        await self.send_command('Console.enable')
+
     async def runtime_enable(self):
-        command = {'method': 'Runtime.enable', 'params': {}}
+        await self.send_command('Runtime.enable')
+
+    async def send_command(self, method: str, **kwargs):
         if self.target_id is None:
-            await self.protocol.send_command(command)
+            await self.protocol.send_command(method, **kwargs)
         else:
-            await self.send_and_receive(command)
+            await self.send_and_receive({'method': method, 'params': kwargs})
 
     async def runtime_evaluate(self, exp: str):
         # if the expression is dict, it's needed to be in ()
@@ -68,11 +82,14 @@ class InspectorSession:
 
         response = await self.send_and_receive({'method': 'Runtime.evaluate',
                                                 'params': {
-                                                    'expression': exp,
+                                                    'expression': f'\n'
+                                                                  f'//# sourceURL=__WebInspectorConsoleEvaluation__\n'
+                                                                  f'{exp}',
                                                     'objectGroup': 'console',
                                                     'includeCommandLineAPI': True,
+                                                    'doNotPauseOnExceptionsAndMuteConsole': False,
                                                     'silent': False,
-                                                    'returnByValue': True,
+                                                    'returnByValue': False,
                                                     'generatePreview': False,
                                                     'userGesture': True,
                                                     'awaitPromise': False,
@@ -138,13 +155,32 @@ class InspectorSession:
             return result['description']
         elif result['type'] == 'undefined':
             pass
+        elif result['type'] == 'object':
+            return f'[object {result["className"]}]'
         else:
             return result['value']
 
     # response methods
     def _target_dispatch_message_from_target(self, response: Mapping):
-        receive_message_id = json.loads(response['params']['message'])['id']
+        target_message = json.loads(response['params']['message'])
+        receive_message_id = target_message.get('id')
+        if receive_message_id is None:
+            self._missing_id_in_message(target_message)
+            return
         self._dispatch_message_responses[receive_message_id] = response
+
+    def _missing_id_in_message(self, message: Mapping):
+        handler = self.response_methods.get(message['method'])
+        if handler is not None:
+            handler(message)
+        else:
+            logger.critical(f'unhandled message: {message}')
+
+    @staticmethod
+    def _console_message_added(message: Mapping):
+        log_level = message['params']['message']['level']
+        text = message['params']['message']['text']
+        webinspector_logger_handlers[log_level](text)
 
     def _target_created(self, response: Mapping):
         pass
