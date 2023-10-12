@@ -261,6 +261,7 @@ class WebinspectorService:
 
     def _handle_application_sent_data(self, arg):
         response = json.loads(arg['WIRMessageDataKey'])
+
         if 'id' in response:
             self.wir_message_results[response['id']] = response
         else:
