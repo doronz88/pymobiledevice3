@@ -1,9 +1,10 @@
 import asyncio
 import logging
+import re
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from functools import update_wrapper
-from typing import Optional, Type
+from typing import Iterable, Optional, Type
 
 import click
 import inquirer3
@@ -12,6 +13,7 @@ import uvicorn
 from inquirer3.themes import GreenPassion
 from prompt_toolkit import HTML, PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.completion.base import CompleteEvent, Completer, Completion, Document
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.lexers import PygmentsLexer
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -28,6 +30,34 @@ from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.web_protocol.driver import By, Cookie, WebDriver
 from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
 from pymobiledevice3.services.webinspector import SAFARI, Page, WebinspectorService
+
+SCRIPT = '''
+function inspectedPage_evalResult_getCompletions(primitiveType) {{
+    var resultSet={{}};
+    var object = primitiveType;
+    for(var o=object;o;o=o.__proto__) {{
+
+        try{{
+            var names=Object.getOwnPropertyNames(o);
+            for(var i=0;i<names.length;++i)
+                resultSet[names[i]]=true;
+        }} catch(e){{}}
+    }}
+    return resultSet;
+}}
+
+try {{
+    inspectedPage_evalResult_getCompletions({object})
+}} catch (e) {{}}
+'''
+
+JS_RESERVED_WORDS = ['abstract', 'arguments', 'await', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class',
+                     'const', 'continue', 'debugger', 'default', 'delete', 'do', 'double', 'else', 'enum', 'eval',
+                     'export', 'extends', 'false', 'final', 'finally', 'float', 'for', 'function', 'goto', 'if',
+                     'implements', 'import', 'in', 'instanceof', 'int', 'interface', 'let', 'long', 'native', 'new',
+                     'null', 'package', 'private', 'protected', 'public', 'return', 'short', 'static', 'super',
+                     'switch', 'synchronized', 'this', 'throw', 'throws', 'transient', 'true', 'try', 'typeof', 'var',
+                     'void', 'volatile', 'while', 'with', 'yield', ]
 
 logger = logging.getLogger(__name__)
 
@@ -226,13 +256,48 @@ def cdp(service_provider: LockdownClient, host, port):
                 ws_ping_timeout=None, ws='wsproto', loop='asyncio')
 
 
+class JsShellCompleter(Completer):
+    def __init__(self, jsshell: 'JsShell'):
+        self.jsshell = jsshell
+
+    def get_completions(
+            self, document: Document, complete_event: CompleteEvent
+    ) -> Iterable[Completion]:
+        text = f'globalThis.{document.text_before_cursor}'
+        text = re.findall('[a-zA-Z0-9.]+', text)
+        if len(text) == 0:
+            return []
+        text = text[-1]
+        if '.' in text:
+            text_to_complete, key_prefix = text.rsplit('.', 1)
+        else:
+            text_to_complete = text
+            key_prefix = ''
+
+        if text_to_complete in JS_RESERVED_WORDS:
+            return []
+
+        completions = []
+        try:
+            for key in asyncio.get_event_loop().run_until_complete(
+                    self.jsshell.evaluate_expression(SCRIPT.format(object=text_to_complete), return_by_value=True)):
+                if not key.startswith(key_prefix):
+                    continue
+                completions.append(Completion(key.removeprefix(key_prefix), display=key))
+        except Exception:
+            # ignore every possible exception
+            pass
+        return completions
+
+
 class JsShell(ABC):
     def __init__(self):
         super().__init__()
         self.prompt_session = PromptSession(lexer=PygmentsLexer(lexers.JavascriptLexer),
                                             auto_suggest=AutoSuggestFromHistory(),
                                             style=style_from_pygments_cls(get_style_by_name('stata-dark')),
-                                            history=FileHistory(self.webinspector_history_path()))
+                                            history=FileHistory(self.webinspector_history_path()),
+                                            completer=JsShellCompleter(self))
 
     @classmethod
     @abstractmethod
@@ -240,7 +305,7 @@ class JsShell(ABC):
         pass
 
     @abstractmethod
-    async def evaluate_expression(self, exp):
+    async def evaluate_expression(self, exp, return_by_value: bool = False):
         pass
 
     @abstractmethod
@@ -295,7 +360,7 @@ class AutomationJsShell(JsShell):
             automation_session.stop_session()
             inspector.close()
 
-    async def evaluate_expression(self, exp: str):
+    async def evaluate_expression(self, exp: str, return_by_value: bool = False):
         return self.driver.execute_script(f'return {exp}')
 
     async def navigate(self, url: str):
@@ -323,8 +388,8 @@ class InspectorJsShell(JsShell):
         finally:
             inspector.close()
 
-    async def evaluate_expression(self, exp: str):
-        return await self.inspector_session.runtime_evaluate(exp)
+    async def evaluate_expression(self, exp: str, return_by_value: bool = False):
+        return await self.inspector_session.runtime_evaluate(exp, return_by_value=return_by_value)
 
     async def navigate(self, url: str):
         await self.inspector_session.navigate_to_url(url)
