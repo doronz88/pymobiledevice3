@@ -158,6 +158,8 @@ class InspectorSession:
             pass
         elif result['type'] == 'object':
             return f'[object {result["className"]}]'
+        elif result['type'] == 'function':
+            return result['description']
         else:
             return result['value']
 
