@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 webinspector_logger = logging.getLogger('webinspector.console')
 
 webinspector_logger_handlers = {
+    'log': webinspector_logger.info,
     'info': webinspector_logger.info,
     'error': webinspector_logger.error,
     'debug': webinspector_logger.debug,
