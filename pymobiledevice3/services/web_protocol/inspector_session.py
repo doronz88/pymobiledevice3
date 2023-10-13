@@ -74,7 +74,7 @@ class InspectorSession:
         else:
             await self.send_and_receive({'method': method, 'params': kwargs})
 
-    async def runtime_evaluate(self, exp: str):
+    async def runtime_evaluate(self, exp: str, return_by_value: bool = False):
         # if the expression is dict, it's needed to be in ()
         exp = exp.strip()
         if exp:
@@ -90,7 +90,7 @@ class InspectorSession:
                                                     'includeCommandLineAPI': True,
                                                     'doNotPauseOnExceptionsAndMuteConsole': False,
                                                     'silent': False,
-                                                    'returnByValue': False,
+                                                    'returnByValue': return_by_value,
                                                     'generatePreview': False,
                                                     'userGesture': True,
                                                     'awaitPromise': False,
@@ -143,7 +143,8 @@ class InspectorSession:
         else:
             message = json.loads(response['params']['message'])
         if 'error' in message:
-            details = message['error']['message']
+            error = message['error']
+            details = error['message']
             logger.error(details)
             raise InspectorEvaluateError(details)
 
@@ -157,6 +158,9 @@ class InspectorSession:
         elif result['type'] == 'undefined':
             pass
         elif result['type'] == 'object':
+            value = result.get('value')
+            if value is not None:
+                return value
             return f'[object {result["className"]}]'
         elif result['type'] == 'function':
             return result['description']
