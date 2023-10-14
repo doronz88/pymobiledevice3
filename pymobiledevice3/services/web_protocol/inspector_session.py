@@ -73,9 +73,9 @@ class InspectorSession:
 
     async def send_command(self, method: str, **kwargs):
         if self.target_id is None:
-            await self.protocol.send_command(method, **kwargs)
+            return await self.protocol.send_receive(method, **kwargs)
         else:
-            await self.send_and_receive({'method': method, 'params': kwargs})
+            return await self.send_and_receive({'method': method, 'params': kwargs})
 
     async def runtime_evaluate(self, exp: str, return_by_value: bool = False):
         # if the expression is dict, it's needed to be in ()
