@@ -389,6 +389,7 @@ class InspectorJsShell(JsShell):
         inspector_session = await inspector.inspector_session(application, page)
         await inspector_session.console_enable()
         await inspector_session.runtime_enable()
+
         try:
             yield cls(inspector_session)
         finally:
