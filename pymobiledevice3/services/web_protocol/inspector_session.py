@@ -1,7 +1,8 @@
 import asyncio
 import json
 import logging
-from typing import Mapping, Optional
+from collections import UserDict
+from typing import List, Mapping, Optional
 
 from pymobiledevice3.exceptions import InspectorEvaluateError
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
@@ -16,6 +17,37 @@ webinspector_logger_handlers = {
     'debug': webinspector_logger.debug,
     'warning': webinspector_logger.warning,
 }
+
+
+class JSObjectPreview(UserDict):
+    def __init__(self, properties: List[Mapping]):
+        super().__init__()
+        for p in properties:
+            name = p['name']
+            value = p['value']
+            self.data[name] = value
+
+
+class JSObjectProperties(UserDict):
+    def __init__(self, properties: List[Mapping]):
+        super().__init__()
+        for p in properties:
+            name = p['name']
+            if name == '__proto__':
+                self.class_name = p['value']['className']
+                continue
+            # test if a getter/setter first
+            value = p.get('get', p.get('set', p.get('value')))
+            if value is None:
+                continue
+            preview = value.get('preview')
+            if preview is not None:
+                value = JSObjectPreview(preview['properties'])
+            elif value.get('className') == 'Function':
+                value = value['description']
+            else:
+                value = value.get('value')
+            self.data[name] = value
 
 
 class InspectorSession:
@@ -102,7 +134,7 @@ class InspectorSession:
                                                     'uniqueContextId': '0.1'}
                                                 })
 
-        return self._parse_runtime_evaluate(response)
+        return await self._parse_runtime_evaluate(response)
 
     async def navigate_to_url(self, url: str):
         return await self.runtime_evaluate(exp=f'window.location = "{url}"')
@@ -140,22 +172,22 @@ class InspectorSession:
                 return self._dispatch_message_responses.pop(message_id)
             await asyncio.sleep(0)
 
-    def _parse_runtime_evaluate(self, response: Mapping):
+    async def get_properties(self, object_id: str) -> JSObjectProperties:
+        properties = await self.send_command(
+            'Runtime.getProperties', objectId=object_id, ownProperties=True, generatePreview=True)
+        message = json.loads(properties['params']['message'])
+        return JSObjectProperties(message['result']['properties'])
+
+    async def _parse_runtime_evaluate(self, response: Mapping):
         if self.target_id is None:
             message = response
         else:
             message = json.loads(response['params']['message'])
-        if 'error' in message:
-            error = message['error']
-            details = error['message']
-            logger.error(details)
-            raise InspectorEvaluateError(details)
-
         result = message['result']['result']
         if result.get('subtype', '') == 'error':
-            details = result['description']
-            logger.error(details)
-            raise InspectorEvaluateError(details)
+            properties = await self.get_properties(result['objectId'])
+            raise InspectorEvaluateError(properties.class_name, properties['message'], properties.get('line'),
+                                         properties.get('column'), properties.get('stack', '').split('\n'))
         elif result['type'] == 'bigint':
             return result['description']
         elif result['type'] == 'undefined':
@@ -165,6 +197,7 @@ class InspectorSession:
             if value is not None:
                 return value
 
+            # TODO: JSObjectProperties()
             preview = result['preview']
             preview_buf = '{\n'
             for p in result['preview']['properties']:

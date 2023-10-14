@@ -14,6 +14,8 @@ __all__ = [
     'AccessDeniedError'
 ]
 
+from typing import List, Optional
+
 
 class PyMobileDevice3Exception(Exception):
     pass
