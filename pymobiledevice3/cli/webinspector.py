@@ -336,7 +336,9 @@ class JsShell(ABC):
                 await self.js_iter()
             except WirError as e:
                 logger.error(e)
-            except (KeyboardInterrupt, InspectorEvaluateError):  # KeyboardInterrupt Control-C
+            except InspectorEvaluateError as e:
+                logger.error(e)
+            except KeyboardInterrupt:  # KeyboardInterrupt Control-C
                 pass
             except EOFError:  # Control-D
                 return
