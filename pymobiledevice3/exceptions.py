@@ -274,7 +274,20 @@ class InvalidServiceError(LockdownError):
 
 
 class InspectorEvaluateError(PyMobileDevice3Exception):
-    pass
+    def __init__(self, class_name: str, message: str, line: Optional[int] = None, column: Optional[int] = None,
+                 stack: Optional[List[str]] = None):
+        super().__init__()
+        self.class_name = class_name
+        self.message = message
+        self.line = line
+        self.column = column
+        self.stack = stack
+
+    def __str__(self) -> str:
+        stack_trace = '\n'.join([f'\t - {frame}' for frame in self.stack])
+        return (f'{self.class_name}: {self.message}.\n'
+                f'Line: {self.line} Column: {self.column}\n'
+                f'Stack: {stack_trace}')
 
 
 class LaunchingApplicationError(PyMobileDevice3Exception):
