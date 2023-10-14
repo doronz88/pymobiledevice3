@@ -142,7 +142,8 @@ class InspectorSession:
     async def send_and_receive(self, message: Mapping) -> Mapping:
         if self.target_id is None:
             message_id = await self.protocol.send_command(message['method'], **message.get('params', {}))
-            return await self.protocol.wait_for_message(message_id)
+            message = await self.protocol.wait_for_message(message_id)
+            return message['result']
         else:
             message_id = await self.send_message_to_target(message)
             message = await self.receive_response_by_id(message_id)
