@@ -55,9 +55,9 @@ def springboard_icon(service_provider: LockdownClient, bundle_id, out):
 
 
 @springboard.command('orientation', cls=Command)
-def springboard_orientation(lockdown: LockdownClient):
+def springboard_orientation(service_provider: LockdownClient):
     """ get screen orientation """
-    print(SpringBoardServicesService(lockdown=lockdown).get_interface_orientation())
+    print(SpringBoardServicesService(lockdown=service_provider).get_interface_orientation())
 
 
 @springboard.command('wallpaper', cls=Command)
