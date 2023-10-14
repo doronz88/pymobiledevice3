@@ -118,9 +118,7 @@ class InspectorSession:
 
         response = await self.send_and_receive({'method': 'Runtime.evaluate',
                                                 'params': {
-                                                    'expression': f'\n'
-                                                                  f'//# sourceURL=__WebInspectorConsoleEvaluation__\n'
-                                                                  f'{exp}',
+                                                    'expression': exp,
                                                     'objectGroup': 'console',
                                                     'includeCommandLineAPI': True,
                                                     'doNotPauseOnExceptionsAndMuteConsole': False,
