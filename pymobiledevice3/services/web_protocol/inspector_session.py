@@ -142,12 +142,10 @@ class InspectorSession:
     async def send_and_receive(self, message: Mapping) -> Mapping:
         if self.target_id is None:
             message_id = await self.protocol.send_command(message['method'], **message.get('params', {}))
-            message = await self.protocol.wait_for_message(message_id)
-            return message['result']
+            return await self.protocol.wait_for_message(message_id)
         else:
             message_id = await self.send_message_to_target(message)
-            message = await self.receive_response_by_id(message_id)
-            return json.loads(message['params']['message'])['result']
+            return await self.receive_response_by_id(message_id)
 
     async def send_message_to_target(self, message: Mapping) -> int:
         message['id'] = self.message_id
@@ -164,11 +162,9 @@ class InspectorSession:
             response = self.protocol.inspector.wir_events.pop(0)
             response_method = response['method']
             if response_method in self.response_methods:
-                if self.target_id is None:
-                    response = json.loads(response['params']['message'])['result']
                 self.response_methods[response_method](response)
             else:
-                logger.error('Unknown response method')
+                logger.error(f'Unknown response: {response}')
 
     async def receive_response_by_id(self, message_id: int) -> Mapping:
         while True:
@@ -179,10 +175,16 @@ class InspectorSession:
     async def get_properties(self, object_id: str) -> JSObjectProperties:
         message = await self.send_command(
             'Runtime.getProperties', objectId=object_id, ownProperties=True, generatePreview=True)
+        if self.target_id is not None:
+            message = json.loads(message['params']['message'])['result']
         return JSObjectProperties(message['properties'])
 
     async def _parse_runtime_evaluate(self, response: Mapping):
-        result = response['result']
+        if self.target_id is None:
+            message = response
+        else:
+            message = json.loads(response['params']['message'])
+        result = message['result']['result']
         if result.get('subtype', '') == 'error':
             properties = await self.get_properties(result['objectId'])
             raise InspectorEvaluateError(properties.class_name, properties['message'], properties.get('line'),
