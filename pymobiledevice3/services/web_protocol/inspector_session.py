@@ -8,14 +8,15 @@ from pymobiledevice3.exceptions import InspectorEvaluateError
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 
 logger = logging.getLogger(__name__)
-webinspector_logger = logging.getLogger('webinspector.console')
+console_logger = logging.getLogger('webinspector.console')
+heap_logger = logging.getLogger('webinspector.heap')
 
 webinspector_logger_handlers = {
-    'log': webinspector_logger.info,
-    'info': webinspector_logger.info,
-    'error': webinspector_logger.error,
-    'debug': webinspector_logger.debug,
-    'warning': webinspector_logger.warning,
+    'log': console_logger.info,
+    'info': console_logger.info,
+    'error': console_logger.error,
+    'debug': console_logger.debug,
+    'warning': console_logger.warning,
 }
 
 
@@ -70,6 +71,7 @@ class InspectorSession:
             'Console.messageAdded': self._console_message_added,
             'Console.messagesCleared': lambda _: _,
             'Console.messageRepeatCountUpdated': self._console_message_repeated_count_updated,
+            'Heap.garbageCollected': self._heap_garbage_collected,
         }
 
         self._receive_task = asyncio.create_task(self._receive_loop())
@@ -97,11 +99,24 @@ class InspectorSession:
         self.target_id = target_id
         logger.info(f'Changed to: {target_id}')
 
+    async def heap_gc(self):
+        return await self.send_command('Heap.gc')
+
+    async def heap_snapshot(self):
+        snapshot = await self.send_command('Heap.snapshot')
+        if self.target_id is not None:
+            snapshot = json.loads(snapshot['params']['message'])
+        snapshot = json.loads(snapshot)['result']['snapshotData']
+        return snapshot
+
+    async def heap_enable(self):
+        return await self.send_command('Heap.enable')
+
     async def console_enable(self):
-        await self.send_command('Console.enable')
+        return await self.send_command('Console.enable')
 
     async def runtime_enable(self):
-        await self.send_command('Runtime.enable')
+        return await self.send_command('Runtime.enable')
 
     async def send_command(self, method: str, **kwargs):
         if self.target_id is None:
@@ -235,6 +250,9 @@ class InspectorSession:
 
     def _console_message_repeated_count_updated(self, message: Mapping):
         self._console_message_added(self._last_console_message)
+
+    def _heap_garbage_collected(self, message: Mapping):
+        heap_logger.debug(message['params'])
 
     def _target_created(self, response: Mapping):
         pass
