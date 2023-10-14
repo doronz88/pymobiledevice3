@@ -35,6 +35,7 @@ class InspectorSession:
             'Target.dispatchMessageFromTarget': self._target_dispatch_message_from_target,
             'Target.didCommitProvisionalTarget': self._target_did_commit_provisional_target,
             'Console.messageAdded': self._console_message_added,
+            'Console.messagesCleared': lambda _: _,
         }
 
         self._receive_task = asyncio.create_task(self._receive_loop())
