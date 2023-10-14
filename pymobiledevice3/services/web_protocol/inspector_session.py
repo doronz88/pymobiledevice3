@@ -92,7 +92,7 @@ class InspectorSession:
                                                     'doNotPauseOnExceptionsAndMuteConsole': False,
                                                     'silent': False,
                                                     'returnByValue': return_by_value,
-                                                    'generatePreview': False,
+                                                    'generatePreview': True,
                                                     'userGesture': True,
                                                     'awaitPromise': False,
                                                     'replMode': True,
@@ -162,7 +162,16 @@ class InspectorSession:
             value = result.get('value')
             if value is not None:
                 return value
-            return f'[object {result["className"]}]'
+
+            preview = result['preview']
+            preview_buf = '{\n'
+            for p in result['preview']['properties']:
+                value = p.get('value', 'NOT_SUPPORTED_FOR_PREVIEW')
+                preview_buf += f'\t{p["name"]}: {value}, // {p["type"]}\n'
+            if preview['overflow']:
+                preview_buf += '\t// ...\n'
+            preview_buf += '}'
+            return f'[object {result["className"]}]\n{preview_buf}'
         elif result['type'] == 'function':
             return result['description']
         else:
