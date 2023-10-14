@@ -27,6 +27,7 @@ class InspectorSession:
         self.protocol = protocol
         self.target_id = target_id
         self.message_id = 1
+        self._last_console_message = {}
         self._dispatch_message_responses = {}
 
         self.response_methods = {
@@ -36,6 +37,7 @@ class InspectorSession:
             'Target.didCommitProvisionalTarget': self._target_did_commit_provisional_target,
             'Console.messageAdded': self._console_message_added,
             'Console.messagesCleared': lambda _: _,
+            'Console.messageRepeatCountUpdated': self._console_message_repeated_count_updated,
         }
 
         self._receive_task = asyncio.create_task(self._receive_loop())
@@ -193,11 +195,14 @@ class InspectorSession:
         else:
             logger.critical(f'unhandled message: {message}')
 
-    @staticmethod
-    def _console_message_added(message: Mapping):
+    def _console_message_added(self, message: Mapping):
         log_level = message['params']['message']['level']
         text = message['params']['message']['text']
+        self._last_console_message = message
         webinspector_logger_handlers[log_level](text)
+
+    def _console_message_repeated_count_updated(self, message: Mapping):
+        self._console_message_added(self._last_console_message)
 
     def _target_created(self, response: Mapping):
         pass
