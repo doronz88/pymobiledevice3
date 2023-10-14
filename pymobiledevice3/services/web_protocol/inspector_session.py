@@ -145,7 +145,8 @@ class InspectorSession:
             return await self.protocol.wait_for_message(message_id)
         else:
             message_id = await self.send_message_to_target(message)
-            return await self.receive_response_by_id(message_id)
+            message = await self.receive_response_by_id(message_id)
+            return json.loads(message['params']['message'])['result']
 
     async def send_message_to_target(self, message: Mapping) -> int:
         message['id'] = self.message_id
@@ -162,6 +163,8 @@ class InspectorSession:
             response = self.protocol.inspector.wir_events.pop(0)
             response_method = response['method']
             if response_method in self.response_methods:
+                if self.target_id is None:
+                    response = json.loads(response['params']['message'])['result']
                 self.response_methods[response_method](response)
             else:
                 logger.error('Unknown response method')
@@ -173,17 +176,12 @@ class InspectorSession:
             await asyncio.sleep(0)
 
     async def get_properties(self, object_id: str) -> JSObjectProperties:
-        properties = await self.send_command(
+        message = await self.send_command(
             'Runtime.getProperties', objectId=object_id, ownProperties=True, generatePreview=True)
-        message = json.loads(properties['params']['message'])
-        return JSObjectProperties(message['result']['properties'])
+        return JSObjectProperties(message['properties'])
 
     async def _parse_runtime_evaluate(self, response: Mapping):
-        if self.target_id is None:
-            message = response
-        else:
-            message = json.loads(response['params']['message'])
-        result = message['result']['result']
+        result = response['result']
         if result.get('subtype', '') == 'error':
             properties = await self.get_properties(result['objectId'])
             raise InspectorEvaluateError(properties.class_name, properties['message'], properties.get('line'),
@@ -203,7 +201,7 @@ class InspectorSession:
             for p in result['preview']['properties']:
                 value = p.get('value', 'NOT_SUPPORTED_FOR_PREVIEW')
                 preview_buf += f'\t{p["name"]}: {value}, // {p["type"]}\n'
-            if preview['overflow']:
+            if preview.get('overflow'):
                 preview_buf += '\t// ...\n'
             preview_buf += '}'
             return f'[object {result["className"]}]\n{preview_buf}'
