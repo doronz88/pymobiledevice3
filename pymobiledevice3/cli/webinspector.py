@@ -4,7 +4,7 @@ import re
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from functools import update_wrapper
-from typing import Iterable, Optional, Type
+from typing import Iterable, List, Optional, Type
 
 import click
 import inquirer3
@@ -256,6 +256,23 @@ def cdp(service_provider: LockdownClient, host, port):
                 ws_ping_timeout=None, ws='wsproto', loop='asyncio')
 
 
+def get_js_completions(jsshell: 'JsShell', obj: str, prefix: str) -> List[Completion]:
+    if obj in JS_RESERVED_WORDS:
+        return []
+
+    completions = []
+    try:
+        for key in asyncio.get_event_loop().run_until_complete(
+                jsshell.evaluate_expression(SCRIPT.format(object=obj), return_by_value=True)):
+            if not key.startswith(prefix):
+                continue
+            completions.append(Completion(key.removeprefix(prefix), display=key))
+    except Exception:
+        # ignore every possible exception
+        pass
+    return completions
+
+
 class JsShellCompleter(Completer):
     def __init__(self, jsshell: 'JsShell'):
         self.jsshell = jsshell
@@ -264,30 +281,17 @@ class JsShellCompleter(Completer):
             self, document: Document, complete_event: CompleteEvent
     ) -> Iterable[Completion]:
         text = f'globalThis.{document.text_before_cursor}'
-        text = re.findall('[a-zA-Z0-9.]+', text)
+        text = re.findall('[a-zA-Z_][a-zA-Z_0-9.]+', text)
         if len(text) == 0:
             return []
         text = text[-1]
         if '.' in text:
-            text_to_complete, key_prefix = text.rsplit('.', 1)
+            js_obj, prefix = text.rsplit('.', 1)
         else:
-            text_to_complete = text
-            key_prefix = ''
+            js_obj = text
+            prefix = ''
 
-        if text_to_complete in JS_RESERVED_WORDS:
-            return []
-
-        completions = []
-        try:
-            for key in asyncio.get_event_loop().run_until_complete(
-                    self.jsshell.evaluate_expression(SCRIPT.format(object=text_to_complete), return_by_value=True)):
-                if not key.startswith(key_prefix):
-                    continue
-                completions.append(Completion(key.removeprefix(key_prefix), display=key))
-        except Exception:
-            # ignore every possible exception
-            pass
-        return completions
+        return get_js_completions(self.jsshell, js_obj, prefix)
 
 
 class JsShell(ABC):
