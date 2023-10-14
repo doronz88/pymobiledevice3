@@ -27,6 +27,7 @@ class InspectorSession:
         self.protocol = protocol
         self.target_id = target_id
         self.message_id = 1
+        self._last_console_message = {}
         self._dispatch_message_responses = {}
 
         self.response_methods = {
@@ -35,6 +36,8 @@ class InspectorSession:
             'Target.dispatchMessageFromTarget': self._target_dispatch_message_from_target,
             'Target.didCommitProvisionalTarget': self._target_did_commit_provisional_target,
             'Console.messageAdded': self._console_message_added,
+            'Console.messagesCleared': lambda _: _,
+            'Console.messageRepeatCountUpdated': self._console_message_repeated_count_updated,
         }
 
         self._receive_task = asyncio.create_task(self._receive_loop())
@@ -91,7 +94,7 @@ class InspectorSession:
                                                     'doNotPauseOnExceptionsAndMuteConsole': False,
                                                     'silent': False,
                                                     'returnByValue': return_by_value,
-                                                    'generatePreview': False,
+                                                    'generatePreview': True,
                                                     'userGesture': True,
                                                     'awaitPromise': False,
                                                     'replMode': True,
@@ -161,7 +164,16 @@ class InspectorSession:
             value = result.get('value')
             if value is not None:
                 return value
-            return f'[object {result["className"]}]'
+
+            preview = result['preview']
+            preview_buf = '{\n'
+            for p in result['preview']['properties']:
+                value = p.get('value', 'NOT_SUPPORTED_FOR_PREVIEW')
+                preview_buf += f'\t{p["name"]}: {value}, // {p["type"]}\n'
+            if preview['overflow']:
+                preview_buf += '\t// ...\n'
+            preview_buf += '}'
+            return f'[object {result["className"]}]\n{preview_buf}'
         elif result['type'] == 'function':
             return result['description']
         else:
@@ -183,11 +195,14 @@ class InspectorSession:
         else:
             logger.critical(f'unhandled message: {message}')
 
-    @staticmethod
-    def _console_message_added(message: Mapping):
+    def _console_message_added(self, message: Mapping):
         log_level = message['params']['message']['level']
         text = message['params']['message']['text']
+        self._last_console_message = message
         webinspector_logger_handlers[log_level](text)
+
+    def _console_message_repeated_count_updated(self, message: Mapping):
+        self._console_message_added(self._last_console_message)
 
     def _target_created(self, response: Mapping):
         pass
