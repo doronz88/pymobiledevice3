@@ -262,7 +262,7 @@ def get_js_completions(jsshell: 'JsShell', obj: str, prefix: str) -> List[Comple
 
     completions = []
     try:
-        for key in asyncio.get_event_loop().run_until_complete(
+        for key in asyncio.get_running_loop().run_until_complete(
                 jsshell.evaluate_expression(SCRIPT.format(object=obj), return_by_value=True)):
             if not key.startswith(prefix):
                 continue
