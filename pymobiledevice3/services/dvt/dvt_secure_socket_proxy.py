@@ -1,8 +1,6 @@
-from typing import Union
-
 from packaging.version import Version
 
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.remote_server import RemoteServer
 
@@ -12,7 +10,7 @@ class DvtSecureSocketProxyService(RemoteServer):
     OLD_SERVICE_NAME = 'com.apple.instruments.remoteserver'
     RSD_SERVICE_NAME = 'com.apple.instruments.dtservicehub'
 
-    def __init__(self, lockdown: Union[RemoteServiceDiscoveryService, LockdownClient]):
+    def __init__(self, lockdown: LockdownServiceProvider):
         if isinstance(lockdown, RemoteServiceDiscoveryService):
             service_name = self.RSD_SERVICE_NAME
             remove_ssl_context = False
