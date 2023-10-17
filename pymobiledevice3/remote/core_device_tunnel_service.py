@@ -20,6 +20,7 @@ import aiofiles
 from construct import Const, Container, Enum, GreedyBytes, GreedyRange, Int8ul, Int16ub, Int64ul, Prefixed, Struct
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives._serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
@@ -42,6 +43,7 @@ from pymobiledevice3.exceptions import PyMobileDevice3Exception, UserDeniedPairi
 from pymobiledevice3.pair_records import create_pairing_records_cache_folder, generate_host_id
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.utils import resume_remoted_if_required, stop_remoted_if_required
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.utils import asyncio_print_traceback
 
@@ -565,3 +567,18 @@ def create_core_device_tunnel_service(rsd: RemoteServiceDiscoveryService, autopa
     service = CoreDeviceTunnelService(rsd)
     service.connect(autopair=autopair)
     return service
+
+
+@asynccontextmanager
+async def start_quic_tunnel(service_provider: RemoteServiceDiscoveryService, secrets: Optional[TextIO] = None) \
+        -> AsyncGenerator[TunnelResult, None]:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    stop_remoted_if_required()
+    with create_core_device_tunnel_service(service_provider, autopair=True) as service:
+        async with service.start_quic_tunnel(private_key, secrets_log_file=secrets) as tunnel_result:
+            resume_remoted_if_required()
+            yield tunnel_result
+
+            while True:
+                # wait user input while the asyncio tasks execute
+                await asyncio.sleep(.5)
