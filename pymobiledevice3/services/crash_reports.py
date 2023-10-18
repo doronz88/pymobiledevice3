@@ -134,9 +134,17 @@ class CrashReportsManager:
         """
         sysdiagnose_filename = None
 
+        now = None
+        if isinstance(self.lockdown, LockdownClient):
+            now = self.lockdown.date
+
         while sysdiagnose_filename is None:
             self.afc.wait_exists('DiagnosticLogs/sysdiagnose')
             for filename in self.ls('DiagnosticLogs/sysdiagnose'):
+                if now is not None and now.strftime('%Y.%m.%d') not in filename:
+                    # filter out files that weren't created now
+                    continue
+
                 # search for an IN_PROGRESS archive
                 if 'IN_PROGRESS_' in filename:
                     for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
