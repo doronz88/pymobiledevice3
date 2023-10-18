@@ -134,27 +134,19 @@ class CrashReportsManager:
         """
         sysdiagnose_filename = None
 
-        for syslog_entry in OsTraceService(lockdown=self.lockdown).syslog():
-            if (posixpath.basename(syslog_entry.filename) not in SYSDIAGNOSE_PROCESS_NAMES) or \
-                    (posixpath.basename(syslog_entry.image_name) not in SYSDIAGNOSE_PROCESS_NAMES):
-                # filter only sysdianose lines
-                continue
-
-            message = syslog_entry.message
-
-            if message.startswith('SDArchive: Successfully created tar at '):
-                self.logger.info('sysdiagnose creation has begun')
-                for filename in self.ls('DiagnosticLogs/sysdiagnose'):
-                    # search for an IN_PROGRESS archive
-                    if 'IN_PROGRESS_' in filename:
-                        for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
-                            if filename.endswith(ext):
-                                sysdiagnose_filename = filename.rsplit(ext)[0]
-                                sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
-                                sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
-                                break
-                break
-
+        while sysdiagnose_filename is None:
+            self.afc.wait_exists('DiagnosticLogs/sysdiagnose')
+            for filename in self.ls('DiagnosticLogs/sysdiagnose'):
+                # search for an IN_PROGRESS archive
+                if 'IN_PROGRESS_' in filename:
+                    for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
+                        if filename.endswith(ext):
+                            sysdiagnose_filename = filename.rsplit(ext)[0]
+                            sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
+                            sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
+                            break
+                    break
+        self.logger.info('sysdiagnose tarball creation has been started')
         self.afc.wait_exists(sysdiagnose_filename)
         time.sleep(IOS17_SYSDIAGNOSE_DELAY)
         self.pull(out, entry=sysdiagnose_filename, erase=erase)
