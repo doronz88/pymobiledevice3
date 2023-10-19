@@ -91,12 +91,11 @@ def format_line(color, pid, syslog_entry, include_label):
 @click.option('-e', '--regex', multiple=True, help='filter only lines matching given regex')
 @click.option('-ei', '--insensitive-regex', multiple=True, help='filter only lines matching given regex (insensitive)')
 def syslog_live(service_provider: LockdownClient, out, color, pid, process_name, match, match_insensitive,
-                include_label, regex,
-                insensitive_regex):
+                include_label, regex, insensitive_regex):
     """ view live syslog lines """
 
-    match_regex = [re.compile(f'.*({r}).*') for r in regex]
-    match_regex += [re.compile(f'.*({r}).*', re.IGNORECASE) for r in insensitive_regex]
+    match_regex = [re.compile(f'.*({r}).*', re.DOTALL) for r in regex]
+    match_regex += [re.compile(f'.*({r}).*', re.IGNORECASE | re.DOTALL) for r in insensitive_regex]
 
     def replace(m):
         if len(m.groups()):
@@ -140,7 +139,6 @@ def syslog_live(service_provider: LockdownClient, out, color, pid, process_name,
             for r in match_regex:
                 if not r.findall(line):
                     continue
-
                 line = re.sub(r, replace, line)
                 skip = False
 
