@@ -4,6 +4,7 @@ import struct
 import tempfile
 import typing
 from datetime import datetime
+from pathlib import Path
 from tarfile import TarFile
 
 from construct import Adapter, Byte, Bytes, Computed, Enum, Int16ul, Int32ul, Optional, RepeatUntil, Struct, this
@@ -117,9 +118,11 @@ class OsTraceService(LockdownService):
         """
         Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
         """
-        with tempfile.NamedTemporaryFile() as tar:
-            self.create_archive(tar, size_limit=size_limit, age_limit=age_limit, start_time=start_time)
-            TarFile(tar.name).extractall(out)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            file = Path(temp_dir) / 'foo.tar'
+            with open(file, 'wb') as f:
+                self.create_archive(f, size_limit=size_limit, age_limit=age_limit, start_time=start_time)
+            TarFile(file).extractall(out)
 
     def syslog(self, pid=-1):
         self.service.send_plist({'Request': 'StartActivity', 'MessageFilter': 65535, 'Pid': pid, 'StreamFlags': 60})
