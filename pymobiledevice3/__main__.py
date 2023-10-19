@@ -48,6 +48,21 @@ logging.getLogger('urllib3.connectionpool').disabled = True
 
 logger = logging.getLogger(__name__)
 
+INVALID_SERVICE_MESSAGE = """Failed to start service. Possible reasons are:
+- If you were trying to access a developer service (developer subcommand):
+    - Make sure the DeveloperDiskImage/PersonalizedImage is mounted via:
+      > python3 -m pymobiledevice3 mounter auto-mount
+
+    - If you your device iOS version >= 17.0:
+        - Make sure you passed the --rsd option to the subcommand
+          https://github.com/doronz88/pymobiledevice3#working-with-developer-tools-ios--170
+
+- Apple removed this service
+
+- A bug. Please file a bug report:
+  https://github.com/doronz88/pymobiledevice3/issues/new?assignees=&labels=&projects=&template=bug_report.md&title=
+"""
+
 
 def cli():
     cli_commands = click.CommandCollection(sources=[
@@ -88,8 +103,7 @@ def cli():
         logger.error('Developer Mode is disabled. You can try to enable it using: '
                      'python3 -m pymobiledevice3 amfi enable-developer-mode')
     except InvalidServiceError:
-        logger.error('Failed to access an invalid lockdown service, possibly from DeveloperDiskImage.dmg or a Cryptex. '
-                     'You may try: python3 -m pymobiledevice3 mounter auto-mount')
+        logger.error(INVALID_SERVICE_MESSAGE)
     except NoDeviceSelectedError:
         return
     except PasswordRequiredError:
