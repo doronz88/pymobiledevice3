@@ -53,7 +53,7 @@ INVALID_SERVICE_MESSAGE = """Failed to start service. Possible reasons are:
     - Make sure the DeveloperDiskImage/PersonalizedImage is mounted via:
       > python3 -m pymobiledevice3 mounter auto-mount
 
-    - If you your device iOS version >= 17.0:
+    - If your device iOS version >= 17.0:
         - Make sure you passed the --rsd option to the subcommand
           https://github.com/doronz88/pymobiledevice3#working-with-developer-tools-ios--170
 
