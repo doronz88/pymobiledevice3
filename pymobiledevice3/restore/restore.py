@@ -31,6 +31,7 @@ known_errors = {
     6: 'disk failure',
     14: 'fail',
     27: 'failed to mount filesystems',
+    50: 'failed to load SEP firmware',
     51: 'failed to load SEP firmware',
     53: 'failed to recover FDR data',
     1015: 'X-Gold Baseband Update Failed. Defective Unit?',
@@ -633,7 +634,8 @@ class Restore(BaseRestore):
 
         while True:
             try:
-                client = LockdownServiceConnection.create_using_usbmux(self._restored.udid, data_port, connection_type='USB')
+                client = LockdownServiceConnection.create_using_usbmux(self._restored.udid, data_port,
+                                                                       connection_type='USB')
                 break
             except ConnectionFailedError:
                 self.logger.debug('Retrying connection...')
@@ -650,16 +652,14 @@ class Restore(BaseRestore):
         self.logger.debug('send_manifest')
         self._restored.send({'ReceiptManifest': self.build_identity.manifest})
 
-    def get_se_firmware_data(self, info: Mapping):
+    def get_se_firmware_data(self, updater_name: str, info: Mapping, arguments: Mapping):
         chip_id = info.get('SE,ChipID')
         if chip_id is None:
-            chip_id = info.get('SEChipID')
-            if chip_id is None:
-                chip_id = self.build_identity['Manifest']['SEChipID']
+            chip_id = self.build_identity['Manifest']['SE,ChipID']
 
         if chip_id == 0x20211:
             comp_name = 'SE,Firmware'
-        elif chip_id in (0x73, 0x64, 0xC8, 0xD2):
+        elif chip_id in (0x73, 0x64, 0xC8, 0xD2, 0x2c, 0x36):
             comp_name = 'SE,UpdatePayload'
         else:
             self.logger.warning(f'Unknown SE,ChipID {chip_id} detected. Restore might fail.')
@@ -673,26 +673,29 @@ class Restore(BaseRestore):
 
         component_data = self.build_identity.get_component(comp_name).data
 
-        # create SE request
-        request = TSSRequest()
-        parameters = dict()
-
-        # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(parameters)
-
-        # add SE,* tags from info dictionary to parameters
-        parameters.update(info)
-
-        # add required tags for SE TSS request
-        request.add_se_tags(parameters, None)
-
-        self.logger.info('Sending SE TSS request...')
-        response = request.send_receive()
-
-        if 'SE,Ticket' in response:
-            self.logger.info('Received SE ticket')
+        if 'DeviceGeneratedTags' in arguments:
+            response = self.get_device_generated_firmware_data(updater_name, info, arguments)
         else:
-            raise PyMobileDevice3Exception('No \'SE,Ticket\' in TSS response, this might not work')
+            # create SE request
+            request = TSSRequest()
+            parameters = dict()
+
+            # add manifest for current build_identity to parameters
+            self.build_identity.populate_tss_request_parameters(parameters)
+
+            # add SE,* tags from info dictionary to parameters
+            parameters.update(info)
+
+            # add required tags for SE TSS request
+            request.add_se_tags(parameters, None)
+
+            self.logger.info('Sending SE TSS request...')
+            response = request.send_receive()
+
+            if 'SE,Ticket' in response:
+                self.logger.info('Received SE ticket')
+            else:
+                raise PyMobileDevice3Exception('No \'SE,Ticket\' in TSS response, this might not work')
 
         response['FirmwareData'] = component_data
 
@@ -771,36 +774,40 @@ class Restore(BaseRestore):
 
         return response
 
-    def get_rose_firmware_data(self, info: Mapping):
+    def get_rose_firmware_data(self, updater_name: str, info: Mapping, arguments: Mapping):
         self.logger.info(f'get_rose_firmware_data: {info}')
 
-        # create Rose request
-        request = TSSRequest()
-        parameters = dict()
-
-        # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(parameters)
-
-        parameters['ApProductionMode'] = True
-
-        if self.device.is_image4_supported:
-            parameters['ApSecurityMode'] = True
-            parameters['ApSupportsImg4'] = True
+        if 'DeviceGeneratedTags' in arguments:
+            response = self.get_device_generated_firmware_data(updater_name, info, arguments)
+            return response
         else:
-            parameters['ApSupportsImg4'] = False
+            # create Rose request
+            request = TSSRequest()
+            parameters = dict()
 
-        # add Rap,* tags from info dictionary to parameters
-        parameters.update(info)
+            # add manifest for current build_identity to parameters
+            self.build_identity.populate_tss_request_parameters(parameters)
 
-        # add required tags for Rose TSS request
-        request.add_rose_tags(parameters, None)
+            parameters['ApProductionMode'] = True
 
-        self.logger.info('Sending Rose TSS request...')
-        response = request.send_receive()
+            if self.device.is_image4_supported:
+                parameters['ApSecurityMode'] = True
+                parameters['ApSupportsImg4'] = True
+            else:
+                parameters['ApSupportsImg4'] = False
 
-        rose_ticket = response.get('Rap,Ticket')
-        if rose_ticket is None:
-            self.logger.error('No "Rap,Ticket" in TSS response, this might not work')
+            # add Rap,* tags from info dictionary to parameters
+            parameters.update(info)
+
+            # add required tags for Rose TSS request
+            request.add_rose_tags(parameters, None)
+
+            self.logger.info('Sending Rose TSS request...')
+            response = request.send_receive()
+
+            rose_ticket = response.get('Rap,Ticket')
+            if rose_ticket is None:
+                self.logger.error('No "Rap,Ticket" in TSS response, this might not work')
 
         comp_name = 'Rap,RTKitOS'
         component_data = self.build_identity.get_component(comp_name).data
@@ -821,29 +828,32 @@ class Restore(BaseRestore):
 
         return response
 
-    def get_veridian_firmware_data(self, info: Mapping):
+    def get_veridian_firmware_data(self, updater_name: str, info: Mapping, arguments: Mapping):
         self.logger.info(f'get_veridian_firmware_data: {info}')
         comp_name = 'BMU,FirmwareMap'
 
-        # create Veridian request
-        request = TSSRequest()
-        parameters = dict()
+        if 'DeviceGeneratedTags' in arguments:
+            response = self.get_device_generated_firmware_data(updater_name, info, arguments)
+        else:
+            # create Veridian request
+            request = TSSRequest()
+            parameters = dict()
 
-        # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(parameters)
+            # add manifest for current build_identity to parameters
+            self.build_identity.populate_tss_request_parameters(parameters)
 
-        # add BMU,* tags from info dictionary to parameters
-        parameters.update(info)
+            # add BMU,* tags from info dictionary to parameters
+            parameters.update(info)
 
-        # add required tags for Veridian TSS request
-        request.add_veridian_tags(parameters, None)
+            # add required tags for Veridian TSS request
+            request.add_veridian_tags(parameters, None)
 
-        self.logger.info('Sending Veridian TSS request...')
-        response = request.send_receive()
+            self.logger.info('Sending Veridian TSS request...')
+            response = request.send_receive()
 
-        ticket = response.get('BMU,Ticket')
-        if ticket is None:
-            self.logger.warning('No "BMU,Ticket" in TSS response, this might not work')
+            ticket = response.get('BMU,Ticket')
+            if ticket is None:
+                self.logger.warning('No "BMU,Ticket" in TSS response, this might not work')
 
         component_data = self.build_identity.get_component(comp_name).data
         fw_map = plistlib.loads(component_data)
@@ -882,8 +892,8 @@ class Restore(BaseRestore):
 
         return response
 
-    def get_cryptex1_firmware_data(self, updater_name: str, info: Mapping, arguments: Mapping):
-        self.logger.info(f'get_cryptex1_firmware_data: {arguments}')
+    def get_device_generated_firmware_data(self, updater_name: str, info: Mapping, arguments: Mapping):
+        self.logger.info(f'get_device_generated_firmware_data ({updater_name}): {arguments}')
         request = TSSRequest()
         parameters = dict()
 
@@ -892,8 +902,16 @@ class Restore(BaseRestore):
             parameters, arguments['DeviceGeneratedTags']['BuildIdentityTags'])
 
         parameters['@BBTicket'] = True
-        parameters['ApProductionMode'] = arguments['MessageArgInfo']['ApProductionMode']
         parameters['ApSecurityMode'] = True
+
+        # by default, set it to True
+        parameters['ApProductionMode'] = True
+
+        for k, v in arguments['MessageArgInfo'].items():
+            if k.endswith('ProductionMode'):
+                # if ApProductionMode should be overridden
+                parameters['ApProductionMode'] = bool(v)
+
         response_ticket = arguments['DeviceGeneratedTags']['ResponseTags'][0]
 
         parameters.update(arguments['DeviceGeneratedRequest'])
@@ -999,7 +1017,7 @@ class Restore(BaseRestore):
         info = arguments['MessageArgInfo']
 
         if updater_name == 'SE':
-            fwdict = self.get_se_firmware_data(info)
+            fwdict = self.get_se_firmware_data(updater_name, info, arguments)
             if fwdict is None:
                 raise PyMobileDevice3Exception('Couldn\'t get SE firmware data')
 
@@ -1015,12 +1033,12 @@ class Restore(BaseRestore):
                 raise PyMobileDevice3Exception(f'Couldn\'t get {fwtype} firmware data')
 
         elif updater_name == 'Rose':
-            fwdict = self.get_rose_firmware_data(info)
+            fwdict = self.get_rose_firmware_data(updater_name, info, arguments)
             if fwdict is None:
                 raise PyMobileDevice3Exception('Couldn\'t get Rose firmware data')
 
         elif updater_name == 'T200':
-            fwdict = self.get_veridian_firmware_data(info)
+            fwdict = self.get_veridian_firmware_data(updater_name, info, arguments)
             if fwdict is None:
                 raise PyMobileDevice3Exception('Couldn\'t get Veridian firmware data')
 
@@ -1035,7 +1053,7 @@ class Restore(BaseRestore):
                 raise PyMobileDevice3Exception('Couldn\'t get AppleTypeCRetimer firmware data')
 
         elif updater_name in ('Cryptex1', 'Cryptex1LocalPolicy'):
-            fwdict = self.get_cryptex1_firmware_data(updater_name, info, arguments)
+            fwdict = self.get_device_generated_firmware_data(updater_name, info, arguments)
             if fwdict is None:
                 raise PyMobileDevice3Exception(f'Couldn\'t get {updater_name} firmware data')
 
@@ -1153,7 +1171,8 @@ class Restore(BaseRestore):
 
         while True:
             try:
-                client = LockdownServiceConnection.create_using_usbmux(self._restored.udid, data_port, connection_type='USB')
+                client = LockdownServiceConnection.create_using_usbmux(self._restored.udid, data_port,
+                                                                       connection_type='USB')
                 break
             except ConnectionFailedError:
                 self.logger.debug('Retrying connection...')
