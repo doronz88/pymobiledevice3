@@ -350,6 +350,10 @@ class PcapdService(LockdownService):
                 if process != str(packet.pid) and process != packet.comm:
                     continue
 
+            if interface_name is not None:
+                if interface_name != packet.interface_name:
+                    continue
+
             packet.interface_type = INTERFACE_NAMES(packet.interface_type)
             packet.protocol_family = socket.AddressFamily(packet.protocol_family)
 
