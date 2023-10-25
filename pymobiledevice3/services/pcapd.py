@@ -3,7 +3,7 @@
 import enum
 import socket
 import struct
-from typing import Generator
+from typing import Generator, Optional
 
 from construct import Byte, Bytes, Container, CString, Int16ub, Int32ub, Int32ul, Padded, Seek, Struct, this
 
@@ -336,7 +336,8 @@ class PcapdService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def watch(self, packets_count: int = -1, process: str = None) -> Generator[Container, None, None]:
+    def watch(self, packets_count: int = -1, process: Optional[str] = None, interface_name: Optional[str] = None) \
+            -> Generator[Container, None, None]:
         packet_index = 0
         while packet_index != packets_count:
             d = self.service.recv_plist()
@@ -349,11 +350,14 @@ class PcapdService(LockdownService):
                 if process != str(packet.pid) and process != packet.comm:
                     continue
 
+            packet.interface_type = INTERFACE_NAMES(packet.interface_type)
+            packet.protocol_family = socket.AddressFamily(packet.protocol_family)
+
             if not packet.frame_pre_length:
                 # Add fake ethernet header for pdp packets.
                 packet.data = ETHERNET_HEADER + packet.data
-            packet.interface_type = INTERFACE_NAMES(packet.interface_type)
-            packet.protocol_family = socket.AddressFamily(packet.protocol_family)
+            elif packet.interface_name == 'pdp_ip':
+                packet.data = ETHERNET_HEADER + packet.data[4:]
 
             yield packet
 

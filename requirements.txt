@@ -9,7 +9,7 @@ pygments
 hexdump
 arrow
 daemonize
-gpxpy
+gpxpy<1.6.0
 pykdebugparser>=1.2.4
 pyusb>=1.2.1
 tqdm
