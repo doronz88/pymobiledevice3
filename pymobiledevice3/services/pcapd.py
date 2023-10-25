@@ -3,7 +3,7 @@
 import enum
 import socket
 import struct
-from typing import Generator
+from typing import Generator, Optional
 
 from construct import Byte, Bytes, Container, CString, Int16ub, Int32ub, Int32ul, Padded, Seek, Struct, this
 
@@ -336,7 +336,8 @@ class PcapdService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def watch(self, packets_count: int = -1, process: str = None) -> Generator[Container, None, None]:
+    def watch(self, packets_count: int = -1, process: Optional[str] = None, interface_name: Optional[str] = None) \
+            -> Generator[Container, None, None]:
         packet_index = 0
         while packet_index != packets_count:
             d = self.service.recv_plist()

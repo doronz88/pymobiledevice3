@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import IO
+from typing import IO, Optional
 
 import click
 from pygments import formatters, highlight, lexers
@@ -40,11 +40,13 @@ def print_packet(packet, color: bool):
 @click.argument('out', type=click.File('wb'), required=False)
 @click.option('-c', '--count', type=click.INT, default=-1, help='Number of packets to sniff. Omit to endless sniff.')
 @click.option('--process', default=None, help='Process to filter. Omit for all.')
+@click.option('-i', '--interface', default=None, help='Interface name to filter. Omit for all.')
 @click.option('--color/--no-color', default=True)
-def pcap(service_provider: LockdownClient, out: IO, count: int, process: str, color: bool):
+def pcap(service_provider: LockdownClient, out: Optional[IO], count: int, process: Optional[str],
+         interface: Optional[str], color: bool):
     """ sniff device traffic """
     service = PcapdService(lockdown=service_provider)
-    packets_generator = service.watch(packets_count=count, process=process)
+    packets_generator = service.watch(packets_count=count, process=process, interface_name=interface)
 
     if out is not None:
         packets_generator_with_print = map(lambda p: print_packet(p, color), packets_generator)
