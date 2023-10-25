@@ -349,11 +349,14 @@ class PcapdService(LockdownService):
                 if process != str(packet.pid) and process != packet.comm:
                     continue
 
+            packet.interface_type = INTERFACE_NAMES(packet.interface_type)
+            packet.protocol_family = socket.AddressFamily(packet.protocol_family)
+
             if not packet.frame_pre_length:
                 # Add fake ethernet header for pdp packets.
                 packet.data = ETHERNET_HEADER + packet.data
-            packet.interface_type = INTERFACE_NAMES(packet.interface_type)
-            packet.protocol_family = socket.AddressFamily(packet.protocol_family)
+            elif packet.interface_name == 'pdp_ip':
+                packet.data = ETHERNET_HEADER + packet.data[4:]
 
             yield packet
 
