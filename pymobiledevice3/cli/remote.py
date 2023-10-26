@@ -129,7 +129,10 @@ def cli_start_quic_tunnel(udid: str, secrets: TextIO, script_mode: bool):
     if udid is not None and rsd.udid != udid:
         raise NoDeviceConnectedError()
 
-    asyncio.run(tunnel_task(rsd, secrets, script_mode), debug=True)
+    try:
+        asyncio.run(tunnel_task(rsd, secrets, script_mode), debug=True)
+    except RuntimeError:
+        pass
 
 
 @remote_cli.command('service', cls=RSDCommand)
