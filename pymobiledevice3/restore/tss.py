@@ -343,12 +343,14 @@ class TSSRequest:
     def add_ap_img4_tags(self, parameters):
         keys_to_copy = (
             'ApNonce', 'Ap,OSLongVersion', 'ApSecurityMode', 'ApProductionMode', 'ApSepNonce',
-            'PearlCertificationRootPub', 'NeRDEpoch',)
+            'PearlCertificationRootPub', 'NeRDEpoch', 'ApSikaFuse')
         for k in keys_to_copy:
             if k in parameters:
                 v = parameters[k]
                 if k == 'ApSepNonce':
                     k = 'SepNonce'
+                if k == 'ApSikaFuse':
+                    k = 'Ap,SikaFuse'
                 self._request[k] = v
 
         uid_mode = parameters.get('UID_MODE', False)
@@ -516,7 +518,7 @@ class TSSRequest:
         keys_to_copy = (
             'BbChipID', 'BbProvisioningManifestKeyHash', 'BbActivationManifestKeyHash', 'BbCalibrationManifestKeyHash',
             'BbFactoryActivationManifestKeyHash', 'BbFDRSecurityKeyHash', 'BbSkeyId', 'BbNonce',
-            'BbGoldCertId', 'BbSNUM',)
+            'BbGoldCertId', 'BbSNUM', 'PearlCertificationRootPub', 'Ap,OSLongVersion')
 
         for k in keys_to_copy:
             if k in parameters:
@@ -566,9 +568,12 @@ class TSSRequest:
             self._request[key] = bytes_to_uint(value) == 1
 
         nonce = get_with_or_without_comma(parameters, 'Rap,Nonce')
-
         if nonce is not None:
             self._request['Rap,Nonce'] = nonce
+
+        digest = get_with_or_without_comma(parameters, 'Rap,FdrRootCaDigest')
+        if digest is not None:
+            self._request['Rap,FdrRootCaDigest'] = digest
 
         for comp_name, node in manifest.items():
             if not comp_name.startswith('Rap,'):
