@@ -604,6 +604,40 @@ class TcpLockdownClient(LockdownClient):
         return LockdownServiceConnection.create_using_tcp(self.hostname, port)
 
 
+class RemoteLockdownClient(LockdownClient):
+    def _create_service_connection(self, port: int) -> LockdownServiceConnection:
+        raise NotImplementedError(
+            'RemoteXPC service connections should only be created using RemoteServiceDiscoveryService')
+
+    def _handle_autopair(self, *args):
+        # The RemoteXPC version of lockdown doesn't support pairing operations
+        return None
+
+    def pair(self, timeout: int = None) -> None:
+        raise NotImplementedError('RemoteXPC lockdown version does not support pairing operations')
+
+    def unpair(self, timeout: int = None) -> None:
+        raise NotImplementedError('RemoteXPC lockdown version does not support pairing operations')
+
+    def __init__(self, service: LockdownServiceConnection, host_id: str, identifier: str = None,
+                 label: str = DEFAULT_LABEL, system_buid: str = SYSTEM_BUID, pair_record: Mapping = None,
+                 pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT):
+        """
+        Create a LockdownClient instance
+
+        :param service: lockdownd connection handler
+        :param host_id: Used as the host identifier for the handshake
+        :param identifier: Used as an identifier to look for the device pair record
+        :param label: lockdownd user-agent
+        :param system_buid: System's unique identifier
+        :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
+        :param pairing_records_cache_folder: Use the following location to search and save pair records
+        :param port: lockdownd service port
+        """
+        super().__init__(service, host_id, identifier, label, system_buid, pair_record, pairing_records_cache_folder,
+                         port)
+
+
 def create_using_usbmux(serial: str = None, identifier: str = None, label: str = DEFAULT_LABEL, autopair: bool = True,
                         connection_type: str = None, pair_timeout: int = None, local_hostname: str = None,
                         pair_record: Mapping = None, pairing_records_cache_folder: Path = None,
@@ -666,10 +700,10 @@ def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT
     return client
 
 
-def create_using_remote(hostname: str, identifier: str = None, label: str = DEFAULT_LABEL, autopair: bool = True,
-                        pair_timeout: int = None, local_hostname: str = None, pair_record: Mapping = None,
-                        pairing_records_cache_folder: Path = None,
-                        port: int = SERVICE_PORT) -> TcpLockdownClient:
+def create_using_remote(service: LockdownServiceConnection, identifier: str = None, label: str = DEFAULT_LABEL,
+                        autopair: bool = True, pair_timeout: int = None, local_hostname: str = None,
+                        pair_record: Mapping = None, pairing_records_cache_folder: Path = None,
+                        port: int = SERVICE_PORT) -> RemoteLockdownClient:
     """
     Create a TcpLockdownClient instance over RSD
 
@@ -684,15 +718,8 @@ def create_using_remote(hostname: str, identifier: str = None, label: str = DEFA
     :param port: lockdownd service port
     :return: TcpLockdownClient instance
     """
-    service = LockdownServiceConnection.create_using_tcp(hostname, port)
-    service.send_plist({'Label': label, 'ProtocolVersion': '2', 'Request': 'RSDCheckin'})
-
-    # we expect two responses after the first request
-    service.recv_plist()
-    service.recv_plist()
-
-    client = TcpLockdownClient.create(
+    client = RemoteLockdownClient.create(
         service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
         pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
-        port=port, hostname=hostname)
+        port=port)
     return client

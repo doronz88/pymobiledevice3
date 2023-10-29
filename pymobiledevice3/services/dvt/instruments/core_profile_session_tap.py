@@ -9,7 +9,6 @@ from construct import Array, Byte, Bytes, Computed, CString, Enum, FixedSized, G
 from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES
 
 from pymobiledevice3.exceptions import ExtractingStackshotError
-from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
@@ -679,11 +678,8 @@ class CoreProfileSessionTap(Tap):
         numer = time_info[1]
         denom = time_info[2]
 
-        usecs_since_epoch = None
-        timezone_ = None
-        if isinstance(dvt.lockdown, LockdownClient):
-            usecs_since_epoch = dvt.lockdown.get_value(key='TimeIntervalSince1970') * 1000000
-            timezone_ = timezone(timedelta(seconds=dvt.lockdown.get_value(key='TimeZoneOffsetFromUTC')))
+        usecs_since_epoch = dvt.lockdown.get_value(key='TimeIntervalSince1970') * 1000000
+        timezone_ = timezone(timedelta(seconds=dvt.lockdown.get_value(key='TimeZoneOffsetFromUTC')))
 
         return dict(
             numer=numer, denom=denom, mach_absolute_time=mach_absolute_time, usecs_since_epoch=usecs_since_epoch,

@@ -1,9 +1,10 @@
 import logging
 from dataclasses import dataclass
-from typing import List, Tuple, Union
+from typing import List, Mapping, Optional, Tuple, Union
 
 from pymobiledevice3.exceptions import InvalidServiceError, NoDeviceConnectedError, PyMobileDevice3Exception, \
     StartServiceError
+from pymobiledevice3.lockdown import LockdownClient, create_using_remote
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.bonjour import DEFAULT_BONJOUR_TIMEOUT, get_remoted_addresses
 from pymobiledevice3.remote.remotexpc import RemoteXPCConnection
@@ -26,7 +27,10 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def __init__(self, address: Tuple[str, int]):
         super().__init__()
         self.service = RemoteXPCConnection(address)
-        self.peer_info = None
+        self.peer_info: Optional[Mapping] = None
+        self.lockdown: Optional[LockdownClient] = None
+        self.all_values: Optional[Mapping] = None
+        self.all_domains: Optional[Mapping] = None
 
     @property
     def product_version(self) -> str:
@@ -41,6 +45,16 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         self.peer_info = self.service.receive_response()
         self.udid = self.peer_info['Properties']['UniqueDeviceID']
         self.product_type = self.peer_info['Properties']['ProductType']
+        try:
+            self.lockdown = create_using_remote(self.start_lockdown_service('com.apple.mobile.lockdown.remote.trusted'))
+        except InvalidServiceError:
+            self.lockdown = create_using_remote(
+                self.start_lockdown_service('com.apple.mobile.lockdown.remote.untrusted'))
+        self.all_values = self.lockdown.all_values
+        self.all_domains = self.lockdown.all_domains
+
+    def get_value(self, domain: str = None, key: str = None):
+        return self.lockdown.get_value(domain, key)
 
     def start_lockdown_service_without_checkin(self, name: str) -> LockdownServiceConnection:
         return LockdownServiceConnection.create_using_tcp(self.service.address[0], self.get_service_port(name))
@@ -97,6 +111,8 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.service.close()
+        if self.lockdown is not None:
+            self.lockdown.close()
 
     def __repr__(self) -> str:
         return (f'<{self.__class__.__name__} PRODUCT:{self.product_type} VERSION:{self.product_version} '
