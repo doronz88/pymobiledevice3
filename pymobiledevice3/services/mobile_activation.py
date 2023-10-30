@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
+import dataclasses
 import plistlib
+import xml.etree.ElementTree as ET
 from contextlib import closing
 from pathlib import Path
+from typing import List, Mapping
 
+import click
+import inquirer3
 import requests
 
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
@@ -18,6 +23,22 @@ DEFAULT_HEADERS = {
 
 ACTIVATION_REQUESTS_SUBDIR = Path('offline_requests')
 NONCE_CYCLE_INTERVAL = 60 * 5
+
+
+@dataclasses.dataclass
+class Field:
+    id: str
+    label: str
+    placeholder: str
+    secure: bool
+
+
+@dataclasses.dataclass
+class ActivationForm:
+    title: str
+    description: str
+    fields: List[Field]
+    server_info: Mapping[str, str]
 
 
 class MobileActivationService:
@@ -42,7 +63,22 @@ class MobileActivationService:
         while handshake_request_message == blob['HandshakeRequestMessage']:
             blob = self.create_activation_session_info()
 
-    def activate(self):
+    @staticmethod
+    def _get_activation_form_from_response(content: str) -> ActivationForm:
+        root = ET.fromstring(content)
+        title = root.find('page/navigationBar').get('title')
+        description = root.find('page/tableView/section/footer').text
+        fields = []
+        for editable in root.findall('page//editableTextRow'):
+            fields.append(
+                Field(id=editable.get('id'), label=editable.get('label'), placeholder=editable.get('placeholder'),
+                      secure=bool(editable.get('secure', False))))
+        server_info = {}
+        for k, v in root.find('serverInfo').items():
+            server_info[k] = v
+        return ActivationForm(title=title, description=description, fields=fields, server_info=server_info)
+
+    def activate(self) -> None:
         blob = self.create_activation_session_info()
 
         # create drmHandshake request with blob from device
@@ -53,7 +89,24 @@ class MobileActivationService:
         activation_info = self.create_activation_info_with_session(content)
 
         content, headers = self.post(ACTIVATION_DEFAULT_URL, data={'activation-info': plistlib.dumps(activation_info)})
-        assert headers['Content-Type'] == 'text/xml'
+        content_type = headers['Content-Type']
+
+        if content_type == 'application/x-buddyml':
+            activation_form = self._get_activation_form_from_response(content.decode())
+            click.secho(activation_form.title, bold=True)
+            click.secho(activation_form.description)
+            fields = []
+            for field in activation_form.fields:
+                if field.secure:
+                    fields.append(inquirer3.Password(name=field.id, message=f'{field.label}'))
+                else:
+                    fields.append(inquirer3.Text(name=field.id, message=f'{field.label}'))
+            data = inquirer3.prompt(fields)
+            data.update(activation_form.server_info)
+            content, headers = self.post(ACTIVATION_DEFAULT_URL, data=data)
+            content_type = headers['Content-Type']
+
+        assert content_type == 'text/xml'
         self.activate_with_session(content, headers)
 
     def deactivate(self):
