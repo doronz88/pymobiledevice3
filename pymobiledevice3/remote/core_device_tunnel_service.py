@@ -4,6 +4,7 @@ import binascii
 import dataclasses
 import hashlib
 import json
+import logging
 import platform
 import plistlib
 import struct
@@ -108,11 +109,13 @@ class RemotePairingTunnel(QuicConnectionProtocol):
     MAX_IDLE_TIMEOUT = 30.0
     REQUESTED_MTU = 1420
 
-    def __init__(self, quic: QuicConnection, stream_handler: Optional[QuicStreamHandler] = None):
+    def __init__(self, quic: QuicConnection, stream_handler: Optional[QuicStreamHandler] = None,
+                 max_idle_timeout: float = MAX_IDLE_TIMEOUT):
         super().__init__(quic, stream_handler)
         self._queue = asyncio.Queue()
         self._keep_alive_task = None
         self._tun_read_task = None
+        self._logger = logging.getLogger(f'{__name__}.{self.__class__.__name__}')
         self.tun = None
 
     @asyncio_print_traceback
@@ -136,20 +139,21 @@ class RemotePairingTunnel(QuicConnectionProtocol):
         return await self._queue.get()
 
     @asyncio_print_traceback
-    async def keep_alive_task(self, interval: float) -> None:
+    async def keep_alive_task(self) -> None:
         while True:
             await self.ping()
-            await asyncio.sleep(interval)
+            await asyncio.sleep(self._quic.configuration.idle_timeout / 2)
 
     def start_tunnel(self, address: str, mtu: int) -> None:
         self.tun = TunTapDevice()
         self.tun.mtu = mtu
         self.tun.addr = address
         self.tun.up()
-        self._keep_alive_task = asyncio.create_task(self.keep_alive_task(self.MAX_IDLE_TIMEOUT / 2))
+        self._keep_alive_task = asyncio.create_task(self.keep_alive_task())
         self._tun_read_task = asyncio.create_task(self.tun_read_task())
 
     async def stop_tunnel(self) -> None:
+        self._logger.debug('stopping tunnel')
         self._keep_alive_task.cancel()
         self._tun_read_task.cancel()
         with suppress(CancelledError):
@@ -221,8 +225,9 @@ class CoreDeviceTunnelService(RemoteService):
         return response['createListener']
 
     @asynccontextmanager
-    async def start_quic_tunnel(self, private_key: RSAPrivateKey, secrets_log_file: Optional[TextIO] = None) \
-            -> AsyncGenerator[TunnelResult, None]:
+    async def start_quic_tunnel(
+            self, private_key: RSAPrivateKey, secrets_log_file: Optional[TextIO] = None,
+            max_idle_timeout: float = RemotePairingTunnel.MAX_IDLE_TIMEOUT) -> AsyncGenerator[TunnelResult, None]:
         parameters = self.create_listener(private_key, protocol='quic')
         cert = make_cert(private_key, private_key.public_key())
         configuration = QuicConfiguration(
@@ -233,7 +238,7 @@ class CoreDeviceTunnelService(RemoteService):
             verify_mode=VerifyMode.CERT_NONE,
             verify_hostname=False,
             max_datagram_frame_size=RemotePairingTunnel.MAX_QUIC_DATAGRAM,
-            idle_timeout=RemotePairingTunnel.MAX_IDLE_TIMEOUT
+            idle_timeout=max_idle_timeout
         )
         configuration.secrets_log_file = secrets_log_file
 
@@ -570,15 +575,13 @@ def create_core_device_tunnel_service(rsd: RemoteServiceDiscoveryService, autopa
 
 
 @asynccontextmanager
-async def start_quic_tunnel(service_provider: RemoteServiceDiscoveryService, secrets: Optional[TextIO] = None) \
+async def start_quic_tunnel(service_provider: RemoteServiceDiscoveryService, secrets: Optional[TextIO] = None,
+                            max_idle_timeout: float = RemotePairingTunnel.MAX_IDLE_TIMEOUT) \
         -> AsyncGenerator[TunnelResult, None]:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     stop_remoted_if_required()
     with create_core_device_tunnel_service(service_provider, autopair=True) as service:
-        async with service.start_quic_tunnel(private_key, secrets_log_file=secrets) as tunnel_result:
+        async with service.start_quic_tunnel(
+                private_key, secrets_log_file=secrets, max_idle_timeout=max_idle_timeout) as tunnel_result:
             resume_remoted_if_required()
             yield tunnel_result
-
-            while True:
-                # wait user input while the asyncio tasks execute
-                await asyncio.sleep(.5)
