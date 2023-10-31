@@ -45,7 +45,6 @@ def asyncio_print_traceback(f: Callable):
         except Exception as e:  # noqa: E72
             if not isinstance(e, asyncio.CancelledError):
                 traceback.print_exc()
-                asyncio.get_event_loop().stop()
             raise
 
     return wrapper
