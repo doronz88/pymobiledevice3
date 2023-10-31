@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from typing import List, TextIO
 
 import click
@@ -19,10 +20,29 @@ try:
 except ImportError:
     start_quic_tunnel = None
     MAX_IDLE_TIMEOUT = None
-    logger.warning(
-        'start_quic_tunnel failed to be imported. Some feature may not work.\n'
-        'You can debug this by trying the import yourself:\n\n'
-        'from pymobiledevice3.remote.core_device_tunnel_service import RemotePairingTunnel, start_quic_tunnel')
+
+WIN32_IMPORT_ERROR = """Windows platforms are not yet supported for this command. For more info:
+https://github.com/doronz88/pymobiledevice3/issues/569
+"""
+
+GENERAL_IMPORT_ERROR = """Failed to import `start_quic_tunnel`. Possible reasons are:
+Please file an issue at:
+https://github.com/doronz88/pymobiledevice3/issues/new?assignees=&labels=&projects=&template=bug_report.md&title=
+
+Also, please supply with a traceback of the following python line:
+
+from pymobiledevice3.remote.core_device_tunnel_service import start_quic_tunnel
+"""
+
+
+def verify_tunnel_imports() -> bool:
+    if start_quic_tunnel is not None:
+        return True
+    if sys.platform == 'win32':
+        logger.error(WIN32_IMPORT_ERROR)
+        return False
+    logger.error(GENERAL_IMPORT_ERROR)
+    return False
 
 
 def get_device_list() -> List[RemoteServiceDiscoveryService]:
@@ -109,10 +129,12 @@ async def tunnel_task(
 @click.option('--secrets', type=click.File('wt'), help='TLS keyfile for decrypting with Wireshark')
 @click.option('--script-mode', is_flag=True,
               help='Show only HOST and port number to allow easy parsing from external shell scripts')
-@click.option('--max-idle-timeout', type=click.FLOAT, default=RemotePairingTunnel.MAX_IDLE_TIMEOUT,
+@click.option('--max-idle-timeout', type=click.FLOAT, default=MAX_IDLE_TIMEOUT,
               help='Maximum QUIC idle time (ping interval)')
 def cli_start_quic_tunnel(udid: str, secrets: TextIO, script_mode: bool, max_idle_timeout: float):
     """ start quic tunnel """
+    if not verify_tunnel_imports():
+        return
     devices = get_device_list()
     if not devices:
         # no devices were found
