@@ -1,0 +1,143 @@
+import asyncio
+import dataclasses
+import logging
+from typing import Dict, Tuple
+
+import ifaddr.netifaces
+import uvicorn
+from fastapi import FastAPI
+from zeroconf import IPVersion
+from zeroconf.asyncio import AsyncZeroconf
+
+from pymobiledevice3.remote.module_imports import start_quic_tunnel
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.utils import stop_remoted
+
+logger = logging.getLogger(__name__)
+
+ZEROCONF_TIMEOUT = 3000
+
+
+@dataclasses.dataclass
+class Tunnel:
+    rsd: RemoteServiceDiscoveryService
+    task: asyncio.Task = None
+    address: Tuple[str, int] = (None, None)
+
+
+class TunneldCore:
+    def __init__(self):
+        self.adapters: Dict[int, str] = {}
+        self.active_tunnels: Dict[int, Tunnel] = {}
+        self._type = '_remoted._tcp.local.'
+        self._name = 'ncm._remoted._tcp.local.'
+        self._interval = .5
+
+    def start(self) -> None:
+        """ Register all tasks """
+        asyncio.create_task(self.update_adapters(), name='update_adapters')
+        asyncio.create_task(self.remove_detached_devices(), name='remove_detached_devices')
+        asyncio.create_task(self.discover_new_devices(), name='discover_new_devices')
+
+    @staticmethod
+    async def handle_new_tunnel(tun: Tunnel) -> None:
+        """ Create new tunnel """
+        async with start_quic_tunnel(tun.rsd) as tunnel_result:
+            tun.address = tunnel_result.address, tunnel_result.port
+            logger.info(f'Created tunnel --rsd {tun.address[0]} {tun.address[1]}')
+            await tunnel_result.client.wait_closed()
+
+    @staticmethod
+    async def connect_rsd(address: str, port: int) -> RemoteServiceDiscoveryService:
+        """ Connect to RSD """
+        with stop_remoted():
+            rsd = RemoteServiceDiscoveryService((address, port))
+            rsd.connect()
+            return rsd
+
+    async def update_adapters(self) -> None:
+        """ Constantly updates the 'adapters' dictionary with IPv6 addresses linked to network interfaces """
+        while True:
+            self.adapters = {iface.index: addr.ip[0] for iface in ifaddr.get_adapters() for addr in iface.ips if
+                             addr.is_IPv6}
+            await asyncio.sleep(self._interval)
+
+    async def remove_detached_devices(self) -> None:
+        """ Continuously checks if adapters were removed and removes associated tunnels """
+        while True:
+            # Find active tunnels that are no longer associated with adapters
+            diff = list(set(self.active_tunnels.keys()) - set(self.adapters.keys()))
+            # For each detached tunnel, cancel its task, log the removal, and remove it from the active tunnels
+            for k in diff:
+                self.active_tunnels[k].task.cancel()
+                logger.info(f'Removing tunnel {self.active_tunnels[k].address}')
+                self.active_tunnels.pop(k)
+
+            await asyncio.sleep(self._interval)
+
+    def get_interface_index(self, address: str) -> int:
+        """
+        To address the issue of an unknown IPv6 scope id for a device, we employ a workaround.
+        We maintain a mapping that associates the scope id with the adapter address.
+        To resolve this, we remove the last segment (quartet) from both the adapter address and the target address.
+        If there is a match, we retrieve the scope id associated with that adapter and use it.
+
+        Disclaimer: Matching addresses based on their segments may result in interface collision in specific network
+        configurations.
+        """
+        address_segments = address.split(':')[:-1]
+        for k, v in self.adapters.items():
+            if address_segments != v.split(':')[:-1]:
+                continue
+            return k
+
+    async def discover_new_devices(self) -> None:
+        """ Continuously scans for devices advertising 'RSD' through IPv6 adapters """
+        while True:
+            # Search for devices advertising the specified service type and name
+            async with AsyncZeroconf(ip_version=IPVersion.V6Only) as aiozc:
+                info = await aiozc.async_get_service_info(self._type, self._name, timeout=ZEROCONF_TIMEOUT)
+                if info is not None:
+                    # Extract device details
+                    addr = info.parsed_scoped_addresses(IPVersion.V6Only)[0]
+                    interface_index = self.get_interface_index(addr)
+                    if interface_index not in self.active_tunnels:
+                        # Connect to the discovered device
+                        addr = f'{addr}%{interface_index}'
+                        rsd = await self.connect_rsd(addr, info.port)
+                        logger.info(f'Creating tunnel for {addr}')
+                        tunnel = Tunnel(rsd)
+                        # Add the tunnel to the active tunnels and start a handling task
+                        tunnel.task = asyncio.create_task(self.handle_new_tunnel(tunnel))
+                        self.active_tunnels[interface_index] = tunnel
+            await asyncio.sleep(self._interval)
+
+
+class TunneldRunner:
+    """ TunneldRunner orchestrate between the webserver and TunneldCore """
+
+    @classmethod
+    def create(cls, host: str, port: int) -> None:
+        cls(host, port)._run_app()
+
+    def __init__(self, host: str, port: int):
+        self.host = host
+        self.port = port
+        self._app = FastAPI()
+        self._tunneld_core = TunneldCore()
+
+        @self._app.get("/")
+        async def list_tunnels() -> Dict[str, Tuple[str, int]]:
+            """ Retrieve the available tunnels and format them as {UUID: TUNNEL_ADDRESS} """
+            tunnels = {}
+            for k, v in self._tunneld_core.active_tunnels.items():
+                tunnels[v.rsd.udid] = v.address
+            return tunnels
+
+        @self._app.on_event("startup")
+        async def on_startup() -> None:
+            """ start TunneldCore """
+            self._tunneld_core.start()
+
+    def _run_app(self) -> None:
+        uvicorn.run(self._app, host=self.host, port=self.port, loop='asyncio')

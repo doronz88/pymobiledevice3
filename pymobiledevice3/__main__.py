@@ -30,9 +30,10 @@ from pymobiledevice3.cli.syslog import cli as syslog_cli
 from pymobiledevice3.cli.usbmux import cli as usbmux_cli
 from pymobiledevice3.cli.webinspector import cli as webinspector_cli
 from pymobiledevice3.exceptions import AccessDeniedError, ConnectionFailedError, DeveloperModeError, \
-    DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, InternalError, InvalidServiceError, \
-    MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, NoDeviceSelectedError, NotPairedError, \
-    PairingDialogResponsePendingError, PasswordRequiredError, SetProhibitedError, UserDeniedPairingError
+    DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, DeviceNotFoundError, InternalError, \
+    InvalidServiceError, MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, NoDeviceSelectedError, \
+    NotPairedError, PairingDialogResponsePendingError, PasswordRequiredError, SetProhibitedError, \
+    TunneldConnectionError, UserDeniedPairingError
 
 coloredlogs.install(level=logging.INFO)
 
@@ -112,6 +113,12 @@ def cli():
         logger.error('This command requires root privileges. Consider retrying with "sudo".')
     except BrokenPipeError:
         traceback.print_exc()
+    except TunneldConnectionError:
+        logger.error(
+            'Unable to connect to Tunneld. You can start one using:\n'
+            'sudo python3 -m pymobiledevice3 remote tunneld')
+    except DeviceNotFoundError as e:
+        logger.error(f'Device not found: {e.udid}')
 
 
 if __name__ == '__main__':

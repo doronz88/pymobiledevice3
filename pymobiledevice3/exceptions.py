@@ -1,7 +1,9 @@
 __all__ = [
     'PyMobileDevice3Exception', 'DeviceVersionNotSupportedError', 'IncorrectModeError',
     'NotTrustedError', 'PairingError', 'NotPairedError', 'CannotStopSessionError',
-    'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'MuxException',
+    'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'DeviceNotFoundError',
+    'TunneldConnectionError',
+    'MuxException',
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
     'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabledError', 'RemoteAutomationNotEnabledError',
@@ -58,6 +60,16 @@ class FatalPairingError(PyMobileDevice3Exception):
 
 
 class NoDeviceConnectedError(PyMobileDevice3Exception):
+    pass
+
+
+class DeviceNotFoundError(PyMobileDevice3Exception):
+    def __init__(self, udid: str):
+        super().__init__()
+        self.udid = udid
+
+
+class TunneldConnectionError(PyMobileDevice3Exception):
     pass
 
 
