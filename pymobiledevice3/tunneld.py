@@ -99,7 +99,7 @@ class TunneldCore:
                 info = await aiozc.async_get_service_info(self._type, self._name, timeout=ZEROCONF_TIMEOUT)
                 if info is not None:
                     # Extract device details
-                    addr = info.parsed_scoped_addresses(IPVersion.V6Only)[0]
+                    addr = info.parsed_addresses(IPVersion.V6Only)[0]
                     interface_index = self.get_interface_index(addr)
                     if interface_index not in self.active_tunnels:
                         # Connect to the discovered device
