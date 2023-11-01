@@ -9,13 +9,46 @@ import click
 import coloredlogs
 import hexdump
 import inquirer3
+from click import Option, UsageError
 from inquirer3.themes import GreenPassion
 from pygments import formatters, highlight, lexers
 
-from pymobiledevice3.exceptions import NoDeviceSelectedError
+from pymobiledevice3.exceptions import DeviceNotFoundError, NoDeviceConnectedError, NoDeviceSelectedError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.utils import get_tunneld_devices
 from pymobiledevice3.usbmux import select_devices_by_connection_type
+
+
+class RSDOption(Option):
+    def __init__(self, *args, **kwargs):
+        self.mutually_exclusive = set(kwargs.pop('mutually_exclusive', []))
+        help = kwargs.get('help', '')
+        if self.mutually_exclusive:
+            ex_str = ', '.join(self.mutually_exclusive)
+            kwargs['help'] = help + (
+                    ' NOTE: This argument is mutually exclusive with '
+                    ' arguments: [' + ex_str + '].'
+            )
+        super(RSDOption, self).__init__(*args, **kwargs)
+
+    def handle_parse_result(self, ctx, opts, args):
+        if len(opts) == 0 and isinstance(ctx.command, RSDCommand) and not (isinstance(ctx.command, Command)):
+            raise UsageError('Illegal usage: At least one is required [--rsd | --tunnel]')
+        if self.mutually_exclusive.intersection(opts) and self.name in opts:
+            raise UsageError(
+                'Illegal usage: `{}` is mutually exclusive with '
+                'arguments `{}`.'.format(
+                    self.name,
+                    ', '.join(self.mutually_exclusive)
+                )
+            )
+
+        return super(RSDOption, self).handle_parse_result(
+            ctx,
+            opts,
+            args
+        )
 
 
 def default_json_encoder(obj):
@@ -70,11 +103,14 @@ def choose_service_provider(callback: Callable):
     def wrap_callback_calling(**kwargs: Mapping):
         service_provider = None
         lockdown_service_provider = kwargs.pop('lockdown_service_provider', None)
-        rsd_service_provider = kwargs.pop('rsd_service_provider', None)
+        rsd_service_provider_manually = kwargs.pop('rsd_service_provider_manually', None)
+        rsd_service_provider_using_tunneld = kwargs.pop('rsd_service_provider_using_tunneld', None)
         if lockdown_service_provider is not None:
             service_provider = lockdown_service_provider
-        if rsd_service_provider is not None:
-            service_provider = rsd_service_provider
+        if rsd_service_provider_manually is not None:
+            service_provider = rsd_service_provider_manually
+        if rsd_service_provider_using_tunneld is not None:
+            service_provider = rsd_service_provider_using_tunneld
         callback(service_provider=service_provider, **kwargs)
 
     return wrap_callback_calling
@@ -121,8 +157,13 @@ class RSDCommand(BaseCommand):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.params[:0] = [
-            click.Option(('rsd_service_provider', '--rsd'), type=(str, int), callback=self.rsd, required=True,
-                         help='RSD hostname and port number'),
+            RSDOption(('rsd_service_provider_manually', '--rsd'), type=(str, int), callback=self.rsd,
+                      mutually_exclusive=['rsd_service_provider_using_tunneld'],
+                      help='RSD hostname and port number'),
+            RSDOption(('rsd_service_provider_using_tunneld', '--tunnel'), callback=self.tunneld,
+                      mutually_exclusive=['rsd_service_provider_manually'],
+                      help='Either an empty string to force tunneld device selection, or a UDID of a tunneld '
+                           'discovered device')
         ]
 
     def rsd(self, ctx, param: str, value: Optional[Tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
@@ -131,12 +172,34 @@ class RSDCommand(BaseCommand):
                 self.service_provider = rsd
                 return self.service_provider
 
+    def tunneld(self, ctx, param: str, udid: Optional[str] = None) -> Optional[RemoteServiceDiscoveryService]:
+        if udid is None:
+            return
+
+        rsds = get_tunneld_devices()
+        if len(rsds) == 0:
+            raise NoDeviceConnectedError()
+
+        if udid != '':
+            try:
+                # Connect to the specified device
+                self.service_provider = [rsd for rsd in rsds if rsd.udid == udid][0]
+                return self.service_provider
+            except IndexError:
+                raise DeviceNotFoundError(udid)
+
+        if len(rsds) == 1:
+            rsd = rsds[0]
+        else:
+            rsd = prompt_device_list(rsds)
+
+        self.service_provider = rsd
+        return self.service_provider
+
 
 class Command(RSDCommand, LockdownCommand):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # make the RSD optional
-        self.params[0].required = False
 
 
 class CommandWithoutAutopair(Command):

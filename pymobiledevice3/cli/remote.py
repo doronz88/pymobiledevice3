@@ -1,6 +1,7 @@
 import asyncio
 import logging
-import sys
+import tempfile
+from functools import partial
 from typing import List, TextIO
 
 import click
@@ -8,41 +9,12 @@ import click
 from pymobiledevice3.cli.cli_common import RSDCommand, print_json, prompt_device_list
 from pymobiledevice3.exceptions import NoDeviceConnectedError
 from pymobiledevice3.remote.bonjour import get_remoted_addresses
+from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_quic_tunnel, verify_tunnel_imports
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
-from pymobiledevice3.remote.utils import stop_remoted
+from pymobiledevice3.remote.utils import TUNNELD_DEFAULT_ADDRESS, stop_remoted
+from pymobiledevice3.tunneld import TunneldRunner
 
 logger = logging.getLogger(__name__)
-
-try:
-    from pymobiledevice3.remote.core_device_tunnel_service import RemotePairingTunnel, start_quic_tunnel
-
-    MAX_IDLE_TIMEOUT = RemotePairingTunnel.MAX_IDLE_TIMEOUT
-except ImportError:
-    start_quic_tunnel = None
-    MAX_IDLE_TIMEOUT = None
-
-WIN32_IMPORT_ERROR = """Windows platforms are not yet supported for this command. For more info:
-https://github.com/doronz88/pymobiledevice3/issues/569
-"""
-
-GENERAL_IMPORT_ERROR = """Failed to import `start_quic_tunnel`. Possible reasons are:
-Please file an issue at:
-https://github.com/doronz88/pymobiledevice3/issues/new?assignees=&labels=&projects=&template=bug_report.md&title=
-
-Also, please supply with a traceback of the following python line:
-
-from pymobiledevice3.remote.core_device_tunnel_service import start_quic_tunnel
-"""
-
-
-def verify_tunnel_imports() -> bool:
-    if start_quic_tunnel is not None:
-        return True
-    if sys.platform == 'win32':
-        logger.error(WIN32_IMPORT_ERROR)
-        return False
-    logger.error(GENERAL_IMPORT_ERROR)
-    return False
 
 
 def get_device_list() -> List[RemoteServiceDiscoveryService]:
@@ -68,6 +40,29 @@ def cli():
 def remote_cli():
     """ remote options """
     pass
+
+
+@remote_cli.command('tunneld')
+@click.option('--host', default=TUNNELD_DEFAULT_ADDRESS[0])
+@click.option('--port', type=click.INT, default=TUNNELD_DEFAULT_ADDRESS[1])
+@click.option('-d', '--daemonize', is_flag=True)
+def cli_tunneld(host: str, port: int, daemonize: bool):
+    """ Start Tunneld service for remote tunneling """
+    if not verify_tunnel_imports():
+        return
+    tunneld_runner = partial(TunneldRunner.create, host, port)
+    if daemonize:
+        try:
+            from daemonize import Daemonize
+        except ImportError:
+            raise NotImplementedError('daemonizing is only supported on unix platforms')
+        with tempfile.NamedTemporaryFile('wt') as pid_file:
+            daemon = Daemonize(app=f'Tunneld {host}:{port}', pid=pid_file.name,
+                               action=tunneld_runner)
+            logger.info(f'starting Tunneld {host}:{port}')
+            daemon.start()
+    else:
+        tunneld_runner()
 
 
 @remote_cli.command('browse')

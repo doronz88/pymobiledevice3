@@ -1,12 +1,30 @@
 import contextlib
 import platform
-from typing import Generator
+from typing import Generator, List
 
 import psutil
+import requests
 
-from pymobiledevice3.exceptions import AccessDeniedError
+from pymobiledevice3.exceptions import AccessDeniedError, TunneldConnectionError
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 REMOTED_PATH = '/usr/libexec/remoted'
+
+TUNNELD_DEFAULT_ADDRESS = ('127.0.0.1', 5555)
+
+
+def get_tunneld_devices(tunneld_address=TUNNELD_DEFAULT_ADDRESS) -> List[RemoteServiceDiscoveryService]:
+    try:
+        # Get the list of tunnels from the specified address
+        resp = requests.get(f'http://{tunneld_address[0]}:{tunneld_address[1]}')
+        tunnels = resp.json()
+    except requests.exceptions.ConnectionError:
+        raise TunneldConnectionError()
+
+    rsds = [RemoteServiceDiscoveryService(tunnel_address) for tunnel_udid, tunnel_address in tunnels.items()]
+    for rsd in rsds:
+        rsd.connect()
+    return rsds
 
 
 def get_remoted_process() -> psutil.Process:

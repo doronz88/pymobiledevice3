@@ -105,14 +105,17 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             raise InvalidServiceError(f'No such service: {name}')
         return int(service['Port'])
 
+    def close(self) -> None:
+        self.service.close()
+        if self.lockdown is not None:
+            self.lockdown.close()
+
     def __enter__(self) -> 'RemoteServiceDiscoveryService':
         self.connect()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.service.close()
-        if self.lockdown is not None:
-            self.lockdown.close()
+        self.close()
 
     def __repr__(self) -> str:
         return (f'<{self.__class__.__name__} PRODUCT:{self.product_type} VERSION:{self.product_version} '

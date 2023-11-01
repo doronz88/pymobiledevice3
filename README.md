@@ -2,6 +2,7 @@
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
 [![Downloads](https://static.pepy.tech/personalized-badge/pymobiledevice3?period=total&units=none&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/pymobiledevice3)
 
+
 - [News](#news)
 - [Description](#description)
 - [Installation](#installation)
@@ -9,6 +10,9 @@
 - [Usage](#usage)
     * [Python API](#python-api)
     * [Working with developer tools (iOS >= 17.0)](#working-with-developer-tools-ios--170)
+  * [Tunneld](#tunneld)
+      + [Command Usage](#command-usage)
+      + [Using Tunneld](#using-tunneld)
     * [Example](#example)
 - [The bits and bytes](#the-bits-and-bytes)
     * [Lockdown services](#lockdown-services)
@@ -18,7 +22,7 @@
             - [Lockdown messages](#lockdown-messages)
             - [Instruments messages](#instruments-messages)
 - [Contributing](#contributing)
-- [Useful info](#Useful-info)
+- [Useful info](#useful-info)
 
 # News
 
@@ -202,6 +206,37 @@ python3 -m pymobiledevice3 developer dvt ls / --rsd fd7b:e5b:6f53::1 64337
 # Or any of the "normal" ones
 python3 -m pymobiledevice3 syslog live --rsd fd7b:e5b:6f53::1 64337
 ```
+
+## Tunneld
+
+The Tunneld Server is responsible for automatically creating a QUIC tunnel for Remote Service Discovery (RSD) when a
+device is connected.
+
+### Command Usage
+
+To start the Tunneld Server, use the following command (with root privileges):
+
+```bash
+sudo python3 -m pymobiledevice3 remote tunneld
+```
+
+### Using Tunneld
+
+Once the Tunneld Server is running, you can use it for RSD over the created QUIC tunnel.
+
+To specify a device by its UDID:
+
+```bash
+python pymobiledevice3 remote rsd-info --tunnel UDID
+```
+
+To let Tunneld automatically select a device (if only one is connected):
+
+```bash
+python pymobiledevice3 remote rsd-info --tunnel ''
+```
+
+If no UDID is specified and multiple devices are connected, a prompt will appear for device selection.
 
 ## Example
 
