@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 import tempfile
 from functools import partial
 from typing import List, TextIO
@@ -114,6 +115,7 @@ async def tunnel_task(
                   click.style(tunnel_result.port, bold=True, fg='white'))
             print(click.style('Use the follow connection option:\n', bold=True, fg='yellow') +
                   click.style(f'--rsd {tunnel_result.address} {tunnel_result.port}', bold=True, fg='cyan'))
+        sys.stdout.flush()
 
         await tunnel_result.client.wait_closed()
         logger.info('tunnel was closed')
