@@ -75,8 +75,10 @@ class LockdownServiceConnection:
         self._writer = None  # type: Optional[asyncio.StreamWriter]
 
     @staticmethod
-    def create_using_tcp(hostname: str, port: int) -> 'LockdownServiceConnection':
+    def create_using_tcp(hostname: str, port: int, keep_alive: bool = True) -> 'LockdownServiceConnection':
         sock = socket.create_connection((hostname, port))
+        if keep_alive:
+            set_keepalive(sock)
         return LockdownServiceConnection(sock)
 
     @staticmethod

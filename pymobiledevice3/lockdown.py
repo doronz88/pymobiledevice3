@@ -582,7 +582,7 @@ class PlistUsbmuxLockdownClient(UsbmuxLockdownClient):
 class TcpLockdownClient(LockdownClient):
     def __init__(self, service: LockdownServiceConnection, host_id: str, hostname: str, identifier: str = None,
                  label: str = DEFAULT_LABEL, system_buid: str = SYSTEM_BUID, pair_record: Mapping = None,
-                 pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT):
+                 pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT, keep_alive: bool = True):
         """
         Create a LockdownClient instance
 
@@ -595,13 +595,15 @@ class TcpLockdownClient(LockdownClient):
         :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
         :param pairing_records_cache_folder: Use the following location to search and save pair records
         :param port: lockdownd service port
+        :param keep_alive: use keep-alive to get notified when the connection is lost
         """
         super().__init__(service, host_id, identifier, label, system_buid, pair_record, pairing_records_cache_folder,
                          port)
+        self._keep_alive = keep_alive
         self.hostname = hostname
 
     def _create_service_connection(self, port: int) -> LockdownServiceConnection:
-        return LockdownServiceConnection.create_using_tcp(self.hostname, port)
+        return LockdownServiceConnection.create_using_tcp(self.hostname, port, keep_alive=self._keep_alive)
 
 
 class RemoteLockdownClient(LockdownClient):
@@ -677,7 +679,8 @@ def create_using_usbmux(serial: str = None, identifier: str = None, label: str =
 
 def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT_LABEL, autopair: bool = True,
                      pair_timeout: int = None, local_hostname: str = None, pair_record: Mapping = None,
-                     pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT) -> TcpLockdownClient:
+                     pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT,
+                     keep_alive: bool = False) -> TcpLockdownClient:
     """
     Create a TcpLockdownClient instance
 
@@ -690,13 +693,14 @@ def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT
     :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
     :param pairing_records_cache_folder: Use the following location to search and save pair records
     :param port: lockdownd service port
+    :param keep_alive: use keep-alive to get notified when the connection is lost
     :return: TcpLockdownClient instance
     """
-    service = LockdownServiceConnection.create_using_tcp(hostname, port)
+    service = LockdownServiceConnection.create_using_tcp(hostname, port, keep_alive=keep_alive)
     client = TcpLockdownClient.create(
         service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
         pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
-        port=port, hostname=hostname)
+        port=port, hostname=hostname, keep_alive=keep_alive)
     return client
 
 
