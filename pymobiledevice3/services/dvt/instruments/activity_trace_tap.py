@@ -278,5 +278,4 @@ class ActivityTraceTap(Tap):
     def __iter__(self):
         while True:
             self._get_next_message()
-            for message in self._parse():
-                yield message
+            yield from self._parse()

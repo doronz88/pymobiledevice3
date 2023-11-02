@@ -21,7 +21,7 @@ ASR_CHECKSUM_CHUNK_SIZE = ASR_PAYLOAD_CHUNK_SIZE
 logger = logging.getLogger(__name__)
 
 
-class ASRClient(object):
+class ASRClient:
     """
     ASR — Apple Software Restore
     """

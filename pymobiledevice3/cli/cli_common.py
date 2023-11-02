@@ -30,7 +30,7 @@ class RSDOption(Option):
                     ' NOTE: This argument is mutually exclusive with '
                     ' arguments: [' + ex_str + '].'
             )
-        super(RSDOption, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def handle_parse_result(self, ctx, opts, args):
         if len(opts) == 0 and isinstance(ctx.command, RSDCommand) and not (isinstance(ctx.command, Command)):
@@ -44,7 +44,7 @@ class RSDOption(Option):
                 )
             )
 
-        return super(RSDOption, self).handle_parse_result(
+        return super().handle_parse_result(
             ctx,
             opts,
             args

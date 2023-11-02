@@ -29,8 +29,7 @@ class Sysmontap(Tap):
 
     def __iter__(self):
         while True:
-            for result in self.channel.receive_plist():
-                yield result
+            yield from self.channel.receive_plist()
 
     def iter_processes(self):
         for row in self:

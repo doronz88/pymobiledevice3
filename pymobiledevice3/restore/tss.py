@@ -154,7 +154,7 @@ class TSSRequest:
             node = manifest_entry.get('Trusted', False)
             if node:
                 if manifest_entry.get('Digest') is None:
-                    tss_entry['Digest'] = bytes()
+                    tss_entry['Digest'] = b''
 
             self._request[key] = tss_entry
 
@@ -328,7 +328,7 @@ class TSSRequest:
             node = manifest_entry.get('Trusted', False)
             if node:
                 if manifest_entry.get('Digest') is None:
-                    tss_entry['Digest'] = bytes()
+                    tss_entry['Digest'] = b''
 
             self._request[key] = tss_entry
 

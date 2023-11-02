@@ -6,7 +6,7 @@ from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 
 
-class DtFetchSymbols(object):
+class DtFetchSymbols:
     SERVICE_NAME = 'com.apple.dt.fetchsymbols'
     MAX_CHUNK = 1024 * 1024 * 10  # 10MB
     CMD_LIST_FILES_PLIST = struct.pack('>I', 0x30303030)
