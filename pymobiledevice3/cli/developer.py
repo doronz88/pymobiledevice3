@@ -525,7 +525,7 @@ def callstacks_live_profile_session(service_provider: LockdownClient, count, pro
         parser.color = color
         parser.show_tid = show_tid
 
-        with open(os.path.join(pymobiledevice3.__path__[0], 'resources', 'dsc_uuid_map.json'), 'r') as fd:
+        with open(os.path.join(pymobiledevice3.__path__[0], 'resources', 'dsc_uuid_map.json')) as fd:
             dsc_uuid_map = json.load(fd)
 
         current_dsc_map = {}

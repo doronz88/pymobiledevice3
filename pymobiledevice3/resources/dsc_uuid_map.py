@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_dsc_map(dsc_uuid):
-    with open(MAP_FILENAME, 'r') as f:
+    with open(MAP_FILENAME) as f:
         uuid_map = json.load(f)
 
     return uuid_map.get(dsc_uuid)
@@ -44,7 +44,7 @@ def main(dsc, dyld_uuid, force):
     Simple utility to get all UUIDs used for symbolication from given DSC.
     The UUID of `/usr/lib/dyld` still needs manual insertion.
     """
-    with open(MAP_FILENAME, 'r') as f:
+    with open(MAP_FILENAME) as f:
         uuid_map = json.load(f)
 
     dsc = dsc.read()

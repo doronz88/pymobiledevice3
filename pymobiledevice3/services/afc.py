@@ -520,8 +520,7 @@ class AfcService(LockdownService):
 
         if dirs:
             for d in dirs:
-                for walk_result in self.walk(posixpath.join(dirname, d)):
-                    yield walk_result
+                yield from self.walk(posixpath.join(dirname, d))
 
     def dirlist(self, root, depth=-1):
         for folder, dirs, files in self.walk(root):

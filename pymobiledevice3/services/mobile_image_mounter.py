@@ -282,7 +282,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
 
             # Make sure we have a Digest key for Trusted items even if empty
             if manifest_entry.get('Digest') is None:
-                tss_entry['Digest'] = bytes()
+                tss_entry['Digest'] = b''
 
             request.update({key: tss_entry})
 

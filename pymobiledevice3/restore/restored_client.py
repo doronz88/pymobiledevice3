@@ -7,7 +7,7 @@ from pymobiledevice3.restore.restore_options import RestoreOptions
 from pymobiledevice3.service_connection import LockdownServiceConnection
 
 
-class RestoredClient(object):
+class RestoredClient:
     DEFAULT_CLIENT_NAME = 'pyMobileDevice'
     SERVICE_PORT = 62078
 
