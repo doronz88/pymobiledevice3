@@ -5,7 +5,6 @@ import socket
 import ssl
 import struct
 import time
-from enum import Enum, auto
 from typing import Mapping, Optional
 
 import IPython
@@ -14,6 +13,11 @@ from pygments import formatters, highlight, lexers
 from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError, NoDeviceConnectedError, \
     PyMobileDevice3Exception
 from pymobiledevice3.usbmux import MuxDevice, select_device
+from pymobiledevice3.utils import set_keepalive
+
+DEFAULT_AFTER_IDLE_SEC = 3
+DEFAULT_INTERVAL_SEC = 3
+DEFAULT_MAX_FAILS = 3
 
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
@@ -57,11 +61,6 @@ def create_context(certfile, keyfile=None):
     return context
 
 
-class Medium(Enum):
-    TCP = auto()
-    USBMUX = auto()
-
-
 class LockdownServiceConnection:
     """ wrapper for usbmux tcp-relay connections """
 
@@ -89,13 +88,6 @@ class LockdownServiceConnection:
             raise NoDeviceConnectedError()
         sock = target_device.connect(port)
         return LockdownServiceConnection(sock, mux_device=target_device)
-
-    @staticmethod
-    def create(medium: Medium, identifier: str, port: int, connection_type: str = None) -> 'LockdownServiceConnection':
-        if medium == Medium.TCP:
-            return LockdownServiceConnection.create_using_tcp(identifier, port)
-        else:
-            return LockdownServiceConnection.create_using_usbmux(identifier, port, connection_type=connection_type)
 
     def setblocking(self, blocking: bool) -> None:
         self.socket.setblocking(blocking)
