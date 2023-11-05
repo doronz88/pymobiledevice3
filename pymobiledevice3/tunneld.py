@@ -16,13 +16,14 @@ from pymobiledevice3.remote.utils import stop_remoted
 logger = logging.getLogger(__name__)
 
 ZEROCONF_TIMEOUT = 3000
+MIN_VERSION = '17.0.0'
 
 
 @dataclasses.dataclass
 class Tunnel:
     rsd: RemoteServiceDiscoveryService
     task: asyncio.Task = None
-    address: Tuple[str, int] = (None, None)
+    address: Tuple[str, int] = ('', 0)
 
 
 class TunneldCore:
@@ -104,7 +105,15 @@ class TunneldCore:
                     if interface_index not in self.active_tunnels:
                         # Connect to the discovered device
                         addr = f'{addr}%{interface_index}'
-                        rsd = await self.connect_rsd(addr, info.port)
+                        try:
+                            rsd = await self.connect_rsd(addr, info.port)
+                        except (TimeoutError, ConnectionError):
+                            logger.warning(f'Failed to connect rsd for {addr}')
+                            continue
+                        # Check unsupported devices with a product version below a minimum threshold
+                        if rsd.product_version < MIN_VERSION:
+                            logger.warning(f'{rsd.udid} Unsupported device {rsd.product_version} < {MIN_VERSION}')
+                            continue
                         logger.info(f'Creating tunnel for {addr}')
                         tunnel = Tunnel(rsd)
                         # Add the tunnel to the active tunnels and start a handling task
@@ -137,6 +146,7 @@ class TunneldRunner:
         @self._app.on_event("startup")
         async def on_startup() -> None:
             """ start TunneldCore """
+            logging.getLogger('zeroconf').disabled = True
             self._tunneld_core.start()
 
     def _run_app(self) -> None:
