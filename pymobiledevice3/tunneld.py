@@ -6,6 +6,7 @@ from typing import Dict, Tuple
 import ifaddr.netifaces
 import uvicorn
 from fastapi import FastAPI
+from packaging import version
 from zeroconf import IPVersion
 from zeroconf.asyncio import AsyncZeroconf
 
@@ -17,13 +18,14 @@ logger = logging.getLogger(__name__)
 
 ZEROCONF_TIMEOUT = 3000
 MIN_VERSION = '17.0.0'
+UNINIT_ADDRESS = ('', 0)
 
 
 @dataclasses.dataclass
 class Tunnel:
     rsd: RemoteServiceDiscoveryService
     task: asyncio.Task = None
-    address: Tuple[str, int] = ('', 0)
+    address: Tuple[str, int] = UNINIT_ADDRESS
 
 
 class TunneldCore:
@@ -107,11 +109,11 @@ class TunneldCore:
                         addr = f'{addr}%{interface_index}'
                         try:
                             rsd = await self.connect_rsd(addr, info.port)
-                        except (TimeoutError, ConnectionError):
-                            logger.warning(f'Failed to connect rsd for {addr}')
+                        except (TimeoutError, ConnectionError, OSError):
+                            logger.warning(f'Failed to connect rsd to {addr}')
                             continue
                         # Check unsupported devices with a product version below a minimum threshold
-                        if rsd.product_version < MIN_VERSION:
+                        if version.parse(rsd.product_version) < version.parse(MIN_VERSION):
                             logger.warning(f'{rsd.udid} Unsupported device {rsd.product_version} < {MIN_VERSION}')
                             continue
                         logger.info(f'Creating tunnel for {addr}')
@@ -140,6 +142,8 @@ class TunneldRunner:
             """ Retrieve the available tunnels and format them as {UUID: TUNNEL_ADDRESS} """
             tunnels = {}
             for k, v in self._tunneld_core.active_tunnels.items():
+                if v.address == UNINIT_ADDRESS:
+                    continue
                 tunnels[v.rsd.udid] = v.address
             return tunnels
 
