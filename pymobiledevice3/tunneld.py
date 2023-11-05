@@ -18,13 +18,14 @@ logger = logging.getLogger(__name__)
 
 ZEROCONF_TIMEOUT = 3000
 MIN_VERSION = '17.0.0'
+UNINIT_ADDRESS = ('', 0)
 
 
 @dataclasses.dataclass
 class Tunnel:
     rsd: RemoteServiceDiscoveryService
     task: asyncio.Task = None
-    address: Tuple[str, int] = ('', 0)
+    address: Tuple[str, int] = UNINIT_ADDRESS
 
 
 class TunneldCore:
@@ -141,6 +142,8 @@ class TunneldRunner:
             """ Retrieve the available tunnels and format them as {UUID: TUNNEL_ADDRESS} """
             tunnels = {}
             for k, v in self._tunneld_core.active_tunnels.items():
+                if v.address == UNINIT_ADDRESS:
+                    continue
                 tunnels[v.rsd.udid] = v.address
             return tunnels
 
