@@ -6,6 +6,7 @@ from typing import Dict, Tuple
 import ifaddr.netifaces
 import uvicorn
 from fastapi import FastAPI
+from packaging import version
 from zeroconf import IPVersion
 from zeroconf.asyncio import AsyncZeroconf
 
@@ -107,11 +108,11 @@ class TunneldCore:
                         addr = f'{addr}%{interface_index}'
                         try:
                             rsd = await self.connect_rsd(addr, info.port)
-                        except (TimeoutError, ConnectionError):
-                            logger.warning(f'Failed to connect rsd for {addr}')
+                        except (TimeoutError, ConnectionError, OSError):
+                            logger.warning(f'Failed to connect rsd to {addr}')
                             continue
                         # Check unsupported devices with a product version below a minimum threshold
-                        if rsd.product_version < MIN_VERSION:
+                        if version.parse(rsd.product_version) < version.parse(MIN_VERSION):
                             logger.warning(f'{rsd.udid} Unsupported device {rsd.product_version} < {MIN_VERSION}')
                             continue
                         logger.info(f'Creating tunnel for {addr}')
