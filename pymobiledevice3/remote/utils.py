@@ -21,9 +21,14 @@ def get_tunneld_devices(tunneld_address=TUNNELD_DEFAULT_ADDRESS) -> List[RemoteS
     except requests.exceptions.ConnectionError:
         raise TunneldConnectionError()
 
-    rsds = [RemoteServiceDiscoveryService(tunnel_address) for tunnel_udid, tunnel_address in tunnels.items()]
-    for rsd in rsds:
-        rsd.connect()
+    rsds = []
+    for tunnel_udid, tunnel_address in tunnels.items():
+        rsd = RemoteServiceDiscoveryService(tunnel_address)
+        try:
+            rsd.connect()
+            rsds.append(rsd)
+        except (TimeoutError, ConnectionError):
+            continue
     return rsds
 
 
