@@ -3,6 +3,7 @@ import select
 import socket
 import threading
 from abc import abstractmethod
+from typing import Optional
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import ConnectionFailedError
@@ -142,7 +143,7 @@ class UsbmuxTcpForwarder(TcpForwarderBase):
     """
 
     def __init__(self, serial: str, dst_port: int, src_port: int, listening_event: threading.Event = None,
-                 usbmux_connection_type: str = None):
+                 usbmux_connection_type: str = None, usbmux_address: Optional[str] = None):
         """
         Initialize a new tcp forwarder
 
@@ -151,15 +152,18 @@ class UsbmuxTcpForwarder(TcpForwarderBase):
         :param src_port: tcp port to listen on
         :param listening_event: event to fire when the listening occurred
         :param usbmux_connection_type: preferred connection type
+        :param usbmux_address: usbmuxd address
         """
         super().__init__(src_port, listening_event)
         self.serial = serial
         self.dst_port = dst_port
         self.usbmux_connection_type = usbmux_connection_type
+        self.usbmux_address = usbmux_address
 
     def _establish_remote_connection(self) -> socket.socket:
         # connect directly using usbmuxd
-        mux_device = usbmux.select_device(self.serial, connection_type=self.usbmux_connection_type)
+        mux_device = usbmux.select_device(self.serial, connection_type=self.usbmux_connection_type,
+                                          usbmux_address=self.usbmux_address)
         if mux_device is None:
             raise ConnectionFailedError()
         return mux_device.connect(self.dst_port)

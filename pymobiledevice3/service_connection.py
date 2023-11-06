@@ -82,8 +82,9 @@ class LockdownServiceConnection:
         return LockdownServiceConnection(sock)
 
     @staticmethod
-    def create_using_usbmux(udid: Optional[str], port: int, connection_type: str = None) -> 'LockdownServiceConnection':
-        target_device = select_device(udid, connection_type=connection_type)
+    def create_using_usbmux(udid: Optional[str], port: int, connection_type: str = None,
+                            usbmux_address: Optional[str] = None) -> 'LockdownServiceConnection':
+        target_device = select_device(udid, connection_type=connection_type, usbmux_address=usbmux_address)
         if target_device is None:
             if udid:
                 raise ConnectionFailedError()

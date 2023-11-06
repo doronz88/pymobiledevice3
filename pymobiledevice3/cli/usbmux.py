@@ -4,7 +4,7 @@ import tempfile
 import click
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.cli.cli_common import print_json
+from pymobiledevice3.cli.cli_common import USBMUX_OPTION_HELP, print_json
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.tcp_forwarder import UsbmuxTcpForwarder
 
@@ -24,13 +24,14 @@ def usbmux_cli():
 
 
 @usbmux_cli.command('forward')
+@click.option('usbmux_address', '--usbmux', help=USBMUX_OPTION_HELP)
 @click.argument('src_port', type=click.IntRange(1, 0xffff))
 @click.argument('dst_port', type=click.IntRange(1, 0xffff))
 @click.option('--serial', help='device serial number')
 @click.option('-d', '--daemonize', is_flag=True)
-def usbmux_forward(src_port: int, dst_port: int, serial: str, daemonize: bool):
+def usbmux_forward(usbmux_address: str, src_port: int, dst_port: int, serial: str, daemonize: bool):
     """ forward tcp port """
-    forwarder = UsbmuxTcpForwarder(serial, dst_port, src_port)
+    forwarder = UsbmuxTcpForwarder(serial, dst_port, src_port, usbmux_address=usbmux_address)
 
     if daemonize:
         try:
@@ -46,13 +47,14 @@ def usbmux_forward(src_port: int, dst_port: int, serial: str, daemonize: bool):
 
 
 @usbmux_cli.command('list')
+@click.option('usbmux_address', '--usbmux', help=USBMUX_OPTION_HELP)
 @click.option('--color/--no-color', default=True)
 @click.option('-u', '--usb', is_flag=True, help='show only usb devices')
 @click.option('-n', '--network', is_flag=True, help='show only network devices')
-def usbmux_list(color, usb, network):
+def usbmux_list(usbmux_address: str, color: bool, usb: bool, network: bool) -> None:
     """ list connected devices """
     connected_devices = []
-    for device in usbmux.list_devices():
+    for device in usbmux.list_devices(usbmux_address=usbmux_address):
         udid = device.serial
 
         if usb and not device.is_usb:
