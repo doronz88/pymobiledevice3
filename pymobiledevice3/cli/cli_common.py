@@ -19,6 +19,8 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 from pymobiledevice3.remote.utils import get_tunneld_devices
 from pymobiledevice3.usbmux import select_devices_by_connection_type
 
+USBMUX_OPTION_HELP = 'usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT'
+
 
 class RSDOption(Option):
     def __init__(self, *args, **kwargs):
@@ -129,11 +131,19 @@ class BaseCommand(click.Command):
 class LockdownCommand(BaseCommand):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.usbmux_address = None
         self.params[:0] = [
+            click.Option(('usbmux', '--usbmux'), callback=self.usbmux, expose_value=False,
+                         help=USBMUX_OPTION_HELP),
             click.Option(('lockdown_service_provider', '--udid'), envvar=UDID_ENV_VAR, callback=self.udid,
                          help=f'Device unique identifier. You may pass {UDID_ENV_VAR} environment variable to pass this'
                               f' option as well'),
         ]
+
+    def usbmux(self, ctx, param: str, value: Optional[str] = None) -> None:
+        if value is None:
+            return
+        self.usbmux_address = value
 
     def udid(self, ctx, param: str, value: str) -> Optional[LockdownClient]:
         if '_PYMOBILEDEVICE3_COMPLETE' in os.environ:
@@ -146,11 +156,12 @@ class LockdownCommand(BaseCommand):
         if value is not None:
             return create_using_usbmux(serial=value)
 
-        devices = select_devices_by_connection_type(connection_type='USB')
+        devices = select_devices_by_connection_type(connection_type='USB', usbmux_address=self.usbmux_address)
         if len(devices) <= 1:
-            return create_using_usbmux()
+            return create_using_usbmux(usbmux_address=self.usbmux_address)
 
-        return prompt_device_list([create_using_usbmux(serial=device.serial) for device in devices])
+        return prompt_device_list(
+            [create_using_usbmux(serial=device.serial, usbmux_address=self.usbmux_address) for device in devices])
 
 
 class RSDCommand(BaseCommand):

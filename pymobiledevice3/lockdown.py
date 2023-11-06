@@ -10,7 +10,7 @@ from contextlib import contextmanager, suppress
 from enum import Enum
 from functools import wraps
 from pathlib import Path
-from typing import Dict, Mapping
+from typing import Dict, Mapping, Optional
 
 from packaging.version import Version
 
@@ -560,6 +560,14 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
 
 class UsbmuxLockdownClient(LockdownClient):
+    def __init__(self, service: LockdownServiceConnection, host_id: str, identifier: str = None,
+                 label: str = DEFAULT_LABEL, system_buid: str = SYSTEM_BUID, pair_record: Mapping = None,
+                 pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT,
+                 usbmux_address: Optional[str] = None):
+        super().__init__(service, host_id, identifier, label, system_buid, pair_record, pairing_records_cache_folder,
+                         port)
+        self.usbmux_address = usbmux_address
+
     @property
     def short_info(self) -> Dict:
         short_info = super().short_info
@@ -568,7 +576,8 @@ class UsbmuxLockdownClient(LockdownClient):
 
     def _create_service_connection(self, port: int) -> LockdownServiceConnection:
         return LockdownServiceConnection.create_using_usbmux(self.identifier, port,
-                                                             self.service.mux_device.connection_type)
+                                                             self.service.mux_device.connection_type,
+                                                             usbmux_address=self.usbmux_address)
 
 
 class PlistUsbmuxLockdownClient(UsbmuxLockdownClient):
@@ -643,7 +652,7 @@ class RemoteLockdownClient(LockdownClient):
 def create_using_usbmux(serial: str = None, identifier: str = None, label: str = DEFAULT_LABEL, autopair: bool = True,
                         connection_type: str = None, pair_timeout: int = None, local_hostname: str = None,
                         pair_record: Mapping = None, pairing_records_cache_folder: Path = None,
-                        port: int = SERVICE_PORT) -> UsbmuxLockdownClient:
+                        port: int = SERVICE_PORT, usbmux_address: Optional[str] = None) -> UsbmuxLockdownClient:
     """
     Create a UsbmuxLockdownClient instance
 
@@ -657,11 +666,13 @@ def create_using_usbmux(serial: str = None, identifier: str = None, label: str =
     :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
     :param pairing_records_cache_folder: Use the following location to search and save pair records
     :param port: lockdownd service port
+    :param usbmux_address: usbmuxd address
     :return: UsbmuxLockdownClient instance
     """
-    service = LockdownServiceConnection.create_using_usbmux(serial, port, connection_type=connection_type)
+    service = LockdownServiceConnection.create_using_usbmux(serial, port, connection_type=connection_type,
+                                                            usbmux_address=usbmux_address)
     cls = UsbmuxLockdownClient
-    with usbmux.create_mux() as client:
+    with usbmux.create_mux(usbmux_address=usbmux_address) as client:
         if isinstance(client, PlistMuxConnection):
             # Only the Plist version of usbmuxd supports this message type
             system_buid = client.get_buid()
@@ -674,7 +685,7 @@ def create_using_usbmux(serial: str = None, identifier: str = None, label: str =
     return cls.create(
         service, identifier=identifier, label=label, system_buid=system_buid, local_hostname=local_hostname,
         pair_record=pair_record, pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout,
-        autopair=autopair)
+        autopair=autopair, usbmux_address=usbmux_address)
 
 
 def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT_LABEL, autopair: bool = True,

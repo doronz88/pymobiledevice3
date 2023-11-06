@@ -143,19 +143,34 @@ class MuxConnection:
     USBMUXD_PIPE = '/var/run/usbmuxd'
 
     @staticmethod
-    def create_usbmux_socket() -> SafeStreamSocket:
+    def create_usbmux_socket(usbmux_address: Optional[str] = None) -> SafeStreamSocket:
         try:
-            if sys.platform in ['win32', 'cygwin']:
-                return SafeStreamSocket(MuxConnection.ITUNES_HOST, socket.AF_INET)
+            if usbmux_address is not None:
+                if ':' in usbmux_address:
+                    # assume tcp address
+                    hostname, port = usbmux_address.split(':')
+                    port = int(port)
+                    address = (hostname, port)
+                    family = socket.AF_INET
+                else:
+                    # assume unix domain address
+                    address = usbmux_address
+                    family = socket.AF_UNIX
             else:
-                return SafeStreamSocket(MuxConnection.USBMUXD_PIPE, socket.AF_UNIX)
+                if sys.platform in ['win32', 'cygwin']:
+                    address = MuxConnection.ITUNES_HOST
+                    family = socket.AF_INET
+                else:
+                    address = MuxConnection.USBMUXD_PIPE
+                    family = socket.AF_UNIX
+            return SafeStreamSocket(address, family)
         except ConnectionRefusedError:
             raise ConnectionFailedError()
 
     @staticmethod
-    def create():
+    def create(usbmux_address: Optional[str] = None):
         # first attempt to connect with possibly the wrong version header (plist protocol)
-        sock = MuxConnection.create_usbmux_socket()
+        sock = MuxConnection.create_usbmux_socket(usbmux_address=usbmux_address)
 
         message = usbmuxd_request.build({
             'header': {'version': usbmuxd_version.PLIST, 'message': usbmuxd_msgtype.PLIST, 'tag': 1},
@@ -386,25 +401,26 @@ class PlistMuxConnection(BinaryMuxConnection):
             raise self._raise_mux_exception(response['Number'], f'got an error message: {response}')
 
 
-def create_mux() -> MuxConnection:
-    return MuxConnection.create()
+def create_mux(usbmux_address: Optional[str] = None) -> MuxConnection:
+    return MuxConnection.create(usbmux_address=usbmux_address)
 
 
-def list_devices() -> List[MuxDevice]:
-    mux = create_mux()
+def list_devices(usbmux_address: Optional[str] = None) -> List[MuxDevice]:
+    mux = create_mux(usbmux_address=usbmux_address)
     mux.get_device_list(0.1)
     devices = mux.devices
     mux.close()
     return devices
 
 
-def select_device(udid: str = None, connection_type: str = None) -> Optional[MuxDevice]:
+def select_device(udid: str = None, connection_type: str = None, usbmux_address: Optional[str] = None) \
+        -> Optional[MuxDevice]:
     """
     select a UsbMux device according to given arguments.
     if more than one device could be selected, always prefer the usb one.
     """
     tmp = None
-    for device in list_devices():
+    for device in list_devices(usbmux_address=usbmux_address):
         if connection_type is not None and device.connection_type != connection_type:
             # if a specific connection_type was desired and not of this one then skip
             continue
@@ -423,12 +439,12 @@ def select_device(udid: str = None, connection_type: str = None) -> Optional[Mux
     return tmp
 
 
-def select_devices_by_connection_type(connection_type: str) -> List[MuxDevice]:
+def select_devices_by_connection_type(connection_type: str, usbmux_address: Optional[str] = None) -> List[MuxDevice]:
     """
     select all UsbMux devices by connection type
     """
     tmp = []
-    for device in list_devices():
+    for device in list_devices(usbmux_address=usbmux_address):
         if device.connection_type == connection_type:
             tmp.append(device)
 
