@@ -1,6 +1,6 @@
 [project]
 name = "pymobiledevice3"
-version = "2.22.2"
+version = "2.23.0"
 description = "Pure python3 implementation for working with iDevices (iPhone, etc...)"
 readme = "README.md"
 requires-python = ">=3.8"
