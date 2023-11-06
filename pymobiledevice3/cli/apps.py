@@ -54,4 +54,4 @@ def install(service_provider: LockdownClient, ipa_path):
 @click.argument('bundle_id')
 def afc(service_provider: LockdownClient, bundle_id: str, documents: bool):
     """ open an AFC shell for given bundle_id, assuming its profile is installed """
-    HouseArrestService(lockdown=service_provider).shell(bundle_id, documents_only=documents)
+    HouseArrestService(lockdown=service_provider, bundle_id=bundle_id, documents_only=documents).shell()
