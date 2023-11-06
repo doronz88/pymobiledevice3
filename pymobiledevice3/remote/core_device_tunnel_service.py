@@ -304,10 +304,15 @@ class CoreDeviceTunnelService(RemoteService):
                                  'sendingHost': platform.node(),
                                  'startNewSession': True})
         self.logger.info('Waiting user pairing consent')
-        assert 'awaitingUserConsent' in self._receive_plain_response()['event']['_0']
-        response = self._receive_pairing_data()
+        response = self._receive_plain_response()['event']['_0']
+        if 'awaitingUserConsent' in response:
+            pairingData = self._receive_pairing_data()
+        else:
+            # On tvOS no consent is needed and pairing data is returned immediately.
+            pairingData = response['pairingData']['_0']['data']
+
         data = self.decode_tlv(PairingDataComponentTLVBuf.parse(
-            response))
+            pairingData))
         return PairConsentResult(public_key=data[PairingDataComponentType.PUBLIC_KEY],
                                  salt=data[PairingDataComponentType.SALT])
 
@@ -424,7 +429,10 @@ class CoreDeviceTunnelService(RemoteService):
 
     def _create_remote_unlock(self) -> None:
         response = self._send_receive_encrypted_request({'request': {'_0': {'createRemoteUnlockKey': {}}}})
-        self.remote_unlock_host_key = response['createRemoteUnlockKey']['hostKey']
+        if 'errorExtended' in response:
+            self.remote_unlock_host_key = None
+        else:
+            self.remote_unlock_host_key = response['createRemoteUnlockKey']['hostKey']
 
     def _attempt_pair_verify(self) -> None:
         self.handshake_info = self._send_receive_handshake({
