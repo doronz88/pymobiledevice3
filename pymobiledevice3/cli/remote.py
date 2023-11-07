@@ -7,7 +7,7 @@ from typing import List, TextIO
 
 import click
 
-from pymobiledevice3.cli.cli_common import RSDCommand, print_json, prompt_device_list
+from pymobiledevice3.cli.cli_common import RSDCommand, print_json, prompt_device_list, sudo_required
 from pymobiledevice3.exceptions import NoDeviceConnectedError
 from pymobiledevice3.remote.bonjour import get_remoted_addresses
 from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_quic_tunnel, verify_tunnel_imports
@@ -47,6 +47,7 @@ def remote_cli():
 @click.option('--host', default=TUNNELD_DEFAULT_ADDRESS[0])
 @click.option('--port', type=click.INT, default=TUNNELD_DEFAULT_ADDRESS[1])
 @click.option('-d', '--daemonize', is_flag=True)
+@sudo_required
 def cli_tunneld(host: str, port: int, daemonize: bool):
     """ Start Tunneld service for remote tunneling """
     if not verify_tunnel_imports():
@@ -128,6 +129,7 @@ async def tunnel_task(
               help='Show only HOST and port number to allow easy parsing from external shell scripts')
 @click.option('--max-idle-timeout', type=click.FLOAT, default=MAX_IDLE_TIMEOUT,
               help='Maximum QUIC idle time (ping interval)')
+@sudo_required
 def cli_start_quic_tunnel(udid: str, secrets: TextIO, script_mode: bool, max_idle_timeout: float):
     """ start quic tunnel """
     if not verify_tunnel_imports():
