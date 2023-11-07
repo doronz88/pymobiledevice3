@@ -1,10 +1,12 @@
 import asyncio
 import dataclasses
 import logging
+from contextlib import suppress
 from typing import Dict, Tuple
 
 import ifaddr.netifaces
 import uvicorn
+import zeroconf
 from fastapi import FastAPI
 from packaging import version
 from zeroconf import IPVersion
@@ -35,12 +37,22 @@ class TunneldCore:
         self._type = '_remoted._tcp.local.'
         self._name = 'ncm._remoted._tcp.local.'
         self._interval = .5
+        self.tasks = []
 
     def start(self) -> None:
         """ Register all tasks """
-        asyncio.create_task(self.update_adapters(), name='update_adapters')
-        asyncio.create_task(self.remove_detached_devices(), name='remove_detached_devices')
-        asyncio.create_task(self.discover_new_devices(), name='discover_new_devices')
+        self.tasks = [
+            asyncio.create_task(self.update_adapters(), name='update_adapters'),
+            asyncio.create_task(self.remove_detached_devices(), name='remove_detached_devices'),
+            asyncio.create_task(self.discover_new_devices(), name='discover_new_devices'),
+        ]
+
+    async def close(self):
+        """ close all tasks """
+        for task in self.tasks:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
     @staticmethod
     async def handle_new_tunnel(tun: Tunnel) -> None:
@@ -99,34 +111,39 @@ class TunneldCore:
         while True:
             # Search for devices advertising the specified service type and name
             async with AsyncZeroconf(ip_version=IPVersion.V6Only) as aiozc:
-                info = await aiozc.async_get_service_info(self._type, self._name, timeout=ZEROCONF_TIMEOUT)
-                if info is not None:
-                    # Extract device details
-                    addr = info.parsed_addresses(IPVersion.V6Only)[0]
-                    interface_index = self.get_interface_index(addr)
-                    if interface_index not in self.active_tunnels:
-                        # Connect to the discovered device
-                        addr = f'{addr}%{interface_index}'
-                        try:
-                            rsd = await self.connect_rsd(addr, info.port)
-                        except (TimeoutError, ConnectionError, OSError):
-                            logger.warning(f'Failed to connect rsd to {addr}')
-                            continue
-                        # Check unsupported devices with a product version below a minimum threshold
-                        if version.parse(rsd.product_version) < version.parse(MIN_VERSION):
-                            logger.warning(f'{rsd.udid} Unsupported device {rsd.product_version} < {MIN_VERSION}')
-                            continue
-                        logger.info(f'Creating tunnel for {addr}')
-                        tunnel = Tunnel(rsd)
-                        # Add the tunnel to the active tunnels and start a handling task
-                        tunnel.task = asyncio.create_task(self.handle_new_tunnel(tunnel))
-                        self.active_tunnels[interface_index] = tunnel
+                try:
+                    info = await aiozc.async_get_service_info(self._type, self._name, timeout=ZEROCONF_TIMEOUT)
+                except zeroconf.Error as e:
+                    logger.warning(e)
+                    continue
+                if info is None:
+                    continue
+                # Extract device details
+                addr = info.parsed_addresses(IPVersion.V6Only)[0]
+                interface_index = self.get_interface_index(addr)
+                if interface_index in self.active_tunnels:
+                    continue
+                # Connect to the discovered device
+                addr = f'{addr}%{interface_index}'
+                try:
+                    rsd = await self.connect_rsd(addr, info.port)
+                except (TimeoutError, ConnectionError, OSError):
+                    logger.warning(f'Failed to connect rsd to {addr}')
+                    continue
+                # Check unsupported devices with a product version below a minimum threshold
+                if version.parse(rsd.product_version) < version.parse(MIN_VERSION):
+                    logger.warning(f'{rsd.udid} Unsupported device {rsd.product_version} < {MIN_VERSION}')
+                    continue
+                logger.info(f'Creating tunnel for {addr}')
+                tunnel = Tunnel(rsd)
+                # Add the tunnel to the active tunnels and start a handling task
+                tunnel.task = asyncio.create_task(self.handle_new_tunnel(tunnel))
+                self.active_tunnels[interface_index] = tunnel
             await asyncio.sleep(self._interval)
 
 
 class TunneldRunner:
     """ TunneldRunner orchestrate between the webserver and TunneldCore """
-
     @classmethod
     def create(cls, host: str, port: int) -> None:
         cls(host, port)._run_app()
@@ -137,7 +154,7 @@ class TunneldRunner:
         self._app = FastAPI()
         self._tunneld_core = TunneldCore()
 
-        @self._app.get("/")
+        @self._app.get('/')
         async def list_tunnels() -> Dict[str, Tuple[str, int]]:
             """ Retrieve the available tunnels and format them as {UUID: TUNNEL_ADDRESS} """
             tunnels = {}
@@ -147,11 +164,15 @@ class TunneldRunner:
                 tunnels[v.rsd.udid] = v.address
             return tunnels
 
-        @self._app.on_event("startup")
+        @self._app.on_event('startup')
         async def on_startup() -> None:
             """ start TunneldCore """
             logging.getLogger('zeroconf').disabled = True
             self._tunneld_core.start()
+
+        @self._app.on_event('shutdown')
+        async def on_close() -> None:
+            await self._tunneld_core.close()
 
     def _run_app(self) -> None:
         uvicorn.run(self._app, host=self.host, port=self.port, loop='asyncio')
