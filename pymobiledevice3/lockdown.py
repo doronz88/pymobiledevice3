@@ -574,6 +574,11 @@ class UsbmuxLockdownClient(LockdownClient):
         short_info['ConnectionType'] = self.service.mux_device.connection_type
         return short_info
 
+    def fetch_pair_record(self) -> None:
+        if self.identifier is not None:
+            self.pair_record = get_preferred_pair_record(self.identifier, self.pairing_records_cache_folder,
+                                                         usbmux_address=self.usbmux_address)
+
     def _create_service_connection(self, port: int) -> LockdownServiceConnection:
         return LockdownServiceConnection.create_using_usbmux(self.identifier, port,
                                                              self.service.mux_device.connection_type,
