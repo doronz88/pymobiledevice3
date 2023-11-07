@@ -82,8 +82,8 @@ class MuxDevice:
     serial: str
     connection_type: str
 
-    def connect(self, port: int) -> socket.socket:
-        mux = create_mux()
+    def connect(self, port: int, usbmux_address: Optional[str] = None) -> socket.socket:
+        mux = create_mux(usbmux_address=usbmux_address)
         try:
             return mux.connect(self, port)
         except:  # noqa: E722
@@ -181,7 +181,7 @@ class MuxConnection:
 
         # if we sent a bad request, we should re-create the socket in the correct version this time
         sock.close()
-        sock = MuxConnection.create_usbmux_socket()
+        sock = MuxConnection.create_usbmux_socket(usbmux_address=usbmux_address)
 
         if response.header.version == usbmuxd_version.BINARY:
             return BinaryMuxConnection(sock)

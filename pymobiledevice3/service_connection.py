@@ -89,7 +89,7 @@ class LockdownServiceConnection:
             if udid:
                 raise ConnectionFailedError()
             raise NoDeviceConnectedError()
-        sock = target_device.connect(port)
+        sock = target_device.connect(port, usbmux_address=usbmux_address)
         return LockdownServiceConnection(sock, mux_device=target_device)
 
     def setblocking(self, blocking: bool) -> None:

@@ -48,7 +48,8 @@ def get_local_pairing_record(identifier: str, pairing_records_cache_folder: Path
     return plistlib.loads(path.read_bytes())
 
 
-def get_preferred_pair_record(identifier: str, pairing_records_cache_folder: Path) -> Mapping:
+def get_preferred_pair_record(identifier: str, pairing_records_cache_folder: Path,
+                              usbmux_address: Optional[str] = None) -> Mapping:
     """
     look for an existing pair record to connected device by following order:
     - usbmuxd
@@ -58,7 +59,7 @@ def get_preferred_pair_record(identifier: str, pairing_records_cache_folder: Pat
 
     # usbmuxd
     with suppress(NotPairedError, MuxException):
-        with usbmux.create_mux() as mux:
+        with usbmux.create_mux(usbmux_address=usbmux_address) as mux:
             if isinstance(mux, PlistMuxConnection):
                 pair_record = mux.get_pair_record(identifier)
                 if pair_record is not None:

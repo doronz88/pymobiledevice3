@@ -166,7 +166,7 @@ class UsbmuxTcpForwarder(TcpForwarderBase):
                                           usbmux_address=self.usbmux_address)
         if mux_device is None:
             raise ConnectionFailedError()
-        return mux_device.connect(self.dst_port)
+        return mux_device.connect(self.dst_port, usbmux_address=self.usbmux_address)
 
 
 class LockdownTcpForwarder(TcpForwarderBase):
