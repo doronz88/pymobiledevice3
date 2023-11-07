@@ -13,7 +13,8 @@ from click import Option, UsageError
 from inquirer3.themes import GreenPassion
 from pygments import formatters, highlight, lexers
 
-from pymobiledevice3.exceptions import DeviceNotFoundError, NoDeviceConnectedError, NoDeviceSelectedError
+from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, NoDeviceConnectedError, \
+    NoDeviceSelectedError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.utils import get_tunneld_devices
@@ -90,6 +91,15 @@ def wait_return():
 
 
 UDID_ENV_VAR = 'PYMOBILEDEVICE3_UDID'
+
+
+def sudo_required(func):
+    def wrapper(*args, **kwargs):
+        if os.geteuid() != 0:
+            raise AccessDeniedError()
+        else:
+            func(*args, **kwargs)
+    return wrapper
 
 
 def prompt_device_list(device_list: List):
