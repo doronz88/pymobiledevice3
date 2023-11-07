@@ -1,10 +1,12 @@
 import asyncio
 import dataclasses
 import logging
+from contextlib import suppress
 from typing import Dict, Tuple
 
 import ifaddr.netifaces
 import uvicorn
+import zeroconf
 from fastapi import FastAPI
 from packaging import version
 from zeroconf import IPVersion
@@ -35,12 +37,22 @@ class TunneldCore:
         self._type = '_remoted._tcp.local.'
         self._name = 'ncm._remoted._tcp.local.'
         self._interval = .5
+        self.tasks = []
 
     def start(self) -> None:
         """ Register all tasks """
-        asyncio.create_task(self.update_adapters(), name='update_adapters')
-        asyncio.create_task(self.remove_detached_devices(), name='remove_detached_devices')
-        asyncio.create_task(self.discover_new_devices(), name='discover_new_devices')
+        self.tasks = [
+            asyncio.create_task(self.update_adapters(), name='update_adapters'),
+            asyncio.create_task(self.remove_detached_devices(), name='remove_detached_devices'),
+            asyncio.create_task(self.discover_new_devices(), name='discover_new_devices'),
+        ]
+
+    async def close(self):
+        """ close all tasks """
+        for task in self.tasks:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
     @staticmethod
     async def handle_new_tunnel(tun: Tunnel) -> None:
@@ -137,7 +149,7 @@ class TunneldRunner:
         self._app = FastAPI()
         self._tunneld_core = TunneldCore()
 
-        @self._app.get("/")
+        @self._app.get('/')
         async def list_tunnels() -> Dict[str, Tuple[str, int]]:
             """ Retrieve the available tunnels and format them as {UUID: TUNNEL_ADDRESS} """
             tunnels = {}
@@ -147,11 +159,15 @@ class TunneldRunner:
                 tunnels[v.rsd.udid] = v.address
             return tunnels
 
-        @self._app.on_event("startup")
+        @self._app.on_event('startup')
         async def on_startup() -> None:
             """ start TunneldCore """
             logging.getLogger('zeroconf').disabled = True
             self._tunneld_core.start()
+
+        @self._app.on_event('shutdown')
+        async def on_close() -> None:
+            await self._tunneld_core.close()
 
     def _run_app(self) -> None:
         uvicorn.run(self._app, host=self.host, port=self.port, loop='asyncio')
