@@ -99,6 +99,7 @@ def sudo_required(func):
             raise AccessDeniedError()
         else:
             func(*args, **kwargs)
+
     return wrapper
 
 
@@ -205,16 +206,19 @@ class RSDCommand(BaseCommand):
             try:
                 # Connect to the specified device
                 self.service_provider = [rsd for rsd in rsds if rsd.udid == udid][0]
-                return self.service_provider
             except IndexError:
                 raise DeviceNotFoundError(udid)
-
-        if len(rsds) == 1:
-            rsd = rsds[0]
         else:
-            rsd = prompt_device_list(rsds)
+            if len(rsds) == 1:
+                self.service_provider = rsds[0]
+            else:
+                self.service_provider = prompt_device_list(rsds)
 
-        self.service_provider = rsd
+        for rsd in rsds:
+            if rsd == self.service_provider:
+                continue
+            rsd.close()
+
         return self.service_provider
 
 
