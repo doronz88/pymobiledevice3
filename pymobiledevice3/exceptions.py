@@ -63,6 +63,12 @@ class NoDeviceConnectedError(PyMobileDevice3Exception):
     pass
 
 
+class InterfaceIndexNotFoundError(PyMobileDevice3Exception):
+    def __init__(self, address: str):
+        super().__init__()
+        self.address = address
+
+
 class DeviceNotFoundError(PyMobileDevice3Exception):
     def __init__(self, udid: str):
         super().__init__()

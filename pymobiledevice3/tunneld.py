@@ -12,6 +12,7 @@ from packaging import version
 from zeroconf import IPVersion
 from zeroconf.asyncio import AsyncZeroconf
 
+from pymobiledevice3.exceptions import InterfaceIndexNotFoundError
 from pymobiledevice3.remote.module_imports import start_quic_tunnel
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.utils import stop_remoted
@@ -105,6 +106,7 @@ class TunneldCore:
             if address_segments != v.split(':')[:-1]:
                 continue
             return k
+        raise InterfaceIndexNotFoundError(address=address)
 
     async def discover_new_devices(self) -> None:
         """ Continuously scans for devices advertising 'RSD' through IPv6 adapters """
@@ -120,7 +122,11 @@ class TunneldCore:
                     continue
                 # Extract device details
                 addr = info.parsed_addresses(IPVersion.V6Only)[0]
-                interface_index = self.get_interface_index(addr)
+                try:
+                    interface_index = self.get_interface_index(addr)
+                except InterfaceIndexNotFoundError as e:
+                    logger.warning(f'Failed to find interface index for {e.address}')
+                    continue
                 if interface_index in self.active_tunnels:
                     continue
                 # Connect to the discovered device
