@@ -29,3 +29,6 @@ If applicable, add logs including backtraces for the given error that help expla
 
 **Additional context**
 Add any other context about the problem here.
+
+## For community
+⬇️  **Please click the 👍 reaction instead of leaving a `+1` or 👍  comment**
