@@ -1,9 +1,12 @@
 import asyncio
 import dataclasses
 import logging
+import os
+import signal
 from contextlib import suppress
 from typing import Dict, Tuple
 
+import fastapi
 import ifaddr.netifaces
 import uvicorn
 import zeroconf
@@ -170,6 +173,12 @@ class TunneldRunner:
                 tunnels[v.rsd.udid] = v.address
             return tunnels
 
+        @self._app.get('/shutdown')
+        async def shutdown() -> fastapi.Response:
+            """ Shutdown Tunneld """
+            os.kill(os.getpid(), signal.SIGINT)
+            return fastapi.Response(status_code=200, content='Server shutting down...')
+
         @self._app.on_event('startup')
         async def on_startup() -> None:
             """ start TunneldCore """
@@ -178,6 +187,7 @@ class TunneldRunner:
 
         @self._app.on_event('shutdown')
         async def on_close() -> None:
+            logger.info('Closing tunneld tasks...')
             await self._tunneld_core.close()
 
     def _run_app(self) -> None:
