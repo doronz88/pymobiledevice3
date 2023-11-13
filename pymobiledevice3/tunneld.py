@@ -97,6 +97,7 @@ class TunneldCore:
             # For each detached tunnel, cancel its task, log the removal, and remove it from the active tunnels
             for k in diff:
                 self.active_tunnels[k].task.cancel()
+                self.active_tunnels[k].rsd.close()
                 logger.info(f'Removing tunnel {self.active_tunnels[k].address}')
                 self.active_tunnels.pop(k)
 
