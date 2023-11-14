@@ -304,7 +304,8 @@ def auto_mount_developer(lockdown: LockdownServiceProvider, xcode: str = None, v
         raise AlreadyMountedError()
 
     if version is None:
-        version = lockdown.product_version
+        version = Version(lockdown.product_version)
+        version = f'{version.major}.{version.minor}'
     image_dir = f'{xcode}/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport/{version}'
     image_path = f'{image_dir}/DeveloperDiskImage.dmg'
     signature = f'{image_path}.signature'
