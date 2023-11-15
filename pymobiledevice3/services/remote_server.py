@@ -139,6 +139,9 @@ class Channel(int):
         channel._service = service
         return channel
 
+    def receive_key_value(self):
+        return self._service.recv_plist(self)
+
     def receive_plist(self):
         return self._service.recv_plist(self)[0]
 
