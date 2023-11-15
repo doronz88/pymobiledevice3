@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
+import dataclasses
 import plistlib
 import struct
 import tempfile
 import typing
 from datetime import datetime
+from enum import IntEnum
 from pathlib import Path
 from tarfile import TarFile
 
@@ -18,6 +20,31 @@ from pymobiledevice3.utils import try_decode
 CHUNK_SIZE = 4096
 TIME_FORMAT = '%H:%M:%S'
 SYSLOG_LINE_SPLITTER = '\n\x00'
+
+
+class SyslogLogLevel(IntEnum):
+    NOTICE = 0x00
+    INFO = 0x01
+    DEBUG = 0x02
+    ERROR = 0x10
+    FAULT = 0x11
+
+
+@dataclasses.dataclass
+class SyslogLabel:
+    category: str
+    subsystem: str
+
+
+@dataclasses.dataclass
+class SyslogEntry:
+    pid: int
+    timestamp: datetime
+    level: SyslogLogLevel
+    image_name: str
+    filename: str
+    message: str
+    label: typing.Optional[SyslogLabel] = None
 
 
 class TimestampAdapter(Adapter):
@@ -124,7 +151,7 @@ class OsTraceService(LockdownService):
                 self.create_archive(f, size_limit=size_limit, age_limit=age_limit, start_time=start_time)
             TarFile(file).extractall(out)
 
-    def syslog(self, pid=-1):
+    def syslog(self, pid=-1) -> typing.Generator[SyslogEntry, None, None]:
         self.service.send_plist({'Request': 'StartActivity', 'MessageFilter': 65535, 'Pid': pid, 'StreamFlags': 60})
 
         length_length, = struct.unpack('<I', self.service.recvall(4))
@@ -139,4 +166,8 @@ class OsTraceService(LockdownService):
             length, = struct.unpack('<I', self.service.recvall(4))
             line = self.service.recvall(length)
             entry = syslog_t.parse(line)
-            yield entry
+            label = None
+            if entry.label is not None:
+                label = SyslogLabel(subsystem=entry.label.subsystem, category=entry.label.category)
+            yield SyslogEntry(pid=entry.pid, timestamp=entry.timestamp, level=SyslogLogLevel(int(entry.level)),
+                              image_name=entry.image_name, filename=entry.filename, message=entry.message, label=label)

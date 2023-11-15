@@ -15,7 +15,6 @@ import click
 from click.exceptions import MissingParameter, UsageError
 from packaging.version import Version
 from pykdebugparser.pykdebugparser import PyKdebugParser
-from termcolor import colored
 
 import pymobiledevice3
 from pymobiledevice3.cli.cli_common import BASED_INT, Command, RSDCommand, default_json_encoder, print_json, wait_return
@@ -598,12 +597,12 @@ def dvt_oslog(service_provider: LockdownClient, color, pid):
                     formatted_message = message.name
 
                 if color:
-                    timestamp = colored(str(timestamp), attrs=['bold'])
-                    message_pid = colored(str(message_pid), 'magenta')
-                    subsystem = colored(subsystem, 'green')
-                    category = colored(category, 'green')
-                    image_name = colored(image_name, 'yellow')
-                    message_type = colored(message_type, 'cyan')
+                    timestamp = click.style(str(timestamp), bold=True)
+                    message_pid = click.style(str(message_pid), 'magenta')
+                    subsystem = click.style(subsystem, 'green')
+                    category = click.style(category, 'green')
+                    image_name = click.style(image_name, 'yellow')
+                    message_type = click.style(message_type, 'cyan')
 
                 print(f'[{timestamp}][{subsystem}][{category}][{message_pid}][{image_name}] '
                       f'<{message_type}>: {formatted_message}')

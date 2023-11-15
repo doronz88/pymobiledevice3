@@ -86,6 +86,10 @@ def set_verbosity(ctx, param, value):
     coloredlogs.set_level(logging.INFO - (value * 10))
 
 
+def get_last_used_terminal_formatting(buf: str) -> str:
+    return '\x1b' + buf.rsplit('\x1b', 1)[1].split('m')[0] + 'm'
+
+
 def wait_return():
     input('> Hit RETURN to exit')
 
