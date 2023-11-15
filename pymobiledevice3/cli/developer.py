@@ -162,14 +162,20 @@ def pkill(service_provider: LockdownClient, expression):
 @click.option('--suspended', is_flag=True, help='Same as WaitForDebugger')
 @click.option('--env', multiple=True, type=click.Tuple((str, str)),
               help='Environment variables to pass to process given as a list of key value')
-def launch(service_provider: LockdownClient, arguments: str, kill_existing: bool, suspended: bool, env: tuple):
+@click.option('--stream', is_flag=True)
+def launch(service_provider: LockdownClient, arguments: str, kill_existing: bool, suspended: bool, env: tuple,
+           stream: bool) -> None:
     """ Launch a process. """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         parsed_arguments = shlex.split(arguments)
-        pid = ProcessControl(dvt).launch(bundle_id=parsed_arguments[0], arguments=parsed_arguments[1:],
-                                         kill_existing=kill_existing, start_suspended=suspended,
-                                         environment=dict(env))
+        process_control = ProcessControl(dvt)
+        pid = process_control.launch(bundle_id=parsed_arguments[0], arguments=parsed_arguments[1:],
+                                     kill_existing=kill_existing, start_suspended=suspended,
+                                     environment=dict(env))
         print(f'Process launched with pid {pid}')
+        while stream:
+            for output_received in process_control:
+                logging.getLogger(f'PID:{output_received.pid}').info(output_received.message.strip())
 
 
 @dvt.command('shell', cls=Command)
