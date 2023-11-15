@@ -1,6 +1,5 @@
 construct>=2.9.29
 asn1
-termcolor
 click
 coloredlogs
 IPython
