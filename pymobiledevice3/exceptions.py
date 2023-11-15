@@ -2,8 +2,7 @@ __all__ = [
     'PyMobileDevice3Exception', 'DeviceVersionNotSupportedError', 'IncorrectModeError',
     'NotTrustedError', 'PairingError', 'NotPairedError', 'CannotStopSessionError',
     'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'DeviceNotFoundError',
-    'TunneldConnectionError',
-    'MuxException',
+    'TunneldConnectionError', 'ConnectionFailedToUsbmuxdError', 'MuxException',
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
     'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabledError', 'RemoteAutomationNotEnabledError',
@@ -96,6 +95,10 @@ class BadDevError(MuxException):
 
 
 class ConnectionFailedError(MuxException):
+    pass
+
+
+class ConnectionFailedToUsbmuxdError(ConnectionFailedError):
     pass
 
 

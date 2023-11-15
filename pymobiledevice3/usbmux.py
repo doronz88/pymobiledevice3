@@ -9,8 +9,8 @@ from typing import List, Mapping, Optional
 from construct import Const, CString, Enum, FixedSized, GreedyBytes, Int16ul, Int32ul, Padding, Prefixed, StreamError, \
     Struct, Switch, this
 
-from pymobiledevice3.exceptions import BadCommandError, BadDevError, ConnectionFailedError, MuxException, \
-    MuxVersionError, NotPairedError
+from pymobiledevice3.exceptions import BadCommandError, BadDevError, ConnectionFailedError, \
+    ConnectionFailedToUsbmuxdError, MuxException, MuxVersionError, NotPairedError
 
 usbmuxd_version = Enum(Int32ul,
                        BINARY=0,
@@ -165,7 +165,7 @@ class MuxConnection:
                     family = socket.AF_UNIX
             return SafeStreamSocket(address, family)
         except ConnectionRefusedError:
-            raise ConnectionFailedError()
+            raise ConnectionFailedToUsbmuxdError()
 
     @staticmethod
     def create(usbmux_address: Optional[str] = None):

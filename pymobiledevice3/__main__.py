@@ -29,7 +29,7 @@ from pymobiledevice3.cli.springboard import cli as springboard_cli
 from pymobiledevice3.cli.syslog import cli as syslog_cli
 from pymobiledevice3.cli.usbmux import cli as usbmux_cli
 from pymobiledevice3.cli.webinspector import cli as webinspector_cli
-from pymobiledevice3.exceptions import AccessDeniedError, ConnectionFailedError, DeveloperModeError, \
+from pymobiledevice3.exceptions import AccessDeniedError, ConnectionFailedToUsbmuxdError, DeveloperModeError, \
     DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, DeviceNotFoundError, InternalError, \
     InvalidServiceError, MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, NoDeviceSelectedError, \
     NotPairedError, PairingDialogResponsePendingError, PasswordRequiredError, SetProhibitedError, \
@@ -93,7 +93,7 @@ def cli():
         logger.error('Cannot enable developer-mode when passcode is set')
     except DeveloperModeError as e:
         logger.error(f'Failed to enable developer-mode. Error: {e}')
-    except ConnectionFailedError:
+    except ConnectionFailedToUsbmuxdError:
         logger.error('Failed to connect to usbmuxd socket. Make sure it\'s running.')
     except MessageNotSupportedError:
         logger.error('Message not supported for this iOS version')
