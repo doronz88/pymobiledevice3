@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import os
+import signal
 import uuid
 from typing import Callable, List, Mapping, Optional, Tuple
 
@@ -91,7 +92,8 @@ def get_last_used_terminal_formatting(buf: str) -> str:
 
 
 def wait_return():
-    input('> Hit RETURN to exit')
+    print("Press Ctrl+C to send a SIGINT or use 'kill' command to send a SIGTERM")
+    signal.sigwait([signal.SIGINT, signal.SIGTERM])
 
 
 UDID_ENV_VAR = 'PYMOBILEDEVICE3_UDID'
