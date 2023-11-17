@@ -40,6 +40,10 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def ecid(self) -> int:
         return self.peer_info['Properties']['UniqueChipID']
 
+    @property
+    def developer_mode_status(self) -> bool:
+        return self.lockdown.developer_mode_status
+
     def connect(self) -> None:
         self.service.connect()
         self.peer_info = self.service.receive_response()

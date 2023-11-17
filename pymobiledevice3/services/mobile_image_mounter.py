@@ -20,12 +20,19 @@ class MobileImageMounterService(LockdownService):
     # implemented in /usr/libexec/mobile_storage_proxy
     SERVICE_NAME = 'com.apple.mobile.mobile_image_mounter'
     RSD_SERVICE_NAME = 'com.apple.mobile.mobile_image_mounter.shim.remote'
+    IMAGE_TYPE: str = None
 
     def __init__(self, lockdown: LockdownServiceProvider):
         if isinstance(lockdown, LockdownClient):
             super().__init__(lockdown, self.SERVICE_NAME)
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
+
+    def raise_if_cannot_mount(self) -> None:
+        if self.is_image_mounted(self.IMAGE_TYPE):
+            raise AlreadyMountedError()
+        if Version(self.lockdown.product_version).major >= 16 and not self.lockdown.developer_mode_status:
+            raise DeveloperModeIsNotEnabledError()
 
     def copy_devices(self) -> List[Mapping]:
         """ Copy mounted devices list. """
@@ -173,8 +180,7 @@ class DeveloperDiskImageMounter(MobileImageMounterService):
     IMAGE_TYPE = 'Developer'
 
     def mount(self, image: Path, signature: Path) -> None:
-        if self.is_image_mounted(self.IMAGE_TYPE):
-            raise AlreadyMountedError()
+        self.raise_if_cannot_mount()
 
         image = Path(image).read_bytes()
         signature = Path(signature).read_bytes()
@@ -190,8 +196,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
 
     def mount(self, image: Path, build_manifest: Path, trust_cache: Path,
               info_plist: Mapping = None) -> None:
-        if self.is_image_mounted(self.IMAGE_TYPE):
-            raise AlreadyMountedError()
+        self.raise_if_cannot_mount()
 
         image = image.read_bytes()
         trust_cache = trust_cache.read_bytes()
