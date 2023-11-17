@@ -21,6 +21,11 @@ class LockdownServiceProvider:
     def ecid(self) -> int:
         pass
 
+    @property
+    @abstractmethod
+    def developer_mode_status(self) -> bool:
+        pass
+
     @abstractmethod
     def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
         pass
