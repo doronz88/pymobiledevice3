@@ -93,7 +93,7 @@ def _reconnect_on_remote_close(f):
 
             # now we re-establish the connection
             self.logger.debug('remote device closed the connection. reconnecting...')
-            self.service = self._create_service_connection(self.port)
+            self.afc = self._create_service_connection(self.port)
             self.validate_pairing()
             return f(*args, **kwargs)
 
