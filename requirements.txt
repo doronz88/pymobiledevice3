@@ -39,5 +39,4 @@ opack
 psutil
 pytun-pmd3>=1.0.0 ; platform_system != "Windows"
 aiofiles
-gnureadline ; platform_system != "Windows"
-pyreadline3 ; platform_system == "Windows"
+prompt_toolkit
