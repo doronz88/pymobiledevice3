@@ -41,7 +41,7 @@ def crash_pull(service_provider: LockdownClient, out, remote_file, erase):
 @crash.command('shell', cls=Command)
 def crash_shell(service_provider: LockdownClient):
     """ start an afc shell """
-    CrashReportsShell(lockdown=service_provider).cmdloop()
+    CrashReportsShell.create(service_provider)
 
 
 @crash.command('ls', cls=Command)

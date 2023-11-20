@@ -13,7 +13,8 @@ pykdebugparser>=1.2.4
 pyusb>=1.2.1
 tqdm
 requests
-cmd2
+xonsh
+parameter_decorators
 packaging
 pygnuutils>=0.0.7
 cryptography>=41.0.1

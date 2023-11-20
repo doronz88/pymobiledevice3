@@ -3,13 +3,14 @@ import posixpath
 import time
 from typing import Generator, List
 
-from cmd2 import Cmd2ArgumentParser, with_argparser
 from pycrashreport.crash_report import get_crash_report_from_buf
+from xonsh.built_ins import XSH
+from xonsh.cli_utils import Annotated, Arg
 
 from pymobiledevice3.exceptions import AfcException
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
-from pymobiledevice3.services.afc import AfcService, AfcShell
+from pymobiledevice3.services.afc import AfcService, AfcShell, path_completer
 from pymobiledevice3.services.os_trace import OsTraceService
 
 SYSDIAGNOSE_PROCESS_NAMES = ('sysdiagnose', 'sysdiagnosed')
@@ -160,23 +161,20 @@ class CrashReportsManager:
         self.pull(out, entry=sysdiagnose_filename, erase=erase)
 
 
-parse_parser = Cmd2ArgumentParser(description='parse given crash report file')
-parse_parser.add_argument('filename')
-
-clear_parser = Cmd2ArgumentParser(description='remove all crash reports')
-
-
 class CrashReportsShell(AfcShell):
-    def __init__(self, lockdown: LockdownServiceProvider):
-        self.manager = CrashReportsManager(lockdown)
-        super().__init__(lockdown, service_name=self.manager.copy_mobile_service_name)
-        self.complete_parse = self._complete_first_arg
+    @classmethod
+    def create(cls, service_provider: LockdownServiceProvider, **kwargs):
+        manager = CrashReportsManager(service_provider)
+        XSH.ctx['_manager'] = manager
+        super(CrashReportsShell, CrashReportsShell).create(service_provider, service=manager.afc)
 
-    @with_argparser(parse_parser)
-    def do_parse(self, args) -> None:
-        self.poutput(
-            get_crash_report_from_buf(self.afc.get_file_contents(args.filename).decode(), filename=args.filename))
+    def _setup_shell_commands(self):
+        super()._setup_shell_commands()
+        self._register_arg_parse_alias('parse', self._do_parse)
+        self._register_arg_parse_alias('clear', self._do_clear)
 
-    @with_argparser(clear_parser)
-    def do_clear(self, args) -> None:
-        self.manager.clear()
+    def _do_parse(self, filename: Annotated[str, Arg(completer=path_completer)]) -> None:
+        print(get_crash_report_from_buf(self.afc.get_file_contents(filename).decode(), filename=filename))
+
+    def _do_clear(self) -> None:
+        XSH.ctx['_manager'].clear()

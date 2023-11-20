@@ -27,7 +27,7 @@ classifiers = [
 dynamic = ["dependencies"]
 
 [project.optional-dependencies]
-test = ["pytest", "cmd2_ext_test"]
+test = ["pytest"]
 
 [project.urls]
 "Homepage" = "https://github.com/doronz88/pymobiledevice3"

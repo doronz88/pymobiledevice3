@@ -20,7 +20,7 @@ def afc():
 @afc.command('shell', cls=Command)
 def afc_shell(service_provider: LockdownClient):
     """ open an AFC shell rooted at /var/mobile/Media """
-    AfcShell(lockdown=service_provider).cmdloop()
+    AfcShell.create(service_provider)
 
 
 @afc.command('pull', cls=Command)
