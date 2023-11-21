@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket
 from fastapi.logger import logger
@@ -8,16 +9,18 @@ from pymobiledevice3.services.web_protocol.cdp_target import CdpTarget
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 from pymobiledevice3.services.webinspector import WirTypes
 
-app = FastAPI()
 
-
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     app.state.inspector.connect()
+    yield
 
 
-@app.get('/json')
-async def available_targets():
+app = FastAPI(lifespan=lifespan)
+
+
+@app.get('/json{_:path}')
+async def available_targets(_: str):
     app.state.inspector.get_open_pages()
     targets = []
     for app_id in app.state.inspector.application_pages:
