@@ -716,11 +716,9 @@ class AfcShell:
         XSH.ctx['_lockdown'] = service_provider
         XSH.ctx['_auto_cd'] = auto_cd
         if service is not None:
-            XSH.ctx['_service'] = AfcService(service_provider)
-            XSH.ctx['_service_name'] = service.service_name
+            XSH.ctx['_service'] = service
         else:
             XSH.ctx['_service'] = AfcService(service_provider, service_name=service_name)
-            XSH.ctx['_service_name'] = service_name
 
         try:
             logging.getLogger('parso.python.diff').disabled = True
@@ -729,9 +727,9 @@ class AfcShell:
         except SystemExit:
             pass
 
-    def __init__(self, lockdown: LockdownServiceProvider, service_name: str):
+    def __init__(self, lockdown: LockdownServiceProvider, service: LockdownService):
         self.lockdown = lockdown
-        self.afc = AfcService(lockdown, service_name=service_name)
+        self.afc = service
         XSH.ctx['_shell'] = self
         self.cwd = XSH.ctx.get('_auto_cd', '/')
         self._commands = {}
@@ -932,7 +930,7 @@ class AfcShell:
 
 
 if __name__ == str(pathlib.Path(__file__).absolute()):
-    rc = XSH.ctx['_class'](XSH.ctx['_lockdown'], XSH.ctx['_service_name'])
+    rc = XSH.ctx['_class'](XSH.ctx['_lockdown'], XSH.ctx['_service'])
     # fix fzf conflicts
     XSH.env['fzf_history_binding'] = ""  # Ctrl+R
     XSH.env['fzf_ssh_binding'] = ""  # Ctrl+S
