@@ -105,10 +105,12 @@ class DeviceLink:
                 ftype = 'DLFileTypeDirectory'
             if file.is_file():
                 ftype = 'DLFileTypeRegular'
+            modifications_data = datetime.datetime.fromtimestamp(file.stat().st_mtime - APPLE_EPOCH)
+            modifications_data = modifications_data.replace(tzinfo=None)
             data[file.name] = {
                 'DLFileType': ftype,
                 'DLFileSize': file.stat().st_size,
-                'DLFileModificationDate': datetime.datetime.utcfromtimestamp(file.stat().st_mtime - APPLE_EPOCH)
+                'DLFileModificationDate': modifications_data
             }
         self.status_response(0, status_dict=data)
 
