@@ -32,5 +32,4 @@ class HouseArrestService(AfcService):
             raise PyMobileDevice3Exception(error)
 
     def shell(self) -> None:
-        AfcShell.create(self.lockdown, service=self,
-                        auto_cd=DOCUMENTS_ROOT if self.documents_only else None)
+        AfcShell.create(self.lockdown, service=self, auto_cd=DOCUMENTS_ROOT if self.documents_only else '/')
