@@ -15,8 +15,10 @@ def make_cert(key, public_key, common_name=None):
     cert = cert.issuer_name(issuer)
     cert = cert.public_key(public_key)
     cert = cert.serial_number(1)
-    cert = cert.not_valid_before(datetime.utcnow() - timedelta(minutes=1))
-    cert = cert.not_valid_after(datetime.utcnow() + timedelta(days=365 * 10))
+    now = datetime.now()
+    now = now.replace(tzinfo=None)
+    cert = cert.not_valid_before(now - timedelta(minutes=1))
+    cert = cert.not_valid_after(now + timedelta(days=365 * 10))
     cert = cert.sign(key, hashes.SHA256())
     return cert
 
