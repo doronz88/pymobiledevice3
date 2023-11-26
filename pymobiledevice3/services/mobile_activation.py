@@ -10,6 +10,7 @@ import click
 import inquirer3
 import requests
 
+from pymobiledevice3.exceptions import MobileActivationException
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 
 ACTIVATION_USER_AGENT_IOS = 'iOS Device Activator (MobileActivation-20 built on Jan 15 2012 at 19:07:28)'
@@ -113,10 +114,18 @@ class MobileActivationService:
         return self.send_command('DeactivateRequest')
 
     def create_activation_session_info(self):
-        return self.send_command('CreateTunnel1SessionInfoRequest')['Value']
+        response = self.send_command('CreateTunnel1SessionInfoRequest')
+        error = response.get('Error')
+        if error is not None:
+            raise MobileActivationException(f'Mobile activation can not be done due to: {response}')
+        return response['Value']
 
     def create_activation_info_with_session(self, handshake_response):
-        return self.send_command('CreateTunnel1ActivationInfoRequest', handshake_response)['Value']
+        response = self.send_command('CreateTunnel1ActivationInfoRequest', handshake_response)
+        error = response.get('Error')
+        if error is not None:
+            raise MobileActivationException(f'Mobile activation can not be done due to: {response}')
+        return response['Value']
 
     def activate_with_session(self, activation_record, headers):
         data = {
