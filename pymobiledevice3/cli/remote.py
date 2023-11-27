@@ -10,7 +10,8 @@ import click
 from pymobiledevice3.cli.cli_common import RSDCommand, print_json, prompt_device_list, sudo_required
 from pymobiledevice3.exceptions import NoDeviceConnectedError
 from pymobiledevice3.remote.bonjour import get_remoted_addresses
-from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_quic_tunnel, verify_tunnel_imports
+from pymobiledevice3.remote.common import TunnelProtocol
+from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_tunnel, verify_tunnel_imports
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
 from pymobiledevice3.remote.utils import TUNNELD_DEFAULT_ADDRESS, stop_remoted
 from pymobiledevice3.tunneld import TunneldRunner
@@ -90,11 +91,13 @@ def rsd_info(service_provider: RemoteServiceDiscoveryService, color: bool):
 
 async def tunnel_task(
         service_provider: RemoteServiceDiscoveryService, secrets: TextIO,
-        script_mode: bool = False, max_idle_timeout: float = MAX_IDLE_TIMEOUT) -> None:
-    if start_quic_tunnel is None:
+        script_mode: bool = False, max_idle_timeout: float = MAX_IDLE_TIMEOUT,
+        protocol: TunnelProtocol = TunnelProtocol.QUIC) -> None:
+    if start_tunnel is None:
         raise NotImplementedError('failed to start the QUIC tunnel on your platform')
 
-    async with start_quic_tunnel(service_provider, secrets=secrets, max_idle_timeout=max_idle_timeout) as tunnel_result:
+    async with start_tunnel(service_provider, secrets=secrets, max_idle_timeout=max_idle_timeout,
+                            protocol=protocol) as tunnel_result:
         logger.info('tunnel created')
         if script_mode:
             print(f'{tunnel_result.address} {tunnel_result.port}')
@@ -110,6 +113,8 @@ async def tunnel_task(
                   click.style(service_provider.product_version, bold=True, fg='white'))
             print(click.style('Interface: ', bold=True, fg='yellow') +
                   click.style(tunnel_result.interface, bold=True, fg='white'))
+            print(click.style('Protocol: ', bold=True, fg='yellow') +
+                  click.style(tunnel_result.protocol, bold=True, fg='white'))
             print(click.style('RSD Address: ', bold=True, fg='yellow') +
                   click.style(tunnel_result.address, bold=True, fg='white'))
             print(click.style('RSD Port: ', bold=True, fg='yellow') +
@@ -117,21 +122,23 @@ async def tunnel_task(
             print(click.style('Use the follow connection option:\n', bold=True, fg='yellow') +
                   click.style(f'--rsd {tunnel_result.address} {tunnel_result.port}', bold=True, fg='cyan'))
         sys.stdout.flush()
-
         await tunnel_result.client.wait_closed()
         logger.info('tunnel was closed')
 
 
-@remote_cli.command('start-quic-tunnel')
+@remote_cli.command('start-tunnel')
 @click.option('--udid', help='UDID for a specific device to look for')
 @click.option('--secrets', type=click.File('wt'), help='TLS keyfile for decrypting with Wireshark')
 @click.option('--script-mode', is_flag=True,
               help='Show only HOST and port number to allow easy parsing from external shell scripts')
 @click.option('--max-idle-timeout', type=click.FLOAT, default=MAX_IDLE_TIMEOUT,
               help='Maximum QUIC idle time (ping interval)')
+@click.option('-p', '--protocol', type=click.Choice([e.value for e in TunnelProtocol]),
+              default=TunnelProtocol.TCP.value)
 @sudo_required
-def cli_start_quic_tunnel(udid: str, secrets: TextIO, script_mode: bool, max_idle_timeout: float):
+def cli_start_tunnel(udid: str, secrets: TextIO, script_mode: bool, max_idle_timeout: float, protocol: str):
     """ start quic tunnel """
+    protocol = TunnelProtocol(protocol)
     if not verify_tunnel_imports():
         return
     devices = get_device_list()
@@ -156,7 +163,8 @@ def cli_start_quic_tunnel(udid: str, secrets: TextIO, script_mode: bool, max_idl
     if udid is not None and rsd.udid != udid:
         raise NoDeviceConnectedError()
 
-    asyncio.run(tunnel_task(rsd, secrets, script_mode, max_idle_timeout=max_idle_timeout), debug=True)
+    asyncio.run(tunnel_task(rsd, secrets, script_mode, max_idle_timeout=max_idle_timeout, protocol=protocol),
+                debug=True)
 
 
 @remote_cli.command('service', cls=RSDCommand)

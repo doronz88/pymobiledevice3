@@ -16,14 +16,15 @@ from zeroconf import IPVersion
 from zeroconf.asyncio import AsyncZeroconf
 
 from pymobiledevice3.exceptions import InterfaceIndexNotFoundError
-from pymobiledevice3.remote.module_imports import start_quic_tunnel
+from pymobiledevice3.remote.common import TunnelProtocol
+from pymobiledevice3.remote.module_imports import start_tunnel
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.utils import stop_remoted
 
 logger = logging.getLogger(__name__)
 
 ZEROCONF_TIMEOUT = 3000
-MIN_VERSION = '17.0.0'
+MIN_VERSION = '16.0.0'
 UNINIT_ADDRESS = ('', 0)
 
 
@@ -69,7 +70,7 @@ class TunneldCore:
     @staticmethod
     async def handle_new_tunnel(tun: Tunnel) -> None:
         """ Create new tunnel """
-        async with start_quic_tunnel(tun.rsd) as tunnel_result:
+        async with start_tunnel(tun.rsd, protocol=TunnelProtocol.TCP) as tunnel_result:
             tun.address = tunnel_result.address, tunnel_result.port
             logger.info(f'Created tunnel --rsd {tun.address[0]} {tun.address[1]}')
             await tunnel_result.client.wait_closed()

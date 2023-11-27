@@ -67,6 +67,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         service = self.start_lockdown_service_without_checkin(name)
         checkin = {'Label': 'pymobiledevice3', 'ProtocolVersion': '2', 'Request': 'RSDCheckin'}
         if include_escrow_bag:
+            # TODO: read the `createRemoteUnlockKey` result
             raise NotImplementedError('EscrowBag over RemoteXPC is not yet supported')
         response = service.send_recv_plist(checkin)
         if response['Request'] != 'RSDCheckin':
