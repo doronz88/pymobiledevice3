@@ -3,7 +3,7 @@ import dataclasses
 import logging
 import os
 import signal
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from typing import Dict, Tuple
 
 import fastapi
@@ -162,14 +162,23 @@ class TunneldCore:
 
 class TunneldRunner:
     """ TunneldRunner orchestrate between the webserver and TunneldCore """
+
     @classmethod
     def create(cls, host: str, port: int) -> None:
         cls(host, port)._run_app()
 
     def __init__(self, host: str, port: int):
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            logging.getLogger('zeroconf').disabled = True
+            self._tunneld_core.start()
+            yield
+            logger.info('Closing tunneld tasks...')
+            await self._tunneld_core.close()
+
         self.host = host
         self.port = port
-        self._app = FastAPI()
+        self._app = FastAPI(lifespan=lifespan)
         self._tunneld_core = TunneldCore()
 
         @self._app.get('/')
@@ -192,17 +201,6 @@ class TunneldRunner:
         async def clear_tunnels() -> fastapi.Response:
             self._tunneld_core.clear()
             return fastapi.Response(status_code=200, content='Cleared tunnels...')
-
-        @self._app.on_event('startup')
-        async def on_startup() -> None:
-            """ start TunneldCore """
-            logging.getLogger('zeroconf').disabled = True
-            self._tunneld_core.start()
-
-        @self._app.on_event('shutdown')
-        async def on_close() -> None:
-            logger.info('Closing tunneld tasks...')
-            await self._tunneld_core.close()
 
     def _run_app(self) -> None:
         uvicorn.run(self._app, host=self.host, port=self.port, loop='asyncio')
