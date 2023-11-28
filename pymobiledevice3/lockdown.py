@@ -219,6 +219,16 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return self.get_value('com.apple.MobileDeviceCrashCopy', 'ShouldSubmit')
 
     @property
+    def assistive_touch(self) -> bool:
+        """AssistiveTouch (the on-screen software home button)"""
+        return bool(self.get_value('com.apple.Accessibility').get('AssistiveTouchEnabledByiTunes', 0))
+
+    @assistive_touch.setter
+    def assistive_touch(self, value: bool) -> None:
+        """AssistiveTouch (the on-screen software home button)"""
+        self.set_value(int(value), 'com.apple.Accessibility', 'AssistiveTouchEnabledByiTunes')
+
+    @property
     def voice_over(self) -> bool:
         return bool(self.get_value('com.apple.Accessibility').get('VoiceOverTouchEnabledByiTunes', 0))
 
