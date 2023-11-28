@@ -79,7 +79,7 @@ class MobileActivationService:
             server_info[k] = v
         return ActivationForm(title=title, description=description, fields=fields, server_info=server_info)
 
-    def activate(self) -> None:
+    def activate(self, skip_apple_id_query: bool = False) -> None:
         blob = self.create_activation_session_info()
 
         # create drmHandshake request with blob from device
@@ -93,6 +93,8 @@ class MobileActivationService:
         content_type = headers['Content-Type']
 
         if content_type == 'application/x-buddyml':
+            if skip_apple_id_query:
+                raise MobileActivationException('Device is iCloud locked')
             activation_form = self._get_activation_form_from_response(content.decode())
             click.secho(activation_form.title, bold=True)
             click.secho(activation_form.description)
