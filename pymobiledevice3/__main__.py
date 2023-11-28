@@ -1,34 +1,9 @@
-#!/usr/bin/env python3
 import logging
 import traceback
 
 import click
 import coloredlogs
 
-from pymobiledevice3.cli.activation import cli as activation_cli
-from pymobiledevice3.cli.afc import cli as afc_cli
-from pymobiledevice3.cli.amfi import cli as amfi_cli
-from pymobiledevice3.cli.apps import cli as apps_cli
-from pymobiledevice3.cli.backup import cli as backup_cli
-from pymobiledevice3.cli.bonjour import cli as bonjour_cli
-from pymobiledevice3.cli.companion_proxy import cli as companion_cli
-from pymobiledevice3.cli.crash import cli as crash_cli
-from pymobiledevice3.cli.developer import cli as developer_cli
-from pymobiledevice3.cli.diagnostics import cli as diagnostics_cli
-from pymobiledevice3.cli.lockdown import cli as lockdown_cli
-from pymobiledevice3.cli.mounter import cli as mounter_cli
-from pymobiledevice3.cli.notification import cli as notification_cli
-from pymobiledevice3.cli.pcap import cli as pcap_cli
-from pymobiledevice3.cli.power_assertion import cli as power_assertion_cli
-from pymobiledevice3.cli.processes import cli as ps_cli
-from pymobiledevice3.cli.profile import cli as profile_cli
-from pymobiledevice3.cli.provision import cli as provision_cli
-from pymobiledevice3.cli.remote import cli as remote_cli
-from pymobiledevice3.cli.restore import cli as restore_cli
-from pymobiledevice3.cli.springboard import cli as springboard_cli
-from pymobiledevice3.cli.syslog import cli as syslog_cli
-from pymobiledevice3.cli.usbmux import cli as usbmux_cli
-from pymobiledevice3.cli.webinspector import cli as webinspector_cli
 from pymobiledevice3.exceptions import AccessDeniedError, ConnectionFailedToUsbmuxdError, DeveloperModeError, \
     DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, DeviceNotFoundError, InternalError, \
     InvalidServiceError, MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, NoDeviceSelectedError, \
@@ -64,17 +39,65 @@ INVALID_SERVICE_MESSAGE = """Failed to start service. Possible reasons are:
   https://github.com/doronz88/pymobiledevice3/issues/new?assignees=&labels=&projects=&template=bug_report.md&title=
 """
 
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
+# Mapping of index options to import file names
+CLI_GROUPS = {
+    'activation': 'activation',
+    'afc': 'afc',
+    'amfi': 'amfi',
+    'apps': 'apps',
+    'backup2': 'backup',
+    'bonjour': 'bonjour',
+    'companion': 'companion_proxy',
+    'crash': 'crash',
+    'developer': 'developer',
+    'diagnostics': 'diagnostics',
+    'lockdown': 'lockdown',
+    'mounter': 'mounter',
+    'notification': 'notification',
+    'pcap': 'pcap',
+    'power-assertion': 'power_assertion',
+    'processes': 'processes',
+    'profile': 'profile',
+    'provision': 'provision',
+    'remote': 'remote',
+    'restore': 'restore',
+    'springboard': 'springboard',
+    'status': 'status',
+    'syslog': 'syslog',
+    'usbmux': 'usbmux',
+    'webinspector': 'webinspector'
+}
+
+
+class Pmd3Cli(click.Group):
+    def list_commands(self, ctx):
+        return CLI_GROUPS.keys()
+
+    def get_command(self, ctx, name):
+        if name not in CLI_GROUPS.keys():
+            ctx.fail(f'No such command {name!r}.')
+        try:
+            mod = __import__(f'pymobiledevice3.cli.{CLI_GROUPS[name]}', None, None, ['cli'])
+        except ImportError:
+            return
+        command = mod.cli.get_command(ctx, name)
+        # Some cli groups have different names than the index
+        if not command:
+            command_name = mod.cli.list_commands(ctx)[0]
+            command = mod.cli.get_command(ctx, command_name)
+        return command
+
+
+@click.command(cls=Pmd3Cli, context_settings=CONTEXT_SETTINGS)
 def cli():
-    cli_commands = click.CommandCollection(sources=[
-        developer_cli, mounter_cli, apps_cli, profile_cli, lockdown_cli, diagnostics_cli, syslog_cli, pcap_cli,
-        crash_cli, afc_cli, ps_cli, notification_cli, usbmux_cli, power_assertion_cli, springboard_cli,
-        provision_cli, backup_cli, restore_cli, activation_cli, companion_cli, webinspector_cli, amfi_cli, bonjour_cli,
-        remote_cli
-    ])
-    cli_commands.context_settings = dict(help_option_names=['-h', '--help'])
+    pass
+
+
+def main() -> None:
     try:
-        cli_commands()
+        cli()
     except NoDeviceConnectedError:
         logger.error('Device is not connected')
     except ConnectionAbortedError:
@@ -122,4 +145,4 @@ def cli():
 
 
 if __name__ == '__main__':
-    cli()
+    main()
