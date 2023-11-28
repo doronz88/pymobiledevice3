@@ -352,15 +352,15 @@ class PlistMuxConnection(BinaryMuxConnection):
     def get_device_list(self, timeout: float = None) -> None:
         """ get device list synchronously without waiting the timeout """
         self.devices = []
-        response = self._send_receive({'MessageType': 'ListDevices'})
-        for device in response['DeviceList']:
-            if device['MessageType'] == 'Attached':
-                super()._add_device(MuxDevice(device['DeviceID'], device['Properties']['SerialNumber'],
-                                              device['Properties']['ConnectionType']))
-            elif device['MessageType'] == 'Detached':
-                super()._remove_device(device['DeviceID'])
+        self._send({'MessageType': 'ListDevices'})
+        for response in self._receive(self._tag - 1)['DeviceList']:
+            if response['MessageType'] == 'Attached':
+                super()._add_device(MuxDevice(response['DeviceID'], response['Properties']['SerialNumber'],
+                                              response['Properties']['ConnectionType']))
+            elif response['MessageType'] == 'Detached':
+                super()._remove_device(response['DeviceID'])
             else:
-                raise MuxException(f'Invalid packet type received: {device}')
+                raise MuxException(f'Invalid packet type received: {response}')
 
     def get_buid(self) -> str:
         """ get SystemBUID """
@@ -392,14 +392,13 @@ class PlistMuxConnection(BinaryMuxConnection):
             raise MuxException(f'Received non-plist type {response}')
         return plistlib.loads(response.data)
 
-    def _send_receive(self, data: Mapping) -> Mapping:
+    def _send_receive(self, data: Mapping):
         self._send(data)
         response = self._receive(self._tag - 1)
         if response['MessageType'] != 'Result':
             raise MuxException(f'got an invalid message: {response}')
         if response['Number'] != 0:
             raise self._raise_mux_exception(response['Number'], f'got an error message: {response}')
-        return response
 
 
 def create_mux(usbmux_address: Optional[str] = None) -> MuxConnection:
