@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import signal
+import sys
 import uuid
 from typing import Callable, List, Mapping, Optional, Tuple
 
@@ -101,7 +102,7 @@ UDID_ENV_VAR = 'PYMOBILEDEVICE3_UDID'
 
 def sudo_required(func):
     def wrapper(*args, **kwargs):
-        if os.geteuid() != 0:
+        if sys.platform != 'win32' and os.geteuid() != 0:
             raise AccessDeniedError()
         else:
             func(*args, **kwargs)
