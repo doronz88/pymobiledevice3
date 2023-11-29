@@ -227,13 +227,13 @@ Once the Tunneld Server is running, you can use it for RSD over the created QUIC
 To specify a device by its UDID:
 
 ```bash
-python pymobiledevice3 remote rsd-info --tunnel UDID
+python3 -m pymobiledevice3 remote rsd-info --tunnel UDID
 ```
 
 To let Tunneld automatically select a device (if only one is connected):
 
 ```bash
-python pymobiledevice3 remote rsd-info --tunnel ''
+python3 -m pymobiledevice3 remote rsd-info --tunnel ''
 ```
 
 If no UDID is specified and multiple devices are connected, a prompt will appear for device selection.
