@@ -106,10 +106,12 @@ class SafeStreamSocket:
     """ wrapper to native python socket object to be used with construct as a stream """
 
     def __init__(self, address, family):
+        self._offset = 0
         self.sock = socket.socket(family, socket.SOCK_STREAM)
         self.sock.connect(address)
 
     def send(self, msg: bytes) -> int:
+        self._offset += len(msg)
         self.sock.sendall(msg)
         return len(msg)
 
@@ -117,19 +119,23 @@ class SafeStreamSocket:
         msg = b''
         while len(msg) < size:
             chunk = self.sock.recv(size - len(msg))
+            self._offset += len(chunk)
             if not chunk:
                 raise MuxException('socket connection broken')
             msg += chunk
         return msg
 
-    def close(self):
+    def close(self) -> None:
         self.sock.close()
 
-    def settimeout(self, interval: float):
+    def settimeout(self, interval: float) -> None:
         self.sock.settimeout(interval)
 
-    def setblocking(self, blocking: bool):
+    def setblocking(self, blocking: bool) -> None:
         self.sock.setblocking(blocking)
+
+    def tell(self) -> int:
+        return self._offset
 
     read = recv
     write = send
