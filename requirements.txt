@@ -40,3 +40,4 @@ psutil
 pytun-pmd3>=1.0.0 ; platform_system != "Windows"
 aiofiles
 prompt_toolkit
+sslpsk-pmd3>=1.0.2
