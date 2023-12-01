@@ -374,7 +374,7 @@ class CoreDeviceTunnelService(RemoteService):
         set_keepalive(sock)
         ctx = SSLPSKContext(ssl.PROTOCOL_TLSv1_2)
         ctx.psk = self.encryption_key
-        ctx.set_ciphers('PSK')
+        ctx.set_ciphers('ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH')
         reader, writer = await asyncio.open_connection(sock=sock, ssl=ctx, server_hostname='')
         tunnel = RemotePairingTcpTunnel(reader, writer)
         handshake_response = await tunnel.request_tunnel_establish()
