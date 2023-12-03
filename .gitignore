@@ -7,3 +7,4 @@ version.txt
 debug/
 *.pyc
 *.egg-info/
+pymobiledevice3/_version.py
