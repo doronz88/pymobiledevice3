@@ -575,6 +575,11 @@ class CoreDeviceTunnelService(RemoteService):
                                                     'startNewSession': True})
 
         data = self.decode_tlv(PairingDataComponentTLVBuf.parse(response))
+
+        if PairingDataComponentType.ERROR in data:
+            self._send_pair_verify_failed()
+            return False
+
         peer_public_key = X25519PublicKey.from_public_bytes(data[PairingDataComponentType.PUBLIC_KEY])
         self.encryption_key = self.x25519_private_key.exchange(peer_public_key)
 
