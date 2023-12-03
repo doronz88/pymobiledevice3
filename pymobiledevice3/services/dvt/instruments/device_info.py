@@ -32,7 +32,7 @@ class DeviceInfo:
         self._channel.execnameForPid_(MessageAux().append_obj(pid))
         return self._channel.receive_plist()
 
-    def proclist(self) -> list:
+    def proclist(self) -> typing.List[typing.Mapping]:
         """
         Get the process list from the device.
         :return: List of process and their attributes.
