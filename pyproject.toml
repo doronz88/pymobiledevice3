@@ -35,7 +35,7 @@ test = ["pytest"]
 "Bug Reports" = "https://github.com/doronz88/pymobiledevice3/issues"
 
 [project.scripts]
-pymobiledevice3 = "pymobiledevice3.__main__:cli"
+pymobiledevice3 = "pymobiledevice3.__main__:main"
 
 [tool.setuptools]
 package-data = { "pymobiledevice3" = ["resources/webinspector/*.js", "resources/dsc_uuid_map.json", "resources/notifications.txt"] }
