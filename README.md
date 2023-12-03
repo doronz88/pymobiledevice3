@@ -142,6 +142,7 @@ Commands:
   syslog           syslog options
   usbmux           usbmuxd options
   webinspector     webinspector options
+  version          get installed package version
 ```
 
 ## Python API
