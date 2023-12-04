@@ -24,7 +24,7 @@ from pymobiledevice3.remote.utils import stop_remoted
 logger = logging.getLogger(__name__)
 
 ZEROCONF_TIMEOUT = 3000
-MIN_VERSION = '16.0.0'
+MIN_VERSION = '17.0.0'
 UNINIT_ADDRESS = ('', 0)
 
 
@@ -36,9 +36,10 @@ class Tunnel:
 
 
 class TunneldCore:
-    def __init__(self):
+    def __init__(self, protocol: TunnelProtocol = TunnelProtocol.QUIC):
         self.adapters: Dict[int, str] = {}
         self.active_tunnels: Dict[int, Tunnel] = {}
+        self.protocol = protocol
         self._type = '_remoted._tcp.local.'
         self._name = 'ncm._remoted._tcp.local.'
         self._interval = .5
@@ -67,10 +68,9 @@ class TunneldCore:
             tunnel.task.cancel()
         self.active_tunnels = {}
 
-    @staticmethod
-    async def handle_new_tunnel(tun: Tunnel) -> None:
+    async def handle_new_tunnel(self, tun: Tunnel) -> None:
         """ Create new tunnel """
-        async with start_tunnel(tun.rsd, protocol=TunnelProtocol.TCP) as tunnel_result:
+        async with start_tunnel(tun.rsd, protocol=self.protocol) as tunnel_result:
             tun.address = tunnel_result.address, tunnel_result.port
             logger.info(f'Created tunnel --rsd {tun.address[0]} {tun.address[1]}')
             await tunnel_result.client.wait_closed()
@@ -165,10 +165,10 @@ class TunneldRunner:
     """ TunneldRunner orchestrate between the webserver and TunneldCore """
 
     @classmethod
-    def create(cls, host: str, port: int) -> None:
-        cls(host, port)._run_app()
+    def create(cls, host: str, port: int, protocol: TunnelProtocol = TunnelProtocol.QUIC) -> None:
+        cls(host, port, protocol=protocol)._run_app()
 
-    def __init__(self, host: str, port: int):
+    def __init__(self, host: str, port: int, protocol: TunnelProtocol = TunnelProtocol.QUIC):
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             logging.getLogger('zeroconf').disabled = True
@@ -179,8 +179,9 @@ class TunneldRunner:
 
         self.host = host
         self.port = port
+        self.protocol = protocol
         self._app = FastAPI(lifespan=lifespan)
-        self._tunneld_core = TunneldCore()
+        self._tunneld_core = TunneldCore(protocol)
 
         @self._app.get('/')
         async def list_tunnels() -> Dict[str, Tuple[str, int]]:

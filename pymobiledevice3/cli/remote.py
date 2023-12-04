@@ -48,12 +48,15 @@ def remote_cli():
 @click.option('--host', default=TUNNELD_DEFAULT_ADDRESS[0])
 @click.option('--port', type=click.INT, default=TUNNELD_DEFAULT_ADDRESS[1])
 @click.option('-d', '--daemonize', is_flag=True)
+@click.option('-p', '--protocol', type=click.Choice([e.value for e in TunnelProtocol]),
+              default=TunnelProtocol.QUIC.value)
 @sudo_required
-def cli_tunneld(host: str, port: int, daemonize: bool):
+def cli_tunneld(host: str, port: int, daemonize: bool, protocol: str):
     """ Start Tunneld service for remote tunneling """
     if not verify_tunnel_imports():
         return
-    tunneld_runner = partial(TunneldRunner.create, host, port)
+    protocol = TunnelProtocol(protocol)
+    tunneld_runner = partial(TunneldRunner.create, host, port, protocol)
     if daemonize:
         try:
             from daemonize import Daemonize
@@ -134,7 +137,7 @@ async def tunnel_task(
 @click.option('--max-idle-timeout', type=click.FLOAT, default=MAX_IDLE_TIMEOUT,
               help='Maximum QUIC idle time (ping interval)')
 @click.option('-p', '--protocol', type=click.Choice([e.value for e in TunnelProtocol]),
-              default=TunnelProtocol.TCP.value)
+              default=TunnelProtocol.QUIC.value)
 @sudo_required
 def cli_start_tunnel(udid: str, secrets: TextIO, script_mode: bool, max_idle_timeout: float, protocol: str):
     """ start quic tunnel """
