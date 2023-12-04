@@ -162,7 +162,7 @@ for line in SyslogService(service_provider=lockdown).watch():
 
 # Or via remoted (iOS>=17)
 # First, create a tunnel using:
-#     $ sudo pymobiledevice3 remote start-quic-tunnel
+#     $ sudo pymobiledevice3 remote start-tunnel
 # You can of course implement it yourself by copying the same pieces of code from:
 #     https://github.com/doronz88/pymobiledevice3/blob/master/pymobiledevice3/cli/remote.py#L68
 # Now you can simply connect to the created tunnel's host and port
@@ -183,7 +183,7 @@ the [RemoteXPC](misc/RemoteXPC.md) protocol. In order to communicate with the de
 first create [trusted tunnel](misc/RemoteXPC.md#trusted-tunnel) as follows:
 
 ```shell
-sudo python3 -m pymobiledevice3 remote start-quic-tunnel
+sudo python3 -m pymobiledevice3 remote start-tunnel
 ```
 
 The root permissions are required since this will create a new TUN/TAP device which is a high privilege operation.
