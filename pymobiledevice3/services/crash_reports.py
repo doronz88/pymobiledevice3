@@ -7,7 +7,7 @@ from pycrashreport.crash_report import get_crash_report_from_buf
 from xonsh.built_ins import XSH
 from xonsh.cli_utils import Annotated, Arg
 
-from pymobiledevice3.exceptions import AfcException
+from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell, path_completer
@@ -133,6 +133,13 @@ class CrashReportsManager:
         :param out: filename
         :param erase: remove after pulling
         """
+        sysdiagnose_filename = self._get_new_sysdiagnose_filename()
+        self.logger.info('sysdiagnose tarball creation has been started')
+        self.afc.wait_exists(sysdiagnose_filename)
+        time.sleep(IOS17_SYSDIAGNOSE_DELAY)
+        self.pull(out, entry=sysdiagnose_filename, erase=erase)
+
+    def _get_new_sysdiagnose_filename(self) -> str:
         sysdiagnose_filename = None
 
         now = None
@@ -140,25 +147,22 @@ class CrashReportsManager:
             now = self.lockdown.date
 
         while sysdiagnose_filename is None:
-            self.afc.wait_exists('DiagnosticLogs/sysdiagnose')
-            for filename in self.ls('DiagnosticLogs/sysdiagnose'):
-                if now is not None and now.strftime('%Y.%m.%d') not in filename:
-                    # filter out files that weren't created now
-                    continue
+            try:
+                for filename in self.ls('DiagnosticLogs/sysdiagnose'):
+                    if now is not None and now.strftime('%Y.%m.%d') not in filename:
+                        # filter out files that weren't created now
+                        continue
 
-                # search for an IN_PROGRESS archive
-                if 'IN_PROGRESS_' in filename:
-                    for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
-                        if filename.endswith(ext):
-                            sysdiagnose_filename = filename.rsplit(ext)[0]
-                            sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
-                            sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
-                            break
-                    break
-        self.logger.info('sysdiagnose tarball creation has been started')
-        self.afc.wait_exists(sysdiagnose_filename)
-        time.sleep(IOS17_SYSDIAGNOSE_DELAY)
-        self.pull(out, entry=sysdiagnose_filename, erase=erase)
+                    # search for an IN_PROGRESS archive
+                    if 'IN_PROGRESS_' in filename:
+                        for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
+                            if filename.endswith(ext):
+                                sysdiagnose_filename = filename.rsplit(ext)[0]
+                                sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
+                                sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
+                                return sysdiagnose_filename
+            except AfcFileNotFoundError:
+                pass
 
 
 class CrashReportsShell(AfcShell):
