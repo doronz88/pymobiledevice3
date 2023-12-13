@@ -727,7 +727,7 @@ class AfcShell:
         except SystemExit:
             pass
 
-    def __init__(self, lockdown: LockdownServiceProvider, service: LockdownService):
+    def __init__(self, lockdown: LockdownServiceProvider, service: AfcService):
         self.lockdown = lockdown
         self.afc = service
         XSH.ctx['_shell'] = self
