@@ -13,8 +13,12 @@ class OutputReceivedEvent:
 
     @classmethod
     def create(cls, message) -> 'OutputReceivedEvent':
-        return cls(pid=message[1].value, date=datetime.datetime.fromtimestamp(message[2].value),
-                   message=message[0].value)
+        try:
+            date = datetime.datetime.fromtimestamp(message[2].value)
+        except ValueError:
+            date = None
+
+        return cls(pid=message[1].value, date=date, message=message[0].value)
 
 
 class ProcessControl:
