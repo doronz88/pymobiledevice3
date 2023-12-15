@@ -31,7 +31,7 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.utils import try_decode
 
-MAXIMUM_READ_SIZE = 1 * 1024 ** 2  # 1 MB
+MAXIMUM_READ_SIZE = 4 * 1024 ** 2  # 4 MB
 MODE_MASK = 0o0000777
 
 StatResult = namedtuple('StatResult',
