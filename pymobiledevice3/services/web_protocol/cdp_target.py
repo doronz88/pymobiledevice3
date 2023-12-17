@@ -356,7 +356,7 @@ class CdpTarget:
 
     async def _page_stop_screencast(self, message):
         if self.screencast is not None:
-            await self.screencast.stop()
+            await self.screencast.clear()
             self.screencast = None
         await self._simple_response(message, None)
 
