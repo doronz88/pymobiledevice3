@@ -391,7 +391,7 @@ class Tap:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.channel.stop(expects_reply=False)
+        self.channel.clear(expects_reply=False)
 
     def __iter__(self):
         while True:

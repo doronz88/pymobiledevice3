@@ -739,9 +739,7 @@ def simulate_location_set(service_provider: LockdownClient, latitude, longitude)
 @click.argument('filename', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @click.option('--disable-sleep', is_flag=True, default=False)
 def simulate_location_play(service_provider: LockdownClient, filename, disable_sleep):
-    """
-    play a .gpx file
-    """
+    """ play a .gpx file """
     DtSimulateLocation(service_provider).play_gpx_file(filename, disable_sleep=disable_sleep)
 
 
@@ -963,7 +961,7 @@ def dvt_simulate_location():
 def dvt_simulate_location_clear(service_provider: LockdownClient):
     """ clear simulated location """
     with DvtSecureSocketProxyService(service_provider) as dvt:
-        LocationSimulation(dvt).stop()
+        LocationSimulation(dvt).clear()
 
 
 @dvt_simulate_location.command('set', cls=Command)
@@ -976,7 +974,17 @@ def dvt_simulate_location_set(service_provider: LockdownClient, latitude, longit
         ... set -- 40.690008 -74.045843 for liberty island
     """
     with DvtSecureSocketProxyService(service_provider) as dvt:
-        LocationSimulation(dvt).simulate_location(latitude, longitude)
+        LocationSimulation(dvt).set(latitude, longitude)
+        wait_return()
+
+
+@dvt_simulate_location.command('play', cls=Command)
+@click.argument('filename', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@click.option('--disable-sleep', is_flag=True, default=False)
+def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, disable_sleep: bool) -> None:
+    """ play a .gpx file """
+    with DvtSecureSocketProxyService(service_provider) as dvt:
+        LocationSimulation(dvt).play_gpx_file(filename, disable_sleep=disable_sleep)
         wait_return()
 
 
