@@ -7,13 +7,14 @@ from pycrashreport.crash_report import get_crash_report_from_buf
 from xonsh.built_ins import XSH
 from xonsh.cli_utils import Annotated, Arg
 
-from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError
+from pymobiledevice3.exceptions import AfcException
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell, path_completer
 from pymobiledevice3.services.os_trace import OsTraceService
 
 SYSDIAGNOSE_PROCESS_NAMES = ('sysdiagnose', 'sysdiagnosed')
+SYSDIAGNOSE_DIR = 'DiagnosticLogs/sysdiagnose'
 
 # on iOS17, we need to wait for a moment before tryint to fetch the sysdiagnose archive
 IOS17_SYSDIAGNOSE_DELAY = 1
@@ -142,17 +143,9 @@ class CrashReportsManager:
     def _get_new_sysdiagnose_filename(self) -> str:
         sysdiagnose_filename = None
 
-        now = None
-        if isinstance(self.lockdown, LockdownClient):
-            now = self.lockdown.date
-
         while sysdiagnose_filename is None:
             try:
-                for filename in self.ls('DiagnosticLogs/sysdiagnose'):
-                    if now is not None and now.strftime('%Y.%m.%d') not in filename:
-                        # filter out files that weren't created now
-                        continue
-
+                for filename in self.afc.listdir(SYSDIAGNOSE_DIR):
                     # search for an IN_PROGRESS archive
                     if 'IN_PROGRESS_' in filename:
                         for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
@@ -160,8 +153,8 @@ class CrashReportsManager:
                                 sysdiagnose_filename = filename.rsplit(ext)[0]
                                 sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
                                 sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
-                                return sysdiagnose_filename
-            except AfcFileNotFoundError:
+                                return posixpath.join(SYSDIAGNOSE_DIR,  sysdiagnose_filename)
+            except AfcException:
                 pass
 
 
