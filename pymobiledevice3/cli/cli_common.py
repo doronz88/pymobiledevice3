@@ -197,9 +197,10 @@ class RSDCommand(BaseCommand):
 
     def rsd(self, ctx, param: str, value: Optional[Tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
         if value is not None:
-            with RemoteServiceDiscoveryService(value) as rsd:
-                self.service_provider = rsd
-                return self.service_provider
+            rsd = RemoteServiceDiscoveryService(value)
+            rsd.connect()
+            self.service_provider = rsd
+            return self.service_provider
 
     def tunneld(self, ctx, param: str, udid: Optional[str] = None) -> Optional[RemoteServiceDiscoveryService]:
         if udid is None:
