@@ -394,6 +394,7 @@ class CoreDeviceTunnelService(RemoteService):
             plistlib.dumps({
                 'public_key': self.ed25519_private_key.public_key().public_bytes_raw(),
                 'private_key': self.ed25519_private_key.private_bytes_raw(),
+                'remote_unlock_host_key': self.remote_unlock_host_key
             }))
 
     @property

@@ -30,9 +30,13 @@ NP_SYNC_DID_FINISH = 'com.apple.itunes-mobdev.syncDidFinish'
 
 class Mobilebackup2Service(LockdownService):
     SERVICE_NAME = 'com.apple.mobilebackup2'
+    RSD_SERVICE_NAME = 'com.apple.mobilebackup2.shim.remote'
 
     def __init__(self, lockdown: LockdownClient):
-        super().__init__(lockdown, self.SERVICE_NAME, include_escrow_bag=True)
+        if isinstance(lockdown, LockdownClient):
+            super().__init__(lockdown, self.SERVICE_NAME, include_escrow_bag=True)
+        else:
+            super().__init__(lockdown, self.RSD_SERVICE_NAME, include_escrow_bag=True)
 
     @property
     def will_encrypt(self):
