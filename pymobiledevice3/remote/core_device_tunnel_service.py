@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 from asyncio import CancelledError, StreamReader, StreamWriter
 from collections import namedtuple
 from contextlib import asynccontextmanager, suppress
+from os import chown, getenv
 from pathlib import Path
 from socket import AF_INET6, create_connection
 from ssl import VerifyMode
@@ -397,6 +398,8 @@ class CoreDeviceTunnelService(RemoteService):
                 'private_key': self.ed25519_private_key.private_bytes_raw(),
                 'remote_unlock_host_key': self.remote_unlock_host_key
             }))
+        if getenv('SUDO_UID'):
+            chown(self.pair_record_path, int(getenv('SUDO_UID')), int(getenv('SUDO_GID')))
 
     @property
     def pair_record(self) -> Optional[Mapping]:
