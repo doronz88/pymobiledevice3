@@ -8,7 +8,7 @@ from pymobiledevice3.exceptions import InvalidServiceError, NoDeviceConnectedErr
     StartServiceError
 from pymobiledevice3.lockdown import LockdownClient, create_using_remote
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
-from pymobiledevice3.pair_records import get_local_pairing_record
+from pymobiledevice3.pair_records import get_local_pairing_record, get_remote_pairing_record_filename
 from pymobiledevice3.remote.bonjour import DEFAULT_BONJOUR_TIMEOUT, get_remoted_addresses
 from pymobiledevice3.remote.remotexpc import RemoteXPCConnection
 from pymobiledevice3.service_connection import LockdownServiceConnection
@@ -70,7 +70,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         service = self.start_lockdown_service_without_checkin(name)
         checkin = {'Label': 'pymobiledevice3', 'ProtocolVersion': '2', 'Request': 'RSDCheckin'}
         if include_escrow_bag:
-            pairing_record = get_local_pairing_record(f'remote_{self.udid}', get_home_folder())
+            pairing_record = get_local_pairing_record(get_remote_pairing_record_filename(self.udid), get_home_folder())
             checkin['EscrowBag'] = base64.b64decode(pairing_record['remote_unlock_host_key'])
         response = service.send_recv_plist(checkin)
         if response['Request'] != 'RSDCheckin':

@@ -21,6 +21,8 @@ PAIR_RECORDS_PATH = {
 
 logger = logging.getLogger(__name__)
 
+PAIRING_RECORD_EXT = 'plist'
+
 
 def generate_host_id(hostname: str = None) -> str:
     hostname = platform.node() if hostname is None else hostname
@@ -41,7 +43,7 @@ def get_itunes_pairing_record(identifier: str) -> Optional[Mapping]:
 
 def get_local_pairing_record(identifier: str, pairing_records_cache_folder: Path) -> Optional[Mapping]:
     logger.debug('Looking for pymobiledevice3 pairing record')
-    path = pairing_records_cache_folder / f'{identifier}.plist'
+    path = pairing_records_cache_folder / f'{identifier}.{PAIRING_RECORD_EXT}'
     if not path.exists():
         logger.debug(f'No pymobiledevice3 pairing record found for device {identifier}')
         return None
@@ -80,3 +82,7 @@ def create_pairing_records_cache_folder(pairing_records_cache_folder: Path = Non
     else:
         pairing_records_cache_folder.mkdir(parents=True, exist_ok=True)
     return pairing_records_cache_folder
+
+
+def get_remote_pairing_record_filename(identifier: str) -> str:
+    return f'remote_{identifier}'
