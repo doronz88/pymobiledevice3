@@ -1077,7 +1077,7 @@ class Restore(BaseRestore):
                                                                         tss=self.recovery.tss).personalized_data})
 
     def handle_data_request_msg(self, message: Mapping):
-        self.logger.info(f'handle_data_request_msg: {message}')
+        self.logger.debug(f'handle_data_request_msg: {message}')
 
         # checks and see what kind of data restored is requests and pass the request to its own handler
         data_type = message.get('DataType')
@@ -1110,7 +1110,7 @@ class Restore(BaseRestore):
 
     def handle_previous_restore_log_msg(self, message: Mapping):
         restorelog = message['PreviousRestoreLog']
-        self.logger.info(f'PreviousRestoreLog: {restorelog}')
+        self.logger.debug(f'PreviousRestoreLog: {restorelog}')
 
     def handle_progress_msg(self, message: Mapping):
         operation = message['Operation']
@@ -1133,7 +1133,7 @@ class Restore(BaseRestore):
 
             return
 
-        self.logger.info(f'progress-bar: {message}')
+        self.logger.debug(f'progress-bar: {message}')
 
     def handle_status_msg(self, message: Mapping):
         self.logger.debug(f'status message: {message}')
@@ -1142,9 +1142,7 @@ class Restore(BaseRestore):
 
         if log:
             # this is the true device log that may inform us for anything that went wrong
-            # we want it to be output into the stdout in multiline, so we can inspect it using
-            # easier shell commands
-            print(log)
+            self.logger.debug(f'log:\n{log}\n')
 
         if status == 0:
             self._restore_finished = True
@@ -1156,10 +1154,10 @@ class Restore(BaseRestore):
                 self.logger.error('unknown error')
 
     def handle_checkpoint_msg(self, message: Mapping):
-        self.logger.info(f'checkpoint: {message}')
+        self.logger.debug(f'checkpoint: {message}')
 
     def handle_bb_update_status_msg(self, message: Mapping):
-        self.logger.info(f'bb_update_status_msg: {message}')
+        self.logger.debug(f'bb_update_status_msg: {message}')
         if not message['Accepted']:
             raise PyMobileDevice3Exception(str(message))
 
