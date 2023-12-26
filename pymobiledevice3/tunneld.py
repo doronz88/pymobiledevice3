@@ -15,7 +15,6 @@ from packaging import version
 from zeroconf import IPVersion
 from zeroconf.asyncio import AsyncZeroconf
 
-from pymobiledevice3.exceptions import InterfaceIndexNotFoundError
 from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.module_imports import start_tunnel
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -104,23 +103,6 @@ class TunneldCore:
 
             await asyncio.sleep(self._interval)
 
-    def get_interface_index(self, address: str) -> int:
-        """
-        To address the issue of an unknown IPv6 scope id for a device, we employ a workaround.
-        We maintain a mapping that associates the scope id with the adapter address.
-        To resolve this, we remove the last segment (quartet) from both the adapter address and the target address.
-        If there is a match, we retrieve the scope id associated with that adapter and use it.
-
-        Disclaimer: Matching addresses based on their segments may result in interface collision in specific network
-        configurations.
-        """
-        address_segments = address.split(':')[:-1]
-        for k, v in self.adapters.items():
-            if address_segments != v.split(':')[:-1]:
-                continue
-            return k
-        raise InterfaceIndexNotFoundError(address=address)
-
     async def discover_new_devices(self) -> None:
         """ Continuously scans for devices advertising 'RSD' through IPv6 adapters """
         while True:
@@ -134,12 +116,8 @@ class TunneldCore:
                 if info is None:
                     continue
                 # Extract device details
+                interface_index = info.interface_index
                 addr = info.parsed_addresses(IPVersion.V6Only)[0]
-                try:
-                    interface_index = self.get_interface_index(addr)
-                except InterfaceIndexNotFoundError as e:
-                    logger.warning(f'Failed to find interface index for {e.address}')
-                    continue
                 if interface_index in self.active_tunnels:
                     continue
                 # Connect to the discovered device
