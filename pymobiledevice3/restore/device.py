@@ -11,6 +11,14 @@ class Device:
         self.lockdown = lockdown
         self.irecv = irecv
 
+    def __repr__(self) -> str:
+        return (
+                f'<{self.__class__.__name__} '
+                f'ecid: {self.ecid} '
+                f'hardware_model: {self.hardware_model} '
+                f'image4-support: {self.is_image4_supported}>'
+            )
+
     @cached_property
     def ecid(self):
         if self.lockdown:

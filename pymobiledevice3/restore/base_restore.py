@@ -31,8 +31,7 @@ class BaseRestore:
         if not self.device.is_image4_supported:
             raise NotImplementedError('is_image4_supported is False')
 
-        self.logger.info(f'connected device: <ecid: {self.device.ecid} hardware_model: {self.device.hardware_model} '
-                         f'image4-support: {self.device.is_image4_supported}>')
+        self.logger.info(f'connected device: {self.device}')
 
         self.logger.debug('scanning BuildManifest.plist for the correct BuildIdentity')
 
