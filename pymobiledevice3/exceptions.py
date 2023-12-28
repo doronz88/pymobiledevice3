@@ -12,7 +12,7 @@ __all__ = [
     'DeveloperModeError', 'ProfileError', 'IRecvError', 'IRecvNoDeviceConnectedError',
     'NoDeviceSelectedError', 'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
     'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError', 'CoreDeviceError',
-    'AccessDeniedError'
+    'AccessDeniedError', 'RSDRequiredError',
 ]
 
 from typing import List, Optional
@@ -339,4 +339,9 @@ class MobileActivationException(PyMobileDevice3Exception):
 
 class NotEnoughDiskSpaceError(PyMobileDevice3Exception):
     """ Computer does not have enough disk space for the intended operation """
+    pass
+
+
+class RSDRequiredError(PyMobileDevice3Exception):
+    """ The requested action requires an RSD object """
     pass
