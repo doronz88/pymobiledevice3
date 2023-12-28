@@ -1,4 +1,6 @@
 import io
+import os
+import uuid
 import plistlib
 import typing
 from functools import partial
@@ -115,11 +117,82 @@ class NSNull:
 
 class NSError:
     @staticmethod
+    def encode_archive(archive_obj):
+        return archiver.archive(archive_obj)
+    
+    @staticmethod
     def decode_archive(archive_obj):
         user_info = archive_obj.decode('NSUserInfo')
         if user_info.get('NSLocalizedDescription', '').endswith(' - it does not respond to the selector'):
             raise UnrecognizedSelectorError(user_info)
         raise DvtException(archive_obj.decode('NSUserInfo'))
+
+
+class NSUUID(uuid.UUID):
+    @staticmethod
+    def uuid4():
+        """Generate a random UUID."""
+        return NSUUID(bytes=os.urandom(16))
+
+    def encode_archive(self, archive_obj: archiver.ArchivingObject):
+        archive_obj.encode('NS.uuidbytes', self.bytes)
+    
+    @staticmethod
+    def decode_archive(archive_obj: archiver.ArchivedObject):
+        return NSUUID(bytes=archive_obj.decode('NS.uuidbytes'))
+
+
+class XCTestConfiguration:
+    _default = {
+        # 'testBundleURL': UID(3), # NSURL(None, file:///private/var/containers/Bundle/.../WebDriverAgentRunner-Runner.app/PlugIns/WebDriverAgentRunner.xctest)
+        # 'sessionIdentifier': UID(8), # UUID
+        'aggregateStatisticsBeforeCrash': {
+            'XCSuiteRecordsKey': {}
+        },
+        'automationFrameworkPath': '/Developer/Library/PrivateFrameworks/XCTAutomationSupport.framework',
+        'baselineFileRelativePath': None,
+        'baselineFileURL': None,
+        'defaultTestExecutionTimeAllowance': None,
+        'disablePerformanceMetrics': False,
+        'emitOSLogs': False,
+        'formatVersion': plistlib.UID(2),  # store in UID
+        'gatherLocalizableStringsData': False,
+        'initializeForUITesting': True,
+        'maximumTestExecutionTimeAllowance': None,
+        'productModuleName': "WebDriverAgentRunner",  # set to other value is also OK
+        'randomExecutionOrderingSeed': None,
+        'reportActivities': True,
+        'reportResultsToIDE': True,
+        'systemAttachmentLifetime': 2,
+        'targetApplicationArguments': [],  # maybe useless
+        'targetApplicationBundleID': None,
+        'targetApplicationEnvironment': None,
+        'targetApplicationPath': "/whatever-it-does-not-matter/but-should-not-be-empty",
+        'testApplicationDependencies': {},
+        'testApplicationUserOverrides': None,
+        'testBundleRelativePath': None,
+        'testExecutionOrdering': 0,
+        'testTimeoutsEnabled': False,
+        'testsDrivenByIDE': False,
+        'testsMustRunOnMainThread': True,
+        'testsToRun': None,
+        'testsToSkip': None,
+        'treatMissingBaselinesAsFailures': False,
+        'userAttachmentLifetime': 1
+    }
+
+    def __init__(self, session_identifier: NSUUID, test_bundle_url: str):
+        self._config = self._default.copy()
+        self._config['testBundleURL'] = test_bundle_url
+        self._config['sessionIdentifier'] = session_identifier
+
+    def encode_archive(self, archive_obj: archiver.ArchivingObject):
+        for k, v in self._config.items():
+            archive_obj.encode(k, v)
+    
+    @staticmethod
+    def decode_archive(archive_obj: archiver.ArchivedObject):
+        return archive_obj.object
 
 
 archiver.update_class_map({'DTSysmonTapMessage': DTTapMessage,
@@ -129,12 +202,17 @@ archiver.update_class_map({'DTSysmonTapMessage': DTTapMessage,
                            'DTActivityTraceTapMessage': DTTapMessage,
                            'DTTapMessage': DTTapMessage,
                            'NSNull': NSNull,
-                           'NSError': NSError})
+                           'NSError': NSError,
+                           'NSUUID': NSUUID,
+                           'XCTestConfiguration': XCTestConfiguration})
+
+
+archiver.Archive.inline_types = list(set(archiver.Archive.inline_types + [bytes]))
 
 
 class Channel(int):
     @classmethod
-    def create(cls, value: int, service):
+    def create(cls, value: int, service: "RemoteServer"):
         channel = cls(value)
         channel._service = service
         return channel
@@ -274,7 +352,8 @@ class RemoteServer(LockdownService):
         self.supported_identifiers = aux[0].value
 
     def make_channel(self, identifier) -> Channel:
-        assert identifier in self.supported_identifiers
+        # NOTE: There is also identifier not in self.supported_identifiers
+        # assert identifier in self.supported_identifiers
         if identifier in self.channel_cache:
             return self.channel_cache[identifier]
 

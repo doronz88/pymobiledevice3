@@ -30,6 +30,7 @@ from pymobiledevice3.services.debugserver_applist import DebugServerAppList
 from pymobiledevice3.services.device_arbitration import DtDeviceArbitration
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.dvt_testmanaged_proxy import DvtTestmanagedProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.condition_inducer import ConditionInducer
@@ -43,6 +44,7 @@ from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
+from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestService
 from pymobiledevice3.services.remote_fetch_symbols import RemoteFetchSymbolsService
 from pymobiledevice3.services.remote_server import RemoteServer
 from pymobiledevice3.services.screenshot import ScreenshotService
@@ -259,6 +261,13 @@ def screenshot(service_provider: LockdownClient, out):
     """ get device screenshot """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         out.write(Screenshot(dvt).get_screenshot())
+
+
+@dvt.command('xcuitest', cls=Command)
+def xcuitest(service_provider: LockdownClient):
+    """ start XCUITest """
+    with DvtTestmanagedProxyService(lockdown=service_provider) as dvt:
+        XCUITestService(dvt).run()
 
 
 @dvt.group('sysmon')
@@ -857,7 +866,6 @@ def condition_set(service_provider: LockdownClient, profile_identifier):
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         ConditionInducer(dvt).set(profile_identifier)
         wait_return()
-
 
 @developer.command(cls=Command)
 @click.argument('out', type=click.File('wb'))

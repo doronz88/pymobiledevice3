@@ -2,6 +2,7 @@ import dataclasses
 import datetime
 import typing
 
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.remote_server import MessageAux
 
 
@@ -24,7 +25,7 @@ class OutputReceivedEvent:
 class ProcessControl:
     IDENTIFIER = 'com.apple.instruments.server.services.processcontrol'
 
-    def __init__(self, dvt):
+    def __init__(self, dvt: DvtSecureSocketProxyService):
         self._channel = dvt.make_channel(self.IDENTIFIER)
 
     def signal(self, pid: int, sig: int):
