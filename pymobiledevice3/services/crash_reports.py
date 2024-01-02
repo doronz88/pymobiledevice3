@@ -1,6 +1,5 @@
 import logging
 import posixpath
-import time
 from typing import Generator, List
 
 from pycrashreport.crash_report import get_crash_report_from_buf
@@ -136,9 +135,14 @@ class CrashReportsManager:
         """
         sysdiagnose_filename = self._get_new_sysdiagnose_filename()
         self.logger.info('sysdiagnose tarball creation has been started')
-        self.afc.wait_exists(sysdiagnose_filename)
-        time.sleep(IOS17_SYSDIAGNOSE_DELAY)
+        self._wait_for_sysdiagnose_to_finish()
         self.pull(out, entry=sysdiagnose_filename, erase=erase)
+
+    def _wait_for_sysdiagnose_to_finish(self) -> None:
+        with OsTraceService(self.lockdown) as os_trace:
+            for entry in os_trace.syslog():
+                if entry.message == 'sysdiagnose (full) complete':
+                    break
 
     def _get_new_sysdiagnose_filename(self) -> str:
         sysdiagnose_filename = None
