@@ -2,6 +2,7 @@ import click
 
 from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.house_arrest import HouseArrestService
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 
@@ -23,7 +24,9 @@ def apps():
 @click.option('-u', '--user', is_flag=True, help='include user apps')
 @click.option('-s', '--system', is_flag=True, help='include system apps')
 @click.option('--hidden', is_flag=True, help='include hidden apps')
-def apps_list(service_provider: LockdownClient, color, user, system, hidden):
+@click.option('--calculate-sizes/--no-calculate-size', default=False)
+def apps_list(service_provider: LockdownServiceProvider, color: bool, user: bool, system: bool, hidden: bool,
+              calculate_sizes: bool) -> None:
     """ list installed apps """
     app_types = []
     if user:
@@ -32,7 +35,8 @@ def apps_list(service_provider: LockdownClient, color, user, system, hidden):
         app_types.append('System')
     if hidden:
         app_types.append('Hidden')
-    print_json(InstallationProxyService(lockdown=service_provider).get_apps(app_types), colored=color)
+    print_json(InstallationProxyService(lockdown=service_provider).get_apps(app_types, calculate_sizes=calculate_sizes),
+               colored=color)
 
 
 @apps.command('uninstall', cls=Command)

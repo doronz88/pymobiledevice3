@@ -4,6 +4,7 @@ from typing import Callable, List, Mapping
 
 from pymobiledevice3.exceptions import AppInstallError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.lockdown_service import LockdownService
 
@@ -14,7 +15,7 @@ class InstallationProxyService(LockdownService):
     SERVICE_NAME = 'com.apple.mobile.installation_proxy'
     RSD_SERVICE_NAME = 'com.apple.mobile.installation_proxy.shim.remote'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownServiceProvider):
         if isinstance(lockdown, LockdownClient):
             super().__init__(lockdown, self.SERVICE_NAME)
         else:
@@ -125,13 +126,13 @@ class InstallationProxyService(LockdownService):
         cmd = {'Command': 'Lookup', 'ClientOptions': options}
         return self.service.send_recv_plist(cmd).get('LookupResult')
 
-    def get_apps(self, app_types: List[str] = None) -> Mapping[str, Mapping]:
+    def get_apps(self, app_types: List[str] = None, calculate_sizes: bool = False) -> Mapping[str, Mapping]:
         """ get applications according to given criteria """
         result = self.lookup()
-        # query for additional info
-        additional_info = self.lookup(GET_APPS_ADDITIONAL_INFO)
-        for bundle_identifier, app in additional_info.items():
-            result[bundle_identifier].update(app)
+        if calculate_sizes:
+            additional_info = self.lookup(GET_APPS_ADDITIONAL_INFO)
+            for bundle_identifier, app in additional_info.items():
+                result[bundle_identifier].update(app)
         # filter results
         filtered_result = {}
         for bundle_identifier, app in result.items():
