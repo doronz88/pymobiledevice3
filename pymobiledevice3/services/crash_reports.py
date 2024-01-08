@@ -1,12 +1,13 @@
 import logging
 import posixpath
-from typing import Generator, List
+import time
+from typing import Generator, List, Optional
 
 from pycrashreport.crash_report import get_crash_report_from_buf
 from xonsh.built_ins import XSH
 from xonsh.cli_utils import Annotated, Arg
 
-from pymobiledevice3.exceptions import AfcException
+from pymobiledevice3.exceptions import AfcException, SysdiagnoseTimeoutError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell, path_completer
@@ -127,28 +128,35 @@ class CrashReportsManager:
                 else:
                     yield crash_report
 
-    def get_new_sysdiagnose(self, out: str, erase: bool = True) -> None:
+    def get_new_sysdiagnose(self, out: str, erase: bool = True, *, timeout: Optional[float] = None) -> None:
         """
         Monitor the creation of a newly created sysdiagnose archive and pull it
         :param out: filename
         :param erase: remove after pulling
+        :keyword timeout: Maximum time in seconds to wait for the completion of sysdiagnose archive
+            If None (default), waits indefinitely
         """
-        sysdiagnose_filename = self._get_new_sysdiagnose_filename()
+        end_time = None
+        if timeout is not None:
+            end_time = time.monotonic() + timeout
+        sysdiagnose_filename = self._get_new_sysdiagnose_filename(end_time)
         self.logger.info('sysdiagnose tarball creation has been started')
-        self._wait_for_sysdiagnose_to_finish()
+        self._wait_for_sysdiagnose_to_finish(end_time)
         self.pull(out, entry=sysdiagnose_filename, erase=erase)
 
     @staticmethod
     def _sysdiagnose_complete_syslog_match(message: str) -> bool:
         return message == 'sysdiagnose (full) complete' or 'Sysdiagnose completed' in message
 
-    def _wait_for_sysdiagnose_to_finish(self) -> None:
+    def _wait_for_sysdiagnose_to_finish(self, end_time: Optional[float] = None) -> None:
         with OsTraceService(self.lockdown) as os_trace:
             for entry in os_trace.syslog():
                 if CrashReportsManager._sysdiagnose_complete_syslog_match(entry.message):
                     break
+                elif self._check_timeout(end_time):
+                    raise SysdiagnoseTimeoutError('Timeout waiting for sysdiagnose completion')
 
-    def _get_new_sysdiagnose_filename(self) -> str:
+    def _get_new_sysdiagnose_filename(self, end_time: Optional[float] = None) -> str:
         sysdiagnose_filename = None
 
         while sysdiagnose_filename is None:
@@ -164,6 +172,11 @@ class CrashReportsManager:
                                 return posixpath.join(SYSDIAGNOSE_DIR,  sysdiagnose_filename)
             except AfcException:
                 pass
+            if self._check_timeout(end_time):
+                raise SysdiagnoseTimeoutError('Timeout finding in-progress sysdiagnose filename')
+
+    def _check_timeout(self, end_time: Optional[float] = None) -> bool:
+        return end_time is not None and time.monotonic() > end_time
 
 
 class CrashReportsShell(AfcShell):
