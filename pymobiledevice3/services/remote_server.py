@@ -1,3 +1,4 @@
+import copy
 import io
 import os
 import uuid
@@ -142,6 +143,20 @@ class NSUUID(uuid.UUID):
         return NSUUID(bytes=archive_obj.decode('NS.uuidbytes'))
 
 
+class NSURL:
+    def __init__(self, base, relative):
+        self.base = base
+        self.relative = relative
+
+    def encode_archive(self, archive_obj: archiver.ArchivingObject):
+        archive_obj.encode('NS.base', self.base)
+        archive_obj.encode('NS.relative', self.relative)
+
+    @staticmethod
+    def decode_archive(archive_obj: archiver.ArchivedObject):
+        return NSURL(archive_obj.decode('NS.base'), archive_obj.decode('NS.relative'))
+    
+
 class XCTestConfiguration:
     _default = {
         # 'testBundleURL': UID(3), # NSURL(None, file:///private/var/containers/Bundle/.../WebDriverAgentRunner-Runner.app/PlugIns/WebDriverAgentRunner.xctest)
@@ -181,10 +196,11 @@ class XCTestConfiguration:
         'userAttachmentLifetime': 1
     }
 
-    def __init__(self, session_identifier: NSUUID, test_bundle_url: str):
-        self._config = self._default.copy()
-        self._config['testBundleURL'] = test_bundle_url
-        self._config['sessionIdentifier'] = session_identifier
+    def __init__(self, kv: dict):
+        assert 'testBundleURL' in kv
+        assert 'sessionIdentifier' in kv
+        self._config = copy.deepcopy(self._default)
+        self._config.update(kv)
 
     def encode_archive(self, archive_obj: archiver.ArchivingObject):
         for k, v in self._config.items():
@@ -225,6 +241,9 @@ class Channel(int):
 
     def receive_message(self):
         return self._service.recv_message(self)[0]
+
+    def send_message(self, selector: str, args: MessageAux = None, expects_reply: bool = True):
+        self._service.send_message(self, selector, args, expects_reply=expects_reply)
 
     @staticmethod
     def _sanitize_name(name: str):

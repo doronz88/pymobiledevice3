@@ -26,6 +26,7 @@ from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
+from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
 from pymobiledevice3.services.device_arbitration import DtDeviceArbitration
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
@@ -264,10 +265,18 @@ def screenshot(service_provider: LockdownClient, out):
 
 
 @dvt.command('xcuitest', cls=Command)
-def xcuitest(service_provider: LockdownClient):
+@click.option("--bundle-id", required=True, help="Bundle ID of the app to test")
+def xcuitest(service_provider: LockdownClient, bundle_id: str):
     """ start XCUITest """
-    with DvtTestmanagedProxyService(lockdown=service_provider) as dvt:
-        XCUITestService(dvt).run()
+    dvt = DvtSecureSocketProxyService(lockdown=service_provider)
+    dvt.perform_handshake()
+    process_control = ProcessControl(dvt)
+
+    testmanaged = DvtTestmanagedProxyService(lockdown=service_provider)
+    testmanaged.perform_handshake()
+
+    afc = AfcService(lockdown=service_provider)
+    XCUITestService(testmanaged, afc, process_control).run(bundle_id)
 
 
 @dvt.group('sysmon')
