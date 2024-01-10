@@ -138,10 +138,14 @@ class CrashReportsManager:
         self._wait_for_sysdiagnose_to_finish()
         self.pull(out, entry=sysdiagnose_filename, erase=erase)
 
+    @staticmethod
+    def _sysdiagnose_complete_syslog_match(message: str) -> bool:
+        return message == 'sysdiagnose (full) complete' or 'Sysdiagnose completed' in message
+
     def _wait_for_sysdiagnose_to_finish(self) -> None:
         with OsTraceService(self.lockdown) as os_trace:
             for entry in os_trace.syslog():
-                if entry.message == 'sysdiagnose (full) complete':
+                if CrashReportsManager._sysdiagnose_complete_syslog_match(entry.message):
                     break
 
     def _get_new_sysdiagnose_filename(self) -> str:
