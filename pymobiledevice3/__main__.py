@@ -8,7 +8,7 @@ from pymobiledevice3.exceptions import AccessDeniedError, ConnectionFailedToUsbm
     DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, DeviceNotFoundError, InternalError, \
     InvalidServiceError, MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, NoDeviceSelectedError, \
     NotEnoughDiskSpaceError, NotPairedError, PairingDialogResponsePendingError, PasswordRequiredError, \
-    SetProhibitedError, TunneldConnectionError, UserDeniedPairingError
+    RSDRequiredError, SetProhibitedError, TunneldConnectionError, UserDeniedPairingError
 
 coloredlogs.install(level=logging.INFO)
 
@@ -145,6 +145,9 @@ def main() -> None:
         logger.error(f'Device not found: {e.udid}')
     except NotEnoughDiskSpaceError:
         logger.error('Not enough disk space')
+    except RSDRequiredError:
+        logger.error('The requested operation requires an RSD instance. For more information see:\n'
+                     'https://github.com/doronz88/pymobiledevice3?tab=readme-ov-file#working-with-developer-tools-ios--170')
 
 
 if __name__ == '__main__':

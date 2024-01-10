@@ -16,7 +16,7 @@ def crash_manager(lockdown):
         yield crash_manager
 
 
-@pytest.fixture(scope='module', autouse=True)
+@pytest.fixture(scope='module')
 def delete_test_dir():
     yield
     with create_using_usbmux() as lockdown_client:
@@ -24,18 +24,18 @@ def delete_test_dir():
             crash_manager.afc.rm(BASENAME)
 
 
-def test_ls_default(crash_manager):
+def test_ls_default(crash_manager, delete_test_dir):
     crash_manager.afc.makedirs(PATH_COMPONENT)
     assert PATH_COMPONENT in crash_manager.ls()
 
 
-def test_ls_path(crash_manager):
+def test_ls_path(crash_manager, delete_test_dir):
     crash_manager.afc.makedirs(PATH_COMPONENT * 2)
     assert (PATH_COMPONENT * 2) in crash_manager.ls(path=PATH_COMPONENT)
 
 
 @pytest.mark.parametrize('depth', [2, 3, 4])
-def test_ls_depth(crash_manager, depth):
+def test_ls_depth(crash_manager, delete_test_dir, depth):
     path = PATH_COMPONENT * depth
     path_list = [PATH_COMPONENT * i for i in range(1, depth + 1)]
     crash_manager.afc.makedirs(path)
@@ -44,7 +44,7 @@ def test_ls_depth(crash_manager, depth):
         assert item in crash_list
 
 
-def test_ls_depth_minus_one(crash_manager):
+def test_ls_depth_minus_one(crash_manager, delete_test_dir):
     path_list = [PATH_COMPONENT, PATH_COMPONENT * 2, PATH_COMPONENT * 3]
     crash_manager.afc.makedirs(path_list[-1])
     crash_list = crash_manager.ls(depth=-1)
@@ -52,7 +52,7 @@ def test_ls_depth_minus_one(crash_manager):
         assert path in crash_list
 
 
-def test_clear(crash_manager):
+def test_clear(crash_manager, delete_test_dir):
     crash_manager.afc.makedirs(PATH_COMPONENT)
     # true indication device time we can assure that every other file should create after it
     test_dir_birth_time = crash_manager.afc.stat(PATH_COMPONENT)['st_birthtime']
@@ -64,10 +64,23 @@ def test_clear(crash_manager):
             assert crash_manager.afc.stat(path)['st_birthtime'] > test_dir_birth_time
 
 
-def test_pull(crash_manager):
+def test_pull(crash_manager, delete_test_dir):
     crash_manager.afc.makedirs(PATH_COMPONENT)
     dir_list = crash_manager.ls(depth=-1)
     crash_manager.pull(BASENAME)
     pulled_list = [file[len(BASENAME):] for file in glob.glob(f'{BASENAME}/**', recursive=True)][1:]  # ignore root path
     assert sorted(dir_list) == sorted(pulled_list)
     shutil.rmtree(BASENAME)
+
+
+@pytest.mark.parametrize(
+    ('message', 'expected'),
+    (
+        ('sysdiagnose (full) complete', True),
+        ('Sysdiagnose completed. File path: /foo/bar.tar.gz', True),
+        ('sysdiagnose', False),
+        ('', False),
+    )
+)
+def test_sysdiagnose_syslog_message_match_return_value(message, expected):
+    assert CrashReportsManager._sysdiagnose_complete_syslog_match(message) is expected

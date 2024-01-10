@@ -19,7 +19,7 @@ from pykdebugparser.pykdebugparser import PyKdebugParser
 import pymobiledevice3
 from pymobiledevice3.cli.cli_common import BASED_INT, Command, RSDCommand, default_json_encoder, print_json, wait_return
 from pymobiledevice3.exceptions import DeviceAlreadyInUseError, DvtDirListError, ExtractingStackshotError, \
-    UnrecognizedSelectorError
+    RSDRequiredError, UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
@@ -55,6 +55,16 @@ from pymobiledevice3.tcp_forwarder import LockdownTcpForwarder
 BSC_SUBCLASS = 0x40c
 BSC_CLASS = 0x4
 VFS_AND_TRACES_SET = {0x03010000, 0x07ff0000}
+DEBUGSERVER_CONNECTION_STEPS = '''
+Follow the following connections steps from LLDB:
+
+(lldb) platform select remote-ios
+(lldb) target create /path/to/local/application.app
+(lldb) script lldb.target.module[0].SetPlatformFileSpec(lldb.SBFileSpec('/private/var/containers/Bundle/Application/<APP-UUID>/application.app'))
+(lldb) process connect connect://[{host}]:{port}   <-- ACTUAL CONNECTION DETAILS!
+(lldb) process launch
+'''
+
 MatchedProcessByPid = namedtuple('MatchedProcess', 'name pid')
 
 logger = logging.getLogger(__name__)
@@ -903,11 +913,7 @@ def debugserver_start_server(service_provider: LockdownClient, local_port: Optio
     if local_port is not provided and iOS version >= 17.0 then just print the connect string
 
     Please note the connection must be done soon afterwards using your own lldb client.
-    This can be done using the following commands within lldb shell:
-
-    (lldb) platform select remote-ios
-
-    (lldb) platform connect connect://localhost:<local_port>
+    This can be done using the following commands within lldb shell.
     """
 
     if Version(service_provider.product_version) < Version('17.0'):
@@ -916,10 +922,14 @@ def debugserver_start_server(service_provider: LockdownClient, local_port: Optio
         service_name = 'com.apple.internal.dt.remote.debugproxy'
 
     if local_port is not None:
+        print(DEBUGSERVER_CONNECTION_STEPS.format(host='127.0.0.1', port=local_port))
+        print('Started port forwarding. Press Ctrl-C to close this shell when done')
         LockdownTcpForwarder(service_provider, local_port, service_name).start()
     elif Version(service_provider.product_version) >= Version('17.0'):
+        if not isinstance(service_provider, RemoteServiceDiscoveryService):
+            raise RSDRequiredError()
         debugserver_port = service_provider.get_service_port(service_name)
-        print(f"Connect with: platform connect connect://[{service_provider.service.address[0]}]:{debugserver_port}")
+        print(DEBUGSERVER_CONNECTION_STEPS.format(host=service_provider.service.address[0], port=debugserver_port))
     else:
         print("local_port is required for iOS < 17.0")
 
