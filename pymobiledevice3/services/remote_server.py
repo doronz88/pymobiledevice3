@@ -220,6 +220,7 @@ archiver.update_class_map({'DTSysmonTapMessage': DTTapMessage,
                            'NSNull': NSNull,
                            'NSError': NSError,
                            'NSUUID': NSUUID,
+                           'NSURL': NSURL,
                            'XCTestConfiguration': XCTestConfiguration})
 
 

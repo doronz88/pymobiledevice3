@@ -46,11 +46,14 @@ from pymobiledevice3.services.dvt.instruments.process_control import ProcessCont
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestService
+from pymobiledevice3.services.house_arrest import HouseArrestService
+from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.remote_fetch_symbols import RemoteFetchSymbolsService
 from pymobiledevice3.services.remote_server import RemoteServer
 from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from pymobiledevice3.tcp_forwarder import LockdownTcpForwarder
+
 
 BSC_SUBCLASS = 0x40c
 BSC_CLASS = 0x4
@@ -274,19 +277,40 @@ def screenshot(service_provider: LockdownClient, out):
         out.write(Screenshot(dvt).get_screenshot())
 
 
+def app_lookup(install_service: InstallationProxyService, bundle_id: str):
+    # install_service.lookup is not working for RSD，use browse instead
+    # will get "ConnectionAbortedError" if use lookup
+    
+    # app_info = {'CFBundlePackageType': 'APPL', 'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'], 'NSBluetoothAlwaysUsageDescription': 'Access is necessary for automated testing.', 'DTPlatformVersion': '17.0', 'DTSDKBuild': '21A289', 'NFCReaderUsageDescription': 'Access is necessary for automated testing.', 'IsHostBackupEligible': True, 'NSSensorKitUsageDescription': 'Access is necessary for automated testing.', 'NSSiriUsageDescription': 'Access is necessary for automated testing.', 'NSLocationDefaultAccuracyReduced': 'Access is necessary for automated testing.', 'LSRequiresIPhoneOS': True, 'NSCameraUsageDescription': 'Access is necessary for automated testing.', 'ProfileValidated': True, 'CFBundleDisplayName': 'WebDriverAgentRunner-Runner', 'SignerIdentity': 'Apple Development: Shengxiang Sun (WK567DUKT7)', 'DTXcodeBuild': '15C66', 'NSRemindersUsageDescription': 'Access is necessary for automated testing.', 'EnvironmentVariables': {'CFFIXED_USER_HOME': '/private/var/mobile/Containers/Data/Application/5274F03B-3C79-4B26-BE55-971A8CF8AD10', 'TMPDIR': '/private/var/mobile/Containers/Data/Application/5274F03B-3C79-4B26-BE55-971A8CF8AD10/tmp', 'HOME': '/private/var/mobile/Containers/Data/Application/5274F03B-3C79-4B26-BE55-971A8CF8AD10'}, 'CFBundleNumericVersion': 16809984, 'SequenceNumber': 3736, 'IsDemotedApp': False, 'Path': '/private/var/containers/Bundle/Application/DDFD9BDF-FBF7-4E8B-A878-AC89FD9B9A33/WebDriverAgentRunner-Runner.app', 'CFBundleIdentifier': 'com.facebook.WebDriverAgentRunner.xctrunner', 'NSHealthClinicalHealthRecordsShareUsageDescription': 'Access is necessary for automated testing.', 'UIDeviceFamily': [1, 2], 'CFBundleSignature': '????', 'CFBundleInfoDictionaryVersion': '6.0', 'IsUpgradeable': True, 'CFBundleSupportedPlatforms': ['iPhoneOS'], 'NSUserTrackingUsageDescription': 'Access is necessary for automated testing.', 'UIRequiresFullScreen': True, 'NSHealthUpdateUsageDescription': 'Access is necessary for automated testing.', 'NSMotionUsageDescription': 'Access is necessary for automated testing.', 'MinimumOSVersion': '11.0', 'NSVideoSubscriberAccountUsageDescription': 'Access is necessary for automated testing.', 'NSBluetoothPeripheralUsageDescription': 'Access is necessary for automated testing.', 'CFBundleName': 'WebDriverAgentRunner-Runner', 'CFBundleShortVersionString': '1.0', 'NSLocalNetworkUsageDescription': 'Access is necessary for automated testing.', 'UIBackgroundModes': ['continuous'], 'UIRequiredDeviceCapabilities': ['arm64'], 'CFBundleExecutable': 'WebDriverAgentRunner-Runner', 'NSHealthShareUsageDescription': 'Access is necessary for automated testing.', 'ApplicationType': 'User', 'NSAppleMusicUsageDescription': 'Access is necessary for automated testing.', 'NSSensorKitUsageDetail': {'SRSensorUsageFallStatistics': {'Description': 'DESCRIPTION_SRSensorUsageFallStatistics'}, 'SRSensorUsageOnWristDetailedState': {'Description': 'DESCRIPTION_SRSensorIdentifierOnWristDetailedState'}, 'SRSensorUsageFacialMetrics': {'Description': 'DESCRIPTION_SRSensorUsageFacialMetrics'}, 'SRSensorUsageKeyboardMetrics': {'Description': 'DESCRIPTION_SRSensorUsageKeyboardMetrics'}, 'SRSensorUsagePedometer': {'Description': 'DESCRIPTION_SRSensorUsagePedometer'}, 'SRSensorUsageVisits': {'Description': 'DESCRIPTION_SRSensorUsageVisits'}, 'SRSensorUsageECG': {'Description': 'DESCRIPTION_SRSensorUsageECG'}, 'SRSensorUsageMotion': {'Required': True, 'Description': 'DESCRIPTION_SRSensorUsageMotion'}, 'SRSensorUsageMotionAlarms': {'Description': 'DESCRIPTION_SRSensorUsageMotionAlarms'}, 'SRSensorUsageDeviceUsage': {'Description': 'DESCRIPTION_SRSensorUsageDeviceUsage'}, 'SRSensorUsagePhoneUsage': {'Description': 'DESCRIPTION_SRSensorUsagePhoneUsage'}, 'SRSensorUsageHeartRate': {'Description': 'DESCRIPTION_SRSensorUsageHeartRate'}, 'SRSensorUsageStrideCalibration': {'Description': 'DESCRIPTION_SRSensorUsageStrideCalibration'}, 'SRSensorUsageMessageUsage': {'Description': 'DESCRIPTION_SRSensorUsageMessageUsage'}, 'SRSensorUsageElevation': {'Description': 'DESCRIPTION_SRSensorUsageElevation'}, 'SRSensorUsageOdometer': {'Description': 'DESCRIPTION_SRSensorUsageOdometer'}, 'SRSensorUsageAmbientLightSensor': {'Description': 'DESCRIPTION_SRSensorUsageAmbientLightSensor'}, 'SRSensorUsageSpeechMetrics': {'Description': 'DESCRIPTION_SRSensorUsageSpeechMetrics'}, 'SRSensorUsageWristDetection': {'Description': 'DESCRIPTION_SRSensorUsageWristDetection'}}, 'NSSpeechRecognitionUsageDescription': 'Access is necessary for automated testing.', 'Container': '/private/var/mobile/Containers/Data/Application/5274F03B-3C79-4B26-BE55-971A8CF8AD10', 'NSSensorKitPrivacyPolicyURL': 'https:\\/\\/www.apple.com/legal/privacy/en-ww/', 'SBIsLaunchableDuringSetup': True, 'BuildMachineOSBuild': '22A380019', 'NSCalendarsUsageDescription': 'Access is necessary for automated testing.', 'DTPlatformName': 'iphoneos', 'NSMicrophoneUsageDescription': 'Access is necessary for automated testing.', 'CFBundleAllowMixedLocalizations': True, 'NSLocationWhenInUseUsageDescription': 'Access is necessary for automated testing.', 'CFBundleVersion': '1', 'CFBundleDevelopmentRegion': 'en', 'NSFaceIDUsageDescription': 'Access is necessary for automated testing.', 'DTCompiler': 'com.apple.compilers.llvm.clang.1_0', 'NSLocationAlwaysAndWhenInUseUsageDescription': 'Access is necessary for automated testing.', 'NSHomeKitUsageDescription': 'Access is necessary for automated testing.', 'DTSDKName': 'iphoneos17.0.internal', 'NSAppTransportSecurity': {'NSAllowsArbitraryLoads': True}, 'Entitlements': {'keychain-access-groups': ['VGBWXXY4P5.com.facebook.WebDriverAgentRunner.xctrunner'], 'application-identifier': 'VGBWXXY4P5.com.facebook.WebDriverAgentRunner.xctrunner', 'get-task-allow': True, 'com.apple.developer.team-identifier': 'VGBWXXY4P5'}, 'NSContactsUsageDescription': 'Access is necessary for automated testing.', 'DTPlatformBuild': '21A289', 'IsAppClip': False, 'NSPhotoLibraryUsageDescription': 'Access is necessary for automated testing.', 'DTXcode': '1510'}
+    
+    app_infos = [v for v in install_service.browse() if v["CFBundleIdentifier"] == bundle_id]
+    if len(app_infos) == 0:
+        raise RuntimeError(f'No app with bundle id {bundle_id} found')
+    return app_infos[0]
+
+
 @dvt.command('xcuitest', cls=Command)
 @click.option("--bundle-id", required=True, help="Bundle ID of the app to test")
 def xcuitest(service_provider: LockdownClient, bundle_id: str):
     """ start XCUITest """
-    dvt = DvtSecureSocketProxyService(lockdown=service_provider)
-    dvt.perform_handshake()
-    process_control = ProcessControl(dvt)
+    # python -m pymobiledevice3 developer dvt screenshot a.png --tunnel $UDID
+    # python -m pymobiledevice3 developer dvt xcuitest --bundle-id com.facebook.WebDriverAgentRunner.xctrunner --tunnel $UDID
+    try:        
+        install_service = InstallationProxyService(lockdown=service_provider)
+        app_info = app_lookup(install_service, bundle_id)
 
-    testmanaged = DvtTestmanagedProxyService(lockdown=service_provider)
-    testmanaged.perform_handshake()
+        dvt = DvtSecureSocketProxyService(lockdown=service_provider)
+        dvt.perform_handshake()
+        process_control = ProcessControl(dvt)        
+        
+        testmanaged = DvtTestmanagedProxyService(lockdown=service_provider)
+        testmanaged.perform_handshake()
 
-    afc = AfcService(lockdown=service_provider)
-    XCUITestService(testmanaged, afc, process_control).run(bundle_id)
+        afc = HouseArrestService(lockdown=service_provider, bundle_id=bundle_id, documents_only=False)
+        
+        XCUITestService(testmanaged, afc, process_control, app_info).run(bundle_id)
+    except:
+        logger.exception('Failed to start XCUITest')
 
 
 @dvt.group('sysmon')
