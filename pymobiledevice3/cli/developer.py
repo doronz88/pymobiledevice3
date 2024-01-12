@@ -278,7 +278,7 @@ def screenshot(service_provider: LockdownClient, out):
 
 
 def app_lookup(install_service: InstallationProxyService, bundle_id: str):
-    # install_service.lookup is not working for RSD，use browse instead
+    # TODO: install_service.lookup is not working for RSD，use browse instead
     # will get "ConnectionAbortedError" if use lookup
     app_infos = [v for v in install_service.browse() if v["CFBundleIdentifier"] == bundle_id]
     if len(app_infos) == 0:
@@ -287,20 +287,20 @@ def app_lookup(install_service: InstallationProxyService, bundle_id: str):
 
 
 @dvt.command('xcuitest', cls=Command)
-@click.option("--bundle-id", required=True, help="Bundle ID of the app to test")
+@click.option('--bundle-id', required=True, help="Bundle ID of the app to test")
 def xcuitest(service_provider: LockdownClient, bundle_id: str):
-    """ start XCUITest """
-    # python -m pymobiledevice3 developer dvt xcuitest --bundle-id com.facebook.WebDriverAgentRunner.xctrunner
-    # python -m pymobiledevice3 developer dvt xcuitest --bundle-id com.facebook.WebDriverAgentRunner.xctrunner --tunnel $UDID
-    try:        
-        install_service = InstallationProxyService(lockdown=service_provider)
-        app_info = app_lookup(install_service, bundle_id)
-
-        afc = HouseArrestService(lockdown=service_provider, bundle_id=bundle_id, documents_only=False)
-        
-        XCUITestService(service_provider, afc, app_info).run(bundle_id)
-    except:
-        logger.exception('Failed to start XCUITest')
+    """ start XCUITest
+    Usage example:
+    iOS<17:
+        python -m pymobiledevice3 developer dvt xcuitest --bundle-id com.facebook.WebDriverAgentRunner.xctrunner
+    iOS>=17:
+        python -m pymobiledevice3 developer dvt xcuitest --bundle-id com.facebook.WebDriverAgentRunner.xctrunner --tunnel $UDID
+    """
+    install_service = InstallationProxyService(lockdown=service_provider)
+    app_info = app_lookup(install_service, bundle_id)
+    afc = HouseArrestService(lockdown=service_provider, bundle_id=bundle_id, documents_only=False)
+    
+    XCUITestService(service_provider, afc, app_info).run(bundle_id)
 
 
 @dvt.group('sysmon')

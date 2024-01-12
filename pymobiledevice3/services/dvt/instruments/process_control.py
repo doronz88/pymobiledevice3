@@ -45,7 +45,7 @@ class ProcessControl:
         self._channel.killPid_(MessageAux().append_obj(pid), expects_reply=False)
 
     def launch(self, bundle_id: str, arguments=None, kill_existing: bool = True, start_suspended: bool = False,
-               environment: typing.Mapping = None, extra_options: dict = {}) -> int:
+               environment: typing.Mapping = None, extra_options: typing.Mapping = None) -> int:
         """
         Launch a process.
         :param bundle_id: Bundle id of the process.
@@ -53,6 +53,7 @@ class ProcessControl:
         :param kill_existing: Whether to kill an existing instance of this process.
         :param start_suspended: Same as WaitForDebugger.
         :param environment: Environment variables to pass to process.
+        :param extra_options: Extra options to pass to process.
         :return: PID of created process.
         """
         arguments = [] if arguments is None else arguments
@@ -61,7 +62,8 @@ class ProcessControl:
             'StartSuspendedKey': start_suspended,
             'KillExisting': kill_existing,
         }
-        options.update(extra_options)
+        if extra_options:
+            options.update(extra_options)
         args = MessageAux().append_obj('').append_obj(bundle_id).append_obj(environment).append_obj(
             arguments).append_obj(options)
         self._channel.launchSuspendedProcessWithDevicePath_bundleIdentifier_environment_arguments_options_(args)
