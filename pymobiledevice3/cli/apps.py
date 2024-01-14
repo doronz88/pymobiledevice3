@@ -21,7 +21,6 @@ def apps():
     pass
 
 
-
 @apps.command('list', cls=Command)
 @click.option('--color/--no-color', default=True)
 @click.option('app_type', '-t', '--type', type=click.Choice(['System', 'User', 'Hidden', 'Any']), default='Any',
@@ -32,6 +31,17 @@ def apps_list(service_provider: LockdownServiceProvider, color: bool, app_type: 
     print_json(InstallationProxyService(lockdown=service_provider).get_apps(application_type=app_type,
                                                                             calculate_sizes=calculate_sizes),
                colored=color)
+
+
+@apps.command('query', cls=Command)
+@click.argument('bundle_identifiers', nargs=-1)
+@click.option('--color/--no-color', default=True)
+@click.option('--calculate-sizes/--no-calculate-size', default=False)
+def apps_query(service_provider: LockdownServiceProvider, bundle_identifiers: List[str], color: bool,
+               calculate_sizes: bool) -> None:
+    """ query installed apps """
+    print_json(InstallationProxyService(lockdown=service_provider)
+               .get_apps(calculate_sizes=calculate_sizes, bundle_identifiers=bundle_identifiers), colored=color)
 
 
 @apps.command('uninstall', cls=Command)
