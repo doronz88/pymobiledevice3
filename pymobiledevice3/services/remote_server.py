@@ -373,6 +373,14 @@ class RemoteServer(LockdownService):
         self.perform_handshake()
         return self
 
+    def close(self):
+        aux = MessageAux()
+        for code in self.channel_messages.keys():
+            if code > 0:
+                aux.append_int(code)
+        self.send_message(self.BROADCAST_CHANNEL, '_channelCanceled:', aux, expects_reply=False)
+        super().close()
+
 
 class Tap:
     def __init__(self, dvt, channel_name: str, config: typing.Mapping):
