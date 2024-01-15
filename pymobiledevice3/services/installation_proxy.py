@@ -1,6 +1,6 @@
 import os
 import posixpath
-from typing import Callable, List, Mapping
+from typing import Callable, List, Mapping, Optional
 
 from pymobiledevice3.exceptions import AppInstallError
 from pymobiledevice3.lockdown import LockdownClient
@@ -119,23 +119,25 @@ class InstallationProxyService(LockdownService):
 
         return result
 
-    def lookup(self, options: Mapping = None) -> Mapping:
+    def lookup(self, options: Optional[Mapping] = None) -> Mapping:
         """ search installation database """
         if options is None:
             options = {}
         cmd = {'Command': 'Lookup', 'ClientOptions': options}
         return self.service.send_recv_plist(cmd).get('LookupResult')
 
-    def get_apps(self, app_types: List[str] = None, calculate_sizes: bool = False) -> Mapping[str, Mapping]:
+    def get_apps(self, application_type: str = 'Any', calculate_sizes: bool = False,
+                 bundle_identifiers: Optional[List[str]] = None) -> Mapping[str, Mapping]:
         """ get applications according to given criteria """
-        result = self.lookup()
+        options = {}
+        if bundle_identifiers is not None:
+            options['BundleIDs'] = bundle_identifiers
+
+        options['ApplicationType'] = application_type
+        result = self.lookup(options)
         if calculate_sizes:
-            additional_info = self.lookup(GET_APPS_ADDITIONAL_INFO)
+            options.update(GET_APPS_ADDITIONAL_INFO)
+            additional_info = self.lookup(options)
             for bundle_identifier, app in additional_info.items():
                 result[bundle_identifier].update(app)
-        # filter results
-        filtered_result = {}
-        for bundle_identifier, app in result.items():
-            if (app_types is None) or (app['ApplicationType'] in app_types):
-                filtered_result[bundle_identifier] = app
-        return filtered_result
+        return result

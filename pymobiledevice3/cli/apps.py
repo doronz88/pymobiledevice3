@@ -1,3 +1,5 @@
+from typing import List
+
 import click
 
 from pymobiledevice3.cli.cli_common import Command, print_json
@@ -21,22 +23,25 @@ def apps():
 
 @apps.command('list', cls=Command)
 @click.option('--color/--no-color', default=True)
-@click.option('-u', '--user', is_flag=True, help='include user apps')
-@click.option('-s', '--system', is_flag=True, help='include system apps')
-@click.option('--hidden', is_flag=True, help='include hidden apps')
+@click.option('app_type', '-t', '--type', type=click.Choice(['System', 'User', 'Hidden', 'Any']), default='Any',
+              help='include only applications of given type')
 @click.option('--calculate-sizes/--no-calculate-size', default=False)
-def apps_list(service_provider: LockdownServiceProvider, color: bool, user: bool, system: bool, hidden: bool,
-              calculate_sizes: bool) -> None:
+def apps_list(service_provider: LockdownServiceProvider, color: bool, app_type: str, calculate_sizes: bool) -> None:
     """ list installed apps """
-    app_types = []
-    if user:
-        app_types.append('User')
-    if system:
-        app_types.append('System')
-    if hidden:
-        app_types.append('Hidden')
-    print_json(InstallationProxyService(lockdown=service_provider).get_apps(app_types, calculate_sizes=calculate_sizes),
+    print_json(InstallationProxyService(lockdown=service_provider).get_apps(application_type=app_type,
+                                                                            calculate_sizes=calculate_sizes),
                colored=color)
+
+
+@apps.command('query', cls=Command)
+@click.argument('bundle_identifiers', nargs=-1)
+@click.option('--color/--no-color', default=True)
+@click.option('--calculate-sizes/--no-calculate-size', default=False)
+def apps_query(service_provider: LockdownServiceProvider, bundle_identifiers: List[str], color: bool,
+               calculate_sizes: bool) -> None:
+    """ query installed apps """
+    print_json(InstallationProxyService(lockdown=service_provider)
+               .get_apps(calculate_sizes=calculate_sizes, bundle_identifiers=bundle_identifiers), colored=color)
 
 
 @apps.command('uninstall', cls=Command)

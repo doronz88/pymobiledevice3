@@ -261,7 +261,9 @@ There is A LOT you may do on the device using `pymobiledevice3`. This is just a 
 * Manage the media directory:
     * `pymobiledevice3 afc shell`
 * List all installed applications and their details:
-    * `pymobiledevice3 apps list --user --system`
+    * `pymobiledevice3 apps list`
+* List query only a specific set os apps:
+    * `pymobiledevice3 apps query BUNDLE_ID1 BUNDLE_ID2`
 * Create a TCP tunnel from your HOST to the device:
     * `pymobiledevice3 usbmux forward HOST_PORT DEVICE_PORT`
 * Create a full backup of the device:
