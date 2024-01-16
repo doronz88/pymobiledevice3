@@ -162,10 +162,6 @@ def syslog_collect(service_provider: LockdownClient, out, size_limit, age_limit,
     Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
     If the filename doesn't exist, system_logs.logarchive will be created in the given directory.
     """
-
-    if os.path.isdir(out):
-        out = os.path.join(out, 'system_logs.logarchive')
-
     if not os.path.exists(out):
         os.makedirs(out)
 
