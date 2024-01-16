@@ -39,6 +39,7 @@ def format_line(color, pid, syslog_entry, include_label):
         SyslogLogLevel.DEBUG.name: 'green',
         SyslogLogLevel.ERROR.name: 'red',
         SyslogLogLevel.FAULT.name: 'red',
+        SyslogLogLevel.USER_ACTION.name: 'white',
     }
 
     syslog_pid = syslog_entry.pid
