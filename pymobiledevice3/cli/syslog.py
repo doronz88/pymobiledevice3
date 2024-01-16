@@ -153,7 +153,7 @@ def syslog_live(service_provider: LockdownClient, out, color, pid, process_name,
 
 
 @syslog.command('collect', cls=Command)
-@click.argument('out', type=click.Path(exists=False, dir_okay=True, file_okay=True))
+@click.argument('out', type=click.Path(exists=False, dir_okay=True, file_okay=False))
 @click.option('--size-limit', type=click.INT)
 @click.option('--age-limit', type=click.INT)
 @click.option('--start-time', type=click.INT)
@@ -162,10 +162,6 @@ def syslog_collect(service_provider: LockdownClient, out, size_limit, age_limit,
     Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
     If the filename doesn't exist, system_logs.logarchive will be created in the given directory.
     """
-
-    if os.path.isdir(out):
-        out = os.path.join(out, 'system_logs.logarchive')
-
     if not os.path.exists(out):
         os.makedirs(out)
 
