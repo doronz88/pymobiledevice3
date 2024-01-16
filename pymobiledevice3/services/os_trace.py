@@ -26,6 +26,9 @@ class SyslogLogLevel(IntEnum):
     NOTICE = 0x00
     INFO = 0x01
     DEBUG = 0x02
+
+    # deducted from console-app
+    USER_ACTION = 0x03
     ERROR = 0x10
     FAULT = 0x11
 
