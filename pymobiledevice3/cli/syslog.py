@@ -153,7 +153,7 @@ def syslog_live(service_provider: LockdownClient, out, color, pid, process_name,
 
 
 @syslog.command('collect', cls=Command)
-@click.argument('out', type=click.Path(exists=False, dir_okay=True, file_okay=True))
+@click.argument('out', type=click.Path(exists=False, dir_okay=True, file_okay=False))
 @click.option('--size-limit', type=click.INT)
 @click.option('--age-limit', type=click.INT)
 @click.option('--start-time', type=click.INT)
