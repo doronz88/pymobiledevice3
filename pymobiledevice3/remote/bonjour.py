@@ -17,12 +17,11 @@ class RemotedListener(ServiceListener):
         self.addresses: List[str] = []
 
     def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        if name == 'ncm._remoted._tcp.local.':
-            service_info = zc.get_service_info(type_, name)
-            entries_with_name = zc.cache.async_entries_with_name(service_info.server)
-            for entry in entries_with_name:
-                if entry.type == _TYPE_AAAA:
-                    self.addresses.append(inet_ntop(AF_INET6, entry.address) + '%' + self.adapter.nice_name)
+        service_info = zc.get_service_info(type_, name)
+        entries_with_name = zc.cache.async_entries_with_name(service_info.server)
+        for entry in entries_with_name:
+            if entry.type == _TYPE_AAAA:
+                self.addresses.append(inet_ntop(AF_INET6, entry.address) + '%' + self.adapter.nice_name)
 
     def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         pass
@@ -41,7 +40,7 @@ class BonjourQuery:
 def query_bonjour(adapter: Adapter) -> BonjourQuery:
     zc = Zeroconf(interfaces=[adapter.ips[0].ip[0]])
     listener = RemotedListener(adapter)
-    service_browser = ServiceBrowser(zc, '_remoted._tcp.local.', listener)
+    service_browser = ServiceBrowser(zc, '_remotepairing._tcp.local.', listener)
     return BonjourQuery(zc, service_browser, listener)
 
 
