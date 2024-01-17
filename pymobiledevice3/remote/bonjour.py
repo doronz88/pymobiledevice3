@@ -3,7 +3,7 @@ import time
 from socket import AF_INET6, inet_ntop
 from typing import List
 
-from ifaddr import Adapter, get_adapters
+from ifaddr import get_adapters
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 from zeroconf.const import _TYPE_AAAA
 
@@ -11,9 +11,9 @@ DEFAULT_BONJOUR_TIMEOUT = 1
 
 
 class RemotedListener(ServiceListener):
-    def __init__(self, adapter: Adapter):
+    def __init__(self, ip: str):
         super().__init__()
-        self.adapter = adapter
+        self.ip = ip
         self.addresses: List[str] = []
 
     def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
@@ -22,7 +22,7 @@ class RemotedListener(ServiceListener):
             entries_with_name = zc.cache.async_entries_with_name(service_info.server)
             for entry in entries_with_name:
                 if entry.type == _TYPE_AAAA:
-                    self.addresses.append(inet_ntop(AF_INET6, entry.address) + '%' + self.adapter.nice_name)
+                    self.addresses.append(inet_ntop(AF_INET6, entry.address) + '%' + self.ip.split('%')[1])
 
     def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         pass
@@ -38,16 +38,16 @@ class BonjourQuery:
     listener: RemotedListener
 
 
-def query_bonjour(adapter: Adapter) -> BonjourQuery:
-    zc = Zeroconf(interfaces=[adapter.ips[0].ip[0]])
-    listener = RemotedListener(adapter)
+def query_bonjour(ip: str) -> BonjourQuery:
+    zc = Zeroconf(interfaces=[ip])
+    listener = RemotedListener(ip)
     service_browser = ServiceBrowser(zc, '_remoted._tcp.local.', listener)
     return BonjourQuery(zc, service_browser, listener)
 
 
 def get_remoted_addresses(timeout: int = DEFAULT_BONJOUR_TIMEOUT) -> List[str]:
-    adapters = [adapter for adapter in get_adapters() if adapter.ips[0].is_IPv6]
-    bonjour_queries = [query_bonjour(adapter) for adapter in adapters]
+    ips = [f'{adapter.ips[0].ip[0]}%{adapter.nice_name}' for adapter in get_adapters() if adapter.ips[0].is_IPv6]
+    bonjour_queries = [query_bonjour(adapter) for adapter in ips]
     time.sleep(timeout)
     addresses = []
     for bonjour_query in bonjour_queries:

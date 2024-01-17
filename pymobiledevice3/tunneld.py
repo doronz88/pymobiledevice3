@@ -3,22 +3,20 @@ import dataclasses
 import logging
 import os
 import signal
+import traceback
 from contextlib import asynccontextmanager, suppress
-from typing import Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import fastapi
-import ifaddr.netifaces
 import uvicorn
-import zeroconf
 from fastapi import FastAPI
-from packaging import version
-from zeroconf import IPVersion
-from zeroconf.asyncio import AsyncZeroconf
+from ifaddr import get_adapters
 
-from pymobiledevice3.exceptions import InterfaceIndexNotFoundError
+from pymobiledevice3.remote.bonjour import query_bonjour
 from pymobiledevice3.remote.common import TunnelProtocol
+from pymobiledevice3.remote.core_device_tunnel_service import TunnelResult
 from pymobiledevice3.remote.module_imports import start_tunnel
-from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
 from pymobiledevice3.remote.utils import stop_remoted
 
 logger = logging.getLogger(__name__)
@@ -29,136 +27,107 @@ UNINIT_ADDRESS = ('', 0)
 
 
 @dataclasses.dataclass
-class Tunnel:
-    rsd: RemoteServiceDiscoveryService
-    task: asyncio.Task = None
-    address: Tuple[str, int] = UNINIT_ADDRESS
+class TunnelTask:
+    task: asyncio.Task
+    udid: Optional[str] = None
+    tunnel: Optional[TunnelResult] = None
 
 
 class TunneldCore:
     def __init__(self, protocol: TunnelProtocol = TunnelProtocol.QUIC):
-        self.adapters: Dict[int, str] = {}
-        self.active_tunnels: Dict[int, Tunnel] = {}
         self.protocol = protocol
-        self._type = '_remoted._tcp.local.'
-        self._name = 'ncm._remoted._tcp.local.'
-        self._interval = .5
-        self.tasks = []
+        self.tasks: List[asyncio.Task] = []
+        self.tunnel_tasks: Dict[str, TunnelTask] = {}
 
     def start(self) -> None:
         """ Register all tasks """
         self.tasks = [
-            asyncio.create_task(self.update_adapters(), name='update_adapters'),
-            asyncio.create_task(self.remove_detached_devices(), name='remove_detached_devices'),
-            asyncio.create_task(self.discover_new_devices(), name='discover_new_devices'),
+            asyncio.create_task(self.monitor_adapters(), name='monitor_adapters'),
         ]
+
+    async def monitor_adapters(self):
+        previous_ips = []
+        while True:
+            current_ips = [f'{adapter.ips[0].ip[0]}%{adapter.nice_name}' for adapter in get_adapters() if
+                           adapter.ips[0].is_IPv6]
+
+            added = [ip for ip in current_ips if ip not in previous_ips]
+            removed = [ip for ip in previous_ips if ip not in current_ips]
+
+            previous_ips = current_ips
+
+            logger.debug(f'added interfaces: {added}')
+            logger.debug(f'removed interfaces: {removed}')
+
+            for ip in removed:
+                if ip in self.tunnel_tasks:
+                    self.tunnel_tasks[ip].task.cancel()
+                    await self.tunnel_tasks[ip].task
+
+            for ip in added:
+                self.tunnel_tasks[ip] = TunnelTask(
+                    task=asyncio.create_task(self.handle_new_ip(ip), name='handle_new_address'))
+
+            # wait before re-iterating
+            await asyncio.sleep(1)
+
+    async def handle_new_ip(self, ip: str):
+        tun = None
+        try:
+            # browse the adapter for CoreDevices
+            query = query_bonjour(ip)
+
+            # wait the response to arrive
+            await asyncio.sleep(1)
+
+            # validate a CoreDevice was indeed found
+            addresses = query.listener.addresses
+            if not addresses:
+                return
+            peer_address = addresses[0]
+
+            # establish an untrusted RSD handshake
+            rsd = RemoteServiceDiscoveryService((peer_address, RSD_PORT))
+            with stop_remoted():
+                try:
+                    rsd.connect()
+                except ConnectionRefusedError:
+                    return
+
+            # populate the udid from the untrusted RSD information
+            self.tunnel_tasks[ip].udid = rsd.udid
+
+            # establish a trusted tunnel
+            async with start_tunnel(rsd, protocol=self.protocol) as tun:
+                self.tunnel_tasks[ip].tunnel = tun
+                logger.info(f'Created tunnel --rsd {tun.address} {tun.port}')
+                await tun.client.wait_closed()
+
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.error(traceback.format_exc())
+        finally:
+            if tun is not None:
+                logger.info(f'disconnected from tunnel --rsd {tun.address} {tun.port}')
+
+            if ip in self.tunnel_tasks:
+                # in case the tunnel was removed just now
+                self.tunnel_tasks.pop(ip)
 
     async def close(self):
         """ close all tasks """
-        for task in self.tasks:
+        for task in self.tasks + [tunnel_task.task for tunnel_task in self.tunnel_tasks.values()]:
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
 
     def clear(self) -> None:
         """ Clear active tunnels """
-        for udid, tunnel in self.active_tunnels.items():
-            logger.info(f'Removing tunnel {tunnel.address}')
-            tunnel.rsd.close()
+        for udid, tunnel in self.tunnel_tasks.items():
+            logger.info(f'Removing tunnel {tunnel}')
             tunnel.task.cancel()
-        self.active_tunnels = {}
-
-    async def handle_new_tunnel(self, tun: Tunnel) -> None:
-        """ Create new tunnel """
-        async with start_tunnel(tun.rsd, protocol=self.protocol) as tunnel_result:
-            tun.address = tunnel_result.address, tunnel_result.port
-            logger.info(f'Created tunnel --rsd {tun.address[0]} {tun.address[1]}')
-            await tunnel_result.client.wait_closed()
-
-    @staticmethod
-    async def connect_rsd(address: str, port: int) -> RemoteServiceDiscoveryService:
-        """ Connect to RSD """
-        with stop_remoted():
-            rsd = RemoteServiceDiscoveryService((address, port))
-            rsd.connect()
-            return rsd
-
-    async def update_adapters(self) -> None:
-        """ Constantly updates the 'adapters' dictionary with IPv6 addresses linked to network interfaces """
-        while True:
-            self.adapters = {iface.index: addr.ip[0] for iface in ifaddr.get_adapters() for addr in iface.ips if
-                             addr.is_IPv6}
-            await asyncio.sleep(self._interval)
-
-    async def remove_detached_devices(self) -> None:
-        """ Continuously checks if adapters were removed and removes associated tunnels """
-        while True:
-            # Find active tunnels that are no longer associated with adapters
-            diff = list(set(self.active_tunnels.keys()) - set(self.adapters.keys()))
-            # For each detached tunnel, cancel its task, log the removal, and remove it from the active tunnels
-            for k in diff:
-                self.active_tunnels[k].task.cancel()
-                self.active_tunnels[k].rsd.close()
-                logger.info(f'Removing tunnel {self.active_tunnels[k].address}')
-                self.active_tunnels.pop(k)
-
-            await asyncio.sleep(self._interval)
-
-    def get_interface_index(self, address: str) -> int:
-        """
-        To address the issue of an unknown IPv6 scope id for a device, we employ a workaround.
-        We maintain a mapping that associates the scope id with the adapter address.
-        To resolve this, we remove the last segment (quartet) from both the adapter address and the target address.
-        If there is a match, we retrieve the scope id associated with that adapter and use it.
-
-        Disclaimer: Matching addresses based on their segments may result in interface collision in specific network
-        configurations.
-        """
-        address_segments = address.split(':')[:-1]
-        for k, v in self.adapters.items():
-            if address_segments != v.split(':')[:-1]:
-                continue
-            return k
-        raise InterfaceIndexNotFoundError(address=address)
-
-    async def discover_new_devices(self) -> None:
-        """ Continuously scans for devices advertising 'RSD' through IPv6 adapters """
-        while True:
-            # Search for devices advertising the specified service type and name
-            async with AsyncZeroconf(ip_version=IPVersion.V6Only) as aiozc:
-                try:
-                    info = await aiozc.async_get_service_info(self._type, self._name, timeout=ZEROCONF_TIMEOUT)
-                except zeroconf.Error as e:
-                    logger.warning(e)
-                    continue
-                if info is None:
-                    continue
-                # Extract device details
-                addr = info.parsed_addresses(IPVersion.V6Only)[0]
-                try:
-                    interface_index = self.get_interface_index(addr)
-                except InterfaceIndexNotFoundError as e:
-                    logger.warning(f'Failed to find interface index for {e.address}')
-                    continue
-                if interface_index in self.active_tunnels:
-                    continue
-                # Connect to the discovered device
-                addr = f'{addr}%{interface_index}'
-                try:
-                    rsd = await self.connect_rsd(addr, info.port)
-                except (TimeoutError, ConnectionError, OSError):
-                    logger.warning(f'Failed to connect rsd to {addr}')
-                    continue
-                # Check unsupported devices with a product version below a minimum threshold
-                if version.parse(rsd.product_version) < version.parse(MIN_VERSION):
-                    logger.warning(f'{rsd.udid} Unsupported device {rsd.product_version} < {MIN_VERSION}')
-                    continue
-                logger.info(f'Creating tunnel for {addr}')
-                tunnel = Tunnel(rsd)
-                # Add the tunnel to the active tunnels and start a handling task
-                tunnel.task = asyncio.create_task(self.handle_new_tunnel(tunnel))
-                self.active_tunnels[interface_index] = tunnel
-            await asyncio.sleep(self._interval)
+        self.tunnel_tasks = {}
 
 
 class TunneldRunner:
@@ -184,13 +153,12 @@ class TunneldRunner:
         self._tunneld_core = TunneldCore(protocol)
 
         @self._app.get('/')
-        async def list_tunnels() -> Dict[str, Tuple[str, int]]:
+        async def list_tunnels() -> Dict[str, Tuple]:
             """ Retrieve the available tunnels and format them as {UUID: TUNNEL_ADDRESS} """
             tunnels = {}
-            for k, v in self._tunneld_core.active_tunnels.items():
-                if v.address == UNINIT_ADDRESS:
-                    continue
-                tunnels[v.rsd.udid] = v.address
+            for ip, active_tunnel in self._tunneld_core.tunnel_tasks.items():
+                if (active_tunnel.udid is not None) and (active_tunnel.tunnel is not None):
+                    tunnels[active_tunnel.udid] = (active_tunnel.tunnel.address, active_tunnel.tunnel.port)
             return tunnels
 
         @self._app.get('/shutdown')
