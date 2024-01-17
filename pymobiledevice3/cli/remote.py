@@ -7,7 +7,7 @@ from typing import List, TextIO
 
 import click
 
-from pymobiledevice3.cli.cli_common import RSDCommand, print_json, prompt_device_list, sudo_required
+from pymobiledevice3.cli.cli_common import BaseCommand, RSDCommand, print_json, prompt_device_list, sudo_required
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import NoDeviceConnectedError
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, get_remote_pairing_record_filename
@@ -46,7 +46,7 @@ def remote_cli():
     pass
 
 
-@remote_cli.command('tunneld')
+@remote_cli.command('tunneld', cls=BaseCommand)
 @click.option('--host', default=TUNNELD_DEFAULT_ADDRESS[0])
 @click.option('--port', type=click.INT, default=TUNNELD_DEFAULT_ADDRESS[1])
 @click.option('-d', '--daemonize', is_flag=True)
@@ -73,7 +73,7 @@ def cli_tunneld(host: str, port: int, daemonize: bool, protocol: str):
         tunneld_runner()
 
 
-@remote_cli.command('browse')
+@remote_cli.command('browse', cls=BaseCommand)
 @click.option('--color/--no-color', default=True)
 def browse(color: bool):
     """ browse devices using bonjour """
@@ -156,7 +156,7 @@ def select_device(udid: str) -> RemoteServiceDiscoveryService:
     return rsd
 
 
-@remote_cli.command('start-tunnel')
+@remote_cli.command('start-tunnel', cls=BaseCommand)
 @click.option('--udid', help='UDID for a specific device to look for')
 @click.option('--secrets', type=click.File('wt'), help='TLS keyfile for decrypting with Wireshark')
 @click.option('--script-mode', is_flag=True,
@@ -176,7 +176,7 @@ def cli_start_tunnel(udid: str, secrets: TextIO, script_mode: bool, max_idle_tim
                 debug=True)
 
 
-@remote_cli.command('delete-pair')
+@remote_cli.command('delete-pair', cls=BaseCommand)
 @click.option('--udid', help='UDID for a specific device to delete the pairing record of')
 @sudo_required
 def cli_delete_pair(udid: str):
