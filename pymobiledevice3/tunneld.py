@@ -11,6 +11,7 @@ import fastapi
 import uvicorn
 from fastapi import FastAPI
 from ifaddr import get_adapters
+from packaging.version import Version
 
 from pymobiledevice3.remote.bonjour import query_bonjour
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -20,10 +21,6 @@ from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServ
 from pymobiledevice3.remote.utils import stop_remoted
 
 logger = logging.getLogger(__name__)
-
-ZEROCONF_TIMEOUT = 3000
-MIN_VERSION = '17.0.0'
-UNINIT_ADDRESS = ('', 0)
 
 
 @dataclasses.dataclass
@@ -83,7 +80,7 @@ class TunneldCore:
             # validate a CoreDevice was indeed found
             addresses = query.listener.addresses
             if not addresses:
-                return
+                raise asyncio.CancelledError()
             peer_address = addresses[0]
 
             # establish an untrusted RSD handshake
@@ -92,7 +89,10 @@ class TunneldCore:
                 try:
                     rsd.connect()
                 except ConnectionRefusedError:
-                    return
+                    raise asyncio.CancelledError()
+
+            if (self.protocol == TunnelProtocol.QUIC) and (Version(rsd.product_version) < Version('17.0.0')):
+                raise asyncio.CancelledError()
 
             # populate the udid from the untrusted RSD information
             self.tunnel_tasks[ip].udid = rsd.udid
