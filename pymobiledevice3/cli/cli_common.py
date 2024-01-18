@@ -142,11 +142,19 @@ class BaseCommand(click.Command):
         self.params[:0] = [
             click.Option(('verbosity', '-v', '--verbose'), count=True, callback=set_verbosity, expose_value=False),
         ]
+
+
+class BaseServiceProviderCommand(BaseCommand):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.params[:0] = [
+            click.Option(('verbosity', '-v', '--verbose'), count=True, callback=set_verbosity, expose_value=False),
+        ]
         self.service_provider = None
         self.callback = choose_service_provider(self.callback)
 
 
-class LockdownCommand(BaseCommand):
+class LockdownCommand(BaseServiceProviderCommand):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.usbmux_address = None
@@ -182,7 +190,7 @@ class LockdownCommand(BaseCommand):
             [create_using_usbmux(serial=device.serial, usbmux_address=self.usbmux_address) for device in devices])
 
 
-class RSDCommand(BaseCommand):
+class RSDCommand(BaseServiceProviderCommand):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.params[:0] = [
