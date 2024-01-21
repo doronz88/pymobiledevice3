@@ -1,4 +1,5 @@
 import logging
+import os
 import traceback
 
 import click
@@ -21,6 +22,8 @@ logging.getLogger('parso.python.diff').disabled = True
 logging.getLogger('humanfriendly.prompts').disabled = True
 logging.getLogger('blib2to3.pgen2.driver').disabled = True
 logging.getLogger('urllib3.connectionpool').disabled = True
+
+DEBUG_ENVIRONMENT_VARIABLE = 'PYMOBILEDEVICE3_DEBUG'
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +85,8 @@ class Pmd3Cli(click.Group):
         try:
             mod = __import__(f'pymobiledevice3.cli.{CLI_GROUPS[name]}', None, None, ['cli'])
         except ImportError:
+            if os.environ.get(DEBUG_ENVIRONMENT_VARIABLE):
+                raise
             return
         command = mod.cli.get_command(ctx, name)
         # Some cli groups have different names than the index
