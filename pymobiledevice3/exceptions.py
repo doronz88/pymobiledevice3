@@ -319,6 +319,10 @@ class AppInstallError(PyMobileDevice3Exception):
     pass
 
 
+class AppNotInstalledError(PyMobileDevice3Exception):
+    pass
+
+
 class CoreDeviceError(PyMobileDevice3Exception):
     pass
 
