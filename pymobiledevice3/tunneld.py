@@ -3,6 +3,7 @@ import dataclasses
 import logging
 import os
 import signal
+import sys
 import traceback
 from contextlib import asynccontextmanager, suppress
 from typing import Dict, List, Optional, Tuple
@@ -45,8 +46,12 @@ class TunneldCore:
     async def monitor_adapters(self):
         previous_ips = []
         while True:
-            current_ips = [f'{adapter.ips[0].ip[0]}%{adapter.nice_name}' for adapter in get_adapters() if
-                           adapter.ips[0].is_IPv6]
+            if sys.platform == 'win32':
+                current_ips = [f'{adapter.ips[0].ip[0]}%{adapter.ips[0].ip[2]}' for adapter in get_adapters() if
+                               adapter.ips[0].is_IPv6]
+            else:
+                current_ips = [f'{adapter.ips[0].ip[0]}%{adapter.nice_name}' for adapter in get_adapters() if
+                               adapter.ips[0].is_IPv6]
 
             added = [ip for ip in current_ips if ip not in previous_ips]
             removed = [ip for ip in previous_ips if ip not in current_ips]

@@ -105,9 +105,29 @@ def wait_return() -> None:
 UDID_ENV_VAR = 'PYMOBILEDEVICE3_UDID'
 
 
+def is_admin_user() -> bool:
+    """ Check if the current OS user is an Administrator or root.
+
+    See: https://github.com/Preston-Landers/pyuac/blob/master/pyuac/admin.py
+
+    :return: True if the current user is an 'Administrator', otherwise False.
+    """
+    if os.name == 'nt':
+        import win32security
+
+        try:
+            admin_sid = win32security.CreateWellKnownSid(win32security.WinBuiltinAdministratorsSid, None)
+            return win32security.CheckTokenMembership(None, admin_sid)
+        except Exception:
+            return False
+    else:
+        # Check for root on Posix
+        return os.getuid() == 0
+
+
 def sudo_required(func):
     def wrapper(*args, **kwargs):
-        if sys.platform != 'win32' and os.geteuid() != 0:
+        if not is_admin_user():
             raise AccessDeniedError()
         else:
             func(*args, **kwargs)

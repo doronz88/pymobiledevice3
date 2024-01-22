@@ -21,6 +21,12 @@ from pymobiledevice3.tunneld import TunneldRunner
 logger = logging.getLogger(__name__)
 
 
+def install_driver_if_required() -> None:
+    if sys.platform == 'win32':
+        import pywintunx_pmd3
+        pywintunx_pmd3.install_wetest_driver()
+
+
 def get_device_list() -> List[RemoteServiceDiscoveryService]:
     result = []
     with stop_remoted():
@@ -57,6 +63,7 @@ def cli_tunneld(host: str, port: int, daemonize: bool, protocol: str):
     """ Start Tunneld service for remote tunneling """
     if not verify_tunnel_imports():
         return
+    install_driver_if_required()
     protocol = TunnelProtocol(protocol)
     tunneld_runner = partial(TunneldRunner.create, host, port, protocol)
     if daemonize:
@@ -77,6 +84,7 @@ def cli_tunneld(host: str, port: int, daemonize: bool, protocol: str):
 @click.option('--color/--no-color', default=True)
 def browse(color: bool):
     """ browse devices using bonjour """
+    install_driver_if_required()
     devices = []
     for rsd in get_device_list():
         devices.append({'address': rsd.service.address[0],
@@ -91,6 +99,7 @@ def browse(color: bool):
 @click.option('--color/--no-color', default=True)
 def rsd_info(service_provider: RemoteServiceDiscoveryService, color: bool):
     """ show info extracted from RSD peer """
+    install_driver_if_required()
     print_json(service_provider.peer_info, colored=color)
 
 
@@ -168,6 +177,7 @@ def select_device(udid: str) -> RemoteServiceDiscoveryService:
 @sudo_required
 def cli_start_tunnel(udid: str, secrets: TextIO, script_mode: bool, max_idle_timeout: float, protocol: str):
     """ start quic tunnel """
+    install_driver_if_required()
     protocol = TunnelProtocol(protocol)
     if not verify_tunnel_imports():
         return
@@ -190,5 +200,6 @@ def cli_delete_pair(udid: str):
 @click.argument('service_name')
 def cli_service(service_provider: RemoteServiceDiscoveryService, service_name: str):
     """ start an ipython shell for interacting with given service """
+    install_driver_if_required()
     with service_provider.start_remote_service(service_name) as service:
         service.shell()
