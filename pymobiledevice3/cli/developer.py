@@ -43,6 +43,7 @@ from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
+from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestService
 from pymobiledevice3.services.remote_fetch_symbols import RemoteFetchSymbolsService
 from pymobiledevice3.services.remote_server import RemoteServer
 from pymobiledevice3.services.screenshot import ScreenshotService
@@ -269,6 +270,20 @@ def screenshot(service_provider: LockdownClient, out):
     """ get device screenshot """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         out.write(Screenshot(dvt).get_screenshot())
+
+
+@dvt.command('xcuitest', cls=Command)
+@click.argument('bundle-id')
+def xcuitest(service_provider: LockdownClient, bundle_id: str) -> None:
+    """\b
+    start XCUITest
+    Usage example:
+    iOS<17:
+        python3 -m pymobiledevice3 developer dvt xcuitest com.facebook.WebDriverAgentRunner.xctrunner
+    iOS>=17:
+        python3 -m pymobiledevice3 developer dvt xcuitest com.facebook.WebDriverAgentRunner.xctrunner --tunnel $UDID
+    """
+    XCUITestService(service_provider).run(bundle_id)
 
 
 @dvt.group('sysmon')
