@@ -72,8 +72,10 @@ def print_json(buf, colored=True, default=default_json_encoder):
         colorful_json = highlight(formatted_json, lexers.JsonLexer(),
                                   formatters.TerminalTrueColorFormatter(style='stata-dark'))
         print(colorful_json)
+        return colorful_json
     else:
         print(formatted_json)
+        return formatted_json
 
 
 def print_hex(data, colored=True):
