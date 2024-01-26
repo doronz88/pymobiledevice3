@@ -43,7 +43,11 @@ from qh3.quic.connection import QuicConnection
 from qh3.quic.events import ConnectionTerminated, DatagramFrameReceived, QuicEvent, StreamDataReceived
 from srptools import SRPClientSession, SRPContext
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
-from sslpsk_pmd3.sslpsk import SSLPSKContext
+
+try:
+    from sslpsk_pmd3.sslpsk import SSLPSKContext
+except ImportError:
+    SSLPSKContext = None
 
 from pymobiledevice3.ca import make_cert
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, UserDeniedPairingError
