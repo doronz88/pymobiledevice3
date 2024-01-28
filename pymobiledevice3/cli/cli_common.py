@@ -99,7 +99,7 @@ def wait_return() -> None:
         print("Press Ctrl+C to send a SIGINT or use 'kill' command to send a SIGTERM")
         signal.sigwait([signal.SIGINT, signal.SIGTERM])
     else:
-        input('Press ENTER to exit>')
+        input('Press ENTER to exit')
 
 
 UDID_ENV_VAR = 'PYMOBILEDEVICE3_UDID'
