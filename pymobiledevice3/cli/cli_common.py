@@ -2,7 +2,6 @@ import datetime
 import json
 import logging
 import os
-import signal
 import sys
 import uuid
 from typing import Callable, List, Mapping, Optional, Tuple
@@ -94,9 +93,13 @@ def get_last_used_terminal_formatting(buf: str) -> str:
     return '\x1b' + buf.rsplit('\x1b', 1)[1].split('m')[0] + 'm'
 
 
-def wait_return():
-    print("Press Ctrl+C to send a SIGINT or use 'kill' command to send a SIGTERM")
-    signal.sigwait([signal.SIGINT, signal.SIGTERM])
+def wait_return() -> None:
+    if sys.platform != 'win32':
+        import signal
+        print("Press Ctrl+C to send a SIGINT or use 'kill' command to send a SIGTERM")
+        signal.sigwait([signal.SIGINT, signal.SIGTERM])
+    else:
+        input('Press ENTER to exit>')
 
 
 UDID_ENV_VAR = 'PYMOBILEDEVICE3_UDID'
