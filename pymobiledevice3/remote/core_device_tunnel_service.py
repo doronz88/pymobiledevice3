@@ -14,7 +14,11 @@ from abc import ABC, abstractmethod
 from asyncio import CancelledError, StreamReader, StreamWriter
 from collections import namedtuple
 from contextlib import asynccontextmanager, suppress
-from os import chown, getenv
+
+if sys.platform != 'win32':
+    from os import chown
+
+from os import getenv
 from pathlib import Path
 from socket import AF_INET6, create_connection
 from ssl import VerifyMode
@@ -33,7 +37,11 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from opack import dumps
-from pytun_pmd3 import TunTapDevice
+
+if sys.platform != 'win32':
+    from pytun_pmd3 import TunTapDevice
+else:
+    TunTapDevice = None
 from qh3.asyncio import QuicConnectionProtocol
 from qh3.asyncio.client import connect as aioquic_connect
 from qh3.asyncio.protocol import QuicStreamHandler
