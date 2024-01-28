@@ -64,7 +64,6 @@ CLI_GROUPS = {
     'remote': 'remote',
     'restore': 'restore',
     'springboard': 'springboard',
-    'status': 'status',
     'syslog': 'syslog',
     'usbmux': 'usbmux',
     'webinspector': 'webinspector',
@@ -79,10 +78,7 @@ class Pmd3Cli(click.Group):
     def get_command(self, ctx, name):
         if name not in CLI_GROUPS.keys():
             ctx.fail(f'No such command {name!r}.')
-        try:
-            mod = __import__(f'pymobiledevice3.cli.{CLI_GROUPS[name]}', None, None, ['cli'])
-        except ImportError:
-            return
+        mod = __import__(f'pymobiledevice3.cli.{CLI_GROUPS[name]}', None, None, ['cli'])
         command = mod.cli.get_command(ctx, name)
         # Some cli groups have different names than the index
         if not command:
