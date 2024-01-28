@@ -39,7 +39,7 @@ class BonjourQuery:
 
 
 def query_bonjour(ip: str) -> BonjourQuery:
-    zc = Zeroconf(interfaces=[ip])
+    zc = Zeroconf(interfaces=[ip.split('%')[0]])
     listener = RemotedListener(ip)
     service_browser = ServiceBrowser(zc, '_remoted._tcp.local.', listener)
     return BonjourQuery(zc, service_browser, listener)
