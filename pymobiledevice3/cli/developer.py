@@ -773,6 +773,19 @@ def accessibility():
     """ accessibility options. """
     pass
 
+@accessibility.command('run-audit', cls=Command)
+@click.argument('test_types', nargs=-1)
+def accessibility_run_audit(service_provider: LockdownServiceProvider, test_types):
+    """ runs accessibility audit tests """
+    param = list(test_types)
+    audit_issues = AccessibilityAudit(service_provider).run_audit(param)
+    print_json([audit_issue.json() for audit_issue in audit_issues], False) 
+
+@accessibility.command('supported-audit-types', cls=Command)
+def accessibility_supported_audit_types(service_provider: LockdownServiceProvider):
+    """ lists supported accessibility audit test types """
+    print_json(AccessibilityAudit(service_provider).supported_audits_types())
+
 
 @accessibility.command('capabilities', cls=Command)
 def accessibility_capabilities(service_provider: LockdownClient):
