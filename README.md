@@ -176,14 +176,19 @@ with RemoteServiceDiscoveryService((host, port)) as rsd:
 
 ## Working with developer tools (iOS >= 17.0)
 
-> **NOTE:** Currently, this is only supported on macOS
+> **NOTE:** Currently, this is only supported on macOS & Windows
 
 Starting at iOS 17.0, Apple introduced the new CoreDevice framework to work with iOS devices. This framework relies on
 the [RemoteXPC](misc/RemoteXPC.md) protocol. In order to communicate with the developer services you'll be required to
 first create [trusted tunnel](misc/RemoteXPC.md#trusted-tunnel) as follows:
 
 ```shell
+# -- On macOS
 sudo python3 -m pymobiledevice3 remote start-tunnel
+
+# -- On windows 
+# Use a "run as administrator" shell 
+python3 -m pymobiledevice3 remote start-tunnel
 ```
 
 The root permissions are required since this will create a new TUN/TAP device which is a high privilege operation.
@@ -218,7 +223,12 @@ device is connected.
 To start the Tunneld Server, use the following command (with root privileges):
 
 ```bash
+# -- On macOS
 sudo python3 -m pymobiledevice3 remote tunneld
+
+# -- On windows 
+# Use a "run as administrator" shell 
+python3 -m pymobiledevice3 remote tunneld
 ```
 
 ### Using Tunneld
