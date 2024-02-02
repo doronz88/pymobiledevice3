@@ -20,7 +20,7 @@ class OutputReceivedEvent:
                 date = datetime.datetime.fromtimestamp(message[2].value / 1000)
             else:
                 date = datetime.datetime.fromtimestamp(message[2].value)
-        except ValueError:
+        except (ValueError, OSError):
             date = None
 
         return cls(pid=message[1].value, date=date, message=message[0].value)
