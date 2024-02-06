@@ -1,6 +1,6 @@
 from typing import List, Mapping, Optional
 
-from pymobiledevice3.exceptions import ConnectionFailedError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import ConnectionFailedError, DeprecationError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -971,14 +971,18 @@ class DiagnosticsService(LockdownService):
     def mobilegestalt(self, keys: List[str] = None) -> Mapping:
         if keys is None or len(keys) == 0:
             keys = MobileGestaltKeys
-        resp = self.service.send_recv_plist({'Request': 'MobileGestalt', 'MobileGestaltKeys': keys})
+        response = self.service.send_recv_plist({'Request': 'MobileGestalt', 'MobileGestaltKeys': keys})
 
-        if (resp['Status'] != 'Success') or (resp['Diagnostics']['MobileGestalt']['Status'] != 'Success'):
+        if (response['Diagnostics']['MobileGestalt']['Status'] == 'MobileGestaltDeprecated'):
+            err_msg = f'failed to query MobileGestalt, MobileGestalt deprecated (iOS >= 17.4). Got response {response}'
+            raise DeprecationError(err_msg)
+
+        if (response['Status'] != 'Success') or (response['Diagnostics']['MobileGestalt']['Status'] != 'Success'):
             raise PyMobileDevice3Exception('failed to query MobileGestalt')
 
-        resp['Diagnostics']['MobileGestalt'].pop('Status')
+        response['Diagnostics']['MobileGestalt'].pop('Status')
 
-        return resp['Diagnostics']['MobileGestalt']
+        return response['Diagnostics']['MobileGestalt']
 
     def action(self, action: str) -> Optional[Mapping]:
         response = self.service.send_recv_plist({'Request': action})

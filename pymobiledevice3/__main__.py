@@ -5,8 +5,8 @@ import traceback
 import click
 import coloredlogs
 
-from pymobiledevice3.exceptions import AccessDeniedError, ConnectionFailedToUsbmuxdError, DeveloperModeError, \
-    DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, DeviceNotFoundError, InternalError, \
+from pymobiledevice3.exceptions import AccessDeniedError, ConnectionFailedToUsbmuxdError, DeprecationError, \
+    DeveloperModeError, DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, DeviceNotFoundError, InternalError, \
     InvalidServiceError, MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, NoDeviceSelectedError, \
     NotEnoughDiskSpaceError, NotPairedError, PairingDialogResponsePendingError, PasswordRequiredError, \
     RSDRequiredError, SetProhibitedError, TunneldConnectionError, UserDeniedPairingError
@@ -148,6 +148,8 @@ def main() -> None:
     except RSDRequiredError:
         logger.error('The requested operation requires an RSD instance. For more information see:\n'
                      'https://github.com/doronz88/pymobiledevice3?tab=readme-ov-file#working-with-developer-tools-ios--170')
+    except DeprecationError:
+        logger.error('failed to query MobileGestalt, MobileGestalt deprecated (iOS >= 17.4).')
 
 
 if __name__ == '__main__':

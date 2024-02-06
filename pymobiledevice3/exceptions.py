@@ -346,6 +346,11 @@ class NotEnoughDiskSpaceError(PyMobileDevice3Exception):
     pass
 
 
+class DeprecationError(PyMobileDevice3Exception):
+    """ The requested action/service/method is deprecated """
+    pass
+
+
 class RSDRequiredError(PyMobileDevice3Exception):
     """ The requested action requires an RSD object """
     pass
