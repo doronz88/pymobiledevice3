@@ -23,6 +23,9 @@ from pymobiledevice3.remote.utils import stop_remoted
 
 logger = logging.getLogger(__name__)
 
+# bugfix: after the device reboots, it might take some time for remoted to start answering the bonjour queries
+REATTEMPT_INTERVAL = 5
+
 
 @dataclasses.dataclass
 class TunnelTask:
@@ -76,16 +79,22 @@ class TunneldCore:
     async def handle_new_ip(self, ip: str):
         tun = None
         try:
-            # browse the adapter for CoreDevices
-            query = query_bonjour(ip)
+            while True:
+                # browse the adapter for CoreDevices
+                query = query_bonjour(ip)
 
-            # wait the response to arrive
-            await asyncio.sleep(1)
+                # validate a CoreDevice was indeed found
+                await asyncio.sleep(1)
 
-            # validate a CoreDevice was indeed found
-            addresses = query.listener.addresses
-            if not addresses:
-                raise asyncio.CancelledError()
+                # close zerconf
+                query.service_browser.cancel()
+                query.zc.close()
+
+                addresses = query.listener.addresses
+                if addresses:
+                    break
+                logger.debug(f'No addresses found for: {ip}')
+                await asyncio.sleep(REATTEMPT_INTERVAL)
             peer_address = addresses[0]
 
             # establish an untrusted RSD handshake
