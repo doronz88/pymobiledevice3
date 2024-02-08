@@ -22,9 +22,10 @@ def profile_group():
 
 
 @profile_group.command('list', cls=Command)
-def profile_list(service_provider: LockdownClient):
+@click.option('--color/--no-color', default=True)
+def profile_list(service_provider: LockdownClient, color):
     """ list installed profiles """
-    print_json(MobileConfigService(lockdown=service_provider).get_profile_list())
+    print_json(MobileConfigService(lockdown=service_provider).get_profile_list(), colored=color)
 
 
 @profile_group.command('install', cls=Command)
