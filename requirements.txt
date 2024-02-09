@@ -41,4 +41,4 @@ pytun-pmd3>=1.0.0 ; platform_system != "Windows"
 pywintunx-pmd3>=1.0.2 ; platform_system == "Windows"
 aiofiles
 prompt_toolkit
-sslpsk-pmd3>=1.0.2
+sslpsk-pmd3>=1.0.3
