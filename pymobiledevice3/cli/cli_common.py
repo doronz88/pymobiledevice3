@@ -22,6 +22,7 @@ from pymobiledevice3.remote.utils import get_tunneld_devices
 from pymobiledevice3.usbmux import select_devices_by_connection_type
 
 USBMUX_OPTION_HELP = 'usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT'
+COLORED_OUTPUT = True
 
 
 class RSDOption(Option):
@@ -65,7 +66,9 @@ def default_json_encoder(obj):
     raise TypeError()
 
 
-def print_json(buf, colored=True, default=default_json_encoder):
+def print_json(buf, colored: Optional[bool] = None, default=default_json_encoder):
+    if colored is None:
+        colored = user_requested_colored_output()
     formatted_json = json.dumps(buf, sort_keys=True, indent=4, default=default)
     if colored:
         colorful_json = highlight(formatted_json, lexers.JsonLexer(),
@@ -87,6 +90,15 @@ def print_hex(data, colored=True):
 
 def set_verbosity(ctx, param, value):
     coloredlogs.set_level(logging.INFO - (value * 10))
+
+
+def set_color_flag(ctx, param, value) -> None:
+    global COLORED_OUTPUT
+    COLORED_OUTPUT = value
+
+
+def user_requested_colored_output() -> bool:
+    return COLORED_OUTPUT
 
 
 def get_last_used_terminal_formatting(buf: str) -> str:
@@ -166,6 +178,8 @@ class BaseCommand(click.Command):
         super().__init__(*args, **kwargs)
         self.params[:0] = [
             click.Option(('verbosity', '-v', '--verbose'), count=True, callback=set_verbosity, expose_value=False),
+            click.Option(('color', '--color/--no-color'), default=True, callback=set_color_flag, is_flag=True,
+                         expose_value=False, help='colorize output'),
         ]
 
 

@@ -41,29 +41,25 @@ def diagnostics_sleep(service_provider: LockdownClient):
 
 
 @diagnostics.command('info', cls=Command)
-@click.option('--color/--no-color', default=True)
-def diagnostics_info(service_provider: LockdownClient, color):
+def diagnostics_info(service_provider: LockdownClient):
     """ get diagnostics info """
-    print_json(DiagnosticsService(lockdown=service_provider).info(), colored=color)
+    print_json(DiagnosticsService(lockdown=service_provider).info())
 
 
 @diagnostics.command('ioregistry', cls=Command)
 @click.option('--plane')
 @click.option('--name')
 @click.option('--ioclass')
-@click.option('--color/--no-color', default=True)
-def diagnostics_ioregistry(service_provider: LockdownClient, plane, name, ioclass, color):
+def diagnostics_ioregistry(service_provider: LockdownClient, plane, name, ioclass):
     """ get ioregistry info """
-    print_json(DiagnosticsService(lockdown=service_provider).ioregistry(plane=plane, name=name, ioclass=ioclass),
-               colored=color)
+    print_json(DiagnosticsService(lockdown=service_provider).ioregistry(plane=plane, name=name, ioclass=ioclass))
 
 
 @diagnostics.command('mg', cls=Command)
 @click.argument('keys', nargs=-1, default=None)
-@click.option('--color/--no-color', default=True)
-def diagnostics_mg(service_provider: LockdownClient, keys, color):
+def diagnostics_mg(service_provider: LockdownClient, keys):
     """ get MobileGestalt key values from given list. If empty, return all known. """
-    print_json(DiagnosticsService(lockdown=service_provider).mobilegestalt(keys=keys), colored=color)
+    print_json(DiagnosticsService(lockdown=service_provider).mobilegestalt(keys=keys))
 
 
 @diagnostics.group('battery')
@@ -73,11 +69,10 @@ def diagnostics_battery():
 
 
 @diagnostics_battery.command('single', cls=Command)
-@click.option('--color/--no-color', default=True)
-def diagnostics_battery_single(service_provider: LockdownClient, color):
+def diagnostics_battery_single(service_provider: LockdownClient):
     """ get single snapshot of battery data """
     raw_info = DiagnosticsService(lockdown=service_provider).get_battery()
-    print_json(raw_info, colored=color)
+    print_json(raw_info)
 
 
 @diagnostics_battery.command('monitor', cls=Command)

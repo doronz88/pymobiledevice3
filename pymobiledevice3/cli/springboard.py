@@ -29,10 +29,9 @@ def state():
 
 
 @state.command('get', cls=Command)
-@click.option('--color/--no-color', default=True)
-def state_get(service_provider: LockdownClient, color):
+def state_get(service_provider: LockdownClient):
     """ get icon state """
-    print_json(SpringBoardServicesService(lockdown=service_provider).get_icon_state(), colored=color)
+    print_json(SpringBoardServicesService(lockdown=service_provider).get_icon_state())
 
 
 @springboard.command('shell', cls=Command)

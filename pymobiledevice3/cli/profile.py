@@ -22,10 +22,9 @@ def profile_group():
 
 
 @profile_group.command('list', cls=Command)
-@click.option('--color/--no-color', default=True)
-def profile_list(service_provider: LockdownClient, color):
+def profile_list(service_provider: LockdownClient):
     """ list installed profiles """
-    print_json(MobileConfigService(lockdown=service_provider).get_profile_list(), colored=color)
+    print_json(MobileConfigService(lockdown=service_provider).get_profile_list())
 
 
 @profile_group.command('install', cls=Command)
@@ -54,10 +53,9 @@ def profile_install_silent(service_provider: LockdownClient, profiles, keystore,
 
 
 @profile_group.command('cloud-configuration', cls=Command)
-@click.option('--color/--no-color', default=True)
-def profile_cloud_configuration(service_provider: LockdownClient, color):
+def profile_cloud_configuration(service_provider: LockdownClient):
     """ get cloud configuration """
-    print_json(MobileConfigService(lockdown=service_provider).get_cloud_configuration(), colored=color)
+    print_json(MobileConfigService(lockdown=service_provider).get_cloud_configuration())
 
 
 @profile_group.command('store', cls=Command)

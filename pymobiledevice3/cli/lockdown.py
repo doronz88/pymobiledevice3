@@ -45,38 +45,34 @@ def lockdown_developer_service(service_provider: LockdownServiceProvider, servic
 
 @lockdown_group.command('info', cls=Command)
 @click.option('-a', '--all', is_flag=True, help='include all domain information')
-@click.option('--color/--no-color', default=True)
-def lockdown_info(service_provider: LockdownServiceProvider, all, color):
+def lockdown_info(service_provider: LockdownServiceProvider, all):
     """ query all lockdown values """
-    print_json(service_provider.all_domains if all else service_provider.all_values, colored=color)
+    print_json(service_provider.all_domains if all else service_provider.all_values)
 
 
 @lockdown_group.command('get', cls=Command)
 @click.argument('domain', required=False)
 @click.argument('key', required=False)
-@click.option('--color/--no-color', default=True)
-def lockdown_get(service_provider: LockdownClient, domain, key, color):
+def lockdown_get(service_provider: LockdownClient, domain, key):
     """ query lockdown values by their domain and key names """
-    print_json(service_provider.get_value(domain=domain, key=key), colored=color)
+    print_json(service_provider.get_value(domain=domain, key=key))
 
 
 @lockdown_group.command('set', cls=Command)
 @click.argument('value')
 @click.argument('domain', required=False)
 @click.argument('key', required=False)
-@click.option('--color/--no-color', default=True)
-def lockdown_set(service_provider: LockdownClient, value, domain, key, color):
+def lockdown_set(service_provider: LockdownClient, value, domain, key):
     """ set a lockdown value using python's eval() """
-    print_json(service_provider.set_value(value=eval(value), domain=domain, key=key), colored=color)
+    print_json(service_provider.set_value(value=eval(value), domain=domain, key=key))
 
 
 @lockdown_group.command('remove', cls=Command)
 @click.argument('domain')
 @click.argument('key')
-@click.option('--color/--no-color', default=True)
-def lockdown_remove(service_provider: LockdownClient, domain, key, color):
+def lockdown_remove(service_provider: LockdownClient, domain, key):
     """ remove a domain/key pair """
-    print_json(service_provider.remove_value(domain=domain, key=key), colored=color)
+    print_json(service_provider.remove_value(domain=domain, key=key))
 
 
 @lockdown_group.command('unpair', cls=CommandWithoutAutopair)

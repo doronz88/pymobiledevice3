@@ -81,8 +81,7 @@ def cli_tunneld(host: str, port: int, daemonize: bool, protocol: str):
 
 
 @remote_cli.command('browse', cls=BaseCommand)
-@click.option('--color/--no-color', default=True)
-def browse(color: bool):
+def browse():
     """ browse devices using bonjour """
     install_driver_if_required()
     devices = []
@@ -92,15 +91,14 @@ def browse(color: bool):
                         'UniqueDeviceID': rsd.peer_info['Properties']['UniqueDeviceID'],
                         'ProductType': rsd.peer_info['Properties']['ProductType'],
                         'OSVersion': rsd.peer_info['Properties']['OSVersion']})
-    print_json(devices, colored=color)
+    print_json(devices)
 
 
 @remote_cli.command('rsd-info', cls=RSDCommand)
-@click.option('--color/--no-color', default=True)
-def rsd_info(service_provider: RemoteServiceDiscoveryService, color: bool):
+def rsd_info(service_provider: RemoteServiceDiscoveryService):
     """ show info extracted from RSD peer """
     install_driver_if_required()
-    print_json(service_provider.peer_info, colored=color)
+    print_json(service_provider.peer_info)
 
 
 async def tunnel_task(

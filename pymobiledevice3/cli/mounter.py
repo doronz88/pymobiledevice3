@@ -41,8 +41,7 @@ def mounter():
 
 
 @mounter.command('list', cls=Command)
-@click.option('--color/--no-color', default=True)
-def mounter_list(service_provider: LockdownClient, color):
+def mounter_list(service_provider: LockdownClient):
     """ list all mounted images """
     output = []
 
@@ -53,17 +52,16 @@ def mounter_list(service_provider: LockdownClient, color):
             image['ImageSignature'] = image_signature.hex()
         output.append(image)
 
-    print_json(output, colored=color)
+    print_json(output)
 
 
 @mounter.command('lookup', cls=Command)
-@click.option('--color/--no-color', default=True)
 @click.argument('image_type')
-def mounter_lookup(service_provider: LockdownClient, color, image_type):
+def mounter_lookup(service_provider: LockdownClient, image_type):
     """ lookup mounter image type """
     try:
         signature = MobileImageMounterService(lockdown=service_provider).lookup_image(image_type)
-        print_json(signature, colored=color)
+        print_json(signature)
     except NotMountedError:
         logger.error(f'Disk image of type: {image_type} is not mounted')
 
@@ -134,36 +132,32 @@ def mounter_auto_mount(service_provider: LockdownServiceProvider, xcode: str, ve
 
 
 @mounter.command('query-developer-mode-status', cls=Command)
-@click.option('--color/--no-color', default=True)
-def mounter_query_developer_mode_status(service_provider: LockdownClient, color):
+def mounter_query_developer_mode_status(service_provider: LockdownClient):
     """ Query developer mode status """
-    print_json(MobileImageMounterService(lockdown=service_provider).query_developer_mode_status(), colored=color)
+    print_json(MobileImageMounterService(lockdown=service_provider).query_developer_mode_status())
 
 
 @mounter.command('query-nonce', cls=Command)
 @click.option('--image-type')
-@click.option('--color/--no-color', default=True)
-def mounter_query_nonce(service_provider: LockdownClient, image_type: str, color: bool):
+def mounter_query_nonce(service_provider: LockdownClient, image_type: str):
     """ Query nonce """
-    print_json(MobileImageMounterService(lockdown=service_provider).query_nonce(image_type), colored=color)
+    print_json(MobileImageMounterService(lockdown=service_provider).query_nonce(image_type))
 
 
 @mounter.command('query-personalization-identifiers', cls=Command)
-@click.option('--color/--no-color', default=True)
-def mounter_query_personalization_identifiers(service_provider: LockdownClient, color):
+def mounter_query_personalization_identifiers(service_provider: LockdownClient):
     """ Query personalization identifiers """
-    print_json(MobileImageMounterService(lockdown=service_provider).query_personalization_identifiers(), colored=color)
+    print_json(MobileImageMounterService(lockdown=service_provider).query_personalization_identifiers())
 
 
 @mounter.command('query-personalization-manifest', cls=Command)
-@click.option('--color/--no-color', default=True)
-def mounter_query_personalization_manifest(service_provider: LockdownClient, color):
+def mounter_query_personalization_manifest(service_provider: LockdownClient):
     """ Query personalization manifest """
     result = []
     mounter = MobileImageMounterService(lockdown=service_provider)
     for device in mounter.copy_devices():
         result.append(mounter.query_personalization_manifest(device['PersonalizedImageType'], device['ImageSignature']))
-    print_json(result, colored=color)
+    print_json(result)
 
 
 @mounter.command('roll-personalization-nonce', cls=Command)
