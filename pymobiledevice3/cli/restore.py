@@ -108,8 +108,7 @@ def restore_restart(device):
 @restore.command('tss', cls=Command)
 @click.argument('ipsw')
 @click.argument('out', type=click.File('wb'), required=False)
-@click.option('--color/--no-color', default=True)
-def restore_tss(device, ipsw, out, color):
+def restore_tss(device, ipsw, out):
     """ query SHSH blobs """
     lockdown = None
     irecv = None
@@ -127,7 +126,7 @@ def restore_tss(device, ipsw, out, color):
     tss = Recovery(ipsw, device).fetch_tss_record()
     if out:
         plistlib.dump(tss, out)
-    print_json(tss, colored=color)
+    print_json(tss)
 
 
 @restore.command('ramdisk', cls=Command)

@@ -22,26 +22,22 @@ def apps():
 
 
 @apps.command('list', cls=Command)
-@click.option('--color/--no-color', default=True)
 @click.option('app_type', '-t', '--type', type=click.Choice(['System', 'User', 'Hidden', 'Any']), default='Any',
               help='include only applications of given type')
 @click.option('--calculate-sizes/--no-calculate-size', default=False)
-def apps_list(service_provider: LockdownServiceProvider, color: bool, app_type: str, calculate_sizes: bool) -> None:
+def apps_list(service_provider: LockdownServiceProvider, app_type: str, calculate_sizes: bool) -> None:
     """ list installed apps """
     print_json(InstallationProxyService(lockdown=service_provider).get_apps(application_type=app_type,
-                                                                            calculate_sizes=calculate_sizes),
-               colored=color)
+                                                                            calculate_sizes=calculate_sizes))
 
 
 @apps.command('query', cls=Command)
 @click.argument('bundle_identifiers', nargs=-1)
-@click.option('--color/--no-color', default=True)
 @click.option('--calculate-sizes/--no-calculate-size', default=False)
-def apps_query(service_provider: LockdownServiceProvider, bundle_identifiers: List[str], color: bool,
-               calculate_sizes: bool) -> None:
+def apps_query(service_provider: LockdownServiceProvider, bundle_identifiers: List[str], calculate_sizes: bool) -> None:
     """ query installed apps """
     print_json(InstallationProxyService(lockdown=service_provider)
-               .get_apps(calculate_sizes=calculate_sizes, bundle_identifiers=bundle_identifiers), colored=color)
+               .get_apps(calculate_sizes=calculate_sizes, bundle_identifiers=bundle_identifiers))
 
 
 @apps.command('uninstall', cls=Command)
