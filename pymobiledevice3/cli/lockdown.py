@@ -44,10 +44,9 @@ def lockdown_developer_service(service_provider: LockdownServiceProvider, servic
 
 
 @lockdown_group.command('info', cls=Command)
-@click.option('-a', '--all', is_flag=True, help='include all domain information')
-def lockdown_info(service_provider: LockdownServiceProvider, all):
+def lockdown_info(service_provider: LockdownServiceProvider):
     """ query all lockdown values """
-    print_json(service_provider.all_domains if all else service_provider.all_values)
+    print_json(service_provider.all_values)
 
 
 @lockdown_group.command('get', cls=Command)

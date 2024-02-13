@@ -28,39 +28,6 @@ from pymobiledevice3.service_connection import LockdownServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
 
 SYSTEM_BUID = '30142955-444094379208051516'
-DOMAINS = ['com.apple.disk_usage',
-           'com.apple.disk_usage.factory',
-           'com.apple.mobile.battery',
-           # FIXME: For some reason lockdownd segfaults on this, works sometimes tho
-           # 'com.apple.mobile.debug',
-           'com.apple.iqagent',
-           'com.apple.purplebuddy',
-           'com.apple.PurpleBuddy',
-           'com.apple.mobile.chaperone',
-           'com.apple.mobile.third_party_termination',
-           'com.apple.mobile.lockdownd',
-           'com.apple.mobile.lockdown_cache',
-           'com.apple.xcode.developerdomain',
-           'com.apple.international',
-           'com.apple.mobile.data_sync',
-           'com.apple.mobile.tethered_sync',
-           'com.apple.mobile.mobile_application_usage',
-           'com.apple.mobile.backup',
-           'com.apple.mobile.nikita',
-           'com.apple.mobile.restriction',
-           'com.apple.mobile.user_preferences',
-           'com.apple.mobile.sync_data_class',
-           'com.apple.mobile.software_behavior',
-           'com.apple.mobile.iTunes.SQLMusicLibraryPostProcessCommands',
-           'com.apple.mobile.iTunes.accessories',
-           'com.apple.mobile.internal',  # < iOS 4.0+
-           'com.apple.mobile.wireless_lockdown',  # < iOS 4.0+
-           'com.apple.fairplay',
-           'com.apple.iTunes',
-           'com.apple.mobile.iTunes.store',
-           'com.apple.mobile.iTunes',
-           'com.apple.fmip',
-           'com.apple.Accessibility', ]
 
 DEFAULT_LABEL = 'pymobiledevice3'
 SERVICE_PORT = 62078
@@ -194,15 +161,6 @@ class LockdownClient(ABC, LockdownServiceProvider):
     @property
     def wifi_mac_address(self) -> str:
         return self.all_values.get('WiFiAddress')
-
-    @property
-    def all_domains(self) -> Mapping:
-        result = self.all_values
-
-        for domain in DOMAINS:
-            result.update({domain: self.get_value(domain)})
-
-        return result
 
     @property
     def short_info(self) -> Dict:
