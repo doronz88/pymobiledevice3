@@ -33,7 +33,6 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         self.peer_info: Optional[Mapping] = None
         self.lockdown: Optional[LockdownClient] = None
         self.all_values: Optional[Mapping] = None
-        self.all_domains: Optional[Mapping] = None
 
     @property
     def product_version(self) -> str:
@@ -58,7 +57,6 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             self.lockdown = create_using_remote(
                 self.start_lockdown_service('com.apple.mobile.lockdown.remote.untrusted'))
         self.all_values = self.lockdown.all_values
-        self.all_domains = self.lockdown.all_domains
 
     def get_value(self, domain: str = None, key: str = None):
         return self.lockdown.get_value(domain, key)
