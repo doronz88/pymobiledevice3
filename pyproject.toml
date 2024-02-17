@@ -3,7 +3,7 @@ name = "pymobiledevice3"
 description = "Pure python3 implementation for working with iDevices (iPhone, etc...)"
 readme = "README.md"
 requires-python = ">=3.8"
-license = { file = "LICENSE" }
+license = { text = "GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007" }
 keywords = ["ios", "protocol", "lockdownd", "instruments", "automation", "cli", "afc"]
 authors = [
     { name = "doronz88", email = "doron88@gmail.com" },
