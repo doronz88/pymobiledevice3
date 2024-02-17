@@ -2,6 +2,7 @@ import click
 
 from pymobiledevice3.cli.cli_common import Command
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell
 
 
@@ -25,18 +26,18 @@ def afc_shell(service_provider: LockdownClient):
 
 @afc.command('pull', cls=Command)
 @click.argument('remote_file', type=click.Path(exists=False))
-@click.argument('local_file', type=click.File('wb'))
-def afc_pull(service_provider: LockdownClient, remote_file, local_file):
+@click.argument('local_file', type=click.Path(exists=False))
+def afc_pull(service_provider: LockdownServiceProvider, remote_file: str, local_file: str) -> None:
     """ pull remote file from /var/mobile/Media """
-    local_file.write(AfcService(lockdown=service_provider).get_file_contents(remote_file))
+    AfcService(lockdown=service_provider).pull(remote_file, local_file)
 
 
 @afc.command('push', cls=Command)
-@click.argument('local_file', type=click.File('rb'))
+@click.argument('local_file', type=click.Path(exists=False))
 @click.argument('remote_file', type=click.Path(exists=False))
-def afc_push(service_provider: LockdownClient, local_file, remote_file):
+def afc_push(service_provider: LockdownServiceProvider, local_file: str, remote_file: str) -> None:
     """ push local file into /var/mobile/Media """
-    AfcService(lockdown=service_provider).set_file_contents(remote_file, local_file.read())
+    AfcService(lockdown=service_provider).push(local_file, remote_file)
 
 
 @afc.command('ls', cls=Command)
