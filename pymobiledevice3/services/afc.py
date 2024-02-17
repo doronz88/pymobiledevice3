@@ -839,7 +839,7 @@ class AfcShell:
                 print(posixpath.join(root, name))
 
     def _do_cat(self, filename: str):
-        print(self.afc.get_file_contents(self.relative_path(filename)))
+        print(try_decode(self.afc.get_file_contents(self.relative_path(filename))))
 
     def _do_rm(self, file: Annotated[List[str], Arg(nargs='+', completer=path_completer)]):
         for filename in file:
