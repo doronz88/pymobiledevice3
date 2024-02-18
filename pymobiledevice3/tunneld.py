@@ -3,7 +3,6 @@ import dataclasses
 import logging
 import os
 import signal
-import sys
 import traceback
 from contextlib import asynccontextmanager, suppress
 from typing import Dict, List, Optional, Tuple
@@ -11,10 +10,9 @@ from typing import Dict, List, Optional, Tuple
 import fastapi
 import uvicorn
 from fastapi import FastAPI
-from ifaddr import get_adapters
 from packaging.version import Version
 
-from pymobiledevice3.remote.bonjour import query_bonjour
+from pymobiledevice3.remote.bonjour import async_get_remoted_addresses, get_ncm_potential_addresses
 from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.core_device_tunnel_service import TunnelResult
 from pymobiledevice3.remote.module_imports import start_tunnel
@@ -25,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 # bugfix: after the device reboots, it might take some time for remoted to start answering the bonjour queries
 REATTEMPT_INTERVAL = 5
+MAX_REATTEMPTS = 5
 
 
 @dataclasses.dataclass
@@ -49,12 +48,7 @@ class TunneldCore:
     async def monitor_adapters(self):
         previous_ips = []
         while True:
-            if sys.platform == 'win32':
-                current_ips = [f'{adapter.ips[0].ip[0]}%{adapter.ips[0].ip[2]}' for adapter in get_adapters() if
-                               adapter.ips[0].is_IPv6]
-            else:
-                current_ips = [f'{adapter.ips[0].ip[0]}%{adapter.nice_name}' for adapter in get_adapters() if
-                               adapter.ips[0].is_IPv6]
+            current_ips = get_ncm_potential_addresses()
 
             added = [ip for ip in current_ips if ip not in previous_ips]
             removed = [ip for ip in previous_ips if ip not in current_ips]
@@ -79,22 +73,19 @@ class TunneldCore:
     async def handle_new_ip(self, ip: str):
         tun = None
         try:
-            while True:
+            addresses = None
+            for i in range(MAX_REATTEMPTS):
                 # browse the adapter for CoreDevices
-                query = query_bonjour(ip)
-
-                # validate a CoreDevice was indeed found
-                await asyncio.sleep(1)
-
-                # close zerconf
-                query.service_browser.cancel()
-                query.zc.close()
-
-                addresses = query.listener.addresses
+                addresses = await async_get_remoted_addresses(ips=[ip])
                 if addresses:
                     break
                 logger.debug(f'No addresses found for: {ip}')
                 await asyncio.sleep(REATTEMPT_INTERVAL)
+
+            if addresses is None:
+                logger.debug(f'giving up on {ip}')
+                raise asyncio.CancelledError()
+
             peer_address = addresses[0]
 
             # establish an untrusted RSD handshake
@@ -116,6 +107,7 @@ class TunneldCore:
                 self.tunnel_tasks[ip].tunnel = tun
                 logger.info(f'Created tunnel --rsd {tun.address} {tun.port}')
                 await tun.client.wait_closed()
+                rsd.close()
 
         except asyncio.CancelledError:
             pass
