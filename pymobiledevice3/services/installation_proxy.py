@@ -1,6 +1,10 @@
 import os
-import posixpath
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Callable, List, Mapping, Optional
+from zipfile import ZIP_DEFLATED, ZipFile
+
+from parameter_decorators import str_to_path
 
 from pymobiledevice3.exceptions import AppInstallError
 from pymobiledevice3.lockdown import LockdownClient
@@ -9,6 +13,22 @@ from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 GET_APPS_ADDITIONAL_INFO = {'ReturnAttributes': ['CFBundleIdentifier', 'StaticDiskUsage', 'DynamicDiskUsage']}
+
+TEMP_REMOTE_IPA_FILE = '/pymobiledevice3.ipa'
+
+
+def create_ipa_contents_from_directory(directory: str) -> bytes:
+    payload_prefix = 'Payload/' + os.path.basename(directory)
+    with TemporaryDirectory() as temp_dir:
+        zip_path = Path(temp_dir) / 'ipa'
+        with ZipFile(zip_path, 'w', ZIP_DEFLATED) as zip_file:
+            for root, dirs, files in os.walk(directory):
+                for file in files:
+                    full_path = Path(root) / file
+                    full_path.touch()
+                    zip_file.write(full_path,
+                                   arcname=f'{payload_prefix}/{os.path.relpath(full_path, directory)}')
+        return zip_path.read_bytes()
 
 
 class InstallationProxyService(LockdownService):
@@ -68,18 +88,24 @@ class InstallationProxyService(LockdownService):
         """ uninstall given bundle_identifier """
         self.send_cmd_for_bundle_identifier(bundle_identifier, 'Uninstall', options, handler, args)
 
-    def install_from_local(self, ipa_path: str, cmd='Install', options: Mapping = None, handler: Callable = None,
-                           *args) -> None:
+    @str_to_path('ipa_or_app_path')
+    def install_from_local(self, ipa_or_app_path: Path, cmd: str = 'Install', options: Optional[Mapping] = None,
+                           handler: Callable = None, *args) -> None:
         """ upload given ipa onto device and install it """
         if options is None:
             options = {}
-        remote_path = posixpath.join('/', os.path.basename(ipa_path))
+        if ipa_or_app_path.is_dir():
+            # treat as app, convert into an ipa
+            ipa_contents = create_ipa_contents_from_directory(str(ipa_or_app_path))
+        else:
+            # treat as ipa
+            ipa_contents = ipa_or_app_path.read_bytes()
+
         with AfcService(self.lockdown) as afc:
-            afc.set_file_contents(remote_path, open(ipa_path, 'rb').read())
-        cmd = {'Command': cmd,
-               'ClientOptions': options,
-               'PackagePath': remote_path}
-        self.service.send_plist(cmd)
+            afc.set_file_contents(TEMP_REMOTE_IPA_FILE, ipa_contents)
+        self.service.send_plist({'Command': cmd,
+                                 'ClientOptions': options,
+                                 'PackagePath': TEMP_REMOTE_IPA_FILE})
         self._watch_completion(handler, args)
 
     def check_capabilities_match(self, capabilities: Mapping = None, options: Mapping = None) -> Mapping:

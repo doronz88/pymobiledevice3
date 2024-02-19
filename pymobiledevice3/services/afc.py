@@ -520,13 +520,13 @@ class AfcService(LockdownService):
         return d
 
     @path_to_str()
-    def set_file_contents(self, filename, data):
+    def set_file_contents(self, filename: str, data: bytes) -> None:
         h = self.fopen(filename, 'w')
         self.fwrite(h, data)
         self.fclose(h)
 
     @path_to_str()
-    def walk(self, dirname):
+    def walk(self, dirname: str):
         dirs = []
         files = []
         for fd in self.listdir(dirname):
