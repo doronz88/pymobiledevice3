@@ -4,7 +4,7 @@ import tempfile
 import click
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.cli.cli_common import USBMUX_OPTION_HELP, print_json
+from pymobiledevice3.cli.cli_common import USBMUX_OPTION_HELP, BaseCommand, print_json
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.tcp_forwarder import UsbmuxTcpForwarder
 
@@ -46,7 +46,7 @@ def usbmux_forward(usbmux_address: str, src_port: int, dst_port: int, serial: st
         forwarder.start()
 
 
-@usbmux_cli.command('list')
+@usbmux_cli.command('list', cls=BaseCommand)
 @click.option('usbmux_address', '--usbmux', help=USBMUX_OPTION_HELP)
 @click.option('-u', '--usb', is_flag=True, help='show only usb devices')
 @click.option('-n', '--network', is_flag=True, help='show only network devices')
