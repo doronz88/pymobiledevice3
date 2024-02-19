@@ -1,6 +1,5 @@
 import logging
 import posixpath
-from datetime import datetime
 from typing import Generator, List
 
 from pycrashreport.crash_report import get_crash_report_from_buf
@@ -161,7 +160,8 @@ class CrashReportsManager:
                     if filename not in excluded_temp_files and 'IN_PROGRESS_' in filename:
                         for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
                             if filename.endswith(ext):
-                                delta = self.lockdown.date - self.afc.stat(posixpath.join(SYSDIAGNOSE_DIR,filename))['st_mtime']
+                                delta = self.lockdown.date - \
+                                    self.afc.stat(posixpath.join(SYSDIAGNOSE_DIR, filename))['st_mtime']
                                 # Ignores IN_PROGRESS sysdiagnose files older than the defined time to live
                                 if delta.total_seconds() < SYSDIAGNOSE_IN_PROGRESS_MAX_TTL_SECS:
                                     sysdiagnose_filename = filename.rsplit(ext)[0]
