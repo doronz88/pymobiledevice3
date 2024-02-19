@@ -14,6 +14,7 @@ from pymobiledevice3.services.os_trace import OsTraceService
 
 SYSDIAGNOSE_PROCESS_NAMES = ('sysdiagnose', 'sysdiagnosed')
 SYSDIAGNOSE_DIR = 'DiagnosticLogs/sysdiagnose'
+SYSDIAGNOSE_IN_PROGRESS_MAX_TTL_SECS = 600
 
 # on iOS17, we need to wait for a moment before tryint to fetch the sysdiagnose archive
 IOS17_SYSDIAGNOSE_DELAY = 1
@@ -150,18 +151,26 @@ class CrashReportsManager:
 
     def _get_new_sysdiagnose_filename(self) -> str:
         sysdiagnose_filename = None
+        excluded_temp_files = []
 
         while sysdiagnose_filename is None:
             try:
                 for filename in self.afc.listdir(SYSDIAGNOSE_DIR):
                     # search for an IN_PROGRESS archive
-                    if 'IN_PROGRESS_' in filename:
+                    if filename not in excluded_temp_files and 'IN_PROGRESS_' in filename:
                         for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
                             if filename.endswith(ext):
-                                sysdiagnose_filename = filename.rsplit(ext)[0]
-                                sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
-                                sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
-                                return posixpath.join(SYSDIAGNOSE_DIR,  sysdiagnose_filename)
+                                delta = self.lockdown.date - \
+                                    self.afc.stat(posixpath.join(SYSDIAGNOSE_DIR, filename))['st_mtime']
+                                # Ignores IN_PROGRESS sysdiagnose files older than the defined time to live
+                                if delta.total_seconds() < SYSDIAGNOSE_IN_PROGRESS_MAX_TTL_SECS:
+                                    sysdiagnose_filename = filename.rsplit(ext)[0]
+                                    sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
+                                    sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
+                                    return posixpath.join(SYSDIAGNOSE_DIR,  sysdiagnose_filename)
+                                else:
+                                    self.logger.warning(f"Old sysdiagnose temp file ignored {filename}")
+                                    excluded_temp_files.append(filename)
             except AfcException:
                 pass
 
