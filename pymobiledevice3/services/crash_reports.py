@@ -161,7 +161,7 @@ class CrashReportsManager:
                         for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
                             if filename.endswith(ext):
                                 delta = datetime.now() - self.afc.stat(posixpath.join(SYSDIAGNOSE_DIR,filename))['st_mtime']
-                                # Ignores IN_PROGRESS sysdiagnose files older than 30min
+                                # Ignores IN_PROGRESS sysdiagnose files older than 10min
                                 if delta.total_seconds() < 600:
                                     sysdiagnose_filename = filename.rsplit(ext)[0]
                                     sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
