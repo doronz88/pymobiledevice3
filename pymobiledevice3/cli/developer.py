@@ -5,6 +5,7 @@ import os
 import posixpath
 import shlex
 import signal
+import sys
 from collections import namedtuple
 from dataclasses import asdict
 from datetime import datetime
@@ -768,7 +769,7 @@ def accessibility_run_audit(service_provider: LockdownServiceProvider, test_type
     """ runs accessibility audit tests """
     param = list(test_types)
     audit_issues = AccessibilityAudit(service_provider).run_audit(param)
-    print_json([audit_issue.json() for audit_issue in audit_issues], False) 
+    print_json([audit_issue.json() for audit_issue in audit_issues], False)
 
 @accessibility.command('supported-audit-types', cls=Command)
 def accessibility_supported_audit_types(service_provider: LockdownServiceProvider):
@@ -924,6 +925,7 @@ def debugserver_start_server(service_provider: LockdownClient, local_port: Optio
     if local_port is not None:
         print(DEBUGSERVER_CONNECTION_STEPS.format(host='127.0.0.1', port=local_port))
         print('Started port forwarding. Press Ctrl-C to close this shell when done')
+        sys.stdout.flush()
         LockdownTcpForwarder(service_provider, local_port, service_name).start()
     elif Version(service_provider.product_version) >= Version('17.0'):
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
