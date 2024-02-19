@@ -20,7 +20,7 @@ class AmfiService:
         """ create an empty file at AMFIShowOverridePath """
         service = self._lockdown.start_lockdown_service(self.SERVICE_NAME)
         resp = service.send_recv_plist({'action': 0})
-        if not resp['status']:
+        if not resp.get('success'):
             raise PyMobileDevice3Exception(f'create_AMFIShowOverridePath() failed with: {resp}')
 
     def enable_developer_mode(self, enable_post_restart=True):
