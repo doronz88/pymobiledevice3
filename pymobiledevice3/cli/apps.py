@@ -48,10 +48,10 @@ def uninstall(service_provider: LockdownClient, bundle_id):
 
 
 @apps.command('install', cls=Command)
-@click.argument('ipa_path', type=click.Path(exists=True))
-def install(service_provider: LockdownClient, ipa_path):
-    """ install given .ipa """
-    InstallationProxyService(lockdown=service_provider).install_from_local(ipa_path)
+@click.argument('ipa_or_app_path', type=click.Path(exists=True))
+def install(service_provider: LockdownServiceProvider, ipa_or_app_path: str) -> None:
+    """ install given .ipa/.app """
+    InstallationProxyService(lockdown=service_provider).install_from_local(ipa_or_app_path)
 
 
 @apps.command('afc', cls=Command)
