@@ -1,5 +1,6 @@
 import logging
 import posixpath
+from datetime import datetime
 from typing import Generator, List
 
 from pycrashreport.crash_report import get_crash_report_from_buf
@@ -150,22 +151,25 @@ class CrashReportsManager:
 
     def _get_new_sysdiagnose_filename(self) -> str:
         sysdiagnose_filename = None
-        build_version = self.lockdown.short_info['BuildVersion']
+        excluded_temp_files = []
 
         while sysdiagnose_filename is None:
             try:
                 for filename in self.afc.listdir(SYSDIAGNOSE_DIR):
                     # search for an IN_PROGRESS archive
-                    if 'IN_PROGRESS_' in filename:
-                            for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
-                                if filename.endswith(ext):
-                                    if build_version in filename:
-                                        sysdiagnose_filename = filename.rsplit(ext)[0]
-                                        sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
-                                        sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
-                                        return posixpath.join(SYSDIAGNOSE_DIR,  sysdiagnose_filename)
-                                    else:
-                                        self.logger.warning(f"Existing old sysdiagnose temp file ignored {filename}")
+                    if filename not in excluded_temp_files and 'IN_PROGRESS_' in filename:
+                        for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
+                            if filename.endswith(ext):
+                                delta = datetime.now() - self.afc.stat(posixpath.join(SYSDIAGNOSE_DIR,filename))['st_mtime']
+                                # Ignores IN_PROGRESS sysdiagnose files older than 30min
+                                if delta.total_seconds() < 600:
+                                    sysdiagnose_filename = filename.rsplit(ext)[0]
+                                    sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
+                                    sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
+                                    return posixpath.join(SYSDIAGNOSE_DIR,  sysdiagnose_filename)
+                                else:
+                                    self.logger.warning(f"Old sysdiagnose temp file ignored {filename}")
+                                    excluded_temp_files.append(filename)
             except AfcException:
                 pass
 
