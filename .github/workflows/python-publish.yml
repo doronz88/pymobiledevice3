@@ -29,6 +29,7 @@ jobs:
           twine upload dist/*
 
   update-formula:
+    needs: deploy
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Tap Repository
