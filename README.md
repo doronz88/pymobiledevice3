@@ -64,14 +64,7 @@ Main features include:
 
 # Installation
 
-You can install from brew:
-
-```shell
-brew tap doronz88/tap
-brew install pymobiledevice3
-```
-
-Or from PyPi:
+You can install from PyPi:
 
 ```shell
 python3 -m pip install -U pymobiledevice3
