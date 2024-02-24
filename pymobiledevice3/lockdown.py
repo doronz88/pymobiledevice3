@@ -107,7 +107,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
     @classmethod
     def create(cls, service: LockdownServiceConnection, identifier: str = None, system_buid: str = SYSTEM_BUID,
-               label: str = DEFAULT_LABEL, autopair: bool = True, pair_timeout: int = None, local_hostname: str = None,
+               label: str = DEFAULT_LABEL, autopair: bool = True, pair_timeout: float = None, local_hostname: str = None,
                pair_record: Mapping = None, pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT,
                **cls_specific_args):
         """
@@ -321,7 +321,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return True
 
     @_reconnect_on_remote_close
-    def pair(self, timeout: int = None) -> None:
+    def pair(self, timeout: float = None) -> None:
         self.device_public_key = self.get_value('', 'DevicePublicKey')
         if not self.device_public_key:
             self.logger.error('Unable to retrieve DevicePublicKey')
@@ -458,7 +458,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         finally:
             os.unlink(filename)
 
-    def _handle_autopair(self, autopair: bool, timeout: int) -> None:
+    def _handle_autopair(self, autopair: bool, timeout: float) -> None:
         if self.validate_pairing():
             return
 
@@ -503,7 +503,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         return response
 
-    def _request_pair(self, pair_options: Mapping, timeout: int = None) -> Mapping:
+    def _request_pair(self, pair_options: Mapping, timeout: float = None) -> Mapping:
         try:
             return self._request('Pair', pair_options)
         except PairingDialogResponsePendingError:
@@ -597,10 +597,10 @@ class RemoteLockdownClient(LockdownClient):
         # The RemoteXPC version of lockdown doesn't support pairing operations
         return None
 
-    def pair(self, timeout: int = None) -> None:
+    def pair(self, timeout: float = None) -> None:
         raise NotImplementedError('RemoteXPC lockdown version does not support pairing operations')
 
-    def unpair(self, timeout: int = None) -> None:
+    def unpair(self, timeout: float = None) -> None:
         raise NotImplementedError('RemoteXPC lockdown version does not support pairing operations')
 
     def __init__(self, service: LockdownServiceConnection, host_id: str, identifier: str = None,
@@ -623,7 +623,7 @@ class RemoteLockdownClient(LockdownClient):
 
 
 def create_using_usbmux(serial: str = None, identifier: str = None, label: str = DEFAULT_LABEL, autopair: bool = True,
-                        connection_type: str = None, pair_timeout: int = None, local_hostname: str = None,
+                        connection_type: str = None, pair_timeout: float = None, local_hostname: str = None,
                         pair_record: Mapping = None, pairing_records_cache_folder: Path = None,
                         port: int = SERVICE_PORT, usbmux_address: Optional[str] = None) -> UsbmuxLockdownClient:
     """
@@ -662,7 +662,7 @@ def create_using_usbmux(serial: str = None, identifier: str = None, label: str =
 
 
 def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT_LABEL, autopair: bool = True,
-                     pair_timeout: int = None, local_hostname: str = None, pair_record: Mapping = None,
+                     pair_timeout: float = None, local_hostname: str = None, pair_record: Mapping = None,
                      pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT,
                      keep_alive: bool = False) -> TcpLockdownClient:
     """
@@ -689,7 +689,7 @@ def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT
 
 
 def create_using_remote(service: LockdownServiceConnection, identifier: str = None, label: str = DEFAULT_LABEL,
-                        autopair: bool = True, pair_timeout: int = None, local_hostname: str = None,
+                        autopair: bool = True, pair_timeout: float = None, local_hostname: str = None,
                         pair_record: Mapping = None, pairing_records_cache_folder: Path = None,
                         port: int = SERVICE_PORT) -> RemoteLockdownClient:
     """

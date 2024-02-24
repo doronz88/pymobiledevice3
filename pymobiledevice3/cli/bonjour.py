@@ -25,7 +25,7 @@ def bonjour_cli():
 @click.option('--timeout', default=DEFAULT_BROWSE_TIMEOUT, type=click.INT)
 @click.option('--pair-records', type=click.Path(dir_okay=True, file_okay=False, exists=True),
               help='pair records to attempt validation with')
-def cli_browse(timeout: int, pair_records: str):
+def cli_browse(timeout: float, pair_records: str):
     """ browse devices over bonjour """
     records = []
     if pair_records is not None:
