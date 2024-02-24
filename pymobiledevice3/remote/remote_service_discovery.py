@@ -128,7 +128,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
                 f'UDID:{self.udid}>')
 
 
-def get_remoted_devices(timeout: int = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevice]:
+def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevice]:
     result = []
     for hostname in get_remoted_addresses(timeout):
         with RemoteServiceDiscoveryService((hostname, RSD_PORT)) as rsd:
@@ -138,7 +138,7 @@ def get_remoted_devices(timeout: int = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevic
     return result
 
 
-def get_remoted_device(udid: str, timeout: int = DEFAULT_BONJOUR_TIMEOUT) -> RSDDevice:
+def get_remoted_device(udid: str, timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> RSDDevice:
     devices = get_remoted_devices(timeout=timeout)
     for device in devices:
         if device.udid == udid:

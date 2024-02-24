@@ -66,7 +66,7 @@ class BonjourListener(ServiceListener):
                                                       lockdown=lockdown)
 
 
-def browse(timeout: int, interfaces: InterfacesType = InterfaceChoice.All, pair_records: List[Mapping] = None) -> \
+def browse(timeout: float, interfaces: InterfacesType = InterfaceChoice.All, pair_records: List[Mapping] = None) -> \
         Mapping[str, BonjourDevice]:
     with Zeroconf(interfaces=interfaces) as zc:
         listener = BonjourListener(pair_records=pair_records)

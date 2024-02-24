@@ -640,7 +640,7 @@ class CoreProfileSessionTap(Tap):
 
         return self.stack_shot
 
-    def dump(self, out: typing.BinaryIO, timeout: int = None):
+    def dump(self, out: typing.BinaryIO, timeout: float = None):
         """
         Dump data from core profile session to a file.
         :param out: File object to write data to.
