@@ -38,7 +38,8 @@ class RSDOption(Option):
         super().__init__(*args, **kwargs)
 
     def handle_parse_result(self, ctx, opts, args):
-        if len(opts) == 0 and isinstance(ctx.command, RSDCommand) and not (isinstance(ctx.command, Command)):
+        if (isinstance(ctx.command, RSDCommand) and not (isinstance(ctx.command, Command)) and
+                ('rsd_service_provider_using_tunneld' not in opts) and ('rsd_service_provider_manually' not in opts)):
             raise UsageError('Illegal usage: At least one is required [--rsd | --tunnel]')
         if self.mutually_exclusive.intersection(opts) and self.name in opts:
             raise UsageError(
