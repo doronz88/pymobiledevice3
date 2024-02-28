@@ -763,6 +763,7 @@ def accessibility():
     """ accessibility options. """
     pass
 
+
 @accessibility.command('run-audit', cls=Command)
 @click.argument('test_types', nargs=-1)
 def accessibility_run_audit(service_provider: LockdownServiceProvider, test_types):
@@ -770,6 +771,7 @@ def accessibility_run_audit(service_provider: LockdownServiceProvider, test_type
     param = list(test_types)
     audit_issues = AccessibilityAudit(service_provider).run_audit(param)
     print_json([audit_issue.json() for audit_issue in audit_issues], False)
+
 
 @accessibility.command('supported-audit-types', cls=Command)
 def accessibility_supported_audit_types(service_provider: LockdownServiceProvider):
@@ -1051,6 +1053,14 @@ def core_device_get_device_info(service_provider: RemoteServiceDiscoveryService)
     """ Get device information """
     with DeviceInfoService(service_provider) as app_service:
         print_json(app_service.get_device_info())
+
+
+@core_device.command('query-mobilegestalt', cls=RSDCommand)
+@click.argument('key', nargs=-1, type=click.STRING)
+def core_device_query_mobilegestalt(service_provider: RemoteServiceDiscoveryService, key: List[str]):
+    """ Query MobileGestalt """
+    with DeviceInfoService(service_provider) as app_service:
+        print_json(app_service.query_mobilegestalt(list(key)))
 
 
 @core_device.command('get-lockstate', cls=RSDCommand)
