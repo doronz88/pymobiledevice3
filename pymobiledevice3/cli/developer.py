@@ -1055,6 +1055,13 @@ def core_device_get_device_info(service_provider: RemoteServiceDiscoveryService)
         print_json(app_service.get_device_info())
 
 
+@core_device.command('get-display-info', cls=RSDCommand)
+def core_device_get_display_info(service_provider: RemoteServiceDiscoveryService):
+    """ Get display information """
+    with DeviceInfoService(service_provider) as app_service:
+        print_json(app_service.get_display_info())
+
+
 @core_device.command('query-mobilegestalt', cls=RSDCommand)
 @click.argument('key', nargs=-1, type=click.STRING)
 def core_device_query_mobilegestalt(service_provider: RemoteServiceDiscoveryService, key: List[str]):
