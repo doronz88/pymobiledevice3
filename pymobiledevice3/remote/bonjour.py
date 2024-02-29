@@ -46,7 +46,7 @@ def query_bonjour(ip: str) -> BonjourQuery:
     return BonjourQuery(zc, service_browser, listener)
 
 
-def get_remoted_addresses(timeout: int = DEFAULT_BONJOUR_TIMEOUT) -> List[str]:
+def get_remoted_addresses(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[str]:
     if sys.platform == 'win32':
         ips = [f'{adapter.ips[0].ip[0]}%{adapter.ips[0].ip[2]}' for adapter in get_adapters() if adapter.ips[0].is_IPv6]
     else:

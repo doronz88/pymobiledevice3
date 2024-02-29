@@ -19,6 +19,12 @@ if os.path.exists(out_dir):
 
 PyInstaller.__main__.run([
     'path/to/file.py',
+    '--hidden-import=ipsw_parser',
+    '--hidden-import=zeroconf',
+    '--hidden-import=pyimg4',
+    '--hidden-import=zeroconf._utils.ipaddress',
+    '--hidden-import=zeroconf._handlers.answers',
+    '--copy-metadata=pyimg4',
     '--onefile'
 ])
 

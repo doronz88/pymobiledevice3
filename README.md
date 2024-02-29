@@ -1,7 +1,7 @@
 [![Python application](https://github.com/doronz88/pymobiledevice3/workflows/Python%20application/badge.svg)](https://github.com/doronz88/pymobiledevice3/actions/workflows/python-app.yml "Python application action")
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
 [![Downloads](https://static.pepy.tech/personalized-badge/pymobiledevice3?period=total&units=none&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/pymobiledevice3)
-
+[![Discord](https://img.shields.io/discord/1133265168051208214?logo=Discord&label=Discord)](https://discord.gg/52mZGC3JXJ)
 
 - [News](#news)
 - [Description](#description)
@@ -10,10 +10,11 @@
 - [Usage](#usage)
     * [Python API](#python-api)
     * [Working with developer tools (iOS >= 17.0)](#working-with-developer-tools-ios--170)
-  * [Tunneld](#tunneld)
-      + [Command Usage](#command-usage)
-      + [Using Tunneld](#using-tunneld)
-    * [Example](#example)
+    * [Tunneld](#tunneld)
+        + [Command Usage](#command-usage)
+        + [Using Tunneld](#using-tunneld)
+
+        * [Example](#example)
 - [The bits and bytes](#the-bits-and-bytes)
     * [Lockdown services](#lockdown-services)
         + [Implemented services](#implemented-services)
@@ -64,13 +65,13 @@ Main features include:
 
 # Installation
 
-Install the last released version using `pip`:
+You can install from PyPi:
 
 ```shell
 python3 -m pip install -U pymobiledevice3
 ```
 
-Or install the latest version from sources:
+Or install the latest version directly from sources:
 
 ```shell
 git clone git@github.com:doronz88/pymobiledevice3.git

@@ -20,6 +20,12 @@ class DeviceInfoService(CoreDeviceService):
         """
         return self.invoke('com.apple.coredevice.feature.getdeviceinfo', {})
 
+    def get_display_info(self) -> Mapping:
+        """
+        Get display information
+        """
+        return self.invoke('com.apple.coredevice.feature.getdisplayinfo', {})
+
     def query_mobilegestalt(self, keys: List[str]) -> Mapping:
         """
         Query MobileGestalt.
