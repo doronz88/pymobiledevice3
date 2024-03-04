@@ -10,7 +10,7 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 
 REMOTED_PATH = '/usr/libexec/remoted'
 
-TUNNELD_DEFAULT_ADDRESS = ('127.0.0.1', 5555)
+TUNNELD_DEFAULT_ADDRESS = ('127.0.0.1', 49151)
 
 
 def get_tunneld_devices(tunneld_address=TUNNELD_DEFAULT_ADDRESS) -> List[RemoteServiceDiscoveryService]:
