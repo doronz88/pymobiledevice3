@@ -355,6 +355,7 @@ class RSDRequiredError(PyMobileDevice3Exception):
     """ The requested action requires an RSD object """
     pass
 
+
 class SysdiagnoseTimeoutError(PyMobileDevice3Exception, TimeoutError):
     """ Timeout collecting new sysdiagnose archive """
     pass

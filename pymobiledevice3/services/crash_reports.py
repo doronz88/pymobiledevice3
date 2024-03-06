@@ -156,7 +156,7 @@ class CrashReportsManager:
                     break
                 elif self._check_timeout(end_time):
                     raise SysdiagnoseTimeoutError('Timeout waiting for sysdiagnose completion')
-                
+          
     def _get_new_sysdiagnose_filename(self, end_time: Optional[float] = None) -> str:
         sysdiagnose_filename = None
         excluded_temp_files = []
@@ -181,12 +181,13 @@ class CrashReportsManager:
                                     excluded_temp_files.append(filename)
             except AfcException:
                 pass
-            
+
             if self._check_timeout(end_time):
                 raise SysdiagnoseTimeoutError('Timeout finding in-progress sysdiagnose filename')
 
     def _check_timeout(self, end_time: Optional[float] = None) -> bool:
         return end_time is not None and time.monotonic() > end_time
+
 
 class CrashReportsShell(AfcShell):
     @classmethod
