@@ -1,5 +1,6 @@
 import glob
 import shutil
+import time
 
 import pytest
 
@@ -74,7 +75,7 @@ def test_pull(crash_manager, delete_test_dir):
 
 
 @pytest.mark.parametrize(
-    ('message', 'expected'),
+    ('message', 'return_value'),
     (
         ('sysdiagnose (full) complete', True),
         ('Sysdiagnose completed. File path: /foo/bar.tar.gz', True),
@@ -82,5 +83,13 @@ def test_pull(crash_manager, delete_test_dir):
         ('', False),
     )
 )
-def test_sysdiagnose_syslog_message_match_return_value(message, expected):
-    assert CrashReportsManager._sysdiagnose_complete_syslog_match(message) is expected
+def test_sysdiagnose_syslog_message_match_return_value(message, return_value):
+    assert CrashReportsManager._sysdiagnose_complete_syslog_match(message) is return_value
+
+
+@pytest.mark.parametrize(
+    ('end_time', 'return_value'),
+    ((-1, True), (0, True), (time.monotonic()+10, False), (None, False))
+)
+def test_check_timeout(crash_manager, end_time, return_value):
+    assert crash_manager._check_timeout(end_time) is return_value
