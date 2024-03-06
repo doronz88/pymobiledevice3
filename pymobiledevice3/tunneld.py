@@ -20,6 +20,7 @@ from pymobiledevice3.remote.core_device_tunnel_service import TunnelResult
 from pymobiledevice3.remote.module_imports import start_tunnel
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
 from pymobiledevice3.remote.utils import stop_remoted
+from pymobiledevice3.utils import asyncio_print_traceback
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,7 @@ class TunneldCore:
             # wait before re-iterating
             await asyncio.sleep(1)
 
+    @asyncio_print_traceback
     async def handle_new_ip(self, ip: str):
         rsd = None
         tun = None
@@ -137,7 +139,10 @@ class TunneldCore:
                 logger.info(f'disconnected from tunnel --rsd {tun.address} {tun.port}')
 
             if rsd is not None:
-                rsd.close()
+                try:
+                    rsd.close()
+                except OSError:
+                    pass
 
             if ip in self.tunnel_tasks:
                 # in case the tunnel was removed just now
