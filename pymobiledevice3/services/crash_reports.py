@@ -156,7 +156,7 @@ class CrashReportsManager:
                     break
                 elif self._check_timeout(end_time):
                     raise SysdiagnoseTimeoutError('Timeout waiting for sysdiagnose completion')
-          
+  
     def _get_new_sysdiagnose_filename(self, end_time: Optional[float] = None) -> str:
         sysdiagnose_filename = None
         excluded_temp_files = []
