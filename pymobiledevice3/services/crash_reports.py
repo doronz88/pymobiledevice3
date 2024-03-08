@@ -142,7 +142,7 @@ class CrashReportsManager:
             end_time = time.monotonic() + timeout
         sysdiagnose_filename = self._get_new_sysdiagnose_filename(end_time)
         self.logger.info('sysdiagnose tarball creation has been started')
-        self._wait_for_sysdiagnose_to_finish()
+        self._wait_for_sysdiagnose_to_finish(end_time)
         self.pull(out, entry=sysdiagnose_filename, erase=erase)
 
     @staticmethod
