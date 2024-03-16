@@ -189,7 +189,6 @@ class AccessibilityAudit(RemoteServer):
         return self.recv_plist()[0]
 
     def run_audit(self, value: typing.List) -> typing.List[AXAuditIssue_v1]:
-        
         if self.product_version >= Version('15.0'):
             self.broadcast.deviceBeginAuditTypes_(MessageAux().append_obj(value))
         else:
