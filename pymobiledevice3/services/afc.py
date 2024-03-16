@@ -520,13 +520,13 @@ class AfcService(LockdownService):
         return d
 
     @path_to_str()
-    def set_file_contents(self, filename, data):
+    def set_file_contents(self, filename: str, data: bytes) -> None:
         h = self.fopen(filename, 'w')
         self.fwrite(h, data)
         self.fclose(h)
 
     @path_to_str()
-    def walk(self, dirname):
+    def walk(self, dirname: str):
         dirs = []
         files = []
         for fd in self.listdir(dirname):
@@ -839,7 +839,7 @@ class AfcShell:
                 print(posixpath.join(root, name))
 
     def _do_cat(self, filename: str):
-        print(self.afc.get_file_contents(self.relative_path(filename)))
+        print(try_decode(self.afc.get_file_contents(self.relative_path(filename))))
 
     def _do_rm(self, file: Annotated[List[str], Arg(nargs='+', completer=path_completer)]):
         for filename in file:

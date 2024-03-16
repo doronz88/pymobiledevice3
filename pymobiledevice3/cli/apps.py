@@ -22,26 +22,22 @@ def apps():
 
 
 @apps.command('list', cls=Command)
-@click.option('--color/--no-color', default=True)
 @click.option('app_type', '-t', '--type', type=click.Choice(['System', 'User', 'Hidden', 'Any']), default='Any',
               help='include only applications of given type')
 @click.option('--calculate-sizes/--no-calculate-size', default=False)
-def apps_list(service_provider: LockdownServiceProvider, color: bool, app_type: str, calculate_sizes: bool) -> None:
+def apps_list(service_provider: LockdownServiceProvider, app_type: str, calculate_sizes: bool) -> None:
     """ list installed apps """
     print_json(InstallationProxyService(lockdown=service_provider).get_apps(application_type=app_type,
-                                                                            calculate_sizes=calculate_sizes),
-               colored=color)
+                                                                            calculate_sizes=calculate_sizes))
 
 
 @apps.command('query', cls=Command)
 @click.argument('bundle_identifiers', nargs=-1)
-@click.option('--color/--no-color', default=True)
 @click.option('--calculate-sizes/--no-calculate-size', default=False)
-def apps_query(service_provider: LockdownServiceProvider, bundle_identifiers: List[str], color: bool,
-               calculate_sizes: bool) -> None:
+def apps_query(service_provider: LockdownServiceProvider, bundle_identifiers: List[str], calculate_sizes: bool) -> None:
     """ query installed apps """
     print_json(InstallationProxyService(lockdown=service_provider)
-               .get_apps(calculate_sizes=calculate_sizes, bundle_identifiers=bundle_identifiers), colored=color)
+               .get_apps(calculate_sizes=calculate_sizes, bundle_identifiers=bundle_identifiers))
 
 
 @apps.command('uninstall', cls=Command)
@@ -52,10 +48,10 @@ def uninstall(service_provider: LockdownClient, bundle_id):
 
 
 @apps.command('install', cls=Command)
-@click.argument('ipa_path', type=click.Path(exists=True))
-def install(service_provider: LockdownClient, ipa_path):
-    """ install given .ipa """
-    InstallationProxyService(lockdown=service_provider).install_from_local(ipa_path)
+@click.argument('ipa_or_app_path', type=click.Path(exists=True))
+def install(service_provider: LockdownServiceProvider, ipa_or_app_path: str) -> None:
+    """ install given .ipa/.app """
+    InstallationProxyService(lockdown=service_provider).install_from_local(ipa_or_app_path)
 
 
 @apps.command('afc', cls=Command)

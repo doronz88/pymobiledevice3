@@ -12,7 +12,7 @@ __all__ = [
     'DeveloperModeError', 'ProfileError', 'IRecvError', 'IRecvNoDeviceConnectedError',
     'NoDeviceSelectedError', 'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
     'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError', 'CoreDeviceError',
-    'AccessDeniedError', 'RSDRequiredError',
+    'AccessDeniedError', 'RSDRequiredError', 'SysdiagnoseTimeoutError',
 ]
 
 from typing import List, Optional
@@ -346,6 +346,16 @@ class NotEnoughDiskSpaceError(PyMobileDevice3Exception):
     pass
 
 
+class DeprecationError(PyMobileDevice3Exception):
+    """ The requested action/service/method is deprecated """
+    pass
+
+
 class RSDRequiredError(PyMobileDevice3Exception):
     """ The requested action requires an RSD object """
+    pass
+
+
+class SysdiagnoseTimeoutError(PyMobileDevice3Exception, TimeoutError):
+    """ Timeout collecting new sysdiagnose archive """
     pass

@@ -19,7 +19,7 @@ packaging
 pygnuutils>=0.0.7
 cryptography>=41.0.1
 pycrashreport>=1.2.2
-fastapi[all]
+fastapi[all]>=0.93.0
 uvicorn>=0.15.0
 starlette
 wsproto
@@ -38,6 +38,7 @@ developer_disk_image>=0.0.2
 opack
 psutil
 pytun-pmd3>=1.0.0 ; platform_system != "Windows"
+pywintunx-pmd3>=1.0.2 ; platform_system == "Windows"
 aiofiles
 prompt_toolkit
-sslpsk-pmd3>=1.0.2
+sslpsk-pmd3>=1.0.3

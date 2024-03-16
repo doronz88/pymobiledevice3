@@ -1,7 +1,7 @@
 [![Python application](https://github.com/doronz88/pymobiledevice3/workflows/Python%20application/badge.svg)](https://github.com/doronz88/pymobiledevice3/actions/workflows/python-app.yml "Python application action")
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
 [![Downloads](https://static.pepy.tech/personalized-badge/pymobiledevice3?period=total&units=none&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/pymobiledevice3)
-
+[![Discord](https://img.shields.io/discord/1133265168051208214?logo=Discord&label=Discord)](https://discord.gg/52mZGC3JXJ)
 
 - [News](#news)
 - [Description](#description)
@@ -10,10 +10,11 @@
 - [Usage](#usage)
     * [Python API](#python-api)
     * [Working with developer tools (iOS >= 17.0)](#working-with-developer-tools-ios--170)
-  * [Tunneld](#tunneld)
-      + [Command Usage](#command-usage)
-      + [Using Tunneld](#using-tunneld)
-    * [Example](#example)
+    * [Tunneld](#tunneld)
+        + [Command Usage](#command-usage)
+        + [Using Tunneld](#using-tunneld)
+
+        * [Example](#example)
 - [The bits and bytes](#the-bits-and-bytes)
     * [Lockdown services](#lockdown-services)
         + [Implemented services](#implemented-services)
@@ -64,13 +65,13 @@ Main features include:
 
 # Installation
 
-Install the last released version using `pip`:
+You can install from PyPi:
 
 ```shell
 python3 -m pip install -U pymobiledevice3
 ```
 
-Or install the latest version from sources:
+Or install the latest version directly from sources:
 
 ```shell
 git clone git@github.com:doronz88/pymobiledevice3.git
@@ -176,14 +177,19 @@ with RemoteServiceDiscoveryService((host, port)) as rsd:
 
 ## Working with developer tools (iOS >= 17.0)
 
-> **NOTE:** Currently, this is only supported on macOS
+> **NOTE:** Currently, this is only supported on macOS & Windows
 
 Starting at iOS 17.0, Apple introduced the new CoreDevice framework to work with iOS devices. This framework relies on
 the [RemoteXPC](misc/RemoteXPC.md) protocol. In order to communicate with the developer services you'll be required to
 first create [trusted tunnel](misc/RemoteXPC.md#trusted-tunnel) as follows:
 
 ```shell
+# -- On macOS
 sudo python3 -m pymobiledevice3 remote start-tunnel
+
+# -- On windows 
+# Use a "run as administrator" shell 
+python3 -m pymobiledevice3 remote start-tunnel
 ```
 
 The root permissions are required since this will create a new TUN/TAP device which is a high privilege operation.
@@ -218,7 +224,12 @@ device is connected.
 To start the Tunneld Server, use the following command (with root privileges):
 
 ```bash
+# -- On macOS
 sudo python3 -m pymobiledevice3 remote tunneld
+
+# -- On windows 
+# Use a "run as administrator" shell 
+python3 -m pymobiledevice3 remote tunneld
 ```
 
 ### Using Tunneld

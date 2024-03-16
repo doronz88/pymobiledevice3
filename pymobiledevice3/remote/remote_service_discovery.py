@@ -33,7 +33,6 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         self.peer_info: Optional[Mapping] = None
         self.lockdown: Optional[LockdownClient] = None
         self.all_values: Optional[Mapping] = None
-        self.all_domains: Optional[Mapping] = None
 
     @property
     def product_version(self) -> str:
@@ -58,7 +57,6 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             self.lockdown = create_using_remote(
                 self.start_lockdown_service('com.apple.mobile.lockdown.remote.untrusted'))
         self.all_values = self.lockdown.all_values
-        self.all_domains = self.lockdown.all_domains
 
     def get_value(self, domain: str = None, key: str = None):
         return self.lockdown.get_value(domain, key)
@@ -130,7 +128,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
                 f'UDID:{self.udid}>')
 
 
-def get_remoted_devices(timeout: int = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevice]:
+def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevice]:
     result = []
     for hostname in get_remoted_addresses(timeout):
         with RemoteServiceDiscoveryService((hostname, RSD_PORT)) as rsd:
@@ -140,7 +138,7 @@ def get_remoted_devices(timeout: int = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevic
     return result
 
 
-def get_remoted_device(udid: str, timeout: int = DEFAULT_BONJOUR_TIMEOUT) -> RSDDevice:
+def get_remoted_device(udid: str, timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> RSDDevice:
     devices = get_remoted_devices(timeout=timeout)
     for device in devices:
         if device.udid == udid:

@@ -169,6 +169,12 @@ class NSMutableData:
         return archive_obj.decode('NS.data')
 
 
+class NSMutableString:
+    @staticmethod
+    def decode_archive(archive_obj: archiver.ArchivedObject):
+        return archive_obj.decode('NS.string')
+
+
 class XCTestConfiguration:
     _default = {
         # 'testBundleURL': UID(3),
@@ -235,6 +241,7 @@ archiver.update_class_map({'DTSysmonTapMessage': DTTapMessage,
                            'NSURL': NSURL,
                            'NSValue': NSValue,
                            'NSMutableData': NSMutableData,
+                           'NSMutableString': NSMutableString,
                            'XCTestConfiguration': XCTestConfiguration})
 
 archiver.Archive.inline_types = list(set(archiver.Archive.inline_types + [bytes]))

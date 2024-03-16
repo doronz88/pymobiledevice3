@@ -1,12 +1,13 @@
 import logging
 import posixpath
-from typing import Generator, List
+import time
+from typing import Generator, List, Optional
 
 from pycrashreport.crash_report import get_crash_report_from_buf
 from xonsh.built_ins import XSH
 from xonsh.cli_utils import Annotated, Arg
 
-from pymobiledevice3.exceptions import AfcException
+from pymobiledevice3.exceptions import AfcException, SysdiagnoseTimeoutError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell, path_completer
@@ -14,6 +15,7 @@ from pymobiledevice3.services.os_trace import OsTraceService
 
 SYSDIAGNOSE_PROCESS_NAMES = ('sysdiagnose', 'sysdiagnosed')
 SYSDIAGNOSE_DIR = 'DiagnosticLogs/sysdiagnose'
+SYSDIAGNOSE_IN_PROGRESS_MAX_TTL_SECS = 600
 
 # on iOS17, we need to wait for a moment before tryint to fetch the sysdiagnose archive
 IOS17_SYSDIAGNOSE_DELAY = 1
@@ -127,43 +129,64 @@ class CrashReportsManager:
                 else:
                     yield crash_report
 
-    def get_new_sysdiagnose(self, out: str, erase: bool = True) -> None:
+    def get_new_sysdiagnose(self, out: str, erase: bool = True, *, timeout: Optional[float] = None) -> None:
         """
         Monitor the creation of a newly created sysdiagnose archive and pull it
         :param out: filename
         :param erase: remove after pulling
+        :keyword timeout: Maximum time in seconds to wait for the completion of sysdiagnose archive
+            If None (default), waits indefinitely
         """
-        sysdiagnose_filename = self._get_new_sysdiagnose_filename()
+        end_time = None
+        if timeout is not None:
+            end_time = time.monotonic() + timeout
+        sysdiagnose_filename = self._get_new_sysdiagnose_filename(end_time)
         self.logger.info('sysdiagnose tarball creation has been started')
-        self._wait_for_sysdiagnose_to_finish()
+        self._wait_for_sysdiagnose_to_finish(end_time)
         self.pull(out, entry=sysdiagnose_filename, erase=erase)
 
     @staticmethod
     def _sysdiagnose_complete_syslog_match(message: str) -> bool:
         return message == 'sysdiagnose (full) complete' or 'Sysdiagnose completed' in message
 
-    def _wait_for_sysdiagnose_to_finish(self) -> None:
+    def _wait_for_sysdiagnose_to_finish(self, end_time: Optional[float] = None) -> None:
         with OsTraceService(self.lockdown) as os_trace:
             for entry in os_trace.syslog():
                 if CrashReportsManager._sysdiagnose_complete_syslog_match(entry.message):
                     break
+                elif self._check_timeout(end_time):
+                    raise SysdiagnoseTimeoutError('Timeout waiting for sysdiagnose completion')
 
-    def _get_new_sysdiagnose_filename(self) -> str:
+    def _get_new_sysdiagnose_filename(self, end_time: Optional[float] = None) -> str:
         sysdiagnose_filename = None
+        excluded_temp_files = []
 
         while sysdiagnose_filename is None:
             try:
                 for filename in self.afc.listdir(SYSDIAGNOSE_DIR):
                     # search for an IN_PROGRESS archive
-                    if 'IN_PROGRESS_' in filename:
+                    if filename not in excluded_temp_files and 'IN_PROGRESS_' in filename:
                         for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
                             if filename.endswith(ext):
-                                sysdiagnose_filename = filename.rsplit(ext)[0]
-                                sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
-                                sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
-                                return posixpath.join(SYSDIAGNOSE_DIR,  sysdiagnose_filename)
+                                delta = self.lockdown.date - \
+                                    self.afc.stat(posixpath.join(SYSDIAGNOSE_DIR, filename))['st_mtime']
+                                # Ignores IN_PROGRESS sysdiagnose files older than the defined time to live
+                                if delta.total_seconds() < SYSDIAGNOSE_IN_PROGRESS_MAX_TTL_SECS:
+                                    sysdiagnose_filename = filename.rsplit(ext)[0]
+                                    sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
+                                    sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
+                                    return posixpath.join(SYSDIAGNOSE_DIR,  sysdiagnose_filename)
+                                else:
+                                    self.logger.warning(f"Old sysdiagnose temp file ignored {filename}")
+                                    excluded_temp_files.append(filename)
             except AfcException:
                 pass
+
+            if self._check_timeout(end_time):
+                raise SysdiagnoseTimeoutError('Timeout finding in-progress sysdiagnose filename')
+
+    def _check_timeout(self, end_time: Optional[float] = None) -> bool:
+        return end_time is not None and time.monotonic() > end_time
 
 
 class CrashReportsShell(AfcShell):

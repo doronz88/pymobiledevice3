@@ -7,7 +7,8 @@ from typing import List, TextIO
 
 import click
 
-from pymobiledevice3.cli.cli_common import BaseCommand, RSDCommand, print_json, prompt_device_list, sudo_required
+from pymobiledevice3.cli.cli_common import BaseCommand, RSDCommand, print_json, prompt_device_list, sudo_required, \
+    user_requested_colored_output
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import NoDeviceConnectedError
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, get_remote_pairing_record_filename
@@ -19,6 +20,12 @@ from pymobiledevice3.remote.utils import TUNNELD_DEFAULT_ADDRESS, stop_remoted
 from pymobiledevice3.tunneld import TunneldRunner
 
 logger = logging.getLogger(__name__)
+
+
+def install_driver_if_required() -> None:
+    if sys.platform == 'win32':
+        import pywintunx_pmd3
+        pywintunx_pmd3.install_wetest_driver()
 
 
 def get_device_list() -> List[RemoteServiceDiscoveryService]:
@@ -57,6 +64,7 @@ def cli_tunneld(host: str, port: int, daemonize: bool, protocol: str):
     """ Start Tunneld service for remote tunneling """
     if not verify_tunnel_imports():
         return
+    install_driver_if_required()
     protocol = TunnelProtocol(protocol)
     tunneld_runner = partial(TunneldRunner.create, host, port, protocol)
     if daemonize:
@@ -74,9 +82,9 @@ def cli_tunneld(host: str, port: int, daemonize: bool, protocol: str):
 
 
 @remote_cli.command('browse', cls=BaseCommand)
-@click.option('--color/--no-color', default=True)
-def browse(color: bool):
+def browse():
     """ browse devices using bonjour """
+    install_driver_if_required()
     devices = []
     for rsd in get_device_list():
         devices.append({'address': rsd.service.address[0],
@@ -84,14 +92,14 @@ def browse(color: bool):
                         'UniqueDeviceID': rsd.peer_info['Properties']['UniqueDeviceID'],
                         'ProductType': rsd.peer_info['Properties']['ProductType'],
                         'OSVersion': rsd.peer_info['Properties']['OSVersion']})
-    print_json(devices, colored=color)
+    print_json(devices)
 
 
 @remote_cli.command('rsd-info', cls=RSDCommand)
-@click.option('--color/--no-color', default=True)
-def rsd_info(service_provider: RemoteServiceDiscoveryService, color: bool):
+def rsd_info(service_provider: RemoteServiceDiscoveryService):
     """ show info extracted from RSD peer """
-    print_json(service_provider.peer_info, colored=color)
+    install_driver_if_required()
+    print_json(service_provider.peer_info)
 
 
 async def tunnel_task(
@@ -107,25 +115,38 @@ async def tunnel_task(
         if script_mode:
             print(f'{tunnel_result.address} {tunnel_result.port}')
         else:
-            if secrets is not None:
-                print(click.style('Secrets: ', bold=True, fg='magenta') +
-                      click.style(secrets.name, bold=True, fg='white'))
-            print(click.style('UDID: ', bold=True, fg='yellow') +
-                  click.style(service_provider.udid, bold=True, fg='white'))
-            print(click.style('ProductType: ', bold=True, fg='yellow') +
-                  click.style(service_provider.product_type, bold=True, fg='white'))
-            print(click.style('ProductVersion: ', bold=True, fg='yellow') +
-                  click.style(service_provider.product_version, bold=True, fg='white'))
-            print(click.style('Interface: ', bold=True, fg='yellow') +
-                  click.style(tunnel_result.interface, bold=True, fg='white'))
-            print(click.style('Protocol: ', bold=True, fg='yellow') +
-                  click.style(tunnel_result.protocol, bold=True, fg='white'))
-            print(click.style('RSD Address: ', bold=True, fg='yellow') +
-                  click.style(tunnel_result.address, bold=True, fg='white'))
-            print(click.style('RSD Port: ', bold=True, fg='yellow') +
-                  click.style(tunnel_result.port, bold=True, fg='white'))
-            print(click.style('Use the follow connection option:\n', bold=True, fg='yellow') +
-                  click.style(f'--rsd {tunnel_result.address} {tunnel_result.port}', bold=True, fg='cyan'))
+            if user_requested_colored_output():
+                if secrets is not None:
+                    print(click.style('Secrets: ', bold=True, fg='magenta') +
+                          click.style(secrets.name, bold=True, fg='white'))
+                print(click.style('UDID: ', bold=True, fg='yellow') +
+                      click.style(service_provider.udid, bold=True, fg='white'))
+                print(click.style('ProductType: ', bold=True, fg='yellow') +
+                      click.style(service_provider.product_type, bold=True, fg='white'))
+                print(click.style('ProductVersion: ', bold=True, fg='yellow') +
+                      click.style(service_provider.product_version, bold=True, fg='white'))
+                print(click.style('Interface: ', bold=True, fg='yellow') +
+                      click.style(tunnel_result.interface, bold=True, fg='white'))
+                print(click.style('Protocol: ', bold=True, fg='yellow') +
+                      click.style(tunnel_result.protocol, bold=True, fg='white'))
+                print(click.style('RSD Address: ', bold=True, fg='yellow') +
+                      click.style(tunnel_result.address, bold=True, fg='white'))
+                print(click.style('RSD Port: ', bold=True, fg='yellow') +
+                      click.style(tunnel_result.port, bold=True, fg='white'))
+                print(click.style('Use the follow connection option:\n', bold=True, fg='yellow') +
+                      click.style(f'--rsd {tunnel_result.address} {tunnel_result.port}', bold=True, fg='cyan'))
+            else:
+                if secrets is not None:
+                    print(f'Secrets: {secrets.name}')
+                print(f'UDID: {service_provider.udid}')
+                print(f'ProductType: {service_provider.product_type}')
+                print(f'ProductVersion: {service_provider.product_version}')
+                print(f'Interface: {tunnel_result.interface}')
+                print(f'Protocol: {tunnel_result.protocol}')
+                print(f'RSD Address: {tunnel_result.address}')
+                print(f'RSD Port: {tunnel_result.port}')
+                print(f'Use the follow connection option:\n'
+                      f'--rsd {tunnel_result.address} {tunnel_result.port}')
         sys.stdout.flush()
         await tunnel_result.client.wait_closed()
         logger.info('tunnel was closed')
@@ -168,6 +189,7 @@ def select_device(udid: str) -> RemoteServiceDiscoveryService:
 @sudo_required
 def cli_start_tunnel(udid: str, secrets: TextIO, script_mode: bool, max_idle_timeout: float, protocol: str):
     """ start quic tunnel """
+    install_driver_if_required()
     protocol = TunnelProtocol(protocol)
     if not verify_tunnel_imports():
         return
@@ -190,5 +212,6 @@ def cli_delete_pair(udid: str):
 @click.argument('service_name')
 def cli_service(service_provider: RemoteServiceDiscoveryService, service_name: str):
     """ start an ipython shell for interacting with given service """
+    install_driver_if_required()
     with service_provider.start_remote_service(service_name) as service:
         service.shell()

@@ -1,4 +1,5 @@
 import dataclasses
+import sys
 import time
 from socket import AF_INET6, inet_ntop
 from typing import List
@@ -7,7 +8,7 @@ from ifaddr import get_adapters
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 from zeroconf.const import _TYPE_AAAA
 
-DEFAULT_BONJOUR_TIMEOUT = 1
+DEFAULT_BONJOUR_TIMEOUT = 1 if sys.platform != 'win32' else 2  # On Windows, it takes longer to get the addresses
 
 
 class RemotedListener(ServiceListener):
@@ -45,8 +46,11 @@ def query_bonjour(ip: str) -> BonjourQuery:
     return BonjourQuery(zc, service_browser, listener)
 
 
-def get_remoted_addresses(timeout: int = DEFAULT_BONJOUR_TIMEOUT) -> List[str]:
-    ips = [f'{adapter.ips[0].ip[0]}%{adapter.nice_name}' for adapter in get_adapters() if adapter.ips[0].is_IPv6]
+def get_remoted_addresses(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[str]:
+    if sys.platform == 'win32':
+        ips = [f'{adapter.ips[0].ip[0]}%{adapter.ips[0].ip[2]}' for adapter in get_adapters() if adapter.ips[0].is_IPv6]
+    else:
+        ips = [f'{adapter.ips[0].ip[0]}%{adapter.nice_name}' for adapter in get_adapters() if adapter.ips[0].is_IPv6]
     bonjour_queries = [query_bonjour(adapter) for adapter in ips]
     time.sleep(timeout)
     addresses = []

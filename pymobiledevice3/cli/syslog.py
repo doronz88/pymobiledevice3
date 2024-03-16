@@ -5,7 +5,7 @@ import re
 
 import click
 
-from pymobiledevice3.cli.cli_common import Command, get_last_used_terminal_formatting
+from pymobiledevice3.cli.cli_common import Command, get_last_used_terminal_formatting, user_requested_colored_output
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.os_trace import OsTraceService, SyslogLogLevel
 from pymobiledevice3.services.syslog import SyslogService
@@ -81,7 +81,6 @@ def format_line(color, pid, syslog_entry, include_label):
 
 @syslog.command('live', cls=Command)
 @click.option('-o', '--out', type=click.File('wt'), help='log file')
-@click.option('--color/--no-color', default=True, help='disable colors')
 @click.option('--pid', type=click.INT, default=-1, help='pid to filter. -1 for all')
 @click.option('-pn', '--process-name', help='process name to filter')
 @click.option('-m', '--match', multiple=True, help='match expression')
@@ -89,7 +88,7 @@ def format_line(color, pid, syslog_entry, include_label):
 @click.option('include_label', '--label', is_flag=True, help='should include label')
 @click.option('-e', '--regex', multiple=True, help='filter only lines matching given regex')
 @click.option('-ei', '--insensitive-regex', multiple=True, help='filter only lines matching given regex (insensitive)')
-def syslog_live(service_provider: LockdownClient, out, color, pid, process_name, match, match_insensitive,
+def syslog_live(service_provider: LockdownClient, out, pid, process_name, match, match_insensitive,
                 include_label, regex, insensitive_regex):
     """ view live syslog lines """
 
@@ -106,7 +105,7 @@ def syslog_live(service_provider: LockdownClient, out, color, pid, process_name,
             if posixpath.basename(syslog_entry.filename) != process_name:
                 continue
 
-        line = format_line(color, pid, syslog_entry, include_label)
+        line = format_line(user_requested_colored_output(), pid, syslog_entry, include_label)
 
         skip = False
 
@@ -117,7 +116,7 @@ def syslog_live(service_provider: LockdownClient, out, color, pid, process_name,
                     skip = True
                     break
                 else:
-                    if color:
+                    if user_requested_colored_output():
                         match_line = match_line.replace(m, click.style(m, bold=True, underline=True))
                         line = match_line
 
@@ -128,7 +127,7 @@ def syslog_live(service_provider: LockdownClient, out, color, pid, process_name,
                     skip = True
                     break
                 else:
-                    if color:
+                    if user_requested_colored_output():
                         start = line.lower().index(m)
                         end = start + len(m)
                         last_color_formatting = get_last_used_terminal_formatting(line[:start])

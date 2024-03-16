@@ -1,5 +1,6 @@
 import dataclasses
 import datetime
+import sys
 import typing
 
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
@@ -15,8 +16,11 @@ class OutputReceivedEvent:
     @classmethod
     def create(cls, message) -> 'OutputReceivedEvent':
         try:
-            date = datetime.datetime.fromtimestamp(message[2].value)
-        except ValueError:
+            if sys.platform == 'win32':
+                date = datetime.datetime.fromtimestamp(message[2].value / 1000)
+            else:
+                date = datetime.datetime.fromtimestamp(message[2].value)
+        except (ValueError, OSError):
             date = None
 
         return cls(pid=message[1].value, date=date, message=message[0].value)
