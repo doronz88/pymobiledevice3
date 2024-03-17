@@ -179,6 +179,7 @@ class AccessibilityAudit(RemoteServer):
 
         # flush previously received messages
         self.recv_plist()
+        self.product_version = Version(lockdown.product_version)
         if Version(lockdown.product_version) >= Version('15.0'):
             self.recv_plist()
 
@@ -188,7 +189,10 @@ class AccessibilityAudit(RemoteServer):
         return self.recv_plist()[0]
 
     def run_audit(self, value: typing.List) -> typing.List[AXAuditIssue_v1]:
-        self.broadcast.deviceBeginAuditTypes_(MessageAux().append_obj(value))
+        if self.product_version >= Version('15.0'):
+            self.broadcast.deviceBeginAuditTypes_(MessageAux().append_obj(value))
+        else:
+            self.broadcast.deviceBeginAuditCaseIDs_(MessageAux().append_obj(value))
 
         while True:
             message = self.recv_plist()
@@ -197,7 +201,10 @@ class AccessibilityAudit(RemoteServer):
             return deserialize_object(message[1])[0]['value']
 
     def supported_audits_types(self) -> None:
-        self.broadcast.deviceAllSupportedAuditTypes()
+        if self.product_version >= Version('15.0'):
+            self.broadcast.deviceAllSupportedAuditTypes()
+        else:
+            self.broadcast.deviceAllAuditCaseIDs()
         return deserialize_object(self.recv_plist()[0])
 
     @property
