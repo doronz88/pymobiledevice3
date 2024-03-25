@@ -41,7 +41,8 @@ class RSDOption(Option):
     def handle_parse_result(self, ctx, opts, args):
         if (isinstance(ctx.command, RSDCommand) and not (isinstance(ctx.command, Command)) and
                 ('rsd_service_provider_using_tunneld' not in opts) and ('rsd_service_provider_manually' not in opts)):
-            raise UsageError('Illegal usage: At least one is required [--rsd | --tunnel]')
+            # defaulting to `--tunnel ''` if no remote option was specified
+            opts['rsd_service_provider_using_tunneld'] = ''
         if self.mutually_exclusive.intersection(opts) and self.name in opts:
             raise UsageError(
                 'Illegal usage: `{}` is mutually exclusive with '
