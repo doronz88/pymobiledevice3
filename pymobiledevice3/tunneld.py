@@ -138,14 +138,12 @@ class TunneldCore:
                 await tun.client.wait_closed()
         except asyncio.CancelledError:
             pass
-        except OSError:
-            logger.debug(f'got OSError from tunnel --rsd {tun.address} {tun.port}')
         except ConnectionResetError:
-            logger.debug(f'got ConnectionResetError from tunnel --rsd {tun.address} {tun.port}')
-        except TimeoutError:
-            logger.debug(f'got timeout from tunnel --rsd {tun.address} {tun.port}')
+            logger.debug(f'got ConnectionResetError from {asyncio.current_task().get_name()}')
+        except (asyncio.exceptions.IncompleteReadError, TimeoutError, OSError) as e:
+            logger.debug(f'got {e.__class__.__name} from tunnel --rsd {tun.address} {tun.port}')
         except Exception:
-            logger.error(traceback.format_exc())
+            logger.error(f'got exception from {asyncio.current_task().get_name()}: {traceback.format_exc()}')
         finally:
             if queue is not None:
                 # notify something went wrong
