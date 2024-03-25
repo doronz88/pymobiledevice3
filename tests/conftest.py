@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from pymobiledevice3.exceptions import DeviceNotFoundError, InvalidServiceError
@@ -6,6 +8,16 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.utils import get_tunneld_devices
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+
+logging.getLogger('quic').disabled = True
+logging.getLogger('asyncio').disabled = True
+logging.getLogger('zeroconf').disabled = True
+logging.getLogger('parso.cache').disabled = True
+logging.getLogger('parso.cache.pickle').disabled = True
+logging.getLogger('parso.python.diff').disabled = True
+logging.getLogger('humanfriendly.prompts').disabled = True
+logging.getLogger('blib2to3.pgen2.driver').disabled = True
+logging.getLogger('urllib3.connectionpool').disabled = True
 
 
 def pytest_addoption(parser):
