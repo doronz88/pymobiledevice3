@@ -63,7 +63,7 @@ class TunneldCore:
 
     def tunnel_exists_for_udid(self, udid: str) -> bool:
         for task in self.tunnel_tasks.values():
-            if task.udid == udid:
+            if task.udid == udid and task.tunnel is not None:
                 return True
         return False
 
@@ -125,33 +125,39 @@ class TunneldCore:
     async def start_tunnel_task(
             self, ip: str, protocol_handler: RemotePairingProtocol, queue: Optional[asyncio.Queue] = None) -> None:
         tun = None
+        bailed_out = False
         try:
             async with start_tunnel(protocol_handler, protocol=self.protocol) as tun:
                 protocol_handler.close()
-                self.tunnel_tasks[ip].tunnel = tun
-                self.tunnel_tasks[ip].udid = protocol_handler.remote_identifier
-                if queue is not None:
-                    queue.put_nowait(tun)
-                    # avoid sending another message if succeeded
-                    queue = None
-                logger.info(f'[{asyncio.current_task().get_name()}] Created tunnel --rsd {tun.address} {tun.port}')
-                await tun.client.wait_closed()
+
+                if not self.tunnel_exists_for_udid(protocol_handler.remote_identifier):
+                    self.tunnel_tasks[ip].tunnel = tun
+                    self.tunnel_tasks[ip].udid = protocol_handler.remote_identifier
+                    if queue is not None:
+                        queue.put_nowait(tun)
+                        # avoid sending another message if succeeded
+                        queue = None
+                    logger.info(f'[{asyncio.current_task().get_name()}] Created tunnel --rsd {tun.address} {tun.port}')
+                    await tun.client.wait_closed()
+                else:
+                    bailed_out = True
+                    logger.debug(
+                        f'not establishing tunnel from {asyncio.current_task().get_name()} '
+                        f'since there is already an active one for same udid')
         except asyncio.CancelledError:
             pass
-        except OSError:
-            logger.debug(f'got OSError from tunnel --rsd {tun.address} {tun.port}')
         except ConnectionResetError:
-            logger.debug(f'got ConnectionResetError from tunnel --rsd {tun.address} {tun.port}')
-        except TimeoutError:
-            logger.debug(f'got timeout from tunnel --rsd {tun.address} {tun.port}')
+            logger.debug(f'got ConnectionResetError from {asyncio.current_task().get_name()}')
+        except (asyncio.exceptions.IncompleteReadError, TimeoutError, OSError) as e:
+            logger.debug(f'got {e.__class__.__name} from tunnel --rsd {tun.address} {tun.port}')
         except Exception:
-            logger.error(traceback.format_exc())
+            logger.error(f'got exception from {asyncio.current_task().get_name()}: {traceback.format_exc()}')
         finally:
             if queue is not None:
                 # notify something went wrong
                 queue.put_nowait(None)
 
-            if tun is not None:
+            if tun is not None and not bailed_out:
                 logger.info(f'disconnected from tunnel --rsd {tun.address} {tun.port}')
 
             if protocol_handler is not None:
