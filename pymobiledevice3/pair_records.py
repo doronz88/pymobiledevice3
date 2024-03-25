@@ -6,7 +6,7 @@ import sys
 import uuid
 from contextlib import suppress
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Generator, Mapping, Optional
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.common import get_home_folder
@@ -86,3 +86,12 @@ def create_pairing_records_cache_folder(pairing_records_cache_folder: Path = Non
 
 def get_remote_pairing_record_filename(identifier: str) -> str:
     return f'remote_{identifier}'
+
+
+def iter_remote_pair_records() -> Generator[Path, None, None]:
+    return get_home_folder().glob('remote_*')
+
+
+def iter_remote_paired_identifiers() -> Generator[str, None, None]:
+    for file in iter_remote_pair_records():
+        yield file.parts[-1].split('remote_', 1)[1].split('.', 1)[0]

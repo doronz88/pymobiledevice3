@@ -6,8 +6,8 @@ from pymobiledevice3.exceptions import DeviceNotFoundError, InvalidServiceError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.remote.utils import get_tunneld_devices
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.tunneld import get_tunneld_devices
 
 logging.getLogger('quic').disabled = True
 logging.getLogger('asyncio').disabled = True

@@ -8,13 +8,9 @@
 - [Installation](#installation)
     * [OpenSSL libraries](#openssl-libraries)
 - [Usage](#usage)
-    * [Python API](#python-api)
     * [Working with developer tools (iOS >= 17.0)](#working-with-developer-tools-ios--170)
-    * [Tunneld](#tunneld)
-        + [Command Usage](#command-usage)
-        + [Using Tunneld](#using-tunneld)
-
-        * [Example](#example)
+    * [Python API](#python-api)
+    * [Example](#example)
 - [The bits and bytes](#the-bits-and-bytes)
     * [Lockdown services](#lockdown-services)
         + [Implemented services](#implemented-services)
@@ -146,12 +142,85 @@ Commands:
   version          get installed package version
 ```
 
+## Working with developer tools (iOS >= 17.0)
+
+> **NOTE:** Currently, this is only officially supported on macOS & Windows
+
+Starting at iOS 17.0, Apple introduced the new CoreDevice framework to work with iOS devices. This framework relies on
+the [RemoteXPC](misc/RemoteXPC.md) protocol. In order to communicate with the developer services you'll be required to
+first create [trusted tunnel](misc/RemoteXPC.md#trusted-tunnel) in one of the two forms:
+
+- Launch a tunnel-server named `tunneld` to automatically detect devices and establish connections
+    - Execute the following:
+      ```shell
+      # on windows, use a privileged shell
+      sudo python3 -m pymobiledevice3 remote tunneld
+      ```
+
+- Create tunnel manually using `start-tunnel`
+    - Execute the following:
+      ```shell
+      # on windows, use a privileged shell
+      # you may pass `-t wifi` to force a WiFi tunnel 
+      sudo python3 -m pymobiledevice3 remote start-tunnel
+      ```
+
+      You will be printed with the following output providing you with the required connection details:
+      ```
+      Interface: utun6
+      RSD Address: fd7b:e5b:6f53::1
+      RSD Port: 64337
+      Use the follow connection option:
+      --rsd fd7b:e5b:6f53::1 64337
+      ```
+
+_Ths command must be run with high privileges since it creates a new TUN/TAP device which is a high
+privilege operation._
+
+Now, (almost) all of pymobiledevice3 accept an additional `--rsd`/`--tunnel` option for connecting to the service over
+the tunnel. The `--tunnel` option specifically, is always attempted implicitly upon an `InvalidServiceError` error to
+simplify the work with developer services. You can now try to execute any of them as follows:
+
+```shell
+# Accessing the DVT services
+# The --tunnel option may accept either an empty string, or a UDID for a specific device 
+python3 -m pymobiledevice3 developer dvt ls / --tunnel ''
+
+# Or simply without the `--tunnel` option, assuming the tunneld is running
+python3 -m pymobiledevice3 developer dvt ls /
+
+# Or we could use the manual tunnel details
+python3 -m pymobiledevice3 developer dvt ls / --rsd fd7b:e5b:6f53::1 64337
+
+# And we can also access or the other "normal" lockdown services
+python3 -m pymobiledevice3 syslog live --tunnel ''
+```
+
 ## Python API
 
-You could also import the modules and use the API yourself:
+You could also import the modules and use the API yourself.
+To communicate the device you'll need an instance of `LockdownClient`, from which you can pair with the device and
+request to establish a connection to [all its exposed services](#lockdown-services).
+
+To do so, use the following snippet:
 
 ```python
-from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.lockdown import create_using_usbmux, create_using_tcp
+
+# Connecting via usbmuxd (you can also specify a specific UDID to connect to)
+lockdown = create_using_usbmux()
+
+# Or you could establish a TCP connection over WiFi, assuming the device allows these types of connections
+# You can enable them using: `pymobiledevice3 lockdown wifi-connections on`
+lockdown = create_using_tcp('192.168.2.2')
+```
+
+Now you can connect to which service you'd like. We already [implemented many of the services](#implemented-services),
+you can use import and use in the form of: `from pymobiledevice3.service.<SERVICE-NAME> import <SERVICE-CLASS>`.
+
+For example, consider the following piece of code to print all syslog lines:
+
+```python
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.services.syslog import SyslogService
 
@@ -160,95 +229,38 @@ lockdown = create_using_usbmux()
 for line in SyslogService(service_provider=lockdown).watch():
     # just print all syslog lines as is
     print(line)
+```
 
-# Or via remoted (iOS>=17)
-# First, create a tunnel using:
-#     $ sudo pymobiledevice3 remote start-tunnel
-# You can of course implement it yourself by copying the same pieces of code from:
-#     https://github.com/doronz88/pymobiledevice3/blob/master/pymobiledevice3/cli/remote.py#L68
-# Now you can simply connect to the created tunnel's host and port
-host = 'fded:c26b:3d2f::1'  # randomized
-port = 65177  # randomized
+If you need more examples of different cool stuff you can do with the different services, just look at
+what [all the CLI commands are already doing](pymobiledevice3/cli).
+
+However, iOS 17.0 introduced a new type of connection called [RSD (RemoteServiceDiscovery)](misc/RemoteXPC.md), used to
+establish a connection with the different Developer-Mode services over a trusted tunnel. To do so,
+you'll [first need to create a trusted tunnel](#working-with-developer-tools-ios--170).
+
+Afterward, use the following APIs:
+
+```python
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.tunneld import get_tunneld_devices
+from pymobiledevice3.services.syslog import SyslogService
+
+# Get a list of all established tunnels in the `rsds` object
+# You can treat them as any other LockdownClient
+rsds = get_tunneld_devices()
+
+# For example, you could use them to connect to any service as seen in prior example
+for line in SyslogService(service_provider=rsds[0]).watch():
+    # just print all syslog lines as is
+    print(line)
+
+# Or you could connect manually to a specific tunnel created by `start-tunnel`
+host = 'fded:c26b:3d2f::1'
+port = 65177
 with RemoteServiceDiscoveryService((host, port)) as rsd:
-    for line in SyslogService(service_provider=rsd).watch():
-        # just print all syslog lines as is
-        print(line)
+    # you can now use this connection as any other LockdownClient connection
+    pass
 ```
-
-## Working with developer tools (iOS >= 17.0)
-
-> **NOTE:** Currently, this is only supported on macOS & Windows
-
-Starting at iOS 17.0, Apple introduced the new CoreDevice framework to work with iOS devices. This framework relies on
-the [RemoteXPC](misc/RemoteXPC.md) protocol. In order to communicate with the developer services you'll be required to
-first create [trusted tunnel](misc/RemoteXPC.md#trusted-tunnel) as follows:
-
-```shell
-# -- On macOS
-sudo python3 -m pymobiledevice3 remote start-tunnel
-
-# -- On windows 
-# Use a "run as administrator" shell 
-python3 -m pymobiledevice3 remote start-tunnel
-```
-
-The root permissions are required since this will create a new TUN/TAP device which is a high privilege operation.
-The output should be something similar to:
-
-```
-Interface: utun6
-RSD Address: fd7b:e5b:6f53::1
-RSD Port: 64337
-Use the follow connection option:
---rsd fd7b:e5b:6f53::1 64337
-```
-
-Now, (almost) all of pymobiledevice3 accept an additional `--rsd` option for connecting to the service over this new
-tunnel. You can now try to execute any of them as follows:
-
-```shell
-# Accessing the DVT services
-python3 -m pymobiledevice3 developer dvt ls / --rsd fd7b:e5b:6f53::1 64337
-
-# Or any of the "normal" ones
-python3 -m pymobiledevice3 syslog live --rsd fd7b:e5b:6f53::1 64337
-```
-
-## Tunneld
-
-The Tunneld Server is responsible for automatically creating a QUIC tunnel for Remote Service Discovery (RSD) when a
-device is connected.
-
-### Command Usage
-
-To start the Tunneld Server, use the following command (with root privileges):
-
-```bash
-# -- On macOS
-sudo python3 -m pymobiledevice3 remote tunneld
-
-# -- On windows 
-# Use a "run as administrator" shell 
-python3 -m pymobiledevice3 remote tunneld
-```
-
-### Using Tunneld
-
-Once the Tunneld Server is running, you can use it for RSD over the created QUIC tunnel.
-
-To specify a device by its UDID:
-
-```bash
-python3 -m pymobiledevice3 remote rsd-info --tunnel UDID
-```
-
-To let Tunneld automatically select a device (if only one is connected):
-
-```bash
-python3 -m pymobiledevice3 remote rsd-info --tunnel ''
-```
-
-If no UDID is specified and multiple devices are connected, a prompt will appear for device selection.
 
 ## Example
 

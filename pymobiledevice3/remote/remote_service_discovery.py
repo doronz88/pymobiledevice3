@@ -3,13 +3,13 @@ import logging
 from dataclasses import dataclass
 from typing import List, Mapping, Optional, Tuple, Union
 
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import InvalidServiceError, NoDeviceConnectedError, PyMobileDevice3Exception, \
     StartServiceError
 from pymobiledevice3.lockdown import LockdownClient, create_using_remote
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.pair_records import get_local_pairing_record, get_remote_pairing_record_filename
-from pymobiledevice3.remote.bonjour import DEFAULT_BONJOUR_TIMEOUT, get_remoted_addresses
 from pymobiledevice3.remote.remotexpc import RemoteXPCConnection
 from pymobiledevice3.service_connection import ServiceConnection
 
@@ -27,8 +27,9 @@ RSD_PORT = 58783
 
 
 class RemoteServiceDiscoveryService(LockdownServiceProvider):
-    def __init__(self, address: Tuple[str, int]):
+    def __init__(self, address: Tuple[str, int], name: Optional[str] = None) -> None:
         super().__init__()
+        self.name = name
         self.service = RemoteXPCConnection(address)
         self.peer_info: Optional[Mapping] = None
         self.lockdown: Optional[LockdownClient] = None
@@ -124,13 +125,16 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         self.close()
 
     def __repr__(self) -> str:
+        name_str = ''
+        if self.name:
+            name_str = f' NAME:{self.name}'
         return (f'<{self.__class__.__name__} PRODUCT:{self.product_type} VERSION:{self.product_version} '
-                f'UDID:{self.udid}>')
+                f'UDID:{self.udid}{name_str}>')
 
 
 def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevice]:
     result = []
-    for hostname in get_remoted_addresses(timeout):
+    for hostname in browse_remoted(timeout):
         with RemoteServiceDiscoveryService((hostname, RSD_PORT)) as rsd:
             properties = rsd.peer_info['Properties']
             result.append(RSDDevice(hostname=hostname, udid=properties['UniqueDeviceID'],

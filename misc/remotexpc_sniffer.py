@@ -12,8 +12,8 @@ from scapy.layers.inet6 import IPv6
 from scapy.packet import Packet
 from scapy.sendrecv import sniff
 
-from pymobiledevice3.remote.core_device_tunnel_service import PairingDataComponentTLVBuf
 from pymobiledevice3.remote.remotexpc import HTTP2_MAGIC
+from pymobiledevice3.remote.tunnel_service import PairingDataComponentTLVBuf
 from pymobiledevice3.remote.xpc_message import XpcWrapper, decode_xpc_object
 
 logger = logging.getLogger()

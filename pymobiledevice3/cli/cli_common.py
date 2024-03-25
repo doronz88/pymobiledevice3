@@ -19,7 +19,7 @@ from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, N
     NoDeviceSelectedError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.remote.utils import get_tunneld_devices
+from pymobiledevice3.tunneld import get_tunneld_devices
 from pymobiledevice3.usbmux import select_devices_by_connection_type
 
 USBMUX_OPTION_HELP = 'usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT'
