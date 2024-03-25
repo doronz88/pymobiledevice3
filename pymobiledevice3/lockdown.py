@@ -24,7 +24,7 @@ from pymobiledevice3.irecv_devices import IRECV_DEVICES
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.pair_records import create_pairing_records_cache_folder, generate_host_id, \
     get_preferred_pair_record
-from pymobiledevice3.service_connection import LockdownServiceConnection
+from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
 
 SYSTEM_BUID = '30142955-444094379208051516'
@@ -68,7 +68,7 @@ def _reconnect_on_remote_close(f):
 
 
 class LockdownClient(ABC, LockdownServiceProvider):
-    def __init__(self, service: LockdownServiceConnection, host_id: str, identifier: str = None,
+    def __init__(self, service: ServiceConnection, host_id: str, identifier: str = None,
                  label: str = DEFAULT_LABEL, system_buid: str = SYSTEM_BUID, pair_record: Mapping = None,
                  pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT):
         """
@@ -106,7 +106,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.product_type = self.all_values.get('ProductType')
 
     @classmethod
-    def create(cls, service: LockdownServiceConnection, identifier: str = None, system_buid: str = SYSTEM_BUID,
+    def create(cls, service: ServiceConnection, identifier: str = None, system_buid: str = SYSTEM_BUID,
                label: str = DEFAULT_LABEL, autopair: bool = True, pair_timeout: float = None, local_hostname: str = None,
                pair_record: Mapping = None, pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT,
                **cls_specific_args):
@@ -420,7 +420,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return response
 
     @_reconnect_on_remote_close
-    def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
+    def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
         attr = self.get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
         service_connection = self._create_service_connection(attr['Port'])
 
@@ -430,7 +430,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return service_connection
 
     async def aio_start_lockdown_service(
-            self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
+            self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
         attr = self.get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
         service_connection = self._create_service_connection(attr['Port'])
 
@@ -472,7 +472,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             raise FatalPairingError()
 
     @abstractmethod
-    def _create_service_connection(self, port: int) -> LockdownServiceConnection:
+    def _create_service_connection(self, port: int) -> ServiceConnection:
         """ Used to establish a new ServiceConnection to a given port """
         pass
 
@@ -528,7 +528,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
 
 class UsbmuxLockdownClient(LockdownClient):
-    def __init__(self, service: LockdownServiceConnection, host_id: str, identifier: str = None,
+    def __init__(self, service: ServiceConnection, host_id: str, identifier: str = None,
                  label: str = DEFAULT_LABEL, system_buid: str = SYSTEM_BUID, pair_record: Mapping = None,
                  pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT,
                  usbmux_address: Optional[str] = None):
@@ -547,10 +547,10 @@ class UsbmuxLockdownClient(LockdownClient):
             self.pair_record = get_preferred_pair_record(self.identifier, self.pairing_records_cache_folder,
                                                          usbmux_address=self.usbmux_address)
 
-    def _create_service_connection(self, port: int) -> LockdownServiceConnection:
-        return LockdownServiceConnection.create_using_usbmux(self.identifier, port,
-                                                             self.service.mux_device.connection_type,
-                                                             usbmux_address=self.usbmux_address)
+    def _create_service_connection(self, port: int) -> ServiceConnection:
+        return ServiceConnection.create_using_usbmux(self.identifier, port,
+                                                     self.service.mux_device.connection_type,
+                                                     usbmux_address=self.usbmux_address)
 
 
 class PlistUsbmuxLockdownClient(UsbmuxLockdownClient):
@@ -562,7 +562,7 @@ class PlistUsbmuxLockdownClient(UsbmuxLockdownClient):
 
 
 class TcpLockdownClient(LockdownClient):
-    def __init__(self, service: LockdownServiceConnection, host_id: str, hostname: str, identifier: str = None,
+    def __init__(self, service: ServiceConnection, host_id: str, hostname: str, identifier: str = None,
                  label: str = DEFAULT_LABEL, system_buid: str = SYSTEM_BUID, pair_record: Mapping = None,
                  pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT, keep_alive: bool = True):
         """
@@ -584,12 +584,12 @@ class TcpLockdownClient(LockdownClient):
         self._keep_alive = keep_alive
         self.hostname = hostname
 
-    def _create_service_connection(self, port: int) -> LockdownServiceConnection:
-        return LockdownServiceConnection.create_using_tcp(self.hostname, port, keep_alive=self._keep_alive)
+    def _create_service_connection(self, port: int) -> ServiceConnection:
+        return ServiceConnection.create_using_tcp(self.hostname, port, keep_alive=self._keep_alive)
 
 
 class RemoteLockdownClient(LockdownClient):
-    def _create_service_connection(self, port: int) -> LockdownServiceConnection:
+    def _create_service_connection(self, port: int) -> ServiceConnection:
         raise NotImplementedError(
             'RemoteXPC service connections should only be created using RemoteServiceDiscoveryService')
 
@@ -603,7 +603,7 @@ class RemoteLockdownClient(LockdownClient):
     def unpair(self, timeout: float = None) -> None:
         raise NotImplementedError('RemoteXPC lockdown version does not support pairing operations')
 
-    def __init__(self, service: LockdownServiceConnection, host_id: str, identifier: str = None,
+    def __init__(self, service: ServiceConnection, host_id: str, identifier: str = None,
                  label: str = DEFAULT_LABEL, system_buid: str = SYSTEM_BUID, pair_record: Mapping = None,
                  pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT):
         """
@@ -642,8 +642,8 @@ def create_using_usbmux(serial: str = None, identifier: str = None, label: str =
     :param usbmux_address: usbmuxd address
     :return: UsbmuxLockdownClient instance
     """
-    service = LockdownServiceConnection.create_using_usbmux(serial, port, connection_type=connection_type,
-                                                            usbmux_address=usbmux_address)
+    service = ServiceConnection.create_using_usbmux(serial, port, connection_type=connection_type,
+                                                    usbmux_address=usbmux_address)
     cls = UsbmuxLockdownClient
     with usbmux.create_mux(usbmux_address=usbmux_address) as client:
         if isinstance(client, PlistMuxConnection):
@@ -680,7 +680,7 @@ def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT
     :param keep_alive: use keep-alive to get notified when the connection is lost
     :return: TcpLockdownClient instance
     """
-    service = LockdownServiceConnection.create_using_tcp(hostname, port, keep_alive=keep_alive)
+    service = ServiceConnection.create_using_tcp(hostname, port, keep_alive=keep_alive)
     client = TcpLockdownClient.create(
         service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
         pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
@@ -688,7 +688,7 @@ def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT
     return client
 
 
-def create_using_remote(service: LockdownServiceConnection, identifier: str = None, label: str = DEFAULT_LABEL,
+def create_using_remote(service: ServiceConnection, identifier: str = None, label: str = DEFAULT_LABEL,
                         autopair: bool = True, pair_timeout: float = None, local_hostname: str = None,
                         pair_record: Mapping = None, pairing_records_cache_folder: Path = None,
                         port: int = SERVICE_PORT) -> RemoteLockdownClient:
