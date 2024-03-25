@@ -1,12 +1,12 @@
 import logging
 
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
-from pymobiledevice3.service_connection import LockdownServiceConnection
+from pymobiledevice3.service_connection import ServiceConnection
 
 
 class LockdownService:
     def __init__(self, lockdown: LockdownServiceProvider, service_name: str, is_developer_service=False,
-                 service: LockdownServiceConnection = None, include_escrow_bag: bool = False):
+                 service: ServiceConnection = None, include_escrow_bag: bool = False):
         """
         :param lockdown: server provider
         :param service_name: wrapped service name - will attempt

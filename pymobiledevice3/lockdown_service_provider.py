@@ -3,7 +3,7 @@ from abc import abstractmethod
 from typing import Optional
 
 from pymobiledevice3.exceptions import StartServiceError
-from pymobiledevice3.service_connection import LockdownServiceConnection
+from pymobiledevice3.service_connection import ServiceConnection
 
 
 class LockdownServiceProvider:
@@ -27,16 +27,16 @@ class LockdownServiceProvider:
         pass
 
     @abstractmethod
-    def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
+    def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
         pass
 
     @abstractmethod
     async def aio_start_lockdown_service(
-            self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
+            self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
         pass
 
     def start_lockdown_developer_service(
-            self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
+            self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
         try:
             return self.start_lockdown_service(name, include_escrow_bag=include_escrow_bag)
         except StartServiceError:
