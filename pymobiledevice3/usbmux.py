@@ -81,6 +81,7 @@ class MuxDevice:
     devid: int
     serial: str
     connection_type: str
+    metadata: Optional[Mapping] = None
 
     def connect(self, port: int, usbmux_address: Optional[str] = None) -> socket.socket:
         mux = create_mux(usbmux_address=usbmux_address)
@@ -221,8 +222,37 @@ class MuxConnection:
         """
         pass
 
+    @staticmethod
+    def _connect_over_network_if_possible(device: MuxDevice, port: int) -> Optional[socket.socket]:
+        if device.metadata is None:
+            return
+
+        properties = device.metadata.get('Properties')
+        if properties is None:
+            return
+
+        network_address = properties.get('NetworkAddress')
+        if network_address is None:
+            return
+
+        family = network_address[1]
+        if family == socket.AF_INET:
+            network_address = socket.inet_ntop(socket.AF_INET, network_address[4:4 + 8])
+        elif family == socket.AF_INET6:
+            network_address = socket.inet_ntop(socket.AF_INET6, network_address[8:8 + 16])
+            interface_index = properties['InterfaceIndex']
+            network_address = f'{network_address}%{interface_index}'
+
+        try:
+            return socket.create_connection((network_address, port))
+        except:  # noqa: E722
+            return None
+
     def connect(self, device: MuxDevice, port: int) -> socket.socket:
         """ connect to a relay port on target machine and get a raw python socket object for the connection """
+        network_sock = self._connect_over_network_if_possible(device, port)
+        if network_sock is not None:
+            return network_sock
         self._connect(device.devid, socket.htons(port))
         self._connected = True
         return self._sock.sock
@@ -361,8 +391,9 @@ class PlistMuxConnection(BinaryMuxConnection):
         self._send({'MessageType': 'ListDevices'})
         for response in self._receive(self._tag - 1)['DeviceList']:
             if response['MessageType'] == 'Attached':
+                # print(response)
                 super()._add_device(MuxDevice(response['DeviceID'], response['Properties']['SerialNumber'],
-                                              response['Properties']['ConnectionType']))
+                                              response['Properties']['ConnectionType'], metadata=response))
             elif response['MessageType'] == 'Detached':
                 super()._remove_device(response['DeviceID'])
             else:
