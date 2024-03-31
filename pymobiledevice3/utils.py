@@ -1,11 +1,17 @@
 import asyncio
+import os
 import platform
 import socket
+import sys
 import traceback
 from functools import wraps
+from pathlib import Path
 from typing import Callable
 
 from construct import Int8ul, Int16ul, Int32ul, Int64ul, Select
+
+if sys.platform != 'win32':
+    from os import chown
 
 DEFAULT_AFTER_IDLE_SEC = 3
 DEFAULT_INTERVAL_SEC = 3
@@ -14,6 +20,12 @@ DEFAULT_MAX_FAILS = 3
 _DARWIN_TCP_KEEPALIVE = 0x10
 _DARWIN_TCP_KEEPINTVL = 0x101
 _DARWIN_TCP_KEEPCNT = 0x102
+
+
+def chown_to_non_sudo_if_needed(path: Path) -> None:
+    if os.getenv('SUDO_UID') is None or sys.platform == 'win32':
+        return
+    chown(path, int(os.getenv('SUDO_UID')), int(os.getenv('SUDO_GID')))
 
 
 def plist_access_path(d, path: tuple, type_=None, required=False):
