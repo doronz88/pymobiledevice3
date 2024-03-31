@@ -62,7 +62,7 @@ except ImportError:
     SSLPSKContext = None
 
 from pymobiledevice3.ca import make_cert
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, UserDeniedPairingError
+from pymobiledevice3.exceptions import PairingError, PyMobileDevice3Exception, UserDeniedPairingError
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, create_pairing_records_cache_folder, generate_host_id, \
     get_remote_pairing_record_filename, iter_remote_paired_identifiers
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -495,7 +495,10 @@ class RemotePairingProtocol:
                                  'startNewSession': True})
         self.logger.info('Waiting user pairing consent')
         response = self._receive_plain_response()['event']['_0']
-        if 'awaitingUserConsent' in response:
+
+        if 'pairingRejectedWithError' in response:
+            raise PairingError(response['pairingRejectedWithError']['wrappedError']['userInfo']['NSLocalizedDescription'])
+        elif 'awaitingUserConsent' in response:
             pairingData = self._receive_pairing_data()
         else:
             # On tvOS no consent is needed and pairing data is returned immediately.
