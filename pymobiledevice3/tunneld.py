@@ -149,7 +149,7 @@ class TunneldCore:
         except ConnectionResetError:
             logger.debug(f'got ConnectionResetError from {asyncio.current_task().get_name()}')
         except (asyncio.exceptions.IncompleteReadError, TimeoutError, OSError) as e:
-            logger.debug(f'got {e.__class__.__name} from tunnel --rsd {tun.address} {tun.port}')
+            logger.debug(f'got {e.__class__.__name__} from tunnel --rsd {tun.address} {tun.port}')
         except Exception:
             logger.error(f'got exception from {asyncio.current_task().get_name()}: {traceback.format_exc()}')
         finally:
