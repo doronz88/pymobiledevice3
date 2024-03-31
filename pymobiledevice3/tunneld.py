@@ -17,7 +17,7 @@ from ifaddr import get_adapters
 from packaging.version import Version
 
 from pymobiledevice3.bonjour import REMOTED_SERVICE_NAMES, browse
-from pymobiledevice3.exceptions import TunneldConnectionError
+from pymobiledevice3.exceptions import PairingError, TunneldConnectionError
 from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.module_imports import start_tunnel
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
@@ -203,6 +203,8 @@ class TunneldCore:
                                       name=f'start-tunnel-task-usb-{ip}')
         except asyncio.CancelledError:
             pass
+        except PairingError as e:
+            logger.error(f'Failed to pair with {ip} with error: {e}')
         except RuntimeError:
             logger.debug(f'Got RuntimeError from: {asyncio.current_task().get_name()}')
         except Exception:
