@@ -137,7 +137,7 @@ def is_admin_user() -> bool:
             return False
     else:
         # Check for root on Posix
-        return os.getuid() == 0
+        return os.geteuid() == 0
 
 
 def sudo_required(func):
