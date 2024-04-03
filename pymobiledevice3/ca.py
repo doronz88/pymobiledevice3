@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from typing import Optional
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
@@ -27,8 +28,10 @@ def dump_cert(cert):
     return cert.public_bytes(Encoding.PEM)
 
 
-def ca_do_everything(device_public_key):
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+def ca_do_everything(device_public_key, private_key: Optional[rsa.RSAPrivateKey] = None):
+    if private_key is None:
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
     cert = make_cert(private_key, private_key.public_key())
     dev_key = load_pem_public_key(device_public_key)
     dev_cert = make_cert(private_key, dev_key, 'Device')
