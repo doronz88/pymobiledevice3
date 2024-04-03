@@ -27,8 +27,14 @@ class LockdownService:
     def __enter__(self):
         return self
 
+    async def __aenter__(self) -> 'LockdownService':
+        return self
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.service.aio_close()
 
     def close(self) -> None:
         self.service.close()
