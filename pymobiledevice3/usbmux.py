@@ -236,7 +236,7 @@ class MuxConnection:
         if self._connected:
             raise MuxException('Mux is connected, cannot issue control packets')
 
-    def _raise_mux_exception(self, result: int, message: str = None):
+    def _raise_mux_exception(self, result: int, message: Optional[str] = None) -> None:
         exceptions = {
             int(usbmuxd_result.BADCOMMAND): BadCommandError,
             int(usbmuxd_result.BADDEV): BadDevError,

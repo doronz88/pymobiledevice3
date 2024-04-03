@@ -71,16 +71,17 @@ def remote_cli():
               default=TunnelProtocol.QUIC.value)
 @click.option('--usb/--no-usb', default=True, help='Enable usb monitoring')
 @click.option('--wifi/--no-wifi', default=True, help='Enable wifi monitoring')
+@click.option('--usbmux/--no-usbmux', default=True, help='Enable usbmux monitoring')
 @sudo_required
 def cli_tunneld(
-        host: str, port: int, daemonize: bool, protocol: str, usb: bool, wifi: bool) \
-        -> None:
+        host: str, port: int, daemonize: bool, protocol: str, usb: bool, wifi: bool, usbmux: bool) -> None:
     """ Start Tunneld service for remote tunneling """
     if not verify_tunnel_imports():
         return
     install_driver_if_required()
     protocol = TunnelProtocol(protocol)
-    tunneld_runner = partial(TunneldRunner.create, host, port, protocol=protocol, usb_monitor=usb, wifi_monitor=wifi)
+    tunneld_runner = partial(TunneldRunner.create, host, port, protocol=protocol, usb_monitor=usb, wifi_monitor=wifi,
+                             usbmux_monitor=usbmux)
     if daemonize:
         try:
             from daemonize import Daemonize
