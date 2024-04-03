@@ -110,36 +110,8 @@ def rsd_info(service_provider: RemoteServiceDiscoveryService):
 
 
 async def tunnel_task(
-        connection_type: ConnectionType, secrets: TextIO, udid: Optional[str] = None, script_mode: bool = False,
+        service, secrets: Optional[TextIO] = None, script_mode: bool = False,
         max_idle_timeout: float = MAX_IDLE_TIMEOUT, protocol: TunnelProtocol = TunnelProtocol.QUIC) -> None:
-    if start_tunnel is None:
-        raise NotImplementedError('failed to start the tunnel on your platform')
-    get_tunnel_services = {
-        connection_type.USB: get_core_device_tunnel_services,
-        connection_type.WIFI: get_remote_pairing_tunnel_services,
-    }
-    tunnel_services = await get_tunnel_services[connection_type]()
-    if not tunnel_services:
-        # no devices were found
-        raise NoDeviceConnectedError()
-    if len(tunnel_services) == 1:
-        # only one device found
-        service = tunnel_services[0]
-    else:
-        # several devices were found
-        if udid is None:
-            # show prompt if non explicitly selected
-            service = prompt_device_list(tunnel_services)
-        else:
-            service = [device for device in tunnel_services if device.remote_identifier == udid]
-            if len(service) > 0:
-                service = service[0]
-            else:
-                raise NoDeviceConnectedError()
-
-    if udid is not None and service.remote_identifier != udid:
-        raise NoDeviceConnectedError()
-
     async with start_tunnel(
             service, secrets=secrets, max_idle_timeout=max_idle_timeout, protocol=protocol) as tunnel_result:
         logger.info('tunnel created')
@@ -177,6 +149,41 @@ async def tunnel_task(
         logger.info('tunnel was closed')
 
 
+async def start_tunnel_task(
+        connection_type: ConnectionType, secrets: TextIO, udid: Optional[str] = None, script_mode: bool = False,
+        max_idle_timeout: float = MAX_IDLE_TIMEOUT, protocol: TunnelProtocol = TunnelProtocol.QUIC) -> None:
+    if start_tunnel is None:
+        raise NotImplementedError('failed to start the tunnel on your platform')
+    get_tunnel_services = {
+        connection_type.USB: get_core_device_tunnel_services,
+        connection_type.WIFI: get_remote_pairing_tunnel_services,
+    }
+    tunnel_services = await get_tunnel_services[connection_type]()
+    if not tunnel_services:
+        # no devices were found
+        raise NoDeviceConnectedError()
+    if len(tunnel_services) == 1:
+        # only one device found
+        service = tunnel_services[0]
+    else:
+        # several devices were found
+        if udid is None:
+            # show prompt if non explicitly selected
+            service = prompt_device_list(tunnel_services)
+        else:
+            service = [device for device in tunnel_services if device.remote_identifier == udid]
+            if len(service) > 0:
+                service = service[0]
+            else:
+                raise NoDeviceConnectedError()
+
+    if udid is not None and service.remote_identifier != udid:
+        raise NoDeviceConnectedError()
+
+    await tunnel_task(service, secrets=secrets, script_mode=script_mode, max_idle_timeout=max_idle_timeout,
+                      protocol=protocol)
+
+
 @remote_cli.command('start-tunnel', cls=BaseCommand)
 @click.option('-t', '--connection-type', type=click.Choice([e.value for e in ConnectionType], case_sensitive=False),
               default=ConnectionType.USB.value)
@@ -193,13 +200,13 @@ async def tunnel_task(
 def cli_start_tunnel(
         connection_type: ConnectionType, udid: Optional[str], secrets: TextIO, script_mode: bool,
         max_idle_timeout: float, protocol: str) -> None:
-    """ start quic tunnel """
+    """ start tunnel """
     if connection_type == ConnectionType.USB:
         install_driver_if_required()
     if not verify_tunnel_imports():
         return
     asyncio.run(
-        tunnel_task(
+        start_tunnel_task(
             ConnectionType(connection_type), secrets, udid, script_mode, max_idle_timeout=max_idle_timeout,
             protocol=TunnelProtocol(protocol)), debug=True)
 
