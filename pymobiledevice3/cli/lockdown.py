@@ -1,11 +1,15 @@
+import asyncio
 import logging
 import plistlib
 
 import click
 
-from pymobiledevice3.cli.cli_common import Command, CommandWithoutAutopair, print_json
+from pymobiledevice3.cli.cli_common import Command, CommandWithoutAutopair, print_json, sudo_required
+from pymobiledevice3.cli.remote import tunnel_task
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.remote.common import TunnelProtocol
+from pymobiledevice3.remote.tunnel_service import CoreDeviceTunnelProxy
 from pymobiledevice3.services.heartbeat import HeartbeatService
 
 logger = logging.getLogger(__name__)
@@ -135,3 +139,14 @@ def lockdown_wifi_connections(service_provider: LockdownClient, state):
     else:
         # enable/disable
         service_provider.enable_wifi_connections = state == 'on'
+
+
+@lockdown_group.command('start-tunnel', cls=Command)
+@click.option('--script-mode', is_flag=True,
+              help='Show only HOST and port number to allow easy parsing from external shell scripts')
+@sudo_required
+def cli_start_tunnel(
+        service_provider: LockdownServiceProvider, script_mode: bool) -> None:
+    """ start tunnel """
+    service = CoreDeviceTunnelProxy(service_provider)
+    asyncio.run(tunnel_task(service, script_mode=script_mode, secrets=None, protocol=TunnelProtocol.TCP), debug=True)

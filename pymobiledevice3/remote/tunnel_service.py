@@ -14,6 +14,13 @@ from abc import ABC, abstractmethod
 from asyncio import CancelledError, StreamReader, StreamWriter
 from collections import namedtuple
 from contextlib import asynccontextmanager, suppress
+
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.lockdown_service import LockdownService
+
+if sys.platform != 'win32':
+    pass
+
 from pathlib import Path
 from socket import AF_INET6, create_connection
 from ssl import VerifyMode
@@ -138,8 +145,6 @@ RPPairingPacket = Struct(
 
 
 class RemotePairingTunnel(ABC):
-    REQUESTED_MTU = 1420
-
     def __init__(self):
         self._queue = asyncio.Queue()
         self._tun_read_task = None
@@ -276,8 +281,9 @@ class RemotePairingTcpTunnel(RemotePairingTunnel):
                 ipv6_length = struct.unpack('>H', ipv6_header[4:6])[0]
                 ipv6_body = await self._reader.readexactly(ipv6_length)
                 self.tun.write(LOOKBACK_HEADER + ipv6_header + ipv6_body)
-        except OSError:
-            self._logger.warning(f'got OSError in {asyncio.current_task().get_name()}')
+        except (OSError, asyncio.exceptions.IncompleteReadError) as e:
+            self._logger.warning(f'got {e.__class__.__name__} in {asyncio.current_task().get_name()}')
+            await self.wait_closed()
 
     async def wait_closed(self) -> None:
         try:
@@ -317,7 +323,20 @@ class TunnelResult:
     client: RemotePairingTunnel
 
 
-class RemotePairingProtocol:
+class StartTcpTunnel(ABC):
+    REQUESTED_MTU = 16000
+
+    @property
+    @abstractmethod
+    def remote_identifier(self) -> str:
+        pass
+
+    @abstractmethod
+    async def start_tcp_tunnel(self) -> AsyncGenerator[TunnelResult, None]:
+        pass
+
+
+class RemotePairingProtocol(StartTcpTunnel):
     WIRE_PROTOCOL_VERSION = 19
 
     def __init__(self):
@@ -490,7 +509,8 @@ class RemotePairingProtocol:
         response = self._receive_plain_response()['event']['_0']
 
         if 'pairingRejectedWithError' in response:
-            raise PairingError(response['pairingRejectedWithError']['wrappedError']['userInfo']['NSLocalizedDescription'])
+            raise PairingError(
+                response['pairingRejectedWithError']['wrappedError']['userInfo']['NSLocalizedDescription'])
         elif 'awaitingUserConsent' in response:
             pairingData = self._receive_pairing_data()
         else:
@@ -837,6 +857,43 @@ class RemotePairingTunnelService(RemotePairingProtocol):
                 f'PORT:{self.port}>')
 
 
+class CoreDeviceTunnelProxy(StartTcpTunnel, LockdownService):
+    SERVICE_NAME = 'com.apple.internal.devicecompute.CoreDeviceProxy'
+
+    def __init__(self, lockdown: LockdownServiceProvider) -> None:
+        LockdownService.__init__(self, lockdown, self.SERVICE_NAME)
+        self._lockdown = lockdown
+        self._service: Optional[ServiceConnection] = None
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        self._loop = loop
+
+    @property
+    def remote_identifier(self) -> str:
+        return self._lockdown.udid
+
+    @asynccontextmanager
+    async def start_tcp_tunnel(self) -> AsyncGenerator['TunnelResult', None]:
+        self._service = await self._lockdown.aio_start_lockdown_service(self.SERVICE_NAME)
+        tunnel = RemotePairingTcpTunnel(self._service.reader, self._service.writer)
+        handshake_response = await tunnel.request_tunnel_establish()
+        tunnel.start_tunnel(handshake_response['clientParameters']['address'],
+                            handshake_response['clientParameters']['mtu'])
+        try:
+            yield TunnelResult(
+                tunnel.tun.name, handshake_response['serverAddress'], handshake_response['serverRSDPort'],
+                TunnelProtocol.TCP, tunnel)
+        finally:
+            await tunnel.stop_tunnel()
+
+    async def aio_close(self) -> None:
+        await self._service.aio_close()
+
+
 def create_core_device_tunnel_service_using_rsd(
         rsd: RemoteServiceDiscoveryService, autopair: bool = True) -> CoreDeviceTunnelService:
     service = CoreDeviceTunnelService(rsd)
@@ -898,6 +955,11 @@ async def start_tunnel(
     elif isinstance(protocol_handler, RemotePairingTunnelService):
         async with start_tunnel_over_remotepairing(
                 protocol_handler, secrets=secrets, max_idle_timeout=max_idle_timeout, protocol=protocol) as service:
+            yield service
+    elif isinstance(protocol_handler, CoreDeviceTunnelProxy):
+        if protocol != TunnelProtocol.TCP:
+            raise ValueError('CoreDeviceTunnelProxy protocol can only be TCP')
+        async with protocol_handler.start_tcp_tunnel() as service:
             yield service
     else:
         raise Exception(f'Bad value for protocol_handler: {protocol_handler}')
