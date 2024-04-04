@@ -90,6 +90,7 @@ def lockdown_pair(service_provider: LockdownClient):
     """ pair device """
     service_provider.pair()
 
+
 @lockdown_group.command('pair-supervised', cls=CommandWithoutAutopair)
 @click.argument('p12file', type=click.File('rb'))
 @click.argument('password')

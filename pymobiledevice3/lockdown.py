@@ -393,7 +393,8 @@ class LockdownClient(ABC, LockdownServiceProvider):
                        'SystemBUID': self.system_buid}
 
         pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2',
-                        'PairingOptions': {'SupervisorCertificate': decrypted_p12.cert.certificate.public_bytes(Encoding.DER), 'ExtendedPairingErrors': True}}
+                        'PairingOptions': {'SupervisorCertificate': decrypted_p12.cert.certificate.public_bytes(Encoding.DER),
+                                           'ExtendedPairingErrors': True}}
 
         # first pair with SupervisorCertificate as PairingOptions to get Challenge
         pair = self._request_pair(pair_options, timeout=timeout)
@@ -551,7 +552,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         error = response.get('Error')
         if error is not None:
             # return response if supervisor cert challenge is required, to work with pair_supervisor
-            if(error) == 'MCChallengeRequired':
+            if error == 'MCChallengeRequired':
                 return response
             exception_errors = {'PasswordProtected': PasswordRequiredError,
                                 'PairingDialogResponsePending': PairingDialogResponsePendingError,
