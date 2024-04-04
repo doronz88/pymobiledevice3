@@ -208,13 +208,8 @@ To do so, use the following snippet:
 from pymobiledevice3.lockdown import create_using_usbmux, create_using_tcp
 
 # Connecting via usbmuxd (you can also specify a specific UDID to connect to)
+# Please note usbmuxd allows connecting to devices both on USB or on WiFi
 lockdown = create_using_usbmux()
-
-# Or you could establish a TCP connection over WiFi, assuming the device allows these types of connections
-# You can enable them using: `pymobiledevice3 lockdown wifi-connections on`
-# Please note this creates an untrusted lockdown connection and completely bypasses the need for usbmuxd
-# For trusted connections, the user must also provide the right pair record (done previously over usb)
-lockdown = create_using_tcp('192.168.2.2')
 ```
 
 Now you can connect to which service you'd like. We already [implemented many of the services](#implemented-services),
