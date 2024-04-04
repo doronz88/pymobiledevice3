@@ -12,6 +12,7 @@ from pymobiledevice3 import usbmux
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import MuxException, NotPairedError
 from pymobiledevice3.usbmux import PlistMuxConnection
+from pymobiledevice3.utils import chown_to_non_sudo_if_needed
 
 PAIR_RECORDS_PATH = {
     'win32': Path(os.environ.get('ALLUSERSPROFILE', ''), 'Apple', 'Lockdown'),
@@ -81,6 +82,7 @@ def create_pairing_records_cache_folder(pairing_records_cache_folder: Path = Non
         pairing_records_cache_folder = get_home_folder()
     else:
         pairing_records_cache_folder.mkdir(parents=True, exist_ok=True)
+    chown_to_non_sudo_if_needed(pairing_records_cache_folder)
     return pairing_records_cache_folder
 
 

@@ -10,6 +10,7 @@ from contextlib import contextmanager, suppress
 from enum import Enum
 from functools import wraps
 from pathlib import Path
+from ssl import SSLZeroReturnError
 from typing import Dict, Mapping, Optional
 
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
@@ -56,12 +57,7 @@ def _reconnect_on_remote_close(f):
         except (BrokenPipeError, ConnectionTerminatedError):
             self: LockdownClient = args[0]
 
-            # first we release the socket on our end to avoid a ResourceWarning
-            self.close()
-
-            # now we re-establish the connection
-            self.logger.debug('remote device closed the connection. reconnecting...')
-            self.service = self._create_service_connection(self.port)
+            self._reestablish_connection()
             self.validate_pairing()
             return f(*args, **kwargs)
 
@@ -311,7 +307,12 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.session_id = start_session.get('SessionID')
         if start_session.get('EnableSessionSSL'):
             with self.ssl_file() as f:
-                self.service.ssl_start(f)
+                try:
+                    self.service.ssl_start(f)
+                except SSLZeroReturnError:
+                    # possible when we have a pair record, but it was removed on-device
+                    self._reestablish_connection()
+                    return False
 
         self.paired = True
 
@@ -526,6 +527,10 @@ class LockdownClient(ABC, LockdownServiceProvider):
     def save_pair_record(self) -> None:
         pair_record_file = self.pairing_records_cache_folder / f'{self.identifier}.plist'
         pair_record_file.write_bytes(plistlib.dumps(self.pair_record))
+
+    def _reestablish_connection(self) -> None:
+        self.close()
+        self.service = self._create_service_connection(self.port)
 
 
 class UsbmuxLockdownClient(LockdownClient):

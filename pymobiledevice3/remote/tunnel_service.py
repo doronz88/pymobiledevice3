@@ -14,14 +14,6 @@ from abc import ABC, abstractmethod
 from asyncio import CancelledError, StreamReader, StreamWriter
 from collections import namedtuple
 from contextlib import asynccontextmanager, suppress
-
-from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing
-from pymobiledevice3.service_connection import ServiceConnection
-
-if sys.platform != 'win32':
-    from os import chown
-
-from os import getenv
 from pathlib import Path
 from socket import AF_INET6, create_connection
 from ssl import VerifyMode
@@ -61,6 +53,7 @@ try:
 except ImportError:
     SSLPSKContext = None
 
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing
 from pymobiledevice3.ca import make_cert
 from pymobiledevice3.exceptions import PairingError, PyMobileDevice3Exception, UserDeniedPairingError
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, create_pairing_records_cache_folder, generate_host_id, \
@@ -70,7 +63,8 @@ from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.utils import get_rsds, resume_remoted_if_required, stop_remoted_if_required
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
-from pymobiledevice3.utils import asyncio_print_traceback, set_keepalive
+from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.utils import asyncio_print_traceback, chown_to_non_sudo_if_needed, set_keepalive
 
 if sys.platform == 'darwin':
     LOOKBACK_HEADER = struct.pack('>I', AF_INET6)
@@ -453,8 +447,7 @@ class RemotePairingProtocol:
                 'private_key': self.ed25519_private_key.private_bytes_raw(),
                 'remote_unlock_host_key': self.remote_unlock_host_key
             }))
-        if getenv('SUDO_UID') and sys.platform != 'win32':
-            chown(self.pair_record_path, int(getenv('SUDO_UID')), int(getenv('SUDO_GID')))
+        chown_to_non_sudo_if_needed(self.pair_record_path)
 
     @property
     def pair_record(self) -> Optional[Mapping]:
