@@ -72,8 +72,8 @@ class ServiceConnection:
         # usbmux connections contain additional information associated with the current connection
         self.mux_device = mux_device
 
-        self._reader = None  # type: Optional[asyncio.StreamReader]
-        self._writer = None  # type: Optional[asyncio.StreamWriter]
+        self.reader = None  # type: Optional[asyncio.StreamReader]
+        self.writer = None  # type: Optional[asyncio.StreamWriter]
 
     @staticmethod
     def create_using_tcp(hostname: str, port: int, keep_alive: bool = True) -> 'ServiceConnection':
@@ -100,15 +100,15 @@ class ServiceConnection:
         self.socket.close()
 
     async def aio_close(self) -> None:
-        if self._writer is None:
+        if self.writer is None:
             return
-        self._writer.close()
+        self.writer.close()
         try:
-            await self._writer.wait_closed()
+            await self.writer.wait_closed()
         except ssl.SSLError:
             pass
-        self._writer = None
-        self._reader = None
+        self.writer = None
+        self.reader = None
 
     def recv(self, length=4096) -> bytes:
         """ socket.recv() normal behavior. attempt to receive a single chunk """
@@ -148,9 +148,9 @@ class ServiceConnection:
 
     async def aio_recv_prefixed(self, endianity='>') -> bytes:
         """ receive a data block prefixed with a u32 length field """
-        size = await self._reader.readexactly(4)
+        size = await self.reader.readexactly(4)
         size = struct.unpack(endianity + 'L', size)[0]
-        return await self._reader.readexactly(size)
+        return await self.reader.readexactly(size)
 
     def send_prefixed(self, data: bytes) -> None:
         """ send a data block prefixed with a u32 length field """
@@ -170,21 +170,21 @@ class ServiceConnection:
         return self.sendall(build_plist(d, endianity, fmt))
 
     async def aio_send_plist(self, d, endianity='>', fmt=plistlib.FMT_XML) -> None:
-        self._writer.write(build_plist(d, endianity, fmt))
-        await self._writer.drain()
+        self.writer.write(build_plist(d, endianity, fmt))
+        await self.writer.drain()
 
     def ssl_start(self, certfile, keyfile=None) -> None:
         self.socket = create_context(certfile, keyfile=keyfile).wrap_socket(self.socket)
 
     async def aio_ssl_start(self, certfile, keyfile=None) -> None:
-        self._reader, self._writer = await asyncio.open_connection(
+        self.reader, self.writer = await asyncio.open_connection(
             sock=self.socket,
             ssl=create_context(certfile, keyfile=keyfile),
             server_hostname=''
         )
 
     async def aio_start(self) -> None:
-        self._reader, self._writer = await asyncio.open_connection(sock=self.socket)
+        self.reader, self.writer = await asyncio.open_connection(sock=self.socket)
 
     def shell(self) -> None:
         IPython.embed(

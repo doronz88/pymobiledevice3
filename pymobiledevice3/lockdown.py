@@ -599,11 +599,11 @@ class RemoteLockdownClient(LockdownClient):
         raise NotImplementedError(
             'RemoteXPC service connections should only be created using RemoteServiceDiscoveryService')
 
-    def _handle_autopair(self, *args):
+    def _handle_autopair(self, *args, **kwargs):
         # The RemoteXPC version of lockdown doesn't support pairing operations
         return None
 
-    def pair(self, timeout: float = None) -> None:
+    def pair(self, *args, **kwargs) -> None:
         raise NotImplementedError('RemoteXPC lockdown version does not support pairing operations')
 
     def unpair(self, timeout: float = None) -> None:

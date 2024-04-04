@@ -144,7 +144,8 @@ Commands:
 
 ## Working with developer tools (iOS >= 17.0)
 
-> **NOTE:** Currently, this is only officially supported on macOS & Windows
+> **NOTE:** Currently, this is only officially supported on macOS & Windows (up to iOS 17.3.1), but fully supported on
+> all platforms starting at iOS 17.4 using the new lockdown tunnel.
 
 Starting at iOS 17.0, Apple introduced the new CoreDevice framework to work with iOS devices. This framework relies on
 the [RemoteXPC](misc/RemoteXPC.md) protocol. In order to communicate with the developer services you'll be required to
@@ -160,8 +161,13 @@ first create [trusted tunnel](misc/RemoteXPC.md#trusted-tunnel) in one of the tw
 - Create tunnel manually using `start-tunnel`
     - Execute the following:
       ```shell
-      # on windows, use a privileged shell
-      # you may pass `-t wifi` to force a WiFi tunnel 
+      # NOTE: on windows, use a privileged shell
+
+      # starting at iOS 17.4 you can use the much faster lockdown tunnel
+      sudo python3 -m pymobiledevice3 lockdown start-tunnel 
+
+      # on older iOS version use the following instead
+      # you may pass `-t wifi` to force a WiFi tunnel
       sudo python3 -m pymobiledevice3 remote start-tunnel
       ```
 
@@ -208,13 +214,8 @@ To do so, use the following snippet:
 from pymobiledevice3.lockdown import create_using_usbmux, create_using_tcp
 
 # Connecting via usbmuxd (you can also specify a specific UDID to connect to)
+# Please note usbmuxd allows connecting to devices both on USB or on WiFi
 lockdown = create_using_usbmux()
-
-# Or you could establish a TCP connection over WiFi, assuming the device allows these types of connections
-# You can enable them using: `pymobiledevice3 lockdown wifi-connections on`
-# Please note this creates an untrusted lockdown connection and completely bypasses the need for usbmuxd
-# For trusted connections, the user must also provide the right pair record (done previously over usb)
-lockdown = create_using_tcp('192.168.2.2')
 ```
 
 Now you can connect to which service you'd like. We already [implemented many of the services](#implemented-services),
