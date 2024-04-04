@@ -144,7 +144,8 @@ Commands:
 
 ## Working with developer tools (iOS >= 17.0)
 
-> **NOTE:** Currently, this is only officially supported on macOS & Windows
+> **NOTE:** Currently, this is only officially supported on macOS & Windows (up to iOS 17.3.1), but fully supported on
+> all platforms starting at iOS 17.4 using the new lockdown tunnel.
 
 Starting at iOS 17.0, Apple introduced the new CoreDevice framework to work with iOS devices. This framework relies on
 the [RemoteXPC](misc/RemoteXPC.md) protocol. In order to communicate with the developer services you'll be required to
@@ -160,8 +161,13 @@ first create [trusted tunnel](misc/RemoteXPC.md#trusted-tunnel) in one of the tw
 - Create tunnel manually using `start-tunnel`
     - Execute the following:
       ```shell
-      # on windows, use a privileged shell
-      # you may pass `-t wifi` to force a WiFi tunnel 
+      # NOTE: on windows, use a privileged shell
+
+      # starting at iOS 17.4 you can use the much faster lockdown tunnel
+      sudo python3 -m pymobiledevice3 lockdown start-tunnel 
+
+      # on older iOS version use the following instead
+      # you may pass `-t wifi` to force a WiFi tunnel
       sudo python3 -m pymobiledevice3 remote start-tunnel
       ```
 
