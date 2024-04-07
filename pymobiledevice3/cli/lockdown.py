@@ -91,6 +91,14 @@ def lockdown_pair(service_provider: LockdownClient):
     service_provider.pair()
 
 
+@lockdown_group.command('pair-supervised', cls=CommandWithoutAutopair)
+@click.argument('p12file', type=click.File('rb'))
+@click.argument('password')
+def lockdown_pair_supervised(service_provider: LockdownClient, p12file, password):
+    """ pair supervised device """
+    service_provider.pair_supervised(p12file=p12file, password=password)
+
+
 @lockdown_group.command('save-pair-record', cls=CommandWithoutAutopair)
 @click.argument('output', type=click.File('wb'))
 def lockdown_save_pair_record(service_provider: LockdownClient, output):

@@ -13,7 +13,11 @@ from pathlib import Path
 from ssl import SSLZeroReturnError
 from typing import Dict, Mapping, Optional
 
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding
+from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7SignatureBuilder
+from cryptography.hazmat.primitives.serialization.pkcs12 import load_pkcs12
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
@@ -358,6 +362,63 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.paired = True
 
     @_reconnect_on_remote_close
+    def pair_supervised(self, timeout: float = None, p12file: Path = None, password: str = None) -> None:
+
+        keystore_data = p12file.read()
+        try:
+            decrypted_p12 = load_pkcs12(
+                keystore_data, password.encode('utf-8'))
+        except Exception as pkcs12_error:
+            self.service.close()
+            raise Exception(f'load_pkcs12 error: {pkcs12_error}')
+
+        self.device_public_key = self.get_value('', 'DevicePublicKey')
+        if not self.device_public_key:
+            self.logger.error('Unable to retrieve DevicePublicKey')
+            self.service.close()
+            raise PairingError()
+
+        self.logger.info('Creating host key & certificate')
+        cert_pem, private_key_pem, device_certificate = ca_do_everything(
+            self.device_public_key)
+
+        pair_record = {'DevicePublicKey': self.device_public_key,
+                       'DeviceCertificate': device_certificate,
+                       'HostCertificate': cert_pem,
+                       'HostID': self.host_id,
+                       'RootCertificate': cert_pem,
+                       'RootPrivateKey': private_key_pem,
+                       'WiFiMACAddress': self.wifi_mac_address,
+                       'SystemBUID': self.system_buid}
+
+        pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2',
+                        'PairingOptions': {'SupervisorCertificate': decrypted_p12.cert.certificate.public_bytes(Encoding.DER),
+                                           'ExtendedPairingErrors': True}}
+
+        # first pair with SupervisorCertificate as PairingOptions to get Challenge
+        pair = self._request_pair(pair_options, timeout=timeout)
+        if pair.get('Error') == 'MCChallengeRequired':
+            extendedresponse = pair.get('ExtendedResponse')
+            if extendedresponse is not None:
+                pairingchallenge = extendedresponse.get('PairingChallenge')
+                signed_response = PKCS7SignatureBuilder().set_data(pairingchallenge).add_signer(
+                    decrypted_p12.cert.certificate, decrypted_p12.key, hashes.SHA256()).sign(Encoding.DER, [])
+                pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2', 'PairingOptions': {
+                    'ChallengeResponse': signed_response, 'ExtendedPairingErrors': True}}
+                # second pair with Response to Challenge
+                pair = self._request_pair(pair_options, timeout=timeout)
+
+        pair_record['HostPrivateKey'] = private_key_pem
+        escrow_bag = pair.get('EscrowBag')
+
+        if escrow_bag is not None:
+            pair_record['EscrowBag'] = pair.get('EscrowBag')
+
+        self.pair_record = pair_record
+        self.save_pair_record()
+        self.paired = True
+
+    @_reconnect_on_remote_close
     def unpair(self, host_id: str = None) -> None:
         pair_record = self.pair_record if host_id is None else {'HostID': host_id}
         self._request('Unpair', {'PairRecord': pair_record, 'ProtocolVersion': '2'}, verify_request=False)
@@ -489,6 +550,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         error = response.get('Error')
         if error is not None:
+            # return response if supervisor cert challenge is required, to work with pair_supervisor
+            if error == 'MCChallengeRequired':
+                return response
             exception_errors = {'PasswordProtected': PasswordRequiredError,
                                 'PairingDialogResponsePending': PairingDialogResponsePendingError,
                                 'UserDeniedPairing': UserDeniedPairingError,
