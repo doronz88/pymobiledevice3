@@ -85,6 +85,10 @@ def developer():
     to execution. You can achieve this using:
 
     pymobiledevice3 mounter mount
+
+    Also, starting at iOS 17.0, a tunnel must be created to the device for the services
+    to be accessible. Therefore, every CLI command is retried with a `--tunnel` option
+    for implicitly accessing tunneld when necessary
     """
     pass
 

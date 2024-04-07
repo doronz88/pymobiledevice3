@@ -125,7 +125,7 @@ def main() -> None:
         logger.error('Developer Mode is disabled. You can try to enable it using: '
                      'python3 -m pymobiledevice3 amfi enable-developer-mode')
     except InvalidServiceError:
-        if '--tunnel' not in sys.argv:
+        if 'developer' in sys.argv and '--tunnel' not in sys.argv:
             sys.argv += ['--tunnel', '']
             return main()
         logger.error(INVALID_SERVICE_MESSAGE)
