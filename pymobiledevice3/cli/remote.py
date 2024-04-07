@@ -159,27 +159,16 @@ async def start_tunnel_task(
         connection_type.USB: get_core_device_tunnel_services,
         connection_type.WIFI: get_remote_pairing_tunnel_services,
     }
-    tunnel_services = await get_tunnel_services[connection_type]()
+    tunnel_services = await get_tunnel_services[connection_type](udid=udid)
     if not tunnel_services:
         # no devices were found
         raise NoDeviceConnectedError()
-    if len(tunnel_services) == 1:
+    if len(tunnel_services) == 1 or udid is not None:
         # only one device found
         service = tunnel_services[0]
     else:
-        # several devices were found
-        if udid is None:
-            # show prompt if non explicitly selected
-            service = prompt_device_list(tunnel_services)
-        else:
-            service = [device for device in tunnel_services if device.remote_identifier == udid]
-            if len(service) > 0:
-                service = service[0]
-            else:
-                raise NoDeviceConnectedError()
-
-    if udid is not None and service.remote_identifier != udid:
-        raise NoDeviceConnectedError()
+        # several devices were found, show prompt if none explicitly selected
+        service = prompt_device_list(tunnel_services)
 
     await tunnel_task(service, secrets=secrets, script_mode=script_mode, max_idle_timeout=max_idle_timeout,
                       protocol=protocol)

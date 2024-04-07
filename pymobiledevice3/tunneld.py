@@ -229,6 +229,7 @@ class TunneldCore:
 
             # establish an untrusted RSD handshake
             rsd = RemoteServiceDiscoveryService((peer_address, RSD_PORT))
+
             with stop_remoted():
                 try:
                     rsd.connect()
@@ -356,12 +357,10 @@ class TunneldRunner:
                     except (ConnectionFailedError, InvalidServiceError, MuxException):
                         pass
                 if connection_type in ('usb', None):
-                    for rsd in await get_rsds():
-                        if rsd.udid != udid:
-                            rsd.close()
-                            continue
+                    for rsd in await get_rsds(udid=udid):
                         rsd_ip = rsd.service.address[0]
                         if ip is not None and rsd_ip != ip:
+                            rsd.close()
                             continue
                         task = asyncio.create_task(
                             self._tunneld_core.start_tunnel_task(rsd_ip,
@@ -371,12 +370,10 @@ class TunneldRunner:
                         self._tunneld_core.tunnel_tasks[rsd_ip] = TunnelTask(task=task, udid=rsd.udid)
                         created_task = True
                 if not created_task and connection_type in ('wifi', None):
-                    for remotepairing in await get_remote_pairing_tunnel_services():
-                        if remotepairing.remote_identifier != udid:
-                            remotepairing.close()
-                            continue
+                    for remotepairing in await get_remote_pairing_tunnel_services(udid=udid):
                         remotepairing_ip = remotepairing.hostname
                         if ip is not None and remotepairing_ip != ip:
+                            remotepairing.close()
                             continue
                         task = asyncio.create_task(
                             self._tunneld_core.start_tunnel_task(remotepairing_ip, remotepairing, queue=queue),

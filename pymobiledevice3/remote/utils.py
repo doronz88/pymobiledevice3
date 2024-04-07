@@ -1,7 +1,7 @@
 import contextlib
 import platform
 import sys
-from typing import Generator, List
+from typing import Generator, List, Optional
 
 import psutil
 
@@ -12,7 +12,8 @@ from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServ
 REMOTED_PATH = '/usr/libexec/remoted'
 
 
-async def get_rsds(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[RemoteServiceDiscoveryService]:
+async def get_rsds(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT, udid: Optional[str] = None) -> \
+        List[RemoteServiceDiscoveryService]:
     result = []
     with stop_remoted():
         for answer in await browse_remoted(timeout=bonjour_timeout):
@@ -24,7 +25,10 @@ async def get_rsds(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[Rem
                     continue
                 except OSError:
                     continue
-                result.append(rsd)
+                if udid is None or rsd.udid == udid:
+                    result.append(rsd)
+                else:
+                    rsd.close()
     return result
 
 
