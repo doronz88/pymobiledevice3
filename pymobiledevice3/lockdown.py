@@ -23,9 +23,9 @@ from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.exceptions import CannotStopSessionError, ConnectionTerminatedError, FatalPairingError, \
-    IncorrectModeError, InvalidConnectionError, InvalidHostIDError, InvalidServiceError, LockdownError, \
-    MissingValueError, NotPairedError, PairingDialogResponsePendingError, PairingError, PasswordRequiredError, \
-    SetProhibitedError, StartServiceError, UserDeniedPairingError
+    GetProhibitedError, IncorrectModeError, InvalidConnectionError, InvalidHostIDError, InvalidServiceError, \
+    LockdownError, MissingValueError, NotPairedError, PairingDialogResponsePendingError, PairingError, \
+    PasswordRequiredError, SetProhibitedError, StartServiceError, UserDeniedPairingError
 from pymobiledevice3.irecv_devices import IRECV_DEVICES
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.pair_records import create_pairing_records_cache_folder, generate_host_id, \
@@ -557,6 +557,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
                                 'PairingDialogResponsePending': PairingDialogResponsePendingError,
                                 'UserDeniedPairing': UserDeniedPairingError,
                                 'InvalidHostID': InvalidHostIDError,
+                                'GetProhibited': GetProhibitedError,
                                 'SetProhibited': SetProhibitedError,
                                 'MissingValue': MissingValueError,
                                 'InvalidService': InvalidServiceError,

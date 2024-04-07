@@ -12,7 +12,7 @@ __all__ = [
     'DeveloperModeError', 'ProfileError', 'IRecvError', 'IRecvNoDeviceConnectedError',
     'NoDeviceSelectedError', 'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
     'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError', 'CoreDeviceError',
-    'AccessDeniedError', 'RSDRequiredError', 'SysdiagnoseTimeoutError',
+    'AccessDeniedError', 'RSDRequiredError', 'SysdiagnoseTimeoutError', 'GetProhibitedError',
 ]
 
 from typing import List, Optional
@@ -224,6 +224,10 @@ class DeveloperModeError(PyMobileDevice3Exception):
 
 class LockdownError(PyMobileDevice3Exception):
     """ lockdown general error """
+    pass
+
+
+class GetProhibitedError(LockdownError):
     pass
 
 
