@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 from asyncio import CancelledError, StreamReader, StreamWriter
 from collections import namedtuple
 from contextlib import asynccontextmanager, suppress
+
 from packaging.version import Version
 
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
