@@ -16,7 +16,6 @@ from collections import namedtuple
 from contextlib import asynccontextmanager, suppress
 from packaging.version import Version
 
-from pymobiledevice3.exceptions import InvalidServiceError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 
@@ -815,6 +814,7 @@ class CoreDeviceTunnelService(RemotePairingProtocol, RemoteService):
         return self.service.send_request({
             'mangledTypeName': 'RemotePairing.ControlChannelMessageEnvelope', 'value': data})
 
+
 class RemotePairingTunnelService(RemotePairingProtocol):
     def __init__(self, remote_identifier: str, hostname: str, port: int) -> None:
         RemotePairingProtocol.__init__(self)
@@ -968,7 +968,8 @@ async def start_tunnel(
         raise Exception(f'Bad value for protocol_handler: {protocol_handler}')
 
 
-async def get_core_device_tunnel_services(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT,
+async def get_core_device_tunnel_services(
+        bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT,
         udid: Optional[str] = None) -> List[CoreDeviceTunnelService]:
     result = []
     for rsd in await get_rsds(bonjour_timeout=bonjour_timeout, udid=udid):
@@ -985,7 +986,8 @@ async def get_core_device_tunnel_services(bonjour_timeout: float = DEFAULT_BONJO
     return result
 
 
-async def get_remote_pairing_tunnel_services(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT,
+async def get_remote_pairing_tunnel_services(
+        bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT,
         udid: Optional[str] = None) -> List[RemotePairingTunnelService]:
     result = []
     for answer in await browse_remotepairing(timeout=bonjour_timeout):
