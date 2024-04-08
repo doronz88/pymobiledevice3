@@ -971,7 +971,6 @@ async def start_tunnel(
 async def get_core_device_tunnel_services(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT,
         udid: Optional[str] = None) -> List[CoreDeviceTunnelService]:
     result = []
-    invalid_service_error = None
     for rsd in await get_rsds(bonjour_timeout=bonjour_timeout, udid=udid):
         if udid is None and Version(rsd.product_version) < Version('17.0'):
             logger.debug(f'Skipping {rsd.udid}:, iOS {rsd.product_version} < 17.0')
@@ -979,16 +978,10 @@ async def get_core_device_tunnel_services(bonjour_timeout: float = DEFAULT_BONJO
             continue
         try:
             result.append(create_core_device_tunnel_service_using_rsd(rsd))
-        except InvalidServiceError as e:
-            invalid_service_error = invalid_service_error or e
-            logger.error(f'Skipping {rsd.udid} iOS {rsd.product_version}: {e}')
-            rsd.close()
         except Exception as e:
-            logger.error(f'Failed to start service: {rsd}')
+            logger.error(f'Failed to start service: {rsd}: {e}')
+            rsd.close()
             raise
-    # Only raise if all attached devices fail. May lead to retrying with --tunnel argument.
-    if invalid_service_error and not result:
-        raise invalid_service_error
     return result
 
 
