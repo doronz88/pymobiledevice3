@@ -15,6 +15,8 @@ from asyncio import CancelledError, StreamReader, StreamWriter
 from collections import namedtuple
 from contextlib import asynccontextmanager, suppress
 
+from packaging.version import Version
+
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 
@@ -83,6 +85,8 @@ if sys.platform == 'win32':
         logging.getLogger('wintun').info(message)
 
     set_logger(wintun_logger)
+
+logger = logging.getLogger(__name__)
 
 IPV6_HEADER_SIZE = 40
 UDP_HEADER_SIZE = 8
@@ -965,20 +969,33 @@ async def start_tunnel(
         raise Exception(f'Bad value for protocol_handler: {protocol_handler}')
 
 
-async def get_core_device_tunnel_services(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT) \
-        -> List[CoreDeviceTunnelService]:
+async def get_core_device_tunnel_services(
+        bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT,
+        udid: Optional[str] = None) -> List[CoreDeviceTunnelService]:
     result = []
-    for rsd in await get_rsds(bonjour_timeout=bonjour_timeout):
-        result.append(create_core_device_tunnel_service_using_rsd(rsd))
+    for rsd in await get_rsds(bonjour_timeout=bonjour_timeout, udid=udid):
+        if udid is None and Version(rsd.product_version) < Version('17.0'):
+            logger.debug(f'Skipping {rsd.udid}:, iOS {rsd.product_version} < 17.0')
+            rsd.close()
+            continue
+        try:
+            result.append(create_core_device_tunnel_service_using_rsd(rsd))
+        except Exception as e:
+            logger.error(f'Failed to start service: {rsd}: {e}')
+            rsd.close()
+            raise
     return result
 
 
-async def get_remote_pairing_tunnel_services(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT) \
-        -> List[RemotePairingTunnelService]:
+async def get_remote_pairing_tunnel_services(
+        bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT,
+        udid: Optional[str] = None) -> List[RemotePairingTunnelService]:
     result = []
     for answer in await browse_remotepairing(timeout=bonjour_timeout):
         for ip in answer.ips:
             for identifier in iter_remote_paired_identifiers():
+                if udid is not None and identifier != udid:
+                    continue
                 try:
                     result.append(create_core_device_tunnel_service_using_remotepairing(identifier, ip, answer.port))
                     break
