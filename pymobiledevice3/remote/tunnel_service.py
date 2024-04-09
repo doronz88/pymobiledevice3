@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 from asyncio import CancelledError, StreamReader, StreamWriter
 from collections import namedtuple
 from contextlib import asynccontextmanager, suppress
+from uuid import uuid4
 
 from packaging.version import Version
 
@@ -189,7 +190,7 @@ class RemotePairingTunnel(ABC):
             self._logger.warning(f'got oserror in {asyncio.current_task().get_name()}')
 
     def start_tunnel(self, address: str, mtu: int) -> None:
-        self.tun = TunTapDevice()
+        self.tun = TunTapDevice(name=uuid4().hex)
         self.tun.mtu = mtu
         self.tun.addr = address
         self.tun.up()
