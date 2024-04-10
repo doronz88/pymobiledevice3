@@ -13,6 +13,7 @@ __all__ = [
     'NoDeviceSelectedError', 'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
     'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError', 'CoreDeviceError',
     'AccessDeniedError', 'RSDRequiredError', 'SysdiagnoseTimeoutError', 'GetProhibitedError',
+    'FeatureNotSupportedError', 'OSNotSupportedError'
 ]
 
 from typing import List, Optional
@@ -363,3 +364,22 @@ class RSDRequiredError(PyMobileDevice3Exception):
 class SysdiagnoseTimeoutError(PyMobileDevice3Exception, TimeoutError):
     """ Timeout collecting new sysdiagnose archive """
     pass
+
+
+class SupportError(PyMobileDevice3Exception):
+    def __init__(self, os_name):
+        self.os_name = os_name
+        super().__init__()
+
+
+class OSNotSupportedError(SupportError):
+    """ Operating system is not supported. """
+    pass
+
+
+class FeatureNotSupportedError(SupportError):
+    """ Feature has not been implemented for OS. """
+
+    def __init__(self, os_name, feature):
+        super().__init__(os_name)
+        self.feature = feature

@@ -1,8 +1,6 @@
 import logging
-import os
 import platform
 import plistlib
-import sys
 import uuid
 from contextlib import suppress
 from pathlib import Path
@@ -11,17 +9,11 @@ from typing import Generator, Mapping, Optional
 from pymobiledevice3 import usbmux
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import MuxException, NotPairedError
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.usbmux import PlistMuxConnection
-from pymobiledevice3.utils import chown_to_non_sudo_if_needed
-
-PAIR_RECORDS_PATH = {
-    'win32': Path(os.environ.get('ALLUSERSPROFILE', ''), 'Apple', 'Lockdown'),
-    'darwin': Path('/var/db/lockdown/'),
-    'linux': Path('/var/lib/lockdown/'),
-}
 
 logger = logging.getLogger(__name__)
-
+OSUTILS = get_os_utils()
 PAIRING_RECORD_EXT = 'plist'
 
 
@@ -32,8 +24,7 @@ def generate_host_id(hostname: str = None) -> str:
 
 
 def get_itunes_pairing_record(identifier: str) -> Optional[Mapping]:
-    platform_type = 'linux' if not sys.platform.startswith('linux') else sys.platform
-    filename = PAIR_RECORDS_PATH[platform_type] / f'{identifier}.plist'
+    filename = OSUTILS.pair_record_path / f'{identifier}.plist'
     try:
         with open(filename, 'rb') as f:
             pair_record = plistlib.load(f)
@@ -82,7 +73,7 @@ def create_pairing_records_cache_folder(pairing_records_cache_folder: Path = Non
         pairing_records_cache_folder = get_home_folder()
     else:
         pairing_records_cache_folder.mkdir(parents=True, exist_ok=True)
-    chown_to_non_sudo_if_needed(pairing_records_cache_folder)
+    OSUTILS.chown_to_non_sudo_if_needed(pairing_records_cache_folder)
     return pairing_records_cache_folder
 
 

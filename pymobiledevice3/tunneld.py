@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import signal
-import sys
 import traceback
 from contextlib import asynccontextmanager, suppress
 from typing import Dict, List, Mapping, Optional, Tuple, Union
@@ -14,7 +13,6 @@ import fastapi
 import requests
 import uvicorn
 from fastapi import FastAPI
-from ifaddr import get_adapters
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
@@ -22,6 +20,7 @@ from pymobiledevice3.bonjour import REMOTED_SERVICE_NAMES, browse
 from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, GetProhibitedError, \
     InvalidServiceError, MuxException, PairingError, TunneldConnectionError
 from pymobiledevice3.lockdown import create_using_usbmux
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.module_imports import start_tunnel
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
@@ -41,6 +40,7 @@ REATTEMPT_COUNT = 5
 REMOTEPAIRING_INTERVAL = 5
 
 USBMUX_INTERVAL = 2
+OSUTILS = get_os_utils()
 
 
 @dataclasses.dataclass
@@ -80,13 +80,7 @@ class TunneldCore:
     async def monitor_usb_task(self) -> None:
         previous_ips = []
         while True:
-            if sys.platform == 'win32':
-                current_ips = [f'{adapter.ips[0].ip[0]}%{adapter.ips[0].ip[2]}' for adapter in get_adapters() if
-                               adapter.ips[0].is_IPv6]
-            else:
-                current_ips = [f'{adapter.ips[0].ip[0]}%{adapter.nice_name}' for adapter in get_adapters() if
-                               adapter.ips[0].is_IPv6]
-
+            current_ips = OSUTILS.get_ipv6_ips()
             added = [ip for ip in current_ips if ip not in previous_ips]
             removed = [ip for ip in previous_ips if ip not in current_ips]
 
