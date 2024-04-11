@@ -166,7 +166,10 @@ first create [trusted tunnel](misc/RemoteXPC.md#trusted-tunnel) in one of the tw
       # NOTE: on windows, use a privileged shell
 
       # starting at iOS 17.4 you can use the much faster lockdown tunnel
-      sudo python3 -m pymobiledevice3 lockdown start-tunnel 
+      sudo python3 -m pymobiledevice3 lockdown start-tunnel
+      
+      # if you need this connection type to be also available over wifi, you can enable it
+      python3 -m pymobiledevice3 lockdown wifi-connections on
 
       # on older iOS version use the following instead
       # you may pass `-t wifi` to force a WiFi tunnel
