@@ -121,7 +121,7 @@ def proclist(service_provider: LockdownClient):
 
 
 @dvt.command('applist', cls=Command)
-def applist(service_provider: LockdownClient, color):
+def applist(service_provider: LockdownServiceProvider) -> None:
     """ show application list """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         apps = ApplicationListing(dvt).applist()
