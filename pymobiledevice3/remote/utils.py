@@ -1,6 +1,5 @@
 import contextlib
 import platform
-import sys
 from typing import Generator, List, Optional
 
 import psutil
@@ -87,9 +86,3 @@ def stop_remoted() -> Generator[None, None, None]:
         yield
     finally:
         resume_remoted_if_required()
-
-
-def install_driver_if_required() -> None:
-    if sys.platform == 'win32':
-        import pywintunx_pmd3
-        pywintunx_pmd3.install_wetest_driver()

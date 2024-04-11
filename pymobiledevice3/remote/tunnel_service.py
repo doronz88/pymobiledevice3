@@ -14,15 +14,6 @@ from abc import ABC, abstractmethod
 from asyncio import CancelledError, StreamReader, StreamWriter
 from collections import namedtuple
 from contextlib import asynccontextmanager, suppress
-
-from packaging.version import Version
-
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
-from pymobiledevice3.services.lockdown_service import LockdownService
-
-if sys.platform != 'win32':
-    pass
-
 from pathlib import Path
 from socket import AF_INET6, create_connection
 from ssl import VerifyMode
@@ -41,12 +32,8 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from opack import dumps
-
-if sys.platform != 'win32':
-    from pytun_pmd3 import TunTapDevice
-else:
-    from pywintunx_pmd3 import TunTapDevice, set_logger
-
+from packaging.version import Version
+from pytun_pmd3 import TunTapDevice
 from qh3.asyncio import QuicConnectionProtocol
 from qh3.asyncio.client import connect as aioquic_connect
 from qh3.asyncio.protocol import QuicStreamHandler
@@ -56,6 +43,9 @@ from qh3.quic.connection import QuicConnection
 from qh3.quic.events import ConnectionTerminated, DatagramFrameReceived, QuicEvent, StreamDataReceived
 from srptools import SRPClientSession, SRPContext
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
+
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.lockdown_service import LockdownService
 
 try:
     from sslpsk_pmd3.sslpsk import SSLPSKContext
@@ -79,12 +69,6 @@ if sys.platform == 'darwin':
     LOOKBACK_HEADER = struct.pack('>I', AF_INET6)
 else:
     LOOKBACK_HEADER = b'\x00\x00\x86\xdd'
-
-if sys.platform == 'win32':
-    def wintun_logger(level: int, timestamp: int, message: str) -> None:
-        logging.getLogger('wintun').info(message)
-
-    set_logger(wintun_logger)
 
 logger = logging.getLogger(__name__)
 
@@ -190,8 +174,8 @@ class RemotePairingTunnel(ABC):
 
     def start_tunnel(self, address: str, mtu: int) -> None:
         self.tun = TunTapDevice()
-        self.tun.mtu = mtu
         self.tun.addr = address
+        self.tun.mtu = mtu
         self.tun.up()
         self._tun_read_task = asyncio.create_task(self.tun_read_task(), name=f'tun-read-{address}')
 
@@ -200,8 +184,8 @@ class RemotePairingTunnel(ABC):
         self._tun_read_task.cancel()
         with suppress(CancelledError):
             await self._tun_read_task
-        if sys.platform != 'darwin':
-            self.tun.down()
+        self.tun.down()
+        self.tun.close()
         self.tun = None
 
     @staticmethod
