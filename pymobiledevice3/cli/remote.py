@@ -17,14 +17,13 @@ from pymobiledevice3.remote.common import ConnectionType, TunnelProtocol
 from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_tunnel, verify_tunnel_imports
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
 from pymobiledevice3.remote.tunnel_service import get_core_device_tunnel_services, get_remote_pairing_tunnel_services
-from pymobiledevice3.remote.utils import get_rsds, install_driver_if_required
+from pymobiledevice3.remote.utils import get_rsds
 from pymobiledevice3.tunneld import TUNNELD_DEFAULT_ADDRESS, TunneldRunner
 
 logger = logging.getLogger(__name__)
 
 
 async def browse_rsd(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[Mapping]:
-    install_driver_if_required()
     devices = []
     for rsd in await get_rsds(timeout):
         devices.append({'address': rsd.service.address[0],
@@ -78,7 +77,6 @@ def cli_tunneld(
     """ Start Tunneld service for remote tunneling """
     if not verify_tunnel_imports():
         return
-    install_driver_if_required()
     protocol = TunnelProtocol(protocol)
     tunneld_runner = partial(TunneldRunner.create, host, port, protocol=protocol, usb_monitor=usb, wifi_monitor=wifi,
                              usbmux_monitor=usbmux)
@@ -106,7 +104,6 @@ def browse(timeout: float) -> None:
 @remote_cli.command('rsd-info', cls=RSDCommand)
 def rsd_info(service_provider: RemoteServiceDiscoveryService):
     """ show info extracted from RSD peer """
-    install_driver_if_required()
     print_json(service_provider.peer_info)
 
 
@@ -191,8 +188,6 @@ def cli_start_tunnel(
         connection_type: ConnectionType, udid: Optional[str], secrets: TextIO, script_mode: bool,
         max_idle_timeout: float, protocol: str) -> None:
     """ start tunnel """
-    if connection_type == ConnectionType.USB:
-        install_driver_if_required()
     if not verify_tunnel_imports():
         return
     asyncio.run(
@@ -214,6 +209,22 @@ def cli_delete_pair(udid: str):
 @click.argument('service_name')
 def cli_service(service_provider: RemoteServiceDiscoveryService, service_name: str):
     """ start an ipython shell for interacting with given service """
-    install_driver_if_required()
     with service_provider.start_remote_service(service_name) as service:
         service.shell()
+
+
+@remote_cli.command('install-wetest-drivers', cls=BaseCommand)
+@sudo_required
+def cli_install_wetest_drivers() -> None:
+    """ install WeTests drivers (windows-only) """
+    import pywintunx_pmd3
+    pywintunx_pmd3.install_wetest_driver()
+
+
+@remote_cli.command('uninstall-wetest-drivers', cls=BaseCommand)
+@sudo_required
+def cli_uninstall_wetest_drivers() -> None:
+    """ uninstall WeTests drivers (windows-only) """
+    import pywintunx_pmd3
+    pywintunx_pmd3.uninstall_wetest_driver()
+    pywintunx_pmd3.delete_driver()
