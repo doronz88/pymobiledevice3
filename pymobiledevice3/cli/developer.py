@@ -263,8 +263,8 @@ def netstat(service_provider: LockdownClient):
             for event in monitor:
                 if isinstance(event, ConnectionDetectionEvent):
                     logger.info(
-                        f'Connection detected: {event.local_address.data.hostname}:{event.local_address.port} -> '
-                        f'{event.remote_address.data.hostname}:{event.remote_address.port}')
+                        f'Connection detected: {event.local_address.data.address}:{event.local_address.port} -> '
+                        f'{event.remote_address.data.address}:{event.remote_address.port}')
 
 
 @dvt.command('screenshot', cls=Command)
