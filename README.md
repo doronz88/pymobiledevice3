@@ -316,10 +316,15 @@ There is A LOT you may do on the device using `pymobiledevice3`. This is just a 
 * Mount DeveloperDiskImage (On iOS>=17.0, each command will require an additional `--rsd` option):
     * `pymobiledevice3 mounter auto-mount`
     * The following will assume the DeveloperDiskImage is already mounted:
-        * Simulate a `lat long` location:
-            * `pymobiledevice3 developer simulate-location set lat long`
-            * Or the following for iOS>=17.0:
-                * `pymobiledevice3 developer dvt simulate-location set --rsd HOST PORT -- lat long`
+        * Simulate location    
+            * Simulate a `lat long` location:
+                * `pymobiledevice3 developer simulate-location set lat long`
+                * Or the following for iOS>=17.0:
+                    * `pymobiledevice3 developer dvt simulate-location set --rsd HOST PORT -- lat long`
+        * Play a .GPX file:
+            * `pymobiledevice3 developer dvt simulate-location play route.gpx`
+        * Clear the simulated location:
+            * `pymobiledevice3 developer dvt simulate-location clear`
         * Taking a screenshot from the device:
             * `pymobiledevice3 developer dvt screenshot /path/to/screen.png`
         * View detailed process list (including ppid, uid, guid, sandboxed, etc...):
