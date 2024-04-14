@@ -184,7 +184,6 @@ class RemotePairingTunnel(ABC):
         self._tun_read_task.cancel()
         with suppress(CancelledError):
             await self._tun_read_task
-        self.tun.down()
         self.tun.close()
         self.tun = None
 
