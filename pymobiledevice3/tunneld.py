@@ -19,8 +19,8 @@ from packaging.version import Version
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import REMOTED_SERVICE_NAMES, browse
-from pymobiledevice3.exceptions import ConnectionFailedError, GetProhibitedError, InvalidServiceError, MuxException, \
-    PairingError, TunneldConnectionError
+from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, GetProhibitedError, \
+    InvalidServiceError, MuxException, PairingError, TunneldConnectionError
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.module_imports import start_tunnel
@@ -134,22 +134,26 @@ class TunneldCore:
     async def monitor_usbmux_task(self) -> None:
         try:
             while True:
-                for mux_device in usbmux.list_devices():
-                    task_identifier = f'usbmux-{mux_device.serial}-{mux_device.connection_type}'
-                    if self.tunnel_exists_for_udid(mux_device.serial):
-                        continue
-                    try:
-                        service = CoreDeviceTunnelProxy(create_using_usbmux(mux_device.serial))
-                    except (MuxException, InvalidServiceError, GetProhibitedError, construct.core.StreamError):
-                        continue
-                    self.tunnel_tasks[task_identifier] = TunnelTask(
-                        udid=mux_device.serial,
-                        task=asyncio.create_task(
-                            self.start_tunnel_task(task_identifier,
-                                                   service,
-                                                   protocol=TunnelProtocol.TCP),
-                            name=f'start-tunnel-task-{task_identifier}'))
-                await asyncio.sleep(USBMUX_INTERVAL)
+                try:
+                    for mux_device in usbmux.list_devices():
+                        task_identifier = f'usbmux-{mux_device.serial}-{mux_device.connection_type}'
+                        if self.tunnel_exists_for_udid(mux_device.serial):
+                            continue
+                        try:
+                            service = CoreDeviceTunnelProxy(create_using_usbmux(mux_device.serial))
+                        except (MuxException, InvalidServiceError, GetProhibitedError, construct.core.StreamError):
+                            continue
+                        self.tunnel_tasks[task_identifier] = TunnelTask(
+                            udid=mux_device.serial,
+                            task=asyncio.create_task(
+                                self.start_tunnel_task(task_identifier,
+                                                       service,
+                                                       protocol=TunnelProtocol.TCP),
+                                name=f'start-tunnel-task-{task_identifier}'))
+                except ConnectionFailedToUsbmuxdError:
+                    logger.warning('failed to connect to usbmux. waiting for it to restart')
+                finally:
+                    await asyncio.sleep(USBMUX_INTERVAL)
         except asyncio.CancelledError:
             pass
 
