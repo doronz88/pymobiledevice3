@@ -44,16 +44,20 @@ class Command(click.Command):
 
         ecid = value
         logger.debug('searching among connected devices via lockdownd')
-        for device in usbmux.list_devices():
-            try:
-                lockdown = create_using_usbmux(serial=device.serial, connection_type='USB')
-            except (ConnectionFailedError, ConnectionFailedToUsbmuxdError, IncorrectModeError):
-                continue
-            if (ecid is None) or (lockdown.ecid == value):
-                logger.debug('found device')
-                return lockdown
-            else:
-                continue
+        try:
+            for device in usbmux.list_devices():
+                try:
+                    lockdown = create_using_usbmux(serial=device.serial, connection_type='USB')
+                except (ConnectionFailedError, IncorrectModeError):
+                    continue
+                if (ecid is None) or (lockdown.ecid == value):
+                    logger.debug('found device')
+                    return lockdown
+                else:
+                    continue
+        except ConnectionFailedToUsbmuxdError:
+            pass
+
         logger.debug('waiting for device to be available in Recovery mode')
         return IRecv(ecid=ecid)
 
