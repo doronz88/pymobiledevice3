@@ -47,9 +47,9 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def developer_mode_status(self) -> bool:
         return self.lockdown.developer_mode_status
 
-    def connect(self) -> None:
-        self.service.connect()
-        self.peer_info = self.service.receive_response()
+    async def connect(self) -> None:
+        await self.service.connect()
+        self.peer_info = await self.service.receive_response()
         self.udid = self.peer_info['Properties']['UniqueDeviceID']
         self.product_type = self.peer_info['Properties']['ProductType']
         try:
@@ -112,17 +112,17 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             raise InvalidServiceError(f'No such service: {name}')
         return int(service['Port'])
 
-    def close(self) -> None:
-        self.service.close()
+    async def close(self) -> None:
+        await self.service.close()
         if self.lockdown is not None:
             self.lockdown.close()
 
-    def __enter__(self) -> 'RemoteServiceDiscoveryService':
-        self.connect()
+    async def __aenter__(self) -> 'RemoteServiceDiscoveryService':
+        await self.connect()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.close()
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
 
     def __repr__(self) -> str:
         name_str = ''
@@ -132,9 +132,9 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
                 f'UDID:{self.udid}{name_str}>')
 
 
-def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevice]:
+async def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevice]:
     result = []
-    for hostname in browse_remoted(timeout):
+    for hostname in await browse_remoted(timeout):
         with RemoteServiceDiscoveryService((hostname, RSD_PORT)) as rsd:
             properties = rsd.peer_info['Properties']
             result.append(RSDDevice(hostname=hostname, udid=properties['UniqueDeviceID'],
@@ -142,8 +142,8 @@ def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDev
     return result
 
 
-def get_remoted_device(udid: str, timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> RSDDevice:
-    devices = get_remoted_devices(timeout=timeout)
+async def get_remoted_device(udid: str, timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> RSDDevice:
+    devices = await get_remoted_devices(timeout=timeout)
     for device in devices:
         if device.udid == udid:
             return device

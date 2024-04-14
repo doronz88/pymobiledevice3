@@ -74,7 +74,8 @@ def query_bonjour(service_names: List[str], ip: str) -> BonjourQuery:
     return BonjourQuery(aiozc, service_browser, listener)
 
 
-async def browse(service_names: List[str], ips: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+async def browse(service_names: List[str], ips: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) \
+        -> List[BonjourAnswer]:
     bonjour_queries = [query_bonjour(service_names, adapter) for adapter in ips]
     answers = []
     await asyncio.sleep(timeout)

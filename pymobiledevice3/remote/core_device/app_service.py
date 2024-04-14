@@ -16,37 +16,37 @@ class AppServiceService(CoreDeviceService):
     def __init__(self, rsd: RemoteServiceDiscoveryService):
         super().__init__(rsd, self.SERVICE_NAME)
 
-    def list_apps(self, include_app_clips: bool = True, include_removable_apps: bool = True,
-                  include_hidden_apps: bool = True, include_internal_apps: bool = True,
-                  include_default_apps: bool = True) -> List[Mapping]:
+    async def list_apps(self, include_app_clips: bool = True, include_removable_apps: bool = True,
+                        include_hidden_apps: bool = True, include_internal_apps: bool = True,
+                        include_default_apps: bool = True) -> List[Mapping]:
         """ List applications """
-        return self.invoke('com.apple.coredevice.feature.listapps', {
+        return await self.invoke('com.apple.coredevice.feature.listapps', {
             'includeAppClips': include_app_clips, 'includeRemovableApps': include_removable_apps,
             'includeHiddenApps': include_hidden_apps, 'includeInternalApps': include_internal_apps,
             'includeDefaultApps': include_default_apps})
 
-    def list_processes(self) -> List[Mapping]:
+    async def list_processes(self) -> List[Mapping]:
         """ List processes """
-        return self.invoke('com.apple.coredevice.feature.listprocesses')['processTokens']
+        return (await self.invoke('com.apple.coredevice.feature.listprocesses'))['processTokens']
 
-    def list_roots(self) -> Mapping:
+    async def list_roots(self) -> Mapping:
         """
         List roots.
 
         Can only be performed on certain devices
         """
-        return self.invoke('com.apple.coredevice.feature.listroots', {
+        return await self.invoke('com.apple.coredevice.feature.listroots', {
             'rootPoint': {
                 'relative': '/'
             }})
 
-    def spawn_executable(self, executable: str, arguments: List[str]) -> Mapping:
+    async def spawn_executable(self, executable: str, arguments: List[str]) -> Mapping:
         """
         Spawn given executable.
 
         Can only be performed on certain devices
         """
-        return self.invoke('com.apple.coredevice.feature.spawnexecutable', {
+        return await self.invoke('com.apple.coredevice.feature.spawnexecutable', {
             'executableItem': {
                 'url': {
                     '_0': {
@@ -67,36 +67,36 @@ class AppServiceService(CoreDeviceService):
             },
         })
 
-    def monitor_process_termination(self, pid: int) -> Mapping:
+    async def monitor_process_termination(self, pid: int) -> Mapping:
         """
         Monitor process termination.
 
         Can only be performed on certain devices
         """
-        return self.invoke('com.apple.coredevice.feature.monitorprocesstermination', {
+        return await self.invoke('com.apple.coredevice.feature.monitorprocesstermination', {
             'processToken': {'processIdentifier': XpcInt64Type(pid)}})
 
-    def uninstall_app(self, bundle_identifier: str) -> None:
+    async def uninstall_app(self, bundle_identifier: str) -> None:
         """
         Uninstall given application by its bundle identifier
         """
-        self.invoke('com.apple.coredevice.feature.uninstallapp', {'bundleIdentifier': bundle_identifier})
+        await self.invoke('com.apple.coredevice.feature.uninstallapp', {'bundleIdentifier': bundle_identifier})
 
-    def send_signal_to_process(self, pid: int, signal: int) -> Mapping:
+    async def send_signal_to_process(self, pid: int, signal: int) -> Mapping:
         """
         Send signal to given process by its pid
         """
-        return self.invoke('com.apple.coredevice.feature.sendsignaltoprocess', {
+        return await self.invoke('com.apple.coredevice.feature.sendsignaltoprocess', {
             'process': {'processIdentifier': XpcInt64Type(pid)},
             'signal': XpcInt64Type(signal),
         })
 
-    def fetch_icons(self, bundle_identifier: str, width: float, height: float, scale: float,
-                    allow_placeholder: bool) -> Mapping:
+    async def fetch_icons(self, bundle_identifier: str, width: float, height: float, scale: float,
+                          allow_placeholder: bool) -> Mapping:
         """
         Fetch given application's icons
         """
-        return self.invoke('com.apple.coredevice.feature.fetchappicons', {
+        return await self.invoke('com.apple.coredevice.feature.fetchappicons', {
             'width': width,
             'height': height,
             'scale': scale,

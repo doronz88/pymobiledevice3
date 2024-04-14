@@ -27,7 +27,7 @@ from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServ
 from pymobiledevice3.remote.tunnel_service import CoreDeviceTunnelProxy, RemotePairingProtocol, TunnelResult, \
     create_core_device_tunnel_service_using_rsd, get_remote_pairing_tunnel_services
 from pymobiledevice3.remote.utils import get_rsds, stop_remoted
-from pymobiledevice3.utils import asyncio_print_traceback
+from pymobiledevice3.utils import asyncio_print_traceback, get_asyncio_loop
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +109,11 @@ class TunneldCore:
                 for service in await get_remote_pairing_tunnel_services():
                     if service.hostname in self.tunnel_tasks:
                         # skip tunnel if already exists for this ip
-                        service.close()
+                        await service.close()
                         continue
                     if self.tunnel_exists_for_udid(service.remote_identifier):
                         # skip tunnel if already exists for this udid
-                        service.close()
+                        await service.close()
                         continue
                     self.tunnel_tasks[service.hostname] = TunnelTask(
                         task=asyncio.create_task(self.start_tunnel_task(service.hostname, service),
@@ -154,7 +154,7 @@ class TunneldCore:
     @asyncio_print_traceback
     async def start_tunnel_task(
             self, task_identifier: str, protocol_handler: Union[RemotePairingProtocol, CoreDeviceTunnelProxy],
-            queue: Optional[asyncio.Queue] = None, protocol: Optional[TunnelProtocol] = TunnelProtocol.QUIC) -> None:
+            queue: Optional[asyncio.Queue] = None, protocol: Optional[TunnelProtocol] = None) -> None:
 
         if protocol is None:
             protocol = self.protocol
@@ -166,8 +166,6 @@ class TunneldCore:
                 raise asyncio.CancelledError()
 
             async with start_tunnel(protocol_handler, protocol=protocol) as tun:
-                protocol_handler.close()
-
                 if not self.tunnel_exists_for_udid(protocol_handler.remote_identifier):
                     self.tunnel_tasks[task_identifier].tunnel = tun
                     self.tunnel_tasks[task_identifier].udid = protocol_handler.remote_identifier
@@ -200,7 +198,7 @@ class TunneldCore:
 
             if protocol_handler is not None:
                 try:
-                    protocol_handler.close()
+                    await protocol_handler.close()
                 except OSError:
                     pass
 
@@ -230,16 +228,17 @@ class TunneldCore:
 
             with stop_remoted():
                 try:
-                    rsd.connect()
+                    await rsd.connect()
                 except ConnectionRefusedError:
                     raise asyncio.CancelledError()
 
             if (self.protocol == TunnelProtocol.QUIC) and (Version(rsd.product_version) < Version('17.0.0')):
-                rsd.close()
+                await rsd.close()
                 raise asyncio.CancelledError()
 
-            await asyncio.create_task(self.start_tunnel_task(ip, create_core_device_tunnel_service_using_rsd(rsd)),
-                                      name=f'start-tunnel-task-usb-{ip}')
+            await asyncio.create_task(
+                self.start_tunnel_task(ip, await create_core_device_tunnel_service_using_rsd(rsd)),
+                name=f'start-tunnel-task-usb-{ip}')
         except asyncio.CancelledError:
             pass
         except PairingError as e:
@@ -251,7 +250,7 @@ class TunneldCore:
         finally:
             if rsd is not None:
                 try:
-                    rsd.close()
+                    await rsd.close()
                 except OSError:
                     pass
 
@@ -358,11 +357,11 @@ class TunneldRunner:
                     for rsd in await get_rsds(udid=udid):
                         rsd_ip = rsd.service.address[0]
                         if ip is not None and rsd_ip != ip:
-                            rsd.close()
+                            await rsd.close()
                             continue
                         task = asyncio.create_task(
                             self._tunneld_core.start_tunnel_task(rsd_ip,
-                                                                 create_core_device_tunnel_service_using_rsd(rsd),
+                                                                 await create_core_device_tunnel_service_using_rsd(rsd),
                                                                  queue=queue),
                             name=f'start-tunnel-usb-{rsd_ip}')
                         self._tunneld_core.tunnel_tasks[rsd_ip] = TunnelTask(task=task, udid=rsd.udid)
@@ -371,7 +370,7 @@ class TunneldRunner:
                     for remotepairing in await get_remote_pairing_tunnel_services(udid=udid):
                         remotepairing_ip = remotepairing.hostname
                         if ip is not None and remotepairing_ip != ip:
-                            remotepairing.close()
+                            await remotepairing.close()
                             continue
                         task = asyncio.create_task(
                             self._tunneld_core.start_tunnel_task(remotepairing_ip, remotepairing, queue=queue),
@@ -400,7 +399,7 @@ class TunneldRunner:
         uvicorn.run(self._app, host=self.host, port=self.port, loop='asyncio')
 
 
-def get_tunneld_devices(tunneld_address: Tuple[str, int] = TUNNELD_DEFAULT_ADDRESS) \
+async def async_get_tunneld_devices(tunneld_address: Tuple[str, int] = TUNNELD_DEFAULT_ADDRESS) \
         -> List[RemoteServiceDiscoveryService]:
     try:
         # Get the list of tunnels from the specified address
@@ -415,8 +414,13 @@ def get_tunneld_devices(tunneld_address: Tuple[str, int] = TUNNELD_DEFAULT_ADDRE
             rsd = RemoteServiceDiscoveryService((tunnel_details['tunnel-address'], tunnel_details['tunnel-port']),
                                                 name=tunnel_details['interface'])
             try:
-                rsd.connect()
+                await rsd.connect()
                 rsds.append(rsd)
             except (TimeoutError, ConnectionError):
                 continue
     return rsds
+
+
+def get_tunneld_devices(tunneld_address: Tuple[str, int] = TUNNELD_DEFAULT_ADDRESS) \
+        -> List[RemoteServiceDiscoveryService]:
+    return get_asyncio_loop().run_until_complete(async_get_tunneld_devices(tunneld_address))
