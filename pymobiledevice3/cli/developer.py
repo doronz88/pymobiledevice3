@@ -19,11 +19,12 @@ from pykdebugparser.pykdebugparser import PyKdebugParser
 
 import pymobiledevice3
 from pymobiledevice3.cli.cli_common import BASED_INT, Command, RSDCommand, default_json_encoder, print_json, \
-    user_requested_colored_output, wait_return
+    user_requested_colored_output
 from pymobiledevice3.exceptions import DeviceAlreadyInUseError, DvtDirListError, ExtractingStackshotError, \
     RSDRequiredError, UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -52,6 +53,7 @@ from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from pymobiledevice3.tcp_forwarder import LockdownTcpForwarder
 
+OSUTILS = get_os_utils()
 BSC_SUBCLASS = 0x40c
 BSC_CLASS = 0x4
 VFS_AND_TRACES_SET = {0x03010000, 0x07ff0000}
@@ -813,7 +815,7 @@ def accessibility_settings_set(service_provider: LockdownClient, setting, value)
     """
     service = AccessibilityAudit(service_provider)
     service.set_setting(setting, eval(value))
-    wait_return()
+    OSUTILS.wait_return()
 
 
 @accessibility.command('shell', cls=Command)
@@ -890,7 +892,7 @@ def condition_set(service_provider: LockdownClient, profile_identifier):
     """ set a specific condition """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         ConditionInducer(dvt).set(profile_identifier)
-        wait_return()
+        OSUTILS.wait_return()
 
 
 @developer.command(cls=Command)
@@ -963,7 +965,7 @@ def check_in(service_provider: LockdownClient, hostname, force):
     with DtDeviceArbitration(service_provider) as device_arbitration:
         try:
             device_arbitration.check_in(hostname, force=force)
-            wait_return()
+            OSUTILS.wait_return()
         except DeviceAlreadyInUseError as e:
             logger.error(e.message)
 
@@ -1009,7 +1011,7 @@ def dvt_simulate_location_set(service_provider: LockdownClient, latitude, longit
     """
     with DvtSecureSocketProxyService(service_provider) as dvt:
         LocationSimulation(dvt).set(latitude, longitude)
-        wait_return()
+        OSUTILS.wait_return()
 
 
 @dvt_simulate_location.command('play', cls=Command)
@@ -1019,7 +1021,7 @@ def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, 
     """ play a .gpx file """
     with DvtSecureSocketProxyService(service_provider) as dvt:
         LocationSimulation(dvt).play_gpx_file(filename, disable_sleep=disable_sleep)
-        wait_return()
+        OSUTILS.wait_return()
 
 
 @developer.group()

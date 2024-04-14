@@ -12,13 +12,13 @@ from pygments import formatters, highlight, lexers
 
 from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError, NoDeviceConnectedError, \
     PyMobileDevice3Exception
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.usbmux import MuxDevice, select_device
-from pymobiledevice3.utils import set_keepalive
 
 DEFAULT_AFTER_IDLE_SEC = 3
 DEFAULT_INTERVAL_SEC = 3
 DEFAULT_MAX_FAILS = 3
-
+OSUTIL = get_os_utils()
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
 
@@ -79,7 +79,7 @@ class ServiceConnection:
     def create_using_tcp(hostname: str, port: int, keep_alive: bool = True) -> 'ServiceConnection':
         sock = socket.create_connection((hostname, port))
         if keep_alive:
-            set_keepalive(sock)
+            OSUTIL.set_keepalive(sock)
         return ServiceConnection(sock)
 
     @staticmethod

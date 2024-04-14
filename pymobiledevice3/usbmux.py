@@ -1,7 +1,6 @@
 import abc
 import plistlib
 import socket
-import sys
 import time
 from dataclasses import dataclass
 from typing import List, Mapping, Optional
@@ -11,6 +10,7 @@ from construct import Const, CString, Enum, FixedSized, GreedyBytes, Int16ul, In
 
 from pymobiledevice3.exceptions import BadCommandError, BadDevError, ConnectionFailedError, \
     ConnectionFailedToUsbmuxdError, MuxException, MuxVersionError, NotPairedError
+from pymobiledevice3.osu.os_utils import get_os_utils
 
 usbmuxd_version = Enum(Int32ul,
                        BINARY=0,
@@ -163,12 +163,7 @@ class MuxConnection:
                     address = usbmux_address
                     family = socket.AF_UNIX
             else:
-                if sys.platform in ['win32', 'cygwin']:
-                    address = MuxConnection.ITUNES_HOST
-                    family = socket.AF_INET
-                else:
-                    address = MuxConnection.USBMUXD_PIPE
-                    family = socket.AF_UNIX
+                address, family = get_os_utils().usbmux_address
             return SafeStreamSocket(address, family)
         except ConnectionRefusedError:
             raise ConnectionFailedToUsbmuxdError()

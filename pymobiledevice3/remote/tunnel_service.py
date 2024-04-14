@@ -15,7 +15,7 @@ from asyncio import CancelledError, StreamReader, StreamWriter
 from collections import namedtuple
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from socket import AF_INET6, create_connection
+from socket import create_connection
 from ssl import VerifyMode
 from typing import AsyncGenerator, List, Mapping, Optional, TextIO, cast
 
@@ -45,6 +45,7 @@ from srptools import SRPClientSession, SRPContext
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
 
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 try:
@@ -63,13 +64,10 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 from pymobiledevice3.remote.utils import get_rsds, resume_remoted_if_required, stop_remoted_if_required
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.service_connection import ServiceConnection
-from pymobiledevice3.utils import asyncio_print_traceback, chown_to_non_sudo_if_needed, set_keepalive
+from pymobiledevice3.utils import asyncio_print_traceback
 
-if sys.platform == 'darwin':
-    LOOKBACK_HEADER = struct.pack('>I', AF_INET6)
-else:
-    LOOKBACK_HEADER = b'\x00\x00\x86\xdd'
-
+OSUTIL = get_os_utils()
+LOOPBACK_HEADER = OSUTIL.loopback_header
 logger = logging.getLogger(__name__)
 
 IPV6_HEADER_SIZE = 40
@@ -153,14 +151,14 @@ class RemotePairingTunnel(ABC):
 
     @asyncio_print_traceback
     async def tun_read_task(self) -> None:
-        read_size = self.tun.mtu + len(LOOKBACK_HEADER)
+        read_size = self.tun.mtu + len(LOOPBACK_HEADER)
         try:
             if sys.platform != 'win32':
                 async with aiofiles.open(self.tun.fileno(), 'rb', opener=lambda path, flags: path, buffering=0) as f:
                     while True:
                         packet = await f.read(read_size)
-                        assert packet.startswith(LOOKBACK_HEADER)
-                        packet = packet[len(LOOKBACK_HEADER):]
+                        assert packet.startswith(LOOPBACK_HEADER)
+                        packet = packet[len(LOOPBACK_HEADER):]
                         await self.send_packet_to_device(packet)
             else:
                 while True:
@@ -240,7 +238,7 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
         elif isinstance(event, StreamDataReceived):
             self._queue.put_nowait(json.loads(CDTunnelPacket.parse(event.data).body))
         elif isinstance(event, DatagramFrameReceived):
-            self.tun.write(LOOKBACK_HEADER + event.data)
+            self.tun.write(LOOPBACK_HEADER + event.data)
 
     @staticmethod
     def _encode_cdtunnel_packet(data: Mapping) -> bytes:
@@ -267,7 +265,7 @@ class RemotePairingTcpTunnel(RemotePairingTunnel):
                 ipv6_header = await self._reader.readexactly(IPV6_HEADER_SIZE)
                 ipv6_length = struct.unpack('>H', ipv6_header[4:6])[0]
                 ipv6_body = await self._reader.readexactly(ipv6_length)
-                self.tun.write(LOOKBACK_HEADER + ipv6_header + ipv6_body)
+                self.tun.write(LOOPBACK_HEADER + ipv6_header + ipv6_body)
         except (OSError, asyncio.exceptions.IncompleteReadError) as e:
             self._logger.warning(f'got {e.__class__.__name__} in {asyncio.current_task().get_name()}')
             await self.wait_closed()
@@ -428,7 +426,7 @@ class RemotePairingProtocol(StartTcpTunnel):
         host = self.hostname
         port = parameters['port']
         sock = create_connection((host, port))
-        set_keepalive(sock)
+        OSUTIL.set_keepalive(sock)
         ctx = SSLPSKContext(ssl.PROTOCOL_TLSv1_2)
         ctx.psk = self.encryption_key
         ctx.set_ciphers('PSK')
@@ -453,7 +451,7 @@ class RemotePairingProtocol(StartTcpTunnel):
                 'private_key': self.ed25519_private_key.private_bytes_raw(),
                 'remote_unlock_host_key': self.remote_unlock_host_key
             }))
-        chown_to_non_sudo_if_needed(self.pair_record_path)
+        OSUTIL.chown_to_non_sudo_if_needed(self.pair_record_path)
 
     @property
     def pair_record(self) -> Optional[Mapping]:

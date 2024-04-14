@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-import sys
 from socket import AF_INET, AF_INET6, inet_ntop
 from typing import List, Mapping, Optional
 
@@ -8,10 +7,13 @@ from ifaddr import get_adapters
 from zeroconf import IPVersion, ServiceListener, ServiceStateChange, Zeroconf
 from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 
+from pymobiledevice3.osu.os_utils import get_os_utils
+
 REMOTEPAIRING_SERVICE_NAMES = ['_remotepairing._tcp.local.']
 MOBDEV2_SERVICE_NAMES = ['_apple-mobdev2._tcp.local.']
 REMOTED_SERVICE_NAMES = ['_remoted._tcp.local.']
-DEFAULT_BONJOUR_TIMEOUT = 1 if sys.platform != 'win32' else 2  # On Windows, it takes longer to get the addresses
+OSUTILS = get_os_utils()
+DEFAULT_BONJOUR_TIMEOUT = OSUTILS.bonjour_timeout
 
 
 @dataclasses.dataclass
@@ -64,23 +66,6 @@ class BonjourQuery:
     listener: BonjourListener
 
 
-def get_ipv6_ips() -> List[str]:
-    ips = []
-    if sys.platform == 'win32':
-        # TODO: verify on windows
-        ips = [f'{adapter.ips[0].ip[0]}%{adapter.ips[0].ip[2]}' for adapter in get_adapters() if adapter.ips[0].is_IPv6]
-    else:
-        for adapter in get_adapters():
-            for ip in adapter.ips:
-                if not ip.is_IPv6:
-                    continue
-                if ip.ip[0] in ('::1', 'fe80::1'):
-                    # skip localhost
-                    continue
-                ips.append(f'{ip.ip[0]}%{adapter.nice_name}')
-    return ips
-
-
 def query_bonjour(service_names: List[str], ip: str) -> BonjourQuery:
     aiozc = AsyncZeroconf(interfaces=[ip])
     listener = BonjourListener(ip)
@@ -106,7 +91,7 @@ async def browse(service_names: List[str], ips: List[str], timeout: float = DEFA
 
 
 async def browse_ipv6(service_names: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
-    return await browse(service_names, get_ipv6_ips(), timeout=timeout)
+    return await browse(service_names, OSUTILS.get_ipv6_ips(), timeout=timeout)
 
 
 async def browse_ipv4(service_names: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
