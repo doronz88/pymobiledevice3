@@ -1031,7 +1031,7 @@ def dvt_simulate_location_set(service_provider: LockdownClient, latitude, longit
 
 @dvt_simulate_location.command('play', cls=Command)
 @click.argument('filename', type=click.Path(exists=True, file_okay=True, dir_okay=False))
-@click.argument('timing_randomness_range', type=click.INT,default=0)
+@click.argument('timing_randomness_range', type=click.INT, default=0)
 @click.option('--disable-sleep', is_flag=True, default=False)
 def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, timing_randomness_range: int, disable_sleep: bool) -> None:
     """ play a .gpx file """
