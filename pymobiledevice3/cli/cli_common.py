@@ -21,6 +21,7 @@ from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.tunneld import get_tunneld_devices
 from pymobiledevice3.usbmux import select_devices_by_connection_type
+from pymobiledevice3.utils import get_asyncio_loop
 
 USBMUX_OPTION_HELP = 'usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT'
 COLORED_OUTPUT = True
@@ -219,7 +220,7 @@ class RSDCommand(BaseServiceProviderCommand):
     def rsd(self, ctx, param: str, value: Optional[Tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
         if value is not None:
             rsd = RemoteServiceDiscoveryService(value)
-            rsd.connect()
+            get_asyncio_loop().run_until_complete(rsd.connect())
             self.service_provider = rsd
             return self.service_provider
 

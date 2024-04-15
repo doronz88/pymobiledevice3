@@ -265,9 +265,14 @@ for line in SyslogService(service_provider=rsds[0]).watch():
 # Or you could connect manually to a specific tunnel created by `start-tunnel`
 host = 'fded:c26b:3d2f::1'
 port = 65177
-with RemoteServiceDiscoveryService((host, port)) as rsd:
+async with RemoteServiceDiscoveryService((host, port)) as rsd:
     # you can now use this connection as any other LockdownClient connection
     pass
+
+# Alternatively, you can use this API not in a context-manager
+rsd = RemoteServiceDiscoveryService((host, port))
+await rsd.connect()
+await rsd.close()
 ```
 
 ## Example

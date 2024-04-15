@@ -19,7 +19,7 @@ async def get_rsds(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT, udid: Optio
             for ip in answer.ips:
                 rsd = RemoteServiceDiscoveryService((ip, RSD_PORT))
                 try:
-                    rsd.connect()
+                    await rsd.connect()
                 except ConnectionRefusedError:
                     continue
                 except OSError:
@@ -27,7 +27,7 @@ async def get_rsds(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT, udid: Optio
                 if udid is None or rsd.udid == udid:
                     result.append(rsd)
                 else:
-                    rsd.close()
+                    await rsd.close()
     return result
 
 
