@@ -41,7 +41,7 @@ def ignored_null(s: bytes) -> bytes:
 def decode_message_format(message) -> str:
     s = ''
     for type_, data in message:
-        if data:
+        if data and isinstance(data, bytes):
             data = ignored_null(data)
         type_ = decode_str(type_)
 
@@ -53,6 +53,8 @@ def decode_message_format(message) -> str:
                 s += '<None>'
             else:
                 s += data.decode()
+        elif type_ == 'private':
+            s += '<private>'
         elif type_.startswith('uint64'):
             uint64 = struct.unpack('<Q', data.ljust(8, b'\x00'))[0]
             if 'hex' in type_:

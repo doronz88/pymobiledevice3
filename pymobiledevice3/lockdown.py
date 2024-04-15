@@ -766,7 +766,7 @@ def create_using_remote(service: ServiceConnection, identifier: str = None, labe
     """
     Create a TcpLockdownClient instance over RSD
 
-    :param hostname: The target device hostname
+    :param service: service connection to use
     :param identifier: Used as an identifier to look for the device pair record
     :param label: lockdownd user-agent
     :param autopair: Attempt to pair with device (blocking) if not already paired
