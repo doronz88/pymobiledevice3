@@ -1,6 +1,6 @@
 import logging
-import time
 import random
+import time
 from abc import abstractmethod
 
 import gpxpy
