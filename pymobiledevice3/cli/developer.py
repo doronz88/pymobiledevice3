@@ -772,10 +772,11 @@ def simulate_location_set(service_provider: LockdownClient, latitude, longitude)
 
 @simulate_location.command('play', cls=Command)
 @click.argument('filename', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@click.argument('timing_randomness_range', type=click.INT)
 @click.option('--disable-sleep', is_flag=True, default=False)
-def simulate_location_play(service_provider: LockdownClient, filename, disable_sleep):
+def simulate_location_play(service_provider: LockdownClient, filename, timing_randomness_range, disable_sleep):
     """ play a .gpx file """
-    DtSimulateLocation(service_provider).play_gpx_file(filename, disable_sleep=disable_sleep)
+    DtSimulateLocation(service_provider).play_gpx_file(filename, timing_randomness_range, disable_sleep=disable_sleep)
 
 
 @developer.group('accessibility')
@@ -1030,11 +1031,12 @@ def dvt_simulate_location_set(service_provider: LockdownClient, latitude, longit
 
 @dvt_simulate_location.command('play', cls=Command)
 @click.argument('filename', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@click.argument('timing_randomness_range', type=click.INT, default=0)
 @click.option('--disable-sleep', is_flag=True, default=False)
-def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, disable_sleep: bool) -> None:
+def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, timing_randomness_range: int, disable_sleep: bool) -> None:
     """ play a .gpx file """
     with DvtSecureSocketProxyService(service_provider) as dvt:
-        LocationSimulation(dvt).play_gpx_file(filename, disable_sleep=disable_sleep)
+        LocationSimulation(dvt).play_gpx_file(filename, disable_sleep=disable_sleep, timing_randomness_range=timing_randomness_range)
         OSUTILS.wait_return()
 
 

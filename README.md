@@ -6,18 +6,18 @@
 - [News](#news)
 - [Description](#description)
 - [Installation](#installation)
-    * [OpenSSL libraries](#openssl-libraries)
+  - [OpenSSL libraries](#openssl-libraries)
 - [Usage](#usage)
-    * [Working with developer tools (iOS >= 17.0)](#working-with-developer-tools-ios--170)
-    * [Python API](#python-api)
-    * [Example](#example)
+  - [Working with developer tools (iOS \>= 17.0)](#working-with-developer-tools-ios--170)
+  - [Python API](#python-api)
+  - [Example](#example)
 - [The bits and bytes](#the-bits-and-bytes)
-    * [Lockdown services](#lockdown-services)
-        + [Implemented services](#implemented-services)
-        + [Un-implemented services](#un-implemented-services)
-        + [Sending your own messages](#sending-your-own-messages)
-            - [Lockdown messages](#lockdown-messages)
-            - [Instruments messages](#instruments-messages)
+  - [Lockdown services](#lockdown-services)
+    - [Implemented services](#implemented-services)
+    - [Un-implemented services](#un-implemented-services)
+    - [Sending your own messages](#sending-your-own-messages)
+      - [Lockdown messages](#lockdown-messages)
+      - [Instruments messages](#instruments-messages)
 - [Contributing](#contributing)
 - [Useful info](#useful-info)
 
@@ -328,6 +328,8 @@ There is A LOT you may do on the device using `pymobiledevice3`. This is just a 
                     * `pymobiledevice3 developer dvt simulate-location set --rsd HOST PORT -- lat long`
         * Play a .GPX file:
             * `pymobiledevice3 developer dvt simulate-location play route.gpx`
+                * Add random timing noise between -500 and 500ms on the time between two points in the GPX file:
+                    * `pymobiledevice3 developer dvt simulate-location play route.gpx 500`
         * Clear the simulated location:
             * `pymobiledevice3 developer dvt simulate-location clear`
         * Taking a screenshot from the device:
