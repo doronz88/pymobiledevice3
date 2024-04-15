@@ -1,4 +1,5 @@
 # flake8: noqa: C901
+import asyncio
 import json
 import logging
 import os
@@ -10,7 +11,7 @@ from collections import namedtuple
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import click
 from click.exceptions import MissingParameter, UsageError
@@ -19,11 +20,12 @@ from pykdebugparser.pykdebugparser import PyKdebugParser
 
 import pymobiledevice3
 from pymobiledevice3.cli.cli_common import BASED_INT, Command, RSDCommand, default_json_encoder, print_json, \
-    user_requested_colored_output, wait_return
-from pymobiledevice3.exceptions import DeviceAlreadyInUseError, DvtDirListError, ExtractingStackshotError, \
-    RSDRequiredError, UnrecognizedSelectorError
+    user_requested_colored_output
+from pymobiledevice3.exceptions import ArgumentError, DeviceAlreadyInUseError, DvtDirListError, \
+    ExtractingStackshotError, RSDRequiredError, UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -52,6 +54,7 @@ from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from pymobiledevice3.tcp_forwarder import LockdownTcpForwarder
 
+OSUTILS = get_os_utils()
 BSC_SUBCLASS = 0x40c
 BSC_CLASS = 0x4
 VFS_AND_TRACES_SET = {0x03010000, 0x07ff0000}
@@ -685,20 +688,26 @@ def fetch_symbols():
     pass
 
 
-@fetch_symbols.command('list', cls=Command)
-def fetch_symbols_list(service_provider: LockdownServiceProvider):
-    """ list of files to be downloaded """
+async def fetch_symbols_list_task(service_provider: LockdownServiceProvider) -> None:
     if Version(service_provider.product_version) < Version('17.0'):
         print_json(DtFetchSymbols(service_provider).list_files())
     else:
-        with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
-            print_json([f.file_path for f in fetch_symbols.get_dsc_file_list()])
+        if not isinstance(service_provider, RemoteServiceDiscoveryService):
+            raise ArgumentError('service_provider must be a RemoteServiceDiscoveryService for iOS 17+ devices')
+
+        async with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
+            print_json([f.file_path for f in await fetch_symbols.get_dsc_file_list()])
 
 
-@fetch_symbols.command('download', cls=Command)
-@click.argument('out', type=click.Path(dir_okay=True, file_okay=False))
-def fetch_symbols_download(service_provider: LockdownServiceProvider, out):
-    """ download the linker and dyld cache to a specified directory """
+@fetch_symbols.command('list', cls=Command)
+def fetch_symbols_list(service_provider: LockdownServiceProvider) -> None:
+    """ list of files to be downloaded """
+    asyncio.run(fetch_symbols_list_task(service_provider), debug=True)
+
+
+async def fetch_symbols_download_task(service_provider: LockdownServiceProvider, out: str) -> None:
+    if not isinstance(service_provider, RemoteServiceDiscoveryService):
+        raise ArgumentError('service_provider must be a RemoteServiceDiscoveryService for iOS 17+ devices')
 
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -726,8 +735,15 @@ def fetch_symbols_download(service_provider: LockdownServiceProvider, out):
                 logger.info(f'writing to: {file}')
                 fetch_symbols.get_file(i, f)
     else:
-        with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
-            fetch_symbols.download(out)
+        async with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
+            await fetch_symbols.download(out)
+
+
+@fetch_symbols.command('download', cls=Command)
+@click.argument('out', type=click.Path(dir_okay=True, file_okay=False))
+def fetch_symbols_download(service_provider: LockdownServiceProvider, out: str) -> None:
+    """ download the linker and dyld cache to a specified directory """
+    asyncio.run(fetch_symbols_download_task(service_provider, out), debug=True)
 
 
 @developer.group('simulate-location')
@@ -813,7 +829,7 @@ def accessibility_settings_set(service_provider: LockdownClient, setting, value)
     """
     service = AccessibilityAudit(service_provider)
     service.set_setting(setting, eval(value))
-    wait_return()
+    OSUTILS.wait_return()
 
 
 @accessibility.command('shell', cls=Command)
@@ -890,7 +906,7 @@ def condition_set(service_provider: LockdownClient, profile_identifier):
     """ set a specific condition """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         ConditionInducer(dvt).set(profile_identifier)
-        wait_return()
+        OSUTILS.wait_return()
 
 
 @developer.command(cls=Command)
@@ -963,7 +979,7 @@ def check_in(service_provider: LockdownClient, hostname, force):
     with DtDeviceArbitration(service_provider) as device_arbitration:
         try:
             device_arbitration.check_in(hostname, force=force)
-            wait_return()
+            OSUTILS.wait_return()
         except DeviceAlreadyInUseError as e:
             logger.error(e.message)
 
@@ -1009,7 +1025,7 @@ def dvt_simulate_location_set(service_provider: LockdownClient, latitude, longit
     """
     with DvtSecureSocketProxyService(service_provider) as dvt:
         LocationSimulation(dvt).set(latitude, longitude)
-        wait_return()
+        OSUTILS.wait_return()
 
 
 @dvt_simulate_location.command('play', cls=Command)
@@ -1019,70 +1035,105 @@ def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, 
     """ play a .gpx file """
     with DvtSecureSocketProxyService(service_provider) as dvt:
         LocationSimulation(dvt).play_gpx_file(filename, disable_sleep=disable_sleep)
-        wait_return()
+        OSUTILS.wait_return()
 
 
 @developer.group()
-def core_device():
+def core_device() -> None:
     """ core-device options """
     pass
 
 
+async def core_device_list_processes_task(service_provider: RemoteServiceDiscoveryService) -> None:
+    async with AppServiceService(service_provider) as app_service:
+        print_json(await app_service.list_processes())
+
+
 @core_device.command('list-processes', cls=RSDCommand)
-def core_device_list_processes(service_provider: RemoteServiceDiscoveryService):
+def core_device_list_processes(service_provider: RemoteServiceDiscoveryService) -> None:
     """ Get process list """
-    with AppServiceService(service_provider) as app_service:
-        print_json(app_service.list_processes())
+    asyncio.run(core_device_list_processes_task(service_provider))
+
+
+async def core_device_uninstall_app_task(service_provider: RemoteServiceDiscoveryService,
+                                         bundle_identifier: str) -> None:
+    async with AppServiceService(service_provider) as app_service:
+        await app_service.uninstall_app(bundle_identifier)
 
 
 @core_device.command('uninstall', cls=RSDCommand)
 @click.argument('bundle_identifier')
-def core_device_uninstall_app(service_provider: RemoteServiceDiscoveryService, bundle_identifier: str):
+def core_device_uninstall_app(service_provider: RemoteServiceDiscoveryService, bundle_identifier: str) -> None:
     """ Uninstall application """
-    with AppServiceService(service_provider) as app_service:
-        app_service.uninstall_app(bundle_identifier)
+    asyncio.run(core_device_uninstall_app_task(service_provider, bundle_identifier))
+
+
+async def core_device_send_signal_to_process_task(
+        service_provider: RemoteServiceDiscoveryService, pid: int, signal: int) -> None:
+    async with AppServiceService(service_provider) as app_service:
+        print_json(await app_service.send_signal_to_process(pid, signal))
 
 
 @core_device.command('send-signal-to-process', cls=RSDCommand)
 @click.argument('pid', type=click.INT)
 @click.argument('signal', type=click.INT)
-def core_device_send_signal_to_process(service_provider: RemoteServiceDiscoveryService, pid: int, signal: int):
+def core_device_send_signal_to_process(service_provider: RemoteServiceDiscoveryService, pid: int, signal: int) -> None:
     """ Send signal to process """
-    with AppServiceService(service_provider) as app_service:
-        print_json(app_service.send_signal_to_process(pid, signal))
+    asyncio.run(core_device_send_signal_to_process_task(service_provider, pid, signal))
+
+
+async def core_device_get_device_info_task(service_provider: RemoteServiceDiscoveryService) -> None:
+    async with DeviceInfoService(service_provider) as app_service:
+        print_json(await app_service.get_device_info())
 
 
 @core_device.command('get-device-info', cls=RSDCommand)
-def core_device_get_device_info(service_provider: RemoteServiceDiscoveryService):
+def core_device_get_device_info(service_provider: RemoteServiceDiscoveryService) -> None:
     """ Get device information """
-    with DeviceInfoService(service_provider) as app_service:
-        print_json(app_service.get_device_info())
+    asyncio.run(core_device_get_device_info_task(service_provider))
+
+
+async def core_device_get_display_info_task(service_provider: RemoteServiceDiscoveryService) -> None:
+    async with DeviceInfoService(service_provider) as app_service:
+        print_json(await app_service.get_display_info())
 
 
 @core_device.command('get-display-info', cls=RSDCommand)
-def core_device_get_display_info(service_provider: RemoteServiceDiscoveryService):
+def core_device_get_display_info(service_provider: RemoteServiceDiscoveryService) -> None:
     """ Get display information """
-    with DeviceInfoService(service_provider) as app_service:
-        print_json(app_service.get_display_info())
+    asyncio.run(core_device_get_display_info_task(service_provider))
+
+
+async def core_device_query_mobilegestalt_task(service_provider: RemoteServiceDiscoveryService, key: List[str]) -> None:
+    """ Query MobileGestalt """
+    async with DeviceInfoService(service_provider) as app_service:
+        print_json(await app_service.query_mobilegestalt(key))
 
 
 @core_device.command('query-mobilegestalt', cls=RSDCommand)
 @click.argument('key', nargs=-1, type=click.STRING)
-def core_device_query_mobilegestalt(service_provider: RemoteServiceDiscoveryService, key: List[str]):
+def core_device_query_mobilegestalt(service_provider: RemoteServiceDiscoveryService, key: Tuple[str]) -> None:
     """ Query MobileGestalt """
-    with DeviceInfoService(service_provider) as app_service:
-        print_json(app_service.query_mobilegestalt(list(key)))
+    asyncio.run(core_device_query_mobilegestalt_task(service_provider, list(key)))
+
+
+async def core_device_get_lockstate_task(service_provider: RemoteServiceDiscoveryService) -> None:
+    async with DeviceInfoService(service_provider) as app_service:
+        print_json(await app_service.get_lockstate())
 
 
 @core_device.command('get-lockstate', cls=RSDCommand)
-def core_device_get_lockstate(service_provider: RemoteServiceDiscoveryService):
+def core_device_get_lockstate(service_provider: RemoteServiceDiscoveryService) -> None:
     """ Get lockstate """
-    with DeviceInfoService(service_provider) as app_service:
-        print_json(app_service.get_lockstate())
+    asyncio.run(core_device_get_lockstate_task(service_provider))
+
+
+async def core_device_list_apps_task(service_provider: RemoteServiceDiscoveryService) -> None:
+    async with AppServiceService(service_provider) as app_service:
+        print_json(await app_service.list_apps())
 
 
 @core_device.command('list-apps', cls=RSDCommand)
-def core_device_list_apps(service_provider: RemoteServiceDiscoveryService):
+def core_device_list_apps(service_provider: RemoteServiceDiscoveryService) -> None:
     """ Get application list """
-    with AppServiceService(service_provider) as app_service:
-        print_json(app_service.list_apps())
+    asyncio.run(core_device_list_apps_task(service_provider))

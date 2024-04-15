@@ -1,31 +1,9 @@
 import asyncio
-import os
-import platform
-import socket
-import sys
 import traceback
 from functools import wraps
-from pathlib import Path
 from typing import Callable
 
 from construct import Int8ul, Int16ul, Int32ul, Int64ul, Select
-
-if sys.platform != 'win32':
-    from os import chown
-
-DEFAULT_AFTER_IDLE_SEC = 3
-DEFAULT_INTERVAL_SEC = 3
-DEFAULT_MAX_FAILS = 3
-
-_DARWIN_TCP_KEEPALIVE = 0x10
-_DARWIN_TCP_KEEPINTVL = 0x101
-_DARWIN_TCP_KEEPCNT = 0x102
-
-
-def chown_to_non_sudo_if_needed(path: Path) -> None:
-    if os.getenv('SUDO_UID') is None or sys.platform == 'win32':
-        return
-    chown(path, int(os.getenv('SUDO_UID')), int(os.getenv('SUDO_GID')))
 
 
 def plist_access_path(d, path: tuple, type_=None, required=False):
@@ -72,43 +50,13 @@ def asyncio_print_traceback(f: Callable):
     return wrapper
 
 
-def set_keepalive(sock: socket.socket, after_idle_sec: int = DEFAULT_AFTER_IDLE_SEC,
-                  interval_sec: int = DEFAULT_INTERVAL_SEC, max_fails: int = DEFAULT_MAX_FAILS) -> None:
-    """
-    set keep-alive parameters on a given socket
-
-    :param sock: socket to operate on
-    :param after_idle_sec: idle time used when SO_KEEPALIVE is enabled
-    :param interval_sec: interval between keepalives
-    :param max_fails: number of keepalives before close
-
-    """
-    plat = platform.system()
-    if plat == 'Linux':
-        return _set_keepalive_linux(sock, after_idle_sec, interval_sec, max_fails)
-    if plat == 'Darwin':
-        return _set_keepalive_darwin(sock, after_idle_sec, interval_sec, max_fails)
-    if plat == 'Windows':
-        return _set_keepalive_win(sock, after_idle_sec, interval_sec)
-    raise RuntimeError(f'Unsupported platform {plat}')
-
-
-def _set_keepalive_linux(sock: socket.socket, after_idle_sec: int = DEFAULT_AFTER_IDLE_SEC,
-                         interval_sec: int = DEFAULT_INTERVAL_SEC, max_fails: int = DEFAULT_MAX_FAILS) -> None:
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, after_idle_sec)
-    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, interval_sec)
-    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, max_fails)
-
-
-def _set_keepalive_darwin(sock: socket.socket, after_idle_sec: int = DEFAULT_AFTER_IDLE_SEC,
-                          interval_sec: int = DEFAULT_INTERVAL_SEC, max_fails: int = DEFAULT_MAX_FAILS) -> None:
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-    sock.setsockopt(socket.IPPROTO_TCP, _DARWIN_TCP_KEEPALIVE, after_idle_sec)
-    sock.setsockopt(socket.IPPROTO_TCP, _DARWIN_TCP_KEEPINTVL, interval_sec)
-    sock.setsockopt(socket.IPPROTO_TCP, _DARWIN_TCP_KEEPCNT, max_fails)
-
-
-def _set_keepalive_win(sock: socket.socket, after_idle_sec: int = DEFAULT_AFTER_IDLE_SEC,
-                       interval_sec: int = DEFAULT_INTERVAL_SEC) -> None:
-    sock.ioctl(socket.SIO_KEEPALIVE_VALS, (1, after_idle_sec * 1000, interval_sec * 1000))
+def get_asyncio_loop() -> asyncio.AbstractEventLoop:
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError('The existing loop is closed.')
+    except RuntimeError:
+        # This happens when there is no current event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop

@@ -12,16 +12,16 @@ class RemoteService:
         self.service: Optional[RemoteXPCConnection] = None
         self.logger = logging.getLogger(self.__module__)
 
-    def connect(self) -> None:
+    async def connect(self) -> None:
         self.service = self.rsd.start_remote_service(self.service_name)
-        self.service.connect()
+        await self.service.connect()
 
-    def __enter__(self):
-        self.connect()
+    async def __aenter__(self):
+        await self.connect()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
 
-    def close(self) -> None:
-        self.service.close()
+    async def close(self) -> None:
+        await self.service.close()

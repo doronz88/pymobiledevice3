@@ -11,7 +11,7 @@ from pymobiledevice3.services.remote_server import MessageAux, RemoteServer
 
 
 class SerializedObject:
-    def __init__(self, fields: typing.Mapping):
+    def __init__(self, fields: typing.MutableMapping):
         self._fields = fields
 
 

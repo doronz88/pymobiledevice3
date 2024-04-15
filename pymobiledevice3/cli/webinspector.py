@@ -21,11 +21,12 @@ from prompt_toolkit.styles import style_from_pygments_cls
 from pygments import formatters, highlight, lexers
 from pygments.styles import get_style_by_name
 
-from pymobiledevice3.cli.cli_common import Command, wait_return
+from pymobiledevice3.cli.cli_common import Command
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import InspectorEvaluateError, LaunchingApplicationError, \
     RemoteAutomationNotEnabledError, WebInspectorNotEnabledError, WirError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.web_protocol.driver import By, Cookie, WebDriver
 from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
@@ -59,6 +60,7 @@ JS_RESERVED_WORDS = ['abstract', 'arguments', 'await', 'boolean', 'break', 'byte
                      'switch', 'synchronized', 'this', 'throw', 'throws', 'transient', 'true', 'try', 'typeof', 'var',
                      'void', 'volatile', 'while', 'with', 'yield', ]
 
+OSUTILS = get_os_utils()
 logger = logging.getLogger(__name__)
 
 
@@ -153,7 +155,7 @@ def launch(service_provider: LockdownClient, url, timeout):
     driver.start_session()
     print('Getting URL')
     driver.get(url)
-    wait_return()
+    OSUTILS.wait_return()
     session.stop_session()
     inspector.close()
 

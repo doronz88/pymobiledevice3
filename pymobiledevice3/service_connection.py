@@ -5,6 +5,7 @@ import socket
 import ssl
 import struct
 import time
+from enum import Enum
 from typing import Mapping, Optional
 
 import IPython
@@ -12,13 +13,13 @@ from pygments import formatters, highlight, lexers
 
 from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError, NoDeviceConnectedError, \
     PyMobileDevice3Exception
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.usbmux import MuxDevice, select_device
-from pymobiledevice3.utils import set_keepalive
 
 DEFAULT_AFTER_IDLE_SEC = 3
 DEFAULT_INTERVAL_SEC = 3
 DEFAULT_MAX_FAILS = 3
-
+OSUTIL = get_os_utils()
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
 
@@ -36,7 +37,7 @@ print(client.recvall(20))
 """
 
 
-def build_plist(d, endianity='>', fmt=plistlib.FMT_XML):
+def build_plist(d: Mapping, endianity: str = '>', fmt: Enum = plistlib.FMT_XML) -> bytes:
     payload = plistlib.dumps(d, fmt=fmt)
     message = struct.pack(endianity + 'L', len(payload))
     return message + payload
@@ -79,7 +80,7 @@ class ServiceConnection:
     def create_using_tcp(hostname: str, port: int, keep_alive: bool = True) -> 'ServiceConnection':
         sock = socket.create_connection((hostname, port))
         if keep_alive:
-            set_keepalive(sock)
+            OSUTIL.set_keepalive(sock)
         return ServiceConnection(sock)
 
     @staticmethod
@@ -146,11 +147,15 @@ class ServiceConnection:
                 # Allow ssl to do stuff
                 time.sleep(0)
 
+    async def aio_recvall(self, size: int) -> bytes:
+        """ receive a payload """
+        return await self.reader.readexactly(size)
+
     async def aio_recv_prefixed(self, endianity='>') -> bytes:
         """ receive a data block prefixed with a u32 length field """
-        size = await self.reader.readexactly(4)
+        size = await self.aio_recvall(4)
         size = struct.unpack(endianity + 'L', size)[0]
-        return await self.reader.readexactly(size)
+        return await self.aio_recvall(size)
 
     def send_prefixed(self, data: bytes) -> None:
         """ send a data block prefixed with a u32 length field """
@@ -169,9 +174,12 @@ class ServiceConnection:
     def send_plist(self, d, endianity='>', fmt=plistlib.FMT_XML) -> None:
         return self.sendall(build_plist(d, endianity, fmt))
 
-    async def aio_send_plist(self, d, endianity='>', fmt=plistlib.FMT_XML) -> None:
-        self.writer.write(build_plist(d, endianity, fmt))
+    async def aio_sendall(self, payload: bytes) -> None:
+        self.writer.write(payload)
         await self.writer.drain()
+
+    async def aio_send_plist(self, d: Mapping, endianity: str = '>', fmt: Enum = plistlib.FMT_XML) -> None:
+        await self.aio_sendall(build_plist(d, endianity, fmt))
 
     def ssl_start(self, certfile, keyfile=None) -> None:
         self.socket = create_context(certfile, keyfile=keyfile).wrap_socket(self.socket)
