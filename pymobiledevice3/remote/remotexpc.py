@@ -52,7 +52,8 @@ class RemoteXPCConnection:
         await self._do_handshake()
 
     async def close(self) -> None:
-        await self.service_connection.aio_close()
+        if self.service_connection is not None:
+            await self.service_connection.aio_close()
 
     async def send_request(self, data: Mapping, wanting_reply: bool = False) -> None:
         xpc_wrapper = create_xpc_wrapper(
