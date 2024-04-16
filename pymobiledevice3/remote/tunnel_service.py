@@ -895,7 +895,8 @@ class CoreDeviceTunnelProxy(StartTcpTunnel, LockdownService):
             await tunnel.stop_tunnel()
 
     async def close(self) -> None:
-        await self._service.aio_close()
+        if self._service is not None:
+            await self._service.aio_close()
 
 
 async def create_core_device_tunnel_service_using_rsd(
