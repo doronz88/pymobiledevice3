@@ -5,10 +5,11 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, load_pem_public_key
+from cryptography.x509 import Certificate
 from cryptography.x509.oid import NameOID
 
 
-def make_cert(key, public_key, common_name=None):
+def make_cert(key, public_key, common_name=None) -> Certificate:
     attributes = [x509.NameAttribute(NameOID.COMMON_NAME, common_name)] if common_name else []
     subject = issuer = x509.Name(attributes)
     cert = x509.CertificateBuilder()
