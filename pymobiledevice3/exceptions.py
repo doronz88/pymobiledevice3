@@ -225,7 +225,10 @@ class DeveloperModeError(PyMobileDevice3Exception):
 
 class LockdownError(PyMobileDevice3Exception):
     """ lockdown general error """
-    pass
+
+    def __init__(self, message: str, identifier: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.identifier = identifier
 
 
 class GetProhibitedError(LockdownError):

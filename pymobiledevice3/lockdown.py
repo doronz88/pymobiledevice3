@@ -562,11 +562,11 @@ class LockdownClient(ABC, LockdownServiceProvider):
                                 'MissingValue': MissingValueError,
                                 'InvalidService': InvalidServiceError,
                                 'InvalidConnection': InvalidConnectionError, }
-            raise exception_errors.get(error, LockdownError)(error)
+            raise exception_errors.get(error, LockdownError)(error, self.identifier)
 
         # iOS < 5: 'Error' is not present, so we need to check the 'Result' instead
         if response.get('Result') == 'Failure':
-            raise LockdownError()
+            raise LockdownError('', self.identifier)
 
         return response
 
