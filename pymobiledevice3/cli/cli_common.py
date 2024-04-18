@@ -247,7 +247,7 @@ class RSDCommand(BaseServiceProviderCommand):
         for rsd in rsds:
             if rsd == self.service_provider:
                 continue
-            rsd.close()
+            get_asyncio_loop().run_until_complete(rsd.close())
 
         return self.service_provider
 
