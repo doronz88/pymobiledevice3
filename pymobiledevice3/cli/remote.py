@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import logging
 import sys
 import tempfile
@@ -7,7 +8,7 @@ from typing import List, Mapping, Optional, TextIO
 
 import click
 
-from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing_manual_pairing
 from pymobiledevice3.cli.cli_common import BaseCommand, RSDCommand, print_json, prompt_device_list, sudo_required, \
     user_requested_colored_output
 from pymobiledevice3.common import get_home_folder
@@ -16,7 +17,8 @@ from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, get_remote_pairing_
 from pymobiledevice3.remote.common import ConnectionType, TunnelProtocol
 from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_tunnel, verify_tunnel_imports
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
-from pymobiledevice3.remote.tunnel_service import get_core_device_tunnel_services, get_remote_pairing_tunnel_services
+from pymobiledevice3.remote.tunnel_service import RemotePairingManualPairingService, get_core_device_tunnel_services, \
+    get_remote_pairing_tunnel_services
 from pymobiledevice3.remote.utils import get_rsds
 from pymobiledevice3.tunneld import TUNNELD_DEFAULT_ADDRESS, TunneldRunner
 
@@ -194,6 +196,46 @@ def cli_start_tunnel(
         start_tunnel_task(
             ConnectionType(connection_type), secrets, udid, script_mode, max_idle_timeout=max_idle_timeout,
             protocol=TunnelProtocol(protocol)), debug=True)
+
+
+@dataclasses.dataclass
+class RemotePairingManualPairingDevice:
+    ip: str
+    port: int
+    device_name: str
+    identifier: str
+
+
+async def start_remote_pair_task(device_name: str) -> None:
+    if start_tunnel is None:
+        raise NotImplementedError('failed to start the tunnel on your platform')
+
+    devices: List[RemotePairingManualPairingDevice] = []
+    for answer in await browse_remotepairing_manual_pairing():
+        current_device_name = answer.properties[b'name'].decode()
+
+        if device_name is not None and current_device_name != device_name:
+            continue
+
+        for ip in answer.ips:
+            devices.append(RemotePairingManualPairingDevice(ip=ip, port=answer.port, device_name=current_device_name,
+                                                            identifier=answer.properties[b'identifier'].decode()))
+
+    if len(devices) > 0:
+        device = prompt_device_list(devices)
+    else:
+        logger.error('No devices were found during bonjour browse')
+        return
+
+    async with RemotePairingManualPairingService(device.identifier, device.ip, device.port) as service:
+        await service.connect(autopair=True)
+
+
+@remote_cli.command('pair', cls=BaseCommand)
+@click.option('--name', help='Device name for a specific device to look for')
+def cli_pair(name: Optional[str]) -> None:
+    """ start remote pairing for devices which allow """
+    asyncio.run(start_remote_pair_task(name), debug=True)
 
 
 @remote_cli.command('delete-pair', cls=BaseCommand)
