@@ -156,6 +156,11 @@ first create [trusted tunnel](misc/RemoteXPC.md#trusted-tunnel) in one of the tw
 - Launch a tunnel-server named `tunneld` to automatically detect devices and establish connections
     - Execute the following:
       ```shell
+      # if the device supports remote pairing, such as corellium instances or AppleTVs,
+      # you'll need to first pair them
+      # normal iOS devices don't require this step 
+      python3 -m pymobiledevice3 remote pair
+      
       # on windows, use a privileged shell
       sudo python3 -m pymobiledevice3 remote tunneld
       ```
@@ -163,7 +168,12 @@ first create [trusted tunnel](misc/RemoteXPC.md#trusted-tunnel) in one of the tw
 - Create tunnel manually using `start-tunnel`
     - Execute the following:
       ```shell
-      # NOTE: on windows, use a privileged shell
+      # if the device supports remote pairing, such as corellium instances or AppleTVs,
+      # you'll need to first pair them
+      # normal iOS devices don't require this step 
+      python3 -m pymobiledevice3 remote pair
+      
+      # NOTE: on windows, use a privileged shell for the following commands
 
       # starting at iOS 17.4 you can use the much faster lockdown tunnel
       sudo python3 -m pymobiledevice3 lockdown start-tunnel

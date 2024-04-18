@@ -4,7 +4,8 @@ from pathlib import Path
 
 import click
 
-from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_mobdev2, browse_remotepairing
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_mobdev2, browse_remotepairing, \
+    browse_remotepairing_manual_pairing
 from pymobiledevice3.cli.cli_common import BaseCommand, print_json
 from pymobiledevice3.cli.remote import browse_rsd
 from pymobiledevice3.lockdown import create_using_tcp
@@ -64,6 +65,21 @@ async def cli_remotepairing_task(timeout: float) -> None:
 def cli_remotepairing(timeout: float) -> None:
     """ browse for remotepairing devices over bonjour (without attempting pair verification) """
     asyncio.run(cli_remotepairing_task(timeout=timeout))
+
+
+async def cli_remotepairing_manual_pairing_task(timeout: float) -> None:
+    output = []
+    for answer in await browse_remotepairing_manual_pairing(timeout=timeout):
+        for ip in answer.ips:
+            output.append({'hostname': ip, 'port': answer.port, 'name': answer.properties[b'name'].decode()})
+    print_json(output)
+
+
+@bonjour_cli.command('remotepairing-manual-pairing', cls=BaseCommand)
+@click.option('--timeout', default=DEFAULT_BONJOUR_TIMEOUT, type=click.FLOAT)
+def cli_remotepairing_manual_pairing(timeout: float) -> None:
+    """ browse for remotepairing-manual-pairing devices over bonjour """
+    asyncio.run(cli_remotepairing_manual_pairing_task(timeout=timeout))
 
 
 async def cli_browse_rsd() -> None:

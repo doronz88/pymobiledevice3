@@ -5,6 +5,7 @@ import dataclasses
 import hashlib
 import json
 import logging
+import os
 import platform
 import plistlib
 import ssl
@@ -361,6 +362,7 @@ class RemotePairingProtocol(StartTcpTunnel):
 
     async def connect(self, autopair: bool = True) -> None:
         await self._attempt_pair_verify()
+
         if not await self._validate_pairing():
             if autopair:
                 await self._pair()
@@ -371,6 +373,7 @@ class RemotePairingProtocol(StartTcpTunnel):
             'key': base64.b64encode(
                 private_key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
             ).decode(),
+            'peerConnectionsInfo': [{'owningPID': os.getpid(), 'owningProcessName': 'CoreDeviceService'}],
             'transportProtocolType': 'quic'}}}}
 
         response = await self._send_receive_encrypted_request(request)
@@ -379,6 +382,7 @@ class RemotePairingProtocol(StartTcpTunnel):
     async def create_tcp_listener(self) -> Mapping:
         request = {'request': {'_0': {'createListener': {
             'key': base64.b64encode(self.encryption_key).decode(),
+            'peerConnectionsInfo': [{'owningPID': os.getpid(), 'owningProcessName': 'CoreDeviceService'}],
             'transportProtocolType': 'tcp'}}}}
         response = await self._send_receive_encrypted_request(request)
         return response['createListener']
@@ -722,7 +726,12 @@ class RemotePairingProtocol(StartTcpTunnel):
 
         encrypted_data = self._decode_bytes_if_needed(response['message']['streamEncrypted']['_0'])
         plaintext = self.server_cip.decrypt(nonce, encrypted_data, None)
-        return json.loads(plaintext)['response']['_1']
+        response = json.loads(plaintext)['response']['_1']
+
+        if 'errorExtended' in response:
+            raise PyMobileDevice3Exception(response['errorExtended']['_0']['userInfo']['NSLocalizedDescription'])
+
+        return response
 
     async def _send_receive_handshake(self, handshake_data: Mapping) -> Mapping:
         response = await self._send_receive_plain_request({'request': {'_0': {'handshake': {'_0': handshake_data}}}})
@@ -861,6 +870,13 @@ class RemotePairingTunnelService(RemotePairingProtocol):
                 f'PORT:{self.port}>')
 
 
+class RemotePairingManualPairingService(RemotePairingTunnelService):
+    async def connect(self, autopair: bool = True) -> None:
+        self._connection = ServiceConnection.create_using_tcp(self.hostname, self.port)
+        await self._connection.aio_start()
+        await RemotePairingProtocol.connect(self, autopair=autopair)
+
+
 class CoreDeviceTunnelProxy(StartTcpTunnel, LockdownService):
     SERVICE_NAME = 'com.apple.internal.devicecompute.CoreDeviceProxy'
 
@@ -909,6 +925,13 @@ async def create_core_device_tunnel_service_using_rsd(
 async def create_core_device_tunnel_service_using_remotepairing(
         remote_identifier: str, hostname: str, port: int, autopair: bool = True) -> RemotePairingTunnelService:
     service = RemotePairingTunnelService(remote_identifier, hostname, port)
+    await service.connect(autopair=autopair)
+    return service
+
+
+async def create_core_device_service_using_remotepairing_manual_pairing(
+        remote_identifier: str, hostname: str, port: int, autopair: bool = True) -> RemotePairingTunnelService:
+    service = RemotePairingManualPairingService(remote_identifier, hostname, port)
     await service.connect(autopair=autopair)
     return service
 

@@ -10,6 +10,7 @@ from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZerocon
 from pymobiledevice3.osu.os_utils import get_os_utils
 
 REMOTEPAIRING_SERVICE_NAMES = ['_remotepairing._tcp.local.']
+REMOTEPAIRING_MANUAL_PAIRING_SERVICE_NAMES = ['_remotepairing-manual-pairing._tcp.local.']
 MOBDEV2_SERVICE_NAMES = ['_apple-mobdev2._tcp.local.']
 REMOTED_SERVICE_NAMES = ['_remoted._tcp.local.']
 OSUTILS = get_os_utils()
@@ -117,3 +118,7 @@ async def browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[Bonjo
 
 async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
     return await browse_ipv4(REMOTEPAIRING_SERVICE_NAMES, timeout=timeout)
+
+
+async def browse_remotepairing_manual_pairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+    return await browse_ipv4(REMOTEPAIRING_MANUAL_PAIRING_SERVICE_NAMES, timeout=timeout)
