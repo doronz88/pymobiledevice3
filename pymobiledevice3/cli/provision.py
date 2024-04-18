@@ -12,13 +12,13 @@ logger = logging.getLogger(__name__)
 
 @click.group()
 def cli():
-    """ privision cli """
+    """ provision cli """
     pass
 
 
 @cli.group()
 def provision():
-    """ privision options """
+    """ provision options """
     pass
 
 
