@@ -25,7 +25,7 @@ from construct import Const, Container
 from construct import Enum as ConstructEnum
 from construct import GreedyBytes, GreedyRange, Int8ul, Int16ub, Int64ul, Prefixed, Struct
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives._serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives._serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
@@ -204,7 +204,10 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
         self._keep_alive_task = None
 
     async def wait_closed(self) -> None:
-        await QuicConnectionProtocol.wait_closed(self)
+        try:
+            await QuicConnectionProtocol.wait_closed(self)
+        except asyncio.CancelledError:
+            pass
 
     async def send_packet_to_device(self, packet: bytes) -> None:
         self._quic.send_datagram_frame(packet)
@@ -397,13 +400,14 @@ class RemotePairingProtocol(StartTcpTunnel):
         configuration = QuicConfiguration(
             alpn_protocols=['RemotePairingTunnelProtocol'],
             is_client=True,
-            certificate=cert,
-            private_key=private_key,
             verify_mode=VerifyMode.CERT_NONE,
             verify_hostname=False,
             max_datagram_frame_size=RemotePairingQuicTunnel.MAX_QUIC_DATAGRAM,
             idle_timeout=max_idle_timeout
         )
+        configuration.load_cert_chain(cert.public_bytes(Encoding.PEM),
+                                      private_key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL,
+                                                                NoEncryption()).decode())
         configuration.secrets_log_file = secrets_log_file
 
         host = self.hostname
