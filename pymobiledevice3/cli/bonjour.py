@@ -29,7 +29,7 @@ async def cli_mobdev2_task(timeout: float, pair_records: str) -> None:
         for record in Path(pair_records).glob('*.plist'):
             records.append(plistlib.loads(record.read_bytes()))
     output = []
-    for answer in await browse_mobdev2():
+    for answer in await browse_mobdev2(timeout=timeout):
         for ip in answer.ips:
             try:
                 lockdown = create_using_tcp(hostname=ip, autopair=False)
@@ -37,7 +37,9 @@ async def cli_mobdev2_task(timeout: float, pair_records: str) -> None:
                     lockdown = create_using_tcp(hostname=ip, autopair=False, pair_record=pair_record)
                     if lockdown.paired:
                         break
-                output.append(lockdown.short_info)
+                short_info = lockdown.short_info
+                short_info['ip'] = ip
+                output.append(short_info)
             except ConnectionRefusedError:
                 continue
     print_json(output)

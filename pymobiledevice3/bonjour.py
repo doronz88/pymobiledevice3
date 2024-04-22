@@ -96,7 +96,7 @@ async def browse_ipv6(service_names: List[str], timeout: float = DEFAULT_BONJOUR
     return await browse(service_names, OSUTILS.get_ipv6_ips(), timeout=timeout)
 
 
-async def browse_ipv4(service_names: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+def get_ipv4_addresses() -> List[str]:
     ips = []
     for adapter in get_adapters():
         for ip in adapter.ips:
@@ -105,7 +105,11 @@ async def browse_ipv4(service_names: List[str], timeout: float = DEFAULT_BONJOUR
             if not ip.is_IPv4:
                 continue
             ips.append(ip.ip)
-    return await browse(service_names, ips, timeout=timeout)
+    return ips
+
+
+async def browse_ipv4(service_names: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+    return await browse(service_names, get_ipv4_addresses(), timeout=timeout)
 
 
 async def browse_remoted(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
@@ -113,7 +117,7 @@ async def browse_remoted(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[Bonjo
 
 
 async def browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
-    return await browse_ipv4(MOBDEV2_SERVICE_NAMES, timeout=timeout)
+    return await browse(MOBDEV2_SERVICE_NAMES, get_ipv4_addresses() + OSUTILS.get_ipv6_ips(), timeout=timeout)
 
 
 async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
