@@ -16,8 +16,8 @@ from typing import Dict, Generator, Mapping, Optional, Tuple
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding
-from cryptography.hazmat.primitives.serialization.pkcs12 import load_pkcs12
 from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7SignatureBuilder
+from cryptography.hazmat.primitives.serialization.pkcs12 import load_pkcs12
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
@@ -818,7 +818,7 @@ async def get_mobdev2_lockdowns(
         for ip in answer.ips:
             try:
                 lockdown = create_using_tcp(hostname=ip, autopair=False, pair_record=record)
-            except ConnectionRefusedError:
+            except Exception:
                 continue
             if lockdown is None:
                 continue
