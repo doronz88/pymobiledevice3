@@ -19,6 +19,7 @@ DEFAULT_BONJOUR_TIMEOUT = OSUTILS.bonjour_timeout
 
 @dataclasses.dataclass
 class BonjourAnswer:
+    name: str
     properties: Mapping[bytes, bytes]
     ips: List[str]
     port: int
@@ -27,6 +28,7 @@ class BonjourAnswer:
 class BonjourListener(ServiceListener):
     def __init__(self, ip: str):
         super().__init__()
+        self.name: Optional[str] = None
         self.properties: Mapping[bytes, bytes] = {}
         self.ip = ip
         self.port: Optional[int] = None
@@ -40,6 +42,7 @@ class BonjourListener(ServiceListener):
 
     async def query_addresses(self) -> None:
         zeroconf, service_type, name, state_change = await self.queue.get()
+        self.name = name
         service_info = AsyncServiceInfo(service_type, name)
         await service_info.async_request(zeroconf, 3000)
         ipv4 = [inet_ntop(AF_INET, address.packed) for address in
@@ -82,8 +85,9 @@ async def browse(service_names: List[str], ips: List[str], timeout: float = DEFA
     await asyncio.sleep(timeout)
     for bonjour_query in bonjour_queries:
         if bonjour_query.listener.addresses:
-            answer = BonjourAnswer(bonjour_query.listener.properties, bonjour_query.listener.addresses,
-                                   bonjour_query.listener.port)
+            answer = BonjourAnswer(
+                bonjour_query.listener.name, bonjour_query.listener.properties, bonjour_query.listener.addresses,
+                bonjour_query.listener.port)
             if answer not in answers:
                 answers.append(answer)
         await bonjour_query.listener.close()

@@ -226,11 +226,15 @@ request to establish a connection to [all its exposed services](#lockdown-servic
 To do so, use the following snippet:
 
 ```python
-from pymobiledevice3.lockdown import create_using_usbmux, create_using_tcp
+from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
 
 # Connecting via usbmuxd (you can also specify a specific UDID to connect to)
 # Please note usbmuxd allows connecting to devices both on USB or on WiFi
 lockdown = create_using_usbmux()
+
+# you can also query network lockdown instances using the following:
+async for ip, lockdown in get_mobdev2_lockdowns():
+    print(ip, lockdown)
 ```
 
 Now you can connect to which service you'd like. We already [implemented many of the services](#implemented-services),

@@ -4,11 +4,10 @@ from pathlib import Path
 
 import click
 
-from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_mobdev2, browse_remotepairing, \
-    browse_remotepairing_manual_pairing
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing, browse_remotepairing_manual_pairing
 from pymobiledevice3.cli.cli_common import BaseCommand, print_json
 from pymobiledevice3.cli.remote import browse_rsd
-from pymobiledevice3.lockdown import create_using_tcp
+from pymobiledevice3.lockdown import get_mobdev2_lockdowns
 
 
 @click.group()
@@ -29,19 +28,10 @@ async def cli_mobdev2_task(timeout: float, pair_records: str) -> None:
         for record in Path(pair_records).glob('*.plist'):
             records.append(plistlib.loads(record.read_bytes()))
     output = []
-    for answer in await browse_mobdev2(timeout=timeout):
-        for ip in answer.ips:
-            try:
-                lockdown = create_using_tcp(hostname=ip, autopair=False)
-                for pair_record in records:
-                    lockdown = create_using_tcp(hostname=ip, autopair=False, pair_record=pair_record)
-                    if lockdown.paired:
-                        break
-                short_info = lockdown.short_info
-                short_info['ip'] = ip
-                output.append(short_info)
-            except ConnectionRefusedError:
-                continue
+    async for ip, lockdown in get_mobdev2_lockdowns(timeout=timeout):
+        short_info = lockdown.short_info
+        short_info['ip'] = ip
+        output.append(short_info)
     print_json(output)
 
 
