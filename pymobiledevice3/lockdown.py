@@ -11,7 +11,7 @@ from enum import Enum
 from functools import wraps
 from pathlib import Path
 from ssl import SSLZeroReturnError
-from typing import Dict, Mapping, Optional
+from typing import Dict, Generator, Mapping, Optional, Tuple
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
@@ -21,7 +21,9 @@ from cryptography.hazmat.primitives.serialization.pkcs12 import load_pkcs12
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_mobdev2
 from pymobiledevice3.ca import ca_do_everything
+from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import CannotStopSessionError, ConnectionTerminatedError, FatalPairingError, \
     GetProhibitedError, IncorrectModeError, InvalidConnectionError, InvalidHostIDError, InvalidServiceError, \
     LockdownError, MissingValueError, NotPairedError, PairingDialogResponsePendingError, PairingError, \
@@ -108,7 +110,8 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
     @classmethod
     def create(cls, service: ServiceConnection, identifier: str = None, system_buid: str = SYSTEM_BUID,
-               label: str = DEFAULT_LABEL, autopair: bool = True, pair_timeout: float = None, local_hostname: str = None,
+               label: str = DEFAULT_LABEL, autopair: bool = True, pair_timeout: float = None,
+               local_hostname: str = None,
                pair_record: Mapping = None, pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT,
                private_key: Optional[RSAPrivateKey] = None, **cls_specific_args):
         """
@@ -165,7 +168,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
     @property
     def short_info(self) -> Dict:
-        keys_to_copy = ['DeviceClass', 'DeviceName', 'BuildVersion', 'ProductVersion', 'ProductType']
+        keys_to_copy = ['DeviceClass', 'DeviceName', 'BuildVersion', 'ProductVersion', 'ProductType', 'UniqueDeviceID']
         result = {
             'Identifier': self.identifier,
         }
@@ -335,7 +338,8 @@ class LockdownClient(ABC, LockdownServiceProvider):
             raise PairingError()
 
         self.logger.info('Creating host key & certificate')
-        cert_pem, private_key_pem, device_certificate = ca_do_everything(self.device_public_key, private_key=private_key)
+        cert_pem, private_key_pem, device_certificate = ca_do_everything(self.device_public_key,
+                                                                         private_key=private_key)
 
         pair_record = {'DevicePublicKey': self.device_public_key,
                        'DeviceCertificate': device_certificate,
@@ -392,8 +396,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
                        'SystemBUID': self.system_buid}
 
         pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2',
-                        'PairingOptions': {'SupervisorCertificate': decrypted_p12.cert.certificate.public_bytes(Encoding.DER),
-                                           'ExtendedPairingErrors': True}}
+                        'PairingOptions': {
+                            'SupervisorCertificate': decrypted_p12.cert.certificate.public_bytes(Encoding.DER),
+                            'ExtendedPairingErrors': True}}
 
         # first pair with SupervisorCertificate as PairingOptions to get Challenge
         pair = self._request_pair(pair_options, timeout=timeout)
@@ -782,3 +787,42 @@ def create_using_remote(service: ServiceConnection, identifier: str = None, labe
         pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
         port=port)
     return client
+
+
+async def get_mobdev2_lockdowns(
+        udid: Optional[str] = None, pair_records: Optional[Path] = None, only_paired: bool = False,
+        timeout: float = DEFAULT_BONJOUR_TIMEOUT) \
+        -> Generator[Tuple[str, TcpLockdownClient], None, None]:
+    records = {}
+    if pair_records is None:
+        pair_records = get_home_folder()
+    for file in pair_records.glob('*.plist'):
+        if file.name.startswith('remote_'):
+            # skip RemotePairing records
+            continue
+        record_udid = file.parts[-1].strip('.plist')
+        if udid is not None and record_udid != udid:
+            continue
+        record = plistlib.loads(file.read_bytes())
+        records[record['WiFiMACAddress']] = record
+
+    for answer in await browse_mobdev2(timeout=timeout):
+        if '@' not in answer.name:
+            continue
+        wifi_mac_address = answer.name.split('@', 1)[0]
+        record = records.get(wifi_mac_address)
+
+        if only_paired and record is None:
+            continue
+
+        for ip in answer.ips:
+            try:
+                lockdown = create_using_tcp(hostname=ip, autopair=False, pair_record=record)
+            except Exception:
+                continue
+            if lockdown is None:
+                continue
+            if only_paired and not lockdown.paired:
+                lockdown.close()
+                continue
+            yield ip, lockdown

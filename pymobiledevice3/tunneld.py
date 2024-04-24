@@ -19,7 +19,7 @@ from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import REMOTED_SERVICE_NAMES, browse
 from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, GetProhibitedError, \
     InvalidServiceError, MuxException, PairingError, TunneldConnectionError
-from pymobiledevice3.lockdown import create_using_usbmux
+from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.module_imports import start_tunnel
@@ -38,6 +38,7 @@ REATTEMPT_INTERVAL = 5
 REATTEMPT_COUNT = 5
 
 REMOTEPAIRING_INTERVAL = 5
+MOVDEV2_INTERVAL = 5
 
 USBMUX_INTERVAL = 2
 OSUTILS = get_os_utils()
@@ -52,13 +53,14 @@ class TunnelTask:
 
 class TunneldCore:
     def __init__(self, protocol: TunnelProtocol = TunnelProtocol.QUIC, wifi_monitor: bool = True,
-                 usb_monitor: bool = True, usbmux_monitor: bool = True) -> None:
+                 usb_monitor: bool = True, usbmux_monitor: bool = True, mobdev2_monitor: bool = True) -> None:
         self.protocol = protocol
         self.tasks: List[asyncio.Task] = []
         self.tunnel_tasks: Dict[str, TunnelTask] = {}
         self.usb_monitor = usb_monitor
         self.wifi_monitor = wifi_monitor
         self.usbmux_monitor = usbmux_monitor
+        self.mobdev2_monitor = mobdev2_monitor
 
     def start(self) -> None:
         """ Register all tasks """
@@ -69,6 +71,8 @@ class TunneldCore:
             self.tasks.append(asyncio.create_task(self.monitor_wifi_task(), name='monitor-wifi-task'))
         if self.usbmux_monitor:
             self.tasks.append(asyncio.create_task(self.monitor_usbmux_task(), name='monitor-usbmux-task'))
+        if self.mobdev2_monitor:
+            self.tasks.append(asyncio.create_task(self.monitor_mobdev2_task(), name='monitor-mobdev2-task'))
 
     def tunnel_exists_for_udid(self, udid: str) -> bool:
         for task in self.tunnel_tasks.values():
@@ -152,12 +156,35 @@ class TunneldCore:
             pass
 
     @asyncio_print_traceback
+    async def monitor_mobdev2_task(self) -> None:
+        try:
+            while True:
+                async for ip, lockdown in get_mobdev2_lockdowns(only_paired=True):
+                    if self.tunnel_exists_for_udid(lockdown.udid):
+                        # skip tunnel if already exists for this udid
+                        continue
+                    try:
+                        tunnel_service = CoreDeviceTunnelProxy(lockdown)
+                    except InvalidServiceError:
+                        logger.warning(f'[{lockdown.udid}-{ip}] failed to start CoreDeviceTunnelProxy - skipping')
+                        continue
+                    self.tunnel_tasks[ip] = TunnelTask(
+                        task=asyncio.create_task(self.start_tunnel_task(ip, tunnel_service),
+                                                 name=f'start-tunnel-task-mobdev2-{ip}'),
+                        udid=lockdown.udid
+                    )
+                await asyncio.sleep(MOVDEV2_INTERVAL)
+        except asyncio.CancelledError:
+            pass
+
+    @asyncio_print_traceback
     async def start_tunnel_task(
             self, task_identifier: str, protocol_handler: Union[RemotePairingProtocol, CoreDeviceTunnelProxy],
             queue: Optional[asyncio.Queue] = None, protocol: Optional[TunnelProtocol] = None) -> None:
-
         if protocol is None:
             protocol = self.protocol
+        if isinstance(protocol_handler, CoreDeviceTunnelProxy):
+            protocol = TunnelProtocol.TCP
         tun = None
         bailed_out = False
         try:
@@ -278,12 +305,12 @@ class TunneldRunner:
 
     @classmethod
     def create(cls, host: str, port: int, protocol: TunnelProtocol = TunnelProtocol.QUIC, usb_monitor: bool = True,
-               wifi_monitor: bool = True, usbmux_monitor: bool = True) -> None:
+               wifi_monitor: bool = True, usbmux_monitor: bool = True, mobdev2_monitor: bool = True) -> None:
         cls(host, port, protocol=protocol, usb_monitor=usb_monitor, wifi_monitor=wifi_monitor,
-            usbmux_monitor=usbmux_monitor)._run_app()
+            usbmux_monitor=usbmux_monitor, mobdev2_monitor=mobdev2_monitor)._run_app()
 
     def __init__(self, host: str, port: int, protocol: TunnelProtocol = TunnelProtocol.QUIC, usb_monitor: bool = True,
-                 wifi_monitor: bool = True, usbmux_monitor: bool = True):
+                 wifi_monitor: bool = True, usbmux_monitor: bool = True, mobdev2_monitor: bool = True):
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             logging.getLogger('zeroconf').disabled = True
@@ -297,7 +324,7 @@ class TunneldRunner:
         self.protocol = protocol
         self._app = FastAPI(lifespan=lifespan)
         self._tunneld_core = TunneldCore(protocol=protocol, wifi_monitor=wifi_monitor, usb_monitor=usb_monitor,
-                                         usbmux_monitor=usbmux_monitor)
+                                         usbmux_monitor=usbmux_monitor, mobdev2_monitor=mobdev2_monitor)
 
         @self._app.get('/')
         async def list_tunnels() -> Mapping[str, List[Mapping]]:
