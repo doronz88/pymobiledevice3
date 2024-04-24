@@ -76,7 +76,7 @@ class TunneldCore:
 
     def tunnel_exists_for_udid(self, udid: str) -> bool:
         for task in self.tunnel_tasks.values():
-            if task.udid == udid and task.tunnel is not None:
+            if (task.udid == udid) and (task.tunnel is not None):
                 return True
         return False
 
@@ -163,14 +163,15 @@ class TunneldCore:
                     if self.tunnel_exists_for_udid(lockdown.udid):
                         # skip tunnel if already exists for this udid
                         continue
+                    task_identifier = f'mobdev2-{lockdown.udid}-{ip}'
                     try:
                         tunnel_service = CoreDeviceTunnelProxy(lockdown)
                     except InvalidServiceError:
-                        logger.warning(f'[{lockdown.udid}-{ip}] failed to start CoreDeviceTunnelProxy - skipping')
+                        logger.warning(f'[{task_identifier}] failed to start CoreDeviceTunnelProxy - skipping')
                         continue
-                    self.tunnel_tasks[ip] = TunnelTask(
-                        task=asyncio.create_task(self.start_tunnel_task(ip, tunnel_service),
-                                                 name=f'start-tunnel-task-mobdev2-{ip}'),
+                    self.tunnel_tasks[task_identifier] = TunnelTask(
+                        task=asyncio.create_task(self.start_tunnel_task(task_identifier, tunnel_service),
+                                                 name=f'start-tunnel-task-{task_identifier}'),
                         udid=lockdown.udid
                     )
                 await asyncio.sleep(MOVDEV2_INTERVAL)

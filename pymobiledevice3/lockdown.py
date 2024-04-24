@@ -806,6 +806,7 @@ async def get_mobdev2_lockdowns(
         record = plistlib.loads(file.read_bytes())
         records[record['WiFiMACAddress']] = record
 
+    iterated_ips = set()
     for answer in await browse_mobdev2(timeout=timeout):
         if '@' not in answer.name:
             continue
@@ -816,6 +817,10 @@ async def get_mobdev2_lockdowns(
             continue
 
         for ip in answer.ips:
+            if ip in iterated_ips:
+                # skip ips we already iterated over, possibly from previous queries
+                continue
+            iterated_ips.add(ip)
             try:
                 lockdown = create_using_tcp(hostname=ip, autopair=False, pair_record=record)
             except Exception:
