@@ -26,7 +26,7 @@ wsproto
 nest_asyncio>=1.5.5
 Pillow
 inquirer3>=0.1.0
-ipsw_parser>=1.1.3
+ipsw_parser>=1.2.3
 remotezip
 zeroconf
 ifaddr
