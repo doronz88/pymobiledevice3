@@ -130,7 +130,7 @@ class CrashReportsManager:
                     yield crash_report
 
     def get_new_sysdiagnose(self, out: str, erase: bool = True, *, timeout: Optional[float] = None,
-                            callback: Optional[Callable[[float], None]]=None) -> None:
+                            callback: Optional[Callable[[float], None]] = None) -> None:
         """
         Monitor the creation of a newly created sysdiagnose archive and pull it
         :param out: filename
