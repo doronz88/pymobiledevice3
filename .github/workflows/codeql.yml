@@ -15,6 +15,11 @@ on:
   pull_request:
     # The branches below must be a subset of the branches above
     branches: [ "master" ]
+    paths:
+      - '.github/workflows/codeql.yml'
+      - 'pymobiledevice3/**'
+      - 'requirements.txt'
+      - 'pyproject.toml'
   schedule:
     - cron: '24 3 * * 6'
 

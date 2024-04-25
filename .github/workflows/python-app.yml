@@ -6,6 +6,11 @@ name: Python application
 on:
   pull_request:
     branches: [ "master" ]
+    paths:
+      - '.github/workflows/python-app.yml'
+      - 'pymobiledevice3/**'
+      - 'requirements.txt'
+      - 'pyproject.toml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,14 +25,6 @@ jobs:
       matrix:
         python-version: [ 3.8, 3.9, "3.10", "3.11", "3.12" ]
         os: [ ubuntu-latest, macos-latest, windows-latest ]
-        # Python <3.10 not available for macos-latest (macos-14-arm64)
-        # https://github.com/actions/setup-python/issues/696#issuecomment-1637587760
-        exclude:
-          - { python-version: 3.8, os: macos-latest }
-          - { python-version: 3.9, os: macos-latest }
-        include:
-          - { python-version: 3.8, os: macos-13 }
-          - { python-version: 3.9, os: macos-13 }
 
     steps:
       - uses: actions/checkout@v4
