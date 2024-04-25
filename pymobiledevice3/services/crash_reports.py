@@ -1,7 +1,7 @@
 import logging
 import posixpath
 import time
-from typing import Generator, List, Optional
+from typing import Callable, Generator, List, Optional
 
 from pycrashreport.crash_report import get_crash_report_from_buf
 from xonsh.built_ins import XSH
@@ -129,21 +129,35 @@ class CrashReportsManager:
                 else:
                     yield crash_report
 
-    def get_new_sysdiagnose(self, out: str, erase: bool = True, *, timeout: Optional[float] = None) -> None:
+    def get_new_sysdiagnose(self, out: str, erase: bool = True, *, timeout: Optional[float] = None,
+                            callback: Optional[Callable[[float], None]] = None) -> None:
         """
         Monitor the creation of a newly created sysdiagnose archive and pull it
         :param out: filename
         :param erase: remove after pulling
         :keyword timeout: Maximum time in seconds to wait for the completion of sysdiagnose archive
             If None (default), waits indefinitely
+        :keyword callback: optional callback function (form: func(float)) that accepts the elapsed time so far
         """
+        start_time = time.monotonic()
         end_time = None
         if timeout is not None:
-            end_time = time.monotonic() + timeout
+            end_time = start_time + timeout
         sysdiagnose_filename = self._get_new_sysdiagnose_filename(end_time)
+
+        if callback is not None:
+            callback(time.monotonic() - start_time)
+
         self.logger.info('sysdiagnose tarball creation has been started')
         self._wait_for_sysdiagnose_to_finish(end_time)
+
+        if callback is not None:
+            callback(time.monotonic() - start_time)
+
         self.pull(out, entry=sysdiagnose_filename, erase=erase)
+
+        if callback is not None:
+            callback(time.monotonic() - start_time)
 
     @staticmethod
     def _sysdiagnose_complete_syslog_match(message: str) -> bool:
