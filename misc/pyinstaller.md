@@ -4,7 +4,6 @@ Below is the snippet, which shows how to build exe from python code
 This method tested on Windows 10, 11  
 Requires module pyinstaller 6.2.0+  
 
-
 ```python
 import shutil
 import os

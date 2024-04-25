@@ -1,20 +1,18 @@
-- [RemoteXPC](#remotexpc)
-    * [Overview](#overview)
-    * [Previous research](#previous-research)
-    * [USB Ethernet](#usb-ethernet)
-    * [Process: `remoted`](#process-remoted)
-    * [Pairing](#pairing)
-    * [Trusted tunnel](#trusted-tunnel)
-        + [Reusing the macOS trusted tunnel](#reusing-the-macos-trusted-tunnel)
-    * [Accessing services over the trusted tunnel](#accessing-services-over-the-trusted-tunnel)
-        + [Lockdown services](#lockdown-services)
-        + [RemoteXPC services](#remotexpc-services)
-            - [CoreDevice services](#coredevice-services)
-    * [Using `pymobiledevice3` as a client](#using-pymobiledevice3-as-a-client)
-        + [Handshake & Pairing](#handshake--pairing)
-        + [Accessing services over RemoteXPC](#accessing-services-over-remotexpc)
-
 # RemoteXPC
+
+- [RemoteXPC](#remotexpc)
+  - [Overview](#overview)
+  - [Previous research](#previous-research)
+  - [USB Ethernet](#usb-ethernet)
+  - [Process: `remoted`](#process-remoted)
+  - [Pairing](#pairing)
+  - [Trusted tunnel](#trusted-tunnel)
+    - [Reusing the macOS trusted tunnel](#reusing-the-macos-trusted-tunnel)
+  - [Accessing services over the trusted tunnel](#accessing-services-over-the-trusted-tunnel)
+    - [Lockdown services](#lockdown-services)
+    - [RemoteXPC services](#remotexpc-services)
+      - [CoreDevice services](#coredevice-services)
+  - [Using `pymobiledevice3` as a client](#using-pymobiledevice3-as-a-client)
 
 ## Overview
 
@@ -23,7 +21,7 @@ communication was TCP based (using the help of `usbmuxd` for USB devices) with T
 are able to connect). You can read more about
 the old protocol in this article:
 
-https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lockdown-service-7f2a1dfd07ae
+<https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lockdown-service-7f2a1dfd07ae>
 
 The new protocol stack relies on [QUIC](https://en.wikipedia.org/wiki/QUIC)+RemoteXPC which should reduce much of the
 communication overhead in general - allowing faster and more stable connections, especially over WiFi.
@@ -32,7 +30,7 @@ communication overhead in general - allowing faster and more stable connections,
 
 RemoteXPC was introduced for macOS much earlier. You can read more about it here:
 
-https://duo.com/labs/research/apple-t2-xpc
+<https://duo.com/labs/research/apple-t2-xpc>
 
 However, our protocol stack is a bit different.
 
@@ -171,10 +169,10 @@ As you can see, we get quite some info:
 
 - The device general information
 - Each service may report the following metadata:
-    - `UsesRemoteXPC`: Whether the communication is done over RemoteXPC or not.
-    - `Entitlement`: From my understanding, this just regards the entitlement needed by the
+  - `UsesRemoteXPC`: Whether the communication is done over RemoteXPC or not.
+  - `Entitlement`: From my understanding, this just regards the entitlement needed by the
       connecting on-device client.
-    - `ServiceVersion`: Probably refers to some protocol changes being done to help backward compatibility of other
+  - `ServiceVersion`: Probably refers to some protocol changes being done to help backward compatibility of other
       clients.
 
 Each of this services can be accessed from any untrusted peer.
@@ -790,8 +788,3 @@ The response is just what the invoked function returned.
 ## Using `pymobiledevice3` as a client
 
 See [main documentation](/README.md#working-with-developer-tools-ios--170) for details.
-
-### Accessing services over RemoteXPC
-
-Almost every command of `pymobiledevice` now receives an optional `--rsd`, allowing us to communicate the same old
-services over RSD. Please notice some of them, such as all the developer services will now only be accessible this way. 
