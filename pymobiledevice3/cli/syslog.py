@@ -105,6 +105,7 @@ def syslog_live(service_provider: LockdownClient, out, pid, process_name, match,
             if posixpath.basename(syslog_entry.filename) != process_name:
                 continue
 
+        line_no_style = format_line(False, pid, syslog_entry, include_label)
         line = format_line(user_requested_colored_output(), pid, syslog_entry, include_label)
 
         skip = False
@@ -148,7 +149,10 @@ def syslog_live(service_provider: LockdownClient, out, pid, process_name, match,
         print(line, flush=True)
 
         if out:
-            print(line, file=out, flush=True)
+            if user_requested_colored_output():
+                print(line, file=out, flush=True)
+            else:
+                print(line_no_style, file=out, flush=True)
 
 
 @syslog.command('collect', cls=Command)
