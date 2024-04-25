@@ -1,7 +1,7 @@
 import logging
 import posixpath
 import time
-from typing import Generator, List, Optional
+from typing import Generator, List, Optional, Callable
 
 from pycrashreport.crash_report import get_crash_report_from_buf
 from xonsh.built_ins import XSH
@@ -130,7 +130,7 @@ class CrashReportsManager:
                     yield crash_report
 
     def get_new_sysdiagnose(self, out: str, erase: bool = True, *, timeout: Optional[float] = None,
-                            callback=None) -> None:
+                            callback: Optional[Callable[[float], None]]=None) -> None:
         """
         Monitor the creation of a newly created sysdiagnose archive and pull it
         :param out: filename
