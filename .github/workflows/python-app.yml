@@ -6,6 +6,11 @@ name: Python application
 on:
   pull_request:
     branches: [ "master" ]
+    paths:
+      - '.github/workflows/python-app.yml'
+      - 'pymobiledevice3/**'
+      - 'requirements.txt'
+      - 'pyproject.toml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
