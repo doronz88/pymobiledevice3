@@ -1,10 +1,11 @@
 import dataclasses
-import datetime
-import sys
 import typing
 
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.remote_server import MessageAux
+
+OSUTIL = get_os_utils()
 
 
 @dataclasses.dataclass
@@ -16,10 +17,7 @@ class OutputReceivedEvent:
     @classmethod
     def create(cls, message) -> 'OutputReceivedEvent':
         try:
-            if sys.platform == 'win32':
-                date = datetime.datetime.fromtimestamp(message[2].value / 1000)
-            else:
-                date = datetime.datetime.fromtimestamp(message[2].value)
+            date = OSUTIL.parse_timestamp(message[2].value)
         except (ValueError, OSError):
             date = None
 

@@ -1,75 +1,132 @@
+import asyncio
 import dataclasses
-import logging
-import socket
-import time
-from typing import List, Mapping
+from socket import AF_INET, AF_INET6, inet_ntop
+from typing import List, Mapping, Optional
 
-from zeroconf import InterfaceChoice, InterfacesType, IPVersion, ServiceBrowser, ServiceListener, Zeroconf
+from ifaddr import get_adapters
+from zeroconf import IPVersion, ServiceListener, ServiceStateChange, Zeroconf
+from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 
-from pymobiledevice3.lockdown import LockdownClient, create_using_tcp
+from pymobiledevice3.osu.os_utils import get_os_utils
 
-SERVICE_NAME = '_apple-mobdev2._tcp.local.'
-
-logger = logging.getLogger(__name__)
+REMOTEPAIRING_SERVICE_NAMES = ['_remotepairing._tcp.local.']
+REMOTEPAIRING_MANUAL_PAIRING_SERVICE_NAMES = ['_remotepairing-manual-pairing._tcp.local.']
+MOBDEV2_SERVICE_NAMES = ['_apple-mobdev2._tcp.local.']
+REMOTED_SERVICE_NAMES = ['_remoted._tcp.local.']
+OSUTILS = get_os_utils()
+DEFAULT_BONJOUR_TIMEOUT = OSUTILS.bonjour_timeout
 
 
 @dataclasses.dataclass
-class BonjourDevice:
+class BonjourAnswer:
     name: str
-    mac_address: str
-    ipv4: List[str]
-    ipv6: List[str]
-    lockdown: LockdownClient
-
-    def asdict(self) -> Mapping:
-        return {
-            'name': self.name,
-            'mac_address': self.mac_address,
-            'ipv4': self.ipv4,
-            'ipv6': self.ipv6,
-            'lockdown_info': self.lockdown.all_values
-        }
+    properties: Mapping[bytes, bytes]
+    ips: List[str]
+    port: int
 
 
 class BonjourListener(ServiceListener):
-    def __init__(self, pair_records: List[Mapping] = None):
+    def __init__(self, ip: str):
         super().__init__()
-        self.pair_records = [] if pair_records is None else pair_records
-        self.discovered_devices = {}
+        self.name: Optional[str] = None
+        self.properties: Mapping[bytes, bytes] = {}
+        self.ip = ip
+        self.port: Optional[int] = None
+        self.addresses: List[str] = []
+        self.queue: asyncio.Queue = asyncio.Queue()
+        self.querying_task: Optional[asyncio.Task] = asyncio.create_task(self.query_addresses())
 
-    def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        logger.debug(f'Service {name} updated')
+    def async_on_service_state_change(
+            self, zeroconf: Zeroconf, service_type: str, name: str, state_change: ServiceStateChange) -> None:
+        self.queue.put_nowait((zeroconf, service_type, name, state_change))
 
-    def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        logger.debug(f'Service {name} removed')
-        self.discovered_devices.pop(name)
+    async def query_addresses(self) -> None:
+        zeroconf, service_type, name, state_change = await self.queue.get()
+        self.name = name
+        service_info = AsyncServiceInfo(service_type, name)
+        await service_info.async_request(zeroconf, 3000)
+        ipv4 = [inet_ntop(AF_INET, address.packed) for address in
+                service_info.ip_addresses_by_version(IPVersion.V4Only)]
+        ipv6 = []
+        if '%' in self.ip:
+            ipv6 = [inet_ntop(AF_INET6, address.packed) + '%' + self.ip.split('%')[1] for address in
+                    service_info.ip_addresses_by_version(IPVersion.V6Only)]
+        self.addresses = ipv4 + ipv6
+        self.properties = service_info.properties
+        self.port = service_info.port
 
-    def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        info = zc.get_service_info(type_, name)
-        logger.debug(f'Service {name} added, service info: {info}')
-
-        ipv4 = [socket.inet_ntop(socket.AF_INET, address) for address in info.addresses_by_version(IPVersion.V4Only)]
-        ipv6 = [socket.inet_ntop(socket.AF_INET6, address) for address in info.addresses_by_version(IPVersion.V6Only)]
-
+    async def close(self) -> None:
+        self.querying_task.cancel()
         try:
-            lockdown = create_using_tcp(hostname=ipv4[0], autopair=False)
-
-            for pair_record in self.pair_records:
-                lockdown = create_using_tcp(hostname=ipv4[0], autopair=False, pair_record=pair_record)
-                if lockdown.paired:
-                    break
-        except ConnectionRefusedError:
-            logger.debug('Service failed to establish a lockdown connection')
-            return
-
-        self.discovered_devices[name] = BonjourDevice(name=name, mac_address=name.split('@')[0], ipv4=ipv4, ipv6=ipv6,
-                                                      lockdown=lockdown)
+            await self.querying_task
+        except asyncio.CancelledError:
+            pass
 
 
-def browse(timeout: float, interfaces: InterfacesType = InterfaceChoice.All, pair_records: List[Mapping] = None) -> \
-        Mapping[str, BonjourDevice]:
-    with Zeroconf(interfaces=interfaces) as zc:
-        listener = BonjourListener(pair_records=pair_records)
-        ServiceBrowser(zc, SERVICE_NAME, listener)
-        time.sleep(timeout)
-        return listener.discovered_devices
+@dataclasses.dataclass
+class BonjourQuery:
+    zc: AsyncZeroconf
+    service_browser: AsyncServiceBrowser
+    listener: BonjourListener
+
+
+def query_bonjour(service_names: List[str], ip: str) -> BonjourQuery:
+    aiozc = AsyncZeroconf(interfaces=[ip])
+    listener = BonjourListener(ip)
+    service_browser = AsyncServiceBrowser(aiozc.zeroconf, service_names,
+                                          handlers=[listener.async_on_service_state_change])
+    return BonjourQuery(aiozc, service_browser, listener)
+
+
+async def browse(service_names: List[str], ips: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) \
+        -> List[BonjourAnswer]:
+    bonjour_queries = [query_bonjour(service_names, adapter) for adapter in ips]
+    answers = []
+    await asyncio.sleep(timeout)
+    for bonjour_query in bonjour_queries:
+        if bonjour_query.listener.addresses:
+            answer = BonjourAnswer(
+                bonjour_query.listener.name, bonjour_query.listener.properties, bonjour_query.listener.addresses,
+                bonjour_query.listener.port)
+            if answer not in answers:
+                answers.append(answer)
+        await bonjour_query.listener.close()
+        await bonjour_query.service_browser.async_cancel()
+        await bonjour_query.zc.async_close()
+    return answers
+
+
+async def browse_ipv6(service_names: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+    return await browse(service_names, OSUTILS.get_ipv6_ips(), timeout=timeout)
+
+
+def get_ipv4_addresses() -> List[str]:
+    ips = []
+    for adapter in get_adapters():
+        for ip in adapter.ips:
+            if ip.ip == '127.0.0.1':
+                continue
+            if not ip.is_IPv4:
+                continue
+            ips.append(ip.ip)
+    return ips
+
+
+async def browse_ipv4(service_names: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+    return await browse(service_names, get_ipv4_addresses(), timeout=timeout)
+
+
+async def browse_remoted(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+    return await browse_ipv6(REMOTED_SERVICE_NAMES, timeout=timeout)
+
+
+async def browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+    return await browse(MOBDEV2_SERVICE_NAMES, get_ipv4_addresses() + OSUTILS.get_ipv6_ips(), timeout=timeout)
+
+
+async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+    return await browse_ipv4(REMOTEPAIRING_SERVICE_NAMES, timeout=timeout)
+
+
+async def browse_remotepairing_manual_pairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+    return await browse_ipv4(REMOTEPAIRING_MANUAL_PAIRING_SERVICE_NAMES, timeout=timeout)

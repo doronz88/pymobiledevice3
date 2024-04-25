@@ -3,15 +3,15 @@ import logging
 from dataclasses import dataclass
 from typing import List, Mapping, Optional, Tuple, Union
 
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import InvalidServiceError, NoDeviceConnectedError, PyMobileDevice3Exception, \
     StartServiceError
 from pymobiledevice3.lockdown import LockdownClient, create_using_remote
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.pair_records import get_local_pairing_record, get_remote_pairing_record_filename
-from pymobiledevice3.remote.bonjour import DEFAULT_BONJOUR_TIMEOUT, get_remoted_addresses
 from pymobiledevice3.remote.remotexpc import RemoteXPCConnection
-from pymobiledevice3.service_connection import LockdownServiceConnection
+from pymobiledevice3.service_connection import ServiceConnection
 
 
 @dataclass
@@ -27,8 +27,9 @@ RSD_PORT = 58783
 
 
 class RemoteServiceDiscoveryService(LockdownServiceProvider):
-    def __init__(self, address: Tuple[str, int]):
+    def __init__(self, address: Tuple[str, int], name: Optional[str] = None) -> None:
         super().__init__()
+        self.name = name
         self.service = RemoteXPCConnection(address)
         self.peer_info: Optional[Mapping] = None
         self.lockdown: Optional[LockdownClient] = None
@@ -46,9 +47,9 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def developer_mode_status(self) -> bool:
         return self.lockdown.developer_mode_status
 
-    def connect(self) -> None:
-        self.service.connect()
-        self.peer_info = self.service.receive_response()
+    async def connect(self) -> None:
+        await self.service.connect()
+        self.peer_info = await self.service.receive_response()
         self.udid = self.peer_info['Properties']['UniqueDeviceID']
         self.product_type = self.peer_info['Properties']['ProductType']
         try:
@@ -61,10 +62,10 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def get_value(self, domain: str = None, key: str = None):
         return self.lockdown.get_value(domain, key)
 
-    def start_lockdown_service_without_checkin(self, name: str) -> LockdownServiceConnection:
-        return LockdownServiceConnection.create_using_tcp(self.service.address[0], self.get_service_port(name))
+    def start_lockdown_service_without_checkin(self, name: str) -> ServiceConnection:
+        return ServiceConnection.create_using_tcp(self.service.address[0], self.get_service_port(name))
 
-    def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
+    def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
         service = self.start_lockdown_service_without_checkin(name)
         checkin = {'Label': 'pymobiledevice3', 'ProtocolVersion': '2', 'Request': 'RSDCheckin'}
         if include_escrow_bag:
@@ -79,12 +80,12 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         return service
 
     async def aio_start_lockdown_service(
-            self, name: str, include_escrow_bag: bool = False) -> LockdownServiceConnection:
+            self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
         service = self.start_lockdown_service(name, include_escrow_bag=include_escrow_bag)
         await service.aio_start()
         return service
 
-    def start_lockdown_developer_service(self, name, include_escrow_bag: bool = False) -> LockdownServiceConnection:
+    def start_lockdown_developer_service(self, name, include_escrow_bag: bool = False) -> ServiceConnection:
         try:
             return self.start_lockdown_service_without_checkin(name)
         except StartServiceError:
@@ -98,7 +99,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         service = RemoteXPCConnection((self.service.address[0], self.get_service_port(name)))
         return service
 
-    def start_service(self, name: str) -> Union[RemoteXPCConnection, LockdownServiceConnection]:
+    def start_service(self, name: str) -> Union[RemoteXPCConnection, ServiceConnection]:
         service = self.peer_info['Services'][name]
         service_properties = service.get('Properties', {})
         use_remote_xpc = service_properties.get('UsesRemoteXPC', False)
@@ -111,26 +112,29 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             raise InvalidServiceError(f'No such service: {name}')
         return int(service['Port'])
 
-    def close(self) -> None:
-        self.service.close()
+    async def close(self) -> None:
+        await self.service.close()
         if self.lockdown is not None:
             self.lockdown.close()
 
-    def __enter__(self) -> 'RemoteServiceDiscoveryService':
-        self.connect()
+    async def __aenter__(self) -> 'RemoteServiceDiscoveryService':
+        await self.connect()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.close()
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
 
     def __repr__(self) -> str:
+        name_str = ''
+        if self.name:
+            name_str = f' NAME:{self.name}'
         return (f'<{self.__class__.__name__} PRODUCT:{self.product_type} VERSION:{self.product_version} '
-                f'UDID:{self.udid}>')
+                f'UDID:{self.udid}{name_str}>')
 
 
-def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevice]:
+async def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevice]:
     result = []
-    for hostname in get_remoted_addresses(timeout):
+    for hostname in await browse_remoted(timeout):
         with RemoteServiceDiscoveryService((hostname, RSD_PORT)) as rsd:
             properties = rsd.peer_info['Properties']
             result.append(RSDDevice(hostname=hostname, udid=properties['UniqueDeviceID'],
@@ -138,8 +142,8 @@ def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDev
     return result
 
 
-def get_remoted_device(udid: str, timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> RSDDevice:
-    devices = get_remoted_devices(timeout=timeout)
+async def get_remoted_device(udid: str, timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> RSDDevice:
+    devices = await get_remoted_devices(timeout=timeout)
     for device in devices:
         if device.udid == udid:
             return device

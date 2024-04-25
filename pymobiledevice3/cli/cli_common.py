@@ -2,8 +2,8 @@ import datetime
 import json
 import logging
 import os
-import sys
 import uuid
+from functools import wraps
 from typing import Callable, List, Mapping, Optional, Tuple
 
 import click
@@ -17,12 +17,16 @@ from pygments import formatters, highlight, lexers
 from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, NoDeviceConnectedError, \
     NoDeviceSelectedError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.remote.utils import get_tunneld_devices
+from pymobiledevice3.tunneld import get_tunneld_devices
 from pymobiledevice3.usbmux import select_devices_by_connection_type
+from pymobiledevice3.utils import get_asyncio_loop
 
 USBMUX_OPTION_HELP = 'usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT'
 COLORED_OUTPUT = True
+UDID_ENV_VAR = 'PYMOBILEDEVICE3_UDID'
+OSUTILS = get_os_utils()
 
 
 class RSDOption(Option):
@@ -40,7 +44,8 @@ class RSDOption(Option):
     def handle_parse_result(self, ctx, opts, args):
         if (isinstance(ctx.command, RSDCommand) and not (isinstance(ctx.command, Command)) and
                 ('rsd_service_provider_using_tunneld' not in opts) and ('rsd_service_provider_manually' not in opts)):
-            raise UsageError('Illegal usage: At least one is required [--rsd | --tunnel]')
+            # defaulting to `--tunnel ''` if no remote option was specified
+            opts['rsd_service_provider_using_tunneld'] = ''
         if self.mutually_exclusive.intersection(opts) and self.name in opts:
             raise UsageError(
                 'Illegal usage: `{}` is mutually exclusive with '
@@ -106,41 +111,10 @@ def get_last_used_terminal_formatting(buf: str) -> str:
     return '\x1b' + buf.rsplit('\x1b', 1)[1].split('m')[0] + 'm'
 
 
-def wait_return() -> None:
-    if sys.platform != 'win32':
-        import signal
-        print("Press Ctrl+C to send a SIGINT or use 'kill' command to send a SIGTERM")
-        signal.sigwait([signal.SIGINT, signal.SIGTERM])
-    else:
-        input('Press ENTER to exit>')
-
-
-UDID_ENV_VAR = 'PYMOBILEDEVICE3_UDID'
-
-
-def is_admin_user() -> bool:
-    """ Check if the current OS user is an Administrator or root.
-
-    See: https://github.com/Preston-Landers/pyuac/blob/master/pyuac/admin.py
-
-    :return: True if the current user is an 'Administrator', otherwise False.
-    """
-    if os.name == 'nt':
-        import win32security
-
-        try:
-            admin_sid = win32security.CreateWellKnownSid(win32security.WinBuiltinAdministratorsSid, None)
-            return win32security.CheckTokenMembership(None, admin_sid)
-        except Exception:
-            return False
-    else:
-        # Check for root on Posix
-        return os.getuid() == 0
-
-
 def sudo_required(func):
+    @wraps(func)
     def wrapper(*args, **kwargs):
-        if not is_admin_user():
+        if not OSUTILS.is_admin:
             raise AccessDeniedError()
         else:
             func(*args, **kwargs)
@@ -246,7 +220,7 @@ class RSDCommand(BaseServiceProviderCommand):
     def rsd(self, ctx, param: str, value: Optional[Tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
         if value is not None:
             rsd = RemoteServiceDiscoveryService(value)
-            rsd.connect()
+            get_asyncio_loop().run_until_complete(rsd.connect())
             self.service_provider = rsd
             return self.service_provider
 
@@ -273,7 +247,7 @@ class RSDCommand(BaseServiceProviderCommand):
         for rsd in rsds:
             if rsd == self.service_provider:
                 continue
-            rsd.close()
+            get_asyncio_loop().run_until_complete(rsd.close())
 
         return self.service_provider
 

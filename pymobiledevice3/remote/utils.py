@@ -1,35 +1,34 @@
 import contextlib
 import platform
-from typing import Generator, List
+from typing import Generator, List, Optional
 
 import psutil
-import requests
 
-from pymobiledevice3.exceptions import AccessDeniedError, TunneldConnectionError
-from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
+from pymobiledevice3.exceptions import AccessDeniedError
+from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
 
 REMOTED_PATH = '/usr/libexec/remoted'
 
-TUNNELD_DEFAULT_ADDRESS = ('127.0.0.1', 49151)
 
-
-def get_tunneld_devices(tunneld_address=TUNNELD_DEFAULT_ADDRESS) -> List[RemoteServiceDiscoveryService]:
-    try:
-        # Get the list of tunnels from the specified address
-        resp = requests.get(f'http://{tunneld_address[0]}:{tunneld_address[1]}')
-        tunnels = resp.json()
-    except requests.exceptions.ConnectionError:
-        raise TunneldConnectionError()
-
-    rsds = []
-    for tunnel_udid, tunnel_address in tunnels.items():
-        rsd = RemoteServiceDiscoveryService(tunnel_address)
-        try:
-            rsd.connect()
-            rsds.append(rsd)
-        except (TimeoutError, ConnectionError):
-            continue
-    return rsds
+async def get_rsds(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT, udid: Optional[str] = None) -> \
+        List[RemoteServiceDiscoveryService]:
+    result = []
+    with stop_remoted():
+        for answer in await browse_remoted(timeout=bonjour_timeout):
+            for ip in answer.ips:
+                rsd = RemoteServiceDiscoveryService((ip, RSD_PORT))
+                try:
+                    await rsd.connect()
+                except ConnectionRefusedError:
+                    continue
+                except OSError:
+                    continue
+                if udid is None or rsd.udid == udid:
+                    result.append(rsd)
+                else:
+                    await rsd.close()
+    return result
 
 
 def get_remoted_process() -> psutil.Process:

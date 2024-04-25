@@ -2,17 +2,18 @@ __all__ = [
     'PyMobileDevice3Exception', 'DeviceVersionNotSupportedError', 'IncorrectModeError',
     'NotTrustedError', 'PairingError', 'NotPairedError', 'CannotStopSessionError',
     'PasswordRequiredError', 'StartServiceError', 'FatalPairingError', 'NoDeviceConnectedError', 'DeviceNotFoundError',
-    'TunneldConnectionError', 'ConnectionFailedToUsbmuxdError', 'MuxException',
+    'TunneldConnectionError', 'ConnectionFailedToUsbmuxdError', 'MuxException', 'InvalidConnectionError',
     'MuxVersionError', 'ArgumentError', 'AfcException', 'AfcFileNotFoundError', 'DvtException', 'DvtDirListError',
     'NotMountedError', 'AlreadyMountedError', 'UnsupportedCommandError', 'ExtractingStackshotError',
     'ConnectionTerminatedError', 'WirError', 'WebInspectorNotEnabledError', 'RemoteAutomationNotEnabledError',
     'ArbitrationError', 'InternalError', 'DeveloperModeIsNotEnabledError', 'DeviceAlreadyInUseError', 'LockdownError',
     'PairingDialogResponsePendingError', 'UserDeniedPairingError', 'InvalidHostIDError', 'SetProhibitedError',
     'MissingValueError', 'PasscodeRequiredError', 'AmfiError', 'DeviceHasPasscodeSetError', 'NotificationTimeoutError',
-    'DeveloperModeError', 'ProfileError', 'IRecvError', 'IRecvNoDeviceConnectedError',
+    'DeveloperModeError', 'ProfileError', 'IRecvError', 'IRecvNoDeviceConnectedError', 'UnrecognizedSelectorError',
     'NoDeviceSelectedError', 'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
     'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError', 'CoreDeviceError',
-    'AccessDeniedError', 'RSDRequiredError', 'SysdiagnoseTimeoutError',
+    'AccessDeniedError', 'RSDRequiredError', 'SysdiagnoseTimeoutError', 'GetProhibitedError',
+    'FeatureNotSupportedError', 'OSNotSupportedError', 'DeprecationError', 'NotEnoughDiskSpaceError'
 ]
 
 from typing import List, Optional
@@ -224,6 +225,13 @@ class DeveloperModeError(PyMobileDevice3Exception):
 
 class LockdownError(PyMobileDevice3Exception):
     """ lockdown general error """
+
+    def __init__(self, message: str, identifier: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.identifier = identifier
+
+
+class GetProhibitedError(LockdownError):
     pass
 
 
@@ -359,3 +367,22 @@ class RSDRequiredError(PyMobileDevice3Exception):
 class SysdiagnoseTimeoutError(PyMobileDevice3Exception, TimeoutError):
     """ Timeout collecting new sysdiagnose archive """
     pass
+
+
+class SupportError(PyMobileDevice3Exception):
+    def __init__(self, os_name):
+        self.os_name = os_name
+        super().__init__()
+
+
+class OSNotSupportedError(SupportError):
+    """ Operating system is not supported. """
+    pass
+
+
+class FeatureNotSupportedError(SupportError):
+    """ Feature has not been implemented for OS. """
+
+    def __init__(self, os_name, feature):
+        super().__init__(os_name)
+        self.feature = feature

@@ -120,7 +120,7 @@ class Mobilebackup2Service(LockdownService):
                 is_encrypted = manifest.get('IsEncrypted', False)
                 options = {
                     'RestoreShouldReboot': reboot,
-                    'RestoreDontCopyBackup': copy,
+                    'RestoreDontCopyBackup': not copy,
                     'RestorePreserveSettings': settings,
                     'RestoreSystemFiles': system,
                     'RemoveItemsNotRestored': remove,

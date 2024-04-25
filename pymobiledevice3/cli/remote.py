@@ -1,44 +1,55 @@
 import asyncio
+import dataclasses
 import logging
 import sys
 import tempfile
 from functools import partial
-from typing import List, TextIO
+from typing import List, Mapping, Optional, TextIO
 
 import click
 
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing_manual_pairing
 from pymobiledevice3.cli.cli_common import BaseCommand, RSDCommand, print_json, prompt_device_list, sudo_required, \
     user_requested_colored_output
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import NoDeviceConnectedError
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, get_remote_pairing_record_filename
-from pymobiledevice3.remote.bonjour import get_remoted_addresses
-from pymobiledevice3.remote.common import TunnelProtocol
+from pymobiledevice3.remote.common import ConnectionType, TunnelProtocol
 from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_tunnel, verify_tunnel_imports
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
-from pymobiledevice3.remote.utils import TUNNELD_DEFAULT_ADDRESS, stop_remoted
-from pymobiledevice3.tunneld import TunneldRunner
+from pymobiledevice3.remote.tunnel_service import RemotePairingManualPairingService, get_core_device_tunnel_services, \
+    get_remote_pairing_tunnel_services
+from pymobiledevice3.remote.utils import get_rsds
+from pymobiledevice3.tunneld import TUNNELD_DEFAULT_ADDRESS, TunneldRunner
 
 logger = logging.getLogger(__name__)
 
 
-def install_driver_if_required() -> None:
-    if sys.platform == 'win32':
-        import pywintunx_pmd3
-        pywintunx_pmd3.install_wetest_driver()
+async def browse_rsd(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[Mapping]:
+    devices = []
+    for rsd in await get_rsds(timeout):
+        devices.append({'address': rsd.service.address[0],
+                        'port': RSD_PORT,
+                        'UniqueDeviceID': rsd.peer_info['Properties']['UniqueDeviceID'],
+                        'ProductType': rsd.peer_info['Properties']['ProductType'],
+                        'OSVersion': rsd.peer_info['Properties']['OSVersion']})
+    return devices
 
 
-def get_device_list() -> List[RemoteServiceDiscoveryService]:
-    result = []
-    with stop_remoted():
-        for address in get_remoted_addresses():
-            rsd = RemoteServiceDiscoveryService((address, RSD_PORT))
-            try:
-                rsd.connect()
-            except ConnectionRefusedError:
-                continue
-            result.append(rsd)
-    return result
+async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[Mapping]:
+    devices = []
+    for remotepairing in await get_remote_pairing_tunnel_services(timeout):
+        devices.append({'address': remotepairing.hostname,
+                        'port': remotepairing.port,
+                        'identifier': remotepairing.remote_identifier})
+    return devices
+
+
+async def cli_browse(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> None:
+    print_json({
+        'usb': await browse_rsd(timeout),
+        'wifi': await browse_remotepairing(timeout),
+    })
 
 
 @click.group()
@@ -59,14 +70,20 @@ def remote_cli():
 @click.option('-d', '--daemonize', is_flag=True)
 @click.option('-p', '--protocol', type=click.Choice([e.value for e in TunnelProtocol]),
               default=TunnelProtocol.QUIC.value)
+@click.option('--usb/--no-usb', default=True, help='Enable usb monitoring')
+@click.option('--wifi/--no-wifi', default=True, help='Enable wifi monitoring')
+@click.option('--usbmux/--no-usbmux', default=True, help='Enable usbmux monitoring')
+@click.option('--mobdev2/--no-mobdev2', default=True, help='Enable mobdev2 monitoring')
 @sudo_required
-def cli_tunneld(host: str, port: int, daemonize: bool, protocol: str):
+def cli_tunneld(
+        host: str, port: int, daemonize: bool, protocol: str, usb: bool, wifi: bool, usbmux: bool,
+        mobdev2: bool) -> None:
     """ Start Tunneld service for remote tunneling """
     if not verify_tunnel_imports():
         return
-    install_driver_if_required()
     protocol = TunnelProtocol(protocol)
-    tunneld_runner = partial(TunneldRunner.create, host, port, protocol)
+    tunneld_runner = partial(TunneldRunner.create, host, port, protocol=protocol, usb_monitor=usb, wifi_monitor=wifi,
+                             usbmux_monitor=usbmux, mobdev2_monitor=mobdev2)
     if daemonize:
         try:
             from daemonize import Daemonize
@@ -82,35 +99,23 @@ def cli_tunneld(host: str, port: int, daemonize: bool, protocol: str):
 
 
 @remote_cli.command('browse', cls=BaseCommand)
-def browse():
-    """ browse devices using bonjour """
-    install_driver_if_required()
-    devices = []
-    for rsd in get_device_list():
-        devices.append({'address': rsd.service.address[0],
-                        'port': RSD_PORT,
-                        'UniqueDeviceID': rsd.peer_info['Properties']['UniqueDeviceID'],
-                        'ProductType': rsd.peer_info['Properties']['ProductType'],
-                        'OSVersion': rsd.peer_info['Properties']['OSVersion']})
-    print_json(devices)
+@click.option('--timeout', type=click.FLOAT, default=DEFAULT_BONJOUR_TIMEOUT, help='Bonjour timeout (in seconds)')
+def browse(timeout: float) -> None:
+    """ browse RemoteXPC devices using bonjour """
+    asyncio.run(cli_browse(timeout), debug=True)
 
 
 @remote_cli.command('rsd-info', cls=RSDCommand)
 def rsd_info(service_provider: RemoteServiceDiscoveryService):
     """ show info extracted from RSD peer """
-    install_driver_if_required()
     print_json(service_provider.peer_info)
 
 
 async def tunnel_task(
-        service_provider: RemoteServiceDiscoveryService, secrets: TextIO,
-        script_mode: bool = False, max_idle_timeout: float = MAX_IDLE_TIMEOUT,
-        protocol: TunnelProtocol = TunnelProtocol.QUIC) -> None:
-    if start_tunnel is None:
-        raise NotImplementedError('failed to start the QUIC tunnel on your platform')
-
-    async with start_tunnel(service_provider, secrets=secrets, max_idle_timeout=max_idle_timeout,
-                            protocol=protocol) as tunnel_result:
+        service, secrets: Optional[TextIO] = None, script_mode: bool = False,
+        max_idle_timeout: float = MAX_IDLE_TIMEOUT, protocol: TunnelProtocol = TunnelProtocol.QUIC) -> None:
+    async with start_tunnel(
+            service, secrets=secrets, max_idle_timeout=max_idle_timeout, protocol=protocol) as tunnel_result:
         logger.info('tunnel created')
         if script_mode:
             print(f'{tunnel_result.address} {tunnel_result.port}')
@@ -119,12 +124,8 @@ async def tunnel_task(
                 if secrets is not None:
                     print(click.style('Secrets: ', bold=True, fg='magenta') +
                           click.style(secrets.name, bold=True, fg='white'))
-                print(click.style('UDID: ', bold=True, fg='yellow') +
-                      click.style(service_provider.udid, bold=True, fg='white'))
-                print(click.style('ProductType: ', bold=True, fg='yellow') +
-                      click.style(service_provider.product_type, bold=True, fg='white'))
-                print(click.style('ProductVersion: ', bold=True, fg='yellow') +
-                      click.style(service_provider.product_version, bold=True, fg='white'))
+                print(click.style('Identifier: ', bold=True, fg='yellow') +
+                      click.style(service.remote_identifier, bold=True, fg='white'))
                 print(click.style('Interface: ', bold=True, fg='yellow') +
                       click.style(tunnel_result.interface, bold=True, fg='white'))
                 print(click.style('Protocol: ', bold=True, fg='yellow') +
@@ -138,9 +139,7 @@ async def tunnel_task(
             else:
                 if secrets is not None:
                     print(f'Secrets: {secrets.name}')
-                print(f'UDID: {service_provider.udid}')
-                print(f'ProductType: {service_provider.product_type}')
-                print(f'ProductVersion: {service_provider.product_version}')
+                print(f'Identifier: {service.remote_identifier}')
                 print(f'Interface: {tunnel_result.interface}')
                 print(f'Protocol: {tunnel_result.protocol}')
                 print(f'RSD Address: {tunnel_result.address}')
@@ -152,59 +151,101 @@ async def tunnel_task(
         logger.info('tunnel was closed')
 
 
-def select_device(udid: str) -> RemoteServiceDiscoveryService:
-    devices = get_device_list()
-    if not devices:
+async def start_tunnel_task(
+        connection_type: ConnectionType, secrets: TextIO, udid: Optional[str] = None, script_mode: bool = False,
+        max_idle_timeout: float = MAX_IDLE_TIMEOUT, protocol: TunnelProtocol = TunnelProtocol.QUIC) -> None:
+    if start_tunnel is None:
+        raise NotImplementedError('failed to start the tunnel on your platform')
+    get_tunnel_services = {
+        connection_type.USB: get_core_device_tunnel_services,
+        connection_type.WIFI: get_remote_pairing_tunnel_services,
+    }
+    tunnel_services = await get_tunnel_services[connection_type](udid=udid)
+    if not tunnel_services:
         # no devices were found
         raise NoDeviceConnectedError()
-    if len(devices) == 1:
+    if len(tunnel_services) == 1 or udid is not None:
         # only one device found
-        rsd = devices[0]
+        service = tunnel_services[0]
     else:
-        # several devices were found
-        if udid is None:
-            # show prompt if non explicitly selected
-            rsd = prompt_device_list(devices)
-        else:
-            rsd = [device for device in devices if device.udid == udid]
-            if len(rsd) > 0:
-                rsd = rsd[0]
-            else:
-                raise NoDeviceConnectedError()
+        # several devices were found, show prompt if none explicitly selected
+        service = prompt_device_list(tunnel_services)
 
-    if udid is not None and rsd.udid != udid:
-        raise NoDeviceConnectedError()
-    return rsd
+    await tunnel_task(service, secrets=secrets, script_mode=script_mode, max_idle_timeout=max_idle_timeout,
+                      protocol=protocol)
 
 
 @remote_cli.command('start-tunnel', cls=BaseCommand)
+@click.option('-t', '--connection-type', type=click.Choice([e.value for e in ConnectionType], case_sensitive=False),
+              default=ConnectionType.USB.value)
 @click.option('--udid', help='UDID for a specific device to look for')
 @click.option('--secrets', type=click.File('wt'), help='TLS keyfile for decrypting with Wireshark')
 @click.option('--script-mode', is_flag=True,
               help='Show only HOST and port number to allow easy parsing from external shell scripts')
 @click.option('--max-idle-timeout', type=click.FLOAT, default=MAX_IDLE_TIMEOUT,
               help='Maximum QUIC idle time (ping interval)')
-@click.option('-p', '--protocol', type=click.Choice([e.value for e in TunnelProtocol]),
+@click.option('-p', '--protocol',
+              type=click.Choice([e.value for e in TunnelProtocol], case_sensitive=False),
               default=TunnelProtocol.QUIC.value)
 @sudo_required
-def cli_start_tunnel(udid: str, secrets: TextIO, script_mode: bool, max_idle_timeout: float, protocol: str):
-    """ start quic tunnel """
-    install_driver_if_required()
-    protocol = TunnelProtocol(protocol)
+def cli_start_tunnel(
+        connection_type: ConnectionType, udid: Optional[str], secrets: TextIO, script_mode: bool,
+        max_idle_timeout: float, protocol: str) -> None:
+    """ start tunnel """
     if not verify_tunnel_imports():
         return
-    rsd = select_device(udid)
-    asyncio.run(tunnel_task(rsd, secrets, script_mode, max_idle_timeout=max_idle_timeout, protocol=protocol),
-                debug=True)
+    asyncio.run(
+        start_tunnel_task(
+            ConnectionType(connection_type), secrets, udid, script_mode, max_idle_timeout=max_idle_timeout,
+            protocol=TunnelProtocol(protocol)), debug=True)
+
+
+@dataclasses.dataclass
+class RemotePairingManualPairingDevice:
+    ip: str
+    port: int
+    device_name: str
+    identifier: str
+
+
+async def start_remote_pair_task(device_name: str) -> None:
+    if start_tunnel is None:
+        raise NotImplementedError('failed to start the tunnel on your platform')
+
+    devices: List[RemotePairingManualPairingDevice] = []
+    for answer in await browse_remotepairing_manual_pairing():
+        current_device_name = answer.properties[b'name'].decode()
+
+        if device_name is not None and current_device_name != device_name:
+            continue
+
+        for ip in answer.ips:
+            devices.append(RemotePairingManualPairingDevice(ip=ip, port=answer.port, device_name=current_device_name,
+                                                            identifier=answer.properties[b'identifier'].decode()))
+
+    if len(devices) > 0:
+        device = prompt_device_list(devices)
+    else:
+        logger.error('No devices were found during bonjour browse')
+        return
+
+    async with RemotePairingManualPairingService(device.identifier, device.ip, device.port) as service:
+        await service.connect(autopair=True)
+
+
+@remote_cli.command('pair', cls=BaseCommand)
+@click.option('--name', help='Device name for a specific device to look for')
+def cli_pair(name: Optional[str]) -> None:
+    """ start remote pairing for devices which allow """
+    asyncio.run(start_remote_pair_task(name), debug=True)
 
 
 @remote_cli.command('delete-pair', cls=BaseCommand)
-@click.option('--udid', help='UDID for a specific device to delete the pairing record of')
+@click.argument('udid')
 @sudo_required
 def cli_delete_pair(udid: str):
     """ delete a pairing record """
-    rsd = select_device(udid)
-    pair_record_path = get_home_folder() / f'{get_remote_pairing_record_filename(rsd.udid)}.{PAIRING_RECORD_EXT}'
+    pair_record_path = get_home_folder() / f'{get_remote_pairing_record_filename(udid)}.{PAIRING_RECORD_EXT}'
     pair_record_path.unlink()
 
 
@@ -212,6 +253,22 @@ def cli_delete_pair(udid: str):
 @click.argument('service_name')
 def cli_service(service_provider: RemoteServiceDiscoveryService, service_name: str):
     """ start an ipython shell for interacting with given service """
-    install_driver_if_required()
     with service_provider.start_remote_service(service_name) as service:
         service.shell()
+
+
+@remote_cli.command('install-wetest-drivers', cls=BaseCommand)
+@sudo_required
+def cli_install_wetest_drivers() -> None:
+    """ install WeTests drivers (windows-only) """
+    import pywintunx_pmd3
+    pywintunx_pmd3.install_wetest_driver()
+
+
+@remote_cli.command('uninstall-wetest-drivers', cls=BaseCommand)
+@sudo_required
+def cli_uninstall_wetest_drivers() -> None:
+    """ uninstall WeTests drivers (windows-only) """
+    import pywintunx_pmd3
+    pywintunx_pmd3.uninstall_wetest_driver()
+    pywintunx_pmd3.delete_driver()
