@@ -73,7 +73,7 @@ def crash_mover_watch(service_provider: LockdownClient, name, raw):
 @crash.command('sysdiagnose', cls=Command)
 @click.argument('out', type=click.Path(exists=False, dir_okay=False, file_okay=True))
 @click.option('-e', '--erase', is_flag=True, help='erase file after pulling')
-@click.option('-t', '--timeout', default=None, show_default=True, type=click.FLOAT, \
+@click.option('-t', '--timeout', default=None, show_default=True, type=click.FLOAT,
               help='Maximum time in seconds to wait for the completion of sysdiagnose archive')
 def crash_sysdiagnose(service_provider: LockdownClient, out, erase, timeout):
     """ get a sysdiagnose archive from device (requires user interaction) """
