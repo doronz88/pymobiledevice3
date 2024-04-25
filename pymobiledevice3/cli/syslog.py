@@ -138,7 +138,7 @@ def syslog_live(service_provider: LockdownClient, out, pid, process_name, match,
         if match_regex:
             skip = True
             for r in match_regex:
-                if not r.findall(line):
+                if not r.findall(line_no_style):
                     continue
                 line = re.sub(r, replace, line)
                 skip = False
