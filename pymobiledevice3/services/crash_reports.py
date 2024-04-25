@@ -1,7 +1,7 @@
 import logging
 import posixpath
 import time
-from typing import Generator, List, Optional, Callable
+from typing import Callable, Generator, List, Optional
 
 from pycrashreport.crash_report import get_crash_report_from_buf
 from xonsh.built_ins import XSH
