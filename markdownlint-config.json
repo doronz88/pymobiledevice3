@@ -1,0 +1,15 @@
+{
+    "default": true,
+    "MD013": false, // Disable line length rule
+    "MD033": { "allowed_elements": ["details", "summary"] }, // Allow certain HTML elements
+    "MD029": { "style": "ordered" }, // Ordered lists must use incremental numbers
+    "MD007": { "indent": 2 }, // Unordered list indentation
+    "MD009": { "br_spaces": 2 }, // Number of spaces after line break
+    "MD036": false, // Disable emphasis used instead of a header
+    "MD040": false,
+    "MD041": false, // First line in file should be a top level header
+    "MD042": true, // No empty links
+    "no-hard-tabs": false, // Allow hard tabs
+    "line-length": { "line_length": 127, "code_blocks": false, "tables": false, "headings": false, "links": false } // Specific line length rules
+  }
+  
