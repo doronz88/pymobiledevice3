@@ -11,10 +11,11 @@
   - [Overview](#overview)
   - [Installation](#installation)
     - [OpenSSL libraries](#openssl-libraries)
+    - [libusb dependency](#libusb-dependency)
   - [Usage](#usage)
     - [Working with developer tools (iOS \>= 17.0)](#working-with-developer-tools-ios--170)
     - [Commonly used actions](#commonly-used-actions)
-  - [The bits and bytes](#the-bits-and-bytes)
+  - [The bits and bytes (Python API)](#the-bits-and-bytes-python-api)
   - [Contributing](#contributing)
   - [Useful info](#useful-info)
 
@@ -92,6 +93,41 @@ On Linux:
 ```shell
 sudo apt install openssl
 ```
+
+### libusb dependency
+
+Interacting with the device in Recovery or DFU modes requires `libusb` to be installed (necessary for handling the `restore` subcommands).
+
+The installation steps differentiate depending on your exact platform:
+
+On macOS:
+
+```shell
+# using homebrew
+brew install libusb
+
+# using MacPorts
+sudo port install libusb
+```
+
+On Linux:
+
+```shell
+# Debian/Ubuntu
+sudo apt-get install libusb-1.0-0-dev
+
+# Fedora
+sudo dnf install libusb-devel
+
+# Arch Linux
+sudo pacman -S libusb
+```
+
+On windows:
+
+Following libusb website to download latest release binaries:
+
+<https://libusb.info/>
 
 ## Usage
 
@@ -219,79 +255,120 @@ python3 -m pymobiledevice3 syslog live --tunnel ''
 
 There is A LOT you may do on the device using `pymobiledevice3`. This is just a TL;DR of some common operations:
 
-- Listing connected devices:
-  - `pymobiledevice3 usbmux list`
-- Discover network devices using bonjour:
-  - `pymobiledevice3 bonjour browse`
-- View all syslog lines (including debug messages):
-  - `pymobiledevice3 syslog live`
-- Filter out only messages containing the word "SpringBoard":
-  - `pymobiledevice3 syslog live -m SpringBoard`
-- Restart device:
-  - `pymobiledevice3 diagnostics restart`
-- Pull all crash reports from device:
-  - `pymobiledevice3 crash pull /path/to/crashes`
-- Manage the media directory:
-  - `pymobiledevice3 afc shell`
-- List all installed applications and their details:
-  - `pymobiledevice3 apps list`
-- List query only a specific set os apps:
-  - `pymobiledevice3 apps query BUNDLE_ID1 BUNDLE_ID2`
-- Create a TCP tunnel from your HOST to the device:
-  - `pymobiledevice3 usbmux forward HOST_PORT DEVICE_PORT`
-- Create a full backup of the device:
-  - `pymobiledevice3 backup2 backup --full DIRECTORY`
-- Restore a given backup:
-  - `pymobiledevice3 backup2 restore DIRECTORY`
-- The following will require Web Inspector feature to be turned on:
-  - Get interactive JavaScript shell on any open tab:
-    - `pymobiledevice3 webinspector js_shell`
-  - List currently opened tabs is device's browser:
-    - `pymobiledevice3 webinspector opened-tabs`
-  - The following will require also the Remote Automation feature to be turned on:
-    - Get interactive JavaScript shell on new remote automation tab:
-      - `pymobiledevice3 webinspector js_shell --automation`
-    - Launch an automation session to view a given URL:
-      - `pymobiledevice3 webinspector launch URL`
-    - Get a a selenium-like shell:
-      - `pymobiledevice3 webinspector shell`
-- Mount DeveloperDiskImage (On iOS>=17.0, each command will require an additional `--rsd` option):
-  - `pymobiledevice3 mounter auto-mount`
-  - The following will assume the DeveloperDiskImage is already mounted:
-    - Simulate location
-      - Simulate a `lat long` location:
-        - `pymobiledevice3 developer simulate-location set lat long`
-        - Or the following for iOS>=17.0:
-          - `pymobiledevice3 developer dvt simulate-location set --rsd HOST PORT -- lat long`
-    - Play a .GPX file:
-      - `pymobiledevice3 developer dvt simulate-location play route.gpx`
-        - Add random timing noise between -500 and 500ms on the time between two points in the GPX file:
-          - `pymobiledevice3 developer dvt simulate-location play route.gpx 500`
-    - Clear the simulated location:
-      - `pymobiledevice3 developer dvt simulate-location clear`
-    - Taking a screenshot from the device:
-      - `pymobiledevice3 developer dvt screenshot /path/to/screen.png`
-    - View detailed process list (including ppid, uid, guid, sandboxed, etc...):
-      - `pymobiledevice3 developer dvt sysmon process single`
-    - Sniffing oslog:
-      - `pymobiledevice3 developer dvt oslog`
-    - Kill a process:
-      - `pymobiledevice3 developer dvt kill PID`
-    - List files in a given directory (un-chrooted):
-      - `pymobiledevice3 developer dvt ls PATH`
-    - Launch an app by its bundle name:
-      - `pymobiledevice3 developer dvt launch com.apple.mobilesafari`
-    - Sniff all KDebug events to get an `strace`-like output:
-      - `pymobiledevice3 developer dvt core-profile-session parse-live`
-    - Sniff all KDebug events into a file for parsing later with tools such
-          as [`pykdebugparser`](https://github.com/matan1008/pykdebugparser), `fs_usage` and so on...
-      - `pymobiledevice3 developer dvt core-profile-session save FILENAME`
-    - Get device extended information (kernel name, chipset, etc...):
-      - `pymobiledevice3 developer dvt device-information`
-    - Monitor energy-consumption for a specific PID:
-      - `pymobiledevice3 developer dvt energy PID1 PID2 ...`
+```shell
+# Listing connected devices
+pymobiledevice3 usbmux list
 
-## The bits and bytes
+# Discover network devices using bonjour
+pymobiledevice3 bonjour browse
+
+# View all syslog lines (including debug messages
+pymobiledevice3 syslog live
+
+# Filter out only messages containing the word "SpringBoard"
+pymobiledevice3 syslog live -m SpringBoard
+
+# Restart device
+pymobiledevice3 diagnostics restart
+
+# Pull all crash reports from device
+pymobiledevice3 crash pull /path/to/crashes
+
+# Manage the media directory
+pymobiledevice3 afc shell
+
+# List all installed applications and their details
+pymobiledevice3 apps list
+
+# List query only a specific set os apps
+pymobiledevice3 apps query BUNDLE_ID1 BUNDLE_ID2
+
+# Create a TCP tunnel from your HOST to the device
+pymobiledevice3 usbmux forward HOST_PORT DEVICE_PORT
+
+# Create a full backup of the device
+pymobiledevice3 backup2 backup --full DIRECTORY
+
+# Restore a given backup
+pymobiledevice3 backup2 restore DIRECTORY
+
+# Perform a software upate by a given IPSW file:
+pymobiledevice3 restore update /path/to/ipsw
+
+# Note: The following webinspector subcommands will require the Web Inspector feature to be turned on
+
+# Get interactive JavaScript shell on any open tab
+pymobiledevice3 webinspector js-shell
+
+# List currently opened tabs is device's browser
+pymobiledevice3 webinspector opened-tabs
+
+# Note: The following webinspector subcommands will require also the Remote Automation feature to be turned on
+
+# Get interactive JavaScript shell on new remote automation tab
+pymobiledevice3 webinspector js-shell --automation
+
+# Launch an automation session to view a given URL
+pymobiledevice3 webinspector launch URL
+
+# Get a a selenium-like shell
+pymobiledevice3 webinspector shell
+
+# Note: The following subcommand will require DeveloperMode to be turned on. If your device doesn't have a pin-code, you can turn it on automatically using the following command
+pymobiledevice3 amfi enable-developer-mode
+
+# Mount the DDI (DeveloperDiskImage)
+pymobiledevice3 mounter auto-mount
+
+# Note: The following subcommands assume both DeveloperMode is turned on and the DDI has been mounted
+
+# Simulate a `lat long` location (iOS < 17.0)
+pymobiledevice3 developer simulate-location set -- lat long
+
+# Simulate a `lat long` location (iOS >= 17.0)
+pymobiledevice3 developer dvt simulate-location set -- lat long
+
+# Play a .GPX file
+pymobiledevice3 developer dvt simulate-location play route.gpx
+
+# Add random timing noise between -500 and 500ms on the time between two points in the GPX file
+pymobiledevice3 developer dvt simulate-location play route.gpx 500
+
+# Clear the simulated location:
+pymobiledevice3 developer dvt simulate-location clear
+
+# Taking a screenshot from the device:
+pymobiledevice3 developer dvt screenshot /path/to/screen.png
+
+# View detailed process list (including ppid, uid, guid, sandboxed, etc...)
+pymobiledevice3 developer dvt sysmon process single
+
+# Sniffing oslog
+pymobiledevice3 developer dvt oslog
+
+# Kill a process
+pymobiledevice3 developer dvt kill PID
+
+# List files in a given directory (un-chrooted)
+pymobiledevice3 developer dvt ls PATH
+
+# Launch an app by its bundle name
+pymobiledevice3 developer dvt launch com.apple.mobilesafari
+
+# Sniff all KDebug events to get an `strace`-like output:
+pymobiledevice3 developer dvt core-profile-session parse-live
+
+# Sniff all KDebug events into a file for parsing later with tools such as [`pykdebugparser`](https://github.com/matan1008/pykdebugparser), `fs_usage` and so on...
+pymobiledevice3 developer dvt core-profile-session save FILENAME
+
+# Get device extended information (kernel name, chipset, etc...)
+pymobiledevice3 developer dvt device-information
+
+# Monitor energy-consumption for a specific PID
+pymobiledevice3 developer dvt energy PID1 PID2 ...
+```
+
+## The bits and bytes (Python API)
 
 To understand the bits and bytes of the communication with `lockdownd`, or if are willing to learn the python API, you
 are advised to take a look at this article:
