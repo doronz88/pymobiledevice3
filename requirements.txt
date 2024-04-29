@@ -37,7 +37,6 @@ developer_disk_image>=0.0.2
 opack
 psutil
 pytun-pmd3>=2.0.5
-pywintunx-pmd3>=1.0.2 ; platform_system == "Windows"
 aiofiles
 prompt_toolkit
 sslpsk-pmd3>=1.0.3

@@ -175,8 +175,7 @@ Commands:
 
 > **NOTE:** Currently, this is only officially supported on macOS & Windows (up to iOS 17.3.1), but fully supported on
 > all platforms starting at iOS 17.4 using the new lockdown tunnel. For windows interaction with iOS 17.0-17.3.1, you'll
-> need to install the additional WeTest drivers using: `pymobiledevice3 remote install-wetest-drivers` inside an
-> administrator terminal
+> need to install the additional drivers (we don't provide them)
 
 Starting at iOS 17.0, Apple introduced the new CoreDevice framework to work with iOS devices. This framework relies on
 the [RemoteXPC](https://github.com/doronz88/pymobiledevice3/blob/master/misc/RemoteXPC.md) protocol. In order to

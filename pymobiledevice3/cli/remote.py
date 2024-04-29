@@ -255,20 +255,3 @@ def cli_service(service_provider: RemoteServiceDiscoveryService, service_name: s
     """ start an ipython shell for interacting with given service """
     with service_provider.start_remote_service(service_name) as service:
         service.shell()
-
-
-@remote_cli.command('install-wetest-drivers', cls=BaseCommand)
-@sudo_required
-def cli_install_wetest_drivers() -> None:
-    """ install WeTests drivers (windows-only) """
-    import pywintunx_pmd3
-    pywintunx_pmd3.install_wetest_driver()
-
-
-@remote_cli.command('uninstall-wetest-drivers', cls=BaseCommand)
-@sudo_required
-def cli_uninstall_wetest_drivers() -> None:
-    """ uninstall WeTests drivers (windows-only) """
-    import pywintunx_pmd3
-    pywintunx_pmd3.uninstall_wetest_driver()
-    pywintunx_pmd3.delete_driver()
