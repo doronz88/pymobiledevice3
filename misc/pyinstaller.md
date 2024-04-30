@@ -26,7 +26,7 @@ PyInstaller.__main__.run([
     '--hidden-import=zeroconf._handlers.answers',
     '--copy-metadata=pyimg4',
     '--copy-metadata=apple_compress',
-    '--add-data="/path/to/site-packages/pytun_pmd3/;pytun_pmd3"
+    f'--add-data="{site.getsitepackages()}/pytun_pmd3/;pytun_pmd3"
     '--onefile'
 ])
 
