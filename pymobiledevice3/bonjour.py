@@ -103,6 +103,9 @@ async def browse_ipv6(service_names: List[str], timeout: float = DEFAULT_BONJOUR
 def get_ipv4_addresses() -> List[str]:
     ips = []
     for adapter in get_adapters():
+        if adapter.nice_name.startswith('tun'):
+            # skip browsing on already established tunnels
+            continue
         for ip in adapter.ips:
             if ip.ip == '127.0.0.1':
                 continue
