@@ -18,6 +18,7 @@
   - [The bits and bytes (Python API)](#the-bits-and-bytes-python-api)
   - [Contributing](#contributing)
   - [Useful info](#useful-info)
+  - [Copyright notice](#copyright-notice)
 
 ## Overview
 
@@ -381,3 +382,14 @@ See [CONTRIBUTING](https://github.com/doronz88/pymobiledevice3/blob/master/CONTR
 ## Useful info
 
 Please see [misc](https://github.com/doronz88/pymobiledevice3/blob/master/misc)
+
+## Copyright notice
+
+This work is licensed under GPL 3.0, and as, credited to several major contributors:
+
+- Hector Martin "marcan" <hector@marcansoft.com>
+- Mathieu Renard
+- doronz <doron88@gmail.com>
+- matan1008 <matan1008@gmail.com>
+- Guy Salton
+- netanelc
