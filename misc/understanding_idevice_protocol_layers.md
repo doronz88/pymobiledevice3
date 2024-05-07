@@ -215,7 +215,7 @@ pymobiledevice3 syslog live
 # Reboot the device
 pymobiledevice3 diagnostics restart
 
-# And the least goes on and on...
+# And the list goes on and on...
 ```
 
 In order to access the different services, the project is structured in the following
@@ -490,6 +490,6 @@ for entry in OsTraceService(rsds[0]).syslog():
 The best way to search for examples is via
 the [`pymobiledevice.cli`](https://github.com/doronz88/pymobiledevice3/tree/refactor/docs/pymobiledevice3/cli) module.
 
-Each submodule, represent a CLI subcommand. You can example each subcommand implementation and simply replace
-the `service_provider` variable with a any other `LockdownServiceProvider` (either `RemoteServiceDiscoveryService`
+Each submodule represents a CLI subcommand. You can copy each subcommand implementation and simply replace
+the `service_provider` variable with any other `LockdownServiceProvider` (either `RemoteServiceDiscoveryService`
 or `LockdownClient`).
