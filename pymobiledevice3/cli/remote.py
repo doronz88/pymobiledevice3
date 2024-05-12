@@ -249,9 +249,13 @@ def cli_delete_pair(udid: str):
     pair_record_path.unlink()
 
 
+async def cli_service_task(service_provider: RemoteServiceDiscoveryService, service_name: str) -> None:
+    async with service_provider.start_remote_service(service_name) as service:
+        service.shell()
+
+
 @remote_cli.command('service', cls=RSDCommand)
 @click.argument('service_name')
-def cli_service(service_provider: RemoteServiceDiscoveryService, service_name: str):
+def cli_service(service_provider: RemoteServiceDiscoveryService, service_name: str) -> None:
     """ start an ipython shell for interacting with given service """
-    with service_provider.start_remote_service(service_name) as service:
-        service.shell()
+    asyncio.run(cli_service_task(service_provider, service_name), debug=True)
