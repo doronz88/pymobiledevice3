@@ -1,10 +1,15 @@
+import asyncio
+import sys
+from asyncio import IncompleteReadError
 from typing import Generator, Mapping, Optional, Tuple
 
 import IPython
+import nest_asyncio
 from construct import StreamError
 from hyperframe.frame import DataFrame, Frame, GoAwayFrame, HeadersFrame, RstStreamFrame, SettingsFrame, \
     WindowUpdateFrame
 from pygments import formatters, highlight, lexers
+from traitlets.config import Config
 
 from pymobiledevice3.exceptions import StreamClosedError
 from pymobiledevice3.remote.xpc_message import XpcFlags, XpcInt64Type, XpcUInt64Type, XpcWrapper, create_xpc_wrapper, \
@@ -26,7 +31,7 @@ SHELL_USAGE = """
 # This shell allows you to communicate directly with every RemoteXPC service.
 
 # For example, you can do the following:
-resp = client.send_receive_request({"Command": "DoSomething"})
+resp = await client.send_receive_request({"Command": "DoSomething"})
 """
 
 
@@ -101,19 +106,22 @@ class RemoteXPCConnection:
             self.next_message_id[frame.stream_id] = xpc_message.message_id + 1
             return decode_xpc_object(xpc_message.payload.obj)
 
-    async def send_receive_request(self, data: Mapping):
+    async def send_receive_request(self, data: Mapping) -> Mapping:
         await self.send_request(data, wanting_reply=True)
         return await self.receive_response()
 
     def shell(self) -> None:
-        IPython.embed(
-            header=highlight(SHELL_USAGE, lexers.PythonLexer(),
-                             formatters.TerminalTrueColorFormatter(style='native')),
-            user_ns={
-                'client': self,
-                'XpcInt64Type': XpcInt64Type,
-                'XpcUInt64Type': XpcUInt64Type,
-            })
+        nest_asyncio.apply(asyncio.get_running_loop())
+        sys.argv = ['a']
+        config = Config()
+        config.InteractiveShellApp.exec_lines = ['%autoawait asyncio']
+        print(highlight(SHELL_USAGE, lexers.PythonLexer(),
+                        formatters.TerminalTrueColorFormatter(style='native')))
+        IPython.start_ipython(config=config, user_ns={
+            'client': self,
+            'XpcInt64Type': XpcInt64Type,
+            'XpcUInt64Type': XpcUInt64Type,
+        })
 
     async def _do_handshake(self) -> None:
         await self.service_connection.aio_sendall(HTTP2_MAGIC)
@@ -173,8 +181,9 @@ class RemoteXPCConnection:
     async def _recvall(self, size: int) -> bytes:
         data = b''
         while len(data) < size:
-            chunk = await self.service_connection.aio_recvall(size - len(data))
-            if chunk is None or len(chunk) == 0:
+            try:
+                chunk = await self.service_connection.aio_recvall(size - len(data))
+            except IncompleteReadError:
                 raise ConnectionAbortedError()
             data += chunk
         return data

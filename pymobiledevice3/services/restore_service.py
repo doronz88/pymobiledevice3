@@ -11,31 +11,31 @@ class RestoreService(RemoteService):
     def __init__(self, lockdown: RemoteServiceDiscoveryService):
         super().__init__(lockdown, self.SERVICE_NAME)
 
-    def delay_recovery_image(self) -> None:
+    async def delay_recovery_image(self) -> None:
         """
         Set `delay-recovery-image` on devices of ProductType 0x1677b394. Otherwise, fail
         """
-        self.validate_command('delayrecoveryimage')
+        await self.validate_command('delayrecoveryimage')
 
-    def enter_recovery(self) -> None:
+    async def enter_recovery(self) -> None:
         """ Enter recovery """
-        self.validate_command('recovery')
+        await self.validate_command('recovery')
 
-    def reboot(self) -> None:
+    async def reboot(self) -> None:
         """ Reboot device """
-        self.validate_command('reboot')
+        await self.validate_command('reboot')
 
-    def get_preflightinfo(self) -> Mapping:
+    async def get_preflightinfo(self) -> Mapping:
         """ Get preflight info """
-        return self.service.send_receive_request({'command': 'getpreflightinfo'})
+        return await self.service.send_receive_request({'command': 'getpreflightinfo'})
 
-    def get_nonces(self) -> Mapping:
+    async def get_nonces(self) -> Mapping:
         """ Get ApNonce and SEPNonce """
-        return self.service.send_receive_request({'command': 'getnonces'})
+        return await self.service.send_receive_request({'command': 'getnonces'})
 
-    def validate_command(self, command: str) -> Mapping:
+    async def validate_command(self, command: str) -> Mapping:
         """ Execute command and validate result is `success` """
-        response = self.service.send_receive_request({'command': command})
+        response = await self.service.send_receive_request({'command': command})
         if response.get('result') != 'success':
             raise PyMobileDevice3Exception(f'request command: {command} failed with error: {response}')
         return response
