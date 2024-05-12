@@ -1,3 +1,4 @@
+from asyncio import IncompleteReadError
 from typing import Generator, Mapping, Optional, Tuple
 
 import IPython
@@ -173,8 +174,9 @@ class RemoteXPCConnection:
     async def _recvall(self, size: int) -> bytes:
         data = b''
         while len(data) < size:
-            chunk = await self.service_connection.aio_recvall(size - len(data))
-            if chunk is None or len(chunk) == 0:
+            try:
+                chunk = await self.service_connection.aio_recvall(size - len(data))
+            except IncompleteReadError:
                 raise ConnectionAbortedError()
             data += chunk
         return data
