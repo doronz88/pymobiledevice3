@@ -106,7 +106,7 @@ class RemoteXPCConnection:
             self.next_message_id[frame.stream_id] = xpc_message.message_id + 1
             return decode_xpc_object(xpc_message.payload.obj)
 
-    async def send_receive_request(self, data: Mapping):
+    async def send_receive_request(self, data: Mapping) -> Mapping:
         await self.send_request(data, wanting_reply=True)
         return await self.receive_response()
 
