@@ -952,7 +952,7 @@ def debugserver_start_server(service_provider: LockdownClient, local_port: Optio
         LockdownTcpForwarder(service_provider, local_port, service_name).start()
     elif Version(service_provider.product_version) >= Version('17.0'):
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
-            raise RSDRequiredError()
+            raise RSDRequiredError(service_provider.identifier)
         debugserver_port = service_provider.get_service_port(service_name)
         print(DEBUGSERVER_CONNECTION_STEPS.format(host=service_provider.service.address[0], port=debugserver_port))
     else:
