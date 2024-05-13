@@ -361,7 +361,10 @@ class DeprecationError(PyMobileDevice3Exception):
 
 class RSDRequiredError(PyMobileDevice3Exception):
     """ The requested action requires an RSD object """
-    pass
+
+    def __init__(self, identifier: str) -> None:
+        self.identifier = identifier
+        super().__init__()
 
 
 class SysdiagnoseTimeoutError(PyMobileDevice3Exception, TimeoutError):
