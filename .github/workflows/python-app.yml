@@ -43,32 +43,6 @@ jobs:
       - name: Test install
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -U .
+          python -m pip install -U '.[test]'
       - name: Test show usage
-        run: |
-          python -m pymobiledevice3 --help
-          python -m pymobiledevice3 activation --help
-          python -m pymobiledevice3 afc --help
-          python -m pymobiledevice3 amfi --help
-          python -m pymobiledevice3 apps --help
-          python -m pymobiledevice3 backup2 --help
-          python -m pymobiledevice3 bonjour --help
-          python -m pymobiledevice3 companion --help
-          python -m pymobiledevice3 crash --help
-          python -m pymobiledevice3 developer --help
-          python -m pymobiledevice3 diagnostics --help
-          python -m pymobiledevice3 lockdown --help
-          python -m pymobiledevice3 mounter --help
-          python -m pymobiledevice3 notification --help
-          python -m pymobiledevice3 pcap --help
-          python -m pymobiledevice3 power-assertion --help
-          python -m pymobiledevice3 processes --help
-          python -m pymobiledevice3 profile --help
-          python -m pymobiledevice3 provision --help
-          python -m pymobiledevice3 remote --help
-          python -m pymobiledevice3 restore --help
-          python -m pymobiledevice3 springboard --help
-          python -m pymobiledevice3 syslog --help
-          python -m pymobiledevice3 usbmux --help
-          python -m pymobiledevice3 webinspector --help
-          python -m pymobiledevice3 version --help
+        run: pytest -m cli
