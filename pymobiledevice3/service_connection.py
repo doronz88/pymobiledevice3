@@ -6,7 +6,7 @@ import ssl
 import struct
 import time
 from enum import Enum
-from typing import Mapping, Optional
+from typing import Any, Mapping, Optional
 
 import IPython
 from pygments import formatters, highlight, lexers
@@ -121,7 +121,7 @@ class ServiceConnection:
         except ssl.SSLEOFError as e:
             raise ConnectionTerminatedError from e
 
-    def send_recv_plist(self, data: Mapping, endianity='>', fmt=plistlib.FMT_XML) -> Mapping:
+    def send_recv_plist(self, data: Mapping, endianity='>', fmt=plistlib.FMT_XML) -> Any:
         self.send_plist(data, endianity=endianity, fmt=fmt)
         return self.recv_plist(endianity=endianity)
 
