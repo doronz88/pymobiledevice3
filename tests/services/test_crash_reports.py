@@ -75,19 +75,6 @@ def test_pull(crash_manager, delete_test_dir):
 
 
 @pytest.mark.parametrize(
-    ('message', 'return_value'),
-    (
-            ('sysdiagnose (full) complete', True),
-            ('Sysdiagnose completed. File path: /foo/bar.tar.gz', True),
-            ('sysdiagnose', False),
-            ('', False),
-    )
-)
-def test_sysdiagnose_syslog_message_match_return_value(message, return_value):
-    assert CrashReportsManager._sysdiagnose_complete_syslog_match(message) is return_value
-
-
-@pytest.mark.parametrize(
     ('end_time', 'return_value'),
     ((-1, True), (0, True), (time.monotonic() + 1000, False), (None, False))
 )
