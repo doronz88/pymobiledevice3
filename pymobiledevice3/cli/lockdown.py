@@ -158,3 +158,16 @@ def cli_start_tunnel(
     """ start tunnel """
     service = CoreDeviceTunnelProxy(service_provider)
     asyncio.run(tunnel_task(service, script_mode=script_mode, secrets=None, protocol=TunnelProtocol.TCP), debug=True)
+
+
+@lockdown_group.command('assistive-touch', cls=Command)
+@click.argument('state', type=click.Choice(['on', 'off']), required=False)
+def lockdown_assistive_touch(service_provider: LockdownClient, state: str) -> None:
+    """ get/set assistive touch icon state (visibility) """
+    if not state:
+        key = 'AssistiveTouchEnabledByiTunes'
+        accessibility_values = service_provider.get_value('com.apple.Accessibility')
+        print_json({key: bool(accessibility_values[key])})
+    else:
+        # enable/disable
+        service_provider.assistive_touch = state == 'on'
