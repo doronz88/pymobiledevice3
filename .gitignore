@@ -8,3 +8,4 @@ debug/
 *.pyc
 *.egg-info/
 pymobiledevice3/_version.py
+.python-version
