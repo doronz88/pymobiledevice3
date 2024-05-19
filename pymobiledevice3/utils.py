@@ -52,7 +52,7 @@ def asyncio_print_traceback(f: Callable):
 
 def get_asyncio_loop() -> asyncio.AbstractEventLoop:
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         if loop.is_closed():
             raise RuntimeError('The existing loop is closed.')
     except RuntimeError:
