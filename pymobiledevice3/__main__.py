@@ -127,11 +127,14 @@ def main() -> None:
         logger.error('Developer Mode is disabled. You can try to enable it using: '
                      'python3 -m pymobiledevice3 amfi enable-developer-mode')
     except (InvalidServiceError, RSDRequiredError) as e:
-        if isinstance(e, InvalidServiceError):
-            logger.warning('Trying again over tunneld since it is a developer command')
-        else:
+        should_retry_over_tunneld = False
+        if isinstance(e, RSDRequiredError):
             logger.warning('Trying again over tunneld since RSD is required for this command')
-        if (e.identifier is not None) and ('developer' in sys.argv) and ('--tunnel' not in sys.argv):
+            should_retry_over_tunneld = True
+        elif (e.identifier is not None) and ('developer' in sys.argv) and ('--tunnel' not in sys.argv):
+            logger.warning('Trying again over tunneld since it is a developer command')
+            should_retry_over_tunneld = True
+        if should_retry_over_tunneld:
             sys.argv += ['--tunnel', e.identifier]
             return main()
         logger.error(INVALID_SERVICE_MESSAGE)
