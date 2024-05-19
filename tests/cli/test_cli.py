@@ -1,5 +1,5 @@
-import shlex
 import subprocess
+import sys
 
 import pytest
 from click.testing import CliRunner
@@ -27,5 +27,4 @@ def test_cli_groups(group):
 
 @pytest.mark.parametrize('group', __main__.CLI_GROUPS.keys())
 def test_cli_from_python_m_flag(group):
-    cmd = shlex.split(f'python -m pymobiledevice3 {group} --help')
-    subprocess.run(cmd, check=True)
+    subprocess.run([sys.executable, '-m', 'pymobiledevice3', group, '--help'], check=True)
