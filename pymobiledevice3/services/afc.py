@@ -663,17 +663,17 @@ def path_completer(xsh, action, completer, alias, command):
     shell: AfcShell = XSH.ctx['_shell']
     pwd = shell.cwd
     is_absolute = command.prefix.startswith('/')
-    dirpath = pathlib.PosixPath(pwd) / command.prefix
+    dirpath = posixpath.join(pwd, command.prefix)
     if not shell.afc.exists(dirpath):
-        dirpath = dirpath.parent
+        dirpath = posixpath.dirname(dirpath)
     result = []
     for f in shell.afc.listdir(dirpath):
         if is_absolute:
-            completion_option = str((dirpath / f))
+            completion_option = posixpath.join(dirpath, f)
         else:
-            completion_option = str((dirpath / f).relative_to(pwd))
+            completion_option = posixpath.relpath(posixpath.join(dirpath, f), pwd)
         try:
-            if shell.afc.isdir(dirpath / f):
+            if shell.afc.isdir(posixpath.join(dirpath, f)):
                 result.append(f'{completion_option}/')
             else:
                 result.append(completion_option)
@@ -686,17 +686,17 @@ def dir_completer(xsh, action, completer, alias, command):
     shell: AfcShell = XSH.ctx['_shell']
     pwd = shell.cwd
     is_absolute = command.prefix.startswith('/')
-    dirpath = pathlib.PosixPath(pwd) / command.prefix
+    dirpath = posixpath.join(pwd, command.prefix)
     if not shell.afc.exists(dirpath):
-        dirpath = dirpath.parent
+        dirpath = posixpath.dirname(dirpath)
     result = []
     for f in shell.afc.listdir(dirpath):
         if is_absolute:
-            completion_option = str((dirpath / f))
+            completion_option = posixpath.join(dirpath, f)
         else:
-            completion_option = str((dirpath / f).relative_to(pwd))
+            completion_option = posixpath.relpath(posixpath.join(dirpath, f), pwd)
         try:
-            if shell.afc.isdir(dirpath / f):
+            if shell.afc.isdir(posixpath.join(dirpath, f)):
                 result.append(f'{completion_option}/')
         except AfcException:
             result.append(completion_option)
