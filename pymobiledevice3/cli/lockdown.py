@@ -48,9 +48,13 @@ def lockdown_developer_service(service_provider: LockdownServiceProvider, servic
 
 
 @lockdown_group.command('info', cls=Command)
-def lockdown_info(service_provider: LockdownServiceProvider):
+@click.option('-s', '--short-info', is_flag=True, default=False, help='short info for lockdown service')
+def lockdown_info(service_provider: LockdownServiceProvider, short_info: bool) -> None:
     """ query all lockdown values """
-    print_json(service_provider.all_values)
+    if short_info:
+        print_json(service_provider.short_info)
+    else:
+        print_json(service_provider.all_values)
 
 
 @lockdown_group.command('get', cls=Command)
