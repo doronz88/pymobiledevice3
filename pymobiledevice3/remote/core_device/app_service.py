@@ -1,5 +1,5 @@
 import plistlib
-from typing import List, Mapping
+from typing import List, Mapping, Optional
 
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -24,6 +24,28 @@ class AppServiceService(CoreDeviceService):
             'includeAppClips': include_app_clips, 'includeRemovableApps': include_removable_apps,
             'includeHiddenApps': include_hidden_apps, 'includeInternalApps': include_internal_apps,
             'includeDefaultApps': include_default_apps})
+
+    async def launch_application(
+            self, bundle_id: str, arguments: Optional[List[str]] = None, kill_existing: bool = True,
+            start_suspended: bool = False, environment: Optional[Mapping] = None, extra_options: Mapping = None) \
+            -> List[Mapping]:
+        """ launch application """
+        return await self.invoke('com.apple.coredevice.feature.launchapplication', {
+            'applicationSpecifier': {
+                'bundleIdentifier': {'_0': bundle_id},
+            },
+            'options': {
+                'arguments': arguments if arguments is not None else [],
+                'environmentVariables': environment if environment is not None else {},
+                'standardIOUsesPseudoterminals': True,
+                'startStopped': start_suspended,
+                'terminateExisting': kill_existing,
+                'user': {'shortName': 'mobile'},
+                'platformSpecificOptions': plistlib.dumps(extra_options if extra_options is not None else {}),
+            },
+            'standardIOIdentifiers': {
+            },
+        })
 
     async def list_processes(self) -> List[Mapping]:
         """ List processes """
