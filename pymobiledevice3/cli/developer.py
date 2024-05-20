@@ -1033,10 +1033,12 @@ def dvt_simulate_location_set(service_provider: LockdownClient, latitude, longit
 @click.argument('filename', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @click.argument('timing_randomness_range', type=click.INT, default=0)
 @click.option('--disable-sleep', is_flag=True, default=False)
-def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, timing_randomness_range: int, disable_sleep: bool) -> None:
+def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, timing_randomness_range: int,
+                               disable_sleep: bool) -> None:
     """ play a .gpx file """
     with DvtSecureSocketProxyService(service_provider) as dvt:
-        LocationSimulation(dvt).play_gpx_file(filename, disable_sleep=disable_sleep, timing_randomness_range=timing_randomness_range)
+        LocationSimulation(dvt).play_gpx_file(filename, disable_sleep=disable_sleep,
+                                              timing_randomness_range=timing_randomness_range)
         OSUTILS.wait_return()
 
 
@@ -1044,6 +1046,31 @@ def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, 
 def core_device() -> None:
     """ core-device options """
     pass
+
+
+async def core_device_list_launch_application_task(
+        service_provider: RemoteServiceDiscoveryService, bundle_identifier: str, argument: List[str],
+        kill_existing: bool, suspended: bool, env: List[Tuple[str, str]]) -> None:
+    async with AppServiceService(service_provider) as app_service:
+        print_json(await app_service.launch_application(bundle_identifier, argument, kill_existing,
+                                                        suspended, dict(env)))
+
+
+@core_device.command('launch-application', cls=RSDCommand)
+@click.argument('bundle_identifier')
+@click.argument('argument', nargs=-1)
+@click.option('--kill-existing/--no-kill-existing', default=True,
+              help='Whether to kill an existing instance of this process')
+@click.option('--suspended', is_flag=True, help='Same as WaitForDebugger')
+@click.option('--env', multiple=True, type=click.Tuple((str, str)),
+              help='Environment variables to pass to process given as a list of key value')
+def core_device_launch_application(
+        service_provider: RemoteServiceDiscoveryService, bundle_identifier: str, argument: Tuple[str],
+        kill_existing: bool, suspended: bool, env: List[Tuple[str, str]]) -> None:
+    """ Launch application """
+    asyncio.run(
+        core_device_list_launch_application_task(
+            service_provider, bundle_identifier, list(argument), kill_existing, suspended, env))
 
 
 async def core_device_list_processes_task(service_provider: RemoteServiceDiscoveryService) -> None:
