@@ -7,18 +7,19 @@ from pycrashreport.crash_report import get_crash_report_from_buf
 from xonsh.built_ins import XSH
 from xonsh.cli_utils import Annotated, Arg
 
-from pymobiledevice3.exceptions import AfcException, SysdiagnoseTimeoutError
+from pymobiledevice3.exceptions import AfcException, NotificationTimeoutError, SysdiagnoseTimeoutError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell, path_completer
+from pymobiledevice3.services.notification_proxy import NotificationProxyService
 from pymobiledevice3.services.os_trace import OsTraceService
 
 SYSDIAGNOSE_PROCESS_NAMES = ('sysdiagnose', 'sysdiagnosed')
 SYSDIAGNOSE_DIR = 'DiagnosticLogs/sysdiagnose'
 SYSDIAGNOSE_IN_PROGRESS_MAX_TTL_SECS = 600
 
-# on iOS17, we need to wait for a moment before tryint to fetch the sysdiagnose archive
-IOS17_SYSDIAGNOSE_DELAY = 1
+# on iOS17, we need to wait for a moment before trying to fetch the sysdiagnose archive
+IOS17_SYSDIAGNOSE_DELAY = 3
 
 
 class CrashReportsManager:
@@ -149,7 +150,7 @@ class CrashReportsManager:
             callback(time.monotonic() - start_time)
 
         self.logger.info('sysdiagnose tarball creation has been started')
-        self._wait_for_sysdiagnose_to_finish(end_time)
+        self._wait_for_sysdiagnose_to_finish(timeout)
 
         if callback is not None:
             callback(time.monotonic() - start_time)
@@ -159,17 +160,19 @@ class CrashReportsManager:
         if callback is not None:
             callback(time.monotonic() - start_time)
 
-    @staticmethod
-    def _sysdiagnose_complete_syslog_match(message: str) -> bool:
-        return message == 'sysdiagnose (full) complete' or 'Sysdiagnose completed' in message
-
     def _wait_for_sysdiagnose_to_finish(self, end_time: Optional[float] = None) -> None:
-        with OsTraceService(self.lockdown) as os_trace:
-            for entry in os_trace.syslog():
-                if CrashReportsManager._sysdiagnose_complete_syslog_match(entry.message):
+        with NotificationProxyService(self.lockdown, timeout=end_time) as service:
+            stop_notification = 'com.apple.sysdiagnose.sysdiagnoseStopped'
+            service.notify_register_dispatch(stop_notification)
+            try:
+                for event in service.receive_notification():
+                    if event['Name'] != stop_notification:
+                        continue
+                    self.logger.debug(f'Received {event}')
+                    time.sleep(IOS17_SYSDIAGNOSE_DELAY)
                     break
-                elif self._check_timeout(end_time):
-                    raise SysdiagnoseTimeoutError('Timeout waiting for sysdiagnose completion')
+            except NotificationTimeoutError as e:
+                raise SysdiagnoseTimeoutError('Timeout waiting for sysdiagnose completion') from e
 
     def _get_new_sysdiagnose_filename(self, end_time: Optional[float] = None) -> str:
         sysdiagnose_filename = None
@@ -186,6 +189,7 @@ class CrashReportsManager:
                                     self.afc.stat(posixpath.join(SYSDIAGNOSE_DIR, filename))['st_mtime']
                                 # Ignores IN_PROGRESS sysdiagnose files older than the defined time to live
                                 if delta.total_seconds() < SYSDIAGNOSE_IN_PROGRESS_MAX_TTL_SECS:
+                                    self.logger.debug(f'Detected in progress sysdiagnose {filename}')
                                     sysdiagnose_filename = filename.rsplit(ext)[0]
                                     sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
                                     sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
