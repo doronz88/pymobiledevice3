@@ -76,6 +76,9 @@ class OsUtils:
     def wait_return(self):
         raise FeatureNotSupportedError(self._os_name, inspect.currentframe().f_code.co_name)
 
+    def get_homedir(self) -> Path:
+        return Path.home()
+
 
 def get_os_utils() -> OsUtils:
     return OsUtils.create()
