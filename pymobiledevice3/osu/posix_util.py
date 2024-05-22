@@ -84,7 +84,7 @@ class Linux(Posix):
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, max_fails)
 
     def get_homedir(self) -> Path:
-        return Path('~' + os.environ.get('SUDO_USER', ''))
+        return Path('~' + os.environ.get('SUDO_USER', '')).expanduser()
 
 
 class Cygwin(Posix):
