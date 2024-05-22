@@ -1,3 +1,4 @@
+import datetime
 import logging
 from abc import abstractmethod
 from typing import Optional
@@ -24,6 +25,11 @@ class LockdownServiceProvider:
     @property
     @abstractmethod
     def developer_mode_status(self) -> bool:
+        pass
+
+    @property
+    @abstractmethod
+    def date(self) -> datetime.datetime:
         pass
 
     @abstractmethod

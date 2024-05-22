@@ -1,6 +1,7 @@
 import base64
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import List, Mapping, Optional, Tuple, Union
 
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
@@ -46,6 +47,10 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     @property
     def developer_mode_status(self) -> bool:
         return self.lockdown.developer_mode_status
+
+    @property
+    def date(self) -> datetime:
+        return self.lockdown.date
 
     async def connect(self) -> None:
         await self.service.connect()
