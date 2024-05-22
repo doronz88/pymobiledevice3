@@ -25,7 +25,9 @@ PyInstaller.__main__.run([
     '--hidden-import=apple_compress',
     '--hidden-import=zeroconf._utils.ipaddress',
     '--hidden-import=zeroconf._handlers.answers',
+    '--hidden-import=readchar',
     '--copy-metadata=pyimg4',
+    '--copy-metadata=readchar',
     '--copy-metadata=apple_compress',
     '--add-binary', f"{site_packages_path}/pytun_pmd3/*;pytun_pmd3",
     '--onefile'
