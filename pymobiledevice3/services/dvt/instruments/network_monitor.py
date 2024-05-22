@@ -55,6 +55,7 @@ class ConnectionDetectionEvent:
 class ConnectionUpdateEvent:
     rx_packets: int
     rx_bytes: int
+    tx_packets: int
     tx_bytes: int
     rx_dups: int
     rx000: int
@@ -62,8 +63,7 @@ class ConnectionUpdateEvent:
     min_rtt: int
     avg_rtt: int
     connection_serial: int
-    unknown0: int
-    unknown1: int
+    time: int
 
 
 class NetworkMonitor:
