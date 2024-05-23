@@ -488,7 +488,7 @@ for entry in OsTraceService(rsds[0]).syslog():
 ## Other python service examples
 
 The best way to search for examples is via
-the [`pymobiledevice.cli`](https://github.com/doronz88/pymobiledevice3/tree/refactor/docs/pymobiledevice3/cli) module.
+the [`pymobiledevice.cli`](https://github.com/doronz88/pymobiledevice3/tree/master/pymobiledevice3/cli) module.
 
 Each submodule represents a CLI subcommand. You can copy each subcommand implementation and simply replace
 the `service_provider` variable with any other `LockdownServiceProvider` (either `RemoteServiceDiscoveryService`
