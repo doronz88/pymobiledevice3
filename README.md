@@ -389,7 +389,7 @@ This work is licensed under GPL 3.0, and as, credited to several major contribut
 
 - Hector Martin "marcan" <hector@marcansoft.com>
 - Mathieu Renard
-- doronz <doron88@gmail.com>
-- matan1008 <matan1008@gmail.com>
-- Guy Salton
-- netanelc
+- [doronz](https://github.com/doronz88) <doron88@gmail.com>
+- [matan1008](https://github.com/matan1008) <matan1008@gmail.com>
+- [Guy Salton](https://github.com/guysalt)
+- [netanelc305](https://github.com/netanelc305) <netanelc305@protonmail.com>
