@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import logging
@@ -19,9 +20,8 @@ from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, N
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.tunneld import get_tunneld_devices
+from pymobiledevice3.tunneld import async_get_tunneld_devices
 from pymobiledevice3.usbmux import select_devices_by_connection_type
-from pymobiledevice3.utils import get_asyncio_loop
 
 USBMUX_OPTION_HELP = 'usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT'
 COLORED_OUTPUT = True
@@ -220,7 +220,7 @@ class RSDCommand(BaseServiceProviderCommand):
     def rsd(self, ctx, param: str, value: Optional[Tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
         if value is not None:
             rsd = RemoteServiceDiscoveryService(value)
-            get_asyncio_loop().run_until_complete(rsd.connect())
+            asyncio.run(rsd.connect(), debug=True)
             self.service_provider = rsd
             return self.service_provider
 
@@ -228,7 +228,7 @@ class RSDCommand(BaseServiceProviderCommand):
         if udid is None:
             return
 
-        rsds = get_tunneld_devices()
+        rsds = asyncio.run(async_get_tunneld_devices(), debug=True)
         if len(rsds) == 0:
             raise NoDeviceConnectedError()
 
@@ -247,7 +247,7 @@ class RSDCommand(BaseServiceProviderCommand):
         for rsd in rsds:
             if rsd == self.service_provider:
                 continue
-            get_asyncio_loop().run_until_complete(rsd.close())
+            asyncio.run(rsd.close(), debug=True)
 
         return self.service_provider
 
