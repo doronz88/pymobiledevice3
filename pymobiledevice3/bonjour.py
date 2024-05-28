@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import sys
 from socket import AF_INET, AF_INET6, inet_ntop
 from typing import List, Mapping, Optional
 
@@ -7,6 +8,7 @@ from ifaddr import get_adapters
 from zeroconf import IPVersion, ServiceListener, ServiceStateChange, Zeroconf
 from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 
+from pymobiledevice3.exceptions import FeatureNotSupportedError
 from pymobiledevice3.osu.os_utils import get_os_utils
 
 REMOTEPAIRING_SERVICE_NAMES = ['_remotepairing._tcp.local.']
@@ -80,7 +82,13 @@ def query_bonjour(service_names: List[str], ip: str) -> BonjourQuery:
 
 async def browse(service_names: List[str], ips: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) \
         -> List[BonjourAnswer]:
-    bonjour_queries = [query_bonjour(service_names, adapter) for adapter in ips]
+    try:
+        bonjour_queries = [query_bonjour(service_names, adapter) for adapter in ips]
+    except ValueError as e:
+        if sys.version_info.major == 3 and sys.version_info.minor == 8:
+            raise FeatureNotSupportedError('python3.8', 'IPv6 link-local bonjour browse') from e
+        else:
+            raise e
     answers = []
     await asyncio.sleep(timeout)
     for bonjour_query in bonjour_queries:
