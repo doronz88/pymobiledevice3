@@ -144,9 +144,15 @@ class OsTraceService(LockdownService):
                 break
             out.write(self.service.recv_prefixed(endianity='<'))
 
-    def collect(self, out: str, size_limit: int = None, age_limit: int = None, start_time: int = None):
+    def collect(self, out: str, size_limit: typing.Optional[int] = None, age_limit: typing.Optional[int] = None,
+                start_time: typing.Optional[int] = None) -> None:
         """
         Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
+
+        :param out: output file name
+        :param size_limit: maximum size in bytes of logarchive
+        :param age_limit: maximum age in days
+        :param start_time: start time of logarchive in unix timestamp
         """
         with tempfile.TemporaryDirectory() as temp_dir:
             file = Path(temp_dir) / 'foo.tar'
