@@ -353,6 +353,11 @@ class TunneldRunner:
             self._tunneld_core.clear()
             return fastapi.Response(status_code=200, content='Cleared tunnels...')
 
+        @self._app.get('/hello')
+        async def hello() -> fastapi.Response:
+            response = {'message': 'Hello, I\'m alive'}
+            return fastapi.Response(status_code=200, media_type="application/json", content=json.dumps(response))
+
         def generate_tunnel_response(tunnel: TunnelResult) -> fastapi.Response:
             return fastapi.Response(
                 status_code=200,
