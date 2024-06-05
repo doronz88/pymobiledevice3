@@ -3,6 +3,7 @@ import datetime
 import json
 import logging
 import os
+import sys
 import uuid
 from functools import wraps
 from typing import Callable, List, Mapping, Optional, Tuple
@@ -76,7 +77,7 @@ def print_json(buf, colored: Optional[bool] = None, default=default_json_encoder
     if colored is None:
         colored = user_requested_colored_output()
     formatted_json = json.dumps(buf, sort_keys=True, indent=4, default=default)
-    if colored:
+    if colored and os.isatty(sys.stdout.fileno()):
         colorful_json = highlight(formatted_json, lexers.JsonLexer(),
                                   formatters.TerminalTrueColorFormatter(style='stata-dark'))
         print(colorful_json)
@@ -104,7 +105,7 @@ def set_color_flag(ctx, param, value) -> None:
 
 
 def user_requested_colored_output() -> bool:
-    return COLORED_OUTPUT
+    return COLORED_OUTPUT and os.isatty(sys.stdout.fileno())
 
 
 def get_last_used_terminal_formatting(buf: str) -> str:
