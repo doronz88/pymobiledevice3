@@ -162,7 +162,7 @@ Commands:
   power-assertion  Create a power assertion (wraps...
   processes        processes cli
   profile          profile options
-  provision        privision options
+  provision        provision options
   remote           remote options
   restore          restore options
   springboard      springboard options
