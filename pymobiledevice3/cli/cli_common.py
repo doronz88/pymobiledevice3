@@ -225,11 +225,11 @@ class RSDCommand(BaseServiceProviderCommand):
             self.service_provider = rsd
             return self.service_provider
 
-    def tunneld(self, ctx, param: str, udid: Optional[str] = None) -> Optional[RemoteServiceDiscoveryService]:
+    async def _tunneld(self, udid: Optional[str] = None) -> Optional[RemoteServiceDiscoveryService]:
         if udid is None:
             return
 
-        rsds = asyncio.run(async_get_tunneld_devices(), debug=True)
+        rsds = await async_get_tunneld_devices()
         if len(rsds) == 0:
             raise NoDeviceConnectedError()
 
@@ -248,9 +248,12 @@ class RSDCommand(BaseServiceProviderCommand):
         for rsd in rsds:
             if rsd == self.service_provider:
                 continue
-            asyncio.run(rsd.close(), debug=True)
+            await rsd.close()
 
         return self.service_provider
+
+    def tunneld(self, ctx, param: str, udid: Optional[str] = None) -> Optional[RemoteServiceDiscoveryService]:
+        return asyncio.run(self._tunneld(udid), debug=True)
 
 
 class Command(RSDCommand, LockdownCommand):
