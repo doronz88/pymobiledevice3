@@ -307,7 +307,7 @@ def sysmon_process():
 def sysmon_process_monitor(service_provider: LockdownClient, threshold):
     """ monitor all most consuming processes by given cpuUsage threshold. """
 
-    Process = namedtuple('process', 'pid name cpuUsage')
+    Process = namedtuple('process', 'pid name cpuUsage physFootprint')
 
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         with Sysmontap(dvt) as sysmon:
@@ -315,7 +315,7 @@ def sysmon_process_monitor(service_provider: LockdownClient, threshold):
                 entries = []
                 for process in process_snapshot:
                     if (process['cpuUsage'] is not None) and (process['cpuUsage'] >= threshold):
-                        entries.append(Process(pid=process['pid'], name=process['name'], cpuUsage=process['cpuUsage']))
+                        entries.append(Process(pid=process['pid'], name=process['name'], cpuUsage=process['cpuUsage'], physFootprint=process['physFootprint']))
 
                 logger.info(entries)
 
