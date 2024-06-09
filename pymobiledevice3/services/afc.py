@@ -234,6 +234,7 @@ class AfcService(LockdownService):
                 dst = os.path.join(dst, os.path.basename(relative_src))
             with open(dst, 'wb') as f:
                 f.write(self.get_file_contents(src))
+            os.utime(dst, (os.stat(dst).st_atime, self.stat(src)['st_mtime'].timestamp()))
         else:
             # directory
             dst_path = pathlib.Path(dst) / os.path.basename(relative_src)
