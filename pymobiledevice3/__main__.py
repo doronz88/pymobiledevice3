@@ -132,7 +132,7 @@ def main() -> None:
             logger.warning('Trying again over tunneld since RSD is required for this command')
             should_retry_over_tunneld = True
         elif (e.identifier is not None) and ('developer' in sys.argv) and ('--tunnel' not in sys.argv):
-            logger.warning('Trying again over tunneld since it is a developer command')
+            logger.warning('Got an InvalidServiceError. Trying again over tunneld since it is a developer command')
             should_retry_over_tunneld = True
         if should_retry_over_tunneld:
             sys.argv += ['--tunnel', e.identifier]
