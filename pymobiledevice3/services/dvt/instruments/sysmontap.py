@@ -22,6 +22,7 @@ class Sysmontap(Tap):
             'procAttrs': process_attributes,
             'sysAttrs': system_attributes,
             'cpuUsage': True,
+            'physFootprint': True,  # memory value
             'sampleInterval': 500000000
         }
 
