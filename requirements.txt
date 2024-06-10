@@ -28,7 +28,7 @@ Pillow
 inquirer3>=0.6.0
 ipsw_parser>=1.2.3
 remotezip
-zeroconf
+zeroconf>=0.132.2
 ifaddr
 hyperframe
 srptools
