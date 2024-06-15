@@ -118,7 +118,7 @@ PairingDataComponentTLV8 = Struct(
 
 PairingDataComponentTLVBuf = GreedyRange(PairingDataComponentTLV8)
 
-PairConsentResult = namedtuple('PairConsentResult', 'public_key salt')
+PairConsentResult = namedtuple('PairConsentResult', 'public_key salt pin')
 
 CDTunnelPacket = Struct(
     'magic' / Const(b'CDTunnel'),
@@ -477,6 +477,10 @@ class RemotePairingProtocol(StartTcpTunnel):
         return self.handshake_info['peerDeviceInfo']['identifier']
 
     @property
+    def remote_device_model(self) -> str:
+        return self.handshake_info['peerDeviceInfo']['model']
+
+    @property
     def pair_record_path(self) -> Path:
         pair_records_cache_directory = create_pairing_records_cache_folder()
         return (pair_records_cache_directory /
@@ -507,6 +511,7 @@ class RemotePairingProtocol(StartTcpTunnel):
         response = await self._receive_plain_response()
         response = response['event']['_0']
 
+        pin = None
         if 'pairingRejectedWithError' in response:
             raise PairingError(
                 response['pairingRejectedWithError']['wrappedError']['userInfo']['NSLocalizedDescription'])
@@ -515,15 +520,20 @@ class RemotePairingProtocol(StartTcpTunnel):
         else:
             # On tvOS no consent is needed and pairing data is returned immediately.
             pairing_data = self._decode_bytes_if_needed(response['pairingData']['_0']['data'])
+            # On tvOS we need pin to setup pairing.
+            if 'AppleTV' in self.remote_device_model:
+                pin = input('Enter PIN: ')
 
         data = self.decode_tlv(PairingDataComponentTLVBuf.parse(pairing_data))
         return PairConsentResult(public_key=data[PairingDataComponentType.PUBLIC_KEY],
-                                 salt=data[PairingDataComponentType.SALT])
+                                 salt=data[PairingDataComponentType.SALT],
+                                 pin=pin)
 
     def _init_srp_context(self, pairing_consent_result: PairConsentResult) -> None:
         # Receive server public and salt and process them.
+        pin = pairing_consent_result.pin or '000000'
         client_session = SRPClientSession(
-            SRPContext('Pair-Setup', password='000000', prime=PRIME_3072, generator=PRIME_3072_GEN,
+            SRPContext('Pair-Setup', password=pin, prime=PRIME_3072, generator=PRIME_3072_GEN,
                        hash_func=hashlib.sha512))
         client_session.process(pairing_consent_result.public_key.hex(),
                                pairing_consent_result.salt.hex())
@@ -632,11 +642,12 @@ class RemotePairingProtocol(StartTcpTunnel):
         self.server_cip = ChaCha20Poly1305(server_key)
 
     async def _create_remote_unlock(self) -> None:
-        response = await self._send_receive_encrypted_request({'request': {'_0': {'createRemoteUnlockKey': {}}}})
-        if 'errorExtended' in response:
-            self.remote_unlock_host_key = None
-        else:
+        try:
+            response = await self._send_receive_encrypted_request({'request': {'_0': {'createRemoteUnlockKey': {}}}})
             self.remote_unlock_host_key = response['createRemoteUnlockKey']['hostKey']
+        except PyMobileDevice3Exception:
+            # tvOS does not support remote unlock.
+            self.remote_unlock_host_key = ''
 
     async def _attempt_pair_verify(self) -> None:
         self.handshake_info = await self._send_receive_handshake({
