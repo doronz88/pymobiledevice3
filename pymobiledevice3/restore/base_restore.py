@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import typing
 from enum import Enum
@@ -22,8 +23,7 @@ class Behavior(Enum):
 
 class BaseRestore:
     def __init__(self, ipsw: ZipFile, device: Device, tss: typing.Mapping = None,
-                 behavior: Behavior = Behavior.Update, logger=None):
-        self.logger = logging.getLogger(self.__class__.__name__) if logger is None else logger
+                 behavior: Behavior = Behavior.Update) -> None:
         self.ipsw = IPSW(ipsw)
         self.device = device
         self.tss = TSSResponse(tss) if tss is not None else None
@@ -67,3 +67,7 @@ class BaseRestore:
         device_class = build_info.get('DeviceClass')
         if device_class is None:
             raise PyMobileDevice3Exception('build identity does not contain an "DeviceClass" element')
+
+    @property
+    def logger(self) -> logging.Logger:
+        return logging.getLogger(f'{asyncio.current_task().get_name()}-{self.__class__.__module__}')

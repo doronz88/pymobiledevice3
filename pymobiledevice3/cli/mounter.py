@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from functools import update_wrapper
 from pathlib import Path
@@ -92,10 +93,17 @@ def mounter_umount_personalized(service_provider: LockdownClient):
 @click.argument('image', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @click.argument('signature', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @catch_errors
-def mounter_mount_developer(service_provider: LockdownClient, image: str, signature: str):
+def mounter_mount_developer(service_provider: LockdownServiceProvider, image: str, signature: str) -> None:
     """ mount developer image """
     DeveloperDiskImageMounter(lockdown=service_provider).mount(Path(image), Path(signature))
     logger.info('Developer image mounted successfully')
+
+
+async def mounter_mount_personalized_task(service_provider: LockdownServiceProvider, image: str, trust_cache: str,
+                                          build_manifest: str) -> None:
+    await PersonalizedImageMounter(lockdown=service_provider).mount(Path(image), Path(build_manifest),
+                                                                    Path(trust_cache))
+    logger.info('Personalized image mounted successfully')
 
 
 @mounter.command('mount-personalized', cls=Command)
@@ -103,21 +111,15 @@ def mounter_mount_developer(service_provider: LockdownClient, image: str, signat
 @click.argument('trust-cache', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @click.argument('build-manifest', type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @catch_errors
-def mounter_mount_personalized(service_provider: LockdownClient, image: str, trust_cache: str, build_manifest: str):
+def mounter_mount_personalized(service_provider: LockdownServiceProvider, image: str, trust_cache: str,
+                               build_manifest: str) -> None:
     """ mount personalized image """
-    PersonalizedImageMounter(lockdown=service_provider).mount(Path(image), Path(build_manifest), Path(trust_cache))
-    logger.info('Personalized image mounted successfully')
+    asyncio.run(mounter_mount_personalized_task(service_provider, image, trust_cache, build_manifest), debug=True)
 
 
-@mounter.command('auto-mount', cls=Command)
-@click.option('-x', '--xcode', type=click.Path(exists=True, dir_okay=True, file_okay=False),
-              help='Xcode application path used to figure out automatically the DeveloperDiskImage path')
-@click.option('-v', '--version', help='use a different DeveloperDiskImage version from the one retrieved by lockdown'
-                                      'connection')
-def mounter_auto_mount(service_provider: LockdownServiceProvider, xcode: str, version: str):
-    """ auto-detect correct DeveloperDiskImage and mount it """
+async def mounter_auto_mount_task(service_provider: LockdownServiceProvider, xcode: str, version: str) -> None:
     try:
-        auto_mount(service_provider, xcode=xcode, version=version)
+        await auto_mount(service_provider, xcode=xcode, version=version)
         logger.info('DeveloperDiskImage mounted successfully')
     except URLError:
         logger.warning('failed to query DeveloperDiskImage versions')
@@ -129,6 +131,16 @@ def mounter_auto_mount(service_provider: LockdownServiceProvider, xcode: str, ve
         logger.error(
             f'DeveloperDiskImage could not be saved to Xcode default path ({e.filename}). '
             f'Please make sure your user has the necessary permissions')
+
+
+@mounter.command('auto-mount', cls=Command)
+@click.option('-x', '--xcode', type=click.Path(exists=True, dir_okay=True, file_okay=False),
+              help='Xcode application path used to figure out automatically the DeveloperDiskImage path')
+@click.option('-v', '--version', help='use a different DeveloperDiskImage version from the one retrieved by lockdown'
+                                      'connection')
+def mounter_auto_mount(service_provider: LockdownServiceProvider, xcode: str, version: str) -> None:
+    """ auto-detect correct DeveloperDiskImage and mount it """
+    asyncio.run(mounter_auto_mount_task(service_provider, xcode, version), debug=True)
 
 
 @mounter.command('query-developer-mode-status', cls=Command)

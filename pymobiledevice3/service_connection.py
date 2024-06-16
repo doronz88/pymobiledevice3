@@ -125,6 +125,10 @@ class ServiceConnection:
         self.send_plist(data, endianity=endianity, fmt=fmt)
         return self.recv_plist(endianity=endianity)
 
+    async def aio_send_recv_plist(self, data: Mapping, endianity='>', fmt=plistlib.FMT_XML) -> Any:
+        await self.aio_send_plist(data, endianity=endianity, fmt=fmt)
+        return await self.aio_recv_plist(endianity=endianity)
+
     def recvall(self, size: int) -> bytes:
         data = b''
         while len(data) < size:
@@ -168,7 +172,7 @@ class ServiceConnection:
     def recv_plist(self, endianity='>') -> Mapping:
         return parse_plist(self.recv_prefixed(endianity=endianity))
 
-    async def aio_recv_plist(self, endianity='>') -> bytes:
+    async def aio_recv_plist(self, endianity='>') -> Mapping:
         return parse_plist(await self.aio_recv_prefixed(endianity))
 
     def send_plist(self, d, endianity='>', fmt=plistlib.FMT_XML) -> None:
