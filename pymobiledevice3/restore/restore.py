@@ -7,12 +7,14 @@ import struct
 import tempfile
 import traceback
 import zipfile
+from threading import Thread
 from typing import Mapping, Optional
 
+import requests
 from tqdm import tqdm, trange
 
 from pymobiledevice3.exceptions import ConnectionFailedError, NoDeviceConnectedError, PyMobileDevice3Exception
-from pymobiledevice3.restore.asr import ASRClient
+from pymobiledevice3.restore.asr import DEFAULT_ASR_SYNC_PORT, ASRClient
 from pymobiledevice3.restore.base_restore import RESTORE_VARIANT_ERASE_INSTALL, RESTORE_VARIANT_MACOS_RECOVERY_OS, \
     RESTORE_VARIANT_UPGRADE_INSTALL, BaseRestore
 from pymobiledevice3.restore.consts import PROGRESS_BAR_OPERATIONS, lpol_file
@@ -59,11 +61,19 @@ class Restore(BaseRestore):
         self._pb_verify_restore = None
         self._pb_verify_restore_old_value = None
 
+        # cache for already downloaded url-assets
+        self._url_assets_cache = {}
+
+        def handle_async_data_request_msg(message: Mapping) -> None:
+            thread = Thread(target=self.handle_data_request_msg, args=(message,))
+            thread.start()
+
         self._handlers = {
             # data request messages are sent by restored whenever it requires
             # files sent to the server by the client. these data requests include
             # SystemImageData, RootTicket, KernelCache, NORData and BasebandData requests
             'DataRequestMsg': self.handle_data_request_msg,
+            'AsyncDataRequestMsg': handle_async_data_request_msg,
 
             # restore logs are available if a previous restore failed
             'PreviousRestoreLogMsg': self.handle_previous_restore_log_msg,
@@ -84,6 +94,15 @@ class Restore(BaseRestore):
 
             # baseband updater output data request
             'BasebandUpdaterOutputData': self.handle_baseband_updater_output_data,
+
+            # report backtrace from restored crash
+            'RestoredCrash': self.handle_restored_crash,
+
+            # report new async contexts
+            'AsyncWait': self.handle_async_wait,
+
+            # handle attestation
+            'RestoreAttestation': self.handle_restore_attestation,
         }
 
         self._data_request_handlers = {
@@ -111,6 +130,10 @@ class Restore(BaseRestore):
 
             # TODO: verify
             'FirmwareUpdaterPreflight': self.send_firmware_updater_preflight,
+
+            # Added on iOS 18.0 beta1
+            'URLAsset': self.send_url_asset,
+            'StreamedImageDecryptionKey': self.send_streamed_image_decryption_key,
         }
 
         self._data_request_components = {
@@ -118,13 +141,14 @@ class Restore(BaseRestore):
             'DeviceTree': self.send_component,
         }
 
-    def send_filesystem(self, message: Mapping):
+    def send_filesystem(self, message: Mapping) -> None:
         self.logger.info('about to send filesystem...')
 
-        self.logger.info('connecting to ASR...')
+        asr_port = message.get('DataPort', DEFAULT_ASR_SYNC_PORT)
+        self.logger.info(f'connecting to ASR on port {asr_port}')
         while True:
             try:
-                asr = ASRClient(self._restored.udid)
+                asr = ASRClient(self._restored.udid, asr_port)
                 break
             except ConnectionFailedError:
                 pass
@@ -144,22 +168,20 @@ class Restore(BaseRestore):
             self.logger.info('sending filesystem now...')
             asr.send_payload(filesystem)
 
+        asr.close()
+
     def get_build_identity_from_request(self, msg):
         return self.get_build_identity(msg['Arguments'].get('IsRecoveryOS', False))
 
-    def send_buildidentity(self, message: Mapping):
+    def send_buildidentity(self, message: Mapping) -> None:
         self.logger.info('About to send BuildIdentity Dict...')
+        service = self._get_service_for_data_request(message)
         req = {'BuildIdentityDict': dict(self.get_build_identity_from_request(message))}
         arguments = message['Arguments']
-        variant = arguments.get('Variant')
-
-        if variant:
-            req['Variant'] = variant
-        else:
-            req['Variant'] = 'Erase'
-
+        variant = arguments.get('Variant', 'Erase')
+        req['Variant'] = variant
         self.logger.info('Sending BuildIdentityDict now...')
-        self._restored.send(req)
+        service.send_plist(req)
 
     def extract_global_manifest(self):
         build_info = self.build_identity.get('Info')
@@ -177,8 +199,9 @@ class Restore(BaseRestore):
         # The path of the global manifest is hardcoded. There's no pointer to in the build manifest.
         return self.ipsw.get_global_manifest(macos_variant, device_class)
 
-    def send_personalized_boot_object_v3(self, message: Mapping):
+    def send_personalized_boot_object_v3(self, message: Mapping) -> None:
         self.logger.debug('send_personalized_boot_object_v3')
+        service = self._get_service_for_data_request(message)
         image_name = message['Arguments']['ImageName']
         component_name = image_name
         self.logger.info(f'About to send {component_name}...')
@@ -195,15 +218,16 @@ class Restore(BaseRestore):
         self.logger.info(f'Sending {component_name} now...')
         chunk_size = 8192
         for i in trange(0, len(data), chunk_size):
-            self._restored.send({'FileData': data[i:i + chunk_size]})
+            service.send_plist({'FileData': data[i:i + chunk_size]})
 
         # Send FileDataDone
-        self._restored.send({'FileDataDone': True})
+        service.send_plist({'FileDataDone': True})
 
         self.logger.info(f'Done sending {component_name}')
 
-    def send_source_boot_object_v4(self, message: Mapping):
+    def send_source_boot_object_v4(self, message: Mapping) -> None:
         self.logger.debug('send_source_boot_object_v4')
+        service = self._get_service_for_data_request(message)
         image_name = message['Arguments']['ImageName']
         component_name = image_name
         self.logger.info(f'About to send {component_name}...')
@@ -215,16 +239,21 @@ class Restore(BaseRestore):
         elif image_name == '__SystemVersion__':
             data = self.ipsw.system_version
         else:
-            data = self.get_build_identity_from_request(message) \
-                .get_component(component_name, tss=self.recovery.tss).data
+            data = (self.get_build_identity_from_request(message)
+                    .get_component(component_name, tss=self.recovery.tss).data)
 
         self.logger.info(f'Sending {component_name} now...')
         chunk_size = 8192
         for i in trange(0, len(data), chunk_size):
-            self._restored.send({'FileData': data[i:i + chunk_size]})
+            chunk = data[i:i + chunk_size]
+            service.send_plist({'FileData': chunk})
+            if i == 0 and chunk.startswith(b'AEA1'):
+                self.logger.debug('First chunk in a AEA')
+                message = service.recv_plist()
+                self.send_url_asset(message)
 
         # Send FileDataDone
-        self._restored.send({'FileDataDone': True})
+        service.send_plist({'FileDataDone': True})
 
         self.logger.info(f'Done sending {component_name}')
 
@@ -277,19 +306,21 @@ class Restore(BaseRestore):
 
         return self.ipsw.build_manifest.get_build_identity(self.device.hardware_model, variant=variant)
 
-    def send_restore_local_policy(self, message: Mapping):
+    def send_restore_local_policy(self, message: Mapping) -> None:
         component = 'Ap,LocalPolicy'
+        service = self._get_service_for_data_request(message)
 
         # The Update mode does not have a specific build identity for the recovery os.
         build_identity = self.get_build_identity(self.build_identity.restore_behavior == Behavior.Erase)
         tss_localpolicy = self.get_recovery_os_local_policy_tss_response(message['Arguments'],
                                                                          build_identity=build_identity)
 
-        self._restored.send({'Ap,LocalPolicy': build_identity.get_component(component, tss=tss_localpolicy,
-                                                                            data=lpol_file).personalized_data})
+        service.send_plist({'Ap,LocalPolicy': build_identity.get_component(component, tss=tss_localpolicy,
+                                                                           data=lpol_file).personalized_data})
 
-    def send_recovery_os_root_ticket(self, message: Mapping):
+    def send_recovery_os_root_ticket(self, message: Mapping) -> None:
         self.logger.info('About to send RecoveryOSRootTicket...')
+        service = self._get_service_for_data_request(message)
 
         if self.recovery.tss_recoveryos_root_ticket is None:
             raise PyMobileDevice3Exception('Cannot send RootTicket without TSS')
@@ -306,19 +337,22 @@ class Restore(BaseRestore):
             self.logger.warning('not sending RootTicketData (no data present)')
 
         self.logger.info('Sending RecoveryOSRootTicket now...')
-        self._restored.send(req)
+        service.send_plist(req)
 
-    def send_root_ticket(self, message: Mapping):
+    def send_root_ticket(self, message: Mapping) -> None:
         self.logger.info('About to send RootTicket...')
+        service = self._get_service_for_data_request(message)
 
         if self.recovery.tss is None:
             raise PyMobileDevice3Exception('Cannot send RootTicket without TSS')
 
         self.logger.info('Sending RootTicket now...')
-        self._restored.send({'RootTicketData': self.recovery.tss.ap_img4_ticket})
+        service.send_plist({'RootTicketData': self.recovery.tss.ap_img4_ticket})
 
     def send_nor(self, message: Mapping):
         self.logger.info('About to send NORData...')
+        service = self._get_service_for_data_request(message)
+
         flash_version_1 = False
         llb_path = self.build_identity.get_component('LLB', tss=self.recovery.tss).path
         llb_filename_offset = llb_path.find('LLB')
@@ -390,7 +424,7 @@ class Restore(BaseRestore):
                 req[f'{component}ImageData'] = comp.personalized_data
 
         self.logger.info('Sending NORData now...')
-        self._restored.send(req)
+        service.send_plist(req)
 
     @staticmethod
     def get_bbfw_fn_for_element(elem):
@@ -507,6 +541,7 @@ class Restore(BaseRestore):
 
     def send_baseband_data(self, message: Mapping):
         self.logger.info(f'About to send BasebandData: {message}')
+        service = self._get_service_for_data_request(message)
 
         # NOTE: this function is called 2 or 3 times!
 
@@ -556,18 +591,21 @@ class Restore(BaseRestore):
         buffer = self.sign_bbfw(bbfw, bbtss, bb_nonce)
 
         self.logger.info('Sending BasebandData now...')
-        self._restored.send({'BasebandData': buffer})
+        service.send_plist({'BasebandData': buffer})
 
     def send_fdr_trust_data(self, message):
         self.logger.info('About to send FDR Trust data...')
+        service = self._get_service_for_data_request(message)
 
         # FIXME: What should we send here?
         # Sending an empty dict makes it continue with FDR
         # and this is what iTunes seems to be doing too
         self.logger.info('Sending FDR Trust data now...')
-        self._restored.send({})
+        service.send_plist({})
 
-    def send_image_data(self, message, image_list_k, image_type_k, image_data_k):
+    def send_image_data(
+            self, message: Mapping, image_list_k: Optional[str], image_type_k: Optional[str],
+            image_data_k: Optional[str]) -> None:
         self.logger.debug(f'send_image_data: {message}')
         arguments = message['Arguments']
         want_image_list = arguments.get(image_list_k)
@@ -1007,16 +1045,23 @@ class Restore(BaseRestore):
 
     def send_firmware_updater_data(self, message: Mapping):
         self.logger.debug(f'got FirmwareUpdaterData request: {message}')
+        service = self._get_service_for_data_request(message)
         arguments = message['Arguments']
         s_type = arguments['MessageArgType']
         updater_name = arguments['MessageArgUpdaterName']
+        device_generated_request = arguments.get('DeviceGeneratedRequest')
 
         if s_type not in ('FirmwareResponseData',):
             raise PyMobileDevice3Exception(f'MessageArgType has unexpected value \'{s_type}\'')
 
         info = arguments['MessageArgInfo']
 
-        if updater_name == 'SE':
+        if device_generated_request is not None:
+            fwdict = self.get_device_generated_firmware_data(updater_name, info, arguments)
+            if fwdict is None:
+                raise PyMobileDevice3Exception(f'Couldn\'t get {updater_name} firmware data')
+
+        elif updater_name == 'SE':
             fwdict = self.get_se_firmware_data(updater_name, info, arguments)
             if fwdict is None:
                 raise PyMobileDevice3Exception('Couldn\'t get SE firmware data')
@@ -1052,20 +1097,55 @@ class Restore(BaseRestore):
             if fwdict is None:
                 raise PyMobileDevice3Exception('Couldn\'t get AppleTypeCRetimer firmware data')
 
-        elif updater_name in ('Cryptex1', 'Cryptex1LocalPolicy'):
-            fwdict = self.get_device_generated_firmware_data(updater_name, info, arguments)
-            if fwdict is None:
-                raise PyMobileDevice3Exception(f'Couldn\'t get {updater_name} firmware data')
-
         else:
             raise PyMobileDevice3Exception(f'Got unknown updater name: {updater_name}')
 
         self.logger.info('Sending FirmwareResponse data now...')
-        self._restored.send({'FirmwareResponseData': fwdict})
+        service.send_plist({'FirmwareResponseData': fwdict})
 
-    def send_firmware_updater_preflight(self, message: Mapping):
+    def send_firmware_updater_preflight(self, message: Mapping) -> None:
         self.logger.warning(f'send_firmware_updater_preflight: {message}')
-        self._restored.send({})
+        service = self._get_service_for_data_request(message)
+        service.send_plist({})
+
+    def send_url_asset(self, message: Mapping) -> None:
+        self.logger.info(f'send_url_asset: {message}')
+        service = self._get_service_for_data_request(message)
+        arguments = message['Arguments']
+        assert arguments['RequestMethod'] == 'GET'
+        url = arguments['RequestURL']
+
+        if url in self._url_assets_cache:
+            self.logger.debug('Using cached URLAsset')
+            response = self._url_assets_cache[url]
+        else:
+            response = requests.get(url)
+            self._url_assets_cache[url] = response
+        service.send_plist({
+            'ResponseBody': response.content,
+            'ResponseBodyDone': True,
+            'ResponseHeaders': dict(response.headers),
+            'ResponseStatus': response.status_code,
+        }, fmt=plistlib.FMT_BINARY)
+        service.close()
+
+    def send_streamed_image_decryption_key(self, message: Mapping) -> None:
+        self.logger.info(f'send_streamed_image_decryption_key: {message}')
+        service = self._get_service_for_data_request(message)
+        arguments = message['Arguments']
+        assert arguments['RequestMethod'] == 'POST'
+
+        response = requests.post(
+            arguments['RequestURL'],
+            headers=arguments['RequestAdditionalHeaders'],
+            data=arguments['RequestBody'])
+        self.logger.info(f'response {response} {response.content}')
+        service.send_plist(plistlib.dumps({
+            'ResponseBody': response.content,
+            'ResponseBodyDone': True,
+            'ResponseHeaders': dict(response.headers),
+            'ResponseStatus': response.status_code,
+        }, fmt=plistlib.FMT_BINARY))
 
     def send_component(self, component, component_name=None):
         if component_name is None:
@@ -1161,7 +1241,7 @@ class Restore(BaseRestore):
         if not message['Accepted']:
             raise PyMobileDevice3Exception(str(message))
 
-    def handle_baseband_updater_output_data(self, message: Mapping):
+    def handle_baseband_updater_output_data(self, message: Mapping) -> None:
         self.logger.debug(f'restore_handle_baseband_updater_output_data: {message}')
         data_port = message['DataPort']
 
@@ -1192,6 +1272,17 @@ class Restore(BaseRestore):
 
         self.logger.debug('Closing connection of BasebandUpdaterOutputData data port')
         client.close()
+
+    def handle_restored_crash(self, message: Mapping) -> None:
+        backtrace = '\n'.join(message['RestoredBacktrace'])
+        self.logger.info(f'restored crashed. backtrace:\n{backtrace}')
+
+    def handle_async_wait(self, message: Mapping) -> None:
+        self.logger.debug(message)
+
+    def handle_restore_attestation(self, message: Mapping) -> None:
+        self.logger.debug(message)
+        self._restored.send({'RestoreShouldAttest': False})
 
     def _connect_to_restored_service(self):
         while True:
@@ -1246,7 +1337,7 @@ class Restore(BaseRestore):
                 try:
                     self._handlers[message_type](message)
                 except Exception:
-                    traceback.print_exc()
+                    self.logger.error(traceback.format_exc())
             else:
                 # there might be some other message types i'm not aware of, but I think
                 # at least the "previous error logs" messages usually end up here
@@ -1257,3 +1348,25 @@ class Restore(BaseRestore):
 
         # device is finally in restore mode, let's do this
         self.restore_device()
+
+    def _get_service_for_data_request(self, message: Mapping) -> ServiceConnection:
+        data_port = message.get('DataPort')
+        if data_port is None:
+            return self._restored.service
+        data_type = message['DataType']
+        data_port = message['DataPort']
+
+        self.logger.info(f'Connecting to {data_type} data port ({data_port})')
+
+        while True:
+            try:
+                service = ServiceConnection.create_using_usbmux(self._restored.udid, data_port, connection_type='USB')
+                break
+            except ConnectionFailedError:
+                self.logger.debug('Retrying connection...')
+
+        if not service:
+            raise ConnectionFailedError(f'failed to establish connection to {data_port}')
+
+        self.logger.info(f'Connected to {data_type} data port ({data_port})')
+        return service

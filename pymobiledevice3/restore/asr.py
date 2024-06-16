@@ -11,7 +11,7 @@ from pymobiledevice3.service_connection import ServiceConnection
 
 ASR_VERSION = 1
 ASR_STREAM_ID = 1
-ASR_PORT = 12345
+DEFAULT_ASR_SYNC_PORT = 12345
 ASR_FEC_SLICE_STRIDE = 40
 ASR_PACKETS_PER_FEC = 25
 ASR_PAYLOAD_PACKET_SIZE = 1450
@@ -26,10 +26,8 @@ class ASRClient:
     ASR — Apple Software Restore
     """
 
-    SERVICE_PORT = ASR_PORT
-
-    def __init__(self, udid: str):
-        self.service = ServiceConnection.create_using_usbmux(udid, self.SERVICE_PORT, connection_type='USB')
+    def __init__(self, udid: str, port: int = DEFAULT_ASR_SYNC_PORT) -> None:
+        self.service = ServiceConnection.create_using_usbmux(udid, port, connection_type='USB')
 
         # receive Initiate command message
         data = self.recv_plist()
@@ -52,7 +50,7 @@ class ASRClient:
         logger.debug(plistlib.dumps(plist).decode())
         self.service.sendall(plistlib.dumps(plist))
 
-    def send_buffer(self, buf: bytes):
+    def send_buffer(self, buf: bytes) -> None:
         self.service.sendall(buf)
 
     def handle_oob_data_request(self, packet: typing.Mapping, filesystem: typing.IO):
@@ -65,7 +63,7 @@ class ASRClient:
 
         self.send_buffer(oob_data)
 
-    def perform_validation(self, filesystem: typing.IO):
+    def perform_validation(self, filesystem: typing.IO) -> None:
         filesystem.seek(0, os.SEEK_END)
         length = filesystem.tell()
         filesystem.seek(0, os.SEEK_SET)
@@ -114,3 +112,6 @@ class ASRClient:
                 chunk += hashlib.sha1(chunk).digest()
 
             self.send_buffer(chunk)
+
+    def close(self) -> None:
+        self.service.close()
