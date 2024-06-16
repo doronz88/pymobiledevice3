@@ -135,7 +135,13 @@ def main() -> None:
             logger.warning('Got an InvalidServiceError. Trying again over tunneld since it is a developer command')
             should_retry_over_tunneld = True
         if should_retry_over_tunneld:
-            sys.argv += ['--tunnel', e.identifier]
+            if '--' in sys.argv:
+                escape_sequence = sys.argv.index('--')
+                before = sys.argv[:escape_sequence]
+                after = sys.argv[escape_sequence:]
+                sys.argv = before + ['--tunnel', e.identifier] + after
+            else:
+                sys.argv += ['--tunnel', e.identifier]
             return main()
         logger.error(INVALID_SERVICE_MESSAGE)
     except NoDeviceSelectedError:
