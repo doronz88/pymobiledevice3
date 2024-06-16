@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import os
 import plistlib
 import traceback
+from typing import IO
 from zipfile import ZipFile
 
 import click
@@ -160,18 +162,7 @@ def restore_ramdisk(device, ipsw, tss):
     Recovery(ipsw, device, tss=tss).boot_ramdisk()
 
 
-@restore.command('update', cls=Command)
-@click.argument('ipsw')
-@click.option('--tss', type=click.File('rb'))
-@click.option('--erase', is_flag=True, help='use the Erase BuildIdentity (full factory-reset)')
-@click.option('--ignore-fdr', is_flag=True, help='only establish an FDR service connection, but don\'t proxy any '
-                                                 'traffic')
-def restore_update(device, ipsw: str, tss, erase, ignore_fdr):
-    """
-    perform an update
-
-    ipsw can be either a filename or an url
-    """
+async def restore_update_task(device: Device, ipsw: str, tss: IO, erase: bool, ignore_fdr: bool) -> None:
     if tss:
         tss = plistlib.load(tss)
 
@@ -193,8 +184,23 @@ def restore_update(device, ipsw: str, tss, erase, ignore_fdr):
         behavior = Behavior.Erase
 
     try:
-        Restore(ipsw, device, tss=tss, behavior=behavior, ignore_fdr=ignore_fdr).update()
+        await Restore(ipsw, device, tss=tss, behavior=behavior, ignore_fdr=ignore_fdr).update()
     except Exception:
         # click may "swallow" several exception types so we try to catch them all here
         traceback.print_exc()
         raise
+
+
+@restore.command('update', cls=Command)
+@click.argument('ipsw')
+@click.option('--tss', type=click.File('rb'))
+@click.option('--erase', is_flag=True, help='use the Erase BuildIdentity (full factory-reset)')
+@click.option('--ignore-fdr', is_flag=True, help='only establish an FDR service connection, but don\'t proxy any '
+                                                 'traffic')
+def restore_update(device: Device, ipsw: str, tss: IO, erase: bool, ignore_fdr: bool) -> None:
+    """
+    perform an update
+
+    ipsw can be either a filename or an url
+    """
+    asyncio.run(restore_update_task(device, ipsw, tss, erase, ignore_fdr), debug=True)

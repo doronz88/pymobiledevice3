@@ -12,7 +12,7 @@ from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.restore.base_restore import BaseRestore, Behavior
 from pymobiledevice3.restore.consts import lpol_file
 from pymobiledevice3.restore.device import Device
-from pymobiledevice3.restore.tss import TSSRequest
+from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
 
 RESTORE_VARIANT_ERASE_INSTALL = 'Erase Install (IPSW)'
 RESTORE_VARIANT_UPGRADE_INSTALL = 'Upgrade Install (IPSW)'
@@ -21,7 +21,7 @@ RESTORE_VARIANT_MACOS_RECOVERY_OS = 'macOS Customer'
 
 class Recovery(BaseRestore):
     def __init__(self, ipsw: ZipFile, device: Device, tss: typing.Mapping = None, behavior: Behavior = Behavior.Update):
-        super().__init__(ipsw, device, tss, behavior, logger=logging.getLogger(__name__))
+        super().__init__(ipsw, device, tss, behavior)
         self.tss_localpolicy = None
         self.tss_recoveryos_root_ticket = None
         self.restore_boot_args = None
@@ -55,7 +55,7 @@ class Recovery(BaseRestore):
 
         return tss.img4_create_local_manifest(build_identity=self.build_identity)
 
-    def get_tss_response(self):
+    async def get_tss_response(self) -> TSSResponse:
         # populate parameters
         parameters = dict()
 
@@ -135,7 +135,7 @@ class Recovery(BaseRestore):
                         tss.add_vinyl_tags(parameters)
 
         # send request and grab response
-        return tss.send_receive()
+        return await tss.send_receive()
 
     def get_local_policy_tss_response(self):
         # populate parameters
@@ -224,13 +224,13 @@ class Recovery(BaseRestore):
 
         return request.send_receive()
 
-    def fetch_tss_record(self):
+    async def fetch_tss_record(self) -> TSSResponse:
         if self.ipsw.build_manifest.build_major > 8:
             if self.device.ap_nonce is None:
                 # the first nonce request with older firmware releases can fail, and it's OK
                 self.logger.info('NOTE: Unable to get nonce from device')
 
-        self.tss = self.get_tss_response()
+        self.tss = await self.get_tss_response()
 
         if self.macos_variant:
             self.tss_localpolicy = self.get_local_policy_tss_response()
@@ -388,7 +388,7 @@ class Recovery(BaseRestore):
 
         self.send_kernelcache()
 
-    def dfu_enter_recovery(self):
+    async def dfu_enter_recovery(self) -> None:
         self.send_component('iBSS')
         self.reconnect_irecv()
 
@@ -404,7 +404,7 @@ class Recovery(BaseRestore):
 
             if old_nonce != nonce:
                 # Welcome iOS5. We have to re-request the TSS with our nonce.
-                self.tss = self.get_tss_response()
+                self.tss = await self.get_tss_response()
 
             self.device.irecv.set_configuration(1)
 
@@ -437,10 +437,10 @@ class Recovery(BaseRestore):
         self.logger.debug('Waiting for device to reconnect in recovery mode...')
         self.reconnect_irecv(is_recovery=True)
 
-    def boot_ramdisk(self):
+    async def boot_ramdisk(self) -> None:
         if self.tss is None:
             self.logger.info('fetching TSS record')
-            self.fetch_tss_record()
+            await self.fetch_tss_record()
 
         if self.device.lockdown:
             # normal mode
@@ -456,7 +456,7 @@ class Recovery(BaseRestore):
 
         if self.device.irecv.mode == Mode.DFU_MODE:
             # device is currently in DFU mode, place it into recovery mode
-            self.dfu_enter_recovery()
+            await self.dfu_enter_recovery()
 
         elif self.device.irecv.mode.is_recovery:
             # now we load the iBEC
