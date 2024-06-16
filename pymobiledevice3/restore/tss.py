@@ -1,6 +1,8 @@
+import asyncio
 import logging
 import plistlib
 import typing
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import asn1
@@ -756,7 +758,7 @@ class TSSRequest:
     def update(self, options) -> None:
         self._request.update(options)
 
-    def send_receive(self) -> TSSResponse:
+    async def send_receive(self) -> TSSResponse:
         headers = {
             'Cache-Control': 'no-cache',
             'Content-type': 'text/xml; charset="utf-8"',
@@ -766,9 +768,14 @@ class TSSRequest:
 
         logger.info('Sending TSS request...')
         logger.debug(self._request)
-        r = requests.post(TSS_CONTROLLER_ACTION_URL, headers=headers,
-                          data=plistlib.dumps(self._request), verify=False)
-        content = r.content
+
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            def post() -> bytes:
+                return requests.post(TSS_CONTROLLER_ACTION_URL, headers=headers, data=plistlib.dumps(self._request),
+                                     verify=False).content
+
+            content = await loop.run_in_executor(executor, post)
 
         if b'MESSAGE=SUCCESS' in content:
             logger.info('response successfully received')
