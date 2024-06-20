@@ -19,6 +19,7 @@ from pymobiledevice3.usbmux import MuxDevice, select_device
 DEFAULT_AFTER_IDLE_SEC = 3
 DEFAULT_INTERVAL_SEC = 3
 DEFAULT_MAX_FAILS = 3
+DEFAULT_TIMEOUT = 1
 OSUTIL = get_os_utils()
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
@@ -77,8 +78,9 @@ class ServiceConnection:
         self.writer = None  # type: Optional[asyncio.StreamWriter]
 
     @staticmethod
-    def create_using_tcp(hostname: str, port: int, keep_alive: bool = True) -> 'ServiceConnection':
-        sock = socket.create_connection((hostname, port))
+    def create_using_tcp(hostname: str, port: int, keep_alive: bool = True,
+                         timeout: int = DEFAULT_TIMEOUT) -> 'ServiceConnection':
+        sock = socket.create_connection((hostname, port), timeout=timeout)
         if keep_alive:
             OSUTIL.set_keepalive(sock)
         return ServiceConnection(sock)
