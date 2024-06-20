@@ -67,6 +67,8 @@ from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.utils import asyncio_print_traceback
 
+TIMEOUT = 1
+
 OSUTIL = get_os_utils()
 LOOPBACK_HEADER = OSUTIL.loopback_header
 logger = logging.getLogger(__name__)
@@ -828,15 +830,16 @@ class RemotePairingTunnelService(RemotePairingProtocol):
         self._remote_identifier = remote_identifier
         self.hostname = hostname
         self.port = port
-        self._connection: Optional[ServiceConnection] = None
+        self._reader: Optional[StreamReader] = None
+        self._writer: Optional[StreamWriter] = None
 
     @property
     def remote_identifier(self) -> str:
         return self._remote_identifier
 
     async def connect(self, autopair: bool = True) -> None:
-        self._connection = ServiceConnection.create_using_tcp(self.hostname, self.port)
-        await self._connection.aio_start()
+        fut = asyncio.open_connection(self.hostname, self.port)
+        self._reader, self._writer = await asyncio.wait_for(fut, timeout=TIMEOUT)
 
         try:
             await self._attempt_pair_verify()
@@ -844,20 +847,29 @@ class RemotePairingTunnelService(RemotePairingProtocol):
                 raise ConnectionAbortedError()
             self._init_client_server_main_encryption_keys()
         except:  # noqa: E722
-            self._connection.close()
+            await self.close()
             raise
 
     async def close(self) -> None:
-        await self._connection.aio_close()
+        if self._writer is None:
+            return
+        self._writer.close()
+        try:
+            await self._writer.wait_closed()
+        except ssl.SSLError:
+            pass
+        self._writer = None
+        self._reader = None
 
     async def receive_response(self) -> Mapping:
-        await self._connection.aio_recvall(len(REPAIRING_PACKET_MAGIC))
-        size = struct.unpack('>H', await self._connection.aio_recvall(2))[0]
-        return json.loads(await self._connection.aio_recvall(size))
+        await self._reader.readexactly(len(REPAIRING_PACKET_MAGIC))
+        size = struct.unpack('>H', await self._reader.readexactly(2))[0]
+        return json.loads(await self._reader.readexactly(size))
 
     async def send_request(self, data: Mapping) -> None:
-        return await self._connection.aio_sendall(
+        self._writer.write(
             RPPairingPacket.build({'body': json.dumps(data, default=self._default_json_encoder).encode()}))
+        await self._writer.drain()
 
     @staticmethod
     def _default_json_encoder(obj) -> str:
@@ -876,8 +888,8 @@ class RemotePairingTunnelService(RemotePairingProtocol):
 
 class RemotePairingManualPairingService(RemotePairingTunnelService):
     async def connect(self, autopair: bool = True) -> None:
-        self._connection = ServiceConnection.create_using_tcp(self.hostname, self.port)
-        await self._connection.aio_start()
+        fut = asyncio.open_connection(self.hostname, self.port)
+        self._reader, self._writer = await asyncio.wait_for(fut, timeout=TIMEOUT)
         await RemotePairingProtocol.connect(self, autopair=autopair)
 
 
