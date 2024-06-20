@@ -32,17 +32,15 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Lint with flake8
+      - name: Install dependencies
         run: |
-          python -m pip install flake8
-          flake8 . --max-line-length=127
-      - name: Verify sorted imports
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pre-commit
+      - name: Run pre-commit hooks
         run: |
-          python -m pip install isort
-          isort . -m HANGING_INDENT -l 120 --check-only
+          pre-commit run --all-files
       - name: Test install
         run: |
-          python -m pip install --upgrade pip
           python -m pip install -U '.[test]'
       - name: Test show usage
         run: pytest -m cli
