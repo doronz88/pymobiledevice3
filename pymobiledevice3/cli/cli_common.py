@@ -21,7 +21,7 @@ from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, N
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.tunneld import async_get_tunneld_devices
+from pymobiledevice3.tunneld import TUNNELD_DEFAULT_ADDRESS, async_get_tunneld_devices
 from pymobiledevice3.usbmux import select_devices_by_connection_type
 
 USBMUX_OPTION_HELP = 'usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT'
@@ -37,7 +37,7 @@ class RSDOption(Option):
         if self.mutually_exclusive:
             ex_str = ', '.join(self.mutually_exclusive)
             kwargs['help'] = help + (
-                    ' NOTE: This argument is mutually exclusive with '
+                    '\nNOTE: This argument is mutually exclusive with '
                     ' arguments: [' + ex_str + '].'
             )
         super().__init__(*args, **kwargs)
@@ -211,11 +211,14 @@ class RSDCommand(BaseServiceProviderCommand):
         self.params[:0] = [
             RSDOption(('rsd_service_provider_manually', '--rsd'), type=(str, int), callback=self.rsd,
                       mutually_exclusive=['rsd_service_provider_using_tunneld'],
-                      help='RSD hostname and port number'),
+                      help='\b\n'
+                           'RSD hostname and port number (as provided by a `start-tunnel` subcommand).'),
             RSDOption(('rsd_service_provider_using_tunneld', '--tunnel'), callback=self.tunneld,
                       mutually_exclusive=['rsd_service_provider_manually'],
-                      help='Either an empty string to force tunneld device selection, or a UDID of a tunneld '
-                           'discovered device')
+                      help='\b\n'
+                           'Either an empty string to force tunneld device selection, or a UDID of a tunneld '
+                           'discovered device.\n'
+                           'The string may be suffixed with :PORT in case tunneld is not serving at the default port.')
         ]
 
     def rsd(self, ctx, param: str, value: Optional[Tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
@@ -229,7 +232,11 @@ class RSDCommand(BaseServiceProviderCommand):
         if udid is None:
             return
 
-        rsds = await async_get_tunneld_devices()
+        port = TUNNELD_DEFAULT_ADDRESS[1]
+        if ':' in udid:
+            udid, port = udid.split(':')
+
+        rsds = await async_get_tunneld_devices((TUNNELD_DEFAULT_ADDRESS[0], port))
         if len(rsds) == 0:
             raise NoDeviceConnectedError()
 

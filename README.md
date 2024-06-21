@@ -239,6 +239,7 @@ simplify the work with developer services. You can now try to execute any of the
 ```shell
 # Accessing the DVT services
 # The --tunnel option may accept either an empty string, or a UDID for a specific device 
+# The UDID may be suffixed with :PORT in case tunneld in serving at a non-default port 
 python3 -m pymobiledevice3 developer dvt ls / --tunnel ''
 
 # Or simply without the `--tunnel` option, assuming the tunneld is running
