@@ -257,7 +257,7 @@ class TunneldCore:
             with stop_remoted():
                 try:
                     await rsd.connect()
-                except ConnectionRefusedError:
+                except (ConnectionRefusedError, TimeoutError):
                     raise asyncio.CancelledError()
 
             if (self.protocol == TunnelProtocol.QUIC) and (Version(rsd.product_version) < Version('17.0.0')):
