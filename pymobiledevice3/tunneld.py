@@ -149,7 +149,9 @@ class TunneldCore:
                                                        protocol=TunnelProtocol.TCP),
                                 name=f'start-tunnel-task-{task_identifier}'))
                 except ConnectionFailedToUsbmuxdError:
-                    logger.warning('failed to connect to usbmux. waiting for it to restart')
+                    # This is exception is expected to occur repeatedly on linux running usbmuxd
+                    # as long as there isn't any physical iDevice connected
+                    logger.debug('failed to connect to usbmux. waiting for it to restart')
                 finally:
                     await asyncio.sleep(USBMUX_INTERVAL)
         except asyncio.CancelledError:
