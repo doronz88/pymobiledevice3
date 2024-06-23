@@ -18,8 +18,6 @@ from pymobiledevice3.remote.xpc_message import XpcWrapper, decode_xpc_object
 
 logger = logging.getLogger()
 
-coloredlogs.install(level=logging.DEBUG)
-
 FRAME_HEADER_SIZE = 9
 
 
@@ -204,4 +202,5 @@ def live(iface: str):
 
 
 if __name__ == '__main__':
+    coloredlogs.install(level=logging.DEBUG)
     cli()

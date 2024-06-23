@@ -8,8 +8,6 @@ import coloredlogs
 
 NOTIFICATIONS_FILENAME = os.path.join(os.path.dirname(__file__), 'notifications.txt')
 
-coloredlogs.install(level=logging.DEBUG)
-
 
 def get_notifications():
     with open(NOTIFICATIONS_FILENAME, 'rb') as f:
@@ -60,4 +58,5 @@ def main(root_fs):
 
 
 if __name__ == '__main__':
+    coloredlogs.install(level=logging.DEBUG)
     main()

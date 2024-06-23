@@ -6,8 +6,6 @@ from uuid import UUID
 import click
 import coloredlogs
 
-coloredlogs.install(level=logging.DEBUG)
-
 MAGIC = b'\x0b\x10\x00\x00'
 DYLD_MAGIC = b'dyld_v1'
 MAP_FILENAME = os.path.join(os.path.dirname(__file__), 'dsc_uuid_map.json')
@@ -99,4 +97,5 @@ def main(dsc, dyld_uuid, force):
 
 
 if __name__ == '__main__':
+    coloredlogs.install(level=logging.DEBUG)
     main()
