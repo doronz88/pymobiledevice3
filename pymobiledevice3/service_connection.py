@@ -79,8 +79,9 @@ class ServiceConnection:
 
     @staticmethod
     def create_using_tcp(hostname: str, port: int, keep_alive: bool = True,
-                         timeout: int = DEFAULT_TIMEOUT) -> 'ServiceConnection':
-        sock = socket.create_connection((hostname, port), timeout=timeout)
+                         create_connection_timeout: int = DEFAULT_TIMEOUT) -> 'ServiceConnection':
+        sock = socket.create_connection((hostname, port), timeout=create_connection_timeout)
+        sock.settimeout(None)
         if keep_alive:
             OSUTIL.set_keepalive(sock)
         return ServiceConnection(sock)
