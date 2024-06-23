@@ -12,6 +12,7 @@ import construct
 import fastapi
 import requests
 import uvicorn
+from construct import StreamError
 from fastapi import FastAPI
 from packaging.version import Version
 
@@ -212,8 +213,8 @@ class TunneldCore:
                         f'since there is already an active one for same udid')
         except asyncio.CancelledError:
             pass
-        except ConnectionResetError:
-            logger.debug(f'got ConnectionResetError from {asyncio.current_task().get_name()}')
+        except (ConnectionResetError, StreamError) as e:
+            logger.debug(f'got {e.__class__.__name__} from {asyncio.current_task().get_name()}')
         except (asyncio.exceptions.IncompleteReadError, TimeoutError, OSError) as e:
             logger.debug(f'got {e.__class__.__name__} from tunnel --rsd {tun.address} {tun.port}')
         except Exception:
