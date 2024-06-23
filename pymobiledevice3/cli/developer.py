@@ -315,7 +315,8 @@ def sysmon_process_monitor(service_provider: LockdownClient, threshold):
                 entries = []
                 for process in process_snapshot:
                     if (process['cpuUsage'] is not None) and (process['cpuUsage'] >= threshold):
-                        entries.append(Process(pid=process['pid'], name=process['name'], cpuUsage=process['cpuUsage'], physFootprint=process['physFootprint']))
+                        entries.append(Process(pid=process['pid'], name=process['name'], cpuUsage=process['cpuUsage'],
+                                               physFootprint=process['physFootprint']))
 
                 logger.info(entries)
 
@@ -888,9 +889,9 @@ def condition():
 
 
 @condition.command('list', cls=Command)
-def condition_list(lockdown: LockdownClient):
+def condition_list(service_provider: LockdownServiceProvider) -> None:
     """ list all available conditions """
-    with DvtSecureSocketProxyService(lockdown=lockdown) as dvt:
+    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         print_json(ConditionInducer(dvt).list())
 
 
