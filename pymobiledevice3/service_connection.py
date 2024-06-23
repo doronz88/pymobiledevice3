@@ -19,7 +19,7 @@ from pymobiledevice3.usbmux import MuxDevice, select_device
 DEFAULT_AFTER_IDLE_SEC = 3
 DEFAULT_INTERVAL_SEC = 3
 DEFAULT_MAX_FAILS = 3
-DEFAULT_TIMEOUT = 1
+DEFAULT_TIMEOUT = 1.5
 OSUTIL = get_os_utils()
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.

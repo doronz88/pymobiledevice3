@@ -207,9 +207,11 @@ def launch(service_provider: LockdownClient, arguments: str, kill_existing: bool
                                      environment=dict(env))
         print(f'Process launched with pid {pid}')
         while stream:
-            for output_received in process_control:
-                logging.getLogger(f'PID:{output_received.pid}').info(output_received.message.strip())
-
+            try:
+                for output_received in process_control:
+                    logging.getLogger(f'PID:{output_received.pid}').info(output_received.message.strip())
+            except OSError:
+                break
 
 @dvt.command('shell', cls=Command)
 def dvt_shell(service_provider: LockdownClient):
