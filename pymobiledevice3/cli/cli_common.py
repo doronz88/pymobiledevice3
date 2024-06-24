@@ -6,7 +6,7 @@ import os
 import sys
 import uuid
 from functools import wraps
-from typing import Callable, List, Mapping, Optional, Tuple
+from typing import Any, Callable, List, Mapping, Optional, Tuple
 
 import click
 import coloredlogs
@@ -16,8 +16,7 @@ from click import Option, UsageError
 from inquirer3.themes import GreenPassion
 from pygments import formatters, highlight, lexers
 
-from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, NoDeviceConnectedError, \
-    NoDeviceSelectedError
+from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, NoDeviceConnectedError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -123,13 +122,17 @@ def sudo_required(func):
     return wrapper
 
 
-def prompt_device_list(device_list: List):
-    device_question = [inquirer3.List('device', message='choose device', choices=device_list, carousel=True)]
+def prompt_selection(choices: List[Any], message: str, idx: bool = False) -> Any:
+    question = [inquirer3.List('selection', message=message, choices=choices, carousel=True)]
     try:
-        result = inquirer3.prompt(device_question, theme=GreenPassion(), raise_keyboard_interrupt=True)
-        return result['device']
+        result = inquirer3.prompt(question, theme=GreenPassion(), raise_keyboard_interrupt=True)
     except KeyboardInterrupt:
-        raise NoDeviceSelectedError()
+        raise click.ClickException('No selection was made')
+    return result['selection'] if not idx else choices.index(result['selection'])
+
+
+def prompt_device_list(device_list: List):
+    return prompt_selection(device_list, 'Choose device')
 
 
 def choose_service_provider(callback: Callable):

@@ -10,7 +10,7 @@ __all__ = [
     'PairingDialogResponsePendingError', 'UserDeniedPairingError', 'InvalidHostIDError', 'SetProhibitedError',
     'MissingValueError', 'PasscodeRequiredError', 'AmfiError', 'DeviceHasPasscodeSetError', 'NotificationTimeoutError',
     'DeveloperModeError', 'ProfileError', 'IRecvError', 'IRecvNoDeviceConnectedError', 'UnrecognizedSelectorError',
-    'NoDeviceSelectedError', 'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
+    'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
     'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError', 'CoreDeviceError',
     'AccessDeniedError', 'RSDRequiredError', 'SysdiagnoseTimeoutError', 'GetProhibitedError',
     'FeatureNotSupportedError', 'OSNotSupportedError', 'DeprecationError', 'NotEnoughDiskSpaceError'
@@ -287,10 +287,6 @@ class IRecvError(PyMobileDevice3Exception):
 
 
 class IRecvNoDeviceConnectedError(IRecvError):
-    pass
-
-
-class NoDeviceSelectedError(PyMobileDevice3Exception):
     pass
 
 
