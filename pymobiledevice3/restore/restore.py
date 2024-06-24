@@ -173,7 +173,7 @@ class Restore(BaseRestore):
             self.logger.info('sending filesystem now...')
             await asr.send_payload(filesystem)
 
-        asr.close()
+        await asr.close()
 
     def get_build_identity_from_request(self, msg):
         return self.get_build_identity(msg['Arguments'].get('IsRecoveryOS', False))
