@@ -18,7 +18,9 @@ class DtFetchSymbols:
 
     def list_files(self) -> typing.List[str]:
         service = self._start_command(self.CMD_LIST_FILES_PLIST)
-        return service.recv_plist().get('files')
+        files = service.recv_plist().get('files')
+        service.close()
+        return files
 
     def get_file(self, fileno: int, stream: typing.IO):
         service = self._start_command(self.CMD_GET_FILE)
@@ -32,6 +34,7 @@ class DtFetchSymbols:
             buf = service.recv(min(size - received, self.MAX_CHUNK))
             stream.write(buf)
             received += len(buf)
+        service.close()
 
     def _start_command(self, cmd: bytes):
         service = self.lockdown.start_lockdown_developer_service(self.SERVICE_NAME)

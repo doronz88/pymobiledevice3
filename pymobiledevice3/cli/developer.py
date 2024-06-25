@@ -707,9 +707,6 @@ def fetch_symbols_list(service_provider: LockdownServiceProvider) -> None:
 
 
 async def fetch_symbols_download_task(service_provider: LockdownServiceProvider, out: str) -> None:
-    if not isinstance(service_provider, RemoteServiceDiscoveryService):
-        raise ArgumentError('service_provider must be a RemoteServiceDiscoveryService for iOS 17+ devices')
-
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -736,6 +733,8 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
                 logger.info(f'writing to: {file}')
                 fetch_symbols.get_file(i, f)
     else:
+        if not isinstance(service_provider, RemoteServiceDiscoveryService):
+            raise ArgumentError('service_provider must be a RemoteServiceDiscoveryService for iOS 17+ devices')
         async with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
             await fetch_symbols.download(out)
 

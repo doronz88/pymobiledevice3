@@ -8,7 +8,7 @@ import coloredlogs
 from pymobiledevice3.exceptions import AccessDeniedError, ConnectionFailedToUsbmuxdError, DeprecationError, \
     DeveloperModeError, DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, DeviceNotFoundError, \
     FeatureNotSupportedError, InternalError, InvalidServiceError, MessageNotSupportedError, MissingValueError, \
-    NoDeviceConnectedError, NoDeviceSelectedError, NotEnoughDiskSpaceError, NotPairedError, OSNotSupportedError, \
+    NoDeviceConnectedError, NotEnoughDiskSpaceError, NotPairedError, OSNotSupportedError, \
     PairingDialogResponsePendingError, PasswordRequiredError, RSDRequiredError, SetProhibitedError, \
     TunneldConnectionError, UserDeniedPairingError
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -144,8 +144,6 @@ def main() -> None:
                 sys.argv += ['--tunnel', e.identifier]
             return main()
         logger.error(INVALID_SERVICE_MESSAGE)
-    except NoDeviceSelectedError:
-        return
     except PasswordRequiredError:
         logger.error('Device is password protected. Please unlock and retry')
     except AccessDeniedError:

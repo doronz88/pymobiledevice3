@@ -293,8 +293,8 @@ pymobiledevice3 backup2 backup --full DIRECTORY
 # Restore a given backup
 pymobiledevice3 backup2 restore DIRECTORY
 
-# Perform a software upate by a given IPSW file:
-pymobiledevice3 restore update /path/to/ipsw
+# Perform a software upate by a given IPSW file/url:
+pymobiledevice3 restore update -i /path/to/ipsw | url
 
 # Note: The following webinspector subcommands will require the Web Inspector feature to be turned on
 

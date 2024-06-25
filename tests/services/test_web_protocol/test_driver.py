@@ -21,7 +21,7 @@ def test_forward(webdriver):
     webdriver.get('https://www.github.com')
     webdriver.back()
     webdriver.forward()
-    assert webdriver.current_url.rstrip('/') == 'https://github.com'
+    assert webdriver.current_url.rstrip('/') == 'https://www.github.com'
 
 
 def test_find_element(webdriver):

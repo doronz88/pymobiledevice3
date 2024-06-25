@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from packaging.version import Version
 
@@ -27,7 +29,8 @@ async def test_fetch_symbols_download(service_provider, tmp_path):
     Test download of device symbol files
     """
     if Version(service_provider.product_version) < Version('17.0'):
-        with tmp_path.open('wb') as file:
+        tmp_file = Path(tmp_path) / 'tmp'
+        with tmp_file.open('wb') as file:
             DtFetchSymbols(service_provider).get_file(0, file)
     else:
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
