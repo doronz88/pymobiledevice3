@@ -88,7 +88,8 @@ def zipfile_ctx(path: str) -> Generator[ZipFile, None, None]:
 class IPSWCommand(Command):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.params.extend([click.Option(('ipsw_ctx', '-i'), required=False, callback=self.ipsw_ctx),
+        self.params.extend([click.Option(('ipsw_ctx', '-i', '--ipsw'), required=False,
+                                         callback=self.ipsw_ctx, help='local IPSW file'),
                             click.Option(('tss', '--tss'), type=click.File('rb'), callback=self.tss)])
 
     @staticmethod
