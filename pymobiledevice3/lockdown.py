@@ -152,10 +152,16 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return f'<{self.__class__.__name__} ID:{self.identifier} VERSION:{self.product_version} ' \
                f'TYPE:{self.product_type} PAIRED:{self.paired}>'
 
-    def __enter__(self):
+    def __enter__(self) -> 'LockdownClient':
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
+    async def __aenter__(self) -> 'LockdownClient':
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
 
     @property
