@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import enum
-import socket
 from typing import Generator, Optional
 
 import pcapng.blocks as blocks
@@ -320,6 +319,12 @@ device_packet_struct = Struct(
 )
 
 
+class CrossPlatformAddressFamily(enum.IntEnum):
+    AF_UNSPEC = 0
+    AF_INET = 2
+    AF_INET6 = 30
+
+
 class PcapdService(LockdownService):
     """
     Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks traffic from
@@ -354,7 +359,7 @@ class PcapdService(LockdownService):
                     continue
 
             packet.interface_type = INTERFACE_NAMES(packet.interface_type)
-            packet.protocol_family = socket.AddressFamily(packet.protocol_family)
+            packet.protocol_family = CrossPlatformAddressFamily(packet.protocol_family)
 
             if not packet.frame_pre_length:
                 # Add fake ethernet header for pdp packets.
