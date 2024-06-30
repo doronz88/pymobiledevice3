@@ -1,3 +1,5 @@
+from typing import IO
+
 import click
 import IPython
 
@@ -59,8 +61,21 @@ def springboard_orientation(service_provider: LockdownClient):
     print(SpringBoardServicesService(lockdown=service_provider).get_interface_orientation())
 
 
-@springboard.command('wallpaper', cls=Command)
+@springboard.command('wallpaper-home-screen', cls=Command)
 @click.argument('out', type=click.File('wb'))
-def springboard_wallpaper(service_provider: LockdownClient, out):
-    """ get wallpapaer """
+def springboard_wallpaper_home_screen(service_provider: LockdownClient, out: IO) -> None:
+    """ get homescreen wallpaper """
     out.write(SpringBoardServicesService(lockdown=service_provider).get_wallpaper_pngdata())
+
+
+@springboard.command('wallpaper-preview-image', cls=Command)
+@click.argument('wallpaper-name', type=click.Choice(['homescreen', 'lockscreen']))
+@click.argument('out', type=click.File('wb'))
+@click.option('-r', '--reload', is_flag=True, help='reload icon state before fetching image')
+def springboard_wallpaper_preview_image(service_provider: LockdownClient, wallpaper_name: str, out: IO,
+                                        reload: bool) -> None:
+    """ get the preview image of either the homescreen or the lockscreen """
+    with SpringBoardServicesService(lockdown=service_provider) as springboard_service:
+        if reload:
+            springboard_service.reload_icon_state()
+        out.write(springboard_service.get_wallpaper_preview_image(wallpaper_name))

@@ -1,5 +1,5 @@
 from enum import IntEnum
-from typing import List, Optional
+from typing import List, Mapping, Optional
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -45,3 +45,16 @@ class SpringBoardServicesService(LockdownService):
 
     def get_wallpaper_pngdata(self) -> bytes:
         return self.service.send_recv_plist({'command': 'getHomeScreenWallpaperPNGData'}).get('pngData')
+
+    def get_homescreen_icon_metrics(self) -> Mapping[str, float]:
+        return self.service.send_recv_plist({'command': 'getHomeScreenIconMetrics'})
+
+    def get_wallpaper_info(self, wallpaper_name: str) -> Mapping:
+        return self.service.send_recv_plist({'command': 'getWallpaperInfo', 'wallpaperName': wallpaper_name})
+
+    def reload_icon_state(self) -> None:
+        self.set_icon_state(self.get_icon_state())
+
+    def get_wallpaper_preview_image(self, wallpaper_name: str) -> bytes:
+        return self.service.send_recv_plist({
+            'command': 'getWallpaperPreviewImage', 'wallpaperName': wallpaper_name})['pngData']
