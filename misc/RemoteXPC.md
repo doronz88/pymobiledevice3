@@ -268,12 +268,12 @@ The client now has a much wider list of services he is able to connect to:
 ```json
 {
     "MessageType": "Handshake",
-    "MessagingProtocolVersion": 3,
+    "MessagingProtocolVersion": 5,
     "Properties": {
         "AppleInternal": false,
         "BoardId": 14,
-        "BootSessionUUID": "6103b8bf-c311-420c-8c00-ddabc6e1413f",
-        "BuildVersion": "21F5058e",
+        "BootSessionUUID": "d5a0aadc-2d73-4baa-928b-a241159584e6",
+        "BuildVersion": "22A5297f",
         "CPUArchitecture": "arm64e",
         "CertificateProductionStatus": true,
         "CertificateSecurityMode": true,
@@ -286,61 +286,61 @@ The client now has a much wider list of services he is able to connect to:
         "EffectiveProductionStatusSEP": true,
         "EffectiveSecurityModeAp": true,
         "EffectiveSecurityModeSEP": true,
-        "EthernetMacAddress": "70:31:7f:e8:27:82",
+        "EthernetMacAddress": "00:11:22:33:44:55",
         "HWModel": "D74AP",
         "HardwarePlatform": "t8120",
         "HasSEP": true,
-        "HumanReadableProductVersionString": "17.5",
+        "HumanReadableProductVersionString": "18.0",
         "Image4CryptoHashMethod": "sha2-384",
         "Image4Supported": true,
         "IsUIBuild": true,
         "IsVirtualDevice": false,
-        "MobileDeviceMinimumVersion": "1600",
+        "MobileDeviceMinimumVersion": "1742",
         "ModelNumber": "MQ9U3",
         "OSInstallEnvironment": false,
-        "OSVersion": "17.5",
+        "OSVersion": "18.0",
         "ProductName": "iPhone OS",
         "ProductType": "iPhone15,3",
         "RegionCode": "HX",
         "RegionInfo": "HX/A",
         "ReleaseType": "Beta",
         "RemoteXPCVersionFlags": 72057594037927942,
-        "RestoreLongVersion": "21.6.58.5.5,0",
+        "RestoreLongVersion": "22.1.297.5.6,0",
         "SecurityDomain": 1,
         "SensitivePropertiesVisible": true,
-        "SerialNumber": "JJKQR65R7V",
+        "SerialNumber": "AABBCCDDEEFF",
         "SigningFuse": true,
         "StoreDemoMode": false,
-        "SupplementalBuildVersion": "21F5058e",
+        "SupplementalBuildVersion": "22A5297f",
         "ThinningProductType": "iPhone15,3",
-        "UniqueChipID": 304410665893918,
-        "UniqueDeviceID": "22222222"
+        "UniqueChipID": 1234,
+        "UniqueDeviceID": "REDACTED"
     },
     "Services": {
         "com.apple.GPUTools.MobileService.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49753",
+            "Port": "49654",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.PurpleReverseProxy.Conn.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49772",
+            "Port": "49620",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.PurpleReverseProxy.Ctrl.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49752",
+            "Port": "49649",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.RestoreRemoteServices.restoreserviced": {
             "Entitlement": "com.apple.private.RestoreRemoteServices.restoreservice.remote",
-            "Port": "49745",
+            "Port": "49597",
             "Properties": {
                 "ServiceVersion": 2,
                 "UsesRemoteXPC": true
@@ -348,112 +348,190 @@ The client now has a much wider list of services he is able to connect to:
         },
         "com.apple.accessibility.axAuditDaemon.remoteserver.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49769",
+            "Port": "49621",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.afc.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49749",
+            "Port": "49615",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.amfi.lockdown.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49785",
+            "Port": "49634",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.atc.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49746",
+            "Port": "49617",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.atc2.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49781",
+            "Port": "49612",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.backgroundassets.lockdownservice.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49757",
+            "Port": "49643",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.bluetooth.BTPacketLogger.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49773",
+            "Port": "49657",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.carkit.remote-iap.service": {
             "Entitlement": "AppleInternal",
-            "Port": "49763",
+            "Port": "49631",
             "Properties": {
                 "UsesRemoteXPC": true
             }
         },
         "com.apple.carkit.service.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49768",
+            "Port": "49625",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.commcenter.mobile-helper-cbupdateservice.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49778",
+            "Port": "49651",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.companion_proxy.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49755",
+            "Port": "49662",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.corecaptured.remoteservice": {
             "Entitlement": "com.apple.corecaptured.remoteservice-access",
-            "Port": "49735",
+            "Port": "49598",
             "Properties": {
+                "UsesRemoteXPC": true
+            }
+        },
+        "com.apple.coredevice.appservice": {
+            "Entitlement": "com.apple.private.CoreDevice.canInstallCustomerContent",
+            "Port": "50056",
+            "Properties": {
+                "Features": [
+                    "com.apple.coredevice.feature.launchapplication",
+                    "com.apple.coredevice.feature.spawnexecutable",
+                    "com.apple.coredevice.feature.monitorprocesstermination",
+                    "com.apple.coredevice.feature.installapp",
+                    "com.apple.coredevice.feature.uninstallapp",
+                    "com.apple.coredevice.feature.listroots",
+                    "com.apple.coredevice.feature.installroot",
+                    "com.apple.coredevice.feature.uninstallroot",
+                    "com.apple.coredevice.feature.sendsignaltoprocess",
+                    "com.apple.coredevice.feature.sendmemorywarningtoprocess",
+                    "com.apple.coredevice.feature.listprocesses",
+                    "com.apple.coredevice.feature.rebootdevice",
+                    "com.apple.coredevice.feature.listapps",
+                    "com.apple.coredevice.feature.fetchappicons"
+                ],
+                "ServiceVersion": 1,
+                "UsesRemoteXPC": true
+            }
+        },
+        "com.apple.coredevice.deviceinfo": {
+            "Entitlement": "com.apple.private.CoreDevice.canRetrieveDeviceInfo",
+            "Port": "50054",
+            "Properties": {
+                "Features": [
+                    "com.apple.coredevice.feature.getdisplayinfo",
+                    "com.apple.coredevice.feature.getdeviceinfo",
+                    "com.apple.coredevice.feature.querymobilegestalt",
+                    "com.apple.coredevice.feature.getlockstate"
+                ],
+                "ServiceVersion": 1,
+                "UsesRemoteXPC": true
+            }
+        },
+        "com.apple.coredevice.diagnosticsservice": {
+            "Entitlement": "com.apple.private.CoreDevice.canObtainDiagnostics",
+            "Port": "50063",
+            "Properties": {
+                "Features": [
+                    "com.apple.coredevice.feature.capturesysdiagnose"
+                ],
+                "ServiceVersion": 1,
+                "UsesRemoteXPC": true
+            }
+        },
+        "com.apple.coredevice.fileservice.control": {
+            "Entitlement": "com.apple.private.CoreDevice.canTransferFilesToDevice",
+            "Port": "50057",
+            "Properties": {
+                "Features": [
+                    "com.apple.coredevice.feature.transferFiles"
+                ],
+                "ServiceVersion": 1,
+                "UsesRemoteXPC": true
+            }
+        },
+        "com.apple.coredevice.fileservice.data": {
+            "Entitlement": "com.apple.private.CoreDevice.canTransferFilesToDevice",
+            "Port": "50058",
+            "Properties": {
+                "Features": [],
+                "ServiceVersion": 1,
+                "UsesRemoteXPC": true
+            }
+        },
+        "com.apple.coredevice.openstdiosocket": {
+            "Entitlement": "com.apple.private.CoreDevice.canInstallCustomerContent",
+            "Port": "50055",
+            "Properties": {
+                "Features": [],
+                "ServiceVersion": 1,
                 "UsesRemoteXPC": true
             }
         },
         "com.apple.crashreportcopymobile.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49776",
+            "Port": "49653",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.crashreportmover.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49782",
+            "Port": "49613",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.dt.ViewHierarchyAgent.remote": {
             "Entitlement": "com.apple.private.dt.ViewHierarchyAgent.client",
-            "Port": "49728",
+            "Port": "49628",
             "Properties": {
                 "UsesRemoteXPC": true
             }
         },
         "com.apple.dt.remoteFetchSymbols": {
             "Entitlement": "com.apple.private.dt.remoteFetchSymbols.client",
-            "Port": "49734",
+            "Port": "49632",
             "Properties": {
                 "Features": [
                     "com.apple.dt.remoteFetchSymbols.dyldSharedCacheFiles"
@@ -464,14 +542,36 @@ The client now has a much wider list of services he is able to connect to:
         },
         "com.apple.dt.remotepairingdeviced.lockdown.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49738",
+            "Port": "49624",
+            "Properties": {
+                "UsesRemoteXPC": false
+            }
+        },
+        "com.apple.dt.testmanagerd.remote": {
+            "Entitlement": "com.apple.private.dt.testmanagerd.client",
+            "Port": "50061",
+            "Properties": {
+                "UsesRemoteXPC": false
+            }
+        },
+        "com.apple.dt.testmanagerd.remote.automation": {
+            "Entitlement": "AppleInternal",
+            "Port": "50062",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.fusion.remote.service": {
             "Entitlement": "com.apple.fusion.remote.service",
-            "Port": "49730",
+            "Port": "49600",
+            "Properties": {
+                "ServiceVersion": 1,
+                "UsesRemoteXPC": true
+            }
+        },
+        "com.apple.gputools.remote.agent": {
+            "Entitlement": "com.apple.private.gputoolstransportd",
+            "Port": "50059",
             "Properties": {
                 "ServiceVersion": 1,
                 "UsesRemoteXPC": true
@@ -479,14 +579,14 @@ The client now has a much wider list of services he is able to connect to:
         },
         "com.apple.idamd.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49786",
+            "Port": "49642",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.instruments.dtservicehub": {
             "Entitlement": "com.apple.private.dt.instruments.dtservicehub.client",
-            "Port": "49783",
+            "Port": "49664",
             "Properties": {
                 "Features": [
                     "com.apple.dt.profile"
@@ -496,7 +596,7 @@ The client now has a much wider list of services he is able to connect to:
         },
         "com.apple.internal.devicecompute.CoreDeviceProxy": {
             "Entitlement": "AppleInternal",
-            "Port": "49759",
+            "Port": "49633",
             "Properties": {
                 "ServiceVersion": 1,
                 "UsesRemoteXPC": false
@@ -504,78 +604,89 @@ The client now has a much wider list of services he is able to connect to:
         },
         "com.apple.internal.devicecompute.CoreDeviceProxy.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49779",
+            "Port": "49610",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.internal.dt.coredevice.untrusted.tunnelservice": {
             "Entitlement": "com.apple.dt.coredevice.tunnelservice.client",
-            "Port": "49729",
+            "Port": "49599",
             "Properties": {
                 "ServiceVersion": 2,
                 "UsesRemoteXPC": true
             }
         },
+        "com.apple.internal.dt.remote.debugproxy": {
+            "Entitlement": "com.apple.private.CoreDevice.canDebugApplicationsOnDevice",
+            "Port": "50060",
+            "Properties": {
+                "Features": [
+                    "com.apple.coredevice.feature.debugserverproxy"
+                ],
+                "ServiceVersion": 1,
+                "UsesRemoteXPC": true
+            }
+        },
         "com.apple.iosdiagnostics.relay.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49751",
+            "Port": "49648",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.misagent.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49775",
+            "Port": "49616",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobile.MCInstall.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49748",
+            "Port": "49652",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobile.assertion_agent.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49771",
+            "Port": "49623",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobile.diagnostics_relay.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49741",
+            "Port": "49659",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobile.file_relay.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49780",
+            "Port": "49611",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobile.heartbeat.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49736",
+            "Port": "49663",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobile.house_arrest.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49767",
+            "Port": "49660",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobile.insecure_notification_proxy.remote": {
             "Entitlement": "com.apple.mobile.insecure_notification_proxy.remote",
-            "Port": "49731",
+            "Port": "49602",
             "Properties": {
                 "ServiceVersion": 1,
                 "UsesRemoteXPC": true
@@ -583,21 +694,21 @@ The client now has a much wider list of services he is able to connect to:
         },
         "com.apple.mobile.insecure_notification_proxy.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.untrusted",
-            "Port": "49770",
+            "Port": "49622",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobile.installation_proxy.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49742",
+            "Port": "49656",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobile.lockdown.remote.trusted": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49732",
+            "Port": "49603",
             "Properties": {
                 "ServiceVersion": 1,
                 "UsesRemoteXPC": false
@@ -605,7 +716,7 @@ The client now has a much wider list of services he is able to connect to:
         },
         "com.apple.mobile.lockdown.remote.untrusted": {
             "Entitlement": "com.apple.mobile.lockdown.remote.untrusted",
-            "Port": "49761",
+            "Port": "49636",
             "Properties": {
                 "ServiceVersion": 1,
                 "UsesRemoteXPC": false
@@ -613,14 +724,14 @@ The client now has a much wider list of services he is able to connect to:
         },
         "com.apple.mobile.mobile_image_mounter.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49743",
+            "Port": "49655",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobile.notification_proxy.remote": {
             "Entitlement": "com.apple.mobile.notification_proxy.remote",
-            "Port": "49762",
+            "Port": "49637",
             "Properties": {
                 "ServiceVersion": 1,
                 "UsesRemoteXPC": true
@@ -628,14 +739,14 @@ The client now has a much wider list of services he is able to connect to:
         },
         "com.apple.mobile.notification_proxy.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49765",
+            "Port": "49601",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobile.storage_mounter_proxy.bridge": {
             "Entitlement": "com.apple.private.mobile_storage.remote.allowedSPI",
-            "Port": "49733",
+            "Port": "49604",
             "Properties": {
                 "ServiceVersion": 1,
                 "UsesRemoteXPC": true
@@ -643,63 +754,63 @@ The client now has a much wider list of services he is able to connect to:
         },
         "com.apple.mobileactivationd.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49739",
+            "Port": "49661",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobilebackup2.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49774",
+            "Port": "49618",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.mobilesync.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49740",
+            "Port": "49658",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.os_trace_relay.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49784",
+            "Port": "49646",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.osanalytics.logTransfer": {
             "Entitlement": "com.apple.ReportCrash.antenna-access",
-            "Port": "49764",
+            "Port": "49665",
             "Properties": {
                 "UsesRemoteXPC": true
             }
         },
         "com.apple.pcapd.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49777",
+            "Port": "49614",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.preboardservice.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49737",
+            "Port": "49627",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.preboardservice_v2.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49744",
+            "Port": "49619",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.remote.installcoordination_proxy": {
             "Entitlement": "com.apple.private.InstallCoordinationRemote",
-            "Port": "49760",
+            "Port": "49635",
             "Properties": {
                 "ServiceVersion": 1,
                 "UsesRemoteXPC": true
@@ -707,61 +818,62 @@ The client now has a much wider list of services he is able to connect to:
         },
         "com.apple.security.cryptexd.remote": {
             "Entitlement": "com.apple.private.security.cryptexd.remote",
-            "Port": "49758",
+            "Port": "49630",
             "Properties": {
                 "Features": [
                     "CryptexInstall",
                     "Cryptex1",
-                    "ReadIdentifiers"
+                    "ReadIdentifiers",
+                    "Cryptex1,UseProductClass"
                 ],
-                "ServiceVersion": 2,
+                "ServiceVersion": 3,
                 "UsesRemoteXPC": true
             }
         },
         "com.apple.springboardservices.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49750",
+            "Port": "49647",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.streaming_zip_conduit.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49756",
+            "Port": "49609",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.sysdiagnose.remote": {
             "Entitlement": "com.apple.private.sysdiagnose.remote",
-            "Port": "49727",
+            "Port": "49629",
             "Properties": {
                 "UsesRemoteXPC": true
             }
         },
         "com.apple.sysdiagnose.remote.trusted": {
             "Entitlement": "com.apple.prviate.sysdiagnose.remote.trusted",
-            "Port": "49754",
+            "Port": "49666",
             "Properties": {
                 "UsesRemoteXPC": true
             }
         },
         "com.apple.syslog_relay.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49747",
+            "Port": "49650",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         },
         "com.apple.webinspector.shim.remote": {
             "Entitlement": "com.apple.mobile.lockdown.remote.trusted",
-            "Port": "49766",
+            "Port": "49626",
             "Properties": {
                 "UsesRemoteXPC": false
             }
         }
     },
-    "UUID": "ae9b9589-5a05-4556-924b-54d98bf7f710"
+    "UUID": "3f7b38f5-ddaa-43a4-b168-2429406210a3"
 }
 ```
 
