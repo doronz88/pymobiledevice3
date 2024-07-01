@@ -33,6 +33,12 @@ class RestoreService(RemoteService):
         """ Get ApNonce and SEPNonce """
         return await self.service.send_receive_request({'command': 'getnonces'})
 
+    async def get_app_parameters(self) -> Mapping:
+        return await self.validate_command('getappparameters')
+
+    async def restore_lang(self, language: str) -> Mapping:
+        return await self.service.send_receive_request({'command': 'restorelang', 'argument': language})
+
     async def validate_command(self, command: str) -> Mapping:
         """ Execute command and validate result is `success` """
         response = await self.service.send_receive_request({'command': command})
