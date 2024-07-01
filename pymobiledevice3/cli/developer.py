@@ -11,7 +11,7 @@ from collections import namedtuple
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import IO, List, Optional, Tuple
 
 import click
 from click.exceptions import MissingParameter, UsageError
@@ -28,6 +28,7 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
+from pymobiledevice3.remote.core_device.file_service import APPLE_DOMAIN_DICT, FileServiceService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
@@ -53,6 +54,7 @@ from pymobiledevice3.services.remote_server import RemoteServer
 from pymobiledevice3.services.screenshot import ScreenshotService
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
 from pymobiledevice3.tcp_forwarder import LockdownTcpForwarder
+from pymobiledevice3.utils import try_decode
 
 OSUTILS = get_os_utils()
 BSC_SUBCLASS = 0x40c
@@ -1046,6 +1048,41 @@ def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, 
 def core_device() -> None:
     """ core-device options """
     pass
+
+
+async def core_device_list_directory_task(
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str) -> None:
+    async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain]) as file_service:
+        print_json(await file_service.retrieve_directory_list(path))
+
+
+@core_device.command('list-directory', cls=RSDCommand)
+@click.argument('domain', type=click.Choice(APPLE_DOMAIN_DICT.keys()))
+@click.argument('path')
+def core_device_list_directory(
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str) -> None:
+    """ List directory at given domain-path """
+    asyncio.run(core_device_list_directory_task(service_provider, domain, path))
+
+
+async def core_device_read_file_task(
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, output: Optional[IO]) -> None:
+    async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain]) as file_service:
+        buf = await file_service.retrieve_file(path)
+        if output is not None:
+            output.write(buf)
+        else:
+            print(try_decode(buf))
+
+
+@core_device.command('read-file', cls=RSDCommand)
+@click.argument('domain', type=click.Choice(APPLE_DOMAIN_DICT.keys()))
+@click.argument('path')
+@click.option('-o', '--output', type=click.File('wb'))
+def core_device_read_file(
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, output: Optional[IO]) -> None:
+    """ Read file from given domain-path """
+    asyncio.run(core_device_read_file_task(service_provider, domain, path, output))
 
 
 async def core_device_list_launch_application_task(
