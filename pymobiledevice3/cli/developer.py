@@ -696,7 +696,7 @@ async def fetch_symbols_list_task(service_provider: LockdownServiceProvider) -> 
         print_json(DtFetchSymbols(service_provider).list_files())
     else:
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
-            raise ArgumentError('service_provider must be a RemoteServiceDiscoveryService for iOS 17+ devices')
+            raise RSDRequiredError(service_provider.identifier)
 
         async with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
             print_json([f.file_path for f in await fetch_symbols.get_dsc_file_list()])
@@ -736,7 +736,7 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
                 fetch_symbols.get_file(i, f)
     else:
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
-            raise ArgumentError('service_provider must be a RemoteServiceDiscoveryService for iOS 17+ devices')
+            raise RSDRequiredError(service_provider.identifier)
         async with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
             await fetch_symbols.download(out)
 
