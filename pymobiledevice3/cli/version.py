@@ -2,14 +2,13 @@ import click
 
 
 @click.group()
-def cli():
-    """ version cli """
+def cli() -> None:
     pass
 
 
 @cli.command()
-def version():
-    """ get installed package version """
+def version() -> None:
+    """ Query pymobiledevice3 version """
     try:
         from pymobiledevice3._version import __version__
         print(__version__)

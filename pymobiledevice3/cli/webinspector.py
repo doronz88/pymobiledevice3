@@ -65,14 +65,13 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-def cli():
-    """ webinspector cli """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def webinspector():
-    """ webinspector options """
+def webinspector() -> None:
+    """ Access webinspector services """
     pass
 
 

@@ -21,8 +21,8 @@ from pykdebugparser.pykdebugparser import PyKdebugParser
 import pymobiledevice3
 from pymobiledevice3.cli.cli_common import BASED_INT, Command, RSDCommand, default_json_encoder, print_json, \
     user_requested_colored_output
-from pymobiledevice3.exceptions import ArgumentError, DeviceAlreadyInUseError, DvtDirListError, \
-    ExtractingStackshotError, RSDRequiredError, UnrecognizedSelectorError
+from pymobiledevice3.exceptions import DeviceAlreadyInUseError, DvtDirListError, ExtractingStackshotError, \
+    RSDRequiredError, UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -76,15 +76,14 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-def cli():
-    """ developer cli """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def developer():
+def developer() -> None:
     """
-    developer options.
+    Perform developer operations
 
     These options require the DeveloperDiskImage.dmg to be mounted on the device prior
     to execution. You can achieve this using:
@@ -102,20 +101,20 @@ def developer():
 @click.argument('service')
 @click.option('-r', '--remove-ssl-context', is_flag=True)
 def developer_shell(service_provider: LockdownClient, service, remove_ssl_context):
-    """ Launch developer shell. """
+    """ Launch developer IPython shell """
     with RemoteServer(service_provider, service, remove_ssl_context) as service:
         service.shell()
 
 
 @developer.group()
-def dvt():
-    """ dvt operations """
+def dvt() -> None:
+    """ Access advanced instrumentation APIs """
     pass
 
 
 @dvt.command('proclist', cls=Command)
 def proclist(service_provider: LockdownClient):
-    """ show process list """
+    """ Show process list """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         processes = DeviceInfo(dvt).proclist()
         for process in processes:
@@ -127,7 +126,7 @@ def proclist(service_provider: LockdownClient):
 
 @dvt.command('applist', cls=Command)
 def applist(service_provider: LockdownServiceProvider) -> None:
-    """ show application list """
+    """ Show application list """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         apps = ApplicationListing(dvt).applist()
         print_json(apps)

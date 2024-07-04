@@ -14,13 +14,12 @@ Use `service` to access the service features
 
 @click.group()
 def cli():
-    """ apps cli """
     pass
 
 
 @cli.group()
 def springboard():
-    """ springboard options """
+    """ Access device UI """
     pass
 
 

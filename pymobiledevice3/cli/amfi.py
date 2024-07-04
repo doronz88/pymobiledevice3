@@ -10,14 +10,13 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-def cli():
-    """ amfi cli """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def amfi():
-    """ amfi options """
+def amfi() -> None:
+    """ Enable/Disable developer-mode or query its state """
     pass
 
 

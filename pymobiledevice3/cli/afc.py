@@ -7,14 +7,13 @@ from pymobiledevice3.services.afc import AfcService, AfcShell
 
 
 @click.group()
-def cli():
-    """ apps cli """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def afc():
-    """ FileSystem utils """
+def afc() -> None:
+    """ Manage device multimedia files """
     pass
 
 

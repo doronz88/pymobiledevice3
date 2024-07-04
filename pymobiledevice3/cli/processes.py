@@ -10,14 +10,13 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-def cli():
-    """ apps cli """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def processes():
-    """ processes cli """
+def processes() -> None:
+    """ View process list using diagnosticsd API """
     pass
 
 

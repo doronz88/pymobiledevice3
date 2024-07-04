@@ -139,14 +139,13 @@ async def restore_update_task(device: Device, ipsw: ZipFile, tss: Optional[IO], 
 
 
 @click.group()
-def cli():
-    """ cli """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def restore():
-    """ restore options """
+def restore() -> None:
+    """ Restore an IPSW or access device in recovery mode """
     pass
 
 

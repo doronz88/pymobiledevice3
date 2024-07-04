@@ -12,14 +12,13 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-def cli():
-    """ usbmuxd cli """
+def cli() -> None:
     pass
 
 
 @cli.group('usbmux')
-def usbmux_cli():
-    """ usbmuxd options """
+def usbmux_cli() -> None:
+    """ List devices or forward a TCP port """
     pass
 
 

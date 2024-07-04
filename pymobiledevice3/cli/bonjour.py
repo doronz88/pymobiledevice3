@@ -11,14 +11,13 @@ from pymobiledevice3.lockdown import get_mobdev2_lockdowns
 
 
 @click.group()
-def cli():
-    """ bonjour cli """
+def cli() -> None:
     pass
 
 
 @cli.group('bonjour')
-def bonjour_cli():
-    """ bonjour options """
+def bonjour_cli() -> None:
+    """ Browse devices over bonjour """
     pass
 
 

@@ -53,14 +53,13 @@ async def cli_browse(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> None:
 
 
 @click.group()
-def cli():
-    """ remote cli """
+def cli() -> None:
     pass
 
 
 @cli.group('remote')
-def remote_cli():
-    """ remote options """
+def remote_cli() -> None:
+    """ Create RemoteXPC tunnels """
     pass
 
 

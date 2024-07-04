@@ -17,14 +17,13 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-def cli():
-    """ backup cli """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def backup2():
-    """ backup utils """
+def backup2() -> None:
+    """ Backup/Restore options """
     pass
 
 

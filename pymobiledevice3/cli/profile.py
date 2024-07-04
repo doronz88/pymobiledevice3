@@ -10,14 +10,13 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-def cli():
-    """ apps cli """
+def cli() -> None:
     pass
 
 
 @cli.group('profile')
-def profile_group():
-    """ profile options """
+def profile_group() -> None:
+    """ Managed installed profiles or install SSL certificates """
     pass
 
 

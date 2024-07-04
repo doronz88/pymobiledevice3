@@ -92,6 +92,12 @@ class Pmd3Cli(click.Group):
 
 @click.command(cls=Pmd3Cli, context_settings=CONTEXT_SETTINGS)
 def cli():
+    """
+    \b
+    Interact with a connected iDevice (iPhone, iPad, ...)
+    For more information please look at:
+        https://github.com/doronz88/pymobiledevice3
+    """
     pass
 
 

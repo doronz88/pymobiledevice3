@@ -6,14 +6,13 @@ from pymobiledevice3.services.companion import CompanionProxyService
 
 
 @click.group()
-def cli():
-    """ companion cli """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def companion():
-    """ companion options """
+def companion() -> None:
+    """ List paired "companion" devices """
     pass
 
 

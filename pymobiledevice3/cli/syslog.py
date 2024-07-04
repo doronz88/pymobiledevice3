@@ -16,14 +16,13 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-def cli():
-    """ syslog cli """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def syslog():
-    """ syslog options """
+def syslog() -> None:
+    """ Watch syslog messages """
     pass
 
 
