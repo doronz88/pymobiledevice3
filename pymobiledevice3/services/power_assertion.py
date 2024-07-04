@@ -18,6 +18,7 @@ class PowerAssertionService(LockdownService):
 
     @contextlib.contextmanager
     def create_power_assertion(self, type_: str, name: str, timeout: float, details: str = None):
+        """ Trigger IOPMAssertionCreateWithName """
         msg = {
             'CommandKey': 'CommandCreateAssertion',
             'AssertionTypeKey': type_,

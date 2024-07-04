@@ -16,14 +16,13 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-def cli():
-    """ apps cli """
+def cli() -> None:
     pass
 
 
 @cli.group('lockdown')
-def lockdown_group():
-    """ lockdown options """
+def lockdown_group() -> None:
+    """ Pair/Unpair device or access other lockdown services """
     pass
 
 

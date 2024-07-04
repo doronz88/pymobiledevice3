@@ -10,14 +10,13 @@ from pymobiledevice3.services.installation_proxy import InstallationProxyService
 
 
 @click.group()
-def cli():
-    """ apps cli """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def apps():
-    """ application options """
+def apps() -> None:
+    """ Manage installed applications """
     pass
 
 

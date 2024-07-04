@@ -11,14 +11,13 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-def cli():
-    """ notification options """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def notification():
-    """ notification options """
+def notification() -> None:
+    """ Post/Observe notifications """
     pass
 
 

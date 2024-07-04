@@ -30,14 +30,13 @@ def catch_errors(func):
 
 
 @click.group()
-def cli():
-    """ mounter cli """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def mounter():
-    """ mounter options """
+def mounter() -> None:
+    """ Mount/Umount DeveloperDiskImage or query related info """
     pass
 
 

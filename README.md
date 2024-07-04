@@ -139,37 +139,41 @@ subcommand. This also means that every feature which isn't there won't require i
 This is the main CLI usage:
 
 ```
-Usage: python -m pymobiledevice3 [OPTIONS] COMMAND [ARGS]...
+Usage: pymobiledevice3 [OPTIONS] COMMAND [ARGS]...
+
+  Interact with a connected iDevice (iPhone, iPad, ...)
+  For more information please look at:
+      https://github.com/doronz88/pymobiledevice3
 
 Options:
   -h, --help  Show this message and exit.
 
 Commands:
-  activation       activation options
-  afc              FileSystem utils
-  amfi             amfi options
-  apps             application options
-  backup2          backup utils
-  bonjour          bonjour options
-  companion        companion options
-  crash            crash report options
-  developer        developer options.
-  diagnostics      diagnostics options
-  lockdown         lockdown options
-  mounter          mounter options
-  notification     notification options
-  pcap             sniff device traffic
-  power-assertion  Create a power assertion (wraps...
-  processes        processes cli
-  profile          profile options
-  provision        provision options
-  remote           remote options
-  restore          restore options
-  springboard      springboard options
-  syslog           syslog options
-  usbmux           usbmuxd options
-  webinspector     webinspector options
-  version          get installed package version
+  activation       Perform iCloud activate/deactivation or query the state
+  afc              Manage device multimedia files
+  amfi             Enable/Disable developer-mode or query its state
+  apps             Manage installed applications
+  backup2          Backup/Restore options
+  bonjour          Browse devices over bonjour
+  companion        List paired "companion" devices
+  crash            Manage crash reports
+  developer        Perform developer operations
+  diagnostics      Reboot/Shutdown device or diagnostics services
+  lockdown         Pair/Unpair device or access other lockdown services
+  mounter          Mount/Umount DeveloperDiskImage or query related info
+  notification     Post/Observe notifications
+  pcap             Sniff device traffic
+  power-assertion  Create a power assertion
+  processes        View process list using diagnosticsd API
+  profile          Managed installed profiles or install SSL certificates
+  provision        Manage installed provision profiles
+  remote           Create RemoteXPC tunnels
+  restore          Restore an IPSW or access device in recovery mode
+  springboard      Access device UI
+  syslog           Watch syslog messages
+  usbmux           List devices or forward a TCP port
+  webinspector     Access webinspector services
+  version          Query pymobiledevice3 version
 ```
 
 ### Working with developer tools (iOS >= 17.0)

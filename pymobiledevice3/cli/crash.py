@@ -6,14 +6,13 @@ from pymobiledevice3.services.crash_reports import CrashReportsManager, CrashRep
 
 
 @click.group()
-def cli():
-    """ crash cli """
+def cli() -> None:
     pass
 
 
 @cli.group()
-def crash():
-    """ crash report options """
+def crash() -> None:
+    """ Manage crash reports """
     pass
 
 
