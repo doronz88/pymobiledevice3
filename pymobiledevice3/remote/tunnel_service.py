@@ -44,7 +44,7 @@ from qh3.quic.connection import QuicConnection
 from qh3.quic.events import ConnectionTerminated, DatagramFrameReceived, QuicEvent, StreamDataReceived
 from srptools import SRPClientSession, SRPContext
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
-from scapy.all import IP, IPv6, UDP, TCP, ICMP, ICMPv6EchoRequest, ICMPv6EchoReply, Raw
+from scapy.all import IP, IPv6, UDP, TCP, ICMP, ICMPv6EchoRequest, ICMPv6EchoReply, Raw, fragment
 
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -75,6 +75,7 @@ LOOPBACK_HEADER4, LOOPBACK_HEADER6 = OSUTIL.loopback_header
 logger = logging.getLogger(__name__)
 
 IPV6_HEADER_SIZE = 40
+IPV4_HEADER_SIZE = 4*15 # this is the max size of an IPv4 header
 UDP_HEADER_SIZE = 8
 
 # The iOS device uses an MTU of 1500, so we'll have to increase the default QUIC MTU
@@ -163,8 +164,8 @@ class RemotePairingTunnel(ABC):
                 async with aiofiles.open(self.tun.fileno(), 'rb', opener=lambda path, flags: path, buffering=0) as f:
                     while True:
                         packet = await f.read(read_size)
-                        packet = self.fix_host_to_device(packet)
-                        if packet is not None:
+                        packets = self.fix_host_to_device(packet)
+                        for packet in packets:
                             await self.send_packet_to_device(packet)
             else:
                 while True:
@@ -176,7 +177,7 @@ class RemotePairingTunnel(ABC):
         except OSError:
             self._logger.warning(f'got oserror in {asyncio.current_task().get_name()}')
 
-    def fix_host_to_device(self, packet) -> Optional[bytes]:
+    def fix_host_to_device(self, packet) -> list:
         if packet.startswith(LOOPBACK_HEADER4):
             assert self.ipv4_pair is not None
             parsed_packet = IP(packet[len(LOOPBACK_HEADER4):])
@@ -204,16 +205,16 @@ class RemotePairingTunnel(ABC):
                 new_packet = IPv6()
                 new_packet.src = self.address_pair[0]
                 new_packet.dst = self.address_pair[1]
-                new_packet.fl = 84398
-                return bytes(new_packet/data)
+                return [bytes(new_packet/data)]
         else:
             assert packet.startswith(LOOPBACK_HEADER6)
             packet = packet[len(LOOPBACK_HEADER6):]
-            return packet
+            return [packet]
+        return []
 
-    def fix_device_to_host(self, packet) -> Optional[bytes]:
+    def fix_device_to_host(self, packet) -> list:
         if self.ipv4_pair is None:
-            return LOOPBACK_HEADER6 + packet
+            return [LOOPBACK_HEADER6 + packet]
         else:
             parsed_packet = IPv6(packet)
             data = None
@@ -238,7 +239,12 @@ class RemotePairingTunnel(ABC):
                 new_packet = IP()
                 new_packet.src = self.ipv4_pair[1]
                 new_packet.dst = self.ipv4_pair[0]
-                return LOOPBACK_HEADER4 + bytes(new_packet/data)
+                new_packet.id = self.ipv4_pktid
+                self.ipv4_pktid = (self.ipv4_pktid + 1) & 0xffff
+                frags = fragment(new_packet/data, self.tun.mtu - IPV4_HEADER_SIZE - len(LOOPBACK_HEADER4))
+                frags = [LOOPBACK_HEADER4 + bytes(frag) for frag in frags]
+                return frags
+        return []
 
     def start_tunnel(self, address_pair: tuple, mtu: int, ipv4_pair: Optional[[str,str]]=None) -> None:
         if ipv4_pair is None:
@@ -249,7 +255,8 @@ class RemotePairingTunnel(ABC):
             self.tun = TunTapDevice(ipv4=True)
             self.tun.addr = ipv4_pair[0]
             self.tun.dstaddr = ipv4_pair[1]
-            self.tun.mtu = mtu - 20
+            self.ipv4_pktid = 1
+            self.tun.mtu = mtu - IPV4_HEADER_SIZE + IPV6_HEADER_SIZE
         self.tun.up()
         self.address_pair = address_pair
         self.ipv4_pair = ipv4_pair
@@ -319,8 +326,8 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
         elif isinstance(event, StreamDataReceived):
             self._queue.put_nowait(json.loads(CDTunnelPacket.parse(event.data).body))
         elif isinstance(event, DatagramFrameReceived):
-            packet = self.fix_device_to_host(event.data)
-            if packet is not None:
+            packets = self.fix_device_to_host(event.data)
+            for packet in packets:
                 self.tun.write(packet)
 
     @staticmethod
@@ -349,8 +356,8 @@ class RemotePairingTcpTunnel(RemotePairingTunnel):
                     ipv6_header = await self._reader.readexactly(IPV6_HEADER_SIZE)
                     ipv6_length = struct.unpack('>H', ipv6_header[4:6])[0]
                     ipv6_body = await self._reader.readexactly(ipv6_length)
-                    packet = self.fix_device_to_host(ipv6_header + ipv6_body)
-                    if packet is not None:
+                    packets = self.fix_device_to_host(ipv6_header + ipv6_body)
+                    for packet in packets:
                         self.tun.write(packet)
                 except asyncio.exceptions.IncompleteReadError:
                     await asyncio.sleep(1)
