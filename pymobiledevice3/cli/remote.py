@@ -73,16 +73,18 @@ def remote_cli() -> None:
 @click.option('--wifi/--no-wifi', default=True, help='Enable wifi monitoring')
 @click.option('--usbmux/--no-usbmux', default=True, help='Enable usbmux monitoring')
 @click.option('--mobdev2/--no-mobdev2', default=True, help='Enable mobdev2 monitoring')
+@click.option('--ipv4', default=None, type=(str,str),
+              help='Use IPv4 pair addresses for the tun device (VERY SLOW! this is for hosts that has no IPv6 support)')
 @sudo_required
 def cli_tunneld(
         host: str, port: int, daemonize: bool, protocol: str, usb: bool, wifi: bool, usbmux: bool,
-        mobdev2: bool) -> None:
+        mobdev2: bool, ipv4: Optional[[str,str]]) -> None:
     """ Start Tunneld service for remote tunneling """
     if not verify_tunnel_imports():
         return
     protocol = TunnelProtocol(protocol)
     tunneld_runner = partial(TunneldRunner.create, host, port, protocol=protocol, usb_monitor=usb, wifi_monitor=wifi,
-                             usbmux_monitor=usbmux, mobdev2_monitor=mobdev2)
+                             usbmux_monitor=usbmux, mobdev2_monitor=mobdev2, ipv4_pair=ipv4)
     if daemonize:
         try:
             from daemonize import Daemonize

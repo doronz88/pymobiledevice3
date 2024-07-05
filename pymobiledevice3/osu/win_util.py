@@ -33,8 +33,8 @@ class Win32(OsUtils):
         return 2
 
     @property
-    def loopback_header(self) -> bytes:
-        return b'\x00\x00\x86\xdd'
+    def loopback_header(self) -> (bytes, bytes):
+        return b'\x00\x00\x08\x00', b'\x00\x00\x86\xdd'
 
     @property
     def access_denied_error(self) -> str:

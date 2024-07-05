@@ -49,7 +49,7 @@ class OsUtils:
         raise FeatureNotSupportedError(self._os_name, inspect.currentframe().f_code.co_name)
 
     @property
-    def loopback_header(self) -> bytes:
+    def loopback_header(self) -> (bytes, bytes):
         raise FeatureNotSupportedError(self._os_name, inspect.currentframe().f_code.co_name)
 
     @property

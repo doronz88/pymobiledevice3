@@ -44,6 +44,7 @@ from qh3.quic.connection import QuicConnection
 from qh3.quic.events import ConnectionTerminated, DatagramFrameReceived, QuicEvent, StreamDataReceived
 from srptools import SRPClientSession, SRPContext
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
+from scapy.all import IP, IPv6, UDP, TCP, ICMP, ICMPv6EchoRequest, ICMPv6EchoReply, Raw
 
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -70,7 +71,7 @@ from pymobiledevice3.utils import asyncio_print_traceback
 TIMEOUT = 1
 
 OSUTIL = get_os_utils()
-LOOPBACK_HEADER = OSUTIL.loopback_header
+LOOPBACK_HEADER4, LOOPBACK_HEADER6 = OSUTIL.loopback_header
 logger = logging.getLogger(__name__)
 
 IPV6_HEADER_SIZE = 40
@@ -156,15 +157,15 @@ class RemotePairingTunnel(ABC):
 
     @asyncio_print_traceback
     async def tun_read_task(self) -> None:
-        read_size = self.tun.mtu + len(LOOPBACK_HEADER)
+        read_size = self.tun.mtu + len(LOOPBACK_HEADER6)
         try:
             if sys.platform != 'win32':
                 async with aiofiles.open(self.tun.fileno(), 'rb', opener=lambda path, flags: path, buffering=0) as f:
                     while True:
                         packet = await f.read(read_size)
-                        assert packet.startswith(LOOPBACK_HEADER)
-                        packet = packet[len(LOOPBACK_HEADER):]
-                        await self.send_packet_to_device(packet)
+                        packet = self.fix_host_to_device(packet)
+                        if packet is not None:
+                            await self.send_packet_to_device(packet)
             else:
                 while True:
                     packet = await asyncio.get_running_loop().run_in_executor(None, self.tun.read)
@@ -175,12 +176,84 @@ class RemotePairingTunnel(ABC):
         except OSError:
             self._logger.warning(f'got oserror in {asyncio.current_task().get_name()}')
 
-    def start_tunnel(self, address: str, mtu: int) -> None:
-        self.tun = TunTapDevice()
-        self.tun.addr = address
-        self.tun.mtu = mtu
+    def fix_host_to_device(self, packet) -> Optional[bytes]:
+        if packet.startswith(LOOPBACK_HEADER4):
+            assert self.ipv4_pair is not None
+            parsed_packet = IP(packet[len(LOOPBACK_HEADER4):])
+            data = None
+            if isinstance(parsed_packet[1], ICMP):
+                if parsed_packet[1].type == 0 or \
+                   parsed_packet[1].type == 8:
+                    if parsed_packet[1].type == 0:
+                        data = ICMPv6EchoRequest()
+                        data.type = 129
+                    else:
+                        data = ICMPv6EchoReply()
+                        data.type = 128
+                    data.id = parsed_packet[1].id
+                    data.seq = parsed_packet[1].seq
+                    data.data = parsed_packet[2]
+            elif isinstance(parsed_packet[1], TCP) or \
+                 isinstance(parsed_packet[1], UDP):
+                data = parsed_packet[1]
+                del(data.chksum)
+            else:
+                self._logger.warning(f'trying to send an unsupported packet: {parsed_packet}')
+
+            if data is not None:
+                new_packet = IPv6()
+                new_packet.src = self.address_pair[0]
+                new_packet.dst = self.address_pair[1]
+                new_packet.fl = 84398
+                return bytes(new_packet/data)
+        else:
+            assert packet.startswith(LOOPBACK_HEADER6)
+            packet = packet[len(LOOPBACK_HEADER6):]
+            return packet
+
+    def fix_device_to_host(self, packet) -> Optional[bytes]:
+        if self.ipv4_pair is None:
+            return LOOPBACK_HEADER6 + packet
+        else:
+            parsed_packet = IPv6(packet)
+            data = None
+            if isinstance(parsed_packet[1], ICMPv6EchoReply) or \
+               isinstance(parsed_packet[1], ICMPv6EchoRequest):
+                data = ICMP()
+                if isinstance(parsed_packet[1], ICMPv6EchoReply):
+                    data.type = 0
+                else:
+                    data.type = 8
+                data.id = parsed_packet[1].id
+                data.seq = parsed_packet[1].seq
+                data = data/Raw(parsed_packet[1].data)
+            elif isinstance(parsed_packet[1], TCP) or \
+                 isinstance(parsed_packet[1], UDP):
+                data = parsed_packet[1:]
+                del(data.chksum)
+            else:
+                self._logger.warning(f'got an unsupported packet: {parsed_packet}')
+
+            if data is not None:
+                new_packet = IP()
+                new_packet.src = self.ipv4_pair[1]
+                new_packet.dst = self.ipv4_pair[0]
+                return LOOPBACK_HEADER4 + bytes(new_packet/data)
+
+    def start_tunnel(self, address_pair: tuple, mtu: int, ipv4_pair: Optional[[str,str]]=None) -> None:
+        if ipv4_pair is None:
+            self.tun = TunTapDevice()
+            self.tun.addr = address_pair[0]
+            self.tun.mtu = mtu
+        else:
+            self.tun = TunTapDevice(ipv4=True)
+            self.tun.addr = ipv4_pair[0]
+            self.tun.dstaddr = ipv4_pair[1]
+            self.tun.mtu = mtu - 20
         self.tun.up()
-        self._tun_read_task = asyncio.create_task(self.tun_read_task(), name=f'tun-read-{address}')
+        self.address_pair = address_pair
+        self.ipv4_pair = ipv4_pair
+        self._tun_read_task = asyncio.create_task(self.tun_read_task(), name=f'tun-read-{address_pair[0]}')
 
     async def stop_tunnel(self) -> None:
         self._logger.debug('stopping tunnel')
@@ -230,8 +303,8 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
             await self.ping()
             await asyncio.sleep(self._quic.configuration.idle_timeout / 2)
 
-    def start_tunnel(self, address: str, mtu: int) -> None:
-        super().start_tunnel(address, mtu)
+    def start_tunnel(self, address_pair: tuple, mtu: int, ipv4_pair: Optional[[str,str]]=None) -> None:
+        super().start_tunnel(address_pair, mtu, ipv4_pair)
         self._keep_alive_task = asyncio.create_task(self.keep_alive_task())
 
     async def stop_tunnel(self) -> None:
@@ -246,7 +319,9 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
         elif isinstance(event, StreamDataReceived):
             self._queue.put_nowait(json.loads(CDTunnelPacket.parse(event.data).body))
         elif isinstance(event, DatagramFrameReceived):
-            self.tun.write(LOOPBACK_HEADER + event.data)
+            packet = self.fix_device_to_host(event.data)
+            if packet is not None:
+                self.tun.write(packet)
 
     @staticmethod
     def _encode_cdtunnel_packet(data: Mapping) -> bytes:
@@ -274,7 +349,9 @@ class RemotePairingTcpTunnel(RemotePairingTunnel):
                     ipv6_header = await self._reader.readexactly(IPV6_HEADER_SIZE)
                     ipv6_length = struct.unpack('>H', ipv6_header[4:6])[0]
                     ipv6_body = await self._reader.readexactly(ipv6_length)
-                    self.tun.write(LOOPBACK_HEADER + ipv6_header + ipv6_body)
+                    packet = self.fix_device_to_host(ipv6_header + ipv6_body)
+                    if packet is not None:
+                        self.tun.write(packet)
                 except asyncio.exceptions.IncompleteReadError:
                     await asyncio.sleep(1)
         except OSError as e:
@@ -293,9 +370,9 @@ class RemotePairingTcpTunnel(RemotePairingTunnel):
         await self._writer.drain()
         return json.loads(CDTunnelPacket.parse(await self._reader.read(self.REQUESTED_MTU)).body)
 
-    def start_tunnel(self, address: str, mtu: int) -> None:
-        super().start_tunnel(address, mtu)
-        self._sock_read_task = asyncio.create_task(self.sock_read_task(), name=f'sock-read-task-{address}')
+    def start_tunnel(self, address_pair: tuple, mtu: int, ipv4_pair: Optional[[str,str]]=None) -> None:
+        super().start_tunnel(address_pair, mtu, ipv4_pair)
+        self._sock_read_task = asyncio.create_task(self.sock_read_task(), name=f'sock-read-task-{address_pair[0]}')
 
     async def stop_tunnel(self) -> None:
         self._sock_read_task.cancel()
@@ -328,7 +405,7 @@ class StartTcpTunnel(ABC):
         pass
 
     @abstractmethod
-    async def start_tcp_tunnel(self) -> AsyncGenerator[TunnelResult, None]:
+    async def start_tcp_tunnel(self, ipv4_pair: Optional[[str,str]] = None) -> AsyncGenerator[TunnelResult, None]:
         pass
 
 
@@ -395,7 +472,8 @@ class RemotePairingProtocol(StartTcpTunnel):
     @asynccontextmanager
     async def start_quic_tunnel(
             self, secrets_log_file: Optional[TextIO] = None,
-            max_idle_timeout: float = RemotePairingQuicTunnel.MAX_IDLE_TIMEOUT) -> AsyncGenerator[TunnelResult, None]:
+            max_idle_timeout: float = RemotePairingQuicTunnel.MAX_IDLE_TIMEOUT,
+            ipv4_pair: Optional[[str,str]] = None) -> AsyncGenerator[TunnelResult, None]:
         private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         parameters = await self.create_quic_listener(private_key)
         cert = make_cert(private_key, private_key.public_key())
@@ -426,17 +504,23 @@ class RemotePairingProtocol(StartTcpTunnel):
             client = cast(RemotePairingQuicTunnel, client)
             await client.wait_connected()
             handshake_response = await client.request_tunnel_establish()
-            client.start_tunnel(handshake_response['clientParameters']['address'],
-                                handshake_response['clientParameters']['mtu'])
+            address_pair = (handshake_response['clientParameters']['address'],
+                            handshake_response['serverAddress'])
+
+            client.start_tunnel(address_pair,
+                                handshake_response['clientParameters']['mtu'],
+                                ipv4_pair)
+
+            rsd_addr = address_pair[1] if ipv4_pair is None else ipv4_pair[1]
             try:
                 yield TunnelResult(
-                    client.tun.name, handshake_response['serverAddress'], handshake_response['serverRSDPort'],
+                    client.tun.name, rsd_addr, handshake_response['serverRSDPort'],
                     TunnelProtocol.QUIC, client)
             finally:
                 await client.stop_tunnel()
 
     @asynccontextmanager
-    async def start_tcp_tunnel(self) -> AsyncGenerator[TunnelResult, None]:
+    async def start_tcp_tunnel(self, ipv4_pair: Optional[[str,str]] = None) -> AsyncGenerator[TunnelResult, None]:
         parameters = await self.create_tcp_listener()
         host = self.hostname
         port = parameters['port']
@@ -449,12 +533,17 @@ class RemotePairingProtocol(StartTcpTunnel):
         tunnel = RemotePairingTcpTunnel(reader, writer)
         handshake_response = await tunnel.request_tunnel_establish()
 
-        tunnel.start_tunnel(handshake_response['clientParameters']['address'],
-                            handshake_response['clientParameters']['mtu'])
+        address_pair = (handshake_response['clientParameters']['address'],
+                        handshake_response['serverAddress'])
 
+        tunnel.start_tunnel(address_pair,
+                            handshake_response['clientParameters']['mtu'],
+                            ipv4_pair)
+
+        rsd_addr = address_pair[1] if ipv4_pair is None else ipv4_pair[1]
         try:
             yield TunnelResult(
-                tunnel.tun.name, handshake_response['serverAddress'], handshake_response['serverRSDPort'],
+                tunnel.tun.name, rsd_addr, handshake_response['serverRSDPort'],
                 TunnelProtocol.TCP, tunnel)
         finally:
             await tunnel.stop_tunnel()
@@ -924,15 +1013,21 @@ class CoreDeviceTunnelProxy(StartTcpTunnel, LockdownService):
         return self._lockdown.udid
 
     @asynccontextmanager
-    async def start_tcp_tunnel(self) -> AsyncGenerator['TunnelResult', None]:
+    async def start_tcp_tunnel(self, ipv4_pair: Optional[[str,str]] = None) -> AsyncGenerator['TunnelResult', None]:
         self._service = await self._lockdown.aio_start_lockdown_service(self.SERVICE_NAME)
         tunnel = RemotePairingTcpTunnel(self._service.reader, self._service.writer)
         handshake_response = await tunnel.request_tunnel_establish()
-        tunnel.start_tunnel(handshake_response['clientParameters']['address'],
-                            handshake_response['clientParameters']['mtu'])
+        address_pair = (handshake_response['clientParameters']['address'],
+                        handshake_response['serverAddress'])
+
+        tunnel.start_tunnel(address_pair,
+                            handshake_response['clientParameters']['mtu'],
+                            ipv4_pair)
+
+        rsd_addr = address_pair[1] if ipv4_pair is None else ipv4_pair[1]
         try:
             yield TunnelResult(
-                tunnel.tun.name, handshake_response['serverAddress'], handshake_response['serverRSDPort'],
+                tunnel.tun.name, rsd_addr, handshake_response['serverRSDPort'],
                 TunnelProtocol.TCP, tunnel)
         finally:
             await tunnel.stop_tunnel()
@@ -967,7 +1062,8 @@ async def create_core_device_service_using_remotepairing_manual_pairing(
 async def start_tunnel_over_remotepairing(
         remote_pairing: RemotePairingTunnelService, secrets: Optional[TextIO] = None,
         max_idle_timeout: float = RemotePairingQuicTunnel.MAX_IDLE_TIMEOUT,
-        protocol: TunnelProtocol = TunnelProtocol.QUIC) \
+        protocol: TunnelProtocol = TunnelProtocol.QUIC,
+        ipv4_pair: Optional[[str,str]] = None) \
         -> AsyncGenerator[TunnelResult, None]:
     async with remote_pairing:
         if protocol == TunnelProtocol.QUIC:
@@ -975,7 +1071,7 @@ async def start_tunnel_over_remotepairing(
                     secrets_log_file=secrets, max_idle_timeout=max_idle_timeout) as tunnel_result:
                 yield tunnel_result
         elif protocol == TunnelProtocol.TCP:
-            async with remote_pairing.start_tcp_tunnel() as tunnel_result:
+            async with remote_pairing.start_tcp_tunnel(ipv4_pair) as tunnel_result:
                 yield tunnel_result
 
 
@@ -983,7 +1079,8 @@ async def start_tunnel_over_remotepairing(
 async def start_tunnel_over_core_device(
         service_provider: CoreDeviceTunnelService, secrets: Optional[TextIO] = None,
         max_idle_timeout: float = RemotePairingQuicTunnel.MAX_IDLE_TIMEOUT,
-        protocol: TunnelProtocol = TunnelProtocol.QUIC) \
+        protocol: TunnelProtocol = TunnelProtocol.QUIC,
+        ipv4_pair: Optional[[str,str]] = None) \
         -> AsyncGenerator[TunnelResult, None]:
     stop_remoted_if_required()
     async with service_provider:
@@ -993,7 +1090,7 @@ async def start_tunnel_over_core_device(
                 resume_remoted_if_required()
                 yield tunnel_result
         elif protocol == TunnelProtocol.TCP:
-            async with service_provider.start_tcp_tunnel() as tunnel_result:
+            async with service_provider.start_tcp_tunnel(ipv4_pair) as tunnel_result:
                 resume_remoted_if_required()
                 yield tunnel_result
 
@@ -1002,19 +1099,20 @@ async def start_tunnel_over_core_device(
 async def start_tunnel(
         protocol_handler: RemotePairingProtocol, secrets: Optional[TextIO] = None,
         max_idle_timeout: float = RemotePairingQuicTunnel.MAX_IDLE_TIMEOUT,
-        protocol: TunnelProtocol = TunnelProtocol.QUIC) -> AsyncGenerator[TunnelResult, None]:
+        protocol: TunnelProtocol = TunnelProtocol.QUIC,
+        ipv4_pair: Optional[[str,str]] = None) -> AsyncGenerator[TunnelResult, None]:
     if isinstance(protocol_handler, CoreDeviceTunnelService):
         async with start_tunnel_over_core_device(
-                protocol_handler, secrets=secrets, max_idle_timeout=max_idle_timeout, protocol=protocol) as service:
+                protocol_handler, secrets=secrets, max_idle_timeout=max_idle_timeout, protocol=protocol, ipv4_pair=ipv4_pair) as service:
             yield service
     elif isinstance(protocol_handler, RemotePairingTunnelService):
         async with start_tunnel_over_remotepairing(
-                protocol_handler, secrets=secrets, max_idle_timeout=max_idle_timeout, protocol=protocol) as service:
+                protocol_handler, secrets=secrets, max_idle_timeout=max_idle_timeout, protocol=protocol, ipv4_pair=ipv4_pair) as service:
             yield service
     elif isinstance(protocol_handler, CoreDeviceTunnelProxy):
         if protocol != TunnelProtocol.TCP:
             raise ValueError('CoreDeviceTunnelProxy protocol can only be TCP')
-        async with protocol_handler.start_tcp_tunnel() as service:
+        async with protocol_handler.start_tcp_tunnel(ipv4_pair) as service:
             yield service
     else:
         raise Exception(f'Bad value for protocol_handler: {protocol_handler}')

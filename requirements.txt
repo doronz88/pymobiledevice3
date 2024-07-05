@@ -41,3 +41,4 @@ aiofiles
 prompt_toolkit
 sslpsk-pmd3>=1.0.3
 python-pcapng>=2.1.1
+scapy

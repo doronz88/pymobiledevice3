@@ -56,8 +56,8 @@ class Darwin(Posix):
         return Path('/var/db/lockdown/')
 
     @property
-    def loopback_header(self) -> bytes:
-        return struct.pack('>I', socket.AF_INET6)
+    def loopback_header(self) -> (bytes, bytes):
+        return struct.pack('>I', socket.AF_INET), struct.pack('>I', socket.AF_INET6)
 
     def set_keepalive(self, sock: socket.socket, after_idle_sec: int = DEFAULT_AFTER_IDLE_SEC,
                       interval_sec: int = DEFAULT_INTERVAL_SEC, max_fails: int = DEFAULT_MAX_FAILS) -> None:
@@ -73,8 +73,8 @@ class Linux(Posix):
         return Path('/var/lib/lockdown/')
 
     @property
-    def loopback_header(self) -> bytes:
-        return b'\x00\x00\x86\xdd'
+    def loopback_header(self) -> (bytes, bytes):
+        return b'\x00\x00\x08\x00', b'\x00\x00\x86\xdd'
 
     def set_keepalive(self, sock: socket.socket, after_idle_sec: int = DEFAULT_AFTER_IDLE_SEC,
                       interval_sec: int = DEFAULT_INTERVAL_SEC, max_fails: int = DEFAULT_MAX_FAILS) -> None:
