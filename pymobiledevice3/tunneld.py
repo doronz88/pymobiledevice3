@@ -55,7 +55,7 @@ class TunnelTask:
 class TunneldCore:
     def __init__(self, protocol: TunnelProtocol = TunnelProtocol.QUIC, wifi_monitor: bool = True,
                  usb_monitor: bool = True, usbmux_monitor: bool = True, mobdev2_monitor: bool = True,
-                 ipv4_pair: Optional[[str,str]] = None) -> None:
+                 ipv4_pair: Optional[Tuple[str, str]] = None) -> None:
         self.protocol = protocol
         self.tasks: List[asyncio.Task] = []
         self.tunnel_tasks: Dict[str, TunnelTask] = {}
@@ -312,13 +312,13 @@ class TunneldRunner:
     @classmethod
     def create(cls, host: str, port: int, protocol: TunnelProtocol = TunnelProtocol.QUIC, usb_monitor: bool = True,
                wifi_monitor: bool = True, usbmux_monitor: bool = True, mobdev2_monitor: bool = True,
-               ipv4_pair: Optional[[str,str]] = None) -> None:
+               ipv4_pair: Optional[Tuple[str, str]] = None) -> None:
         cls(host, port, protocol=protocol, usb_monitor=usb_monitor, wifi_monitor=wifi_monitor,
             usbmux_monitor=usbmux_monitor, mobdev2_monitor=mobdev2_monitor, ipv4_pair=ipv4_pair)._run_app()
 
     def __init__(self, host: str, port: int, protocol: TunnelProtocol = TunnelProtocol.QUIC, usb_monitor: bool = True,
                  wifi_monitor: bool = True, usbmux_monitor: bool = True, mobdev2_monitor: bool = True,
-                 ipv4_pair: Optional[[str,str]] = None):
+                 ipv4_pair: Optional[Tuple[str, str]] = None):
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             logging.getLogger('zeroconf').disabled = True
