@@ -33,7 +33,7 @@ class Win32(OsUtils):
         return 2
 
     @property
-    def loopback_header(self) -> (bytes, bytes):
+    def loopback_header(self) -> Tuple[bytes, bytes]:
         return b'\x00\x00\x08\x00', b'\x00\x00\x86\xdd'
 
     @property
