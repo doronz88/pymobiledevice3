@@ -76,7 +76,7 @@ class AXAuditDeviceSetting_v1(SerializedObject):
 
 class AXAuditIssue_v1(SerializedObject):
     FIELDS = ('ElementRectValue_v1', 'IssueClassificationValue_v1',
-              'ElementRectValue_v1', 'FontSizeValue_v1', 'MLGeneratedDescriptionValue_v1', 'ElementLongDescExtraInfo_v1',
+              'FontSizeValue_v1', 'MLGeneratedDescriptionValue_v1', 'ElementLongDescExtraInfo_v1',
               'BackgroundColorValue_v1', 'ForegroundColorValue_v1')
 
     def __init__(self, fields):
