@@ -296,12 +296,16 @@ class TunneldCore:
             with suppress(asyncio.CancelledError):
                 await task
 
-    def clear(self) -> None:
+    def clear(self, p_udid: str = None) -> int:
         """ Clear active tunnels """
-        for udid, tunnel in self.tunnel_tasks.items():
-            logger.info(f'Removing tunnel {tunnel}')
-            tunnel.task.cancel()
-        self.tunnel_tasks = {}
+        cleard_tunnels = 0
+        for udid in list(self.tunnel_tasks.keys()):
+            if not p_udid or p_udid in udid:
+                tunnel = self.tunnel_tasks.pop(udid)
+                logger.info(f'Removing tunnel {tunnel}')
+                tunnel.task.cancel()
+                cleard_tunnels += 1
+        return cleard_tunnels
 
 
 class TunneldRunner:
@@ -355,6 +359,11 @@ class TunneldRunner:
         async def clear_tunnels() -> fastapi.Response:
             self._tunneld_core.clear()
             return fastapi.Response(status_code=200, content='Cleared tunnels...')
+
+        @self._app.get('/clear-tunnel')
+        async def clear_tunnels(udid: str) -> fastapi.Response:
+            cleared_tunnels = self._tunneld_core.clear(p_udid=udid)
+            return fastapi.Response(status_code=200, content=f'Cleared {cleared_tunnels} tunnels ...')
 
         @self._app.get('/hello')
         async def hello() -> fastapi.Response:
