@@ -1,7 +1,7 @@
 import json
 import typing
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, IntEnum
 
 from packaging.version import Version
 
@@ -74,9 +74,33 @@ class AXAuditDeviceSetting_v1(SerializedObject):
         return f'<AXAuditDeviceSetting_v1 {self.key} = {self.value}>'
 
 
+class AuditType(IntEnum):
+    DYNAMIC_TEXT = 3001
+    DYNAMIC_TEXT_ALT = 3002
+    TEXT_CLIPPED = 3003
+    ELEMENT_DETECTION = 1000
+    SUFFICIENT_ELEMENT_DESCRIPTION = 5000
+    HIT_REGION = 100
+    CONTRAST = 12
+    CONTRAST_ALT = 13
+
+
+AUDIT_TYPE_DESCRIPTIONS = {
+    AuditType.DYNAMIC_TEXT: 'testTypeDynamicText',
+    AuditType.DYNAMIC_TEXT_ALT: 'testTypeDynamicText',
+    AuditType.TEXT_CLIPPED: 'testTypeTextClipped',
+    AuditType.ELEMENT_DETECTION: 'testTypeElementDetection',
+    AuditType.SUFFICIENT_ELEMENT_DESCRIPTION: 'testTypeSufficientElementDescription',
+    AuditType.HIT_REGION: 'testTypeHitRegion',
+    AuditType.CONTRAST: 'testTypeContrast',
+    AuditType.CONTRAST_ALT: 'testTypeContrast'
+}
+
+
 class AXAuditIssue_v1(SerializedObject):
     FIELDS = ('ElementRectValue_v1', 'IssueClassificationValue_v1',
-              'ElementRectValue_v1', 'FontSizeValue_v1', 'MLGeneratedDescriptionValue_v1')
+              'FontSizeValue_v1', 'MLGeneratedDescriptionValue_v1', 'ElementLongDescExtraInfo_v1',
+              'BackgroundColorValue_v1', 'ForegroundColorValue_v1')
 
     def __init__(self, fields):
         super().__init__(fields)
@@ -91,25 +115,44 @@ class AXAuditIssue_v1(SerializedObject):
 
     @property
     def issue_type(self) -> typing.Any:
-        if self._fields['IssueClassificationValue_v1'] in AUDIT_TYPES:
-            return AUDIT_TYPES[self._fields['IssueClassificationValue_v1']]
+        issue_classification = self._fields['IssueClassificationValue_v1']
+        if issue_classification in AUDIT_TYPE_DESCRIPTIONS:
+            return AUDIT_TYPE_DESCRIPTIONS[AuditType(issue_classification)]
         else:
-            return self._fields['IssueClassificationValue_v1']
+            return issue_classification
 
     @property
     def ml_generated_description(self) -> typing.Any:
         return self._fields['MLGeneratedDescriptionValue_v1']
 
     @property
+    def long_description_extra_info(self) -> typing.Any:
+        return self._fields['ElementLongDescExtraInfo_v1']
+
+    @property
     def font_size(self) -> typing.Any:
         return self._fields['FontSizeValue_v1']
 
+    @property
+    def foreground_color(self) -> typing.Any:
+        return self._fields['ForegroundColorValue_v1']
+
+    @property
+    def background_color(self) -> typing.Any:
+        return self._fields['BackgroundColorValue_v1']
+
     def json(self) -> typing.Mapping:
-        resp = {}
-        resp['element_rect_value'] = self.rect
-        resp['issue_classification'] = self.issue_type
-        resp['font_size'] = self.font_size
-        resp['ml_generated_description'] = self.ml_generated_description
+        resp = {
+            'element_rect_value': self.rect,
+            'issue_classification': self.issue_type,
+            'font_size': self.font_size,
+            'ml_generated_description': self.ml_generated_description,
+            'long_description_extra_info': self.long_description_extra_info
+        }
+        # Include foreground and background colors when issue type is 'testTypeContrast'
+        if self._fields['IssueClassificationValue_v1'] in {AuditType.CONTRAST, AuditType.CONTRAST_ALT}:
+            resp['foreground_color'] = self.foreground_color
+            resp['background_color'] = self.background_color
         return resp
 
     def __str__(self) -> str:
@@ -123,15 +166,6 @@ SERIALIZABLE_OBJECTS = {
     'AXAuditInspectorSection_v1': AXAuditInspectorSection_v1,
     'AXAuditElementAttribute_v1': AXAuditElementAttribute_v1,
     'AXAuditIssue_v1': AXAuditIssue_v1
-}
-
-AUDIT_TYPES = {
-    3001: 'testTypeDynamicText',
-    3003: 'testTypeTextClipped',
-    1000: 'testTypeElementDetection',
-    5000: 'testTypeSufficientElementDescription',
-    100: 'testTypeHitRegion',
-    13: 'testTypeContrast'
 }
 
 
