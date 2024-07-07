@@ -361,7 +361,7 @@ class TunneldRunner:
             return fastapi.Response(status_code=200, content='Cleared tunnels...')
 
         @self._app.get('/clear-tunnel')
-        async def clear_tunnels(udid: str) -> fastapi.Response:
+        async def clear_tunnel(udid: str) -> fastapi.Response:
             cleared_tunnels = self._tunneld_core.clear(p_udid=udid)
             return fastapi.Response(status_code=200, content=f'Cleared {cleared_tunnels} tunnels ...')
 
