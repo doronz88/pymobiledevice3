@@ -122,7 +122,7 @@ class AXAuditIssue_v1(SerializedObject):
                 'ml_generated_description': self.ml_generated_description,
                 'long_description_extra_info': self.long_description_extra_info}
         # Include foreground and background colors when issue type is 'testTypeContrast'
-        if self._fields['IssueClassificationValue_v1'] == 12:
+        if self._fields['IssueClassificationValue_v1'] == 12 or self._fields['IssueClassificationValue_v1'] == 13:
             resp['foreground_color'] = self.foreground_color
             resp['background_color'] = self.background_color
         return resp
@@ -142,11 +142,13 @@ SERIALIZABLE_OBJECTS = {
 
 AUDIT_TYPES = {
     3001: 'testTypeDynamicText',
+    3002: 'testTypeDynamicText',
     3003: 'testTypeTextClipped',
     1000: 'testTypeElementDetection',
     5000: 'testTypeSufficientElementDescription',
     100: 'testTypeHitRegion',
-    12: 'testTypeContrast'
+    12: 'testTypeContrast',
+    13: 'testTypeContrast'
 }
 
 
