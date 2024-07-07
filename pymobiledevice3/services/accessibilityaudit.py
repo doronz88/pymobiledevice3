@@ -76,7 +76,8 @@ class AXAuditDeviceSetting_v1(SerializedObject):
 
 class AXAuditIssue_v1(SerializedObject):
     FIELDS = ('ElementRectValue_v1', 'IssueClassificationValue_v1',
-              'ElementRectValue_v1', 'FontSizeValue_v1', 'MLGeneratedDescriptionValue_v1')
+              'ElementRectValue_v1', 'FontSizeValue_v1', 'MLGeneratedDescriptionValue_v1', 'ElementLongDescExtraInfo_v1',
+              'BackgroundColorValue_v1', 'ForegroundColorValue_v1')
 
     def __init__(self, fields):
         super().__init__(fields)
@@ -101,15 +102,29 @@ class AXAuditIssue_v1(SerializedObject):
         return self._fields['MLGeneratedDescriptionValue_v1']
 
     @property
+    def long_description_extra_info(self) -> typing.Any:
+        return self._fields['ElementLongDescExtraInfo_v1']
+
+    @property
     def font_size(self) -> typing.Any:
         return self._fields['FontSizeValue_v1']
 
+    @property
+    def foreground_color(self) -> typing.Any:
+        return self._fields['ForegroundColorValue_v1']
+
+    @property
+    def background_color(self) -> typing.Any:
+        return self._fields['BackgroundColorValue_v1']
+
     def json(self) -> typing.Mapping:
-        resp = {}
-        resp['element_rect_value'] = self.rect
-        resp['issue_classification'] = self.issue_type
-        resp['font_size'] = self.font_size
-        resp['ml_generated_description'] = self.ml_generated_description
+        resp = {'element_rect_value': self.rect, 'issue_classification': self.issue_type, 'font_size': self.font_size,
+                'ml_generated_description': self.ml_generated_description,
+                'long_description_extra_info': self.long_description_extra_info}
+        # Include foreground and background colors when issue type is 'testTypeContrast'
+        if self._fields['IssueClassificationValue_v1'] == 12:
+            resp['foreground_color'] = self.foreground_color
+            resp['background_color'] = self.background_color
         return resp
 
     def __str__(self) -> str:
@@ -131,7 +146,7 @@ AUDIT_TYPES = {
     1000: 'testTypeElementDetection',
     5000: 'testTypeSufficientElementDescription',
     100: 'testTypeHitRegion',
-    13: 'testTypeContrast'
+    12: 'testTypeContrast'
 }
 
 
