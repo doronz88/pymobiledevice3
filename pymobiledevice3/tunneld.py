@@ -297,7 +297,7 @@ class TunneldCore:
                 await task
 
     def get_tunnels_ips(self) -> Dict:
-        """ Retrieve the available tunnel tasks and format them as {UUID: IP} """
+        """ Retrieve the available tunnel tasks and format them as {UDID: [IP]} """
         tunnels_ips = {}
         for ip, active_tunnel in self.tunnel_tasks.items():
             if (active_tunnel.udid is None) or (active_tunnel.tunnel is None):
