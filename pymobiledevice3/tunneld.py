@@ -296,7 +296,7 @@ class TunneldCore:
             with suppress(asyncio.CancelledError):
                 await task
 
-    def get_tunnels_ips(self) -> Dict[str | None, list[str]]:
+    def get_tunnels_ips(self) -> Dict[Union[str, None], list[str]]:
         """ Retrieve the available tunnel tasks and format them as {UUID: IP} """
         tunnels_ips = {}
         for ip, active_tunnel in self.tunnel_tasks.items():
