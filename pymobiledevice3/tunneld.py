@@ -296,6 +296,24 @@ class TunneldCore:
             with suppress(asyncio.CancelledError):
                 await task
 
+    def get_tunnels_ips(self) -> Dict:
+        """ Retrieve the available tunnel tasks and format them as {UDID: [IP]} """
+        tunnels_ips = {}
+        for ip, active_tunnel in self.tunnel_tasks.items():
+            if (active_tunnel.udid is None) or (active_tunnel.tunnel is None):
+                continue
+            if active_tunnel.udid not in tunnels_ips:
+                tunnels_ips[active_tunnel.udid] = [ip]
+            else:
+                tunnels_ips[active_tunnel.udid].append(ip)
+        return tunnels_ips
+
+    def cancel(self, udid: str) -> None:
+        """ Cancel active tunnels """
+        for tunnel_ip in self.get_tunnels_ips().get(udid, []):
+            self.tunnel_tasks.pop(tunnel_ip).task.cancel()
+            logger.info(f'canceling tunnel {tunnel_ip}')
+
     def clear(self) -> None:
         """ Clear active tunnels """
         for udid, tunnel in self.tunnel_tasks.items():
@@ -355,6 +373,11 @@ class TunneldRunner:
         async def clear_tunnels() -> fastapi.Response:
             self._tunneld_core.clear()
             return fastapi.Response(status_code=200, content='Cleared tunnels...')
+
+        @self._app.get('/cancel')
+        async def cancel_tunnel(udid: str) -> fastapi.Response:
+            self._tunneld_core.cancel(udid=udid)
+            return fastapi.Response(status_code=200, content=f'tunnel {udid} Canceled ...')
 
         @self._app.get('/hello')
         async def hello() -> fastapi.Response:
