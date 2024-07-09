@@ -23,7 +23,10 @@ class HouseArrestService(AfcService):
         else:
             cmd = VEND_CONTAINER
         self.documents_only = documents_only
-        self.send_command(bundle_id, cmd)
+        try:
+            self.send_command(bundle_id, cmd)
+        finally:
+            self.close()
 
     def send_command(self, bundle_id: str, cmd: str = 'VendContainer') -> None:
         response = self.service.send_recv_plist({'Command': cmd, 'Identifier': bundle_id})
