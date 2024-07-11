@@ -9,3 +9,4 @@ debug/
 *.egg-info/
 pymobiledevice3/_version.py
 .python-version
+__main__.spec
