@@ -83,7 +83,7 @@ def cli() -> None:
 @cli.group()
 def developer() -> None:
     """
-    Perform developer operations
+    Perform developer operations (Requires enable of Developer-Mode)
 
     These options require the DeveloperDiskImage.dmg to be mounted on the device prior
     to execution. You can achieve this using:
@@ -101,7 +101,7 @@ def developer() -> None:
 @click.argument('service')
 @click.option('-r', '--remove-ssl-context', is_flag=True)
 def developer_shell(service_provider: LockdownClient, service, remove_ssl_context):
-    """ Launch developer IPython shell """
+    """ Launch developer IPython shell (used for pymobiledevice3 R&D) """
     with RemoteServer(service_provider, service, remove_ssl_context) as service:
         service.shell()
 
@@ -137,7 +137,7 @@ def applist(service_provider: LockdownServiceProvider) -> None:
 @click.argument('sig', type=click.INT, required=False)
 @click.option('-s', '--signal-name', type=click.Choice([s.name for s in signal.Signals]))
 def send_signal(service_provider, pid, sig, signal_name):
-    """ Send SIGNAL to process by its PID """
+    """ Send a signal to process by its PID """
     if not sig and not signal_name:
         raise MissingParameter(param_type='argument|option', param_hint='\'SIG|SIGNAL-NAME\'')
     if sig and signal_name:
@@ -214,7 +214,7 @@ def launch(service_provider: LockdownClient, arguments: str, kill_existing: bool
 
 @dvt.command('shell', cls=Command)
 def dvt_shell(service_provider: LockdownClient):
-    """ Launch developer shell. """
+    """ Launch developer shell (used for pymobiledevice3 R&D) """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         dvt.shell()
 
@@ -236,14 +236,14 @@ def show_dirlist(device_info: DeviceInfo, dirname, recursive=False):
 @click.argument('path', type=click.Path(exists=False, readable=False))
 @click.option('-r', '--recursive', is_flag=True)
 def ls(service_provider: LockdownClient, path, recursive):
-    """ List directory. """
+    """ List directory """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         show_dirlist(DeviceInfo(dvt), path, recursive=recursive)
 
 
 @dvt.command('device-information', cls=Command)
 def device_information(service_provider: LockdownClient):
-    """ Print system information. """
+    """ Print system information """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         device_info = DeviceInfo(dvt)
         info = {
@@ -274,7 +274,7 @@ def netstat(service_provider: LockdownClient):
 @dvt.command('screenshot', cls=Command)
 @click.argument('out', type=click.File('wb'))
 def screenshot(service_provider: LockdownClient, out):
-    """ get device screenshot """
+    """ Take device screenshot """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         out.write(Screenshot(dvt).get_screenshot())
 
@@ -283,12 +283,10 @@ def screenshot(service_provider: LockdownClient, out):
 @click.argument('bundle-id')
 def xcuitest(service_provider: LockdownClient, bundle_id: str) -> None:
     """\b
-    start XCUITest
+    Start XCUITest
+
     Usage example:
-    iOS<17:
         python3 -m pymobiledevice3 developer dvt xcuitest com.facebook.WebDriverAgentRunner.xctrunner
-    iOS>=17:
-        python3 -m pymobiledevice3 developer dvt xcuitest com.facebook.WebDriverAgentRunner.xctrunner --tunnel $UDID
     """
     XCUITestService(service_provider).run(bundle_id)
 
@@ -387,7 +385,7 @@ def sysmon_system(service_provider: LockdownClient, fields):
 
 @dvt.group('core-profile-session')
 def core_profile_session():
-    """ Core profile session options. """
+    """ Access tailspin features """
 
 
 bsc_filter = click.option('--bsc/--no-bsc', default=False, help='Whether to print BSC events or not.')
@@ -615,7 +613,7 @@ def dvt_name_for_gid(service_provider: LockdownClient, gid):
 @dvt.command('oslog', cls=Command)
 @click.option('--pid', type=click.INT)
 def dvt_oslog(service_provider: LockdownClient, pid):
-    """ oslog. """
+    """ Sniff device oslog (not very stable, but includes more data and normal syslog) """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         with ActivityTraceTap(dvt) as tap:
             for message in tap:
@@ -652,7 +650,7 @@ def dvt_oslog(service_provider: LockdownClient, pid):
 @dvt.command('energy', cls=Command)
 @click.argument('pid-list', nargs=-1)
 def dvt_energy(service_provider: LockdownClient, pid_list):
-    """ energy monitoring for given pid list. """
+    """ Monitor the energy consumption for given PIDs """
 
     if len(pid_list) == 0:
         logger.error('pid_list must not be empty')
@@ -668,7 +666,7 @@ def dvt_energy(service_provider: LockdownClient, pid_list):
 
 @dvt.command('notifications', cls=Command)
 def dvt_notifications(service_provider: LockdownClient):
-    """ monitor memory and app notifications """
+    """ Monitor memory and app notifications """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         with Notifications(dvt) as notifications:
             for notification in notifications:
@@ -677,7 +675,7 @@ def dvt_notifications(service_provider: LockdownClient):
 
 @dvt.command('graphics', cls=Command)
 def dvt_notifications(service_provider: LockdownClient):
-    """ monitor graphics statistics """
+    """ Monitor graphics-related information """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         with Graphics(dvt) as graphics:
             for stats in graphics:
@@ -686,7 +684,7 @@ def dvt_notifications(service_provider: LockdownClient):
 
 @developer.group('fetch-symbols')
 def fetch_symbols():
-    """ fetch-symbols options. """
+    """ Download the DSC (and dyld) from the device """
     pass
 
 
@@ -749,7 +747,7 @@ def fetch_symbols_download(service_provider: LockdownServiceProvider, out: str) 
 
 @developer.group('simulate-location')
 def simulate_location():
-    """ simulate-location options. """
+    """ Simulate device location by given input """
     pass
 
 
@@ -782,7 +780,7 @@ def simulate_location_play(service_provider: LockdownClient, filename, timing_ra
 
 @developer.group('accessibility')
 def accessibility():
-    """ accessibility options. """
+    """ Interact with accessibility-related features """
     pass
 
 
@@ -884,7 +882,7 @@ def accessibility_list_items(service_provider: LockdownClient):
 
 @developer.group('condition')
 def condition():
-    """ condition inducer options. """
+    """ Force a predefined condition """
     pass
 
 
@@ -914,19 +912,19 @@ def condition_set(service_provider: LockdownClient, profile_identifier):
 @developer.command(cls=Command)
 @click.argument('out', type=click.File('wb'))
 def screenshot(service_provider: LockdownClient, out):
-    """ take a screenshot in PNG format """
+    """ Take a screenshot in PNG format """
     out.write(ScreenshotService(lockdown=service_provider).take_screenshot())
 
 
 @developer.group('debugserver')
 def debugserver():
-    """ debugserver options. """
+    """ Interact with debugserver """
     pass
 
 
 @debugserver.command('applist', cls=Command)
 def debugserver_applist(service_provider: LockdownClient):
-    """ get applist xml """
+    """ Get applist xml """
     print_json(DebugServerAppList(service_provider).get())
 
 
@@ -937,7 +935,7 @@ def debugserver_start_server(service_provider: LockdownClient, local_port: Optio
     if local_port is provided, start a debugserver at remote listening on a given port locally.
     if local_port is not provided and iOS version >= 17.0 then just print the connect string
 
-    Please note the connection must be done soon afterwards using your own lldb client.
+    Please note the connection must be done soon afterward using your own lldb client.
     This can be done using the following commands within lldb shell.
     """
 
@@ -962,7 +960,7 @@ def debugserver_start_server(service_provider: LockdownClient, local_port: Optio
 
 @developer.group('arbitration')
 def arbitration():
-    """ arbitration options. """
+    """ Mark/Unmark device as "in-use" """
     pass
 
 
@@ -995,7 +993,12 @@ def check_out(service_provider: LockdownClient):
 
 @dvt.command('har', cls=Command)
 def dvt_har(service_provider: LockdownClient):
-    """ enable har-logging """
+    """
+    Enable har-logging
+
+    For more information, please read:
+        https://github.com/doronz88/harlogger?tab=readme-ov-file#enable-http-instrumentation-method
+    """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         print('> Press Ctrl-C to abort')
         with ActivityTraceTap(dvt, enable_http_archive_logging=True) as tap:
@@ -1005,13 +1008,13 @@ def dvt_har(service_provider: LockdownClient):
 
 @dvt.group('simulate-location')
 def dvt_simulate_location():
-    """ simulate-location options. """
+    """ Simulate device location by given input """
     pass
 
 
 @dvt_simulate_location.command('clear', cls=Command)
 def dvt_simulate_location_clear(service_provider: LockdownClient):
-    """ clear simulated location """
+    """ Clear currently simulated location """
     with DvtSecureSocketProxyService(service_provider) as dvt:
         LocationSimulation(dvt).clear()
 
@@ -1021,8 +1024,8 @@ def dvt_simulate_location_clear(service_provider: LockdownClient):
 @click.argument('longitude', type=click.FLOAT)
 def dvt_simulate_location_set(service_provider: LockdownClient, latitude, longitude):
     """
-    set a simulated location.
-    try:
+    Set a simulated location.
+    For example:
         ... set -- 40.690008 -74.045843 for liberty island
     """
     with DvtSecureSocketProxyService(service_provider) as dvt:
@@ -1036,7 +1039,7 @@ def dvt_simulate_location_set(service_provider: LockdownClient, latitude, longit
 @click.option('--disable-sleep', is_flag=True, default=False)
 def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, timing_randomness_range: int,
                                disable_sleep: bool) -> None:
-    """ play a .gpx file """
+    """ Simulate inputs from a given .gpx file """
     with DvtSecureSocketProxyService(service_provider) as dvt:
         LocationSimulation(dvt).play_gpx_file(filename, disable_sleep=disable_sleep,
                                               timing_randomness_range=timing_randomness_range)
@@ -1045,7 +1048,7 @@ def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, 
 
 @developer.group()
 def core_device() -> None:
-    """ core-device options """
+    """ Access features exposed by the DeveloperDiskImage """
     pass
 
 

@@ -42,7 +42,7 @@ INVALID_SERVICE_MESSAGE = """Failed to start service. Possible reasons are:
   https://github.com/doronz88/pymobiledevice3/issues/new?assignees=&labels=&projects=&template=bug_report.md&title=
 """
 
-CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'], max_content_width=400)
 
 # Mapping of index options to import file names
 CLI_GROUPS = {

@@ -12,7 +12,7 @@ def cli() -> None:
 
 @cli.group()
 def activation() -> None:
-    """ Perform iCloud activate/deactivation or query the state """
+    """ Perform iCloud activation/deactivation or query the current state """
     pass
 
 
