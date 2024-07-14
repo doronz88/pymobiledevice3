@@ -17,7 +17,7 @@ def cli() -> None:
 
 @cli.group()
 def diagnostics() -> None:
-    """ Reboot/Shutdown device or diagnostics services """
+    """ Reboot/Shutdown device or access other diagnostics services """
     pass
 
 

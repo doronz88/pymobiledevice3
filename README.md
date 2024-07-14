@@ -149,7 +149,7 @@ Options:
   -h, --help  Show this message and exit.
 
 Commands:
-  activation       Perform iCloud activate/deactivation or query the state
+  activation       Perform iCloud activation/deactivation or query the current state
   afc              Manage device multimedia files
   amfi             Enable/Disable developer-mode or query its state
   apps             Manage installed applications
@@ -157,8 +157,8 @@ Commands:
   bonjour          Browse devices over bonjour
   companion        List paired "companion" devices
   crash            Manage crash reports
-  developer        Perform developer operations
-  diagnostics      Reboot/Shutdown device or diagnostics services
+  developer        Perform developer operations (Requires enable of Developer-Mode)
+  diagnostics      Reboot/Shutdown device or access other diagnostics services
   lockdown         Pair/Unpair device or access other lockdown services
   mounter          Mount/Umount DeveloperDiskImage or query related info
   notification     Post/Observe notifications
