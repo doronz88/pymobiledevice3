@@ -11,7 +11,7 @@ from typing import Any, Mapping, Optional
 import IPython
 from pygments import formatters, highlight, lexers
 
-from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError, NoDeviceConnectedError, \
+from pymobiledevice3.exceptions import ConnectionTerminatedError, DeviceNotFoundError, NoDeviceConnectedError, \
     PyMobileDevice3Exception
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.usbmux import MuxDevice, select_device
@@ -92,7 +92,7 @@ class ServiceConnection:
         target_device = select_device(udid, connection_type=connection_type, usbmux_address=usbmux_address)
         if target_device is None:
             if udid:
-                raise ConnectionFailedError()
+                raise DeviceNotFoundError(udid)
             raise NoDeviceConnectedError()
         sock = target_device.connect(port, usbmux_address=usbmux_address)
         return ServiceConnection(sock, mux_device=target_device)
