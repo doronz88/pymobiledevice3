@@ -1,3 +1,4 @@
+import json
 import logging
 
 import click
@@ -52,9 +53,16 @@ def profile_install_silent(service_provider: LockdownClient, profiles, keystore,
 
 
 @profile_group.command('cloud-configuration', cls=Command)
-def profile_cloud_configuration(service_provider: LockdownClient):
-    """ get cloud configuration """
-    print_json(MobileConfigService(lockdown=service_provider).get_cloud_configuration())
+@click.argument('config', type=click.File('rb'), required=False)
+def profile_cloud_configuration(service_provider: LockdownClient, config):
+    """ get/set cloud configuration """
+    if not config:
+        print_json(MobileConfigService(lockdown=service_provider).get_cloud_configuration())
+    else:
+        config_json = json.load(config)
+        logger.info(f'applying cloud configuration {config_json}')
+        MobileConfigService(lockdown=service_provider).set_cloud_configuration(config_json)
+        logger.info('applied cloud configuration')
 
 
 @profile_group.command('store', cls=Command)
@@ -79,3 +87,15 @@ def profile_remove(service_provider: LockdownClient, name):
 def profile_set_wifi_power(service_provider: LockdownClient, state):
     """ change Wi-Fi power state """
     MobileConfigService(lockdown=service_provider).set_wifi_power_state(state == 'on')
+
+
+@profile_group.command('erase-device', cls=Command)
+@click.option('--preserve-data-plan/--no-preserve-data-plan', default=True, help='Preserves eSIM / data plan after erase')
+@click.option('--disallow-proximity-setup/--no-disallow-proximity-setup', default=False,
+              help='Disallows to setup the erased device from nearby devices')
+def profile_erase_device(service_provider: LockdownClient, preserve_data_plan: bool, disallow_proximity_setup: bool):
+    """ erase device """
+    logger.info(f'erasing device with preserve_data_plan: {preserve_data_plan}, '
+                f'disallow_proximity_setup: {disallow_proximity_setup}')
+    MobileConfigService(lockdown=service_provider).erase_device(preserve_data_plan, disallow_proximity_setup)
+    logger.info('erased device')
