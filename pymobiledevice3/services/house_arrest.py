@@ -25,7 +25,7 @@ class HouseArrestService(AfcService):
         self.documents_only = documents_only
         try:
             self.send_command(bundle_id, cmd)
-        finally:
+        except PyMobileDevice3Exception:
             self.close()
 
     def send_command(self, bundle_id: str, cmd: str = 'VendContainer') -> None:
