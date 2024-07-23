@@ -1,5 +1,6 @@
 import logging
 import posixpath
+import re
 import time
 from typing import Callable, Generator, List, Optional
 
@@ -77,24 +78,26 @@ class CrashReportsManager:
         """
         return list(self.afc.dirlist(path, depth))[1:]  # skip the root path '/'
 
-    def pull(self, out: str, entry: str = '/', erase: bool = False) -> None:
+    def pull(self, out: str, entry: str = '/', erase: bool = False, match: Optional[str] = None) -> None:
         """
         Pull crash reports from the device.
         :param out: Directory to pull crash reports to.
         :param entry: File or Folder to pull.
         :param erase: Whether to erase the original file from the CrashReports directory.
+        :param match: Regex to match against file and directory names to pull.
         """
 
         def log(src, dst):
             self.logger.info(f'{src} --> {dst}')
 
-        self.afc.pull(entry, out, callback=log)
+        match = None if match is None else re.compile(match)
+        self.afc.pull(entry, out, match, callback=log)
 
         if erase:
-            if posixpath.normpath(entry) in ('.', '/'):
+            if match is None and posixpath.normpath(entry) in ('.', '/'):
                 self.clear()
             else:
-                self.afc.rm(entry, force=True)
+                self.afc.rm(entry, match, force=True)
 
     def flush(self) -> None:
         """ Trigger com.apple.crashreportmover to flush all products into CrashReports directory """
@@ -186,14 +189,14 @@ class CrashReportsManager:
                         for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
                             if filename.endswith(ext):
                                 delta = self.lockdown.date - \
-                                    self.afc.stat(posixpath.join(SYSDIAGNOSE_DIR, filename))['st_mtime']
+                                        self.afc.stat(posixpath.join(SYSDIAGNOSE_DIR, filename))['st_mtime']
                                 # Ignores IN_PROGRESS sysdiagnose files older than the defined time to live
                                 if delta.total_seconds() < SYSDIAGNOSE_IN_PROGRESS_MAX_TTL_SECS:
                                     self.logger.debug(f'Detected in progress sysdiagnose {filename}')
                                     sysdiagnose_filename = filename.rsplit(ext)[0]
                                     sysdiagnose_filename = sysdiagnose_filename.replace('IN_PROGRESS_', '')
                                     sysdiagnose_filename = f'{sysdiagnose_filename}.tar.gz'
-                                    return posixpath.join(SYSDIAGNOSE_DIR,  sysdiagnose_filename)
+                                    return posixpath.join(SYSDIAGNOSE_DIR, sysdiagnose_filename)
                                 else:
                                     self.logger.warning(f"Old sysdiagnose temp file ignored {filename}")
                                     excluded_temp_files.append(filename)

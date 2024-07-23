@@ -11,6 +11,7 @@ import struct
 import sys
 from collections import namedtuple
 from datetime import datetime
+from re import Pattern
 from typing import Callable, List, Optional, Union
 
 import hexdump
@@ -221,7 +222,7 @@ class AfcService(LockdownService):
         super().__init__(lockdown, service_name)
         self.packet_num = 0
 
-    def pull(self, relative_src, dst, callback=None, src_dir=''):
+    def pull(self, relative_src, dst, match: Optional[Pattern] = None, callback=None, src_dir=''):
         src = posixpath.join(src_dir, relative_src)
         if callback is not None:
             callback(src, dst)
@@ -245,6 +246,9 @@ class AfcService(LockdownService):
                 dst_filename = dst_path / filename
 
                 src_filename = self.resolve_path(src_filename)
+
+                if match is not None and not match.match(posixpath.basename(src_filename)):
+                    continue
 
                 if self.isdir(src_filename):
                     dst_filename.mkdir(exist_ok=True)
@@ -328,12 +332,13 @@ class AfcService(LockdownService):
             raise
 
     @path_to_str()
-    def rm(self, filename: str, force: bool = False) -> List[str]:
+    def rm(self, filename: str, match: Optional[Pattern] = None, force: bool = False) -> List[str]:
         """ recursive removal of a directory or a file
 
         if did not succeed, return list of undeleted filenames or raise exception depending on force parameter.
 
         :param filename: path to directory or a file
+        :param match: Pattern of directory entries to remove or None to remove all
         :param force: True for ignore exception and return list of undeleted paths
         :return: list of undeleted paths
         :rtype: list[str]
@@ -352,6 +357,10 @@ class AfcService(LockdownService):
         undeleted_items = []
         for entry in self.listdir(filename):
             current_filename = posixpath.join(filename, entry)
+
+            if match is not None and not match.match(posixpath.basename(current_filename)):
+                continue
+
             if self.isdir(current_filename):
                 ret_undeleted_items = self.rm(current_filename, force=True)
                 undeleted_items.extend(ret_undeleted_items)
