@@ -2,6 +2,7 @@ import click
 
 from pymobiledevice3.cli.cli_common import Command
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.crash_reports import CrashReportsManager, CrashReportsShell
 
 
@@ -30,11 +31,12 @@ def crash_clear(service_provider: LockdownClient, flush):
 @click.argument('out', type=click.Path(file_okay=False))
 @click.argument('remote_file', type=click.Path(), required=False)
 @click.option('-e', '--erase', is_flag=True)
-def crash_pull(service_provider: LockdownClient, out, remote_file, erase):
+@click.option('-m', '--match', help='Match given regex over enumerated basenames')
+def crash_pull(service_provider: LockdownServiceProvider, out, remote_file, erase, match) -> None:
     """ pull all crash reports """
     if remote_file is None:
         remote_file = '/'
-    CrashReportsManager(service_provider).pull(out, remote_file, erase)
+    CrashReportsManager(service_provider).pull(out, remote_file, erase, match)
 
 
 @crash.command('shell', cls=Command)
