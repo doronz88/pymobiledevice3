@@ -14,7 +14,7 @@ from pymobiledevice3.utils import bytes_to_uint, plist_access_path
 
 TSS_CONTROLLER_ACTION_URL = 'http://gs.apple.com/TSS/controller?action=2'
 
-TSS_CLIENT_VERSION_STRING = 'libauthinstall-973.0.1'
+TSS_CLIENT_VERSION_STRING = 'libauthinstall-1033.0.2'
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,12 @@ def get_with_or_without_comma(obj: typing.Mapping, k: str, default=None):
     if val is None and default is not None:
         val = default
     return val
+
+
+def is_fw_payload(info: typing.Mapping[str, typing.Any]) -> bool:
+    return (info.get('IsFirmwarePayload') or info.get('IsSecondaryFirmwarePayload') or info.get('IsFUDFirmware') or
+            info.get('IsLoadedByiBoot') or info.get('IsEarlyAccessFirmware') or info.get('IsiBootEANFirmware') or
+            info.get('IsiBootNonEssentialFirmware'))
 
 
 class TSSResponse(dict):
@@ -134,9 +140,8 @@ class TSSRequest:
                     logger.debug(f'skipping {key} as it is not trusted')
                     continue
                 info = manifest_entry['Info']
-                if not info['IsFirmwarePayload'] and not info['IsSecondaryFirmwarePayload'] and \
-                        not info['IsFUDFirmware']:
-                    logger.debug(f'skipping {key} as it is neither firmware nor secondary nor FUD firmware payload')
+                if not is_fw_payload(info):
+                    logger.debug(f'skipping {key} as it is not a firmware payload')
                     continue
 
             # copy this entry
@@ -240,7 +245,6 @@ class TSSRequest:
 
     def add_vinyl_tags(self, parameters: typing.Mapping, overrides=None):
         self._request['@BBTicket'] = True
-        self._request['@eUICC,Ticket'] = True
 
         self._request['eUICC,ApProductionMode'] = parameters.get('eUICC,ApProductionMode',
                                                                  parameters.get('ApProductionMode'))
@@ -303,10 +307,9 @@ class TSSRequest:
                 if not manifest_node.get('Trusted', False):
                     logger.debug(f'skipping {key} as it is not trusted')
                     continue
-                info = manifest_node['Info']
-                if not info['IsFirmwarePayload'] and not info['IsSecondaryFirmwarePayload'] and \
-                        not info['IsFUDFirmware']:
-                    logger.debug(f'skipping {key} as it is neither firmware nor secondary nor FUD firmware payload')
+                info = manifest_entry['Info']
+                if not is_fw_payload(info):
+                    logger.debug(f'skipping {key} as it is not a firmware payload')
                     continue
 
             if info_dict.get('IsFTAB'):
@@ -344,8 +347,10 @@ class TSSRequest:
 
     def add_ap_img4_tags(self, parameters):
         keys_to_copy = (
-            'ApNonce', 'Ap,OSLongVersion', 'ApSecurityMode', 'ApProductionMode', 'ApSepNonce',
-            'PearlCertificationRootPub', 'NeRDEpoch', 'ApSikaFuse')
+            'ApNonce', 'ApProductionMode', 'ApSecurityMode', 'Ap,OSLongVersion', 'ApSecurityMode', 'ApSepNonce',
+            'Ap,SDKPlatform', 'PearlCertificationRootPub', 'NeRDEpoch', 'ApSikaFuse', 'Ap,SikaFuse', 'Ap,OSReleaseType',
+            'Ap,ProductType', 'Ap,Target', 'Ap,TargetType'
+        )
         for k in keys_to_copy:
             if k in parameters:
                 v = parameters[k]
@@ -360,6 +365,9 @@ class TSSRequest:
         self._request['UID_MODE'] = uid_mode
         self._request['@ApImg4Ticket'] = True
         self._request['@BBTicket'] = True
+
+        if 'Ap,SikaFuse' not in self._request.keys():
+            self._request['Ap,SikaFuse'] = 0
 
     def add_se_tags(self, parameters: typing.Mapping, overrides=None):
         manifest = parameters['Manifest']

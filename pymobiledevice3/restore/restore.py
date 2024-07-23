@@ -423,9 +423,13 @@ class Restore(BaseRestore):
 
         req['NorImageData'] = norimage
 
-        for component in ('RestoreSEP', 'SEP'):
+        for component in ('RestoreSEP', 'SEP', 'SepStage1'):
+            if not self.build_identity.has_component(component):
+                continue
             comp = self.build_identity.get_component(component, tss=self.recovery.tss)
             if comp.path:
+                if component == 'SepStage1':
+                    component = 'SEPPatch'
                 req[f'{component}ImageData'] = comp.personalized_data
 
         self.logger.info('Sending NORData now...')
