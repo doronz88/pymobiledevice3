@@ -366,7 +366,7 @@ class TSSRequest:
         self._request['@ApImg4Ticket'] = True
         self._request['@BBTicket'] = True
 
-        if 'Ap,SikaFuse' not in self._request.keys():
+        if parameters.get('RequiresUIDMode'):
             self._request['Ap,SikaFuse'] = 0
 
     def add_se_tags(self, parameters: typing.Mapping, overrides=None):
