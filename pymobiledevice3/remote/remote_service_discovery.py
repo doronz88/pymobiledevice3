@@ -118,9 +118,9 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         return int(service['Port'])
 
     async def close(self) -> None:
-        await self.service.close()
         if self.lockdown is not None:
             self.lockdown.close()
+        await self.service.close()
 
     async def __aenter__(self) -> 'RemoteServiceDiscoveryService':
         await self.connect()
