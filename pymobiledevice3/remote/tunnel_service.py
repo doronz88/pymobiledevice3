@@ -187,7 +187,8 @@ class RemotePairingTunnel(ABC):
         self._tun_read_task.cancel()
         with suppress(CancelledError):
             await self._tun_read_task
-        self.tun.close()
+        if self.tun is not None:
+            self.tun.close()
         self.tun = None
 
     @staticmethod

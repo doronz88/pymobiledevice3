@@ -226,6 +226,7 @@ class TunneldCore:
 
             if tun is not None and not bailed_out:
                 logger.info(f'disconnected from tunnel --rsd {tun.address} {tun.port}')
+                await tun.client.stop_tunnel()
 
             if protocol_handler is not None:
                 try:
