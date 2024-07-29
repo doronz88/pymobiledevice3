@@ -194,6 +194,7 @@ class FDRClient:
 
 
 def fdr_listener_thread(type_: fdr_type):
+    client = None
     try:
         client = FDRClient(type_)
 
