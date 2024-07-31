@@ -222,12 +222,9 @@ class AfcService(LockdownService):
         super().__init__(lockdown, service_name)
         self.packet_num = 0
 
-    def pull(self, relative_src, dst, match: Optional[Pattern] = None, callback=None, src_dir=''):
-        src = posixpath.join(src_dir, relative_src)
-        if callback is not None:
-            callback(src, dst)
-
-        src = self.resolve_path(src)
+    def pull(self, relative_src: str, dst: str, match: Optional[Pattern] = None, callback: Optional[Callable] = None,
+             src_dir: str = '') -> None:
+        src = self.resolve_path(posixpath.join(src_dir, relative_src))
 
         if not self.isdir(src):
             # normal file
@@ -236,6 +233,8 @@ class AfcService(LockdownService):
             with open(dst, 'wb') as f:
                 f.write(self.get_file_contents(src))
             os.utime(dst, (os.stat(dst).st_atime, self.stat(src)['st_mtime'].timestamp()))
+            if callback is not None:
+                callback(src, dst)
         else:
             # directory
             dst_path = pathlib.Path(dst) / os.path.basename(relative_src)
@@ -313,7 +312,7 @@ class AfcService(LockdownService):
         self._push_internal(local_path, remote_path, callback)
 
     @path_to_str()
-    def _rm_single(self, filename: str, force: bool = False) -> bool:
+    def rm_single(self, filename: str, force: bool = False) -> bool:
         """ remove single file or directory
 
          return if succeed or raise exception depending on force parameter.
@@ -344,12 +343,12 @@ class AfcService(LockdownService):
         :rtype: list[str]
         """
         if not self.exists(filename):
-            if not self._rm_single(filename, force=force):
+            if not self.rm_single(filename, force=force):
                 return [filename]
 
         # single file
         if not self.isdir(filename):
-            if self._rm_single(filename, force=force):
+            if self.rm_single(filename, force=force):
                 return []
             return [filename]
 
@@ -365,12 +364,12 @@ class AfcService(LockdownService):
                 ret_undeleted_items = self.rm(current_filename, force=True)
                 undeleted_items.extend(ret_undeleted_items)
             else:
-                if not self._rm_single(current_filename, force=True):
+                if not self.rm_single(current_filename, force=True):
                     undeleted_items.append(current_filename)
 
         # directory path
         try:
-            if not self._rm_single(filename, force=force):
+            if not self.rm_single(filename, force=force):
                 undeleted_items.append(filename)
                 return undeleted_items
         except AfcException:
