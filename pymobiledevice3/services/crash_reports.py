@@ -87,17 +87,14 @@ class CrashReportsManager:
         :param match: Regex to match against file and directory names to pull.
         """
 
-        def log(src, dst):
+        def log(src: str, dst: str) -> None:
             self.logger.info(f'{src} --> {dst}')
+            if erase:
+                if not self.afc.isdir(src):
+                    self.afc.rm_single(src, force=True)
 
         match = None if match is None else re.compile(match)
         self.afc.pull(entry, out, match, callback=log)
-
-        if erase:
-            if match is None and posixpath.normpath(entry) in ('.', '/'):
-                self.clear()
-            else:
-                self.afc.rm(entry, match, force=True)
 
     def flush(self) -> None:
         """ Trigger com.apple.crashreportmover to flush all products into CrashReports directory """
