@@ -13,11 +13,11 @@ class Device:
 
     def __repr__(self) -> str:
         return (
-                f'<{self.__class__.__name__} '
-                f'ecid: {self.ecid} '
-                f'hardware_model: {self.hardware_model} '
-                f'image4-support: {self.is_image4_supported}>'
-            )
+            f'<{self.__class__.__name__} '
+            f'ecid: {self.ecid} '
+            f'hardware_model: {self.hardware_model} '
+            f'image4-support: {self.is_image4_supported}>'
+        )
 
     @cached_property
     def ecid(self):
@@ -55,3 +55,9 @@ class Device:
             with suppress(MissingValueError):
                 return self.lockdown.preflight_info
         return None
+
+    @cached_property
+    def product_type(self) -> str:
+        if self.lockdown:
+            return self.lockdown.product_type
+        return self.irecv.product_type
