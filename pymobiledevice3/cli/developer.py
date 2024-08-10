@@ -155,6 +155,14 @@ def kill(service_provider: LockdownClient, pid):
         ProcessControl(dvt).kill(pid)
 
 
+@dvt.command('processIdForBundleId', cls=Command)
+@click.argument('appbundleidentifier')
+def processIdForBundleId(service_provider,appbundleidentifier) -> None:
+    """ Get PID of a bundle identifier (only returns a valid value if its running). """
+    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        print(ProcessControl(dvt).processIdentifierForBundleIdentifier(appbundleidentifier))
+
+
 def get_matching_processes(service_provider: LockdownServiceProvider, name: Optional[str] = None,
                            bundle_identifier: Optional[str] = None) \
         -> List[MatchedProcessByPid]:

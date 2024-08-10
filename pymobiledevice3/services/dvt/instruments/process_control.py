@@ -46,6 +46,10 @@ class ProcessControl:
         """
         self._channel.killPid_(MessageAux().append_obj(pid), expects_reply=False)
 
+    def processIdentifierForBundleIdentifier(self,appbundleidentifier:str):
+        self._channel.processIdentifierForBundleIdentifier_(MessageAux().append_obj(appbundleidentifier),expects_reply=True)
+        return self._channel.receive_plist()
+
     def launch(self, bundle_id: str, arguments=None, kill_existing: bool = True, start_suspended: bool = False,
                environment: typing.Mapping = None, extra_options: typing.Mapping = None) -> int:
         """
