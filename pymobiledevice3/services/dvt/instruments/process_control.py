@@ -46,7 +46,7 @@ class ProcessControl:
         """
         self._channel.killPid_(MessageAux().append_obj(pid), expects_reply=False)
 
-    def processIdentifierForBundleIdentifier(self,appbundleidentifier:str):
+    def process_identifier_for_bundle_identifier(self, app_bundle_identifier: str) -> int:
         self._channel.processIdentifierForBundleIdentifier_(MessageAux().append_obj(appbundleidentifier),expects_reply=True)
         return self._channel.receive_plist()
 
