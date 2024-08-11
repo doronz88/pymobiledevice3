@@ -155,7 +155,7 @@ def kill(service_provider: LockdownClient, pid):
         ProcessControl(dvt).kill(pid)
 
 
-@dvt.command('processIdForBundleId', cls=Command)
+@dvt.command(cls=Command)
 @click.argument('appbundleidentifier')
 def process_id_for_bundle_id(service_provider: LockdownServiceProvider, app_bundle_identifier: str) -> None:
     """ Get PID of a bundle identifier (only returns a valid value if its running). """
