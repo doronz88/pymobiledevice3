@@ -254,8 +254,12 @@ class Restore(BaseRestore):
             await service.aio_send_plist({'FileData': chunk})
             if i == 0 and chunk.startswith(b'AEA1'):
                 self.logger.debug('First chunk in a AEA')
-                message = await service.aio_recv_plist()
-                await self.send_url_asset(message)
+                try:
+                    async with asyncio.timeout(3):
+                        message = await service.aio_recv_plist()
+                        await self.send_url_asset(message)
+                except asyncio.TimeoutError:
+                    self.logger.debug('No URLAsset was requested. Assuming it is not necessary')
 
         # Send FileDataDone
         await service.aio_send_plist({'FileDataDone': True})
