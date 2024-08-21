@@ -57,7 +57,7 @@ def create_context(certfile, keyfile=None):
         context.set_ciphers('ALL:!aNULL:!eNULL:@SECLEVEL=0')
     else:
         context.set_ciphers('ALL:!aNULL:!eNULL')
-    context.options |= 0x4 #OPENSSL OP_LEGACY_SERVER_CONNECT (required for legacy iOS devices)
+    context.options |= 0x4 # OPENSSL OP_LEGACY_SERVER_CONNECT (required for legacy iOS devices)
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     context.load_cert_chain(certfile, keyfile)
