@@ -16,7 +16,7 @@ def cli() -> None:
 
 @cli.group()
 def amfi() -> None:
-    """ Enable/Disable developer-mode or query its state """
+    """ Enable developer-mode or query its state """
     pass
 
 

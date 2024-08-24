@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 
 INVALID_SERVICE_MESSAGE = """Failed to start service. Possible reasons are:
 - If you were trying to access a developer service (developer subcommand):
+    - If your device iOS version >= 15.0:
+        - Make sure you first enabled "Developer Mode" via:
+          > python3 -m pymobiledevice3 amfi enable-developer-mode
+
     - Make sure the DeveloperDiskImage/PersonalizedImage is mounted via:
       > python3 -m pymobiledevice3 mounter auto-mount
 
