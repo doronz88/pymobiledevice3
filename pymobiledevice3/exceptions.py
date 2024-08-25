@@ -13,7 +13,8 @@ __all__ = [
     'MessageNotSupportedError', 'InvalidServiceError', 'InspectorEvaluateError',
     'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError', 'CoreDeviceError',
     'AccessDeniedError', 'RSDRequiredError', 'SysdiagnoseTimeoutError', 'GetProhibitedError',
-    'FeatureNotSupportedError', 'OSNotSupportedError', 'DeprecationError', 'NotEnoughDiskSpaceError'
+    'FeatureNotSupportedError', 'OSNotSupportedError', 'DeprecationError', 'NotEnoughDiskSpaceError',
+    'CloudConfigurationAlreadyPresentError'
 ]
 
 from typing import List, Optional
@@ -279,6 +280,10 @@ class NotificationTimeoutError(PyMobileDevice3Exception, TimeoutError):
 
 
 class ProfileError(PyMobileDevice3Exception):
+    pass
+
+
+class CloudConfigurationAlreadyPresentError(ProfileError):
     pass
 
 
