@@ -1,7 +1,8 @@
 import plistlib
 from enum import Enum
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Optional
+from uuid import uuid4
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -36,17 +37,17 @@ class MobileConfigService(LockdownService):
     def flush(self) -> None:
         self._send_recv({'RequestType': 'Flush'})
 
-    def escalate(self, certificate_file: str) -> None:
+    def escalate(self, keybag_file: Path) -> None:
         """
         Authenticate with the device.
 
-        :param certificate_file: Certificate file in PEM format, containing certificate and private key.
+        :param keybag_file: Certificate file in PEM format, containing certificate and private key.
         :return: None
         """
-        with open(certificate_file, 'rb') as certificate_file:
-            certificate_file = certificate_file.read()
-        private_key = serialization.load_pem_private_key(certificate_file, password=None)
-        cer = x509.load_pem_x509_certificate(certificate_file)
+        with open(keybag_file, 'rb') as keybag_file:
+            keybag_file = keybag_file.read()
+        private_key = serialization.load_pem_private_key(keybag_file, password=None)
+        cer = x509.load_pem_x509_certificate(keybag_file)
         public_key = cer.public_bytes(Encoding.DER)
         escalate_response = self._send_recv({
             'RequestType': 'Escalate',
@@ -88,8 +89,8 @@ class MobileConfigService(LockdownService):
     def install_profile(self, payload: bytes) -> None:
         self._send_recv({'RequestType': 'InstallProfile', 'Payload': payload})
 
-    def install_profile_silent(self, certificate_file: str, profile: bytes) -> None:
-        self.escalate(certificate_file)
+    def install_profile_silent(self, keybag_file: Path, profile: bytes) -> None:
+        self.escalate(keybag_file)
         self._send_recv({'RequestType': 'InstallProfileSilent', 'Payload': profile})
 
     def remove_profile(self, identifier: str) -> None:
@@ -118,8 +119,74 @@ class MobileConfigService(LockdownService):
             raise ProfileError(f'invalid response {response}')
         return response
 
-    def supervise(self, organization: str, keybag: Path) -> None:
-        cer = x509.load_pem_x509_certificate(keybag.read_bytes())
+    def install_wifi_profile(self, encryption_type: str, ssid: str, password: str,
+                             auto_join: bool = True, captive_bypass: bool = False,
+                             disable_association_mac_randomization: bool = False, hidden_network: bool = False,
+                             is_hotspot: bool = False, keybag_file: Optional[Path] = None) -> None:
+        payload_uuid = str(uuid4())
+        profile_data = plistlib.dumps({
+            'PayloadContent': [
+                {
+                    'AutoJoin': auto_join,
+                    'CaptiveBypass': captive_bypass,
+                    'DisableAssociationMACRandomization': disable_association_mac_randomization,
+                    'EncryptionType': encryption_type,
+                    'HIDDEN_NETWORK': hidden_network,
+                    'IsHotspot': is_hotspot,
+                    'Password': password,
+                    'PayloadDescription': 'Configures Wi-Fi settings',
+                    'PayloadDisplayName': 'Wi-Fi',
+                    'PayloadIdentifier': f'com.apple.wifi.managed.{payload_uuid}',
+                    'PayloadType': 'com.apple.wifi.managed',
+                    'PayloadUUID': payload_uuid,
+                    'PayloadVersion': 1,
+                    'ProxyType': 'None',
+                    'SSID_STR': ssid
+                }
+            ],
+            'PayloadDisplayName': f'WiFi Profile For {ssid}',
+            'PayloadIdentifier': f'MacBook-Pro.{payload_uuid}',
+            'PayloadRemovalDisallowed': False,
+            'PayloadType': 'Configuration',
+            'PayloadUUID': payload_uuid,
+            'PayloadVersion': 1
+        })
+        if keybag_file is not None:
+            self.install_profile_silent(keybag_file, profile_data)
+        else:
+            self.install_profile(profile_data)
+
+    def install_http_proxy(self, server: str, server_port: int, keybag_file: Optional[Path] = None) -> None:
+        payload_uuid = str(uuid4())
+        profile_data = plistlib.dumps({
+            'PayloadContent': [
+                {
+                    'PayloadDescription': 'Global HTTP Proxy',
+                    'PayloadDisplayName': 'Global HTTP Proxy',
+                    'PayloadIdentifier': f'com.apple.proxy.http.global.{payload_uuid}',
+                    'PayloadType': 'com.apple.proxy.http.global',
+                    'PayloadUUID': payload_uuid,
+                    'PayloadVersion': 1,
+                    'ProxyCaptiveLoginAllowed': False,
+                    'ProxyServer': server,
+                    'ProxyServerPort': server_port,
+                    'ProxyType': 'Manual'
+                }
+            ],
+            'PayloadDisplayName': f'HTTP Proxy {server}:{server_port}',
+            'PayloadIdentifier': f'MacBook-Pro.{payload_uuid}',
+            'PayloadRemovalDisallowed': False,
+            'PayloadType': 'Configuration',
+            'PayloadUUID': payload_uuid,
+            'PayloadVersion': 1
+        })
+        if keybag_file is not None:
+            self.install_profile_silent(keybag_file, profile_data)
+        else:
+            self.install_profile(profile_data)
+
+    def supervise(self, organization: str, keybag_file: Path) -> None:
+        cer = x509.load_pem_x509_certificate(keybag_file.read_bytes())
         public_key = cer.public_bytes(Encoding.DER)
         self.set_cloud_configuration({
             'AllowPairing': True,
@@ -130,7 +197,7 @@ class MobileConfigService(LockdownService):
             'IsMandatory': True,
             'IsMultiUser': False,
             'IsSupervised': True,
-            'OrganizationMagic': '5A750C81-5B7E-4F7B-B070-B5E565236C04',
+            'OrganizationMagic': str(uuid4()),
             'OrganizationName': organization,
             'PostSetupProfileWasInstalled': True,
             'SkipSetup': [

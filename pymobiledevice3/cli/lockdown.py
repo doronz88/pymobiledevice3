@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import plistlib
+from typing import Optional
 
 import click
 
@@ -121,9 +122,21 @@ def lockdown_heartbeat(service_provider: LockdownClient):
 
 
 @lockdown_group.command('language', cls=Command)
-def lockdown_language(service_provider: LockdownClient):
-    """ get current language settings """
-    print(f'{service_provider.language} {service_provider.locale}')
+@click.argument('language', required=False)
+def lockdown_language(service_provider: LockdownClient, language: Optional[str]) -> None:
+    """ Get/Set current language settings """
+    if language is not None:
+        service_provider.set_language(language)
+    print_json(service_provider.language)
+
+
+@lockdown_group.command('locale', cls=Command)
+@click.argument('locale', required=False)
+def lockdown_locale(service_provider: LockdownClient, locale: Optional[str]) -> None:
+    """ Get/Set current language settings """
+    if locale is not None:
+        service_provider.set_locale(locale)
+    print_json(service_provider.locale)
 
 
 @lockdown_group.command('device-name', cls=Command)
