@@ -33,6 +33,10 @@ class LockdownServiceProvider:
         pass
 
     @abstractmethod
+    def set_language(self, language: str) -> None:
+        pass
+
+    @abstractmethod
     def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
         pass
 
