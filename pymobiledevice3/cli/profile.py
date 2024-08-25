@@ -1,10 +1,17 @@
-import json
 import logging
+import plistlib
+import tempfile
+from pathlib import Path
+from typing import IO, List
 
 import click
+from typing_extensions import Optional
 
+from pymobiledevice3.ca import create_keybag_file
 from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.mobile_activation import MobileActivationService
 from pymobiledevice3.services.mobile_config import MobileConfigService
 
 logger = logging.getLogger(__name__)
@@ -38,18 +45,14 @@ def profile_install(service_provider: LockdownClient, profiles):
 
 
 @profile_group.command('install-silent', cls=Command)
-@click.option('--keystore', type=click.File('rb'), required=True,
-              help="A PKCS#12 keystore containing the certificate and private key which can supervise the device.")
-@click.option('--keystore-password', prompt=True, required=True, hide_input=True,
-              help="The password for the PKCS#12 keystore.")
+@click.argument('certificate', type=click.Path(exists=True, dir_okay=False, file_okay=True))
 @click.argument('profiles', nargs=-1, type=click.File('rb'))
-def profile_install_silent(service_provider: LockdownClient, profiles, keystore, keystore_password):
+def profile_install_silent(certificate: str, service_provider: LockdownServiceProvider, profiles: List[IO]) -> None:
     """ install given profiles without user interaction (requires the device to be supervised) """
     service = MobileConfigService(lockdown=service_provider)
     for profile in profiles:
         logger.info(f'installing {profile.name}')
-        service.install_profile_silent(
-            profile.read(), keystore.read(), keystore_password)
+        service.install_profile_silent(certificate, profile.read())
 
 
 @profile_group.command('cloud-configuration', cls=Command)
@@ -59,7 +62,7 @@ def profile_cloud_configuration(service_provider: LockdownClient, config):
     if not config:
         print_json(MobileConfigService(lockdown=service_provider).get_cloud_configuration())
     else:
-        config_json = json.load(config)
+        config_json = plistlib.load(config)
         logger.info(f'applying cloud configuration {config_json}')
         MobileConfigService(lockdown=service_provider).set_cloud_configuration(config_json)
         logger.info('applied cloud configuration')
@@ -90,12 +93,42 @@ def profile_set_wifi_power(service_provider: LockdownClient, state):
 
 
 @profile_group.command('erase-device', cls=Command)
-@click.option('--preserve-data-plan/--no-preserve-data-plan', default=True, help='Preserves eSIM / data plan after erase')
+@click.option('--preserve-data-plan/--no-preserve-data-plan', default=True,
+              help='Preserves eSIM / data plan after erase')
 @click.option('--disallow-proximity-setup/--no-disallow-proximity-setup', default=False,
               help='Disallows to setup the erased device from nearby devices')
 def profile_erase_device(service_provider: LockdownClient, preserve_data_plan: bool, disallow_proximity_setup: bool):
     """ erase device """
-    logger.info(f'erasing device with preserve_data_plan: {preserve_data_plan}, '
+    logger.info(f'Erasing device with preserve_data_plan: {preserve_data_plan}, '
                 f'disallow_proximity_setup: {disallow_proximity_setup}')
     MobileConfigService(lockdown=service_provider).erase_device(preserve_data_plan, disallow_proximity_setup)
-    logger.info('erased device')
+    logger.info('Erased device')
+
+
+@profile_group.command('create-keybag')
+@click.argument('keybag', type=click.Path(file_okay=True, dir_okay=False, exists=False))
+@click.argument('organization')
+def profile_create_keybag(keybag: str, organization: str) -> None:
+    """ Create keybag storing certificate and private key """
+    create_keybag_file(Path(keybag), organization)
+
+
+@profile_group.command('supervise', cls=Command)
+@click.argument('organization')
+@click.option('--keybag', type=click.Path(file_okay=True, dir_okay=False, exists=True))
+def profile_supervise(service_provider: LockdownServiceProvider, organization: str, keybag: Optional[str]) -> None:
+    """ supervise device """
+    if MobileActivationService(service_provider).state == 'Unactivated':
+        logger.info('Activating device')
+        MobileActivationService(service_provider).activate()
+        logger.info('Device has been successfully activated')
+    logger.info('Supervising device')
+    if keybag is None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            keybag = Path(temp_dir) / 'keybag'
+            create_keybag_file(keybag, organization)
+            MobileConfigService(lockdown=service_provider).supervise(organization, keybag)
+    else:
+        MobileConfigService(lockdown=service_provider).supervise(organization, Path(keybag))
+
+    logger.info('Device has been successfully supervised')
