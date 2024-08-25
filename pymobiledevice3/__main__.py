@@ -5,12 +5,12 @@ import traceback
 import click
 import coloredlogs
 
-from pymobiledevice3.exceptions import AccessDeniedError, ConnectionFailedToUsbmuxdError, DeprecationError, \
-    DeveloperModeError, DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, DeviceNotFoundError, \
-    FeatureNotSupportedError, InternalError, InvalidServiceError, MessageNotSupportedError, MissingValueError, \
-    NoDeviceConnectedError, NotEnoughDiskSpaceError, NotPairedError, OSNotSupportedError, \
-    PairingDialogResponsePendingError, PasswordRequiredError, RSDRequiredError, SetProhibitedError, \
-    TunneldConnectionError, UserDeniedPairingError
+from pymobiledevice3.exceptions import AccessDeniedError, CloudConfigurationAlreadyPresentError, \
+    ConnectionFailedToUsbmuxdError, DeprecationError, DeveloperModeError, DeveloperModeIsNotEnabledError, \
+    DeviceHasPasscodeSetError, DeviceNotFoundError, FeatureNotSupportedError, InternalError, InvalidServiceError, \
+    MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, NotEnoughDiskSpaceError, NotPairedError, \
+    OSNotSupportedError, PairingDialogResponsePendingError, PasswordRequiredError, RSDRequiredError, \
+    SetProhibitedError, TunneldConnectionError, UserDeniedPairingError
 from pymobiledevice3.osu.os_utils import get_os_utils
 
 coloredlogs.install(level=logging.INFO)
@@ -174,6 +174,10 @@ def main() -> None:
         logger.error(
             f'Unsupported OS - {e.os_name}. To add support, consider contributing at '
             f'https://github.com/doronz88/pymobiledevice3.')
+    except CloudConfigurationAlreadyPresentError:
+        logger.error('A cloud configuration is already present on device. You must first erase the device in order '
+                     'to install new one:\n'
+                     '> pymobiledevice3 profile erase-device')
     except FeatureNotSupportedError as e:
         logger.error(
             f'Missing implementation of `{e.feature}` on `{e.os_name}`. To add support, consider contributing at '
