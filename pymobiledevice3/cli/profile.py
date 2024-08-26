@@ -157,3 +157,9 @@ def profile_install_http_proxy(service_provider: LockdownServiceProvider, server
                                keybag: Optional[str]) -> None:
     """ Install HTTP Proxy profile """
     MobileConfigService(lockdown=service_provider).install_http_proxy(server, port, keybag_file=keybag)
+
+
+@profile_group.command('remove-http-proxy', cls=Command)
+def profile_remove_http_proxy(service_provider: LockdownServiceProvider) -> None:
+    """ Remove HTTP Proxy profile that was previously installed using pymobiledevice3 """
+    MobileConfigService(lockdown=service_provider).remove_http_proxy()

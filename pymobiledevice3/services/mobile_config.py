@@ -1,7 +1,7 @@
 import plistlib
 from enum import Enum
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Any, Mapping, Optional
 from uuid import uuid4
 
 from cryptography import x509
@@ -15,6 +15,7 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 ERROR_CLOUD_CONFIGURATION_ALREADY_PRESENT = 14002
+GLOBAL_HTTP_PROXY_UUID = '86a52338-52f7-4c09-b005-52baf3dc4882'
 
 
 class Purpose(Enum):
@@ -124,66 +125,41 @@ class MobileConfigService(LockdownService):
                              disable_association_mac_randomization: bool = False, hidden_network: bool = False,
                              is_hotspot: bool = False, keybag_file: Optional[Path] = None) -> None:
         payload_uuid = str(uuid4())
-        profile_data = plistlib.dumps({
-            'PayloadContent': [
-                {
-                    'AutoJoin': auto_join,
-                    'CaptiveBypass': captive_bypass,
-                    'DisableAssociationMACRandomization': disable_association_mac_randomization,
-                    'EncryptionType': encryption_type,
-                    'HIDDEN_NETWORK': hidden_network,
-                    'IsHotspot': is_hotspot,
-                    'Password': password,
-                    'PayloadDescription': 'Configures Wi-Fi settings',
-                    'PayloadDisplayName': 'Wi-Fi',
-                    'PayloadIdentifier': f'com.apple.wifi.managed.{payload_uuid}',
-                    'PayloadType': 'com.apple.wifi.managed',
-                    'PayloadUUID': payload_uuid,
-                    'PayloadVersion': 1,
-                    'ProxyType': 'None',
-                    'SSID_STR': ssid
-                }
-            ],
-            'PayloadDisplayName': f'WiFi Profile For {ssid}',
-            'PayloadIdentifier': f'MacBook-Pro.{payload_uuid}',
-            'PayloadRemovalDisallowed': False,
-            'PayloadType': 'Configuration',
+        self.install_managed_profile(f'WiFi Profile For {ssid}', {
+            'AutoJoin': auto_join,
+            'CaptiveBypass': captive_bypass,
+            'DisableAssociationMACRandomization': disable_association_mac_randomization,
+            'EncryptionType': encryption_type,
+            'HIDDEN_NETWORK': hidden_network,
+            'IsHotspot': is_hotspot,
+            'Password': password,
+            'PayloadDescription': 'Configures Wi-Fi settings',
+            'PayloadDisplayName': 'Wi-Fi',
+            'PayloadIdentifier': f'com.apple.wifi.managed.{payload_uuid}',
+            'PayloadType': 'com.apple.wifi.managed',
             'PayloadUUID': payload_uuid,
-            'PayloadVersion': 1
-        })
-        if keybag_file is not None:
-            self.install_profile_silent(keybag_file, profile_data)
-        else:
-            self.install_profile(profile_data)
+            'PayloadVersion': 1,
+            'ProxyType': 'None',
+            'SSID_STR': ssid
+        }, keybag_file=keybag_file)
 
     def install_http_proxy(self, server: str, server_port: int, keybag_file: Optional[Path] = None) -> None:
         payload_uuid = str(uuid4())
-        profile_data = plistlib.dumps({
-            'PayloadContent': [
-                {
-                    'PayloadDescription': 'Global HTTP Proxy',
-                    'PayloadDisplayName': 'Global HTTP Proxy',
-                    'PayloadIdentifier': f'com.apple.proxy.http.global.{payload_uuid}',
-                    'PayloadType': 'com.apple.proxy.http.global',
-                    'PayloadUUID': payload_uuid,
-                    'PayloadVersion': 1,
-                    'ProxyCaptiveLoginAllowed': False,
-                    'ProxyServer': server,
-                    'ProxyServerPort': server_port,
-                    'ProxyType': 'Manual'
-                }
-            ],
-            'PayloadDisplayName': f'HTTP Proxy {server}:{server_port}',
-            'PayloadIdentifier': f'MacBook-Pro.{payload_uuid}',
-            'PayloadRemovalDisallowed': False,
-            'PayloadType': 'Configuration',
+        self.install_managed_profile(f'HTTP Proxy for {server}:{server_port}', {
+            'PayloadDescription': 'Global HTTP Proxy',
+            'PayloadDisplayName': 'Global HTTP Proxy',
+            'PayloadIdentifier': f'com.apple.proxy.http.global.{payload_uuid}',
+            'PayloadType': 'com.apple.proxy.http.global',
             'PayloadUUID': payload_uuid,
-            'PayloadVersion': 1
-        })
-        if keybag_file is not None:
-            self.install_profile_silent(keybag_file, profile_data)
-        else:
-            self.install_profile(profile_data)
+            'PayloadVersion': 1,
+            'ProxyCaptiveLoginAllowed': False,
+            'ProxyServer': server,
+            'ProxyServerPort': server_port,
+            'ProxyType': 'Manual'
+        }, payload_uuid=GLOBAL_HTTP_PROXY_UUID, keybag_file=keybag_file)
+
+    def remove_http_proxy(self) -> None:
+        self.remove_profile(GLOBAL_HTTP_PROXY_UUID)
 
     def supervise(self, organization: str, keybag_file: Path) -> None:
         cer = x509.load_pem_x509_certificate(keybag_file.read_bytes())
@@ -247,3 +223,22 @@ class MobileConfigService(LockdownService):
                 public_key
             ]
         })
+
+    def install_managed_profile(self, display_name: str, payload_content: Mapping[str, Any],
+                                payload_uuid: str = str(uuid4()),
+                                keybag_file: Optional[Path] = None) -> None:
+        profile_data = plistlib.dumps({
+            'PayloadContent': [
+                payload_content
+            ],
+            'PayloadDisplayName': display_name,
+            'PayloadIdentifier': payload_uuid,
+            'PayloadRemovalDisallowed': False,
+            'PayloadType': 'Configuration',
+            'PayloadUUID': payload_uuid,
+            'PayloadVersion': 1
+        })
+        if keybag_file is not None:
+            self.install_profile_silent(keybag_file, profile_data)
+        else:
+            self.install_profile(profile_data)
