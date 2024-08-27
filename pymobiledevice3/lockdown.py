@@ -14,11 +14,11 @@ from pathlib import Path
 from ssl import SSLZeroReturnError
 from typing import Dict, Generator, Mapping, Optional, Tuple
 
-from cryptography.hazmat.primitives import hashes
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7SignatureBuilder
-from cryptography.hazmat.primitives.serialization.pkcs12 import load_pkcs12
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
@@ -379,15 +379,12 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.paired = True
 
     @_reconnect_on_remote_close
-    def pair_supervised(self, timeout: float = None, p12file: Path = None, password: str = None) -> None:
-
-        keystore_data = p12file.read()
-        try:
-            decrypted_p12 = load_pkcs12(
-                keystore_data, password.encode('utf-8'))
-        except Exception as pkcs12_error:
-            self.service.close()
-            raise Exception(f'load_pkcs12 error: {pkcs12_error}')
+    def pair_supervised(self, keybag_file: Path, timeout: Optional[float] = None) -> None:
+        with open(keybag_file, 'rb') as keybag_file:
+            keybag_file = keybag_file.read()
+        private_key = serialization.load_pem_private_key(keybag_file, password=None)
+        cer = x509.load_pem_x509_certificate(keybag_file)
+        public_key = cer.public_bytes(Encoding.DER)
 
         self.device_public_key = self.get_value('', 'DevicePublicKey')
         if not self.device_public_key:
@@ -396,8 +393,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             raise PairingError()
 
         self.logger.info('Creating host key & certificate')
-        cert_pem, private_key_pem, device_certificate = ca_do_everything(
-            self.device_public_key)
+        cert_pem, private_key_pem, device_certificate = ca_do_everything(self.device_public_key)
 
         pair_record = {'DevicePublicKey': self.device_public_key,
                        'DeviceCertificate': device_certificate,
@@ -410,17 +406,17 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2',
                         'PairingOptions': {
-                            'SupervisorCertificate': decrypted_p12.cert.certificate.public_bytes(Encoding.DER),
+                            'SupervisorCertificate': public_key,
                             'ExtendedPairingErrors': True}}
 
-        # first pair with SupervisorCertificate as PairingOptions to get Challenge
+        # first pair with SupervisorCertificate as PairingOptions to get PairingChallenge
         pair = self._request_pair(pair_options, timeout=timeout)
         if pair.get('Error') == 'MCChallengeRequired':
-            extendedresponse = pair.get('ExtendedResponse')
-            if extendedresponse is not None:
-                pairingchallenge = extendedresponse.get('PairingChallenge')
-                signed_response = PKCS7SignatureBuilder().set_data(pairingchallenge).add_signer(
-                    decrypted_p12.cert.certificate, decrypted_p12.key, hashes.SHA256()).sign(Encoding.DER, [])
+            extended_response = pair.get('ExtendedResponse')
+            if extended_response is not None:
+                pairing_challenge = extended_response.get('PairingChallenge')
+                signed_response = PKCS7SignatureBuilder().set_data(pairing_challenge).add_signer(
+                    cer, private_key, hashes.SHA256()).sign(Encoding.DER, [])
                 pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2', 'PairingOptions': {
                     'ChallengeResponse': signed_response, 'ExtendedPairingErrors': True}}
                 # second pair with Response to Challenge
@@ -588,7 +584,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         return response
 
-    def _request_pair(self, pair_options: Mapping, timeout: float = None) -> Mapping:
+    def _request_pair(self, pair_options: Mapping, timeout: Optional[float] = None) -> Mapping:
         try:
             return self._request('Pair', pair_options)
         except PairingDialogResponsePendingError:

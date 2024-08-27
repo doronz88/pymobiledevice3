@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import plistlib
+from pathlib import Path
 from typing import Optional
 
 import click
@@ -92,11 +93,10 @@ def lockdown_pair(service_provider: LockdownClient):
 
 
 @lockdown_group.command('pair-supervised', cls=CommandWithoutAutopair)
-@click.argument('p12file', type=click.File('rb'))
-@click.argument('password')
-def lockdown_pair_supervised(service_provider: LockdownClient, p12file, password):
+@click.argument('keybag', type=click.Path(file_okay=True, dir_okay=False, exists=True))
+def lockdown_pair_supervised(service_provider: LockdownClient, keybag: str) -> None:
     """ pair supervised device """
-    service_provider.pair_supervised(p12file=p12file, password=password)
+    service_provider.pair_supervised(Path(keybag))
 
 
 @lockdown_group.command('save-pair-record', cls=CommandWithoutAutopair)
