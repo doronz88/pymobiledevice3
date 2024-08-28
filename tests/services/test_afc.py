@@ -1,9 +1,12 @@
+import os
 import pathlib
+from pathlib import Path, PurePosixPath
 from datetime import datetime
 
 import pytest
 
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError
+from pymobiledevice3.remote.utils import stop_remoted
 from pymobiledevice3.services.afc import MAXIMUM_READ_SIZE, AfcService, afc_error_t
 
 TEST_FILENAME = 'test'
@@ -337,3 +340,243 @@ def test_push_pull_bigger_than_max_chunk(afc: AfcService):
     afc.set_file_contents('test', contents)
     assert contents == afc.get_file_contents('test')
     afc.rm('test')
+
+class TestPull:
+    FILE_NAME = 'temp.txt'
+    FILE_NAME1 = 'temp1.txt'
+    FILE_DATA = b'data'
+    FILE_DATA1 = b'data1'
+    TEMP1 = 'temp1'
+    TEMP2 = 'temp2'
+    TEMP3 = 'temp3'
+    TEMP4 = 'temp4'
+    TEMP3_PATH = PurePosixPath(TEMP1, TEMP2, TEMP3)
+    FILE_PATH = TEMP3_PATH / FILE_NAME
+    TEMP4_PATH = TEMP3_PATH / TEMP4
+    FILE1_PATH = TEMP4_PATH / FILE_NAME1
+
+    @pytest.fixture()
+    def make_temp_dirs_and_files(self, afc: AfcService):
+        """
+        source:
+        temp1
+        └── temp2
+            └── temp3
+                ├── temp.txt
+                └── temp4
+                    └── temp1.txt
+        """
+        afc.makedirs(str(self.TEMP4_PATH))
+        afc.set_file_contents(filename=str(self.FILE_PATH), data=self.FILE_DATA)
+        afc.set_file_contents(filename=str(self.FILE1_PATH), data=self.FILE_DATA1)
+        yield
+        afc.rm(self.TEMP1)
+
+    def test_pull_afc_file_not_found_error(self, afc: AfcService, tmp_path: Path):
+        """
+        pull temp.txt target
+
+        Raises: AfcFileNotFoundError
+        """
+        with pytest.raises(AfcFileNotFoundError):
+            afc.pull(self.FILE_NAME, tmp_path.absolute())
+
+    def test_pull_file_to_non_exists_folder(self, afc: AfcService, tmp_path: Path, make_temp_dirs_and_files):
+        """
+        pull temp1/temp2/temp3/temp.txt target/temp1/
+
+        Raises: NotADirectoryError
+        """
+        dst = f'{tmp_path}/temp1/'
+        with pytest.raises(NotADirectoryError) as excinfo:
+            afc.pull(src=str(self.FILE_PATH), dst=dst)
+
+        assert str(excinfo.value) == f'pull: directory {pathlib.PurePosixPath(dst)} does not exist'
+
+    def test_pull_file_to_folder(self, afc: AfcService, tmp_path: Path, make_temp_dirs_and_files):
+        """
+        pull temp1/temp2/temp3/temp.txt target
+
+        target
+        └── temp.txt
+        """
+        afc.pull(src=str(self.FILE_PATH), dst=str(tmp_path.absolute()))
+
+        assert len(list(tmp_path.iterdir())) == 1
+        assert (tmp_path / self.FILE_NAME).read_bytes() == self.FILE_DATA
+
+    def test_pull_file_to_folder_with_slash(self, afc: AfcService, tmp_path: Path, make_temp_dirs_and_files):
+        """
+        pull temp1/temp2/temp3/temp.txt target/
+
+        target
+        └── temp.txt
+        """
+        afc.pull(src=str(self.FILE_PATH), dst=f'{tmp_path.absolute()}/')
+
+        assert len(list(tmp_path.iterdir())) == 1
+        assert (tmp_path / self.FILE_NAME).read_bytes() == self.FILE_DATA
+
+    def test_pull_file_to_current_folder(self, afc: AfcService, tmp_path: Path, make_temp_dirs_and_files):
+        """
+        pull temp1/temp2/temp3/temp.txt .
+
+        target
+        └── temp.txt
+        """
+        os.chdir(tmp_path)
+        afc.pull(src=str(self.FILE_PATH), dst='.')
+
+        assert len(list(tmp_path.iterdir())) == 1
+        assert Path(self.FILE_NAME).read_bytes() == self.FILE_DATA
+
+    def test_pull_file_to_new_file_name(self, afc: AfcService, tmp_path: Path, make_temp_dirs_and_files):
+        """
+        pull temp1/temp2/temp3/temp.txt temp1.txt
+
+        target
+        └── temp1.txt
+        """
+        os.chdir(tmp_path)
+        afc.pull(src=str(self.FILE_PATH), dst=self.FILE_NAME1)
+
+        assert len(list(tmp_path.iterdir())) == 1
+        assert Path(self.FILE_NAME1).read_bytes() == self.FILE_DATA
+
+    def test_pull_file_to_new_file_name_in_folder(self, afc: AfcService, tmp_path: Path, make_temp_dirs_and_files):
+        """
+        pull temp1/temp2/temp3/temp.txt target/temp1.txt
+
+        target
+        └── temp1.txt
+        """
+        new_file_path = tmp_path / self.FILE_NAME1
+        afc.pull(src=str(self.FILE_PATH), dst=str(new_file_path.absolute()))
+
+        assert len(list(tmp_path.iterdir())) == 1
+        assert new_file_path.read_bytes() == self.FILE_DATA
+
+    def test_pull_file_content_to_existing_file(self, afc: AfcService, tmp_path: Path, make_temp_dirs_and_files):
+        """
+        pull temp1/temp2/temp3/temp.txt target/temp1.txt
+
+        target
+        └── temp1.txt
+        """
+        exist_file = tmp_path / self.FILE_NAME1
+        exist_file.touch()
+        afc.pull(src=str(self.FILE_PATH), dst=str(exist_file.absolute()))
+
+        assert len(list(tmp_path.iterdir())) == 1
+        assert exist_file.read_bytes() == self.FILE_DATA
+
+    def test_pull_folder_to_existing_file(self, afc: AfcService, tmp_path, make_temp_dirs_and_files):
+        """
+        pull temp1 target/temp.txt
+
+        Raises: IsADirectoryError
+        """
+        new_file_path = tmp_path / self.FILE_NAME
+        new_file_path.touch()
+        src = str(self.TEMP1)
+        with pytest.raises(IsADirectoryError) as excinfo:
+            afc.pull(src=src, dst=str(new_file_path.absolute()))
+
+        assert str(excinfo.value) == f'pull: {src} is a directory (not copied).'
+
+    def test_pull_folder_to_folder(self, afc: AfcService, tmp_path: Path, make_temp_dirs_and_files):
+        """
+        pull temp1/temp2/temp3 target
+
+        target
+        └── temp3
+            ├── temp.txt
+            └── temp4
+                └── temp1.txt
+        """
+        afc.pull(src=str(self.TEMP3_PATH), dst=str(tmp_path.absolute()))
+
+        assert len(list(tmp_path.iterdir())) == 1
+
+        temp3 = tmp_path / self.TEMP3
+        assert len(list(temp3.iterdir())) == 2
+        assert (temp3 / self.FILE_NAME).read_bytes() == self.FILE_DATA
+
+        temp4 = temp3 / self.TEMP4
+        assert len(list(temp4.iterdir())) == 1
+        assert (temp4 / self.FILE_NAME1).read_bytes() == self.FILE_DATA1
+
+    def test_pull_folder_to_folder_with_slash(self, afc: AfcService, tmp_path: Path, make_temp_dirs_and_files):
+        """
+        pull temp1/temp2/temp3 target/
+
+        target
+        └── temp3
+            ├── temp.txt
+            └── temp4
+                └── temp1.txt
+        """
+        afc.pull(src=str(self.TEMP3_PATH), dst=f'{tmp_path.absolute()}/')
+
+        assert len(list(tmp_path.iterdir())) == 1
+
+        temp3 = tmp_path / self.TEMP3
+        assert len(list(temp3.iterdir())) == 2
+        assert (temp3 / self.FILE_NAME).read_bytes() == self.FILE_DATA
+
+        temp4 = temp3 / self.TEMP4
+        assert len(list(temp4.iterdir())) == 1
+        assert (temp4 / self.FILE_NAME1).read_bytes() == self.FILE_DATA1
+
+    def test_pull_folder_with_slash_to_folder(self, afc: AfcService, tmp_path: Path, make_temp_dirs_and_files):
+        """
+        pull temp1/temp2/temp3/ target
+
+        target
+        ├── temp.txt
+        └── temp4
+            └── temp1.txt
+        """
+        afc.pull(src=f'{self.TEMP3_PATH}/', dst=str(tmp_path.absolute()))
+
+        assert len(list(tmp_path.iterdir())) == 2
+        assert (tmp_path / self.FILE_NAME).read_bytes() == self.FILE_DATA
+
+        temp4 = tmp_path / self.TEMP4
+        assert len(list(temp4.iterdir())) == 1
+        assert (temp4 / self.FILE_NAME1).read_bytes() == self.FILE_DATA1
+
+    def test_pull_folder_with_slash_to_non_exists_folder(self, afc: AfcService, tmp_path: Path, make_temp_dirs_and_files):
+        """
+        pull temp1/temp2/temp3/ temp1
+
+        target
+        └── temp1
+            ├── temp.txt
+            └── temp4
+                └── temp1.txt
+        """
+        os.chdir(tmp_path)
+        afc.pull(src=f'{self.TEMP3_PATH}/', dst=self.TEMP1)
+
+        assert len(list(tmp_path.iterdir())) == 1
+
+        temp1 = tmp_path / self.TEMP1
+        assert len(list(temp1.iterdir())) == 2
+        assert (temp1 / self.FILE_NAME).read_bytes() == self.FILE_DATA
+
+        temp4 = temp1 / self.TEMP4
+        assert len(list(temp4.iterdir())) == 1
+        assert (temp4 / self.FILE_NAME1).read_bytes() == self.FILE_DATA1
+
+    def test_pull_folder_to_not_exists_path(self, afc: AfcService, tmp_path, make_temp_dirs_and_files):
+        """
+        pull temp1 target/temp1/temp2
+
+        Raises: FileNotFoundError
+        """
+        dst = f'{tmp_path}/temp1/temp2'
+        with pytest.raises(FileNotFoundError) as excinfo:
+            afc.pull(src=self.TEMP1, dst=dst)
+
+        assert str(excinfo.value) == f'pull: {dst}: No such file or directory'
