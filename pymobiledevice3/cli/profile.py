@@ -145,6 +145,8 @@ def profile_install_wifi_profile(service_provider: LockdownServiceProvider, encr
 
     This will enable the device to auto-connect to given network
     """
+    if keybag is not None:
+        keybag = Path(keybag)
     MobileConfigService(lockdown=service_provider).install_wifi_profile(
         encryption_type=encryption_type, ssid=ssid, password=password, keybag_file=keybag)
 
@@ -156,6 +158,8 @@ def profile_install_wifi_profile(service_provider: LockdownServiceProvider, encr
 def profile_install_http_proxy(service_provider: LockdownServiceProvider, server: str, port: int,
                                keybag: Optional[str]) -> None:
     """ Install HTTP Proxy profile """
+    if keybag is not None:
+        keybag = Path(keybag)
     MobileConfigService(lockdown=service_provider).install_http_proxy(server, port, keybag_file=keybag)
 
 
