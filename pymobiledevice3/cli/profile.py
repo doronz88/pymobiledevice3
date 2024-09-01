@@ -167,3 +167,15 @@ def profile_install_http_proxy(service_provider: LockdownServiceProvider, server
 def profile_remove_http_proxy(service_provider: LockdownServiceProvider) -> None:
     """ Remove HTTP Proxy profile that was previously installed using pymobiledevice3 """
     MobileConfigService(lockdown=service_provider).remove_http_proxy()
+
+
+@profile_group.command('install-restrictions-profile', cls=Command)
+@click.option('--keybag', type=click.Path(file_okay=True, dir_okay=False, exists=True))
+@click.option('--enforced-software-update-delay', type=click.IntRange(0, 90), default=0)
+def profile_install_restrictions_profile(
+        service_provider: LockdownServiceProvider, keybag: Optional[str], enforced_software_update_delay: int) -> None:
+    """ Install restrictions profile (can be used for delayed OTA) """
+    if keybag is not None:
+        keybag = Path(keybag)
+    MobileConfigService(lockdown=service_provider).install_restrictions_profile(
+        enforced_software_update_delay=enforced_software_update_delay, keybag_file=Path(keybag))
