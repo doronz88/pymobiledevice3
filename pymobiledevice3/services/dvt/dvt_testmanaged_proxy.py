@@ -15,9 +15,12 @@ class DvtTestmanagedProxyService(RemoteServer):
     def __init__(self, lockdown: LockdownServiceProvider):
         if isinstance(lockdown, RemoteServiceDiscoveryService):  # only happends when >=17.0
             service_name = self.RSD_SERVICE_NAME
+            remove_ssl_context = False
         elif Version(lockdown.product_version) >= Version('14.0'):
             service_name = self.SERVICE_NAME
+            remove_ssl_context = False
         else:
             service_name = self.OLD_SERVICE_NAME
+            remove_ssl_context = True
 
-        super().__init__(lockdown, service_name, remove_ssl_context=False)
+        super().__init__(lockdown, service_name, remove_ssl_context=remove_ssl_context)
