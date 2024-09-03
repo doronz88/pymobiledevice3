@@ -16,6 +16,7 @@ from pymobiledevice3.services.lockdown_service import LockdownService
 
 ERROR_CLOUD_CONFIGURATION_ALREADY_PRESENT = 14002
 GLOBAL_HTTP_PROXY_UUID = '86a52338-52f7-4c09-b005-52baf3dc4882'
+GLOBAL_RESTRICTIONS_UUID = 'e22a0a66-08a8-43f5-9bbc-5279af35bb2b'
 
 
 class Purpose(Enum):
@@ -244,7 +245,7 @@ class MobileConfigService(LockdownService):
             self.install_profile(profile_data)
 
     def install_restrictions_profile(
-            self, enforced_software_update_delay: int = 0, payload_uuid: str = str(uuid4()),
+            self, enforced_software_update_delay: int = 0, payload_uuid: str = GLOBAL_RESTRICTIONS_UUID,
             keybag_file: Optional[Path] = None) -> None:
         self.install_managed_profile('Restrictions', {
             'PayloadDescription': 'Configures restrictions',
