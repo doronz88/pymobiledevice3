@@ -21,6 +21,7 @@ from parameter_decorators import path_to_str
 from pygments import formatters, highlight, lexers
 from pygnuutils.cli.ls import ls as ls_cli
 from pygnuutils.ls import Ls, LsStub
+from tqdm import trange
 from xonsh.built_ins import XSH
 from xonsh.cli_utils import Annotated, Arg, ArgParserAlias
 from xonsh.main import main as xonsh_main
@@ -231,7 +232,16 @@ class AfcService(LockdownService):
             if os.path.isdir(dst):
                 dst = os.path.join(dst, os.path.basename(relative_src))
             with open(dst, 'wb') as f:
-                f.write(self.get_file_contents(src))
+                src_size = self.stat(src)['st_size']
+                if src_size <= MAXIMUM_READ_SIZE:
+                    f.write(self.get_file_contents(src))
+                else:
+                    left_size = src_size
+                    handle = self.fopen(src)
+                    for _ in trange(src_size // MAXIMUM_READ_SIZE + 1):
+                        f.write(self.fread(handle, min(MAXIMUM_READ_SIZE, left_size)))
+                        left_size -= MAXIMUM_READ_SIZE
+                    self.fclose(handle)
             os.utime(dst, (os.stat(dst).st_atime, self.stat(src)['st_mtime'].timestamp()))
             if callback is not None:
                 callback(src, dst)
@@ -438,7 +448,7 @@ class AfcService(LockdownService):
                                   afc_make_link_req_t.build({'type': type_, 'target': target, 'source': source}))
 
     @path_to_str()
-    def fopen(self, filename: str, mode='r'):
+    def fopen(self, filename: str, mode: str = 'r') -> int:
         if mode not in AFC_FOPEN_TEXTUAL_MODES:
             raise ArgumentError(f'mode can be only one of: {AFC_FOPEN_TEXTUAL_MODES.keys()}')
 
@@ -446,7 +456,7 @@ class AfcService(LockdownService):
                                   afc_fopen_req_t.build({'mode': AFC_FOPEN_TEXTUAL_MODES[mode], 'filename': filename}))
         return afc_fopen_resp_t.parse(data).handle
 
-    def fclose(self, handle):
+    def fclose(self, handle: int):
         return self._do_operation(afc_opcode_t.FILE_CLOSE, afc_fclose_req_t.build({'handle': handle}))
 
     @path_to_str()
@@ -459,7 +469,7 @@ class AfcService(LockdownService):
                 raise
             raise AfcFileNotFoundError(e.args[0], e.status) from e
 
-    def fread(self, handle, sz):
+    def fread(self, handle: int, sz: bytes) -> bytes:
         data = b''
         while sz > 0:
             if sz > MAXIMUM_READ_SIZE:
