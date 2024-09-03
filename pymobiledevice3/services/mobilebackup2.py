@@ -6,6 +6,8 @@ from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 
+from django.urls import include
+
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ConnectionTerminatedError, LockdownError, \
     PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
@@ -32,11 +34,11 @@ class Mobilebackup2Service(LockdownService):
     SERVICE_NAME = 'com.apple.mobilebackup2'
     RSD_SERVICE_NAME = 'com.apple.mobilebackup2.shim.remote'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownClient, include_escrow_bag):
         if isinstance(lockdown, LockdownClient):
-            super().__init__(lockdown, self.SERVICE_NAME, include_escrow_bag=True)
+            super().__init__(lockdown, self.SERVICE_NAME, include_escrow_bag=include_escrow_bag)
         else:
-            super().__init__(lockdown, self.RSD_SERVICE_NAME, include_escrow_bag=True)
+            super().__init__(lockdown, self.RSD_SERVICE_NAME, include_escrow_bag=include_escrow_bag)
 
     @property
     def will_encrypt(self):
