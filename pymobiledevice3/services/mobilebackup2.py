@@ -6,7 +6,6 @@ from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 
-from django.urls import include
 
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ConnectionTerminatedError, LockdownError, \
     PyMobileDevice3Exception
