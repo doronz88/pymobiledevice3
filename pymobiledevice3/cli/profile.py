@@ -178,4 +178,4 @@ def profile_install_restrictions_profile(
     if keybag is not None:
         keybag = Path(keybag)
     MobileConfigService(lockdown=service_provider).install_restrictions_profile(
-        enforced_software_update_delay=enforced_software_update_delay, keybag_file=Path(keybag))
+        enforced_software_update_delay=enforced_software_update_delay, keybag_file=keybag)
