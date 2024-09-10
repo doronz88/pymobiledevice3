@@ -2,10 +2,9 @@ import logging
 import plistlib
 import tempfile
 from pathlib import Path
-from typing import IO, List
+from typing import IO, List, Optional
 
 import click
-from typing_extensions import Optional
 
 from pymobiledevice3.ca import create_keybag_file
 from pymobiledevice3.cli.cli_common import Command, print_json
