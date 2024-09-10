@@ -107,8 +107,20 @@ class SafeStreamSocket:
 
     def __init__(self, address, family):
         self._offset = 0
-        self.sock = socket.socket(family, socket.SOCK_STREAM)
-        self.sock.connect(address)
+        # Multiple connections within a short period of time in windows
+        # may throw the exception "OSError: [WinError 10048]".
+        max_retries = 15
+        for attempt in range(max_retries):
+            try:
+                self.sock = socket.socket(family, socket.SOCK_STREAM)
+                self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                self.sock.connect(address)
+                break
+            except OSError as e:
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                else:
+                    raise e
 
     def send(self, msg: bytes) -> int:
         self._offset += len(msg)
