@@ -140,7 +140,8 @@ class TunneldCore:
                             continue
                         try:
                             service = CoreDeviceTunnelProxy(create_using_usbmux(mux_device.serial))
-                        except (MuxException, InvalidServiceError, GetProhibitedError, construct.core.StreamError):
+                        except (MuxException, InvalidServiceError, GetProhibitedError, construct.core.StreamError,
+                                ConnectionAbortedError):
                             continue
                         self.tunnel_tasks[task_identifier] = TunnelTask(
                             udid=mux_device.serial,
@@ -380,7 +381,8 @@ class TunneldRunner:
         @self._app.get('/cancel')
         async def cancel_tunnel(udid: str) -> fastapi.Response:
             self._tunneld_core.cancel(udid=udid)
-            data = json.dumps({'operation': 'cancel', 'udid': udid, 'data': True, 'message': f'tunnel {udid} Canceled ...'})
+            data = json.dumps(
+                {'operation': 'cancel', 'udid': udid, 'data': True, 'message': f'tunnel {udid} Canceled ...'})
             return generate_http_response(data)
 
         @self._app.get('/hello')
