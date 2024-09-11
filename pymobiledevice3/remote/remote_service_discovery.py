@@ -61,10 +61,11 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         self.udid = self.peer_info['Properties']['UniqueDeviceID']
         self.product_type = self.peer_info['Properties']['ProductType']
         try:
-            self.lockdown = create_using_remote(self.start_lockdown_service('com.apple.mobile.lockdown.remote.trusted'))
+            self.lockdown = create_using_remote(
+                await self.aio_start_lockdown_service('com.apple.mobile.lockdown.remote.trusted'))
         except InvalidServiceError:
             self.lockdown = create_using_remote(
-                self.start_lockdown_service('com.apple.mobile.lockdown.remote.untrusted'))
+                await self.aio_start_lockdown_service('com.apple.mobile.lockdown.remote.trusted'))
         self.all_values = self.lockdown.all_values
 
     def get_value(self, domain: str = None, key: str = None):

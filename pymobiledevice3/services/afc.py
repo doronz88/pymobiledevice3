@@ -456,8 +456,21 @@ class AfcService(LockdownService):
                                   afc_fopen_req_t.build({'mode': AFC_FOPEN_TEXTUAL_MODES[mode], 'filename': filename}))
         return afc_fopen_resp_t.parse(data).handle
 
+    @path_to_str()
+    async def aio_fopen(self, filename: str, mode: str = 'r') -> int:
+        if mode not in AFC_FOPEN_TEXTUAL_MODES:
+            raise ArgumentError(f'mode can be only one of: {AFC_FOPEN_TEXTUAL_MODES.keys()}')
+
+        data = await self._aio_do_operation(afc_opcode_t.FILE_OPEN,
+                                            afc_fopen_req_t.build(
+                                                {'mode': AFC_FOPEN_TEXTUAL_MODES[mode], 'filename': filename}))
+        return afc_fopen_resp_t.parse(data).handle
+
     def fclose(self, handle: int):
         return self._do_operation(afc_opcode_t.FILE_CLOSE, afc_fclose_req_t.build({'handle': handle}))
+
+    async def aio_fclose(self, handle: int):
+        return await self._aio_do_operation(afc_opcode_t.FILE_CLOSE, afc_fclose_req_t.build({'handle': handle}))
 
     @path_to_str()
     def rename(self, source: str, target: str):
@@ -511,6 +524,33 @@ class AfcService(LockdownService):
             if status != afc_error_t.SUCCESS:
                 raise AfcException(f'failed to write last chunk: {status}', status)
 
+    async def aio_fwrite(self, handle, data, chunk_size=MAXIMUM_WRITE_SIZE):
+        file_handle = struct.pack('<Q', handle)
+        chunks_count = len(data) // chunk_size
+        b = b''
+        for i in range(chunks_count):
+            chunk = data[i * chunk_size:(i + 1) * chunk_size]
+            await self._aio_dispatch_packet(afc_opcode_t.WRITE,
+                                            file_handle + chunk,
+                                            this_length=48)
+            b += chunk
+
+            status, response = await self._aio_receive_data()
+            if status != afc_error_t.SUCCESS:
+                raise AfcException(f'failed to write chunk: {status}', status)
+
+        if len(data) % chunk_size:
+            chunk = data[chunks_count * chunk_size:]
+            await self._aio_dispatch_packet(afc_opcode_t.WRITE,
+                                            file_handle + chunk,
+                                            this_length=48)
+
+            b += chunk
+
+            status, response = await self._aio_receive_data()
+            if status != afc_error_t.SUCCESS:
+                raise AfcException(f'failed to write last chunk: {status}', status)
+
     @path_to_str()
     def resolve_path(self, filename: str):
         info = self.stat(filename)
@@ -543,6 +583,13 @@ class AfcService(LockdownService):
         h = self.fopen(filename, 'w')
         self.fwrite(h, data)
         self.fclose(h)
+
+    @path_to_str()
+    async def aio_set_file_contents(self, filename: str, data: bytes) -> None:
+        # await self.service.aio_start()
+        h = await self.aio_fopen(filename, 'w')
+        await self.aio_fwrite(h, data)
+        await self.aio_fclose(h)
 
     @path_to_str()
     def walk(self, dirname: str):
@@ -590,6 +637,18 @@ class AfcService(LockdownService):
         self.packet_num += 1
         self.service.sendall(header + data)
 
+    async def _aio_dispatch_packet(self, operation, data, this_length=0):
+        afcpack = Container(magic=AFCMAGIC,
+                            entire_length=afc_header_t.sizeof() + len(data),
+                            this_length=afc_header_t.sizeof() + len(data),
+                            packet_num=self.packet_num,
+                            operation=operation)
+        if this_length:
+            afcpack.this_length = this_length
+        header = afc_header_t.build(afcpack)
+        self.packet_num += 1
+        await self.service.aio_sendall(header + data)
+
     def _receive_data(self):
         res = self.service.recvall(afc_header_t.sizeof())
         status = afc_error_t.SUCCESS
@@ -607,9 +666,39 @@ class AfcService(LockdownService):
                 pass
         return status, data
 
+    async def _aio_receive_data(self):
+        res = await self.service.aio_recvall(afc_header_t.sizeof())
+        status = afc_error_t.SUCCESS
+        data = ''
+        if res:
+            res = afc_header_t.parse(res)
+            assert res['entire_length'] >= afc_header_t.sizeof()
+            length = res['entire_length'] - afc_header_t.sizeof()
+            data = await self.service.aio_recvall(length)
+            if res.operation == afc_opcode_t.STATUS:
+                if length != 8:
+                    self.logger.error('Status length != 8')
+                status = afc_error_t.parse(data)
+            elif res.operation != afc_opcode_t.DATA:
+                pass
+        return status, data
+
     def _do_operation(self, opcode: afc_opcode_t, data: bytes = b''):
         self._dispatch_packet(opcode, data)
         status, data = self._receive_data()
+
+        exception = AfcException
+        if status != afc_error_t.SUCCESS:
+            if status == afc_error_t.OBJECT_NOT_FOUND:
+                exception = AfcFileNotFoundError
+
+            raise exception(f'opcode: {opcode} failed with status: {status}', status)
+
+        return data
+
+    async def _aio_do_operation(self, opcode: afc_opcode_t, data: bytes = b''):
+        await self._aio_dispatch_packet(opcode, data)
+        status, data = await self._aio_receive_data()
 
         exception = AfcException
         if status != afc_error_t.SUCCESS:

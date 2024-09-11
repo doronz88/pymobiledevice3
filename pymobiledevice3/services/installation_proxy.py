@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 from typing import Callable, List, Mapping, Optional
 from zipfile import ZIP_DEFLATED, ZipFile
 
+import aiofiles
 from parameter_decorators import str_to_path
 
 from pymobiledevice3.exceptions import AppInstallError
@@ -59,6 +60,24 @@ class InstallationProxyService(LockdownService):
                 return
         raise AppInstallError()
 
+    async def _aio_watch_completion(self, handler: Callable = None, *args) -> None:
+        while True:
+            response = await self.service.aio_recv_plist()
+            if not response:
+                break
+            error = response.get('Error')
+            if error:
+                raise AppInstallError(f'{error}: {response.get("ErrorDescription")}')
+            completion = response.get('PercentComplete')
+            if completion:
+                if handler:
+                    self.logger.debug('calling handler')
+                    handler(completion, *args)
+                self.logger.info(f'{response.get("PercentComplete")}% Complete')
+            if response.get('Status') == 'Complete':
+                return
+        raise AppInstallError()
+
     def send_cmd_for_bundle_identifier(self, bundle_identifier: str, cmd: str = 'Archive', options: Mapping = None,
                                        handler: Mapping = None, *args) -> None:
         """ send a low-level command to installation relay """
@@ -72,13 +91,35 @@ class InstallationProxyService(LockdownService):
         self.service.send_plist(cmd)
         self._watch_completion(handler, *args)
 
+    async def aio_send_cmd_for_bundle_identifier(self, bundle_identifier: str, cmd: str = 'Archive',
+                                                 options: Mapping = None, handler: Mapping = None, *args) -> None:
+        cmd = {'Command': cmd,
+               'ApplicationIdentifier': bundle_identifier}
+
+        if options is None:
+            options = {}
+
+        cmd.update({'ClientOptions': options})
+        if self.service.writer is None:
+            await self.service.aio_start()
+        await self.service.aio_send_plist(cmd)
+        await self._aio_watch_completion(handler, *args)
+
     def install(self, ipa_path: str, options: Mapping = None, handler: Callable = None, *args) -> None:
         """ install given ipa from device path """
         self.install_from_local(ipa_path, 'Install', options, handler, args)
 
+    async def aio_install(self, ipa_path: str, options: Mapping = None, handler: Callable = None, *args) -> None:
+        """ install given ipa from device path """
+        await self.aio_install_from_local(ipa_path, 'Install', options, handler, args)
+
     def upgrade(self, ipa_path: str, options: Mapping = None, handler: Callable = None, *args) -> None:
         """ upgrade given ipa from device path """
         self.install_from_local(ipa_path, 'Upgrade', options, handler, args)
+
+    async def aio_upgrade(self, ipa_path: str, options: Mapping = None, handler: Callable = None, *args) -> None:
+        """ upgrade given ipa from device path """
+        await self.aio_install_from_local(ipa_path, 'Upgrade', options, handler, args)
 
     def restore(self, bundle_identifier: str, options: Mapping = None, handler: Callable = None, *args) -> None:
         """ no longer supported on newer iOS versions """
@@ -87,6 +128,11 @@ class InstallationProxyService(LockdownService):
     def uninstall(self, bundle_identifier: str, options: Mapping = None, handler: Callable = None, *args) -> None:
         """ uninstall given bundle_identifier """
         self.send_cmd_for_bundle_identifier(bundle_identifier, 'Uninstall', options, handler, args)
+
+    async def aio_uninstall(self, bundle_identifier: str, options: Mapping = None, handler: Callable = None,
+                            *args) -> None:
+        """ uninstall given bundle_identifier """
+        await self.aio_send_cmd_for_bundle_identifier(bundle_identifier, 'Uninstall', options, handler, args)
 
     @str_to_path('ipa_or_app_path')
     def install_from_local(self, ipa_or_app_path: Path, cmd: str = 'Install', options: Optional[Mapping] = None,
@@ -107,6 +153,25 @@ class InstallationProxyService(LockdownService):
                                  'ClientOptions': options,
                                  'PackagePath': TEMP_REMOTE_IPA_FILE})
         self._watch_completion(handler, args)
+
+    @str_to_path('ipa_or_app_path')
+    async def aio_install_from_local(self, ipa_or_app_path: Path, cmd: str = 'Install',
+                                     options: Optional[Mapping] = None, handler: Callable = None, *args) -> None:
+        """ upload given ipa onto device and install it """
+        if options is None:
+            options = {}
+        if ipa_or_app_path.is_dir():
+            ipa_contents = create_ipa_contents_from_directory(str(ipa_or_app_path))  # TODO async create ipa content
+        else:
+            async with aiofiles.open(ipa_or_app_path, mode='rb') as f:
+                ipa_contents = await f.read()
+
+        async with AfcService(self.lockdown) as afc:
+            await afc.aio_set_file_contents(TEMP_REMOTE_IPA_FILE, ipa_contents)
+        await self.service.aio_send_plist({'Command': cmd,
+                                           'ClientOptions': options,
+                                           'PackagePath': TEMP_REMOTE_IPA_FILE})
+        await self._aio_watch_completion(handler, args)
 
     def check_capabilities_match(self, capabilities: Mapping = None, options: Mapping = None) -> Mapping:
         if options is None:
@@ -152,6 +217,14 @@ class InstallationProxyService(LockdownService):
         cmd = {'Command': 'Lookup', 'ClientOptions': options}
         return self.service.send_recv_plist(cmd).get('LookupResult')
 
+    async def aio_lookup(self, options: Optional[Mapping] = None) -> Mapping:
+        """ search installation database """
+        if options is None:
+            options = {}
+        cmd = {'Command': 'Lookup', 'ClientOptions': options}
+        result = await self.service.aio_send_recv_plist(cmd)
+        return result.get('LookupResult')
+
     def get_apps(self, application_type: str = 'Any', calculate_sizes: bool = False,
                  bundle_identifiers: Optional[List[str]] = None) -> Mapping[str, Mapping]:
         """ get applications according to given criteria """
@@ -164,6 +237,22 @@ class InstallationProxyService(LockdownService):
         if calculate_sizes:
             options.update(GET_APPS_ADDITIONAL_INFO)
             additional_info = self.lookup(options)
+            for bundle_identifier, app in additional_info.items():
+                result[bundle_identifier].update(app)
+        return result
+
+    async def aio_get_apps(self, application_type: str = 'Any', calculate_sizes: bool = False,
+                           bundle_identifiers: Optional[List[str]] = None) -> Mapping[str, Mapping]:
+        """ get applications according to given criteria """
+        options = {}
+        if bundle_identifiers is not None:
+            options['BundleIDs'] = bundle_identifiers
+
+        options['ApplicationType'] = application_type
+        result = await self.aio_lookup(options)
+        if calculate_sizes:
+            options.update(GET_APPS_ADDITIONAL_INFO)
+            additional_info = await self.aio_lookup(options)
             for bundle_identifier, app in additional_info.items():
                 result[bundle_identifier].update(app)
         return result
