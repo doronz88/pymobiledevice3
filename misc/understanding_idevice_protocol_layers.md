@@ -87,7 +87,7 @@ will we wish to connect to? Probably to [`lockdownd`](#lockdownd).
 
 ## lockdownd
 
-The `lockdownd` is daemon that listens on the hard-coded TCP port 62078. It has 3 main purposes:
+`lockdownd` is a daemon that listens on the hard-coded TCP port 62078. It has 3 main purposes:
 
 - Query general device information (ProductVersion, UDID, ...)
 - Pairing
