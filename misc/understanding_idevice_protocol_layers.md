@@ -74,7 +74,7 @@ for device in usbmux_devices:
 On a macOS workstation this daemon is builtin. On other platforms however you'll need an external tool for that:
 
 - Windows
-  - iTunes' installations includes "Apple Mobile Service" to perform the same thing
+  - iTunes installations include "Apple Mobile Service" to perform the same thing
   - This version exposes the same API as `usbmuxd`, but over TCP port 27015
 - Linux
   - <https://github.com/libimobiledevice/usbmuxd>
