@@ -398,9 +398,9 @@ follows:
 sudo pymobiledevice3 remote start-tunnel -t wifi
 ```
 
-This is nice and all, and as previously mentioned, Apple may have regretted this `remoted` separate pairing, or
-maybe thanks to EU ruling because of the special drivers needed for this pairing, but iOS 17.4 added a new lockdown
-service, allowing us to just establish this trusted tunnel over our existing lockdown connection - meaning no extra
+This is nice and all but, as previously mentioned, Apple may have regretted this `remoted` separate pairing (perhaps
+thanks to EU ruling because of the special drivers needed), because iOS 17.4 added a new lockdown
+service allowing us to just establish this trusted tunnel over our existing lockdown connection. This means no extra
 pairing process is required - and the cherry on top is that it's always TCP tunnels, making it MUCH faster.
 
 To do so, simply use:
