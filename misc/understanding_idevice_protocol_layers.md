@@ -362,7 +362,7 @@ specifically):
 pymobiledevice3 bonjour rsd
 ```
 
-We don't delve too much as to what RSD exposes. For that you may read in:
+We don't delve too much into what RSD exposes. For that you may read in:
 
 <https://github.com/doronz88/pymobiledevice3/blob/master/misc/RemoteXPC.md>
 
