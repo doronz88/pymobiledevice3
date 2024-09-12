@@ -108,7 +108,7 @@ lockdown = create_using_usbmux(serial='11223344', autopair=False)
 # Corellium anyone?
 correlium_lockdown = create_using_usbmux(serial='11223344', autopair=False, usbmux_address='10.11.1.2:5000')
 
-# If the device can be found in our LAN, and we know it's address, we simply connect to it
+# If the device can be found in our LAN, and we know its address, we simply connect to it
 # Please note the device does not allow pairing over LAN, so we must first pair it over USB
 lockdown = create_using_tcp('192.168.2.7', autopair=False)
 
