@@ -268,7 +268,7 @@ Once the DeveloperMode is on, we can mount the DDI. This however has very much c
 short, we'll just say you can simply use the following CLI command:
 
 ```shell
-# This will automatically deduct the correct way to mount the DDI onto your device
+# This will automatically deduce the correct way to mount the DDI onto your device
 # Please note this will require network activity for mounting on iOS 17
 pymobiledevice3 mounter auto-mount
 ```
