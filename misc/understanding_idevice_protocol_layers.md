@@ -366,8 +366,8 @@ We don't delve too much into what RSD exposes. For that you may read in:
 
 <https://github.com/doronz88/pymobiledevice3/blob/master/misc/RemoteXPC.md>
 
-In short, it will allow us to both pair and start a VPN tunnel onto device, where we can access all the other both
-lockdown and other RemoteXPC services. As we previously mentioned, starting at iOS 17.0, this is the only way to access
+In short, it will allow us to both pair and start a VPN tunnel onto device, where we can access both
+lockdown and all the other RemoteXPC services. As we previously mentioned, starting at iOS 17.0, this is the only way to access
 the developer services.
 
 You'll have to start this tunnel using a privileged process, since it requires creating a TUN/TAP device:
