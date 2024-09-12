@@ -344,10 +344,10 @@ different pairing logic, leading into two different "Trust/Don't Trust" dialogs 
 the same).
 
 Since all this communication is IP-based, but without any additional exported TCP port from the device, `usbmuxd` can't
-help us here. Instead, starting at iOS 16.0, when connecting an iDevice, it exports another none-standard USB-Ethernet
+help us here. Instead, starting at iOS 16.0, when connecting an iDevice, it exports another non-standard USB-Ethernet
 adapter (with IPv6 link-local address), placing us in a subnet with the device's `remoted`.
 
-As we've said this communication is none-standard, and requires either:
+As we've said this communication is non-standard, and requires either:
 
 - macOS Monterey or higher
 - Special driver on your linux/windows machine
