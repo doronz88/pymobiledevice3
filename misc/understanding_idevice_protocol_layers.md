@@ -74,7 +74,7 @@ for device in usbmux_devices:
 On a macOS workstation this daemon is builtin. On other platforms however you'll need an external tool for that:
 
 - Windows
-  - iTunes' installations includes "Apple Mobile Service" to perform the same thing
+  - iTunes installations include "Apple Mobile Service" to perform the same thing
   - This version exposes the same API as `usbmuxd`, but over TCP port 27015
 - Linux
   - <https://github.com/libimobiledevice/usbmuxd>
@@ -87,7 +87,7 @@ will we wish to connect to? Probably to [`lockdownd`](#lockdownd).
 
 ## lockdownd
 
-The `lockdownd` is daemon that listens on the hard-coded TCP port 62078. It has 3 main purposes:
+`lockdownd` is a daemon that listens on the hard-coded TCP port 62078. It has 3 main purposes:
 
 - Query general device information (ProductVersion, UDID, ...)
 - Pairing
@@ -108,7 +108,7 @@ lockdown = create_using_usbmux(serial='11223344', autopair=False)
 # Corellium anyone?
 correlium_lockdown = create_using_usbmux(serial='11223344', autopair=False, usbmux_address='10.11.1.2:5000')
 
-# If the device can be found in our LAN, and we know it's address, we simply connect to it
+# If the device can be found in our LAN, and we know its address, we simply connect to it
 # Please note the device does not allow pairing over LAN, so we must first pair it over USB
 lockdown = create_using_tcp('192.168.2.7', autopair=False)
 
@@ -268,7 +268,7 @@ Once the DeveloperMode is on, we can mount the DDI. This however has very much c
 short, we'll just say you can simply use the following CLI command:
 
 ```shell
-# This will automatically deduct the correct way to mount the DDI onto your device
+# This will automatically deduce the correct way to mount the DDI onto your device
 # Please note this will require network activity for mounting on iOS 17
 pymobiledevice3 mounter auto-mount
 ```
@@ -344,10 +344,10 @@ different pairing logic, leading into two different "Trust/Don't Trust" dialogs 
 the same).
 
 Since all this communication is IP-based, but without any additional exported TCP port from the device, `usbmuxd` can't
-help us here. Instead, starting at iOS 16.0, when connecting an iDevice, it exports another none-standard USB-Ethernet
+help us here. Instead, starting at iOS 16.0, when connecting an iDevice, it exports another non-standard USB-Ethernet
 adapter (with IPv6 link-local address), placing us in a subnet with the device's `remoted`.
 
-As we've said this communication is none-standard, and requires either:
+As we've said this communication is non-standard, and requires either:
 
 - macOS Monterey or higher
 - Special driver on your linux/windows machine
@@ -362,12 +362,12 @@ specifically):
 pymobiledevice3 bonjour rsd
 ```
 
-We don't delve too much as to what RSD exposes. For that you may read in:
+We don't delve too much into what RSD exposes. For that you may read in:
 
 <https://github.com/doronz88/pymobiledevice3/blob/master/misc/RemoteXPC.md>
 
-In short, it will allow us to both pair and start a VPN tunnel onto device, where we can access all the other both
-lockdown and other RemoteXPC services. As we previously mentioned, starting at iOS 17.0, this is the only way to access
+In short, it will allow us to both pair and start a VPN tunnel onto device, where we can access both
+lockdown and all the other RemoteXPC services. As we previously mentioned, starting at iOS 17.0, this is the only way to access
 the developer services.
 
 You'll have to start this tunnel using a privileged process, since it requires creating a TUN/TAP device:
@@ -398,9 +398,9 @@ follows:
 sudo pymobiledevice3 remote start-tunnel -t wifi
 ```
 
-This is all nice and all, and as previously mentioned, Apple may have regretted this `remoted` separate pairing, or
-maybe thanks to EU ruling because of the special drivers needed for this pairing, but iOS 17.4 added a new lockdown
-service, allowing us to just establish this trusted tunnel over our existing lockdown connection - meaning no extra
+This is nice and all but, as previously mentioned, Apple may have regretted this `remoted` separate pairing (perhaps
+thanks to EU ruling because of the special drivers needed), because iOS 17.4 added a new lockdown
+service allowing us to just establish this trusted tunnel over our existing lockdown connection. This means no extra
 pairing process is required - and the cherry on top is that it's always TCP tunnels, making it MUCH faster.
 
 To do so, simply use:
