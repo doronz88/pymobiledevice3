@@ -21,6 +21,12 @@ def amfi() -> None:
 
 
 @amfi.command(cls=Command)
+def reveal_developer_mode(service_provider: LockdownClient):
+    """ reveal developer mode option in device's UI """
+    AmfiService(service_provider).reveal_developer_mode_option_in_ui()
+
+
+@amfi.command(cls=Command)
 def enable_developer_mode(service_provider: LockdownClient):
     """ enable developer mode """
     AmfiService(service_provider).enable_developer_mode()
