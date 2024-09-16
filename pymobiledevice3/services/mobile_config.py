@@ -250,6 +250,7 @@ class MobileConfigService(LockdownService):
                 'PreferredLang',
                 'OnboardingSubtitle',
                 'AppleTVSubtitle',
+                'Intelligence'
             ],
             'SupervisorHostCertificates': [
                 public_key
