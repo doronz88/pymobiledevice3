@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import plistlib
+from pathlib import Path
+from typing import Optional
 
 import click
 
@@ -91,11 +93,10 @@ def lockdown_pair(service_provider: LockdownClient):
 
 
 @lockdown_group.command('pair-supervised', cls=CommandWithoutAutopair)
-@click.argument('p12file', type=click.File('rb'))
-@click.argument('password')
-def lockdown_pair_supervised(service_provider: LockdownClient, p12file, password):
+@click.argument('keybag', type=click.Path(file_okay=True, dir_okay=False, exists=True))
+def lockdown_pair_supervised(service_provider: LockdownClient, keybag: str) -> None:
     """ pair supervised device """
-    service_provider.pair_supervised(p12file=p12file, password=password)
+    service_provider.pair_supervised(Path(keybag))
 
 
 @lockdown_group.command('save-pair-record', cls=CommandWithoutAutopair)
@@ -121,9 +122,21 @@ def lockdown_heartbeat(service_provider: LockdownClient):
 
 
 @lockdown_group.command('language', cls=Command)
-def lockdown_language(service_provider: LockdownClient):
-    """ get current language settings """
-    print(f'{service_provider.language} {service_provider.locale}')
+@click.argument('language', required=False)
+def lockdown_language(service_provider: LockdownClient, language: Optional[str]) -> None:
+    """ Get/Set current language settings """
+    if language is not None:
+        service_provider.set_language(language)
+    print_json(service_provider.language)
+
+
+@lockdown_group.command('locale', cls=Command)
+@click.argument('locale', required=False)
+def lockdown_locale(service_provider: LockdownClient, locale: Optional[str]) -> None:
+    """ Get/Set current language settings """
+    if locale is not None:
+        service_provider.set_locale(locale)
+    print_json(service_provider.locale)
 
 
 @lockdown_group.command('device-name', cls=Command)

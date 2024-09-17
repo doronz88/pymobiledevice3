@@ -16,8 +16,14 @@ def cli() -> None:
 
 @cli.group()
 def amfi() -> None:
-    """ Enable/Disable developer-mode or query its state """
+    """ Enable developer-mode or query its state """
     pass
+
+
+@amfi.command(cls=Command)
+def reveal_developer_mode(service_provider: LockdownClient):
+    """ reveal developer mode option in device's UI """
+    AmfiService(service_provider).reveal_developer_mode_option_in_ui()
 
 
 @amfi.command(cls=Command)

@@ -5,6 +5,7 @@ import click
 
 from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.diagnostics import DiagnosticsService
 
 logger = logging.getLogger(__name__)
@@ -89,3 +90,10 @@ def diagnostics_battery_monitor(service_provider: LockdownClient):
         }
         logger.info(info)
         time.sleep(1)
+
+
+@diagnostics.command('wifi', cls=Command)
+def diagnostics_wifi(service_provider: LockdownServiceProvider) -> None:
+    """ Query WiFi info from IORegistry """
+    raw_info = DiagnosticsService(lockdown=service_provider).get_wifi()
+    print_json(raw_info)

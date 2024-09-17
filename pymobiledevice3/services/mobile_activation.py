@@ -11,7 +11,8 @@ import inquirer3
 import requests
 
 from pymobiledevice3.exceptions import MobileActivationException
-from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
+from pymobiledevice3.lockdown import create_using_usbmux
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 
 ACTIVATION_USER_AGENT_IOS = 'iOS Device Activator (MobileActivation-20 built on Jan 15 2012 at 19:07:28)'
 ACTIVATION_DEFAULT_URL = 'https://albert.apple.com/deviceservices/deviceActivation'
@@ -51,7 +52,7 @@ class MobileActivationService:
     """
     SERVICE_NAME = 'com.apple.mobileactivationd'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownServiceProvider) -> None:
         self.lockdown = lockdown
 
     @property

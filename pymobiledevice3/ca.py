@@ -1,15 +1,17 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, load_pem_public_key
 from cryptography.x509 import Certificate
 from cryptography.x509.oid import NameOID
 
 
-def make_cert(key, public_key, common_name=None) -> Certificate:
+def make_cert(key: RSAPrivateKey, public_key: RSAPublicKey, common_name: Optional[str] = None) -> Certificate:
     attributes = [x509.NameAttribute(NameOID.COMMON_NAME, common_name)] if common_name else []
     subject = issuer = x509.Name(attributes)
     cert = x509.CertificateBuilder()
@@ -38,3 +40,14 @@ def ca_do_everything(device_public_key, private_key: Optional[rsa.RSAPrivateKey]
     dev_cert = make_cert(private_key, dev_key, 'Device')
     return dump_cert(cert), private_key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()), dump_cert(
         dev_cert)
+
+
+def create_keybag_file(file: Path, common_name: str) -> None:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    cer = make_cert(private_key, private_key.public_key(), common_name)
+    file.write_bytes(
+        private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()
+        ) + cer.public_bytes(encoding=serialization.Encoding.PEM))

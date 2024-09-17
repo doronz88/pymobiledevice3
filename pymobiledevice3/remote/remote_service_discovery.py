@@ -52,6 +52,9 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def date(self) -> datetime:
         return self.lockdown.date
 
+    def set_language(self, language: str) -> None:
+        self.lockdown.set_language(language)
+
     async def connect(self) -> None:
         await self.service.connect()
         self.peer_info = await self.service.receive_response()

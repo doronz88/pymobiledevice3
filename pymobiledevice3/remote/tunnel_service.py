@@ -820,8 +820,10 @@ class CoreDeviceTunnelService(RemotePairingProtocol, RemoteService):
             self.version = response['ServiceVersion']
             await RemotePairingProtocol.connect(self, autopair=autopair)
             self.hostname = self.service.address[0]
-        except:  # noqa: E722
+        except Exception as e:  # noqa: E722
             await self.service.close()
+            if isinstance(e, UserDeniedPairingError):
+                raise
 
     async def close(self) -> None:
         await self.rsd.close()
@@ -1026,7 +1028,8 @@ async def get_core_device_tunnel_services(
         udid: Optional[str] = None) -> List[CoreDeviceTunnelService]:
     result = []
     for rsd in await get_rsds(bonjour_timeout=bonjour_timeout, udid=udid):
-        if udid is None and Version(rsd.product_version) < Version('17.0'):
+        if udid is None and ((Version(rsd.product_version) < Version('17.0'))
+                             and not rsd.product_type.startswith('RealityDevice')):
             logger.debug(f'Skipping {rsd.udid}:, iOS {rsd.product_version} < 17.0')
             await rsd.close()
             continue

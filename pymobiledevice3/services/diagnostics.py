@@ -1027,3 +1027,6 @@ class DiagnosticsService(LockdownService):
 
     def get_battery(self) -> Mapping:
         return self.ioregistry(ioclass='IOPMPowerSource')
+
+    def get_wifi(self) -> Mapping:
+        return self.ioregistry(name='AppleBCMWLANSkywalkInterface')

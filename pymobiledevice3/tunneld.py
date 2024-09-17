@@ -18,8 +18,8 @@ from packaging.version import Version
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import REMOTED_SERVICE_NAMES, browse
-from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, GetProhibitedError, \
-    InvalidServiceError, MuxException, PairingError, TunneldConnectionError
+from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, DeviceNotFoundError, \
+    GetProhibitedError, InvalidServiceError, MuxException, PairingError, TunneldConnectionError
 from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -140,7 +140,8 @@ class TunneldCore:
                             continue
                         try:
                             service = CoreDeviceTunnelProxy(create_using_usbmux(mux_device.serial))
-                        except (MuxException, InvalidServiceError, GetProhibitedError, construct.core.StreamError):
+                        except (MuxException, InvalidServiceError, GetProhibitedError, construct.core.StreamError,
+                                ConnectionAbortedError, DeviceNotFoundError):
                             continue
                         self.tunnel_tasks[task_identifier] = TunnelTask(
                             udid=mux_device.serial,
@@ -368,34 +369,45 @@ class TunneldRunner:
         async def shutdown() -> fastapi.Response:
             """ Shutdown Tunneld """
             os.kill(os.getpid(), signal.SIGINT)
-            return fastapi.Response(status_code=200, content='Server shutting down...')
+            data = json.dumps({'operation': 'shutdown', 'data': True, 'message': 'Server shutting down...'})
+            return generate_http_response(data)
 
         @self._app.get('/clear_tunnels')
         async def clear_tunnels() -> fastapi.Response:
             self._tunneld_core.clear()
-            return fastapi.Response(status_code=200, content='Cleared tunnels...')
+            data = json.dumps({'operation': 'clear_tunnels', 'data': True, 'message': 'Cleared tunnels...'})
+            return generate_http_response(data)
 
         @self._app.get('/cancel')
         async def cancel_tunnel(udid: str) -> fastapi.Response:
             self._tunneld_core.cancel(udid=udid)
-            return fastapi.Response(status_code=200, content=f'tunnel {udid} Canceled ...')
+            data = json.dumps(
+                {'operation': 'cancel', 'udid': udid, 'data': True, 'message': f'tunnel {udid} Canceled ...'})
+            return generate_http_response(data)
 
         @self._app.get('/hello')
         async def hello() -> fastapi.Response:
-            response = {'message': 'Hello, I\'m alive'}
-            return fastapi.Response(status_code=200, media_type="application/json", content=json.dumps(response))
+            data = {'message': 'Hello, I\'m alive'}
+            return generate_http_response(data)
 
-        def generate_tunnel_response(tunnel: TunnelResult) -> fastapi.Response:
+        def generate_http_response(
+                data: dict, status_code: int = 200, media_type: str = "application/json") -> fastapi.Response:
             return fastapi.Response(
-                status_code=200,
-                content=json.dumps({'interface': tunnel.interface, 'port': tunnel.port, 'address': tunnel.address}))
+                status_code=status_code,
+                media_type=media_type,
+                content=json.dumps(data))
 
         @self._app.get('/start-tunnel')
         async def start_tunnel(
                 udid: str, ip: Optional[str] = None, connection_type: Optional[str] = None) -> fastapi.Response:
             udid_tunnels = [t.tunnel for t in self._tunneld_core.tunnel_tasks.values() if t.udid == udid]
             if len(udid_tunnels) > 0:
-                return generate_tunnel_response(udid_tunnels[0])
+                data = {
+                    'interface': udid_tunnels[0].interface,
+                    'port': udid_tunnels[0].port,
+                    'address': udid_tunnels[0].address
+                }
+                return generate_http_response(data)
 
             queue = asyncio.Queue()
             created_task = False
@@ -450,7 +462,12 @@ class TunneldRunner:
 
             tunnel: Optional[TunnelResult] = await queue.get()
             if tunnel is not None:
-                return generate_tunnel_response(tunnel)
+                data = {
+                    'interface': tunnel.interface,
+                    'port': tunnel.port,
+                    'address': tunnel.address
+                }
+                return generate_http_response(data)
             else:
                 return fastapi.Response(status_code=404,
                                         content=json.dumps({'error': 'something went wrong during tunnel creation'}))
