@@ -820,8 +820,10 @@ class CoreDeviceTunnelService(RemotePairingProtocol, RemoteService):
             self.version = response['ServiceVersion']
             await RemotePairingProtocol.connect(self, autopair=autopair)
             self.hostname = self.service.address[0]
-        except:  # noqa: E722
+        except Exception as e:  # noqa: E722
             await self.service.close()
+            if isinstance(e, UserDeniedPairingError):
+                raise
 
     async def close(self) -> None:
         await self.rsd.close()

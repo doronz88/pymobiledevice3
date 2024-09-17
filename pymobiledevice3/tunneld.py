@@ -18,8 +18,8 @@ from packaging.version import Version
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import REMOTED_SERVICE_NAMES, browse
-from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, GetProhibitedError, \
-    InvalidServiceError, MuxException, PairingError, TunneldConnectionError
+from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, DeviceNotFoundError, \
+    GetProhibitedError, InvalidServiceError, MuxException, PairingError, TunneldConnectionError
 from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -141,7 +141,7 @@ class TunneldCore:
                         try:
                             service = CoreDeviceTunnelProxy(create_using_usbmux(mux_device.serial))
                         except (MuxException, InvalidServiceError, GetProhibitedError, construct.core.StreamError,
-                                ConnectionAbortedError):
+                                ConnectionAbortedError, DeviceNotFoundError):
                             continue
                         self.tunnel_tasks[task_identifier] = TunnelTask(
                             udid=mux_device.serial,
