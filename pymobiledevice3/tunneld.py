@@ -369,20 +369,19 @@ class TunneldRunner:
         async def shutdown() -> fastapi.Response:
             """ Shutdown Tunneld """
             os.kill(os.getpid(), signal.SIGINT)
-            data = json.dumps({'operation': 'shutdown', 'data': True, 'message': 'Server shutting down...'})
+            data = {'operation': 'shutdown', 'data': True, 'message': 'Server shutting down...'}
             return generate_http_response(data)
 
         @self._app.get('/clear_tunnels')
         async def clear_tunnels() -> fastapi.Response:
             self._tunneld_core.clear()
-            data = json.dumps({'operation': 'clear_tunnels', 'data': True, 'message': 'Cleared tunnels...'})
+            data = {'operation': 'clear_tunnels', 'data': True, 'message': 'Cleared tunnels...'}
             return generate_http_response(data)
 
         @self._app.get('/cancel')
         async def cancel_tunnel(udid: str) -> fastapi.Response:
             self._tunneld_core.cancel(udid=udid)
-            data = json.dumps(
-                {'operation': 'cancel', 'udid': udid, 'data': True, 'message': f'tunnel {udid} Canceled ...'})
+            data = {'operation': 'cancel', 'udid': udid, 'data': True, 'message': f'tunnel {udid} Canceled ...'}
             return generate_http_response(data)
 
         @self._app.get('/hello')
