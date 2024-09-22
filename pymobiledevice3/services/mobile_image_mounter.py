@@ -15,6 +15,8 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.restore.tss import TSSRequest
 from pymobiledevice3.services.lockdown_service import LockdownService
 
+LATEST_DDI_BUILD_ID = '16A242d'
+
 
 class MobileImageMounterService(LockdownService):
     # implemented in /usr/libexec/mobile_storage_proxy
@@ -343,7 +345,8 @@ async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
     build_manifest = local_path / 'BuildManifest.plist'
     trustcache = local_path / 'Image.trustcache'
 
-    if not image.exists():
+    if (not build_manifest.exists() or
+            plistlib.loads(build_manifest.read_bytes()).get('ProductBuildVersion') != LATEST_DDI_BUILD_ID):
         # download the Personalized image from our repository
         repo = DeveloperDiskImageRepository.create()
         personalized_image = repo.get_personalized_disk_image()
