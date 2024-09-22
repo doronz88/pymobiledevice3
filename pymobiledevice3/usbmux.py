@@ -354,7 +354,11 @@ class PlistMuxConnection(BinaryMuxConnection):
         """ get device list synchronously without waiting the timeout """
         self.devices = []
         self._send({'MessageType': 'ListDevices'})
-        for response in self._receive(self._tag - 1)['DeviceList']:
+        response = self._receive(self._tag - 1)
+        device_list = response.get('DeviceList')
+        if device_list is None:
+            raise MuxException(f'Got an invalid response from usbmux: {response}')
+        for response in device_list:
             if response['MessageType'] == 'Attached':
                 super()._add_device(MuxDevice(response['DeviceID'], response['Properties']['SerialNumber'],
                                               response['Properties']['ConnectionType']))
