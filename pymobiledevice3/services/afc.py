@@ -726,11 +726,8 @@ class AfcShell:
     @classmethod
     def create(cls, service_provider: LockdownServiceProvider, service_name: Optional[str] = None,
                service: Optional[LockdownService] = None, auto_cd: Optional[str] = '/'):
-        args = ['--rc']
-        home_rc = pathlib.Path('~/.xonshrc').expanduser()
-        if home_rc.exists():
-            args.append(str(home_rc.expanduser().absolute()))
-        args.append(str(pathlib.Path(__file__).absolute()))
+        args = ['--rc', str(pathlib.Path(__file__).absolute())]
+        os.environ['XONSH_COLOR_STYLE'] = 'default'
         XSH.ctx['_class'] = cls
         XSH.ctx['_lockdown'] = service_provider
         XSH.ctx['_auto_cd'] = auto_cd
