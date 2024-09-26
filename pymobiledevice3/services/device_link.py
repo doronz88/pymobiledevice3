@@ -77,8 +77,24 @@ class DeviceLink:
         for file in message[1]:
             self.service.sendall(struct.pack(SIZE_FORMAT, len(file)))
             self.service.sendall(file.encode())
+
             try:
-                data = (self.root_path / file).read_bytes()
+                file_path = self.root_path / file
+
+                # split into chunks, otherwise we may crash BackupAgent2 by OOM
+                # https://github.com/doronz88/pymobiledevice3/issues/1165#issuecomment-2376815692
+                chunk_size = 128 * 1024 * 1024  # 128 MB
+
+                with file_path.open('rb') as file_handle:
+                    while True:
+                        chunk_data = file_handle.read(chunk_size)
+                        if not chunk_data:
+                            break
+                        self.service.sendall(struct.pack(SIZE_FORMAT, len(chunk_data) + struct.calcsize(CODE_FORMAT)))
+                        self.service.sendall(struct.pack(CODE_FORMAT, CODE_FILE_DATA) + chunk_data)
+
+                buffer = struct.pack(SIZE_FORMAT, struct.calcsize(CODE_FORMAT)) + struct.pack(CODE_FORMAT, CODE_SUCCESS)
+                self.service.sendall(buffer)
             except IOError as e:
                 status[file] = {
                     'DLFileErrorString': e.strerror,
@@ -86,11 +102,7 @@ class DeviceLink:
                 }
                 self.service.sendall(struct.pack(SIZE_FORMAT, len(e.strerror) + struct.calcsize(CODE_FORMAT)))
                 self.service.sendall(struct.pack(CODE_FORMAT, CODE_ERROR_LOCAL) + e.strerror.encode())
-            else:
-                self.service.sendall(struct.pack(SIZE_FORMAT, len(data) + struct.calcsize(CODE_FORMAT)))
-                self.service.sendall(struct.pack(CODE_FORMAT, CODE_FILE_DATA) + data)
-                buffer = struct.pack(SIZE_FORMAT, struct.calcsize(CODE_FORMAT)) + struct.pack(CODE_FORMAT, CODE_SUCCESS)
-                self.service.sendall(buffer)
+
         self.service.sendall(FILE_TRANSFER_TERMINATOR)
         if status:
             self.status_response(BULK_OPERATION_ERROR, 'Multi status', status)
