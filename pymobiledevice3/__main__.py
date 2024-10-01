@@ -1,10 +1,12 @@
 import logging
+import os
 import sys
 import traceback
 
 import click
 import coloredlogs
 
+from pymobiledevice3.cli.cli_common import TUNNEL_ENV_VAR
 from pymobiledevice3.exceptions import AccessDeniedError, CloudConfigurationAlreadyPresentError, \
     ConnectionFailedToUsbmuxdError, DeprecationError, DeveloperModeError, DeveloperModeIsNotEnabledError, \
     DeviceHasPasscodeSetError, DeviceNotFoundError, FeatureNotSupportedError, InternalError, InvalidServiceError, \
@@ -145,13 +147,8 @@ def main() -> None:
             logger.warning('Got an InvalidServiceError. Trying again over tunneld since it is a developer command')
             should_retry_over_tunneld = True
         if should_retry_over_tunneld:
-            if '--' in sys.argv:
-                escape_sequence = sys.argv.index('--')
-                before = sys.argv[:escape_sequence]
-                after = sys.argv[escape_sequence:]
-                sys.argv = before + ['--tunnel', e.identifier] + after
-            else:
-                sys.argv += ['--tunnel', e.identifier]
+            # use a single space because click will ignore envvars of empty strings
+            os.environ[TUNNEL_ENV_VAR] = ' '
             return main()
         logger.error(INVALID_SERVICE_MESSAGE)
     except PasswordRequiredError:
