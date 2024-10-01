@@ -26,6 +26,7 @@ from pymobiledevice3.usbmux import select_devices_by_connection_type
 USBMUX_OPTION_HELP = 'usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT'
 COLORED_OUTPUT = True
 UDID_ENV_VAR = 'PYMOBILEDEVICE3_UDID'
+TUNNEL_ENV_VAR = 'PYMOBILEDEVICE3_TUNNEL'
 OSUTILS = get_os_utils()
 
 
@@ -217,11 +218,12 @@ class RSDCommand(BaseServiceProviderCommand):
                       help='\b\n'
                            'RSD hostname and port number (as provided by a `start-tunnel` subcommand).'),
             RSDOption(('rsd_service_provider_using_tunneld', '--tunnel'), callback=self.tunneld,
-                      mutually_exclusive=['rsd_service_provider_manually'],
+                      mutually_exclusive=['rsd_service_provider_manually'], envvar=TUNNEL_ENV_VAR,
                       help='\b\n'
                            'Either an empty string to force tunneld device selection, or a UDID of a tunneld '
                            'discovered device.\n'
-                           'The string may be suffixed with :PORT in case tunneld is not serving at the default port.')
+                           'The string may be suffixed with :PORT in case tunneld is not serving at the default port.\n'
+                           f'This option may also be transferred as an environment variable: {TUNNEL_ENV_VAR}')
         ]
 
     def rsd(self, ctx, param: str, value: Optional[Tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
@@ -235,6 +237,7 @@ class RSDCommand(BaseServiceProviderCommand):
         if udid is None:
             return
 
+        udid = udid.strip()
         port = TUNNELD_DEFAULT_ADDRESS[1]
         if ':' in udid:
             udid, port = udid.split(':')
