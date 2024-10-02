@@ -913,13 +913,6 @@ class CoreDeviceTunnelProxy(StartTcpTunnel):
         self._lockdown = lockdown
         self._service: Optional[ServiceConnection] = None
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        self._loop = loop
-
     @property
     def remote_identifier(self) -> str:
         return self._lockdown.udid
