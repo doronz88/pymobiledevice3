@@ -928,6 +928,7 @@ class CoreDeviceTunnelProxy(StartTcpTunnel, LockdownService):
 
     @asynccontextmanager
     async def start_tcp_tunnel(self) -> AsyncGenerator['TunnelResult', None]:
+        self.service.close()
         self._service = await self._lockdown.aio_start_lockdown_service(self.SERVICE_NAME)
         tunnel = RemotePairingTcpTunnel(self._service.reader, self._service.writer)
         handshake_response = await tunnel.request_tunnel_establish()
