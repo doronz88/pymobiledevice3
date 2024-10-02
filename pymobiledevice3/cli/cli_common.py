@@ -23,11 +23,14 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 from pymobiledevice3.tunneld import TUNNELD_DEFAULT_ADDRESS, async_get_tunneld_devices
 from pymobiledevice3.usbmux import select_devices_by_connection_type
 
-USBMUX_OPTION_HELP = 'usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT'
 COLORED_OUTPUT = True
 UDID_ENV_VAR = 'PYMOBILEDEVICE3_UDID'
 TUNNEL_ENV_VAR = 'PYMOBILEDEVICE3_TUNNEL'
+USBMUX_ENV_VAR = 'PYMOBILEDEVICE3_USBMUX'
 OSUTILS = get_os_utils()
+
+USBMUX_OPTION_HELP = (f'usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT). '
+                      f'Can be specified via {USBMUX_ENV_VAR} envvar')
 
 
 class RSDOption(Option):
@@ -179,7 +182,7 @@ class LockdownCommand(BaseServiceProviderCommand):
         self.usbmux_address = None
         self.params[:0] = [
             click.Option(('usbmux', '--usbmux'), callback=self.usbmux, expose_value=False,
-                         help=USBMUX_OPTION_HELP),
+                         envvar=USBMUX_ENV_VAR, help=USBMUX_OPTION_HELP),
             click.Option(('lockdown_service_provider', '--udid'), envvar=UDID_ENV_VAR, callback=self.udid,
                          help=f'Device unique identifier. You may pass {UDID_ENV_VAR} environment variable to pass this'
                               f' option as well'),
