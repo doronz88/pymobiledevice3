@@ -47,7 +47,6 @@ from srptools.constants import PRIME_3072, PRIME_3072_GEN
 
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
-from pymobiledevice3.services.lockdown_service import LockdownService
 
 try:
     from sslpsk_pmd3.sslpsk import SSLPSKContext
@@ -907,11 +906,10 @@ class RemotePairingManualPairingService(RemotePairingTunnelService):
         await RemotePairingProtocol.connect(self, autopair=autopair)
 
 
-class CoreDeviceTunnelProxy(StartTcpTunnel, LockdownService):
+class CoreDeviceTunnelProxy(StartTcpTunnel):
     SERVICE_NAME = 'com.apple.internal.devicecompute.CoreDeviceProxy'
 
     def __init__(self, lockdown: LockdownServiceProvider) -> None:
-        LockdownService.__init__(self, lockdown, self.SERVICE_NAME)
         self._lockdown = lockdown
         self._service: Optional[ServiceConnection] = None
 
@@ -928,7 +926,6 @@ class CoreDeviceTunnelProxy(StartTcpTunnel, LockdownService):
 
     @asynccontextmanager
     async def start_tcp_tunnel(self) -> AsyncGenerator['TunnelResult', None]:
-        self.service.close()
         self._service = await self._lockdown.aio_start_lockdown_service(self.SERVICE_NAME)
         tunnel = RemotePairingTcpTunnel(self._service.reader, self._service.writer)
         handshake_response = await tunnel.request_tunnel_establish()
