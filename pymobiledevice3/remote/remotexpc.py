@@ -1,7 +1,8 @@
 import asyncio
 import sys
 from asyncio import IncompleteReadError
-from typing import Generator, Mapping, Optional, Tuple
+from collections.abc import Generator
+from typing import Optional
 
 import IPython
 import nest_asyncio
@@ -35,10 +36,10 @@ resp = await client.send_receive_request({"Command": "DoSomething"})
 
 
 class RemoteXPCConnection:
-    def __init__(self, address: Tuple[str, int]):
+    def __init__(self, address: tuple[str, int]):
         self._previous_frame_data = b''
         self.address = address
-        self.next_message_id: Mapping[int: int] = {ROOT_CHANNEL: 0, REPLY_CHANNEL: 0}
+        self.next_message_id: dict[int, int] = {ROOT_CHANNEL: 0, REPLY_CHANNEL: 0}
         self.peer_info = None
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
@@ -65,7 +66,7 @@ class RemoteXPCConnection:
         self._writer = None
         self._reader = None
 
-    async def send_request(self, data: Mapping, wanting_reply: bool = False) -> None:
+    async def send_request(self, data: dict, wanting_reply: bool = False) -> None:
         xpc_wrapper = create_xpc_wrapper(
             data, message_id=self.next_message_id[ROOT_CHANNEL], wanting_reply=wanting_reply)
         self._writer.write(DataFrame(stream_id=ROOT_CHANNEL, data=xpc_wrapper).serialize())
@@ -96,7 +97,7 @@ class RemoteXPCConnection:
             buf += chunk
         return buf
 
-    async def receive_response(self) -> Mapping:
+    async def receive_response(self) -> dict:
         while True:
             frame = await self._receive_next_data_frame()
             try:
@@ -112,7 +113,7 @@ class RemoteXPCConnection:
             self.next_message_id[frame.stream_id] = xpc_message.message_id + 1
             return decode_xpc_object(xpc_message.payload.obj)
 
-    async def send_receive_request(self, data: Mapping) -> Mapping:
+    async def send_receive_request(self, data: dict) -> dict:
         await self.send_request(data, wanting_reply=True)
         return await self.receive_response()
 

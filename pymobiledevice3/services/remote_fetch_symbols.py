@@ -1,7 +1,6 @@
 import dataclasses
 import uuid
 from pathlib import Path
-from typing import List
 
 from tqdm import tqdm
 
@@ -21,8 +20,8 @@ class RemoteFetchSymbolsService(RemoteService):
     def __init__(self, rsd: RemoteServiceDiscoveryService):
         super().__init__(rsd, self.SERVICE_NAME)
 
-    async def get_dsc_file_list(self) -> List[DSCFile]:
-        files: List[DSCFile] = []
+    async def get_dsc_file_list(self) -> list[DSCFile]:
+        files: list[DSCFile] = []
         response = await self.service.send_receive_request({'XPCDictionary_sideChannel': uuid.uuid4(), 'DSCFilePaths': []})
         file_count = response['DSCFilePaths']
         for i in range(file_count):

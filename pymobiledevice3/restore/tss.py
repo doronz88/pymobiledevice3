@@ -19,14 +19,14 @@ TSS_CLIENT_VERSION_STRING = 'libauthinstall-1033.0.2'
 logger = logging.getLogger(__name__)
 
 
-def get_with_or_without_comma(obj: typing.Mapping, k: str, default=None):
+def get_with_or_without_comma(obj: dict, k: str, default=None):
     val = obj.get(k, obj.get(k.replace(',', '')))
     if val is None and default is not None:
         val = default
     return val
 
 
-def is_fw_payload(info: typing.Mapping[str, typing.Any]) -> bool:
+def is_fw_payload(info: dict[str, typing.Any]) -> bool:
     return (info.get('IsFirmwarePayload') or info.get('IsSecondaryFirmwarePayload') or info.get('IsFUDFirmware') or
             info.get('IsLoadedByiBoot') or info.get('IsEarlyAccessFirmware') or info.get('IsiBootEANFirmware') or
             info.get('IsiBootNonEssentialFirmware'))
@@ -63,8 +63,7 @@ class TSSRequest:
         }
 
     @staticmethod
-    def apply_restore_request_rules(tss_entry: typing.MutableMapping, parameters: typing.MutableMapping,
-                                    rules: typing.List):
+    def apply_restore_request_rules(tss_entry: dict, parameters: dict, rules: list) -> dict:
         for rule in rules:
             conditions_fulfilled = True
             conditions = rule['Conditions']
@@ -106,13 +105,13 @@ class TSSRequest:
                     tss_entry[key] = value
         return tss_entry
 
-    def add_tags(self, parameters: typing.Mapping):
+    def add_tags(self, parameters: dict):
         for key, value in parameters.items():
             if isinstance(value, str) and value.startswith('0x'):
                 value = int(value, 16)
             self._request[key] = value
 
-    def add_common_tags(self, parameters: typing.Mapping, overrides=None):
+    def add_common_tags(self, parameters: dict, overrides=None):
         keys = ('ApECID', 'UniqueBuildID', 'ApChipID', 'ApBoardID', 'ApSecurityDomain')
         for k in keys:
             if k in parameters:
@@ -120,7 +119,7 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
-    def add_ap_recovery_tags(self, parameters: typing.Mapping, overrides=None):
+    def add_ap_recovery_tags(self, parameters: dict, overrides=None):
         skip_keys = ('BasebandFirmware', 'SE,UpdatePayload', 'BaseSystem', 'ANS', 'Ap,AudioBootChime', 'Ap,CIO',
                      'Ap,RestoreCIO', 'Ap,RestoreTMU', 'Ap,TMU', 'Ap,rOSLogo1', 'Ap,rOSLogo2', 'AppleLogo', 'DCP',
                      'LLB', 'RecoveryMode', 'RestoreANS', 'RestoreDCP', 'RestoreDeviceTree', 'RestoreKernelCache',
@@ -168,7 +167,7 @@ class TSSRequest:
         if overrides:
             self._request.update(overrides)
 
-    def add_timer_tags(self, parameters: typing.Mapping, overrides=None):
+    def add_timer_tags(self, parameters: dict, overrides=None):
         manifest = parameters['Manifest']
 
         # add tags indicating we want to get the Timer ticket
@@ -229,7 +228,7 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
-    def add_local_policy_tags(self, parameters: typing.Mapping):
+    def add_local_policy_tags(self, parameters: dict):
         self._request['@ApImg4Ticket'] = True
 
         keys_to_copy = (
@@ -243,7 +242,7 @@ class TSSRequest:
                     v = int(v, 16)
                 self._request[k] = v
 
-    def add_vinyl_tags(self, parameters: typing.Mapping, overrides=None):
+    def add_vinyl_tags(self, parameters: dict, overrides=None):
         self._request['@BBTicket'] = True
 
         self._request['eUICC,ApProductionMode'] = parameters.get('eUICC,ApProductionMode',
@@ -281,7 +280,7 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
-    def add_ap_tags(self, parameters: typing.Mapping, overrides=None):
+    def add_ap_tags(self, parameters: dict, overrides=None):
         """ loop over components from build manifest """
 
         manifest_node = parameters['Manifest']
@@ -340,7 +339,7 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
-    def add_ap_img3_tags(self, parameters: typing.Mapping):
+    def add_ap_img3_tags(self, parameters: dict):
         if 'ApNonce' in parameters:
             self._request['ApNonce'] = parameters['ApNonce']
         self._request['@APTicket'] = True
@@ -369,7 +368,7 @@ class TSSRequest:
         if parameters.get('RequiresUIDMode'):
             self._request['Ap,SikaFuse'] = 0
 
-    def add_se_tags(self, parameters: typing.Mapping, overrides=None):
+    def add_se_tags(self, parameters: dict, overrides=None):
         manifest = parameters['Manifest']
 
         # add tags indicating we want to get the SE,Ticket
@@ -424,7 +423,7 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
-    def add_savage_tags(self, parameters: typing.Mapping, overrides=None, component_name=None):
+    def add_savage_tags(self, parameters: dict, overrides=None, component_name=None):
         manifest = parameters['Manifest']
 
         # add tags indicating we want to get the Savage,Ticket
@@ -470,7 +469,7 @@ class TSSRequest:
 
         return comp_name
 
-    def add_yonkers_tags(self, parameters: typing.Mapping, overrides=None):
+    def add_yonkers_tags(self, parameters: dict, overrides=None):
         manifest = parameters['Manifest']
 
         # add tags indicating we want to get the Yonkers,Ticket
@@ -522,7 +521,7 @@ class TSSRequest:
 
         return result_comp_name
 
-    def add_baseband_tags(self, parameters: typing.Mapping, overrides=None):
+    def add_baseband_tags(self, parameters: dict, overrides=None):
         self._request['@BBTicket'] = True
 
         keys_to_copy = (
@@ -554,7 +553,7 @@ class TSSRequest:
         if overrides:
             self._request.update(overrides)
 
-    def add_rose_tags(self, parameters: typing.Mapping, overrides: typing.Mapping = None):
+    def add_rose_tags(self, parameters: dict, overrides: typing.Optional[dict] = None):
         manifest = parameters['Manifest']
 
         # add tags indicating we want to get the Rap,Ticket
@@ -613,7 +612,7 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
-    def add_veridian_tags(self, parameters: typing.Mapping, overrides: typing.Mapping = None):
+    def add_veridian_tags(self, parameters: dict, overrides: typing.Optional[dict] = None):
         manifest = parameters['Manifest']
 
         # add tags indicating we want to get the Rap,Ticket
@@ -656,7 +655,7 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
-    def add_tcon_tags(self, parameters: typing.Mapping, overrides: typing.Mapping = None):
+    def add_tcon_tags(self, parameters: dict, overrides: typing.Optional[dict] = None):
         manifest = parameters['Manifest']
 
         # add tags indicating we want to get the Baobab,Ticket

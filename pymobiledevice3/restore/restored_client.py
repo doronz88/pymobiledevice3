@@ -1,6 +1,6 @@
 import logging
 from functools import cached_property
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import ConnectionFailedError, NoDeviceConnectedError
@@ -58,19 +58,19 @@ class RestoredClient:
 
         return await self.service.aio_send_plist(req)
 
-    async def reboot(self) -> Mapping:
+    async def reboot(self) -> dict:
         return await self.service.aio_send_recv_plist({'Request': 'Reboot', 'Label': self.label})
 
-    async def send(self, message: Mapping) -> None:
+    async def send(self, message: dict) -> None:
         await self.service.aio_send_plist(message)
 
-    async def recv(self) -> Mapping:
+    async def recv(self) -> dict:
         return await self.service.aio_recv_plist()
 
     @cached_property
-    async def hardware_info(self) -> Mapping[str, Any]:
+    async def hardware_info(self) -> dict[str, Any]:
         return (await self.query_value('HardwareInfo'))['HardwareInfo']
 
     @property
-    async def saved_debug_info(self) -> Mapping[str, Any]:
+    async def saved_debug_info(self) -> dict[str, Any]:
         return (await self.query_value('SavedDebugInfo'))['SavedDebugInfo']

@@ -1,7 +1,7 @@
 import plistlib
 import pprint
 import xml
-from typing import IO, Mapping, Optional, TextIO
+from typing import IO, Optional, TextIO
 
 import click
 from scapy.packet import Packet, Raw
@@ -31,7 +31,7 @@ class PcapSniffer:
             except xml.parsers.expat.ExpatError:
                 pass
 
-    def report(self, plist: Mapping) -> None:
+    def report(self, plist: dict) -> None:
         try:
             print(plist)
             if self.file is not None:

@@ -1,5 +1,4 @@
 from dataclasses import asdict, dataclass
-from typing import List
 
 from pymobiledevice3.services.web_protocol.automation_session import RESOURCES, Point, Rect, Size
 from pymobiledevice3.services.web_protocol.element import WebElement
@@ -91,7 +90,7 @@ class WebDriver(SeleniumApi):
         elem = self.session.find_elements(by, value)
         return None if elem is None else WebElement(self.session, elem)
 
-    def find_elements(self, by=By.ID, value=None) -> List[WebElement]:
+    def find_elements(self, by=By.ID, value=None) -> list[WebElement]:
         """ Find elements given a By strategy and locator. """
         elements = self.session.find_elements(by, value, single=False)
         return list(map(lambda elem: WebElement(self.session, elem), elements))
@@ -118,7 +117,7 @@ class WebDriver(SeleniumApi):
             if cookie.name == name:
                 return cookie
 
-    def get_cookies(self) -> List[Cookie]:
+    def get_cookies(self) -> list[Cookie]:
         """ Returns cookies visible in the current session. """
         return list(map(Cookie.from_automation, self.session.get_all_cookies()))
 
@@ -191,6 +190,6 @@ class WebDriver(SeleniumApi):
         return self.session.evaluate_js_function('function() { return document.title; }')
 
     @property
-    def window_handles(self) -> List[str]:
+    def window_handles(self) -> list[str]:
         """ Returns the handles of all windows within the current session. """
         return self.session.get_window_handles()

@@ -1,7 +1,7 @@
 import plistlib
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
 from uuid import uuid4
 
 from cryptography import x509
@@ -60,16 +60,16 @@ class MobileConfigService(LockdownService):
         self._send_recv({'RequestType': 'EscalateResponse', 'SignedRequest': signed_challenge})
         self._send_recv({'RequestType': 'ProceedWithKeybagMigration'})
 
-    def get_stored_profile(self, purpose: Purpose = Purpose.PostSetupInstallation) -> Mapping:
+    def get_stored_profile(self, purpose: Purpose = Purpose.PostSetupInstallation) -> dict:
         return self._send_recv({'RequestType': 'GetStoredProfile', 'Purpose': purpose.value})
 
     def store_profile(self, profile_data: bytes, purpose: Purpose = Purpose.PostSetupInstallation) -> None:
         self._send_recv({'RequestType': 'StoreProfile', 'ProfileData': profile_data, 'Purpose': purpose.value})
 
-    def get_cloud_configuration(self) -> Mapping:
+    def get_cloud_configuration(self) -> dict:
         return self._send_recv({'RequestType': 'GetCloudConfiguration'}).get('CloudConfiguration')
 
-    def set_cloud_configuration(self, cloud_configuration: Mapping) -> None:
+    def set_cloud_configuration(self, cloud_configuration: dict) -> None:
         self._send_recv({'RequestType': 'SetCloudConfiguration', 'CloudConfiguration': cloud_configuration})
 
     def establish_provisional_enrollment(self, nonce: bytes) -> None:
@@ -85,7 +85,7 @@ class MobileConfigService(LockdownService):
         except ConnectionAbortedError:
             pass
 
-    def get_profile_list(self) -> Mapping:
+    def get_profile_list(self) -> dict:
         return self._send_recv({'RequestType': 'GetProfileList'})
 
     def install_profile(self, payload: bytes) -> None:
@@ -110,7 +110,7 @@ class MobileConfigService(LockdownService):
                                })
         self._send_recv({'RequestType': 'RemoveProfile', 'ProfileIdentifier': data})
 
-    def _send_recv(self, request: Mapping) -> Mapping:
+    def _send_recv(self, request: dict) -> dict:
         response = self.service.send_recv_plist(request)
         if response.get('Status', None) != 'Acknowledged':
             error_chain = response.get('ErrorChain')
@@ -258,7 +258,7 @@ class MobileConfigService(LockdownService):
         })
 
     def install_managed_profile(
-            self, display_name: str, payload_content: Mapping[str, Any], payload_uuid: str = str(uuid4()),
+            self, display_name: str, payload_content: dict[str, Any], payload_uuid: str = str(uuid4()),
             keybag_file: Optional[Path] = None) -> None:
         profile_data = plistlib.dumps({
             'PayloadContent': [

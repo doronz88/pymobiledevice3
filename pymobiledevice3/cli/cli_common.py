@@ -6,7 +6,7 @@ import os
 import sys
 import uuid
 from functools import wraps
-from typing import Any, Callable, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Optional
 
 import click
 import coloredlogs
@@ -126,7 +126,7 @@ def sudo_required(func):
     return wrapper
 
 
-def prompt_selection(choices: List[Any], message: str, idx: bool = False) -> Any:
+def prompt_selection(choices: list[Any], message: str, idx: bool = False) -> Any:
     question = [inquirer3.List('selection', message=message, choices=choices, carousel=True)]
     try:
         result = inquirer3.prompt(question, theme=GreenPassion(), raise_keyboard_interrupt=True)
@@ -135,12 +135,12 @@ def prompt_selection(choices: List[Any], message: str, idx: bool = False) -> Any
     return result['selection'] if not idx else choices.index(result['selection'])
 
 
-def prompt_device_list(device_list: List):
+def prompt_device_list(device_list: list):
     return prompt_selection(device_list, 'Choose device')
 
 
 def choose_service_provider(callback: Callable):
-    def wrap_callback_calling(**kwargs: Mapping):
+    def wrap_callback_calling(**kwargs: dict) -> None:
         service_provider = None
         lockdown_service_provider = kwargs.pop('lockdown_service_provider', None)
         rsd_service_provider_manually = kwargs.pop('rsd_service_provider_manually', None)
@@ -229,7 +229,7 @@ class RSDCommand(BaseServiceProviderCommand):
                            f'This option may also be transferred as an environment variable: {TUNNEL_ENV_VAR}')
         ]
 
-    def rsd(self, ctx, param: str, value: Optional[Tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
+    def rsd(self, ctx, param: str, value: Optional[tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
         if value is not None:
             rsd = RemoteServiceDiscoveryService(value)
             asyncio.run(rsd.connect(), debug=True)

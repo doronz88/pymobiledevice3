@@ -1,7 +1,7 @@
 import hashlib
 import plistlib
 from pathlib import Path
-from typing import List, Mapping
+from typing import Optional
 
 from developer_disk_image.repo import DeveloperDiskImageRepository
 from packaging.version import Version
@@ -22,7 +22,7 @@ class MobileImageMounterService(LockdownService):
     # implemented in /usr/libexec/mobile_storage_proxy
     SERVICE_NAME = 'com.apple.mobile.mobile_image_mounter'
     RSD_SERVICE_NAME = 'com.apple.mobile.mobile_image_mounter.shim.remote'
-    IMAGE_TYPE: str = None
+    IMAGE_TYPE: Optional[str] = None
 
     def __init__(self, lockdown: LockdownServiceProvider):
         if isinstance(lockdown, LockdownClient):
@@ -36,7 +36,7 @@ class MobileImageMounterService(LockdownService):
         if Version(self.lockdown.product_version).major >= 16 and not self.lockdown.developer_mode_status:
             raise DeveloperModeIsNotEnabledError()
 
-    def copy_devices(self) -> List[Mapping]:
+    def copy_devices(self) -> list[dict]:
         """ Copy mounted devices list. """
         try:
             return self.service.send_recv_plist({'Command': 'CopyDevices'})['EntryList']
@@ -81,7 +81,7 @@ class MobileImageMounterService(LockdownService):
             else:
                 raise PyMobileDevice3Exception(response)
 
-    def mount_image(self, image_type: str, signature: bytes, extras: Mapping = None) -> None:
+    def mount_image(self, image_type: str, signature: bytes, extras: Optional[dict] = None) -> None:
         """ Upload image into device. """
 
         if self.is_image_mounted(image_type):
@@ -132,7 +132,7 @@ class MobileImageMounterService(LockdownService):
         except KeyError as e:
             raise MessageNotSupportedError from e
 
-    def query_nonce(self, personalized_image_type: str = None) -> bytes:
+    def query_nonce(self, personalized_image_type: Optional[str] = None) -> bytes:
         request = {'Command': 'QueryNonce'}
         if personalized_image_type is not None:
             request['PersonalizedImageType'] = personalized_image_type
@@ -142,7 +142,7 @@ class MobileImageMounterService(LockdownService):
         except KeyError as e:
             raise MessageNotSupportedError from e
 
-    def query_personalization_identifiers(self, image_type: str = None) -> Mapping:
+    def query_personalization_identifiers(self, image_type: Optional[str] = None) -> dict:
         request = {'Command': 'QueryPersonalizationIdentifiers'}
 
         if image_type is not None:
@@ -197,7 +197,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
     IMAGE_TYPE = 'Personalized'
 
     async def mount(self, image: Path, build_manifest: Path, trust_cache: Path,
-                    info_plist: Mapping = None) -> None:
+                    info_plist: Optional[dict]) -> None:
         self.raise_if_cannot_mount()
 
         image = image.read_bytes()
@@ -223,7 +223,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
     def umount(self) -> None:
         self.unmount_image('/System/Developer')
 
-    async def get_manifest_from_tss(self, build_manifest: Mapping) -> bytes:
+    async def get_manifest_from_tss(self, build_manifest: dict) -> bytes:
         request = TSSRequest()
 
         personalization_identifiers = self.query_personalization_identifiers()
@@ -297,7 +297,8 @@ class PersonalizedImageMounter(MobileImageMounterService):
         return response['ApImg4Ticket']
 
 
-def auto_mount_developer(lockdown: LockdownServiceProvider, xcode: str = None, version: str = None) -> None:
+def auto_mount_developer(
+        lockdown: LockdownServiceProvider, xcode: Optional[str] = None, version: Optional[str] = None) -> None:
     """ auto-detect correct DeveloperDiskImage and mount it """
     if xcode is None:
         # avoid "default"-ing this option, because Windows and Linux won't have this path
@@ -358,7 +359,7 @@ async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
     await PersonalizedImageMounter(lockdown=lockdown).mount(image, build_manifest, trustcache)
 
 
-async def auto_mount(lockdown: LockdownServiceProvider, xcode: str = None, version: str = None) -> None:
+async def auto_mount(lockdown: LockdownServiceProvider, xcode: Optional[str] = None, version: Optional[str] = None) -> None:
     if Version(lockdown.product_version) < Version('17.0'):
         auto_mount_developer(lockdown, xcode=xcode, version=version)
     else:

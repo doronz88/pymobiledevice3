@@ -11,7 +11,7 @@ from pymobiledevice3.services.remote_server import MessageAux, RemoteServer
 
 
 class SerializedObject:
-    def __init__(self, fields: typing.MutableMapping):
+    def __init__(self, fields: dict):
         self._fields = fields
 
 
@@ -141,7 +141,7 @@ class AXAuditIssue_v1(SerializedObject):
     def background_color(self) -> typing.Any:
         return self._fields['BackgroundColorValue_v1']
 
-    def json(self) -> typing.Mapping:
+    def json(self) -> dict:
         resp = {
             'element_rect_value': self.rect,
             'issue_classification': self.issue_type,
@@ -218,11 +218,11 @@ class AccessibilityAudit(RemoteServer):
             self.recv_plist()
 
     @property
-    def capabilities(self) -> typing.List[str]:
+    def capabilities(self) -> list[str]:
         self.broadcast.deviceCapabilities()
         return self.recv_plist()[0]
 
-    def run_audit(self, value: typing.List) -> typing.List[AXAuditIssue_v1]:
+    def run_audit(self, value: list) -> list[AXAuditIssue_v1]:
         if self.product_version >= Version('15.0'):
             self.broadcast.deviceBeginAuditTypes_(MessageAux().append_obj(value))
         else:
@@ -242,7 +242,7 @@ class AccessibilityAudit(RemoteServer):
         return deserialize_object(self.recv_plist()[0])
 
     @property
-    def settings(self) -> typing.List[AXAuditDeviceSetting_v1]:
+    def settings(self) -> list[AXAuditDeviceSetting_v1]:
         self.broadcast.deviceAccessibilitySettings()
         return deserialize_object(self.recv_plist()[0])
 

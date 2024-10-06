@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
 import enum
-from typing import Generator, Optional
+from collections.abc import Generator
+from typing import Optional
 
 import pcapng.blocks as blocks
 from construct import Byte, Bytes, Container, CString, Int16ub, Int32ub, Int32ul, Padded, Seek, Struct, this

@@ -2,7 +2,6 @@ import datetime
 import os
 import socket
 from pathlib import Path
-from typing import List, Tuple
 
 import win32security
 from ifaddr import get_adapters
@@ -25,7 +24,7 @@ class Win32(OsUtils):
             return False
 
     @property
-    def usbmux_address(self) -> Tuple[str, int]:
+    def usbmux_address(self) -> tuple[str, int]:
         return MuxConnection.ITUNES_HOST, socket.AF_INET
 
     @property
@@ -44,7 +43,7 @@ class Win32(OsUtils):
     def pair_record_path(self) -> Path:
         return Path(os.environ.get('ALLUSERSPROFILE', ''), 'Apple', 'Lockdown')
 
-    def get_ipv6_ips(self) -> List[str]:
+    def get_ipv6_ips(self) -> list[str]:
         return [f'{adapter.ips[0].ip[0]}%{adapter.ips[0].ip[2]}' for adapter in get_adapters() if
                 adapter.ips[0].is_IPv6]
 

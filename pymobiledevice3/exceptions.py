@@ -17,7 +17,7 @@ __all__ = [
     'CloudConfigurationAlreadyPresentError'
 ]
 
-from typing import List, Optional
+from typing import Optional
 
 
 class PyMobileDevice3Exception(Exception):
@@ -305,7 +305,7 @@ class InvalidServiceError(LockdownError):
 
 class InspectorEvaluateError(PyMobileDevice3Exception):
     def __init__(self, class_name: str, message: str, line: Optional[int] = None, column: Optional[int] = None,
-                 stack: Optional[List[str]] = None):
+                 stack: Optional[list[str]] = None):
         super().__init__()
         self.class_name = class_name
         self.message = message

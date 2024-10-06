@@ -2,7 +2,7 @@ import base64
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Mapping, Optional, Tuple, Union
+from typing import Optional, Union
 
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
 from pymobiledevice3.common import get_home_folder
@@ -28,13 +28,13 @@ RSD_PORT = 58783
 
 
 class RemoteServiceDiscoveryService(LockdownServiceProvider):
-    def __init__(self, address: Tuple[str, int], name: Optional[str] = None) -> None:
+    def __init__(self, address: tuple[str, int], name: Optional[str] = None) -> None:
         super().__init__()
         self.name = name
         self.service = RemoteXPCConnection(address)
-        self.peer_info: Optional[Mapping] = None
+        self.peer_info: Optional[dict] = None
         self.lockdown: Optional[LockdownClient] = None
-        self.all_values: Optional[Mapping] = None
+        self.all_values: Optional[dict] = None
 
     @property
     def product_version(self) -> str:
@@ -140,7 +140,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
                 f'UDID:{self.udid}{name_str}>')
 
 
-async def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[RSDDevice]:
+async def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[RSDDevice]:
     result = []
     for hostname in await browse_remoted(timeout):
         with RemoteServiceDiscoveryService((hostname, RSD_PORT)) as rsd:

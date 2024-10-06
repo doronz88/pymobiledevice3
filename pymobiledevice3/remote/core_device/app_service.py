@@ -1,5 +1,5 @@
 import plistlib
-from typing import List, Mapping, Optional
+from typing import Optional
 
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -18,7 +18,7 @@ class AppServiceService(CoreDeviceService):
 
     async def list_apps(self, include_app_clips: bool = True, include_removable_apps: bool = True,
                         include_hidden_apps: bool = True, include_internal_apps: bool = True,
-                        include_default_apps: bool = True) -> List[Mapping]:
+                        include_default_apps: bool = True) -> list[dict]:
         """ List applications """
         return await self.invoke('com.apple.coredevice.feature.listapps', {
             'includeAppClips': include_app_clips, 'includeRemovableApps': include_removable_apps,
@@ -26,9 +26,9 @@ class AppServiceService(CoreDeviceService):
             'includeDefaultApps': include_default_apps})
 
     async def launch_application(
-            self, bundle_id: str, arguments: Optional[List[str]] = None, kill_existing: bool = True,
-            start_suspended: bool = False, environment: Optional[Mapping] = None, extra_options: Mapping = None) \
-            -> List[Mapping]:
+            self, bundle_id: str, arguments: Optional[list[str]] = None, kill_existing: bool = True,
+            start_suspended: bool = False, environment: Optional[dict] = None, extra_options: Optional[dict] = None) \
+            -> list[dict]:
         """ launch application """
         return await self.invoke('com.apple.coredevice.feature.launchapplication', {
             'applicationSpecifier': {
@@ -47,11 +47,11 @@ class AppServiceService(CoreDeviceService):
             },
         })
 
-    async def list_processes(self) -> List[Mapping]:
+    async def list_processes(self) -> list[dict]:
         """ List processes """
         return (await self.invoke('com.apple.coredevice.feature.listprocesses'))['processTokens']
 
-    async def list_roots(self) -> Mapping:
+    async def list_roots(self) -> dict:
         """
         List roots.
 
@@ -62,7 +62,7 @@ class AppServiceService(CoreDeviceService):
                 'relative': '/'
             }})
 
-    async def spawn_executable(self, executable: str, arguments: List[str]) -> Mapping:
+    async def spawn_executable(self, executable: str, arguments: list[str]) -> dict:
         """
         Spawn given executable.
 
@@ -89,7 +89,7 @@ class AppServiceService(CoreDeviceService):
             },
         })
 
-    async def monitor_process_termination(self, pid: int) -> Mapping:
+    async def monitor_process_termination(self, pid: int) -> dict:
         """
         Monitor process termination.
 
@@ -104,7 +104,7 @@ class AppServiceService(CoreDeviceService):
         """
         await self.invoke('com.apple.coredevice.feature.uninstallapp', {'bundleIdentifier': bundle_identifier})
 
-    async def send_signal_to_process(self, pid: int, signal: int) -> Mapping:
+    async def send_signal_to_process(self, pid: int, signal: int) -> dict:
         """
         Send signal to given process by its pid
         """
@@ -114,7 +114,7 @@ class AppServiceService(CoreDeviceService):
         })
 
     async def fetch_icons(self, bundle_identifier: str, width: float, height: float, scale: float,
-                          allow_placeholder: bool) -> Mapping:
+                          allow_placeholder: bool) -> dict:
         """
         Fetch given application's icons
         """

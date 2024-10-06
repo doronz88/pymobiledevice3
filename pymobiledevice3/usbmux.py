@@ -3,7 +3,7 @@ import plistlib
 import socket
 import time
 from dataclasses import dataclass
-from typing import List, Mapping, Optional
+from typing import Optional
 
 from construct import Const, CString, Enum, FixedSized, GreedyBytes, Int16ul, Int32ul, Padding, Prefixed, StreamError, \
     Struct, Switch, this
@@ -293,7 +293,7 @@ class BinaryMuxConnection(MuxConnection):
                                             f'failed to connect to device: {device_id} at port: {port}. reason: '
                                             f'{response.data.result}')
 
-    def _send(self, data: Mapping):
+    def _send(self, data: dict) -> None:
         self._assert_not_connected()
         self._sock.send(usbmuxd_request.build(data))
         self._tag += 1
@@ -341,7 +341,7 @@ class PlistMuxConnection(BinaryMuxConnection):
     def listen(self) -> None:
         self._send_receive({'MessageType': 'Listen'})
 
-    def get_pair_record(self, serial: str) -> Mapping:
+    def get_pair_record(self, serial: str) -> dict:
         # serials are saved inside usbmuxd without '-'
         self._send({'MessageType': 'ReadPairRecord', 'PairRecordID': serial})
         response = self._receive(self._tag - 1)
@@ -382,7 +382,7 @@ class PlistMuxConnection(BinaryMuxConnection):
     def _connect(self, device_id: int, port: int):
         self._send_receive({'MessageType': 'Connect', 'DeviceID': device_id, 'PortNumber': port})
 
-    def _send(self, data: Mapping):
+    def _send(self, data: dict):
         request = {'ClientVersionString': 'qt4i-usbmuxd', 'ProgName': 'pymobiledevice3', 'kLibUSBMuxVersion': 3}
         request.update(data)
         super()._send({'header': {'version': self._version,
@@ -391,13 +391,13 @@ class PlistMuxConnection(BinaryMuxConnection):
                        'data': plistlib.dumps(request),
                        })
 
-    def _receive(self, expected_tag: int = None) -> Mapping:
+    def _receive(self, expected_tag: int = None) -> dict:
         response = super()._receive(expected_tag=expected_tag)
         if response.header.message != usbmuxd_msgtype.PLIST:
             raise MuxException(f'Received non-plist type {response}')
         return plistlib.loads(response.data)
 
-    def _send_receive(self, data: Mapping):
+    def _send_receive(self, data: dict):
         self._send(data)
         response = self._receive(self._tag - 1)
         if response['MessageType'] != 'Result':
@@ -410,7 +410,7 @@ def create_mux(usbmux_address: Optional[str] = None) -> MuxConnection:
     return MuxConnection.create(usbmux_address=usbmux_address)
 
 
-def list_devices(usbmux_address: Optional[str] = None) -> List[MuxDevice]:
+def list_devices(usbmux_address: Optional[str] = None) -> list[MuxDevice]:
     mux = create_mux(usbmux_address=usbmux_address)
     mux.get_device_list(0.1)
     devices = mux.devices
@@ -444,7 +444,7 @@ def select_device(udid: str = None, connection_type: str = None, usbmux_address:
     return tmp
 
 
-def select_devices_by_connection_type(connection_type: str, usbmux_address: Optional[str] = None) -> List[MuxDevice]:
+def select_devices_by_connection_type(connection_type: str, usbmux_address: Optional[str] = None) -> list[MuxDevice]:
     """
     select all UsbMux devices by connection type
     """

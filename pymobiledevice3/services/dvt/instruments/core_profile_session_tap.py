@@ -586,7 +586,7 @@ class CoreProfileSessionTap(Tap):
     """
     IDENTIFIER = 'com.apple.instruments.server.services.coreprofilesessiontap'
 
-    def __init__(self, dvt: DvtSecureSocketProxyService, time_config: typing.Mapping, filters: typing.Set = None):
+    def __init__(self, dvt: DvtSecureSocketProxyService, time_config: dict, filters: set = None):
         """
         :param dvt: Instruments service proxy.
         :param time_config: Timing information - numer, denom, mach_absolute_time and matching usecs_since_epoch,
@@ -612,7 +612,7 @@ class CoreProfileSessionTap(Tap):
         }
         super().__init__(dvt, self.IDENTIFIER, config)
 
-    def get_stackshot(self) -> typing.Mapping:
+    def get_stackshot(self) -> dict:
         """
         Get a stackshot from the tap.
         """

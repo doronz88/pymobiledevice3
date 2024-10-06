@@ -9,7 +9,7 @@ import traceback
 import typing
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
-from typing import Mapping, MutableMapping, Optional
+from typing import Optional
 
 import requests
 from tqdm import tqdm, trange
@@ -140,12 +140,12 @@ class Restore(BaseRestore):
             'DeviceTree': self.send_component,
         }
 
-    def handle_async_data_request_msg(self, message: Mapping) -> typing.Coroutine:
+    def handle_async_data_request_msg(self, message: dict) -> typing.Coroutine:
         self._tasks.append(asyncio.create_task(self.handle_data_request_msg(message),
                                                name=f'AsyncDataRequestMsg-{message["DataType"]}'))
         return asyncio.sleep(0)
 
-    async def send_filesystem(self, message: Mapping) -> None:
+    async def send_filesystem(self, message: dict) -> None:
         self.logger.info('about to send filesystem...')
 
         asr_port = message.get('DataPort', DEFAULT_ASR_SYNC_PORT)
@@ -178,7 +178,7 @@ class Restore(BaseRestore):
     def get_build_identity_from_request(self, msg):
         return self.get_build_identity(msg['Arguments'].get('IsRecoveryOS', False))
 
-    async def send_buildidentity(self, message: Mapping) -> None:
+    async def send_buildidentity(self, message: dict) -> None:
         self.logger.info('About to send BuildIdentity Dict...')
         service = await self._get_service_for_data_request(message)
         req = {'BuildIdentityDict': dict(self.get_build_identity_from_request(message))}
@@ -188,7 +188,7 @@ class Restore(BaseRestore):
         self.logger.info('Sending BuildIdentityDict now...')
         await service.aio_send_plist(req)
 
-    async def extract_global_manifest(self) -> Mapping:
+    async def extract_global_manifest(self) -> dict:
         build_info = self.build_identity.get('Info')
         if build_info is None:
             raise PyMobileDevice3Exception('build identity does not contain an "Info" element')
@@ -204,7 +204,7 @@ class Restore(BaseRestore):
         # The path of the global manifest is hardcoded. There's no pointer to in the build manifest.
         return self.ipsw.get_global_manifest(macos_variant, device_class)
 
-    async def send_personalized_boot_object_v3(self, message: Mapping) -> None:
+    async def send_personalized_boot_object_v3(self, message: dict) -> None:
         self.logger.debug('send_personalized_boot_object_v3')
         service = await self._get_service_for_data_request(message)
         image_name = message['Arguments']['ImageName']
@@ -230,7 +230,7 @@ class Restore(BaseRestore):
 
         self.logger.info(f'Done sending {component_name}')
 
-    async def send_source_boot_object_v4(self, message: Mapping) -> None:
+    async def send_source_boot_object_v4(self, message: dict) -> None:
         self.logger.debug('send_source_boot_object_v4')
         service = await self._get_service_for_data_request(message)
         image_name = message['Arguments']['ImageName']
@@ -314,7 +314,7 @@ class Restore(BaseRestore):
 
         return self.ipsw.build_manifest.get_build_identity(self.device.hardware_model, variant=variant)
 
-    async def send_restore_local_policy(self, message: Mapping) -> None:
+    async def send_restore_local_policy(self, message: dict) -> None:
         component = 'Ap,LocalPolicy'
         service = await self._get_service_for_data_request(message)
 
@@ -326,7 +326,7 @@ class Restore(BaseRestore):
         await service.aio_send_plist({'Ap,LocalPolicy': build_identity.get_component(component, tss=tss_localpolicy,
                                                                                      data=lpol_file).personalized_data})
 
-    async def send_recovery_os_root_ticket(self, message: Mapping) -> None:
+    async def send_recovery_os_root_ticket(self, message: dict) -> None:
         self.logger.info('About to send RecoveryOSRootTicket...')
         service = await self._get_service_for_data_request(message)
 
@@ -347,7 +347,7 @@ class Restore(BaseRestore):
         self.logger.info('Sending RecoveryOSRootTicket now...')
         await service.aio_send_plist(req)
 
-    async def send_root_ticket(self, message: Mapping) -> None:
+    async def send_root_ticket(self, message: dict) -> None:
         self.logger.info('About to send RootTicket...')
         service = await self._get_service_for_data_request(message)
 
@@ -357,7 +357,7 @@ class Restore(BaseRestore):
         self.logger.info('Sending RootTicket now...')
         await service.aio_send_plist({'RootTicketData': self.recovery.tss.ap_img4_ticket})
 
-    async def send_nor(self, message: Mapping):
+    async def send_nor(self, message: dict):
         self.logger.info('About to send NORData...')
         service = await self._get_service_for_data_request(message)
 
@@ -556,7 +556,7 @@ class Restore(BaseRestore):
             if tmp_zip_read_name:
                 os.remove(tmp_zip_read_name)
 
-    async def send_baseband_data(self, message: Mapping):
+    async def send_baseband_data(self, message: dict):
         self.logger.info(f'About to send BasebandData: {message}')
         service = await self._get_service_for_data_request(message)
 
@@ -610,7 +610,7 @@ class Restore(BaseRestore):
         self.logger.info('Sending BasebandData now...')
         await service.aio_send_plist({'BasebandData': buffer})
 
-    async def send_fdr_trust_data(self, message: Mapping) -> None:
+    async def send_fdr_trust_data(self, message: dict) -> None:
         self.logger.info('About to send FDR Trust data...')
         service = await self._get_service_for_data_request(message)
 
@@ -621,7 +621,7 @@ class Restore(BaseRestore):
         await service.aio_send_plist({})
 
     async def send_image_data(
-            self, message: Mapping, image_list_k: Optional[str], image_type_k: Optional[str],
+            self, message: dict, image_list_k: Optional[str], image_type_k: Optional[str],
             image_data_k: Optional[str]) -> None:
         self.logger.debug(f'send_image_data: {message}')
         arguments = message['Arguments']
@@ -682,7 +682,7 @@ class Restore(BaseRestore):
 
         await self._restored.send(req)
 
-    async def send_bootability_bundle_data(self, message: Mapping) -> None:
+    async def send_bootability_bundle_data(self, message: dict) -> None:
         self.logger.debug(f'send_bootability_bundle_data: {message}')
         service = await self._get_service_for_data_request(message)
         await service.aio_sendall(self.ipsw.bootability)
@@ -692,7 +692,7 @@ class Restore(BaseRestore):
         self.logger.debug('send_manifest')
         await self._restored.send({'ReceiptManifest': self.build_identity.manifest})
 
-    async def get_se_firmware_data(self, updater_name: str, info: Mapping, arguments: Mapping) -> Mapping:
+    async def get_se_firmware_data(self, updater_name: str, info: dict, arguments: dict) -> dict:
         chip_id = info.get('SE,ChipID')
         if chip_id is None:
             chip_id = self.build_identity['Manifest']['SE,ChipID']
@@ -741,7 +741,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_yonkers_firmware_data(self, info: Mapping):
+    async def get_yonkers_firmware_data(self, info: dict):
         # create Yonkers request
         request = TSSRequest()
         parameters = dict()
@@ -779,7 +779,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_savage_firmware_data(self, info: Mapping):
+    async def get_savage_firmware_data(self, info: dict):
         # create Savage request
         request = TSSRequest()
         parameters = dict()
@@ -814,7 +814,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_rose_firmware_data(self, updater_name: str, info: Mapping, arguments: Mapping):
+    async def get_rose_firmware_data(self, updater_name: str, info: dict, arguments: dict):
         self.logger.info(f'get_rose_firmware_data: {info}')
 
         if 'DeviceGeneratedTags' in arguments:
@@ -868,7 +868,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_veridian_firmware_data(self, updater_name: str, info: Mapping, arguments: Mapping):
+    async def get_veridian_firmware_data(self, updater_name: str, info: dict, arguments: dict):
         self.logger.info(f'get_veridian_firmware_data: {info}')
         comp_name = 'BMU,FirmwareMap'
 
@@ -904,7 +904,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_tcon_firmware_data(self, info: Mapping):
+    async def get_tcon_firmware_data(self, info: dict):
         self.logger.info(f'restore_get_tcon_firmware_data: {info}')
         comp_name = 'Baobab,TCON'
 
@@ -932,7 +932,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_device_generated_firmware_data(self, updater_name: str, info: Mapping, arguments: Mapping) -> Mapping:
+    async def get_device_generated_firmware_data(self, updater_name: str, info: dict, arguments: dict) -> dict:
         self.logger.info(f'get_device_generated_firmware_data ({updater_name}): {arguments}')
         request = TSSRequest()
         parameters = dict()
@@ -971,7 +971,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_timer_firmware_data(self, info: Mapping):
+    async def get_timer_firmware_data(self, info: dict):
         self.logger.info(f'get_timer_firmware_data: {info}')
 
         ftab = None
@@ -1045,7 +1045,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def send_firmware_updater_data(self, message: Mapping):
+    async def send_firmware_updater_data(self, message: dict):
         self.logger.debug(f'got FirmwareUpdaterData request: {message}')
         service = await self._get_service_for_data_request(message)
         arguments = message['Arguments']
@@ -1105,12 +1105,12 @@ class Restore(BaseRestore):
         self.logger.info('Sending FirmwareResponse data now...')
         await service.aio_send_plist({'FirmwareResponseData': fwdict})
 
-    async def send_firmware_updater_preflight(self, message: Mapping) -> None:
+    async def send_firmware_updater_preflight(self, message: dict) -> None:
         self.logger.warning(f'send_firmware_updater_preflight: {message}')
         service = await self._get_service_for_data_request(message)
         await service.aio_send_plist({})
 
-    async def send_url_asset(self, message: Mapping) -> None:
+    async def send_url_asset(self, message: dict) -> None:
         self.logger.info(f'send_url_asset: {message}')
         service = await self._get_service_for_data_request(message)
         arguments = message['Arguments']
@@ -1133,7 +1133,7 @@ class Restore(BaseRestore):
         }, fmt=plistlib.FMT_BINARY)
         await service.aio_close()
 
-    async def send_streamed_image_decryption_key(self, message: Mapping) -> None:
+    async def send_streamed_image_decryption_key(self, message: dict) -> None:
         self.logger.info(f'send_streamed_image_decryption_key: {message}')
         service = await self._get_service_for_data_request(message)
         arguments = message['Arguments']
@@ -1160,7 +1160,7 @@ class Restore(BaseRestore):
             {f'{component_name}File': self.build_identity.get_component(component,
                                                                         tss=self.recovery.tss).personalized_data})
 
-    async def handle_data_request_msg(self, message: Mapping):
+    async def handle_data_request_msg(self, message: dict):
         self.logger.debug(f'handle_data_request_msg: {message}')
 
         # checks and see what kind of data restored is requests and pass the request to its own handler
@@ -1192,11 +1192,11 @@ class Restore(BaseRestore):
         else:
             self.logger.error(f'unknown data request: {message}')
 
-    async def handle_previous_restore_log_msg(self, message: Mapping):
+    async def handle_previous_restore_log_msg(self, message: dict):
         restorelog = message['PreviousRestoreLog']
         self.logger.debug(f'PreviousRestoreLog: {restorelog}')
 
-    async def handle_progress_msg(self, message: MutableMapping) -> None:
+    async def handle_progress_msg(self, message: dict) -> None:
         operation = message['Operation']
         if operation in PROGRESS_BAR_OPERATIONS:
             message['Operation'] = PROGRESS_BAR_OPERATIONS[operation]
@@ -1219,7 +1219,7 @@ class Restore(BaseRestore):
 
         self.logger.debug(f'progress-bar: {message}')
 
-    async def handle_status_msg(self, message: Mapping):
+    async def handle_status_msg(self, message: dict):
         self.logger.debug(f'status message: {message}')
         status = message['Status']
         log = message.get('Log')
@@ -1237,15 +1237,15 @@ class Restore(BaseRestore):
             else:
                 self.logger.error('unknown error')
 
-    async def handle_checkpoint_msg(self, message: Mapping):
+    async def handle_checkpoint_msg(self, message: dict):
         self.logger.debug(f'checkpoint: {message}')
 
-    async def handle_bb_update_status_msg(self, message: Mapping):
+    async def handle_bb_update_status_msg(self, message: dict):
         self.logger.debug(f'bb_update_status_msg: {message}')
         if not message['Accepted']:
             raise PyMobileDevice3Exception(str(message))
 
-    async def handle_baseband_updater_output_data(self, message: Mapping) -> None:
+    async def handle_baseband_updater_output_data(self, message: dict) -> None:
         self.logger.debug(f'restore_handle_baseband_updater_output_data: {message}')
         data_port = message['DataPort']
 
@@ -1277,14 +1277,14 @@ class Restore(BaseRestore):
         self.logger.debug('Closing connection of BasebandUpdaterOutputData data port')
         client.close()
 
-    async def handle_restored_crash(self, message: Mapping) -> None:
+    async def handle_restored_crash(self, message: dict) -> None:
         backtrace = '\n'.join(message['RestoredBacktrace'])
         self.logger.info(f'restored crashed. backtrace:\n{backtrace}')
 
-    async def handle_async_wait(self, message: Mapping) -> None:
+    async def handle_async_wait(self, message: dict) -> None:
         self.logger.debug(message)
 
-    async def handle_restore_attestation(self, message: Mapping) -> None:
+    async def handle_restore_attestation(self, message: dict) -> None:
         self.logger.debug(message)
         await self._restored.send({'RestoreShouldAttest': False})
 
@@ -1354,7 +1354,7 @@ class Restore(BaseRestore):
         # device is finally in restore mode, let's do this
         await self.restore_device()
 
-    async def _get_service_for_data_request(self, message: Mapping) -> ServiceConnection:
+    async def _get_service_for_data_request(self, message: dict) -> ServiceConnection:
         data_port = message.get('DataPort')
         if data_port is None:
             return self._restored.service

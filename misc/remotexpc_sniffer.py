@@ -1,6 +1,6 @@
 import logging
 from pprint import pformat
-from typing import List, MutableMapping, Optional
+from typing import Optional
 
 import click
 import coloredlogs
@@ -71,7 +71,7 @@ class TCPStream:
 
 
 class H2Stream(TCPStream):
-    def pop_frames(self) -> List[Frame]:
+    def pop_frames(self) -> list[Frame]:
         """ Pop all available H2Frames """
 
         # If self.data starts with the http/2 magic bytes, pop them off
@@ -96,8 +96,8 @@ class H2Stream(TCPStream):
 
 class RemoteXPCSniffer:
     def __init__(self):
-        self._h2_streams: MutableMapping[str, H2Stream] = {}
-        self._previous_frame_data: MutableMapping[str, bytes] = {}
+        self._h2_streams: dict[str, H2Stream] = {}
+        self._previous_frame_data: dict[str, bytes] = {}
 
     def process_packet(self, packet: Packet) -> None:
         if packet.haslayer(TCP) and packet[TCP].payload:

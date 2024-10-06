@@ -6,7 +6,7 @@ import ssl
 import struct
 import time
 from enum import Enum
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
 
 import IPython
 from pygments import formatters, highlight, lexers
@@ -38,7 +38,7 @@ print(client.recvall(20))
 """
 
 
-def build_plist(d: Mapping, endianity: str = '>', fmt: Enum = plistlib.FMT_XML) -> bytes:
+def build_plist(d: dict, endianity: str = '>', fmt: Enum = plistlib.FMT_XML) -> bytes:
     payload = plistlib.dumps(d, fmt=fmt)
     message = struct.pack(endianity + 'L', len(payload))
     return message + payload
@@ -125,11 +125,11 @@ class ServiceConnection:
         except ssl.SSLEOFError as e:
             raise ConnectionTerminatedError from e
 
-    def send_recv_plist(self, data: Mapping, endianity='>', fmt=plistlib.FMT_XML) -> Any:
+    def send_recv_plist(self, data: dict, endianity='>', fmt=plistlib.FMT_XML) -> Any:
         self.send_plist(data, endianity=endianity, fmt=fmt)
         return self.recv_plist(endianity=endianity)
 
-    async def aio_send_recv_plist(self, data: Mapping, endianity='>', fmt=plistlib.FMT_XML) -> Any:
+    async def aio_send_recv_plist(self, data: dict, endianity='>', fmt=plistlib.FMT_XML) -> Any:
         await self.aio_send_plist(data, endianity=endianity, fmt=fmt)
         return await self.aio_recv_plist(endianity=endianity)
 
@@ -173,10 +173,10 @@ class ServiceConnection:
         msg = b''.join([hdr, data])
         return self.sendall(msg)
 
-    def recv_plist(self, endianity='>') -> Mapping:
+    def recv_plist(self, endianity='>') -> dict:
         return parse_plist(self.recv_prefixed(endianity=endianity))
 
-    async def aio_recv_plist(self, endianity='>') -> Mapping:
+    async def aio_recv_plist(self, endianity='>') -> dict:
         return parse_plist(await self.aio_recv_prefixed(endianity))
 
     def send_plist(self, d, endianity='>', fmt=plistlib.FMT_XML) -> None:
@@ -186,7 +186,7 @@ class ServiceConnection:
         self.writer.write(payload)
         await self.writer.drain()
 
-    async def aio_send_plist(self, d: Mapping, endianity: str = '>', fmt: Enum = plistlib.FMT_XML) -> None:
+    async def aio_send_plist(self, d: dict, endianity: str = '>', fmt: Enum = plistlib.FMT_XML) -> None:
         await self.aio_sendall(build_plist(d, endianity, fmt))
 
     def ssl_start(self, certfile, keyfile=None) -> None:

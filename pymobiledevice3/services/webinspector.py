@@ -4,7 +4,7 @@ import logging
 import uuid
 from dataclasses import dataclass, fields
 from enum import Enum
-from typing import Mapping, Optional, Tuple, Union
+from typing import Optional, Union
 
 import nest_asyncio
 
@@ -54,7 +54,7 @@ class Page:
     automation_connection_id: str = ''
 
     @classmethod
-    def from_page_dictionary(cls, page_dict: Mapping) -> 'Page':
+    def from_page_dictionary(cls, page_dict: dict) -> 'Page':
         p = cls(page_dict['WIRPageIdentifierKey'], WirTypes(page_dict['WIRTypeKey']))
         if p.type_ in (WirTypes.WEB, WirTypes.WEB_PAGE):
             p.web_title = page_dict['WIRTitleKey']
@@ -68,7 +68,7 @@ class Page:
                 p.automation_connection_id = page_dict['WIRConnectionIdentifierKey']
         return p
 
-    def update(self, page_dict: Mapping):
+    def update(self, page_dict: dict):
         new_p = self.from_page_dictionary(page_dict)
         for field in fields(self):
             setattr(self, field.name, getattr(new_p, field.name))
@@ -190,7 +190,7 @@ class WebinspectorService:
         return await InspectorSession.create(SessionProtocol(self, session_id, app, page, method_prefix=''),
                                              wait_target=wait_target)
 
-    def get_open_pages(self) -> Mapping:
+    def get_open_pages(self) -> dict:
         apps = {}
         self.await_(asyncio.gather(*[self._forward_get_listing(app) for app in self.connected_application]))
         for app in self.connected_application:
@@ -206,13 +206,13 @@ class WebinspectorService:
         except TimeoutError:
             raise LaunchingApplicationError()
 
-    async def send_socket_data(self, session_id: str, app_id: str, page_id: int, data: Mapping):
+    async def send_socket_data(self, session_id: str, app_id: str, page_id: int, data: dict):
         await self._forward_socket_data(session_id, app_id, page_id, data)
 
     async def setup_inspector_socket(self, session_id: str, app_id: str, page_id: int):
         await self._forward_socket_setup(session_id, app_id, page_id, pause=False)
 
-    def find_page_id(self, page_id: str) -> Tuple[Application, Page]:
+    def find_page_id(self, page_id: str) -> tuple[Application, Page]:
         for app_id in self.application_pages:
             for page in self.application_pages[app_id]:
                 if page == page_id:
@@ -301,7 +301,7 @@ class WebinspectorService:
             message['WIRAutomaticallyPause'] = False
         await self._send_message('_rpc_forwardSocketSetup:', message)
 
-    async def _forward_socket_data(self, session_id: str, app_id: str, page_id: int, data: Mapping):
+    async def _forward_socket_data(self, session_id: str, app_id: str, page_id: int, data: dict):
         await self._send_message('_rpc_forwardSocketData:', {
             'WIRApplicationIdentifierKey': app_id,
             'WIRPageIdentifierKey': page_id,

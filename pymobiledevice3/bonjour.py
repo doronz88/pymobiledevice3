@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 import sys
 from socket import AF_INET, AF_INET6, inet_ntop
-from typing import List, Mapping, Optional
+from typing import Optional
 
 from ifaddr import get_adapters
 from zeroconf import IPVersion, ServiceListener, ServiceStateChange, Zeroconf
@@ -22,8 +22,8 @@ DEFAULT_BONJOUR_TIMEOUT = OSUTILS.bonjour_timeout
 @dataclasses.dataclass
 class BonjourAnswer:
     name: str
-    properties: Mapping[bytes, bytes]
-    ips: List[str]
+    properties: dict[bytes, bytes]
+    ips: list[str]
     port: int
 
 
@@ -31,10 +31,10 @@ class BonjourListener(ServiceListener):
     def __init__(self, ip: str):
         super().__init__()
         self.name: Optional[str] = None
-        self.properties: Mapping[bytes, bytes] = {}
+        self.properties: dict[bytes, bytes] = {}
         self.ip = ip
         self.port: Optional[int] = None
-        self.addresses: List[str] = []
+        self.addresses: list[str] = []
         self.queue: asyncio.Queue = asyncio.Queue()
         self.querying_task: Optional[asyncio.Task] = asyncio.create_task(self.query_addresses())
 
@@ -72,7 +72,7 @@ class BonjourQuery:
     listener: BonjourListener
 
 
-def query_bonjour(service_names: List[str], ip: str) -> BonjourQuery:
+def query_bonjour(service_names: list[str], ip: str) -> BonjourQuery:
     aiozc = AsyncZeroconf(interfaces=[ip])
     listener = BonjourListener(ip)
     service_browser = AsyncServiceBrowser(aiozc.zeroconf, service_names,
@@ -80,8 +80,8 @@ def query_bonjour(service_names: List[str], ip: str) -> BonjourQuery:
     return BonjourQuery(aiozc, service_browser, listener)
 
 
-async def browse(service_names: List[str], ips: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) \
-        -> List[BonjourAnswer]:
+async def browse(service_names: list[str], ips: list[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) \
+        -> list[BonjourAnswer]:
     try:
         bonjour_queries = [query_bonjour(service_names, adapter) for adapter in ips]
     except ValueError as e:
@@ -104,11 +104,11 @@ async def browse(service_names: List[str], ips: List[str], timeout: float = DEFA
     return answers
 
 
-async def browse_ipv6(service_names: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+async def browse_ipv6(service_names: list[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[BonjourAnswer]:
     return await browse(service_names, OSUTILS.get_ipv6_ips(), timeout=timeout)
 
 
-def get_ipv4_addresses() -> List[str]:
+def get_ipv4_addresses() -> list[str]:
     ips = []
     for adapter in get_adapters():
         if adapter.nice_name.startswith('tun'):
@@ -123,21 +123,21 @@ def get_ipv4_addresses() -> List[str]:
     return ips
 
 
-async def browse_ipv4(service_names: List[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+async def browse_ipv4(service_names: list[str], timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[BonjourAnswer]:
     return await browse(service_names, get_ipv4_addresses(), timeout=timeout)
 
 
-async def browse_remoted(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+async def browse_remoted(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[BonjourAnswer]:
     return await browse_ipv6(REMOTED_SERVICE_NAMES, timeout=timeout)
 
 
-async def browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+async def browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[BonjourAnswer]:
     return await browse(MOBDEV2_SERVICE_NAMES, get_ipv4_addresses() + OSUTILS.get_ipv6_ips(), timeout=timeout)
 
 
-async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[BonjourAnswer]:
     return await browse_ipv4(REMOTEPAIRING_SERVICE_NAMES, timeout=timeout)
 
 
-async def browse_remotepairing_manual_pairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[BonjourAnswer]:
+async def browse_remotepairing_manual_pairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[BonjourAnswer]:
     return await browse_ipv4(REMOTEPAIRING_MANUAL_PAIRING_SERVICE_NAMES, timeout=timeout)

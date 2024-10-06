@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import typing
+from typing import Optional
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
@@ -40,7 +40,8 @@ class CompanionProxyService(LockdownService):
         error = response.get('Error')
         raise PyMobileDevice3Exception(error)
 
-    def start_forwarding_service_port(self, remote_port: int, service_name: str = None, options: typing.Mapping = None):
+    def start_forwarding_service_port(self, remote_port: int, service_name: Optional[str] = None,
+                                      options: Optional[dict] = None):
         service = self.lockdown.start_lockdown_service(self.service_name)
 
         request = {'Command': 'StartForwardingServicePort',

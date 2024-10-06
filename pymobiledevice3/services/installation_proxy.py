@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Callable, List, Mapping, Optional
+from typing import Callable, Optional
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from parameter_decorators import str_to_path
@@ -59,8 +59,8 @@ class InstallationProxyService(LockdownService):
                 return
         raise AppInstallError()
 
-    def send_cmd_for_bundle_identifier(self, bundle_identifier: str, cmd: str = 'Archive', options: Mapping = None,
-                                       handler: Mapping = None, *args) -> None:
+    def send_cmd_for_bundle_identifier(self, bundle_identifier: str, cmd: str = 'Archive', options: Optional[dict] = None,
+                                       handler: Optional[dict] = None, *args) -> None:
         """ send a low-level command to installation relay """
         cmd = {'Command': cmd,
                'ApplicationIdentifier': bundle_identifier}
@@ -72,24 +72,24 @@ class InstallationProxyService(LockdownService):
         self.service.send_plist(cmd)
         self._watch_completion(handler, *args)
 
-    def install(self, ipa_path: str, options: Mapping = None, handler: Callable = None, *args) -> None:
+    def install(self, ipa_path: str, options: Optional[dict] = None, handler: Callable = None, *args) -> None:
         """ install given ipa from device path """
         self.install_from_local(ipa_path, 'Install', options, handler, args)
 
-    def upgrade(self, ipa_path: str, options: Mapping = None, handler: Callable = None, *args) -> None:
+    def upgrade(self, ipa_path: str, options: Optional[dict] = None, handler: Callable = None, *args) -> None:
         """ upgrade given ipa from device path """
         self.install_from_local(ipa_path, 'Upgrade', options, handler, args)
 
-    def restore(self, bundle_identifier: str, options: Mapping = None, handler: Callable = None, *args) -> None:
+    def restore(self, bundle_identifier: str, options: Optional[dict] = None, handler: Callable = None, *args) -> None:
         """ no longer supported on newer iOS versions """
         self.send_cmd_for_bundle_identifier(bundle_identifier, 'Restore', options, handler, args)
 
-    def uninstall(self, bundle_identifier: str, options: Mapping = None, handler: Callable = None, *args) -> None:
+    def uninstall(self, bundle_identifier: str, options: Optional[dict] = None, handler: Callable = None, *args) -> None:
         """ uninstall given bundle_identifier """
         self.send_cmd_for_bundle_identifier(bundle_identifier, 'Uninstall', options, handler, args)
 
     @str_to_path('ipa_or_app_path')
-    def install_from_local(self, ipa_or_app_path: Path, cmd: str = 'Install', options: Optional[Mapping] = None,
+    def install_from_local(self, ipa_or_app_path: Path, cmd: str = 'Install', options: Optional[dict] = None,
                            handler: Callable = None, *args) -> None:
         """ upload given ipa onto device and install it """
         if options is None:
@@ -108,7 +108,7 @@ class InstallationProxyService(LockdownService):
                                  'PackagePath': TEMP_REMOTE_IPA_FILE})
         self._watch_completion(handler, args)
 
-    def check_capabilities_match(self, capabilities: Mapping = None, options: Mapping = None) -> Mapping:
+    def check_capabilities_match(self, capabilities: Optional[dict] = None, options: Optional[dict] = None) -> dict:
         if options is None:
             options = {}
         cmd = {'Command': 'CheckCapabilitiesMatch',
@@ -119,7 +119,7 @@ class InstallationProxyService(LockdownService):
 
         return self.service.send_recv_plist(cmd).get('LookupResult')
 
-    def browse(self, options: Mapping = None, attributes: List[str] = None) -> List[Mapping]:
+    def browse(self, options: Optional[dict] = None, attributes: list[str] = None) -> list[dict]:
         if options is None:
             options = {}
         if attributes:
@@ -145,7 +145,7 @@ class InstallationProxyService(LockdownService):
 
         return result
 
-    def lookup(self, options: Optional[Mapping] = None) -> Mapping:
+    def lookup(self, options: Optional[dict] = None) -> dict:
         """ search installation database """
         if options is None:
             options = {}
@@ -153,7 +153,7 @@ class InstallationProxyService(LockdownService):
         return self.service.send_recv_plist(cmd).get('LookupResult')
 
     def get_apps(self, application_type: str = 'Any', calculate_sizes: bool = False,
-                 bundle_identifiers: Optional[List[str]] = None) -> Mapping[str, Mapping]:
+                 bundle_identifiers: Optional[list[str]] = None) -> dict[str, dict]:
         """ get applications according to given criteria """
         options = {}
         if bundle_identifiers is not None:

@@ -3,7 +3,6 @@ import socket
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple
 
 from pymobiledevice3.exceptions import FeatureNotSupportedError, OSNotSupportedError
 
@@ -41,7 +40,7 @@ class OsUtils:
         raise FeatureNotSupportedError(self._os_name, inspect.currentframe().f_code.co_name)
 
     @property
-    def usbmux_address(self) -> Tuple[str, int]:
+    def usbmux_address(self) -> tuple[str, int]:
         raise FeatureNotSupportedError(self._os_name, inspect.currentframe().f_code.co_name)
 
     @property
@@ -60,7 +59,7 @@ class OsUtils:
     def pair_record_path(self) -> Path:
         raise FeatureNotSupportedError(self._os_name, inspect.currentframe().f_code.co_name)
 
-    def get_ipv6_ips(self) -> List[str]:
+    def get_ipv6_ips(self) -> list[str]:
         raise FeatureNotSupportedError(self._os_name, inspect.currentframe().f_code.co_name)
 
     def set_keepalive(self, sock: socket.socket, after_idle_sec: int = DEFAULT_AFTER_IDLE_SEC,
