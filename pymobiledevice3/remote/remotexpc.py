@@ -123,7 +123,7 @@ class RemoteXPCConnection:
         config = Config()
         config.InteractiveShellApp.exec_lines = ['%autoawait asyncio']
         print(highlight(SHELL_USAGE, lexers.PythonLexer(),
-                        formatters.TerminalTrueColorFormatter(style='native')))
+                        formatters.Terminal256Formatter(style='native')))
         IPython.start_ipython(config=config, user_ns={
             'client': self,
             'XpcInt64Type': XpcInt64Type,
