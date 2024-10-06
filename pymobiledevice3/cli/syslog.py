@@ -2,7 +2,7 @@ import logging
 import os
 import posixpath
 import re
-from typing import List, Optional, TextIO
+from typing import Optional, TextIO
 
 import click
 
@@ -82,8 +82,8 @@ def format_line(color, pid, syslog_entry, include_label):
 
 def syslog_live(
         service_provider: LockdownServiceProvider, out: Optional[TextIO], pid: Optional[int],
-        process_name: Optional[str], match: List[str], match_insensitive: List[str], include_label: bool,
-        regex: List[str], insensitive_regex: List[str]) -> None:
+        process_name: Optional[str], match: list[str], match_insensitive: list[str], include_label: bool,
+        regex: list[str], insensitive_regex: list[str]) -> None:
     match_regex = [re.compile(f'.*({r}).*', re.DOTALL) for r in regex]
     match_regex += [re.compile(f'.*({r}).*', re.IGNORECASE | re.DOTALL) for r in insensitive_regex]
 
@@ -158,8 +158,8 @@ def syslog_live(
 @click.option('-ei', '--insensitive-regex', multiple=True, help='filter only lines matching given regex (insensitive)')
 def cli_syslog_live(
         service_provider: LockdownServiceProvider, out: Optional[TextIO], pid: Optional[int],
-        process_name: Optional[str], match: List[str], match_insensitive: List[str], include_label: bool,
-        regex: List[str], insensitive_regex: List[str]) -> None:
+        process_name: Optional[str], match: list[str], match_insensitive: list[str], include_label: bool,
+        regex: list[str], insensitive_regex: list[str]) -> None:
     """ view live syslog lines """
 
     syslog_live(service_provider, out, pid, process_name, match, match_insensitive, include_label, regex,

@@ -5,8 +5,9 @@ import os
 import plistlib
 import tempfile
 import traceback
+from collections.abc import Generator
 from pathlib import Path
-from typing import IO, Generator, Optional, Union
+from typing import IO, Optional, Union
 from zipfile import ZipFile
 
 import click

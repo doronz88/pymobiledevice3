@@ -11,7 +11,7 @@ from collections import namedtuple
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import IO, List, Optional, Tuple
+from typing import IO, Optional
 
 import click
 from click.exceptions import MissingParameter, UsageError
@@ -165,7 +165,7 @@ def process_id_for_bundle_id(service_provider: LockdownServiceProvider, app_bund
 
 def get_matching_processes(service_provider: LockdownServiceProvider, name: Optional[str] = None,
                            bundle_identifier: Optional[str] = None) \
-        -> List[MatchedProcessByPid]:
+        -> list[MatchedProcessByPid]:
     result = []
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         device_info = DeviceInfo(dvt)
@@ -331,7 +331,7 @@ def sysmon_process_monitor(service_provider: LockdownClient, threshold):
 @sysmon_process.command('single', cls=Command)
 @click.option('-a', '--attributes', multiple=True,
               help='filter processes by given attribute value given as key=value')
-def sysmon_process_single(service_provider: LockdownClient, attributes: List[str]):
+def sysmon_process_single(service_provider: LockdownClient, attributes: list[str]):
     """ show a single snapshot of currently running processes. """
 
     count = 0
@@ -403,7 +403,7 @@ subclass_filter = click.option('-sf', '--subclass-filters', multiple=True, type=
                                help='Events subclass filter. Omit for all.')
 
 
-def parse_filters(subclasses: List[int], classes: List[int]):
+def parse_filters(subclasses: list[int], classes: list[int]):
     if not subclasses and not classes:
         return None
     parsed = set()
@@ -1096,8 +1096,8 @@ def core_device_read_file(
 
 
 async def core_device_list_launch_application_task(
-        service_provider: RemoteServiceDiscoveryService, bundle_identifier: str, argument: List[str],
-        kill_existing: bool, suspended: bool, env: List[Tuple[str, str]]) -> None:
+        service_provider: RemoteServiceDiscoveryService, bundle_identifier: str, argument: list[str],
+        kill_existing: bool, suspended: bool, env: list[tuple[str, str]]) -> None:
     async with AppServiceService(service_provider) as app_service:
         print_json(await app_service.launch_application(bundle_identifier, argument, kill_existing,
                                                         suspended, dict(env)))
@@ -1112,8 +1112,8 @@ async def core_device_list_launch_application_task(
 @click.option('--env', multiple=True, type=click.Tuple((str, str)),
               help='Environment variables to pass to process given as a list of key value')
 def core_device_launch_application(
-        service_provider: RemoteServiceDiscoveryService, bundle_identifier: str, argument: Tuple[str],
-        kill_existing: bool, suspended: bool, env: List[Tuple[str, str]]) -> None:
+        service_provider: RemoteServiceDiscoveryService, bundle_identifier: str, argument: tuple[str],
+        kill_existing: bool, suspended: bool, env: list[tuple[str, str]]) -> None:
     """ Launch application """
     asyncio.run(
         core_device_list_launch_application_task(
@@ -1180,7 +1180,7 @@ def core_device_get_display_info(service_provider: RemoteServiceDiscoveryService
     asyncio.run(core_device_get_display_info_task(service_provider))
 
 
-async def core_device_query_mobilegestalt_task(service_provider: RemoteServiceDiscoveryService, key: List[str]) -> None:
+async def core_device_query_mobilegestalt_task(service_provider: RemoteServiceDiscoveryService, key: list[str]) -> None:
     """ Query MobileGestalt """
     async with DeviceInfoService(service_provider) as app_service:
         print_json(await app_service.query_mobilegestalt(key))
@@ -1188,7 +1188,7 @@ async def core_device_query_mobilegestalt_task(service_provider: RemoteServiceDi
 
 @core_device.command('query-mobilegestalt', cls=RSDCommand)
 @click.argument('key', nargs=-1, type=click.STRING)
-def core_device_query_mobilegestalt(service_provider: RemoteServiceDiscoveryService, key: Tuple[str]) -> None:
+def core_device_query_mobilegestalt(service_provider: RemoteServiceDiscoveryService, key: tuple[str]) -> None:
     """ Query MobileGestalt """
     asyncio.run(core_device_query_mobilegestalt_task(service_provider, list(key)))
 

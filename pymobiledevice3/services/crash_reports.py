@@ -2,7 +2,8 @@ import logging
 import posixpath
 import re
 import time
-from typing import Callable, Generator, List, Optional
+from collections.abc import Generator
+from typing import Callable, Optional
 
 from pycrashreport.crash_report import get_crash_report_from_buf
 from xonsh.built_ins import XSH
@@ -69,7 +70,7 @@ class CrashReportsManager:
             if item != self.APPSTORED_PATH:
                 raise AfcException(f'failed to clear crash reports directory, undeleted items: {undeleted_items}', None)
 
-    def ls(self, path: str = '/', depth: int = 1) -> List[str]:
+    def ls(self, path: str = '/', depth: int = 1) -> list[str]:
         """
         List file and folder in the crash report's directory.
         :param path: Path to list, relative to the crash report's directory.

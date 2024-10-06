@@ -1,4 +1,4 @@
-from typing import List, Mapping, Optional
+from typing import Optional
 
 from pymobiledevice3.exceptions import ConnectionFailedError, DeprecationError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
@@ -968,7 +968,7 @@ class DiagnosticsService(LockdownService):
 
         super().__init__(lockdown, service_name, service=service)
 
-    def mobilegestalt(self, keys: List[str] = None) -> Mapping:
+    def mobilegestalt(self, keys: list[str] = None) -> dict:
         if keys is None or len(keys) == 0:
             keys = MobileGestaltKeys
         response = self.service.send_recv_plist({'Request': 'MobileGestalt', 'MobileGestaltKeys': keys})
@@ -984,7 +984,7 @@ class DiagnosticsService(LockdownService):
 
         return response['Diagnostics']['MobileGestalt']
 
-    def action(self, action: str) -> Optional[Mapping]:
+    def action(self, action: str) -> Optional[dict]:
         response = self.service.send_recv_plist({'Request': action})
         if response['Status'] != 'Success':
             raise PyMobileDevice3Exception(f'failed to perform action: {action}')
@@ -999,7 +999,7 @@ class DiagnosticsService(LockdownService):
     def sleep(self):
         self.action('Sleep')
 
-    def info(self, diag_type: str = 'All') -> Mapping:
+    def info(self, diag_type: str = 'All') -> dict:
         return self.action(diag_type)
 
     def ioregistry(self, plane: str = None, name: str = None, ioclass: str = None):
@@ -1025,8 +1025,8 @@ class DiagnosticsService(LockdownService):
             return dd.get('IORegistry')
         return None
 
-    def get_battery(self) -> Mapping:
+    def get_battery(self) -> dict:
         return self.ioregistry(ioclass='IOPMPowerSource')
 
-    def get_wifi(self) -> Mapping:
+    def get_wifi(self) -> dict:
         return self.ioregistry(name='AppleBCMWLANSkywalkInterface')

@@ -48,20 +48,20 @@ class ASRClient:
         self.checksum_chunks = data.get('Checksum Chunks', False)
         self.logger.debug(f'Checksum Chunks: {self.checksum_chunks}')
 
-    async def recv_plist(self) -> typing.Mapping:
+    async def recv_plist(self) -> dict:
         buf = b''
         while not buf.endswith(b'</plist>\n'):
             buf += await self.service.aio_recvall(1)
         return plistlib.loads(buf)
 
-    async def send_plist(self, plist: typing.Mapping) -> None:
+    async def send_plist(self, plist: dict) -> None:
         self.logger.debug(plistlib.dumps(plist).decode())
         await self.send_buffer(plistlib.dumps(plist))
 
     async def send_buffer(self, buf: bytes) -> None:
         await self.service.aio_sendall(buf)
 
-    async def handle_oob_data_request(self, packet: typing.Mapping, filesystem: typing.IO):
+    async def handle_oob_data_request(self, packet: dict, filesystem: typing.IO):
         oob_length = packet['OOB Length']
         oob_offset = packet['OOB Offset']
         filesystem.seek(oob_offset, os.SEEK_SET)

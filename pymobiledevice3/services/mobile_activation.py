@@ -4,7 +4,6 @@ import plistlib
 import xml.etree.ElementTree as ET
 from contextlib import closing
 from pathlib import Path
-from typing import List, Mapping
 
 import click
 import inquirer3
@@ -39,8 +38,8 @@ class Field:
 class ActivationForm:
     title: str
     description: str
-    fields: List[Field]
-    server_info: Mapping[str, str]
+    fields: list[Field]
+    server_info: dict[str, str]
 
 
 class MobileActivationService:

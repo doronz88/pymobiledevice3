@@ -5,7 +5,7 @@ repos:
     hooks:
       - id: isort
         args: [ '-m', 'HANGING_INDENT', '-l', '120','--check-only' ]
-        files: \.py$
+        files: .
 
   - repo: https://github.com/pycqa/flake8
     rev: "7.0.0"

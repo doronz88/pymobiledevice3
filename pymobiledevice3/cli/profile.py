@@ -2,7 +2,7 @@ import logging
 import plistlib
 import tempfile
 from pathlib import Path
-from typing import IO, List, Optional
+from typing import IO, Optional
 
 import click
 
@@ -36,7 +36,7 @@ def profile_list(service_provider: LockdownClient):
 @profile_group.command('install', cls=Command)
 @click.option('--keybag', type=click.Path(file_okay=True, dir_okay=False, exists=True))
 @click.argument('profiles', nargs=-1, type=click.File('rb'))
-def profile_install(service_provider: LockdownServiceProvider, keybag: Optional[str], profiles: List[IO]) -> None:
+def profile_install(service_provider: LockdownServiceProvider, keybag: Optional[str], profiles: list[IO]) -> None:
     """
     Install given profiles
 
@@ -66,7 +66,7 @@ def profile_cloud_configuration(service_provider: LockdownServiceProvider, confi
 
 @profile_group.command('store', cls=Command)
 @click.argument('profiles', nargs=-1, type=click.File('rb'))
-def profile_store(service_provider: LockdownServiceProvider, profiles: List[IO]) -> None:
+def profile_store(service_provider: LockdownServiceProvider, profiles: list[IO]) -> None:
     """ Store a profile """
     service = MobileConfigService(lockdown=service_provider)
     for profile in profiles:

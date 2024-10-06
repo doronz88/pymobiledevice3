@@ -1,7 +1,7 @@
 import asyncio
 import logging
-import typing
 from enum import Enum
+from typing import Optional
 from zipfile import ZipFile
 
 from ipsw_parser.exceptions import NoSuchBuildIdentityError
@@ -22,7 +22,7 @@ class Behavior(Enum):
 
 
 class BaseRestore:
-    def __init__(self, ipsw: ZipFile, device: Device, tss: typing.Mapping = None,
+    def __init__(self, ipsw: ZipFile, device: Device, tss: Optional[dict] = None,
                  behavior: Behavior = Behavior.Update) -> None:
         self.ipsw = IPSW(ipsw)
         self.device = device

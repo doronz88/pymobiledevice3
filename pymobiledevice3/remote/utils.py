@@ -1,6 +1,7 @@
 import contextlib
 import platform
-from typing import Generator, List, Optional
+from collections.abc import Generator
+from typing import Optional
 
 import psutil
 
@@ -12,7 +13,7 @@ REMOTED_PATH = '/usr/libexec/remoted'
 
 
 async def get_rsds(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT, udid: Optional[str] = None) -> \
-        List[RemoteServiceDiscoveryService]:
+        list[RemoteServiceDiscoveryService]:
     result = []
     with stop_remoted():
         for answer in await browse_remoted(timeout=bonjour_timeout):

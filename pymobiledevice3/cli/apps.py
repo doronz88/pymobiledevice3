@@ -1,5 +1,3 @@
-from typing import List
-
 import click
 
 from pymobiledevice3.cli.cli_common import Command, print_json
@@ -33,7 +31,7 @@ def apps_list(service_provider: LockdownServiceProvider, app_type: str, calculat
 @apps.command('query', cls=Command)
 @click.argument('bundle_identifiers', nargs=-1)
 @click.option('--calculate-sizes/--no-calculate-size', default=False)
-def apps_query(service_provider: LockdownServiceProvider, bundle_identifiers: List[str], calculate_sizes: bool) -> None:
+def apps_query(service_provider: LockdownServiceProvider, bundle_identifiers: list[str], calculate_sizes: bool) -> None:
     """ query installed apps """
     print_json(InstallationProxyService(lockdown=service_provider)
                .get_apps(calculate_sizes=calculate_sizes, bundle_identifiers=bundle_identifiers))

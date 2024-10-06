@@ -1,6 +1,5 @@
 import plistlib
 from io import BytesIO
-from typing import List, Mapping
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
@@ -29,7 +28,7 @@ class MisagentService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def install(self, plist: BytesIO) -> Mapping:
+    def install(self, plist: BytesIO) -> dict:
         response = self.service.send_recv_plist({'MessageType': 'Install',
                                                  'Profile': plist.read(),
                                                  'ProfileType': 'Provisioning'})
@@ -38,7 +37,7 @@ class MisagentService(LockdownService):
 
         return response
 
-    def remove(self, profile_id: str) -> Mapping:
+    def remove(self, profile_id: str) -> dict:
         response = self.service.send_recv_plist({'MessageType': 'Remove',
                                                  'ProfileID': profile_id,
                                                  'ProfileType': 'Provisioning'})
@@ -47,7 +46,7 @@ class MisagentService(LockdownService):
 
         return response
 
-    def copy_all(self) -> List[ProvisioningProfile]:
+    def copy_all(self) -> list[ProvisioningProfile]:
         response = self.service.send_recv_plist({'MessageType': 'CopyAll',
                                                  'ProfileType': 'Provisioning'})
         if response['Status']:

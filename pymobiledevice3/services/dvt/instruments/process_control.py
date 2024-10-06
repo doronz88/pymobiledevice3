@@ -1,5 +1,6 @@
 import dataclasses
 import typing
+from typing import Optional
 
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
@@ -51,7 +52,7 @@ class ProcessControl:
         return self._channel.receive_plist()
 
     def launch(self, bundle_id: str, arguments=None, kill_existing: bool = True, start_suspended: bool = False,
-               environment: typing.Mapping = None, extra_options: typing.Mapping = None) -> int:
+               environment: Optional[dict] = None, extra_options: Optional[dict] = None) -> int:
         """
         Launch a process.
         :param bundle_id: Bundle id of the process.

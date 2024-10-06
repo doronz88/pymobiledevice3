@@ -1,5 +1,3 @@
-from typing import Mapping
-
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -25,21 +23,21 @@ class RestoreService(RemoteService):
         """ Reboot device """
         await self.validate_command('reboot')
 
-    async def get_preflightinfo(self) -> Mapping:
+    async def get_preflightinfo(self) -> dict:
         """ Get preflight info """
         return await self.service.send_receive_request({'command': 'getpreflightinfo'})
 
-    async def get_nonces(self) -> Mapping:
+    async def get_nonces(self) -> dict:
         """ Get ApNonce and SEPNonce """
         return await self.service.send_receive_request({'command': 'getnonces'})
 
-    async def get_app_parameters(self) -> Mapping:
+    async def get_app_parameters(self) -> dict:
         return await self.validate_command('getappparameters')
 
-    async def restore_lang(self, language: str) -> Mapping:
+    async def restore_lang(self, language: str) -> dict:
         return await self.service.send_receive_request({'command': 'restorelang', 'argument': language})
 
-    async def validate_command(self, command: str) -> Mapping:
+    async def validate_command(self, command: str) -> dict:
         """ Execute command and validate result is `success` """
         response = await self.service.send_receive_request({'command': command})
         if response.get('result') != 'success':

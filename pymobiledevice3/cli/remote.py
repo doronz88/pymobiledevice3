@@ -4,7 +4,7 @@ import logging
 import sys
 import tempfile
 from functools import partial
-from typing import List, Mapping, Optional, TextIO
+from typing import Optional, TextIO
 
 import click
 
@@ -25,7 +25,7 @@ from pymobiledevice3.tunneld import TUNNELD_DEFAULT_ADDRESS, TunneldRunner
 logger = logging.getLogger(__name__)
 
 
-async def browse_rsd(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[Mapping]:
+async def browse_rsd(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[dict]:
     devices = []
     for rsd in await get_rsds(timeout):
         devices.append({'address': rsd.service.address[0],
@@ -36,7 +36,7 @@ async def browse_rsd(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[Mapping]:
     return devices
 
 
-async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> List[Mapping]:
+async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[dict]:
     devices = []
     for remotepairing in await get_remote_pairing_tunnel_services(timeout):
         devices.append({'address': remotepairing.hostname,
@@ -211,7 +211,7 @@ async def start_remote_pair_task(device_name: str) -> None:
     if start_tunnel is None:
         raise NotImplementedError('failed to start the tunnel on your platform')
 
-    devices: List[RemotePairingManualPairingDevice] = []
+    devices: list[RemotePairingManualPairingDevice] = []
     for answer in await browse_remotepairing_manual_pairing():
         current_device_name = answer.properties[b'name'].decode()
 

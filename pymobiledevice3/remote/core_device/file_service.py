@@ -1,8 +1,9 @@
 import asyncio
 import struct
 import uuid
+from collections.abc import AsyncGenerator
 from enum import IntEnum
-from typing import AsyncGenerator, List, Mapping, Optional
+from typing import Optional
 
 from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
@@ -44,7 +45,7 @@ class FileServiceService(CoreDeviceService):
             'User': 'mobile'})
         self.session = response['NewSessionID']
 
-    async def retrieve_directory_list(self, path: str = '.') -> AsyncGenerator[List[str], None]:
+    async def retrieve_directory_list(self, path: str = '.') -> AsyncGenerator[list[str], None]:
         return (await self.send_receive_request({
             'Cmd': 'RetrieveDirectoryList', 'MessageUUID': str(uuid.uuid4()), 'Path': path, 'SessionID': self.session}
         ))['FileList']
@@ -60,7 +61,7 @@ class FileServiceService(CoreDeviceService):
         await reader.readexactly(0x24)
         return await reader.readexactly(struct.unpack('>I', await reader.readexactly(4))[0])
 
-    async def send_receive_request(self, request: Mapping) -> Mapping:
+    async def send_receive_request(self, request: dict) -> dict:
         response = await self.service.send_receive_request(request)
         encoded_error = response.get('EncodedError')
         if encoded_error is not None:

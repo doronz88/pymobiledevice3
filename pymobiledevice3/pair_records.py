@@ -2,9 +2,10 @@ import logging
 import platform
 import plistlib
 import uuid
+from collections.abc import Generator
 from contextlib import suppress
 from pathlib import Path
-from typing import Generator, Mapping, Optional
+from typing import Optional
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.common import get_home_folder
@@ -23,7 +24,7 @@ def generate_host_id(hostname: str = None) -> str:
     return str(host_id).upper()
 
 
-def get_itunes_pairing_record(identifier: str) -> Optional[Mapping]:
+def get_itunes_pairing_record(identifier: str) -> Optional[dict]:
     filename = OSUTILS.pair_record_path / f'{identifier}.plist'
     try:
         with open(filename, 'rb') as f:
@@ -33,7 +34,7 @@ def get_itunes_pairing_record(identifier: str) -> Optional[Mapping]:
     return pair_record
 
 
-def get_local_pairing_record(identifier: str, pairing_records_cache_folder: Path) -> Optional[Mapping]:
+def get_local_pairing_record(identifier: str, pairing_records_cache_folder: Path) -> Optional[dict]:
     logger.debug('Looking for pymobiledevice3 pairing record')
     path = pairing_records_cache_folder / f'{identifier}.{PAIRING_RECORD_EXT}'
     if not path.exists():
@@ -43,7 +44,7 @@ def get_local_pairing_record(identifier: str, pairing_records_cache_folder: Path
 
 
 def get_preferred_pair_record(identifier: str, pairing_records_cache_folder: Path,
-                              usbmux_address: Optional[str] = None) -> Mapping:
+                              usbmux_address: Optional[str] = None) -> dict:
     """
     look for an existing pair record to connected device by following order:
     - usbmuxd

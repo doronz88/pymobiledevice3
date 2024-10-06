@@ -1,5 +1,6 @@
 import socket
-from typing import Generator, Mapping, Union
+from collections.abc import Generator
+from typing import Union
 
 from pymobiledevice3.exceptions import NotificationTimeoutError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -39,7 +40,7 @@ class NotificationProxyService(LockdownService):
         self.logger.info(f'Observing {name}')
         self.service.send_plist({'Command': 'ObserveNotification', 'Name': name})
 
-    def receive_notification(self) -> Generator[Mapping, None, None]:
+    def receive_notification(self) -> Generator[dict, None, None]:
         while True:
             try:
                 yield self.service.recv_plist()
