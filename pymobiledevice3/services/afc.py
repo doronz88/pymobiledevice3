@@ -899,7 +899,7 @@ class AfcShell:
 
     def _update_prompt(self) -> None:
         self.prompt = highlight(f'[{self.afc.service_name}:{self.cwd}]$ ', lexers.BashSessionLexer(),
-                                formatters.TerminalTrueColorFormatter(style='solarized-dark')).strip()
+                                formatters.Terminal256Formatter(style='solarized-dark')).strip()
 
     def _complete(self, text, line, begidx, endidx):
         curdir_diff = posixpath.dirname(text)

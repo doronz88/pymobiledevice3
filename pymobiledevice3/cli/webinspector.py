@@ -198,7 +198,7 @@ def shell(service_provider: LockdownClient, timeout):
     driver = WebDriver(session)
     try:
         IPython.embed(
-            header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.TerminalTrueColorFormatter(style='native')),
+            header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style='native')),
             user_ns={
                 'driver': driver,
                 'Cookie': Cookie,
@@ -327,7 +327,7 @@ class JsShell(ABC):
 
         result = await self.evaluate_expression(exp)
         colorful_result = highlight(f'{result}', lexers.JavascriptLexer(),
-                                    formatters.TerminalTrueColorFormatter(style='stata-dark'))
+                                    formatters.Terminal256Formatter(style='stata-dark'))
         print(colorful_result, end='')
 
     async def start(self, url: str = ''):

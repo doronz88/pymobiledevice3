@@ -154,7 +154,7 @@ def restore() -> None:
 def restore_shell(device):
     """ create an IPython shell for interacting with iBoot """
     IPython.embed(
-        header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.TerminalTrueColorFormatter(style='native')),
+        header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style='native')),
         user_ns={
             'irecv': device,
         })

@@ -14,7 +14,7 @@ def cli() -> None:
     pass
 
 
-def print_packet_header(packet, color: bool):
+def print_packet_header(packet, color: bool) -> None:
     date = datetime.fromtimestamp(packet.seconds + (packet.microseconds / 1000000))
     data = (
         f'{date}: '
@@ -25,7 +25,7 @@ def print_packet_header(packet, color: bool):
     if not color:
         print(data)
     else:
-        print(highlight(data, lexers.HspecLexer(), formatters.TerminalTrueColorFormatter(style='native')), end='')
+        print(highlight(data, lexers.HspecLexer(), formatters.Terminal256Formatter(style='native')), end='')
 
 
 def print_packet(packet, color: Optional[bool] = None):

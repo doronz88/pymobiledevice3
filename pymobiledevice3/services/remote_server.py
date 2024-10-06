@@ -372,7 +372,7 @@ class RemoteServer(LockdownService):
 
     def shell(self):
         IPython.embed(
-            header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.TerminalTrueColorFormatter(style='native')),
+            header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style='native')),
             user_ns={
                 'developer': self,
                 'broadcast': self.broadcast,
