@@ -18,6 +18,18 @@ def test_cli_main_interface():
     assert r2.exit_code == 0
 
 
+@pytest.mark.parametrize('keyword,suggestions', [
+    ('kill', ['dvt kill', 'dvt pkill']),
+    ('sysdi', ['crash sysdiagnose']),
+    ('shell', ['accessibility shell', 'afc shell', 'crash shell', 'developer shell', 'dvt shell', 'restore shell',
+               'springboard shell', 'webinspector js-shell', 'webinspector shell'])
+])
+def test_cli_suggestions(keyword, suggestions):
+    output = subprocess.run([sys.executable, '-m', 'pymobiledevice3', keyword], capture_output=True, text=True)
+    for suggestion in suggestions:
+        assert suggestion in output.stderr
+
+
 @pytest.mark.parametrize('group', __main__.CLI_GROUPS.keys())
 def test_cli_groups(group):
     runner = CliRunner()

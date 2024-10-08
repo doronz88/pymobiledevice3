@@ -1,12 +1,15 @@
 import logging
 import os
+import re
 import sys
+import textwrap
 import traceback
+from typing import Union
 
 import click
 import coloredlogs
 
-from pymobiledevice3.cli.cli_common import TUNNEL_ENV_VAR
+from pymobiledevice3.cli.cli_common import TUNNEL_ENV_VAR, isatty
 from pymobiledevice3.exceptions import AccessDeniedError, CloudConfigurationAlreadyPresentError, \
     ConnectionFailedToUsbmuxdError, DeprecationError, DeveloperModeError, DeveloperModeIsNotEnabledError, \
     DeviceHasPasscodeSetError, DeviceNotFoundError, FeatureNotSupportedError, InternalError, InvalidServiceError, \
@@ -84,16 +87,70 @@ class Pmd3Cli(click.Group):
     def list_commands(self, ctx):
         return CLI_GROUPS.keys()
 
-    def get_command(self, ctx, name):
+    def get_command(self, ctx: click.Context, name: str) -> click.Command:
         if name not in CLI_GROUPS.keys():
-            ctx.fail(f'No such command {name!r}.')
-        mod = __import__(f'pymobiledevice3.cli.{CLI_GROUPS[name]}', None, None, ['cli'])
+            self.handle_invalid_command(ctx, name)
+        return self.import_and_get_command(ctx, name)
+
+    def handle_invalid_command(self, ctx: click.Context, name: str) -> None:
+        suggested_commands = self.search_commands(name)
+        suggestion = self.format_suggestions(suggested_commands)
+        ctx.fail(f'No such command {name!r}{suggestion}')
+
+    @staticmethod
+    def format_suggestions(suggestions: list[str]) -> str:
+        if not suggestions:
+            return ''
+        cmds = textwrap.indent('\n'.join(suggestions), ' ' * 4)
+        return f'\nDid you mean this?\n{cmds}'
+
+    @staticmethod
+    def import_and_get_command(ctx: click.Context, name: str) -> click.Command:
+        module_name = f'pymobiledevice3.cli.{CLI_GROUPS[name]}'
+        mod = __import__(module_name, None, None, ['cli'])
         command = mod.cli.get_command(ctx, name)
-        # Some cli groups have different names than the index
         if not command:
             command_name = mod.cli.list_commands(ctx)[0]
             command = mod.cli.get_command(ctx, command_name)
         return command
+
+    @staticmethod
+    def highlight_keyword(text: str, keyword: str) -> str:
+        return re.sub(f'({keyword})', click.style('\\1', bold=True), text, flags=re.IGNORECASE)
+
+    @staticmethod
+    def collect_commands(command: click.Command) -> Union[str, list[str]]:
+        commands = []
+        if isinstance(command, click.Group):
+            for k, v in command.commands.items():
+                cmd = Pmd3Cli.collect_commands(v)
+                if isinstance(cmd, list):
+                    commands.extend(cmd)
+                else:
+                    commands.append(f'{command.name} {cmd}')
+            return commands
+        return f'{command.name}'
+
+    @staticmethod
+    def search_commands(pattern: str) -> list[str]:
+        all_commands = Pmd3Cli.load_all_commands()
+        matched = sorted(filter(lambda cmd: re.search(pattern, cmd), all_commands))
+        if isatty():
+            matched = [Pmd3Cli.highlight_keyword(cmd, pattern) for cmd in matched]
+        return matched
+
+    @staticmethod
+    def load_all_commands() -> list[str]:
+        all_commands = []
+        for key in CLI_GROUPS.keys():
+            module_name = f'pymobiledevice3.cli.{CLI_GROUPS[key]}'
+            mod = __import__(module_name, None, None, ['cli'])
+            cmd = Pmd3Cli.collect_commands(mod.cli.commands[key])
+            if isinstance(cmd, list):
+                all_commands.extend(cmd)
+            else:
+                all_commands.append(cmd)
+        return all_commands
 
 
 @click.command(cls=Pmd3Cli, context_settings=CONTEXT_SETTINGS)
