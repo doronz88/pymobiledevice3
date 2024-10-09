@@ -125,7 +125,7 @@ class Pmd3Cli(click.Group):
             for k, v in command.commands.items():
                 cmd = Pmd3Cli.collect_commands(v)
                 if isinstance(cmd, list):
-                    commands.extend(cmd)
+                    commands.extend([f'{command.name} {c}' for c in cmd])
                 else:
                     commands.append(f'{command.name} {cmd}')
             return commands

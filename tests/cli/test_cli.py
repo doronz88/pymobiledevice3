@@ -19,10 +19,10 @@ def test_cli_main_interface():
 
 
 @pytest.mark.parametrize('keyword,suggestions', [
-    ('kill', ['dvt kill', 'dvt pkill']),
+    ('kill', ['developer dvt kill', 'developer dvt pkill']),
     ('sysdi', ['crash sysdiagnose']),
-    ('shell', ['accessibility shell', 'afc shell', 'crash shell', 'developer shell', 'dvt shell', 'restore shell',
-               'springboard shell', 'webinspector js-shell', 'webinspector shell'])
+    ('shell', ['afc shell', 'crash shell', 'developer accessibility shell', 'developer dvt shell', 'developer shell',
+               'restore shell', 'springboard shell', 'webinspector js-shell', 'webinspector shell'])
 ])
 def test_cli_suggestions(keyword, suggestions):
     output = subprocess.run([sys.executable, '-m', 'pymobiledevice3', keyword], capture_output=True, text=True)
