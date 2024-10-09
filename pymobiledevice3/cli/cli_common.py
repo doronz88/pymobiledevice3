@@ -107,8 +107,12 @@ def set_color_flag(ctx, param, value) -> None:
     COLORED_OUTPUT = value
 
 
+def isatty() -> bool:
+    return os.isatty(sys.stdout.fileno())
+
+
 def user_requested_colored_output() -> bool:
-    return COLORED_OUTPUT and os.isatty(sys.stdout.fileno())
+    return COLORED_OUTPUT and isatty()
 
 
 def get_last_used_terminal_formatting(buf: str) -> str:
