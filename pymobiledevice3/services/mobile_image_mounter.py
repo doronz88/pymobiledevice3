@@ -197,7 +197,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
     IMAGE_TYPE = 'Personalized'
 
     async def mount(self, image: Path, build_manifest: Path, trust_cache: Path,
-                    info_plist: Optional[dict]) -> None:
+                    info_plist: Optional[dict] = None) -> None:
         self.raise_if_cannot_mount()
 
         image = image.read_bytes()
