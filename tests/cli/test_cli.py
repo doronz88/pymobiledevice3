@@ -22,7 +22,9 @@ def test_cli_main_interface():
     ('kill', ['developer dvt kill', 'developer dvt pkill']),
     ('sysdi', ['crash sysdiagnose']),
     ('shell', ['afc shell', 'crash shell', 'developer accessibility shell', 'developer dvt shell', 'developer shell',
-               'restore shell', 'springboard shell', 'webinspector js-shell', 'webinspector shell'])
+               'restore shell', 'springboard shell', 'webinspector js-shell', 'webinspector shell']),
+    ('shall', ['afc shell', 'crash pull', 'crash shell', 'apps install', 'crash ls', 'afc pull', 'restore shell',
+               'apps uninstall', 'profile install', 'developer shell'])
 ])
 def test_cli_suggestions(keyword, suggestions):
     output = subprocess.run([sys.executable, '-m', 'pymobiledevice3', keyword], capture_output=True, text=True)

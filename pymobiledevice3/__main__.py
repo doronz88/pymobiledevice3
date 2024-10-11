@@ -1,3 +1,4 @@
+import difflib
 import logging
 import os
 import re
@@ -135,6 +136,8 @@ class Pmd3Cli(click.Group):
     def search_commands(pattern: str) -> list[str]:
         all_commands = Pmd3Cli.load_all_commands()
         matched = sorted(filter(lambda cmd: re.search(pattern, cmd), all_commands))
+        if not matched:
+            matched = difflib.get_close_matches(pattern, all_commands, n=20, cutoff=0.4)
         if isatty():
             matched = [Pmd3Cli.highlight_keyword(cmd, pattern) for cmd in matched]
         return matched
