@@ -388,6 +388,8 @@ See [CONTRIBUTING](https://github.com/doronz88/pymobiledevice3/blob/master/CONTR
 
 Please see [misc](https://github.com/doronz88/pymobiledevice3/blob/master/misc)
 
+Library uses WindowsSelectorEventLoopPolicy for asyncio on Windows platform. Please see discussion [misc](https://github.com/doronz88/pymobiledevice3/issues/1217)
+
 ## Copyright notice
 
 This work is licensed under GPL 3.0, and as, credited to several major contributors:
