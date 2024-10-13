@@ -14,7 +14,9 @@ from pymobiledevice3.services.lockdown_service import LockdownService
 
 GET_APPS_ADDITIONAL_INFO = {'ReturnAttributes': ['CFBundleIdentifier', 'StaticDiskUsage', 'DynamicDiskUsage']}
 
-TEMP_REMOTE_IPA_FILE = '/pymobiledevice3.ipa'
+TEMP_REMOTE_IPA_FILE = '/PublicStaging/pymobiledevice3.ipa'
+
+TEMP_REMOTE_IPCC_FOLDER = '/PublicStaging/pymobiledevice3.ipcc'
 
 
 def create_ipa_contents_from_directory(directory: str) -> bytes:
@@ -41,7 +43,7 @@ class InstallationProxyService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def _watch_completion(self, handler: Callable = None, *args) -> None:
+    def _watch_completion(self, handler: Callable = None, ipcc: bool = False, *args) -> None:
         while True:
             response = self.service.recv_plist()
             if not response:
@@ -56,10 +58,15 @@ class InstallationProxyService(LockdownService):
                     handler(completion, *args)
                 self.logger.info(f'{response.get("PercentComplete")}% Complete')
             if response.get('Status') == 'Complete':
+                if ipcc:
+                    # there is no progress when installing a .ipcc file,
+                    # so we just put a simple message indicating it's done
+                    self.logger.info('Installation succeed.')
                 return
         raise AppInstallError()
 
-    def send_cmd_for_bundle_identifier(self, bundle_identifier: str, cmd: str = 'Archive', options: Optional[dict] = None,
+    def send_cmd_for_bundle_identifier(self, bundle_identifier: str, cmd: str = 'Archive',
+                                       options: Optional[dict] = None,
                                        handler: Optional[dict] = None, *args) -> None:
         """ send a low-level command to installation relay """
         cmd = {'Command': cmd,
@@ -72,9 +79,9 @@ class InstallationProxyService(LockdownService):
         self.service.send_plist(cmd)
         self._watch_completion(handler, *args)
 
-    def install(self, ipa_path: str, options: Optional[dict] = None, handler: Callable = None, *args) -> None:
-        """ install given ipa from device path """
-        self.install_from_local(ipa_path, 'Install', options, handler, args)
+    def install(self, package_path: str, options: Optional[dict] = None, handler: Callable = None, *args) -> None:
+        """ install given ipa/ipcc from device path """
+        self.install_from_local(package_path, 'Install', options, handler, args)
 
     def upgrade(self, ipa_path: str, options: Optional[dict] = None, handler: Callable = None, *args) -> None:
         """ upgrade given ipa from device path """
@@ -84,29 +91,66 @@ class InstallationProxyService(LockdownService):
         """ no longer supported on newer iOS versions """
         self.send_cmd_for_bundle_identifier(bundle_identifier, 'Restore', options, handler, args)
 
-    def uninstall(self, bundle_identifier: str, options: Optional[dict] = None, handler: Callable = None, *args) -> None:
+    def uninstall(self, bundle_identifier: str, options: Optional[dict] = None, handler: Callable = None,
+                  *args) -> None:
         """ uninstall given bundle_identifier """
         self.send_cmd_for_bundle_identifier(bundle_identifier, 'Uninstall', options, handler, args)
 
-    @str_to_path('ipa_or_app_path')
-    def install_from_local(self, ipa_or_app_path: Path, cmd: str = 'Install', options: Optional[dict] = None,
+    @str_to_path('package_path')
+    def install_from_local(self, package_path: Path, cmd: str = 'Install', options: Optional[dict] = None,
                            handler: Callable = None, *args) -> None:
-        """ upload given ipa onto device and install it """
+        """ upload given ipa/ipcc onto device and install it """
+
+        ipcc_mode = package_path.suffix == '.ipcc'
+
         if options is None:
             options = {}
-        if ipa_or_app_path.is_dir():
-            # treat as app, convert into an ipa
-            ipa_contents = create_ipa_contents_from_directory(str(ipa_or_app_path))
+
+        if ipcc_mode:
+            options['PackageType'] = 'CarrierBundle'
         else:
-            # treat as ipa
-            ipa_contents = ipa_or_app_path.read_bytes()
+            if package_path.is_dir():
+                # treat as app, convert into an ipa
+                ipa_contents = create_ipa_contents_from_directory(str(package_path))
+            else:
+                # treat as ipa
+                ipa_contents = package_path.read_bytes()
 
         with AfcService(self.lockdown) as afc:
-            afc.set_file_contents(TEMP_REMOTE_IPA_FILE, ipa_contents)
+            if not ipcc_mode:
+                afc.set_file_contents(TEMP_REMOTE_IPA_FILE, ipa_contents)
+
+            else:
+                self.upload_ipcc_as_folder(package_path, afc)
+
         self.service.send_plist({'Command': cmd,
                                  'ClientOptions': options,
-                                 'PackagePath': TEMP_REMOTE_IPA_FILE})
-        self._watch_completion(handler, args)
+                                 'PackagePath': TEMP_REMOTE_IPCC_FOLDER if ipcc_mode
+                                 else TEMP_REMOTE_IPA_FILE})
+
+        self._watch_completion(handler, ipcc_mode, args)
+
+    def upload_ipcc_as_folder(self, file: Path, afc_client: AfcService) -> None:
+        """Used to upload a .ipcc file to an iPhone as a folder"""
+
+        self.logger.info(f'Uploading {file.name} contents..')
+
+        afc_client.makedirs(TEMP_REMOTE_IPCC_FOLDER)
+
+        # we unpack it and upload it directly instead of saving it in a temp folder
+        with ZipFile(file, 'r') as file_zip:
+            for file_name in file_zip.namelist():
+
+                if file_name.endswith(('/', '\\')):
+                    afc_client.makedirs(f'{TEMP_REMOTE_IPCC_FOLDER}/{file_name}')
+                    continue
+
+                with file_zip.open(file_name) as inside_file_zip:
+                    file_data = inside_file_zip.read()
+
+                    afc_client.set_file_contents(f'{TEMP_REMOTE_IPCC_FOLDER}/{file_name}', file_data)
+
+        self.logger.info('Upload complete.')
 
     def check_capabilities_match(self, capabilities: Optional[dict] = None, options: Optional[dict] = None) -> dict:
         if options is None:
