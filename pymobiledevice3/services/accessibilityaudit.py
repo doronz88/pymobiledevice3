@@ -24,8 +24,52 @@ class AXAuditInspectorFocus_v1(SerializedObject):
         return self._fields.get('CaptionTextValue_v1')
 
     @property
+    def spoken_description(self) -> str:
+        return self._fields.get('SpokenDescriptionValue_v1')
+
+    @property
     def element(self) -> bytes:
         return self._fields.get('ElementValue_v1')
+
+    @property
+    def platform_identifier(self) -> str:
+        """Converts the element bytes to a hexadecimal string."""
+        return self.element.identifier.hex().upper()
+
+    @property
+    def estimated_uid(self) -> str:
+        """Generates a UID from the platform identifier."""
+        hex_value = self.platform_identifier
+
+        if len(hex_value) % 2 != 0:
+            raise ValueError("Hex value length must be even.")
+
+        hex_bytes = bytes.fromhex(hex_value)
+
+        if len(hex_bytes) < 16:
+            raise ValueError("Hex value must contain at least 16 bytes.")
+
+        # Extract TimeLow bytes (indexes 12 to 15)
+        time_low_bytes = hex_bytes[12:16]
+        time_low = time_low_bytes.hex().upper()
+
+        # Extract ClockSeq bytes (indexes 0 to 1)
+        clock_seq_bytes = hex_bytes[0:2]
+        clock_seq = clock_seq_bytes.hex().upper()
+
+        # Construct UID with placeholder values for unused parts
+        uid = f"{time_low}-0000-0000-{clock_seq}-000000000000"
+
+        return uid
+
+    def to_dict(self) -> dict:
+        """Serializes the focus element into a dictionary."""
+        return {
+            'platform_identifier': self.platform_identifier,
+            'estimated_uid': self.estimated_uid,
+            'caption': self.caption,
+            'spoken_description': self.spoken_description
+        }
 
     def __str__(self):
         return f'<Focused ElementCaption: {self.caption}>'
