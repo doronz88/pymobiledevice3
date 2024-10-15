@@ -2,6 +2,7 @@ import json
 import typing
 from dataclasses import dataclass
 from enum import Enum, IntEnum
+from typing import Generator
 
 from packaging.version import Version
 
@@ -413,3 +414,27 @@ class AccessibilityAudit(RemoteServer):
         self.broadcast.deviceUpdateAccessibilitySetting_withValue_(
             MessageAux().append_obj(setting).append_obj({'ObjectType': 'passthrough', 'Value': value}),
             expects_reply=False)
+
+    def iter_elements(self) -> Generator[AXAuditInspectorFocus_v1, None, None]:
+        iterator = self.iter_events()
+
+        # every focus change is expected publish a "hostInspectorCurrentElementChanged:"
+        self.move_focus_next()
+
+        first_item = None
+
+        for event in iterator:
+            if event.name != 'hostInspectorCurrentElementChanged:':
+                # ignore any other events
+                continue
+
+            # each such event should contain exactly one element that became in focus
+            current_item = event.data[0]
+
+            if first_item is None:
+                first_item = current_item
+            elif first_item.caption == current_item.caption:
+                break  # Break if we encounter the first item again (loop)
+
+            yield current_item
+            self.move_focus_next()
