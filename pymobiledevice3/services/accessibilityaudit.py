@@ -37,7 +37,7 @@ class AXAuditElement_v1(SerializedObject):
 
     @property
     def identifier(self) -> bytes:
-        return self._fields['PlatformElementValue_v1'].NSdata
+        return self._fields['PlatformElementValue_v1']
 
     def __repr__(self):
         return f'<Element: {self.identifier}>'
