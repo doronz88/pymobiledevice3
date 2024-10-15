@@ -882,11 +882,12 @@ def accessibility_list_items(service_provider: LockdownClient):
         if first_item is None:
             first_item = current_item
         elif first_item.caption == current_item.caption:
-            return  # Break if we encounter the first item again (loop)
+            break  # Break if we encounter the first item again (loop)
 
         items.append(current_item.to_dict())
-        print_json(items)
         service.move_focus_next()
+
+    print_json(items)
 
 @developer.group('condition')
 def condition():
