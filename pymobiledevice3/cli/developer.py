@@ -860,7 +860,7 @@ def accessibility_notifications(service_provider: LockdownClient):
 
 @accessibility.command('list-items', cls=Command)
 def accessibility_list_items(service_provider: LockdownClient):
-    """ list items available in currently shown menu """
+    """List items available in the currently shown menu."""
 
     service = AccessibilityAudit(service_provider)
     iterator = service.iter_events()
@@ -869,6 +869,7 @@ def accessibility_list_items(service_provider: LockdownClient):
     service.move_focus_next()
 
     first_item = None
+    items = []
 
     for event in iterator:
         if event.name != 'hostInspectorCurrentElementChanged:':
@@ -880,13 +881,12 @@ def accessibility_list_items(service_provider: LockdownClient):
 
         if first_item is None:
             first_item = current_item
-        else:
-            if first_item.caption == current_item.caption:
-                return
+        elif first_item.caption == current_item.caption:
+            return  # Break if we encounter the first item again (loop)
 
-        print(f'{current_item.caption}: {current_item.element.identifier}')
+        items.append(current_item.to_dict())
+        print_json(items)
         service.move_focus_next()
-
 
 @developer.group('condition')
 def condition():
