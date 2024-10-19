@@ -24,6 +24,16 @@ def generate_host_id(hostname: str = None) -> str:
     return str(host_id).upper()
 
 
+def get_usbmux_pairing_record(identifier: str, usbmux_address: Optional[str] = None):
+    with suppress(NotPairedError, MuxException):
+        with usbmux.create_mux(usbmux_address=usbmux_address) as mux:
+            if isinstance(mux, PlistMuxConnection):
+                pair_record = mux.get_pair_record(identifier)
+                if pair_record is not None:
+                    return pair_record
+    return None
+
+
 def get_itunes_pairing_record(identifier: str) -> Optional[dict]:
     filename = OSUTILS.pair_record_path / f'{identifier}.plist'
     try:
@@ -53,12 +63,9 @@ def get_preferred_pair_record(identifier: str, pairing_records_cache_folder: Pat
     """
 
     # usbmuxd
-    with suppress(NotPairedError, MuxException):
-        with usbmux.create_mux(usbmux_address=usbmux_address) as mux:
-            if isinstance(mux, PlistMuxConnection):
-                pair_record = mux.get_pair_record(identifier)
-                if pair_record is not None:
-                    return pair_record
+    pair_record = get_usbmux_pairing_record(identifier=identifier, usbmux_address=usbmux_address)
+    if pair_record is not None:
+        return pair_record
 
     # iTunes
     pair_record = get_itunes_pairing_record(identifier)
