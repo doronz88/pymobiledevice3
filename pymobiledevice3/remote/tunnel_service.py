@@ -443,9 +443,17 @@ class RemotePairingProtocol(StartTcpTunnel):
         port = parameters['port']
         sock = create_connection((host, port))
         OSUTIL.set_keepalive(sock)
-        ctx = SSLPSKContext(ssl.PROTOCOL_TLSv1_2)
-        ctx.psk = self.encryption_key
-        ctx.set_ciphers('PSK')
+        if sys.version_info >= (3, 13):
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            ctx.set_ciphers('PSK')
+            ctx.set_psk_client_callback(lambda hint: (None, self.encryption_key))
+        else:
+            # TODO: remove this when python3.12 becomes deprecated
+            ctx = SSLPSKContext(ssl.PROTOCOL_TLSv1_2)
+            ctx.psk = self.encryption_key
+            ctx.set_ciphers('PSK')
         reader, writer = await asyncio.open_connection(sock=sock, ssl=ctx, server_hostname='')
         tunnel = RemotePairingTcpTunnel(reader, writer)
         handshake_response = await tunnel.request_tunnel_establish()
