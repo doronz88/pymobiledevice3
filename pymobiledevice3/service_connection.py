@@ -157,7 +157,13 @@ class ServiceConnection:
 
     async def aio_recvall(self, size: int) -> bytes:
         """ receive a payload """
-        return await self.reader.readexactly(size)
+        data = b''
+        while len(data) < size:
+            try:
+                data += await self.reader.readexactly(size)
+            except asyncio.IncompleteReadError:
+                pass
+        return data
 
     async def aio_recv_prefixed(self, endianity='>') -> bytes:
         """ receive a data block prefixed with a u32 length field """
