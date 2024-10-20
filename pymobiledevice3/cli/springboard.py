@@ -5,6 +5,7 @@ import IPython
 
 from pymobiledevice3.cli.cli_common import Command, print_json
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.springboard import SpringBoardServicesService
 
 SHELL_USAGE = '''
@@ -78,3 +79,10 @@ def springboard_wallpaper_preview_image(service_provider: LockdownClient, wallpa
         if reload:
             springboard_service.reload_icon_state()
         out.write(springboard_service.get_wallpaper_preview_image(wallpaper_name))
+
+
+@springboard.command('homescreen-icon-metrics', cls=Command)
+def springboard_homescreen_icon_metrics(service_provider: LockdownServiceProvider) -> None:
+    """ Get homescreen icon metrics """
+    with SpringBoardServicesService(lockdown=service_provider) as springboard_service:
+        print_json(springboard_service.get_homescreen_icon_metrics())
