@@ -13,3 +13,9 @@ repos:
       - id: flake8
         args: [ '--max-line-length=127' ]
         files: \.py$
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.0
+    hooks:
+      - id: ruff
+        args: [ --preview ]

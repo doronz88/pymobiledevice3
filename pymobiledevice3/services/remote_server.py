@@ -400,7 +400,7 @@ class RemoteServer(LockdownService):
         code = self.last_channel_code
         args = MessageAux().append_int(code).append_obj(identifier)
         self.send_message(0, '_requestChannelWithCode:identifier:', args)
-        ret, aux = self.recv_plist()
+        ret, _aux = self.recv_plist()
         assert ret is None
         channel = Channel.create(code, self)
         self.channel_cache[identifier] = channel

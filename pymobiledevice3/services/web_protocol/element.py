@@ -26,7 +26,7 @@ class WebElement(SeleniumApi):
         """ Clears the text if it's a text entry element. """
         if not self.is_editable():
             return
-        rect, center, is_obscured = self._compute_layout()
+        rect, center, _is_obscured = self._compute_layout()
         if rect is None or center is None:
             return
         self._evaluate_js_function(ELEMENT_CLEAR)
@@ -152,7 +152,7 @@ class WebElement(SeleniumApi):
 
     def touch(self):
         """ Simulate touch interaction on the element. """
-        rect, center, is_obscured = self._compute_layout(use_viewport=True)
+        _rect, center, _is_obscured = self._compute_layout(use_viewport=True)
         self.session.perform_interaction_sequence(
             [{'sourceId': self.session.id_, 'sourceType': 'Touch'}],
             [{'states': [

@@ -53,7 +53,7 @@ class TcpForwarderBase:
         while self.inputs:
             # will only perform the socket select on the inputs. the outputs will handled
             # as synchronous blocking
-            readable, writable, exceptional = select.select(self.inputs, [], self.inputs, self.TIMEOUT)
+            readable, _writable, exceptional = select.select(self.inputs, [], self.inputs, self.TIMEOUT)
             if self.stopped.is_set():
                 self.logger.debug("Closing since stopped is set")
                 break
@@ -134,7 +134,7 @@ class TcpForwarderBase:
 
     def _handle_server_connection(self):
         """ accept the connection from local machine and attempt to connect at remote """
-        local_connection, client_address = self.server_socket.accept()
+        local_connection, _client_address = self.server_socket.accept()
         local_connection.setblocking(False)
 
         try:

@@ -41,7 +41,10 @@ StatResult = namedtuple('StatResult',
                         ['st_mode', 'st_ino', 'st_dev', 'st_nlink', 'st_uid', 'st_gid', 'st_size', 'st_atime',
                          'st_mtime', 'st_ctime', 'st_blocks', 'st_blksize', 'st_birthtime'])
 
+
 afc_opcode_t = Enum(Int64ul,
+
+
                     STATUS=0x00000001,
                     DATA=0x00000002,  # Data */
                     READ_DIR=0x00000003,  # ReadDir */
@@ -496,7 +499,7 @@ class AfcService(LockdownService):
                                   this_length=48)
             b += chunk
 
-            status, response = self._receive_data()
+            status, _response = self._receive_data()
             if status != afc_error_t.SUCCESS:
                 raise AfcException(f'failed to write chunk: {status}', status)
 
@@ -508,7 +511,7 @@ class AfcService(LockdownService):
 
             b += chunk
 
-            status, response = self._receive_data()
+            status, _response = self._receive_data()
             if status != afc_error_t.SUCCESS:
                 raise AfcException(f'failed to write last chunk: {status}', status)
 
