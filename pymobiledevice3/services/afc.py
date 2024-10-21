@@ -9,6 +9,7 @@ import shutil
 import stat as stat_module
 import struct
 import sys
+import warnings
 from collections import namedtuple
 from datetime import datetime
 from re import Pattern
@@ -726,6 +727,7 @@ class AfcShell:
     @classmethod
     def create(cls, service_provider: LockdownServiceProvider, service_name: Optional[str] = None,
                service: Optional[LockdownService] = None, auto_cd: Optional[str] = '/'):
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
         args = ['--rc', str(pathlib.Path(__file__).absolute())]
         os.environ['XONSH_COLOR_STYLE'] = 'default'
         XSH.ctx['_class'] = cls
