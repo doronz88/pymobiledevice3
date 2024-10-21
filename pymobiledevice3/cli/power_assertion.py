@@ -13,13 +13,13 @@ def cli() -> None:
 
 
 @cli.command('power-assertion', cls=Command)
-@click.argument('type', type=click.Choice(
+@click.argument('_type', type=click.Choice(
     ['AMDPowerAssertionTypeWirelessSync', 'PreventUserIdleSystemSleep', 'PreventSystemSleep']))
 @click.argument('name')
 @click.argument('timeout', type=click.INT)
 @click.argument('details', required=False)
-def power_assertion(service_provider: LockdownServiceProvider, type, name, timeout, details) -> None:
+def power_assertion(service_provider: LockdownServiceProvider, _type, name, timeout, details) -> None:
     """ Create a power assertion """
-    with PowerAssertionService(service_provider).create_power_assertion(type, name, timeout, details):
+    with PowerAssertionService(service_provider).create_power_assertion(_type, name, timeout, details):
         print('> Hit Ctrl+C to exit')
         time.sleep(timeout)

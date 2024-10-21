@@ -141,9 +141,9 @@ class FDRClient:
         sockfd.connect((host, port))
 
         while True:
-            readable, writable, exceptional = select.select([sockfd, self.service.socket],
-                                                            [],
-                                                            [sockfd, self.service.socket])
+            readable, _writable, exceptional = select.select([sockfd, self.service.socket],
+                                                             [],
+                                                             [sockfd, self.service.socket])
 
             for current_sock in readable:
                 if current_sock == self.service.socket:
