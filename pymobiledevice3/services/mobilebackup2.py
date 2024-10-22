@@ -93,7 +93,7 @@ class Mobilebackup2Service(LockdownService):
 
     def restore(self, backup_directory='.', system: bool = False, reboot: bool = True, copy: bool = True,
                 settings: bool = True, remove: bool = False, password: str = '', source: str = '',
-                progress_callback=lambda x: None):
+                progress_callback=lambda x: None, skip_apps: bool = False):
         """
         Restore a previous backup to the device.
         :param backup_directory: Path of the backup directory.
@@ -105,6 +105,7 @@ class Mobilebackup2Service(LockdownService):
         :param password: Password of the backup if it is encrypted.
         :param source: Identifier of device to restore its backup.
         :param progress_callback: Function to be called as the backup progresses.
+        :param skip_apps: Do not trigger re-installation of apps after restore.
         The function shall receive the current percentage of the progress as a parameter.
         """
         backup_directory = Path(backup_directory)
@@ -138,6 +139,15 @@ class Mobilebackup2Service(LockdownService):
                     'SourceIdentifier': source,
                     'Options': options,
                 })
+
+                if not skip_apps:
+                    # Write /iTunesRestore/RestoreApplications.plist so that the device will start
+                    # restoring applications once the rest of the restore process is finished
+                    info_plist_path = backup_directory / source / 'Info.plist'
+                    applications = plistlib.loads(info_plist_path.read_bytes())['Applications']
+                    afc.makedirs('/iTunesRestore')
+                    afc.set_file_contents('/iTunesRestore/RestoreApplications.plist', plistlib.dumps(applications))
+
                 dl.dl_loop(progress_callback)
 
     def info(self, backup_directory='.', source: str = '') -> str:
