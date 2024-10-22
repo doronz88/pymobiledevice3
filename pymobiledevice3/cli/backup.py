@@ -51,7 +51,7 @@ def backup(service_provider: LockdownServiceProvider, backup_directory: str, ful
 @backup_directory_arg
 @click.option('--system/--no-system', default=False, help='Restore system files.')
 @click.option('--reboot/--no-reboot', default=True, help='Reboot the device when done.')
-@click.option('--copy/--no-copy', default=True, help='Create a copy of backup folder before restoring.')
+@click.option('--copy/--no-copy', default=False, help='Create a copy of backup folder before restoring.')
 @click.option('--settings/--no-settings', default=True, help='Restore device settings.')
 @click.option('--remove/--no-remove', default=False, help='Remove items which aren\'t being restored.')
 @password_option
