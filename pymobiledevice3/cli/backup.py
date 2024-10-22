@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 from pymobiledevice3.cli.cli_common import Command
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 
 source_option = click.option('--source', default='', help='The UDID of the source device.')
@@ -31,7 +32,7 @@ def backup2() -> None:
 @click.argument('backup-directory', type=click.Path(file_okay=False))
 @click.option('--full', is_flag=True, help=('Whether to do a full backup.'
                                             ' If full is True, any previous backup attempts will be discarded.'))
-def backup(service_provider: LockdownClient, backup_directory, full):
+def backup(service_provider: LockdownServiceProvider, backup_directory: str, full: bool) -> None:
     """
     Backup device.
 

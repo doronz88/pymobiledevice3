@@ -9,6 +9,7 @@ from pathlib import Path
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ConnectionTerminatedError, LockdownError, \
     PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AFC_LOCK_EX, AFC_LOCK_UN, AfcService, afc_error_t
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
@@ -32,20 +33,20 @@ class Mobilebackup2Service(LockdownService):
     SERVICE_NAME = 'com.apple.mobilebackup2'
     RSD_SERVICE_NAME = 'com.apple.mobilebackup2.shim.remote'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownServiceProvider) -> None:
         if isinstance(lockdown, LockdownClient):
             super().__init__(lockdown, self.SERVICE_NAME, include_escrow_bag=True)
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME, include_escrow_bag=True)
 
     @property
-    def will_encrypt(self):
+    def will_encrypt(self) -> bool:
         try:
             return self.lockdown.get_value('com.apple.mobile.backup', 'WillEncrypt')
         except LockdownError:
             return False
 
-    def backup(self, full: bool = True, backup_directory='.', progress_callback=lambda x: None) -> None:
+    def backup(self, full: bool = True, backup_directory: str = '.', progress_callback=lambda x: None) -> None:
         """
         Backup a device.
         :param full: Whether to do a full backup. If full is True, any previous backup attempts will be discarded.

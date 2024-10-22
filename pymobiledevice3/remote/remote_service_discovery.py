@@ -2,7 +2,7 @@ import base64
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
 from pymobiledevice3.common import get_home_folder
@@ -67,7 +67,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
                 self.start_lockdown_service('com.apple.mobile.lockdown.remote.untrusted'))
         self.all_values = self.lockdown.all_values
 
-    def get_value(self, domain: str = None, key: str = None):
+    def get_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> Any:
         return self.lockdown.get_value(domain, key)
 
     def start_lockdown_service_without_checkin(self, name: str) -> ServiceConnection:
