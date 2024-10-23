@@ -144,9 +144,10 @@ class Mobilebackup2Service(LockdownService):
                     # Write /iTunesRestore/RestoreApplications.plist so that the device will start
                     # restoring applications once the rest of the restore process is finished
                     info_plist_path = backup_directory / source / 'Info.plist'
-                    applications = plistlib.loads(info_plist_path.read_bytes())['Applications']
-                    afc.makedirs('/iTunesRestore')
-                    afc.set_file_contents('/iTunesRestore/RestoreApplications.plist', plistlib.dumps(applications))
+                    applications = plistlib.loads(info_plist_path.read_bytes()).get('Applications')
+                    if applications is not None:
+                        afc.makedirs('/iTunesRestore')
+                        afc.set_file_contents('/iTunesRestore/RestoreApplications.plist', plistlib.dumps(applications))
 
                 dl.dl_loop(progress_callback)
 
