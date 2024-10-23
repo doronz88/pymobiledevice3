@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 from pymobiledevice3.cli.cli_common import Command
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 
 source_option = click.option('--source', default='', help='The UDID of the source device.')
@@ -31,7 +32,7 @@ def backup2() -> None:
 @click.argument('backup-directory', type=click.Path(file_okay=False))
 @click.option('--full', is_flag=True, help=('Whether to do a full backup.'
                                             ' If full is True, any previous backup attempts will be discarded.'))
-def backup(service_provider: LockdownClient, backup_directory, full):
+def backup(service_provider: LockdownServiceProvider, backup_directory: str, full: bool) -> None:
     """
     Backup device.
 
@@ -50,12 +51,14 @@ def backup(service_provider: LockdownClient, backup_directory, full):
 @backup_directory_arg
 @click.option('--system/--no-system', default=False, help='Restore system files.')
 @click.option('--reboot/--no-reboot', default=True, help='Reboot the device when done.')
-@click.option('--copy/--no-copy', default=True, help='Create a copy of backup folder before restoring.')
+@click.option('--copy/--no-copy', default=False, help='Create a copy of backup folder before restoring.')
 @click.option('--settings/--no-settings', default=True, help='Restore device settings.')
 @click.option('--remove/--no-remove', default=False, help='Remove items which aren\'t being restored.')
+@click.option('--skip-apps', is_flag=True, help='Do not trigger re-installation of apps after restore')
 @password_option
 @source_option
-def restore(service_provider: LockdownClient, backup_directory, system, reboot, copy, settings, remove, password, source):
+def restore(service_provider: LockdownServiceProvider, backup_directory: str, system: bool, reboot: bool, copy: bool,
+            settings: bool, remove: bool, skip_apps: bool, password: str, source: str) -> None:
     """
     Restore a backup to a device.
 
@@ -69,7 +72,7 @@ def restore(service_provider: LockdownClient, backup_directory, system, reboot, 
 
         backup_client.restore(backup_directory=backup_directory, progress_callback=update_bar, system=system,
                               reboot=reboot, copy=copy, settings=settings, remove=remove, password=password,
-                              source=source)
+                              source=source, skip_apps=skip_apps)
 
 
 @backup2.command(cls=Command)

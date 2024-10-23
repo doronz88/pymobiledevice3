@@ -9,6 +9,7 @@ from pathlib import Path
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ConnectionTerminatedError, LockdownError, \
     PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AFC_LOCK_EX, AFC_LOCK_UN, AfcService, afc_error_t
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
@@ -32,20 +33,20 @@ class Mobilebackup2Service(LockdownService):
     SERVICE_NAME = 'com.apple.mobilebackup2'
     RSD_SERVICE_NAME = 'com.apple.mobilebackup2.shim.remote'
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownServiceProvider) -> None:
         if isinstance(lockdown, LockdownClient):
             super().__init__(lockdown, self.SERVICE_NAME, include_escrow_bag=True)
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME, include_escrow_bag=True)
 
     @property
-    def will_encrypt(self):
+    def will_encrypt(self) -> bool:
         try:
             return self.lockdown.get_value('com.apple.mobile.backup', 'WillEncrypt')
         except LockdownError:
             return False
 
-    def backup(self, full: bool = True, backup_directory='.', progress_callback=lambda x: None) -> None:
+    def backup(self, full: bool = True, backup_directory: str = '.', progress_callback=lambda x: None) -> None:
         """
         Backup a device.
         :param full: Whether to do a full backup. If full is True, any previous backup attempts will be discarded.
@@ -92,7 +93,7 @@ class Mobilebackup2Service(LockdownService):
 
     def restore(self, backup_directory='.', system: bool = False, reboot: bool = True, copy: bool = True,
                 settings: bool = True, remove: bool = False, password: str = '', source: str = '',
-                progress_callback=lambda x: None):
+                progress_callback=lambda x: None, skip_apps: bool = False):
         """
         Restore a previous backup to the device.
         :param backup_directory: Path of the backup directory.
@@ -104,6 +105,7 @@ class Mobilebackup2Service(LockdownService):
         :param password: Password of the backup if it is encrypted.
         :param source: Identifier of device to restore its backup.
         :param progress_callback: Function to be called as the backup progresses.
+        :param skip_apps: Do not trigger re-installation of apps after restore.
         The function shall receive the current percentage of the progress as a parameter.
         """
         backup_directory = Path(backup_directory)
@@ -137,6 +139,15 @@ class Mobilebackup2Service(LockdownService):
                     'SourceIdentifier': source,
                     'Options': options,
                 })
+
+                if not skip_apps:
+                    # Write /iTunesRestore/RestoreApplications.plist so that the device will start
+                    # restoring applications once the rest of the restore process is finished
+                    info_plist_path = backup_directory / source / 'Info.plist'
+                    applications = plistlib.loads(info_plist_path.read_bytes())['Applications']
+                    afc.makedirs('/iTunesRestore')
+                    afc.set_file_contents('/iTunesRestore/RestoreApplications.plist', plistlib.dumps(applications))
+
                 dl.dl_loop(progress_callback)
 
     def info(self, backup_directory='.', source: str = '') -> str:
