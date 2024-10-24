@@ -41,7 +41,7 @@ class BonjourListener(ServiceListener):
         self.queue.put_nowait((zeroconf, service_type, name, state_change))
 
     async def query_addresses(self) -> None:
-        zeroconf, service_type, name, state_change = await self.queue.get()
+        zeroconf, service_type, name, _state_change = await self.queue.get()
         self.name = name
         service_info = AsyncServiceInfo(service_type, name)
         await service_info.async_request(zeroconf, 3000)

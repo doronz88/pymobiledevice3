@@ -15,7 +15,7 @@ def plist_access_path(d, path: tuple, type_=None, required=False):
         if d is None:
             break
 
-    if type_ == bool and isinstance(d, str):
+    if type_ is bool and isinstance(d, str):
         if d.lower() not in ('true', 'false'):
             raise ValueError()
         d = 'true' == d.lower()

@@ -68,7 +68,7 @@ Follow the following connections steps from LLDB:
 (lldb) script lldb.target.module[0].SetPlatformFileSpec(lldb.SBFileSpec('/private/var/containers/Bundle/Application/<APP-UUID>/application.app'))
 (lldb) process connect connect://[{host}]:{port}   <-- ACTUAL CONNECTION DETAILS!
 (lldb) process launch
-'''
+'''  # noqa: E501
 
 MatchedProcessByPid = namedtuple('MatchedProcess', 'name pid')
 
@@ -281,7 +281,7 @@ def netstat(service_provider: LockdownClient):
 
 @dvt.command('screenshot', cls=Command)
 @click.argument('out', type=click.File('wb'))
-def screenshot(service_provider: LockdownClient, out):
+def dvt_screenshot(service_provider: LockdownClient, out):
     """ Take device screenshot """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         out.write(Screenshot(dvt).get_screenshot())
@@ -488,7 +488,7 @@ def stackshot(service_provider: LockdownClient, out):
             try:
                 data = tap.get_stackshot()
             except ExtractingStackshotError:
-                logger.error(f'Extracting stackshot failed')
+                logger.error('Extracting stackshot failed')
                 return
 
             if out is not None:
@@ -682,7 +682,7 @@ def dvt_notifications(service_provider: LockdownClient):
 
 
 @dvt.command('graphics', cls=Command)
-def dvt_notifications(service_provider: LockdownClient):
+def dvt_graphics(service_provider: LockdownClient):
     """ Monitor graphics-related information """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         with Graphics(dvt) as graphics:
