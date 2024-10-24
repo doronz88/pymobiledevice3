@@ -14,9 +14,9 @@ from pymobiledevice3.services.lockdown_service import LockdownService
 
 GET_APPS_ADDITIONAL_INFO = {'ReturnAttributes': ['CFBundleIdentifier', 'StaticDiskUsage', 'DynamicDiskUsage']}
 
-TEMP_REMOTE_IPA_FILE = '/PublicStaging/pymobiledevice3.ipa'
-
-TEMP_REMOTE_IPCC_FOLDER = '/PublicStaging/pymobiledevice3.ipcc'
+TEMP_REMOTE_BASEDIR = '/PublicStaging'
+TEMP_REMOTE_IPA_FILE = f'{TEMP_REMOTE_BASEDIR}/pymobiledevice3.ipa'
+TEMP_REMOTE_IPCC_FOLDER = f'{TEMP_REMOTE_BASEDIR}/pymobiledevice3.ipcc'
 
 
 def create_ipa_contents_from_directory(directory: str) -> bytes:
@@ -118,6 +118,7 @@ class InstallationProxyService(LockdownService):
 
         with AfcService(self.lockdown) as afc:
             if not ipcc_mode:
+                afc.makedirs(TEMP_REMOTE_BASEDIR)
                 afc.set_file_contents(TEMP_REMOTE_IPA_FILE, ipa_contents)
 
             else:
@@ -147,7 +148,7 @@ class InstallationProxyService(LockdownService):
 
                 with file_zip.open(file_name) as inside_file_zip:
                     file_data = inside_file_zip.read()
-
+                    afc_client.makedirs(TEMP_REMOTE_BASEDIR)
                     afc_client.set_file_contents(f'{TEMP_REMOTE_IPCC_FOLDER}/{file_name}', file_data)
 
         self.logger.info('Upload complete.')
