@@ -197,7 +197,7 @@ from pymobiledevice3.lockdown import create_using_usbmux
 lockdown = create_using_usbmux()
 
 # Get a handle to the service
-service = lockdown.start_lockdown_service(SERIVCE_NAME)
+service = lockdown.start_lockdown_service(SERVICE_NAME)
 
 # Attempt to send and receive messages from it
 service.sendall(b'hello')
