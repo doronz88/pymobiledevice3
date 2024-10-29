@@ -1,8 +1,10 @@
 import os
+from enum import Enum
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Callable, Optional
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from parameter_decorators import str_to_path
 
@@ -19,6 +21,17 @@ TEMP_REMOTE_IPA_FILE = f'{TEMP_REMOTE_BASEDIR}/pymobiledevice3.ipa'
 TEMP_REMOTE_IPCC_FOLDER = f'{TEMP_REMOTE_BASEDIR}/pymobiledevice3.ipcc'
 
 
+class ZipFileType(Enum):
+    IPCC = 'ipcc'
+    IPA = 'ipa'
+
+    def is_ipcc(self) -> bool:
+        return self == ZipFileType.IPCC
+
+    def is_ipa(self) -> bool:
+        return self == ZipFileType.IPA
+
+
 def create_ipa_contents_from_directory(directory: str) -> bytes:
     payload_prefix = 'Payload/' + os.path.basename(directory)
     with TemporaryDirectory() as temp_dir:
@@ -31,6 +44,26 @@ def create_ipa_contents_from_directory(directory: str) -> bytes:
                     zip_file.write(full_path,
                                    arcname=f'{payload_prefix}/{os.path.relpath(full_path, directory)}')
         return zip_path.read_bytes()
+
+
+def classify_zip_file(zip_bytes: bytes) -> ZipFileType:
+    """ checks the zipped bytes if it's a .ipcc or .ipa """
+    try:
+        with ZipFile(BytesIO(zip_bytes), 'r') as zip_file:
+            # sometimes packages at first index don't have enough infos to check
+            dirs = zip_file.namelist()[1].split('/')
+
+            if dirs[0] != 'Payload':
+                raise AppInstallError('package does not have a payload')
+            if dirs[1].endswith('.app'):
+                return ZipFileType.IPA
+            elif dirs[1].endswith('.bundle'):
+                return ZipFileType.IPCC
+            else:
+                raise AppInstallError('package does not have the appropriate folders structure')
+
+    except BadZipFile:
+        raise AppInstallError('invalid bytes package')
 
 
 class InstallationProxyService(LockdownService):
@@ -96,11 +129,29 @@ class InstallationProxyService(LockdownService):
         """ uninstall given bundle_identifier """
         self.send_cmd_for_bundle_identifier(bundle_identifier, 'Uninstall', options, handler, args)
 
+    def install_from_bytes(self, package_bytes: bytes, cmd: str = 'Install', options: Optional[dict] = None,
+                           handler: Callable = None, *args) -> None:
+        """ upload given ipa/ipcc bytes object onto device and install it """
+        ipcc_mode = classify_zip_file(package_bytes).is_ipcc()
+
+        if options is None:
+            options = {}
+
+        if ipcc_mode:
+            options['PackageType'] = 'CarrierBundle'
+
+        with AfcService(self.lockdown) as afc:
+            if not ipcc_mode:
+                afc.set_file_contents(TEMP_REMOTE_IPA_FILE, package_bytes)
+            else:
+                self.upload_ipcc_from_bytes(package_bytes, afc)
+
+        self.send_package(cmd, options, handler, ipcc_mode, *args)
+
     @str_to_path('package_path')
     def install_from_local(self, package_path: Path, cmd: str = 'Install', options: Optional[dict] = None,
                            handler: Callable = None, *args) -> None:
         """ upload given ipa/ipcc onto device and install it """
-
         ipcc_mode = package_path.suffix == '.ipcc'
 
         if options is None:
@@ -122,24 +173,42 @@ class InstallationProxyService(LockdownService):
                 afc.set_file_contents(TEMP_REMOTE_IPA_FILE, ipa_contents)
 
             else:
-                self.upload_ipcc_as_folder(package_path, afc)
+                self.upload_ipcc_from_path(package_path, afc)
 
-        self.service.send_plist({'Command': cmd,
-                                 'ClientOptions': options,
-                                 'PackagePath': TEMP_REMOTE_IPCC_FOLDER if ipcc_mode
-                                 else TEMP_REMOTE_IPA_FILE})
+        self.send_package(cmd, options, handler, ipcc_mode, *args)
+
+    def send_package(self, cmd: str, options: Optional[dict], handler: Callable, ipcc_mode: bool = False, *args):
+        self.service.send_plist({
+            'Command': cmd,
+            'ClientOptions': options,
+            'PackagePath': (
+                TEMP_REMOTE_IPCC_FOLDER if ipcc_mode
+                else TEMP_REMOTE_IPA_FILE
+            )
+        })
 
         self._watch_completion(handler, ipcc_mode, args)
 
-    def upload_ipcc_as_folder(self, file: Path, afc_client: AfcService) -> None:
+    def upload_ipcc_from_path(self, file: Path, afc_client: AfcService) -> None:
         """Used to upload a .ipcc file to an iPhone as a folder"""
+        with file.open('rb') as fb:
+            file_name = file.name
+            file_stream = BytesIO(fb.read())
+            self._upload_ipcc(file_stream, afc_client, file_name)
 
-        self.logger.info(f'Uploading {file.name} contents..')
+    def upload_ipcc_from_bytes(self, file_bytes: bytes, afc_client: AfcService) -> None:
+        """Used to upload a .ipcc bytes array to an iPhone as a folder"""
+        file_stream = BytesIO(file_bytes)
+        file_name = "bytes"
+        self._upload_ipcc(file_stream, afc_client, file_name)
+
+    def _upload_ipcc(self, file_stream: BytesIO, afc_client: AfcService, file_name: str) -> None:
+        self.logger.info(f'Uploading {file_name} contents..')
 
         afc_client.makedirs(TEMP_REMOTE_IPCC_FOLDER)
 
         # we unpack it and upload it directly instead of saving it in a temp folder
-        with ZipFile(file, 'r') as file_zip:
+        with ZipFile(file_stream, 'r') as file_zip:
             for file_name in file_zip.namelist():
 
                 if file_name.endswith(('/', '\\')):
