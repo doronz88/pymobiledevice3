@@ -14,7 +14,7 @@ __all__ = [
     'LaunchingApplicationError', 'BadCommandError', 'BadDevError', 'ConnectionFailedError', 'CoreDeviceError',
     'AccessDeniedError', 'RSDRequiredError', 'SysdiagnoseTimeoutError', 'GetProhibitedError',
     'FeatureNotSupportedError', 'OSNotSupportedError', 'DeprecationError', 'NotEnoughDiskSpaceError',
-    'CloudConfigurationAlreadyPresentError'
+    'CloudConfigurationAlreadyPresentError', 'QuicProtocolNotSupportedError',
 ]
 
 from typing import Optional
@@ -390,3 +390,8 @@ class FeatureNotSupportedError(SupportError):
     def __init__(self, os_name, feature):
         super().__init__(os_name)
         self.feature = feature
+
+
+class QuicProtocolNotSupportedError(PyMobileDevice3Exception):
+    """ QUIC tunnel support was removed on iOS 18.2+ """
+    pass

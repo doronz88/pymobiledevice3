@@ -56,7 +56,8 @@ except ImportError:
 
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing
 from pymobiledevice3.ca import make_cert
-from pymobiledevice3.exceptions import PairingError, PyMobileDevice3Exception, UserDeniedPairingError
+from pymobiledevice3.exceptions import PairingError, PyMobileDevice3Exception, QuicProtocolNotSupportedError, \
+    UserDeniedPairingError
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, create_pairing_records_cache_folder, generate_host_id, \
     get_remote_pairing_record_filename, iter_remote_paired_identifiers
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -417,24 +418,28 @@ class RemotePairingProtocol(StartTcpTunnel):
         port = parameters['port']
 
         self.logger.debug(f'Connecting to {host}:{port}')
-        async with aioquic_connect(
-                host,
-                port,
-                configuration=configuration,
-                create_protocol=RemotePairingQuicTunnel,
-        ) as client:
-            self.logger.debug('quic connected')
-            client = cast(RemotePairingQuicTunnel, client)
-            await client.wait_connected()
-            handshake_response = await client.request_tunnel_establish()
-            client.start_tunnel(handshake_response['clientParameters']['address'],
-                                handshake_response['clientParameters']['mtu'])
-            try:
-                yield TunnelResult(
-                    client.tun.name, handshake_response['serverAddress'], handshake_response['serverRSDPort'],
-                    TunnelProtocol.QUIC, client)
-            finally:
-                await client.stop_tunnel()
+        try:
+            async with aioquic_connect(
+                    host,
+                    port,
+                    configuration=configuration,
+                    create_protocol=RemotePairingQuicTunnel,
+            ) as client:
+                self.logger.debug('quic connected')
+                client = cast(RemotePairingQuicTunnel, client)
+                await client.wait_connected()
+                handshake_response = await client.request_tunnel_establish()
+                client.start_tunnel(handshake_response['clientParameters']['address'],
+                                    handshake_response['clientParameters']['mtu'])
+                try:
+                    yield TunnelResult(
+                        client.tun.name, handshake_response['serverAddress'], handshake_response['serverRSDPort'],
+                        TunnelProtocol.QUIC, client)
+                finally:
+                    await client.stop_tunnel()
+        except ConnectionError:
+            raise QuicProtocolNotSupportedError(
+                'iOS 18.2+ removed QUIC protocol support. Use TCP instead (requires python3.13+)')
 
     @asynccontextmanager
     async def start_tcp_tunnel(self) -> AsyncGenerator[TunnelResult, None]:

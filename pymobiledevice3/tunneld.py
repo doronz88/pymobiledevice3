@@ -53,7 +53,7 @@ class TunnelTask:
 
 
 class TunneldCore:
-    def __init__(self, protocol: TunnelProtocol = TunnelProtocol.QUIC, wifi_monitor: bool = True,
+    def __init__(self, protocol: TunnelProtocol = TunnelProtocol.DEFAULT, wifi_monitor: bool = True,
                  usb_monitor: bool = True, usbmux_monitor: bool = True, mobdev2_monitor: bool = True) -> None:
         self.protocol = protocol
         self.tasks: list[asyncio.Task] = []
