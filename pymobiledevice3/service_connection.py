@@ -177,7 +177,10 @@ class ServiceConnection:
         :param length: The maximum amount of data to receive.
         :return: The received data.
         """
-        return self.socket.recv(length)
+        try:
+            return self.socket.recv(length)
+        except ssl.SSLError:
+            raise ConnectionAbortedError()
 
     def sendall(self, data: bytes) -> None:
         """
