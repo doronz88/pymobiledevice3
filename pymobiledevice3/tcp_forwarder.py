@@ -118,9 +118,7 @@ class TcpForwarderBase:
         other_sock = self.connections[from_sock]
         try:
             # send the data in blocking manner
-            other_sock.setblocking(True)
             other_sock.sendall(data)
-            other_sock.setblocking(False)
         except OSError:
             # Tried writing to closed socket
             self.logger.exception("Exception when sending data to socket")
