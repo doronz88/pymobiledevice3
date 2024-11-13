@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import time
 import enum
 from collections.abc import Generator
 from typing import Optional
@@ -391,10 +392,21 @@ class PcapdService(LockdownService):
         writer = FileWriter(out, shb)
 
         for packet in packet_generator:
+            if hasattr(packet, 'timestamp'):
+                packet_time = packet.timestamp
+            else:
+                packet_time = time.time()
+
+            timestamp_microseconds = int(packet_time * 1_000_000)
+            timestamp_high = (timestamp_microseconds >> 32) & 0xFFFFFFFF
+            timestamp_low = timestamp_microseconds & 0xFFFFFFFF
+
             enhanced_packet = shb.new_member(blocks.EnhancedPacket, options={
                 'opt_comment': f'PID: {packet.pid}, ProcName: {packet.comm}, EPID: {packet.epid}, '
                                f'EProcName: {packet.ecomm}, SVC: {packet.svc}'
             })
 
             enhanced_packet.packet_data = packet.data
+            enhanced_packet.timestamp_high = timestamp_high
+            enhanced_packet.timestamp_low = timestamp_low
             writer.write_block(enhanced_packet)
