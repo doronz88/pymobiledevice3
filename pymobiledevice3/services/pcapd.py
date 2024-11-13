@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
-import time
 import enum
+import time
 from collections.abc import Generator
 from typing import Optional
 
 import pcapng.blocks as blocks
 from construct import Byte, Bytes, Container, CString, Int16ub, Int32ub, Int32ul, Padded, Seek, Struct, this
 from pcapng import FileWriter
-
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
