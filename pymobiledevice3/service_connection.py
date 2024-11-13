@@ -5,6 +5,7 @@ import socket
 import ssl
 import struct
 import time
+import xml
 from enum import Enum
 from typing import Any, Optional
 
@@ -59,9 +60,16 @@ def parse_plist(payload: bytes) -> dict:
     :param payload: The plist-formatted byte string to parse.
     :return: The parsed dictionary.
     :raises PyMobileDevice3Exception: If the payload is invalid.
+    :retries with a filtered payload if plistlib compains about "not well-formed (invalid token)"
     """
     try:
         return plistlib.loads(payload)
+    except xml.parsers.expat.ExpatError:
+        payload = bytes([b for b in payload if b not in (0x00, 0x10)])
+        try:
+            return plistlib.loads(payload)
+        except plistlib.InvalidFileException:
+            raise PyMobileDevice3Exception(f'parse_plist invalid data: {payload[:100].hex()}')
     except plistlib.InvalidFileException:
         raise PyMobileDevice3Exception(f'parse_plist invalid data: {payload[:100].hex()}')
 
