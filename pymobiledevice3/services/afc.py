@@ -260,12 +260,16 @@ class AfcService(LockdownService):
                 if match is not None and not match.match(posixpath.basename(src_filename)):
                     continue
 
-                if self.isdir(src_filename):
-                    dst_filename.mkdir(exist_ok=True)
-                    self.pull(src_filename, str(dst_path), callback=callback)
-                    continue
+                try:
+                    if self.isdir(src_filename):
+                        dst_filename.mkdir(exist_ok=True)
+                        self.pull(src_filename, str(dst_path), callback=callback)
+                        continue
 
-                self.pull(src_filename, str(dst_path), callback=callback)
+                    self.pull(src_filename, str(dst_path), callback=callback)
+
+                except Exception as e:
+                    print("Error", e, "occured during the copy of", src_filename)
 
     @path_to_str()
     def exists(self, filename):
