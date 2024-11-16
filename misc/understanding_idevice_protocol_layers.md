@@ -121,10 +121,10 @@ this feature over USB:
 
 ```shell
 # Turn it on
-pymobiledevice3 lockdown wifi-connection on
+pymobiledevice3 lockdown wifi-connections on
 
 # Or off
-pymobiledevice3 lockdown wifi-connection off
+pymobiledevice3 lockdown wifi-connections off
 ```
 
 Now the device will use the [bonjour](https://en.wikipedia.org/wiki/Bonjour_(software)) protocol in order to announce
