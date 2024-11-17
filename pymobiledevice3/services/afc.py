@@ -270,7 +270,7 @@ class AfcService(LockdownService):
 
                 except Exception as afc_exception:
                     if (ignore_errors):
-                        self.logger.warning("(Ignoring error) Error:", afc_exception, "occured during the copy of", src_filename)
+                        self.logger.warning("(Ignoring) Error:", afc_exception, "occured during the copy of", src_filename)
                     else:
                         self.logger.error("Error occured during the copy of", src_filename, "exiting...")
                         self.logger.error("If you want to ignore errors, use the -i/--ignore-errors flag")
@@ -872,7 +872,8 @@ class AfcShell:
         for filename in file:
             self.afc.rm(self.relative_path(filename))
 
-    def _do_pull(self, remote_path: Annotated[str, Arg(completer=path_completer)], local_path: str, ignore_errors: bool = False):
+    def _do_pull(self, remote_path: Annotated[str, Arg(completer=path_completer)], local_path: str, 
+        ignore_errors: bool = False):
         def log(src, dst):
             print(f'{src} --> {dst}')
 
