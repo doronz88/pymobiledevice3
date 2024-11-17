@@ -225,7 +225,7 @@ class AfcService(LockdownService):
         self.packet_num = 0
 
     def pull(self, relative_src: str, dst: str, match: Optional[Pattern] = None, callback: Optional[Callable] = None,
-             src_dir: str = '') -> None:
+             src_dir: str = '', ignore_errors: bool = False) -> None:
         src = self.resolve_path(posixpath.join(src_dir, relative_src))
 
         if not self.isdir(src):
@@ -263,13 +263,18 @@ class AfcService(LockdownService):
                 try:
                     if self.isdir(src_filename):
                         dst_filename.mkdir(exist_ok=True)
-                        self.pull(src_filename, str(dst_path), callback=callback)
+                        self.pull(src_filename, str(dst_path), callback=callback, ignore_errors=ignore_errors)
                         continue
 
-                    self.pull(src_filename, str(dst_path), callback=callback)
+                    self.pull(src_filename, str(dst_path), callback=callback, ignore_errors=ignore_errors)
 
-                except Exception as e:
-                    print("Error", e, "occured during the copy of", src_filename)
+                except Exception as afc_exception:
+                    if(ignore_errors):
+                        self.logger.warning("(Ignoring error) Error:", e, "occured during the copy of", src_filename)
+                    else:
+                        self.logger.error("Error occured during the copy of", src_filename, "exiting...")
+                        self.logger.error("If you want to ignore errors, use the -i/--ignore-errors flag")
+                        exit(1)
 
     @path_to_str()
     def exists(self, filename):
@@ -867,11 +872,11 @@ class AfcShell:
         for filename in file:
             self.afc.rm(self.relative_path(filename))
 
-    def _do_pull(self, remote_path: Annotated[str, Arg(completer=path_completer)], local_path: str):
+    def _do_pull(self, remote_path: Annotated[str, Arg(completer=path_completer)], local_path: str, ignore_errors: bool = False):
         def log(src, dst):
             print(f'{src} --> {dst}')
 
-        self.afc.pull(remote_path, local_path, callback=log, src_dir=self.cwd)
+        self.afc.pull(remote_path, local_path, callback=log, src_dir=self.cwd, ignore_errors=ignore_errors)
 
     def _do_push(self, local_path: str, remote_path: Annotated[str, Arg(completer=path_completer)]):
         def log(src, dst):
