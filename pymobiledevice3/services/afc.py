@@ -272,11 +272,6 @@ class AfcService(LockdownService):
                     if not ignore_errors:
                         raise
                     self.logger.warning("(Ignoring) Error:", afc_exception, "occured during the copy of", src_filename)
-                        self.logger.warning("(Ignoring) Error:", afc_exception, "occured during the copy of", src_filename)
-                    else:
-                        self.logger.error("Error occured during the copy of", src_filename, "exiting...")
-                        self.logger.error("If you want to ignore errors, set ignore_errors parameter to True")
-                        exit(1)
 
     @path_to_str()
     def exists(self, filename):

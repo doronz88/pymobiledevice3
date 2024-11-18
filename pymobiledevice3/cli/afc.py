@@ -24,7 +24,7 @@ def afc_shell(service_provider: LockdownClient):
 
 
 @afc.command('pull', cls=Command)
-@click.option('-i', '--ignore-errors', is_flag=True)
+@click.option('-i', '--ignore-errors', is_flag=True, help='Ignore AFC pull errors')
 @click.argument('remote_file', type=click.Path(exists=False))
 @click.argument('local_file', type=click.Path(exists=False))
 def afc_pull(service_provider: LockdownServiceProvider, remote_file: str, local_file: str, ignore_errors: bool) -> None:
