@@ -269,7 +269,9 @@ class AfcService(LockdownService):
                     self.pull(src_filename, str(dst_path), callback=callback, ignore_errors=ignore_errors)
 
                 except Exception as afc_exception:
-                    if (ignore_errors):
+                    if not ignore_errors:
+                        raise
+                    self.logger.warning("(Ignoring) Error:", afc_exception, "occured during the copy of", src_filename)
                         self.logger.warning("(Ignoring) Error:", afc_exception, "occured during the copy of", src_filename)
                     else:
                         self.logger.error("Error occured during the copy of", src_filename, "exiting...")
