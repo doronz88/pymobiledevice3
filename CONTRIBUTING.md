@@ -1,7 +1,17 @@
 # Contibuting
 
-If you would like to contribute, feel free to report issues, start new discussions, or create pull requests. You can
-also contact us on Discord:
+If you would like to contribute, feel free to report issues, start new discussions, or create pull requests.
+
+In general we recommend using our pre-commit hook which enforce the linter rules we use:
+
+```shell
+python3 -m pip install -U pre-commit
+pre-commit install
+```
+
+In addition, please note we prefer using `'` for strings instead of `"`.
+
+If you're having any troubles, You can also contact us on Discord:
 
 <https://discord.gg/52mZGC3JXJ>
 
