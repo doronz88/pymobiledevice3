@@ -872,8 +872,8 @@ class AfcShell:
         for filename in file:
             self.afc.rm(self.relative_path(filename))
 
-    def _do_pull(self, remote_path: Annotated[str, Arg(completer=path_completer)], local_path: str, 
-        ignore_errors: bool = False):
+    def _do_pull(self, remote_path: Annotated[str, Arg(completer=path_completer)], local_path: str,
+                 ignore_errors: bool = False):
         def log(src, dst):
             print(f'{src} --> {dst}')
 
