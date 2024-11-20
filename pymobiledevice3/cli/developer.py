@@ -21,16 +21,18 @@ from pykdebugparser.pykdebugparser import PyKdebugParser
 import pymobiledevice3
 from pymobiledevice3.cli.cli_common import BASED_INT, Command, RSDCommand, default_json_encoder, print_json, \
     user_requested_colored_output
-from pymobiledevice3.exceptions import DeviceAlreadyInUseError, DvtDirListError, ExtractingStackshotError, \
-    RSDRequiredError, UnrecognizedSelectorError
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.exceptions import CoreDeviceError, DeviceAlreadyInUseError, DvtDirListError, \
+    ExtractingStackshotError, RSDRequiredError, UnrecognizedSelectorError
+from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
+from pymobiledevice3.remote.core_device.diagnostics_service import DiagnosticsServiceService
 from pymobiledevice3.remote.core_device.file_service import APPLE_DOMAIN_DICT, FileServiceService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
+from pymobiledevice3.services.crash_reports import CrashReportsManager
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
 from pymobiledevice3.services.device_arbitration import DtDeviceArbitration
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
@@ -1194,3 +1196,26 @@ async def core_device_list_apps_task(service_provider: RemoteServiceDiscoverySer
 def core_device_list_apps(service_provider: RemoteServiceDiscoveryService) -> None:
     """ Get application list """
     asyncio.run(core_device_list_apps_task(service_provider))
+
+
+async def core_device_sysdiagnose_task(service_provider: RemoteServiceDiscoveryService, output: str) -> None:
+    output = Path(output)
+    async with DiagnosticsServiceService(service_provider) as service:
+        response = await service.capture_sysdiagnose(False)
+        logger.info(f'Operation response: {response}')
+        if output.is_dir():
+            output /= response.preferred_filename
+        logger.info(f'Downloading sysdiagnose to: {output}')
+
+        # get the file over lockdownd which is WAYYY faster
+        lockdown = create_using_usbmux(service_provider.udid)
+        with CrashReportsManager(lockdown) as crash_reports_manager:
+            crash_reports_manager.afc.pull(posixpath.join(f'/DiagnosticLogs/sysdiagnose/{response.preferred_filename}'),
+                                           output)
+
+
+@core_device.command('sysdiagnose', cls=RSDCommand)
+@click.argument('output', type=click.Path(dir_okay=True, file_okay=True, exists=True))
+def core_device_sysdiagnose(service_provider: RemoteServiceDiscoveryService, output: str) -> None:
+    """ Execute sysdiagnose and fetch the output file """
+    asyncio.run(core_device_sysdiagnose_task(service_provider, output))
