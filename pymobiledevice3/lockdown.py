@@ -12,7 +12,7 @@ from contextlib import contextmanager, suppress
 from enum import Enum
 from functools import wraps
 from pathlib import Path
-from ssl import SSLZeroReturnError
+from ssl import SSLError, SSLZeroReturnError
 from typing import Optional
 
 from cryptography import x509
@@ -66,7 +66,7 @@ def _reconnect_on_remote_close(f):
     def _inner_reconnect_on_remote_close(*args, **kwargs):
         try:
             return f(*args, **kwargs)
-        except (BrokenPipeError, ConnectionTerminatedError):
+        except (BrokenPipeError, ConnectionTerminatedError, SSLError):
             _reconnect(args[0])
             return f(*args, **kwargs)
         except ConnectionAbortedError:
