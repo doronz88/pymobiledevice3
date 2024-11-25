@@ -19,7 +19,7 @@ from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import REMOTED_SERVICE_NAMES, browse
 from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, DeviceNotFoundError, \
-    GetProhibitedError, InvalidServiceError, MuxException, PairingError, TunneldConnectionError
+    GetProhibitedError, InvalidServiceError, LockdownError, MuxException, PairingError, TunneldConnectionError
 from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -141,7 +141,7 @@ class TunneldCore:
                         try:
                             service = CoreDeviceTunnelProxy(create_using_usbmux(mux_device.serial))
                         except (MuxException, InvalidServiceError, GetProhibitedError, construct.core.StreamError,
-                                ConnectionAbortedError, DeviceNotFoundError):
+                                ConnectionAbortedError, DeviceNotFoundError, LockdownError):
                             continue
                         self.tunnel_tasks[task_identifier] = TunnelTask(
                             udid=mux_device.serial,
@@ -214,10 +214,12 @@ class TunneldCore:
                         f'since there is already an active one for same udid')
         except asyncio.CancelledError:
             pass
-        except (ConnectionResetError, StreamError, InvalidServiceError) as e:
-            logger.debug(f'got {e.__class__.__name__} from {asyncio.current_task().get_name()}')
-        except (asyncio.exceptions.IncompleteReadError, TimeoutError, OSError) as e:
-            logger.debug(f'got {e.__class__.__name__} from tunnel --rsd {tun.address} {tun.port}')
+        except (asyncio.exceptions.IncompleteReadError, TimeoutError, OSError, ConnectionResetError, StreamError,
+                InvalidServiceError) as e:
+            if tun is None:
+                logger.debug(f'got {e.__class__.__name__} from {asyncio.current_task().get_name()}')
+            else:
+                logger.debug(f'got {e.__class__.__name__} from tunnel --rsd {tun.address} {tun.port}')
         except Exception:
             logger.error(f'got exception from {asyncio.current_task().get_name()}: {traceback.format_exc()}')
         finally:

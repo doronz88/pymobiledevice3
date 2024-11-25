@@ -560,8 +560,8 @@ class LockdownClient(ABC, LockdownServiceProvider):
             message.update(options)
         response = self.service.send_recv_plist(message)
 
-        if verify_request and response['Request'] != request:
-            raise LockdownError(f'incorrect response returned. got {response["Request"]} instead of {request}')
+        if verify_request and response.get('Request') != request:
+            raise LockdownError(f'incorrect response returned. got {response}')
 
         error = response.get('Error')
         if error is not None:
