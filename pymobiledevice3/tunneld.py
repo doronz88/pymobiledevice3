@@ -214,10 +214,12 @@ class TunneldCore:
                         f'since there is already an active one for same udid')
         except asyncio.CancelledError:
             pass
-        except (ConnectionResetError, StreamError, InvalidServiceError) as e:
-            logger.debug(f'got {e.__class__.__name__} from {asyncio.current_task().get_name()}')
-        except (asyncio.exceptions.IncompleteReadError, TimeoutError, OSError) as e:
-            logger.debug(f'got {e.__class__.__name__} from tunnel --rsd {tun.address} {tun.port}')
+        except (asyncio.exceptions.IncompleteReadError, TimeoutError, OSError, ConnectionResetError, StreamError,
+                InvalidServiceError) as e:
+            if tun is None:
+                logger.debug(f'got {e.__class__.__name__} from {asyncio.current_task().get_name()}')
+            else:
+                logger.debug(f'got {e.__class__.__name__} from tunnel --rsd {tun.address} {tun.port}')
         except Exception:
             logger.error(f'got exception from {asyncio.current_task().get_name()}: {traceback.format_exc()}')
         finally:
