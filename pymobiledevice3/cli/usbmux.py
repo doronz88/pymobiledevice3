@@ -22,7 +22,7 @@ def usbmux_cli() -> None:
     pass
 
 
-@usbmux_cli.command('forward')
+@usbmux_cli.command('forward', cls=BaseCommand)
 @click.option('usbmux_address', '--usbmux', help=USBMUX_OPTION_HELP)
 @click.argument('src_port', type=click.IntRange(1, 0xffff))
 @click.argument('dst_port', type=click.IntRange(1, 0xffff))
