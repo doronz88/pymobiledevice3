@@ -2,6 +2,7 @@ import logging
 import select
 import socket
 import threading
+import time
 from abc import abstractmethod
 from typing import Optional
 
@@ -94,37 +95,42 @@ class TcpForwarderBase:
         self.logger.info(f'connection {other_sock} was closed')
 
     def _handle_data(self, from_sock, closed_sockets):
-        self.logger.debug("Handling data from %s", from_sock)
-        data = None
+        self.logger.debug(f"Handling data from {from_sock}")
         try:
             data = from_sock.recv(1024)
-        except OSError:
-            # Socket closing is handled in another if block
-            pass
-
-        if data is None or len(data) == 0:
-            if data is None:
-                # data is none means we had an error reading from socket
-                self.logger.debug("oserror when reading from_sock")
-            else:
-                # Empty data means socket was closed
-                self.logger.info("No data was read from the socket")
+            if not data:
+                raise ConnectionResetError("Connection closed by the peer.")
+        except BlockingIOError:
+            self.logger.warning(f"Non-blocking read failed on {from_sock}, retrying later.")
+            return
+        except OSError as e:
+            self.logger.error(f"Error reading from socket {from_sock}: {e}")
             self._handle_close_or_error(from_sock)
             closed_sockets.add(from_sock)
-            closed_sockets.add(self.connections[from_sock])
             return
 
-        # when data is received from one end, just forward it to the other
-        other_sock = self.connections[from_sock]
+        other_sock = self.connections.get(from_sock)
+        if not other_sock:
+            self.logger.error(f"No connection mapping found for {from_sock}.")
+            return
+
         try:
-            # send the data in blocking manner
-            other_sock.sendall(data)
-        except OSError:
-            # Tried writing to closed socket
-            self.logger.exception("Exception when sending data to socket")
-            self._handle_close_or_error(other_sock)
+            total_sent = 0
+            while total_sent < len(data):
+                try:
+                    sent = other_sock.send(data[total_sent:])
+                    total_sent += sent
+                except BlockingIOError:
+                    self.logger.warning(f"Socket buffer full for {other_sock}, retrying in 100ms.")
+                    time.sleep(0.1)  # Introduce a small delay
+                except BrokenPipeError:
+                    self.logger.error(f"Broken pipe error on {other_sock}.")
+                    raise
+        except OSError as e:
+            self.logger.error(f"Unhandled error while forwarding data: {e}")
+            self._handle_close_or_error(from_sock)
             closed_sockets.add(from_sock)
-            closed_sockets.add(self.connections[from_sock])
+            closed_sockets.add(other_sock)
 
     @abstractmethod
     def _establish_remote_connection(self) -> socket.socket:
