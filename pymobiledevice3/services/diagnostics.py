@@ -1029,4 +1029,7 @@ class DiagnosticsService(LockdownService):
         return self.ioregistry(ioclass='IOPMPowerSource')
 
     def get_wifi(self) -> dict:
-        return self.ioregistry(name='AppleBCMWLANSkywalkInterface')
+        result = self.ioregistry(name='AppleBCMWLANSkywalkInterface')
+        if result:
+            return result
+        return self.ioregistry(ioclass='IO80211Interface')
