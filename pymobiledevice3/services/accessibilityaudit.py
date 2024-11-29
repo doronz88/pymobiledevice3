@@ -415,6 +415,9 @@ class AccessibilityAudit(RemoteServer):
             MessageAux().append_obj(setting).append_obj({'ObjectType': 'passthrough', 'Value': value}),
             expects_reply=False)
 
+    def reset_settings(self) -> None:
+        self.broadcast.deviceResetToDefaultAccessibilitySettings()
+
     def iter_elements(self) -> Generator[AXAuditInspectorFocus_v1, None, None]:
         iterator = self.iter_events()
 
