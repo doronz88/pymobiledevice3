@@ -841,6 +841,13 @@ def accessibility_settings_set(service_provider: LockdownClient, setting, value)
     service.set_setting(setting, eval(value))
     OSUTILS.wait_return()
 
+@accessibility_settings.command('reset', cls=Command)
+def accessibility_settings_reset(service_provider: LockdownClient):
+    """
+    reset accessibility settings to default
+    """
+    service = AccessibilityAudit(service_provider)
+    service.reset_settings()
 
 @accessibility.command('shell', cls=Command)
 def accessibility_shell(service_provider: LockdownClient):
