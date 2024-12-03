@@ -22,7 +22,7 @@ from parameter_decorators import path_to_str
 from pygments import formatters, highlight, lexers
 from pygnuutils.cli.ls import ls as ls_cli
 from pygnuutils.ls import Ls, LsStub
-from tqdm import trange
+from tqdm.auto import trange
 from xonsh.built_ins import XSH
 from xonsh.cli_utils import Annotated, Arg, ArgParserAlias
 from xonsh.main import main as xonsh_main
@@ -225,7 +225,7 @@ class AfcService(LockdownService):
         self.packet_num = 0
 
     def pull(self, relative_src: str, dst: str, match: Optional[Pattern] = None, callback: Optional[Callable] = None,
-             src_dir: str = '', ignore_errors: bool = False) -> None:
+             src_dir: str = '', ignore_errors: bool = False, progress_bar: bool = True) -> None:
         src = self.resolve_path(posixpath.join(src_dir, relative_src))
 
         if not self.isdir(src):
@@ -239,7 +239,11 @@ class AfcService(LockdownService):
                 else:
                     left_size = src_size
                     handle = self.fopen(src)
-                    for _ in trange(src_size // MAXIMUM_READ_SIZE + 1):
+                    if progress_bar:
+                        pb = trange(src_size // MAXIMUM_READ_SIZE + 1)
+                    else:
+                        pb = range(src_size // MAXIMUM_READ_SIZE + 1)
+                    for _ in pb:
                         f.write(self.fread(handle, min(MAXIMUM_READ_SIZE, left_size)))
                         left_size -= MAXIMUM_READ_SIZE
                     self.fclose(handle)
@@ -263,10 +267,12 @@ class AfcService(LockdownService):
                 try:
                     if self.isdir(src_filename):
                         dst_filename.mkdir(exist_ok=True)
-                        self.pull(src_filename, str(dst_path), callback=callback, ignore_errors=ignore_errors)
+                        self.pull(src_filename, str(dst_path), callback=callback, ignore_errors=ignore_errors,
+                                  progress_bar=progress_bar)
                         continue
 
-                    self.pull(src_filename, str(dst_path), callback=callback, ignore_errors=ignore_errors)
+                    self.pull(src_filename, str(dst_path), callback=callback, ignore_errors=ignore_errors,
+                              progress_bar=progress_bar)
 
                 except Exception as afc_exception:
                     if not ignore_errors:
@@ -870,11 +876,12 @@ class AfcShell:
             self.afc.rm(self.relative_path(filename))
 
     def _do_pull(self, remote_path: Annotated[str, Arg(completer=path_completer)], local_path: str,
-                 ignore_errors: bool = False):
+                 ignore_errors: bool = False, progress_bar: bool = True):
         def log(src, dst):
             print(f'{src} --> {dst}')
 
-        self.afc.pull(remote_path, local_path, callback=log, src_dir=self.cwd, ignore_errors=ignore_errors)
+        self.afc.pull(remote_path, local_path, callback=log, src_dir=self.cwd, ignore_errors=ignore_errors,
+                      progress_bar=progress_bar)
 
     def _do_push(self, local_path: str, remote_path: Annotated[str, Arg(completer=path_completer)]):
         def log(src, dst):
