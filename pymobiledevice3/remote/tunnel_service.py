@@ -57,7 +57,7 @@ except ImportError:
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing
 from pymobiledevice3.ca import make_cert
 from pymobiledevice3.exceptions import PairingError, PyMobileDevice3Exception, QuicProtocolNotSupportedError, \
-    UserDeniedPairingError
+    RemotePairingCompletedError, UserDeniedPairingError
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, create_pairing_records_cache_folder, generate_host_id, \
     get_remote_pairing_record_filename, iter_remote_paired_identifiers
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -370,10 +370,17 @@ class RemotePairingProtocol(StartTcpTunnel):
     async def connect(self, autopair: bool = True) -> None:
         await self._attempt_pair_verify()
 
-        if not await self._validate_pairing():
-            if autopair:
-                await self._pair()
-        self._init_client_server_main_encryption_keys()
+        if await self._validate_pairing():
+            # Pairing record validation succeeded, so we can just initiate the relevant session keys
+            self._init_client_server_main_encryption_keys()
+            return
+
+        if autopair:
+            await self._pair()
+            await self.close()
+
+            # Once pairing is completed, the remote endpoint closes the connection, so it must be re-established
+            raise RemotePairingCompletedError()
 
     async def create_quic_listener(self, private_key: RSAPrivateKey) -> dict:
         request = {'request': {'_0': {'createListener': {
@@ -683,7 +690,6 @@ class RemotePairingProtocol(StartTcpTunnel):
         response = await self._send_receive_pairing_data({'data': pairing_data,
                                                           'kind': 'verifyManualPairing',
                                                           'startNewSession': True})
-
         data = self.decode_tlv(PairingDataComponentTLVBuf.parse(response))
 
         if PairingDataComponentType.ERROR in data:
@@ -827,16 +833,18 @@ class CoreDeviceTunnelService(RemotePairingProtocol, RemoteService):
         self.version: Optional[int] = None
 
     async def connect(self, autopair: bool = True) -> None:
+        # Establish RemoteXPC connection to `SERVICE_NAME`
         await RemoteService.connect(self)
         try:
             response = await self.service.receive_response()
             self.version = response['ServiceVersion']
+
+            # Perform pairing if necessary and start a trusted RemoteXPC connection
             await RemotePairingProtocol.connect(self, autopair=autopair)
             self.hostname = self.service.address[0]
-        except Exception as e:  # noqa: E722
+        except Exception:  # noqa: E722
             await self.service.close()
-            if isinstance(e, UserDeniedPairingError):
-                raise
+            raise
 
     async def close(self) -> None:
         await self.rsd.close()
@@ -953,7 +961,13 @@ class CoreDeviceTunnelProxy(StartTcpTunnel):
 async def create_core_device_tunnel_service_using_rsd(
         rsd: RemoteServiceDiscoveryService, autopair: bool = True) -> CoreDeviceTunnelService:
     service = CoreDeviceTunnelService(rsd)
-    await service.connect(autopair=autopair)
+    try:
+        await service.connect(autopair=autopair)
+    except RemotePairingCompletedError:
+        # The connection must be reestablished upon pairing is completed
+        await service.close()
+        service = CoreDeviceTunnelService(rsd)
+        await service.connect(autopair=autopair)
     return service
 
 
