@@ -33,7 +33,7 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from opack import dumps
+from opack2 import dumps
 from packaging.version import Version
 from pytun_pmd3 import TunTapDevice
 from qh3.asyncio import QuicConnectionProtocol
