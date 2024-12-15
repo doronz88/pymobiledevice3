@@ -1,5 +1,6 @@
 import asyncio
 import struct
+import time
 import uuid
 from collections.abc import AsyncGenerator
 from enum import IntEnum
@@ -8,7 +9,7 @@ from typing import Optional
 from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.remote.xpc_message import XpcUInt64Type
+from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 
 
 class Domain(IntEnum):
@@ -60,6 +61,20 @@ class FileServiceService(CoreDeviceService):
         await writer.drain()
         await reader.readexactly(0x24)
         return await reader.readexactly(struct.unpack('>I', await reader.readexactly(4))[0])
+
+    async def propose_empty_file(self, path: str = '.', file_permissions: int = 0o644, uid: int = 501, gid: int = 501,
+                                 creation_time: int = time.time(), last_modification_time: int = time.time()) -> None:
+        """ Request to write an empty file at given path. """
+        await self.send_receive_request({
+            'Cmd': 'ProposeEmptyFile',
+            'FileCreationTime': XpcInt64Type(creation_time),
+            'FileLastModificationTime': XpcInt64Type(last_modification_time),
+            'FilePermissions': XpcInt64Type(file_permissions),
+            'FileOwnerUserID': XpcInt64Type(uid),
+            'FileOwnerGroupID': XpcInt64Type(gid),
+            'Path': path,
+            'SessionID': self.session
+        })
 
     async def send_receive_request(self, request: dict) -> dict:
         response = await self.service.send_receive_request(request)

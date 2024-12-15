@@ -7,6 +7,7 @@ import posixpath
 import shlex
 import signal
 import sys
+import time
 from collections import namedtuple
 from dataclasses import asdict
 from datetime import datetime
@@ -841,6 +842,7 @@ def accessibility_settings_set(service_provider: LockdownClient, setting, value)
     service.set_setting(setting, eval(value))
     OSUTILS.wait_return()
 
+
 @accessibility_settings.command('reset', cls=Command)
 def accessibility_settings_reset(service_provider: LockdownClient):
     """
@@ -848,6 +850,7 @@ def accessibility_settings_reset(service_provider: LockdownClient):
     """
     service = AccessibilityAudit(service_provider)
     service.reset_settings()
+
 
 @accessibility.command('shell', cls=Command)
 def accessibility_shell(service_provider: LockdownClient):
@@ -1083,6 +1086,29 @@ def core_device_read_file(
         service_provider: RemoteServiceDiscoveryService, domain: str, path: str, output: Optional[IO]) -> None:
     """ Read file from given domain-path """
     asyncio.run(core_device_read_file_task(service_provider, domain, path, output))
+
+
+async def core_device_propose_empty_file_task(
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, file_permissions: int, uid: int,
+        gid: int, creation_time: int, last_modification_time: int) -> None:
+    async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain]) as file_service:
+        await file_service.propose_empty_file(path, file_permissions, uid, gid, creation_time, last_modification_time)
+
+
+@core_device.command('propose-empty-file', cls=RSDCommand)
+@click.argument('domain', type=click.Choice(APPLE_DOMAIN_DICT.keys()))
+@click.argument('path')
+@click.option('--file-permissions', type=click.INT, default=0o644)
+@click.option('--uid', type=click.INT, default=501)
+@click.option('--gid', type=click.INT, default=501)
+@click.option('--creation-time', type=click.INT, default=time.time())
+@click.option('--last-modification-time', type=click.INT, default=time.time())
+def core_device_propose_empty_file(
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, file_permissions: int, uid: int,
+        gid: int, creation_time: int, last_modification_time: int) -> None:
+    """ Write an empty file to given domain-path """
+    asyncio.run(core_device_propose_empty_file_task(service_provider, domain, path, file_permissions, uid, gid, creation_time,
+                                                    last_modification_time))
 
 
 async def core_device_list_launch_application_task(
