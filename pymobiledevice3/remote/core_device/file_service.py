@@ -34,15 +34,16 @@ class FileServiceService(CoreDeviceService):
 
     CTRL_SERVICE_NAME = 'com.apple.coredevice.fileservice.control'
 
-    def __init__(self, rsd: RemoteServiceDiscoveryService, domain: Domain) -> None:
+    def __init__(self, rsd: RemoteServiceDiscoveryService, domain: Domain, identifier: str = '') -> None:
         super().__init__(rsd, self.CTRL_SERVICE_NAME)
         self.domain: Domain = domain
         self.session: Optional[str] = None
+        self.identifier = identifier
 
     async def connect(self) -> None:
         await super().connect()
         response = await self.send_receive_request({
-            'Cmd': 'CreateSession', 'Domain': XpcUInt64Type(self.domain), 'Identifier': '', 'Session': '',
+            'Cmd': 'CreateSession', 'Domain': XpcUInt64Type(self.domain), 'Identifier': self.identifier, 'Session': '',
             'User': 'mobile'})
         self.session = response['NewSessionID']
 

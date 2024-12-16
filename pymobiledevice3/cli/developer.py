@@ -1054,23 +1054,24 @@ def core_device() -> None:
 
 
 async def core_device_list_directory_task(
-        service_provider: RemoteServiceDiscoveryService, domain: str, path: str) -> None:
-    async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain]) as file_service:
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str) -> None:
+    async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain], identifier) as file_service:
         print_json(await file_service.retrieve_directory_list(path))
 
 
 @core_device.command('list-directory', cls=RSDCommand)
 @click.argument('domain', type=click.Choice(APPLE_DOMAIN_DICT.keys()))
 @click.argument('path')
+@click.option('--identifier', default='')
 def core_device_list_directory(
-        service_provider: RemoteServiceDiscoveryService, domain: str, path: str) -> None:
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str) -> None:
     """ List directory at given domain-path """
-    asyncio.run(core_device_list_directory_task(service_provider, domain, path))
+    asyncio.run(core_device_list_directory_task(service_provider, domain, path, identifier))
 
 
 async def core_device_read_file_task(
-        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, output: Optional[IO]) -> None:
-    async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain]) as file_service:
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str, output: Optional[IO]) -> None:
+    async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain], identifier) as file_service:
         buf = await file_service.retrieve_file(path)
         if output is not None:
             output.write(buf)
@@ -1081,34 +1082,36 @@ async def core_device_read_file_task(
 @core_device.command('read-file', cls=RSDCommand)
 @click.argument('domain', type=click.Choice(APPLE_DOMAIN_DICT.keys()))
 @click.argument('path')
+@click.option('--identifier', default='')
 @click.option('-o', '--output', type=click.File('wb'))
 def core_device_read_file(
-        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, output: Optional[IO]) -> None:
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str, output: Optional[IO]) -> None:
     """ Read file from given domain-path """
-    asyncio.run(core_device_read_file_task(service_provider, domain, path, output))
+    asyncio.run(core_device_read_file_task(service_provider, domain, path, identifier, output))
 
 
 async def core_device_propose_empty_file_task(
-        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, file_permissions: int, uid: int,
-        gid: int, creation_time: int, last_modification_time: int) -> None:
-    async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain]) as file_service:
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str, file_permissions: int,
+        uid: int, gid: int, creation_time: int, last_modification_time: int) -> None:
+    async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain], identifier) as file_service:
         await file_service.propose_empty_file(path, file_permissions, uid, gid, creation_time, last_modification_time)
 
 
 @core_device.command('propose-empty-file', cls=RSDCommand)
 @click.argument('domain', type=click.Choice(APPLE_DOMAIN_DICT.keys()))
 @click.argument('path')
+@click.option('--identifier', default='')
 @click.option('--file-permissions', type=click.INT, default=0o644)
 @click.option('--uid', type=click.INT, default=501)
 @click.option('--gid', type=click.INT, default=501)
 @click.option('--creation-time', type=click.INT, default=time.time())
 @click.option('--last-modification-time', type=click.INT, default=time.time())
 def core_device_propose_empty_file(
-        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, file_permissions: int, uid: int,
-        gid: int, creation_time: int, last_modification_time: int) -> None:
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str, file_permissions: int,
+        uid: int, gid: int, creation_time: int, last_modification_time: int) -> None:
     """ Write an empty file to given domain-path """
-    asyncio.run(core_device_propose_empty_file_task(service_provider, domain, path, file_permissions, uid, gid, creation_time,
-                                                    last_modification_time))
+    asyncio.run(core_device_propose_empty_file_task(service_provider, domain, path, identifier, file_permissions, uid,
+                                                    gid, creation_time, last_modification_time))
 
 
 async def core_device_list_launch_application_task(
