@@ -15,6 +15,7 @@ __all__ = [
     'AccessDeniedError', 'RSDRequiredError', 'SysdiagnoseTimeoutError', 'GetProhibitedError',
     'FeatureNotSupportedError', 'OSNotSupportedError', 'DeprecationError', 'NotEnoughDiskSpaceError',
     'CloudConfigurationAlreadyPresentError', 'QuicProtocolNotSupportedError', 'RemotePairingCompletedError',
+    'DisableMemoryLimitError',
 ]
 
 from typing import Optional
@@ -404,4 +405,9 @@ class RemotePairingCompletedError(PyMobileDevice3Exception):
     remotepairingdeviced closes connection after pairing, so client must re-establish it after pairing is
     completed.
     """
+    pass
+
+
+class DisableMemoryLimitError(PyMobileDevice3Exception):
+    """ Disabling memory limit fails. """
     pass

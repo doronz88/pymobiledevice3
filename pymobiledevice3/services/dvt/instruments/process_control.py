@@ -2,6 +2,7 @@ import dataclasses
 import typing
 from typing import Optional
 
+from pymobiledevice3.exceptions import DisableMemoryLimitError
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.remote_server import MessageAux
@@ -39,6 +40,15 @@ class ProcessControl:
         """
         self._channel.sendSignal_toPid_(MessageAux().append_obj(sig).append_obj(pid), expects_reply=True)
         return self._channel.receive_plist()
+
+    def disable_memory_limit_for_pid(self, pid: int) -> None:
+        """
+        Waive memory limit for a given pid
+        :param pid: process id.
+        """
+        self._channel.requestDisableMemoryLimitsForPid_(MessageAux().append_int(pid), expects_reply=True)
+        if not self._channel.receive_plist():
+            raise DisableMemoryLimitError()
 
     def kill(self, pid: int):
         """

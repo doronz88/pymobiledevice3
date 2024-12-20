@@ -126,6 +126,12 @@ def proclist(service_provider: LockdownClient):
 
         print_json(processes)
 
+@dvt.command('memlimitoff', cls=Command)
+@click.argument('pid', type=click.INT)
+def memlimitoff(service_provider: LockdownServiceProvider, pid: int) -> None:
+    """ Disable process memory limit """
+    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        ProcessControl(dvt).disable_memory_limit_for_pid(pid)
 
 @dvt.command('applist', cls=Command)
 def applist(service_provider: LockdownServiceProvider) -> None:
