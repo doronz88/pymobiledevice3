@@ -40,6 +40,14 @@ class ProcessControl:
         self._channel.sendSignal_toPid_(MessageAux().append_obj(sig).append_obj(pid), expects_reply=True)
         return self._channel.receive_plist()
 
+    def memlimitoff(self, pid: int) -> list:
+        """
+        Waive memory limit for a given pid
+        :param pid: process id.
+        """
+        self._channel.requestDisableMemoryLimitsForPid_(MessageAux().append_int(pid), expects_reply=True)
+        return self._channel.receive_plist()
+
     def kill(self, pid: int):
         """
         Kill a process.
