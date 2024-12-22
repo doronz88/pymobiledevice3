@@ -86,6 +86,7 @@ CLI_GROUPS = {
     'usbmux': 'usbmux',
     'webinspector': 'webinspector',
     'version': 'version',
+    'install-completions': 'completions',
 }
 
 
