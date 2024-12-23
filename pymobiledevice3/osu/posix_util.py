@@ -90,3 +90,9 @@ class Cygwin(Posix):
     @property
     def usbmux_address(self) -> tuple[str, int]:
         return MuxConnection.ITUNES_HOST, socket.AF_INET
+
+
+class Wsl(Linux):
+    @property
+    def usbmux_address(self) -> tuple[str, int]:
+        return MuxConnection.ITUNES_HOST, socket.AF_INET
