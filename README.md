@@ -12,6 +12,7 @@
   - [Installation](#installation)
     - [OpenSSL libraries](#openssl-libraries)
     - [libusb dependency](#libusb-dependency)
+    - [Autocompletions](#autocompletions)
   - [Usage](#usage)
     - [Working with developer tools (iOS \>= 17.0)](#working-with-developer-tools-ios--170)
     - [Commonly used actions](#commonly-used-actions)
@@ -68,15 +69,6 @@ Or install the latest version directly from sources:
 git clone git@github.com:doronz88/pymobiledevice3.git
 cd pymobiledevice3
 python3 -m pip install -U -e .
-```
-
-You can also install auto-completion for all available sub-commands by adding the following into your `~/.zshrc`:
-
-```shell
-# python-click<8.0
-eval "$(_PYMOBILEDEVICE3_COMPLETE=source_zsh pymobiledevice3)"
-# python-click>=8.0
-eval "$(_PYMOBILEDEVICE3_COMPLETE=zsh_source pymobiledevice3)"
 ```
 
 If you're not a macOS user:
@@ -146,6 +138,21 @@ On windows:
 Following libusb website to download latest release binaries:
 
 <https://libusb.info/>
+
+### Autocompletions
+
+You can also install auto-completion for all available sub-commands by running the following command:
+
+```shell
+# Install bash completions
+pymobiledevice3 install-completions
+```
+
+Supported shells include:
+
+- Fish
+- Bash
+- Zsh
 
 ## Usage
 
