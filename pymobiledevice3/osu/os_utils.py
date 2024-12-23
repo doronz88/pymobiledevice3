@@ -11,6 +11,15 @@ DEFAULT_INTERVAL_SEC = 3
 DEFAULT_MAX_FAILS = 3
 
 
+def is_wsl() -> bool:
+    try:
+        with open('/proc/version', 'r') as f:
+            version_info = f.read()
+            return 'Microsoft' in version_info or 'WSL' in version_info
+    except FileNotFoundError:
+        return False
+
+
 class OsUtils:
     _instance = None
     _os_name = None
@@ -26,8 +35,8 @@ class OsUtils:
                 from pymobiledevice3.osu.posix_util import Darwin
                 cls._instance = Darwin()
             elif cls._os_name == 'linux':
-                from pymobiledevice3.osu.posix_util import Linux
-                cls._instance = Linux()
+                from pymobiledevice3.osu.posix_util import Linux, Wsl
+                cls._instance = Wsl() if is_wsl() else Linux()
             elif cls._os_name == 'cygwin':
                 from pymobiledevice3.osu.posix_util import Cygwin
                 cls._instance = Cygwin()

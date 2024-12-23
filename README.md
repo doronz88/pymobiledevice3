@@ -83,6 +83,15 @@ If you're not a macOS user:
 
 - If you're using a Windows workstation, you'll need to install and run
   execute [iTunes](https://apps.microsoft.com/detail/9pb2mz1zmb1s?hl=en-US&gl=US).
+  - If you're using WSL2, you will need to
+    [enable mirrored networking mode](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking)
+    (Requires Windows 11 22H2 or higher).
+    This can be achieved creating a file named `.wslconfig` in your home directory with the following contents:
+
+      ```none
+      [wsl2]
+      networkingMode=mirrored
+      ```
 
 - If you're using a Linux workstation, install [`usbmuxd`](https://github.com/libimobiledevice/usbmuxd) (Available on
   Ubuntu via `apt`)
