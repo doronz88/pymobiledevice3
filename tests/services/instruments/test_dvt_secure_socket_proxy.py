@@ -49,6 +49,13 @@ def test_applist(dvt):
     assert safari['Type'] == 'PluginKit'
 
 
+def test_memlimitoff(dvt):
+    """
+    Test disabling memory limit.
+    """
+    ProcessControl(dvt).disable_memory_limit_for_pid(get_process_data(dvt, 'SpringBoard')['pid'])
+
+
 def test_kill(dvt):
     """
     Test killing a process.
