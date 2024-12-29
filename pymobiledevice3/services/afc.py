@@ -790,7 +790,7 @@ class AfcShell:
         # clear all host commands except for some useful ones
         XSH.env['PATH'].clear()
         # adding "file" just to fix xonsh errors
-        for cmd in ['wc', 'grep', 'egrep', 'sed', 'awk', 'print', 'yes', 'cat', 'file']:
+        for cmd in ['wc', 'grep', 'egrep', 'sed', 'awk', 'print', 'yes', 'cat']:
             executable = shutil.which(cmd)
             if executable is not None:
                 self._register_rpc_command(cmd, executable)
