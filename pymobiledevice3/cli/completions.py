@@ -39,12 +39,12 @@ def install_completions() -> None:
             if not completion.path.parent.exists():
                 # fish is not installed, skip
                 continue
-            if not completion.rc.exists():
-                continue
             logger.info(f'Writing shell completions to: {completion.path}')
             completion.path.write_text(pymobiledevice3())
             line = f'source {completion.path}'
-            if line in completion.rc.read_text():
+
+            if not completion.rc.exists() or line in completion.rc.read_text():
                 continue
+
             logger.info(f'Adding source line to {completion.rc}')
             completion.rc.write_text(f'{completion.rc.read_text()}\n{line}')
