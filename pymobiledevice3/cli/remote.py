@@ -20,7 +20,8 @@ from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServ
 from pymobiledevice3.remote.tunnel_service import RemotePairingManualPairingService, get_core_device_tunnel_services, \
     get_remote_pairing_tunnel_services
 from pymobiledevice3.remote.utils import get_rsds
-from pymobiledevice3.tunneld import TUNNELD_DEFAULT_ADDRESS, TunneldRunner
+from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS
+from pymobiledevice3.tunneld.server import TunneldRunner
 
 logger = logging.getLogger(__name__)
 
