@@ -475,7 +475,7 @@ pymobiledevice3 developer dvt launch com.apple.mobilesafari --tunnel '11223344'
 This is of course also available via a python API:
 
 ```python
-from pymobiledevice3.tunneld import async_get_tunneld_devices
+from pymobiledevice3.tunneld.api import async_get_tunneld_devices
 from pymobiledevice3.services.os_trace import OsTraceService
 
 rsds = await async_get_tunneld_devices()
