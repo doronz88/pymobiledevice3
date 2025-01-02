@@ -1,7 +1,6 @@
 import asyncio
 import contextlib
 import logging
-import os
 import plistlib
 import tempfile
 import traceback
@@ -16,7 +15,7 @@ import requests
 from pygments import formatters, highlight, lexers
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.cli.cli_common import print_json, prompt_selection, set_verbosity
+from pymobiledevice3.cli.cli_common import is_invoked_for_completion, print_json, prompt_selection, set_verbosity
 from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, IncorrectModeError
 from pymobiledevice3.irecv import IRecv
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
@@ -46,7 +45,7 @@ class Command(click.Command):
 
     @staticmethod
     def device(ctx, param, value) -> Optional[Union[LockdownClient, IRecv]]:
-        if '_PYMOBILEDEVICE3_COMPLETE' in os.environ:
+        if is_invoked_for_completion():
             # prevent lockdown connection establishment when in autocomplete mode
             return
 
