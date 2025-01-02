@@ -20,7 +20,7 @@ from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, N
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.tunneld import TUNNELD_DEFAULT_ADDRESS, async_get_tunneld_devices
+from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, async_get_tunneld_devices
 from pymobiledevice3.usbmux import select_devices_by_connection_type
 
 COLORED_OUTPUT = True

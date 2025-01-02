@@ -10,7 +10,6 @@ from typing import Optional, Union
 
 import construct
 import fastapi
-import requests
 import uvicorn
 from construct import StreamError
 from fastapi import FastAPI
@@ -19,7 +18,7 @@ from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import REMOTED_SERVICE_NAMES, browse
 from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, DeviceNotFoundError, \
-    GetProhibitedError, InvalidServiceError, LockdownError, MuxException, PairingError, TunneldConnectionError
+    GetProhibitedError, InvalidServiceError, LockdownError, MuxException, PairingError
 from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -28,11 +27,9 @@ from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServ
 from pymobiledevice3.remote.tunnel_service import CoreDeviceTunnelProxy, RemotePairingProtocol, TunnelResult, \
     create_core_device_tunnel_service_using_rsd, get_remote_pairing_tunnel_services
 from pymobiledevice3.remote.utils import get_rsds, stop_remoted
-from pymobiledevice3.utils import asyncio_print_traceback, get_asyncio_loop
+from pymobiledevice3.utils import asyncio_print_traceback
 
 logger = logging.getLogger(__name__)
-
-TUNNELD_DEFAULT_ADDRESS = ('127.0.0.1', 49151)
 
 # bugfix: after the device reboots, it might take some time for remoted to start answering the bonjour queries
 REATTEMPT_INTERVAL = 5
@@ -475,52 +472,3 @@ class TunneldRunner:
 
     def _run_app(self) -> None:
         uvicorn.run(self._app, host=self.host, port=self.port, loop='asyncio')
-
-
-async def async_get_tunneld_devices(tunneld_address: tuple[str, int] = TUNNELD_DEFAULT_ADDRESS) \
-        -> list[RemoteServiceDiscoveryService]:
-    tunnels = _list_tunnels(tunneld_address)
-    return await _create_rsds_from_tunnels(tunnels)
-
-
-def get_tunneld_devices(tunneld_address: tuple[str, int] = TUNNELD_DEFAULT_ADDRESS) \
-        -> list[RemoteServiceDiscoveryService]:
-    return get_asyncio_loop().run_until_complete(async_get_tunneld_devices(tunneld_address))
-
-
-async def async_get_tunneld_device_by_udid(udid: str, tunneld_address: tuple[str, int] = TUNNELD_DEFAULT_ADDRESS) \
-        -> Optional[RemoteServiceDiscoveryService]:
-    tunnels = _list_tunnels(tunneld_address)
-    if udid not in tunnels:
-        return None
-    rsds = await _create_rsds_from_tunnels({udid: tunnels[udid]})
-    return rsds[0]
-
-
-def get_tunneld_device_by_udid(udid: str, tunneld_address: tuple[str, int] = TUNNELD_DEFAULT_ADDRESS) \
-        -> Optional[RemoteServiceDiscoveryService]:
-    return get_asyncio_loop().run_until_complete(async_get_tunneld_device_by_udid(udid, tunneld_address))
-
-
-def _list_tunnels(tunneld_address: tuple[str, int] = TUNNELD_DEFAULT_ADDRESS) -> dict[str, list[dict]]:
-    try:
-        # Get the list of tunnels from the specified address
-        resp = requests.get(f'http://{tunneld_address[0]}:{tunneld_address[1]}')
-        tunnels = resp.json()
-    except requests.exceptions.ConnectionError:
-        raise TunneldConnectionError()
-    return tunnels
-
-
-async def _create_rsds_from_tunnels(tunnels: dict[str, list[dict]]) -> list[RemoteServiceDiscoveryService]:
-    rsds = []
-    for udid, details in tunnels.items():
-        for tunnel_details in details:
-            rsd = RemoteServiceDiscoveryService((tunnel_details['tunnel-address'], tunnel_details['tunnel-port']),
-                                                name=tunnel_details['interface'])
-            try:
-                await rsd.connect()
-                rsds.append(rsd)
-            except (TimeoutError, ConnectionError):
-                continue
-    return rsds
