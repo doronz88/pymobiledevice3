@@ -8,7 +8,7 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 
 class HeartbeatService:
     """
-    Use to keep an active connection with lockdowd
+    Use to keep an active connection with lockdownd
     """
     SERVICE_NAME = 'com.apple.mobile.heartbeat'
     RSD_SERVICE_NAME = 'com.apple.mobile.heartbeat.shim.remote'
