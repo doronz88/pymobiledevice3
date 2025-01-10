@@ -6,7 +6,7 @@ from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 
-from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ConnectionTerminatedError, LockdownError, \
+from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, MissingValueError, ConnectionTerminatedError, LockdownError, \
     PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -274,7 +274,7 @@ class Mobilebackup2Service(LockdownService):
             itunes_settings = self.lockdown.get_value(domain='com.apple.iTunes')
             try:
                 min_itunes_version = self.lockdown.get_value('com.apple.mobile.iTunes', 'MinITunesVersion')
-            except:
+            except MissingValueError:
                 min_itunes_version = '10.0.1'
             app_dict = {}
             installed_apps = []
