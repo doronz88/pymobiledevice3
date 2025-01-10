@@ -272,7 +272,10 @@ class Mobilebackup2Service(LockdownService):
         with InstallationProxyService(self.lockdown) as ip, SpringBoardServicesService(self.lockdown) as sbs:
             root_node = self.lockdown.get_value()
             itunes_settings = self.lockdown.get_value(domain='com.apple.iTunes')
-            min_itunes_version = self.lockdown.get_value('com.apple.mobile.iTunes', 'MinITunesVersion')
+            try:
+                min_itunes_version = self.lockdown.get_value('com.apple.mobile.iTunes', 'MinITunesVersion')
+            except:
+                min_itunes_version = '10.0.1'
             app_dict = {}
             installed_apps = []
             apps = ip.browse(options={'ApplicationType': 'User'},
