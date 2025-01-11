@@ -6,8 +6,8 @@ from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 
-from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, MissingValueError, ConnectionTerminatedError, LockdownError, \
-    PyMobileDevice3Exception
+from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ConnectionTerminatedError, LockdownError, \
+    MissingValueError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AFC_LOCK_EX, AFC_LOCK_UN, AfcService, afc_error_t
