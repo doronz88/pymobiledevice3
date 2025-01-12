@@ -275,6 +275,8 @@ class Mobilebackup2Service(LockdownService):
             try:
                 min_itunes_version = self.lockdown.get_value('com.apple.mobile.iTunes', 'MinITunesVersion')
             except MissingValueError:
+                # iPadOS may not contain this value. See:
+                # https://github.com/doronz88/pymobiledevice3/issues/1332
                 min_itunes_version = '10.0.1'
             app_dict = {}
             installed_apps = []
