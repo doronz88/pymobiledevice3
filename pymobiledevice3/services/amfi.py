@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 import logging
 
-import construct
-
-from pymobiledevice3.exceptions import AmfiError, BadDevError, ConnectionFailedError, DeveloperModeError, \
-    DeviceHasPasscodeSetError, DeviceNotFoundError, NoDeviceConnectedError, PyMobileDevice3Exception
-from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
+from pymobiledevice3.exceptions import AmfiError, DeveloperModeError, DeviceHasPasscodeSetError, \
+    PyMobileDevice3Exception
+from pymobiledevice3.lockdown import LockdownClient, retry_create_using_usbmux
 from pymobiledevice3.services.heartbeat import HeartbeatService
 
 
@@ -54,14 +52,7 @@ class AmfiService:
         except ConnectionAbortedError:
             self._logger.debug('device disconnected, awaiting reconnect')
 
-        while True:
-            try:
-                self._lockdown = create_using_usbmux(self._lockdown.udid)
-                break
-            except (NoDeviceConnectedError, ConnectionFailedError, BadDevError, OSError, construct.core.StreamError,
-                    DeviceNotFoundError):
-                pass
-
+        self._lockdown = retry_create_using_usbmux(None, serial=self._lockdown.udid)
         self.enable_developer_mode_post_restart()
 
     def enable_developer_mode_post_restart(self):
