@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ConnectionTerminatedError, LockdownError, \
-    PyMobileDevice3Exception
+    MissingValueError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AFC_LOCK_EX, AFC_LOCK_UN, AfcService, afc_error_t
@@ -272,7 +272,12 @@ class Mobilebackup2Service(LockdownService):
         with InstallationProxyService(self.lockdown) as ip, SpringBoardServicesService(self.lockdown) as sbs:
             root_node = self.lockdown.get_value()
             itunes_settings = self.lockdown.get_value(domain='com.apple.iTunes')
-            min_itunes_version = self.lockdown.get_value('com.apple.mobile.iTunes', 'MinITunesVersion')
+            try:
+                min_itunes_version = self.lockdown.get_value('com.apple.mobile.iTunes', 'MinITunesVersion')
+            except MissingValueError:
+                # iPadOS may not contain this value. See:
+                # https://github.com/doronz88/pymobiledevice3/issues/1332
+                min_itunes_version = '10.0.1'
             app_dict = {}
             installed_apps = []
             apps = ip.browse(options={'ApplicationType': 'User'},
