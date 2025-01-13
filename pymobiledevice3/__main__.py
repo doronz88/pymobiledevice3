@@ -179,17 +179,19 @@ def cli(reconnect: bool) -> None:
     RECONNECT = reconnect
 
 
-def main() -> None:
+def invoke_cli_with_error_handling() -> bool:
+    """
+    Invoke the command line interface and return `True` if the failure reason of the command was that the device was
+    disconnected.
+    """
     try:
         cli()
     except NoDeviceConnectedError:
         logger.error('Device is not connected')
+        return True
     except ConnectionAbortedError:
         logger.error('Device was disconnected')
-        if RECONNECT:
-            lockdown = retry_create_using_usbmux(None)
-            lockdown.close()
-            cli()
+        return True
     except NotPairedError:
         logger.error('Device is not paired')
     except UserDeniedPairingError:
@@ -257,6 +259,24 @@ def main() -> None:
             f'https://github.com/doronz88/pymobiledevice3.')
     except QuicProtocolNotSupportedError as e:
         logger.error(str(e))
+
+    return False
+
+
+def main() -> None:
+    # Retry to invoke the CLI
+    while invoke_cli_with_error_handling():
+        # If reached here, this means the failure reason was that the device is disconnected
+        if not RECONNECT:
+            # If not invoked with the `--reconnect` option, break here
+            break
+        try:
+            # Wait for the device to be available again
+            lockdown = retry_create_using_usbmux(None)
+            lockdown.close()
+        except KeyboardInterrupt:
+            print('Aborted.')
+            break
 
 
 if __name__ == '__main__':
