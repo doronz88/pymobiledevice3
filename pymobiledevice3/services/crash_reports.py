@@ -3,13 +3,15 @@ import posixpath
 import re
 import time
 from collections.abc import Generator
+from json import JSONDecodeError
 from typing import Callable, Optional
 
 from pycrashreport.crash_report import get_crash_report_from_buf
 from xonsh.built_ins import XSH
 from xonsh.cli_utils import Annotated, Arg
 
-from pymobiledevice3.exceptions import AfcException, NotificationTimeoutError, SysdiagnoseTimeoutError
+from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, NotificationTimeoutError, \
+    SysdiagnoseTimeoutError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell, path_completer
@@ -124,8 +126,14 @@ class CrashReportsManager:
             if posixpath.splitext(filename)[-1] not in ('.ips', '.panic'):
                 continue
 
-            crash_report_raw = self.afc.get_file_contents(filename).decode()
-            crash_report = get_crash_report_from_buf(crash_report_raw, filename=filename)
+            while True:
+                try:
+                    crash_report_raw = self.afc.get_file_contents(filename).decode()
+                    crash_report = get_crash_report_from_buf(crash_report_raw, filename=filename)
+                    break
+                except (AfcFileNotFoundError, JSONDecodeError):
+                    # Sometimes we have to wait for the file to be readable
+                    pass
 
             if name is None or crash_report.name == name:
                 if raw:

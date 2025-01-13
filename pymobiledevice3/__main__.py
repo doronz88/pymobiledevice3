@@ -18,6 +18,7 @@ from pymobiledevice3.exceptions import AccessDeniedError, CloudConfigurationAlre
     MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, NotEnoughDiskSpaceError, NotPairedError, \
     OSNotSupportedError, PairingDialogResponsePendingError, PasswordRequiredError, QuicProtocolNotSupportedError, \
     RSDRequiredError, SetProhibitedError, TunneldConnectionError, UserDeniedPairingError
+from pymobiledevice3.lockdown import retry_create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 
 coloredlogs.install(level=logging.INFO)
@@ -88,6 +89,9 @@ CLI_GROUPS = {
     'version': 'version',
     'install-completions': 'completions',
 }
+
+# Set if used the `--reconnect` option
+RECONNECT = False
 
 
 class Pmd3Cli(click.Group):
@@ -163,14 +167,16 @@ class Pmd3Cli(click.Group):
 
 
 @click.command(cls=Pmd3Cli, context_settings=CONTEXT_SETTINGS)
-def cli():
+@click.option('--reconnect', is_flag=True, default=False, help='Reconnect to device when disconnected.')
+def cli(reconnect: bool) -> None:
     """
     \b
     Interact with a connected iDevice (iPhone, iPad, ...)
     For more information please look at:
         https://github.com/doronz88/pymobiledevice3
     """
-    pass
+    global RECONNECT
+    RECONNECT = reconnect
 
 
 def main() -> None:
@@ -180,6 +186,10 @@ def main() -> None:
         logger.error('Device is not connected')
     except ConnectionAbortedError:
         logger.error('Device was disconnected')
+        if RECONNECT:
+            lockdown = retry_create_using_usbmux(None)
+            lockdown.close()
+            cli()
     except NotPairedError:
         logger.error('Device is not paired')
     except UserDeniedPairingError:

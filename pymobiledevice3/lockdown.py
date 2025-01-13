@@ -15,6 +15,7 @@ from pathlib import Path
 from ssl import SSLError, SSLZeroReturnError
 from typing import Optional
 
+import construct
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
@@ -26,10 +27,11 @@ from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_mobdev2
 from pymobiledevice3.ca import ca_do_everything
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import CannotStopSessionError, ConnectionTerminatedError, FatalPairingError, \
-    GetProhibitedError, IncorrectModeError, InvalidConnectionError, InvalidHostIDError, InvalidServiceError, \
-    LockdownError, MissingValueError, NotPairedError, PairingDialogResponsePendingError, PairingError, \
-    PasswordRequiredError, SetProhibitedError, StartServiceError, UserDeniedPairingError
+from pymobiledevice3.exceptions import BadDevError, CannotStopSessionError, ConnectionFailedError, \
+    ConnectionTerminatedError, DeviceNotFoundError, FatalPairingError, GetProhibitedError, IncorrectModeError, \
+    InvalidConnectionError, InvalidHostIDError, InvalidServiceError, LockdownError, MissingValueError, \
+    NoDeviceConnectedError, NotPairedError, PairingDialogResponsePendingError, PairingError, PasswordRequiredError, \
+    SetProhibitedError, StartServiceError, UserDeniedPairingError
 from pymobiledevice3.irecv_devices import IRECV_DEVICES
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.pair_records import create_pairing_records_cache_folder, generate_host_id, \
@@ -745,6 +747,23 @@ def create_using_usbmux(serial: str = None, identifier: str = None, label: str =
         service, identifier=identifier, label=label, system_buid=system_buid, local_hostname=local_hostname,
         pair_record=pair_record, pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout,
         autopair=autopair, usbmux_address=usbmux_address)
+
+
+def retry_create_using_usbmux(retry_timeout: Optional[float] = None, **kwargs) -> UsbmuxLockdownClient:
+    """
+    Repeatedly retry to create a UsbmuxLockdownClient instance while dismissing different errors that might occur
+    while device is rebooting
+
+    :param retry_timeout: Retry timeout in seconds or None for no timeout
+    :return: UsbmuxLockdownClient instance
+    """
+    start = time.time()
+    while (retry_timeout is None) or (time.time() - start < retry_timeout):
+        try:
+            return create_using_usbmux(**kwargs)
+        except (NoDeviceConnectedError, ConnectionFailedError, BadDevError, OSError, construct.core.StreamError,
+                DeviceNotFoundError):
+            pass
 
 
 def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT_LABEL, autopair: bool = True,
