@@ -18,7 +18,7 @@ from pymobiledevice3.exceptions import AccessDeniedError, CloudConfigurationAlre
     MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, NotEnoughDiskSpaceError, NotPairedError, \
     OSNotSupportedError, PairingDialogResponsePendingError, PasswordRequiredError, QuicProtocolNotSupportedError, \
     RSDRequiredError, SetProhibitedError, TunneldConnectionError, UserDeniedPairingError
-from pymobiledevice3.lockdown import retry_create_using_usbmux
+from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 
 coloredlogs.install(level=logging.INFO)
