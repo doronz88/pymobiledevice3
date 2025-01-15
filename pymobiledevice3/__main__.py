@@ -13,11 +13,12 @@ import coloredlogs
 
 from pymobiledevice3.cli.cli_common import TUNNEL_ENV_VAR, isatty
 from pymobiledevice3.exceptions import AccessDeniedError, CloudConfigurationAlreadyPresentError, \
-    ConnectionFailedToUsbmuxdError, DeprecationError, DeveloperModeError, DeveloperModeIsNotEnabledError, \
-    DeviceHasPasscodeSetError, DeviceNotFoundError, FeatureNotSupportedError, InternalError, InvalidServiceError, \
-    MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, NotEnoughDiskSpaceError, NotPairedError, \
-    OSNotSupportedError, PairingDialogResponsePendingError, PasswordRequiredError, QuicProtocolNotSupportedError, \
-    RSDRequiredError, SetProhibitedError, TunneldConnectionError, UserDeniedPairingError
+    ConnectionFailedError, ConnectionFailedToUsbmuxdError, DeprecationError, DeveloperModeError, \
+    DeveloperModeIsNotEnabledError, DeviceHasPasscodeSetError, DeviceNotFoundError, FeatureNotSupportedError, \
+    InternalError, InvalidServiceError, MessageNotSupportedError, MissingValueError, NoDeviceConnectedError, \
+    NotEnoughDiskSpaceError, NotPairedError, OSNotSupportedError, PairingDialogResponsePendingError, \
+    PasswordRequiredError, QuicProtocolNotSupportedError, RSDRequiredError, SetProhibitedError, \
+    TunneldConnectionError, UserDeniedPairingError
 from pymobiledevice3.lockdown import retry_create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 
@@ -208,6 +209,9 @@ def invoke_cli_with_error_handling() -> bool:
         logger.error(f'Failed to enable developer-mode. Error: {e}')
     except ConnectionFailedToUsbmuxdError:
         logger.error('Failed to connect to usbmuxd socket. Make sure it\'s running.')
+    except ConnectionFailedError:
+        logger.error('Failed to connect to service port.')
+        return True
     except MessageNotSupportedError:
         logger.error('Message not supported for this iOS version')
         traceback.print_exc()
