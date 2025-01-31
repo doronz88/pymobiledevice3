@@ -27,6 +27,7 @@ class HouseArrestService(AfcService):
             self.send_command(bundle_id, cmd)
         except PyMobileDevice3Exception:
             self.close()
+            raise
 
     def send_command(self, bundle_id: str, cmd: str = 'VendContainer') -> None:
         response = self.service.send_recv_plist({'Command': cmd, 'Identifier': bundle_id})
