@@ -1,4 +1,4 @@
-from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.exceptions import AppNotInstalledError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell
@@ -32,7 +32,10 @@ class HouseArrestService(AfcService):
         response = self.service.send_recv_plist({'Command': cmd, 'Identifier': bundle_id})
         error = response.get('Error')
         if error:
-            raise PyMobileDevice3Exception(error)
+            if error == 'ApplicationLookupFailed':
+                raise AppNotInstalledError(f'No app with bundle id {bundle_id} found')
+            else:
+                raise PyMobileDevice3Exception(error)
 
     def shell(self) -> None:
         AfcShell.create(self.lockdown, service=self, auto_cd=DOCUMENTS_ROOT if self.documents_only else '/')
