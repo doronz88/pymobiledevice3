@@ -295,7 +295,8 @@ class WebinspectorService:
         message = {
             'WIRApplicationIdentifierKey': app_id,
             'WIRPageIdentifierKey': page_id,
-            'WIRSenderKey': session_id
+            'WIRSenderKey': session_id,
+            'WIRMessageDataTypeChunkSupportedKey': 0,
         }
         if not pause:
             message['WIRAutomaticallyPause'] = False
@@ -306,6 +307,7 @@ class WebinspectorService:
             'WIRApplicationIdentifierKey': app_id,
             'WIRPageIdentifierKey': page_id,
             'WIRSessionIdentifierKey': session_id,
+            'WIRSenderKey': session_id,
             'WIRSocketDataKey': json.dumps(data).encode(),
         })
 
