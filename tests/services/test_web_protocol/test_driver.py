@@ -4,7 +4,7 @@ from tests.services.test_web_protocol.common import LINK_HTML
 
 def test_back(webdriver):
     webdriver.get('https://www.google.com')
-    webdriver.get('https://www.github.com')
+    webdriver.get('https://github.com')
     webdriver.back()
     assert webdriver.current_url.rstrip('/') == 'https://www.google.com'
 
@@ -18,10 +18,10 @@ def test_current_url(webdriver):
 
 def test_forward(webdriver):
     webdriver.get('https://www.google.com')
-    webdriver.get('https://www.github.com')
+    webdriver.get('https://github.com')
     webdriver.back()
     webdriver.forward()
-    assert webdriver.current_url.rstrip('/') == 'https://www.github.com'
+    assert webdriver.current_url.rstrip('/') == 'https://github.com'
 
 
 def test_find_element(webdriver):
