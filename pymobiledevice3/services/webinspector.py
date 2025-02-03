@@ -259,7 +259,7 @@ class WebinspectorService:
             self.connected_application[key] = Application.from_application_dictionary(application)
 
             # Immediately also query the application pages
-            self.await_(self._forward_get_listing(application))
+            self.await_(self._forward_get_listing(self.connected_application[key].id_))
 
     def _handle_report_connected_driver_list(self, arg):
         pass
