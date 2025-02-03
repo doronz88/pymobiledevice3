@@ -116,23 +116,11 @@ def opened_tabs(service_provider: LockdownClient, verbose, timeout):
     Opt-in:
         Settings -> Safari -> Advanced -> Web Inspector
     """
-    inspector = WebinspectorService(lockdown=service_provider, loop=asyncio.get_event_loop())
+    inspector = WebinspectorService(lockdown=service_provider)
     inspector.connect(timeout)
-    while not inspector.connected_application:
-        inspector.flush_input()
-    reload_pages(inspector)
-    for app_id, app_ in inspector.connected_application.items():
-        if app_id not in inspector.application_pages:
-            continue
-        if verbose:
-            print(f'{app_.name}    id: {app_id}')
-        else:
-            print(app_.name)
-        for page_id, page in inspector.application_pages[app_id].items():
-            if verbose:
-                print(f' - {page.web_url}    id: {page_id}')
-            else:
-                print(f' - {page.web_url}')
+    application_pages = inspector.get_open_application_pages(timeout=timeout)
+    for application_page in application_pages:
+        print(application_page)
     inspector.close()
 
 
