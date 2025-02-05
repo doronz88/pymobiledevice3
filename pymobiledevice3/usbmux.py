@@ -22,6 +22,7 @@ usbmuxd_result = Enum(Int32ul,
                       BADCOMMAND=1,
                       BADDEV=2,
                       CONNREFUSED=3,
+                      NOSUCHSERVICE=4,
                       BADVERSION=6,
                       )
 
@@ -236,6 +237,7 @@ class MuxConnection:
             int(usbmuxd_result.BADCOMMAND): BadCommandError,
             int(usbmuxd_result.BADDEV): BadDevError,
             int(usbmuxd_result.CONNREFUSED): ConnectionFailedError,
+            int(usbmuxd_result.NOSUCHSERVICE): ConnectionFailedError,
             int(usbmuxd_result.BADVERSION): MuxVersionError,
         }
         exception = exceptions.get(result, MuxException)
