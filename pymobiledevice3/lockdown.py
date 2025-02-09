@@ -732,21 +732,26 @@ def create_using_usbmux(serial: str = None, identifier: str = None, label: str =
     """
     service = ServiceConnection.create_using_usbmux(serial, port, connection_type=connection_type,
                                                     usbmux_address=usbmux_address)
-    cls = UsbmuxLockdownClient
-    with usbmux.create_mux(usbmux_address=usbmux_address) as client:
-        if isinstance(client, PlistMuxConnection):
-            # Only the Plist version of usbmuxd supports this message type
-            system_buid = client.get_buid()
-            cls = PlistUsbmuxLockdownClient
+    try:
+        cls = UsbmuxLockdownClient
+        with usbmux.create_mux(usbmux_address=usbmux_address) as client:
+            if isinstance(client, PlistMuxConnection):
+                # Only the Plist version of usbmuxd supports this message type
+                system_buid = client.get_buid()
+                cls = PlistUsbmuxLockdownClient
 
-    if identifier is None:
-        # attempt get identifier from mux device serial
-        identifier = service.mux_device.serial
+        if identifier is None:
+            # attempt get identifier from mux device serial
+            identifier = service.mux_device.serial
 
-    return cls.create(
-        service, identifier=identifier, label=label, system_buid=system_buid, local_hostname=local_hostname,
-        pair_record=pair_record, pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout,
-        autopair=autopair, usbmux_address=usbmux_address)
+        return cls.create(
+            service, identifier=identifier, label=label, system_buid=system_buid, local_hostname=local_hostname,
+            pair_record=pair_record, pairing_records_cache_folder=pairing_records_cache_folder,
+            pair_timeout=pair_timeout,
+            autopair=autopair, usbmux_address=usbmux_address)
+    except Exception:
+        service.close()
+        raise
 
 
 def retry_create_using_usbmux(retry_timeout: Optional[float] = None, **kwargs) -> UsbmuxLockdownClient:
@@ -786,11 +791,14 @@ def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT
     :return: TcpLockdownClient instance
     """
     service = ServiceConnection.create_using_tcp(hostname, port, keep_alive=keep_alive)
-    client = TcpLockdownClient.create(
-        service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
-        pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
-        port=port, hostname=hostname, keep_alive=keep_alive)
-    return client
+    try:
+        return TcpLockdownClient.create(
+            service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
+            pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
+            port=port, hostname=hostname, keep_alive=keep_alive)
+    except Exception:
+        service.close()
+        raise
 
 
 def create_using_remote(service: ServiceConnection, identifier: str = None, label: str = DEFAULT_LABEL,
