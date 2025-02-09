@@ -35,8 +35,12 @@ def main(root_fs):
             continue
 
         filename = os.path.join(launch_daemons, filename)
-        with open(filename, 'rb') as f:
-            plist = plistlib.load(f)
+        try:
+            with open(filename, 'rb') as f:
+                plist = plistlib.load(f)
+        except Exception:
+            logging.exception(f'error parsing: {filename}')
+            continue
 
         launch_events = plist.get('LaunchEvents', {})
         notifyd_matching = launch_events.get('com.apple.notifyd.matching', {})
