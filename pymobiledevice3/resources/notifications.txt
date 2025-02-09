@@ -206,6 +206,7 @@ com.apple.TVScreenSaver.IdleScreenScreenSaverTypeChanged
 com.apple.TVScreenSaver.PhotosSharingFilterChanged
 com.apple.TVScreenSaver.RequestMemoriesRefresh
 com.apple.TVScreenSaver.TVScreenSaverAssetServiceManagerUpdated
+com.apple.TelephonyUtilities.DefaultAppRelayTelephonySettingChanged
 com.apple.TextInput.RemoveAllDynamicDictionariesNotification
 com.apple.UsageTrackingAgent.registration.application
 com.apple.UsageTrackingAgent.registration.now-playing
