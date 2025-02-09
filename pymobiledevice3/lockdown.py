@@ -7,13 +7,12 @@ import sys
 import tempfile
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from enum import Enum
 from functools import wraps
 from pathlib import Path
 from ssl import SSLError, SSLZeroReturnError
-from typing import Optional
+from typing import AsyncIterable, Optional
 
 import construct
 from cryptography import x509
@@ -819,17 +818,20 @@ def create_using_remote(service: ServiceConnection, identifier: str = None, labe
     :param port: lockdownd service port
     :return: TcpLockdownClient instance
     """
-    client = RemoteLockdownClient.create(
-        service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
-        pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
-        port=port)
-    return client
+    try:
+        return RemoteLockdownClient.create(
+            service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
+            pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
+            port=port)
+    except Exception:
+        service.close()
+        raise
 
 
 async def get_mobdev2_lockdowns(
         udid: Optional[str] = None, pair_records: Optional[Path] = None, only_paired: bool = False,
         timeout: float = DEFAULT_BONJOUR_TIMEOUT) \
-        -> Generator[tuple[str, TcpLockdownClient], None, None]:
+        -> AsyncIterable[tuple[str, TcpLockdownClient]]:
     records = {}
     if pair_records is None:
         pair_records = get_home_folder()
@@ -861,8 +863,6 @@ async def get_mobdev2_lockdowns(
             try:
                 lockdown = create_using_tcp(hostname=ip, autopair=False, pair_record=record)
             except Exception:
-                continue
-            if lockdown is None:
                 continue
             if only_paired and not lockdown.paired:
                 lockdown.close()
