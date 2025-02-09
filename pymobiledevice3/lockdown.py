@@ -7,13 +7,12 @@ import sys
 import tempfile
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from enum import Enum
 from functools import wraps
 from pathlib import Path
 from ssl import SSLError, SSLZeroReturnError
-from typing import Optional
+from typing import AsyncIterable, Optional
 
 import construct
 from cryptography import x509
@@ -732,21 +731,26 @@ def create_using_usbmux(serial: str = None, identifier: str = None, label: str =
     """
     service = ServiceConnection.create_using_usbmux(serial, port, connection_type=connection_type,
                                                     usbmux_address=usbmux_address)
-    cls = UsbmuxLockdownClient
-    with usbmux.create_mux(usbmux_address=usbmux_address) as client:
-        if isinstance(client, PlistMuxConnection):
-            # Only the Plist version of usbmuxd supports this message type
-            system_buid = client.get_buid()
-            cls = PlistUsbmuxLockdownClient
+    try:
+        cls = UsbmuxLockdownClient
+        with usbmux.create_mux(usbmux_address=usbmux_address) as client:
+            if isinstance(client, PlistMuxConnection):
+                # Only the Plist version of usbmuxd supports this message type
+                system_buid = client.get_buid()
+                cls = PlistUsbmuxLockdownClient
 
-    if identifier is None:
-        # attempt get identifier from mux device serial
-        identifier = service.mux_device.serial
+        if identifier is None:
+            # attempt get identifier from mux device serial
+            identifier = service.mux_device.serial
 
-    return cls.create(
-        service, identifier=identifier, label=label, system_buid=system_buid, local_hostname=local_hostname,
-        pair_record=pair_record, pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout,
-        autopair=autopair, usbmux_address=usbmux_address)
+        return cls.create(
+            service, identifier=identifier, label=label, system_buid=system_buid, local_hostname=local_hostname,
+            pair_record=pair_record, pairing_records_cache_folder=pairing_records_cache_folder,
+            pair_timeout=pair_timeout,
+            autopair=autopair, usbmux_address=usbmux_address)
+    except Exception:
+        service.close()
+        raise
 
 
 def retry_create_using_usbmux(retry_timeout: Optional[float] = None, **kwargs) -> UsbmuxLockdownClient:
@@ -786,11 +790,14 @@ def create_using_tcp(hostname: str, identifier: str = None, label: str = DEFAULT
     :return: TcpLockdownClient instance
     """
     service = ServiceConnection.create_using_tcp(hostname, port, keep_alive=keep_alive)
-    client = TcpLockdownClient.create(
-        service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
-        pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
-        port=port, hostname=hostname, keep_alive=keep_alive)
-    return client
+    try:
+        return TcpLockdownClient.create(
+            service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
+            pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
+            port=port, hostname=hostname, keep_alive=keep_alive)
+    except Exception:
+        service.close()
+        raise
 
 
 def create_using_remote(service: ServiceConnection, identifier: str = None, label: str = DEFAULT_LABEL,
@@ -811,17 +818,20 @@ def create_using_remote(service: ServiceConnection, identifier: str = None, labe
     :param port: lockdownd service port
     :return: TcpLockdownClient instance
     """
-    client = RemoteLockdownClient.create(
-        service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
-        pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
-        port=port)
-    return client
+    try:
+        return RemoteLockdownClient.create(
+            service, identifier=identifier, label=label, local_hostname=local_hostname, pair_record=pair_record,
+            pairing_records_cache_folder=pairing_records_cache_folder, pair_timeout=pair_timeout, autopair=autopair,
+            port=port)
+    except Exception:
+        service.close()
+        raise
 
 
 async def get_mobdev2_lockdowns(
         udid: Optional[str] = None, pair_records: Optional[Path] = None, only_paired: bool = False,
         timeout: float = DEFAULT_BONJOUR_TIMEOUT) \
-        -> Generator[tuple[str, TcpLockdownClient], None, None]:
+        -> AsyncIterable[tuple[str, TcpLockdownClient]]:
     records = {}
     if pair_records is None:
         pair_records = get_home_folder()
@@ -853,8 +863,6 @@ async def get_mobdev2_lockdowns(
             try:
                 lockdown = create_using_tcp(hostname=ip, autopair=False, pair_record=record)
             except Exception:
-                continue
-            if lockdown is None:
                 continue
             if only_paired and not lockdown.paired:
                 lockdown.close()

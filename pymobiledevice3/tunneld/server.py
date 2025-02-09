@@ -169,6 +169,7 @@ class TunneldCore:
                         tunnel_service = CoreDeviceTunnelProxy(lockdown)
                     except InvalidServiceError:
                         logger.warning(f'[{task_identifier}] failed to start CoreDeviceTunnelProxy - skipping')
+                        lockdown.close()
                         continue
                     self.tunnel_tasks[task_identifier] = TunnelTask(
                         task=asyncio.create_task(self.start_tunnel_task(task_identifier, tunnel_service),
