@@ -181,9 +181,6 @@ class BaseCommand(click.Command):
 class BaseServiceProviderCommand(BaseCommand):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.params[:0] = [
-            click.Option(('verbosity', '-v', '--verbose'), count=True, callback=set_verbosity, expose_value=False),
-        ]
         self.service_provider = None
         self.callback = choose_service_provider(self.callback)
 
