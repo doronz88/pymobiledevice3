@@ -399,7 +399,8 @@ class TunneldRunner:
         @self._app.get('/start-tunnel')
         async def start_tunnel(
                 udid: str, ip: Optional[str] = None, connection_type: Optional[str] = None) -> fastapi.Response:
-            udid_tunnels = [t.tunnel for t in self._tunneld_core.tunnel_tasks.values() if t.udid == udid]
+            udid_tunnels = [t.tunnel for t in self._tunneld_core.tunnel_tasks.values() if
+                            t.udid == udid and t.tunnel is not None]
             if len(udid_tunnels) > 0:
                 data = {
                     'interface': udid_tunnels[0].interface,
