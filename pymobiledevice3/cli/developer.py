@@ -389,12 +389,24 @@ def sysmon_system(service_provider: LockdownClient, fields):
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         sysmontap = Sysmontap(dvt)
         with sysmontap as sysmon:
+            system = None
+            system_usage = None
+            system_usage_seen = False  # Tracks if the first occurrence of SystemCPUUsage
+
             for row in sysmon:
-                if 'System' in row:
+                if 'System' in row and system is None:
                     system = sysmon.system_attributes_cls(*row['System'])
+
+                if 'SystemCPUUsage' in row:
+                    if system_usage_seen:
+                        system_usage = row['SystemCPUUsage']
+                    else: # Ignore the first occurrence because first occurrence always gives a incorrect value - 100 or 0
+                        system_usage_seen = True
+
+                if system and system_usage:
                     break
 
-    attrs_dict = asdict(system)
+    attrs_dict = {**asdict(system), **system_usage}
     for name, value in attrs_dict.items():
         if (fields is None) or (name in fields):
             print(f'{name}: {value}')
