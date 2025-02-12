@@ -619,9 +619,9 @@ class UsbmuxLockdownClient(LockdownClient):
                  label: str = DEFAULT_LABEL, system_buid: str = SYSTEM_BUID, pair_record: Optional[dict] = None,
                  pairing_records_cache_folder: Path = None, port: int = SERVICE_PORT,
                  usbmux_address: Optional[str] = None):
+        self.usbmux_address = usbmux_address
         super().__init__(service, host_id, identifier, label, system_buid, pair_record, pairing_records_cache_folder,
                          port)
-        self.usbmux_address = usbmux_address
 
     @property
     def short_info(self) -> dict:
