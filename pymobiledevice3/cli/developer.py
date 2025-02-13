@@ -399,7 +399,12 @@ def sysmon_system(service_provider: LockdownClient, fields):
 
                 if 'SystemCPUUsage' in row:
                     if system_usage_seen:
-                        system_usage = row['SystemCPUUsage']
+                        system_usage = {
+                            **row['SystemCPUUsage'], **{
+                                'CPUCount': row['CPUCount'],
+                                'EnabledCPUs': row['EnabledCPUs'],
+                            }
+                        }
                     else: # Ignore the first occurrence because first occurrence always gives a incorrect value - 100 or 0
                         system_usage_seen = True
 
