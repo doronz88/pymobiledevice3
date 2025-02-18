@@ -230,7 +230,7 @@ def invoke_cli_with_error_handling() -> bool:
             should_retry_over_tunneld = True
         if should_retry_over_tunneld:
             # use a single space because click will ignore envvars of empty strings
-            os.environ[TUNNEL_ENV_VAR] = ' '
+            os.environ[TUNNEL_ENV_VAR] = e.identifier or ' '
             return main()
         logger.error(INVALID_SERVICE_MESSAGE)
     except PasswordRequiredError:
