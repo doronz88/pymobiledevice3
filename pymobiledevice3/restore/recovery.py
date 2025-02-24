@@ -44,7 +44,7 @@ class Recovery(BaseRestore):
             'ApSupportsImg4': True,
         }
 
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         tss = TSSRequest()
         tss.add_common_tags(parameters, overrides)
@@ -74,7 +74,7 @@ class Recovery(BaseRestore):
         else:
             parameters['ApSupportsImg4'] = False
 
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         tss = TSSRequest()
         tss.add_common_tags(parameters)
@@ -159,7 +159,7 @@ class Recovery(BaseRestore):
         else:
             parameters['ApSupportsImg4'] = False
 
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         # Add Ap,LocalPolicy
         lpol = {
@@ -205,7 +205,7 @@ class Recovery(BaseRestore):
         else:
             parameters['ApSupportsImg4'] = False
 
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         # create basic request
         # Adds @HostPlatformInfo, @VersionInfo, @UUID

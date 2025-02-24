@@ -579,7 +579,7 @@ class Restore(BaseRestore):
             parameters['BbGoldCertId'] = bb_cert_id
             parameters['BbSNUM'] = bb_snum
 
-            self.build_identity.populate_tss_request_parameters(parameters)
+            self.populate_tss_request_from_manifest(parameters)
 
             # create baseband request
             request = TSSRequest()
@@ -721,7 +721,7 @@ class Restore(BaseRestore):
             parameters = dict()
 
             # add manifest for current build_identity to parameters
-            self.build_identity.populate_tss_request_parameters(parameters)
+            self.populate_tss_request_from_manifest(parameters)
 
             # add SE,* tags from info dictionary to parameters
             parameters.update(info)
@@ -747,7 +747,7 @@ class Restore(BaseRestore):
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         # add Yonkers,* tags from info dictionary to parameters
         parameters.update(info)
@@ -785,7 +785,7 @@ class Restore(BaseRestore):
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         # add Savage,* tags from info dictionary to parameters
         parameters.update(info)
@@ -826,7 +826,7 @@ class Restore(BaseRestore):
             parameters = dict()
 
             # add manifest for current build_identity to parameters
-            self.build_identity.populate_tss_request_parameters(parameters)
+            self.populate_tss_request_from_manifest(parameters)
 
             parameters['ApProductionMode'] = True
 
@@ -880,7 +880,7 @@ class Restore(BaseRestore):
             parameters = dict()
 
             # add manifest for current build_identity to parameters
-            self.build_identity.populate_tss_request_parameters(parameters)
+            self.populate_tss_request_from_manifest(parameters)
 
             # add BMU,* tags from info dictionary to parameters
             parameters.update(info)
@@ -913,7 +913,7 @@ class Restore(BaseRestore):
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         # add Baobab,* tags from info dictionary to parameters
         parameters.update(info)
@@ -938,7 +938,7 @@ class Restore(BaseRestore):
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(
+        self.populate_tss_request_from_manifest(
             parameters, arguments['DeviceGeneratedTags']['BuildIdentityTags'])
 
         parameters['@BBTicket'] = True
@@ -981,7 +981,7 @@ class Restore(BaseRestore):
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         parameters['ApProductionMode'] = True
         if self.device.is_image4_supported:

@@ -71,3 +71,39 @@ class BaseRestore:
     @property
     def logger(self) -> logging.Logger:
         return logging.getLogger(f'{asyncio.current_task().get_name()}-{self.__class__.__module__}')
+
+    def populate_tss_request_from_manifest(self, parameters: dict, additional_keys: Optional[list[str]] = None) -> None:
+        """ equivalent to idevicerestore:tss_parameters_add_from_manifest """
+        key_list = ['ApBoardID', 'ApChipID']
+        if additional_keys is None:
+            key_list += ['UniqueBuildID', 'Ap,OSLongVersion', 'Ap,OSReleaseType', 'Ap,ProductType', 'Ap,SDKPlatform',
+                         'Ap,SikaFuse', 'Ap,Target', 'Ap,TargetType', 'ApBoardID', 'ApChipID',
+                         'ApSecurityDomain', 'BMU,BoardID', 'BMU,ChipID', 'BbChipID', 'BbProvisioningManifestKeyHash',
+                         'BbActivationManifestKeyHash', 'BbCalibrationManifestKeyHash', 'Ap,ProductMarketingVersion',
+                         'BbFactoryActivationManifestKeyHash', 'BbFDRSecurityKeyHash', 'BbSkeyId', 'SE,ChipID',
+                         'Savage,ChipID', 'Savage,PatchEpoch', 'Yonkers,BoardID', 'Yonkers,ChipID',
+                         'Yonkers,PatchEpoch', 'Rap,BoardID', 'Rap,ChipID', 'Rap,SecurityDomain', 'Baobab,BoardID',
+                         'Baobab,ChipID', 'Baobab,ManifestEpoch', 'Baobab,SecurityDomain', 'eUICC,ChipID',
+                         'PearlCertificationRootPub', 'Timer,BoardID,1', 'Timer,BoardID,2', 'Timer,ChipID,1',
+                         'Timer,ChipID,2', 'Timer,SecurityDomain,1', 'Timer,SecurityDomain,2', 'Manifest',
+                         ]
+        else:
+            key_list += additional_keys
+
+        for k in key_list:
+            try:
+                v = self.build_identity[k]
+                if isinstance(v, str) and v.startswith('0x'):
+                    v = int(v, 16)
+                parameters[k] = v
+            except KeyError:
+                pass
+
+        if additional_keys is None:
+            # special treat for RequiresUIDMode
+            info = self.build_identity.get('Info')
+            if info is None:
+                return
+            requires_uid_mode = info.get('RequiresUIDMode')
+            if requires_uid_mode is not None:
+                parameters['RequiresUIDMode'] = requires_uid_mode
