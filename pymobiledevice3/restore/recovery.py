@@ -247,7 +247,7 @@ class Recovery(BaseRestore):
             # If Ap,LocalPolicy => Inject an empty policy
             data = lpol_file
 
-        data = self.build_identity.get_component(name, tss=tss, data=data).personalized_data
+        data = self.get_personalized_data(name, data=data, tss=tss)
         self.logger.info(f'Sending {name} ({len(data)} bytes)...')
         self.device.irecv.send_buffer(data)
 

@@ -9,6 +9,7 @@ from ipsw_parser.ipsw import IPSW
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.restore.device import Device
+from pymobiledevice3.restore.img4 import stitch_component
 from pymobiledevice3.restore.tss import TSSResponse
 
 RESTORE_VARIANT_ERASE_INSTALL = 'Erase Install (IPSW)'
@@ -71,6 +72,12 @@ class BaseRestore:
     @property
     def logger(self) -> logging.Logger:
         return logging.getLogger(f'{asyncio.current_task().get_name()}-{self.__class__.__module__}')
+
+    def get_personalized_data(self, component_name: str, data: Optional[bytes] = None,
+                              tss: Optional[TSSResponse] = None, path: Optional[str] = None) -> bytes:
+        return stitch_component(component_name,
+                                self.build_identity.get_component(component_name, tss=tss, data=data, path=path).data,
+                                tss)
 
     def populate_tss_request_from_manifest(self, parameters: dict, additional_keys: Optional[list[str]] = None) -> None:
         """ equivalent to idevicerestore:tss_parameters_add_from_manifest """
