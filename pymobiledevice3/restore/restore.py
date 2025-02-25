@@ -218,7 +218,7 @@ class Restore(BaseRestore):
         elif image_name == '__SystemVersion__':
             data = self.ipsw.system_version
         else:
-            data = self.build_identity.get_component(component_name, tss=self.recovery.tss).personalized_data
+            data = self.get_personalized_data(component_name, data=data, tss=self.recovery.tss)
 
         self.logger.info(f'Sending {component_name} now...')
         chunk_size = 8192
@@ -256,6 +256,8 @@ class Restore(BaseRestore):
                 self.logger.debug('First chunk in a AEA')
                 try:
                     message = await asyncio.wait_for(service.aio_recv_plist(), timeout=3)
+                    if message['MsgType'] != 'URLAsset':
+                        raise asyncio.exceptions.TimeoutError()
                     await self.send_url_asset(message)
                 except asyncio.exceptions.TimeoutError:
                     self.logger.debug('No URLAsset was requested. Assuming it is not necessary')
@@ -265,7 +267,7 @@ class Restore(BaseRestore):
 
         self.logger.info(f'Done sending {component_name}')
 
-    def get_recovery_os_local_policy_tss_response(self, args, build_identity=None):
+    async def get_recovery_os_local_policy_tss_response(self, args, build_identity=None):
         if build_identity is None:
             build_identity = self.build_identity
 
@@ -302,7 +304,7 @@ class Restore(BaseRestore):
         request.add_local_policy_tags(parameters)
 
         self.logger.info('Requesting SHSH blobs...')
-        return request.send_receive()
+        return await request.send_receive()
 
     def get_build_identity(self, is_recovery_os: bool):
         if is_recovery_os:
@@ -320,11 +322,12 @@ class Restore(BaseRestore):
 
         # The Update mode does not have a specific build identity for the recovery os.
         build_identity = self.get_build_identity(self.build_identity.restore_behavior == Behavior.Erase.value)
-        tss_localpolicy = self.get_recovery_os_local_policy_tss_response(message['Arguments'],
-                                                                         build_identity=build_identity)
+        tss_localpolicy = await self.get_recovery_os_local_policy_tss_response(message['Arguments'],
+                                                                               build_identity=build_identity)
 
-        await service.aio_send_plist({'Ap,LocalPolicy': build_identity.get_component(component, tss=tss_localpolicy,
-                                                                                     data=lpol_file).personalized_data})
+        await service.aio_send_plist({
+            'Ap,LocalPolicy':
+                self.get_personalized_data(component, data=lpol_file, tss=tss_localpolicy)})
 
     async def send_recovery_os_root_ticket(self, message: dict) -> None:
         self.logger.info('About to send RecoveryOSRootTicket...')
@@ -397,8 +400,7 @@ class Restore(BaseRestore):
             raise PyMobileDevice3Exception('Unable to get list of firmware files.')
 
         component = 'LLB'
-        llb_data = self.build_identity.get_component(component, tss=self.recovery.tss,
-                                                     path=llb_path).personalized_data
+        llb_data = self.get_personalized_data(component, tss=self.recovery.tss, path=llb_path)
         req = {'LlbImageData': llb_data}
 
         if flash_version_1:
@@ -412,8 +414,7 @@ class Restore(BaseRestore):
                 # skip RestoreSEP, it's passed in RestoreSEPImageData
                 continue
 
-            nor_data = self.build_identity.get_component(component, tss=self.recovery.tss,
-                                                         path=comppath).personalized_data
+            nor_data = self.get_personalized_data(component, tss=self.recovery.tss, path=comppath)
 
             if flash_version_1:
                 norimage[component] = nor_data
@@ -433,7 +434,7 @@ class Restore(BaseRestore):
             if comp.path:
                 if component == 'SepStage1':
                     component = 'SEPPatch'
-                req[f'{component}ImageData'] = comp.personalized_data
+                req[f'{component}ImageData'] = self.get_personalized_data(comp.name, comp.data, self.recovery.tss)
 
         self.logger.info('Sending NORData now...')
         await service.aio_send_plist(req)
@@ -579,7 +580,7 @@ class Restore(BaseRestore):
             parameters['BbGoldCertId'] = bb_cert_id
             parameters['BbSNUM'] = bb_snum
 
-            self.build_identity.populate_tss_request_parameters(parameters)
+            self.populate_tss_request_from_manifest(parameters)
 
             # create baseband request
             request = TSSRequest()
@@ -663,8 +664,7 @@ class Restore(BaseRestore):
                     else:
                         self.logger.info(f'found component \'{component}\'')
 
-                    data_dict[component] = self.build_identity.get_component(component,
-                                                                             tss=self.recovery.tss).personalized_data
+                    data_dict[component] = self.get_personalized_data(component, tss=self.recovery.tss)
 
         req = dict()
         if want_image_list:
@@ -721,7 +721,7 @@ class Restore(BaseRestore):
             parameters = dict()
 
             # add manifest for current build_identity to parameters
-            self.build_identity.populate_tss_request_parameters(parameters)
+            self.populate_tss_request_from_manifest(parameters)
 
             # add SE,* tags from info dictionary to parameters
             parameters.update(info)
@@ -747,7 +747,7 @@ class Restore(BaseRestore):
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         # add Yonkers,* tags from info dictionary to parameters
         parameters.update(info)
@@ -785,7 +785,7 @@ class Restore(BaseRestore):
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         # add Savage,* tags from info dictionary to parameters
         parameters.update(info)
@@ -826,7 +826,7 @@ class Restore(BaseRestore):
             parameters = dict()
 
             # add manifest for current build_identity to parameters
-            self.build_identity.populate_tss_request_parameters(parameters)
+            self.populate_tss_request_from_manifest(parameters)
 
             parameters['ApProductionMode'] = True
 
@@ -880,7 +880,7 @@ class Restore(BaseRestore):
             parameters = dict()
 
             # add manifest for current build_identity to parameters
-            self.build_identity.populate_tss_request_parameters(parameters)
+            self.populate_tss_request_from_manifest(parameters)
 
             # add BMU,* tags from info dictionary to parameters
             parameters.update(info)
@@ -913,7 +913,7 @@ class Restore(BaseRestore):
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         # add Baobab,* tags from info dictionary to parameters
         parameters.update(info)
@@ -938,7 +938,7 @@ class Restore(BaseRestore):
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(
+        self.populate_tss_request_from_manifest(
             parameters, arguments['DeviceGeneratedTags']['BuildIdentityTags'])
 
         parameters['@BBTicket'] = True
@@ -981,7 +981,7 @@ class Restore(BaseRestore):
         parameters = dict()
 
         # add manifest for current build_identity to parameters
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         parameters['ApProductionMode'] = True
         if self.device.is_image4_supported:
@@ -1157,8 +1157,7 @@ class Restore(BaseRestore):
 
         self.logger.info(f'Sending now {component_name}...')
         await self._restored.send(
-            {f'{component_name}File': self.build_identity.get_component(component,
-                                                                        tss=self.recovery.tss).personalized_data})
+            {f'{component_name}File': self.get_personalized_data(component, tss=self.recovery.tss)})
 
     async def handle_data_request_msg(self, message: dict):
         self.logger.debug(f'handle_data_request_msg: {message}')

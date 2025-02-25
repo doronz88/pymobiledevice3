@@ -44,7 +44,7 @@ class Recovery(BaseRestore):
             'ApSupportsImg4': True,
         }
 
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         tss = TSSRequest()
         tss.add_common_tags(parameters, overrides)
@@ -74,11 +74,15 @@ class Recovery(BaseRestore):
         else:
             parameters['ApSupportsImg4'] = False
 
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         tss = TSSRequest()
         tss.add_common_tags(parameters)
         tss.add_ap_tags(parameters)
+
+        build_manifest_info = self.build_identity['Info']
+        for manifest_property in build_manifest_info.get('RequestManifestProperties', []):
+            tss.add_tags({manifest_property: build_manifest_info[manifest_property]})
 
         # add personalized parameters
         if self.device.is_image4_supported:
@@ -159,7 +163,7 @@ class Recovery(BaseRestore):
         else:
             parameters['ApSupportsImg4'] = False
 
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         # Add Ap,LocalPolicy
         lpol = {
@@ -205,7 +209,7 @@ class Recovery(BaseRestore):
         else:
             parameters['ApSupportsImg4'] = False
 
-        self.build_identity.populate_tss_request_parameters(parameters)
+        self.populate_tss_request_from_manifest(parameters)
 
         # create basic request
         # Adds @HostPlatformInfo, @VersionInfo, @UUID
@@ -235,6 +239,10 @@ class Recovery(BaseRestore):
         if self.macos_variant:
             self.tss_localpolicy = self.get_local_policy_tss_response()
             self.tss_recoveryos_root_ticket = self.get_recoveryos_root_ticket_tss_response()
+        else:
+            recovery_variant = self.build_identity['Info'].get('RecoveryVariant')
+            if recovery_variant is not None:
+                self.tss_recoveryos_root_ticket = await self.get_tss_response()
 
         return self.tss
 
@@ -247,7 +255,7 @@ class Recovery(BaseRestore):
             # If Ap,LocalPolicy => Inject an empty policy
             data = lpol_file
 
-        data = self.build_identity.get_component(name, tss=tss, data=data).personalized_data
+        data = self.get_personalized_data(name, data=data, tss=tss)
         self.logger.info(f'Sending {name} ({len(data)} bytes)...')
         self.device.irecv.send_buffer(data)
 

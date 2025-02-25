@@ -9,6 +9,7 @@ from ipsw_parser.ipsw import IPSW
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.restore.device import Device
+from pymobiledevice3.restore.img4 import stitch_component
 from pymobiledevice3.restore.tss import TSSResponse
 
 RESTORE_VARIANT_ERASE_INSTALL = 'Erase Install (IPSW)'
@@ -71,3 +72,47 @@ class BaseRestore:
     @property
     def logger(self) -> logging.Logger:
         return logging.getLogger(f'{asyncio.current_task().get_name()}-{self.__class__.__module__}')
+
+    def get_personalized_data(self, component_name: str, data: Optional[bytes] = None,
+                              tss: Optional[TSSResponse] = None, path: Optional[str] = None) -> bytes:
+        return stitch_component(component_name,
+                                self.build_identity.get_component(component_name, tss=tss, data=data, path=path).data,
+                                tss,
+                                self.build_identity)
+
+    def populate_tss_request_from_manifest(self, parameters: dict, additional_keys: Optional[list[str]] = None) -> None:
+        """ equivalent to idevicerestore:tss_parameters_add_from_manifest """
+        key_list = ['ApBoardID', 'ApChipID']
+        if additional_keys is None:
+            key_list += ['UniqueBuildID', 'Ap,OSLongVersion', 'Ap,OSReleaseType', 'Ap,ProductType', 'Ap,SDKPlatform',
+                         'Ap,SikaFuse', 'Ap,Target', 'Ap,TargetType', 'ApBoardID', 'ApChipID',
+                         'ApSecurityDomain', 'BMU,BoardID', 'BMU,ChipID', 'BbChipID', 'BbProvisioningManifestKeyHash',
+                         'BbActivationManifestKeyHash', 'BbCalibrationManifestKeyHash', 'Ap,ProductMarketingVersion',
+                         'BbFactoryActivationManifestKeyHash', 'BbFDRSecurityKeyHash', 'BbSkeyId', 'SE,ChipID',
+                         'Savage,ChipID', 'Savage,PatchEpoch', 'Yonkers,BoardID', 'Yonkers,ChipID',
+                         'Yonkers,PatchEpoch', 'Rap,BoardID', 'Rap,ChipID', 'Rap,SecurityDomain', 'Baobab,BoardID',
+                         'Baobab,ChipID', 'Baobab,ManifestEpoch', 'Baobab,SecurityDomain', 'eUICC,ChipID',
+                         'PearlCertificationRootPub', 'Timer,BoardID,1', 'Timer,BoardID,2', 'Timer,ChipID,1',
+                         'Timer,ChipID,2', 'Timer,SecurityDomain,1', 'Timer,SecurityDomain,2', 'Manifest',
+                         'NeRDEpoch',
+                         ]
+        else:
+            key_list += additional_keys
+
+        for k in key_list:
+            try:
+                v = self.build_identity[k]
+                if isinstance(v, str) and v.startswith('0x'):
+                    v = int(v, 16)
+                parameters[k] = v
+            except KeyError:
+                pass
+
+        if additional_keys is None:
+            # special treat for RequiresUIDMode
+            info = self.build_identity.get('Info')
+            if info is None:
+                return
+            requires_uid_mode = info.get('RequiresUIDMode')
+            if requires_uid_mode is not None:
+                parameters['RequiresUIDMode'] = requires_uid_mode
