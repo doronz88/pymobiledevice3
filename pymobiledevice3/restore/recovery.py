@@ -80,6 +80,10 @@ class Recovery(BaseRestore):
         tss.add_common_tags(parameters)
         tss.add_ap_tags(parameters)
 
+        build_manifest_info = self.build_identity['Info']
+        for manifest_property in build_manifest_info.get('RequestManifestProperties', []):
+            tss.add_tags({manifest_property: build_manifest_info[manifest_property]})
+
         # add personalized parameters
         if self.device.is_image4_supported:
             tss.add_ap_img4_tags(parameters)
