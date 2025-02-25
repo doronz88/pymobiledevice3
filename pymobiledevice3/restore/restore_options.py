@@ -198,7 +198,17 @@ class RestoreOptions:
         if spp:
             spp = dict(spp)
         else:
-            spp = {'128': 1280, '16': 160, '32': 320, '64': 640, '8': 80}
+            spp = {
+                '1024': 1280,
+                '128': 1280,
+                '16': 160,
+                '256': 1280,
+                '32': 320,
+                '512': 1280,
+                '64': 640,
+                '768': 1280,
+                '8': 80
+            }
         self.SystemPartitionPadding = spp
 
     def to_dict(self):
