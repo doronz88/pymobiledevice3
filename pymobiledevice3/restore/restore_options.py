@@ -80,6 +80,7 @@ SUPPORTED_DATA_TYPES = {
 SUPPORTED_MESSAGE_TYPES = {
     'BBUpdateStatusMsg': False,
     'CheckpointMsg': True,
+    'CrashLog': True,
     'DataRequestMsg': False,
     'FDRSubmit': True,
     'MsgType': False,
