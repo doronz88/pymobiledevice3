@@ -256,6 +256,8 @@ class Restore(BaseRestore):
                 self.logger.debug('First chunk in a AEA')
                 try:
                     message = await asyncio.wait_for(service.aio_recv_plist(), timeout=3)
+                    if message['MsgType'] != 'URLAsset':
+                        raise asyncio.exceptions.TimeoutError()
                     await self.send_url_asset(message)
                 except asyncio.exceptions.TimeoutError:
                     self.logger.debug('No URLAsset was requested. Assuming it is not necessary')
