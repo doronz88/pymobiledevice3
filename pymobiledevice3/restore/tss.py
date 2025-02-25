@@ -286,7 +286,7 @@ class TSSRequest:
         manifest_node = parameters['Manifest']
 
         # add components to request
-        skipped_keys = ('BasebandFirmware', 'SE,UpdatePayload', 'BaseSystem', 'Diags',)
+        skipped_keys = ('BasebandFirmware', 'SE,UpdatePayload', 'BaseSystem', 'Diags', 'Ap,ExclaveOS')
         for key, manifest_entry in manifest_node.items():
             if key in skipped_keys:
                 continue
@@ -348,7 +348,8 @@ class TSSRequest:
         keys_to_copy = (
             'ApNonce', 'ApProductionMode', 'ApSecurityMode', 'Ap,OSLongVersion', 'ApSecurityMode', 'ApSepNonce',
             'Ap,SDKPlatform', 'PearlCertificationRootPub', 'NeRDEpoch', 'ApSikaFuse', 'Ap,SikaFuse', 'Ap,OSReleaseType',
-            'Ap,ProductType', 'Ap,Target', 'Ap,TargetType'
+            'Ap,ProductType', 'Ap,Target', 'Ap,TargetType', 'AllowNeRDBoot', 'Ap,ProductMarketingVersion',
+            'Ap,Timestamp',
         )
         for k in keys_to_copy:
             if k in parameters:
@@ -360,6 +361,9 @@ class TSSRequest:
                 self._request[k] = v
 
         uid_mode = parameters.get('UID_MODE', False)
+
+        if 'NeRDEpoch' in parameters:
+            self._request['PermitNeRDPivot'] = b''
 
         self._request['UID_MODE'] = uid_mode
         self._request['@ApImg4Ticket'] = True
