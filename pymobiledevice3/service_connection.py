@@ -6,6 +6,7 @@ import ssl
 import struct
 import time
 import xml
+from asyncio import IncompleteReadError
 from enum import Enum
 from typing import Any, Optional
 
@@ -267,7 +268,13 @@ class ServiceConnection:
         :param size: The amount of data to receive.
         :return: The received data.
         """
-        return await self.reader.readexactly(size)
+        data = b''
+        while len(data) < size:
+            try:
+                data += await self.reader.readexactly(size)
+            except IncompleteReadError as e:
+                data += e.partial
+        return data
 
     async def aio_recv_prefixed(self, endianity: str = '>') -> bytes:
         """
