@@ -239,6 +239,10 @@ class Recovery(BaseRestore):
         if self.macos_variant:
             self.tss_localpolicy = self.get_local_policy_tss_response()
             self.tss_recoveryos_root_ticket = self.get_recoveryos_root_ticket_tss_response()
+        else:
+            recovery_variant = self.build_identity['Info'].get('RecoveryVariant')
+            if recovery_variant is not None:
+                self.tss_recoveryos_root_ticket = await self.get_tss_response()
 
         return self.tss
 
