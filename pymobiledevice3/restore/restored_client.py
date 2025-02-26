@@ -1,34 +1,59 @@
 import logging
-from functools import cached_property
 from typing import Any, Optional
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import ConnectionFailedError, NoDeviceConnectedError
+from pymobiledevice3.lockdown import DEFAULT_LABEL
 from pymobiledevice3.restore.restore_options import RestoreOptions
 from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.usbmux import select_devices_by_connection_type
+
+logger = logging.getLogger(__name__)
 
 
 class RestoredClient:
-    DEFAULT_CLIENT_NAME = 'pyMobileDevice'
+    DEFAULT_CLIENT_NAME = 'pymobiledevice3'
     SERVICE_PORT = 62078
 
-    def __init__(self, udid: Optional[str] = None) -> None:
-        self.logger = logging.getLogger(__name__)
+    @classmethod
+    async def create(cls, ecid: str) -> 'RestoredClient':
+        for mux_device in select_devices_by_connection_type('USB'):
+            logger.debug(f'Iterating: {mux_device}')
+            service = ServiceConnection.create_using_usbmux(mux_device.serial, cls.SERVICE_PORT,
+                                                            connection_type=mux_device.connection_type)
+            await service.aio_start()
+
+            query_type = await service.aio_send_recv_plist({'Request': 'QueryType'})
+            version = query_type.get('RestoreProtocolVersion')
+            logger.debug(f'RestoreProtocolVersion: {version}')
+
+            if query_type.get('Type') != 'com.apple.mobile.restored':
+                logger.debug(f'Skipping: {mux_device.serial} as its not a restored device')
+                await service.aio_close()
+                continue
+
+            restored_client = cls(mux_device.serial, version, service)
+            await restored_client._connect()
+
+            if restored_client.ecid != ecid:
+                logger.debug(f'Skipping: {restored_client.ecid} as its not the right ECID ({restored_client.ecid} '
+                             f'instead of {ecid})')
+                await service.aio_close()
+                continue
+
+            return restored_client
+        raise NoDeviceConnectedError()
+
+    def __init__(self, udid: str, version: str, service: ServiceConnection) -> None:
         self.udid = udid
-        self.version: Optional[str] = None
-        self.query_type: Optional[str] = None
-        self.label: Optional[str] = None
-        self.service: Optional[ServiceConnection] = None
+        self.version = version
+        self.service = service
+        self.label = DEFAULT_LABEL
 
-    async def connect(self, client_name: str = DEFAULT_CLIENT_NAME) -> None:
-        self.service = ServiceConnection.create_using_usbmux(self.udid, self.SERVICE_PORT,
-                                                             connection_type='USB')
-        await self.service.aio_start()
-        self.label = client_name
-        self.query_type = await self.service.aio_send_recv_plist({'Request': 'QueryType'})
-        self.version = self.query_type.get('RestoreProtocolVersion')
-
-        assert self.query_type.get('Type') == 'com.apple.mobile.restored', f'wrong query type: {self.query_type}'
+    async def _connect(self) -> None:
+        self.hardware_info = (await self.query_value('HardwareInfo'))['HardwareInfo']
+        self.ecid = self.hardware_info['UniqueChipID']
+        self.saved_debug_info = (await self.query_value('SavedDebugInfo'))['SavedDebugInfo']
 
     @staticmethod
     def _get_or_verify_udid(udid: Optional[str] = None) -> str:
@@ -54,7 +79,7 @@ class RestoredClient:
         if opts is not None:
             req['RestoreOptions'] = opts.to_dict()
 
-        self.logger.debug(f'start_restore request: {req}')
+        logger.debug(f'start_restore request: {req}')
 
         return await self.service.aio_send_plist(req)
 
@@ -66,11 +91,3 @@ class RestoredClient:
 
     async def recv(self) -> dict:
         return await self.service.aio_recv_plist()
-
-    @cached_property
-    async def hardware_info(self) -> dict[str, Any]:
-        return (await self.query_value('HardwareInfo'))['HardwareInfo']
-
-    @property
-    async def saved_debug_info(self) -> dict[str, Any]:
-        return (await self.query_value('SavedDebugInfo'))['SavedDebugInfo']

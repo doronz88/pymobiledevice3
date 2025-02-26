@@ -1288,21 +1288,20 @@ class Restore(BaseRestore):
         await self._restored.send({'RestoreShouldAttest': False})
 
     async def _connect_to_restored_service(self):
-        self._restored = RestoredClient()
         while True:
             try:
-                await self._restored.connect()
+                self._restored = await RestoredClient.create(self.device.ecid)
                 break
             except (ConnectionFailedError, NoDeviceConnectedError):
-                pass
+                await asyncio.sleep(1)
 
     async def restore_device(self) -> None:
         self.logger.debug('waiting for device to connect for restored service')
         await self._connect_to_restored_service()
 
-        self.logger.info(f'hardware info: {await self._restored.hardware_info}')
+        self.logger.info(f'hardware info: {self._restored.hardware_info}')
         self.logger.info(f'version: {self._restored.version}')
-        self.logger.info(f'saved_debug_info: {await self._restored.saved_debug_info}')
+        self.logger.info(f'saved_debug_info: {self._restored.saved_debug_info}')
 
         if self.recovery.tss.bb_ticket is not None:
             # initial TSS response contains a baseband ticket
