@@ -203,13 +203,7 @@ def restore_tss(device: Device, ipsw_ctx: Generator, out):
     print_json(tss)
 
 
-@restore.command('ramdisk', cls=IPSWCommand)
-def restore_ramdisk(device: Device, ipsw_ctx: Generator, tss: IO):
-    """
-    don't perform an actual restore. just enter the update ramdisk
-
-    ipsw can be either a filename or an url
-    """
+async def restore_ramdisk_task(device: Device, ipsw_ctx: Generator) -> None:
     lockdown = None
     irecv = None
     if isinstance(device, LockdownClient):
@@ -217,8 +211,19 @@ def restore_ramdisk(device: Device, ipsw_ctx: Generator, tss: IO):
     elif isinstance(device, IRecv):
         irecv = device
     device = Device(lockdown=lockdown, irecv=irecv)
+
     with ipsw_ctx as ipsw:
-        Recovery(ipsw, device, tss=tss).boot_ramdisk()
+        await Recovery(ipsw, device).boot_ramdisk()
+
+
+@restore.command('ramdisk', cls=IPSWCommand)
+def restore_ramdisk(device: Device, ipsw_ctx: Generator, tss: IO) -> None:
+    """
+    don't perform an actual restore. just enter the update ramdisk
+
+    ipsw can be either a filename or an url
+    """
+    asyncio.run(restore_ramdisk_task(device, ipsw_ctx), debug=True)
 
 
 @restore.command('update', cls=IPSWCommand)
