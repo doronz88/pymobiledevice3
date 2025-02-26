@@ -39,6 +39,7 @@ from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
 
 SYSTEM_BUID = '30142955-444094379208051516'
+RESTORED_SERVICE_TYPE = 'com.apple.mobile.restored'
 
 DEFAULT_LABEL = 'pymobiledevice3'
 SERVICE_PORT = 62078
@@ -562,7 +563,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
         response = self.service.send_recv_plist(message)
 
         if verify_request and response.get('Request') != request:
-            raise LockdownError(f'incorrect response returned. got {response}')
+            if response.get('Type') == RESTORED_SERVICE_TYPE:
+                raise IncorrectModeError(f'Incorrect mode returned. Got: {response}')
+            raise LockdownError(f'Incorrect response returned. Got: {response}')
 
         error = response.get('Error')
         if error is not None:
