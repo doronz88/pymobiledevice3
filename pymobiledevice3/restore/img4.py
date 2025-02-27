@@ -123,7 +123,8 @@ COMPONENT_FOURCC = {
 }
 
 
-def stitch_component(name: str, im4p_data: bytes, tss: TSSResponse, build_identity: BuildIdentity) -> bytes:
+def stitch_component(name: str, im4p_data: bytes, tss: TSSResponse, build_identity: BuildIdentity,
+                     ap_parameters: dict) -> bytes:
     logger.info(f'Personalizing IMG4 component {name}...')
 
     im4p = IM4P(data=im4p_data)
@@ -143,12 +144,16 @@ def stitch_component(name: str, im4p_data: bytes, tss: TSSResponse, build_identi
         if info.get('RequiresNonceSlot', False) and name in ('SEP', 'SepStage1', 'LLB'):
             logger.debug(f'{name}: RequiresNonceSlot for {name}')
             if name in ('SEP', 'SepStage1'):
+                snid = ap_parameters.get('SepNonceSlotID', info.get('SepNonceSlotID', 2))
+                logger.debug(f'snid: {snid}')
                 im4r.add_property(
-                    RestoreProperty(fourcc='snid', value=info.get('SepNonceSlotID', 2))
+                    RestoreProperty(fourcc='snid', value=snid)
                 )
             else:
+                anid = ap_parameters.get('ApNonceSlotID', info.get('ApNonceSlotID', 0))
+                logger.debug(f'anid: {anid}')
                 im4r.add_property(
-                    RestoreProperty(fourcc='anid', value=info.get('ApNonceSlotID', 0))
+                    RestoreProperty(fourcc='anid', value=anid)
                 )
 
         for key in tbm_dict.keys():
