@@ -7,9 +7,9 @@ from uuid import uuid4
 
 import asn1
 import requests
-from ipsw_parser.img4 import COMPONENT_FOURCC
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.restore.img4 import COMPONENT_FOURCC
 from pymobiledevice3.utils import bytes_to_uint, plist_access_path
 
 TSS_CONTROLLER_ACTION_URL = 'http://gs.apple.com/TSS/controller?action=2'

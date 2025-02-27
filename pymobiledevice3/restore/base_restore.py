@@ -78,7 +78,8 @@ class BaseRestore:
         return stitch_component(component_name,
                                 self.build_identity.get_component(component_name, tss=tss, data=data, path=path).data,
                                 tss,
-                                self.build_identity)
+                                self.build_identity,
+                                self.device.ap_parameters)
 
     def populate_tss_request_from_manifest(self, parameters: dict, additional_keys: Optional[list[str]] = None) -> None:
         """ equivalent to idevicerestore:tss_parameters_add_from_manifest """
