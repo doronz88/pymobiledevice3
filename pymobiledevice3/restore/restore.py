@@ -222,7 +222,7 @@ class Restore(BaseRestore):
 
         self.logger.info(f'Sending {component_name} now...')
         chunk_size = 8192
-        for i in trange(0, len(data), chunk_size):
+        for i in trange(0, len(data), chunk_size, dynamic_ncols=True):
             await service.aio_send_plist({'FileData': data[i:i + chunk_size]})
 
         # Send FileDataDone
@@ -249,7 +249,7 @@ class Restore(BaseRestore):
 
         self.logger.info(f'Sending {component_name} now...')
         chunk_size = 8192
-        for i in trange(0, len(data), chunk_size):
+        for i in trange(0, len(data), chunk_size, dynamic_ncols=True):
             chunk = data[i:i + chunk_size]
             await service.aio_send_plist({'FileData': chunk})
             if i == 0 and chunk.startswith(b'AEA1'):
