@@ -53,7 +53,11 @@ class RemoteXPCConnection:
 
     async def connect(self) -> None:
         self._reader, self._writer = await asyncio.open_connection(self.address[0], self.address[1])
-        await self._do_handshake()
+        try:
+            await self._do_handshake()
+        except Exception:  # noqa: E722
+            await self.close()
+            raise
 
     async def close(self) -> None:
         if self._writer is None:
