@@ -963,6 +963,8 @@ async def create_core_device_tunnel_service_using_rsd(
     service = CoreDeviceTunnelService(rsd)
     try:
         await service.connect(autopair=autopair)
+    except Exception:  # noqa: E722
+        await service.close()
     except RemotePairingCompletedError:
         # The connection must be reestablished upon pairing is completed
         await service.close()
