@@ -120,6 +120,8 @@ IRECV_DEVICES = (
                 display_name='iPhone 16'),
     IRecvDevice(product_type='iPhone17,4', hardware_model='d48ap', board_id=0x0A, chip_id=0x8140,
                 display_name='iPhone 16 Plus'),
+    IRecvDevice(product_type='iPhone17,5', hardware_model='v59ap', board_id=0x04, chip_id=0x8140,
+                display_name='iPhone 16e'),
     IRecvDevice(product_type='iPhone17,1', hardware_model='d93ap', board_id=0x0C, chip_id=0x8140,
                 display_name='iPhone 16 Pro'),
     IRecvDevice(product_type='iPhone17,2', hardware_model='d94ap', board_id=0x0E, chip_id=0x8140,
