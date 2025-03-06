@@ -69,6 +69,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             self.all_values = self.lockdown.all_values
         except Exception:  # noqa: E722
             await self.close()
+            raise
 
     def get_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> Any:
         return self.lockdown.get_value(domain, key)
