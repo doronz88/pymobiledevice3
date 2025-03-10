@@ -432,6 +432,7 @@ class AccessibilityAudit(RemoteServer):
                 continue
 
             # each such event should contain exactly one element that became in focus
+            current_item = event.data[0]
             current_identifier = current_item.platform_identifier
 
             if current_identifier in visited_identifiers:
