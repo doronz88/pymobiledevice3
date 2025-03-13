@@ -424,7 +424,7 @@ class AccessibilityAudit(RemoteServer):
         # every focus change is expected publish a "hostInspectorCurrentElementChanged:"
         self.move_focus_next()
 
-        first_item = None
+        visited_identifiers = set()
 
         for event in iterator:
             if event.name != 'hostInspectorCurrentElementChanged:':
@@ -433,11 +433,11 @@ class AccessibilityAudit(RemoteServer):
 
             # each such event should contain exactly one element that became in focus
             current_item = event.data[0]
+            current_identifier = current_item.platform_identifier
 
-            if first_item is None:
-                first_item = current_item
-            elif first_item.caption == current_item.caption:
-                break  # Break if we encounter the first item again (loop)
+            if current_identifier in visited_identifiers:
+                break  # Exit if we've seen this element before (loop detected)
 
             yield current_item
+            visited_identifiers.add(current_identifier)
             self.move_focus_next()
