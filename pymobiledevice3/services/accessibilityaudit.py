@@ -440,5 +440,4 @@ class AccessibilityAudit(RemoteServer):
 
             yield current_item
             visited_identifiers.add(current_identifier)
-            
             self.move_focus_next()
