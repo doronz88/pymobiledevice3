@@ -114,7 +114,7 @@ def opened_tabs(service_provider: LockdownClient, verbose, timeout):
 
     \b
     Opt-in:
-        Settings -> Safari -> Advanced -> Web Inspector
+        Settings -> Apps -> Safari -> Advanced -> Web Inspector
     """
     inspector = WebinspectorService(lockdown=service_provider)
     inspector.connect(timeout)
@@ -134,8 +134,8 @@ def launch(service_provider: LockdownClient, url, timeout):
 
     \b
     Opt-in:
-        Settings -> Safari -> Advanced -> Web Inspector
-        Settings -> Safari -> Advanced -> Remote Automation
+        Settings -> Apps -> Safari -> Advanced -> Web Inspector
+        Settings -> Apps -> Safari -> Advanced -> Remote Automation
     """
     inspector, safari = create_webinspector_and_launch_app(service_provider, timeout, SAFARI)
     session = inspector.automation_session(safari)
@@ -179,8 +179,8 @@ def shell(service_provider: LockdownClient, timeout):
 
     \b
     Opt-in:
-        Settings -> Safari -> Advanced -> Web Inspector
-        Settings -> Safari -> Advanced -> Remote Automation
+        Settings -> Apps -> Safari -> Advanced -> Web Inspector
+        Settings -> Apps -> Safari -> Advanced -> Remote Automation
     """
     inspector, safari = create_webinspector_and_launch_app(service_provider, timeout, SAFARI)
     session = inspector.automation_session(safari)
@@ -212,11 +212,11 @@ def js_shell(service_provider: LockdownServiceProvider, timeout: float, automati
 
     \b
     Opt-in:
-        Settings -> Safari -> Advanced -> Web Inspector
+        Settings -> Apps -> Safari -> Advanced -> Web Inspector
 
     \b
     for automation also enable:
-        Settings -> Safari -> Advanced -> Remote Automation
+        Settings -> Apps -> Safari -> Advanced -> Remote Automation
     """
 
     js_shell_class = AutomationJsShell if automation else InspectorJsShell
