@@ -114,7 +114,9 @@ def opened_tabs(service_provider: LockdownClient, verbose, timeout):
 
     \b
     Opt-in:
-        Settings -> Apps -> Safari -> Advanced -> Web Inspector
+       iOS >= 18: Settings -> Apps -> Safari -> Advanced -> Web Inspector
+       
+       iOS < 18: Settings -> Safari -> Advanced -> Web Inspector
     """
     inspector = WebinspectorService(lockdown=service_provider)
     inspector.connect(timeout)
@@ -133,9 +135,14 @@ def launch(service_provider: LockdownClient, url, timeout):
     Launch a specific URL in Safari.
 
     \b
-    Opt-in:
+    Opt-in (iOS >= 18):
         Settings -> Apps -> Safari -> Advanced -> Web Inspector
         Settings -> Apps -> Safari -> Advanced -> Remote Automation
+
+    Opt-in (iOS < 18):
+        Settings -> Safari -> Advanced -> Web Inspector
+        Settings -> Safari -> Advanced -> Remote Automation
+        
     """
     inspector, safari = create_webinspector_and_launch_app(service_provider, timeout, SAFARI)
     session = inspector.automation_session(safari)
@@ -178,9 +185,13 @@ def shell(service_provider: LockdownClient, timeout):
     Create an IPython shell for interacting with a WebView.
 
     \b
-    Opt-in:
+    Opt-in (iOS >= 18):
         Settings -> Apps -> Safari -> Advanced -> Web Inspector
         Settings -> Apps -> Safari -> Advanced -> Remote Automation
+
+    Opt-in (iOS < 18):
+        Settings -> Safari -> Advanced -> Web Inspector
+        Settings -> Safari -> Advanced -> Remote Automation
     """
     inspector, safari = create_webinspector_and_launch_app(service_provider, timeout, SAFARI)
     session = inspector.automation_session(safari)
@@ -212,11 +223,12 @@ def js_shell(service_provider: LockdownServiceProvider, timeout: float, automati
 
     \b
     Opt-in:
-        Settings -> Apps -> Safari -> Advanced -> Web Inspector
-
+        iOS >= 18: Settings -> Apps -> Safari -> Advanced -> Web Inspector
+        iOS < 18: Settings -> Safari -> Advanced -> Web Inspector
     \b
     for automation also enable:
-        Settings -> Apps -> Safari -> Advanced -> Remote Automation
+        iOS >= 18: Settings -> Apps -> Safari -> Advanced -> Remote Automation
+        iOS < 18: Settings -> Safari -> Advanced -> Remote Automation
     """
 
     js_shell_class = AutomationJsShell if automation else InspectorJsShell
