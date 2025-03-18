@@ -115,7 +115,7 @@ def opened_tabs(service_provider: LockdownClient, verbose, timeout):
     \b
     Opt-in:
        iOS >= 18: Settings -> Apps -> Safari -> Advanced -> Web Inspector
-       
+
        iOS < 18: Settings -> Safari -> Advanced -> Web Inspector
     """
     inspector = WebinspectorService(lockdown=service_provider)
@@ -142,7 +142,7 @@ def launch(service_provider: LockdownClient, url, timeout):
     Opt-in (iOS < 18):
         Settings -> Safari -> Advanced -> Web Inspector
         Settings -> Safari -> Advanced -> Remote Automation
-        
+
     """
     inspector, safari = create_webinspector_and_launch_app(service_provider, timeout, SAFARI)
     session = inspector.automation_session(safari)
