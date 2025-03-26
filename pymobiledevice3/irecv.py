@@ -256,7 +256,10 @@ class IRecv:
             self.set_interface_altsetting(0, 0)
 
     def _copy_nonce_with_tag(self, tag):
-        return binascii.unhexlify(get_string(self._device, 1).split(f'{tag}:')[1].split(' ')[0])
+        if tag in get_string(self._device, 1):
+            return binascii.unhexlify(get_string(self._device, 1).split(f'{tag}:')[1].split(' ')[0])
+        else:
+            return None
 
     def _find(self, ecid=None, timeout=0xffffffff, is_recovery=None):
         start = time.time()
