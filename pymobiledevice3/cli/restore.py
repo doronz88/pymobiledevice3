@@ -184,10 +184,7 @@ def restore_restart(device):
         device.reboot()
 
 
-@restore.command('tss', cls=IPSWCommand)
-@click.argument('out', type=click.File('wb'), required=False)
-def restore_tss(device: Device, ipsw_ctx: Generator, out):
-    """ query SHSH blobs """
+async def restore_tss_task(device: Device, ipsw_ctx: Generator, tss: IO, out: Optional[IO]) -> None:
     lockdown = None
     irecv = None
     if isinstance(device, LockdownClient):
@@ -197,10 +194,17 @@ def restore_tss(device: Device, ipsw_ctx: Generator, out):
 
     device = Device(lockdown=lockdown, irecv=irecv)
     with ipsw_ctx as ipsw:
-        tss = Recovery(ipsw, device).fetch_tss_record()
+        tss = await Recovery(ipsw, device).fetch_tss_record()
     if out:
         plistlib.dump(tss, out)
     print_json(tss)
+
+
+@restore.command('tss', cls=IPSWCommand)
+@click.argument('out', type=click.File('wb'), required=False)
+def restore_tss(device: Device, ipsw_ctx: Generator, tss: IO, out: Optional[IO]) -> None:
+    """ query SHSH blobs """
+    asyncio.run(restore_tss_task(device, ipsw_ctx, tss, out), debug=True)
 
 
 async def restore_ramdisk_task(device: Device, ipsw_ctx: Generator) -> None:
