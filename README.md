@@ -424,3 +424,4 @@ This work is licensed under GPL 3.0, and as, credited to several major contribut
 - [matan1008](https://github.com/matan1008) <matan1008@gmail.com>
 - [Guy Salton](https://github.com/guysalt)
 - [netanelc305](https://github.com/netanelc305) <netanelc305@protonmail.com>
+- Inbar Agmon <inbar2812@gmail.com> ([Project's logo](https://repository-images.githubusercontent.com/357904774/6d6fb035-5953-425d-9afd-cc1087df0cfb))
