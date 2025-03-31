@@ -247,8 +247,12 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return self.get_value(key='Locale', domain='com.apple.international')
 
     @property
-    def preflight_info(self) -> dict:
+    def firmware_preflight_info(self) -> dict:
         return self.get_value(key='FirmwarePreflightInfo')
+
+    @property
+    def preflight_info(self) -> dict:
+        return self.get_value(key='PreflightInfo')
 
     @property
     def display_name(self) -> str:
