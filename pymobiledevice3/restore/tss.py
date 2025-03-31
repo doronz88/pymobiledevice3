@@ -244,6 +244,7 @@ class TSSRequest:
 
     def add_vinyl_tags(self, parameters: dict, overrides=None):
         self._request['@BBTicket'] = True
+        self._request['@eUICC,Ticket'] = True
 
         self._request['eUICC,ApProductionMode'] = parameters.get('eUICC,ApProductionMode',
                                                                  parameters.get('ApProductionMode'))
