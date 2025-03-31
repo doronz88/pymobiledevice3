@@ -19,7 +19,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding
-from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7SignatureBuilder
+from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7Options, PKCS7SignatureBuilder
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
@@ -419,7 +419,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             if extended_response is not None:
                 pairing_challenge = extended_response.get('PairingChallenge')
                 signed_response = PKCS7SignatureBuilder().set_data(pairing_challenge).add_signer(
-                    cer, private_key, hashes.SHA256()).sign(Encoding.DER, [])
+                    cer, private_key, hashes.SHA256()).sign(Encoding.DER, [PKCS7Options.Binary])
                 pair_options = {'PairRecord': pair_record, 'ProtocolVersion': '2', 'PairingOptions': {
                     'ChallengeResponse': signed_response, 'ExtendedPairingErrors': True}}
                 # second pair with Response to Challenge
