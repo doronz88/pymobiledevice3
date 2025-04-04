@@ -72,6 +72,13 @@ class Device:
         return None
 
     @cached_property
+    def firmware_preflight_info(self):
+        if self.lockdown:
+            with suppress(MissingValueError):
+                return self.lockdown.firmware_preflight_info
+        return None
+
+    @cached_property
     def product_type(self) -> str:
         if self.lockdown:
             return self.lockdown.product_type
