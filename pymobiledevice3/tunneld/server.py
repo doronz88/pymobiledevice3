@@ -74,8 +74,12 @@ class TunneldCore:
 
     def tunnel_exists_for_udid(self, udid: str) -> bool:
         for task in self.tunnel_tasks.values():
-            if (task.udid == udid) and (task.tunnel is not None):
+            # Linux implementations of `usbmuxd` may report an incorrect value of UDID, dismissing the `-` character.
+            # For such cases, we also check for a UDID without it.
+            # See: <https://github.com/doronz88/pymobiledevice3/issues/1388#issuecomment-2782249770>
+            if ((task.udid == udid) or (task.udid.replace('-', '') == udid)) and (task.tunnel is not None):
                 return True
+
         return False
 
     @asyncio_print_traceback
