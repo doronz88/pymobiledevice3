@@ -350,7 +350,7 @@ adapter (with IPv6 link-local address), placing us in a subnet with the device's
 As we've said this communication is non-standard, and requires either:
 
 - macOS Monterey or higher
-- Special driver on your linux/windows machine
+- Special driver on your linux/Windows machine
 
 > **Spoiler Alert:** Apple may have regretted this, since starting at iOS 17.4, they added the `CodeDeviceProxy` - a new
 > lockdown service, allowing us skip all the steps this special driver is required for.
