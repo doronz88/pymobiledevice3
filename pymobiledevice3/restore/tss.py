@@ -381,7 +381,7 @@ class TSSRequest:
         self._request['@SE,Ticket'] = True
 
         keys_to_copy = ('SE,ChipID', 'SE,ID', 'SE,Nonce', 'SE,Nonce', 'SE,RootKeyIdentifier',
-                        'SEChipID', 'SEID', 'SENonce', 'SENonce', 'SERootKeyIdentifier',)
+                        'SEChipID', 'SEID', 'SENonce', 'SENonce', 'SERootKeyIdentifier', 'SE,OSUPubKeyID')
 
         for src_key in keys_to_copy:
             if src_key not in parameters:

@@ -56,7 +56,7 @@ class Restore(BaseRestore):
         self._ignore_fdr = ignore_fdr
 
         # query preflight info while device may still be in normal mode
-        self._preflight_info = self.device.preflight_info
+        self._preflight_info = self.device.firmware_preflight_info
 
         # prepare progress bar for OS component verify
         self._pb_verify_restore = None
