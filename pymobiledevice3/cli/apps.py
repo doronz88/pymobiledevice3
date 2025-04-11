@@ -57,3 +57,29 @@ def install(service_provider: LockdownServiceProvider, package: str) -> None:
 def afc(service_provider: LockdownClient, bundle_id: str, documents: bool):
     """ open an AFC shell for given bundle_id, assuming its profile is installed """
     HouseArrestService(lockdown=service_provider, bundle_id=bundle_id, documents_only=documents).shell()
+
+
+@apps.command('pull', cls=Command)
+@click.argument('bundle_id')
+@click.argument('remote_file', type=click.Path(exists=False))
+@click.argument('local_file', type=click.Path(exists=False))
+def pull(service_provider: LockdownClient, bundle_id: str, remote_file: str, local_file: str):
+    """ pull remote file from specified bundle_id """
+    HouseArrestService(lockdown=service_provider, bundle_id=bundle_id).pull(remote_file, local_file)
+
+
+@apps.command('push', cls=Command)
+@click.argument('bundle_id')
+@click.argument('local_file', type=click.Path(exists=False))
+@click.argument('remote_file', type=click.Path(exists=False))
+def push(service_provider: LockdownClient, bundle_id: str, local_file: str, remote_file: str):
+    """ push local file into specified bundle_id """
+    HouseArrestService(lockdown=service_provider, bundle_id=bundle_id).push(local_file, remote_file)
+
+
+@apps.command('rm', cls=Command)
+@click.argument('bundle_id')
+@click.argument('remote_file', type=click.Path(exists=False))
+def rm(service_provider: LockdownClient, bundle_id: str, remote_file: str):
+    """ remove remote file from specified bundle_id """
+    HouseArrestService(lockdown=service_provider, bundle_id=bundle_id).rm(remote_file)
