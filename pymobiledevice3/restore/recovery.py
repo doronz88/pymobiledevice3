@@ -112,31 +112,32 @@ class Recovery(BaseRestore):
                 if node is not None:
                     parameters['BbSNUM'] = node
 
-                tss.add_baseband_tags(parameters)
+                    # add baseband parameters
+                    tss.add_baseband_tags(parameters)
 
-                euiccchipid = pinfo.get('EUICCChipID')
-                if euiccchipid:
-                    self.logger.debug('adding EUICCChipID info')
-                    parameters['eUICC,ChipID'] = euiccchipid
+                    euiccchipid = pinfo.get('EUICCChipID')
+                    if euiccchipid:
+                        self.logger.debug('adding EUICCChipID info')
+                        parameters['eUICC,ChipID'] = euiccchipid
 
-                    if euiccchipid >= 5:
-                        node = pinfo.get('EUICCCSN')
-                        if node is not None:
-                            parameters['eUICC,EID'] = node
+                        if euiccchipid >= 5:
+                            node = pinfo.get('EUICCCSN')
+                            if node is not None:
+                                parameters['eUICC,EID'] = node
 
-                        node = pinfo.get('EUICCCertIdentifier')
-                        if node is not None:
-                            parameters['eUICC,RootKeyIdentifier'] = node
+                            node = pinfo.get('EUICCCertIdentifier')
+                            if node is not None:
+                                parameters['eUICC,RootKeyIdentifier'] = node
 
-                        node = pinfo.get('EUICCGoldNonce')
-                        if node is not None:
-                            parameters['EUICCGoldNonce'] = node
+                            node = pinfo.get('EUICCGoldNonce')
+                            if node is not None:
+                                parameters['EUICCGoldNonce'] = node
 
-                        node = pinfo.get('EUICCMainNonce')
-                        if node is not None:
-                            parameters['EUICCMainNonce'] = node
+                            node = pinfo.get('EUICCMainNonce')
+                            if node is not None:
+                                parameters['EUICCMainNonce'] = node
 
-                        tss.add_vinyl_tags(parameters)
+                            tss.add_vinyl_tags(parameters)
 
         # send request and grab response
         return await tss.send_receive()
