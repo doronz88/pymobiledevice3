@@ -561,7 +561,7 @@ def parse_live_profile_session(service_provider: LockdownClient, count, tid, sho
 
             i = 0
             for trace in parser.formatted_traces(tap.get_kdbuf_stream()):
-                print(trace)
+                print(trace, flush=True)
                 i += 1
                 if i == count:
                     break
