@@ -551,6 +551,7 @@ def parse_live_profile_session(service_provider: LockdownClient, count, tid, sho
         parser.filter_tid = tid
         parser.filter_process = process
         parser.show_tid = show_tid
+        parser.color = user_requested_colored_output()
 
         with CoreProfileSessionTap(dvt, time_config, filters) as tap:
             if show_tid:
@@ -560,7 +561,7 @@ def parse_live_profile_session(service_provider: LockdownClient, count, tid, sho
 
             i = 0
             for trace in parser.formatted_traces(tap.get_kdbuf_stream()):
-                print(trace)
+                print(trace, flush=True)
                 i += 1
                 if i == count:
                     break
