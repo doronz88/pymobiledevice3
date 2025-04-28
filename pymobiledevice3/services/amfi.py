@@ -49,7 +49,7 @@ class AmfiService:
 
         try:
             HeartbeatService(self._lockdown).start()
-        except ConnectionAbortedError:
+        except (ConnectionAbortedError, BrokenPipeError):
             self._logger.debug('device disconnected, awaiting reconnect')
 
         self._lockdown = retry_create_using_usbmux(None, serial=self._lockdown.udid)
