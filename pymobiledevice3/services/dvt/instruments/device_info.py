@@ -45,6 +45,15 @@ class DeviceInfo:
                 process['startDate'] = datetime.fromtimestamp(process['startDate'])
         return result
 
+    def is_running_pid(self, pid: int) -> bool:
+        """
+        check if pid is running 
+        :param pid: process identifier
+        :return: whether if it is running or not
+        """
+        self._channel.isRunningPid_(MessageAux().append_obj(pid))
+        return self._channel.receive_plist()
+
     def system_information(self):
         return self.request_information('systemInformation')
 
