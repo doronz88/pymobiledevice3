@@ -116,7 +116,7 @@ def dvt() -> None:
 
 
 @dvt.command('proclist', cls=Command)
-def proclist(service_provider: LockdownClient):
+def proclist(service_provider: LockdownClient) -> None:
     """ Show process list """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         processes = DeviceInfo(dvt).proclist()
@@ -128,7 +128,7 @@ def proclist(service_provider: LockdownClient):
 
 @dvt.command('is-running-pid', cls=Command)
 @click.argument('pid', type=click.INT)
-def proclist(service_provider: LockdownClient, pid: int):
+def is_running_pid(service_provider: LockdownClient, pid: int) -> None:
     """ Simple check if PID is running """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         print(DeviceInfo(dvt).is_running_pid(pid))
@@ -152,7 +152,7 @@ def applist(service_provider: LockdownServiceProvider) -> None:
 @click.argument('pid', type=click.INT)
 @click.argument('sig', type=click.INT, required=False)
 @click.option('-s', '--signal-name', type=click.Choice([s.name for s in signal.Signals]))
-def send_signal(service_provider, pid, sig, signal_name):
+def send_signal(service_provider, pid, sig, signal_name) -> None:
     """ Send a signal to process by its PID """
     if not sig and not signal_name:
         raise MissingParameter(param_type='argument|option', param_hint='\'SIG|SIGNAL-NAME\'')
@@ -165,7 +165,7 @@ def send_signal(service_provider, pid, sig, signal_name):
 
 @dvt.command('kill', cls=Command)
 @click.argument('pid', type=click.INT)
-def kill(service_provider: LockdownClient, pid):
+def kill(service_provider: LockdownClient, pid) -> None:
     """ Kill a process by its pid. """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         ProcessControl(dvt).kill(pid)
