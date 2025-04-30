@@ -47,7 +47,7 @@ class DeviceInfo:
 
     def is_running_pid(self, pid: int) -> bool:
         """
-        check if pid is running 
+        check if pid is running
         :param pid: process identifier
         :return: whether if it is running or not
         """
