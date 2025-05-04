@@ -136,6 +136,11 @@ RPPairingPacket = Struct(
 )
 
 
+# TODO: Remove this when 3.12 becomes deprecated
+def python_version_supports_tcp_tls_psk() -> bool:
+    return sys.version_info >= (3, 13)
+
+
 class RemotePairingTunnel(ABC):
     def __init__(self):
         self._queue = asyncio.Queue()
@@ -455,7 +460,7 @@ class RemotePairingProtocol(StartTcpTunnel):
         port = parameters['port']
         sock = create_connection((host, port))
         OSUTIL.set_keepalive(sock)
-        if sys.version_info >= (3, 13):
+        if python_version_supports_tcp_tls_psk():
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
@@ -992,8 +997,10 @@ async def create_core_device_service_using_remotepairing_manual_pairing(
 async def start_tunnel_over_remotepairing(
         remote_pairing: RemotePairingTunnelService, secrets: Optional[TextIO] = None,
         max_idle_timeout: float = RemotePairingQuicTunnel.MAX_IDLE_TIMEOUT,
-        protocol: TunnelProtocol = TunnelProtocol.QUIC) \
+        protocol: TunnelProtocol = TunnelProtocol.DEFAULT) \
         -> AsyncGenerator[TunnelResult, None]:
+    if protocol == TunnelProtocol.DEFAULT:
+        protocol = TunnelProtocol.TCP if python_version_supports_tcp_tls_psk() else TunnelProtocol.QUIC
     async with remote_pairing:
         if protocol == TunnelProtocol.QUIC:
             async with remote_pairing.start_quic_tunnel(
@@ -1008,9 +1015,14 @@ async def start_tunnel_over_remotepairing(
 async def start_tunnel_over_core_device(
         service_provider: CoreDeviceTunnelService, secrets: Optional[TextIO] = None,
         max_idle_timeout: float = RemotePairingQuicTunnel.MAX_IDLE_TIMEOUT,
-        protocol: TunnelProtocol = TunnelProtocol.QUIC) \
+        protocol: TunnelProtocol = TunnelProtocol.DEFAULT) \
         -> AsyncGenerator[TunnelResult, None]:
     stop_remoted_if_required()
+    if protocol == TunnelProtocol.DEFAULT:
+        if python_version_supports_tcp_tls_psk() and Version(service_provider.rsd.product_version) >= Version('17.2'):
+            protocol = TunnelProtocol.TCP
+        else:
+            protocol = TunnelProtocol.QUIC
     async with service_provider:
         if protocol == TunnelProtocol.QUIC:
             async with service_provider.start_quic_tunnel(

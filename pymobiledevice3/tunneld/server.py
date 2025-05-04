@@ -333,12 +333,12 @@ class TunneldRunner:
     """ TunneldRunner orchestrate between the webserver and TunneldCore """
 
     @classmethod
-    def create(cls, host: str, port: int, protocol: TunnelProtocol = TunnelProtocol.QUIC, usb_monitor: bool = True,
+    def create(cls, host: str, port: int, protocol: TunnelProtocol = TunnelProtocol.DEFAULT, usb_monitor: bool = True,
                wifi_monitor: bool = True, usbmux_monitor: bool = True, mobdev2_monitor: bool = True) -> None:
         cls(host, port, protocol=protocol, usb_monitor=usb_monitor, wifi_monitor=wifi_monitor,
             usbmux_monitor=usbmux_monitor, mobdev2_monitor=mobdev2_monitor)._run_app()
 
-    def __init__(self, host: str, port: int, protocol: TunnelProtocol = TunnelProtocol.QUIC, usb_monitor: bool = True,
+    def __init__(self, host: str, port: int, protocol: TunnelProtocol = TunnelProtocol.DEFAULT, usb_monitor: bool = True,
                  wifi_monitor: bool = True, usbmux_monitor: bool = True, mobdev2_monitor: bool = True):
         @asynccontextmanager
         async def lifespan(app: FastAPI):
