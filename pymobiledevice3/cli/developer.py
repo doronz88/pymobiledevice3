@@ -131,7 +131,7 @@ def proclist(service_provider: LockdownClient) -> None:
 def is_running_pid(service_provider: LockdownClient, pid: int) -> None:
     """ Simple check if PID is running """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        print(DeviceInfo(dvt).is_running_pid(pid))
+        print_json(DeviceInfo(dvt).is_running_pid(pid))
 
 @dvt.command('memlimitoff', cls=Command)
 @click.argument('pid', type=click.INT)
