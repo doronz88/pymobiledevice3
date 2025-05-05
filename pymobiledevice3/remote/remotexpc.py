@@ -1,8 +1,7 @@
 import asyncio
 import sys
 from asyncio import IncompleteReadError
-from collections.abc import Generator
-from typing import Optional
+from typing import AsyncIterable, Optional
 
 import IPython
 import nest_asyncio
@@ -76,7 +75,7 @@ class RemoteXPCConnection:
         self._writer.write(DataFrame(stream_id=ROOT_CHANNEL, data=xpc_wrapper).serialize())
         await self._writer.drain()
 
-    async def iter_file_chunks(self, total_size: int, file_idx: int = 0) -> Generator[bytes, None, None]:
+    async def iter_file_chunks(self, total_size: int, file_idx: int = 0) -> AsyncIterable[bytes]:
         stream_id = (file_idx + 1) * 2
         await self._open_channel(stream_id, XpcFlags.FILE_TX_STREAM_RESPONSE)
         size = 0
