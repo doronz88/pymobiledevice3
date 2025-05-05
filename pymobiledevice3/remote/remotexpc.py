@@ -1,8 +1,7 @@
 import asyncio
 import sys
 from asyncio import IncompleteReadError
-from collections.abc import Generator
-from typing import Optional
+from typing import AsyncIterable, Optional
 
 import IPython
 import nest_asyncio
@@ -12,7 +11,7 @@ from hyperframe.frame import DataFrame, Frame, GoAwayFrame, HeadersFrame, RstStr
 from pygments import formatters, highlight, lexers
 from traitlets.config import Config
 
-from pymobiledevice3.exceptions import StreamClosedError
+from pymobiledevice3.exceptions import ProtocolError, StreamClosedError
 from pymobiledevice3.remote.xpc_message import XpcFlags, XpcInt64Type, XpcUInt64Type, XpcWrapper, create_xpc_wrapper, \
     decode_xpc_object
 
@@ -26,6 +25,8 @@ HTTP2_MAGIC = b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n'
 
 ROOT_CHANNEL = 1
 REPLY_CHANNEL = 3
+
+FIRST_REPLY_TIMEOUT = 3
 
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every RemoteXPC service.
@@ -76,7 +77,7 @@ class RemoteXPCConnection:
         self._writer.write(DataFrame(stream_id=ROOT_CHANNEL, data=xpc_wrapper).serialize())
         await self._writer.drain()
 
-    async def iter_file_chunks(self, total_size: int, file_idx: int = 0) -> Generator[bytes, None, None]:
+    async def iter_file_chunks(self, total_size: int, file_idx: int = 0) -> AsyncIterable[bytes]:
         stream_id = (file_idx + 1) * 2
         await self._open_channel(stream_id, XpcFlags.FILE_TX_STREAM_RESPONSE)
         size = 0
@@ -154,7 +155,9 @@ class RemoteXPCConnection:
         await self._open_channel(REPLY_CHANNEL, XpcFlags.INIT_HANDSHAKE)
         self.next_message_id[REPLY_CHANNEL] += 1
 
-        assert isinstance(await self._receive_frame(), SettingsFrame)
+        settings_frame = await asyncio.wait_for(self._receive_frame(), FIRST_REPLY_TIMEOUT)
+        if not isinstance(settings_frame, SettingsFrame):
+            raise ProtocolError(f'Got unexpected frame: {settings_frame} instead of a SettingsFrame')
 
         await self._send_frame(SettingsFrame(flags=['ACK']))
 

@@ -411,3 +411,8 @@ class RemotePairingCompletedError(PyMobileDevice3Exception):
 class DisableMemoryLimitError(PyMobileDevice3Exception):
     """ Disabling memory limit fails. """
     pass
+
+
+class ProtocolError(PyMobileDevice3Exception):
+    """ An unexpected protocol message was received """
+    pass
