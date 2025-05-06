@@ -94,6 +94,24 @@ class Recovery(BaseRestore):
         if self.device.lockdown is not None:
             pinfo = self.device.preflight_info
             if pinfo:
+                for updater_name, value in pinfo['DeviceInfo'].items():
+                    # add SE,* tags from info dictionary to parameters
+                    if updater_name == 'SE':
+                        parameters.update(value)
+                        # add required tags for SE TSS request
+                        tss.add_se_tags(parameters, None)
+                    if updater_name == 'Savage':
+                        try:
+                            value = value.pop('YonkersDeviceInfo')
+                            parameters.update(value)
+                            tss.add_yonkers_tags(parameters)
+                        except KeyError:
+                            parameters.update(value)
+                            # add required tags for SE TSS request
+                            tss.add_savage_tags(parameters, None)
+
+            pinfo = self.device.firmware_preflight_info
+            if pinfo:
                 self.logger.debug('adding preflight info')
 
                 node = pinfo.get('Nonce')
