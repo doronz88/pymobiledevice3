@@ -102,19 +102,22 @@ SUPPORTED_MESSAGE_TYPES = {
 
 class RestoreOptions:
 
-    def __init__(self, preflight_info=None, sep=None, macos_variant=None, build_identity: BuildIdentity = None,
+    def __init__(self, firmware_preflight_info=None, sep=None, macos_variant=None, build_identity: BuildIdentity = None,
                  restore_boot_args=None, spp=None, restore_behavior: str = None, msp=None):
         self.AutoBootDelay = 0
 
-        if preflight_info is not None:
-            bbus = dict(preflight_info)
-            bbus.pop('FusingStatus')
-            bbus.pop('PkHash')
-            self.BBUpdaterState = bbus
+        try:
+            if firmware_preflight_info is not None:
+                bbus = dict(firmware_preflight_info)
+                bbus.pop('FusingStatus')
+                bbus.pop('PkHash')
+                self.BBUpdaterState = bbus
 
-            nonce = preflight_info.get('Nonce')
-            if nonce is not None:
-                self.BasebandNonce = nonce
+                nonce = firmware_preflight_info.get('Nonce')
+                if nonce is not None:
+                    self.BasebandNonce = nonce
+        except KeyError as e:
+            logger.warning(f'Skipping addition of firmware_preflight_info due to: {e}')
 
         self.SupportedDataTypes = SUPPORTED_DATA_TYPES
         self.SupportedMessageTypes = SUPPORTED_MESSAGE_TYPES

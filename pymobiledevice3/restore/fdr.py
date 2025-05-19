@@ -36,8 +36,6 @@ class FDRClient:
     ctrlprotoversion = 2
 
     def __init__(self, type_: fdr_type, udid=None):
-        global conn_port
-
         device = usbmux.select_device(udid)
         if device is None:
             if udid:

@@ -1,5 +1,6 @@
 from contextlib import suppress
 from functools import cached_property
+from typing import Optional
 
 from pymobiledevice3.exceptions import MissingValueError
 from pymobiledevice3.irecv import IRecv
@@ -65,10 +66,17 @@ class Device:
         return self.irecv.sep_nonce
 
     @cached_property
-    def preflight_info(self):
+    def preflight_info(self) -> Optional[dict]:
         if self.lockdown:
             with suppress(MissingValueError):
                 return self.lockdown.preflight_info
+        return None
+
+    @cached_property
+    def firmware_preflight_info(self) -> Optional[dict]:
+        if self.lockdown:
+            with suppress(MissingValueError):
+                return self.lockdown.firmware_preflight_info
         return None
 
     @cached_property
