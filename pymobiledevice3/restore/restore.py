@@ -57,6 +57,7 @@ class Restore(BaseRestore):
 
         # query preflight info while device may still be in normal mode
         self._preflight_info = self.device.preflight_info
+        self._firmware_preflight_info = self.device.firmware_preflight_info
 
         # prepare progress bar for OS component verify
         self._pb_verify_restore = None
@@ -1318,7 +1319,7 @@ class Restore(BaseRestore):
 
         sep = self.build_identity['Manifest']['SEP'].get('Info')
         spp = self.build_identity['Info'].get('SystemPartitionPadding')
-        opts = RestoreOptions(preflight_info=self._preflight_info, sep=sep, macos_variant=self.macos_variant,
+        opts = RestoreOptions(firmware_preflight_info=self._firmware_preflight_info, sep=sep, macos_variant=self.macos_variant,
                               build_identity=self.build_identity, restore_boot_args=self.recovery.restore_boot_args,
                               spp=spp, restore_behavior=self.build_identity.restore_behavior,
                               msp=self.build_identity.minimum_system_partition)

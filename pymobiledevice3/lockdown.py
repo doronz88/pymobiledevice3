@@ -248,6 +248,10 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
     @property
     def preflight_info(self) -> dict:
+        return self.get_value(key='PreflightInfo')
+
+    @property
+    def firmware_preflight_info(self) -> dict:
         return self.get_value(key='FirmwarePreflightInfo')
 
     @property
