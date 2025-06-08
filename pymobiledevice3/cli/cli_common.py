@@ -149,6 +149,7 @@ def choose_service_provider(callback: Callable):
         lockdown_service_provider = kwargs.pop('lockdown_service_provider', None)
         rsd_service_provider_manually = kwargs.pop('rsd_service_provider_manually', None)
         rsd_service_provider_using_tunneld = kwargs.pop('rsd_service_provider_using_tunneld', None)
+        del kwargs['rsd_use_userspace_tun']
         if lockdown_service_provider is not None:
             service_provider = lockdown_service_provider
         if rsd_service_provider_manually is not None:
@@ -224,13 +225,23 @@ class LockdownCommand(BaseServiceProviderCommand):
 class RSDCommand(BaseServiceProviderCommand):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.userspace_tun_address = None
         self.params[:0] = [
+            RSDOption(('rsd_use_userspace_tun', '--userspace-tun'), type=(str, int),
+                      callback=self.userspace_tun,
+                      mutually_exclusive=['rsd_service_provider_using_tunneld'],
+                      help='\b\nhostname and port number of userspace tunnel server '
+                           '(as provided by a `start-tunnel` subcommand).'),
             RSDOption(('rsd_service_provider_manually', '--rsd'), type=(str, int), callback=self.rsd,
                       mutually_exclusive=['rsd_service_provider_using_tunneld'],
                       help='\b\n'
                            'RSD hostname and port number (as provided by a `start-tunnel` subcommand).'),
             RSDOption(('rsd_service_provider_using_tunneld', '--tunnel'), callback=self.tunneld,
-                      mutually_exclusive=['rsd_service_provider_manually'], envvar=TUNNEL_ENV_VAR,
+                      mutually_exclusive=[
+                          'rsd_service_provider_manually',
+                          'rsd_use_userspace_tun'
+                      ],
+                      envvar=TUNNEL_ENV_VAR,
                       help='\b\n'
                            'Either an empty string to force tunneld device selection, or a UDID of a tunneld '
                            'discovered device.\n'
@@ -238,9 +249,12 @@ class RSDCommand(BaseServiceProviderCommand):
                            f'This option may also be transferred as an environment variable: {TUNNEL_ENV_VAR}')
         ]
 
+    def userspace_tun(self, ctx, param: str, value: Optional[tuple[str, int]]) -> None:
+        self.userspace_tun_address = value
+
     def rsd(self, ctx, param: str, value: Optional[tuple[str, int]]) -> Optional[RemoteServiceDiscoveryService]:
         if value is not None:
-            rsd = RemoteServiceDiscoveryService(value)
+            rsd = RemoteServiceDiscoveryService(value, userspace_tun_address=self.userspace_tun_address)
             asyncio.run(rsd.connect(), debug=True)
             self.service_provider = rsd
             return self.service_provider
