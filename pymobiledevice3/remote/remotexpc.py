@@ -1,4 +1,5 @@
 import asyncio
+import socket
 import sys
 from asyncio import IncompleteReadError
 from typing import AsyncIterable, Optional
@@ -37,9 +38,10 @@ resp = await client.send_receive_request({"Command": "DoSomething"})
 
 
 class RemoteXPCConnection:
-    def __init__(self, address: tuple[str, int]):
+    def __init__(self, address: tuple[str, int], userspace_address: "tuple[str, int] | None" = None):
         self._previous_frame_data = b''
         self.address = address
+        self.userspace_address = userspace_address
         self.next_message_id: dict[int, int] = {ROOT_CHANNEL: 0, REPLY_CHANNEL: 0}
         self.peer_info = None
         self._reader: Optional[asyncio.StreamReader] = None
@@ -53,7 +55,15 @@ class RemoteXPCConnection:
         await self.close()
 
     async def connect(self) -> None:
-        self._reader, self._writer = await asyncio.open_connection(self.address[0], self.address[1])
+        if self.userspace_address:
+            self._reader, self._writer = await asyncio.open_connection(*self.userspace_address)
+            self._writer.write(
+                socket.inet_pton(socket.AF_INET6, self.address[0])
+                + self.address[1].to_bytes(4, "little")
+            )
+            await self._writer.drain()
+        else:
+            self._reader, self._writer = await asyncio.open_connection(self.address[0], self.address[1])
         try:
             await self._do_handshake()
         except Exception:  # noqa: E722
