@@ -43,3 +43,4 @@ sslpsk-pmd3>=1.0.3;python_version<'3.13'
 python-pcapng>=2.1.1
 plumbum
 pyimg4>=0.8.8
+swtcp6_pmd3 @ git+https://github.com/strobecat/swtcp6-pmd3@f59719e
