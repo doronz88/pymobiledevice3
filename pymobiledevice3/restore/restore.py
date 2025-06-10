@@ -5,6 +5,7 @@ import os
 import plistlib
 import struct
 import tempfile
+import time
 import traceback
 import typing
 import zipfile
@@ -1189,6 +1190,8 @@ class Restore(BaseRestore):
             await self.send_manifest()
         elif data_type == 'BasebandUpdaterOutputData':
             await self.handle_baseband_updater_output_data(message)
+        elif data_type == 'HostSystemTime':
+            await self.handle_host_system_time(message)
         else:
             self.logger.error(f'unknown data request: {message}')
 
@@ -1277,6 +1280,9 @@ class Restore(BaseRestore):
         self.logger.debug('Closing connection of BasebandUpdaterOutputData data port')
         client.close()
 
+    async def handle_host_system_time(self, message: dict) -> None:
+        await self._restored.send({'SetHostTimeOnDevice': time.time()})
+
     async def handle_restored_crash(self, message: dict) -> None:
         backtrace = '\n'.join(message['RestoredBacktrace'])
         self.logger.info(f'restored crashed. backtrace:\n{backtrace}')
@@ -1319,7 +1325,8 @@ class Restore(BaseRestore):
 
         sep = self.build_identity['Manifest']['SEP'].get('Info')
         spp = self.build_identity['Info'].get('SystemPartitionPadding')
-        opts = RestoreOptions(firmware_preflight_info=self._firmware_preflight_info, sep=sep, macos_variant=self.macos_variant,
+        opts = RestoreOptions(firmware_preflight_info=self._firmware_preflight_info, sep=sep,
+                              macos_variant=self.macos_variant,
                               build_identity=self.build_identity, restore_boot_args=self.recovery.restore_boot_args,
                               spp=spp, restore_behavior=self.build_identity.restore_behavior,
                               msp=self.build_identity.minimum_system_partition)
