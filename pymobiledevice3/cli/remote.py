@@ -113,14 +113,21 @@ def rsd_info(service_provider: RemoteServiceDiscoveryService):
 
 
 async def tunnel_task(
-        service, secrets: Optional[TextIO] = None, script_mode: bool = False,
+        service, secrets: Optional[TextIO] = None, script_mode: bool = False, userspace_host: Optional[str] = None,
         max_idle_timeout: float = MAX_IDLE_TIMEOUT, protocol: TunnelProtocol = TunnelProtocol.DEFAULT) -> None:
     async with start_tunnel(
-            service, secrets=secrets, max_idle_timeout=max_idle_timeout, protocol=protocol) as tunnel_result:
+            service, secrets=secrets, max_idle_timeout=max_idle_timeout,
+            protocol=protocol, userspace_host=userspace_host) as tunnel_result:
         logger.info('tunnel created')
+        use_userspace = userspace_host is not None
         if script_mode:
-            print(f'{tunnel_result.address} {tunnel_result.port}')
+            if userspace_host:
+                print(f'{tunnel_result.address} {tunnel_result.port} {tunnel_result.interface}')
+            else:
+                print(f'{tunnel_result.address} {tunnel_result.port}')
         else:
+            interface_name = "Userspace TUN" if use_userspace else tunnel_result.interface
+            userspace_param = f"--userspace-wrapper {tunnel_result.interface} " if use_userspace else ""
             if user_requested_colored_output():
                 if secrets is not None:
                     print(click.style('Secrets: ', bold=True, fg='magenta') +
@@ -128,7 +135,7 @@ async def tunnel_task(
                 print(click.style('Identifier: ', bold=True, fg='yellow') +
                       click.style(service.remote_identifier, bold=True, fg='white'))
                 print(click.style('Interface: ', bold=True, fg='yellow') +
-                      click.style(tunnel_result.interface, bold=True, fg='white'))
+                      click.style(interface_name, bold=True, fg='white'))
                 print(click.style('Protocol: ', bold=True, fg='yellow') +
                       click.style(tunnel_result.protocol, bold=True, fg='white'))
                 print(click.style('RSD Address: ', bold=True, fg='yellow') +
@@ -136,7 +143,8 @@ async def tunnel_task(
                 print(click.style('RSD Port: ', bold=True, fg='yellow') +
                       click.style(tunnel_result.port, bold=True, fg='white'))
                 print(click.style('Use the follow connection option:\n', bold=True, fg='yellow') +
-                      click.style(f'--rsd {tunnel_result.address} {tunnel_result.port}', bold=True, fg='cyan'))
+                      click.style(userspace_param + f'--rsd {tunnel_result.address} {tunnel_result.port}',
+                                  bold=True, fg='cyan'))
             else:
                 if secrets is not None:
                     print(f'Secrets: {secrets.name}')
@@ -145,8 +153,8 @@ async def tunnel_task(
                 print(f'Protocol: {tunnel_result.protocol}')
                 print(f'RSD Address: {tunnel_result.address}')
                 print(f'RSD Port: {tunnel_result.port}')
-                print(f'Use the follow connection option:\n'
-                      f'--rsd {tunnel_result.address} {tunnel_result.port}')
+                print('Use the follow connection option:\n' +
+                      userspace_param + f'--rsd {tunnel_result.address} {tunnel_result.port}')
         sys.stdout.flush()
         await tunnel_result.client.wait_closed()
         logger.info('tunnel was closed')
@@ -154,7 +162,8 @@ async def tunnel_task(
 
 async def start_tunnel_task(
         connection_type: ConnectionType, secrets: TextIO, udid: Optional[str] = None, script_mode: bool = False,
-        max_idle_timeout: float = MAX_IDLE_TIMEOUT, protocol: TunnelProtocol = TunnelProtocol.DEFAULT) -> None:
+        max_idle_timeout: float = MAX_IDLE_TIMEOUT, protocol: TunnelProtocol = TunnelProtocol.DEFAULT,
+        userspace_host: Optional[str] = None) -> None:
     if start_tunnel is None:
         raise NotImplementedError('failed to start the tunnel on your platform')
     get_tunnel_services = {
@@ -173,13 +182,14 @@ async def start_tunnel_task(
         service = prompt_device_list(tunnel_services)
 
     await tunnel_task(service, secrets=secrets, script_mode=script_mode, max_idle_timeout=max_idle_timeout,
-                      protocol=protocol)
+                      protocol=protocol, userspace_host=userspace_host)
 
 
 @remote_cli.command('start-tunnel', cls=BaseCommand)
 @click.option('-t', '--connection-type', type=click.Choice([e.value for e in ConnectionType], case_sensitive=False),
               default=ConnectionType.USB.value)
 @click.option('--udid', help='UDID for a specific device to look for')
+@click.option('--userspace-host', help='Specify a host to listen on to enable userspace TUN')
 @click.option('--secrets', type=click.File('wt'), help='TLS keyfile for decrypting with Wireshark')
 @click.option('--script-mode', is_flag=True,
               help='Show only HOST and port number to allow easy parsing from external shell scripts')
@@ -188,17 +198,17 @@ async def start_tunnel_task(
 @click.option('-p', '--protocol',
               type=click.Choice([e.value for e in TunnelProtocol], case_sensitive=False),
               default=TunnelProtocol.DEFAULT.value)
-@sudo_required
+# @sudo_required
 def cli_start_tunnel(
-        connection_type: ConnectionType, udid: Optional[str], secrets: TextIO, script_mode: bool,
-        max_idle_timeout: float, protocol: str) -> None:
+        connection_type: ConnectionType, udid: Optional[str], userspace_host: Optional[str],
+        secrets: TextIO, script_mode: bool, max_idle_timeout: float, protocol: str) -> None:
     """ start tunnel """
     if not verify_tunnel_imports():
         return
     asyncio.run(
         start_tunnel_task(
             ConnectionType(connection_type), secrets, udid, script_mode, max_idle_timeout=max_idle_timeout,
-            protocol=TunnelProtocol(protocol)), debug=True)
+            protocol=TunnelProtocol(protocol), userspace_host=userspace_host), debug=True)
 
 
 @dataclasses.dataclass

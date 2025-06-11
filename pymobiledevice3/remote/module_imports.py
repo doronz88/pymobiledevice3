@@ -4,9 +4,9 @@ from typing import Callable, Optional
 logger = logging.getLogger(__name__)
 
 try:
-    from pymobiledevice3.remote.tunnel_service import RemotePairingQuicTunnel, start_tunnel
+    from pymobiledevice3.remote.tunnel_service import _RemotePairingQuicTunnelMixin, start_tunnel
 
-    MAX_IDLE_TIMEOUT = RemotePairingQuicTunnel.MAX_IDLE_TIMEOUT
+    MAX_IDLE_TIMEOUT = _RemotePairingQuicTunnelMixin.MAX_IDLE_TIMEOUT
 except ImportError:
     start_tunnel: Optional[Callable] = None
     MAX_IDLE_TIMEOUT = None

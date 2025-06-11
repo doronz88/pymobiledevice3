@@ -116,6 +116,7 @@ class ServiceConnection:
 
     @staticmethod
     def create_using_tcp(hostname: str, port: int, keep_alive: bool = True,
+                         userspace_address: "None | tuple[str, int]" = None,
                          create_connection_timeout: int = DEFAULT_TIMEOUT) -> 'ServiceConnection':
         """
         Create a ServiceConnection using a TCP connection.
@@ -126,7 +127,11 @@ class ServiceConnection:
         :param create_connection_timeout: The timeout for creating the connection.
         :return: A ServiceConnection object.
         """
-        sock = socket.create_connection((hostname, port), timeout=create_connection_timeout)
+        if userspace_address:
+            sock = socket.create_connection(userspace_address, timeout=create_connection_timeout)
+            sock.sendall(socket.inet_pton(socket.AF_INET6, hostname) + port.to_bytes(4, "little"))
+        else:
+            sock = socket.create_connection((hostname, port), timeout=create_connection_timeout)
         sock.settimeout(None)
         if keep_alive:
             OSUTIL.set_keepalive(sock)
