@@ -252,7 +252,12 @@ class MobileConfigService(LockdownService):
                 'AppleTVSubtitle',
                 'Intelligence',
                 'WebContentFiltering',
-                'CameraButton'
+                'CameraButton',
+                'AdditionalPrivacySettings',
+                'EnableLockdownMode',
+                'OSShowcase',
+                'SafetyAndHandling',
+                'Tips',
             ],
             'SupervisorHostCertificates': [
                 public_key
