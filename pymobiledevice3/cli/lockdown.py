@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import platform
 import plistlib
 from pathlib import Path
 from typing import Optional
@@ -164,12 +165,15 @@ def lockdown_wifi_connections(service_provider: LockdownClient, state):
 @lockdown_group.command('start-tunnel', cls=Command)
 @click.option('--script-mode', is_flag=True,
               help='Show only HOST and port number to allow easy parsing from external shell scripts')
-@sudo_required
+@click.option('--userspace-tun-host', help='Specify a host to listen on to enable userspace TUN')
 def cli_start_tunnel(
-        service_provider: LockdownServiceProvider, script_mode: bool) -> None:
+        service_provider: LockdownServiceProvider, script_mode: bool, userspace_tun_host: Optional[str] = None) -> None:
     """ start tunnel """
+    if userspace_tun_host is None or platform.system() == 'Darwin':
+        sudo_required(lambda: None)()
     service = CoreDeviceTunnelProxy(service_provider)
-    asyncio.run(tunnel_task(service, script_mode=script_mode, secrets=None, protocol=TunnelProtocol.TCP), debug=True)
+    asyncio.run(tunnel_task(service, script_mode=script_mode, secrets=None,
+                protocol=TunnelProtocol.TCP, userspace_tun_host=userspace_tun_host), debug=True)
 
 
 @lockdown_group.command('assistive-touch', cls=Command)
