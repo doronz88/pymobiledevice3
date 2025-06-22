@@ -168,8 +168,11 @@ class RemotePairingTunnel(ABC):
                         await self.send_packet_to_device(packet)
             else:
                 while True:
-                    packet = await asyncio.get_running_loop().run_in_executor(None, self.tun.read)
+                    packet = await self.tun.async_read()
                     if packet:
+                        if (packet[0] >> 4) != 6:
+                            # Make sure to output only IPv6 packets
+                            continue
                         await self.send_packet_to_device(packet)
         except ConnectionResetError:
             self._logger.warning(f'got connection reset in {asyncio.current_task().get_name()}')
