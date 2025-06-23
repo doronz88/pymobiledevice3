@@ -68,6 +68,7 @@ from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.utils import asyncio_print_traceback
 
+DEFAULT_INTERFACE_NAME = 'pymobiledevice3-tunnel'
 TIMEOUT = 1
 
 OSUTIL = get_os_utils()
@@ -179,8 +180,12 @@ class RemotePairingTunnel(ABC):
         except OSError:
             self._logger.warning(f'got oserror in {asyncio.current_task().get_name()}')
 
-    def start_tunnel(self, address: str, mtu: int) -> None:
-        self.tun = TunTapDevice()
+    def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
+        if 'win32' == sys.platform:
+            # Only win32 tunnel implementation supports interface name
+            self.tun = TunTapDevice(interface_name)
+        else:
+            self.tun = TunTapDevice()
         self.tun.addr = address
         self.tun.mtu = mtu
         self.tun.up()
@@ -235,8 +240,8 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
             await self.ping()
             await asyncio.sleep(self._quic.configuration.idle_timeout / 2)
 
-    def start_tunnel(self, address: str, mtu: int) -> None:
-        super().start_tunnel(address, mtu)
+    def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
+        super().start_tunnel(address, mtu, interface_name=interface_name)
         self._keep_alive_task = asyncio.create_task(self.keep_alive_task())
 
     async def stop_tunnel(self) -> None:
@@ -298,8 +303,8 @@ class RemotePairingTcpTunnel(RemotePairingTunnel):
         await self._writer.drain()
         return json.loads(CDTunnelPacket.parse(await self._reader.read(self.REQUESTED_MTU)).body)
 
-    def start_tunnel(self, address: str, mtu: int) -> None:
-        super().start_tunnel(address, mtu)
+    def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
+        super().start_tunnel(address, mtu, interface_name=interface_name)
         self._sock_read_task = asyncio.create_task(self.sock_read_task(), name=f'sock-read-task-{address}')
 
     async def stop_tunnel(self) -> None:
@@ -440,7 +445,8 @@ class RemotePairingProtocol(StartTcpTunnel):
                 await client.wait_connected()
                 handshake_response = await client.request_tunnel_establish()
                 client.start_tunnel(handshake_response['clientParameters']['address'],
-                                    handshake_response['clientParameters']['mtu'])
+                                    handshake_response['clientParameters']['mtu'],
+                                    interface_name=f'{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}')
                 try:
                     yield TunnelResult(
                         client.tun.name, handshake_response['serverAddress'], handshake_response['serverRSDPort'],
@@ -474,7 +480,8 @@ class RemotePairingProtocol(StartTcpTunnel):
         handshake_response = await tunnel.request_tunnel_establish()
 
         tunnel.start_tunnel(handshake_response['clientParameters']['address'],
-                            handshake_response['clientParameters']['mtu'])
+                            handshake_response['clientParameters']['mtu'],
+                            interface_name=f'{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}')
 
         try:
             yield TunnelResult(
@@ -948,7 +955,8 @@ class CoreDeviceTunnelProxy(StartTcpTunnel):
         tunnel = RemotePairingTcpTunnel(self._service.reader, self._service.writer)
         handshake_response = await tunnel.request_tunnel_establish()
         tunnel.start_tunnel(handshake_response['clientParameters']['address'],
-                            handshake_response['clientParameters']['mtu'])
+                            handshake_response['clientParameters']['mtu'],
+                            interface_name=f'{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}')
         try:
             yield TunnelResult(
                 tunnel.tun.name, handshake_response['serverAddress'], handshake_response['serverRSDPort'],
