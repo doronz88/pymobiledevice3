@@ -37,7 +37,6 @@ developer_disk_image>=0.0.2
 opack2
 psutil
 pytun-pmd3>=2.1.0
-aiofiles
 prompt_toolkit
 sslpsk-pmd3>=1.0.3;python_version<'3.13'
 python-pcapng>=2.1.1
