@@ -311,13 +311,13 @@ class RemotePairingTcpTunnel(RemotePairingTunnel):
         self._sock_read_task.cancel()
         with suppress(CancelledError):
             await self._sock_read_task
+        await super().stop_tunnel()
         if not self._writer.is_closing():
             self._writer.close()
             try:
                 await self._writer.wait_closed()
             except OSError:
                 pass
-        await super().stop_tunnel()
 
 
 @dataclasses.dataclass
