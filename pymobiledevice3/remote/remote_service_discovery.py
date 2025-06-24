@@ -28,10 +28,16 @@ RSD_PORT = 58783
 
 
 class RemoteServiceDiscoveryService(LockdownServiceProvider):
-    def __init__(self, address: tuple[str, int], name: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        address: tuple[str, int],
+        userspace_tun_address: "tuple[str, int] | None" = None,
+        name: Optional[str] = None
+    ) -> None:
         super().__init__()
         self.name = name
-        self.service = RemoteXPCConnection(address)
+        self.service = RemoteXPCConnection(address, userspace_tun_address)
+        self.userspace_tun_address = userspace_tun_address
         self.peer_info: Optional[dict] = None
         self.lockdown: Optional[LockdownClient] = None
         self.all_values: Optional[dict] = None
@@ -75,7 +81,11 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         return self.lockdown.get_value(domain, key)
 
     def start_lockdown_service_without_checkin(self, name: str) -> ServiceConnection:
-        return ServiceConnection.create_using_tcp(self.service.address[0], self.get_service_port(name))
+        return ServiceConnection.create_using_tcp(
+            self.service.address[0],
+            self.get_service_port(name),
+            userspace_tun_address=self.userspace_tun_address
+        )
 
     def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
         service = self.start_lockdown_service_without_checkin(name)
@@ -112,7 +122,10 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             raise
 
     def start_remote_service(self, name: str) -> RemoteXPCConnection:
-        service = RemoteXPCConnection((self.service.address[0], self.get_service_port(name)))
+        service = RemoteXPCConnection(
+            (self.service.address[0], self.get_service_port(name)),
+            self.userspace_tun_address
+        )
         return service
 
     def start_service(self, name: str) -> Union[RemoteXPCConnection, ServiceConnection]:
