@@ -220,7 +220,7 @@ class Restore(BaseRestore):
         elif image_name == '__SystemVersion__':
             data = self.ipsw.system_version
         else:
-            data = self.get_personalized_data(component_name, data=data, tss=self.recovery.tss)
+            data = self.get_personalized_data(component_name, tss=self.recovery.tss)
 
         self.logger.info(f'Sending {component_name} now...')
         chunk_size = 8192
