@@ -21,7 +21,6 @@ from socket import create_connection
 from ssl import VerifyMode
 from typing import Optional, TextIO, cast
 
-import aiofiles
 from construct import Const, Container
 from construct import Enum as ConstructEnum
 from construct import GreedyBytes, GreedyRange, Int8ul, Int16ub, Int64ul, Prefixed, Struct
@@ -161,12 +160,11 @@ class RemotePairingTunnel(ABC):
         read_size = self.tun.mtu + len(LOOPBACK_HEADER)
         try:
             if sys.platform != 'win32':
-                async with aiofiles.open(self.tun.fileno(), 'rb', opener=lambda path, flags: path, buffering=0) as f:
-                    while True:
-                        packet = await f.read(read_size)
-                        assert packet.startswith(LOOPBACK_HEADER)
-                        packet = packet[len(LOOPBACK_HEADER):]
-                        await self.send_packet_to_device(packet)
+                while True:
+                    packet = await asyncio.to_thread(self.tun.read, read_size)
+                    assert packet.startswith(LOOPBACK_HEADER)
+                    packet = packet[len(LOOPBACK_HEADER):]
+                    await self.send_packet_to_device(packet)
             else:
                 while True:
                     packet = await self.tun.async_read()
