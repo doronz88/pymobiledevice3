@@ -11,6 +11,7 @@ import plistlib
 import ssl
 import struct
 import sys
+import threading
 from abc import ABC, abstractmethod
 from asyncio import CancelledError, StreamReader, StreamWriter
 from collections import namedtuple
@@ -157,26 +158,46 @@ class RemotePairingTunnel(ABC):
 
     @asyncio_print_traceback
     async def tun_read_task(self) -> None:
-        read_size = self.tun.mtu + len(LOOPBACK_HEADER)
         try:
             if sys.platform != 'win32':
+                read_size = self.tun.mtu + len(LOOPBACK_HEADER)
                 while True:
                     packet = await asyncio.to_thread(self.tun.read, read_size)
                     assert packet.startswith(LOOPBACK_HEADER)
                     packet = packet[len(LOOPBACK_HEADER):]
                     await self.send_packet_to_device(packet)
             else:
-                while True:
-                    packet = await self.tun.async_read()
-                    if packet:
-                        if (packet[0] >> 4) != 6:
-                            # Make sure to output only IPv6 packets
-                            continue
+                queue = asyncio.Queue()
+                stop_event = threading.Event()
+                read_tun_write_queue_task = asyncio.create_task(asyncio.to_thread(self.read_tun_write_queue, queue, stop_event, asyncio.get_running_loop()))
+                try:
+                    while True:
+                        packet = await queue.get()
                         await self.send_packet_to_device(packet)
+                except asyncio.QueueShutDown:
+                    pass
+                finally:
+                    stop_event.set()
+                    self.tun.set_read_wait_event()
+                await read_tun_write_queue_task  # should raise an error
         except ConnectionResetError:
             self._logger.warning(f'got connection reset in {asyncio.current_task().get_name()}')
         except OSError:
             self._logger.warning(f'got oserror in {asyncio.current_task().get_name()}')
+
+    def read_tun_write_queue(self, queue: asyncio.Queue, stop_event: threading.Event, loop: asyncio.AbstractEventLoop):
+        try:
+            while not stop_event.is_set():
+                packet = self.tun.read()
+                if packet:
+                    if (packet[0] >> 4) != 6:
+                        # Make sure to output only IPv6 packets
+                        continue
+                    loop.call_soon_threadsafe(queue.put_nowait, packet)
+                else:
+                    self.tun.wait_read()
+        finally:
+            loop.call_soon_threadsafe(queue.shutdown)
 
     def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
         if 'win32' == sys.platform:
