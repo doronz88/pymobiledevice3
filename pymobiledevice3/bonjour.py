@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-from asyncio import CancelledError
 from socket import AF_INET, AF_INET6, inet_ntop
 from typing import Optional
 
@@ -83,14 +82,7 @@ async def browse(service_names: list[str], ips: list[str], timeout: float = DEFA
         -> list[BonjourAnswer]:
     bonjour_queries = [query_bonjour(service_names, adapter) for adapter in ips]
     answers = []
-    try:
-        await asyncio.sleep(timeout)
-    except CancelledError:
-        for bonjour_query in bonjour_queries:
-            await bonjour_query.listener.close()
-            await bonjour_query.service_browser.async_cancel()
-            await bonjour_query.zc.async_close()
-        raise
+    await asyncio.sleep(timeout)
     for bonjour_query in bonjour_queries:
         if bonjour_query.listener.addresses:
             answer = BonjourAnswer(
