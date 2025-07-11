@@ -1,4 +1,5 @@
 import hashlib
+import logging;
 import plistlib
 from pathlib import Path
 from typing import Optional
@@ -16,6 +17,7 @@ from pymobiledevice3.restore.tss import TSSRequest
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 LATEST_DDI_BUILD_ID = '16A242d'
+logger = logging.getLogger(__name__);
 
 
 class MobileImageMounterService(LockdownService):
@@ -338,23 +340,31 @@ def auto_mount_developer(
     image_mounter.mount(image_path, signature)
 
 
-async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
+async def auto_mount_personalized(lockdown: LockdownServiceProvider, version: Optional[str] = None) -> None:
     local_path = get_home_folder() / 'Xcode_iOS_DDI_Personalized'
     local_path.mkdir(parents=True, exist_ok=True)
 
     image = local_path / 'Image.dmg'
     build_manifest = local_path / 'BuildManifest.plist'
     trustcache = local_path / 'Image.trustcache'
-
+    ddi_id = (LATEST_DDI_BUILD_ID if version is None else version);
     if (not build_manifest.exists() or
-            plistlib.loads(build_manifest.read_bytes()).get('ProductBuildVersion') != LATEST_DDI_BUILD_ID):
+            plistlib.loads(build_manifest.read_bytes()).get('ProductBuildVersion') != ddi_id):
         # download the Personalized image from our repository
-        repo = DeveloperDiskImageRepository.create()
-        personalized_image = repo.get_personalized_disk_image()
+        try:
+            repo = DeveloperDiskImageRepository.create()
+            personalized_image = repo.get_personalized_disk_image()
 
-        image.write_bytes(personalized_image.image)
-        build_manifest.write_bytes(personalized_image.build_manifest)
-        trustcache.write_bytes(personalized_image.trustcache)
+            image.write_bytes(personalized_image.image)
+            build_manifest.write_bytes(personalized_image.build_manifest)
+            trustcache.write_bytes(personalized_image.trustcache)
+        except:
+            if not build_manifest.exists():
+                raise;
+            else:
+                logger.debug("Use local DeveloperDiskImage(ProductBuildVersion= %s)" % (plistlib.loads(build_manifest.read_bytes()).get("ProductBuildVersion")));
+            # end if
+        # end try
 
     await PersonalizedImageMounter(lockdown=lockdown).mount(image, build_manifest, trustcache)
 
@@ -363,4 +373,4 @@ async def auto_mount(lockdown: LockdownServiceProvider, xcode: Optional[str] = N
     if Version(lockdown.product_version) < Version('17.0'):
         auto_mount_developer(lockdown, xcode=xcode, version=version)
     else:
-        await auto_mount_personalized(lockdown)
+        await auto_mount_personalized(lockdown, version=version)
