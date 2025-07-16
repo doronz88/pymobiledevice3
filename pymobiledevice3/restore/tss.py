@@ -56,7 +56,7 @@ class TSSResponse(dict):
 
 class TSSRequest:
     def __init__(self):
-        self._request = {
+        self._request: dict[str, typing.Any] = {
             '@HostPlatformInfo': 'mac',
             '@VersionInfo': TSS_CLIENT_VERSION_STRING,
             '@UUID': str(uuid4()).upper(),
@@ -361,16 +361,21 @@ class TSSRequest:
                     k = 'Ap,SikaFuse'
                 self._request[k] = v
 
-        uid_mode = parameters.get('UID_MODE', False)
+        uid_mode = parameters.get('UID_MODE')
 
         if 'NeRDEpoch' in parameters:
             self._request['PermitNeRDPivot'] = b''
 
-        self._request['UID_MODE'] = uid_mode
+        if uid_mode is not None:
+            self._request['UID_MODE'] = uid_mode
         self._request['@ApImg4Ticket'] = True
         self._request['@BBTicket'] = True
 
         if parameters.get('RequiresUIDMode'):
+            # The logic here is missing why this value is expected to be 'false'
+            self._request['UID_MODE'] = False
+
+            # Workaround: We have only seen Ap,SikaFuse together with UID_MODE
             self._request['Ap,SikaFuse'] = 0
 
     def add_se_tags(self, parameters: dict, overrides=None):
