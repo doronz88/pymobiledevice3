@@ -15,7 +15,7 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.restore.tss import TSSRequest
 from pymobiledevice3.services.lockdown_service import LockdownService
 
-LATEST_DDI_BUILD_ID = '16A242d'
+LATEST_DDI_BUILD_ID = '16E5121h'
 
 
 class MobileImageMounterService(LockdownService):
