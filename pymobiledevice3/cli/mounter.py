@@ -135,8 +135,8 @@ async def mounter_auto_mount_task(service_provider: LockdownServiceProvider, xco
 @mounter.command('auto-mount', cls=Command)
 @click.option('-x', '--xcode', type=click.Path(exists=True, dir_okay=True, file_okay=False),
               help='Xcode application path used to figure out automatically the DeveloperDiskImage path')
-@click.option('-v', '--version', help='use a different DeveloperDiskImage version from the one retrieved by lockdown'
-                                      'connection')
+@click.option('--version', help='use a different DeveloperDiskImage version from the one retrieved by lockdown'
+                                'connection')
 def mounter_auto_mount(service_provider: LockdownServiceProvider, xcode: str, version: str) -> None:
     """ auto-detect correct DeveloperDiskImage and mount it """
     asyncio.run(mounter_auto_mount_task(service_provider, xcode, version), debug=True)
