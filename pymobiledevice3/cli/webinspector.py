@@ -105,7 +105,6 @@ def create_webinspector_and_launch_app(lockdown: LockdownClient, timeout: float,
 
 
 @webinspector.command(cls=Command)
-@click.option('-v', '--verbose', is_flag=True)
 @click.option('-t', '--timeout', default=3, show_default=True, type=float)
 @catch_errors
 def opened_tabs(service_provider: LockdownClient, verbose, timeout):
