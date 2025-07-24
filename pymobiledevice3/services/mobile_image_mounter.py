@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import plistlib
 from pathlib import Path
 from typing import Optional
@@ -14,6 +15,8 @@ from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.restore.tss import TSSRequest
 from pymobiledevice3.services.lockdown_service import LockdownService
+
+logger = logging.getLogger(__name__)
 
 LATEST_DDI_BUILD_ID = '16E5121h'
 
@@ -355,6 +358,10 @@ async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
         image.write_bytes(personalized_image.image)
         build_manifest.write_bytes(personalized_image.build_manifest)
         trustcache.write_bytes(personalized_image.trustcache)
+        downloaded_ddi_build_id = plistlib.loads(personalized_image.build_manifest).get('ProductBuildVersion')
+        if downloaded_ddi_build_id != LATEST_DDI_BUILD_ID:
+            logger.warning('Downloaded personalized image has unexpected ProductBuildVersion '
+                           f'{downloaded_ddi_build_id}. Please update pymobiledevice3!')
 
     await PersonalizedImageMounter(lockdown=lockdown).mount(image, build_manifest, trustcache)
 
