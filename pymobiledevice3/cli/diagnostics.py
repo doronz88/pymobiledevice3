@@ -4,7 +4,7 @@ import time
 import click
 
 from pymobiledevice3.cli.cli_common import Command, print_json
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import LockdownClient, retry_create_using_usbmux
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.diagnostics import DiagnosticsService
 
@@ -23,9 +23,15 @@ def diagnostics() -> None:
 
 
 @diagnostics.command('restart', cls=Command)
-def diagnostics_restart(service_provider: LockdownClient):
+@click.option('-r', '--reconnect', is_flag=True, default=False,
+              help='Wait until the device reconnects before finishing the operation.')
+def diagnostics_restart(service_provider: LockdownClient, reconnect):
     """ Restart device """
     DiagnosticsService(lockdown=service_provider).restart()
+    if reconnect:
+        # Wait for the device to be available again
+        with retry_create_using_usbmux(None, serial=service_provider.udid):
+            print(f'Device Reconnected ({service_provider.udid}).')
 
 
 @diagnostics.command('shutdown', cls=Command)
