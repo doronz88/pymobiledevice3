@@ -19,8 +19,9 @@ from pymobiledevice3.exceptions import AccessDeniedError, CloudConfigurationAlre
     NotEnoughDiskSpaceError, NotPairedError, OSNotSupportedError, PairingDialogResponsePendingError, \
     PasswordRequiredError, QuicProtocolNotSupportedError, RSDRequiredError, SetProhibitedError, \
     TunneldConnectionError, UserDeniedPairingError
-from pymobiledevice3.lockdown import retry_create_using_usbmux
+from pymobiledevice3.lockdown import create_using_usbmux, retry_create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
+from pymobiledevice3.services.diagnostics import DiagnosticsService
 
 coloredlogs.install(level=logging.INFO)
 
@@ -93,6 +94,7 @@ CLI_GROUPS = {
 
 # Set if used the `--reconnect` option
 RECONNECT = False
+ALREADY_RESTARTED = False
 
 
 class Pmd3Cli(click.Group):
@@ -169,7 +171,9 @@ class Pmd3Cli(click.Group):
 
 @click.command(cls=Pmd3Cli, context_settings=CONTEXT_SETTINGS)
 @click.option('--reconnect', is_flag=True, default=False, help='Reconnect to device when disconnected.')
-def cli(reconnect: bool) -> None:
+@click.option('--restart', is_flag=True, default=False,
+              help='Restart the device before executing any command, includes the --reconnect option implicitly.')
+def cli(reconnect: bool, restart: bool) -> None:
     """
     \b
     Interact with a connected iDevice (iPhone, iPad, ...)
@@ -177,7 +181,14 @@ def cli(reconnect: bool) -> None:
         https://github.com/doronz88/pymobiledevice3
     """
     global RECONNECT
-    RECONNECT = reconnect
+    RECONNECT = reconnect or restart
+
+    if restart:
+        global ALREADY_RESTARTED
+        if not ALREADY_RESTARTED:
+            with create_using_usbmux(None) as lockdown:
+                DiagnosticsService(lockdown=lockdown).restart()
+                ALREADY_RESTARTED = True
 
 
 def invoke_cli_with_error_handling() -> bool:
