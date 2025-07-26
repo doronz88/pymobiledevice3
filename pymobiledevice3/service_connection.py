@@ -60,12 +60,12 @@ def parse_plist(payload: bytes) -> dict:
     :param payload: The plist-formatted byte string to parse.
     :return: The parsed dictionary.
     :raises PyMobileDevice3Exception: If the payload is invalid.
-    :retries with a filtered payload if plistlib compains about "not well-formed (invalid token)"
+    :retries with a filtered payload of only valid XML characters if plistlib compains about "not well-formed (invalid token)"
     """
     try:
         return plistlib.loads(payload)
     except xml.parsers.expat.ExpatError:
-        payload = bytes([b for b in payload if b not in (0x00, 0x10)])
+        payload = bytes([b for b in payload if b >= 0x20 or b in (0x09, 0x0a, 0x0d)])
         try:
             return plistlib.loads(payload)
         except plistlib.InvalidFileException:
