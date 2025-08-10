@@ -45,10 +45,11 @@ def uninstall(service_provider: LockdownClient, bundle_id):
 
 
 @apps.command('install', cls=Command)
+@click.option('--developer', is_flag=True, help='Install developer package')
 @click.argument('package', type=click.Path(exists=True))
-def install(service_provider: LockdownServiceProvider, package: str) -> None:
+def install(service_provider: LockdownServiceProvider, package: str, developer: bool) -> None:
     """ install given .ipa/.app/.ipcc """
-    InstallationProxyService(lockdown=service_provider).install_from_local(package)
+    InstallationProxyService(lockdown=service_provider).install_from_local(package, developer=developer)
 
 
 @apps.command('afc', cls=Command)
