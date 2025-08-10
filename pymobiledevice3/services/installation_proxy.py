@@ -150,7 +150,7 @@ class InstallationProxyService(LockdownService):
 
     @str_to_path('package_path')
     def install_from_local(self, package_path: Path, cmd: str = 'Install', options: Optional[dict] = None,
-                           handler: Callable = None, *args) -> None:
+                           handler: Callable = None, developer: bool = False, *args) -> None:
         """ upload given ipa/ipcc onto device and install it """
         ipcc_mode = package_path.suffix == '.ipcc'
 
@@ -166,6 +166,9 @@ class InstallationProxyService(LockdownService):
             else:
                 # treat as ipa
                 ipa_contents = package_path.read_bytes()
+
+        if developer:
+            options['PackageType'] = 'Developer'
 
         with AfcService(self.lockdown) as afc:
             if not ipcc_mode:
