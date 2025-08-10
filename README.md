@@ -5,6 +5,7 @@
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
 [![Downloads](https://static.pepy.tech/personalized-badge/pymobiledevice3?period=total&units=none&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/pymobiledevice3)
 [![Discord](https://img.shields.io/discord/1133265168051208214?logo=Discord&label=Discord)](https://discord.gg/52mZGC3JXJ)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/doronz88/pymobiledevice3)
 <!-- markdownlint-enable MD013 -->
 
 - [PyMobileDevice3](#pymobiledevice3)
