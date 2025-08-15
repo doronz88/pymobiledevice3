@@ -11,7 +11,7 @@ from contextlib import contextmanager, suppress
 from enum import Enum
 from functools import wraps
 from pathlib import Path
-from ssl import SSLError, SSLZeroReturnError
+from ssl import SSLError, SSLZeroReturnError, TLSVersion
 from typing import AsyncIterable, Optional
 
 import construct
@@ -333,6 +333,11 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         self.session_id = start_session.get('SessionID')
         if start_session.get('EnableSessionSSL'):
+            if (Version(self.product_version) < Version('5.0')) and (self.device_class != DeviceClass.WATCH):
+                # TLS v1 is the protocol required for versions prior to iOS 5
+                self.service.min_ssl_proto = TLSVersion.SSLv3
+                self.service.max_ssl_proto = TLSVersion.TLSv1
+
             with self.ssl_file() as f:
                 try:
                     self.service.ssl_start(f)
