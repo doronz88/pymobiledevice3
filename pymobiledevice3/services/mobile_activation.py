@@ -89,6 +89,10 @@ class MobileActivationService:
         return ActivationForm(title=title, description=description, fields=fields, server_info=server_info)
 
     def activate(self, skip_apple_id_query: bool = False) -> None:
+        if self.state != 'Unactivated':
+            self.logger.error(f'Device is already activated!')
+            return
+
         try:
             blob = self.create_activation_session_info()
             session_mode = True
