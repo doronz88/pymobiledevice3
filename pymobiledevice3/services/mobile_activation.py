@@ -135,19 +135,23 @@ class MobileActivationService:
         if content_type == 'application/x-buddyml':
             if skip_apple_id_query:
                 raise MobileActivationException('Device is iCloud locked')
-            activation_form = self._get_activation_form_from_response(content.decode())
-            click.secho(activation_form.title, bold=True)
-            click.secho(activation_form.description)
-            fields = []
-            for field in activation_form.fields:
-                if field.secure:
-                    fields.append(inquirer3.Password(name=field.id, message=f'{field.label}'))
-                else:
-                    fields.append(inquirer3.Text(name=field.id, message=f'{field.label}'))
-            data = inquirer3.prompt(fields)
-            data.update(activation_form.server_info)
-            content, headers = self.post(ACTIVATION_DEFAULT_URL, data=data)
-            content_type = headers['Content-Type']
+            try:
+                activation_form = self._get_activation_form_from_response(content.decode())
+            except:
+                raise MobileActivationException('Activation server response is invalid')
+            else:
+                click.secho(activation_form.title, bold=True)
+                click.secho(activation_form.description)
+                fields = []
+                for field in activation_form.fields:
+                    if field.secure:
+                        fields.append(inquirer3.Password(name=field.id, message=f'{field.label}'))
+                    else:
+                        fields.append(inquirer3.Text(name=field.id, message=f'{field.label}'))
+                data = inquirer3.prompt(fields)
+                data.update(activation_form.server_info)
+                content, headers = self.post(ACTIVATION_DEFAULT_URL, data=data)
+                content_type = headers['Content-Type']
 
         assert content_type == 'text/xml'
         if session_mode:
