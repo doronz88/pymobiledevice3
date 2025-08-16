@@ -36,3 +36,9 @@ def activate(service_provider: LockdownClient, now):
 def deactivate(service_provider: LockdownClient):
     """ Deactivate device """
     MobileActivationService(service_provider).deactivate()
+
+
+@activation.command(cls=Command)
+def itunes(service_provider: LockdownClient):
+    """ Tell the device that it has been connected to iTunes (useful for < iOS 4) """
+    service_provider.set_value(True, key='iTunesHasConnected')
