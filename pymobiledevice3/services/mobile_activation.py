@@ -163,6 +163,9 @@ class MobileActivationService:
         else:
             self.activate_with_lockdown(content)
 
+        # set ActivationStateAcknowledged if we succeeded
+        self.lockdown.set_value(True, key='ActivationStateAcknowledged')
+
     def deactivate(self):
         try:
             return self.send_command('DeactivateRequest')
