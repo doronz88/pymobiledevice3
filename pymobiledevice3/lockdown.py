@@ -169,7 +169,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
     @property
     def product_version(self) -> str:
-        return self.all_values.get('ProductVersion')
+        return self.all_values.get('ProductVersion') or '1.0'
 
     @property
     def device_class(self) -> DeviceClass:
