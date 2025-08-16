@@ -23,7 +23,7 @@ def state(service_provider: LockdownClient):
 
 
 @activation.command(cls=Command)
-@click.option('--now', is_flag=True, help='when --offline is used, dont wait for next nonce cycle')
+@click.option('--now', is_flag=True, help='do not wait for next nonce cycle')
 def activate(service_provider: LockdownClient, now):
     """ Activate device """
     activation_service = MobileActivationService(service_provider)
@@ -36,3 +36,9 @@ def activate(service_provider: LockdownClient, now):
 def deactivate(service_provider: LockdownClient):
     """ Deactivate device """
     MobileActivationService(service_provider).deactivate()
+
+
+@activation.command(cls=Command)
+def itunes(service_provider: LockdownClient):
+    """ Tell the device that it has been connected to iTunes (useful for < iOS 4) """
+    service_provider.set_value(True, key='iTunesHasConnected')
