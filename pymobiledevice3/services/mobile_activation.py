@@ -61,13 +61,13 @@ class MobileActivationService:
     def state(self):
         try:
             return self.send_command('GetActivationStateRequest')['Value']
-        except:
+        except:  # noqa
             return self.lockdown.get_value(key='ActivationState')
 
     def wait_for_activation_session(self):
         try:
             blob = self.create_activation_session_info()
-        except:
+        except:  # noqa
             return
         handshake_request_message = blob['HandshakeRequestMessage']
         while handshake_request_message == blob['HandshakeRequestMessage']:
@@ -90,33 +90,36 @@ class MobileActivationService:
 
     def activate(self, skip_apple_id_query: bool = False) -> None:
         if self.state != 'Unactivated':
-            self.logger.error(f'Device is already activated!')
+            self.logger.error('Device is already activated!')
             return
 
         try:
             blob = self.create_activation_session_info()
             session_mode = True
-        except:
+        except:  # noqa
             session_mode = False
 
         # create drmHandshake request with blob from device
         headers = {'Content-Type': 'application/x-apple-plist'}
         headers.update(DEFAULT_HEADERS)
         if session_mode:
-            content, headers = self.post(ACTIVATION_DRM_HANDSHAKE_DEFAULT_URL, data=plistlib.dumps(blob), headers=headers)
+            content, headers = self.post(ACTIVATION_DRM_HANDSHAKE_DEFAULT_URL, data=plistlib.dumps(blob),
+                                         headers=headers)
 
         activation_request = {}
         if session_mode:
             activation_info = self.create_activation_info_with_session(content)
         else:
             activation_info = self.lockdown.get_value(key='ActivationInfo')
-            activation_request.update({'InStoreActivation': False, 'AppleSerialNumber': self.lockdown.get_value(key='SerialNumber')})
+            activation_request.update(
+                {'InStoreActivation': False, 'AppleSerialNumber': self.lockdown.get_value(key='SerialNumber')})
             if self.lockdown.all_values.get('TelephonyCapability'):
                 req_pair = {'IMEI': 'InternationalMobileEquipmentIdentity',
                             'MEID': 'MobileEquipmentIdentifier',
                             'IMSI': 'InternationalMobileSubscriberIdentity',
                             'ICCID': 'IntegratedCircuitCardIdentity'}
 
+                has_meid = False
                 for k, v in req_pair.items():
                     lv = self.lockdown.all_values.get(v)
                     if lv is not None:
@@ -141,7 +144,7 @@ class MobileActivationService:
                 raise MobileActivationException('Device is iCloud locked')
             try:
                 activation_form = self._get_activation_form_from_response(content.decode())
-            except:
+            except:  # noqa
                 raise MobileActivationException('Activation server response is invalid')
             else:
                 click.secho(activation_form.title, bold=True)
@@ -169,7 +172,7 @@ class MobileActivationService:
     def deactivate(self):
         try:
             return self.send_command('DeactivateRequest')
-        except:
+        except:  # noqa
             return self.lockdown._request('Deactivate')
 
     def create_activation_session_info(self):
