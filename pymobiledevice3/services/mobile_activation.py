@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import dataclasses
+import logging
 import plistlib
 import xml.etree.ElementTree as ET
 from contextlib import closing
@@ -54,13 +55,20 @@ class MobileActivationService:
 
     def __init__(self, lockdown: LockdownServiceProvider) -> None:
         self.lockdown = lockdown
+        self.logger = logging.getLogger(__name__)
 
     @property
     def state(self):
-        return self.send_command('GetActivationStateRequest')['Value']
+        try:
+            return self.send_command('GetActivationStateRequest')['Value']
+        except:
+            return self.lockdown.get_value(key='ActivationState')
 
     def wait_for_activation_session(self):
-        blob = self.create_activation_session_info()
+        try:
+            blob = self.create_activation_session_info()
+        except:
+            return
         handshake_request_message = blob['HandshakeRequestMessage']
         while handshake_request_message == blob['HandshakeRequestMessage']:
             blob = self.create_activation_session_info()
@@ -81,40 +89,88 @@ class MobileActivationService:
         return ActivationForm(title=title, description=description, fields=fields, server_info=server_info)
 
     def activate(self, skip_apple_id_query: bool = False) -> None:
-        blob = self.create_activation_session_info()
+        if self.state != 'Unactivated':
+            self.logger.error(f'Device is already activated!')
+            return
+
+        try:
+            blob = self.create_activation_session_info()
+            session_mode = True
+        except:
+            session_mode = False
 
         # create drmHandshake request with blob from device
         headers = {'Content-Type': 'application/x-apple-plist'}
         headers.update(DEFAULT_HEADERS)
-        content, headers = self.post(ACTIVATION_DRM_HANDSHAKE_DEFAULT_URL, data=plistlib.dumps(blob), headers=headers)
+        if session_mode:
+            content, headers = self.post(ACTIVATION_DRM_HANDSHAKE_DEFAULT_URL, data=plistlib.dumps(blob), headers=headers)
 
-        activation_info = self.create_activation_info_with_session(content)
+        activation_request = {}
+        if session_mode:
+            activation_info = self.create_activation_info_with_session(content)
+        else:
+            activation_info = self.lockdown.get_value(key='ActivationInfo')
+            activation_request.update({'InStoreActivation': False, 'AppleSerialNumber': self.lockdown.get_value(key='SerialNumber')})
+            if self.lockdown.all_values.get('TelephonyCapability'):
+                req_pair = {'IMEI': 'InternationalMobileEquipmentIdentity',
+                            'MEID': 'MobileEquipmentIdentifier',
+                            'IMSI': 'InternationalMobileSubscriberIdentity',
+                            'ICCID': 'IntegratedCircuitCardIdentity'}
 
-        content, headers = self.post(ACTIVATION_DEFAULT_URL, data={'activation-info': plistlib.dumps(activation_info)})
+                for k, v in req_pair.items():
+                    lv = self.lockdown.all_values.get(v)
+                    if lv is not None:
+                        activation_request.update({k: lv})
+                        continue
+                    else:
+                        self.logger.warn(f'Unable to get {k} from lockdownd')
+                        if k == 'MEID' and has_meid:
+                            # Something is wrong if both IMEI & MEID is missing
+                            raise MobileActivationException('Unable to obtain both IMEI and MEID')
+
+                    # Either IMEI or MEID, or both
+                    if k == 'IMEI':
+                        has_meid = lv is None
+        activation_request.update({'activation-info': plistlib.dumps(activation_info)})
+
+        content, headers = self.post(ACTIVATION_DEFAULT_URL, data=activation_request)
         content_type = headers['Content-Type']
 
         if content_type == 'application/x-buddyml':
             if skip_apple_id_query:
                 raise MobileActivationException('Device is iCloud locked')
-            activation_form = self._get_activation_form_from_response(content.decode())
-            click.secho(activation_form.title, bold=True)
-            click.secho(activation_form.description)
-            fields = []
-            for field in activation_form.fields:
-                if field.secure:
-                    fields.append(inquirer3.Password(name=field.id, message=f'{field.label}'))
-                else:
-                    fields.append(inquirer3.Text(name=field.id, message=f'{field.label}'))
-            data = inquirer3.prompt(fields)
-            data.update(activation_form.server_info)
-            content, headers = self.post(ACTIVATION_DEFAULT_URL, data=data)
-            content_type = headers['Content-Type']
+            try:
+                activation_form = self._get_activation_form_from_response(content.decode())
+            except:
+                raise MobileActivationException('Activation server response is invalid')
+            else:
+                click.secho(activation_form.title, bold=True)
+                click.secho(activation_form.description)
+                fields = []
+                for field in activation_form.fields:
+                    if field.secure:
+                        fields.append(inquirer3.Password(name=field.id, message=f'{field.label}'))
+                    else:
+                        fields.append(inquirer3.Text(name=field.id, message=f'{field.label}'))
+                data = inquirer3.prompt(fields)
+                data.update(activation_form.server_info)
+                content, headers = self.post(ACTIVATION_DEFAULT_URL, data=data)
+                content_type = headers['Content-Type']
 
         assert content_type == 'text/xml'
-        self.activate_with_session(content, headers)
+        if session_mode:
+            self.activate_with_session(content, headers)
+        else:
+            self.activate_with_lockdown(content)
+
+        # set ActivationStateAcknowledged if we succeeded
+        self.lockdown.set_value(True, key='ActivationStateAcknowledged')
 
     def deactivate(self):
-        return self.send_command('DeactivateRequest')
+        try:
+            return self.send_command('DeactivateRequest')
+        except:
+            return self.lockdown._request('Deactivate')
 
     def create_activation_session_info(self):
         response = self.send_command('CreateTunnel1SessionInfoRequest')
@@ -129,6 +185,16 @@ class MobileActivationService:
         if error is not None:
             raise MobileActivationException(f'Mobile activation can not be done due to: {response}')
         return response['Value']
+
+    def activate_with_lockdown(self, activation_record):
+        record = plistlib.loads(activation_record)
+        node = record.get('iphone-activation')
+        if node is None:
+            node = record.get('device-activation')
+        if node is None:
+            raise MobileActivationException('Activation record received is invalid')
+
+        self.lockdown._request('Activate', {'ActivationRecord': node.get('activation-record')})
 
     def activate_with_session(self, activation_record, headers):
         data = {

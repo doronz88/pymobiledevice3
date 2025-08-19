@@ -74,26 +74,6 @@ def parse_plist(payload: bytes) -> dict:
         raise PyMobileDevice3Exception(f'parse_plist invalid data: {payload[:100].hex()}')
 
 
-def create_context(certfile: str, keyfile: Optional[str] = None) -> ssl.SSLContext:
-    """
-    Create an SSL context for a secure connection.
-
-    :param certfile: The path to the certificate file.
-    :param keyfile: The path to the key file (optional).
-    :return: An SSL context object.
-    """
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    if ssl.OPENSSL_VERSION.lower().startswith('openssl'):
-        context.set_ciphers('ALL:!aNULL:!eNULL:@SECLEVEL=0')
-    else:
-        context.set_ciphers('ALL:!aNULL:!eNULL')
-    context.options |= 0x4  # OPENSSL OP_LEGACY_SERVER_CONNECT (required for legacy iOS devices)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    context.load_cert_chain(certfile, keyfile)
-    return context
-
-
 class ServiceConnection:
     """ wrapper for tcp-relay connections """
 
@@ -113,6 +93,11 @@ class ServiceConnection:
 
         self.reader = None  # type: Optional[asyncio.StreamReader]
         self.writer = None  # type: Optional[asyncio.StreamWriter]
+
+        # SSL/TLS version to be used for connecting to device
+        # TLS v1.2 is supported since iOS 5
+        self.min_ssl_proto = ssl.TLSVersion.TLSv1_2
+        self.max_ssl_proto = ssl.TLSVersion.TLSv1_3
 
     @staticmethod
     def create_using_tcp(hostname: str, port: int, keep_alive: bool = True,
@@ -339,6 +324,27 @@ class ServiceConnection:
         """
         await self.aio_sendall(build_plist(d, endianity, fmt))
 
+    def create_ssl_context(self, certfile: str, keyfile: Optional[str] = None) -> ssl.SSLContext:
+        """
+        Create an SSL context for a secure connection.
+
+        :param certfile: The path to the certificate file.
+        :param keyfile: The path to the key file (optional).
+        :return: An SSL context object.
+        """
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.minimum_version = self.min_ssl_proto
+        context.maximum_version = self.max_ssl_proto
+        if ssl.OPENSSL_VERSION.lower().startswith('openssl'):
+            context.set_ciphers('ALL:!aNULL:!eNULL:@SECLEVEL=0')
+        else:
+            context.set_ciphers('ALL:!aNULL:!eNULL')
+        context.options |= 0x4  # OPENSSL OP_LEGACY_SERVER_CONNECT (required for legacy iOS devices)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        context.load_cert_chain(certfile, keyfile)
+        return context
+
     def ssl_start(self, certfile: str, keyfile: Optional[str] = None) -> None:
         """
         Start an SSL connection.
@@ -346,7 +352,7 @@ class ServiceConnection:
         :param certfile: The path to the certificate file.
         :param keyfile: The path to the key file (optional).
         """
-        self.socket = create_context(certfile, keyfile=keyfile).wrap_socket(self.socket)
+        self.socket = self.create_ssl_context(certfile, keyfile=keyfile).wrap_socket(self.socket)
 
     async def aio_ssl_start(self, certfile: str, keyfile: Optional[str] = None) -> None:
         """
@@ -357,7 +363,7 @@ class ServiceConnection:
         """
         self.reader, self.writer = await asyncio.open_connection(
             sock=self.socket,
-            ssl=create_context(certfile, keyfile=keyfile),
+            ssl=self.create_ssl_context(certfile, keyfile=keyfile),
             server_hostname=''
         )
 

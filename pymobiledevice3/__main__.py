@@ -53,7 +53,7 @@ INVALID_SERVICE_MESSAGE = """Failed to start service. Possible reasons are:
         - Make sure you passed the --rsd option to the subcommand
           https://github.com/doronz88/pymobiledevice3#working-with-developer-tools-ios--170
 
-- Apple removed this service
+- Apple removed this service, or your iOS version does not support it.
 
 - A bug. Please file a bug report:
   https://github.com/doronz88/pymobiledevice3/issues/new?assignees=&labels=&projects=&template=bug_report.md&title=
