@@ -15,6 +15,7 @@ import inquirer3
 from click import Option, UsageError
 from inquirer3.themes import GreenPassion
 from pygments import formatters, highlight, lexers
+from typer.core import TyperCommand
 
 from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, NoDeviceConnectedError
 from pymobiledevice3.lockdown import LockdownClient, TcpLockdownClient, create_using_usbmux, get_mobdev2_lockdowns
@@ -168,7 +169,7 @@ def is_invoked_for_completion() -> bool:
     return False
 
 
-class BaseCommand(click.Command):
+class BaseCommand(TyperCommand):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.params[:0] = [

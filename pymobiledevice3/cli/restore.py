@@ -13,6 +13,7 @@ import click
 import IPython
 import requests
 from pygments import formatters, highlight, lexers
+from typer.core import TyperCommand
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.cli.cli_common import is_invoked_for_completion, print_json, prompt_selection, set_verbosity
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 IPSWME_API = 'https://api.ipsw.me/v4/device/'
 
 
-class Command(click.Command):
+class Command(TyperCommand):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.params[:0] = [
