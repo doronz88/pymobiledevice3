@@ -682,6 +682,7 @@ class TcpLockdownClient(LockdownClient):
                          port)
         self._keep_alive = keep_alive
         self.hostname = hostname
+        self.identifier = hostname
 
     def _create_service_connection(self, port: int) -> ServiceConnection:
         return ServiceConnection.create_using_tcp(self.hostname, port, keep_alive=self._keep_alive)
