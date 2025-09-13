@@ -131,8 +131,10 @@ async def browse_remoted(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[Bonjo
     return await browse_ipv6(REMOTED_SERVICE_NAMES, timeout=timeout)
 
 
-async def browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[BonjourAnswer]:
-    return await browse(MOBDEV2_SERVICE_NAMES, get_ipv4_addresses() + OSUTILS.get_ipv6_ips(), timeout=timeout)
+async def browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT, ips: Optional[list[str]] = None) -> list[BonjourAnswer]:
+    if ips is None:
+        ips = get_ipv4_addresses() + OSUTILS.get_ipv6_ips()
+    return await browse(MOBDEV2_SERVICE_NAMES, ips, timeout=timeout)
 
 
 async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[BonjourAnswer]:
