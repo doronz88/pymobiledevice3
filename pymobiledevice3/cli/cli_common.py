@@ -17,7 +17,7 @@ from inquirer3.themes import GreenPassion
 from pygments import formatters, highlight, lexers
 
 from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, NoDeviceConnectedError
-from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
+from pymobiledevice3.lockdown import LockdownClient, TcpLockdownClient, create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, async_get_tunneld_devices
@@ -189,7 +189,11 @@ class LockdownCommand(BaseServiceProviderCommand):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.usbmux_address = None
+        self.mobdev2_option = None
         self.params[:0] = [
+            click.Option(('mobdev2', '--mobdev2'), callback=self.mobdev2, expose_value=False, default=None,
+                         help='Use bonjour browse for mobdev2 devices. Expected value IP address of the interface to '
+                              'use. Leave empty to browse through all interfaces'),
             click.Option(('usbmux', '--usbmux'), callback=self.usbmux, expose_value=False,
                          envvar=USBMUX_ENV_VAR, help=USBMUX_OPTION_HELP),
             click.Option(('lockdown_service_provider', '--udid'), envvar=UDID_ENV_VAR, callback=self.udid,
@@ -197,17 +201,40 @@ class LockdownCommand(BaseServiceProviderCommand):
                               f' option as well'),
         ]
 
+    async def get_mobdev2_devices(self, udid: Optional[str] = None, ips: Optional[list[str]] = None) \
+            -> list[TcpLockdownClient]:
+        result = []
+        async for ip, lockdown in get_mobdev2_lockdowns(udid=udid, ips=ips):
+            result.append(lockdown)
+        return result
+
+    def mobdev2(self, ctx, param: str, value: Optional[str] = None) -> None:
+        self.mobdev2_option = value
+
     def usbmux(self, ctx, param: str, value: Optional[str] = None) -> None:
         if value is None:
             return
         self.usbmux_address = value
 
-    def udid(self, ctx, param: str, value: str) -> Optional[LockdownClient]:
+    def udid(self, ctx, param: str, value: Optional[str]) -> Optional[LockdownClient]:
         if is_invoked_for_completion():
             # prevent lockdown connection establishment when in autocomplete mode
             return
 
         if self.service_provider is not None:
+            return self.service_provider
+
+        if self.mobdev2_option is not None:
+            devices = asyncio.run(self.get_mobdev2_devices(
+                udid=value if value else None, ips=[self.mobdev2_option] if self.mobdev2_option else None))
+            if not devices:
+                raise NoDeviceConnectedError()
+
+            if len(devices) == 1:
+                self.service_provider = devices[0]
+                return self.service_provider
+
+            self.service_provider = prompt_device_list(devices)
             return self.service_provider
 
         if value is not None:

@@ -682,6 +682,7 @@ class TcpLockdownClient(LockdownClient):
                          port)
         self._keep_alive = keep_alive
         self.hostname = hostname
+        self.identifier = hostname
 
     def _create_service_connection(self, port: int) -> ServiceConnection:
         return ServiceConnection.create_using_tcp(self.hostname, port, keep_alive=self._keep_alive)
@@ -842,7 +843,7 @@ def create_using_remote(service: ServiceConnection, identifier: str = None, labe
 
 async def get_mobdev2_lockdowns(
         udid: Optional[str] = None, pair_records: Optional[Path] = None, only_paired: bool = False,
-        timeout: float = DEFAULT_BONJOUR_TIMEOUT) \
+        timeout: float = DEFAULT_BONJOUR_TIMEOUT, ips: Optional[list[str]] = None) \
         -> AsyncIterable[tuple[str, TcpLockdownClient]]:
     records = {}
     if pair_records is None:
@@ -858,7 +859,7 @@ async def get_mobdev2_lockdowns(
         records[record['WiFiMACAddress']] = record
 
     iterated_ips = set()
-    for answer in await browse_mobdev2(timeout=timeout):
+    for answer in await browse_mobdev2(timeout=timeout, ips=ips):
         if '@' not in answer.name:
             continue
         wifi_mac_address = answer.name.split('@', 1)[0]

@@ -1,6 +1,5 @@
 import asyncio
-import plistlib
-from pathlib import Path
+from typing import Optional
 
 import click
 
@@ -21,13 +20,9 @@ def bonjour_cli() -> None:
     pass
 
 
-async def cli_mobdev2_task(timeout: float, pair_records: str) -> None:
-    records = []
-    if pair_records is not None:
-        for record in Path(pair_records).glob('*.plist'):
-            records.append(plistlib.loads(record.read_bytes()))
+async def cli_mobdev2_task(timeout: float, pair_records: Optional[str]) -> None:
     output = []
-    async for ip, lockdown in get_mobdev2_lockdowns(timeout=timeout):
+    async for ip, lockdown in get_mobdev2_lockdowns(timeout=timeout, pair_records=pair_records):
         short_info = lockdown.short_info
         short_info['ip'] = ip
         output.append(short_info)
@@ -38,7 +33,7 @@ async def cli_mobdev2_task(timeout: float, pair_records: str) -> None:
 @click.option('--timeout', default=DEFAULT_BONJOUR_TIMEOUT, type=click.INT)
 @click.option('--pair-records', type=click.Path(dir_okay=True, file_okay=False, exists=True),
               help='pair records to attempt validation with')
-def cli_mobdev2(timeout: float, pair_records: str) -> None:
+def cli_mobdev2(timeout: float, pair_records: Optional[str]) -> None:
     """ browse for mobdev2 devices over bonjour """
     asyncio.run(cli_mobdev2_task(timeout, pair_records))
 
