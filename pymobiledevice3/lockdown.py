@@ -24,13 +24,13 @@ from packaging.version import Version
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_mobdev2
-from pymobiledevice3.ca import ca_do_everything
+from pymobiledevice3.ca import generate_pairing_cert_chain
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import BadDevError, CannotStopSessionError, ConnectionFailedError, \
     ConnectionTerminatedError, DeviceNotFoundError, FatalPairingError, GetProhibitedError, IncorrectModeError, \
     InvalidConnectionError, InvalidHostIDError, InvalidServiceError, LockdownError, MissingValueError, \
     NoDeviceConnectedError, NotPairedError, PairingDialogResponsePendingError, PairingError, PasswordRequiredError, \
-    SetProhibitedError, StartServiceError, UserDeniedPairingError
+    PyMobileDevice3Exception, SetProhibitedError, StartServiceError, UserDeniedPairingError
 from pymobiledevice3.irecv_devices import IRECV_DEVICES
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.pair_records import create_pairing_records_cache_folder, generate_host_id, \
@@ -308,6 +308,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             if not response or response.get('Result') != 'Success':
                 raise CannotStopSessionError()
             return response
+        raise PyMobileDevice3Exception('No active session')
 
     def validate_pairing(self) -> bool:
         if self.pair_record is None:
@@ -363,15 +364,17 @@ class LockdownClient(ABC, LockdownServiceProvider):
             raise PairingError()
 
         self.logger.info('Creating host key & certificate')
-        cert_pem, private_key_pem, device_certificate = ca_do_everything(self.device_public_key,
-                                                                         private_key=private_key)
+        host_cert_pem, host_key_pem, device_cert_pem, root_cert_pem, root_key_pem = generate_pairing_cert_chain(
+            self.device_public_key,
+            private_key=private_key
+            # TODO: consider parsing product_version to support iOS < 4
+        )
 
-        pair_record = {'DevicePublicKey': self.device_public_key,
-                       'DeviceCertificate': device_certificate,
-                       'HostCertificate': cert_pem,
+        pair_record = {'DeviceCertificate': device_cert_pem,
+                       'HostCertificate': host_cert_pem,
                        'HostID': self.host_id,
-                       'RootCertificate': cert_pem,
-                       'RootPrivateKey': private_key_pem,
+                       'RootCertificate': root_cert_pem,
+                       'RootPrivateKey': root_key_pem,
                        'WiFiMACAddress': self.wifi_mac_address,
                        'SystemBUID': self.system_buid}
 
@@ -380,7 +383,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         pair = self._request_pair(pair_options, timeout=timeout)
 
-        pair_record['HostPrivateKey'] = private_key_pem
+        pair_record['HostPrivateKey'] = host_key_pem
         escrow_bag = pair.get('EscrowBag')
 
         if escrow_bag is not None:
@@ -405,14 +408,16 @@ class LockdownClient(ABC, LockdownServiceProvider):
             raise PairingError()
 
         self.logger.info('Creating host key & certificate')
-        cert_pem, private_key_pem, device_certificate = ca_do_everything(self.device_public_key)
+        host_cert_pem, host_key_pem, device_cert_pem, root_cert_pem, root_key_pem = generate_pairing_cert_chain(
+            self.device_public_key
+            # TODO: consider parsing product_version to support iOS < 4
+        )
 
-        pair_record = {'DevicePublicKey': self.device_public_key,
-                       'DeviceCertificate': device_certificate,
-                       'HostCertificate': cert_pem,
+        pair_record = {'DeviceCertificate': device_cert_pem,
+                       'HostCertificate': host_cert_pem,
                        'HostID': self.host_id,
-                       'RootCertificate': cert_pem,
-                       'RootPrivateKey': private_key_pem,
+                       'RootCertificate': root_cert_pem,
+                       'RootPrivateKey': root_key_pem,
                        'WiFiMACAddress': self.wifi_mac_address,
                        'SystemBUID': self.system_buid}
 
@@ -434,7 +439,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
                 # second pair with Response to Challenge
                 pair = self._request_pair(pair_options, timeout=timeout)
 
-        pair_record['HostPrivateKey'] = private_key_pem
+        pair_record['HostPrivateKey'] = host_key_pem
         escrow_bag = pair.get('EscrowBag')
 
         if escrow_bag is not None:
