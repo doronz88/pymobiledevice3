@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import IO, Optional
 
 import click
+import typer
 from click.exceptions import MissingParameter, UsageError
 from packaging.version import Version
 from pykdebugparser.pykdebugparser import PyKdebugParser
@@ -22,8 +23,8 @@ from pykdebugparser.pykdebugparser import PyKdebugParser
 import pymobiledevice3
 from pymobiledevice3.cli.cli_common import BASED_INT, Command, RSDCommand, default_json_encoder, print_json, \
     user_requested_colored_output
-from pymobiledevice3.exceptions import CoreDeviceError, DeviceAlreadyInUseError, DvtDirListError, \
-    ExtractingStackshotError, RSDRequiredError, UnrecognizedSelectorError
+from pymobiledevice3.exceptions import DeviceAlreadyInUseError, DvtDirListError, ExtractingStackshotError, \
+    RSDRequiredError, UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -77,30 +78,22 @@ MatchedProcessByPid = namedtuple('MatchedProcess', 'name pid')
 
 logger = logging.getLogger(__name__)
 
+USAGE = """Perform developer operations (Requires enable of Developer-Mode)
 
-@click.group()
-def cli() -> None:
-    pass
+These options require the DeveloperDiskImage.dmg to be mounted on the device prior
+to execution. You can achieve this using:
 
+pymobiledevice3 mounter mount
 
-@cli.group()
-def developer() -> None:
-    """
-    Perform developer operations (Requires enable of Developer-Mode)
+Also, starting at iOS 17.0, a tunnel must be created to the device for the services
+to be accessible. Therefore, every CLI command is retried with a `--tunnel` option
+for implicitly accessing tunneld when necessary
+"""
 
-    These options require the DeveloperDiskImage.dmg to be mounted on the device prior
-    to execution. You can achieve this using:
-
-    pymobiledevice3 mounter mount
-
-    Also, starting at iOS 17.0, a tunnel must be created to the device for the services
-    to be accessible. Therefore, every CLI command is retried with a `--tunnel` option
-    for implicitly accessing tunneld when necessary
-    """
-    pass
+cli = typer.Typer(no_args_is_help=True, add_completion=False, help=USAGE)
 
 
-@developer.command('shell', cls=Command)
+@cli.command('shell', cls=Command)
 @click.argument('service')
 @click.option('-r', '--remove-ssl-context', is_flag=True)
 def developer_shell(service_provider: LockdownClient, service, remove_ssl_context):
@@ -109,10 +102,8 @@ def developer_shell(service_provider: LockdownClient, service, remove_ssl_contex
         service.shell()
 
 
-@developer.group()
-def dvt() -> None:
-    """ Access advanced instrumentation APIs """
-    pass
+dvt = typer.Typer(no_args_is_help=True, add_completion=False, help='Access advanced instrumentation APIs')
+cli.add_typer(dvt)
 
 
 @dvt.command('proclist', cls=Command)
@@ -126,6 +117,7 @@ def proclist(service_provider: LockdownClient) -> None:
 
         print_json(processes)
 
+
 @dvt.command('is-running-pid', cls=Command)
 @click.argument('pid', type=click.INT)
 def is_running_pid(service_provider: LockdownClient, pid: int) -> None:
@@ -133,12 +125,14 @@ def is_running_pid(service_provider: LockdownClient, pid: int) -> None:
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         print_json(DeviceInfo(dvt).is_running_pid(pid))
 
+
 @dvt.command('memlimitoff', cls=Command)
 @click.argument('pid', type=click.INT)
 def memlimitoff(service_provider: LockdownServiceProvider, pid: int) -> None:
     """ Disable process memory limit """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         ProcessControl(dvt).disable_memory_limit_for_pid(pid)
+
 
 @dvt.command('applist', cls=Command)
 def applist(service_provider: LockdownServiceProvider) -> None:
@@ -315,14 +309,12 @@ def xcuitest(service_provider: LockdownClient, bundle_id: str) -> None:
     XCUITestService(service_provider).run(bundle_id)
 
 
-@dvt.group('sysmon')
-def sysmon():
-    """ System monitor options. """
+sysmon = typer.Typer(no_args_is_help=True, add_completion=False, name='sysmon', help='System monitor options.')
+dvt.add_typer(sysmon)
 
-
-@sysmon.group('process')
-def sysmon_process():
-    """ Process monitor options. """
+sysmon_process = typer.Typer(no_args_is_help=True, add_completion=False, name='process',
+                             help='Process monitor options.')
+sysmon.add_typer(sysmon_process)
 
 
 @sysmon_process.command('monitor', cls=Command)
@@ -412,7 +404,7 @@ def sysmon_system(service_provider: LockdownClient, fields):
                                 'EnabledCPUs': row['EnabledCPUs'],
                             }
                         }
-                    else: # Ignore the first occurrence because first occurrence always gives a incorrect value - 100 or 0
+                    else:  # Ignore the first occurrence because first occurrence always gives a incorrect value - 100 or 0
                         system_usage_seen = True
 
                 if system and system_usage:
@@ -424,10 +416,9 @@ def sysmon_system(service_provider: LockdownClient, fields):
             print(f'{name}: {value}')
 
 
-@dvt.group('core-profile-session')
-def core_profile_session():
-    """ Access tailspin features """
-
+core_profile_session = typer.Typer(no_args_is_help=True, add_completion=False, name='core-profile-session',
+                                   help='Access tailspin features.')
+dvt.add_typer(core_profile_session)
 
 bsc_filter = click.option('--bsc/--no-bsc', default=False, help='Whether to print BSC events or not.')
 class_filter = click.option('-cf', '--class-filters', multiple=True, type=BASED_INT,
@@ -724,10 +715,9 @@ def dvt_notifications(service_provider: LockdownClient):
                 logger.info(stats)
 
 
-@developer.group('fetch-symbols')
-def fetch_symbols():
-    """ Download the DSC (and dyld) from the device """
-    pass
+fetch_symbols = typer.Typer(no_args_is_help=True, add_completion=False, name='fetch-symbols',
+                            help='List devices or forward a TCP port.')
+cli.add_typer(fetch_symbols)
 
 
 async def fetch_symbols_list_task(service_provider: LockdownServiceProvider) -> None:
@@ -787,10 +777,9 @@ def fetch_symbols_download(service_provider: LockdownServiceProvider, out: str) 
     asyncio.run(fetch_symbols_download_task(service_provider, out), debug=True)
 
 
-@developer.group('simulate-location')
-def simulate_location():
-    """ Simulate device location by given input """
-    pass
+simulate_location = typer.Typer(no_args_is_help=True, add_completion=False, name='simulate-location',
+                                help='Simulate device location by given input.')
+cli.add_typer(simulate_location)
 
 
 @simulate_location.command('clear', cls=Command)
@@ -820,10 +809,9 @@ def simulate_location_play(service_provider: LockdownClient, filename, timing_ra
     DtSimulateLocation(service_provider).play_gpx_file(filename, timing_randomness_range, disable_sleep=disable_sleep)
 
 
-@developer.group('accessibility')
-def accessibility():
-    """ Interact with accessibility-related features """
-    pass
+accessibility = typer.Typer(no_args_is_help=True, add_completion=False, name='accessibility',
+                            help='Interact with accessibility-related features.')
+cli.add_typer(accessibility)
 
 
 @accessibility.command('run-audit', cls=Command)
@@ -847,10 +835,9 @@ def accessibility_capabilities(service_provider: LockdownClient):
     print_json(AccessibilityAudit(service_provider).capabilities)
 
 
-@accessibility.group('settings')
-def accessibility_settings():
-    """ accessibility settings. """
-    pass
+accessibility_settings = typer.Typer(no_args_is_help=True, add_completion=False, name='settings',
+                                     help='Accessibility settings.')
+accessibility.add_typer(accessibility_settings)
 
 
 @accessibility_settings.command('show', cls=Command)
@@ -912,10 +899,9 @@ def accessibility_list_items(service_provider: LockdownClient):
     print_json(elements)
 
 
-@developer.group('condition')
-def condition():
-    """ Force a predefined condition """
-    pass
+condition = typer.Typer(no_args_is_help=True, add_completion=False, name='condition',
+                        help='Force a predefined condition.')
+cli.add_typer(condition)
 
 
 @condition.command('list', cls=Command)
@@ -941,17 +927,15 @@ def condition_set(service_provider: LockdownClient, profile_identifier):
         OSUTILS.wait_return()
 
 
-@developer.command(cls=Command)
+@cli.command(cls=Command)
 @click.argument('out', type=click.File('wb'))
 def screenshot(service_provider: LockdownClient, out):
     """ Take a screenshot in PNG format """
     out.write(ScreenshotService(lockdown=service_provider).take_screenshot())
 
 
-@developer.group('debugserver')
-def debugserver():
-    """ Interact with debugserver """
-    pass
+debugserver = typer.Typer(no_args_is_help=True, add_completion=False, help='Interact with debugserver.')
+cli.add_typer(debugserver)
 
 
 @debugserver.command('applist', cls=Command)
@@ -990,10 +974,8 @@ def debugserver_start_server(service_provider: LockdownClient, local_port: Optio
         print("local_port is required for iOS < 17.0")
 
 
-@developer.group('arbitration')
-def arbitration():
-    """ Mark/Unmark device as "in-use" """
-    pass
+arbitration = typer.Typer(no_args_is_help=True, add_completion=False, help='Mark/Unmark device as "in-use".')
+cli.add_typer(arbitration)
 
 
 @arbitration.command('version', cls=Command)
@@ -1038,10 +1020,9 @@ def dvt_har(service_provider: LockdownClient):
                 tap.channel.receive_message()
 
 
-@dvt.group('simulate-location')
-def dvt_simulate_location():
-    """ Simulate device location by given input """
-    pass
+dvt_simulate_location = typer.Typer(no_args_is_help=True, add_completion=False, name='simulate-location',
+                                    help='Simulate device location by given input.')
+dvt.add_typer(simulate_location)
 
 
 @dvt_simulate_location.command('clear', cls=Command)
@@ -1078,10 +1059,9 @@ def dvt_simulate_location_play(service_provider: LockdownClient, filename: str, 
         OSUTILS.wait_return()
 
 
-@developer.group()
-def core_device() -> None:
-    """ Access features exposed by the DeveloperDiskImage """
-    pass
+core_device = typer.Typer(no_args_is_help=True, add_completion=False, name='core-device',
+                          help='Access features exposed by the DeveloperDiskImage.')
+cli.add_typer(core_device)
 
 
 async def core_device_list_directory_task(
@@ -1101,7 +1081,8 @@ def core_device_list_directory(
 
 
 async def core_device_read_file_task(
-        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str, output: Optional[IO]) -> None:
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str,
+        output: Optional[IO]) -> None:
     async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain], identifier) as file_service:
         buf = await file_service.retrieve_file(path)
         if output is not None:
@@ -1116,7 +1097,8 @@ async def core_device_read_file_task(
 @click.option('--identifier', default='')
 @click.option('-o', '--output', type=click.File('wb'))
 def core_device_read_file(
-        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str, output: Optional[IO]) -> None:
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str,
+        output: Optional[IO]) -> None:
     """ Read file from given domain-path """
     asyncio.run(core_device_read_file_task(service_provider, domain, path, identifier, output))
 
