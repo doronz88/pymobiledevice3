@@ -288,7 +288,7 @@ class RSDCommand(BaseServiceProviderCommand):
         if udid != '':
             try:
                 # Connect to the specified device
-                self.service_provider = [rsd for rsd in rsds if rsd.udid == udid][0]
+                self.service_provider = [rsd for rsd in rsds if rsd.udid == udid or rsd.udid.replace('-', '') == udid][0]
             except IndexError:
                 raise DeviceNotFoundError(udid)
         else:
