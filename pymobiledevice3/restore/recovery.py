@@ -80,9 +80,10 @@ class Recovery(BaseRestore):
         tss.add_common_tags(parameters)
         tss.add_ap_tags(parameters)
 
-        build_manifest_info = self.build_identity['Info']
-        for manifest_property in build_manifest_info.get('RequestManifestProperties', []):
-            tss.add_tags({manifest_property: build_manifest_info[manifest_property]})
+        # TODO: This break updating iPhone 15P Pro. Consider re-adding it once we figure out what went wrong
+        # build_manifest_info = self.build_identity['Info']
+        # for manifest_property in build_manifest_info.get('RequestManifestProperties', []):
+        #     tss.add_tags({manifest_property: build_manifest_info[manifest_property]})
 
         # add personalized parameters
         if self.device.is_image4_supported:
