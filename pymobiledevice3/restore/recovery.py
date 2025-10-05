@@ -80,9 +80,10 @@ class Recovery(BaseRestore):
         tss.add_common_tags(parameters)
         tss.add_ap_tags(parameters)
 
-        build_manifest_info = self.build_identity['Info']
-        for manifest_property in build_manifest_info.get('RequestManifestProperties', []):
-            tss.add_tags({manifest_property: build_manifest_info[manifest_property]})
+        # TODO: This break updating iPhone 15P Pro. Consider re-adding it once we figure out what went wrong
+        # build_manifest_info = self.build_identity['Info']
+        # for manifest_property in build_manifest_info.get('RequestManifestProperties', []):
+        #     tss.add_tags({manifest_property: build_manifest_info[manifest_property]})
 
         # add personalized parameters
         if self.device.is_image4_supported:
@@ -344,10 +345,10 @@ class Recovery(BaseRestore):
         self.device.irecv.set_autoboot(enable)
 
     def enter_restore(self):
-        if self.ipsw.build_manifest.build_major >= 8:
-            self.restore_boot_args = 'rd=md0 nand-enable-reformat=1 -progress'
-        elif self.macos_variant:
+        if self.macos_variant:
             self.restore_boot_args = 'rd=md0 nand-enable-reformat=1 -progress -restore'
+        elif self.ipsw.build_manifest.build_major >= 8:
+            self.restore_boot_args = 'rd=md0 nand-enable-reformat=1 -progress'
 
         # upload data to make device boot restore mode
 

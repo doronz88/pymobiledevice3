@@ -31,6 +31,7 @@ COMPONENT_FOURCC = {
     'Ap,RestoreANE2': 'ran2',
     'Ap,RestoreANE3': 'ran3',
     'Ap,RestoreCIO': 'rcio',
+    'Ap,RestoreDCP2': 'rdc2',
     'Ap,RestoreTMU': 'rtmu',
     'Ap,Scorpius': 'scpf',
     'Ap,SystemVolumeCanonicalMetadata': 'msys',
@@ -132,14 +133,17 @@ def stitch_component(name: str, im4p_data: bytes, tss: dict, build_identity: Bui
     if fourcc is not None:
         im4p.fourcc = fourcc
 
-    # hack if we have a *-TBM entry for the give
+    # check if we have a *-TBM entry for the given component
     tbm_dict = tss.get(f'{name}-TBM')
 
+    info = build_identity['Info']
+    nonce_slot_required = info.get('RequiresNonceSlot', False) and name in ('SEP', 'SepStage1', 'LLB')
+
     im4r = None
-    if tbm_dict is not None:
+    if tbm_dict is not None or nonce_slot_required:
         im4r = IM4R()
-        info = build_identity['Info']
-        if info.get('RequiresNonceSlot', False) and name in ('SEP', 'SepStage1', 'LLB'):
+
+        if nonce_slot_required:
             logger.debug(f'{name}: RequiresNonceSlot for {name}')
             if name in ('SEP', 'SepStage1'):
                 snid = ap_parameters.get('SepNonceSlotID', info.get('SepNonceSlotID', 2))
@@ -154,6 +158,7 @@ def stitch_component(name: str, im4p_data: bytes, tss: dict, build_identity: Bui
                     RestoreProperty(fourcc='anid', value=anid)
                 )
 
+    if tbm_dict is not None:
         for key in tbm_dict.keys():
             logger.debug(f'{name}: Adding property {key}')
             im4r.add_property(RestoreProperty(fourcc=key, value=tbm_dict[key]))
