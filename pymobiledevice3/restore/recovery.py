@@ -344,10 +344,10 @@ class Recovery(BaseRestore):
         self.device.irecv.set_autoboot(enable)
 
     def enter_restore(self):
-        if self.ipsw.build_manifest.build_major >= 8:
-            self.restore_boot_args = 'rd=md0 nand-enable-reformat=1 -progress'
-        elif self.macos_variant:
+        if self.macos_variant:
             self.restore_boot_args = 'rd=md0 nand-enable-reformat=1 -progress -restore'
+        elif self.ipsw.build_manifest.build_major >= 8:
+            self.restore_boot_args = 'rd=md0 nand-enable-reformat=1 -progress'
 
         # upload data to make device boot restore mode
 

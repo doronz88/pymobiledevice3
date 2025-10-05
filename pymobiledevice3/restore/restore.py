@@ -701,7 +701,7 @@ class Restore(BaseRestore):
 
         if chip_id == 0x20211:
             comp_name = 'SE,Firmware'
-        elif chip_id in (0x73, 0x64, 0xC8, 0xD2, 0x2c, 0x36):
+        elif chip_id in (0x73, 0x64, 0xC8, 0xD2, 0x2c, 0x36, 0x37):
             comp_name = 'SE,UpdatePayload'
         else:
             self.logger.warning(f'Unknown SE,ChipID {chip_id} detected. Restore might fail.')
