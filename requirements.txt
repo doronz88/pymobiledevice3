@@ -1,6 +1,6 @@
 construct>=2.9.29
 asn1
-click
+typer
 coloredlogs
 IPython
 bpylist2>=4.0.1
