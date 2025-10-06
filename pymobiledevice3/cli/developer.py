@@ -12,7 +12,7 @@ from collections import namedtuple
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import IO, Optional
+from typing import IO, Annotated, Optional
 
 import click
 import typer
@@ -192,7 +192,7 @@ def get_matching_processes(service_provider: LockdownServiceProvider, name: Opti
 @dvt.command('pkill', cls=Command)
 @click.argument('expression')
 @click.option('--bundle', is_flag=True, help='Treat given expression as a bundle-identifier instead of a process name')
-def pkill(service_provider: LockdownServiceProvider, expression: str, bundle: False) -> None:
+def pkill(service_provider: LockdownServiceProvider, expression: str, bundle: str) -> None:
     """ kill all processes containing `expression` in their name. """
     matching_name = expression if not bundle else None
     matching_bundle_identifier = expression if bundle else None
@@ -215,7 +215,7 @@ def pkill(service_provider: LockdownServiceProvider, expression: str, bundle: Fa
 @click.option('--env', multiple=True, type=click.Tuple((str, str)),
               help='Environment variables to pass to process given as a list of key value')
 @click.option('--stream', is_flag=True)
-def launch(service_provider: LockdownClient, arguments: str, kill_existing: bool, suspended: bool, env: tuple,
+def launch(service_provider: LockdownClient, arguments: str, kill_existing: bool, suspended: bool, env,
            stream: bool) -> None:
     """ Launch a process. """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
@@ -1095,10 +1095,12 @@ async def core_device_read_file_task(
 @click.argument('domain', type=click.Choice(APPLE_DOMAIN_DICT.keys()))
 @click.argument('path')
 @click.option('--identifier', default='')
-@click.option('-o', '--output', type=click.File('wb'))
 def core_device_read_file(
-        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str,
-        output: Optional[IO]) -> None:
+        service_provider: RemoteServiceDiscoveryService,
+        domain: str,
+        path: str,
+        identifier: str,
+        output: Optional[Annotated[typer.FileBinaryWrite, typer.Option('-o', '--output', help='File to write to', mode='w')]]) -> None:
     """ Read file from given domain-path """
     asyncio.run(core_device_read_file_task(service_provider, domain, path, identifier, output))
 
@@ -1145,7 +1147,7 @@ async def core_device_list_launch_application_task(
               help='Environment variables to pass to process given as a list of key value')
 def core_device_launch_application(
         service_provider: RemoteServiceDiscoveryService, bundle_identifier: str, argument: tuple[str],
-        kill_existing: bool, suspended: bool, env: list[tuple[str, str]]) -> None:
+        kill_existing: bool, suspended: bool, env) -> None:
     """ Launch application """
     asyncio.run(
         core_device_list_launch_application_task(

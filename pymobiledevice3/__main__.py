@@ -125,7 +125,7 @@ class Pmd3TyperGroup(TyperGroup):
         mod = __import__(module_name, None, None, ['cli'])
         # submodules currently expose a Click/Typer Group named "cli"
         if isinstance(mod.cli, typer.Typer):
-            command = typer.main.get_command(mod.cli)
+            command = typer.main.get_group(mod.cli)
             command.name = name
         else:
             command = mod.cli.get_command(ctx, name)

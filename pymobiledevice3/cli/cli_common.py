@@ -12,10 +12,12 @@ import click
 import coloredlogs
 import hexdump
 import inquirer3
+import typer.main
 from click import Option, UsageError
 from inquirer3.themes import GreenPassion
 from pygments import formatters, highlight, lexers
 from typer.core import TyperCommand
+from typer.models import ParamMeta
 
 from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, NoDeviceConnectedError
 from pymobiledevice3.lockdown import LockdownClient, TcpLockdownClient, create_using_usbmux, get_mobdev2_lockdowns
@@ -32,6 +34,17 @@ OSUTILS = get_os_utils()
 
 USBMUX_OPTION_HELP = (f'usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT). '
                       f'Can be specified via {USBMUX_ENV_VAR} envvar')
+
+_orig_get_params_from_function = typer.main.get_params_from_function
+
+
+def get_params_from_function_hook(func: Callable[..., Any]) -> dict[str, ParamMeta]:
+    result = _orig_get_params_from_function(func)
+    result.pop('service_provider', None)
+    return result
+
+
+typer.main.get_params_from_function = get_params_from_function_hook
 
 
 class RSDOption(Option):
