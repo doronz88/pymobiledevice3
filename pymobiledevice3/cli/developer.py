@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import os
+import plistlib
 import posixpath
 import shlex
 import signal
@@ -17,13 +18,14 @@ from typing import IO, Optional
 import click
 from click.exceptions import MissingParameter, UsageError
 from packaging.version import Version
+from plumbum import FG, local
 from pykdebugparser.pykdebugparser import PyKdebugParser
 
 import pymobiledevice3
 from pymobiledevice3.cli.cli_common import BASED_INT, Command, RSDCommand, default_json_encoder, print_json, \
     user_requested_colored_output
-from pymobiledevice3.exceptions import CoreDeviceError, DeviceAlreadyInUseError, DvtDirListError, \
-    ExtractingStackshotError, RSDRequiredError, UnrecognizedSelectorError
+from pymobiledevice3.exceptions import DeviceAlreadyInUseError, DvtDirListError, ExtractingStackshotError, \
+    RSDRequiredError, UnrecognizedSelectorError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -52,6 +54,7 @@ from pymobiledevice3.services.dvt.instruments.process_control import ProcessCont
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestService
+from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.remote_fetch_symbols import RemoteFetchSymbolsService
 from pymobiledevice3.services.remote_server import RemoteServer
 from pymobiledevice3.services.screenshot import ScreenshotService
@@ -126,6 +129,7 @@ def proclist(service_provider: LockdownClient) -> None:
 
         print_json(processes)
 
+
 @dvt.command('is-running-pid', cls=Command)
 @click.argument('pid', type=click.INT)
 def is_running_pid(service_provider: LockdownClient, pid: int) -> None:
@@ -133,12 +137,14 @@ def is_running_pid(service_provider: LockdownClient, pid: int) -> None:
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         print_json(DeviceInfo(dvt).is_running_pid(pid))
 
+
 @dvt.command('memlimitoff', cls=Command)
 @click.argument('pid', type=click.INT)
 def memlimitoff(service_provider: LockdownServiceProvider, pid: int) -> None:
     """ Disable process memory limit """
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         ProcessControl(dvt).disable_memory_limit_for_pid(pid)
+
 
 @dvt.command('applist', cls=Command)
 def applist(service_provider: LockdownServiceProvider) -> None:
@@ -412,7 +418,7 @@ def sysmon_system(service_provider: LockdownClient, fields):
                                 'EnabledCPUs': row['EnabledCPUs'],
                             }
                         }
-                    else: # Ignore the first occurrence because first occurrence always gives a incorrect value - 100 or 0
+                    else:  # Ignore the first occurrence because first occurrence always gives a incorrect value - 100 or 0
                         system_usage_seen = True
 
                 if system and system_usage:
@@ -990,6 +996,59 @@ def debugserver_start_server(service_provider: LockdownClient, local_port: Optio
         print("local_port is required for iOS < 17.0")
 
 
+@debugserver.command('lldb', cls=RSDCommand)
+@click.argument('xcodeproj_path', type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option('--configuration', default='Debug', help='Usually Release/Debug')
+@click.option('--lldb-command', default='lldb')
+def debugserver_lldb(
+        service_provider: LockdownServiceProvider,
+        xcodeproj_path: str,
+        configuration: str,
+        lldb_command: str) -> None:
+    """ Automate lldb launch for a given xcodeproj """
+    if Version(service_provider.product_version) < Version('17.0'):
+        logger.error('lldb is only supported on iOS >= 17.0')
+        return
+
+    commands = []
+    xcodeproj_path = Path(xcodeproj_path)
+    with local.cwd(xcodeproj_path.parent):
+        logger.info(f'Building {xcodeproj_path} for {configuration} configuration')
+        local['xcodebuild']['-configuration', configuration, 'build']()
+        local_app = list(Path(f'build/{configuration}-iphoneos').glob('*.app'))[0]
+        logger.info(f'Using app: {local_app}')
+
+        info_plist_path = local_app / 'Info.plist'
+        info_plist = plistlib.loads(info_plist_path.read_bytes())
+        bundle_identifier = info_plist['CFBundleIdentifier']
+        logger.info(f'Bundle identifier: {bundle_identifier}')
+
+        commands.append('platform select remote-ios')
+        commands.append(f'target create "{local_app.absolute()}"')
+
+        with InstallationProxyService(create_using_usbmux()) as installation_proxy:
+            logger.info('Installing app')
+            installation_proxy.install_from_local(local_app)
+            remote_path = installation_proxy.get_apps(bundle_identifiers=[bundle_identifier])[bundle_identifier]['Path']
+            logger.info(f'Remote path: {remote_path}')
+
+        commands.append(f'script lldb.target.module[0].SetPlatformFileSpec(lldb.SBFileSpec("{remote_path}"))')
+
+        logger.info(f'Running lldb commands:\n{commands}')
+
+        commands.append(f'# THE FOLLOWING MUST BE RUN MANUALLY:')
+        debugserver_port = service_provider.get_service_port('com.apple.internal.dt.remote.debugproxy')
+        commands.append(f'# process connect connect://[{service_provider.service.address[0]}]:{debugserver_port}\n')
+        commands.append(f'# process launch\n')
+
+        args = []
+        for command in commands:
+            args += ['--one-line', command]
+
+        lldb = local[lldb_command][args]
+        lldb & FG
+
+
 @developer.group('arbitration')
 def arbitration():
     """ Mark/Unmark device as "in-use" """
@@ -1101,7 +1160,8 @@ def core_device_list_directory(
 
 
 async def core_device_read_file_task(
-        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str, output: Optional[IO]) -> None:
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str,
+        output: Optional[IO]) -> None:
     async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain], identifier) as file_service:
         buf = await file_service.retrieve_file(path)
         if output is not None:
@@ -1116,7 +1176,8 @@ async def core_device_read_file_task(
 @click.option('--identifier', default='')
 @click.option('-o', '--output', type=click.File('wb'))
 def core_device_read_file(
-        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str, output: Optional[IO]) -> None:
+        service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str,
+        output: Optional[IO]) -> None:
     """ Read file from given domain-path """
     asyncio.run(core_device_read_file_task(service_provider, domain, path, identifier, output))
 
