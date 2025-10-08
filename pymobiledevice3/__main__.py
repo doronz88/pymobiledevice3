@@ -6,6 +6,7 @@ import re
 import sys
 import textwrap
 import traceback
+import warnings
 from typing import Union
 
 import click
@@ -38,7 +39,9 @@ logger = logging.getLogger(__name__)
 
 # For issue https://github.com/doronz88/pymobiledevice3/issues/1217, details: https://bugs.python.org/issue37373
 if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', category=DeprecationWarning)
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 INVALID_SERVICE_MESSAGE = """Failed to start service. Possible reasons are:
 - If you were trying to access a developer service (developer subcommand):
