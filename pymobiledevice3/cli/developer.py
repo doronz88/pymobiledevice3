@@ -7,6 +7,8 @@ import plistlib
 import posixpath
 import shlex
 import signal
+import struct
+import subprocess
 import sys
 import time
 from collections import namedtuple
@@ -18,7 +20,7 @@ from typing import IO, Optional
 import click
 from click.exceptions import MissingParameter, UsageError
 from packaging.version import Version
-from plumbum import FG, local
+from plumbum import local
 from pykdebugparser.pykdebugparser import PyKdebugParser
 
 import pymobiledevice3
@@ -1000,12 +1002,31 @@ def debugserver_start_server(service_provider: LockdownClient, local_port: Optio
 @click.argument('xcodeproj_path', type=click.Path(exists=True, file_okay=False, dir_okay=True))
 @click.option('--configuration', default='Debug', help='Usually Release/Debug')
 @click.option('--lldb-command', default='lldb')
+@click.option('--launch', is_flag=True, default=False, help='Launch the app after connecting to lldb')
+@click.option('breakpoints', '-b', '--break', multiple=True, help='Add multiple startup breakpoints')
+@click.option('user_commands', '--command', '-c', multiple=True, help='Additional commands to run at startup')
 def debugserver_lldb(
         service_provider: LockdownServiceProvider,
         xcodeproj_path: str,
         configuration: str,
-        lldb_command: str) -> None:
-    """ Automate lldb launch for a given xcodeproj """
+        lldb_command: str,
+        launch: bool,
+        breakpoints: tuple[str],
+        user_commands: tuple[str],
+) -> None:
+    """
+    Automate lldb launch for a given xcodeproj.
+
+    \b
+    This will:
+    - Build the given xcodeproj
+    - Install it
+    - Start a debugserver attached to it
+    - Place breakpoints if given any
+    - Launch the application if requested
+    - Execute any additional commands if requested
+    - Switch to lldb shell
+    """
     if Version(service_provider.product_version) < Version('17.0'):
         logger.error('lldb is only supported on iOS >= 17.0')
         return
@@ -1034,19 +1055,106 @@ def debugserver_lldb(
 
         commands.append(f'script lldb.target.module[0].SetPlatformFileSpec(lldb.SBFileSpec("{remote_path}"))')
 
-        logger.info(f'Running lldb commands:\n{commands}')
-
-        commands.append(f'# THE FOLLOWING MUST BE RUN MANUALLY:')
         debugserver_port = service_provider.get_service_port('com.apple.internal.dt.remote.debugproxy')
-        commands.append(f'# process connect connect://[{service_provider.service.address[0]}]:{debugserver_port}\n')
-        commands.append(f'# process launch\n')
 
-        args = []
-        for command in commands:
-            args += ['--one-line', command]
+        # Add connection and launch commands
+        commands.append(f'process connect connect://[{service_provider.service.address[0]}]:{debugserver_port}')
 
-        lldb = local[lldb_command][args]
-        lldb & FG
+        for breakpoint in breakpoints:
+            commands.append(f'breakpoint set -n "{breakpoint}"')
+
+        if launch:
+            commands.append('process launch')
+
+        # Add user commands
+        commands += user_commands
+
+        logger.info(f'Starting lldb with automated setup and connection')
+
+        # Works only on unix-based systems, so keep these imports here
+        import fcntl
+        import pty
+        import select as select_module
+        import termios
+        import tty
+
+        master, slave = pty.openpty()
+
+        process = None  # Initialize process variable for signal handler
+
+        # Copy terminal size from the current terminal to PTY
+        def resize_pty() -> None:
+            """Update PTY size to match current terminal size"""
+            size = struct.unpack('HHHH',
+                                 fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, struct.pack('HHHH', 0, 0, 0, 0)))
+            fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', *size))
+            # Send SIGWINCH to the child process to notify it of the resize
+            if process is not None and process.poll() is None:
+                process.send_signal(signal.SIGWINCH)
+
+        # Initial resize
+        resize_pty()
+
+        # Set up signal handler for window resize
+        def handle_sigwinch(signum, frame):
+            resize_pty()
+
+        old_sigwinch_handler = signal.signal(signal.SIGWINCH, handle_sigwinch)
+
+        # Save original terminal settings
+        old_tty = termios.tcgetattr(sys.stdin)
+
+        try:
+            # Set TERM environment variable to enable colors
+            env = os.environ.copy()
+            env['TERM'] = os.environ.get('TERM', 'xterm-256color')
+
+            process = subprocess.Popen(
+                [lldb_command],
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+                env=env
+            )
+            os.close(slave)
+
+            # Put terminal in raw mode for proper interaction
+            tty.setraw(sys.stdin.fileno())
+            # Send all commands through stdin
+            for command in commands:
+                os.write(master, (command + '\n').encode())
+
+            # Now redirect stdin from the terminal to lldb so user can interact
+            while True:
+                rlist, _, _ = select_module.select([sys.stdin, master], [], [])
+
+                if sys.stdin in rlist:
+                    # User typed something
+                    data = os.read(sys.stdin.fileno(), 1024)
+                    if not data:
+                        break
+                    os.write(master, data)
+
+                if master in rlist:
+                    # lldb has output
+                    try:
+                        data = os.read(master, 1024)
+                        if not data:
+                            break
+                        os.write(sys.stdout.fileno(), data)
+                    except OSError:
+                        break
+        except (KeyboardInterrupt, OSError):
+            pass
+        finally:
+            # Restore terminal settings
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_tty)
+            # Restore original SIGWINCH handler
+            signal.signal(signal.SIGWINCH, old_sigwinch_handler)
+            os.close(master)
+            if process is not None:
+                process.terminate()
+                process.wait()
 
 
 @developer.group('arbitration')
