@@ -691,7 +691,7 @@ class AfcLsStub(LsStub):
         return os.get_terminal_size().columns
 
 
-def path_completer(xsh, action, completer, alias, command):
+def path_completer(xsh, action, completer, alias, command) -> list[str]:
     shell: AfcShell = XSH.ctx['_shell']
     pwd = shell.cwd
     is_absolute = command.prefix.startswith('/')
@@ -876,7 +876,17 @@ class AfcShell:
             self.afc.rm(self.relative_path(filename))
 
     def _do_pull(self, remote_path: Annotated[str, Arg(completer=path_completer)], local_path: str,
-                 ignore_errors: bool = False, progress_bar: bool = True):
+                 ignore_errors: bool = False, progress_bar: bool = False) -> None:
+        """
+        Pull a file or directory from device to local machine.
+
+        Parameters
+        ----------
+        ignore_errors : --ignore-errors
+            Ignore errors and continue
+        progress_bar : --progress_bar
+            Show progress bar
+        """
         def log(src, dst):
             print(f'{src} --> {dst}')
 
