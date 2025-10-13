@@ -7,7 +7,7 @@ bpylist2>=4.0.1
 pygments
 hexdump
 daemonize
-gpxpy<1.6.0
+gpxpy<1.7.0,!=1.6.0
 pykdebugparser>=1.2.7
 pyusb>=1.2.1
 tqdm
