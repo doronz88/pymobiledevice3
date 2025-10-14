@@ -51,37 +51,38 @@ class TcpForwarderBase:
         if self.listening_event:
             self.listening_event.set()
 
-        while self.inputs:
-            # will only perform the socket select on the inputs. the outputs will handled
-            # as synchronous blocking
-            readable, writable, exceptional = select.select(self.inputs, [], self.inputs, self.TIMEOUT)
-            if self.stopped.is_set():
-                self.logger.debug("Closing since stopped is set")
-                break
+        try:
+            while self.inputs:
+                # will only perform the socket select on the inputs. the outputs will handled
+                # as synchronous blocking
+                readable, writable, exceptional = select.select(self.inputs, [], self.inputs, self.TIMEOUT)
+                if self.stopped.is_set():
+                    self.logger.debug("Closing since stopped is set")
+                    break
 
-            closed_sockets = set()
-            for current_sock in readable:
-                self.logger.debug("Processing %r", current_sock)
-                if current_sock is self.server_socket:
-                    self._handle_server_connection()
-                else:
-                    if current_sock not in closed_sockets:
-                        try:
-                            self._handle_data(current_sock, closed_sockets)
-                        except ConnectionResetError:
-                            self.logger.exception("Error when handling data")
-                            self._handle_close_or_error(current_sock)
+                closed_sockets = set()
+                for current_sock in readable:
+                    self.logger.debug("Processing %r", current_sock)
+                    if current_sock is self.server_socket:
+                        self._handle_server_connection()
                     else:
-                        self.logger.debug("Is closed")
+                        if current_sock not in closed_sockets:
+                            try:
+                                self._handle_data(current_sock, closed_sockets)
+                            except ConnectionResetError:
+                                self.logger.exception("Error when handling data")
+                                self._handle_close_or_error(current_sock)
+                        else:
+                            self.logger.debug("Is closed")
 
-            for current_sock in exceptional:
-                self.logger.error("Sock failed: %r", current_sock)
-                self._handle_close_or_error(current_sock)
-
-        self.logger.info("Closing everything")
-        # on stop, close all currently opened sockets
-        for current_sock in self.inputs:
-            current_sock.close()
+                for current_sock in exceptional:
+                    self.logger.error("Sock failed: %r", current_sock)
+                    self._handle_close_or_error(current_sock)
+        finally:
+            self.logger.info("Closing everything")
+            # on stop, close all currently opened sockets
+            for current_sock in self.inputs:
+                current_sock.close()
 
     def _handle_close_or_error(self, from_sock):
         """ if an error occurred its time to close the two sockets """
