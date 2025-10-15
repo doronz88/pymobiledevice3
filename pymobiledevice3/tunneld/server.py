@@ -5,11 +5,16 @@ import logging
 import os
 import signal
 import traceback
+import warnings
 from contextlib import asynccontextmanager, suppress
 from typing import Optional, Union
 
 import construct
-import fastapi
+
+with warnings.catch_warnings():
+    # Ignore: "Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater."
+    warnings.simplefilter('ignore', category=UserWarning)
+    import fastapi
 import uvicorn
 from construct import StreamError
 from fastapi import FastAPI
