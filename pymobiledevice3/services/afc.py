@@ -277,7 +277,7 @@ class AfcService(LockdownService):
                 except Exception as afc_exception:
                     if not ignore_errors:
                         raise
-                    self.logger.warning("(Ignoring) Error:", afc_exception, "occured during the copy of", src_filename)
+                    self.logger.warning(f"(Ignoring) Error: {afc_exception} occurred during the copy of {src_filename}")
 
     @path_to_str()
     def exists(self, filename):
@@ -620,7 +620,7 @@ class AfcService(LockdownService):
                 pass
         return status, data
 
-    def _do_operation(self, opcode: afc_opcode_t, data: bytes = b''):
+    def _do_operation(self, opcode, data: bytes = b''):
         self._dispatch_packet(opcode, data)
         status, data = self._receive_data()
 
@@ -887,6 +887,7 @@ class AfcShell:
         progress_bar : --progress_bar
             Show progress bar
         """
+
         def log(src, dst):
             print(f'{src} --> {dst}')
 

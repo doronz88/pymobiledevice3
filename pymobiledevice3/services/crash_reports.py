@@ -99,7 +99,7 @@ class CrashReportsManager:
                     self.afc.rm_single(src, force=True)
 
         match = None if match is None else re.compile(match)
-        self.afc.pull(entry, out, match, callback=log, progress_bar=progress_bar)
+        self.afc.pull(entry, out, match, callback=log, progress_bar=progress_bar, ignore_errors=True)
 
     def flush(self) -> None:
         """ Trigger com.apple.crashreportmover to flush all products into CrashReports directory """
