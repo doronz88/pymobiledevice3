@@ -4,7 +4,7 @@ import logging
 import uuid
 from dataclasses import dataclass, fields
 from enum import Enum
-from typing import Optional, Union
+from typing import Any, Coroutine, Optional, Union
 
 import nest_asyncio
 
@@ -157,7 +157,7 @@ class WebinspectorService:
         self.service = self.await_(self.lockdown.aio_start_lockdown_service(self.service_name))
         self.await_(self._report_identifier())
         try:
-            self._handle_recv(self.await_(asyncio.wait_for(self._recv_message(), timeout)))
+            self._handle_recv(self._await_with_timeout(self._recv_message(), timeout))
         except asyncio.TimeoutError as e:
             raise WebInspectorNotEnabledError from e
         self._recv_task = self.loop.create_task(self._receiving_task())
@@ -225,7 +225,7 @@ class WebinspectorService:
         self.await_(self._request_application_launch(bundle))
         self.get_open_pages()
         try:
-            return self.await_(asyncio.wait_for(self._wait_for_application(bundle), timeout=timeout))
+            return self._await_with_timeout(self._wait_for_application(bundle), timeout)
         except TimeoutError:
             raise LaunchingApplicationError()
 
@@ -244,8 +244,22 @@ class WebinspectorService:
     def flush_input(self, duration: Union[float, int] = 0):
         return self.await_(asyncio.sleep(duration))
 
-    def await_(self, awaitable):
-        return self.loop.run_until_complete(asyncio.ensure_future(awaitable, loop=self.loop))
+    def await_(self, awaitable: Coroutine) -> Any:
+        return self.loop.run_until_complete(awaitable)
+
+    def _await_with_timeout(self, coro: Coroutine, timeout: float = None) -> Any:
+        # Create a task explicitly so we're definitely inside a Task
+        task = self.loop.create_task(coro)
+        done, pending = self.loop.run_until_complete(asyncio.wait({task}, timeout=timeout))
+        if not done:
+            task.cancel()
+            # Give the task a chance to cancel cleanly
+            try:
+                self.loop.run_until_complete(task)
+            except asyncio.CancelledError:
+                pass
+            raise WebInspectorNotEnabledError()
+        return task.result()
 
     def _handle_recv(self, plist):
         self.receive_handlers[plist['__selector']](plist['__argument'])
