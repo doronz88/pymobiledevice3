@@ -15,6 +15,7 @@ with warnings.catch_warnings():
     # Ignore: "Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater."
     warnings.simplefilter('ignore', category=UserWarning)
     import fastapi
+
 import uvicorn
 from construct import StreamError
 from fastapi import FastAPI
@@ -23,7 +24,7 @@ from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import REMOTED_SERVICE_NAMES, browse
 from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, DeviceNotFoundError, \
-    GetProhibitedError, InvalidServiceError, LockdownError, MuxException, PairingError
+    GetProhibitedError, IncorrectModeError, InvalidServiceError, LockdownError, MuxException, PairingError
 from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -148,7 +149,7 @@ class TunneldCore:
                         try:
                             service = CoreDeviceTunnelProxy(create_using_usbmux(mux_device.serial))
                         except (MuxException, InvalidServiceError, GetProhibitedError, construct.core.StreamError,
-                                ConnectionAbortedError, DeviceNotFoundError, LockdownError):
+                                ConnectionAbortedError, DeviceNotFoundError, LockdownError, IncorrectModeError):
                             continue
                         self.tunnel_tasks[task_identifier] = TunnelTask(
                             udid=mux_device.serial,
