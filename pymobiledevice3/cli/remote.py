@@ -220,9 +220,10 @@ async def start_remote_pair_task(device_name: str) -> None:
         if device_name is not None and current_device_name != device_name:
             continue
 
-        for ip in answer.ips:
-            devices.append(RemotePairingManualPairingDevice(ip=ip, port=answer.port, device_name=current_device_name,
-                                                            identifier=answer.properties[b'identifier'].decode()))
+        for address in answer.addresses:
+            devices.append(
+                RemotePairingManualPairingDevice(ip=address.full_ip, port=answer.port, device_name=current_device_name,
+                                                 identifier=answer.properties[b'identifier'].decode()))
 
     if len(devices) > 0:
         device = prompt_device_list(devices)

@@ -190,7 +190,7 @@ class RemotePairingTunnel(ABC):
         self._tun_read_task = asyncio.create_task(self.tun_read_task(), name=f'tun-read-{address}')
 
     async def stop_tunnel(self) -> None:
-        self._logger.debug('stopping tunnel')
+        self._logger.debug(f'[{asyncio.current_task().get_name()}] stopping tunnel')
         self._tun_read_task.cancel()
         with suppress(CancelledError):
             await self._tun_read_task
@@ -222,6 +222,9 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
     async def send_packet_to_device(self, packet: bytes) -> None:
         self._quic.send_datagram_frame(packet)
         self.transmit()
+
+        # Allow other tasks to run
+        await asyncio.sleep(0)
 
     async def request_tunnel_establish(self) -> dict:
         stream_id = self._quic.get_next_available_stream_id()
@@ -1078,13 +1081,14 @@ async def get_remote_pairing_tunnel_services(
         udid: Optional[str] = None) -> list[RemotePairingTunnelService]:
     result = []
     for answer in await browse_remotepairing(timeout=bonjour_timeout):
-        for ip in answer.ips:
+        for address in answer.addresses:
             for identifier in iter_remote_paired_identifiers():
                 if udid is not None and identifier != udid:
                     continue
                 conn = None
                 try:
-                    conn = await create_core_device_tunnel_service_using_remotepairing(identifier, ip, answer.port)
+                    conn = await create_core_device_tunnel_service_using_remotepairing(
+                        identifier, address.full_ip, answer.port)
                     result.append(conn)
                     break
                 except ConnectionAbortedError:

@@ -17,8 +17,8 @@ async def get_rsds(bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT, udid: Optio
     result = []
     with stop_remoted():
         for answer in await browse_remoted(timeout=bonjour_timeout):
-            for ip in answer.ips:
-                rsd = RemoteServiceDiscoveryService((ip, RSD_PORT))
+            for address in answer.addresses:
+                rsd = RemoteServiceDiscoveryService((address.full_ip, RSD_PORT))
                 try:
                     await rsd.connect()
                 except ConnectionRefusedError:

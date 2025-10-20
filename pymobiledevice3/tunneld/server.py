@@ -7,9 +7,12 @@ import signal
 import traceback
 import warnings
 from contextlib import asynccontextmanager, suppress
+from ssl import SSLEOFError
 from typing import Optional, Union
 
 import construct
+
+from pymobiledevice3.bonjour import browse_remoted
 
 with warnings.catch_warnings():
     # Ignore: "Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater."
@@ -22,9 +25,9 @@ from fastapi import FastAPI
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.bonjour import REMOTED_SERVICE_NAMES, browse
 from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, DeviceNotFoundError, \
-    GetProhibitedError, IncorrectModeError, InvalidServiceError, LockdownError, MuxException, PairingError
+    GetProhibitedError, IncorrectModeError, InvalidServiceError, LockdownError, MuxException, PairingError, \
+    StreamClosedError
 from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -42,7 +45,7 @@ REATTEMPT_INTERVAL = 5
 REATTEMPT_COUNT = 5
 
 REMOTEPAIRING_INTERVAL = 5
-MOVDEV2_INTERVAL = 5
+MOBDEV2_INTERVAL = 5
 
 USBMUX_INTERVAL = 2
 OSUTILS = get_os_utils()
@@ -99,18 +102,29 @@ class TunneldCore:
 
             previous_ips = current_ips
 
-            logger.debug(f'added interfaces: {added}')
-            logger.debug(f'removed interfaces: {removed}')
+            # logger.debug(f'added interfaces: {added}')
+            # logger.debug(f'removed interfaces: {removed}')
 
             for ip in removed:
                 if ip in self.tunnel_tasks:
                     self.tunnel_tasks[ip].task.cancel()
-                    await self.tunnel_tasks[ip].task
+                    with suppress(asyncio.CancelledError):
+                        await self.tunnel_tasks[ip].task
 
-            for ip in added:
-                self.tunnel_tasks[ip] = TunnelTask(
-                    task=asyncio.create_task(self.handle_new_potential_usb_cdc_ncm_interface_task(ip),
-                                             name=f'handle-new-potential-usb-cdc-ncm-interface-task-{ip}'))
+            if added:
+                # A new interface was attached
+                for answer in await browse_remoted():
+                    for address in answer.addresses:
+                        if address.iface.startswith('utun'):
+                            # Skip already established tunnels
+                            continue
+                        if address.full_ip in self.tunnel_tasks.keys():
+                            # Skip already established tunnels
+                            continue
+                        self.tunnel_tasks[address.full_ip] = TunnelTask(
+                            task=asyncio.create_task(
+                                self.handle_new_potential_usb_cdc_ncm_interface_task(address.full_ip),
+                                name=f'handle-new-potential-usb-cdc-ncm-interface-task-{address.full_ip}'))
 
             # wait before re-iterating
             await asyncio.sleep(1)
@@ -145,12 +159,23 @@ class TunneldCore:
                     for mux_device in usbmux.list_devices():
                         task_identifier = f'usbmux-{mux_device.serial}-{mux_device.connection_type}'
                         if self.tunnel_exists_for_udid(mux_device.serial):
+                            # Skip if already established a tunnel for this udid
                             continue
+                        if task_identifier in self.tunnel_tasks:
+                            # Skip if already trying to establish a tunnel for this device
+                            continue
+                        lockdown = None
+                        service = None
                         try:
-                            service = CoreDeviceTunnelProxy(create_using_usbmux(mux_device.serial))
+                            lockdown = create_using_usbmux(mux_device.serial)
+                            service = CoreDeviceTunnelProxy(lockdown)
                         except (MuxException, InvalidServiceError, GetProhibitedError, construct.core.StreamError,
-                                ConnectionAbortedError, DeviceNotFoundError, LockdownError, IncorrectModeError):
+                                ConnectionAbortedError, DeviceNotFoundError, LockdownError, IncorrectModeError,
+                                SSLEOFError):
                             continue
+                        finally:
+                            if lockdown is not None and service is None:
+                                lockdown.close()
                         self.tunnel_tasks[task_identifier] = TunnelTask(
                             udid=mux_device.serial,
                             task=asyncio.create_task(
@@ -172,10 +197,13 @@ class TunneldCore:
         try:
             while True:
                 async for ip, lockdown in get_mobdev2_lockdowns(only_paired=True):
-                    if self.tunnel_exists_for_udid(lockdown.udid):
-                        # skip tunnel if already exists for this udid
-                        continue
                     task_identifier = f'mobdev2-{lockdown.udid}-{ip}'
+                    if self.tunnel_exists_for_udid(lockdown.udid):
+                        # Skip tunnel if already exists for this udid
+                        continue
+                    if task_identifier in self.tunnel_tasks:
+                        # Skip if already trying to establish a tunnel for this device
+                        continue
                     try:
                         tunnel_service = CoreDeviceTunnelProxy(lockdown)
                     except InvalidServiceError:
@@ -187,7 +215,7 @@ class TunneldCore:
                                                  name=f'start-tunnel-task-{task_identifier}'),
                         udid=lockdown.udid
                     )
-                await asyncio.sleep(MOVDEV2_INTERVAL)
+                await asyncio.sleep(MOBDEV2_INTERVAL)
         except asyncio.CancelledError:
             pass
 
@@ -219,8 +247,8 @@ class TunneldCore:
                 else:
                     bailed_out = True
                     logger.debug(
-                        f'not establishing tunnel from {asyncio.current_task().get_name()} '
-                        f'since there is already an active one for same udid')
+                        f'[{asyncio.current_task().get_name()}] Not establishing tunnel since there is already an '
+                        f'active one for same udid')
         except asyncio.CancelledError:
             pass
         except (asyncio.exceptions.IncompleteReadError, TimeoutError, OSError, ConnectionResetError, StreamError,
@@ -254,30 +282,28 @@ class TunneldCore:
     async def handle_new_potential_usb_cdc_ncm_interface_task(self, ip: str) -> None:
         rsd = None
         try:
-            answers = None
-            for i in range(REATTEMPT_COUNT):
-                answers = await browse(REMOTED_SERVICE_NAMES, [ip])
-                if answers:
-                    break
-                logger.debug(f'No addresses found for: {ip}')
-                await asyncio.sleep(REATTEMPT_INTERVAL)
-
-            if not answers:
-                raise asyncio.CancelledError()
-
-            peer_address = answers[0].ips[0]
-
             # establish an untrusted RSD handshake
-            rsd = RemoteServiceDiscoveryService((peer_address, RSD_PORT))
+            rsd = RemoteServiceDiscoveryService((ip, RSD_PORT))
 
             with stop_remoted():
-                try:
-                    await rsd.connect()
-                except (ConnectionRefusedError, TimeoutError):
-                    raise asyncio.CancelledError()
+                first_time = True
+                retry = False
+                while retry or first_time:
+                    retry = False
+                    try:
+                        await rsd.connect()
+                    except StreamClosedError:
+                        # Could be on first try because of remoted race
+                        if first_time:
+                            retry = True
+                    except (ConnectionRefusedError, TimeoutError, OSError):
+                        raise asyncio.CancelledError()
+                    finally:
+                        first_time = False
 
             if (self.protocol == TunnelProtocol.QUIC) and (Version(rsd.product_version) < Version('17.0.0')):
                 await rsd.close()
+                rsd = None
                 raise asyncio.CancelledError()
 
             await asyncio.create_task(
@@ -299,7 +325,7 @@ class TunneldCore:
                     pass
 
             if ip in self.tunnel_tasks:
-                # in case the tunnel was removed just now
+                # In case the tunnel was removed just now
                 self.tunnel_tasks.pop(ip)
 
     async def close(self) -> None:
@@ -325,7 +351,7 @@ class TunneldCore:
         """ Cancel active tunnels """
         for tunnel_ip in self.get_tunnels_ips().get(udid, []):
             self.tunnel_tasks.pop(tunnel_ip).task.cancel()
-            logger.info(f'canceling tunnel {tunnel_ip}')
+            logger.info(f'Canceling tunnel {tunnel_ip}')
 
     def clear(self) -> None:
         """ Clear active tunnels """
@@ -348,7 +374,6 @@ class TunneldRunner:
                  wifi_monitor: bool = True, usbmux_monitor: bool = True, mobdev2_monitor: bool = True):
         @asynccontextmanager
         async def lifespan(app: FastAPI):
-            logging.getLogger('zeroconf').disabled = True
             self._tunneld_core.start()
             yield
             logger.info('Closing tunneld tasks...')
@@ -469,7 +494,7 @@ class TunneldRunner:
                                         }}))
 
             if not created_task:
-                return fastapi.Response(status_code=501, content=json.dumps({'error': 'task not not created'}))
+                return fastapi.Response(status_code=501, content=json.dumps({'error': 'task not created'}))
 
             tunnel: Optional[TunnelResult] = await queue.get()
             if tunnel is not None:
