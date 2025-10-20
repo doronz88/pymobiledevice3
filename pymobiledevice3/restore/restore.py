@@ -23,12 +23,13 @@ from pymobiledevice3.restore.consts import PROGRESS_BAR_OPERATIONS, lpol_file
 from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.fdr import FDRClient, fdr_type, start_fdr_thread
 from pymobiledevice3.restore.ftab import Ftab
+from pymobiledevice3.restore.mbn import mbn_mav25_stitch, mbn_stitch
 from pymobiledevice3.restore.recovery import Behavior, Recovery
 from pymobiledevice3.restore.restore_options import RestoreOptions
 from pymobiledevice3.restore.restored_client import RestoredClient
 from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
 from pymobiledevice3.service_connection import ServiceConnection
-from pymobiledevice3.utils import plist_access_path
+from pymobiledevice3.utils import asyncio_print_traceback, plist_access_path
 
 known_errors = {
     0xFFFFFFFFFFFFFFFF: 'verification error',
@@ -442,7 +443,7 @@ class Restore(BaseRestore):
         await service.aio_send_plist(req)
 
     @staticmethod
-    def get_bbfw_fn_for_element(elem):
+    def get_bbfw_fn_for_element(elem: str, bb_chip_id: Optional[int] = None) -> str:
         bbfw_fn_elem = {
             # ICE3 firmware files
             'RamPSI': 'psi_ram.fls',
@@ -465,7 +466,16 @@ class Restore(BaseRestore):
             # Mav20 Firmware file
             'Misc': 'multi_image.mbn',
         }
-        return bbfw_fn_elem.get(elem)
+
+        bbfw_fn_elem_mav25 = {
+            # Mav25 Firmware files
+            'Misc': 'multi_image.mbn',
+            'RestoreSBL1': 'restorexbl_sc.elf',
+            'SBL1': 'xbl_sc.elf',
+            'TME': 'signed_firmware_soc_view.elf',
+        }
+
+        return bbfw_fn_elem_mav25.get(elem) if bb_chip_id == 0x1F30E1 else bbfw_fn_elem.get(elem)
 
     def fls_parse(self, buffer):
         raise NotImplementedError()
@@ -476,7 +486,8 @@ class Restore(BaseRestore):
     def fls_insert_ticket(self, fls, bbticket):
         raise NotImplementedError()
 
-    def sign_bbfw(self, bbfw_orig, bbtss, bb_nonce):
+    def sign_bbfw(self, bbfw_orig: bytes, bbtss: TSSResponse, bb_nonce: Optional[bytes],
+                  bb_chip_id: Optional[int] = None) -> bytes:
         # check for BBTicket in result
         bbticket = bbtss.bb_ticket
         bbfw_dict = bbtss.get('BasebandFirmware')
@@ -495,7 +506,7 @@ class Restore(BaseRestore):
                     for key, blob in bbfw_dict.items():
                         if key.endswith('-Blob') and isinstance(blob, bytes):
                             key = key.split('-', 1)[0]
-                            signfn = self.get_bbfw_fn_for_element(key)
+                            signfn = self.get_bbfw_fn_for_element(key, bb_chip_id)
 
                             if signfn is None:
                                 raise PyMobileDevice3Exception(
@@ -507,11 +518,11 @@ class Restore(BaseRestore):
                             buffer = bbfw_orig.read(signfn)
 
                             if is_fls:
-                                fls = self.fls_parse(buffer)
-                                data = self.fls_update_sig_blob(fls, blob)
+                                raise NotImplementedError('is_fls')
+                            elif bb_chip_id == 0x1F30E1:  # Mav25 - Qualcomm Snapdragon X80 5G Modem
+                                data = mbn_mav25_stitch(buffer, blob)
                             else:
-                                parsed_sig_offset = len(buffer) - len(blob)
-                                data = buffer[:parsed_sig_offset] + blob
+                                data = mbn_stitch(buffer, blob)
 
                             bbfw_patched.writestr(bbfw_orig.getinfo(signfn), data)
 
@@ -559,6 +570,7 @@ class Restore(BaseRestore):
             if tmp_zip_read_name:
                 os.remove(tmp_zip_read_name)
 
+    @asyncio_print_traceback
     async def send_baseband_data(self, message: dict):
         self.logger.info(f'About to send BasebandData: {message}')
         service = await self._get_service_for_data_request(message)
@@ -608,7 +620,7 @@ class Restore(BaseRestore):
         # extract baseband firmware to temp file
         bbfw = self.ipsw.read(bbfwpath)
 
-        buffer = self.sign_bbfw(bbfw, bbtss, bb_nonce)
+        buffer = self.sign_bbfw(bbfw, bbtss, bb_nonce, bb_chip_id)
 
         self.logger.info('Sending BasebandData now...')
         await service.aio_send_plist({'BasebandData': buffer})
