@@ -174,15 +174,17 @@ class MuxConnection:
         # first attempt to connect with possibly the wrong version header (plist protocol)
         sock = MuxConnection.create_usbmux_socket(usbmux_address=usbmux_address)
 
-        message = usbmuxd_request.build({
-            'header': {'version': usbmuxd_version.PLIST, 'message': usbmuxd_msgtype.PLIST, 'tag': 1},
-            'data': plistlib.dumps({'MessageType': 'ReadBUID'})
-        })
-        sock.send(message)
-        response = usbmuxd_response.parse_stream(sock)
+        try:
+            message = usbmuxd_request.build({
+                'header': {'version': usbmuxd_version.PLIST, 'message': usbmuxd_msgtype.PLIST, 'tag': 1},
+                'data': plistlib.dumps({'MessageType': 'ReadBUID'})
+            })
+            sock.send(message)
+            response = usbmuxd_response.parse_stream(sock)
 
-        # if we sent a bad request, we should re-create the socket in the correct version this time
-        sock.close()
+        finally:
+            # If we sent a bad request, we should re-create the socket in the correct version this time
+            sock.close()
         sock = MuxConnection.create_usbmux_socket(usbmux_address=usbmux_address)
 
         if response.header.version == usbmuxd_version.BINARY:
@@ -414,9 +416,11 @@ def create_mux(usbmux_address: Optional[str] = None) -> MuxConnection:
 
 def list_devices(usbmux_address: Optional[str] = None) -> list[MuxDevice]:
     mux = create_mux(usbmux_address=usbmux_address)
-    mux.get_device_list(0.1)
-    devices = mux.devices
-    mux.close()
+    try:
+        mux.get_device_list(0.1)
+        devices = mux.devices
+    finally:
+        mux.close()
     return devices
 
 
