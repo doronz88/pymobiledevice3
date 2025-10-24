@@ -942,17 +942,21 @@ class RemotePairingManualPairingService(RemotePairingTunnelService):
 class CoreDeviceTunnelProxy(StartTcpTunnel):
     SERVICE_NAME = 'com.apple.internal.devicecompute.CoreDeviceProxy'
 
-    def __init__(self, lockdown: LockdownServiceProvider) -> None:
-        self._lockdown = lockdown
-        self._service: Optional[ServiceConnection] = None
+    @classmethod
+    async def create(cls, lockdown: LockdownServiceProvider) -> 'CoreDeviceTunnelProxy':
+        return cls(await lockdown.aio_start_lockdown_service(cls.SERVICE_NAME), lockdown.udid)
+
+    def __init__(self, service: ServiceConnection, remote_identifier: str) -> None:
+        self._service: ServiceConnection = service
+        self._remote_identifier: str = remote_identifier
 
     @property
     def remote_identifier(self) -> str:
-        return self._lockdown.udid
+        return self._remote_identifier
 
     @asynccontextmanager
     async def start_tcp_tunnel(self) -> AsyncGenerator['TunnelResult', None]:
-        self._service = await self._lockdown.aio_start_lockdown_service(self.SERVICE_NAME)
+        assert self._service is not None, 'service must be connected first'
         tunnel = RemotePairingTcpTunnel(self._service.reader, self._service.writer)
         handshake_response = await tunnel.request_tunnel_establish()
         tunnel.start_tunnel(handshake_response['clientParameters']['address'],

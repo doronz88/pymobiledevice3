@@ -164,18 +164,16 @@ class TunneldCore:
                         if task_identifier in self.tunnel_tasks:
                             # Skip if already trying to establish a tunnel for this device
                             continue
-                        lockdown = None
                         service = None
                         try:
-                            lockdown = create_using_usbmux(mux_device.serial)
-                            service = CoreDeviceTunnelProxy(lockdown)
+                            with create_using_usbmux(mux_device.serial) as lockdown:
+                                service = await CoreDeviceTunnelProxy.create(lockdown)
                         except (MuxException, InvalidServiceError, GetProhibitedError, construct.core.StreamError,
                                 ConnectionAbortedError, DeviceNotFoundError, LockdownError, IncorrectModeError,
                                 SSLEOFError):
+                            if service is not None:
+                                await service.close()
                             continue
-                        finally:
-                            if lockdown is not None and service is None:
-                                lockdown.close()
                         self.tunnel_tasks[task_identifier] = TunnelTask(
                             udid=mux_device.serial,
                             task=asyncio.create_task(
@@ -197,23 +195,24 @@ class TunneldCore:
         try:
             while True:
                 async for ip, lockdown in get_mobdev2_lockdowns(only_paired=True):
-                    task_identifier = f'mobdev2-{lockdown.udid}-{ip}'
-                    if self.tunnel_exists_for_udid(lockdown.udid):
-                        # Skip tunnel if already exists for this udid
-                        continue
-                    if task_identifier in self.tunnel_tasks:
-                        # Skip if already trying to establish a tunnel for this device
-                        continue
-                    try:
-                        tunnel_service = CoreDeviceTunnelProxy(lockdown)
-                    except InvalidServiceError:
-                        logger.warning(f'[{task_identifier}] failed to start CoreDeviceTunnelProxy - skipping')
-                        lockdown.close()
-                        continue
+                    with lockdown:
+                        udid = lockdown.udid
+                        task_identifier = f'mobdev2-{udid}-{ip}'
+                        if self.tunnel_exists_for_udid(udid):
+                            # Skip tunnel if already exists for this udid
+                            continue
+                        if task_identifier in self.tunnel_tasks:
+                            # Skip if already trying to establish a tunnel for this device
+                            continue
+                        try:
+                            tunnel_service = await CoreDeviceTunnelProxy.create(lockdown)
+                        except InvalidServiceError:
+                            logger.warning(f'[{task_identifier}] failed to start CoreDeviceTunnelProxy - skipping')
+                            continue
                     self.tunnel_tasks[task_identifier] = TunnelTask(
                         task=asyncio.create_task(self.start_tunnel_task(task_identifier, tunnel_service),
                                                  name=f'start-tunnel-task-{task_identifier}'),
-                        udid=lockdown.udid
+                        udid=udid
                     )
                 await asyncio.sleep(MOBDEV2_INTERVAL)
         except asyncio.CancelledError:
@@ -452,7 +451,8 @@ class TunneldRunner:
                 if not created_task and connection_type in ('usbmux', None):
                     task_identifier = f'usbmux-{udid}'
                     try:
-                        service = CoreDeviceTunnelProxy(create_using_usbmux(udid))
+                        with create_using_usbmux(udid) as lockdown:
+                            service = await CoreDeviceTunnelProxy.create(lockdown)
                         task = asyncio.create_task(
                             self._tunneld_core.start_tunnel_task(task_identifier, service, protocol=TunnelProtocol.TCP,
                                                                  queue=queue),
