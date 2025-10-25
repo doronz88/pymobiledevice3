@@ -94,61 +94,75 @@ class TunneldCore:
 
     @asyncio_print_traceback
     async def monitor_usb_task(self) -> None:
-        previous_ips = []
-        while True:
-            current_ips = OSUTILS.get_ipv6_ips()
-            added = [ip for ip in current_ips if ip not in previous_ips]
-            removed = [ip for ip in previous_ips if ip not in current_ips]
+        try:
+            previous_ips = []
+            while True:
+                current_ips = OSUTILS.get_ipv6_ips()
+                added = [ip for ip in current_ips if ip not in previous_ips]
+                removed = [ip for ip in previous_ips if ip not in current_ips]
 
-            previous_ips = current_ips
+                previous_ips = current_ips
 
-            # logger.debug(f'added interfaces: {added}')
-            # logger.debug(f'removed interfaces: {removed}')
+                # logger.debug(f'added interfaces: {added}')
+                # logger.debug(f'removed interfaces: {removed}')
 
-            for ip in removed:
-                if ip in self.tunnel_tasks:
-                    self.tunnel_tasks[ip].task.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await self.tunnel_tasks[ip].task
+                for ip in removed:
+                    if ip in self.tunnel_tasks:
+                        self.tunnel_tasks[ip].task.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await self.tunnel_tasks[ip].task
 
-            if added:
-                # A new interface was attached
-                for answer in await browse_remoted():
-                    for address in answer.addresses:
-                        if address.iface.startswith('utun'):
-                            # Skip already established tunnels
-                            continue
-                        if address.full_ip in self.tunnel_tasks.keys():
-                            # Skip already established tunnels
-                            continue
-                        self.tunnel_tasks[address.full_ip] = TunnelTask(
-                            task=asyncio.create_task(
-                                self.handle_new_potential_usb_cdc_ncm_interface_task(address.full_ip),
-                                name=f'handle-new-potential-usb-cdc-ncm-interface-task-{address.full_ip}'))
+                if added:
+                    # A new interface was attached
+                    for answer in await browse_remoted():
+                        for address in answer.addresses:
+                            if address.iface.startswith('utun'):
+                                # Skip already established tunnels
+                                continue
+                            if address.full_ip in self.tunnel_tasks.keys():
+                                # Skip already established tunnels
+                                continue
+                            self.tunnel_tasks[address.full_ip] = TunnelTask(
+                                task=asyncio.create_task(
+                                    self.handle_new_potential_usb_cdc_ncm_interface_task(address.full_ip),
+                                    name=f'handle-new-potential-usb-cdc-ncm-interface-task-{address.full_ip}'))
 
-            # wait before re-iterating
-            await asyncio.sleep(1)
+                # wait before re-iterating
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            pass
 
     @asyncio_print_traceback
     async def monitor_wifi_task(self) -> None:
         try:
             while True:
-                for service in await get_remote_pairing_tunnel_services():
-                    if service.hostname in self.tunnel_tasks:
-                        # skip tunnel if already exists for this ip
-                        await service.close()
-                        continue
-                    if self.tunnel_exists_for_udid(service.remote_identifier):
-                        # skip tunnel if already exists for this udid
-                        await service.close()
-                        continue
-                    self.tunnel_tasks[service.hostname] = TunnelTask(
-                        task=asyncio.create_task(self.start_tunnel_task(service.hostname, service),
-                                                 name=f'start-tunnel-task-wifi-{service.hostname}'),
-                        udid=service.remote_identifier
-                    )
+                try:
+                    remote_pairing_tunnel_services = await get_remote_pairing_tunnel_services()
+                    for service in remote_pairing_tunnel_services:
+                        if service.hostname in self.tunnel_tasks:
+                            # skip tunnel if already exists for this ip
+                            await service.close()
+                            continue
+                        if self.tunnel_exists_for_udid(service.remote_identifier):
+                            # skip tunnel if already exists for this udid
+                            await service.close()
+                            continue
+                        self.tunnel_tasks[service.hostname] = TunnelTask(
+                            task=asyncio.create_task(self.start_tunnel_task(service.hostname, service),
+                                                     name=f'start-tunnel-task-wifi-{service.hostname}'),
+                            udid=service.remote_identifier
+                        )
+                except asyncio.exceptions.IncompleteReadError:
+                    continue
+                except asyncio.CancelledError:
+                    # Raise and cancel gracefully
+                    raise
+                except Exception:
+                    logger.error(f'Got exception from {asyncio.current_task().get_name()}: {traceback.format_exc()}')
+                    continue
                 await asyncio.sleep(REMOTEPAIRING_INTERVAL)
         except asyncio.CancelledError:
+            # Cancel gracefully
             pass
 
     @asyncio_print_traceback
