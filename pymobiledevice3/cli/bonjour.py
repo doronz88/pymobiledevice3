@@ -41,8 +41,8 @@ def cli_mobdev2(timeout: float, pair_records: Optional[str]) -> None:
 async def cli_remotepairing_task(timeout: float) -> None:
     output = []
     for answer in await browse_remotepairing(timeout=timeout):
-        for ip in answer.ips:
-            output.append({'hostname': ip, 'port': answer.port})
+        for address in answer.addresses:
+            output.append({'hostname': address.full_ip, 'port': answer.port})
     print_json(output)
 
 
@@ -56,8 +56,8 @@ def cli_remotepairing(timeout: float) -> None:
 async def cli_remotepairing_manual_pairing_task(timeout: float) -> None:
     output = []
     for answer in await browse_remotepairing_manual_pairing(timeout=timeout):
-        for ip in answer.ips:
-            output.append({'hostname': ip, 'port': answer.port, 'name': answer.properties[b'name'].decode()})
+        for address in answer.addresses:
+            output.append({'hostname': address.full_ip, 'port': answer.port, 'name': answer.properties[b'name'].decode()})
     print_json(output)
 
 

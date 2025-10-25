@@ -45,7 +45,7 @@ def asyncio_print_traceback(f: Callable):
     async def wrapper(*args, **kwargs):
         try:
             return await f(*args, **kwargs)
-        except Exception as e:  # noqa: E72
+        except (Exception, RuntimeError) as e:  # noqa: E72
             if not isinstance(e, asyncio.CancelledError):
                 traceback.print_exc()
             raise
