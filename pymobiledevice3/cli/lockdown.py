@@ -161,6 +161,12 @@ def lockdown_wifi_connections(service_provider: LockdownClient, state):
         service_provider.enable_wifi_connections = state == 'on'
 
 
+async def async_cli_start_tunnel(
+        service_provider: LockdownServiceProvider, script_mode: bool) -> None:
+    await tunnel_task(await CoreDeviceTunnelProxy.create(service_provider),
+                      script_mode=script_mode, secrets=None, protocol=TunnelProtocol.TCP)
+
+
 @lockdown_group.command('start-tunnel', cls=Command)
 @click.option('--script-mode', is_flag=True,
               help='Show only HOST and port number to allow easy parsing from external shell scripts')
@@ -168,8 +174,7 @@ def lockdown_wifi_connections(service_provider: LockdownClient, state):
 def cli_start_tunnel(
         service_provider: LockdownServiceProvider, script_mode: bool) -> None:
     """ start tunnel """
-    service = CoreDeviceTunnelProxy(service_provider)
-    asyncio.run(tunnel_task(service, script_mode=script_mode, secrets=None, protocol=TunnelProtocol.TCP), debug=True)
+    asyncio.run(async_cli_start_tunnel(service_provider, script_mode), debug=True)
 
 
 @lockdown_group.command('assistive-touch', cls=Command)

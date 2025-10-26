@@ -27,7 +27,6 @@ coloredlogs.install(level=logging.INFO)
 
 logging.getLogger('quic').disabled = True
 logging.getLogger('asyncio').disabled = True
-logging.getLogger('zeroconf').disabled = True
 logging.getLogger('parso.cache').disabled = True
 logging.getLogger('parso.cache.pickle').disabled = True
 logging.getLogger('parso.python.diff').disabled = True

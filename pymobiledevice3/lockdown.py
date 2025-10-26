@@ -848,7 +848,7 @@ def create_using_remote(service: ServiceConnection, identifier: str = None, labe
 
 async def get_mobdev2_lockdowns(
         udid: Optional[str] = None, pair_records: Optional[Path] = None, only_paired: bool = False,
-        timeout: float = DEFAULT_BONJOUR_TIMEOUT, ips: Optional[list[str]] = None) \
+        timeout: float = DEFAULT_BONJOUR_TIMEOUT) \
         -> AsyncIterable[tuple[str, TcpLockdownClient]]:
     records = {}
     if pair_records is None:
@@ -863,26 +863,21 @@ async def get_mobdev2_lockdowns(
         record = plistlib.loads(file.read_bytes())
         records[record['WiFiMACAddress']] = record
 
-    iterated_ips = set()
-    for answer in await browse_mobdev2(timeout=timeout, ips=ips):
-        if '@' not in answer.name:
+    for answer in await browse_mobdev2(timeout=timeout):
+        if '@' not in answer.instance:
             continue
-        wifi_mac_address = answer.name.split('@', 1)[0]
+        wifi_mac_address = answer.instance.split('@', 1)[0]
         record = records.get(wifi_mac_address)
 
         if only_paired and record is None:
             continue
 
-        for ip in answer.ips:
-            if ip in iterated_ips:
-                # skip ips we already iterated over, possibly from previous queries
-                continue
-            iterated_ips.add(ip)
+        for address in answer.addresses:
             try:
-                lockdown = create_using_tcp(hostname=ip, autopair=False, pair_record=record)
+                lockdown = create_using_tcp(hostname=address.full_ip, autopair=False, pair_record=record)
             except Exception:
                 continue
             if only_paired and not lockdown.paired:
                 lockdown.close()
                 continue
-            yield ip, lockdown
+            yield address.full_ip, lockdown
