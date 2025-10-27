@@ -2,7 +2,7 @@ from pymobiledevice3.services.remote_server import MessageAux
 
 
 class Notifications:
-    IDENTIFIER = 'com.apple.instruments.server.services.mobilenotifications'
+    IDENTIFIER = "com.apple.instruments.server.services.mobilenotifications"
 
     def __init__(self, dvt):
         self._dvt = dvt

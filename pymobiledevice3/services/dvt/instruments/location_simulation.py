@@ -3,7 +3,7 @@ from pymobiledevice3.services.remote_server import MessageAux
 
 
 class LocationSimulation(LocationSimulationBase):
-    IDENTIFIER = 'com.apple.instruments.server.services.LocationSimulation'
+    IDENTIFIER = "com.apple.instruments.server.services.LocationSimulation"
 
     def __init__(self, dvt):
         super().__init__()

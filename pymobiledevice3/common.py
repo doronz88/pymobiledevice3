@@ -3,7 +3,7 @@ from pathlib import Path
 from pymobiledevice3.osu.os_utils import get_os_utils
 
 _OS_UTILS = get_os_utils()
-_HOMEFOLDER = _OS_UTILS.get_homedir() / '.pymobiledevice3'
+_HOMEFOLDER = _OS_UTILS.get_homedir() / ".pymobiledevice3"
 
 
 def get_home_folder() -> Path:

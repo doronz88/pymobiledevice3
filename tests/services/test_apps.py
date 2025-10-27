@@ -9,7 +9,6 @@ def test_get_apps(lockdown):
 
 def test_get_system_apps(lockdown):
     with InstallationProxyService(lockdown=lockdown) as installation_proxy:
-        app_types = {
-            app['ApplicationType'] for app in installation_proxy.get_apps(application_type='System').values()}
+        app_types = {app["ApplicationType"] for app in installation_proxy.get_apps(application_type="System").values()}
         assert len(app_types) == 1
-        assert app_types.pop() == 'System'
+        assert app_types.pop() == "System"

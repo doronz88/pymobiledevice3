@@ -5,8 +5,14 @@ from pymobiledevice3.service_connection import ServiceConnection
 
 
 class LockdownService:
-    def __init__(self, lockdown: LockdownServiceProvider, service_name: str, is_developer_service=False,
-                 service: ServiceConnection = None, include_escrow_bag: bool = False):
+    def __init__(
+        self,
+        lockdown: LockdownServiceProvider,
+        service_name: str,
+        is_developer_service=False,
+        service: ServiceConnection = None,
+        include_escrow_bag: bool = False,
+    ):
         """
         :param lockdown: server provider
         :param service_name: wrapped service name - will attempt
@@ -15,8 +21,9 @@ class LockdownService:
         """
 
         if service is None:
-            start_service = lockdown.start_lockdown_developer_service if is_developer_service else \
-                lockdown.start_lockdown_service
+            start_service = (
+                lockdown.start_lockdown_developer_service if is_developer_service else lockdown.start_lockdown_service
+            )
             service = start_service(service_name, include_escrow_bag=include_escrow_bag)
 
         self.service_name = service_name
@@ -27,7 +34,7 @@ class LockdownService:
     def __enter__(self):
         return self
 
-    async def __aenter__(self) -> 'LockdownService':
+    async def __aenter__(self) -> "LockdownService":
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

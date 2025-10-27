@@ -7,10 +7,10 @@ from pymobiledevice3.lockdown import LockdownClient
 
 
 class DtFetchSymbols:
-    SERVICE_NAME = 'com.apple.dt.fetchsymbols'
+    SERVICE_NAME = "com.apple.dt.fetchsymbols"
     MAX_CHUNK = 1024 * 1024 * 10  # 10MB
-    CMD_LIST_FILES_PLIST = struct.pack('>I', 0x30303030)
-    CMD_GET_FILE = struct.pack('>I', 1)
+    CMD_LIST_FILES_PLIST = struct.pack(">I", 0x30303030)
+    CMD_GET_FILE = struct.pack(">I", 1)
 
     def __init__(self, lockdown: LockdownClient):
         self.logger = logging.getLogger(__name__)
@@ -18,16 +18,16 @@ class DtFetchSymbols:
 
     def list_files(self) -> list[str]:
         service = self._start_command(self.CMD_LIST_FILES_PLIST)
-        files = service.recv_plist().get('files')
+        files = service.recv_plist().get("files")
         service.close()
         return files
 
     def get_file(self, fileno: int, stream: typing.IO):
         service = self._start_command(self.CMD_GET_FILE)
-        service.sendall(struct.pack('>I', fileno))
+        service.sendall(struct.pack(">I", fileno))
 
-        size = struct.unpack('>Q', service.recvall(8))[0]
-        self.logger.debug(f'file size: {size}')
+        size = struct.unpack(">Q", service.recvall(8))[0]
+        self.logger.debug(f"file size: {size}")
 
         received = 0
         while received < size:
@@ -42,6 +42,6 @@ class DtFetchSymbols:
 
         # receive same command as an ack
         if cmd != service.recvall(len(cmd)):
-            raise PyMobileDevice3Exception('bad ack')
+            raise PyMobileDevice3Exception("bad ack")
 
         return service

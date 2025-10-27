@@ -11,21 +11,21 @@ class IpAddressAdapter(Adapter):
 
 
 address_t = Struct(
-    'len' / Int8ul,
-    'family' / Int8ul,
-    'port' / Int16ub,
-    'data' / Switch(this.len, {
-        0x1c: Struct(
-            'flow_info' / Int32ul,
-            'address' / IpAddressAdapter(Bytes(16)),
-            'scope_id' / Int32ul,
-        ),
-        0x10: Struct(
-            'address' / IpAddressAdapter(Bytes(4)),
-            '_zero' / Bytes(8)
-        )
-    })
-
+    "len" / Int8ul,
+    "family" / Int8ul,
+    "port" / Int16ub,
+    "data"
+    / Switch(
+        this.len,
+        {
+            0x1C: Struct(
+                "flow_info" / Int32ul,
+                "address" / IpAddressAdapter(Bytes(16)),
+                "scope_id" / Int32ul,
+            ),
+            0x10: Struct("address" / IpAddressAdapter(Bytes(4)), "_zero" / Bytes(8)),
+        },
+    ),
 )
 
 MESSAGE_TYPE_INTERFACE_DETECTION = 0
@@ -67,7 +67,7 @@ class ConnectionUpdateEvent:
 
 
 class NetworkMonitor:
-    IDENTIFIER = 'com.apple.instruments.server.services.networking'
+    IDENTIFIER = "com.apple.instruments.server.services.networking"
 
     def __init__(self, dvt):
         self.logger = logging.getLogger(__name__)
@@ -98,5 +98,5 @@ class NetworkMonitor:
             elif message[0] == MESSAGE_TYPE_CONNECTION_UPDATE:
                 event = ConnectionUpdateEvent(*message[1])
             else:
-                self.logger.warning(f'unsupported event type: {message[0]}')
+                self.logger.warning(f"unsupported event type: {message[0]}")
             yield event

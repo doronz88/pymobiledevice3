@@ -17,25 +17,25 @@ def cli() -> None:
 
 @cli.group()
 def notification() -> None:
-    """ Post/Observe notifications """
+    """Post/Observe notifications"""
     pass
 
 
 @notification.command(cls=Command)
-@click.argument('names', nargs=-1)
-@click.option('--insecure', is_flag=True, help='use the insecure relay meant for untrusted clients instead')
+@click.argument("names", nargs=-1)
+@click.option("--insecure", is_flag=True, help="use the insecure relay meant for untrusted clients instead")
 def post(service_provider: LockdownClient, names, insecure):
-    """ API for notify_post(). """
+    """API for notify_post()."""
     service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
     for name in names:
         service.notify_post(name)
 
 
 @notification.command(cls=Command)
-@click.argument('names', nargs=-1)
-@click.option('--insecure', is_flag=True, help='use the insecure relay meant for untrusted clients instead')
+@click.argument("names", nargs=-1)
+@click.option("--insecure", is_flag=True, help="use the insecure relay meant for untrusted clients instead")
 def observe(service_provider: LockdownClient, names, insecure):
-    """ API for notify_register_dispatch(). """
+    """API for notify_register_dispatch()."""
     service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
     for name in names:
         service.notify_register_dispatch(name)
@@ -44,10 +44,10 @@ def observe(service_provider: LockdownClient, names, insecure):
         logger.info(event)
 
 
-@notification.command('observe-all', cls=Command)
-@click.option('--insecure', is_flag=True, help='use the insecure relay meant for untrusted clients instead')
+@notification.command("observe-all", cls=Command)
+@click.option("--insecure", is_flag=True, help="use the insecure relay meant for untrusted clients instead")
 def observe_all(service_provider: LockdownClient, insecure):
-    """ attempt to observe all builtin firmware notifications. """
+    """attempt to observe all builtin firmware notifications."""
     service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
     for notification in get_notifications():
         service.notify_register_dispatch(notification)

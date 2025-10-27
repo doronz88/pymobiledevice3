@@ -13,8 +13,16 @@ from pymobiledevice3.services.dvt.dvt_testmanaged_proxy import DvtTestmanagedPro
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.house_arrest import HouseArrestService
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
-from pymobiledevice3.services.remote_server import NSURL, NSUUID, Channel, ChannelFragmenter, MessageAux, \
-    XCTestConfiguration, dtx_message_header_struct, dtx_message_payload_header_struct
+from pymobiledevice3.services.remote_server import (
+    NSURL,
+    NSUUID,
+    Channel,
+    ChannelFragmenter,
+    MessageAux,
+    XCTestConfiguration,
+    dtx_message_header_struct,
+    dtx_message_payload_header_struct,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +60,7 @@ class XCUITestService:
         self.setup_xcuitest(bundle_id, xctest_path, xctest_configuration)
         dvt1, chan1, dvt2, chan2 = self.init_ide_channels(session_identifier)
 
-        pid = self.launch_test_app(
-            app_info, bundle_id, xctest_path, test_runner_env, test_runner_args
-        )
+        pid = self.launch_test_app(app_info, bundle_id, xctest_path, test_runner_env, test_runner_args)
         logger.info("Runner started with pid:%d, waiting for testBundleReady", pid)
 
         time.sleep(1)
@@ -95,24 +101,18 @@ class XCUITestService:
             # - _XCT_didFinishExecutingTestPlan
             logger.info("unhandled %s %r", key, value)
 
-    def send_response_capabilities(
-        self, dvt: DvtTestmanagedProxyService, chan: Channel, cur_message: int
-    ):
-        pheader = dtx_message_payload_header_struct.build(
-            dict(flags=3, auxiliaryLength=0, totalLength=0)
-        )
-        mheader = dtx_message_header_struct.build(
-            dict(
-                cb=dtx_message_header_struct.sizeof(),
-                fragmentId=0,
-                fragmentCount=1,
-                length=dtx_message_payload_header_struct.sizeof(),
-                identifier=cur_message,
-                conversationIndex=1,
-                channelCode=chan,
-                expectsReply=int(0),
-            )
-        )
+    def send_response_capabilities(self, dvt: DvtTestmanagedProxyService, chan: Channel, cur_message: int):
+        pheader = dtx_message_payload_header_struct.build({"flags": 3, "auxiliaryLength": 0, "totalLength": 0})
+        mheader = dtx_message_header_struct.build({
+            "cb": dtx_message_header_struct.sizeof(),
+            "fragmentId": 0,
+            "fragmentCount": 1,
+            "length": dtx_message_payload_header_struct.sizeof(),
+            "identifier": cur_message,
+            "conversationIndex": 1,
+            "channelCode": chan,
+            "expectsReply": (0),
+        })
         msg = mheader + pheader
         dvt.service.sendall(msg)
 
@@ -160,9 +160,7 @@ class XCUITestService:
         xctest_configuration: XCTestConfiguration,
     ):
         """push xctestconfiguration to app VendDocuments"""
-        with HouseArrestService(
-            lockdown=self.service_provider, bundle_id=bundle_id, documents_only=False
-        ) as afc:
+        with HouseArrestService(lockdown=self.service_provider, bundle_id=bundle_id, documents_only=False) as afc:
             for name in afc.listdir("/tmp"):
                 if name.endswith(".xctestconfiguration"):
                     logger.debug("remove /tmp/%s", name)
@@ -212,9 +210,7 @@ class XCUITestService:
         exec_name = app_info["CFBundleExecutable"]
         # # logger.info('CFBundleExecutable: %s', exec_name)
         # # CFBundleName always endswith -Runner
-        assert exec_name.endswith("-Runner"), (
-            "Invalid CFBundleExecutable: %s" % exec_name
-        )
+        assert exec_name.endswith("-Runner"), "Invalid CFBundleExecutable: %s" % exec_name
         target_name = exec_name[: -len("-Runner")]
 
         app_env = {
@@ -226,7 +222,7 @@ class XCUITestService:
             "NSUnbufferedIO": "YES",
             "SQLITE_ENABLE_THREAD_ASSERTIONS": "1",
             "WDA_PRODUCT_BUNDLE_IDENTIFIER": "",
-            "XCTestBundlePath": f'{app_info["Path"]}/PlugIns/{target_name}.xctest',
+            "XCTestBundlePath": f"{app_info['Path']}/PlugIns/{target_name}.xctest",
             "XCTestConfigurationFilePath": app_container + xctest_path,
             "XCODE_DBG_XPC_EXCLUSIONS": "com.apple.dt.xctestSymbolicator",
             # the following maybe no needed
@@ -238,9 +234,7 @@ class XCUITestService:
             app_env.update(test_runner_env)
 
         if self.product_major_version >= 11:
-            app_env[
-                "DYLD_INSERT_LIBRARIES"
-            ] = "/Developer/usr/lib/libMainThreadChecker.dylib"
+            app_env["DYLD_INSERT_LIBRARIES"] = "/Developer/usr/lib/libMainThreadChecker.dylib"
             app_env["OS_ACTIVITY_DT_MODE"] = "YES"
 
         app_args = [
@@ -276,7 +270,7 @@ def get_app_info(service_provider: LockdownClient, bundle_id: str) -> dict[str, 
 def generate_xctestconfiguration(
     app_info: dict,
     session_identifier: NSUUID,
-    target_app_bundle_id: str = None,
+    target_app_bundle_id: Optional[str] = None,
     target_app_env: Optional[dict] = None,
     target_app_args: Optional[list] = None,
     tests_to_run: Optional[list] = None,
@@ -285,19 +279,15 @@ def generate_xctestconfiguration(
     assert exec_name.endswith("-Runner"), "Invalid CFBundleExecutable: %s" % exec_name
     config_name = exec_name[: -len("-Runner")]
 
-    return XCTestConfiguration(
-        {
-            "testBundleURL": NSURL(
-                None, f'file://{app_info["Path"]}/PlugIns/{config_name}.xctest'
-            ),
-            "sessionIdentifier": session_identifier,
-            "targetApplicationBundleID": target_app_bundle_id,
-            "targetApplicationEnvironment": target_app_env or {},
-            "targetApplicationArguments": target_app_args or [],
-            "testsToRun": tests_to_run or set(),
-            "testsMustRunOnMainThread": True,
-            "reportResultsToIDE": True,
-            "reportActivities": True,
-            "automationFrameworkPath": "/Developer/Library/PrivateFrameworks/XCTAutomationSupport.framework",
-        }
-    )
+    return XCTestConfiguration({
+        "testBundleURL": NSURL(None, f"file://{app_info['Path']}/PlugIns/{config_name}.xctest"),
+        "sessionIdentifier": session_identifier,
+        "targetApplicationBundleID": target_app_bundle_id,
+        "targetApplicationEnvironment": target_app_env or {},
+        "targetApplicationArguments": target_app_args or [],
+        "testsToRun": tests_to_run or set(),
+        "testsMustRunOnMainThread": True,
+        "reportResultsToIDE": True,
+        "reportActivities": True,
+        "automationFrameworkPath": "/Developer/Library/PrivateFrameworks/XCTAutomationSupport.framework",
+    })

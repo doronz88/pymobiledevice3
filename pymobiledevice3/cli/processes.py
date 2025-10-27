@@ -16,22 +16,22 @@ def cli() -> None:
 
 @cli.group()
 def processes() -> None:
-    """ View process list using diagnosticsd API """
+    """View process list using diagnosticsd API"""
     pass
 
 
-@processes.command('ps', cls=Command)
+@processes.command("ps", cls=Command)
 def processes_ps(service_provider: LockdownClient):
-    """ show process list """
-    print_json(OsTraceService(lockdown=service_provider).get_pid_list().get('Payload'))
+    """show process list"""
+    print_json(OsTraceService(lockdown=service_provider).get_pid_list().get("Payload"))
 
 
-@processes.command('pgrep', cls=Command)
-@click.argument('expression')
+@processes.command("pgrep", cls=Command)
+@click.argument("expression")
 def processes_pgrep(service_provider: LockdownClient, expression):
-    """ try to match processes pid by given expression (like pgrep) """
-    processes_list = OsTraceService(lockdown=service_provider).get_pid_list().get('Payload')
+    """try to match processes pid by given expression (like pgrep)"""
+    processes_list = OsTraceService(lockdown=service_provider).get_pid_list().get("Payload")
     for pid, process_info in processes_list.items():
-        process_name = process_info.get('ProcessName')
+        process_name = process_info.get("ProcessName")
         if expression in process_name:
-            logger.info(f'{pid} {process_name}')
+            logger.info(f"{pid} {process_name}")

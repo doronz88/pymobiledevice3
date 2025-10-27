@@ -29,28 +29,28 @@ class ASRClient:
 
     def __init__(self, udid: str) -> None:
         self._udid: str = udid
-        self.logger = logging.getLogger(f'{asyncio.current_task().get_name()}-{__name__}')
+        self.logger = logging.getLogger(f"{asyncio.current_task().get_name()}-{__name__}")
         self.service: typing.Optional[ServiceConnection] = None
         self.checksum_chunks: bool = False
 
     async def connect(self, port: int = DEFAULT_ASR_SYNC_PORT) -> None:
-        self.service = ServiceConnection.create_using_usbmux(self._udid, port, connection_type='USB')
+        self.service = ServiceConnection.create_using_usbmux(self._udid, port, connection_type="USB")
         await self.service.aio_start()
 
         # receive Initiate command message
         data = await self.recv_plist()
-        self.logger.debug(f'got command: {data}')
+        self.logger.debug(f"got command: {data}")
 
-        command = data.get('Command')
-        if command != 'Initiate':
-            raise PyMobileDevice3Exception(f'invalid command received: {command}')
+        command = data.get("Command")
+        if command != "Initiate":
+            raise PyMobileDevice3Exception(f"invalid command received: {command}")
 
-        self.checksum_chunks = data.get('Checksum Chunks', False)
-        self.logger.debug(f'Checksum Chunks: {self.checksum_chunks}')
+        self.checksum_chunks = data.get("Checksum Chunks", False)
+        self.logger.debug(f"Checksum Chunks: {self.checksum_chunks}")
 
     async def recv_plist(self) -> dict:
-        buf = b''
-        while not buf.endswith(b'</plist>\n'):
+        buf = b""
+        while not buf.endswith(b"</plist>\n"):
             buf += await self.service.aio_recvall(1)
         return plistlib.loads(buf)
 
@@ -62,8 +62,8 @@ class ASRClient:
         await self.service.aio_sendall(buf)
 
     async def handle_oob_data_request(self, packet: dict, filesystem: typing.IO):
-        oob_length = packet['OOB Length']
-        oob_offset = packet['OOB Offset']
+        oob_length = packet["OOB Length"]
+        oob_offset = packet["OOB Offset"]
         filesystem.seek(oob_offset, os.SEEK_SET)
 
         oob_data = filesystem.read(oob_length)
@@ -77,36 +77,36 @@ class ASRClient:
         filesystem.seek(0, os.SEEK_SET)
 
         payload_info = {
-            'Port': 1,
-            'Size': length,
+            "Port": 1,
+            "Size": length,
         }
 
-        packet_info = dict()
+        packet_info = {}
         if self.checksum_chunks:
-            packet_info['Checksum Chunk Size'] = ASR_CHECKSUM_CHUNK_SIZE
+            packet_info["Checksum Chunk Size"] = ASR_CHECKSUM_CHUNK_SIZE
 
-        packet_info['FEC Slice Stride'] = ASR_FEC_SLICE_STRIDE
-        packet_info['Packet Payload Size'] = ASR_PAYLOAD_PACKET_SIZE
-        packet_info['Packets Per FEC'] = ASR_PACKETS_PER_FEC
-        packet_info['Payload'] = payload_info
-        packet_info['Stream ID'] = ASR_STREAM_ID
-        packet_info['Version'] = ASR_VERSION
+        packet_info["FEC Slice Stride"] = ASR_FEC_SLICE_STRIDE
+        packet_info["Packet Payload Size"] = ASR_PAYLOAD_PACKET_SIZE
+        packet_info["Packets Per FEC"] = ASR_PACKETS_PER_FEC
+        packet_info["Payload"] = payload_info
+        packet_info["Stream ID"] = ASR_STREAM_ID
+        packet_info["Version"] = ASR_VERSION
 
         await self.send_plist(packet_info)
 
         while True:
             packet = await self.recv_plist()
-            self.logger.debug(f'perform_validation: {packet}')
-            command = packet['Command']
+            self.logger.debug(f"perform_validation: {packet}")
+            command = packet["Command"]
 
-            if command == 'Payload':
+            if command == "Payload":
                 break
 
-            elif command == 'OOBData':
+            elif command == "OOBData":
                 await self.handle_oob_data_request(packet, filesystem)
 
             else:
-                raise PyMobileDevice3Exception(f'unknown packet: {packet}')
+                raise PyMobileDevice3Exception(f"unknown packet: {packet}")
 
     async def send_payload(self, filesystem: typing.IO) -> None:
         filesystem.seek(0, os.SEEK_END)

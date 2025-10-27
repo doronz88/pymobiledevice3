@@ -12,13 +12,13 @@ async def test_mobdev2(lockdown):
 
 @pytest.mark.asyncio
 async def test_remoted(lockdown):
-    if Version(lockdown.product_version) < Version('16.0'):
-        pytest.skip('iOS < 16.0')
+    if Version(lockdown.product_version) < Version("16.0"):
+        pytest.skip("iOS < 16.0")
     assert len(await browse_remoted()) >= 1
 
 
 @pytest.mark.asyncio
 async def test_remotepairing(lockdown):
-    if Version(lockdown.product_version) < Version('17.0'):
-        pytest.skip('iOS < 17.0')
+    if Version(lockdown.product_version) < Version("17.0"):
+        pytest.skip("iOS < 17.0")
     assert len(await browse_remotepairing()) >= 1

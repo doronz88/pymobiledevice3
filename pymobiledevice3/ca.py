@@ -23,10 +23,7 @@ def select_hash_algorithm(device_version: Union[tuple[int, int, int], str, None]
     """
     if device_version is None:
         return hashes.SHA256()
-    if isinstance(device_version, str):
-        parts = tuple(int(x) for x in device_version.split("."))
-    else:
-        parts = device_version
+    parts = tuple(int(x) for x in device_version.split(".")) if isinstance(device_version, str) else device_version
     return hashes.SHA1() if parts < (4, 0, 0) else hashes.SHA256()
 
 
@@ -65,6 +62,7 @@ def serialize_private_key_pkcs8_pem(key: RSAPrivateKey) -> bytes:
 # Certificate builders (empty DN, v3, KU)
 # =======================================
 
+
 def build_root_certificate(root_key: RSAPrivateKey, alg: hashes.HashAlgorithm) -> Certificate:
     """
     Build a self-signed root (CA) certificate:
@@ -93,10 +91,10 @@ def build_root_certificate(root_key: RSAPrivateKey, alg: hashes.HashAlgorithm) -
 
 
 def build_host_certificate(
-        host_key: RSAPrivateKey,
-        root_cert: Certificate,
-        root_key: RSAPrivateKey,
-        alg: hashes.HashAlgorithm,
+    host_key: RSAPrivateKey,
+    root_cert: Certificate,
+    root_key: RSAPrivateKey,
+    alg: hashes.HashAlgorithm,
 ) -> Certificate:
     """
     Build the host (leaf) certificate signed by the root:
@@ -127,9 +125,13 @@ def build_host_certificate(
             x509.KeyUsage(
                 digital_signature=True,
                 key_encipherment=True,
-                key_cert_sign=False, crl_sign=False,
-                content_commitment=False, data_encipherment=False,
-                key_agreement=False, encipher_only=False, decipher_only=False,
+                key_cert_sign=False,
+                crl_sign=False,
+                content_commitment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                encipher_only=False,
+                decipher_only=False,
             ),
             critical=True,
         )
@@ -138,10 +140,10 @@ def build_host_certificate(
 
 
 def build_device_certificate(
-        device_public_key: RSAPublicKey,
-        root_cert: Certificate,
-        root_key: RSAPrivateKey,
-        alg: hashes.HashAlgorithm,
+    device_public_key: RSAPublicKey,
+    root_cert: Certificate,
+    root_key: RSAPrivateKey,
+    alg: hashes.HashAlgorithm,
 ) -> Certificate:
     """
     Build the device certificate (leaf) signed by the root:
@@ -173,9 +175,13 @@ def build_device_certificate(
             x509.KeyUsage(
                 digital_signature=True,
                 key_encipherment=True,
-                key_cert_sign=False, crl_sign=False,
-                content_commitment=False, data_encipherment=False,
-                key_agreement=False, encipher_only=False, decipher_only=False,
+                key_cert_sign=False,
+                crl_sign=False,
+                content_commitment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                encipher_only=False,
+                decipher_only=False,
             ),
             critical=True,
         )
@@ -188,10 +194,11 @@ def build_device_certificate(
 # Public API for your pairing flow (renamed)
 # ==========================================
 
+
 def generate_pairing_cert_chain(
-        device_public_key_pem: bytes,
-        private_key: Optional[RSAPrivateKey] = None,
-        device_version: Union[tuple[int, int, int], str, None] = (4, 0, 0),
+    device_public_key_pem: bytes,
+    private_key: Optional[RSAPrivateKey] = None,
+    device_version: Union[tuple[int, int, int], str, None] = (4, 0, 0),
 ) -> tuple[bytes, bytes, bytes, bytes, bytes]:
     """
     Generate a root→host certificate chain and a device certificate that mirror the
@@ -215,7 +222,7 @@ def generate_pairing_cert_chain(
     # Device leaf (public key provided by the device)
     dev_pub = load_pem_public_key(device_public_key_pem)
     if not isinstance(dev_pub, RSAPublicKey):
-        raise ValueError("device_public_key_pem must be an RSA PUBLIC KEY in PEM format")
+        raise TypeError("device_public_key_pem must be an RSA PUBLIC KEY in PEM format")
     device_cert = build_device_certificate(dev_pub, root_cert, root_key, alg)
 
     return (
@@ -277,6 +284,7 @@ def create_keybag_file(file: Path, common_name: str) -> None:
         private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=PrivateFormat.TraditionalOpenSSL,
-            encryption_algorithm=serialization.NoEncryption()
-        ) + cer.public_bytes(encoding=serialization.Encoding.PEM)
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        + cer.public_bytes(encoding=serialization.Encoding.PEM)
     )

@@ -1,6 +1,6 @@
 import socket
 from collections.abc import Generator
-from typing import Union
+from typing import Optional, Union
 
 from pymobiledevice3.exceptions import NotificationTimeoutError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -9,13 +9,13 @@ from pymobiledevice3.services.lockdown_service import LockdownService
 
 
 class NotificationProxyService(LockdownService):
-    SERVICE_NAME = 'com.apple.mobile.notification_proxy'
-    RSD_SERVICE_NAME = 'com.apple.mobile.notification_proxy.shim.remote'
+    SERVICE_NAME = "com.apple.mobile.notification_proxy"
+    RSD_SERVICE_NAME = "com.apple.mobile.notification_proxy.shim.remote"
 
-    INSECURE_SERVICE_NAME = 'com.apple.mobile.insecure_notification_proxy'
-    RSD_INSECURE_SERVICE_NAME = 'com.apple.mobile.insecure_notification_proxy.shim.remote'
+    INSECURE_SERVICE_NAME = "com.apple.mobile.insecure_notification_proxy"
+    RSD_INSECURE_SERVICE_NAME = "com.apple.mobile.insecure_notification_proxy.shim.remote"
 
-    def __init__(self, lockdown: LockdownServiceProvider, insecure=False, timeout: Union[float, int] = None):
+    def __init__(self, lockdown: LockdownServiceProvider, insecure=False, timeout: Optional[Union[float, int]] = None):
         if isinstance(lockdown, RemoteServiceDiscoveryService):
             secure_service_name = self.RSD_SERVICE_NAME
             insecure_service_name = self.RSD_INSECURE_SERVICE_NAME
@@ -32,13 +32,13 @@ class NotificationProxyService(LockdownService):
             self.service.socket.settimeout(timeout)
 
     def notify_post(self, name: str) -> None:
-        """ Send notification to the device's notification_proxy. """
-        self.service.send_plist({'Command': 'PostNotification', 'Name': name})
+        """Send notification to the device's notification_proxy."""
+        self.service.send_plist({"Command": "PostNotification", "Name": name})
 
     def notify_register_dispatch(self, name: str) -> None:
-        """ Tells the device to send a notification on the specified event. """
-        self.logger.info(f'Observing {name}')
-        self.service.send_plist({'Command': 'ObserveNotification', 'Name': name})
+        """Tells the device to send a notification on the specified event."""
+        self.logger.info(f"Observing {name}")
+        self.service.send_plist({"Command": "ObserveNotification", "Name": name})
 
     def receive_notification(self) -> Generator[dict, None, None]:
         while True:

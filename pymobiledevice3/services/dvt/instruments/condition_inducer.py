@@ -5,7 +5,7 @@ from pymobiledevice3.services.remote_server import MessageAux
 
 
 class ConditionInducer:
-    IDENTIFIER = 'com.apple.instruments.server.services.ConditionInducer'
+    IDENTIFIER = "com.apple.instruments.server.services.ConditionInducer"
 
     def __init__(self, dvt):
         self.logger = logging.getLogger(__name__)
@@ -17,15 +17,16 @@ class ConditionInducer:
 
     def set(self, profile_identifier):
         for group in self.list():
-            for profile in group.get('profiles'):
-                if profile_identifier == profile.get('identifier'):
-                    self.logger.info(profile.get('description'))
+            for profile in group.get("profiles"):
+                if profile_identifier == profile.get("identifier"):
+                    self.logger.info(profile.get("description"))
                     self._channel.enableConditionWithIdentifier_profileIdentifier_(
-                        MessageAux().append_obj(group.get('identifier')).append_obj(profile.get('identifier')))
+                        MessageAux().append_obj(group.get("identifier")).append_obj(profile.get("identifier"))
+                    )
                     # wait for response which may be a raised NSError
                     self._channel.receive_plist()
                     return
-        raise PyMobileDevice3Exception('Invalid profile identifier')
+        raise PyMobileDevice3Exception("Invalid profile identifier")
 
     def clear(self):
         self._channel.disableActiveCondition()

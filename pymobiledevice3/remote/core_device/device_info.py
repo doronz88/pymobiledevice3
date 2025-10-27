@@ -7,7 +7,7 @@ class DeviceInfoService(CoreDeviceService):
     Query device information
     """
 
-    SERVICE_NAME = 'com.apple.coredevice.deviceinfo'
+    SERVICE_NAME = "com.apple.coredevice.deviceinfo"
 
     def __init__(self, rsd: RemoteServiceDiscoveryService):
         super().__init__(rsd, self.SERVICE_NAME)
@@ -16,13 +16,13 @@ class DeviceInfoService(CoreDeviceService):
         """
         Get device information
         """
-        return await self.invoke('com.apple.coredevice.feature.getdeviceinfo', {})
+        return await self.invoke("com.apple.coredevice.feature.getdeviceinfo", {})
 
     async def get_display_info(self) -> dict:
         """
         Get display information
         """
-        return await self.invoke('com.apple.coredevice.feature.getdisplayinfo', {})
+        return await self.invoke("com.apple.coredevice.feature.getdisplayinfo", {})
 
     async def query_mobilegestalt(self, keys: list[str]) -> dict:
         """
@@ -30,10 +30,10 @@ class DeviceInfoService(CoreDeviceService):
 
         Can only be performed to specific devices
         """
-        return await self.invoke('com.apple.coredevice.feature.querymobilegestalt', {'keys': keys})
+        return await self.invoke("com.apple.coredevice.feature.querymobilegestalt", {"keys": keys})
 
     async def get_lockstate(self) -> dict:
         """
         Get lockstate
         """
-        return await self.invoke('com.apple.coredevice.feature.getlockstate', {})
+        return await self.invoke("com.apple.coredevice.feature.getlockstate", {})

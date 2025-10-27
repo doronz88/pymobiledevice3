@@ -12,11 +12,11 @@ def cli() -> None:
 
 @cli.group()
 def companion() -> None:
-    """ List paired "companion" devices """
+    """List paired "companion" devices"""
     pass
 
 
-@companion.command('list', cls=Command)
+@companion.command("list", cls=Command)
 def companion_list(service_provider: LockdownClient):
-    """ list all paired companion devices """
-    print_json(CompanionProxyService(service_provider).list(), default=lambda x: '<non-serializable>')
+    """list all paired companion devices"""
+    print_json(CompanionProxyService(service_provider).list(), default=lambda x: "<non-serializable>")

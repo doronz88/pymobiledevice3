@@ -6,15 +6,15 @@ from pymobiledevice3.services.remote_server import RemoteServer
 
 
 class DvtSecureSocketProxyService(RemoteServer):
-    SERVICE_NAME = 'com.apple.instruments.remoteserver.DVTSecureSocketProxy'
-    OLD_SERVICE_NAME = 'com.apple.instruments.remoteserver'
-    RSD_SERVICE_NAME = 'com.apple.instruments.dtservicehub'
+    SERVICE_NAME = "com.apple.instruments.remoteserver.DVTSecureSocketProxy"
+    OLD_SERVICE_NAME = "com.apple.instruments.remoteserver"
+    RSD_SERVICE_NAME = "com.apple.instruments.dtservicehub"
 
     def __init__(self, lockdown: LockdownServiceProvider):
         if isinstance(lockdown, RemoteServiceDiscoveryService):
             service_name = self.RSD_SERVICE_NAME
             remove_ssl_context = False
-        elif Version(lockdown.product_version) >= Version('14.0'):
+        elif Version(lockdown.product_version) >= Version("14.0"):
             service_name = self.SERVICE_NAME
             remove_ssl_context = False
         else:

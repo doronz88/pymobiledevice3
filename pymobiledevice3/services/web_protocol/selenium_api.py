@@ -69,14 +69,14 @@ class SeleniumApi(ABC):
     def screenshot(self, filename):
         png = self.screenshot_as_png()
         try:
-            with open(filename, 'wb') as f:
+            with open(filename, "wb") as f:
                 f.write(png)
         except IOError:
             return False
         return True
 
     def screenshot_as_png(self):
-        return b64decode(self.screenshot_as_base64.encode('ascii'))
+        return b64decode(self.screenshot_as_base64.encode("ascii"))
 
     def get_screenshot_as_base64(self):
         return self.screenshot_as_base64

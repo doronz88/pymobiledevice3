@@ -14,8 +14,8 @@ class InterfaceOrientation(IntEnum):
 
 
 class SpringBoardServicesService(LockdownService):
-    RSD_SERVICE_NAME = 'com.apple.springboardservices.shim.remote'
-    SERVICE_NAME = 'com.apple.springboardservices'
+    RSD_SERVICE_NAME = "com.apple.springboardservices.shim.remote"
+    SERVICE_NAME = "com.apple.springboardservices"
 
     def __init__(self, lockdown: LockdownServiceProvider) -> None:
         if isinstance(lockdown, LockdownClient):
@@ -23,38 +23,38 @@ class SpringBoardServicesService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def get_icon_state(self, format_version: str = '2') -> list:
-        cmd = {'command': 'getIconState'}
+    def get_icon_state(self, format_version: str = "2") -> list:
+        cmd = {"command": "getIconState"}
         if format_version:
-            cmd['formatVersion'] = format_version
+            cmd["formatVersion"] = format_version
         return self.service.send_recv_plist(cmd)
 
     def set_icon_state(self, newstate: Optional[list] = None) -> None:
         if newstate is None:
             newstate = {}
-        self.service.send_plist({'command': 'setIconState', 'iconState': newstate})
+        self.service.send_plist({"command": "setIconState", "iconState": newstate})
         self.service.recv_prefixed()
 
     def get_icon_pngdata(self, bundle_id: str) -> bytes:
-        return self.service.send_recv_plist({'command': 'getIconPNGData',
-                                             'bundleId': bundle_id}).get('pngData')
+        return self.service.send_recv_plist({"command": "getIconPNGData", "bundleId": bundle_id}).get("pngData")
 
     def get_interface_orientation(self) -> InterfaceOrientation:
-        res = self.service.send_recv_plist({'command': 'getInterfaceOrientation'})
-        return InterfaceOrientation(res.get('interfaceOrientation'))
+        res = self.service.send_recv_plist({"command": "getInterfaceOrientation"})
+        return InterfaceOrientation(res.get("interfaceOrientation"))
 
     def get_wallpaper_pngdata(self) -> bytes:
-        return self.service.send_recv_plist({'command': 'getHomeScreenWallpaperPNGData'}).get('pngData')
+        return self.service.send_recv_plist({"command": "getHomeScreenWallpaperPNGData"}).get("pngData")
 
     def get_homescreen_icon_metrics(self) -> dict[str, float]:
-        return self.service.send_recv_plist({'command': 'getHomeScreenIconMetrics'})
+        return self.service.send_recv_plist({"command": "getHomeScreenIconMetrics"})
 
     def get_wallpaper_info(self, wallpaper_name: str) -> dict:
-        return self.service.send_recv_plist({'command': 'getWallpaperInfo', 'wallpaperName': wallpaper_name})
+        return self.service.send_recv_plist({"command": "getWallpaperInfo", "wallpaperName": wallpaper_name})
 
     def reload_icon_state(self) -> None:
         self.set_icon_state(self.get_icon_state())
 
     def get_wallpaper_preview_image(self, wallpaper_name: str) -> bytes:
-        return self.service.send_recv_plist({
-            'command': 'getWallpaperPreviewImage', 'wallpaperName': wallpaper_name})['pngData']
+        return self.service.send_recv_plist({"command": "getWallpaperPreviewImage", "wallpaperName": wallpaper_name})[
+            "pngData"
+        ]

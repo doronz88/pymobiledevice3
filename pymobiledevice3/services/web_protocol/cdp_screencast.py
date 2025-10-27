@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from base64 import b64decode, b64encode
 from datetime import datetime
 from io import BytesIO
@@ -31,19 +32,19 @@ class ScreenCast:
 
     @property
     def scale(self) -> float:
-        """ The amount screen pixels in one devtools pixel. """
+        """The amount screen pixels in one devtools pixel."""
         real_height = self.device_height * self.page_scale_factor
         real_width = self.device_width * self.page_scale_factor
         return min(self.max_height / real_height, self.max_width / real_width, 1) * self.page_scale_factor
 
     @property
     def scaled_width(self) -> int:
-        """ Width of screenshot after scaling. """
+        """Width of screenshot after scaling."""
         return int(self.scale * self.device_width)
 
     @property
     def scaled_height(self) -> int:
-        """ Height of screenshot after scaling. """
+        """Height of screenshot after scaling."""
         return int(self.scale * self.device_height)
 
     async def start(self, message_id: int):
@@ -53,26 +54,26 @@ class ScreenCast:
         """
         device_size = await self.target.evaluate_and_result(
             message_id,
-            ('(window.innerWidth > 0 ? window.innerWidth : screen.width) + "," + '
-             '(window.innerHeight > 0 ? window.innerHeight : screen.height) + "," + '
-             'window.devicePixelRatio')
+            (
+                '(window.innerWidth > 0 ? window.innerWidth : screen.width) + "," + '
+                '(window.innerHeight > 0 ? window.innerHeight : screen.height) + "," + '
+                "window.devicePixelRatio"
+            ),
         )
-        self.device_width, self.device_height, self.page_scale_factor = list(map(int, device_size.split(',')))
+        self.device_width, self.device_height, self.page_scale_factor = list(map(int, device_size.split(",")))
         self._run = True
         self.recording_task = asyncio.create_task(self.recording_loop(message_id))
 
     async def stop(self):
-        """ Stop sending screenshots to the devtools. """
+        """Stop sending screenshots to the devtools."""
         self._run = False
         self.recording_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await self.recording_task
-        except asyncio.CancelledError:
-            pass
         self.recording_task = None
 
     def ack(self, frame_id: int):
-        """ Handle acknowledgement for screencast frames. """
+        """Handle acknowledgement for screencast frames."""
         self.frames_acked.append(frame_id)
 
     def resize_jpeg(self, data: str) -> str:
@@ -83,9 +84,9 @@ class ScreenCast:
         """
         resized_img = Image.open(BytesIO(b64decode(data)))
         resized_img = resized_img.resize((self.scaled_width, self.scaled_height), Image.ANTIALIAS)
-        resized_img = resized_img.convert('RGB')
+        resized_img = resized_img.convert("RGB")
         resized = BytesIO()
-        resized_img.save(resized, format='jpeg', quality='maximum')
+        resized_img.save(resized, format="jpeg", quality="maximum")
         return b64encode(resized.getvalue()).decode()
 
     async def get_offsets(self, message_id: int):
@@ -96,12 +97,11 @@ class ScreenCast:
         :rtype: tuple
         """
         frame_size = await self.target.evaluate_and_result(
-            message_id,
-            'window.document.body.offsetTop + "," + window.pageXOffset + "," + window.pageYOffset'
+            message_id, 'window.document.body.offsetTop + "," + window.pageXOffset + "," + window.pageYOffset'
         )
         if frame_size is None or not isinstance(frame_size, str):
             return 0, 0, 0
-        return tuple(map(int, frame_size.split(',')))
+        return tuple(map(int, frame_size.split(",")))
 
     async def recording_loop(self, message_id):
         """
@@ -114,24 +114,32 @@ class ScreenCast:
                 continue
             self.frame_id += 1
             offset_top, scroll_offset_x, scroll_offset_y = await self.get_offsets(message_id)
-            event = await self.target.send_message_with_result(message_id, 'Page.snapshotRect', {
-                'x': 0, 'y': 0, 'width': self.device_width, 'height': self.device_height, 'coordinateSystem': 'Viewport'
-            })
-            data = event['result']['dataURL']
-            data = data[data.find('base64,') + 7:]
+            event = await self.target.send_message_with_result(
+                message_id,
+                "Page.snapshotRect",
+                {
+                    "x": 0,
+                    "y": 0,
+                    "width": self.device_width,
+                    "height": self.device_height,
+                    "coordinateSystem": "Viewport",
+                },
+            )
+            data = event["result"]["dataURL"]
+            data = data[data.find("base64,") + 7 :]
             await self.target.output_queue.put({
-                'method': 'Page.screencastFrame',
-                'params': {
-                    'data': self.resize_jpeg(data),
-                    'sessionId': self.frame_id - 1,
-                    'metadata': {
-                        'pageScaleFactor': self.page_scale_factor,
-                        'offsetTop': offset_top,
-                        'deviceWidth': self.scaled_width,
-                        'deviceHeight': self.scaled_height,
-                        'scrollOffsetX': scroll_offset_x,
-                        'scrollOffsetY': scroll_offset_y,
-                        'timestamp': datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f'),
-                    }
-                }
+                "method": "Page.screencastFrame",
+                "params": {
+                    "data": self.resize_jpeg(data),
+                    "sessionId": self.frame_id - 1,
+                    "metadata": {
+                        "pageScaleFactor": self.page_scale_factor,
+                        "offsetTop": offset_top,
+                        "deviceWidth": self.scaled_width,
+                        "deviceHeight": self.scaled_height,
+                        "scrollOffsetX": scroll_offset_x,
+                        "scrollOffsetY": scroll_offset_y,
+                        "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f"),
+                    },
+                },
             })

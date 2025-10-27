@@ -164,12 +164,12 @@ ELF64_Phdr = Struct(
 
 def _is_valid_elf_ident(e_ident: bytes) -> bool:
     return (
-            len(e_ident) >= EI_NIDENT
-            and e_ident[EI_MAG0] == ELFMAG0
-            and e_ident[EI_MAG1] == ELFMAG1
-            and e_ident[EI_MAG2] == ELFMAG2
-            and e_ident[EI_MAG3] == ELFMAG3
-            and e_ident[EI_CLASS] != ELFCLASSNONE
+        len(e_ident) >= EI_NIDENT
+        and e_ident[EI_MAG0] == ELFMAG0
+        and e_ident[EI_MAG1] == ELFMAG1
+        and e_ident[EI_MAG2] == ELFMAG2
+        and e_ident[EI_MAG3] == ELFMAG3
+        and e_ident[EI_CLASS] != ELFCLASSNONE
     )
 
 
@@ -198,22 +198,15 @@ def _read_program_headers(data: bytes, kind: str, hdr) -> list:
         logger.error("%s: ELF has no program sections", "_read_program_headers")
         return phdrs
 
-    table_size = hdr.e_phnum * (
-        ELF64_Phdr.sizeof() if kind == "ELF64" else ELF32_Phdr.sizeof()
-    )
+    table_size = hdr.e_phnum * (ELF64_Phdr.sizeof() if kind == "ELF64" else ELF32_Phdr.sizeof())
     if hdr.e_phoff + table_size > len(data):
-        logger.error(
-            "%s: Program header table is out of bounds", "_read_program_headers"
-        )
+        logger.error("%s: Program header table is out of bounds", "_read_program_headers")
         return []
 
-    table = data[hdr.e_phoff:hdr.e_phoff + table_size]
+    table = data[hdr.e_phoff : hdr.e_phoff + table_size]
     bio = io.BytesIO(table)
     for _ in range(hdr.e_phnum):
-        if kind == "ELF64":
-            ph = ELF64_Phdr.parse_stream(bio)
-        else:
-            ph = ELF32_Phdr.parse_stream(bio)
+        ph = ELF64_Phdr.parse_stream(bio) if kind == "ELF64" else ELF32_Phdr.parse_stream(bio)
         phdrs.append(ph)
     return phdrs
 
@@ -232,25 +225,25 @@ def _elf_last_segment_end(data: bytes) -> Optional[int]:
 
 def _mbn_v7_header_sizes_valid(h, sect_size: int) -> bool:
     total = (
-            MBN_V7.sizeof()
-            + h.common_metadata_size
-            + h.qti_metadata_size
-            + h.oem_metadata_size
-            + h.hash_table_size
-            + h.qti_signature_size
-            + h.qti_certificate_chain_size
-            + h.oem_signature_size
-            + h.oem_certificate_chain_size
+        MBN_V7.sizeof()
+        + h.common_metadata_size
+        + h.qti_metadata_size
+        + h.oem_metadata_size
+        + h.hash_table_size
+        + h.qti_signature_size
+        + h.qti_certificate_chain_size
+        + h.oem_signature_size
+        + h.oem_certificate_chain_size
     )
     return total <= sect_size
 
 
 def _mbn_v7_header_sizes_expected(h) -> bool:
     return (
-            (h.qti_metadata_size in (0, 0xE0))
-            and (h.oem_metadata_size in (0, 0xE0))
-            and (h.oem_signature_size in (0, 0x68))
-            and (h.oem_certificate_chain_size in (0, 0xD20))
+        (h.qti_metadata_size in (0, 0xE0))
+        and (h.oem_metadata_size in (0, 0xE0))
+        and (h.oem_signature_size in (0, 0x68))
+        and (h.oem_certificate_chain_size in (0, 0xD20))
     )
 
 
@@ -329,9 +322,8 @@ def mbn_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
 
         # BIN
         elif (
-                data_size > (MBN_BIN_MAGIC_SIZE + MBN_BIN_MAGIC_OFFSET)
-                and data[MBN_BIN_MAGIC_OFFSET:MBN_BIN_MAGIC_OFFSET + MBN_BIN_MAGIC_SIZE]
-                == MBN_BIN_MAGIC
+            data_size > (MBN_BIN_MAGIC_SIZE + MBN_BIN_MAGIC_OFFSET)
+            and data[MBN_BIN_MAGIC_OFFSET : MBN_BIN_MAGIC_OFFSET + MBN_BIN_MAGIC_SIZE] == MBN_BIN_MAGIC
         ):
             if data_size < MBN_BIN.sizeof():
                 logger.error("%s: truncated MBN BIN header", "mbn_stitch")
@@ -384,14 +376,14 @@ def mbn_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
             stitch_offset,
             blob_size,
         )
-        out[stitch_offset: stitch_offset + blob_size] = blob
+        out[stitch_offset : stitch_offset + blob_size] = blob
         return bytes(out)
 
-    except ChecksumError as e:
-        logger.error("%s: construct checksum error: %s", "mbn_stitch", str(e))
+    except ChecksumError:
+        logger.exception("mbn_stitch: construct checksum error")
         return None
-    except Exception as e:
-        logger.error("%s: unexpected error: %s", "mbn_stitch", str(e))
+    except Exception:
+        logger.exception("mbn_stitch")
         return None
 
 
@@ -475,7 +467,7 @@ def mbn_mav25_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
         )
         return None
 
-    dest = MBN_V7.parse(data[sect_off: sect_off + MBN_V7.sizeof()])
+    dest = MBN_V7.parse(data[sect_off : sect_off + MBN_V7.sizeof()])
     _mbn_v7_log(dest, "mbn_mav25_stitch", "dest")
     if dest.version != 7:
         logger.error(
@@ -515,21 +507,12 @@ def mbn_mav25_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
         )
 
     # compute new layout from src
-    new_metadata_size = (
-            MBN_V7.sizeof()
-            + src.common_metadata_size
-            + src.qti_metadata_size
-            + src.oem_metadata_size
-    )
+    new_metadata_size = MBN_V7.sizeof() + src.common_metadata_size + src.qti_metadata_size + src.oem_metadata_size
     new_metadata_and_hash_table_size = new_metadata_size + src.hash_table_size
-    new_oem_sig_and_cert_chain_size = (
-            src.oem_signature_size + src.oem_certificate_chain_size
-    )
+    new_oem_sig_and_cert_chain_size = src.oem_signature_size + src.oem_certificate_chain_size
 
     new_oem_sig_and_cert_chain_off = (
-            new_metadata_and_hash_table_size
-            + dest.qti_signature_size
-            + dest.qti_certificate_chain_size
+        new_metadata_and_hash_table_size + dest.qti_signature_size + dest.qti_certificate_chain_size
     )
 
     # bounds
@@ -572,9 +555,7 @@ def mbn_mav25_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
         sect_off,
         new_metadata_and_hash_table_size,
     )
-    out[sect_off: sect_off + new_metadata_and_hash_table_size] = blob[
-        :new_metadata_and_hash_table_size
-    ]
+    out[sect_off : sect_off + new_metadata_and_hash_table_size] = blob[:new_metadata_and_hash_table_size]
 
     # write OEM sig + chain
     logger.debug(

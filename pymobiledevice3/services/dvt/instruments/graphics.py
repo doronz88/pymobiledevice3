@@ -2,7 +2,7 @@ from pymobiledevice3.services.remote_server import MessageAux
 
 
 class Graphics:
-    IDENTIFIER = 'com.apple.instruments.server.services.graphics.opengl'
+    IDENTIFIER = "com.apple.instruments.server.services.graphics.opengl"
 
     def __init__(self, dvt):
         self._channel = dvt.make_channel(self.IDENTIFIER)

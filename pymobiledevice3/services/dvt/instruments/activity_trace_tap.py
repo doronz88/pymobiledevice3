@@ -13,8 +13,8 @@ CMD_TABLE_RESET = 0x64
 CMD_COPY = 0x65
 CMD_SENTINEL = 0x68
 CMD_STRUCT = 0x69
-CMD_PLACEHOLDER_COUNT = 0x6a
-CMD_DEBUG = 0x6b
+CMD_PLACEHOLDER_COUNT = 0x6A
+CMD_DEBUG = 0x6B
 
 
 @dataclasses.dataclass
@@ -26,7 +26,7 @@ class Table:
 
 
 def decode_str(s: bytes):
-    return s.split(b'\x00', 1)[0].decode()
+    return s.split(b"\x00", 1)[0].decode()
 
 
 def ignored_null(s: bytes) -> bytes:
@@ -39,35 +39,35 @@ def ignored_null(s: bytes) -> bytes:
 
 
 def decode_message_format(message) -> str:
-    s = ''
+    s = ""
     for type_, data in message:
         if data and isinstance(data, bytes):
             data = ignored_null(data)
         type_ = decode_str(type_)
 
-        if type_ == 'address':
-            type_ = 'uint64-hex'
+        if type_ == "address":
+            type_ = "uint64-hex"
 
-        if type_ in ('narrative-text', 'string'):
+        if type_ in ("narrative-text", "string"):
             if data is None:
-                s += '<None>'
+                s += "<None>"
             else:
                 s += data.decode()
-        elif type_ == 'private':
-            s += '<private>'
-        elif type_.startswith('uint64'):
-            uint64 = struct.unpack('<Q', data.ljust(8, b'\x00'))[0]
-            if 'hex' in type_:
+        elif type_ == "private":
+            s += "<private>"
+        elif type_.startswith("uint64"):
+            uint64 = struct.unpack("<Q", data.ljust(8, b"\x00"))[0]
+            if "hex" in type_:
                 uint64 = hex(uint64)[2:]
-                if 'lowercase' in type_:
+                if "lowercase" in type_:
                     uint64 = uint64.lower()
             s += str(uint64)
-        elif 'decimal' in type_:
-            uint64 = struct.unpack('<Q', data.ljust(8, b'\x00'))[0]
+        elif "decimal" in type_:
+            uint64 = struct.unpack("<Q", data.ljust(8, b"\x00"))[0]
             s += str(uint64)
-        elif type_ in ('data', 'uuid'):
+        elif type_ in ("data", "uuid"):
             if data is not None:
-                s += b''.join(data).hex()
+                s += b"".join(data).hex()
         else:
             # by default, make sure the data can be concatenated
             s += str(data)
@@ -75,7 +75,7 @@ def decode_message_format(message) -> str:
 
 
 class ActivityTraceTap(Tap):
-    IDENTIFIER = 'com.apple.instruments.server.services.activitytracetap'
+    IDENTIFIER = "com.apple.instruments.server.services.activitytracetap"
 
     def __init__(self, dvt, enable_http_archive_logging=False):
         # TODO:
@@ -83,20 +83,20 @@ class ActivityTraceTap(Tap):
         #   to understand each row's structure.
 
         config = {
-            'bm': 0,  # buffer mode
-            'combineDataScope': 0,
-            'machTimebaseDenom': 3,
-            'machTimebaseNumer': 125,
-            'onlySignposts': 0,
-            'pidToInjectCombineDYLIB': '-1',
-            'predicate': '(messageType == info OR messageType == debug OR messageType == default OR '
-                         'messageType == error OR messageType == fault)',
-            'signpostsAndLogs': 1,
-            'trackPidToExecNameMapping': True,
-            'enableHTTPArchiveLogging': enable_http_archive_logging,
-            'targetPID': -3,  # all Process
-            'trackExpiredPIDs': 1,
-            'ur': 500,
+            "bm": 0,  # buffer mode
+            "combineDataScope": 0,
+            "machTimebaseDenom": 3,
+            "machTimebaseNumer": 125,
+            "onlySignposts": 0,
+            "pidToInjectCombineDYLIB": "-1",
+            "predicate": "(messageType == info OR messageType == debug OR messageType == default OR "
+            "messageType == error OR messageType == fault)",
+            "signpostsAndLogs": 1,
+            "trackPidToExecNameMapping": True,
+            "enableHTTPArchiveLogging": enable_http_archive_logging,
+            "targetPID": -3,  # all Process
+            "trackExpiredPIDs": 1,
+            "ur": 500,
         }
 
         super().__init__(dvt, self.IDENTIFIER, config)
@@ -107,8 +107,8 @@ class ActivityTraceTap(Tap):
         self.tables = []
 
     def _get_next_message(self):
-        message = b''
-        while message.startswith(b'bplist') or len(message) == 0:
+        message = b""
+        while message.startswith(b"bplist") or len(message) == 0:
             # ignore heartbeat messages
             message = self.channel.receive_message()
         self._set_current_message(message)
@@ -123,7 +123,7 @@ class ActivityTraceTap(Tap):
         buf = self._message.read(2)
         if len(buf) != 2:
             raise EOFError()
-        word, = struct.unpack('<H', buf)
+        (word,) = struct.unpack("<H", buf)
         self._message.seek(-2, os.SEEK_CUR)
         return word
 
@@ -133,45 +133,45 @@ class ActivityTraceTap(Tap):
         return word
 
     def _handle_push(self, word):
-        assert word >> 14 in (0b10, 0b11), f'invalid magic for pushed item. word: {hex(word)}'
+        assert word >> 14 in (0b10, 0b11), f"invalid magic for pushed item. word: {hex(word)}"
 
         count = 0
         imm = 0
         bit_count = 0
         while word >> 14 != 0b11:
             # not end word
-            imm = (imm << 14) | (word & 0x3fff)
+            imm = (imm << 14) | (word & 0x3FFF)
             word = self._read_word()
             count += 1
             bit_count += 14
 
-        imm = (imm << 14) | (word & 0x3fff)
+        imm = (imm << 14) | (word & 0x3FFF)
         bit_count += 14
 
-        imm <<= (8 - bit_count % 8)
+        imm <<= 8 - bit_count % 8
         bit_count += 8 - bit_count % 8
 
-        result = imm.to_bytes(math.ceil(bit_count / 8), 'big')
+        result = imm.to_bytes(math.ceil(bit_count / 8), "big")
         self.stack.append(result)
 
         return result
 
     def _handle_table_reset(self, word):
-        """ start new table vector """
+        """start new table vector"""
         self.generation += 1
         self.background = 0
         self.stack = []
 
     def _handle_sentinel(self, word):
-        """ push a dummy """
+        """push a dummy"""
         self.stack.append(None)
 
     def _handle_struct(self, word):
-        """ replace last `distance` items with a single one which represents them as a tuple """
-        distance = word & 0xff
+        """replace last `distance` items with a single one which represents them as a tuple"""
+        distance = word & 0xFF
 
-        if distance == 0xff:
-            raise NotImplementedError('long struct')
+        if distance == 0xFF:
+            raise NotImplementedError("long struct")
 
         new_item = self.stack[-distance:]
 
@@ -179,71 +179,82 @@ class ActivityTraceTap(Tap):
         self.stack.append(new_item)
 
     def _handle_define_table(self, word):
-        """ define a table struct """
+        """define a table struct"""
         distance = 4
 
         table_raw = Table(*self.stack[-distance:])
-        table = Table(name=table_raw.name.split(b'\x00', 1)[0].decode(),
-                      columns=[c.split(b'\x00', 1)[0].decode() for c in table_raw.columns],
-                      unknown0=table_raw.unknown0, unknown2=table_raw.unknown2)
+        table = Table(
+            name=table_raw.name.split(b"\x00", 1)[0].decode(),
+            columns=[c.split(b"\x00", 1)[0].decode() for c in table_raw.columns],
+            unknown0=table_raw.unknown0,
+            unknown2=table_raw.unknown2,
+        )
 
         self.stack = self.stack[:-distance]
         self.tables.append(table)
 
     def _handle_debug(self, word):
-        """ pop last pushed item from stack """
-        debug_id = word & 0xff
+        """pop last pushed item from stack"""
+        debug_id = word & 0xFF
         item = self.stack[-1]
 
-        reference = int.from_bytes(item, byteorder='little')
+        reference = int.from_bytes(item, byteorder="little")
 
-        assert reference == len(self.stack) - 1, \
-            f'assert debug {debug_id} got reference: {hex(reference)} instead of: {len(self.stack) - 1}  {item}'
+        assert reference == len(self.stack) - 1, (
+            f"assert debug {debug_id} got reference: {hex(reference)} instead of: {len(self.stack) - 1}  {item}"
+        )
         self.stack = self.stack[:-1]
 
     def _handle_copy(self, word):
-        """ copy item at distance from stack """
-        distance = word & 0xff
-        if distance != 0xff:
+        """copy item at distance from stack"""
+        distance = word & 0xFF
+        if distance != 0xFF:
             item = self.stack[-distance - 1]
             self.stack.append(item)
         else:
             # long struct - pop distance from stack
             item = self.stack[-1]
-            reference = int.from_bytes(item, byteorder='little') - 1
+            reference = int.from_bytes(item, byteorder="little") - 1
             self.stack = self.stack[:-1]
             self.stack.append(self.stack[reference])
 
     def _handle_end_row(self, word):
-        """ flush current row """
-        generation = word & 0xff
+        """flush current row"""
+        generation = word & 0xFF
         columns = self.tables[generation].columns
-        row = self.stack[-len(columns):]
-        self.stack = self.stack[:-len(columns)]
+        row = self.stack[-len(columns) :]
+        self.stack = self.stack[: -len(columns)]
 
-        Message = dataclasses.make_dataclass('message', [c.replace('-', '_') for c in columns])
+        Message = dataclasses.make_dataclass("message", [c.replace("-", "_") for c in columns])
         message = Message(*row)
-        message.process = 0 if message.process is None else struct.unpack('<I', message.process[0].ljust(4, b'\x00'))[0]
-        message.thread = struct.unpack('<I', message.thread[0].ljust(4, b'\x00'))[0]
+        message.process = 0 if message.process is None else struct.unpack("<I", message.process[0].ljust(4, b"\x00"))[0]
+        message.thread = struct.unpack("<I", message.thread[0].ljust(4, b"\x00"))[0]
 
-        string_fields = ('message_type', 'format_string', 'subsystem', 'category', 'sender_image_path',
-                         'event_type', 'name')
+        string_fields = (
+            "message_type",
+            "format_string",
+            "subsystem",
+            "category",
+            "sender_image_path",
+            "event_type",
+            "name",
+        )
         for f in string_fields:
             if hasattr(message, f):
                 v = getattr(message, f)
                 setattr(message, f, decode_str(v) if v else v)
 
-        if hasattr(message, 'message'):
+        if hasattr(message, "message"):
             return message
 
     def _handle_placeholder_count(self, word):
-        """ remove `count` last items from stack """
-        count = word & 0xff
+        """remove `count` last items from stack"""
+        count = word & 0xFF
         if count > 0:
             self.stack = self.stack[:-count]
 
     def _handle_convert_mach_continuous(self, word):
-        """ push an item and pop it. effectively do nothing """
+        """push an item and pop it. effectively do nothing"""
         pass
 
     def _parse(self):
