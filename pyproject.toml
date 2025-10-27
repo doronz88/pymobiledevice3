@@ -81,8 +81,8 @@ select = [
     "F",
     # pygrep-hooks
     "PGH",
-#    # pyupgrade
-#    "UP",
+    # pyupgrade
+    "UP",
     # ruff
     "RUF",
     # tryceratops

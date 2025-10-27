@@ -10,7 +10,7 @@ import struct
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Optional
 
 import ifaddr  # pip install ifaddr
 
@@ -64,8 +64,8 @@ class ServiceInstance:
     instance: str  # "<Instance Name>._type._proto.local."
     host: Optional[str]  # "host.local" (without trailing dot), or None if unresolved
     port: Optional[int]  # SRV port
-    addresses: List[Address] = field(default_factory=list)  # IPs with interface names
-    properties: Dict[str, str] = field(default_factory=dict)  # TXT key/values
+    addresses: list[Address] = field(default_factory=list)  # IPs with interface names
+    properties: dict[str, str] = field(default_factory=dict)  # TXT key/values
 
 
 # ---------------- DNS helpers ----------------
@@ -84,7 +84,7 @@ def encode_name(name: str) -> bytes:
     return bytes(out)
 
 
-def decode_name(data: bytes, off: int) -> Tuple[str, int]:
+def decode_name(data: bytes, off: int) -> tuple[str, int]:
     labels = []
     jumped = False
     orig_end = off
@@ -264,7 +264,7 @@ async def _bind_ipv6_all_ifaces(queue: asyncio.Queue):
 
 async def _open_mdns_sockets():
     queue = asyncio.Queue()
-    transports: List[Tuple[asyncio.BaseTransport, socket.socket]] = []
+    transports: list[tuple[asyncio.BaseTransport, socket.socket]] = []
     t4, s4 = await _bind_ipv4(queue)
     transports.append((t4, s4))
     t6, s6 = await _bind_ipv6_all_ifaces(queue)
@@ -287,7 +287,7 @@ async def _send_query_all(transports, pkt: bytes):
 # ---------------- Public API ----------------
 
 
-async def browse_service(service_type: str, timeout: float = 4.0) -> List[ServiceInstance]:
+async def browse_service(service_type: str, timeout: float = 4.0) -> list[ServiceInstance]:
     """
     Discover a DNS-SD/mDNS service type (e.g. "_remoted._tcp.local.") on the local network.
 
@@ -299,11 +299,11 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> List[Servic
     transports, queue = await _open_mdns_sockets()
     adapters = _Adapters()
 
-    ptr_targets: Set[str] = set()
-    srv_map: Dict[str, Dict] = {}
-    txt_map: Dict[str, Dict] = {}
+    ptr_targets: set[str] = set()
+    srv_map: dict[str, dict] = {}
+    txt_map: dict[str, dict] = {}
     # host -> list[(ip, iface)]
-    host_addrs: Dict[str, List[Address]] = defaultdict(list)
+    host_addrs: dict[str, list[Address]] = defaultdict(list)
 
     def _record_addr(rr_name: str, ip_str: str, pkt_addr):
         # Determine family and possible scopeid from the packet that delivered this RR
@@ -344,7 +344,7 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> List[Servic
             transport.close()
 
     # Assemble dataclasses
-    results: List[ServiceInstance] = []
+    results: list[ServiceInstance] = []
     for inst in sorted(ptr_targets):
         srv = srv_map.get(inst, {})
         target = srv.get("target")

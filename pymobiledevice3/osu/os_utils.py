@@ -13,7 +13,7 @@ DEFAULT_MAX_FAILS = 3
 
 def is_wsl() -> bool:
     try:
-        with open("/proc/version", "r") as f:
+        with open("/proc/version") as f:
             version_info = f.read()
             return "Microsoft" in version_info or "WSL" in version_info
     except FileNotFoundError:

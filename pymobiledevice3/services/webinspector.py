@@ -3,9 +3,10 @@ import contextlib
 import json
 import logging
 import uuid
+from collections.abc import Coroutine
 from dataclasses import dataclass, fields
 from enum import Enum
-from typing import Any, Coroutine, Optional, Union
+from typing import Any, Optional, Union
 
 import nest_asyncio
 

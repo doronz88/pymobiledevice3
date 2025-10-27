@@ -1,8 +1,8 @@
 import json
 import typing
+from collections.abc import Generator
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import Generator
 
 from packaging.version import Version
 
