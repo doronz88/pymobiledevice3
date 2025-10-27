@@ -100,7 +100,7 @@ class DeviceLink:
 
                 buffer = struct.pack(SIZE_FORMAT, struct.calcsize(CODE_FORMAT)) + struct.pack(CODE_FORMAT, CODE_SUCCESS)
                 self.service.sendall(buffer)
-            except IOError as e:
+            except OSError as e:
                 status[file] = {
                     "DLFileErrorString": e.strerror,
                     "DLFileErrorCode": ctypes.c_uint64(ERRNO_TO_DEVICE_ERROR[e.errno]).value,

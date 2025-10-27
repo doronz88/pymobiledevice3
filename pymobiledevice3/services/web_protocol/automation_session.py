@@ -258,15 +258,15 @@ class AutomationSession:
         by = by.value if isinstance(by, By) else by
         if by == By.ID.value:
             by = By.CSS_SELECTOR.value
-            value = '[id="%s"]' % value
+            value = f'[id="{value}"]'
         elif by == By.TAG_NAME.value:
             by = By.CSS_SELECTOR.value
         elif by == By.CLASS_NAME.value:
             by = By.CSS_SELECTOR.value
-            value = ".%s" % value
+            value = f".{value}"
         elif by == By.NAME.value:
             by = By.CSS_SELECTOR.value
-            value = '[name="%s"]' % value
+            value = f'[name="{value}"]'
 
         parameters = {
             "browsingContextHandle": self.top_level_handle,

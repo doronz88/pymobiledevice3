@@ -309,7 +309,7 @@ class BinaryMuxConnection(MuxConnection):
                 self._receive_device_state_update()
             except (BlockingIOError, StreamError):
                 continue
-            except IOError as e:
+            except OSError as e:
                 try:
                     self._sock.setblocking(True)
                     self.close()

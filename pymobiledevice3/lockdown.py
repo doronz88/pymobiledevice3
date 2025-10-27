@@ -7,12 +7,13 @@ import sys
 import tempfile
 import time
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterable
 from contextlib import contextmanager, suppress
 from enum import Enum
 from functools import wraps
 from pathlib import Path
 from ssl import SSLError, SSLZeroReturnError, TLSVersion
-from typing import AsyncIterable, Optional
+from typing import Optional
 
 import construct
 from cryptography import x509

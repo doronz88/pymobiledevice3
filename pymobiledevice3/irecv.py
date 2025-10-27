@@ -166,7 +166,7 @@ class IRecv:
             if self.mode.is_recovery:
                 n = self._device.write(0x04, chunk, timeout=USB_TIMEOUT)
                 if n != len(chunk):
-                    raise IOError("failed to upload data")
+                    raise OSError("failed to upload data")
             else:
                 if _offset + packet_size >= len(buf):
                     # last packet

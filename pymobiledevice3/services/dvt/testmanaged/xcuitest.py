@@ -195,7 +195,7 @@ class XCUITestService:
         if isinstance(reply, bool) and reply is True:
             logger.info("authorizing test session for pid %d successful %r", pid, reply)
         else:
-            raise RuntimeError("Failed to authorize test process id: %s" % reply)
+            raise RuntimeError(f"Failed to authorize test process id: {reply}")
 
     def launch_test_app(
         self,
@@ -210,7 +210,7 @@ class XCUITestService:
         exec_name = app_info["CFBundleExecutable"]
         # # logger.info('CFBundleExecutable: %s', exec_name)
         # # CFBundleName always endswith -Runner
-        assert exec_name.endswith("-Runner"), "Invalid CFBundleExecutable: %s" % exec_name
+        assert exec_name.endswith("-Runner"), f"Invalid CFBundleExecutable: {exec_name}"
         target_name = exec_name[: -len("-Runner")]
 
         app_env = {
@@ -276,7 +276,7 @@ def generate_xctestconfiguration(
     tests_to_run: Optional[list] = None,
 ) -> XCTestConfiguration:
     exec_name: str = app_info["CFBundleExecutable"]
-    assert exec_name.endswith("-Runner"), "Invalid CFBundleExecutable: %s" % exec_name
+    assert exec_name.endswith("-Runner"), f"Invalid CFBundleExecutable: {exec_name}"
     config_name = exec_name[: -len("-Runner")]
 
     return XCTestConfiguration({

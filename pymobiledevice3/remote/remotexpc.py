@@ -2,7 +2,8 @@ import asyncio
 import contextlib
 import sys
 from asyncio import IncompleteReadError
-from typing import AsyncIterable, Optional
+from collections.abc import AsyncIterable
+from typing import Optional
 
 import IPython
 import nest_asyncio
