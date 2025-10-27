@@ -100,10 +100,24 @@ kcdata_types = {
     'STACKSHOT_KCTYPE_LATENCY_INFO_THREAD': 0x92d,
     'STACKSHOT_KCTYPE_LOADINFO64_TEXT_EXEC': 0x92e,
 
+    'STACKSHOT_KCTYPE_USER_ASYNC_START_INDEX': 0x932,
+    'STACKSHOT_KCTYPE_USER_ASYNC_STACKLR64': 0x933,
+
     'STACKSHOT_KCTYPE_TASK_DELTA_SNAPSHOT': 0x940,
     'STACKSHOT_KCTYPE_THREAD_DELTA_SNAPSHOT': 0x941,
-    'STACKSHOT_KCTYPE_UNKNOWN_0x942': 0x942,
+    'STACKSHOT_KCCONTAINER_SHAREDCACHE': 0x942,
     'STACKSHOT_KCTYPE_UNKNOWN_0x943': 0x943,
+    'STACKSHOT_KCCONTAINER_EXCLAVES': 0x949,
+    'STACKSHOT_KCCONTAINER_EXCLAVE_SCRESULT': 0x94a,
+
+    'STACKSHOT_KCCONTAINER_EXCLAVE_IPCSTACKENTRY': 0x94c,
+    'STACKSHOT_KCTYPE_EXCLAVE_IPCSTACKENTRY_INFO': 0x94d,
+    'STACKSHOT_KCTYPE_EXCLAVE_IPCSTACKENTRY_ECSTACK': 0x94e,
+    'STACKSHOT_KCCONTAINER_EXCLAVE_ADDRESSSPACE': 0x94f,
+
+    'STACKSHOT_KCCONTAINER_EXCLAVE_TEXTLAYOUT': 0x952,
+    'STACKSHOT_KCTYPE_EXCLAVE_TEXTLAYOUT_INFO': 0x953,
+    'STACKSHOT_KCTYPE_EXCLAVE_TEXTLAYOUT_SEGMENTS': 0x954,
 
     'KCDATA_TYPE_BUFFER_END': 0xF19158ED,
 
@@ -185,6 +199,16 @@ predefined_names = {
     kcdata_types_enum.STACKSHOT_KCTYPE_STACKSHOT_FAULT_STATS: 'stackshot_fault_stats',
     kcdata_types_enum.STACKSHOT_KCTYPE_STACKSHOT_DURATION: 'stackshot_duration',
     kcdata_types_enum.STACKSHOT_KCTYPE_LOADINFO64_TEXT_EXEC: 'dyld_load_info_text_exec',
+    kcdata_types_enum.STACKSHOT_KCTYPE_USER_ASYNC_STACKLR64: 'user_async_stack_lr',
+    kcdata_types_enum.STACKSHOT_KCCONTAINER_SHAREDCACHE: 'container_sharedcache',
+    kcdata_types_enum.STACKSHOT_KCCONTAINER_EXCLAVES: 'container_exclaves',
+    kcdata_types_enum.STACKSHOT_KCCONTAINER_EXCLAVE_SCRESULT: 'exclave_scresult',
+    kcdata_types_enum.STACKSHOT_KCCONTAINER_EXCLAVE_IPCSTACKENTRY: 'exclave_ipc_stack_entry',
+    kcdata_types_enum.STACKSHOT_KCTYPE_EXCLAVE_IPCSTACKENTRY_ECSTACK: 'exclave_ipc_stack_entry_ecstack',
+    kcdata_types_enum.STACKSHOT_KCCONTAINER_EXCLAVE_ADDRESSSPACE: 'exclave_address_space',
+    kcdata_types_enum.STACKSHOT_KCCONTAINER_EXCLAVE_TEXTLAYOUT: 'exclave_text_layout',
+    kcdata_types_enum.STACKSHOT_KCTYPE_EXCLAVE_TEXTLAYOUT_INFO: 'exclave_text_layout_info',
+    kcdata_types_enum.STACKSHOT_KCTYPE_EXCLAVE_TEXTLAYOUT_SEGMENTS: 'exclave_text_layout_segments',
 }
 
 predefined_name_substruct = 'name' / Computed(lambda ctx: predefined_names[ctx._.type])
@@ -443,6 +467,39 @@ loadinfo64_text_exec = Struct(
     ),
 )
 
+user_async_stacklr64 = Struct(
+    predefined_name_substruct,
+    'obj' / Struct(
+        'lr' / Int64ul,
+    ),
+)
+
+exclave_ipcstackentry_ecstack = Struct(
+    predefined_name_substruct,
+    'obj' / Struct(
+        'addr' / Int64ul,
+    ),
+)
+
+exclave_textlayout_info = Struct(
+    predefined_name_substruct,
+    'obj' / Struct(
+        'layout_id' / Int64ul,
+        'etl_flags' / Int64ul,
+        'sharedcache_index' / Int32ul,
+    ),
+)
+
+exclave_textlayout_segments = Struct(
+    predefined_name_substruct,
+    'obj' / Struct(
+        '_imageUUID' / Bytes(16),
+        'imageUUID' / Computed(lambda ctx: uuid.UUID(bytes=ctx._imageUUID)),
+        'layoutSegment_loadAddress' / Int64ul,
+        'layoutSegment_rawLoadAddress' / Int64ul,
+    ),
+)
+
 kcdata_types_structures = {
     kcdata_types_enum.KCDATA_TYPE_UINT32_DESC: uint32_desc,
     kcdata_types_enum.KCDATA_TYPE_UINT64_DESC: uint64_desc,
@@ -482,6 +539,10 @@ kcdata_types_structures = {
     kcdata_types_enum.KCDATA_TYPE_BUFFER_END: Pass,
     kcdata_types_enum.STACKSHOT_KCTYPE_STACKSHOT_DURATION: stackshot_duration,
     kcdata_types_enum.STACKSHOT_KCTYPE_LOADINFO64_TEXT_EXEC: loadinfo64_text_exec,
+    kcdata_types_enum.STACKSHOT_KCTYPE_USER_ASYNC_STACKLR64: user_async_stacklr64,
+    kcdata_types_enum.STACKSHOT_KCTYPE_EXCLAVE_IPCSTACKENTRY_ECSTACK: exclave_ipcstackentry_ecstack,
+    kcdata_types_enum.STACKSHOT_KCTYPE_EXCLAVE_TEXTLAYOUT_INFO: exclave_textlayout_info,
+    kcdata_types_enum.STACKSHOT_KCTYPE_EXCLAVE_TEXTLAYOUT_SEGMENTS: exclave_textlayout_segments,
 }
 
 kcdata_item = Struct(
