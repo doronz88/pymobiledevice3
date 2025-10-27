@@ -18,88 +18,93 @@ def cli() -> None:
 
 @cli.group()
 def diagnostics() -> None:
-    """ Reboot/Shutdown device or access other diagnostics services """
+    """Reboot/Shutdown device or access other diagnostics services"""
     pass
 
 
-@diagnostics.command('restart', cls=Command)
-@click.option('-r', '--reconnect', is_flag=True, default=False,
-              help='Wait until the device reconnects before finishing the operation.')
+@diagnostics.command("restart", cls=Command)
+@click.option(
+    "-r",
+    "--reconnect",
+    is_flag=True,
+    default=False,
+    help="Wait until the device reconnects before finishing the operation.",
+)
 def diagnostics_restart(service_provider: LockdownClient, reconnect):
-    """ Restart device """
+    """Restart device"""
     DiagnosticsService(lockdown=service_provider).restart()
     if reconnect:
         # Wait for the device to be available again
         with retry_create_using_usbmux(None, serial=service_provider.udid):
-            print(f'Device Reconnected ({service_provider.udid}).')
+            print(f"Device Reconnected ({service_provider.udid}).")
 
 
-@diagnostics.command('shutdown', cls=Command)
+@diagnostics.command("shutdown", cls=Command)
 def diagnostics_shutdown(service_provider: LockdownClient):
-    """ Shutdown device """
+    """Shutdown device"""
     DiagnosticsService(lockdown=service_provider).shutdown()
 
 
-@diagnostics.command('sleep', cls=Command)
+@diagnostics.command("sleep", cls=Command)
 def diagnostics_sleep(service_provider: LockdownClient):
-    """ Put device into sleep """
+    """Put device into sleep"""
     DiagnosticsService(lockdown=service_provider).sleep()
 
 
-@diagnostics.command('info', cls=Command)
+@diagnostics.command("info", cls=Command)
 def diagnostics_info(service_provider: LockdownClient):
-    """ Get diagnostics info """
+    """Get diagnostics info"""
     print_json(DiagnosticsService(lockdown=service_provider).info())
 
 
-@diagnostics.command('ioregistry', cls=Command)
-@click.option('--plane')
-@click.option('--name')
-@click.option('--ioclass')
+@diagnostics.command("ioregistry", cls=Command)
+@click.option("--plane")
+@click.option("--name")
+@click.option("--ioclass")
 def diagnostics_ioregistry(service_provider: LockdownClient, plane, name, ioclass):
-    """ Get ioregistry info """
+    """Get ioregistry info"""
     print_json(DiagnosticsService(lockdown=service_provider).ioregistry(plane=plane, name=name, ioclass=ioclass))
 
 
-@diagnostics.command('mg', cls=Command)
-@click.argument('keys', nargs=-1, default=None)
+@diagnostics.command("mg", cls=Command)
+@click.argument("keys", nargs=-1, default=None)
 def diagnostics_mg(service_provider: LockdownClient, keys):
-    """ Get MobileGestalt key values from given list. If empty, return all known. """
+    """Get MobileGestalt key values from given list. If empty, return all known."""
     print_json(DiagnosticsService(lockdown=service_provider).mobilegestalt(keys=keys))
 
 
-@diagnostics.group('battery')
+@diagnostics.group("battery")
 def diagnostics_battery():
-    """ Battery options """
+    """Battery options"""
     pass
 
 
-@diagnostics_battery.command('single', cls=Command)
+@diagnostics_battery.command("single", cls=Command)
 def diagnostics_battery_single(service_provider: LockdownClient):
-    """ get single snapshot of battery data """
+    """get single snapshot of battery data"""
     raw_info = DiagnosticsService(lockdown=service_provider).get_battery()
     print_json(raw_info)
 
 
-@diagnostics_battery.command('monitor', cls=Command)
+@diagnostics_battery.command("monitor", cls=Command)
 def diagnostics_battery_monitor(service_provider: LockdownClient):
-    """ monitor battery usage """
+    """monitor battery usage"""
     diagnostics = DiagnosticsService(lockdown=service_provider)
     while True:
         raw_info = diagnostics.get_battery()
         info = {
-            'InstantAmperage': raw_info.get('InstantAmperage'),
-            'Temperature': raw_info.get('Temperature'),
-            'Voltage': raw_info.get('Voltage'),
-            'IsCharging': raw_info.get('IsCharging'),
-            'CurrentCapacity': raw_info.get('CurrentCapacity'),
+            "InstantAmperage": raw_info.get("InstantAmperage"),
+            "Temperature": raw_info.get("Temperature"),
+            "Voltage": raw_info.get("Voltage"),
+            "IsCharging": raw_info.get("IsCharging"),
+            "CurrentCapacity": raw_info.get("CurrentCapacity"),
         }
         logger.info(info)
         time.sleep(1)
 
 
-@diagnostics.command('wifi', cls=Command)
+@diagnostics.command("wifi", cls=Command)
 def diagnostics_wifi(service_provider: LockdownServiceProvider) -> None:
-    """ Query WiFi info from IORegistry """
+    """Query WiFi info from IORegistry"""
     raw_info = DiagnosticsService(lockdown=service_provider).get_wifi()
     print_json(raw_info)

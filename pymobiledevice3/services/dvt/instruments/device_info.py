@@ -7,7 +7,7 @@ from pymobiledevice3.services.remote_server import MessageAux
 
 
 class DeviceInfo:
-    IDENTIFIER = 'com.apple.instruments.server.services.deviceinfo'
+    IDENTIFIER = "com.apple.instruments.server.services.deviceinfo"
 
     def __init__(self, dvt):
         self._channel = dvt.make_channel(self.IDENTIFIER)
@@ -41,8 +41,8 @@ class DeviceInfo:
         result = self._channel.receive_plist()
         assert isinstance(result, list)
         for process in result:
-            if 'startDate' in process:
-                process['startDate'] = datetime.fromtimestamp(process['startDate'])
+            if "startDate" in process:
+                process["startDate"] = datetime.fromtimestamp(process["startDate"])
         return result
 
     def is_running_pid(self, pid: int) -> bool:
@@ -55,28 +55,28 @@ class DeviceInfo:
         return self._channel.receive_plist()
 
     def system_information(self):
-        return self.request_information('systemInformation')
+        return self.request_information("systemInformation")
 
     def hardware_information(self):
-        return self.request_information('hardwareInformation')
+        return self.request_information("hardwareInformation")
 
     def network_information(self):
-        return self.request_information('networkInformation')
+        return self.request_information("networkInformation")
 
     def mach_time_info(self):
-        return self.request_information('machTimeInfo')
+        return self.request_information("machTimeInfo")
 
     def mach_kernel_name(self) -> str:
-        return self.request_information('machKernelName')
+        return self.request_information("machKernelName")
 
     def kpep_database(self) -> typing.Optional[dict]:
-        kpep_database = self.request_information('kpepDatabase')
+        kpep_database = self.request_information("kpepDatabase")
         if kpep_database is not None:
             return plistlib.loads(kpep_database)
 
     def trace_codes(self):
-        codes_file = self.request_information('traceCodesFile')
-        return {int(k, 16): v for k, v in map(lambda line: line.split(), codes_file.splitlines())}
+        codes_file = self.request_information("traceCodesFile")
+        return {int(k, 16): v for k, v in (line.split() for line in codes_file.splitlines())}
 
     def request_information(self, selector_name):
         self._channel[selector_name]()

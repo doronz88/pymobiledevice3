@@ -5,7 +5,7 @@ from pymobiledevice3.exceptions import WirError
 
 
 class SessionProtocol:
-    def __init__(self, inspector, id_, app, page, method_prefix='Automation'):
+    def __init__(self, inspector, id_, app, page, method_prefix="Automation"):
         """
         :param pymobiledevice3.services.webinspector.WebinspectorService inspector:
         """
@@ -19,19 +19,24 @@ class SessionProtocol:
     async def send_command(self, method, **kwargs):
         wir_id = self._wir_messages_id
         self._wir_messages_id += 1
-        await self.inspector.send_socket_data(self.id_, self.app.id_, self.page.id_, {
-            'method': f'{self.method_prefix}.{method}' if self.method_prefix else method,
-            'params': kwargs,
-            'id': wir_id,
-        })
+        await self.inspector.send_socket_data(
+            self.id_,
+            self.app.id_,
+            self.page.id_,
+            {
+                "method": f"{self.method_prefix}.{method}" if self.method_prefix else method,
+                "params": kwargs,
+                "id": wir_id,
+            },
+        )
         return wir_id
 
     async def get_response(self, wir_id):
         response = await self.wait_for_message(wir_id)
-        if 'result' in response:
-            return response['result']
-        elif 'error' in response:
-            raise WirError(response['error']['message'])
+        if "result" in response:
+            return response["result"]
+        elif "error" in response:
+            raise WirError(response["error"]["message"])
 
     async def send_receive(self, method, wait_for_response=True, **kwargs):
         wir_id = await self.send_command(method, **kwargs)

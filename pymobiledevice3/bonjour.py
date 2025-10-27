@@ -3,6 +3,7 @@
 # - Uses ifaddr (optional) to map IPs -> local interfaces; otherwise iface will be None.
 
 import asyncio
+import contextlib
 import ipaddress
 import socket
 import struct
@@ -15,10 +16,10 @@ import ifaddr  # pip install ifaddr
 
 from pymobiledevice3.osu.os_utils import get_os_utils
 
-REMOTEPAIRING_SERVICE_NAME = '_remotepairing._tcp.local.'
-REMOTEPAIRING_MANUAL_PAIRING_SERVICE_NAME = '_remotepairing-manual-pairing._tcp.local.'
-MOBDEV2_SERVICE_NAME = '_apple-mobdev2._tcp.local.'
-REMOTED_SERVICE_NAME = '_remoted._tcp.local.'
+REMOTEPAIRING_SERVICE_NAME = "_remotepairing._tcp.local."
+REMOTEPAIRING_MANUAL_PAIRING_SERVICE_NAME = "_remotepairing-manual-pairing._tcp.local."
+MOBDEV2_SERVICE_NAME = "_apple-mobdev2._tcp.local."
+REMOTED_SERVICE_NAME = "_remoted._tcp.local."
 OSUTILS = get_os_utils()
 DEFAULT_BONJOUR_TIMEOUT = OSUTILS.bonjour_timeout
 
@@ -37,6 +38,7 @@ CLASS_QU = 0x8000  # unicast-response bit (we use multicast queries)
 
 
 # ---------------- Dataclasses ----------------
+
 
 # --- Dataclass decorator shim (adds slots only on 3.10+)
 def dataclass_compat(*d_args, **d_kwargs):
@@ -123,9 +125,9 @@ def parse_rr(data: bytes, off: int):
     name, off = decode_name(data, off)
     if off + 10 > len(data):
         raise ValueError("truncated RR header")
-    rtype, rclass, ttl, rdlen = struct.unpack("!HHIH", data[off: off + 10])
+    rtype, rclass, ttl, rdlen = struct.unpack("!HHIH", data[off : off + 10])
     off += 10
-    rdata = data[off: off + rdlen]
+    rdata = data[off : off + rdlen]
     off += rdlen
 
     rr = {"name": name, "type": rtype, "class": rclass & 0x7FFF, "ttl": ttl}
@@ -135,16 +137,14 @@ def parse_rr(data: bytes, off: int):
     elif rtype == QTYPE_SRV and rdlen >= 6:
         priority, weight, port = struct.unpack("!HHH", rdata[:6])
         target, _ = decode_name(data, off - rdlen + 6)
-        rr.update(
-            {"priority": priority, "weight": weight, "port": port, "target": target}
-        )
+        rr.update({"priority": priority, "weight": weight, "port": port, "target": target})
     elif rtype == QTYPE_TXT:
         kv = {}
         i = 0
         while i < rdlen:
             b = rdata[i]
             i += 1
-            seg = rdata[i: i + b]
+            seg = rdata[i : i + b]
             i += b
             if not seg:
                 continue
@@ -185,16 +185,13 @@ class _Adapters:
     def __init__(self):
         self.adapters = ifaddr.get_adapters() if ifaddr is not None else []
 
-    def pick_iface_for_ip(
-            self, ip_str: str, family: int, v6_scopeid: Optional[int]
-    ) -> Optional[str]:
+    def pick_iface_for_ip(self, ip_str: str, family: int, v6_scopeid: Optional[int]) -> Optional[str]:
         # Prefer scope id for IPv6 link-local
-        if family == socket.AF_INET6 and ip_str.lower().startswith("fe80:"):
-            if v6_scopeid:
-                try:
-                    return socket.if_indextoname(v6_scopeid)
-                except OSError:
-                    pass
+        if family == socket.AF_INET6 and ip_str.lower().startswith("fe80:") and v6_scopeid:
+            try:
+                return socket.if_indextoname(v6_scopeid)
+            except OSError:
+                pass
 
         # Otherwise, try to match destination ip to local subnet via ifaddr
         if not self.adapters:
@@ -213,9 +210,7 @@ class _Adapters:
                     ipn_ip = ipn.ip[0]
                 if fam != family:
                     continue
-                net = ipaddress.ip_network(
-                    f"{ipn_ip}/{ipn.network_prefix}", strict=False
-                )
+                net = ipaddress.ip_network(f"{ipn_ip}/{ipn.network_prefix}", strict=False)
                 if ip in net and ipn.network_prefix > best[1]:
                     best = (ad.nice_name or ad.name, ipn.network_prefix)
         return best[0]
@@ -237,21 +232,15 @@ async def _bind_ipv4(queue: asyncio.Queue):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     if hasattr(socket, "SO_REUSEPORT"):
-        try:
+        with contextlib.suppress(OSError):
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        except OSError:
-            pass
     s.bind(("0.0.0.0", MDNS_PORT))
     try:
-        mreq = struct.pack(
-            "=4s4s", socket.inet_aton(MDNS_MCAST_V4), socket.inet_aton("0.0.0.0")
-        )
+        mreq = struct.pack("=4s4s", socket.inet_aton(MDNS_MCAST_V4), socket.inet_aton("0.0.0.0"))
         s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
     except OSError:
         pass
-    transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
-        lambda: _DatagramProtocol(queue), sock=s
-    )
+    transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(lambda: _DatagramProtocol(queue), sock=s)
     return transport, s
 
 
@@ -259,10 +248,8 @@ async def _bind_ipv6_all_ifaces(queue: asyncio.Queue):
     s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     if hasattr(socket, "SO_REUSEPORT"):
-        try:
+        with contextlib.suppress(OSError):
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        except OSError:
-            pass
     s.bind(("::", MDNS_PORT))
     grp = socket.inet_pton(socket.AF_INET6, MDNS_MCAST_V6)
     for ifindex, _ in socket.if_nameindex():
@@ -271,9 +258,7 @@ async def _bind_ipv6_all_ifaces(queue: asyncio.Queue):
             s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq6)
         except OSError:
             continue
-    transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
-        lambda: _DatagramProtocol(queue), sock=s
-    )
+    transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(lambda: _DatagramProtocol(queue), sock=s)
     return transport, s
 
 
@@ -302,9 +287,7 @@ async def _send_query_all(transports, pkt: bytes):
 # ---------------- Public API ----------------
 
 
-async def browse_service(
-        service_type: str, timeout: float = 4.0
-) -> List[ServiceInstance]:
+async def browse_service(service_type: str, timeout: float = 4.0) -> List[ServiceInstance]:
     """
     Discover a DNS-SD/mDNS service type (e.g. "_remoted._tcp.local.") on the local network.
 
@@ -335,16 +318,12 @@ async def browse_service(
             existing.append(Address(ip=ip_str, iface=iface))
 
     try:
-        await _send_query_all(
-            transports, build_query(service_type, QTYPE_PTR, unicast=False)
-        )
+        await _send_query_all(transports, build_query(service_type, QTYPE_PTR, unicast=False))
         loop = asyncio.get_running_loop()
         end = loop.time() + timeout
         while loop.time() < end:
             try:
-                data, pkt_addr = await asyncio.wait_for(
-                    queue.get(), timeout=end - loop.time()
-                )
+                data, pkt_addr = await asyncio.wait_for(queue.get(), timeout=end - loop.time())
             except asyncio.TimeoutError:
                 break
             for rr in parse_mdns_message(data):
@@ -358,9 +337,7 @@ async def browse_service(
                     }
                 elif t == QTYPE_TXT:
                     txt_map[rr["name"]] = rr.get("txt", {})
-                elif t == QTYPE_A and rr.get("address"):
-                    _record_addr(rr["name"], rr["address"], pkt_addr)
-                elif t == QTYPE_AAAA and rr.get("address"):
+                elif (t == QTYPE_A and rr.get("address")) or (t == QTYPE_AAAA and rr.get("address")):
                     _record_addr(rr["name"], rr["address"], pkt_addr)
     finally:
         for transport, _ in transports:

@@ -1,4 +1,6 @@
-from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
+from pymobiledevice3.services.dvt.instruments.location_simulation import (
+    LocationSimulation,
+)
 
 
 def test_set_location(dvt):

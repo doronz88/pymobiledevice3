@@ -13,7 +13,7 @@ from pymobiledevice3.usbmux import MuxConnection
 class Win32(OsUtils):
     @property
     def is_admin(self) -> bool:
-        """ Check if the current OS user is an Administrator or root.
+        """Check if the current OS user is an Administrator or root.
         See: https://github.com/Preston-Landers/pyuac/blob/master/pyuac/admin.py
         :return: True if the current user is an 'Administrator', otherwise False.
         """
@@ -33,7 +33,7 @@ class Win32(OsUtils):
 
     @property
     def loopback_header(self) -> bytes:
-        return b'\x00\x00\x86\xdd'
+        return b"\x00\x00\x86\xdd"
 
     @property
     def access_denied_error(self) -> str:
@@ -41,14 +41,20 @@ class Win32(OsUtils):
 
     @property
     def pair_record_path(self) -> Path:
-        return Path(os.environ.get('ALLUSERSPROFILE', ''), 'Apple', 'Lockdown')
+        return Path(os.environ.get("ALLUSERSPROFILE", ""), "Apple", "Lockdown")
 
     def get_ipv6_ips(self) -> list[str]:
-        return [f'{adapter.ips[0].ip[0]}%{adapter.ips[0].ip[2]}' for adapter in get_adapters() if
-                adapter.ips[0].is_IPv6]
+        return [
+            f"{adapter.ips[0].ip[0]}%{adapter.ips[0].ip[2]}" for adapter in get_adapters() if adapter.ips[0].is_IPv6
+        ]
 
-    def set_keepalive(self, sock: socket.socket, after_idle_sec: int = DEFAULT_AFTER_IDLE_SEC,
-                      interval_sec: int = DEFAULT_INTERVAL_SEC, **kwargs) -> None:
+    def set_keepalive(
+        self,
+        sock: socket.socket,
+        after_idle_sec: int = DEFAULT_AFTER_IDLE_SEC,
+        interval_sec: int = DEFAULT_INTERVAL_SEC,
+        **kwargs,
+    ) -> None:
         sock.ioctl(socket.SIO_KEEPALIVE_VALS, (1, after_idle_sec * 1000, interval_sec * 1000))
 
     def parse_timestamp(self, time_stamp) -> datetime:
@@ -58,4 +64,4 @@ class Win32(OsUtils):
         return
 
     def wait_return(self):
-        input('Press ENTER to exit>')
+        input("Press ENTER to exit>")

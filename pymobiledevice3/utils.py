@@ -15,16 +15,16 @@ def plist_access_path(d, path: tuple, type_=None, required=False):
         if d is None:
             break
 
-    if type_ == bool and isinstance(d, str):
-        if d.lower() not in ('true', 'false'):
+    if type_ is bool and isinstance(d, str):
+        if d.lower() not in ("true", "false"):
             raise ValueError()
-        d = 'true' == d.lower()
+        d = d.lower() == "true"
     elif type_ is not None and not isinstance(d, type_):
         # wrong type
         d = None
 
     if d is None and required:
-        raise KeyError(f'path: {path} doesn\'t exist in given plist object')
+        raise KeyError(f"path: {path} doesn't exist in given plist object")
 
     return d
 
@@ -35,7 +35,7 @@ def bytes_to_uint(b: bytes):
 
 def try_decode(s: bytes):
     try:
-        return s.decode('utf8')
+        return s.decode("utf8")
     except UnicodeDecodeError:
         return s
 
@@ -45,7 +45,7 @@ def asyncio_print_traceback(f: Callable):
     async def wrapper(*args, **kwargs):
         try:
             return await f(*args, **kwargs)
-        except (Exception, RuntimeError) as e:  # noqa: E72
+        except (Exception, RuntimeError) as e:
             if not isinstance(e, asyncio.CancelledError):
                 traceback.print_exc()
             raise
@@ -57,7 +57,7 @@ def get_asyncio_loop() -> asyncio.AbstractEventLoop:
     try:
         loop = asyncio.get_running_loop()
         if loop.is_closed():
-            raise RuntimeError('The existing loop is closed.')
+            raise RuntimeError("The existing loop is closed.")
     except RuntimeError:
         # This happens when there is no current event loop
         loop = asyncio.new_event_loop()
@@ -67,14 +67,17 @@ def get_asyncio_loop() -> asyncio.AbstractEventLoop:
 
 def file_download(url: str, outfile: Path, chunk_size=1024) -> None:
     resp = requests.get(url, stream=True)
-    total = int(resp.headers.get('content-length', 0))
-    with outfile.open('wb') as file, tqdm(
+    total = int(resp.headers.get("content-length", 0))
+    with (
+        outfile.open("wb") as file,
+        tqdm(
             desc=outfile.name,
             total=total,
-            unit='iB',
+            unit="iB",
             unit_scale=True,
             unit_divisor=1024,
-    ) as bar:
+        ) as bar,
+    ):
         for data in resp.iter_content(chunk_size=chunk_size):
             size = file.write(data)
             bar.update(size)

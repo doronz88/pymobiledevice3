@@ -22,7 +22,7 @@ FRAME_HEADER_SIZE = 9
 
 
 def create_stream_key(src: str, sport: int, dst: str, dport: int) -> str:
-    return f'{src}/{sport}//{dst}/{dport}'
+    return f"{src}/{sport}//{dst}/{dport}"
 
 
 class TCPStream:
@@ -37,7 +37,7 @@ class TCPStream:
         self.segments = {}  # data segments to add later
 
     def __repr__(self) -> str:
-        return f'Stream<{self.key}>'
+        return f"Stream<{self.key}>"
 
     def __len__(self) -> int:
         return len(self.data)
@@ -58,12 +58,12 @@ class TCPStream:
             return False
         else:
             # if this data is in order (has a place to be inserted)
-            self.data[seq_offset:seq_offset + data_len] = data
+            self.data[seq_offset : seq_offset + data_len] = data
             # check if there are any waiting data segments to add
             for seq_offset in sorted(self.segments.keys()):
                 if seq_offset <= len(self.data):  # if we can add this segment to the stream
                     segment_payload = self.segments[seq_offset]
-                    self.data[seq_offset:seq_offset + len(segment_payload)] = segment_payload
+                    self.data[seq_offset : seq_offset + len(segment_payload)] = segment_payload
                     self.segments.pop(seq_offset)
                 else:
                     break  # short circuit because list is sorted
@@ -72,12 +72,12 @@ class TCPStream:
 
 class H2Stream(TCPStream):
     def pop_frames(self) -> list[Frame]:
-        """ Pop all available H2Frames """
+        """Pop all available H2Frames"""
 
         # If self.data starts with the http/2 magic bytes, pop them off
         if self.data.startswith(HTTP2_MAGIC):
-            logger.debug('HTTP/2 magic bytes')
-            self.data = self.data[len(HTTP2_MAGIC):]
+            logger.debug("HTTP/2 magic bytes")
+            self.data = self.data[len(HTTP2_MAGIC) :]
             self.seq += len(HTTP2_MAGIC)
 
         frames = []
@@ -120,13 +120,14 @@ class RemoteXPCSniffer:
         tcp_pkt = pkt[TCP]
         stream_key = create_stream_key(net_pkt.src, tcp_pkt.sport, net_pkt.dst, tcp_pkt.dport)
         stream = self._h2_streams.setdefault(
-            stream_key, H2Stream(net_pkt.src, tcp_pkt.sport, net_pkt.dst, tcp_pkt.dport))
+            stream_key, H2Stream(net_pkt.src, tcp_pkt.sport, net_pkt.dst, tcp_pkt.dport)
+        )
         stream_finished_assembling = stream.add(tcp_pkt)
         if stream_finished_assembling:  # if we just added something in order
             self._process_stream(stream)
 
     def _handle_data_frame(self, stream: H2Stream, frame: DataFrame) -> None:
-        previous_frame_data = self._previous_frame_data.get(stream.key, b'')
+        previous_frame_data = self._previous_frame_data.get(stream.key, b"")
         try:
             payload = XpcWrapper.parse(previous_frame_data + frame.data).message.payload
             if payload is None:
@@ -134,10 +135,11 @@ class RemoteXPCSniffer:
             xpc_message = decode_xpc_object(payload.obj)
         except ConstError:  # if we don't know what this payload is
             logger.debug(
-                f'New Data frame {stream.src}->{stream.dst} on HTTP/2 stream {frame.stream_id} TCP port {stream.dport}')
+                f"New Data frame {stream.src}->{stream.dst} on HTTP/2 stream {frame.stream_id} TCP port {stream.dport}"
+            )
             hexdump(frame.data[:64])
             if len(frame.data) > 64:
-                logger.debug(f'... {len(frame.data)} bytes')
+                logger.debug(f"... {len(frame.data)} bytes")
             return
         except StreamError:
             self._previous_frame_data[stream.key] = previous_frame_data + frame.data
@@ -149,27 +151,26 @@ class RemoteXPCSniffer:
         if xpc_message is None:
             return
 
-        logger.info(f'As Python Object (#{frame.stream_id}): {pformat(xpc_message)}')
+        logger.info(f"As Python Object (#{frame.stream_id}): {pformat(xpc_message)}")
 
         # print `pairingData` if exists, since it contains an inner struct
-        if 'value' not in xpc_message:
+        if "value" not in xpc_message:
             return
-        message = xpc_message['value']['message']
-        if 'plain' not in message:
+        message = xpc_message["value"]["message"]
+        if "plain" not in message:
             return
-        plain = message['plain']['_0']
-        if 'event' not in plain:
+        plain = message["plain"]["_0"]
+        if "event" not in plain:
             return
-        pairing_data = plain['event']['_0']['pairingData']['_0']['data']
+        pairing_data = plain["event"]["_0"]["pairingData"]["_0"]["data"]
         logger.info(PairingDataComponentTLVBuf.parse(pairing_data))
 
     def _handle_single_frame(self, stream: H2Stream, frame: Frame) -> None:
-        logger.debug(f'New HTTP/2 frame: {stream.key} ({frame})')
+        logger.debug(f"New HTTP/2 frame: {stream.key} ({frame})")
         if isinstance(frame, HeadersFrame):
-            logger.debug(
-                f'{stream.src} opening stream {frame.stream_id} for communication on port {stream.dport}')
+            logger.debug(f"{stream.src} opening stream {frame.stream_id} for communication on port {stream.dport}")
         elif isinstance(frame, GoAwayFrame):
-            logger.debug(f'{stream.src} closing stream {frame.stream_id} on port {stream.sport}')
+            logger.debug(f"{stream.src} closing stream {frame.stream_id} on port {stream.sport}")
         elif isinstance(frame, DataFrame):
             self._handle_data_frame(stream, frame)
 
@@ -180,27 +181,27 @@ class RemoteXPCSniffer:
 
 @click.group()
 def cli():
-    """ Parse RemoteXPC traffic """
+    """Parse RemoteXPC traffic"""
     pass
 
 
 @cli.command()
-@click.argument('file', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@click.argument("file", type=click.Path(exists=True, file_okay=True, dir_okay=False))
 def offline(file: str):
-    """ Parse RemoteXPC traffic from a .pcap file """
+    """Parse RemoteXPC traffic from a .pcap file"""
     sniffer = RemoteXPCSniffer()
     for p in sniff(offline=file):
         sniffer.process_packet(p)
 
 
 @cli.command()
-@click.argument('iface')
+@click.argument("iface")
 def live(iface: str):
-    """ Parse RemoteXPC live from a given network interface """
+    """Parse RemoteXPC live from a given network interface"""
     sniffer = RemoteXPCSniffer()
     sniff(iface=iface, prn=sniffer.process_packet)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     coloredlogs.install(level=logging.DEBUG)
     cli()

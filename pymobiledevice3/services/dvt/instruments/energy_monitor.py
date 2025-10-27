@@ -2,7 +2,7 @@ from pymobiledevice3.services.remote_server import MessageAux
 
 
 class EnergyMonitor:
-    IDENTIFIER = 'com.apple.xcode.debug-gauge-data-providers.Energy'
+    IDENTIFIER = "com.apple.xcode.debug-gauge-data-providers.Energy"
 
     def __init__(self, dvt, pid_list: list):
         self._channel = dvt.make_channel(self.IDENTIFIER)

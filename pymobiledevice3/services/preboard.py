@@ -6,8 +6,8 @@ from pymobiledevice3.services.lockdown_service import LockdownService
 
 
 class PreboardService(LockdownService):
-    RSD_SERVICE_NAME = 'com.apple.preboardservice_v2.shim.remote'
-    SERVICE_NAME = 'com.apple.preboardservice_v2'
+    RSD_SERVICE_NAME = "com.apple.preboardservice_v2.shim.remote"
+    SERVICE_NAME = "com.apple.preboardservice_v2"
 
     def __init__(self, lockdown: LockdownServiceProvider):
         if isinstance(lockdown, LockdownClient):
@@ -16,7 +16,7 @@ class PreboardService(LockdownService):
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     def create_stashbag(self, manifest):
-        return self.service.send_recv_plist({'Command': 'CreateStashbag', 'Manifest': manifest})
+        return self.service.send_recv_plist({"Command": "CreateStashbag", "Manifest": manifest})
 
     def commit(self, manifest):
-        return self.service.send_recv_plist({'Command': 'CommitStashbag', 'Manifest': manifest})
+        return self.service.send_recv_plist({"Command": "CommitStashbag", "Manifest": manifest})

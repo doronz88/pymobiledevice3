@@ -13,9 +13,9 @@ DEFAULT_MAX_FAILS = 3
 
 def is_wsl() -> bool:
     try:
-        with open('/proc/version', 'r') as f:
+        with open("/proc/version", "r") as f:
             version_info = f.read()
-            return 'Microsoft' in version_info or 'WSL' in version_info
+            return "Microsoft" in version_info or "WSL" in version_info
     except FileNotFoundError:
         return False
 
@@ -25,20 +25,24 @@ class OsUtils:
     _os_name = None
 
     @classmethod
-    def create(cls) -> 'OsUtils':
+    def create(cls) -> "OsUtils":
         if cls._instance is None:
             cls._os_name = sys.platform
-            if cls._os_name == 'win32':
+            if cls._os_name == "win32":
                 from pymobiledevice3.osu.win_util import Win32
+
                 cls._instance = Win32()
-            elif cls._os_name == 'darwin':
+            elif cls._os_name == "darwin":
                 from pymobiledevice3.osu.posix_util import Darwin
+
                 cls._instance = Darwin()
-            elif cls._os_name == 'linux':
+            elif cls._os_name == "linux":
                 from pymobiledevice3.osu.posix_util import Linux, Wsl
+
                 cls._instance = Wsl() if is_wsl() else Linux()
-            elif cls._os_name == 'cygwin':
+            elif cls._os_name == "cygwin":
                 from pymobiledevice3.osu.posix_util import Cygwin
+
                 cls._instance = Cygwin()
             else:
                 raise OSNotSupportedError(cls._os_name)
@@ -71,8 +75,13 @@ class OsUtils:
     def get_ipv6_ips(self) -> list[str]:
         raise FeatureNotSupportedError(self._os_name, inspect.currentframe().f_code.co_name)
 
-    def set_keepalive(self, sock: socket.socket, after_idle_sec: int = DEFAULT_AFTER_IDLE_SEC,
-                      interval_sec: int = DEFAULT_INTERVAL_SEC, max_fails: int = DEFAULT_MAX_FAILS) -> None:
+    def set_keepalive(
+        self,
+        sock: socket.socket,
+        after_idle_sec: int = DEFAULT_AFTER_IDLE_SEC,
+        interval_sec: int = DEFAULT_INTERVAL_SEC,
+        max_fails: int = DEFAULT_MAX_FAILS,
+    ) -> None:
         raise FeatureNotSupportedError(self._os_name, inspect.currentframe().f_code.co_name)
 
     def parse_timestamp(self, time_stamp) -> datetime:

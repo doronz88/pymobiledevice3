@@ -1,27 +1,27 @@
 from construct import Array, Bytes, Const, Default, Int32ub, Int32ul, Pointer, Struct, this
 
 ftab_entry = Struct(
-    'tag' / Bytes(4),
-    'offset' / Int32ul,
-    'size' / Int32ul,
-    'pad_0x0C' / Default(Int32ul, 0),
-    'data' / Pointer(this.offset, Bytes(this.size))
+    "tag" / Bytes(4),
+    "offset" / Int32ul,
+    "size" / Int32ul,
+    "pad_0x0C" / Default(Int32ul, 0),
+    "data" / Pointer(this.offset, Bytes(this.size)),
 )
 
 ftab_header = Struct(
-    'always_01' / Int32ul,  # 1
-    'always_ff' / Int32ul,  # 0xFFFFFFFF
-    'unk_0x08' / Int32ub,  # 0
-    'unk_0x0C' / Int32ub,  # 0
-    'unk_0x10' / Int32ub,  # 0
-    'unk_0x14' / Int32ub,  # 0
-    'unk_0x18' / Int32ub,  # 0
-    'unk_0x1C' / Int32ub,  # 0
-    'tag' / Bytes(4),  # e.g. 'rkos'
-    'magic' / Const(b'ftab'),  # 'ftab' magic
-    'num_entries' / Int32ul,
-    'pad_0x2C' / Int32ub,
-    'entries' / Array(this.num_entries, ftab_entry)
+    "always_01" / Int32ul,  # 1
+    "always_ff" / Int32ul,  # 0xFFFFFFFF
+    "unk_0x08" / Int32ub,  # 0
+    "unk_0x0C" / Int32ub,  # 0
+    "unk_0x10" / Int32ub,  # 0
+    "unk_0x14" / Int32ub,  # 0
+    "unk_0x18" / Int32ub,  # 0
+    "unk_0x1C" / Int32ub,  # 0
+    "tag" / Bytes(4),  # e.g. 'rkos'
+    "magic" / Const(b"ftab"),  # 'ftab' magic
+    "num_entries" / Int32ul,
+    "pad_0x2C" / Int32ub,
+    "entries" / Array(this.num_entries, ftab_entry),
 )
 
 
@@ -41,7 +41,7 @@ class Ftab:
 
     def add_entry(self, tag: bytes, data: bytes):
         new_offset = self.parsed.entries[-1].offset + self.parsed.entries[-1].size
-        new_entry = {'tag': tag, 'offset': new_offset, 'size': len(data), 'data': data}
+        new_entry = {"tag": tag, "offset": new_offset, "size": len(data), "data": data}
 
         self.parsed.num_entries += 1
         self.parsed.entries.append(new_entry)

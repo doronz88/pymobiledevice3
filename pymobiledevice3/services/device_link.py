@@ -7,13 +7,13 @@ from pathlib import Path
 
 from pymobiledevice3.exceptions import NotEnoughDiskSpaceError, PyMobileDevice3Exception
 
-SIZE_FORMAT = '>I'
-CODE_FORMAT = '>B'
-CODE_FILE_DATA = 0xc
-CODE_ERROR_REMOTE = 0xb
+SIZE_FORMAT = ">I"
+CODE_FORMAT = ">B"
+CODE_FILE_DATA = 0xC
+CODE_ERROR_REMOTE = 0xB
 CODE_ERROR_LOCAL = 0x6
 CODE_SUCCESS = 0
-FILE_TRANSFER_TERMINATOR = b'\x00\x00\x00\x00'
+FILE_TRANSFER_TERMINATOR = b"\x00\x00\x00\x00"
 BULK_OPERATION_ERROR = -13
 APPLE_EPOCH = 978307200
 ERRNO_TO_DEVICE_ERROR = {
@@ -32,15 +32,15 @@ class DeviceLink:
         self.service = service
         self.root_path = root_path
         self._dl_handlers = {
-            'DLMessageCreateDirectory': self.create_directory,
-            'DLMessageUploadFiles': self.upload_files,
-            'DLMessageGetFreeDiskSpace': self.get_free_disk_space,
-            'DLMessageMoveItems': self.move_items,
-            'DLMessageRemoveItems': self.remove_items,
-            'DLMessageDownloadFiles': self.download_files,
-            'DLContentsOfDirectory': self.contents_of_directory,
-            'DLMessageCopyItem': self.copy_item,
-            'DLMessagePurgeDiskSpace': self.purge_disk_space
+            "DLMessageCreateDirectory": self.create_directory,
+            "DLMessageUploadFiles": self.upload_files,
+            "DLMessageGetFreeDiskSpace": self.get_free_disk_space,
+            "DLMessageMoveItems": self.move_items,
+            "DLMessageRemoveItems": self.remove_items,
+            "DLMessageDownloadFiles": self.download_files,
+            "DLContentsOfDirectory": self.contents_of_directory,
+            "DLMessageCopyItem": self.copy_item,
+            "DLMessagePurgeDiskSpace": self.purge_disk_space,
         }
 
     def dl_loop(self, progress_callback=lambda x: None):
@@ -48,29 +48,34 @@ class DeviceLink:
             message = self.receive_message()
             command = message[0]
 
-            if command in ('DLMessageDownloadFiles', 'DLMessageMoveFiles', 'DLMessageMoveItems', 'DLMessageRemoveFiles',
-                           'DLMessageRemoveItems'):
+            if command in (
+                "DLMessageDownloadFiles",
+                "DLMessageMoveFiles",
+                "DLMessageMoveItems",
+                "DLMessageRemoveFiles",
+                "DLMessageRemoveItems",
+            ):
                 progress_callback(message[3])
-            elif command == 'DLMessageUploadFiles':
+            elif command == "DLMessageUploadFiles":
                 progress_callback(message[2])
 
-            if command == 'DLMessageProcessMessage':
-                if not message[1]['ErrorCode']:
-                    return message[1].get('Content')
+            if command == "DLMessageProcessMessage":
+                if not message[1]["ErrorCode"]:
+                    return message[1].get("Content")
                 else:
-                    raise PyMobileDevice3Exception(f'Device link error: {message[1]}')
+                    raise PyMobileDevice3Exception(f"Device link error: {message[1]}")
             self._dl_handlers[command](message)
 
     def version_exchange(self):
         dl_message_version_exchange = self.receive_message()
         version_major = dl_message_version_exchange[1]
-        self.service.send_plist(['DLMessageVersionExchange', 'DLVersionsOk', version_major])
+        self.service.send_plist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
         dl_message_device_ready = self.receive_message()
-        if dl_message_device_ready[0] != 'DLMessageDeviceReady':
-            raise PyMobileDevice3Exception('Device link didn\'t return ready state')
+        if dl_message_device_ready[0] != "DLMessageDeviceReady":
+            raise PyMobileDevice3Exception("Device link didn't return ready state")
 
     def send_process_message(self, message):
-        self.service.send_plist(['DLMessageProcessMessage', message])
+        self.service.send_plist(["DLMessageProcessMessage", message])
 
     def download_files(self, message):
         status = {}
@@ -85,7 +90,7 @@ class DeviceLink:
                 # https://github.com/doronz88/pymobiledevice3/issues/1165#issuecomment-2376815692
                 chunk_size = 128 * 1024 * 1024  # 128 MB
 
-                with file_path.open('rb') as file_handle:
+                with file_path.open("rb") as file_handle:
                     while True:
                         chunk_data = file_handle.read(chunk_size)
                         if not chunk_data:
@@ -97,15 +102,15 @@ class DeviceLink:
                 self.service.sendall(buffer)
             except IOError as e:
                 status[file] = {
-                    'DLFileErrorString': e.strerror,
-                    'DLFileErrorCode': ctypes.c_uint64(ERRNO_TO_DEVICE_ERROR[e.errno]).value
+                    "DLFileErrorString": e.strerror,
+                    "DLFileErrorCode": ctypes.c_uint64(ERRNO_TO_DEVICE_ERROR[e.errno]).value,
                 }
                 self.service.sendall(struct.pack(SIZE_FORMAT, len(e.strerror) + struct.calcsize(CODE_FORMAT)))
                 self.service.sendall(struct.pack(CODE_FORMAT, CODE_ERROR_LOCAL) + e.strerror.encode())
 
         self.service.sendall(FILE_TRANSFER_TERMINATOR)
         if status:
-            self.status_response(BULK_OPERATION_ERROR, 'Multi status', status)
+            self.status_response(BULK_OPERATION_ERROR, "Multi status", status)
         else:
             self.status_response(0)
 
@@ -113,17 +118,17 @@ class DeviceLink:
         data = {}
         path = self.root_path / message[1]
         for file in path.iterdir():
-            ftype = 'DLFileTypeUnknown'
+            ftype = "DLFileTypeUnknown"
             if file.is_dir():
-                ftype = 'DLFileTypeDirectory'
+                ftype = "DLFileTypeDirectory"
             if file.is_file():
-                ftype = 'DLFileTypeRegular'
+                ftype = "DLFileTypeRegular"
             modifications_data = datetime.datetime.fromtimestamp(file.stat().st_mtime - APPLE_EPOCH)
             modifications_data = modifications_data.replace(tzinfo=None)
             data[file.name] = {
-                'DLFileType': ftype,
-                'DLFileSize': file.stat().st_size,
-                'DLFileModificationDate': modifications_data
+                "DLFileType": ftype,
+                "DLFileSize": file.stat().st_size,
+                "DLFileModificationDate": modifications_data,
             }
         self.status_response(0, status_dict=data)
 
@@ -133,20 +138,22 @@ class DeviceLink:
             if not device_name:
                 break
             file_name = self._prefixed_recv()
-            size, = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
-            code, = struct.unpack(CODE_FORMAT, self.service.recvall(struct.calcsize(CODE_FORMAT)))
+            (size,) = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
+            (code,) = struct.unpack(CODE_FORMAT, self.service.recvall(struct.calcsize(CODE_FORMAT)))
             size -= struct.calcsize(CODE_FORMAT)
-            with open(self.root_path / file_name, 'wb') as fd:
+            with open(self.root_path / file_name, "wb") as fd:
                 while size and code == CODE_FILE_DATA:
                     fd.write(self.service.recvall(size))
-                    size, = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
-                    code, = struct.unpack(CODE_FORMAT, self.service.recvall(struct.calcsize(CODE_FORMAT)))
+                    (size,) = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
+                    (code,) = struct.unpack(CODE_FORMAT, self.service.recvall(struct.calcsize(CODE_FORMAT)))
                     size -= struct.calcsize(CODE_FORMAT)
             if code == CODE_ERROR_REMOTE:
                 # iOS 17 beta devices give this error for: backup_manifest.db
                 error_message = self.service.recvall(size).decode()
-                warnings.warn(f'Failed to fully upload: {file_name}. Device file name: {device_name}. Reason: '
-                              f'{error_message}')
+                warnings.warn(
+                    f"Failed to fully upload: {file_name}. Device file name: {device_name}. Reason: {error_message}",
+                    stacklevel=2,
+                )
                 continue
             assert code == CODE_SUCCESS
         self.status_response(0)
@@ -189,10 +196,11 @@ class DeviceLink:
         (self.root_path / path).mkdir(parents=True, exist_ok=True)
         self.status_response(0)
 
-    def status_response(self, status_code, status_str='', status_dict=None):
+    def status_response(self, status_code, status_str="", status_dict=None):
         self.service.send_plist([
-            'DLMessageStatusResponse', ctypes.c_uint64(status_code).value,
-            status_str if status_str else '___EmptyParameterString___',
+            "DLMessageStatusResponse",
+            ctypes.c_uint64(status_code).value,
+            status_str if status_str else "___EmptyParameterString___",
             status_dict if status_dict is not None else {},
         ])
 
@@ -200,8 +208,8 @@ class DeviceLink:
         return self.service.recv_plist()
 
     def disconnect(self):
-        self.service.send_plist(['DLMessageDisconnect', '___EmptyParameterString___'])
+        self.service.send_plist(["DLMessageDisconnect", "___EmptyParameterString___"])
 
     def _prefixed_recv(self):
-        size, = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
+        (size,) = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
         return self.service.recvall(size).decode()

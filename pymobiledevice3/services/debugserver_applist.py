@@ -7,14 +7,14 @@ CHUNK_SIZE = 200
 
 
 class DebugServerAppList(LockdownService):
-    SERVICE_NAME = 'com.apple.debugserver.DVTSecureSocketProxy.applist'
+    SERVICE_NAME = "com.apple.debugserver.DVTSecureSocketProxy.applist"
 
     def __init__(self, lockdown: LockdownClient):
         super().__init__(lockdown, self.SERVICE_NAME)
 
     def get(self) -> dict:
-        buf = b''
-        while b'</plist>' not in buf:
+        buf = b""
+        while b"</plist>" not in buf:
             buf += self.service.recv(CHUNK_SIZE)
 
         return plistlib.loads(buf)

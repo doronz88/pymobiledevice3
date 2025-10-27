@@ -6,11 +6,11 @@ class Alert:
         self.session = session
 
     def accept(self):
-        """ Accepts the alert available. """
+        """Accepts the alert available."""
         self.session.accept_current_javascript_dialog()
 
     def dismiss(self):
-        """ Dismisses the alert available. """
+        """Dismisses the alert available."""
         self.session.dismiss_current_javascript_dialog()
 
     def send_keys(self, text: str):
@@ -22,5 +22,5 @@ class Alert:
 
     @property
     def text(self) -> str:
-        """ Gets the text of the Alert. """
+        """Gets the text of the Alert."""
         return self.session.message_of_current_javascript_dialog()

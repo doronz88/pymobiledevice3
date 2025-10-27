@@ -6,9 +6,9 @@ from pymobiledevice3.services.remote_server import RemoteServer
 
 
 class DvtTestmanagedProxyService(RemoteServer):
-    SERVICE_NAME = 'com.apple.testmanagerd.lockdown.secure'
-    OLD_SERVICE_NAME = 'com.apple.testmanagerd.lockdown'
-    RSD_SERVICE_NAME = 'com.apple.dt.testmanagerd.remote'
+    SERVICE_NAME = "com.apple.testmanagerd.lockdown.secure"
+    OLD_SERVICE_NAME = "com.apple.testmanagerd.lockdown"
+    RSD_SERVICE_NAME = "com.apple.dt.testmanagerd.remote"
 
     # TODO: there is also service named 'com.apple.dt.testmanagerd.remote.automation', but not used
 
@@ -16,7 +16,7 @@ class DvtTestmanagedProxyService(RemoteServer):
         if isinstance(lockdown, RemoteServiceDiscoveryService):  # only happends when >=17.0
             service_name = self.RSD_SERVICE_NAME
             remove_ssl_context = False
-        elif Version(lockdown.product_version) >= Version('14.0'):
+        elif Version(lockdown.product_version) >= Version("14.0"):
             service_name = self.SERVICE_NAME
             remove_ssl_context = False
         else:

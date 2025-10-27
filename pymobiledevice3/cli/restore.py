@@ -32,15 +32,15 @@ print(irecv.getenv('build-version'))
 """
 
 logger = logging.getLogger(__name__)
-IPSWME_API = 'https://api.ipsw.me/v4/device/'
+IPSWME_API = "https://api.ipsw.me/v4/device/"
 
 
 class Command(click.Command):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.params[:0] = [
-            click.Option(('device', '--ecid'), type=click.INT, callback=self.device),
-            click.Option(('verbosity', '-v', '--verbose'), count=True, callback=set_verbosity, expose_value=False),
+            click.Option(("device", "--ecid"), type=click.INT, callback=self.device),
+            click.Option(("verbosity", "-v", "--verbose"), count=True, callback=set_verbosity, expose_value=False),
         ]
 
     @staticmethod
@@ -50,32 +50,32 @@ class Command(click.Command):
             return
 
         ecid = value
-        logger.debug('searching among connected devices via lockdownd')
-        devices = [dev for dev in usbmux.list_devices() if dev.connection_type == 'USB']
+        logger.debug("searching among connected devices via lockdownd")
+        devices = [dev for dev in usbmux.list_devices() if dev.connection_type == "USB"]
         if len(devices) > 1:
-            raise click.ClickException('Multiple device detected')
+            raise click.ClickException("Multiple device detected")
         try:
             for device in devices:
                 try:
-                    lockdown = create_using_usbmux(serial=device.serial, connection_type='USB')
+                    lockdown = create_using_usbmux(serial=device.serial, connection_type="USB")
                 except (ConnectionFailedError, IncorrectModeError):
                     continue
                 if (ecid is None) or (lockdown.ecid == value):
-                    logger.debug('found device')
+                    logger.debug("found device")
                     return lockdown
                 else:
                     continue
         except ConnectionFailedToUsbmuxdError:
             pass
 
-        logger.debug('waiting for device to be available in Recovery mode')
+        logger.debug("waiting for device to be available in Recovery mode")
         return IRecv(ecid=ecid)
 
 
 @contextlib.contextmanager
 def tempzip_download_ctx(url: str) -> Generator[ZipFile, None, None]:
     with tempfile.TemporaryDirectory() as tmpdir:
-        tmpzip = Path(tmpdir) / url.split('/')[-1]
+        tmpzip = Path(tmpdir) / url.split("/")[-1]
         file_download(url, tmpzip)
         yield ZipFile(tmpzip)
 
@@ -88,18 +88,19 @@ def zipfile_ctx(path: str) -> Generator[ZipFile, None, None]:
 class IPSWCommand(Command):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.params.extend([click.Option(('ipsw_ctx', '-i', '--ipsw'), required=False,
-                                         callback=self.ipsw_ctx, help='local IPSW file'),
-                            click.Option(('tss', '--tss'), type=click.File('rb'), callback=self.tss)])
+        self.params.extend([
+            click.Option(("ipsw_ctx", "-i", "--ipsw"), required=False, callback=self.ipsw_ctx, help="local IPSW file"),
+            click.Option(("tss", "--tss"), type=click.File("rb"), callback=self.tss),
+        ])
 
     @staticmethod
     def ipsw_ctx(ctx, param, value) -> Generator[ZipFile, None, None]:
-        if value and not value.startswith(('http://', 'https://')):
+        if value and not value.startswith(("http://", "https://")):
             return zipfile_ctx(value)
 
         url = value
         if url is None:
-            url = query_ipswme(ctx.params['device'].product_type)
+            url = query_ipswme(ctx.params["device"].product_type)
         return tempzip_download_ctx(url)
 
     @staticmethod
@@ -110,11 +111,11 @@ class IPSWCommand(Command):
 
 
 def query_ipswme(identifier: str) -> str:
-    resp = requests.get(IPSWME_API + identifier, headers={'Accept': 'application/json'})
-    firmwares = resp.json()['firmwares']
-    display_list = [f'{entry["version"]}: {entry["buildid"]}' for entry in firmwares if entry['signed']]
-    idx = prompt_selection(display_list, 'Choose version', idx=True)
-    return firmwares[idx]['url']
+    resp = requests.get(IPSWME_API + identifier, headers={"Accept": "application/json"})
+    firmwares = resp.json()["firmwares"]
+    display_list = [f"{entry['version']}: {entry['buildid']}" for entry in firmwares if entry["signed"]]
+    idx = prompt_selection(display_list, "Choose version", idx=True)
+    return firmwares[idx]["url"]
 
 
 async def restore_update_task(device: Device, ipsw: ZipFile, tss: Optional[IO], erase: bool, ignore_fdr: bool) -> None:
@@ -145,38 +146,39 @@ def cli() -> None:
 
 @cli.group()
 def restore() -> None:
-    """ Restore an IPSW or access device in recovery mode """
+    """Restore an IPSW or access device in recovery mode"""
     pass
 
 
-@restore.command('shell', cls=Command)
+@restore.command("shell", cls=Command)
 def restore_shell(device):
-    """ create an IPython shell for interacting with iBoot """
+    """create an IPython shell for interacting with iBoot"""
     IPython.embed(
-        header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style='native')),
+        header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")),
         user_ns={
-            'irecv': device,
-        })
+            "irecv": device,
+        },
+    )
 
 
-@restore.command('enter', cls=Command)
+@restore.command("enter", cls=Command)
 def restore_enter(device):
-    """ enter Recovery mode """
+    """enter Recovery mode"""
     if isinstance(device, LockdownClient):
         device.enter_recovery()
 
 
-@restore.command('exit')
+@restore.command("exit")
 def restore_exit():
-    """ exit Recovery mode """
+    """exit Recovery mode"""
     irecv = IRecv()
     irecv.set_autoboot(True)
     irecv.reboot()
 
 
-@restore.command('restart', cls=Command)
+@restore.command("restart", cls=Command)
 def restore_restart(device):
-    """ restarts device """
+    """restarts device"""
     if isinstance(device, LockdownClient):
         with DiagnosticsService(device) as diagnostics:
             diagnostics.restart()
@@ -200,10 +202,10 @@ async def restore_tss_task(device: Device, ipsw_ctx: Generator, tss: IO, out: Op
     print_json(tss)
 
 
-@restore.command('tss', cls=IPSWCommand)
-@click.argument('out', type=click.File('wb'), required=False)
+@restore.command("tss", cls=IPSWCommand)
+@click.argument("out", type=click.File("wb"), required=False)
 def restore_tss(device: Device, ipsw_ctx: Generator, tss: IO, out: Optional[IO]) -> None:
-    """ query SHSH blobs """
+    """query SHSH blobs"""
     asyncio.run(restore_tss_task(device, ipsw_ctx, tss, out), debug=True)
 
 
@@ -220,7 +222,7 @@ async def restore_ramdisk_task(device: Device, ipsw_ctx: Generator) -> None:
         await Recovery(ipsw, device).boot_ramdisk()
 
 
-@restore.command('ramdisk', cls=IPSWCommand)
+@restore.command("ramdisk", cls=IPSWCommand)
 def restore_ramdisk(device: Device, ipsw_ctx: Generator, tss: IO) -> None:
     """
     don't perform an actual restore. just enter the update ramdisk
@@ -230,10 +232,11 @@ def restore_ramdisk(device: Device, ipsw_ctx: Generator, tss: IO) -> None:
     asyncio.run(restore_ramdisk_task(device, ipsw_ctx), debug=True)
 
 
-@restore.command('update', cls=IPSWCommand)
-@click.option('--erase', is_flag=True, help='use the Erase BuildIdentity (full factory-reset)')
-@click.option('--ignore-fdr', is_flag=True, help='only establish an FDR service connection, but don\'t proxy any '
-                                                 'traffic')
+@restore.command("update", cls=IPSWCommand)
+@click.option("--erase", is_flag=True, help="use the Erase BuildIdentity (full factory-reset)")
+@click.option(
+    "--ignore-fdr", is_flag=True, help="only establish an FDR service connection, but don't proxy any traffic"
+)
 def restore_update(device: Device, ipsw_ctx: Generator, tss: IO, erase: bool, ignore_fdr: bool) -> None:
     """
     perform an update

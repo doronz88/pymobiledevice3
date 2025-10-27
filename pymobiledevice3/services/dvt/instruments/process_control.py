@@ -17,7 +17,7 @@ class OutputReceivedEvent:
     message: str
 
     @classmethod
-    def create(cls, message) -> 'OutputReceivedEvent':
+    def create(cls, message) -> "OutputReceivedEvent":
         try:
             date = OSUTIL.parse_timestamp(message[2].value)
         except (ValueError, OSError):
@@ -27,7 +27,7 @@ class OutputReceivedEvent:
 
 
 class ProcessControl:
-    IDENTIFIER = 'com.apple.instruments.server.services.processcontrol'
+    IDENTIFIER = "com.apple.instruments.server.services.processcontrol"
 
     def __init__(self, dvt: DvtSecureSocketProxyService):
         self._channel = dvt.make_channel(self.IDENTIFIER)
@@ -58,11 +58,20 @@ class ProcessControl:
         self._channel.killPid_(MessageAux().append_obj(pid), expects_reply=False)
 
     def process_identifier_for_bundle_identifier(self, app_bundle_identifier: str) -> int:
-        self._channel.processIdentifierForBundleIdentifier_(MessageAux().append_obj(app_bundle_identifier), expects_reply=True)
+        self._channel.processIdentifierForBundleIdentifier_(
+            MessageAux().append_obj(app_bundle_identifier), expects_reply=True
+        )
         return self._channel.receive_plist()
 
-    def launch(self, bundle_id: str, arguments=None, kill_existing: bool = True, start_suspended: bool = False,
-               environment: Optional[dict] = None, extra_options: Optional[dict] = None) -> int:
+    def launch(
+        self,
+        bundle_id: str,
+        arguments=None,
+        kill_existing: bool = True,
+        start_suspended: bool = False,
+        environment: Optional[dict] = None,
+        extra_options: Optional[dict] = None,
+    ) -> int:
         """
         Launch a process.
         :param bundle_id: Bundle id of the process.
@@ -76,13 +85,19 @@ class ProcessControl:
         arguments = [] if arguments is None else arguments
         environment = {} if environment is None else environment
         options = {
-            'StartSuspendedKey': start_suspended,
-            'KillExisting': kill_existing,
+            "StartSuspendedKey": start_suspended,
+            "KillExisting": kill_existing,
         }
         if extra_options:
             options.update(extra_options)
-        args = MessageAux().append_obj('').append_obj(bundle_id).append_obj(environment).append_obj(
-            arguments).append_obj(options)
+        args = (
+            MessageAux()
+            .append_obj("")
+            .append_obj(bundle_id)
+            .append_obj(environment)
+            .append_obj(arguments)
+            .append_obj(options)
+        )
         self._channel.launchSuspendedProcessWithDevicePath_bundleIdentifier_environment_arguments_options_(args)
         result = self._channel.receive_plist()
         assert result
@@ -90,5 +105,5 @@ class ProcessControl:
 
     def __iter__(self) -> typing.Generator[OutputReceivedEvent, None, None]:
         key, value = self._channel.receive_key_value()
-        if key == 'outputReceived:fromProcess:atTime:':
+        if key == "outputReceived:fromProcess:atTime:":
             yield OutputReceivedEvent.create(value)

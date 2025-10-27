@@ -10,8 +10,8 @@ class ProvisioningProfile:
     def __init__(self, buf: bytes):
         self.buf = buf
 
-        xml = b'<?xml' + buf.split(b'<?xml', 1)[1]
-        xml = xml.split(b'</plist>')[0] + b'</plist>'
+        xml = b"<?xml" + buf.split(b"<?xml", 1)[1]
+        xml = xml.split(b"</plist>")[0] + b"</plist>"
         self.plist = plistlib.loads(xml)
 
     def __str__(self):
@@ -19,8 +19,8 @@ class ProvisioningProfile:
 
 
 class MisagentService(LockdownService):
-    SERVICE_NAME = 'com.apple.misagent'
-    RSD_SERVICE_NAME = 'com.apple.misagent.shim.remote'
+    SERVICE_NAME = "com.apple.misagent"
+    RSD_SERVICE_NAME = "com.apple.misagent.shim.remote"
 
     def __init__(self, lockdown: LockdownClient):
         if isinstance(lockdown, LockdownClient):
@@ -29,27 +29,30 @@ class MisagentService(LockdownService):
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     def install(self, plist: BytesIO) -> dict:
-        response = self.service.send_recv_plist({'MessageType': 'Install',
-                                                 'Profile': plist.read(),
-                                                 'ProfileType': 'Provisioning'})
-        if response['Status']:
-            raise PyMobileDevice3Exception(f'invalid status: {response}')
+        response = self.service.send_recv_plist({
+            "MessageType": "Install",
+            "Profile": plist.read(),
+            "ProfileType": "Provisioning",
+        })
+        if response["Status"]:
+            raise PyMobileDevice3Exception(f"invalid status: {response}")
 
         return response
 
     def remove(self, profile_id: str) -> dict:
-        response = self.service.send_recv_plist({'MessageType': 'Remove',
-                                                 'ProfileID': profile_id,
-                                                 'ProfileType': 'Provisioning'})
-        if response['Status']:
-            raise PyMobileDevice3Exception(f'invalid status: {response}')
+        response = self.service.send_recv_plist({
+            "MessageType": "Remove",
+            "ProfileID": profile_id,
+            "ProfileType": "Provisioning",
+        })
+        if response["Status"]:
+            raise PyMobileDevice3Exception(f"invalid status: {response}")
 
         return response
 
     def copy_all(self) -> list[ProvisioningProfile]:
-        response = self.service.send_recv_plist({'MessageType': 'CopyAll',
-                                                 'ProfileType': 'Provisioning'})
-        if response['Status']:
-            raise PyMobileDevice3Exception(f'invalid status: {response}')
+        response = self.service.send_recv_plist({"MessageType": "CopyAll", "ProfileType": "Provisioning"})
+        if response["Status"]:
+            raise PyMobileDevice3Exception(f"invalid status: {response}")
 
-        return [ProvisioningProfile(p) for p in response['Payload']]
+        return [ProvisioningProfile(p) for p in response["Payload"]]

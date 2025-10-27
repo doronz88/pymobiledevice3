@@ -29,15 +29,15 @@ class LocationSimulationBase:
                 for point in segment.points:
                     if last_time is not None:
                         duration = (point.time - last_time).total_seconds()
-                        if duration >= 0:
-                            if not disable_sleep:
+                        if duration >= 0 and not disable_sleep:
+                            if timing_randomness_range:
+                                gpx_timing_noise = (
+                                    random.randint(-timing_randomness_range, timing_randomness_range) / 1000
+                                )
+                                duration += gpx_timing_noise
 
-                                if timing_randomness_range:
-                                    gpx_timing_noise = random.randint(-timing_randomness_range, timing_randomness_range) / 1000
-                                    duration += gpx_timing_noise
-
-                                self.logger.info(f'waiting for {duration:.3f}s')
-                                time.sleep(duration)
+                            self.logger.info(f"waiting for {duration:.3f}s")
+                            time.sleep(duration)
                     last_time = point.time
-                    self.logger.info(f'set location to {point.latitude} {point.longitude}')
+                    self.logger.info(f"set location to {point.latitude} {point.longitude}")
                     self.set(point.latitude, point.longitude)
