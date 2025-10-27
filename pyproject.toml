@@ -91,12 +91,6 @@ select = [
 ignore = [
     # LineTooLong
     "E501",
-    # DoNotAssignLambda
-    "E731",
-    # Asserts
-    "S101",
-    # Name for classes
-    "N801",
     # Custom error classes
     "TRY003",
     # Abstract `raise` to an inner function
