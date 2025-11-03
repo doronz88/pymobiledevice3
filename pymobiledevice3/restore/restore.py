@@ -6,7 +6,6 @@ import plistlib
 import struct
 import tempfile
 import time
-import traceback
 import typing
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -1361,7 +1360,7 @@ class Restore(BaseRestore):
                 try:
                     await self._handlers[message_type](message)
                 except Exception:
-                    self.logger.exception(traceback.format_exc())
+                    self.logger.exception(f"Failed to handle {message_type}")
             else:
                 # there might be some other message types i'm not aware of, but I think
                 # at least the "previous error logs" messages usually end up here

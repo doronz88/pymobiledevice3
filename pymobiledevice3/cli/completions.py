@@ -31,7 +31,7 @@ def install_completions() -> None:
     try:
         pymobiledevice3 = local["pymobiledevice3"]
     except CommandNotFound:
-        logger.exception("pymobiledevice3 main binary could not be found in your path.")
+        logger.error("pymobiledevice3 main binary could not be found in your path.")
         return
 
     for completion in COMPLETIONS:

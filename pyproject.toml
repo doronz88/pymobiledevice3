@@ -93,6 +93,8 @@ ignore = [
     "E501",
     # Custom error classes
     "TRY003",
+    # Use `logging.exception` instead of `logging.error`
+    "TRY400",
     # Abstract `raise` to an inner function
     "TRY301"
 ]

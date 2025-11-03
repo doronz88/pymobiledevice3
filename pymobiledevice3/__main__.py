@@ -210,37 +210,37 @@ def invoke_cli_with_error_handling() -> bool:
     try:
         cli()
     except NoDeviceConnectedError:
-        logger.exception("Device is not connected")
+        logger.error("Device is not connected")
         return True
     except ConnectionAbortedError:
-        logger.exception("Device was disconnected")
+        logger.error("Device was disconnected")
         return True
     except NotPairedError:
-        logger.exception("Device is not paired")
+        logger.error("Device is not paired")
     except UserDeniedPairingError:
-        logger.exception("User refused to trust this computer")
+        logger.error("User refused to trust this computer")
     except PairingDialogResponsePendingError:
-        logger.exception("Waiting for user dialog approval")
+        logger.error("Waiting for user dialog approval")
     except SetProhibitedError:
-        logger.exception("lockdownd denied the access")
+        logger.error("lockdownd denied the access")
     except MissingValueError:
-        logger.exception("No such value")
+        logger.error("No such value")
     except DeviceHasPasscodeSetError:
-        logger.exception("Cannot enable developer-mode when passcode is set")
+        logger.error("Cannot enable developer-mode when passcode is set")
     except DeveloperModeError:
-        logger.exception("Failed to enable developer-mode.")
+        logger.error("Failed to enable developer-mode.")
     except ConnectionFailedToUsbmuxdError:
-        logger.exception("Failed to connect to usbmuxd socket. Make sure it's running.")
+        logger.error("Failed to connect to usbmuxd socket. Make sure it's running.")
     except ConnectionFailedError:
-        logger.exception("Failed to connect to service port.")
+        logger.error("Failed to connect to service port.")
         return True
     except MessageNotSupportedError:
-        logger.exception("Message not supported for this iOS version")
+        logger.error("Message not supported for this iOS version")
         traceback.print_exc()
     except InternalError:
-        logger.exception("Internal Error")
+        logger.error("Internal Error")
     except DeveloperModeIsNotEnabledError:
-        logger.exception(
+        logger.error(
             "Developer Mode is disabled. You can try to enable it using: "
             "python3 -m pymobiledevice3 amfi enable-developer-mode"
         )
@@ -256,41 +256,41 @@ def invoke_cli_with_error_handling() -> bool:
             # use a single space because click will ignore envvars of empty strings
             os.environ[TUNNEL_ENV_VAR] = e.identifier or " "
             return main()
-        logger.exception(INVALID_SERVICE_MESSAGE)
+        logger.error(INVALID_SERVICE_MESSAGE)
     except PasswordRequiredError:
-        logger.exception("Device is password protected. Please unlock and retry")
+        logger.error("Device is password protected. Please unlock and retry")
     except AccessDeniedError:
-        logger.exception(get_os_utils().access_denied_error)
+        logger.error(get_os_utils().access_denied_error)
     except BrokenPipeError:
         traceback.print_exc()
     except TunneldConnectionError:
-        logger.exception(
+        logger.error(
             "Unable to connect to Tunneld. You can start one using:\nsudo python3 -m pymobiledevice3 remote tunneld"
         )
     except DeviceNotFoundError as e:
-        logger.exception(f"Device not found: {e.udid}")
+        logger.error(f"Device not found: {e.udid}")
     except NotEnoughDiskSpaceError:
-        logger.exception("Not enough disk space")
+        logger.error("Not enough disk space")
     except DeprecationError:
-        logger.exception("failed to query MobileGestalt, MobileGestalt deprecated (iOS >= 17.4).")
+        logger.error("failed to query MobileGestalt, MobileGestalt deprecated (iOS >= 17.4).")
     except OSNotSupportedError as e:
-        logger.exception(
+        logger.error(
             f"Unsupported OS - {e.os_name}. To add support, consider contributing at "
             f"https://github.com/doronz88/pymobiledevice3."
         )
     except CloudConfigurationAlreadyPresentError:
-        logger.exception(
+        logger.error(
             "A cloud configuration is already present on device. You must first erase the device in order "
             "to install new one:\n"
             "> pymobiledevice3 profile erase-device"
         )
     except FeatureNotSupportedError as e:
-        logger.exception(
+        logger.error(
             f"Missing implementation of `{e.feature}` on `{e.os_name}`. To add support, consider contributing at "
             f"https://github.com/doronz88/pymobiledevice3."
         )
     except QuicProtocolNotSupportedError:
-        logger.exception("Encountered a QUIC protocol error.")
+        logger.error("Encountered a QUIC protocol error.")
 
     return False
 

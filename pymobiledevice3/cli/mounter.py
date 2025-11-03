@@ -30,9 +30,9 @@ def catch_errors(func):
         try:
             return func(*args, **kwargs)
         except AlreadyMountedError:
-            logger.exception("Given image was already mounted")
+            logger.error("Given image was already mounted")
         except UnsupportedCommandError:
-            logger.exception("Your iOS version doesn't support this command")
+            logger.error("Your iOS version doesn't support this command")
 
     return update_wrapper(catch_function, func)
 
@@ -71,7 +71,7 @@ def mounter_lookup(service_provider: LockdownClient, image_type):
         signature = MobileImageMounterService(lockdown=service_provider).lookup_image(image_type)
         print_json(signature)
     except NotMountedError:
-        logger.exception(f"Disk image of type: {image_type} is not mounted")
+        logger.error(f"Disk image of type: {image_type} is not mounted")
 
 
 @mounter.command("umount-developer", cls=Command)
@@ -82,7 +82,7 @@ def mounter_umount_developer(service_provider: LockdownClient):
         DeveloperDiskImageMounter(lockdown=service_provider).umount()
         logger.info("Developer image unmounted successfully")
     except NotMountedError:
-        logger.exception("Developer image isn't currently mounted")
+        logger.error("Developer image isn't currently mounted")
 
 
 @mounter.command("umount-personalized", cls=Command)
@@ -93,7 +93,7 @@ def mounter_umount_personalized(service_provider: LockdownClient):
         PersonalizedImageMounter(lockdown=service_provider).umount()
         logger.info("Personalized image unmounted successfully")
     except NotMountedError:
-        logger.exception("Personalized image isn't currently mounted")
+        logger.error("Personalized image isn't currently mounted")
 
 
 @mounter.command("mount-developer", cls=Command)
@@ -134,11 +134,11 @@ async def mounter_auto_mount_task(service_provider: LockdownServiceProvider, xco
     except URLError:
         logger.warning("failed to query DeveloperDiskImage versions")
     except DeveloperDiskImageNotFoundError:
-        logger.exception("Unable to find the correct DeveloperDiskImage")
+        logger.error("Unable to find the correct DeveloperDiskImage")
     except AlreadyMountedError:
-        logger.exception("DeveloperDiskImage already mounted")
+        logger.error("DeveloperDiskImage already mounted")
     except PermissionError as e:
-        logger.exception(
+        logger.error(
             f"DeveloperDiskImage could not be saved to Xcode default path ({e.filename}). "
             f"Please make sure your user has the necessary permissions"
         )
