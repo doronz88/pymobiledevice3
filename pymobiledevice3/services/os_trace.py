@@ -9,8 +9,6 @@ from enum import IntEnum
 from pathlib import Path
 from tarfile import TarFile
 
-from construct import Adapter, Byte, Bytes, Computed, Enum, Int16ul, Int32ul, Optional, RepeatUntil, Struct, this
-
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -50,46 +48,96 @@ class SyslogEntry:
     label: typing.Optional[SyslogLabel] = None
 
 
-class TimestampAdapter(Adapter):
-    def _decode(self, obj, context, path):
-        return datetime.fromtimestamp(obj.seconds + (obj.microseconds / 1000000))
+def parse_syslog_entry(data: bytes) -> SyslogEntry:
+    """
+    Parse a syslog entry from binary data.
 
-    def _encode(self, obj, context, path):
-        return list(map(int, obj.split(".")))
+    :param data: Raw binary data
+    :return: SyslogEntry
+    """
+    offset = 0
 
+    # Skip first 9 bytes
+    offset += 9
 
-timestamp_t = Struct("seconds" / Int32ul, Bytes(4), "microseconds" / Int32ul)
+    # Parse pid (4 bytes, little-endian unsigned int)
+    pid = struct.unpack("<I", data[offset : offset + 4])[0]
+    offset += 4
 
-syslog_t = Struct(
-    Bytes(9),
-    "pid" / Int32ul,
-    Bytes(42),
-    "timestamp" / TimestampAdapter(timestamp_t),
-    Bytes(1),
-    "level" / Enum(Byte, Notice=0, Info=0x01, Debug=0x02, Error=0x10, Fault=0x11),
-    Bytes(38),
-    "image_name_size" / Int16ul,
-    "message_size" / Int16ul,
-    Bytes(6),
-    "_subsystem_size" / Int32ul,
-    "_category_size" / Int32ul,
-    Bytes(4),
-    "_filename" / RepeatUntil(lambda x, lst, ctx: lst[-1] == 0, Byte),
-    "filename" / Computed(lambda ctx: try_decode(bytearray(ctx._filename[:-1]))),
-    "_image_name" / Bytes(this.image_name_size),
-    "image_name" / Computed(lambda ctx: try_decode(ctx._image_name[:-1])),
-    "_message" / Bytes(this.message_size),
-    "message" / Computed(lambda ctx: try_decode(ctx._message[:-1])),
-    "label"
-    / Optional(
-        Struct(
-            "_subsystem" / Bytes(this._._subsystem_size),
-            "subsystem" / Computed(lambda ctx: try_decode(ctx._subsystem[:-1])),
-            "_category" / Bytes(this._._category_size),
-            "category" / Computed(lambda ctx: try_decode(ctx._category[:-1])),
-        )
-    ),
-)
+    # Skip 42 bytes
+    offset += 42
+
+    # Parse timestamp
+    seconds = struct.unpack("<I", data[offset : offset + 4])[0]
+    offset += 4
+    offset += 4  # Skip 4 bytes
+    microseconds = struct.unpack("<I", data[offset : offset + 4])[0]
+    offset += 4
+    timestamp = datetime.fromtimestamp(seconds + (microseconds / 1000000))
+
+    # Skip 1 byte
+    offset += 1
+
+    # Parse level (1 byte)
+    level = data[offset]
+    offset += 1
+
+    # Skip 38 bytes
+    offset += 38
+
+    # Parse image_name_size (2 bytes, little-endian unsigned short)
+    image_name_size = struct.unpack("<H", data[offset : offset + 2])[0]
+    offset += 2
+
+    # Parse message_size (2 bytes, little-endian unsigned short)
+    message_size = struct.unpack("<H", data[offset : offset + 2])[0]
+    offset += 2
+
+    # Skip 6 bytes
+    offset += 6
+
+    # Parse subsystem_size (4 bytes, little-endian unsigned int)
+    subsystem_size = struct.unpack("<I", data[offset : offset + 4])[0]
+    offset += 4
+
+    # Parse category_size (4 bytes, little-endian unsigned int)
+    category_size = struct.unpack("<I", data[offset : offset + 4])[0]
+    offset += 4
+
+    # Skip 4 bytes
+    offset += 4
+
+    # Parse filename (null-terminated)
+    filename_end = data.find(b"\x00", offset)
+    filename = try_decode(data[offset:filename_end])
+    offset = filename_end + 1
+
+    # Parse image_name
+    image_name = try_decode(data[offset : offset + image_name_size - 1])
+    offset += image_name_size
+
+    # Parse message
+    message = try_decode(data[offset : offset + message_size - 1])
+    offset += message_size
+
+    # Parse label (optional)
+    label = None
+    if subsystem_size > 0 and category_size > 0:
+        subsystem = try_decode(data[offset : offset + subsystem_size - 1])
+        offset += subsystem_size
+        category = try_decode(data[offset : offset + category_size - 1])
+        offset += category_size
+        label = SyslogLabel(subsystem=subsystem, category=category)
+
+    return SyslogEntry(
+        pid=pid,
+        timestamp=timestamp,
+        level=SyslogLogLevel(level),
+        image_name=image_name,
+        filename=filename,
+        message=message,
+        label=label,
+    )
 
 
 class OsTraceService(LockdownService):
@@ -185,16 +233,4 @@ class OsTraceService(LockdownService):
             assert self.service.recvall(1) == b"\x02"
             (length,) = struct.unpack("<I", self.service.recvall(4))
             line = self.service.recvall(length)
-            entry = syslog_t.parse(line)
-            label = None
-            if entry.label is not None:
-                label = SyslogLabel(subsystem=entry.label.subsystem, category=entry.label.category)
-            yield SyslogEntry(
-                pid=entry.pid,
-                timestamp=entry.timestamp,
-                level=SyslogLogLevel(int(entry.level)),
-                image_name=entry.image_name,
-                filename=entry.filename,
-                message=entry.message,
-                label=label,
-            )
+            yield parse_syslog_entry(line)
