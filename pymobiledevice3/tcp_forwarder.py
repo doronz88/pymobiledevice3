@@ -70,7 +70,7 @@ class TcpForwarderBase:
                             try:
                                 self._handle_data(current_sock, closed_sockets)
                             except ConnectionResetError:
-                                self.logger.exception("Error when handling data")
+                                self.logger.error("Error when handling data")
                                 self._handle_close_or_error(current_sock)
                         else:
                             self.logger.debug("Is closed")
@@ -105,7 +105,7 @@ class TcpForwarderBase:
             self.logger.warning(f"Non-blocking read failed on {from_sock}, retrying later.")
             return
         except OSError:
-            self.logger.exception(f"Error reading from socket {from_sock}")
+            self.logger.error(f"Error reading from socket {from_sock}")
             self._handle_close_or_error(from_sock)
             closed_sockets.add(from_sock)
             return
@@ -125,10 +125,10 @@ class TcpForwarderBase:
                     self.logger.warning(f"Socket buffer full for {other_sock}, retrying in 100ms.")
                     time.sleep(0.1)  # Introduce a small delay
                 except BrokenPipeError:
-                    self.logger.exception(f"Broken pipe error on {other_sock}.")
+                    self.logger.error(f"Broken pipe error on {other_sock}.")
                     raise
         except OSError:
-            self.logger.exception("Unhandled error while forwarding data")
+            self.logger.error("Unhandled error while forwarding data")
             self._handle_close_or_error(from_sock)
             closed_sockets.add(from_sock)
             closed_sockets.add(other_sock)
@@ -145,7 +145,7 @@ class TcpForwarderBase:
         try:
             remote_connection = self._establish_remote_connection()
         except ConnectionFailedError:
-            self.logger.exception(f"failed to connect to port: {self.dst_port}")
+            self.logger.error(f"failed to connect to port: {self.dst_port}")
             local_connection.close()
             return
 

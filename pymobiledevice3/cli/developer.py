@@ -1210,7 +1210,7 @@ def check_in(service_provider: LockdownClient, hostname, force):
             device_arbitration.check_in(hostname, force=force)
             OSUTILS.wait_return()
         except DeviceAlreadyInUseError as e:
-            logger.exception(e.message)
+            logger.error(e.message)
 
 
 @arbitration.command("check-out", cls=Command)

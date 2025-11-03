@@ -146,11 +146,11 @@ def catch_errors(func):
         try:
             return func(*args, **kwargs)
         except LaunchingApplicationError:
-            logger.exception("Unable to launch application (try to unlock device)")
+            logger.error("Unable to launch application (try to unlock device)")
         except WebInspectorNotEnabledError:
-            logger.exception("Web inspector is not enable")
+            logger.error("Web inspector is not enable")
         except RemoteAutomationNotEnabledError:
-            logger.exception("Remote automation is not enable")
+            logger.error("Remote automation is not enable")
 
     return update_wrapper(catch_function, func)
 
@@ -414,7 +414,7 @@ class JsShell(ABC):
             try:
                 await self.js_iter()
             except (WirError, InspectorEvaluateError):
-                logger.exception("Failed in js_iter")
+                logger.error("Failed in js_iter")
             except KeyboardInterrupt:  # KeyboardInterrupt Control-C
                 pass
             except EOFError:  # Control-D

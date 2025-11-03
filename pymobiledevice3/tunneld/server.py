@@ -182,9 +182,7 @@ class TunneldCore:
                     # Raise and cancel gracefully
                     raise
                 except Exception:
-                    logger.exception(
-                        f"Got exception from {asyncio.current_task().get_name()}: {traceback.format_exc()}"
-                    )
+                    logger.exception(f"Got exception from {asyncio.current_task().get_name()}")
                     continue
                 await asyncio.sleep(REMOTEPAIRING_INTERVAL)
         except asyncio.CancelledError:
@@ -314,18 +312,18 @@ class TunneldCore:
             InvalidServiceError,
         ) as e:
             if tun is None:
-                logger.debug(f"got {e.__class__.__name__} from {asyncio.current_task().get_name()}")
+                logger.debug(f"Got {e.__class__.__name__} from {asyncio.current_task().get_name()}")
             else:
-                logger.debug(f"got {e.__class__.__name__} from tunnel --rsd {tun.address} {tun.port}")
+                logger.debug(f"Got {e.__class__.__name__} from tunnel --rsd {tun.address} {tun.port}")
         except Exception:
-            logger.exception(f"got exception from {asyncio.current_task().get_name()}: {traceback.format_exc()}")
+            logger.exception(f"Got exception from {asyncio.current_task().get_name()}")
         finally:
             if queue is not None:
                 # notify something went wrong
                 queue.put_nowait(None)
 
             if tun is not None and not bailed_out:
-                logger.info(f"disconnected from tunnel --rsd {tun.address} {tun.port}")
+                logger.info(f"Disconnected from tunnel --rsd {tun.address} {tun.port}")
                 await tun.client.stop_tunnel()
 
             if protocol_handler is not None:
