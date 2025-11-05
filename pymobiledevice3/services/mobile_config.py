@@ -279,7 +279,7 @@ class MobileConfigService(LockdownService):
                 "OSShowcase",
                 "SafetyAndHandling",
                 "Tips",
-                "AgeBasedSafetySettings"
+                "AgeBasedSafetySettings",
             ],
             "SupervisorHostCertificates": [public_key],
         })
