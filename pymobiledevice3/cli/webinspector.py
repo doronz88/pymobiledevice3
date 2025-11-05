@@ -413,8 +413,8 @@ class JsShell(ABC):
         while True:
             try:
                 await self.js_iter()
-            except (WirError, InspectorEvaluateError):
-                logger.error("Failed in js_iter")
+            except (WirError, InspectorEvaluateError) as e:
+                logger.error(e)
             except KeyboardInterrupt:  # KeyboardInterrupt Control-C
                 pass
             except EOFError:  # Control-D
