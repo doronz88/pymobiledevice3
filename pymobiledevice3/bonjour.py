@@ -50,7 +50,7 @@ def dataclass_compat(*d_args, **d_kwargs):
 @dataclass_compat(slots=True)
 class Address:
     ip: str
-    iface: Optional[str]  # local interface name (e.g., "en0"), or None if unknown
+    iface: str  # local interface name (e.g., "en0"), or None if unknown
 
     @property
     def full_ip(self) -> str:
@@ -312,6 +312,8 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
         if isinstance(pkt_addr, tuple) and len(pkt_addr) == 4:  # IPv6 remote tuple
             scopeid = pkt_addr[3]
         iface = adapters.pick_iface_for_ip(ip_str, family, scopeid)
+        if iface is None:
+            return
         # avoid duplicates for the same host/ip
         existing = host_addrs[rr_name]
         if not any(a.ip == ip_str for a in existing):
