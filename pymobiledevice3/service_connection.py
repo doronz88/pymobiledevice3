@@ -357,7 +357,10 @@ class ServiceConnection:
         :param certfile: The path to the certificate file.
         :param keyfile: The path to the key file (optional).
         """
-        self.socket = self.create_ssl_context(certfile, keyfile=keyfile).wrap_socket(self.socket)
+        try:
+            self.socket = self.create_ssl_context(certfile, keyfile=keyfile).wrap_socket(self.socket)
+        except OSError as e:
+            raise ConnectionAbortedError() from e
 
     async def aio_ssl_start(self, certfile: str, keyfile: Optional[str] = None) -> None:
         """
