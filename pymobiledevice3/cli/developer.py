@@ -19,6 +19,7 @@ from typing import IO, Optional
 
 import click
 from click.exceptions import MissingParameter, UsageError
+from ipsw_parser.dsc import create_device_support_layout, get_device_support_path
 from packaging.version import Version
 from plumbum import local
 from pykdebugparser.pykdebugparser import PyKdebugParser
@@ -788,7 +789,16 @@ def fetch_symbols_list(service_provider: LockdownServiceProvider) -> None:
     asyncio.run(fetch_symbols_list_task(service_provider), debug=True)
 
 
-async def fetch_symbols_download_task(service_provider: LockdownServiceProvider, out: str) -> None:
+async def fetch_symbols_download_task(service_provider: LockdownServiceProvider, out: Optional[str]) -> None:
+    should_create_device_support_layout = False
+    if out is None:
+        out = get_device_support_path(
+            service_provider.product_type, service_provider.product_version, service_provider.product_build_version
+        )
+        should_create_device_support_layout = True
+
+    logger.info(f"Downloading DSC into: {out}")
+
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -820,11 +830,22 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
         async with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
             await fetch_symbols.download(out)
 
+    if should_create_device_support_layout:
+        create_device_support_layout(
+            service_provider.product_type, service_provider.product_version, service_provider.product_build_version, out
+        )
+
 
 @fetch_symbols.command("download", cls=Command)
-@click.argument("out", type=click.Path(dir_okay=True, file_okay=False))
-def fetch_symbols_download(service_provider: LockdownServiceProvider, out: str) -> None:
-    """download the linker and dyld cache to a specified directory"""
+@click.argument("out", type=click.Path(dir_okay=True, file_okay=False), required=False)
+def fetch_symbols_download(service_provider: LockdownServiceProvider, out: Optional[str]) -> None:
+    """
+    Fetches symbols from the given device and saves them into Xcode DeviceSupport directory.
+
+    This command downloads symbol data. Optionally, the user can specify an output directory where the data will
+    be stored. If no output directory is provided, the symbols will be downloaded into the Xcode directory directly
+    (DeviceSupport).
+    """
     asyncio.run(fetch_symbols_download_task(service_provider, out), debug=True)
 
 

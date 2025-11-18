@@ -38,11 +38,16 @@ class RemoteFetchSymbolsService(RemoteService):
 
     async def download(self, out: Path) -> None:
         files = await self.get_dsc_file_list()
-        for i, file in enumerate(files):
-            self.logger.info(f"Downloading {file}")
-            out_file = out / file.file_path[1:]  # trim the "/" prefix
-            out_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(out_file, "wb") as f, tqdm(total=files[i].file_size, dynamic_ncols=True) as pb:
-                async for chunk in self.service.iter_file_chunks(files[i].file_size, file_idx=i):
-                    f.write(chunk)
-                    pb.update(len(chunk))
+        with tqdm(total=len(files), dynamic_ncols=True, desc="Downloading DSC") as total_pb:
+            for i, file in enumerate(files):
+                total_pb.set_description("Downloading DSC")
+                out_file = out / file.file_path[1:]  # trim the "/" prefix
+                out_file.parent.mkdir(parents=True, exist_ok=True)
+                with (
+                    open(out_file, "wb") as f,
+                    tqdm(total=files[i].file_size, dynamic_ncols=True, desc=file.file_path.rsplit("/", 1)[-1]) as pb,
+                ):
+                    async for chunk in self.service.iter_file_chunks(files[i].file_size, file_idx=i):
+                        f.write(chunk)
+                        pb.update(len(chunk))
+                total_pb.update(1)

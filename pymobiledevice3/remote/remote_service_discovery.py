@@ -45,6 +45,10 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         return self.peer_info["Properties"]["OSVersion"]
 
     @property
+    def product_build_version(self) -> str:
+        return self.peer_info["Properties"]["BuildVersion"]
+
+    @property
     def ecid(self) -> int:
         return self.peer_info["Properties"]["UniqueChipID"]
 
