@@ -19,6 +19,11 @@ class LockdownServiceProvider:
 
     @property
     @abstractmethod
+    def product_build_version(self) -> str:
+        pass
+
+    @property
+    @abstractmethod
     def ecid(self) -> int:
         pass
 
