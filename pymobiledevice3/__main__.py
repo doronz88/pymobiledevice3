@@ -109,6 +109,7 @@ CLI_GROUPS = {
     "syslog": "syslog",
     "usbmux": "usbmux",
     "webinspector": "webinspector",
+    "idam": "idam",
     "version": "version",
     "install-completions": "completions",
 }
