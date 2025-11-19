@@ -37,6 +37,7 @@ class SessionProtocol:
             return response["result"]
         elif "error" in response:
             raise WirError(response["error"]["message"])
+        raise WirError(f"Unknown response: {response}")
 
     async def send_receive(self, method, wait_for_response=True, **kwargs):
         wir_id = await self.send_command(method, **kwargs)
@@ -50,8 +51,8 @@ class SessionProtocol:
             await asyncio.sleep(0)
         return self.inspector.wir_message_results.pop(id_)
 
-    def sync_send_receive(self, method, wait_for_response=True, **kwargs):
-        return self.inspector.await_(self.send_receive(method, wait_for_response, **kwargs))
+    async def sync_send_receive(self, method, wait_for_response=True, **kwargs):
+        return await self.send_receive(method, wait_for_response, **kwargs)
 
     def __getattr__(self, item):
         return partial(self.sync_send_receive, method=item)
