@@ -11,6 +11,7 @@ from typing import Union
 
 import click
 import coloredlogs
+from packaging.version import Version
 
 from pymobiledevice3.cli.cli_common import TUNNEL_ENV_VAR, isatty
 from pymobiledevice3.exceptions import (
@@ -40,7 +41,7 @@ from pymobiledevice3.exceptions import (
     TunneldConnectionError,
     UserDeniedPairingError,
 )
-from pymobiledevice3.lockdown import retry_create_using_usbmux
+from pymobiledevice3.lockdown import create_using_usbmux, retry_create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 
 coloredlogs.install(level=logging.INFO)
@@ -203,6 +204,23 @@ def cli(reconnect: bool) -> None:
     RECONNECT = reconnect
 
 
+def device_might_need_tunneld(identifier: str) -> bool:
+    """
+    Determines if the device might require tunneling based on its product version.
+
+    This function uses the `create_using_usbmux` context manager to establish a lockdown
+    session with the specified identifier. It retrieves the device's product version,
+    and checks if it is greater than or equal to version "17.0". If so, the function
+    returns True, indicating that the device might require tunneling. Otherwise, it
+    returns False.
+
+    :param identifier: A string representing the device identifier.
+    :return: A boolean indicating whether the device might require tunneling.
+    """
+    with create_using_usbmux(identifier) as lockdown:
+        return Version(lockdown.product_version) >= Version("17.0")
+
+
 def invoke_cli_with_error_handling() -> bool:
     """
     Invoke the command line interface and return `True` if the failure reason of the command was that the device was
@@ -250,7 +268,12 @@ def invoke_cli_with_error_handling() -> bool:
         if isinstance(e, RSDRequiredError):
             logger.warning("Trying again over tunneld since RSD is required for this command")
             should_retry_over_tunneld = True
-        elif (e.identifier is not None) and ("developer" in sys.argv) and ("--tunnel" not in sys.argv):
+        elif (
+            (e.identifier is not None)
+            and ("developer" in sys.argv)
+            and ("--tunnel" not in sys.argv)
+            and device_might_need_tunneld(e.identifier)
+        ):
             logger.warning("Got an InvalidServiceError. Trying again over tunneld since it is a developer command")
             should_retry_over_tunneld = True
         if should_retry_over_tunneld:
