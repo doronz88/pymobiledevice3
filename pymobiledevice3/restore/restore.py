@@ -182,7 +182,7 @@ class Restore(BaseRestore):
         self.logger.info("Sending BuildIdentityDict now...")
         await service.aio_send_plist(req)
 
-    async def extract_global_manifest(self) -> dict:
+    def extract_global_manifest(self) -> dict:
         build_info = self.build_identity.get("Info")
         if build_info is None:
             raise PyMobileDevice3Exception('build identity does not contain an "Info" element')
@@ -881,7 +881,7 @@ class Restore(BaseRestore):
         comp_name = "BMU,FirmwareMap"
 
         if "DeviceGeneratedTags" in arguments:
-            response = self.get_device_generated_firmware_data(updater_name, info, arguments)
+            response = await self.get_device_generated_firmware_data(updater_name, info, arguments)
         else:
             # create Veridian request
             request = TSSRequest()
