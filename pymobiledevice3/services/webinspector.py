@@ -3,12 +3,9 @@ import contextlib
 import json
 import logging
 import uuid
-from collections.abc import Coroutine
 from dataclasses import dataclass, fields
 from enum import Enum
-from typing import Any, Optional, Union
-
-import nest_asyncio
+from typing import Optional, Union
 
 from pymobiledevice3.exceptions import (
     LaunchingApplicationError,
@@ -122,21 +119,12 @@ class WebinspectorService:
     SERVICE_NAME = "com.apple.webinspector"
     RSD_SERVICE_NAME = "com.apple.webinspector.shim.remote"
 
-    def __init__(self, lockdown: LockdownServiceProvider, loop=None):
-        if loop is None:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-        nest_asyncio.apply(loop)
-
+    def __init__(self, lockdown: LockdownServiceProvider):
         if isinstance(lockdown, LockdownClient):
             self.service_name = self.SERVICE_NAME
         else:
             self.service_name = self.RSD_SERVICE_NAME
 
-        self.loop = loop
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
         self.service: Optional[ServiceConnection] = None
@@ -158,20 +146,20 @@ class WebinspectorService:
         }
         self._recv_task: Optional[asyncio.Task] = None
 
-    def connect(self, timeout: Optional[Union[float, int]] = None):
-        self.service = self.await_(self.lockdown.aio_start_lockdown_service(self.service_name))
-        self.await_(self._report_identifier())
+    async def connect(self, timeout: Optional[Union[float, int]] = None):
+        self.service = await self.lockdown.aio_start_lockdown_service(self.service_name)
+        await self._report_identifier()
         try:
-            self._handle_recv(self._await_with_timeout(self._recv_message(), timeout))
+            await self._handle_recv(await asyncio.wait_for(self._recv_message(), timeout))
         except asyncio.TimeoutError as e:
             raise WebInspectorNotEnabledError from e
-        self._recv_task = self.loop.create_task(self._receiving_task())
+        self._recv_task = asyncio.create_task(self._receiving_task())
 
-    def close(self):
+    async def close(self):
         self._recv_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            self.await_(self._recv_task)
-        self.await_(self.service.aio_close())
+            await self._recv_task
+        await self.service.aio_close()
 
     async def _recv_message(self):
         while True:
@@ -182,19 +170,19 @@ class WebinspectorService:
 
     async def _receiving_task(self):
         while True:
-            self._handle_recv(await self._recv_message())
+            await self._handle_recv(await self._recv_message())
 
-    def automation_session(self, app: Application) -> AutomationSession:
+    async def automation_session(self, app: Application) -> AutomationSession:
         if self.state == "WIRAutomationAvailabilityNotAvailable":
             raise RemoteAutomationNotEnabledError()
         session_id = str(uuid.uuid4()).upper()
-        self.await_(self._forward_automation_session_request(session_id, app.id_))
-        self.await_(self._forward_get_listing(app.id_))
-        page = self.await_(self._wait_for_page(session_id))
-        self.await_(self._forward_socket_setup(session_id, app.id_, page.id_))
-        self.await_(self._forward_get_listing(app.id_))
+        await self._forward_automation_session_request(session_id, app.id_)
+        await self._forward_get_listing(app.id_)
+        page = await self._wait_for_page(session_id)
+        await self._forward_socket_setup(session_id, app.id_, page.id_)
+        await self._forward_get_listing(app.id_)
         while not page.automation_connection_id:
-            self.await_(asyncio.sleep(0))
+            await asyncio.sleep(0)
         return AutomationSession(SessionProtocol(self, session_id, app, page))
 
     async def inspector_session(self, app: Application, page: Page) -> InspectorSession:
@@ -204,20 +192,20 @@ class WebinspectorService:
             wait_target=page.type_ != WirTypes.JAVASCRIPT,
         )
 
-    def get_open_pages(self) -> dict:
+    async def get_open_pages(self) -> dict:
         apps = {}
-        self.await_(asyncio.gather(*[self._forward_get_listing(app) for app in self.connected_application]))
+        await asyncio.gather(*[self._forward_get_listing(app) for app in self.connected_application])
         for app in self.connected_application:
             if self.application_pages.get(app, False):
                 apps[self.connected_application[app].name] = self.application_pages[app].values()
         return apps
 
-    def get_open_application_pages(self, timeout: float) -> list[ApplicationPage]:
+    async def get_open_application_pages(self, timeout: float) -> list[ApplicationPage]:
         # Query all connected applications
-        self.await_(self._get_connected_applications())
+        await self._get_connected_applications()
 
         # Give some time for `webinspectord` to reply with all inspectable applications
-        self.await_(asyncio.sleep(timeout))
+        await asyncio.sleep(timeout)
 
         result = []
         for app in self.connected_application:
@@ -226,11 +214,11 @@ class WebinspectorService:
                     result.append(ApplicationPage(self.connected_application[app], page))
         return result
 
-    def open_app(self, bundle: str, timeout: Union[float, int] = 3) -> Application:
-        self.await_(self._request_application_launch(bundle))
-        self.get_open_pages()
+    async def open_app(self, bundle: str, timeout: Union[float, int] = 3) -> Application:
+        await self._request_application_launch(bundle)
+        await self.get_open_pages()
         try:
-            return self._await_with_timeout(self._wait_for_application(bundle), timeout)
+            return await asyncio.wait_for(self._wait_for_application(bundle), timeout)
         except TimeoutError as e:
             raise LaunchingApplicationError() from e
 
@@ -245,43 +233,29 @@ class WebinspectorService:
             for page in self.application_pages[app_id]:
                 if page == page_id:
                     return self.connected_application[app_id], self.application_pages[app_id][page_id]
+        raise KeyError(f"Page with id {page_id} not found")
 
-    def flush_input(self, duration: Union[float, int] = 0):
-        return self.await_(asyncio.sleep(duration))
+    async def flush_input(self, duration: Union[float, int] = 0):
+        return await asyncio.sleep(duration)
 
-    def await_(self, awaitable: Coroutine) -> Any:
-        return self.loop.run_until_complete(awaitable)
+    async def _handle_recv(self, plist):
+        await self.receive_handlers[plist["__selector"]](plist["__argument"])
 
-    def _await_with_timeout(self, coro: Coroutine, timeout: Optional[float] = None) -> Any:
-        # Create a task explicitly so we're definitely inside a Task
-        task = self.loop.create_task(coro)
-        done, _pending = self.loop.run_until_complete(asyncio.wait({task}, timeout=timeout))
-        if not done:
-            task.cancel()
-            # Give the task a chance to cancel cleanly
-            with contextlib.suppress(asyncio.CancelledError):
-                self.loop.run_until_complete(task)
-            raise WebInspectorNotEnabledError()
-        return task.result()
-
-    def _handle_recv(self, plist):
-        self.receive_handlers[plist["__selector"]](plist["__argument"])
-
-    def _handle_report_current_state(self, arg):
+    async def _handle_report_current_state(self, arg):
         self.state = arg["WIRAutomationAvailabilityKey"]
 
-    def _handle_report_connected_application_list(self, arg):
+    async def _handle_report_connected_application_list(self, arg):
         self.connected_application = {}
         for key, application in arg["WIRApplicationDictionaryKey"].items():
             self.connected_application[key] = Application.from_application_dictionary(application)
 
             # Immediately also query the application pages
-            self.await_(self._forward_get_listing(self.connected_application[key].id_))
+            await self._forward_get_listing(self.connected_application[key].id_)
 
-    def _handle_report_connected_driver_list(self, arg):
+    async def _handle_report_connected_driver_list(self, arg):
         pass
 
-    def _handle_application_sent_listing(self, arg):
+    async def _handle_application_sent_listing(self, arg):
         if arg["WIRApplicationIdentifierKey"] in self.application_pages:
             # Update existing application pages
             for id_, page in arg["WIRListingKey"].items():
@@ -296,15 +270,15 @@ class WebinspectorService:
                 pages[id_] = Page.from_page_dictionary(page)
             self.application_pages[arg["WIRApplicationIdentifierKey"]] = pages
 
-    def _handle_application_updated(self, arg):
+    async def _handle_application_updated(self, arg):
         app = Application.from_application_dictionary(arg)
         self.connected_application[app.id_] = app
 
-    def _handle_application_connected(self, arg):
+    async def _handle_application_connected(self, arg):
         app = Application.from_application_dictionary(arg)
         self.connected_application[app.id_] = app
 
-    def _handle_application_sent_data(self, arg):
+    async def _handle_application_sent_data(self, arg):
         response = json.loads(arg["WIRMessageDataKey"])
 
         if "id" in response:
@@ -312,7 +286,7 @@ class WebinspectorService:
         else:
             self.wir_events.append(response)
 
-    def _handle_application_disconnected(self, arg):
+    async def _handle_application_disconnected(self, arg):
         self.connected_application.pop(arg["WIRApplicationIdentifierKey"], None)
         self.application_pages.pop(arg["WIRApplicationIdentifierKey"], None)
 
@@ -386,6 +360,7 @@ class WebinspectorService:
             for page in self.application_pages[app_id]:
                 if page.type_ == WirTypes.AUTOMATION and page.automation_session_id == session_id:
                     return page
+        raise KeyError(f"Automation session with id {session_id} not found")
 
     async def _wait_for_page(self, session_id: str):
         while True:
