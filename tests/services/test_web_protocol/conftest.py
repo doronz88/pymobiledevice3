@@ -6,16 +6,15 @@ from pymobiledevice3.services.webinspector import SAFARI, WebinspectorService
 
 
 @pytest.fixture
-def webdriver(lockdown: LockdownClient):
+async def webdriver(lockdown: LockdownClient):
     inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect()
-    safari = inspector.open_app(SAFARI)
-    inspector.flush_input(1)
-    session = inspector.automation_session(safari)
+    await inspector.connect()
+    safari = await inspector.open_app(SAFARI)
+    await inspector.flush_input(1)
+    session = await inspector.automation_session(safari)
     driver = WebDriver(session)
-    driver.start_session()
+    await driver.start_session()
     try:
         yield driver
     finally:
-        inspector.close()
-        inspector.loop.close()
+        await inspector.close()

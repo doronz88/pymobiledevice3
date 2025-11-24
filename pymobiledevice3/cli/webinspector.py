@@ -2,14 +2,16 @@ import asyncio
 import logging
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
+from asyncio import CancelledError
+from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from functools import update_wrapper
-from typing import Optional
+from typing import Optional, Union
 
 import click
 import inquirer3
 import IPython
+import nest_asyncio
 import uvicorn
 from inquirer3.themes import GreenPassion
 from prompt_toolkit import HTML, PromptSession
@@ -161,11 +163,20 @@ def reload_pages(inspector: WebinspectorService):
     inspector.flush_input(2)
 
 
-def create_webinspector_and_launch_app(lockdown: LockdownClient, timeout: float, app: str):
+async def create_webinspector_and_launch_app(lockdown: LockdownClient, timeout: float, app: str):
     inspector = WebinspectorService(lockdown=lockdown)
-    inspector.connect(timeout)
-    application = inspector.open_app(app)
+    await inspector.connect(timeout)
+    application = await inspector.open_app(app)
     return inspector, application
+
+
+async def opened_tabs_task(service_provider: LockdownClient, timeout):
+    inspector = WebinspectorService(lockdown=service_provider)
+    await inspector.connect(timeout)
+    application_pages = await inspector.get_open_application_pages(timeout=timeout)
+    for application_page in application_pages:
+        print(application_page)
+    await inspector.close()
 
 
 @webinspector.command(cls=Command)
@@ -181,12 +192,21 @@ def opened_tabs(service_provider: LockdownClient, timeout):
 
        iOS < 18: Settings -> Safari -> Advanced -> Web Inspector
     """
-    inspector = WebinspectorService(lockdown=service_provider)
-    inspector.connect(timeout)
-    application_pages = inspector.get_open_application_pages(timeout=timeout)
-    for application_page in application_pages:
-        print(application_page)
-    inspector.close()
+    asyncio.run(opened_tabs_task(service_provider, timeout), debug=True)
+
+
+@catch_errors
+async def launch_task(service_provider: LockdownClient, url, timeout):
+    inspector, safari = await create_webinspector_and_launch_app(service_provider, timeout, SAFARI)
+    session = await inspector.automation_session(safari)
+    driver = WebDriver(session)
+    print("Starting session")
+    await driver.start_session()
+    print("Getting URL")
+    await driver.get(url)
+    OSUTILS.wait_return()
+    await session.stop_session()
+    await inspector.close()
 
 
 @webinspector.command(cls=Command)
@@ -207,16 +227,7 @@ def launch(service_provider: LockdownClient, url, timeout):
         Settings -> Safari -> Advanced -> Remote Automation
 
     """
-    inspector, safari = create_webinspector_and_launch_app(service_provider, timeout, SAFARI)
-    session = inspector.automation_session(safari)
-    driver = WebDriver(session)
-    print("Starting session")
-    driver.start_session()
-    print("Getting URL")
-    driver.get(url)
-    OSUTILS.wait_return()
-    session.stop_session()
-    inspector.close()
+    asyncio.run(launch_task(service_provider, url, timeout), debug=True)
 
 
 SHELL_USAGE = """
@@ -240,9 +251,28 @@ driver.add_cookie(
 """
 
 
+@catch_errors
+async def shell_task(service_provider: LockdownClient, timeout):
+    inspector, safari = await create_webinspector_and_launch_app(service_provider, timeout, SAFARI)
+    session = await inspector.automation_session(safari)
+    driver = WebDriver(session)
+    try:
+        nest_asyncio.apply()
+        IPython.embed(
+            header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")),
+            user_ns={
+                "driver": driver,
+                "Cookie": Cookie,
+                "By": By,
+            },
+        )
+    finally:
+        await session.stop_session()
+        await inspector.close()
+
+
 @webinspector.command(cls=Command)
 @click.option("-t", "--timeout", default=3, show_default=True, type=float)
-@catch_errors
 def shell(service_provider: LockdownClient, timeout):
     """
     Create an IPython shell for interacting with a WebView.
@@ -256,21 +286,7 @@ def shell(service_provider: LockdownClient, timeout):
         Settings -> Safari -> Advanced -> Web Inspector
         Settings -> Safari -> Advanced -> Remote Automation
     """
-    inspector, safari = create_webinspector_and_launch_app(service_provider, timeout, SAFARI)
-    session = inspector.automation_session(safari)
-    driver = WebDriver(session)
-    try:
-        IPython.embed(
-            header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")),
-            user_ns={
-                "driver": driver,
-                "Cookie": Cookie,
-                "By": By,
-            },
-        )
-    finally:
-        session.stop_session()
-        inspector.close()
+    asyncio.run(shell_task(service_provider, timeout), debug=True)
 
 
 @webinspector.command(cls=Command)
@@ -333,41 +349,55 @@ def cdp(service_provider: LockdownClient, host, port):
     )
 
 
-def get_js_completions(jsshell: "JsShell", obj: str, prefix: str) -> list[Completion]:
+async def get_js_completions(jsshell: "JsShell", obj: str, prefix: str) -> AsyncIterator[Completion]:
     if obj in JS_RESERVED_WORDS:
-        return []
+        return
 
-    completions = []
     try:
-        for key in asyncio.get_running_loop().run_until_complete(
-            jsshell.evaluate_expression(SCRIPT.format(object=obj), return_by_value=True)
-        ):
+        for key in await jsshell.evaluate_expression(SCRIPT.format(object=obj), return_by_value=True):
             if not key.startswith(prefix):
                 continue
-            completions.append(Completion(key.removeprefix(prefix), display=key))
-    except Exception:
+            yield Completion(key.removeprefix(prefix), display=key)
+    except (Exception, CancelledError):
         # ignore every possible exception
         pass
-    return completions
 
 
 class JsShellCompleter(Completer):
     def __init__(self, jsshell: "JsShell"):
         self.jsshell = jsshell
 
-    def get_completions(self, document: Document, complete_event: CompleteEvent) -> Iterable[Completion]:
+    def get_completions_async(
+        self,
+        document: Document,
+        complete_event: CompleteEvent,
+    ) -> Union[AsyncIterator[Completion], Iterable[Completion]]:
+        # Build the JS expression we want to inspect
         text = f"globalThis.{document.text_before_cursor}"
-        text = re.findall("[a-zA-Z_][a-zA-Z_0-9.]+", text)
-        if len(text) == 0:
-            return []
-        text = text[-1]
+
+        # Extract identifiers / dotted paths
+        matches = re.findall(r"[a-zA-Z_][a-zA-Z_0-9.]+", text)
+        if not matches:
+            # async *generator*: just end, don't return a list
+            return iter(())
+
+        text = matches[-1]
         if "." in text:
             js_obj, prefix = text.rsplit(".", 1)
         else:
             js_obj = text
             prefix = ""
 
+        # This should return an iterable of Completion (or something we can wrap)
         return get_js_completions(self.jsshell, js_obj, prefix)
+
+    # Optional: keep sync completions empty so PTK knows we prefer async
+    def get_completions(
+        self,
+        document: Document,
+        complete_event: CompleteEvent,
+    ) -> Iterable[Completion]:
+        return []
 
 
 class JsShell(ABC):
@@ -436,7 +466,7 @@ class AutomationJsShell(JsShell):
         inspector, application = create_webinspector_and_launch_app(lockdown, timeout, SAFARI)
         automation_session = inspector.automation_session(application)
         driver = WebDriver(automation_session)
-        driver.start_session()
+        await driver.start_session()
         try:
             yield cls(driver)
         finally:
@@ -444,10 +474,10 @@ class AutomationJsShell(JsShell):
             inspector.close()
 
     async def evaluate_expression(self, exp: str, return_by_value: bool = False):
-        return self.driver.execute_script(f"return {exp}")
+        return await self.driver.execute_script(f"return {exp}")
 
     async def navigate(self, url: str):
-        self.driver.get(url)
+        await self.driver.get(url)
 
 
 class InspectorJsShell(JsShell):
@@ -459,10 +489,10 @@ class InspectorJsShell(JsShell):
     @asynccontextmanager
     async def create(cls, lockdown: LockdownClient, timeout: float, open_safari: bool) -> "InspectorJsShell":
         inspector = WebinspectorService(lockdown=lockdown)
-        inspector.connect(timeout)
+        await inspector.connect(timeout)
         if open_safari:
-            _ = inspector.open_app(SAFARI)
-        application_page = cls.query_page(inspector, bundle_identifier=SAFARI if open_safari else None)
+            _ = await inspector.open_app(SAFARI)
+        application_page = await cls.query_page(inspector, bundle_identifier=SAFARI if open_safari else None)
         if application_page is None:
             raise click.exceptions.Exit()
 
@@ -473,7 +503,7 @@ class InspectorJsShell(JsShell):
         try:
             yield cls(inspector_session)
         finally:
-            inspector.close()
+            await inspector.close()
 
     async def evaluate_expression(self, exp: str, return_by_value: bool = False):
         return await self.inspector_session.runtime_evaluate(exp, return_by_value=return_by_value)
@@ -482,10 +512,10 @@ class InspectorJsShell(JsShell):
         await self.inspector_session.navigate_to_url(url)
 
     @staticmethod
-    def query_page(
+    async def query_page(
         inspector: WebinspectorService, bundle_identifier: Optional[str] = None
     ) -> Optional[ApplicationPage]:
-        available_pages = inspector.get_open_application_pages(timeout=1)
+        available_pages = await inspector.get_open_application_pages(timeout=1)
         if bundle_identifier is not None:
             available_pages = [
                 application_page
