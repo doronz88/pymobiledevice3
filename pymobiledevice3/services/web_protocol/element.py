@@ -54,7 +54,7 @@ class WebElement(SeleniumApi):
 
     async def find_element(self, by=By.ID, value=None):
         """Find an element given a By strategy and locator."""
-        elem = self.session.find_elements(by, value, root=self.id_)
+        elem = await self.session.find_elements(by, value, root=self.id_)
         return None if elem is None else WebElement(self.session, elem)
 
     async def find_elements(self, by=By.ID, value=None):
@@ -180,9 +180,9 @@ class WebElement(SeleniumApi):
             "}"
         )
 
-    def is_editable(self) -> bool:
+    async def is_editable(self) -> bool:
         """Returns whether the element is editable."""
-        return self._evaluate_js_function(IS_EDITABLE)
+        return await self._evaluate_js_function(IS_EDITABLE)
 
     async def _compute_layout(self, scroll_if_needed=True, use_viewport=False):
         try:
