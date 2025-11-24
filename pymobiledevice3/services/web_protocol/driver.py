@@ -127,9 +127,9 @@ class WebDriver(SeleniumApi):
         """Gets the screenshot of the current window as a base64 encoded string."""
         return await self.session.screenshot_as_base64()
 
-    def get_window_position(self) -> Point:
+    async def get_window_position(self) -> Point:
         """Gets the x,y position of the current window."""
-        rect = self.get_window_rect()
+        rect = await self.get_window_rect()
         return Point(x=rect.x, y=rect.y)
 
     async def get_window_rect(self) -> Rect:

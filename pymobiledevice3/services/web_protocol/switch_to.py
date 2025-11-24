@@ -11,10 +11,12 @@ class SwitchTo:
         self.session = session
 
     @property
-    def active_element(self) -> WebElement:
+    async def active_element(self) -> WebElement:
         """Returns the element with focus, or BODY if nothing has focus."""
-        self.session.wait_for_navigation_to_complete()
-        elem = self.session.evaluate_js_function("function() { return document.activeElement; }", include_frame=False)
+        await self.session.wait_for_navigation_to_complete()
+        elem = await self.session.evaluate_js_function(
+            "function() { return document.activeElement; }", include_frame=False
+        )
         return WebElement(self.session, elem)
 
     @property
@@ -22,11 +24,11 @@ class SwitchTo:
         """Switches focus to an alert on the page."""
         return Alert(self.session)
 
-    def default_content(self):
+    async def default_content(self):
         """Switch focus to the default frame."""
-        self.session.switch_to_browsing_context("")
+        await self.session.switch_to_browsing_context("")
 
-    def frame(self, frame_reference):
+    async def frame(self, frame_reference):
         """
         Switches focus to the specified frame, by index, name, or web element.
         :param frame_reference: The name of the window to switch to, an integer representing the index,
@@ -35,32 +37,34 @@ class SwitchTo:
         if isinstance(frame_reference, (int, WebElement)):
             frame = frame_reference
         elif isinstance(frame_reference, str):
-            elem = self.session.find_elements(By.ID, frame_reference)
+            elem = await self.session.find_elements(By.ID, frame_reference)
             if elem is None:
-                elem = self.session.find_elements(By.NAME, frame_reference)
+                elem = await self.session.find_elements(By.NAME, frame_reference)
             frame = WebElement(self.session, elem)
         else:
             raise TypeError()
 
-        self.session.wait_for_navigation_to_complete()
+        await self.session.wait_for_navigation_to_complete()
         if isinstance(frame, int):
-            self.session.switch_to_frame(frame_ordinal=frame)
+            await self.session.switch_to_frame(frame_ordinal=frame)
         else:
-            self.session.switch_to_frame(frame_handle=frame)
+            await self.session.switch_to_frame(frame_handle=frame)
 
-    def new_window(self, type_=""):
+    async def new_window(self, type_=""):
         """Switches to a new top-level browsing context."""
-        self.session.switch_to_window(self.session.create_window(type_))
+        await self.session.switch_to_window(self.session.create_window(type_))
 
-    def parent_frame(self):
+    async def parent_frame(self):
         """
         Switches focus to the parent context. If the current context is the top
         level browsing context, the context remains unchanged.
         """
-        self.session.wait_for_navigation_to_complete()
-        self.session.switch_to_browsing_context_frame(self.session.top_level_handle, self.session.current_parent_handle)
-        self.session.switch_to_browsing_context(self.session.current_parent_handle)
+        await self.session.wait_for_navigation_to_complete()
+        await self.session.switch_to_browsing_context_frame(
+            self.session.top_level_handle, self.session.current_parent_handle
+        )
+        await self.session.switch_to_browsing_context(self.session.current_parent_handle)
 
-    def window(self, window_name):
+    async def window(self, window_name):
         """Switches focus to the specified window."""
-        self.session.switch_to_window(window_name)
+        await self.session.switch_to_window(window_name)
