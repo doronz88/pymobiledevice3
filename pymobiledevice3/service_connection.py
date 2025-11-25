@@ -8,7 +8,7 @@ import struct
 import time
 import xml
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import IPython
 from pygments import formatters, highlight, lexers
@@ -282,29 +282,29 @@ class ServiceConnection:
         msg = b"".join([hdr, data])
         return self.sendall(msg)
 
-    def recv_plist(self, endianity: str = ">") -> dict:
+    def recv_plist(self, endianity: str = ">") -> Union[dict, list]:
         """
-        Receive a plist from the socket and parse it into a dictionary.
+        Receive a plist from the socket and parse it into a native type.
 
         :param endianity: The byte order ('>' for big-endian, '<' for little-endian).
-        :return: The received plist as a dictionary.
+        :return: The received plist as a native type.
         """
         return parse_plist(self.recv_prefixed(endianity=endianity))
 
     async def aio_recv_plist(self, endianity: str = ">") -> dict:
         """
-        Asynchronously receive a plist from the socket and parse it into a dictionary.
+        Asynchronously receive a plist from the socket and parse it into a native type.
 
         :param endianity: The byte order ('>' for big-endian, '<' for little-endian).
-        :return: The received plist as a dictionary.
+        :return: The received plist as a native type.
         """
         return parse_plist(await self.aio_recv_prefixed(endianity))
 
-    def send_plist(self, d: dict, endianity: str = ">", fmt: Enum = plistlib.FMT_XML) -> None:
+    def send_plist(self, d: Union[dict, list], endianity: str = ">", fmt: Enum = plistlib.FMT_XML) -> None:
         """
-        Send a dictionary as a plist to the socket.
+        Send a native type as a plist to the socket.
 
-        :param d: The dictionary to send.
+        :param d: The native type to send.
         :param endianity: The byte order ('>' for big-endian, '<' for little-endian).
         :param fmt: The plist format (e.g., plistlib.FMT_XML).
         """
@@ -319,7 +319,7 @@ class ServiceConnection:
         self.writer.write(payload)
         await self.writer.drain()
 
-    async def aio_send_plist(self, d: dict, endianity: str = ">", fmt: Enum = plistlib.FMT_XML) -> None:
+    async def aio_send_plist(self, d: Union[dict, list], endianity: str = ">", fmt: Enum = plistlib.FMT_XML) -> None:
         """
         Asynchronously send a dictionary as a plist to the socket.
 
