@@ -3,9 +3,12 @@ import datetime
 import shutil
 import struct
 import warnings
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
+from typing import Any, Callable, Optional, cast
 
 from pymobiledevice3.exceptions import NotEnoughDiskSpaceError, PyMobileDevice3Exception
+from pymobiledevice3.service_connection import ServiceConnection
 
 SIZE_FORMAT = ">I"
 CODE_FORMAT = ">B"
@@ -26,12 +29,16 @@ ERRNO_TO_DEVICE_ERROR = {
     28: -15,
 }
 
+DLMessage = Sequence[Any]
+ProgressCallback = Callable[[Any], None]
+DLHandler = Callable[[DLMessage], None]
+
 
 class DeviceLink:
-    def __init__(self, service, root_path: Path):
-        self.service = service
-        self.root_path = root_path
-        self._dl_handlers = {
+    def __init__(self, service: ServiceConnection, root_path: Path) -> None:
+        self.service: ServiceConnection = service
+        self.root_path: Path = root_path
+        self._dl_handlers: dict[str, DLHandler] = {
             "DLMessageCreateDirectory": self.create_directory,
             "DLMessageUploadFiles": self.upload_files,
             "DLMessageGetFreeDiskSpace": self.get_free_disk_space,
@@ -43,7 +50,12 @@ class DeviceLink:
             "DLMessagePurgeDiskSpace": self.purge_disk_space,
         }
 
-    def dl_loop(self, progress_callback=lambda x: None):
+    def dl_loop(self, progress_callback: Optional[ProgressCallback] = None) -> Any:
+        def _noop(_: Any) -> None:
+            return None
+
+        callback: ProgressCallback = progress_callback if progress_callback is not None else _noop
+
         while True:
             message = self.receive_message()
             command = message[0]
@@ -55,9 +67,9 @@ class DeviceLink:
                 "DLMessageRemoveFiles",
                 "DLMessageRemoveItems",
             ):
-                progress_callback(message[3])
+                callback(message[3])
             elif command == "DLMessageUploadFiles":
-                progress_callback(message[2])
+                callback(message[2])
 
             if command == "DLMessageProcessMessage":
                 if not message[1]["ErrorCode"]:
@@ -66,7 +78,7 @@ class DeviceLink:
                     raise PyMobileDevice3Exception(f"Device link error: {message[1]}")
             self._dl_handlers[command](message)
 
-    def version_exchange(self):
+    def version_exchange(self) -> None:
         dl_message_version_exchange = self.receive_message()
         version_major = dl_message_version_exchange[1]
         self.service.send_plist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
@@ -74,12 +86,13 @@ class DeviceLink:
         if dl_message_device_ready[0] != "DLMessageDeviceReady":
             raise PyMobileDevice3Exception("Device link didn't return ready state")
 
-    def send_process_message(self, message):
+    def send_process_message(self, message: Mapping[str, Any]) -> None:
         self.service.send_plist(["DLMessageProcessMessage", message])
 
-    def download_files(self, message):
-        status = {}
-        for file in message[1]:
+    def download_files(self, message: DLMessage) -> None:
+        status: dict[str, dict[str, Any]] = {}
+        files = cast(Iterable[str], message[1])
+        for file in files:
             self.service.sendall(struct.pack(SIZE_FORMAT, len(file)))
             self.service.sendall(file.encode())
 
@@ -114,9 +127,9 @@ class DeviceLink:
         else:
             self.status_response(0)
 
-    def contents_of_directory(self, message):
+    def contents_of_directory(self, message: DLMessage) -> None:
         data = {}
-        path = self.root_path / message[1]
+        path = self.root_path / cast(str, message[1])
         for file in path.iterdir():
             ftype = "DLFileTypeUnknown"
             if file.is_dir():
@@ -132,7 +145,7 @@ class DeviceLink:
             }
         self.status_response(0, status_dict=data)
 
-    def upload_files(self, message):
+    def upload_files(self, _message: DLMessage) -> None:
         while True:
             device_name = self._prefixed_recv()
             if not device_name:
@@ -158,20 +171,21 @@ class DeviceLink:
             assert code == CODE_SUCCESS
         self.status_response(0)
 
-    def get_free_disk_space(self, message):
+    def get_free_disk_space(self, _message: DLMessage) -> None:
         freespace = shutil.disk_usage(self.root_path).free
         self.status_response(0, status_dict=freespace)
 
-    def move_items(self, message):
-        for src, dst in message[1].items():
+    def move_items(self, message: DLMessage) -> None:
+        items = cast(Mapping[str, str], message[1])
+        for src, dst in items.items():
             dest = self.root_path / dst
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(self.root_path / src, dest)
         self.status_response(0)
 
-    def copy_item(self, message):
-        src = self.root_path / message[1]
-        dest = self.root_path / message[2]
+    def copy_item(self, message: DLMessage) -> None:
+        src = self.root_path / cast(str, message[1])
+        dest = self.root_path / cast(str, message[2])
         dest.parent.mkdir(parents=True, exist_ok=True)
         if src.is_dir():
             shutil.copytree(src, dest)
@@ -179,11 +193,11 @@ class DeviceLink:
             shutil.copy(src, dest)
         self.status_response(0)
 
-    def purge_disk_space(self, message) -> None:
+    def purge_disk_space(self, _message: DLMessage) -> None:
         raise NotEnoughDiskSpaceError()
 
-    def remove_items(self, message):
-        for path in message[1]:
+    def remove_items(self, message: DLMessage) -> None:
+        for path in cast(Iterable[str], message[1]):
             rm_path = self.root_path / path
             if rm_path.is_dir():
                 shutil.rmtree(rm_path)
@@ -191,12 +205,12 @@ class DeviceLink:
                 rm_path.unlink(missing_ok=True)
         self.status_response(0)
 
-    def create_directory(self, message):
-        path = message[1]
+    def create_directory(self, message: DLMessage) -> None:
+        path = cast(str, message[1])
         (self.root_path / path).mkdir(parents=True, exist_ok=True)
         self.status_response(0)
 
-    def status_response(self, status_code, status_str="", status_dict=None):
+    def status_response(self, status_code: int, status_str: str = "", status_dict: Any = None) -> None:
         self.service.send_plist([
             "DLMessageStatusResponse",
             ctypes.c_uint64(status_code).value,
@@ -204,12 +218,12 @@ class DeviceLink:
             status_dict if status_dict is not None else {},
         ])
 
-    def receive_message(self):
-        return self.service.recv_plist()
+    def receive_message(self) -> DLMessage:
+        return cast(DLMessage, self.service.recv_plist())
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         self.service.send_plist(["DLMessageDisconnect", "___EmptyParameterString___"])
 
-    def _prefixed_recv(self):
+    def _prefixed_recv(self) -> str:
         (size,) = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
         return self.service.recvall(size).decode()
