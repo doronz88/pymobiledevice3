@@ -50,7 +50,7 @@ def format_line(color, pid, syslog_entry, include_label: bool, image_offset: boo
     image_name = posixpath.basename(syslog_entry.image_name)
     message = syslog_entry.message
     process_name = posixpath.basename(filename)
-    image_offset_str = f"+0x{syslog_entry.image_offset:x}" if image_offset else ""
+    image_offset_str = f"+0x{syslog_entry.image_offset:x}" if image_offset and image_name else ""
     label = ""
 
     if (pid != -1) and (syslog_pid != pid):
