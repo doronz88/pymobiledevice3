@@ -33,7 +33,7 @@ def syslog_live_old(service_provider: LockdownClient):
         print(line)
 
 
-def format_line(color, pid, syslog_entry, include_label):
+def format_line(color, pid, syslog_entry, include_label: bool, image_offset: bool = False) -> Optional[str]:
     log_level_colors = {
         SyslogLogLevel.NOTICE.name: "white",
         SyslogLogLevel.INFO.name: "white",
@@ -50,6 +50,7 @@ def format_line(color, pid, syslog_entry, include_label):
     image_name = posixpath.basename(syslog_entry.image_name)
     message = syslog_entry.message
     process_name = posixpath.basename(filename)
+    image_offset_str = f"+0x{syslog_entry.image_offset:x}" if image_offset else ""
     label = ""
 
     if (pid != -1) and (syslog_pid != pid):
@@ -63,13 +64,15 @@ def format_line(color, pid, syslog_entry, include_label):
         process_name = click.style(process_name, "magenta")
         if len(image_name) > 0:
             image_name = click.style(image_name, "magenta")
+        if image_offset:
+            image_offset_str = click.style(image_offset_str, "blue")
         syslog_pid = click.style(syslog_pid, "cyan")
         log_level_color = log_level_colors[level]
         level = click.style(level, log_level_color)
         label = click.style(label, "cyan")
         message = click.style(message, log_level_color)
 
-    line_format = "{timestamp} {process_name}{{{image_name}}}[{pid}] <{level}>: {message}"
+    line_format = "{timestamp} {process_name}{{{image_name}{image_offset_str}}}[{pid}] <{level}>: {message}"
 
     if include_label:
         line_format += f" {label}"
@@ -81,6 +84,7 @@ def format_line(color, pid, syslog_entry, include_label):
         pid=syslog_pid,
         level=level,
         message=message,
+        image_offset_str=image_offset_str,
     )
 
     return line
@@ -96,6 +100,7 @@ def syslog_live(
     include_label: bool,
     regex: list[str],
     insensitive_regex: list[str],
+    image_offset: bool = False,
 ) -> None:
     match_regex = [re.compile(f".*({r}).*", re.DOTALL) for r in regex]
     match_regex += [re.compile(f".*({r}).*", re.IGNORECASE | re.DOTALL) for r in insensitive_regex]
@@ -109,8 +114,8 @@ def syslog_live(
         if process_name and posixpath.basename(syslog_entry.filename) != process_name:
             continue
 
-        line_no_style = format_line(False, pid, syslog_entry, include_label)
-        line = format_line(user_requested_colored_output(), pid, syslog_entry, include_label)
+        line_no_style = format_line(False, pid, syslog_entry, include_label, image_offset)
+        line = format_line(user_requested_colored_output(), pid, syslog_entry, include_label, image_offset)
 
         skip = False
 
@@ -172,6 +177,7 @@ def syslog_live(
 @click.option("include_label", "--label", is_flag=True, help="should include label")
 @click.option("-e", "--regex", multiple=True, help="filter only lines matching given regex")
 @click.option("-ei", "--insensitive-regex", multiple=True, help="filter only lines matching given regex (insensitive)")
+@click.option("-im", "--image-offset", is_flag=True, help="Include image offset in log line")
 def cli_syslog_live(
     service_provider: LockdownServiceProvider,
     out: Optional[TextIO],
@@ -182,11 +188,21 @@ def cli_syslog_live(
     include_label: bool,
     regex: list[str],
     insensitive_regex: list[str],
+    image_offset: bool,
 ) -> None:
     """view live syslog lines"""
 
     syslog_live(
-        service_provider, out, pid, process_name, match, match_insensitive, include_label, regex, insensitive_regex
+        service_provider,
+        out,
+        pid,
+        process_name,
+        match,
+        match_insensitive,
+        include_label,
+        regex,
+        insensitive_regex,
+        image_offset,
     )
 
 
