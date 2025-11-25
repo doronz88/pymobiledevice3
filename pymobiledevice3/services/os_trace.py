@@ -43,6 +43,7 @@ class SyslogEntry:
     timestamp: datetime
     level: SyslogLogLevel
     image_name: str
+    image_offset: int
     filename: str
     message: str
     label: typing.Optional[SyslogLabel] = None
@@ -93,8 +94,12 @@ def parse_syslog_entry(data: bytes) -> SyslogEntry:
     message_size = struct.unpack("<H", data[offset : offset + 2])[0]
     offset += 2
 
-    # Skip 6 bytes
-    offset += 6
+    # Skip 2 bytes
+    offset += 2
+
+    # Parse sender_image_offset (4 bytes, little-endian unsigned int)
+    sender_image_offset = struct.unpack("<I", data[offset : offset + 4])[0]
+    offset += 4
 
     # Parse subsystem_size (4 bytes, little-endian unsigned int)
     subsystem_size = struct.unpack("<I", data[offset : offset + 4])[0]
@@ -134,6 +139,7 @@ def parse_syslog_entry(data: bytes) -> SyslogEntry:
         timestamp=timestamp,
         level=SyslogLogLevel(level),
         image_name=image_name,
+        image_offset=sender_image_offset,
         filename=filename,
         message=message,
         label=label,
