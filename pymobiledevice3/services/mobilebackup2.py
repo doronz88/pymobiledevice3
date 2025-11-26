@@ -16,7 +16,7 @@ from pymobiledevice3.exceptions import (
 )
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
-from pymobiledevice3.services.afc import AFC_LOCK_EX, AFC_LOCK_UN, AfcService, afc_error_t
+from pymobiledevice3.services.afc import AFC_LOCK_EX, AFC_LOCK_UN, AfcError, AfcService
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -386,7 +386,7 @@ class Mobilebackup2Service(LockdownService):
                 try:
                     afc.lock(lockfile, AFC_LOCK_EX)
                 except AfcException as e:
-                    if e.status == afc_error_t.OP_WOULD_BLOCK:
+                    if e.status == AfcError.OP_WOULD_BLOCK:
                         time.sleep(0.2)
                     else:
                         afc.fclose(lockfile)

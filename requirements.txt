@@ -1,4 +1,5 @@
 construct>=2.9.29
+construct-typing>=0.7.0
 asn1
 click
 coloredlogs
