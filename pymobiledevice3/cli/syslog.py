@@ -177,7 +177,7 @@ def syslog_live(
 @click.option("include_label", "--label", is_flag=True, help="should include label")
 @click.option("-e", "--regex", multiple=True, help="filter only lines matching given regex")
 @click.option("-ei", "--insensitive-regex", multiple=True, help="filter only lines matching given regex (insensitive)")
-@click.option("-im", "--image-offset", is_flag=True, help="Include image offset in log line")
+@click.option("-io", "--image-offset", is_flag=True, help="Include image offset in log line")
 def cli_syslog_live(
     service_provider: LockdownServiceProvider,
     out: Optional[TextIO],
