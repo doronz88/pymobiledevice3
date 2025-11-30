@@ -4,7 +4,7 @@ from datetime import datetime
 import pytest
 
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError
-from pymobiledevice3.services.afc import MAXIMUM_READ_SIZE, AfcService, afc_error_t
+from pymobiledevice3.services.afc import MAXIMUM_READ_SIZE, AfcError, AfcService
 
 TEST_FILENAME = "test"
 TEST_FOLDER_NAME = "test_folder"
@@ -59,7 +59,7 @@ def test_rm_force_missing_file(afc):
 def test_rm_file_doesnt_exist(afc: AfcService, path):
     with pytest.raises(AfcFileNotFoundError) as e:
         afc.rm(path)
-    assert e.value.status == afc_error_t.OBJECT_NOT_FOUND
+    assert e.value.status == AfcError.OBJECT_NOT_FOUND
 
 
 def test_get_device_info(afc: AfcService):
@@ -88,7 +88,7 @@ def test_listdir(afc):
 def test_listdir_folder_doesnt_exist(afc: AfcService, path):
     with pytest.raises(AfcFileNotFoundError) as e:
         afc.listdir(path)
-    assert e.value.status == afc_error_t.OBJECT_NOT_FOUND
+    assert e.value.status == AfcError.OBJECT_NOT_FOUND
 
 
 def test_listdir_file(afc: AfcService):
@@ -98,7 +98,7 @@ def test_listdir_file(afc: AfcService):
             afc.listdir(TEST_FILENAME)
     finally:
         afc.rm(TEST_FILENAME)
-    assert e.value.status == afc_error_t.READ_ERROR
+    assert e.value.status == AfcError.READ_ERROR
 
 
 @pytest.mark.parametrize(
@@ -128,7 +128,7 @@ def test_makedirs_file(afc: AfcService):
         assert not afc.exists(impossible_path)
     finally:
         afc.rm(TEST_FILENAME)
-    assert e.value.status == afc_error_t.OBJECT_EXISTS
+    assert e.value.status == AfcError.OBJECT_EXISTS
 
 
 def test_isdir_file(afc: AfcService):
@@ -227,7 +227,7 @@ def test_fopen_missing_file(afc: AfcService):
 def test_fclose_not_opened(afc: AfcService):
     with pytest.raises(AfcException) as e:
         afc.fclose(77)
-    assert e.value.status == afc_error_t.INVALID_ARG
+    assert e.value.status == AfcError.INVALID_ARG
 
 
 def test_rename(afc: AfcService):
@@ -304,13 +304,13 @@ def test_fread_more_than_file_size(afc: AfcService):
 def test_fread_not_opened(afc: AfcService):
     with pytest.raises(AfcException) as e:
         afc.fread(77, 4)
-    assert e.value.status == afc_error_t.INVALID_ARG
+    assert e.value.status == AfcError.INVALID_ARG
 
 
 def test_fwrite_not_opened(afc: AfcService):
     with pytest.raises(AfcException) as e:
         afc.fwrite(77, b"asdasd")
-    assert e.value.status == afc_error_t.INVALID_ARG
+    assert e.value.status == AfcError.INVALID_ARG
 
 
 def test_file_read_write(afc: AfcService):

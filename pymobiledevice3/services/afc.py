@@ -18,13 +18,15 @@ import struct
 import sys
 import warnings
 from collections import namedtuple
+from dataclasses import dataclass, field
 from datetime import datetime
 from re import Pattern
 from typing import Callable, Optional, Union
 
 import hexdump
 from click.exceptions import Exit
-from construct import Const, Container, CString, Enum, GreedyRange, Int64ul, Struct, Tell
+from construct import Const, CString, GreedyRange, Int64ul, Tell
+from construct_typed import DataclassMixin, EnumBase, TEnum, TStruct, csfield
 from parameter_decorators import path_to_str
 from pygments import formatters, highlight, lexers
 from pygnuutils.cli.ls import ls as ls_cli
@@ -63,188 +65,210 @@ StatResult = namedtuple(
     ],
 )
 
-afc_opcode_t = Enum(
-    Int64ul,
-    STATUS=0x00000001,
-    DATA=0x00000002,  # Data */
-    READ_DIR=0x00000003,  # ReadDir */
-    READ_FILE=0x00000004,  # ReadFile */
-    WRITE_FILE=0x00000005,  # WriteFile */
-    WRITE_PART=0x00000006,  # WritePart */
-    TRUNCATE=0x00000007,  # TruncateFile */
-    REMOVE_PATH=0x00000008,  # RemovePath */
-    MAKE_DIR=0x00000009,  # MakeDir */
-    GET_FILE_INFO=0x0000000A,  # GetFileInfo */
-    GET_DEVINFO=0x0000000B,  # GetDeviceInfo */
-    WRITE_FILE_ATOM=0x0000000C,  # WriteFileAtomic (tmp file+rename) */
-    FILE_OPEN=0x0000000D,  # FileRefOpen */
-    FILE_OPEN_RES=0x0000000E,  # FileRefOpenResult */
-    READ=0x0000000F,  # FileRefRead */
-    WRITE=0x00000010,  # FileRefWrite */
-    FILE_SEEK=0x00000011,  # FileRefSeek */
-    FILE_TELL=0x00000012,  # FileRefTell */
-    FILE_TELL_RES=0x00000013,  # FileRefTellResult */
-    FILE_CLOSE=0x00000014,  # FileRefClose */
-    FILE_SET_SIZE=0x00000015,  # FileRefSetFileSize (ftruncate) */
-    GET_CON_INFO=0x00000016,  # GetConnectionInfo */
-    SET_CON_OPTIONS=0x00000017,  # SetConnectionOptions */
-    RENAME_PATH=0x00000018,  # RenamePath */
-    SET_FS_BS=0x00000019,  # SetFSBlockSize (0x800000) */
-    SET_SOCKET_BS=0x0000001A,  # SetSocketBlockSize (0x800000) */
-    FILE_LOCK=0x0000001B,  # FileRefLock */
-    MAKE_LINK=0x0000001C,  # MakeLink */
-    SET_FILE_TIME=0x0000001E,  # set st_mtime */
-)
 
-afc_error_t = Enum(
-    Int64ul,
-    SUCCESS=0,
-    UNKNOWN_ERROR=1,
-    OP_HEADER_INVALID=2,
-    NO_RESOURCES=3,
-    READ_ERROR=4,
-    WRITE_ERROR=5,
-    UNKNOWN_PACKET_TYPE=6,
-    INVALID_ARG=7,
-    OBJECT_NOT_FOUND=8,
-    OBJECT_IS_DIR=9,
-    PERM_DENIED=10,
-    SERVICE_NOT_CONNECTED=11,
-    OP_TIMEOUT=12,
-    TOO_MUCH_DATA=13,
-    END_OF_DATA=14,
-    OP_NOT_SUPPORTED=15,
-    OBJECT_EXISTS=16,
-    OBJECT_BUSY=17,
-    NO_SPACE_LEFT=18,
-    OP_WOULD_BLOCK=19,
-    IO_ERROR=20,
-    OP_INTERRUPTED=21,
-    OP_IN_PROGRESS=22,
-    INTERNAL_ERROR=23,
-    MUX_ERROR=30,
-    NO_MEM=31,
-    NOT_ENOUGH_DATA=32,
-    DIR_NOT_EMPTY=33,
-)
+class AfcOpcode(EnumBase):
+    STATUS = 0x00000001
+    DATA = 0x00000002  # Data
+    READ_DIR = 0x00000003  # ReadDir
+    READ_FILE = 0x00000004  # ReadFile
+    WRITE_FILE = 0x00000005  # WriteFile
+    WRITE_PART = 0x00000006  # WritePart
+    TRUNCATE = 0x00000007  # TruncateFile
+    REMOVE_PATH = 0x00000008  # RemovePath
+    MAKE_DIR = 0x00000009  # MakeDir
+    GET_FILE_INFO = 0x0000000A  # GetFileInfo
+    GET_DEVINFO = 0x0000000B  # GetDeviceInfo
+    WRITE_FILE_ATOM = 0x0000000C  # WriteFileAtomic (tmp file+rename)
+    FILE_OPEN = 0x0000000D  # FileRefOpen
+    FILE_OPEN_RES = 0x0000000E  # FileRefOpenResult
+    READ = 0x0000000F  # FileRefRead
+    WRITE = 0x00000010  # FileRefWrite
+    FILE_SEEK = 0x00000011  # FileRefSeek
+    FILE_TELL = 0x00000012  # FileRefTell
+    FILE_TELL_RES = 0x00000013  # FileRefTellResult
+    FILE_CLOSE = 0x00000014  # FileRefClose
+    FILE_SET_SIZE = 0x00000015  # FileRefSetFileSize (ftruncate)
+    GET_CON_INFO = 0x00000016  # GetConnectionInfo
+    SET_CON_OPTIONS = 0x00000017  # SetConnectionOptions
+    RENAME_PATH = 0x00000018  # RenamePath
+    SET_FS_BS = 0x00000019  # SetFSBlockSize (0x800000)
+    SET_SOCKET_BS = 0x0000001A  # SetSocketBlockSize (0x800000)
+    FILE_LOCK = 0x0000001B  # FileRefLock
+    MAKE_LINK = 0x0000001C  # MakeLink
+    SET_FILE_TIME = 0x0000001E  # set st_mtime
 
-afc_link_type_t = Enum(
-    Int64ul,
-    HARDLINK=1,
-    SYMLINK=2,
-)
 
-afc_fopen_mode_t = Enum(
-    Int64ul,
-    RDONLY=0x00000001,  # /**< r   O_RDONLY */
-    RW=0x00000002,  # /**< r+  O_RDWR   | O_CREAT */
-    WRONLY=0x00000003,  # /**< w   O_WRONLY | O_CREAT  | O_TRUNC */
-    WR=0x00000004,  # /**< w+  O_RDWR   | O_CREAT  | O_TRUNC */
-    APPEND=0x00000005,  # /**< a   O_WRONLY | O_APPEND | O_CREAT */
-    RDAPPEND=0x00000006,  # /**< a+  O_RDWR   | O_APPEND | O_CREAT */
-)
+class AfcError(EnumBase):
+    SUCCESS = 0
+    UNKNOWN_ERROR = 1
+    OP_HEADER_INVALID = 2
+    NO_RESOURCES = 3
+    READ_ERROR = 4
+    WRITE_ERROR = 5
+    UNKNOWN_PACKET_TYPE = 6
+    INVALID_ARG = 7
+    OBJECT_NOT_FOUND = 8
+    OBJECT_IS_DIR = 9
+    PERM_DENIED = 10
+    SERVICE_NOT_CONNECTED = 11
+    OP_TIMEOUT = 12
+    TOO_MUCH_DATA = 13
+    END_OF_DATA = 14
+    OP_NOT_SUPPORTED = 15
+    OBJECT_EXISTS = 16
+    OBJECT_BUSY = 17
+    NO_SPACE_LEFT = 18
+    OP_WOULD_BLOCK = 19
+    IO_ERROR = 20
+    OP_INTERRUPTED = 21
+    OP_IN_PROGRESS = 22
+    INTERNAL_ERROR = 23
+    MUX_ERROR = 30
+    NO_MEM = 31
+    NOT_ENOUGH_DATA = 32
+    DIR_NOT_EMPTY = 33
+
+
+class AfcLinkType(EnumBase):
+    HARDLINK = 1
+    SYMLINK = 2
+
+
+class AfcFopenMode(EnumBase):
+    RDONLY = 0x00000001  # r   O_RDONLY
+    RW = 0x00000002  # r+  O_RDWR   | O_CREAT
+    WRONLY = 0x00000003  # w   O_WRONLY | O_CREAT  | O_TRUNC
+    WR = 0x00000004  # w+  O_RDWR   | O_CREAT  | O_TRUNC
+    APPEND = 0x00000005  # a   O_WRONLY | O_APPEND | O_CREAT
+    RDAPPEND = 0x00000006  # a+  O_RDWR   | O_APPEND | O_CREAT
+
+
+# typed construct adapters for the enums
+afc_opcode_t = TEnum(Int64ul, AfcOpcode)
+afc_error_construct = TEnum(Int64ul, AfcError)
+afc_link_type_construct = TEnum(Int64ul, AfcLinkType)
+afc_fopen_mode_construct = TEnum(Int64ul, AfcFopenMode)
 
 AFC_FOPEN_TEXTUAL_MODES = {
-    "r": afc_fopen_mode_t.RDONLY,
-    "r+": afc_fopen_mode_t.RW,
-    "w": afc_fopen_mode_t.WRONLY,
-    "w+": afc_fopen_mode_t.WR,
-    "a": afc_fopen_mode_t.APPEND,
-    "a+": afc_fopen_mode_t.RDAPPEND,
+    "r": AfcFopenMode.RDONLY,
+    "r+": AfcFopenMode.RW,
+    "w": AfcFopenMode.WRONLY,
+    "w+": AfcFopenMode.WR,
+    "a": AfcFopenMode.APPEND,
+    "a+": AfcFopenMode.RDAPPEND,
 }
 
-AFC_LOCK_SH = 1 | 4  # /**< shared lock */
-AFC_LOCK_EX = 2 | 4  # /**< exclusive lock */
-AFC_LOCK_UN = 8 | 4  # /**< unlock */
+AFC_LOCK_SH = 1 | 4  # shared lock
+AFC_LOCK_EX = 2 | 4  # exclusive lock
+AFC_LOCK_UN = 8 | 4  # unlock
 
 MAXIMUM_WRITE_SIZE = 1 << 30
 
 AFCMAGIC = b"CFA6LPAA"
 
-afc_header_t = Struct(
-    "magic" / Const(AFCMAGIC),
-    "entire_length" / Int64ul,
-    "this_length" / Int64ul,
-    "packet_num" / Int64ul,
-    "operation" / afc_opcode_t,
-    "_data_offset" / Tell,
-)
 
-afc_read_dir_req_t = Struct(
-    "filename" / CString("utf8"),
-)
-
-afc_read_dir_resp_t = Struct(
-    "filenames" / GreedyRange(CString("utf8")),
-)
-
-afc_mkdir_req_t = Struct(
-    "filename" / CString("utf8"),
-)
-
-afc_stat_t = Struct(
-    "filename" / CString("utf8"),
-)
-
-afc_make_link_req_t = Struct(
-    "type" / afc_link_type_t,
-    "target" / CString("utf8"),
-    "source" / CString("utf8"),
-)
-
-afc_fopen_req_t = Struct(
-    "mode" / afc_fopen_mode_t,
-    "filename" / CString("utf8"),
-)
-
-afc_fopen_resp_t = Struct(
-    "handle" / Int64ul,
-)
-
-afc_fclose_req_t = Struct(
-    "handle" / Int64ul,
-)
-
-afc_rm_req_t = Struct(
-    "filename" / CString("utf8"),
-)
-
-afc_rename_req_t = Struct(
-    "source" / CString("utf8"),
-    "target" / CString("utf8"),
-)
-
-afc_fread_req_t = Struct(
-    "handle" / Int64ul,
-    "size" / Int64ul,
-)
-
-afc_lock_t = Struct(
-    "handle" / Int64ul,
-    "op" / Int64ul,
-)
+@dataclass
+class AfcHeader(DataclassMixin):
+    magic: bytes = csfield(Const(AFCMAGIC))
+    entire_length: int = csfield(Int64ul)
+    this_length: int = csfield(Int64ul)
+    packet_num: int = csfield(Int64ul)
+    operation: AfcOpcode = csfield(afc_opcode_t)
+    _data_offset: int = field(default=0, init=False, metadata={"subcon": Tell})
 
 
-def list_to_dict(d):
+@dataclass
+class AfcReadDirRequest(DataclassMixin):
+    filename: str = csfield(CString("utf8"))
+
+
+@dataclass
+class AfcReadDirResponse(DataclassMixin):
+    filenames: list[str] = csfield(GreedyRange(CString("utf8")))
+
+
+@dataclass
+class AfcMkdirRequest(DataclassMixin):
+    filename: str = csfield(CString("utf8"))
+
+
+@dataclass
+class AfcStatRequest(DataclassMixin):
+    filename: str = csfield(CString("utf8"))
+
+
+@dataclass
+class AfcMakeLinkRequest(DataclassMixin):
+    type: AfcLinkType = csfield(afc_link_type_construct)
+    target: str = csfield(CString("utf8"))
+    source: str = csfield(CString("utf8"))
+
+
+@dataclass
+class AfcFopenRequest(DataclassMixin):
+    mode: AfcFopenMode = csfield(afc_fopen_mode_construct)
+    filename: str = csfield(CString("utf8"))
+
+
+@dataclass
+class AfcFopenResponse(DataclassMixin):
+    handle: int = csfield(Int64ul)
+
+
+@dataclass
+class AfcFcloseRequest(DataclassMixin):
+    handle: int = csfield(Int64ul)
+
+
+@dataclass
+class AfcRmRequest(DataclassMixin):
+    filename: str = csfield(CString("utf8"))
+
+
+@dataclass
+class AfcRenameRequest(DataclassMixin):
+    source: str = csfield(CString("utf8"))
+    target: str = csfield(CString("utf8"))
+
+
+@dataclass
+class AfcFreadRequest(DataclassMixin):
+    handle: int = csfield(Int64ul)
+    size: int = csfield(Int64ul)
+
+
+@dataclass
+class AfcLockRequest(DataclassMixin):
+    handle: int = csfield(Int64ul)
+    op: int = csfield(Int64ul)
+
+
+afc_header_t = TStruct(AfcHeader)
+afc_read_dir_req_t = TStruct(AfcReadDirRequest)
+afc_read_dir_resp_t = TStruct(AfcReadDirResponse)
+afc_mkdir_req_t = TStruct(AfcMkdirRequest)
+afc_stat_t = TStruct(AfcStatRequest)
+afc_make_link_req_t = TStruct(AfcMakeLinkRequest)
+afc_fopen_req_t = TStruct(AfcFopenRequest)
+afc_fopen_resp_t = TStruct(AfcFopenResponse)
+afc_fclose_req_t = TStruct(AfcFcloseRequest)
+afc_rm_req_t = TStruct(AfcRmRequest)
+afc_rename_req_t = TStruct(AfcRenameRequest)
+afc_fread_req_t = TStruct(AfcFreadRequest)
+afc_lock_t = TStruct(AfcLockRequest)
+
+
+def list_to_dict(raw: bytes) -> dict[str, str]:
     """
     Convert a null-terminated key-value list to a dictionary.
 
     The input is expected to be a byte string with alternating keys and values,
-    each separated by null bytes (\x00).
-
-    :param d: Byte string containing null-terminated key-value pairs
-    :return: Dictionary mapping keys to values
-    :raises: AssertionError if the list doesn't contain an even number of elements
+    each separated by null bytes (``\\x00``).
     """
-    d = d.decode("utf-8")
-    t = d.split("\x00")
-    t = t[:-1]
-
-    assert len(t) % 2 == 0
-    res = {}
-    for i in range(int(len(t) / 2)):
-        res[t[i * 2]] = t[i * 2 + 1]
-    return res
+    parts = raw.decode("utf-8").split("\x00")[:-1]
+    if len(parts) % 2:
+        raise ValueError("AFC list is not key/value aligned")
+    return dict(zip(parts[::2], parts[1::2]))
 
 
 class AfcService(LockdownService):
@@ -314,15 +338,13 @@ class AfcService(LockdownService):
                 if src_size <= MAXIMUM_READ_SIZE:
                     f.write(self.get_file_contents(src))
                 else:
-                    left_size = src_size
                     handle = self.fopen(src)
+                    iterator = range(0, src_size, MAXIMUM_READ_SIZE)
                     if progress_bar:
-                        pb = trange(src_size // MAXIMUM_READ_SIZE + 1)
-                    else:
-                        pb = range(src_size // MAXIMUM_READ_SIZE + 1)
-                    for _ in pb:
-                        f.write(self.fread(handle, min(MAXIMUM_READ_SIZE, left_size)))
-                        left_size -= MAXIMUM_READ_SIZE
+                        iterator = trange(0, src_size, MAXIMUM_READ_SIZE)
+                    for offset in iterator:
+                        to_read = min(MAXIMUM_READ_SIZE, src_size - offset)
+                        f.write(self.fread(handle, to_read))
                     self.fclose(handle)
             os.utime(dst, (os.stat(dst).st_atime, self.stat(src)["st_mtime"].timestamp()))
             if callback is not None:
@@ -464,7 +486,7 @@ class AfcService(LockdownService):
         :rtype: bool
         """
         try:
-            self._do_operation(afc_opcode_t.REMOVE_PATH, afc_rm_req_t.build({"filename": filename}), filename)
+            self._do_operation(AfcOpcode.REMOVE_PATH, afc_rm_req_t.build(AfcRmRequest(filename=filename)), filename)
         except AfcException:
             if force:
                 return False
@@ -532,7 +554,7 @@ class AfcService(LockdownService):
 
         :return: Dictionary containing device file system information
         """
-        return list_to_dict(self._do_operation(afc_opcode_t.GET_DEVINFO))
+        return list_to_dict(self._do_operation(AfcOpcode.GET_DEVINFO))
 
     @path_to_str()
     def listdir(self, filename: str):
@@ -543,7 +565,7 @@ class AfcService(LockdownService):
         :return: List of filenames in the directory (excluding '.' and '..')
         :raises: AfcException if the path is not a directory or doesn't exist
         """
-        data = self._do_operation(afc_opcode_t.READ_DIR, afc_read_dir_req_t.build({"filename": filename}))
+        data = self._do_operation(AfcOpcode.READ_DIR, afc_read_dir_req_t.build(AfcReadDirRequest(filename=filename)))
         return afc_read_dir_resp_t.parse(data).filenames[2:]  # skip the . and ..
 
     @path_to_str()
@@ -556,7 +578,7 @@ class AfcService(LockdownService):
         :param filename: Path of the directory to create
         :return: Response data from the operation
         """
-        return self._do_operation(afc_opcode_t.MAKE_DIR, afc_mkdir_req_t.build({"filename": filename}))
+        return self._do_operation(AfcOpcode.MAKE_DIR, afc_mkdir_req_t.build(AfcMkdirRequest(filename=filename)))
 
     @path_to_str()
     def isdir(self, filename: str) -> bool:
@@ -580,10 +602,12 @@ class AfcService(LockdownService):
         """
         try:
             stat = list_to_dict(
-                self._do_operation(afc_opcode_t.GET_FILE_INFO, afc_stat_t.build({"filename": filename}), filename)
+                self._do_operation(
+                    AfcOpcode.GET_FILE_INFO, afc_stat_t.build(AfcStatRequest(filename=filename)), filename
+                )
             )
         except AfcException as e:
-            if e.status != afc_error_t.READ_ERROR:
+            if e.status != AfcError.READ_ERROR:
                 raise
             raise AfcFileNotFoundError(e.args[0], e.status) from e
 
@@ -629,7 +653,7 @@ class AfcService(LockdownService):
         )
 
     @path_to_str()
-    def link(self, target: str, source: str, type_=afc_link_type_t.SYMLINK):
+    def link(self, target: str, source: str, type_=AfcLinkType.SYMLINK):
         """
         Create a symbolic or hard link on the device.
 
@@ -639,7 +663,8 @@ class AfcService(LockdownService):
         :return: Response data from the operation
         """
         return self._do_operation(
-            afc_opcode_t.MAKE_LINK, afc_make_link_req_t.build({"type": type_, "target": target, "source": source})
+            AfcOpcode.MAKE_LINK,
+            afc_make_link_req_t.build(AfcMakeLinkRequest(type=type_, target=target, source=source)),
         )
 
     @path_to_str()
@@ -656,7 +681,10 @@ class AfcService(LockdownService):
             raise ArgumentError(f"mode can be only one of: {AFC_FOPEN_TEXTUAL_MODES.keys()}")
 
         data = self._do_operation(
-            afc_opcode_t.FILE_OPEN, afc_fopen_req_t.build({"mode": AFC_FOPEN_TEXTUAL_MODES[mode], "filename": filename})
+            AfcOpcode.FILE_OPEN,
+            afc_fopen_req_t.build(
+                AfcFopenRequest(mode=AFC_FOPEN_TEXTUAL_MODES[mode], filename=filename),
+            ),
         )
         return afc_fopen_resp_t.parse(data).handle
 
@@ -667,7 +695,7 @@ class AfcService(LockdownService):
         :param handle: File handle returned from fopen
         :return: Response data from the operation
         """
-        return self._do_operation(afc_opcode_t.FILE_CLOSE, afc_fclose_req_t.build({"handle": handle}))
+        return self._do_operation(AfcOpcode.FILE_CLOSE, afc_fclose_req_t.build(AfcFcloseRequest(handle=handle)))
 
     @path_to_str()
     def rename(self, source: str, target: str) -> None:
@@ -680,8 +708,8 @@ class AfcService(LockdownService):
         """
         try:
             self._do_operation(
-                afc_opcode_t.RENAME_PATH,
-                afc_rename_req_t.build({"source": source, "target": target}, filename=f"{source}->{target}"),
+                AfcOpcode.RENAME_PATH,
+                afc_rename_req_t.build(AfcRenameRequest(source=source, target=target)),
             )
         except AfcException as e:
             if self.exists(source):
@@ -690,7 +718,7 @@ class AfcService(LockdownService):
                 f"Failed to rename {source} into {target}. Got status: {e.status}", e.args[0], str(e.status)
             ) from e
 
-    def fread(self, handle: int, sz: bytes) -> bytes:
+    def fread(self, handle: int, sz: int) -> bytes:
         """
         Read data from an open file handle.
 
@@ -704,15 +732,15 @@ class AfcService(LockdownService):
         data = b""
         while sz > 0:
             to_read = MAXIMUM_READ_SIZE if sz > MAXIMUM_READ_SIZE else sz
-            self._dispatch_packet(afc_opcode_t.READ, afc_fread_req_t.build({"handle": handle, "size": to_read}))
+            self._dispatch_packet(AfcOpcode.READ, afc_fread_req_t.build(AfcFreadRequest(handle=handle, size=to_read)))
             status, chunk = self._receive_data()
-            if status != afc_error_t.SUCCESS:
+            if status != AfcError.SUCCESS:
                 raise AfcException("fread error", status)
             sz -= to_read
             data += chunk
         return data
 
-    def fwrite(self, handle, data, chunk_size=MAXIMUM_WRITE_SIZE):
+    def fwrite(self, handle: int, data: bytes, chunk_size: int = MAXIMUM_WRITE_SIZE) -> None:
         """
         Write data to an open file handle.
 
@@ -725,24 +753,20 @@ class AfcService(LockdownService):
         """
         file_handle = struct.pack("<Q", handle)
         chunks_count = len(data) // chunk_size
-        b = b""
         for i in range(chunks_count):
             chunk = data[i * chunk_size : (i + 1) * chunk_size]
-            self._dispatch_packet(afc_opcode_t.WRITE, file_handle + chunk, this_length=48)
-            b += chunk
+            self._dispatch_packet(AfcOpcode.WRITE, file_handle + chunk, this_length=48)
 
             status, _response = self._receive_data()
-            if status != afc_error_t.SUCCESS:
+            if status != AfcError.SUCCESS:
                 raise AfcException(f"failed to write chunk: {status}", status)
 
         if len(data) % chunk_size:
             chunk = data[chunks_count * chunk_size :]
-            self._dispatch_packet(afc_opcode_t.WRITE, file_handle + chunk, this_length=48)
-
-            b += chunk
+            self._dispatch_packet(AfcOpcode.WRITE, file_handle + chunk, this_length=48)
 
             status, _response = self._receive_data()
-            if status != afc_error_t.SUCCESS:
+            if status != AfcError.SUCCESS:
                 raise AfcException(f"failed to write last chunk: {status}", status)
 
     @path_to_str()
@@ -777,7 +801,7 @@ class AfcService(LockdownService):
         info = self.stat(filename)
 
         if info["st_ifmt"] != "S_IFREG":
-            raise AfcException(f"{filename} isn't a file", afc_error_t.INVALID_ARG)
+            raise AfcException(f"{filename} isn't a file", AfcError.INVALID_ARG)
 
         h = self.fopen(filename)
         if not h:
@@ -855,9 +879,9 @@ class AfcService(LockdownService):
         :param operation: Lock operation (AFC_LOCK_SH, AFC_LOCK_EX, or AFC_LOCK_UN)
         :return: Response data from the operation
         """
-        return self._do_operation(afc_opcode_t.FILE_LOCK, afc_lock_t.build({"handle": handle, "op": operation}))
+        return self._do_operation(AfcOpcode.FILE_LOCK, afc_lock_t.build(AfcLockRequest(handle=handle, op=operation)))
 
-    def _dispatch_packet(self, operation, data, this_length=0):
+    def _dispatch_packet(self, operation: AfcOpcode, data: bytes, this_length: int = 0) -> None:
         """
         Send an AFC protocol packet to the device.
 
@@ -865,16 +889,15 @@ class AfcService(LockdownService):
         :param data: Packet payload data
         :param this_length: Override for the packet length field (0 for auto-calculation)
         """
-        afcpack = Container(
-            magic=AFCMAGIC,
-            entire_length=afc_header_t.sizeof() + len(data),
-            this_length=afc_header_t.sizeof() + len(data),
-            packet_num=self.packet_num,
-            operation=operation,
+        entire_length = afc_header_t.sizeof() + len(data)
+        header = afc_header_t.build(
+            AfcHeader(
+                entire_length=entire_length,
+                this_length=this_length or entire_length,
+                packet_num=self.packet_num,
+                operation=operation,
+            )
         )
-        if this_length:
-            afcpack.this_length = this_length
-        header = afc_header_t.build(afcpack)
         self.packet_num += 1
         self.service.sendall(header + data)
 
@@ -884,23 +907,23 @@ class AfcService(LockdownService):
 
         :return: Tuple of (status_code, response_data)
         """
-        res = self.service.recvall(afc_header_t.sizeof())
-        status = afc_error_t.SUCCESS
-        data = ""
-        if res:
-            res = afc_header_t.parse(res)
-            assert res["entire_length"] >= afc_header_t.sizeof()
-            length = res["entire_length"] - afc_header_t.sizeof()
+        header_bytes = self.service.recvall(afc_header_t.sizeof())
+        status = AfcError.SUCCESS
+        data = b""
+        if header_bytes:
+            header = afc_header_t.parse(header_bytes)
+            assert header.entire_length >= afc_header_t.sizeof()
+            length = header.entire_length - afc_header_t.sizeof()
             data = self.service.recvall(length)
-            if res.operation == afc_opcode_t.STATUS:
+            if header.operation == AfcOpcode.STATUS:
                 if length != 8:
                     self.logger.error("Status length != 8")
-                status = afc_error_t.parse(data)
-            elif res.operation != afc_opcode_t.DATA:
-                pass
+                status = afc_error_construct.parse(data)
+            elif header.operation != AfcOpcode.DATA:
+                self.logger.debug("Unexpected AFC opcode %s", header.operation)
         return status, data
 
-    def _do_operation(self, opcode: int, data: bytes = b"", filename: Optional[str] = None) -> bytes:
+    def _do_operation(self, opcode: AfcOpcode, data: bytes = b"", filename: Optional[str] = None) -> bytes:
         """
         Performs a low-level operation using the specified opcode and additional data.
 
@@ -924,11 +947,12 @@ class AfcService(LockdownService):
         status, data = self._receive_data()
 
         exception = AfcException
-        if status != afc_error_t.SUCCESS:
-            if status == afc_error_t.OBJECT_NOT_FOUND:
+        if status != AfcError.SUCCESS:
+            if status == AfcError.OBJECT_NOT_FOUND:
                 exception = AfcFileNotFoundError
 
-            message = f"Opcode: {opcode} failed with status: {status}"
+            opcode_name = opcode.name if isinstance(opcode, AfcOpcode) else opcode
+            message = f"Opcode: {opcode_name} failed with status: {status}"
             if filename is not None:
                 message += f" for file: {filename}"
             raise exception(message, status, filename)
@@ -1257,7 +1281,7 @@ class AfcShell:
         :param target: Target path that the link will point to
         :param source: Path where the link will be created
         """
-        self.afc.link(self.relative_path(target), self.relative_path(source), afc_link_type_t.SYMLINK)
+        self.afc.link(self.relative_path(target), self.relative_path(source), AfcLinkType.SYMLINK)
 
     def _do_cd(self, directory: Annotated[str, Arg(completer=dir_completer)]) -> None:
         """
@@ -1320,8 +1344,8 @@ class AfcShell:
         self,
         remote_path: Annotated[str, Arg(completer=path_completer)],
         local_path: str,
-        ignore_errors: bool = False,
-        progress_bar: bool = False,
+        ignore_errors: Annotated[bool, Arg("--ignore-errors", action="store_true")] = False,
+        progress_bar: Annotated[bool, Arg("--progress-bar", action="store_true")] = False,
     ) -> None:
         """
         Pull a file or directory from device to local machine.

@@ -96,7 +96,9 @@ ignore = [
     # Use `logging.exception` instead of `logging.error`
     "TRY400",
     # Abstract `raise` to an inner function
-    "TRY301"
+    "TRY301",
+    # Do not perform function call `csfield` in dataclass defaults
+    "RUF009"
 ]
 
 [tool.ruff.format]
