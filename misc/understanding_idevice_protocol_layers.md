@@ -287,14 +287,14 @@ pymobiledevice3 developer dvt launch com.apple.mobilesafari
 
 ## DVT
 
-One of the more interesting developer services, is the one exposed by `DTServiceHub`. It is using DTX protocol messages,
+One of the more interesting developer services is the one exposed by `DTServiceHub`. It is using DTX protocol messages,
 but since it mainly wraps and allows access to stuff in `DVTFoundation.framework` we called it DVT in our
 implementation (probably standing for DeveloperTools).
 
 We don't delve too much into this protocol, but we'll say in general it allows us to invoke a whitelist of ObjC methods
 in different ObjC objects. The terminology used by DVT to each such ObjC object is called "channels".
 
-In order to access this different object use the following APIs:
+To access this different object use the following APIs:
 
 ```python
 from pymobiledevice3.lockdown import create_using_usbmux
@@ -313,17 +313,22 @@ dvt_channel = Screenshot(dvt)
 open('/tmp/screen.png', 'wb').write(dvt_channel.get_screenshot())
 ```
 
-Looking for an unimplemented feature/channel? Feel free to play with it (and submit a PR afterwards 🙏) using the
+Looking for an unimplemented feature/channel? Feel free to play with it (and submit a PR afterward 🙏) using the
 following shell:
 
 ```shell
 pymobiledevice3 developer dvt shell
 ```
 
+> **NOTE:** The full list of the methods that can be invoked on a DVT channel can be found by looking at all ObjC
+> classes in `DVTInstrumentsFoundation.framework` implementing the `DTXAllowedRPC` protocol.
+> There is an existing [Anubis rule](https://github.com/netanelc305/anubis/blob/9da337178ebd7e9f168e9df2d82b192eba4f1b30/example_rules.yaml#L14-L17)
+> I use to diff new methods against the existing ones.
+
 ## RemoteXPC
 
 Starting at iOS 17.0, Apple made a large refactor in the manner we all interact with the developer services. There can
-be multiple reasons for that decision, but in general this refactor main key points are:
+be multiple reasons for that decision, but in general these refactor main key points are:
 
 - Create a single standard for interacting with the new lockdown services (XPC Messages, Apple's proprietary IPC)
 - Optimize the protocol for large file transfers (such as the dyld_shared_cache)
@@ -347,7 +352,7 @@ Since all this communication is IP-based, but without any additional exported TC
 help us here. Instead, starting at iOS 16.0, when connecting an iDevice, it exports another non-standard USB-Ethernet
 adapter (with IPv6 link-local address), placing us in a subnet with the device's `remoted`.
 
-As we've said this communication is non-standard, and requires either:
+As we've said, this communication is non-standard and requires either:
 
 - macOS Monterey or higher
 - Special driver on your linux/Windows machine
