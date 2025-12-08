@@ -13,7 +13,7 @@ import sys
 import time
 from collections import namedtuple
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import IO, Optional
 
@@ -417,6 +417,91 @@ def sysmon_process_single(service_provider: LockdownClient, attributes: list[str
                 # exit after single snapshot
                 break
     print_json(result)
+
+
+@sysmon_process.command("monitor-single", cls=Command)
+@click.option(
+    "-a",
+    "--attributes",
+    multiple=True,
+    help="filter processes by attribute (key=value). Multiple filters on same attribute use OR logic, different attributes use AND.",
+)
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(),
+    default=None,
+    help="output file path for JSONL format (optional, defaults to stdout)",
+)
+@click.option(
+    "-i", "--interval", type=click.INT, default=None, help="minimum interval in milliseconds between outputs (optional)"
+)
+@click.option(
+    "-d",
+    "--duration",
+    type=click.INT,
+    default=None,
+    help="maximum duration in milliseconds to run monitoring (optional)",
+)
+def sysmon_process_monitor_single(
+    service_provider: LockdownClient,
+    attributes: list[str],
+    output: Optional[str],
+    interval: Optional[int],
+    duration: Optional[int],
+):
+    """Continuously monitor a single process with comprehensive metrics."""
+    count = 0
+    start_time = None
+
+    # Parse attributes into grouped filters: same attribute uses OR, different attributes use AND
+    parsed_filters: dict[str, list[str]] = {}
+    if attributes:
+        for raw in attributes:
+            key, value = raw.split("=", 1)
+            parsed_filters.setdefault(key, []).append(value)
+
+    def matches_filters(proc: dict) -> bool:
+        """Check if process matches all filter criteria."""
+        if not parsed_filters:
+            return True
+        return all(str(proc.get(key)) in values for key, values in parsed_filters.items())
+
+    with contextlib.ExitStack() as stack:
+        output_file = stack.enter_context(open(output, "w")) if output else None
+
+        dvt = stack.enter_context(DvtSecureSocketProxyService(lockdown=service_provider))
+        sysmon = stack.enter_context(Sysmontap(dvt))
+
+        for process_snapshot in sysmon.iter_processes():
+            count += 1
+
+            if count < 2:
+                continue
+
+            if start_time is None:
+                start_time = time.time()
+
+            if duration is not None:
+                elapsed_ms = (time.time() - start_time) * 1000
+                if elapsed_ms >= duration:
+                    break
+
+            for process in process_snapshot:
+                if not matches_filters(process):
+                    continue
+
+                process["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+                if output_file:
+                    json_output = json.dumps(process, default=default_json_encoder)
+                    output_file.write(json_output + "\n")
+                    output_file.flush()
+                else:
+                    print_json(process)
+
+            if interval:
+                time.sleep(interval / 1000.0)
 
 
 @sysmon.command("system", cls=Command)
