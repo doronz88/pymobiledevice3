@@ -1,5 +1,6 @@
 import asyncio
 import difflib
+import importlib
 import logging
 import os
 import re
@@ -7,13 +8,18 @@ import sys
 import textwrap
 import traceback
 import warnings
-from typing import Union
+from collections.abc import Sequence
+from typing import Annotated, Optional, Union
 
 import click
 import coloredlogs
+import typer
+import typer.core
 from packaging.version import Version
+from typer.core import TyperGroup
+from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import TUNNEL_ENV_VAR, isatty
+from pymobiledevice3.cli.cli_common import TUNNEL_ENV_VAR, isatty, set_color_flag, set_verbosity
 from pymobiledevice3.exceptions import (
     AccessDeniedError,
     CloudConfigurationAlreadyPresentError,
@@ -112,25 +118,26 @@ CLI_GROUPS = {
     "webinspector": "webinspector",
     "idam": "idam",
     "version": "version",
-    "install-completions": "completions",
 }
 
 # Set if used the `--reconnect` option
 RECONNECT = False
 
 
-class Pmd3Cli(click.Group):
-    def list_commands(self, ctx):
-        return CLI_GROUPS.keys()
+class Pmd3TyperGroup(TyperGroup):
+    def list_commands(self, ctx: click.Context) -> list[str]:
+        # Order is preserved by dict insertion; adjust if you want alphabetical
+        return list(CLI_GROUPS.keys())
 
-    def get_command(self, ctx: click.Context, name: str) -> click.Command:
-        if name not in CLI_GROUPS:
-            self.handle_invalid_command(ctx, name)
-        return self.import_and_get_command(ctx, name)
+    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command:
+        if cmd_name not in CLI_GROUPS:
+            self.handle_invalid_command(ctx, cmd_name)
+        return self.import_and_get_command(ctx, cmd_name)
 
-    def handle_invalid_command(self, ctx: click.Context, name: str) -> None:
+    def handle_invalid_command(self, ctx, name: str) -> None:
         suggested_commands = self.search_commands(name)
         suggestion = self.format_suggestions(suggested_commands)
+        # ctx.fail raises a ClickException underneath, which Typer displays nicely
         ctx.fail(f"No such command {name!r}{suggestion}")
 
     @staticmethod
@@ -138,70 +145,108 @@ class Pmd3Cli(click.Group):
         if not suggestions:
             return ""
         cmds = textwrap.indent("\n".join(suggestions), " " * 4)
-        return f"\nDid you mean this?\n{cmds}"
+        return f"\nDid you mean:\n{cmds}"
 
     @staticmethod
     def import_and_get_command(ctx: click.Context, name: str) -> click.Command:
         module_name = f"pymobiledevice3.cli.{CLI_GROUPS[name]}"
-        mod = __import__(module_name, None, None, ["cli"])
-        command = mod.cli.get_command(ctx, name)
-        if not command:
-            command_name = mod.cli.list_commands(ctx)[0]
-            command = mod.cli.get_command(ctx, command_name)
-        return command
+        mod = importlib.import_module(module_name)
+        # submodules expose a Typer Group named "cli"
+        cli: typer.Typer = mod.cli
+        return typer.main.get_command(cli)
 
     @staticmethod
     def highlight_keyword(text: str, keyword: str) -> str:
-        return re.sub(f"({keyword})", click.style("\\1", bold=True), text, flags=re.IGNORECASE)
+        return re.sub(f"({keyword})", typer.style("\\1", bold=True), text, flags=re.IGNORECASE)
 
     @staticmethod
-    def collect_commands(command: click.Command) -> Union[str, list[str]]:
-        commands = []
-        if isinstance(command, click.Group):
-            for _k, v in command.commands.items():
-                cmd = Pmd3Cli.collect_commands(v)
-                if isinstance(cmd, list):
-                    commands.extend([f"{command.name} {c}" for c in cmd])
+    def collect_commands(command: Union[TyperGroup, click.Command]) -> Union[str, list[str]]:
+        if isinstance(command, TyperGroup):  # group
+            cmds = []
+            for v in command.commands.values():
+                child = Pmd3TyperGroup.collect_commands(v)
+                if isinstance(child, list):
+                    cmds.extend([f"{command.name} {c}" for c in child])
                 else:
-                    commands.append(f"{command.name} {cmd}")
-            return commands
-        return f"{command.name}"
+                    cmds.append(f"{command.name} {child}")
+            return cmds
+        return command.name or ""
 
     @staticmethod
     def search_commands(pattern: str) -> list[str]:
-        all_commands = Pmd3Cli.load_all_commands()
+        all_commands = Pmd3TyperGroup.load_all_commands()
         matched = sorted(filter(lambda cmd: re.search(pattern, cmd), all_commands))
         if not matched:
             matched = difflib.get_close_matches(pattern, all_commands, n=20, cutoff=0.4)
         if isatty():
-            matched = [Pmd3Cli.highlight_keyword(cmd, pattern) for cmd in matched]
+            matched = [Pmd3TyperGroup.highlight_keyword(cmd, pattern) for cmd in matched]
         return matched
 
     @staticmethod
     def load_all_commands() -> list[str]:
-        all_commands = []
+        all_commands: list[str] = []
         for key in CLI_GROUPS:
             module_name = f"pymobiledevice3.cli.{CLI_GROUPS[key]}"
-            mod = __import__(module_name, None, None, ["cli"])
-            cmd = Pmd3Cli.collect_commands(mod.cli.commands[key])
+            mod = importlib.import_module(module_name)
+            if isinstance(mod.cli, typer.Typer):
+                cmd = Pmd3TyperGroup.collect_commands(typer.main.get_group(mod.cli))
+            else:
+                cmd = Pmd3TyperGroup.collect_commands(mod.cli.commands[key])
             if isinstance(cmd, list):
                 all_commands.extend(cmd)
             else:
                 all_commands.append(cmd)
         return all_commands
 
+    def resolve_command(
+        self, ctx: click.Context, args: list[str]
+    ) -> tuple[Optional[str], Optional[click.Command], list[str]]:
+        return super().resolve_command(ctx, args)
 
-@click.command(cls=Pmd3Cli, context_settings=CONTEXT_SETTINGS)
-@click.option("--reconnect", is_flag=True, default=False, help="Reconnect to device when disconnected.")
-def cli(reconnect: bool) -> None:
+
+app = InjectingTyper(
+    cls=Pmd3TyperGroup,
+    context_settings=CONTEXT_SETTINGS,
+    no_args_is_help=True,
+    # add_completion=False,
+    rich_markup_mode="markdown",
+    help=(
+        "Interact with a connected iDevice (iPhone, iPad, ...)\n\n"
+        "For more information please see: https://github.com/doronz88/pymobiledevice3"
+    ),
+)
+
+
+@app.callback()
+def _root(
+    reconnect: Annotated[
+        bool,
+        typer.Option(
+            "--reconnect",
+            help="Reconnect to device when disconnected.",
+            show_default=False,
+        ),
+    ] = False,
+    verbosity: Annotated[
+        int,
+        typer.Option(
+            "--verbose",
+            "-v",
+            count=True,
+        ),
+    ] = 0,
+    color: Annotated[
+        bool,
+        typer.Option(help="colorize output"),
+    ] = True,
+) -> None:
     """
-    \b
-    Interact with a connected iDevice (iPhone, iPad, ...)
-    For more information please look at:
-        https://github.com/doronz88/pymobiledevice3
+    Top-level options for pymobiledevice3.
     """
     global RECONNECT
     RECONNECT = reconnect
+    set_verbosity(verbosity)
+    set_color_flag(color)
 
 
 def device_might_need_tunneld(identifier: str) -> bool:
@@ -221,13 +266,53 @@ def device_might_need_tunneld(identifier: str) -> bool:
         return Version(lockdown.product_version) >= Version("17.0")
 
 
+class PossiblyMisplacedOption(click.NoSuchOption):
+    def __init__(
+        self,
+        option_name: str,
+        message: Optional[str] = None,
+        possibilities: Optional[Sequence[str]] = None,
+        ctx: Optional[click.Context] = None,
+        suggested_ctx: Optional[click.Context] = None,
+    ) -> None:
+        super().__init__(option_name, message, possibilities, ctx)
+        if suggested_ctx is not None:
+            if ctx is not None:
+                self.message += f" for subcommand: {ctx.command_path}"
+
+            suggestion = f"{suggested_ctx.command_path} {option_name}"
+            suggestion += ctx.command_path.removeprefix(suggested_ctx.command_path) if ctx is not None else " ..."
+
+            self.message += f"\nDid you mean: {suggestion}?"
+
+    @staticmethod
+    def from_no_such_option(e: click.NoSuchOption) -> "PossiblyMisplacedOption":
+        ctx = e.ctx
+        while ctx:
+            for param in ctx.command.params:
+                if isinstance(param, typer.core.TyperOption) and (
+                    e.option_name in param.opts or e.option_name in param.secondary_opts
+                ):
+                    break
+            else:
+                ctx = ctx.parent
+                continue
+            break
+
+        return PossiblyMisplacedOption(e.option_name, e.message, e.possibilities, e.ctx, ctx)
+
+
 def invoke_cli_with_error_handling() -> bool:
     """
     Invoke the command line interface and return `True` if the failure reason of the command was that the device was
     disconnected.
     """
     try:
-        cli()
+        # Typer apps are callable; this executes the CLI with current sys.argv
+        try:
+            app(standalone_mode=False)
+        except click.NoSuchOption as e:
+            raise PossiblyMisplacedOption.from_no_such_option(e) from e
     except NoDeviceConnectedError:
         logger.error("Device is not connected")
         return True
@@ -277,9 +362,10 @@ def invoke_cli_with_error_handling() -> bool:
             logger.warning("Got an InvalidServiceError. Trying again over tunneld since it is a developer command")
             should_retry_over_tunneld = True
         if should_retry_over_tunneld:
-            # use a single space because click will ignore envvars of empty strings
+            # use a single space because Typer/Click will ignore envvars of empty strings
             os.environ[TUNNEL_ENV_VAR] = e.identifier or " "
-            return main()
+            main()
+            return False
         logger.error(INVALID_SERVICE_MESSAGE)
     except PasswordRequiredError:
         logger.error("Device is password protected. Please unlock and retry")
@@ -315,6 +401,11 @@ def invoke_cli_with_error_handling() -> bool:
         )
     except QuicProtocolNotSupportedError:
         logger.error("Encountered a QUIC protocol error.")
+    except click.ClickException as e:
+        from typer import rich_utils
+
+        rich_utils.rich_format_error(e)
+        sys.exit(e.exit_code)
 
     return False
 

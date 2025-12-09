@@ -1,34 +1,28 @@
 import logging
 
-import click
+from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import Command, print_json
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, print_json
 from pymobiledevice3.services.os_trace import OsTraceService
 
 logger = logging.getLogger(__name__)
 
 
-@click.group()
-def cli() -> None:
-    pass
+cli = InjectingTyper(
+    name="processes",
+    help="View process list using diagnosticsd API",
+    no_args_is_help=True,
+)
 
 
-@cli.group()
-def processes() -> None:
-    """View process list using diagnosticsd API"""
-    pass
-
-
-@processes.command("ps", cls=Command)
-def processes_ps(service_provider: LockdownClient):
+@cli.command("ps")
+def processes_ps(service_provider: ServiceProviderDep) -> None:
     """show process list"""
     print_json(OsTraceService(lockdown=service_provider).get_pid_list().get("Payload"))
 
 
-@processes.command("pgrep", cls=Command)
-@click.argument("expression")
-def processes_pgrep(service_provider: LockdownClient, expression):
+@cli.command("pgrep")
+def processes_pgrep(service_provider: ServiceProviderDep, expression: str) -> None:
     """try to match processes pid by given expression (like pgrep)"""
     processes_list = OsTraceService(lockdown=service_provider).get_pid_list().get("Payload")
     for pid, process_info in processes_list.items():

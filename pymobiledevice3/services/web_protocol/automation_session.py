@@ -1,9 +1,11 @@
+import importlib.resources
 import json
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 
-RESOURCES = Path(__file__).parent.parent.parent / "resources" / "webinspector"
+import pymobiledevice3.resources
+
+RESOURCES = importlib.resources.files(pymobiledevice3.resources) / "webinspector"
 FIND_NODES = (RESOURCES / "find_nodes.js").read_text()
 
 

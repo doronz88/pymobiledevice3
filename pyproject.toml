@@ -4,14 +4,22 @@ description = "Pure python3 implementation for working with iDevices (iPhone, et
 readme = "README.md"
 requires-python = ">=3.9"
 license = "GPL-3.0-or-later"
-keywords = ["ios", "protocol", "lockdownd", "instruments", "automation", "cli", "afc"]
+keywords = [
+    "ios",
+    "protocol",
+    "lockdownd",
+    "instruments",
+    "automation",
+    "cli",
+    "afc",
+]
 authors = [
     { name = "doronz88", email = "doron88@gmail.com" },
-    { name = "matan", email = "matan1008@gmail.com" }
+    { name = "matan", email = "matan1008@gmail.com" },
 ]
 maintainers = [
     { name = "doronz88", email = "doron88@gmail.com" },
-    { name = "matan", email = "matan1008@gmail.com" }
+    { name = "matan", email = "matan1008@gmail.com" },
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -37,14 +45,18 @@ test = ["pytest", "pytest-asyncio"]
 pymobiledevice3 = "pymobiledevice3.__main__:main"
 
 [tool.setuptools]
-package-data = { "pymobiledevice3" = ["resources/webinspector/*.js", "resources/dsc_uuid_map.json", "resources/notifications.txt"] }
+package-data = { "pymobiledevice3" = [
+    "resources/webinspector/*.js",
+    "resources/dsc_uuid_map.json",
+    "resources/notifications.txt",
+] }
 
 [tool.setuptools.packages.find]
 exclude = ["docs*", "tests*"]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
-version = {attr = "pymobiledevice3._version.__version__"}
+version = { attr = "pymobiledevice3._version.__version__" }
 
 [tool.setuptools_scm]
 version_file = "pymobiledevice3/_version.py"
@@ -89,6 +101,8 @@ select = [
     "TRY",
 ]
 ignore = [
+    # Shadowing a built-in
+    "A001",
     # LineTooLong
     "E501",
     # Custom error classes
@@ -98,7 +112,7 @@ ignore = [
     # Abstract `raise` to an inner function
     "TRY301",
     # Do not perform function call `csfield` in dataclass defaults
-    "RUF009"
+    "RUF009",
 ]
 
 [tool.ruff.format]

@@ -9,14 +9,14 @@ from pymobiledevice3.tcp_forwarder import UsbmuxTcpForwarder
 FREE_PORT = 3582
 
 
-def attempt_local_connection(port: int):
+def attempt_local_connection(port: int) -> None:
     client = socket()
     client.connect(("127.0.0.1", port))
     client.close()
 
 
 @pytest.mark.parametrize("dst_port", [FREE_PORT, SERVICE_PORT])
-def test_tcp_forwarder_bad_port(lockdown: LockdownClient, dst_port: int):
+def test_tcp_forwarder_bad_port(lockdown: LockdownClient, dst_port: int) -> None:
     # start forwarder
     listening_event = threading.Event()
     forwarder = UsbmuxTcpForwarder(lockdown.udid, dst_port, FREE_PORT, listening_event=listening_event)

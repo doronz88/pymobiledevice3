@@ -1,9 +1,11 @@
 import time
 
+from pymobiledevice3.lockdown import LockdownClient
+
 LOCKDOWND_SOCKET_SELECT_TIMEOUT = 60
 
 
-def test_lockdown_reconnect(lockdown):
+def test_lockdown_reconnect(lockdown: LockdownClient) -> None:
     d1 = lockdown.date
 
     # add some threshold to make sure lockdownd closed the connection on its end

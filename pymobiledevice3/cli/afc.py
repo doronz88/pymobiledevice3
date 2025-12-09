@@ -1,56 +1,64 @@
-import click
+from pathlib import Path
+from typing import Annotated
 
-from pymobiledevice3.cli.cli_common import Command
-from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+import typer
+from typer_injector import InjectingTyper
+
+from pymobiledevice3.cli.cli_common import ServiceProviderDep
 from pymobiledevice3.services.afc import AfcService, AfcShell
 
-
-@click.group()
-def cli() -> None:
-    pass
-
-
-@cli.group()
-def afc() -> None:
-    """Manage device multimedia files"""
-    pass
+cli = InjectingTyper(
+    name="afc",
+    help="Manage device multimedia files",
+    no_args_is_help=True,
+)
 
 
-@afc.command("shell", cls=Command)
-def afc_shell(service_provider: LockdownClient):
+@cli.command("shell")
+def afc_shell(service_provider: ServiceProviderDep) -> None:
     """open an AFC shell rooted at /var/mobile/Media"""
     AfcShell.create(service_provider)
 
 
-@afc.command("pull", cls=Command)
-@click.option("-i", "--ignore-errors", is_flag=True, help="Ignore AFC pull errors")
-@click.argument("remote_file", type=click.Path(exists=False))
-@click.argument("local_file", type=click.Path(exists=False))
-def afc_pull(service_provider: LockdownServiceProvider, remote_file: str, local_file: str, ignore_errors: bool) -> None:
+@cli.command("pull")
+def afc_pull(
+    service_provider: ServiceProviderDep,
+    remote_file: Path,
+    local_file: Path,
+    ignore_errors: Annotated[
+        bool,
+        typer.Option(
+            "--ignore-errors",
+            "-i",
+            help="Ignore AFC pull errors",
+        ),
+    ],
+) -> None:
     """pull remote file from /var/mobile/Media"""
-    AfcService(lockdown=service_provider).pull(remote_file, local_file, ignore_errors=ignore_errors)
+    AfcService(lockdown=service_provider).pull(str(remote_file), str(local_file), ignore_errors=ignore_errors)
 
 
-@afc.command("push", cls=Command)
-@click.argument("local_file", type=click.Path(exists=False))
-@click.argument("remote_file", type=click.Path(exists=False))
-def afc_push(service_provider: LockdownServiceProvider, local_file: str, remote_file: str) -> None:
+@cli.command("push")
+def afc_push(service_provider: ServiceProviderDep, local_file: Path, remote_file: Path) -> None:
     """push local file into /var/mobile/Media"""
-    AfcService(lockdown=service_provider).push(local_file, remote_file)
+    AfcService(lockdown=service_provider).push(str(local_file), str(remote_file))
 
 
-@afc.command("ls", cls=Command)
-@click.argument("remote_file", type=click.Path(exists=False))
-@click.option("-r", "--recursive", is_flag=True)
-def afc_ls(service_provider: LockdownClient, remote_file, recursive):
+@cli.command("ls")
+def afc_ls(
+    service_provider: ServiceProviderDep,
+    remote_file: Path,
+    recursive: Annotated[
+        bool,
+        typer.Option("--recursive", "-r"),
+    ] = False,
+) -> None:
     """perform a dirlist rooted at /var/mobile/Media"""
-    for path in AfcService(lockdown=service_provider).dirlist(remote_file, -1 if recursive else 1):
+    for path in AfcService(lockdown=service_provider).dirlist(str(remote_file), -1 if recursive else 1):
         print(path)
 
 
-@afc.command("rm", cls=Command)
-@click.argument("remote_file", type=click.Path(exists=False))
-def afc_rm(service_provider: LockdownClient, remote_file):
+@cli.command("rm")
+def afc_rm(service_provider: ServiceProviderDep, remote_file: Path) -> None:
     """remove a file rooted at /var/mobile/Media"""
-    AfcService(lockdown=service_provider).rm(remote_file)
+    AfcService(lockdown=service_provider).rm(str(remote_file))

@@ -1,30 +1,32 @@
-import click
+from typing import Annotated
 
-from pymobiledevice3.cli.cli_common import Command
-from pymobiledevice3.lockdown import LockdownClient
+import typer
+from typer_injector import InjectingTyper
+
+from pymobiledevice3.cli.cli_common import ServiceProviderDep
 from pymobiledevice3.services.mobile_activation import MobileActivationService
 
-
-@click.group()
-def cli() -> None:
-    pass
-
-
-@cli.group()
-def activation() -> None:
-    """Perform iCloud activation/deactivation or query the current state"""
-    pass
+cli = InjectingTyper(
+    name="activation",
+    help="Perform iCloud activation/deactivation or query the current state",
+    no_args_is_help=True,
+)
 
 
-@activation.command(cls=Command)
-def state(service_provider: LockdownClient):
+@cli.command()
+def state(service_provider: ServiceProviderDep) -> None:
     """Get current activation state"""
     print(MobileActivationService(service_provider).state)
 
 
-@activation.command(cls=Command)
-@click.option("--now", is_flag=True, help="do not wait for next nonce cycle")
-def activate(service_provider: LockdownClient, now):
+@cli.command()
+def activate(
+    service_provider: ServiceProviderDep,
+    now: Annotated[
+        bool,
+        typer.Option(help="do not wait for next nonce cycle"),
+    ] = False,
+) -> None:
     """Activate device"""
     activation_service = MobileActivationService(service_provider)
     if not now:
@@ -32,13 +34,13 @@ def activate(service_provider: LockdownClient, now):
     activation_service.activate()
 
 
-@activation.command(cls=Command)
-def deactivate(service_provider: LockdownClient):
+@cli.command()
+def deactivate(service_provider: ServiceProviderDep) -> None:
     """Deactivate device"""
     MobileActivationService(service_provider).deactivate()
 
 
-@activation.command(cls=Command)
-def itunes(service_provider: LockdownClient):
+@cli.command()
+def itunes(service_provider: ServiceProviderDep) -> None:
     """Tell the device that it has been connected to iTunes (useful for < iOS 4)"""
     service_provider.set_value(True, key="iTunesHasConnected")

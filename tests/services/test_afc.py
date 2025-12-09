@@ -4,6 +4,7 @@ from datetime import datetime
 import pytest
 
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.afc import MAXIMUM_READ_SIZE, AfcError, AfcService
 
 TEST_FILENAME = "test"
@@ -11,17 +12,17 @@ TEST_FOLDER_NAME = "test_folder"
 
 
 @pytest.fixture(scope="function")
-def afc(lockdown):
+def afc(lockdown: LockdownClient):
     with AfcService(lockdown) as afc:
         yield afc
 
 
-def test_exists(afc: AfcService):
+def test_exists(afc: AfcService) -> None:
     assert afc.exists("DCIM")
     assert not afc.exists("a_directory_that_doesnt_exist")
 
 
-def test_exists_folder_in_a_file(afc: AfcService):
+def test_exists_folder_in_a_file(afc: AfcService) -> None:
     afc.set_file_contents(TEST_FILENAME, b"data")
     try:
         assert not afc.exists(f"{TEST_FILENAME}/sub_folder")
@@ -29,7 +30,7 @@ def test_exists_folder_in_a_file(afc: AfcService):
         afc.rm(TEST_FILENAME)
 
 
-def test_rm(afc):
+def test_rm(afc: AfcService) -> None:
     afc.set_file_contents(TEST_FILENAME, b"")
     filenames = afc.listdir("/")
     assert TEST_FILENAME in filenames
@@ -40,7 +41,7 @@ def test_rm(afc):
     assert TEST_FILENAME not in filenames
 
 
-def test_rm_force_missing_file(afc):
+def test_rm_force_missing_file(afc: AfcService) -> None:
     with pytest.raises(AfcFileNotFoundError):
         afc.rm(TEST_FILENAME)
     afc.rm(TEST_FILENAME, force=True)
@@ -56,19 +57,19 @@ def test_rm_force_missing_file(afc):
         "/missingfolder/./././file_that_doesnt_exist.txt/",
     ],
 )
-def test_rm_file_doesnt_exist(afc: AfcService, path):
+def test_rm_file_doesnt_exist(afc: AfcService, path: str) -> None:
     with pytest.raises(AfcFileNotFoundError) as e:
         afc.rm(path)
     assert e.value.status == AfcError.OBJECT_NOT_FOUND
 
 
-def test_get_device_info(afc: AfcService):
+def test_get_device_info(afc: AfcService) -> None:
     device_info = afc.get_device_info()
     assert device_info["Model"].startswith("iPhone")
     assert int(device_info["FSTotalBytes"]) > int(device_info["FSFreeBytes"])
 
 
-def test_listdir(afc):
+def test_listdir(afc: AfcService) -> None:
     filenames = afc.listdir("/")
     assert "DCIM" in filenames
     assert "Downloads" in filenames
@@ -85,7 +86,7 @@ def test_listdir(afc):
         "/missingfolder/missing_folder/",
     ],
 )
-def test_listdir_folder_doesnt_exist(afc: AfcService, path):
+def test_listdir_folder_doesnt_exist(afc: AfcService, path: str) -> None:
     with pytest.raises(AfcFileNotFoundError) as e:
         afc.listdir(path)
     assert e.value.status == AfcError.OBJECT_NOT_FOUND
@@ -111,7 +112,7 @@ def test_listdir_file(afc: AfcService):
         "/test_dir_a/./../test_dir_a/test_dir_b/../test_dir_b/test_dir_c/",
     ],
 )
-def test_makedirs_and_rm_dir(afc: AfcService, path):
+def test_makedirs_and_rm_dir(afc: AfcService, path: str) -> None:
     assert not afc.exists(path)
     afc.makedirs(path)
     assert afc.exists(path)
@@ -147,18 +148,18 @@ def test_isdir_file(afc: AfcService):
         f"/{TEST_FOLDER_NAME}/./../{TEST_FOLDER_NAME}/",
     ],
 )
-def test_isdir_folder(afc: AfcService, path):
+def test_isdir_folder(afc: AfcService, path: str) -> None:
     afc.makedirs(TEST_FILENAME)
     assert afc.isdir(TEST_FILENAME)
     afc.rm(TEST_FILENAME)
 
 
-def test_isdir_missing_path(afc: AfcService):
+def test_isdir_missing_path(afc: AfcService) -> None:
     with pytest.raises(AfcFileNotFoundError):
         afc.isdir("folder_that_doesnt_exist")
 
 
-def test_isdir_missing_path_inside_a_file(afc: AfcService):
+def test_isdir_missing_path_inside_a_file(afc: AfcService) -> None:
     afc.set_file_contents(TEST_FILENAME, b"data")
     impossible_path = f"{TEST_FILENAME}/sub_folder"
     try:
@@ -168,7 +169,7 @@ def test_isdir_missing_path_inside_a_file(afc: AfcService):
         afc.rm(TEST_FILENAME)
 
 
-def test_stat_file(afc: AfcService):
+def test_stat_file(afc: AfcService) -> None:
     data = b"data"
     timestamp = datetime.fromtimestamp(afc.lockdown.get_value(key="TimeIntervalSince1970"))
     timestamp = timestamp.replace(microsecond=0)  # stat resolution might not include microseconds
@@ -180,7 +181,7 @@ def test_stat_file(afc: AfcService):
     assert stat["st_mtime"] >= timestamp
 
 
-def test_stat_folder(afc: AfcService):
+def test_stat_folder(afc: AfcService) -> None:
     timestamp = datetime.fromtimestamp(afc.lockdown.get_value(key="TimeIntervalSince1970"))
     timestamp = timestamp.replace(microsecond=0)  # stat resolution might not include microseconds
     afc.makedirs(TEST_FOLDER_NAME)
@@ -204,12 +205,12 @@ def test_stat_folder(afc: AfcService):
         "/missingfolder/missing_folder/",
     ],
 )
-def test_stat_doesnt_exist(afc: AfcService, path):
+def test_stat_doesnt_exist(afc: AfcService, path: str) -> None:
     with pytest.raises(AfcFileNotFoundError):
         afc.stat(path)
 
 
-def test_stat_missing_path_inside_a_file(afc: AfcService):
+def test_stat_missing_path_inside_a_file(afc: AfcService) -> None:
     afc.set_file_contents(TEST_FILENAME, b"data")
     impossible_path = f"{TEST_FILENAME}/sub_folder"
     try:
@@ -219,12 +220,12 @@ def test_stat_missing_path_inside_a_file(afc: AfcService):
         afc.rm(TEST_FILENAME)
 
 
-def test_fopen_missing_file(afc: AfcService):
+def test_fopen_missing_file(afc: AfcService) -> None:
     with pytest.raises(AfcFileNotFoundError):
         afc.fopen("file_that_doesnt_exist")
 
 
-def test_fclose_not_opened(afc: AfcService):
+def test_fclose_not_opened(afc: AfcService) -> None:
     with pytest.raises(AfcException) as e:
         afc.fclose(77)
     assert e.value.status == AfcError.INVALID_ARG
@@ -241,7 +242,7 @@ def test_rename(afc: AfcService):
         afc.get_file_contents("source.txt")
 
 
-def test_rename_between_folders(afc: AfcService):
+def test_rename_between_folders(afc: AfcService) -> None:
     afc.makedirs("dir_a/dir_b")
     source = "dir_a/dir_b/source.txt"
     dest = "dir_a/source.txt"
@@ -255,12 +256,12 @@ def test_rename_between_folders(afc: AfcService):
         afc.rm("dir_a")
 
 
-def test_rename_missing_source(afc: AfcService):
+def test_rename_missing_source(afc: AfcService) -> None:
     with pytest.raises(AfcFileNotFoundError):
         afc.rename("source.txt", "dest.txt")
 
 
-def test_rename_source_path_inside_a_file(afc: AfcService):
+def test_rename_source_path_inside_a_file(afc: AfcService) -> None:
     afc.set_file_contents(TEST_FILENAME, b"data")
     impossible_path = f"{TEST_FILENAME}/source.txt"
     try:
@@ -270,7 +271,7 @@ def test_rename_source_path_inside_a_file(afc: AfcService):
         afc.rm(TEST_FILENAME)
 
 
-def test_rename_dest_path_inside_a_file(afc: AfcService):
+def test_rename_dest_path_inside_a_file(afc: AfcService) -> None:
     afc.set_file_contents(TEST_FILENAME, b"data")
     source = "source.txt"
     afc.set_file_contents(source, b"data")
@@ -283,7 +284,7 @@ def test_rename_dest_path_inside_a_file(afc: AfcService):
         afc.rm(source)
 
 
-def test_rename_to_self(afc: AfcService):
+def test_rename_to_self(afc: AfcService) -> None:
     data = b"data"
     afc.set_file_contents(TEST_FILENAME, data)
     afc.rename(TEST_FILENAME, TEST_FILENAME)
@@ -291,7 +292,7 @@ def test_rename_to_self(afc: AfcService):
     afc.rm(TEST_FILENAME)
 
 
-def test_fread_more_than_file_size(afc: AfcService):
+def test_fread_more_than_file_size(afc: AfcService) -> None:
     data = b"data"
     afc.set_file_contents(TEST_FILENAME, data)
     h = afc.fopen(TEST_FILENAME)
@@ -301,19 +302,19 @@ def test_fread_more_than_file_size(afc: AfcService):
     assert read_data == data
 
 
-def test_fread_not_opened(afc: AfcService):
+def test_fread_not_opened(afc: AfcService) -> None:
     with pytest.raises(AfcException) as e:
         afc.fread(77, 4)
     assert e.value.status == AfcError.INVALID_ARG
 
 
-def test_fwrite_not_opened(afc: AfcService):
+def test_fwrite_not_opened(afc: AfcService) -> None:
     with pytest.raises(AfcException) as e:
         afc.fwrite(77, b"asdasd")
     assert e.value.status == AfcError.INVALID_ARG
 
 
-def test_file_read_write(afc: AfcService):
+def test_file_read_write(afc: AfcService) -> None:
     body = b"data"
 
     afc.set_file_contents(TEST_FILENAME, body)
@@ -323,7 +324,7 @@ def test_file_read_write(afc: AfcService):
         afc.rm(TEST_FILENAME)
 
 
-def test_get_file_contents_missing_file(afc: AfcService):
+def test_get_file_contents_missing_file(afc: AfcService) -> None:
     with pytest.raises(AfcFileNotFoundError):
         afc.get_file_contents("missing_file")
 
@@ -347,7 +348,7 @@ def test_dirlist(afc: AfcService):
         afc.rm("test_a")
 
 
-def test_push_pull_bigger_than_max_chunk(afc: AfcService):
+def test_push_pull_bigger_than_max_chunk(afc: AfcService) -> None:
     contents = b"x" * MAXIMUM_READ_SIZE * 2
     afc.set_file_contents("test", contents)
     assert contents == afc.get_file_contents("test")

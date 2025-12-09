@@ -1,9 +1,8 @@
-from pymobiledevice3.services.dvt.instruments.location_simulation import (
-    LocationSimulation,
-)
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
 
 
-def test_set_location(dvt):
+def test_set_location(dvt: DvtSecureSocketProxyService) -> None:
     """
     Test set location.
     """
@@ -11,7 +10,7 @@ def test_set_location(dvt):
     LocationSimulation(dvt).set(40.690008, -74.045843)
 
 
-def test_clear_location(dvt):
+def test_clear_location(dvt: DvtSecureSocketProxyService) -> None:
     """
     Test clear location simulation
     """

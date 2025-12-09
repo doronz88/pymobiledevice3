@@ -15,7 +15,7 @@ def user_bundle_id(lockdown: LockdownClient) -> str:
     return next(iter(user_apps))
 
 
-def test_missing_bundle_id(lockdown: LockdownClient):
+def test_missing_bundle_id(lockdown: LockdownClient) -> None:
     with pytest.raises(AppNotInstalledError):
         HouseArrestService(lockdown=lockdown, bundle_id="com.pymobiledevice3.missing.app")
 
