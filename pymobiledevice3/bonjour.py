@@ -300,10 +300,9 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
     adapters = _Adapters()
 
     ptr_targets: set[str] = set()
-    srv_map: dict[str, dict] = {}
+    srv_map: dict[str, list[dict]] = defaultdict(list)  # instance_name -> list of {"target", "port"}
     txt_map: dict[str, dict] = {}
-    # host -> list[(ip, iface)]
-    host_addrs: dict[str, list[Address]] = defaultdict(list)
+    host_addrs: dict[str, list[Address]] = defaultdict(list)  # host -> list[(ip, iface)]
 
     def _record_addr(rr_name: str, ip_str: str, pkt_addr):
         # Determine family and possible scopeid from the packet that delivered this RR
@@ -314,7 +313,7 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
         iface = adapters.pick_iface_for_ip(ip_str, family, scopeid)
         if iface is None:
             return
-        # avoid duplicates for the same host/ip
+        # Avoid duplicates for the same host/ip
         existing = host_addrs[rr_name]
         if not any(a.ip == ip_str for a in existing):
             existing.append(Address(ip=ip_str, iface=iface))
@@ -333,11 +332,10 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
                 if t == QTYPE_PTR and rr.get("name") == service_type:
                     ptr_targets.add(rr.get("ptrdname"))
                 elif t == QTYPE_SRV:
-                    srv_map[rr["name"]] = {
-                        "target": rr.get("target"),
-                        "port": rr.get("port"),
-                    }
+                    srv_map[rr["name"]].append({"target": rr.get("target"), "port": rr.get("port")})
                 elif t == QTYPE_TXT:
+                    # TODO: This could possibly mix the properties of multiple TXT records for the same instance.
+                    #       However, it's currently unused.
                     txt_map[rr["name"]] = rr.get("txt", {})
                 elif (t == QTYPE_A and rr.get("address")) or (t == QTYPE_AAAA and rr.get("address")):
                     _record_addr(rr["name"], rr["address"], pkt_addr)
@@ -348,20 +346,21 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
     # Assemble dataclasses
     results: list[ServiceInstance] = []
     for inst in sorted(ptr_targets):
-        srv = srv_map.get(inst, {})
-        target = srv.get("target")
-        host = (target[:-1] if target and target.endswith(".") else target) or None
-        addrs = host_addrs.get(target, []) if target else []
+        srv_entries = srv_map.get(inst, [])
         props = txt_map.get(inst, {})
-        results.append(
-            ServiceInstance(
-                instance=inst,
-                host=host,
-                port=srv.get("port"),
-                addresses=addrs,
-                properties=props,
+        for srv in srv_entries:
+            target = srv.get("target")
+            host = (target[:-1] if target and target.endswith(".") else target) or None
+            addrs = host_addrs.get(target, []) if target else []
+            results.append(
+                ServiceInstance(
+                    instance=inst,
+                    host=host,
+                    port=srv.get("port"),
+                    addresses=addrs,
+                    properties=props,
+                )
             )
-        )
     return results
 
 
