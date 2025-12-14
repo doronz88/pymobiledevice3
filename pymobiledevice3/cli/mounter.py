@@ -2,7 +2,7 @@ import asyncio
 import logging
 from functools import update_wrapper
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 from urllib.error import URLError
 
 import typer
@@ -183,7 +183,7 @@ async def mounter_auto_mount_task(service_provider: LockdownServiceProvider, xco
 def mounter_auto_mount(
     service_provider: ServiceProviderDep,
     xcode: Annotated[
-        Path,
+        Optional[Path],
         typer.Option(
             "--xcode",
             "-x",
@@ -192,11 +192,11 @@ def mounter_auto_mount(
             dir_okay=False,
             help="Xcode application path used to figure out automatically the DeveloperDiskImage path",
         ),
-    ],
+    ] = None,
     version: Annotated[
-        str,
-        typer.Option(help="use a different DeveloperDiskImage version from the one retrieved by lockdownconnection"),
-    ],
+        Optional[str],
+        typer.Option(help="Use a different DeveloperDiskImage version from the one retrieved by lockdownconnection"),
+    ] = None,
 ) -> None:
     """auto-detect correct DeveloperDiskImage and mount it"""
     asyncio.run(mounter_auto_mount_task(service_provider, str(xcode), version), debug=True)
