@@ -5,6 +5,7 @@ import uuid
 from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
+from typing import Union
 
 from pymobiledevice3.exceptions import (
     AfcException,
@@ -60,7 +61,9 @@ class Mobilebackup2Service(LockdownService):
         except LockdownError:
             return False
 
-    def backup(self, full: bool = True, backup_directory: str = ".", progress_callback=lambda x: None) -> None:
+    def backup(
+        self, full: bool = True, backup_directory: Union[str, Path] = ".", progress_callback=lambda x: None
+    ) -> None:
         """
         Backup a device.
         :param full: Whether to do a full backup. If full is True, any previous backup attempts will be discarded.

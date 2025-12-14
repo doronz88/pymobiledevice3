@@ -1,6 +1,6 @@
 from contextlib import suppress
 from functools import cached_property
-from typing import Optional
+from typing import Optional, overload
 
 from pymobiledevice3.exceptions import MissingValueError
 from pymobiledevice3.irecv import IRecv
@@ -8,9 +8,15 @@ from pymobiledevice3.lockdown import LockdownClient
 
 
 class Device:
-    def __init__(self, lockdown: LockdownClient = None, irecv: IRecv = None):
-        self.lockdown = lockdown
-        self.irecv = irecv
+    @overload
+    def __init__(self, lockdown: LockdownClient, irecv: None = None) -> None: ...
+
+    @overload
+    def __init__(self, lockdown: None = None, *, irecv: IRecv) -> None: ...
+
+    def __init__(self, lockdown: Optional[LockdownClient] = None, irecv: Optional[IRecv] = None) -> None:
+        self._lockdown: Optional[LockdownClient] = lockdown
+        self._irecv: Optional[IRecv] = irecv
 
     def __repr__(self) -> str:
         return (
@@ -19,6 +25,24 @@ class Device:
             f"hardware_model: {self.hardware_model} "
             f"image4-support: {self.is_image4_supported}>"
         )
+
+    @cached_property
+    def is_lockdown(self) -> bool:
+        return self._lockdown is not None
+
+    @cached_property
+    def is_irecv(self) -> bool:
+        return self._irecv is not None
+
+    @cached_property
+    def lockdown(self) -> LockdownClient:
+        assert self._lockdown is not None
+        return self._lockdown
+
+    @cached_property
+    def irecv(self) -> IRecv:
+        assert self._irecv is not None
+        return self._irecv
 
     @cached_property
     def ecid(self):

@@ -3,15 +3,14 @@ from pathlib import Path
 import pytest
 from packaging.version import Version
 
-from pymobiledevice3.remote.remote_service_discovery import (
-    RemoteServiceDiscoveryService,
-)
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from pymobiledevice3.services.remote_fetch_symbols import RemoteFetchSymbolsService
 
 
 @pytest.mark.asyncio
-async def test_fetch_symbols_list(service_provider):
+async def test_fetch_symbols_list(service_provider: LockdownServiceProvider) -> None:
     """
     Test listing of device symbol files
     """
@@ -26,7 +25,7 @@ async def test_fetch_symbols_list(service_provider):
 
 
 @pytest.mark.asyncio
-async def test_fetch_symbols_download(service_provider, tmp_path):
+async def test_fetch_symbols_download(service_provider: LockdownServiceProvider, tmp_path: Path) -> None:
     """
     Test download of device symbol files
     """

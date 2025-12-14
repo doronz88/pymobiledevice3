@@ -3,6 +3,7 @@ import contextlib
 from base64 import b64decode, b64encode
 from datetime import datetime
 from io import BytesIO
+from typing import Optional
 
 from PIL import Image
 
@@ -28,7 +29,7 @@ class ScreenCast:
         self.device_height = 0
         self.page_scale_factor = 0
         self._run = True
-        self.recording_task = None  # type: asyncio.Task | None
+        self.recording_task: Optional[asyncio.Task] = None
 
     @property
     def scale(self) -> float:

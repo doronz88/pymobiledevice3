@@ -2,7 +2,7 @@ import subprocess
 import sys
 
 import pytest
-from click.testing import CliRunner
+from typer.testing import CliRunner
 
 from pymobiledevice3 import __main__
 
@@ -12,10 +12,10 @@ pytestmark = [pytest.mark.cli]
 @pytest.mark.xfail(reason="Looks like click broke something")
 def test_cli_main_interface():
     runner = CliRunner()
-    r1 = runner.invoke(__main__.cli, ["--help"])
+    r1 = runner.invoke(__main__.app, ["--help"])
     assert r1.exit_code == 0
 
-    r2 = runner.invoke(__main__.cli)
+    r2 = runner.invoke(__main__.app)
     assert r2.exit_code == 0
 
 
@@ -68,7 +68,7 @@ def test_cli_suggestions(keyword, suggestions):
 @pytest.mark.parametrize("group", __main__.CLI_GROUPS.keys())
 def test_cli_groups(group):
     runner = CliRunner()
-    group_help_result = runner.invoke(__main__.cli, [group, "--help"])
+    group_help_result = runner.invoke(__main__.app, [group, "--help"])
     assert group_help_result.exit_code == 0
 
 

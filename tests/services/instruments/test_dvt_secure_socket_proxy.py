@@ -3,19 +3,18 @@ import time
 import pytest
 
 from pymobiledevice3.exceptions import DvtDirListError, UnrecognizedSelectorError
-from pymobiledevice3.services.dvt.instruments.application_listing import (
-    ApplicationListing,
-)
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 
 
-def get_process_data(dvt, name: str):
+def get_process_data(dvt: DvtSecureSocketProxyService, name: str):
     processes = DeviceInfo(dvt).proclist()
     return next(process for process in processes if process["name"] == name)
 
 
-def test_ls(dvt):
+def test_ls(dvt: DvtSecureSocketProxyService) -> None:
     """
     Test listing a directory.
     """
@@ -23,7 +22,7 @@ def test_ls(dvt):
     assert {"usr", "bin", "etc", "var", "private", "Applications", "Developer"} <= ls
 
 
-def test_ls_failure(dvt):
+def test_ls_failure(dvt: DvtSecureSocketProxyService) -> None:
     """
     Test listing a directory.
     """
@@ -31,7 +30,7 @@ def test_ls_failure(dvt):
         DeviceInfo(dvt).ls("Directory that does not exist")
 
 
-def test_proclist(dvt):
+def test_proclist(dvt: DvtSecureSocketProxyService) -> None:
     """
     Test listing processes.
     """
@@ -40,7 +39,7 @@ def test_proclist(dvt):
     assert not lockdownd["isApplication"]
 
 
-def test_applist(dvt):
+def test_applist(dvt: DvtSecureSocketProxyService) -> None:
     """
     Test listing applications.
     """
@@ -51,14 +50,14 @@ def test_applist(dvt):
     assert safari["Type"] == "PluginKit"
 
 
-def test_memlimitoff(dvt):
+def test_memlimitoff(dvt: DvtSecureSocketProxyService) -> None:
     """
     Test disabling memory limit.
     """
     ProcessControl(dvt).disable_memory_limit_for_pid(get_process_data(dvt, "SpringBoard")["pid"])
 
 
-def test_kill(dvt):
+def test_kill(dvt: DvtSecureSocketProxyService) -> None:
     """
     Test killing a process.
     """
@@ -71,7 +70,7 @@ def test_kill(dvt):
         assert aggregated["startDate"] < aggregated_after_kill["startDate"]
 
 
-def test_launch(dvt):
+def test_launch(dvt: DvtSecureSocketProxyService) -> None:
     """
     Test launching a process.
     """
@@ -82,7 +81,7 @@ def test_launch(dvt):
             assert process["name"] == "MobileSafari"
 
 
-def test_system_information(dvt):
+def test_system_information(dvt: DvtSecureSocketProxyService) -> None:
     """
     Test getting system information.
     """
@@ -93,7 +92,7 @@ def test_system_information(dvt):
     assert "_deviceDescription" in system_info and system_info["_deviceDescription"].startswith("Build Version")
 
 
-def test_hardware_information(dvt):
+def test_hardware_information(dvt: DvtSecureSocketProxyService) -> None:
     """
     Test getting hardware information.
     """
@@ -101,7 +100,7 @@ def test_hardware_information(dvt):
     assert hardware_info["numberOfCpus"] > 0
 
 
-def test_network_information(dvt):
+def test_network_information(dvt: DvtSecureSocketProxyService) -> None:
     """
     Test getting network information.
     """

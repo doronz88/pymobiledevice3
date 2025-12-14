@@ -1,17 +1,18 @@
 from datetime import datetime
-from typing import IO, Optional
+from pathlib import Path
+from typing import Annotated, Optional
 
-import click
+import typer
 from pygments import formatters, highlight, lexers
+from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import Command, print_hex, user_requested_colored_output
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, print_hex, user_requested_colored_output
 from pymobiledevice3.services.pcapd import PcapdService
 
-
-@click.group()
-def cli() -> None:
-    pass
+cli = InjectingTyper(
+    name="pcap",
+    no_args_is_help=True,
+)
 
 
 def print_packet_header(packet, color: bool) -> None:
@@ -37,17 +38,30 @@ def print_packet(packet, color: Optional[bool] = None):
     return packet
 
 
-@cli.command(cls=Command)
-@click.argument("out", type=click.File("wb"), required=False)
-@click.option("-c", "--count", type=click.INT, default=-1, help="Number of packets to sniff. Omit to endless sniff.")
-@click.option("--process", default=None, help="Process to filter. Omit for all.")
-@click.option("-i", "--interface", default=None, help="Interface name to filter. Omit for all.")
+@cli.command()
 def pcap(
-    service_provider: LockdownServiceProvider,
-    out: Optional[IO],
-    count: int,
-    process: Optional[str],
-    interface: Optional[str],
+    service_provider: ServiceProviderDep,
+    out: Optional[Path] = None,
+    count: Annotated[
+        int,
+        typer.Option(
+            "--count",
+            "-c",
+            help="Number of packets to sniff. Omit to endless sniff.",
+        ),
+    ] = -1,
+    process: Annotated[
+        Optional[str],
+        typer.Option(help="Process to filter. Omit for all."),
+    ] = None,
+    interface: Annotated[
+        Optional[str],
+        typer.Option(
+            "--interface",
+            "-i",
+            help="Interface name to filter. Omit for all.",
+        ),
+    ] = None,
 ) -> None:
     """Sniff device traffic"""
     service = PcapdService(lockdown=service_provider)
@@ -55,7 +69,8 @@ def pcap(
 
     if out is not None:
         packets_generator_with_print = (print_packet(p) for p in packets_generator)
-        service.write_to_pcap(out, packets_generator_with_print)
+        with out.open("wb") as out_file:
+            service.write_to_pcap(out_file, packets_generator_with_print)
         return
 
     for packet in packets_generator:

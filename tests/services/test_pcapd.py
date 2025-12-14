@@ -1,7 +1,8 @@
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.pcapd import PcapdService
 
 
-def test_sniffing(lockdown):
+def test_sniffing(lockdown: LockdownClient) -> None:
     """
     Test sniffing device traffic.
     :param pymobiledevice3.lockdown.LockdownClient lockdown: Lockdown client.

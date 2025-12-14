@@ -35,7 +35,7 @@ def ignore_connection_errors(f: Callable):
 
 
 @ignore_connection_errors
-def change_password(lockdown, old: str = "", new: str = "") -> None:
+def change_password(lockdown: LockdownClient, old: str = "", new: str = "") -> None:
     with Mobilebackup2Service(lockdown) as service:
         service.change_password(old=old, new=new)
 
@@ -47,12 +47,12 @@ def backup(lockdown: LockdownClient, backup_directory: Path) -> None:
 
 
 @pytest.mark.filterwarnings("ignore::UserWarning")
-def test_backup(lockdown, tmp_path):
+def test_backup(lockdown: LockdownClient, tmp_path: Path) -> None:
     backup(lockdown, tmp_path)
 
 
 @pytest.mark.filterwarnings("ignore::UserWarning")
-def test_encrypted_backup(lockdown, tmp_path):
+def test_encrypted_backup(lockdown: LockdownClient, tmp_path: Path) -> None:
     change_password(lockdown, new=PASSWORD)
     backup(lockdown, tmp_path)
     change_password(lockdown, old=PASSWORD)

@@ -1,7 +1,6 @@
 construct>=2.9.29
 construct-typing>=0.7.0
 asn1
-click
 coloredlogs
 IPython
 bpylist2>=4.0.1
@@ -39,3 +38,5 @@ sslpsk-pmd3>=1.0.3;python_version<'3.13'
 python-pcapng>=2.1.1
 plumbum
 pyimg4>=0.8.8
+typer>=0.20.0
+typer-injector>=0.2.0

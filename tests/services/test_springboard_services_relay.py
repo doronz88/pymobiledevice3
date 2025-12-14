@@ -1,9 +1,10 @@
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.springboard import SpringBoardServicesService
 
 PNG_HEADER = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a"
 
 
-def test_get_icon_png_data(lockdown):
+def test_get_icon_png_data(lockdown: LockdownClient) -> None:
     """
     Test that getting icon's data returns a valid PNG.
     :param pymobiledevice3.lockdown.LockdownClient lockdown: Lockdown client.
@@ -13,7 +14,7 @@ def test_get_icon_png_data(lockdown):
         assert icon_data.startswith(PNG_HEADER)
 
 
-def test_get_icon_date(lockdown):
+def test_get_icon_date(lockdown: LockdownClient) -> None:
     """
     :param pymobiledevice3.lockdown.LockdownClient lockdown: Lockdown client.
     """
@@ -21,7 +22,7 @@ def test_get_icon_date(lockdown):
         assert len(springboard.get_icon_state()[0]) > 0
 
 
-def test_set_icon_date(lockdown):
+def test_set_icon_date(lockdown: LockdownClient) -> None:
     """
     :param pymobiledevice3.lockdown.LockdownClient lockdown: Lockdown client.
     """

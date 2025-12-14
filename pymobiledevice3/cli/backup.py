@@ -1,42 +1,65 @@
 import logging
+from pathlib import Path
+from typing import Annotated, Literal
 
-import click
+import typer
 from tqdm import tqdm
+from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import Command
-from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.cli.cli_common import ServiceProviderDep
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
-
-source_option = click.option("--source", default="", help="The UDID of the source device.")
-password_option = click.option("-p", "--password", default="", help="Backup password.")
-backup_directory_arg = click.argument("backup-directory", type=click.Path(exists=True, file_okay=False))
-backup_directory_option = click.option(
-    "-b", "--backup-directory", type=click.Path(exists=True, file_okay=False), default="."
-)
 
 logger = logging.getLogger(__name__)
 
 
-@click.group()
-def cli() -> None:
-    pass
-
-
-@cli.group()
-def backup2() -> None:
-    """Backup/Restore options"""
-    pass
-
-
-@backup2.command(cls=Command)
-@click.argument("backup-directory", type=click.Path(file_okay=False))
-@click.option(
-    "--full",
-    is_flag=True,
-    help=("Whether to do a full backup. If full is True, any previous backup attempts will be discarded."),
+cli = InjectingTyper(
+    name="backup2",
+    help="Backup/Restore options",
+    no_args_is_help=True,
 )
-def backup(service_provider: LockdownServiceProvider, backup_directory: str, full: bool) -> None:
+
+
+SourceOption = Annotated[
+    str,
+    typer.Option(help="The UDID of the source device."),
+]
+PasswordOption = Annotated[
+    str,
+    typer.Option(
+        "--password",
+        "-p",
+        help="Backup password.",
+    ),
+]
+BackupDirectoryArg = Annotated[
+    Path,
+    typer.Argument(
+        exists=True,
+        file_okay=False,
+    ),
+]
+BackupDirectoryOption = Annotated[
+    Path,
+    typer.Option(
+        "--backup-directory",
+        "-b",
+        exists=True,
+        file_okay=False,
+    ),
+]
+
+
+@cli.command()
+def backup(
+    service_provider: ServiceProviderDep,
+    backup_directory: BackupDirectoryArg,
+    full: Annotated[
+        bool,
+        typer.Option(
+            help="Whether to do a full backup. If full is True, any previous backup attempts will be discarded.",
+        ),
+    ],
+) -> None:
     """
     Backup device.
 
@@ -45,34 +68,43 @@ def backup(service_provider: LockdownServiceProvider, backup_directory: str, ful
     backup_client = Mobilebackup2Service(service_provider)
     with tqdm(total=100, dynamic_ncols=True) as pbar:
 
-        def update_bar(percentage):
+        def update_bar(percentage) -> None:
             pbar.n = percentage
             pbar.refresh()
 
-        backup_client.backup(full=full, backup_directory=backup_directory, progress_callback=update_bar)
+        backup_client.backup(full=full, backup_directory=str(backup_directory), progress_callback=update_bar)
 
 
-@backup2.command(cls=Command)
-@backup_directory_arg
-@click.option("--system/--no-system", default=False, help="Restore system files.")
-@click.option("--reboot/--no-reboot", default=True, help="Reboot the device when done.")
-@click.option("--copy/--no-copy", default=False, help="Create a copy of backup folder before restoring.")
-@click.option("--settings/--no-settings", default=True, help="Restore device settings.")
-@click.option("--remove/--no-remove", default=False, help="Remove items which aren't being restored.")
-@click.option("--skip-apps", is_flag=True, help="Do not trigger re-installation of apps after restore")
-@password_option
-@source_option
+@cli.command()
 def restore(
-    service_provider: LockdownServiceProvider,
-    backup_directory: str,
-    system: bool,
-    reboot: bool,
-    copy: bool,
-    settings: bool,
-    remove: bool,
-    skip_apps: bool,
-    password: str,
-    source: str,
+    service_provider: ServiceProviderDep,
+    backup_directory: BackupDirectoryArg,
+    system: Annotated[
+        bool,
+        typer.Option(help="Restore system files."),
+    ] = False,
+    reboot: Annotated[
+        bool,
+        typer.Option(help="Reboot the device when done."),
+    ] = True,
+    copy: Annotated[
+        bool,
+        typer.Option(help="Create a copy of backup folder before restoring."),
+    ] = False,
+    settings: Annotated[
+        bool,
+        typer.Option(help="Restore device settings."),
+    ] = True,
+    remove: Annotated[
+        bool,
+        typer.Option(help="Remove items which aren't being restored."),
+    ] = False,
+    skip_apps: Annotated[
+        bool,
+        typer.Option(help="Do not trigger re-installation of apps after restore."),
+    ] = False,
+    password: PasswordOption = "",
+    source: SourceOption = "",
 ) -> None:
     """
     Restore a backup to a device.
@@ -82,12 +114,12 @@ def restore(
     backup_client = Mobilebackup2Service(service_provider)
     with tqdm(total=100, dynamic_ncols=True) as pbar:
 
-        def update_bar(percentage):
+        def update_bar(percentage) -> None:
             pbar.n = percentage
             pbar.refresh()
 
         backup_client.restore(
-            backup_directory=backup_directory,
+            backup_directory=str(backup_directory),
             progress_callback=update_bar,
             system=system,
             reboot=reboot,
@@ -100,47 +132,49 @@ def restore(
         )
 
 
-@backup2.command(cls=Command)
-@backup_directory_arg
-@source_option
-def info(service_provider: LockdownClient, backup_directory, source):
+@cli.command()
+def info(service_provider: ServiceProviderDep, backup_directory: BackupDirectoryArg, source: SourceOption = "") -> None:
     """
     Print information about a backup.
     """
     backup_client = Mobilebackup2Service(service_provider)
-    print(backup_client.info(backup_directory=backup_directory, source=source))
+    print(backup_client.info(backup_directory=str(backup_directory), source=source))
 
 
-@backup2.command("list", cls=Command)
-@backup_directory_arg
-@source_option
-def list_(service_provider: LockdownClient, backup_directory, source):
+@cli.command("list")
+def list_(
+    service_provider: ServiceProviderDep, backup_directory: BackupDirectoryArg, source: SourceOption = ""
+) -> None:
     """
     List all file in the backup in a CSV format.
     """
     backup_client = Mobilebackup2Service(service_provider)
-    print(backup_client.list(backup_directory=backup_directory, source=source))
+    print(backup_client.list(backup_directory=str(backup_directory), source=source))
 
 
-@backup2.command(cls=Command)
-@backup_directory_arg
-@password_option
-@source_option
-def unback(service_provider: LockdownClient, backup_directory, password, source):
+@cli.command()
+def unback(
+    service_provider: ServiceProviderDep,
+    backup_directory: BackupDirectoryArg,
+    password: PasswordOption = "",
+    source: SourceOption = "",
+) -> None:
     """
     Convert all files in the backup to the correct directory hierarchy.
     """
     backup_client = Mobilebackup2Service(service_provider)
-    backup_client.unback(backup_directory=backup_directory, password=password, source=source)
+    backup_client.unback(backup_directory=str(backup_directory), password=password, source=source)
 
 
-@backup2.command(cls=Command)
-@click.argument("domain-name")
-@click.argument("relative-path")
-@backup_directory_arg
-@password_option
-@source_option
-def extract(service_provider: LockdownClient, domain_name, relative_path, backup_directory, password, source):
+@cli.command()
+def extract(
+    service_provider: ServiceProviderDep,
+    domain_name: str,
+    relative_path: str,
+    backup_directory: BackupDirectoryArg,
+    password: PasswordOption = "",
+    source: SourceOption = "",
+) -> None:
     """
     Extract a file from the backup.
 
@@ -149,15 +183,21 @@ def extract(service_provider: LockdownClient, domain_name, relative_path, backup
     """
     backup_client = Mobilebackup2Service(service_provider)
     backup_client.extract(
-        domain_name, relative_path, backup_directory=backup_directory, password=password, source=source
+        domain_name, relative_path, backup_directory=str(backup_directory), password=password, source=source
     )
 
 
-@backup2.command(cls=Command)
-@click.argument("mode", type=click.Choice(["on", "off"], case_sensitive=False))
-@click.argument("password")
-@backup_directory_option
-def encryption(service_provider: LockdownClient, backup_directory, mode, password):
+@cli.command()
+def encryption(
+    service_provider: ServiceProviderDep,
+    *,
+    backup_directory: BackupDirectoryOption = Path("."),
+    mode: Annotated[
+        Literal["on", "off"],
+        typer.Argument(case_sensitive=False),
+    ],
+    password: str,
+) -> None:
     """
     Set backup encryption on / off.
 
@@ -170,16 +210,18 @@ def encryption(service_provider: LockdownClient, backup_directory, mode, passwor
         logger.error("Encryption already " + ("on!" if should_encrypt else "off!"))
         return
     if should_encrypt:
-        backup_client.change_password(backup_directory, new=password)
+        backup_client.change_password(str(backup_directory), new=password)
     else:
-        backup_client.change_password(backup_directory, old=password)
+        backup_client.change_password(str(backup_directory), old=password)
 
 
-@backup2.command(cls=Command)
-@click.argument("old-password")
-@click.argument("new-password")
-@backup_directory_option
-def change_password(service_provider: LockdownClient, old_password, new_password, backup_directory):
+@cli.command()
+def change_password(
+    service_provider: ServiceProviderDep,
+    old_password: str,
+    new_password: str,
+    backup_directory: BackupDirectoryOption = Path("."),
+) -> None:
     """
     Change the backup password.
     """
@@ -187,14 +229,13 @@ def change_password(service_provider: LockdownClient, old_password, new_password
     if not backup_client.will_encrypt:
         logger.error("Encryption is not turned on!")
         return
-    backup_client.change_password(backup_directory, old=old_password, new=new_password)
+    backup_client.change_password(str(backup_directory), old=old_password, new=new_password)
 
 
-@backup2.command(cls=Command)
-@backup_directory_arg
-def erase_device(service_provider: LockdownClient, backup_directory):
+@cli.command()
+def erase_device(service_provider: ServiceProviderDep, backup_directory: BackupDirectoryArg) -> None:
     """
     Erase all data on the device.
     """
     backup_client = Mobilebackup2Service(service_provider)
-    backup_client.erase_device(backup_directory)
+    backup_client.erase_device(str(backup_directory))

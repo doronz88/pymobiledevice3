@@ -1,11 +1,11 @@
-from typing import IO
+from pathlib import Path
+from typing import Annotated, Literal
 
-import click
 import IPython
+import typer
+from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import Command, print_json
-from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, print_json
 from pymobiledevice3.services.springboard import SpringBoardServicesService
 
 SHELL_USAGE = """
@@ -13,31 +13,27 @@ Use `service` to access the service features
 """
 
 
-@click.group()
-def cli():
-    pass
+cli = InjectingTyper(
+    name="springboard",
+    help="Access device UI",
+    no_args_is_help=True,
+)
+state_cli = InjectingTyper(
+    name="state",
+    help="icons state options",
+    no_args_is_help=True,
+)
+cli.add_typer(state_cli)
 
 
-@cli.group()
-def springboard():
-    """Access device UI"""
-    pass
-
-
-@springboard.group()
-def state():
-    """icons state options"""
-    pass
-
-
-@state.command("get", cls=Command)
-def state_get(service_provider: LockdownClient):
+@state_cli.command("get")
+def state_get(service_provider: ServiceProviderDep) -> None:
     """get icon state"""
     print_json(SpringBoardServicesService(lockdown=service_provider).get_icon_state())
 
 
-@springboard.command("shell", cls=Command)
-def springboard_shell(service_provider: LockdownClient):
+@cli.command("shell")
+def springboard_shell(service_provider: ServiceProviderDep) -> None:
     """open a shell to communicate with SpringBoardServicesService"""
     service = SpringBoardServicesService(lockdown=service_provider)
     IPython.embed(
@@ -48,43 +44,47 @@ def springboard_shell(service_provider: LockdownClient):
     )
 
 
-@springboard.command("icon", cls=Command)
-@click.argument("bundle_id")
-@click.argument("out", type=click.File("wb"))
-def springboard_icon(service_provider: LockdownClient, bundle_id, out):
+@cli.command("icon")
+def springboard_icon(service_provider: ServiceProviderDep, bundle_id: str, out: Path) -> None:
     """get application's icon"""
-    out.write(SpringBoardServicesService(lockdown=service_provider).get_icon_pngdata(bundle_id))
+    out.write_bytes(SpringBoardServicesService(lockdown=service_provider).get_icon_pngdata(bundle_id))
 
 
-@springboard.command("orientation", cls=Command)
-def springboard_orientation(service_provider: LockdownClient):
+@cli.command("orientation")
+def springboard_orientation(service_provider: ServiceProviderDep) -> None:
     """get screen orientation"""
     print(SpringBoardServicesService(lockdown=service_provider).get_interface_orientation())
 
 
-@springboard.command("wallpaper-home-screen", cls=Command)
-@click.argument("out", type=click.File("wb"))
-def springboard_wallpaper_home_screen(service_provider: LockdownClient, out: IO) -> None:
+@cli.command("wallpaper-home-screen")
+def springboard_wallpaper_home_screen(service_provider: ServiceProviderDep, out: Path) -> None:
     """get homescreen wallpaper"""
-    out.write(SpringBoardServicesService(lockdown=service_provider).get_wallpaper_pngdata())
+    out.write_bytes(SpringBoardServicesService(lockdown=service_provider).get_wallpaper_pngdata())
 
 
-@springboard.command("wallpaper-preview-image", cls=Command)
-@click.argument("wallpaper-name", type=click.Choice(["homescreen", "lockscreen"]))
-@click.argument("out", type=click.File("wb"))
-@click.option("-r", "--reload", is_flag=True, help="reload icon state before fetching image")
+@cli.command("wallpaper-preview-image")
 def springboard_wallpaper_preview_image(
-    service_provider: LockdownClient, wallpaper_name: str, out: IO, reload: bool
+    service_provider: ServiceProviderDep,
+    wallpaper_name: Literal["homescreen", "lockscreen"],
+    out: Path,
+    reload: Annotated[
+        bool,
+        typer.Option(
+            "--reload",
+            "-r",
+            help="reload icon state before fetching image",
+        ),
+    ] = False,
 ) -> None:
     """get the preview image of either the homescreen or the lockscreen"""
     with SpringBoardServicesService(lockdown=service_provider) as springboard_service:
         if reload:
             springboard_service.reload_icon_state()
-        out.write(springboard_service.get_wallpaper_preview_image(wallpaper_name))
+        out.write_bytes(springboard_service.get_wallpaper_preview_image(wallpaper_name))
 
 
-@springboard.command("homescreen-icon-metrics", cls=Command)
-def springboard_homescreen_icon_metrics(service_provider: LockdownServiceProvider) -> None:
+@cli.command("homescreen-icon-metrics")
+def springboard_homescreen_icon_metrics(service_provider: ServiceProviderDep) -> None:
     """Get homescreen icon metrics"""
     with SpringBoardServicesService(lockdown=service_provider) as springboard_service:
         print_json(springboard_service.get_homescreen_icon_metrics())

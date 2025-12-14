@@ -1,26 +1,25 @@
 import time
+from typing import Literal, Optional
 
-import click
+from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import Command
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.cli.cli_common import ServiceProviderDep
 from pymobiledevice3.services.power_assertion import PowerAssertionService
 
-
-@click.group()
-def cli() -> None:
-    pass
-
-
-@cli.command("power-assertion", cls=Command)
-@click.argument(
-    "assertion_type",
-    type=click.Choice(["AMDPowerAssertionTypeWirelessSync", "PreventUserIdleSystemSleep", "PreventSystemSleep"]),
+cli = InjectingTyper(
+    name="power-assertion",
+    no_args_is_help=True,
 )
-@click.argument("name")
-@click.argument("timeout", type=click.INT)
-@click.argument("details", required=False)
-def power_assertion(service_provider: LockdownServiceProvider, assertion_type, name, timeout, details) -> None:
+
+
+@cli.command("power-assertion")
+def power_assertion(
+    service_provider: ServiceProviderDep,
+    assertion_type: Literal["AMDPowerAssertionTypeWirelessSync", "PreventUserIdleSystemSleep", "PreventSystemSleep"],
+    name: str,
+    timeout: int,
+    details: Optional[str] = None,
+) -> None:
     """Create a power assertion"""
     with PowerAssertionService(service_provider).create_power_assertion(assertion_type, name, timeout, details):
         print("> Hit Ctrl+C to exit")

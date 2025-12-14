@@ -103,7 +103,7 @@ class WebElement(SeleniumApi):
     @property
     async def rect(self) -> Rect:
         """The size and location of the element."""
-        return await self._compute_layout(scroll_if_needed=False)[0]
+        return (await self._compute_layout(scroll_if_needed=False))[0]
 
     @property
     async def screenshot_as_base64(self) -> str:
@@ -144,7 +144,7 @@ class WebElement(SeleniumApi):
 
     async def submit(self):
         """Submits a form."""
-        form = self.find_element(By.XPATH, "./ancestor-or-self::form")
+        form = await self.find_element(By.XPATH, "./ancestor-or-self::form")
         submit_code = (
             "var e = arguments[0].ownerDocument.createEvent('Event');"
             "e.initEvent('submit', true, true);"
@@ -164,7 +164,7 @@ class WebElement(SeleniumApi):
             'function(element) { return element.innerText.replace(/^[^\\S\\xa0]+|[^\\S\\xa0]+$/g, "") }'
         )
 
-    async def touch(self):
+    async def touch(self) -> None:
         """Simulate touch interaction on the element."""
         _rect, center, _is_obscured = await self._compute_layout(use_viewport=True)
         await self.session.perform_interaction_sequence(

@@ -2,38 +2,41 @@ import logging
 import os
 import posixpath
 import re
-from typing import Optional, TextIO
+from contextlib import nullcontext
+from pathlib import Path
+from typing import Annotated, Optional, TextIO
 
-import click
+import typer
+from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import Command, get_last_used_terminal_formatting, user_requested_colored_output
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.cli.cli_common import (
+    ServiceProviderDep,
+    get_last_used_terminal_formatting,
+    user_requested_colored_output,
+)
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
-from pymobiledevice3.services.os_trace import OsTraceService, SyslogLogLevel
+from pymobiledevice3.services.os_trace import OsTraceService, SyslogEntry, SyslogLogLevel
 from pymobiledevice3.services.syslog import SyslogService
 
 logger = logging.getLogger(__name__)
 
-
-@click.group()
-def cli() -> None:
-    pass
-
-
-@cli.group()
-def syslog() -> None:
-    """Watch syslog messages"""
-    pass
+cli = InjectingTyper(
+    name="syslog",
+    help="Watch syslog messages",
+    no_args_is_help=True,
+)
 
 
-@syslog.command("live-old", cls=Command)
-def syslog_live_old(service_provider: LockdownClient):
+@cli.command("live-old")
+def syslog_live_old(service_provider: ServiceProviderDep) -> None:
     """view live syslog lines in raw bytes form from old relay"""
     for line in SyslogService(service_provider=service_provider).watch():
         print(line)
 
 
-def format_line(color, pid, syslog_entry, include_label: bool, image_offset: bool = False) -> Optional[str]:
+def format_line(
+    color: bool, pid: int, syslog_entry: SyslogEntry, include_label: bool, image_offset: bool = False
+) -> Optional[str]:
     log_level_colors = {
         SyslogLogLevel.NOTICE.name: "white",
         SyslogLogLevel.INFO.name: "white",
@@ -60,17 +63,17 @@ def format_line(color, pid, syslog_entry, include_label: bool, image_offset: boo
         label = f"[{syslog_entry.label.subsystem}][{syslog_entry.label.category}]"
 
     if color:
-        timestamp = click.style(str(timestamp), "green")
-        process_name = click.style(process_name, "magenta")
+        timestamp = typer.style(str(timestamp), "green")
+        process_name = typer.style(process_name, "magenta")
         if len(image_name) > 0:
-            image_name = click.style(image_name, "magenta")
+            image_name = typer.style(image_name, "magenta")
         if image_offset:
-            image_offset_str = click.style(image_offset_str, "blue")
-        syslog_pid = click.style(syslog_pid, "cyan")
+            image_offset_str = typer.style(image_offset_str, "blue")
+        syslog_pid = typer.style(syslog_pid, "cyan")
         log_level_color = log_level_colors[level]
-        level = click.style(level, log_level_color)
-        label = click.style(label, "cyan")
-        message = click.style(message, log_level_color)
+        level = typer.style(level, log_level_color)
+        label = typer.style(label, "cyan")
+        message = typer.style(message, log_level_color)
 
     line_format = "{timestamp} {process_name}{{{image_name}{image_offset_str}}}[{pid}] <{level}>: {message}"
 
@@ -93,7 +96,7 @@ def format_line(color, pid, syslog_entry, include_label: bool, image_offset: boo
 def syslog_live(
     service_provider: LockdownServiceProvider,
     out: Optional[TextIO],
-    pid: Optional[int],
+    pid: int,
     process_name: Optional[str],
     match: list[str],
     match_insensitive: list[str],
@@ -106,9 +109,9 @@ def syslog_live(
     match_regex += [re.compile(f".*({r}).*", re.IGNORECASE | re.DOTALL) for r in insensitive_regex]
 
     def replace(m):
-        if len(m.groups()):
-            return line.replace(m.group(1), click.style(m.group(1), bold=True, underline=True))
-        return None
+        if len(m.groups()) and line:
+            return line.replace(m.group(1), typer.style(m.group(1), bold=True, underline=True))
+        return ""
 
     for syslog_entry in OsTraceService(lockdown=service_provider).syslog(pid=pid):
         if process_name and posixpath.basename(syslog_entry.filename) != process_name:
@@ -116,6 +119,9 @@ def syslog_live(
 
         line_no_style = format_line(False, pid, syslog_entry, include_label, image_offset)
         line = format_line(user_requested_colored_output(), pid, syslog_entry, include_label, image_offset)
+
+        if line_no_style is None or line is None:
+            continue
 
         skip = False
 
@@ -127,7 +133,7 @@ def syslog_live(
                     break
                 else:
                     if user_requested_colored_output():
-                        match_line = match_line.replace(m, click.style(m, bold=True, underline=True))
+                        match_line = match_line.replace(m, typer.style(m, bold=True, underline=True))
                         line = match_line
 
         if match_insensitive is not None:
@@ -143,7 +149,7 @@ def syslog_live(
                         last_color_formatting = get_last_used_terminal_formatting(line[:start])
                         line = (
                             line[:start]
-                            + click.style(line[start:end], bold=True, underline=True)
+                            + typer.style(line[start:end], bold=True, underline=True)
                             + last_color_formatting
                             + line[end:]
                         )
@@ -168,50 +174,108 @@ def syslog_live(
                 print(line_no_style, file=out, flush=True)
 
 
-@syslog.command("live", cls=Command)
-@click.option("-o", "--out", type=click.File("wt"), help="log file")
-@click.option("--pid", type=click.INT, default=-1, help="pid to filter. -1 for all")
-@click.option("-pn", "--process-name", help="process name to filter")
-@click.option("-m", "--match", multiple=True, help="match expression")
-@click.option("-mi", "--match-insensitive", multiple=True, help="insensitive match expression")
-@click.option("include_label", "--label", is_flag=True, help="should include label")
-@click.option("-e", "--regex", multiple=True, help="filter only lines matching given regex")
-@click.option("-ei", "--insensitive-regex", multiple=True, help="filter only lines matching given regex (insensitive)")
-@click.option("-io", "--image-offset", is_flag=True, help="Include image offset in log line")
+@cli.command("live")
 def cli_syslog_live(
-    service_provider: LockdownServiceProvider,
-    out: Optional[TextIO],
-    pid: Optional[int],
-    process_name: Optional[str],
-    match: list[str],
-    match_insensitive: list[str],
-    include_label: bool,
-    regex: list[str],
-    insensitive_regex: list[str],
-    image_offset: bool,
+    service_provider: ServiceProviderDep,
+    out: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--out",
+            "-o",
+            help="log file",
+        ),
+    ] = None,
+    pid: Annotated[
+        int,
+        typer.Option(help="pid to filter. -1 for all"),
+    ] = -1,
+    process_name: Annotated[
+        Optional[str],
+        typer.Option(
+            "--process-name",
+            "-pn",
+            help="process name to filter",
+        ),
+    ] = None,
+    match: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--match",
+            "-m",
+            help="match expression",
+        ),
+    ] = None,
+    match_insensitive: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--match-insensitive",
+            "-mi",
+            help="case-insensitive match expression",
+        ),
+    ] = None,
+    include_label: Annotated[
+        bool,
+        typer.Option(
+            "--label",
+            help="should include label",
+        ),
+    ] = False,
+    regex: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--regex",
+            "-e",
+            help="filter only lines matching given regex",
+        ),
+    ] = None,
+    insensitive_regex: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--insensitive-regex",
+            "-ei",
+            help="filter only lines matching given regex (insensitive)",
+        ),
+    ] = None,
+    image_offset: Annotated[
+        bool,
+        typer.Option(
+            "--image-offset",
+            "-io",
+            help="Include image offset in log line",
+        ),
+    ] = False,
 ) -> None:
     """view live syslog lines"""
 
-    syslog_live(
-        service_provider,
-        out,
-        pid,
-        process_name,
-        match,
-        match_insensitive,
-        include_label,
-        regex,
-        insensitive_regex,
-        image_offset,
-    )
+    with out.open("wt") if out else nullcontext() as out_file:
+        syslog_live(
+            service_provider,
+            out_file,
+            pid,
+            process_name,
+            match or [],
+            match_insensitive or [],
+            include_label,
+            regex or [],
+            insensitive_regex or [],
+        )
 
 
-@syslog.command("collect", cls=Command)
-@click.argument("out", type=click.Path(exists=False, dir_okay=True, file_okay=False))
-@click.option("--size-limit", type=click.INT)
-@click.option("--age-limit", type=click.INT)
-@click.option("--start-time", type=click.INT)
-def syslog_collect(service_provider: LockdownClient, out, size_limit, age_limit, start_time):
+@cli.command("collect")
+def syslog_collect(
+    service_provider: ServiceProviderDep,
+    out: Annotated[
+        Path,
+        typer.Argument(
+            exists=False,
+            dir_okay=True,
+            file_okay=False,
+        ),
+    ],
+    size_limit: int,
+    age_limit: int,
+    start_time: int,
+) -> None:
     """
     Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
     If the filename doesn't exist, system_logs.logarchive will be created in the given directory.
@@ -219,12 +283,12 @@ def syslog_collect(service_provider: LockdownClient, out, size_limit, age_limit,
     if not os.path.exists(out):
         os.makedirs(out)
 
-    if not out.endswith(".logarchive"):
+    if out.suffix != ".logarchive":
         logger.warning(
             "given out path doesn't end with a .logarchive - consider renaming to be able to view "
             "the file with the likes of the Console.app and the `log show` utilities"
         )
 
     OsTraceService(lockdown=service_provider).collect(
-        out, size_limit=size_limit, age_limit=age_limit, start_time=start_time
+        str(out), size_limit=size_limit, age_limit=age_limit, start_time=start_time
     )

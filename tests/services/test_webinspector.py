@@ -1,9 +1,10 @@
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.webinspector import SAFARI, WebinspectorService
 
 TIMEOUT = 10
 
 
-async def testp_opening_app(lockdown):
+async def testp_opening_app(lockdown: LockdownClient) -> None:
     inspector = WebinspectorService(lockdown=lockdown)
     await inspector.connect(timeout=TIMEOUT)
     safari = await inspector.open_app(SAFARI)

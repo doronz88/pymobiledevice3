@@ -1,9 +1,6 @@
-import click
+from typer import Typer
 
-
-@click.group()
-def cli() -> None:
-    pass
+cli = Typer()
 
 
 @cli.command()
