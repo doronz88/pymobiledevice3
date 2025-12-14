@@ -107,7 +107,10 @@ class PasswordRequiredError(PairingError):
 
 
 class StartServiceError(PyMobileDevice3Exception):
-    pass
+    def __init__(self, service_name: str, message: str) -> None:
+        super().__init__()
+        self.service_name = service_name
+        self.message = message
 
 
 class FatalPairingError(PyMobileDevice3Exception):
