@@ -6,28 +6,28 @@ from pymobiledevice3.services.dvt.instruments.condition_inducer import Condition
 
 cli = InjectingTyper(
     name="developer",
-    help="Force a predefined condition",
+    help="Force predefined device conditions (network, thermal, battery) via DVT.",
     no_args_is_help=True,
 )
 
 
 @cli.command("list")
 def condition_list(service_provider: ServiceProviderDep) -> None:
-    """list all available conditions"""
+    """List available condition profiles."""
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         print_json(ConditionInducer(dvt).list())
 
 
 @cli.command("clear")
 def condition_clear(service_provider: ServiceProviderDep) -> None:
-    """clear current condition"""
+    """Clear any active induced condition."""
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         ConditionInducer(dvt).clear()
 
 
 @cli.command("set")
 def condition_set(service_provider: ServiceProviderDep, profile_identifier: str) -> None:
-    """set a specific condition"""
+    """Apply a specific condition profile by identifier."""
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         ConditionInducer(dvt).set(profile_identifier)
         OSUTILS.wait_return()

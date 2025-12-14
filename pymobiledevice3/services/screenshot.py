@@ -1,12 +1,12 @@
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 
 class ScreenshotService(LockdownService):
     SERVICE_NAME = "com.apple.mobile.screenshotr"
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownServiceProvider) -> None:
         super().__init__(lockdown, self.SERVICE_NAME, is_developer_service=True)
 
         dl_message_version_exchange = self.service.recv_plist()

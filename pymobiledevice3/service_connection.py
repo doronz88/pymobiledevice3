@@ -192,7 +192,7 @@ class ServiceConnection:
         except ssl.SSLEOFError as e:
             raise ConnectionTerminatedError from e
 
-    def send_recv_plist(self, data: dict, endianity: str = ">", fmt: Enum = plistlib.FMT_XML) -> Any:
+    def send_recv_plist(self, data: Union[dict, list], endianity: str = ">", fmt: Enum = plistlib.FMT_XML) -> Any:
         """
         Send a plist to the socket and receive a plist response.
 

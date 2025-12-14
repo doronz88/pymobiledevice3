@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="usbmux",
-    help="List devices or forward a TCP port",
+    help="Inspect usbmuxd-connected devices and forward TCP ports to them.",
     no_args_is_help=True,
 )
 
@@ -40,14 +40,14 @@ def usbmux_forward(
     ] = None,
     serial: Annotated[
         str,
-        typer.Option(help="device serial number"),
+        typer.Option(help="Device serial/UDID to forward traffic to."),
     ],
     daemonize: Annotated[
         bool,
-        typer.Option("--daemonize", "-d"),
+        typer.Option("--daemonize", "-d", help="Run the forwarder in the background."),
     ] = False,
 ) -> None:
-    """forward tcp port"""
+    """Forward a local TCP port to the device via usbmuxd."""
     forwarder = UsbmuxTcpForwarder(serial, dst_port, src_port, usbmux_address=usbmux_address)
 
     if daemonize:
@@ -89,7 +89,7 @@ def usbmux_list(
         ),
     ] = False,
 ) -> None:
-    """list connected devices"""
+    """List devices known to usbmuxd (USB and Wi-Fi)."""
     connected_devices = []
     for device in usbmux.list_devices(usbmux_address=usbmux_address):
         udid = device.serial

@@ -137,7 +137,10 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="webinspector",
-    help="Access webinspector services",
+    help=(
+        "Control Safari/WebViews (tabs, automation, JS shells, CDP). "
+        "Requires Web Inspector and Remote Automation enabled on the device."
+    ),
     no_args_is_help=True,
 )
 
@@ -201,7 +204,7 @@ def opened_tabs(
     service_provider: ServiceProviderDep,
     timeout: Annotated[
         float,
-        typer.Option("--timeout", "-t"),
+        typer.Option("--timeout", "-t", help="Seconds to wait for WebInspector to respond."),
     ] = 3.0,
 ) -> None:
     """
@@ -237,7 +240,7 @@ def launch(
     url: str,
     timeout: Annotated[
         float,
-        typer.Option("--timeout", "-t"),
+        typer.Option("--timeout", "-t", help="Seconds to wait for WebInspector to respond."),
     ] = 3.0,
 ) -> None:
     """
@@ -303,7 +306,7 @@ def shell(
     service_provider: ServiceProviderDep,
     timeout: Annotated[
         float,
-        typer.Option("--timeout", "-t"),
+        typer.Option("--timeout", "-t", help="Seconds to wait for WebInspector to respond."),
     ] = 3.0,
 ) -> None:
     """
@@ -328,15 +331,15 @@ def js_shell(
     url: str = "",
     timeout: Annotated[
         float,
-        typer.Option("--timeout", "-t"),
+        typer.Option("--timeout", "-t", help="Seconds to wait for WebInspector to respond."),
     ] = 3.0,
     automation: Annotated[
         bool,
-        typer.Option(help="Use remote automation"),
+        typer.Option(help="Use remote automation (requires Remote Automation toggle)."),
     ] = False,
     open_safari: Annotated[
         bool,
-        typer.Option(help="Avoid opening the Safari app"),
+        typer.Option(help="Use an existing WebView; skip auto-opening Safari."),
     ] = False,
 ) -> None:
     """

@@ -9,14 +9,14 @@ from pymobiledevice3.services.afc import AfcService, AfcShell
 
 cli = InjectingTyper(
     name="afc",
-    help="Manage device multimedia files",
+    help="Browse, push, and pull files via the AFC service (/var/mobile/Media).",
     no_args_is_help=True,
 )
 
 
 @cli.command("shell")
 def afc_shell(service_provider: ServiceProviderDep) -> None:
-    """open an AFC shell rooted at /var/mobile/Media"""
+    """Open an interactive AFC shell rooted at /var/mobile/Media."""
     AfcShell.create(service_provider)
 
 
@@ -30,17 +30,17 @@ def afc_pull(
         typer.Option(
             "--ignore-errors",
             "-i",
-            help="Ignore AFC pull errors",
+            help="Continue downloading even if some files error (best-effort pull).",
         ),
     ],
 ) -> None:
-    """pull remote file from /var/mobile/Media"""
+    """Download a remote path under /var/mobile/Media to the local filesystem."""
     AfcService(lockdown=service_provider).pull(str(remote_file), str(local_file), ignore_errors=ignore_errors)
 
 
 @cli.command("push")
 def afc_push(service_provider: ServiceProviderDep, local_file: Path, remote_file: Path) -> None:
-    """push local file into /var/mobile/Media"""
+    """Upload a local file into /var/mobile/Media."""
     AfcService(lockdown=service_provider).push(str(local_file), str(remote_file))
 
 
@@ -50,15 +50,15 @@ def afc_ls(
     remote_file: Path,
     recursive: Annotated[
         bool,
-        typer.Option("--recursive", "-r"),
+        typer.Option("--recursive", "-r", help="Recurse into subdirectories when listing."),
     ] = False,
 ) -> None:
-    """perform a dirlist rooted at /var/mobile/Media"""
+    """List files under /var/mobile/Media (optionally recursively)."""
     for path in AfcService(lockdown=service_provider).dirlist(str(remote_file), -1 if recursive else 1):
         print(path)
 
 
 @cli.command("rm")
 def afc_rm(service_provider: ServiceProviderDep, remote_file: Path) -> None:
-    """remove a file rooted at /var/mobile/Media"""
+    """Delete a file under /var/mobile/Media."""
     AfcService(lockdown=service_provider).rm(str(remote_file))

@@ -22,9 +22,9 @@ from pymobiledevice3.services.screenshot import ScreenshotService
 cli = InjectingTyper(
     name="developer",
     help=dedent("""\
-        Perform developer operations (Requires enable of Developer-Mode)
+        Developer tooling for iOS devices (requires Developer Mode + mounted DeveloperDiskImage).
 
-        These options require the DeveloperDiskImage.dmg to be mounted on the device prior
+        These commands require the DeveloperDiskImage.dmg to be mounted on the device prior
         to execution. You can achieve this using:
 
         pymobiledevice3 mounter mount
@@ -51,12 +51,12 @@ def developer_shell(
     service: str,
     remove_ssl_context: Annotated[bool, typer.Option("--remove-ssl-context", "-r")] = False,
 ) -> None:
-    """Launch developer IPython shell (used for pymobiledevice3 R&D)"""
+    """Open an IPython shell connected to a developer service (for exploration/R&D)."""
     with RemoteServer(service_provider, service, remove_ssl_context) as service:
         service.shell()
 
 
 @cli.command()
 def screenshot(service_provider: ServiceProviderDep, out: Path) -> None:
-    """Take a screenshot in PNG format"""
+    """Capture a PNG screenshot (Depcrecated API)."""
     out.write_bytes(ScreenshotService(lockdown=service_provider).take_screenshot())

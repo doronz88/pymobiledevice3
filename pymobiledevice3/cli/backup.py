@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="backup2",
-    help="Backup/Restore options",
+    help="Create, inspect, and restore MobileBackup2 backups.",
     no_args_is_help=True,
 )
 

@@ -11,6 +11,7 @@ from pymobiledevice3.services.pcapd import PcapdService
 
 cli = InjectingTyper(
     name="pcap",
+    help="Sniff device traffic via pcapd and optionally save to a .pcap file.",
     no_args_is_help=True,
 )
 
@@ -63,7 +64,7 @@ def pcap(
         ),
     ] = None,
 ) -> None:
-    """Sniff device traffic"""
+    """Sniff device traffic."""
     service = PcapdService(lockdown=service_provider)
     packets_generator = service.watch(packets_count=count, process=process, interface_name=interface)
 
