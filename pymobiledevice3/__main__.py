@@ -404,7 +404,13 @@ def invoke_cli_with_error_handling() -> bool:
     except QuicProtocolNotSupportedError:
         logger.error("Encountered a QUIC protocol error.")
     except StartServiceError as e:
-        logger.error(f"Failed to start: {e.service_name} with. Received error: {e.message}.")
+        if e.message == "ServiceProhibited" and e.service_name == "com.apple.pcapd.shim.remote":
+            logger.error(
+                f"The {e.service_name} service is USB only (at least for some iOS versions).\n"
+                "Full discussion is available in: https://github.com/doronz88/pymobiledevice3/issues/1515"
+            )
+        else:
+            logger.error(f"Failed to start: {e.service_name} with. Received error: {e.message}.")
     except click.ClickException as e:
         from typer import rich_utils
 
