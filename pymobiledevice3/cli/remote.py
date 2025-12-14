@@ -70,7 +70,7 @@ async def cli_browse(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> None:
 
 cli = InjectingTyper(
     name="remote",
-    help="Create RemoteXPC tunnels",
+    help="Create and browse RemoteXPC tunnels (RSD/tunneld) for developer services.",
     no_args_is_help=True,
 )
 
@@ -78,16 +78,16 @@ cli = InjectingTyper(
 @cli.command("tunneld")
 @sudo_required
 def cli_tunneld(
-    host: Annotated[str, typer.Option()] = TUNNELD_DEFAULT_ADDRESS[0],
-    port: Annotated[int, typer.Option()] = TUNNELD_DEFAULT_ADDRESS[1],
-    daemonize: Annotated[bool, typer.Option("--daemonize", "-d")] = False,
+    host: Annotated[str, typer.Option(help="Address to bind the tunneld server to.")] = TUNNELD_DEFAULT_ADDRESS[0],
+    port: Annotated[int, typer.Option(help="Port to bind the tunneld server to.")] = TUNNELD_DEFAULT_ADDRESS[1],
+    daemonize: Annotated[bool, typer.Option("--daemonize", "-d", help="Run tunneld in the background.")] = False,
     protocol: Annotated[
         TunnelProtocol,
         typer.Option(
             "--protocol",
             "-p",
             case_sensitive=False,
-            help="Transport protocol. If python version >= 3.13 will default to TCP. Otherwise will default to QUIC",
+            help="Transport protocol for tunneld (default: TCP on Python >=3.13, otherwise QUIC).",
         ),
     ] = TunnelProtocol.DEFAULT,
     usb: Annotated[bool, typer.Option(help="Enable USB monitoring")] = True,
@@ -233,6 +233,7 @@ def cli_start_tunnel(
             "--connection-type",
             "-t",
             case_sensitive=False,
+            help="Connection interface to tunnel (USB, WiFi, etc.).",
         ),
     ] = ConnectionType.USB,
     udid: Annotated[
@@ -241,15 +242,15 @@ def cli_start_tunnel(
     ] = None,
     secrets: Annotated[
         Path,
-        typer.Option(help="TLS keyfile for decrypting with Wireshark"),
+        typer.Option(help="File to write TLS secrets for Wireshark decryption."),
     ],
     script_mode: Annotated[
         bool,
-        typer.Option(help="Show only HOST and port number to allow easy parsing from external shell scripts"),
+        typer.Option(help="Print only HOST and port for scripts instead of formatted output."),
     ] = False,
     max_idle_timeout: Annotated[
         float,
-        typer.Option(help="Maximum QUIC idle time (ping interval)"),
+        typer.Option(help="Maximum idle time before QUIC keepalive pings are sent."),
     ] = MAX_IDLE_TIMEOUT,
     protocol: Annotated[
         TunnelProtocol,
@@ -257,7 +258,7 @@ def cli_start_tunnel(
             "--protocol",
             "-p",
             case_sensitive=False,
-            help="Transport protocol. If python version >= 3.13 will default to TCP. Otherwise will default to QUIC",
+            help="Transport protocol for the tunnel (default: TCP on Python >=3.13, otherwise QUIC).",
         ),
     ] = TunnelProtocol.DEFAULT,
 ) -> None:

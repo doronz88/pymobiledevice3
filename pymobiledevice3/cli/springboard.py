@@ -15,12 +15,12 @@ Use `service` to access the service features
 
 cli = InjectingTyper(
     name="springboard",
-    help="Access device UI",
+    help="Interact with SpringBoard UI (icons, wallpapers, orientation, shell).",
     no_args_is_help=True,
 )
 state_cli = InjectingTyper(
     name="state",
-    help="icons state options",
+    help="Icon state operations.",
     no_args_is_help=True,
 )
 cli.add_typer(state_cli)
@@ -28,13 +28,13 @@ cli.add_typer(state_cli)
 
 @state_cli.command("get")
 def state_get(service_provider: ServiceProviderDep) -> None:
-    """get icon state"""
+    """Fetch the current icon layout/state."""
     print_json(SpringBoardServicesService(lockdown=service_provider).get_icon_state())
 
 
 @cli.command("shell")
 def springboard_shell(service_provider: ServiceProviderDep) -> None:
-    """open a shell to communicate with SpringBoardServicesService"""
+    """Open an IPython shell bound to SpringBoardServicesService."""
     service = SpringBoardServicesService(lockdown=service_provider)
     IPython.embed(
         header=SHELL_USAGE,
@@ -46,19 +46,19 @@ def springboard_shell(service_provider: ServiceProviderDep) -> None:
 
 @cli.command("icon")
 def springboard_icon(service_provider: ServiceProviderDep, bundle_id: str, out: Path) -> None:
-    """get application's icon"""
+    """Save an app's icon PNG to the given path."""
     out.write_bytes(SpringBoardServicesService(lockdown=service_provider).get_icon_pngdata(bundle_id))
 
 
 @cli.command("orientation")
 def springboard_orientation(service_provider: ServiceProviderDep) -> None:
-    """get screen orientation"""
+    """Print current screen orientation."""
     print(SpringBoardServicesService(lockdown=service_provider).get_interface_orientation())
 
 
 @cli.command("wallpaper-home-screen")
 def springboard_wallpaper_home_screen(service_provider: ServiceProviderDep, out: Path) -> None:
-    """get homescreen wallpaper"""
+    """Save the homescreen wallpaper PNG to the given path."""
     out.write_bytes(SpringBoardServicesService(lockdown=service_provider).get_wallpaper_pngdata())
 
 
@@ -76,7 +76,7 @@ def springboard_wallpaper_preview_image(
         ),
     ] = False,
 ) -> None:
-    """get the preview image of either the homescreen or the lockscreen"""
+    """Save the preview image for the homescreen or lockscreen wallpaper (optionally reload state first)."""
     with SpringBoardServicesService(lockdown=service_provider) as springboard_service:
         if reload:
             springboard_service.reload_icon_state()
@@ -85,6 +85,6 @@ def springboard_wallpaper_preview_image(
 
 @cli.command("homescreen-icon-metrics")
 def springboard_homescreen_icon_metrics(service_provider: ServiceProviderDep) -> None:
-    """Get homescreen icon metrics"""
+    """Print homescreen icon spacing/metrics."""
     with SpringBoardServicesService(lockdown=service_provider) as springboard_service:
         print_json(springboard_service.get_homescreen_icon_metrics())

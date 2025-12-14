@@ -40,7 +40,7 @@ IPSWME_API = "https://api.ipsw.me/v4/device/"
 
 cli = InjectingTyper(
     name="restore",
-    help="Restore an IPSW or access device in recovery mode",
+    help="Restore/erase IPSWs, fetch blobs, and manage devices in Recovery/DFU.",
     no_args_is_help=True,
 )
 
@@ -49,7 +49,7 @@ def device_dependency(
     ecid: Annotated[
         Optional[str],
         typer.Option(
-            help="ECID of the device to connect to. If not specified, the first connected device will be used.",
+            help="Target device ECID; defaults to the first connected USB device or waits for Recovery/DFU.",
         ),
     ] = None,
 ) -> Optional[Device]:
@@ -105,7 +105,7 @@ def ipsw_ctx_dependency(
         typer.Option(
             "--ipsw",
             "-i",
-            help="local IPSW file",
+            help="Path or URL to an IPSW. If omitted, choose a signed build interactively.",
         ),
     ] = None,
 ) -> contextlib.AbstractContextManager[ZipFile]:
@@ -127,7 +127,7 @@ IPSWCtxDep = Annotated[
 def tss_dependency(
     tss: Annotated[
         Optional[Path],
-        typer.Option(help="file containing SHSH blobs in plist format"),
+        typer.Option(help="Path to SHSH blob plist to use for signing requests."),
     ] = None,
 ) -> None:
     if tss is None:
@@ -226,9 +226,7 @@ async def restore_ramdisk_task(device: Device, ipsw_ctx: contextlib.AbstractCont
 @cli.command("ramdisk")
 def restore_ramdisk(device: DeviceDep, ipsw_ctx: IPSWCtxDep) -> None:
     """
-    don't perform an actual restore. just enter the update ramdisk
-
-    ipsw can be either a filename or an url
+    Boot only the update ramdisk without performing a restore (IPSW path or URL accepted).
     """
     asyncio.run(restore_ramdisk_task(device, ipsw_ctx), debug=True)
 
@@ -240,17 +238,15 @@ def restore_update(
     tss: TSSDep,
     erase: Annotated[
         bool,
-        typer.Option(help="use the Erase BuildIdentity (full factory-reset)"),
+        typer.Option(help="Erase and restore (factory reset) instead of updating in place."),
     ] = False,
     ignore_fdr: Annotated[
         bool,
-        typer.Option(help="only establish an FDR service connection, but don't proxy any traffic"),
+        typer.Option(help="Connect to the FDR service only (debug mode; no traffic proxying)."),
     ] = False,
 ) -> None:
     """
-    perform an update
-
-    ipsw can be either a filename or an url
+    Update or restore the device using an IPSW (local path or URL).
     """
     with ipsw_ctx as ipsw:
         asyncio.run(restore_update_task(device, ipsw, tss, erase, ignore_fdr), debug=True)

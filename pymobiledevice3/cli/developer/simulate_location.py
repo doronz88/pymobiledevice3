@@ -13,23 +13,22 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="simulate-location",
-    help="Simulate device location by given input",
+    help="Simulate GPS location (set, clear, or replay GPX routes).",
     no_args_is_help=True,
 )
 
 
 @cli.command("clear")
 def simulate_location_clear(service_provider: ServiceProviderDep) -> None:
-    """clear simulated location"""
+    """Stop location simulation and resume real GPS."""
     DtSimulateLocation(service_provider).clear()
 
 
 @cli.command("set")
 def simulate_location_set(service_provider: ServiceProviderDep, latitude: float, longitude: float) -> None:
     """
-    set a simulated location.
-    try:
-        ... set -- 40.690008 -74.045843 for liberty island
+    Set a fixed simulated location (latitude, longitude).
+    Example: `set 40.690008 -74.045843` (Liberty Island).
     """
     DtSimulateLocation(service_provider).set(latitude, longitude)
 
@@ -44,7 +43,7 @@ def simulate_location_play(
     timing_randomness_range: int,
     disable_sleep: Annotated[bool, typer.Option()] = False,
 ) -> None:
-    """play a .gpx file"""
+    """Replay a GPX route; optionally disable sleeps and add timing jitter."""
     DtSimulateLocation(service_provider).play_gpx_file(
         str(filename),
         disable_sleep=disable_sleep,

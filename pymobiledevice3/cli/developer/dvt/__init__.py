@@ -37,7 +37,7 @@ class MatchedProcessByPid(NamedTuple):
 
 cli = InjectingTyper(
     name="dvt",
-    help="Access advanced instrumentation APIs",
+    help="Drive DVT instrumentation APIs (process control, metrics, traces).",
     no_args_is_help=True,
 )
 
@@ -48,7 +48,7 @@ cli.add_typer(simulate_location.cli)
 
 @cli.command("proclist")
 def proclist(service_provider: ServiceProviderDep) -> None:
-    """Show process list"""
+    """Show processes (with start times) via DVT."""
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         processes = DeviceInfo(dvt).proclist()
         for process in processes:
@@ -60,21 +60,21 @@ def proclist(service_provider: ServiceProviderDep) -> None:
 
 @cli.command("is-running-pid")
 def is_running_pid(service_provider: ServiceProviderDep, pid: int) -> None:
-    """Simple check if PID is running"""
+    """Check if a PID is currently running."""
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         print_json(DeviceInfo(dvt).is_running_pid(pid))
 
 
 @cli.command("memlimitoff")
 def memlimitoff(service_provider: ServiceProviderDep, pid: int) -> None:
-    """Disable process memory limit"""
+    """Disable jetsam memory limit for a PID."""
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         ProcessControl(dvt).disable_memory_limit_for_pid(pid)
 
 
 @cli.command("applist")
 def applist(service_provider: ServiceProviderDep) -> None:
-    """Show application list"""
+    """List installed applications via DVT."""
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         apps = ApplicationListing(dvt).applist()
         print_json(apps)
@@ -90,7 +90,7 @@ def send_signal(
         typer.Option("--signal-name", "-s"),
     ] = None,
 ) -> None:
-    """Send a signal to process by its PID"""
+    """Send a signal to a PID (choose numeric SIG or --signal-name)."""
     if not sig and not signal_name:
         raise MissingParameter(param_type="argument|option", param_hint="'SIG|SIGNAL-NAME'")
     if sig and signal_name:
@@ -102,7 +102,7 @@ def send_signal(
 
 @cli.command("kill")
 def kill(service_provider: ServiceProviderDep, pid: int) -> None:
-    """Kill a process by its pid."""
+    """Kill a process by PID."""
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         ProcessControl(dvt).kill(pid)
 

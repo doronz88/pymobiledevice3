@@ -30,7 +30,9 @@ from pymobiledevice3.usbmux import select_devices_by_connection_type
 UDID_ENV_VAR = "PYMOBILEDEVICE3_UDID"
 TUNNEL_ENV_VAR = "PYMOBILEDEVICE3_TUNNEL"
 USBMUX_ENV_VAR = "PYMOBILEDEVICE3_USBMUX"
-USBMUX_OPTION_HELP = "usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT)."
+USBMUX_OPTION_HELP = (
+    "Address of the usbmuxd daemon (unix socket path or HOST:PORT). Defaults to the platform usbmuxd if omitted."
+)
 DEVICE_OPTIONS_PANEL_TITLE = "Device Options"
 OSUTILS = get_os_utils()
 
@@ -162,8 +164,8 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
             typer.Option(
                 metavar="HOST PORT",
                 help=dedent("""\
-                    RSD hostname and port number (as provided by a `start-tunnel` subcommand).
-                    NOTE: This argument is mutually exclusive with --tunnel.
+                    Hostname and port of a RemoteServiceDiscovery (from any of the `start-tunnel` subcommands).
+                    Mutually exclusive with --tunnel.
                 """),
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),
@@ -173,9 +175,8 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
             typer.Option(
                 envvar=TUNNEL_ENV_VAR,
                 help=dedent("""\
-                    Either an empty string to force tunneld device selection, or a UDID of a tunneld discovered device.
-                    The string may be suffixed with :PORT in case tunneld is not serving at the default port.
-                    NOTE: This argument is mutually exclusive with --rsd.
+                    Use a device discovered via tunneld. Provide a UDID (optionally with :PORT) or leave empty to pick
+                    interactively. Mutually exclusive with --rsd.
                 """),
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),
@@ -208,7 +209,7 @@ def any_service_provider_dependency(
         bool,
         typer.Option(
             expose_value=False,
-            help="Use bonjour browse for mobdev2 devices.",
+            help="Discover devices over bonjour/mobdev2 instead of usbmux.",
             rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
         ),
     ] = False,
@@ -217,7 +218,7 @@ def any_service_provider_dependency(
         typer.Option(
             envvar=USBMUX_ENV_VAR,
             expose_value=False,
-            help="usbmuxd listener address (in the form of either /path/to/unix/socket OR HOST:PORT).",
+            help=USBMUX_OPTION_HELP,
             rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
         ),
     ] = None,
@@ -225,7 +226,7 @@ def any_service_provider_dependency(
         Optional[str],
         typer.Option(
             envvar=UDID_ENV_VAR,
-            help="Device unique identifier.",
+            help="Target device UDID (defaults to the first USB device).",
             rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
         ),
     ] = None,
@@ -266,7 +267,7 @@ def no_autopair_service_provider_dependency(
         Optional[str],
         typer.Option(
             envvar=UDID_ENV_VAR,
-            help="Device unique identifier.",
+            help="Target device UDID (defaults to the first USB device).",
             rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
         ),
     ] = None,

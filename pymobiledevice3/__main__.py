@@ -211,8 +211,8 @@ app = InjectingTyper(
     # add_completion=False,
     rich_markup_mode="markdown",
     help=(
-        "Interact with a connected iDevice (iPhone, iPad, ...)\n\n"
-        "For more information please see: https://github.com/doronz88/pymobiledevice3"
+        "Swiss-army CLI for pairing, inspecting, backing up, and automating iOS devices.\n\n"
+        "Docs and examples: https://github.com/doronz88/pymobiledevice3"
     ),
 )
 
@@ -223,7 +223,7 @@ def _root(
         bool,
         typer.Option(
             "--reconnect",
-            help="Reconnect to device when disconnected.",
+            help="Automatically reconnect if the device disconnects mid-command.",
             show_default=False,
         ),
     ] = False,
@@ -233,11 +233,12 @@ def _root(
             "--verbose",
             "-v",
             count=True,
+            help="Increase logging verbosity (repeat for more detail).",
         ),
     ] = 0,
     color: Annotated[
         bool,
-        typer.Option(help="colorize output"),
+        typer.Option(help="Colorize output; disable with --no-color for plain logs."),
     ] = True,
 ) -> None:
     """

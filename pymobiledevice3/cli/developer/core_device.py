@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="core-device",
-    help="Access features exposed by the DeveloperDiskImage",
+    help="Access DeveloperDiskImage services (files, processes, app launch, diagnostics).",
     no_args_is_help=True,
 )
 
@@ -46,7 +46,7 @@ def core_device_list_directory(
     path: str,
     identifier: Annotated[str, typer.Option()] = "",
 ) -> None:
-    """List directory at given domain-path"""
+    """List directory contents for a given domain/path."""
     asyncio.run(core_device_list_directory_task(service_provider, domain, path, identifier))
 
 
@@ -80,7 +80,7 @@ def core_device_read_file(
         typer.Option("--output", "-o"),
     ],
 ) -> None:
-    """Read file from given domain-path"""
+    """Read a file from a domain/path to stdout or --output."""
     with output.open("wb") as output_file:
         asyncio.run(core_device_read_file_task(service_provider, domain, path, identifier, output_file))
 
@@ -115,7 +115,7 @@ def core_device_propose_empty_file(
     creation_time: Annotated[Optional[int], typer.Option()] = None,
     last_modification_time: Annotated[Optional[int], typer.Option()] = None,
 ) -> None:
-    """Write an empty file to given domain-path"""
+    """Create an empty file at the given domain/path with custom permissions/owner/timestamps."""
     asyncio.run(
         core_device_propose_empty_file_task(
             service_provider,
@@ -160,7 +160,7 @@ def core_device_launch_application(
         ),
     ] = None,
 ) -> None:
-    """Launch application"""
+    """Launch an app; optionally kill existing, wait for debugger, or set env vars."""
     asyncio.run(
         core_device_list_launch_application_task(
             service_provider,
@@ -180,7 +180,7 @@ async def core_device_list_processes_task(service_provider: RemoteServiceDiscove
 
 @cli.command("list-processes")
 def core_device_list_processes(service_provider: RSDServiceProviderDep) -> None:
-    """Get process list"""
+    """List running processes via CoreDevice."""
     asyncio.run(core_device_list_processes_task(service_provider))
 
 
@@ -193,7 +193,7 @@ async def core_device_uninstall_app_task(
 
 @cli.command("uninstall")
 def core_device_uninstall_app(service_provider: RSDServiceProviderDep, bundle_identifier: str) -> None:
-    """Uninstall application"""
+    """Uninstall an app by bundle identifier via CoreDevice."""
     asyncio.run(core_device_uninstall_app_task(service_provider, bundle_identifier))
 
 

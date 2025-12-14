@@ -37,25 +37,25 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="debugserver",
-    help="Interact with debugserver",
+    help="Start and drive debugserver sessions (RSD for iOS 17+, usbmux for older).",
     no_args_is_help=True,
 )
 
 
 @cli.command("applist")
 def debugserver_applist(service_provider: ServiceProviderDep) -> None:
-    """Get applist xml"""
+    """Print the debugserver applist XML for the device."""
     print_json(DebugServerAppList(service_provider).get())
 
 
 @cli.command("start-server")
 def debugserver_start_server(service_provider: ServiceProviderDep, local_port: Optional[int] = None) -> None:
     """
-    if local_port is provided, start a debugserver at remote listening on a given port locally.
-    if local_port is not provided and iOS version >= 17.0 then just print the connect string
+    Start debugserver and print the LLDB connect string.
 
-    Please note the connection must be done soon afterward using your own lldb client.
-    This can be done using the following commands within lldb shell.
+    - For iOS < 17, you must forward to a local port (--local-port).
+    - For iOS >= 17, if connected over RSD, the remote host:port is printed for LLDB.
+    Connect quickly with your own LLDB client using the printed steps.
     """
 
     if Version(service_provider.product_version) < Version("17.0"):
@@ -86,15 +86,15 @@ def debugserver_lldb(
     ],
     configuration: Annotated[
         str,
-        typer.Option(help="Usually Release/Debug"),
+        typer.Option(help="Build configuration to invoke (e.g., Debug or Release)."),
     ] = "Debug",
     lldb_command: Annotated[
         str,
-        typer.Option(help="Path to lldb command"),
+        typer.Option(help="Path to the lldb executable to run."),
     ] = "lldb",
     launch: Annotated[
         bool,
-        typer.Option(help="Launch the app after connecting to lldb"),
+        typer.Option(help="Automatically launch the app after attaching."),
     ] = False,
     breakpoints: Annotated[
         Optional[list[str]],

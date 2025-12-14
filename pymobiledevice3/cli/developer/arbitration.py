@@ -13,14 +13,14 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="arbitration",
-    help='Mark/unmark device as "in-use"',
+    help='Mark/unmark a device as "in-use" to avoid conflicts with other tools.',
     no_args_is_help=True,
 )
 
 
 @cli.command("version")
 def version(service_provider: ServiceProviderDep) -> None:
-    """get arbitration version"""
+    """Show arbitration protocol version."""
     with DtDeviceArbitration(service_provider) as device_arbitration:
         print_json(device_arbitration.version)
 
@@ -34,7 +34,7 @@ def check_in(
         typer.Option("--force", "-f"),
     ] = False,
 ) -> None:
-    """owner check-in"""
+    """Check-in as owner (marks device as in-use; use --force to override)."""
     with DtDeviceArbitration(service_provider) as device_arbitration:
         try:
             device_arbitration.check_in(hostname, force=force)
@@ -45,6 +45,6 @@ def check_in(
 
 @cli.command("check-out")
 def check_out(service_provider: ServiceProviderDep) -> None:
-    """owner check-out"""
+    """Release ownership and allow other tools to use the device."""
     with DtDeviceArbitration(service_provider) as device_arbitration:
         device_arbitration.check_out()

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="notifications",
-    help="Post/Observe notifications",
+    help="Post or observe Darwin notifications via notification_proxy.",
     no_args_is_help=True,
 )
 
@@ -24,10 +24,10 @@ def post(
     names: list[str],
     insecure: Annotated[
         bool,
-        typer.Option(help="use the insecure relay meant for untrusted clients instead"),
+        typer.Option(help="Use the insecure relay meant for untrusted clients instead of the trusted channel."),
     ],
 ) -> None:
-    """API for notify_post()."""
+    """Post one or more Darwin notifications (notify_post)."""
     service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
     for name in names:
         service.notify_post(name)
@@ -39,10 +39,10 @@ def observe(
     names: list[str],
     insecure: Annotated[
         bool,
-        typer.Option(help="use the insecure relay meant for untrusted clients instead"),
+        typer.Option(help="Use the insecure relay meant for untrusted clients instead of the trusted channel."),
     ],
 ) -> None:
-    """API for notify_register_dispatch()."""
+    """Subscribe and stream notifications (notify_register_dispatch)."""
     service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
     for name in names:
         service.notify_register_dispatch(name)
@@ -56,10 +56,10 @@ def observe_all(
     service_provider: ServiceProviderDep,
     insecure: Annotated[
         bool,
-        typer.Option(help="use the insecure relay meant for untrusted clients instead"),
+        typer.Option(help="Use the insecure relay meant for untrusted clients instead of the trusted channel."),
     ],
 ) -> None:
-    """attempt to observe all builtin firmware notifications."""
+    """Subscribe to all known firmware notifications and stream events."""
     service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
     for notification in get_notifications():
         service.notify_register_dispatch(notification)
