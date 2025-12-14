@@ -63,7 +63,7 @@ SubclassFilter = Annotated[
     ),
 ]
 Count = Annotated[
-    int,
+    Optional[int],
     typer.Option(
         "--count",
         "-c",
@@ -201,7 +201,7 @@ def stackshot(
 def parse_live_profile_session(
     service_provider: ServiceProviderDep,
     *,
-    count: Count = -1,
+    count: Count = None,
     bsc: BSCFilter = False,
     class_filters: ClassFilter,
     subclass_filters: SubclassFilter,
