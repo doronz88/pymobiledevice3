@@ -580,7 +580,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
                 raise PasswordRequiredError(
                     "your device is protected with password, please enter password in device and try again"
                 )
-            raise StartServiceError(response.get("Error"))
+            raise StartServiceError(name, response.get("Error"))
         return response
 
     @_reconnect_on_remote_close

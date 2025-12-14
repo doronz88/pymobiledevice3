@@ -105,6 +105,9 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
                 raise PyMobileDevice3Exception(
                     f'Invalid response for RSDCheckIn: {response}. Expected "ServiceService"'
                 )
+            error = response.get("Error")
+            if error is not None:
+                raise StartServiceError(name, error)
         except Exception:
             service.close()
             raise

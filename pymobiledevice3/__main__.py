@@ -44,6 +44,7 @@ from pymobiledevice3.exceptions import (
     QuicProtocolNotSupportedError,
     RSDRequiredError,
     SetProhibitedError,
+    StartServiceError,
     TunneldConnectionError,
     UserDeniedPairingError,
 )
@@ -402,6 +403,8 @@ def invoke_cli_with_error_handling() -> bool:
         )
     except QuicProtocolNotSupportedError:
         logger.error("Encountered a QUIC protocol error.")
+    except StartServiceError as e:
+        logger.error(f"Failed to start: {e.service_name} with. Received error: {e.message}.")
     except click.ClickException as e:
         from typer import rich_utils
 
