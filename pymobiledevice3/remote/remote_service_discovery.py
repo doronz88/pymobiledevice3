@@ -166,17 +166,18 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
 
 async def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[RSDDevice]:
     result = []
-    for hostname in await browse_remoted(timeout):
-        with RemoteServiceDiscoveryService((hostname, RSD_PORT)) as rsd:
-            properties = rsd.peer_info["Properties"]
-            result.append(
-                RSDDevice(
-                    hostname=hostname,
-                    udid=properties["UniqueDeviceID"],
-                    product_type=properties["ProductType"],
-                    os_version=properties["OSVersion"],
+    for instance in await browse_remoted(timeout):
+        for address in instance.addresses:
+            with RemoteServiceDiscoveryService((address.full_ip, RSD_PORT)) as rsd:
+                properties = rsd.peer_info["Properties"]
+                result.append(
+                    RSDDevice(
+                        hostname=address.full_ip,
+                        udid=properties["UniqueDeviceID"],
+                        product_type=properties["ProductType"],
+                        os_version=properties["OSVersion"],
+                    )
                 )
-            )
     return result
 
 
