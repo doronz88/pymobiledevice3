@@ -141,10 +141,8 @@ async def _tunneld(udid: Optional[str] = None) -> Optional[RemoteServiceDiscover
         raise NoDeviceConnectedError()
 
     if udid != "":
-        try:
-            # Connect to the specified device
-            service_provider = next(rsd for rsd in rsds if rsd.udid == udid)
-        except IndexError:
+        service_provider = next((rsd for rsd in rsds if rsd.udid == udid), None)
+        if service_provider is None:
             raise DeviceNotFoundError(udid) from None
     else:
         service_provider = rsds[0] if len(rsds) == 1 else prompt_device_list(rsds)
