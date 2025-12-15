@@ -3,6 +3,7 @@ import dataclasses
 import logging
 import sys
 import tempfile
+from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
 from typing import Annotated, Optional, TextIO
@@ -195,7 +196,7 @@ async def tunnel_task(
 
 async def start_tunnel_task(
     connection_type: ConnectionType,
-    secrets: TextIO,
+    secrets: Optional[TextIO],
     udid: Optional[str] = None,
     script_mode: bool = False,
     max_idle_timeout: float = MAX_IDLE_TIMEOUT,
@@ -226,7 +227,6 @@ async def start_tunnel_task(
 @cli.command("start-tunnel")
 @sudo_required
 def cli_start_tunnel(
-    *,
     connection_type: Annotated[
         ConnectionType,
         typer.Option(
@@ -241,9 +241,9 @@ def cli_start_tunnel(
         typer.Option(help="UDID for a specific device to look for"),
     ] = None,
     secrets: Annotated[
-        Path,
+        Optional[Path],
         typer.Option(help="File to write TLS secrets for Wireshark decryption."),
-    ],
+    ] = None,
     script_mode: Annotated[
         bool,
         typer.Option(help="Print only HOST and port for scripts instead of formatted output."),
@@ -265,7 +265,7 @@ def cli_start_tunnel(
     """start tunnel"""
     if not verify_tunnel_imports():
         return
-    with secrets.open("wt") as secrets_file:
+    with secrets.open("wt") if secrets is not None else nullcontext() as secrets_file:
         asyncio.run(
             start_tunnel_task(
                 connection_type,
