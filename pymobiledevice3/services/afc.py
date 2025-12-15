@@ -573,7 +573,7 @@ class AfcService(LockdownService):
         """
         Create a directory on the device.
 
-        Note: Unlike os.makedirs, this does not create parent directories automatically.
+        Note: This behaves like os.makedirs and will create parent directories as needed.
 
         :param filename: Path of the directory to create
         :return: Response data from the operation
