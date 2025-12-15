@@ -574,6 +574,7 @@ class AfcService(LockdownService):
         Create a directory on the device.
 
         Note: This behaves like os.makedirs and will create parent directories as needed.
+        It is idempotent and will not raise an error if the directory already exists.
 
         :param filename: Path of the directory to create
         :return: Response data from the operation
