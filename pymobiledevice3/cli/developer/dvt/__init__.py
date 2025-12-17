@@ -3,13 +3,13 @@ import logging
 import os
 import posixpath
 import shlex
-import signal
 from datetime import datetime
+from enum import IntEnum
 from pathlib import Path
 from typing import Annotated, NamedTuple, Optional
 
 import typer
-from click.exceptions import MissingParameter, UsageError
+from click.exceptions import BadParameter, MissingParameter, UsageError
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, print_json, user_requested_colored_output
@@ -80,22 +80,73 @@ def applist(service_provider: ServiceProviderDep) -> None:
         print_json(apps)
 
 
+class Signals(IntEnum):
+    """Platform-independent version of `signal.Signals`, allowing names to be used on Windows."""
+
+    HUP = 1
+    INT = 2
+    QUIT = 3
+    ILL = 4
+    TRAP = 5
+    ABRT = 6
+    EMT = 7
+    FPE = 8
+    KILL = 9
+    BUS = 10
+    SEGV = 11
+    SYS = 12
+    PIPE = 13
+    ALRM = 14
+    TERM = 15
+    URG = 16
+    STOP = 17
+    TSTP = 18
+    CONT = 19
+    CHLD = 20
+    TTIN = 21
+    TTOU = 22
+    IO = 23
+    XCPU = 24
+    XFSZ = 25
+    VTALRM = 26
+    PROF = 27
+    WINCH = 28
+    INFO = 29
+    USR1 = 30
+    USR2 = 31
+
+
 @cli.command("signal")
 def send_signal(
     service_provider: ServiceProviderDep,
     pid: int,
-    sig: Optional[int] = None,
+    sig: Annotated[
+        Optional[int],
+        typer.Argument(),
+    ] = None,
     signal_name: Annotated[
-        Optional[signal.Signals],
+        Optional[str],
         typer.Option("--signal-name", "-s"),
     ] = None,
 ) -> None:
     """Send a signal to a PID (choose numeric SIG or --signal-name)."""
-    if not sig and not signal_name:
-        raise MissingParameter(param_type="argument|option", param_hint="'SIG|SIGNAL-NAME'")
-    if sig and signal_name:
+    if sig is not None and signal_name is not None:
         raise UsageError(message="Cannot give SIG and SIGNAL-NAME together")
-    sig = sig or signal_name.value
+
+    if signal_name is not None:
+        normalized_signal_name = signal_name.upper().removeprefix("SIG")
+        try:
+            sig = Signals[normalized_signal_name]
+        except KeyError:
+            raise BadParameter(f"{signal_name!r} is not a valid signal") from None
+    elif sig is not None:
+        try:
+            sig = Signals(sig)
+        except ValueError:
+            raise BadParameter(f"{sig} is not a valid signal") from None
+    else:
+        raise MissingParameter(param_type="argument|option", param_hint="'SIG|SIGNAL-NAME'")
+
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         ProcessControl(dvt).signal(pid, sig)
 
