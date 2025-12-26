@@ -206,7 +206,6 @@ def any_service_provider_dependency(
     mobdev2: Annotated[
         bool,
         typer.Option(
-            expose_value=False,
             help="Discover devices over bonjour/mobdev2 instead of usbmux.",
             rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
         ),
@@ -215,7 +214,6 @@ def any_service_provider_dependency(
         Optional[str],
         typer.Option(
             envvar=USBMUX_ENV_VAR,
-            expose_value=False,
             help=USBMUX_OPTION_HELP,
             rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
         ),
@@ -247,7 +245,7 @@ def any_service_provider_dependency(
         return prompt_device_list(devices)
 
     if udid is not None:
-        return create_using_usbmux(serial=udid)
+        return create_using_usbmux(serial=udid, usbmux_address=usbmux)
 
     devices = select_devices_by_connection_type(connection_type="USB", usbmux_address=usbmux)
     if len(devices) <= 1:
