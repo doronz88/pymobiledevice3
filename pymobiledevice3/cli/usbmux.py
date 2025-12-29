@@ -6,7 +6,7 @@ import typer
 from typer_injector import InjectingTyper
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.cli.cli_common import USBMUX_OPTION_HELP, print_json
+from pymobiledevice3.cli.cli_common import USBMUX_ENV_VAR, USBMUX_OPTION_HELP, print_json
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.tcp_forwarder import UsbmuxTcpForwarder
 
@@ -35,13 +35,14 @@ def usbmux_forward(
         Optional[str],
         typer.Option(
             "--usbmux",
+            envvar=USBMUX_ENV_VAR,
             help=USBMUX_OPTION_HELP,
         ),
     ] = None,
     serial: Annotated[
-        str,
+        Optional[str],
         typer.Option(help="Device serial/UDID to forward traffic to."),
-    ],
+    ] = None,
     daemonize: Annotated[
         bool,
         typer.Option("--daemonize", "-d", help="Run the forwarder in the background."),
@@ -69,6 +70,7 @@ def usbmux_list(
         Optional[str],
         typer.Option(
             "--usbmux",
+            envvar=USBMUX_ENV_VAR,
             help=USBMUX_OPTION_HELP,
         ),
     ] = None,
