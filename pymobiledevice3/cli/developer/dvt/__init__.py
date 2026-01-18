@@ -166,46 +166,49 @@ def process_id_for_bundle_id(service_provider: ServiceProviderDep, app_bundle_id
 
 
 def get_matching_processes(
-    service_provider: ServiceProviderDep,
+    device_info: DeviceInfo,
     name: Optional[str] = None,
     bundle_identifier: Optional[str] = None,
 ) -> list[MatchedProcessByPid]:
     result: list[MatchedProcessByPid] = []
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        device_info = DeviceInfo(dvt)
-        for process in device_info.proclist():
-            current_name = process["name"]
-            current_bundle_identifier = process.get("bundleIdentifier", "")
-            pid = process["pid"]
-            if (bundle_identifier is not None and bundle_identifier in current_bundle_identifier) or (
-                name is not None and name in current_name
-            ):
-                result.append(MatchedProcessByPid(name=current_name, pid=pid))
+    for process in device_info.proclist():
+        current_name = process["name"]
+        current_bundle_identifier = process.get("bundleIdentifier", "")
+        pid = process["pid"]
+        if (bundle_identifier is not None and bundle_identifier in current_bundle_identifier) or (
+            name is not None and name in current_name
+        ):
+            result.append(MatchedProcessByPid(name=current_name, pid=pid))
     return result
 
 
 @cli.command("pkill")
 def pkill(
     service_provider: ServiceProviderDep,
-    expression: str,
+    expressions: Annotated[
+        list[str],
+        typer.Argument(help="One or more process-name (or bundle id) expressions to match."),
+    ],
     bundle: Annotated[
         bool,
-        typer.Option(help="Treat given expression as a bundle-identifier instead of a process name"),
+        typer.Option(help="Treat given expressions as bundle-identifiers instead of process names"),
     ] = False,
 ) -> None:
-    """Kill all processes containing `expression` in their name."""
-    matching_name = expression if not bundle else None
-    matching_bundle_identifier = expression if bundle else None
-    matching_processes = get_matching_processes(
-        service_provider, name=matching_name, bundle_identifier=matching_bundle_identifier
-    )
-
+    """Kill all processes containing each expression in their name."""
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        device_info = DeviceInfo(dvt)
         process_control = ProcessControl(dvt)
 
-        for process in matching_processes:
-            logger.info(f"killing {process.name}({process.pid})")
-            process_control.kill(process.pid)
+        for expression in expressions:
+            matching_name = expression if not bundle else None
+            matching_bundle_identifier = expression if bundle else None
+            matching_processes = get_matching_processes(
+                device_info, name=matching_name, bundle_identifier=matching_bundle_identifier
+            )
+
+            for process in matching_processes:
+                logger.info(f"Killing {process.name}({process.pid})")
+                process_control.kill(process.pid)
 
 
 @cli.command("launch")
