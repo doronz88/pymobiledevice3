@@ -6,7 +6,9 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Annotated, Optional
+from zipfile import ZipFile
 
 import typer
 from packaging.version import Version
@@ -80,9 +82,9 @@ def debugserver_start_server(service_provider: ServiceProviderDep, local_port: O
 @cli.command("lldb")
 def debugserver_lldb(
     service_provider: RSDServiceProviderDep,
-    xcodeproj_path: Annotated[
+    project_or_ipa_path: Annotated[
         Path,
-        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+        typer.Argument(exists=True, file_okay=True, dir_okay=True),
     ],
     configuration: Annotated[
         str,
@@ -106,11 +108,12 @@ def debugserver_lldb(
     ] = None,
 ) -> None:
     """
-    Automate lldb launch for a given xcodeproj.
+    Automate lldb launch for a given xcodeproj or IPA.
 
     \b
     This will:
-    - Build the given xcodeproj
+    - Build the given xcodeproj (if provided)
+    - Extract the given IPA (if provided)
     - Install it
     - Start a debugserver attached to it
     - Place breakpoints if given any
@@ -123,122 +126,154 @@ def debugserver_lldb(
         return
 
     commands = []
-    with local.cwd(xcodeproj_path.parent):
-        logger.info(f"Building {xcodeproj_path} for {configuration} configuration")
-        local["xcodebuild"]["-configuration", configuration, "build"]()
-        local_app = next(iter(Path(f"build/{configuration}-iphoneos").glob("*.app")))
-        logger.info(f"Using app: {local_app}")
+    temp_dir = None
+    local_app = None
+    install_source = None
 
-        info_plist_path = local_app / "Info.plist"
-        info_plist = plistlib.loads(info_plist_path.read_bytes())
-        bundle_identifier = info_plist["CFBundleIdentifier"]
-        logger.info(f"Bundle identifier: {bundle_identifier}")
+    if project_or_ipa_path.suffix == ".xcodeproj":
+        with local.cwd(project_or_ipa_path.parent):
+            logger.info(f"Building {project_or_ipa_path} for {configuration} configuration")
+            local["xcodebuild"]["-project", str(project_or_ipa_path), "-configuration", configuration, "build"]()
+            app_candidates = [app for app in Path("build").rglob("*.app") if (app / "Info.plist").exists()]
+            if not app_candidates:
+                logger.error("No built .app with Info.plist found under build/.")
+                return
+            app_candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            local_app = app_candidates[0].absolute()
+            install_source = local_app
+    elif project_or_ipa_path.suffix == ".ipa":
+        temp_dir = TemporaryDirectory()
+        with ZipFile(project_or_ipa_path, "r") as ipa_zip:
+            ipa_zip.extractall(temp_dir.name)
+        payload_dir = Path(temp_dir.name) / "Payload"
+        apps = list(payload_dir.glob("*.app"))
+        if not apps:
+            logger.error("No .app bundle found in IPA Payload.")
+            temp_dir.cleanup()
+            return
+        if len(apps) > 1:
+            logger.error("Multiple .app bundles found in IPA Payload; please provide a single-app IPA.")
+            temp_dir.cleanup()
+            return
+        local_app = apps[0].absolute()
+        install_source = project_or_ipa_path
+    else:
+        logger.error("Expected an .xcodeproj directory or an .ipa file.")
+        return
 
-        commands.append("platform select remote-ios")
-        commands.append(f'target create "{local_app.absolute()}"')
+    logger.info(f"Using app: {local_app}")
 
-        with InstallationProxyService(create_using_usbmux()) as installation_proxy:
-            logger.info("Installing app")
-            installation_proxy.install_from_local(local_app)
-            remote_path = installation_proxy.get_apps(bundle_identifiers=[bundle_identifier])[bundle_identifier]["Path"]
-            logger.info(f"Remote path: {remote_path}")
+    info_plist_path = local_app / "Info.plist"
+    info_plist = plistlib.loads(info_plist_path.read_bytes())
+    bundle_identifier = info_plist["CFBundleIdentifier"]
+    logger.info(f"Bundle identifier: {bundle_identifier}")
 
+    commands.append("platform select remote-ios")
+    commands.append(f'target create "{local_app.absolute()}"')
+
+    with InstallationProxyService(create_using_usbmux()) as installation_proxy:
+        logger.info("Installing app")
+        installation_proxy.install_from_local(install_source)
+        remote_path = installation_proxy.get_apps(bundle_identifiers=[bundle_identifier])[bundle_identifier]["Path"]
+        logger.info(f"Remote path: {remote_path}")
         commands.append(f'script lldb.target.module[0].SetPlatformFileSpec(lldb.SBFileSpec("{remote_path}"))')
 
-        debugserver_port = service_provider.get_service_port("com.apple.internal.dt.remote.debugproxy")
+    debugserver_port = service_provider.get_service_port("com.apple.internal.dt.remote.debugproxy")
 
-        # Add connection and launch commands
-        commands.append(f"process connect connect://[{service_provider.service.address[0]}]:{debugserver_port}")
+    # Add connection and launch commands
+    commands.append(f"process connect connect://[{service_provider.service.address[0]}]:{debugserver_port}")
 
-        if breakpoints:
-            for bp in breakpoints:
-                commands.append(f'breakpoint set -n "{bp}"')
+    if breakpoints:
+        for bp in breakpoints:
+            commands.append(f'breakpoint set -n "{bp}"')
 
-        if launch:
-            commands.append("process launch")
+    if launch:
+        commands.append("process launch")
 
-        if user_commands:
-            # Add user commands
-            commands += user_commands
+    if user_commands:
+        # Add user commands
+        commands += user_commands
 
-        logger.info("Starting lldb with automated setup and connection")
+    logger.info("Starting lldb with automated setup and connection")
 
-        # Works only on unix-based systems, so keep these imports here
-        import fcntl
-        import pty
-        import select as select_module
-        import termios
-        import tty
+    # Works only on unix-based systems, so keep these imports here
+    import fcntl
+    import pty
+    import select as select_module
+    import termios
+    import tty
 
-        master, slave = pty.openpty()
+    master, slave = pty.openpty()
 
-        process = None  # Initialize process variable for signal handler
+    process = None  # Initialize process variable for signal handler
 
-        # Copy terminal size from the current terminal to PTY
-        def resize_pty() -> None:
-            """Update PTY size to match current terminal size"""
-            size = struct.unpack(
-                "HHHH", fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, struct.pack("HHHH", 0, 0, 0, 0))
-            )
-            fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", *size))
-            # Send SIGWINCH to the child process to notify it of the resize
-            if process is not None and process.poll() is None:
-                process.send_signal(signal.SIGWINCH)
+    # Copy terminal size from the current terminal to PTY
+    def resize_pty() -> None:
+        """Update PTY size to match current terminal size"""
+        size = struct.unpack(
+            "HHHH", fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, struct.pack("HHHH", 0, 0, 0, 0))
+        )
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", *size))
+        # Send SIGWINCH to the child process to notify it of the resize
+        if process is not None and process.poll() is None:
+            process.send_signal(signal.SIGWINCH)
 
-        # Initial resize
+    # Initial resize
+    resize_pty()
+
+    # Set up signal handler for window resize
+    def handle_sigwinch(signum, frame):
         resize_pty()
 
-        # Set up signal handler for window resize
-        def handle_sigwinch(signum, frame):
-            resize_pty()
+    old_sigwinch_handler = signal.signal(signal.SIGWINCH, handle_sigwinch)
 
-        old_sigwinch_handler = signal.signal(signal.SIGWINCH, handle_sigwinch)
+    # Save original terminal settings
+    old_tty = termios.tcgetattr(sys.stdin)
 
-        # Save original terminal settings
-        old_tty = termios.tcgetattr(sys.stdin)
+    try:
+        # Set TERM environment variable to enable colors
+        env = os.environ.copy()
+        env["TERM"] = os.environ.get("TERM", "xterm-256color")
 
-        try:
-            # Set TERM environment variable to enable colors
-            env = os.environ.copy()
-            env["TERM"] = os.environ.get("TERM", "xterm-256color")
+        process = subprocess.Popen([lldb_command], stdin=slave, stdout=slave, stderr=slave, env=env)
+        os.close(slave)
 
-            process = subprocess.Popen([lldb_command], stdin=slave, stdout=slave, stderr=slave, env=env)
-            os.close(slave)
+        # Put terminal in raw mode for proper interaction
+        tty.setraw(sys.stdin.fileno())
+        # Send all commands through stdin
+        for command in commands:
+            os.write(master, (command + "\n").encode())
 
-            # Put terminal in raw mode for proper interaction
-            tty.setraw(sys.stdin.fileno())
-            # Send all commands through stdin
-            for command in commands:
-                os.write(master, (command + "\n").encode())
+        # Now redirect stdin from the terminal to lldb so user can interact
+        while True:
+            rlist, _, _ = select_module.select([sys.stdin, master], [], [])
 
-            # Now redirect stdin from the terminal to lldb so user can interact
-            while True:
-                rlist, _, _ = select_module.select([sys.stdin, master], [], [])
+            if sys.stdin in rlist:
+                # User typed something
+                data = os.read(sys.stdin.fileno(), 1024)
+                if not data:
+                    break
+                os.write(master, data)
 
-                if sys.stdin in rlist:
-                    # User typed something
-                    data = os.read(sys.stdin.fileno(), 1024)
+            if master in rlist:
+                # lldb has output
+                try:
+                    data = os.read(master, 1024)
                     if not data:
                         break
-                    os.write(master, data)
-
-                if master in rlist:
-                    # lldb has output
-                    try:
-                        data = os.read(master, 1024)
-                        if not data:
-                            break
-                        os.write(sys.stdout.fileno(), data)
-                    except OSError:
-                        break
-        except (KeyboardInterrupt, OSError):
-            pass
-        finally:
-            # Restore terminal settings
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_tty)
-            # Restore original SIGWINCH handler
-            signal.signal(signal.SIGWINCH, old_sigwinch_handler)
-            os.close(master)
-            if process is not None:
-                process.terminate()
-                process.wait()
+                    os.write(sys.stdout.fileno(), data)
+                except OSError:
+                    break
+    except (KeyboardInterrupt, OSError):
+        pass
+    finally:
+        # Restore terminal settings
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_tty)
+        # Restore original SIGWINCH handler
+        signal.signal(signal.SIGWINCH, old_sigwinch_handler)
+        os.close(master)
+        if process is not None:
+            process.terminate()
+            process.wait()
+        if temp_dir is not None:
+            temp_dir.cleanup()
