@@ -1,3 +1,4 @@
+import ast
 import asyncio
 import logging
 import plistlib
@@ -61,8 +62,8 @@ def lockdown_set(
     domain: Optional[str] = None,
     key: Optional[str] = None,
 ) -> None:
-    """set a lockdown value using python's eval()"""
-    print_json(service_provider.set_value(value=eval(value), domain=domain, key=key))
+    """set a lockdown value using python's ast.literal_eval()"""
+    print_json(service_provider.set_value(value=ast.literal_eval(value), domain=domain, key=key))
 
 
 @cli.command("remove")
