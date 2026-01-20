@@ -51,7 +51,14 @@ def debugserver_applist(service_provider: ServiceProviderDep) -> None:
 
 
 @cli.command("start-server")
-def debugserver_start_server(service_provider: ServiceProviderDep, local_port: Optional[int] = None) -> None:
+def debugserver_start_server(
+    service_provider: ServiceProviderDep,
+    local_port: Optional[int] = None,
+    host: Annotated[
+        str,
+        typer.Option(help="Address to bind the local port to."),
+    ] = "127.0.0.1",
+) -> None:
     """
     Start debugserver and print the LLDB connect string.
 
@@ -66,10 +73,10 @@ def debugserver_start_server(service_provider: ServiceProviderDep, local_port: O
         service_name = "com.apple.internal.dt.remote.debugproxy"
 
     if local_port is not None:
-        print(DEBUGSERVER_CONNECTION_STEPS.format(host="127.0.0.1", port=local_port))
+        print(DEBUGSERVER_CONNECTION_STEPS.format(host=host, port=local_port))
         print("Started port forwarding. Press Ctrl-C to close this shell when done")
         sys.stdout.flush()
-        LockdownTcpForwarder(service_provider, local_port, service_name).start()
+        LockdownTcpForwarder(service_provider, local_port, service_name).start(address=host)
     elif Version(service_provider.product_version) >= Version("17.0"):
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
             raise RSDRequiredError(service_provider.identifier)

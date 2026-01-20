@@ -43,6 +43,10 @@ def usbmux_forward(
         Optional[str],
         typer.Option(help="Device serial/UDID to forward traffic to."),
     ] = None,
+    host: Annotated[
+        str,
+        typer.Option(help="Address to bind the local port to."),
+    ] = "127.0.0.1",
     daemonize: Annotated[
         bool,
         typer.Option("--daemonize", "-d", help="Run the forwarder in the background."),
@@ -58,10 +62,12 @@ def usbmux_forward(
             raise NotImplementedError("daemonizing is only supported on unix platforms") from e
 
         with tempfile.NamedTemporaryFile("wt") as pid_file:
-            daemon = Daemonize(app=f"forwarder {src_port}->{dst_port}", pid=pid_file.name, action=forwarder.start)
+            daemon = Daemonize(
+                app=f"forwarder {src_port}->{dst_port}", pid=pid_file.name, action=lambda: forwarder.start(address=host)
+            )
             daemon.start()
     else:
-        forwarder.start()
+        forwarder.start(address=host)
 
 
 @cli.command("list")
