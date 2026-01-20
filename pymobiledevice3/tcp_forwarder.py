@@ -38,7 +38,7 @@ class TcpForwarderBase:
         # socket to its remote socket and vice versa
         self.connections = {}
 
-    def start(self, address="0.0.0.0"):
+    def start(self, address="127.0.0.1"):
         """forward each connection from given local machine port to remote device port"""
         # create local tcp server socket
         self.server_socket = socket.socket()
