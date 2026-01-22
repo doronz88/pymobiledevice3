@@ -177,7 +177,7 @@ class ServiceConnection:
         """
         try:
             return self.socket.recv(length)
-        except ssl.SSLError as e:
+        except (ssl.SSLError, BrokenPipeError) as e:
             raise ConnectionAbortedError() from e
 
     def sendall(self, data: bytes) -> None:
