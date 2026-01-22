@@ -258,6 +258,11 @@ class MuxConnection:
         """
         pass
 
+    @abc.abstractmethod
+    def listen(self):
+        """start listening for events of attached and detached devices"""
+        pass
+
     def connect(self, device: MuxDevice, port: int) -> socket.socket:
         """connect to a relay port on target machine and get a raw python socket object for the connection"""
         self._connect(device.devid, socket.htons(port))
@@ -272,6 +277,11 @@ class MuxConnection:
         """verify active state is in state for control messages"""
         if self._connected:
             raise MuxException("Mux is connected, cannot issue control packets")
+
+    @abc.abstractmethod
+    def receive_device_state_update(self):
+        """Block and wait for a device notification"""
+        pass
 
     def _raise_mux_exception(self, result: int, message: Optional[str] = None) -> None:
         exceptions = {
@@ -306,7 +316,7 @@ class BinaryMuxConnection(MuxConnection):
         while time.time() < end:
             self._sock.settimeout(end - time.time())
             try:
-                self._receive_device_state_update()
+                self.receive_device_state_update()
             except (BlockingIOError, StreamError):
                 continue
             except OSError as e:
@@ -348,6 +358,16 @@ class BinaryMuxConnection(MuxConnection):
             raise MuxException(f"Reply tag mismatch: expected {expected_tag}, got {response.header.tag}")
         return response
 
+    def receive_device_state_update(self):
+        response = self._receive()
+        if response.header.message == usbmuxd_msgtype.ADD:
+            # old protocol only supported USB devices
+            self._add_device(MuxDevice(response.data.device_id, response.data.serial_number, "USB"))
+        elif response.header.message == usbmuxd_msgtype.REMOVE:
+            self._remove_device(response.data.device_id)
+        else:
+            raise MuxException(f"Invalid packet type received: {response}")
+
     def _send_receive(self, message_type: int):
         self._send({"header": {"version": self._version, "message": message_type, "tag": self._tag}, "data": b""})
         response = self._receive(self._tag - 1)
@@ -363,16 +383,6 @@ class BinaryMuxConnection(MuxConnection):
 
     def _remove_device(self, device_id: int):
         self.devices = [device for device in self.devices if device.devid != device_id]
-
-    def _receive_device_state_update(self):
-        response = self._receive()
-        if response.header.message == usbmuxd_msgtype.ADD:
-            # old protocol only supported USB devices
-            self._add_device(MuxDevice(response.data.device_id, response.data.serial_number, "USB"))
-        elif response.header.message == usbmuxd_msgtype.REMOVE:
-            self._remove_device(response.data.device_id)
-        else:
-            raise MuxException(f"Invalid packet type received: {response}")
 
 
 class PlistMuxConnection(BinaryMuxConnection):
@@ -392,6 +402,20 @@ class PlistMuxConnection(BinaryMuxConnection):
             raise NotPairedError("device should be paired first")
         return plistlib.loads(pair_record)
 
+    def _process_device_state(self, response):
+        if response["MessageType"] == "Attached":
+            super()._add_device(
+                MuxDevice(
+                    response["DeviceID"],
+                    response["Properties"]["SerialNumber"],
+                    response["Properties"]["ConnectionType"],
+                )
+            )
+        elif response["MessageType"] == "Detached":
+            super()._remove_device(response["DeviceID"])
+        else:
+            raise MuxException(f"Invalid packet type received: {response}")
+
     def get_device_list(self, timeout: Optional[float] = None) -> None:
         """get device list synchronously without waiting the timeout"""
         self.devices = []
@@ -401,18 +425,7 @@ class PlistMuxConnection(BinaryMuxConnection):
         if device_list is None:
             raise MuxException(f"Got an invalid response from usbmux: {response}")
         for response in device_list:
-            if response["MessageType"] == "Attached":
-                super()._add_device(
-                    MuxDevice(
-                        response["DeviceID"],
-                        response["Properties"]["SerialNumber"],
-                        response["Properties"]["ConnectionType"],
-                    )
-                )
-            elif response["MessageType"] == "Detached":
-                super()._remove_device(response["DeviceID"])
-            else:
-                raise MuxException(f"Invalid packet type received: {response}")
+            self._process_device_state(response)
 
     def get_buid(self) -> str:
         """get SystemBUID"""
@@ -444,6 +457,10 @@ class PlistMuxConnection(BinaryMuxConnection):
         if response.header.message != usbmuxd_msgtype.PLIST:
             raise MuxException(f"Received non-plist type {response}")
         return plistlib.loads(response.data)
+
+    def receive_device_state_update(self):
+        response = self._receive()
+        self._process_device_state(response)
 
     def _send_receive(self, data: dict):
         self._send(data)

@@ -191,10 +191,16 @@ class TunneldCore:
 
     @asyncio_print_traceback
     async def monitor_usbmux_task(self) -> None:
-        try:
-            while True:
-                try:
-                    for mux_device in usbmux.list_devices():
+        while True:
+            mux = None
+            try:
+                mux = usbmux.create_mux()
+                mux.listen()
+
+                while True:
+                    await asyncio.to_thread(mux.receive_device_state_update)
+
+                    for mux_device in mux.devices:
                         task_identifier = f"usbmux-{mux_device.serial}-{mux_device.connection_type}"
                         if self.tunnel_exists_for_udid(mux_device.serial):
                             # Skip if already established a tunnel for this udid
@@ -227,14 +233,19 @@ class TunneldCore:
                                 name=f"start-tunnel-task-{task_identifier}",
                             ),
                         )
-                except ConnectionFailedToUsbmuxdError:
-                    # This is exception is expected to occur repeatedly on linux running usbmuxd
-                    # as long as there isn't any physical iDevice connected
-                    logger.debug("failed to connect to usbmux. waiting for it to restart")
-                finally:
-                    await asyncio.sleep(USBMUX_INTERVAL)
-        except asyncio.CancelledError:
-            pass
+            except (BlockingIOError, StreamError, OSError) as e:
+                # Connection lost - will reconnect on next iteration
+                logger.debug(f"usbmux connection error: {e}, reconnecting...")
+            except ConnectionFailedToUsbmuxdError:
+                # This is exception is expected to occur repeatedly on linux running usbmuxd
+                # as long as there isn't any physical iDevice connected
+                logger.debug("failed to connect to usbmux. waiting for it to restart")
+                await asyncio.sleep(USBMUX_INTERVAL)
+            except asyncio.CancelledError:
+                break
+            finally:
+                if mux is not None:
+                    mux.close()
 
     @asyncio_print_traceback
     async def monitor_mobdev2_task(self) -> None:
