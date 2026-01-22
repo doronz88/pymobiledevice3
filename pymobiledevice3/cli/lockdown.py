@@ -17,7 +17,6 @@ from pymobiledevice3.services.heartbeat import HeartbeatService
 
 logger = logging.getLogger(__name__)
 
-
 cli = InjectingTyper(
     name="lockdown",
     help="Pair/Unpair device or access other lockdown services",
@@ -118,7 +117,9 @@ def lockdown_heartbeat(service_provider: ServiceProviderDep) -> None:
 
 
 @cli.command("language")
-def lockdown_language(service_provider: ServiceProviderDep, language: Optional[str] = None) -> None:
+def lockdown_language(
+    service_provider: ServiceProviderDep, language: Annotated[Optional[str], typer.Argument()] = None
+) -> None:
     """Get/Set current language settings"""
     if language is not None:
         service_provider.set_language(language)
@@ -126,7 +127,9 @@ def lockdown_language(service_provider: ServiceProviderDep, language: Optional[s
 
 
 @cli.command("locale")
-def lockdown_locale(service_provider: ServiceProviderDep, locale: Optional[str] = None) -> None:
+def lockdown_locale(
+    service_provider: ServiceProviderDep, locale: Annotated[Optional[str], typer.Argument()] = None
+) -> None:
     """Get/Set current language settings"""
     if locale is not None:
         service_provider.set_locale(locale)
