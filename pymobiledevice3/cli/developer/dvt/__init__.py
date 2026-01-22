@@ -304,9 +304,10 @@ def netstat(service_provider: ServiceProviderDep) -> None:
     with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, NetworkMonitor(dvt) as monitor:
         for event in monitor:
             if isinstance(event, ConnectionDetectionEvent):
-                local_host, local_port = event.local_address.split(":")
-                remote_host, remote_port = event.local_address.split(":")
-                logger.info(f"Connection detected: {local_host}:{local_port} -> {remote_host}:{remote_port}")
+                logger.info(
+                    f"Connection detected: {event.local_address.data.address}:{event.local_address.port} -> "
+                    f"{event.remote_address.data.address}:{event.remote_address.port}"
+                )
 
 
 @cli.command("screenshot")
