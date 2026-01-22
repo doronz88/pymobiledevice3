@@ -35,6 +35,7 @@ from pymobiledevice3.exceptions import (
     LockdownError,
     MuxException,
     PairingError,
+    QuicProtocolNotSupportedError,
     StreamClosedError,
 )
 from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
@@ -314,6 +315,8 @@ class TunneldCore:
                     )
         except asyncio.CancelledError:
             pass
+        except QuicProtocolNotSupportedError as e:
+            logger.warning(f"[{asyncio.current_task().get_name()}] {e.__class__.__name__}: {e}")
         except (
             asyncio.exceptions.IncompleteReadError,
             TimeoutError,

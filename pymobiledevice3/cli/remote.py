@@ -83,14 +83,14 @@ def cli_tunneld(
     port: Annotated[int, typer.Option(help="Port to bind the tunneld server to.")] = TUNNELD_DEFAULT_ADDRESS[1],
     daemonize: Annotated[bool, typer.Option("--daemonize", "-d", help="Run tunneld in the background.")] = False,
     protocol: Annotated[
-        str,
+        TunnelProtocol,
         typer.Option(
             "--protocol",
             "-p",
             case_sensitive=False,
             help="Transport protocol for tunneld (default: TCP on Python >=3.13, otherwise QUIC).",
         ),
-    ] = TunnelProtocol.DEFAULT.value,
+    ] = TunnelProtocol.DEFAULT,
     usb: Annotated[bool, typer.Option(help="Enable USB monitoring")] = True,
     wifi: Annotated[bool, typer.Option(help="Enable WiFi monitoring")] = True,
     usbmux: Annotated[bool, typer.Option(help="Enable usbmux monitoring")] = True,
