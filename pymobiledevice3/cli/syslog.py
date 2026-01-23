@@ -258,6 +258,7 @@ def cli_syslog_live(
             include_label,
             regex or [],
             insensitive_regex or [],
+            image_offset,
         )
 
 
