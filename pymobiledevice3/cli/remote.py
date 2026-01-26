@@ -148,7 +148,7 @@ async def tunnel_task(
     ) as tunnel_result:
         logger.info("tunnel created")
         if script_mode:
-            print(f"{tunnel_result.address} {tunnel_result.port}")
+            print(f"{tunnel_result.address} {tunnel_result.port}", flush=True)
         else:
             if user_requested_colored_output():
                 if secrets is not None:
