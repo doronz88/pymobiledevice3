@@ -234,10 +234,11 @@ class TunneldCore:
                                 name=f"start-tunnel-task-{task_identifier}",
                             ),
                         )
-            except (BlockingIOError, StreamError, OSError) as e:
+            except (BlockingIOError, StreamError) as e:
                 # Connection lost - will reconnect on next iteration
                 logger.debug(f"usbmux connection error: {e}, reconnecting...")
-            except ConnectionFailedToUsbmuxdError:
+                await asyncio.sleep(USBMUX_INTERVAL)
+            except (ConnectionFailedToUsbmuxdError, OSError):
                 # This is exception is expected to occur repeatedly on linux running usbmuxd
                 # as long as there isn't any physical iDevice connected
                 logger.debug("failed to connect to usbmux. waiting for it to restart")
