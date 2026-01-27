@@ -35,13 +35,11 @@ class Device:
         return self._irecv is not None
 
     @cached_property
-    def lockdown(self) -> LockdownClient:
-        assert self._lockdown is not None
+    def lockdown(self) -> Optional[LockdownClient]:
         return self._lockdown
 
     @cached_property
-    def irecv(self) -> IRecv:
-        assert self._irecv is not None
+    def irecv(self) -> Optional[IRecv]:
         return self._irecv
 
     @cached_property
