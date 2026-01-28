@@ -532,14 +532,18 @@ class Restore(BaseRestore):
                         keep = True
 
                     # check for anything but .mbn and .fls if bb_nonce is set
-                    if bb_nonce and not keep:
+                    if not keep:
                         ext = os.path.splitext(filename)[1]
                         keep |= ext in (".fls", ".mbn", ".elf", ".bin")
 
-                    if keep and (filename not in signed_file):
-                        bbfw_patched.writestr(bbfw_orig.getinfo(filename), bbfw_orig.read(filename))
+                    if keep:
+                        if filename not in signed_file:
+                            bbfw_patched.writestr(bbfw_orig.getinfo(filename), bbfw_orig.read(filename))
+                        self.logger.debug("sign_bbfw: keeping %s in bbfw", filename)
+                    else:
+                        self.logger.debug("sign_bbfw: removing %s from bbfw", filename)
 
-                if bb_nonce:
+                if bbticket:
                     if is_fls:
                         # add BBTicket to file ebl.fls
                         buffer = bbfw_orig.read("ebl.fls")
