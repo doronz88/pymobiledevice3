@@ -273,9 +273,27 @@ def syslog_collect(
             file_okay=False,
         ),
     ],
-    size_limit: int,
-    age_limit: int,
-    start_time: int,
+    size_limit: Annotated[
+        Optional[int],
+        typer.Option(
+            "--size-limit",
+            help="Maximum size in bytes of logarchive",
+        ),
+    ] = None,
+    age_limit: Annotated[
+        Optional[int],
+        typer.Option(
+            "--age-limit",
+            help="Maximum age in days",
+        ),
+    ] = None,
+    start_time: Annotated[
+        Optional[int],
+        typer.Option(
+            "--start-time",
+            help="Start time of logarchive as a unix timestamp",
+        ),
+    ] = None,
 ) -> None:
     """
     Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
