@@ -41,7 +41,7 @@ def usbmux_forward(
     ] = None,
     serial: Annotated[
         Optional[str],
-        typer.Option(help="Device serial/UDID to forward traffic to."),
+        typer.Option("--serial", "--udid", help="Device serial/UDID to forward traffic to."),
     ] = None,
     host: Annotated[
         str,
