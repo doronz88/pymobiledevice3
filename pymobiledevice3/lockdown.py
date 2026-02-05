@@ -3,6 +3,7 @@ import datetime
 import logging
 import os
 import plistlib
+import socket
 import sys
 import tempfile
 import time
@@ -435,6 +436,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         }
 
         pair_options = {
+            "HostName": socket.gethostname(),
             "PairRecord": pair_record,
             "ProtocolVersion": "2",
             "PairingOptions": {"ExtendedPairingErrors": True},
