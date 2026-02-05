@@ -331,6 +331,8 @@ class AfcService(LockdownService):
 
         if not self.isdir(src):
             # normal file
+            if match is not None and not match.search(posixpath.basename(src)):
+                return
             if os.path.isdir(dst):
                 dst = os.path.join(dst, os.path.basename(relative_src))
             with open(dst, "wb") as f:
@@ -360,7 +362,7 @@ class AfcService(LockdownService):
 
                 src_filename = self.resolve_path(src_filename)
 
-                if match is not None and not match.match(posixpath.basename(src_filename)):
+                if match is not None and not match.search(posixpath.basename(src_filename)):
                     continue
 
                 try:
@@ -369,6 +371,7 @@ class AfcService(LockdownService):
                         self.pull(
                             src_filename,
                             str(dst_path),
+                            match=match,
                             callback=callback,
                             ignore_errors=ignore_errors,
                             progress_bar=progress_bar,
@@ -378,6 +381,7 @@ class AfcService(LockdownService):
                     self.pull(
                         src_filename,
                         str(dst_path),
+                        match=match,
                         callback=callback,
                         ignore_errors=ignore_errors,
                         progress_bar=progress_bar,
