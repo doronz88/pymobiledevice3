@@ -40,7 +40,7 @@ class CrashReportsManager:
     APPSTORED_PATH = "/com.apple.appstored"
     IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS: ClassVar = [".tmp", ".tar.gz"]
 
-    def __init__(self, lockdown: LockdownServiceProvider):
+    def __init__(self, lockdown: LockdownServiceProvider) -> None:
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
 
