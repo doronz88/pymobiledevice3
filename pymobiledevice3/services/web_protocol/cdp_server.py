@@ -12,7 +12,7 @@ from pymobiledevice3.services.webinspector import WirTypes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.inspector.connect()
+    await app.state.inspector.connect()
     yield
 
 

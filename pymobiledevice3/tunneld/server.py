@@ -183,7 +183,7 @@ class TunneldCore:
                     # Raise and cancel gracefully
                     raise
                 except Exception:
-                    logger.exception(f"Got exception from {asyncio.current_task().get_name()}")
+                    logger.error(f"Got exception from {asyncio.current_task().get_name()}")
                     continue
                 await asyncio.sleep(REMOTEPAIRING_INTERVAL)
         except asyncio.CancelledError:
