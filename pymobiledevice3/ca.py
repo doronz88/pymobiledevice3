@@ -78,7 +78,8 @@ def build_root_certificate(root_key: RSAPrivateKey, alg: hashes.HashAlgorithm) -
     not_before, not_after = get_validity_bounds()
     empty = x509.Name([])
     builder = (
-        x509.CertificateBuilder()
+        x509
+        .CertificateBuilder()
         .subject_name(empty)
         .issuer_name(empty)
         .public_key(root_key.public_key())
@@ -113,7 +114,8 @@ def build_host_certificate(
     """
     not_before, not_after = get_validity_bounds()
     builder = (
-        x509.CertificateBuilder()
+        x509
+        .CertificateBuilder()
         .subject_name(x509.Name([]))
         .issuer_name(root_cert.subject)  # empty
         .public_key(host_key.public_key())
@@ -163,7 +165,8 @@ def build_device_certificate(
     """
     not_before, not_after = get_validity_bounds()
     builder = (
-        x509.CertificateBuilder()
+        x509
+        .CertificateBuilder()
         .subject_name(x509.Name([]))
         .issuer_name(root_cert.subject)  # empty
         .public_key(device_public_key)
