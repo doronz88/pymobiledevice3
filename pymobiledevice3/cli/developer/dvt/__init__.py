@@ -440,3 +440,72 @@ def dvt_har(service_provider: ServiceProviderDep) -> None:
         with ActivityTraceTap(dvt, enable_http_archive_logging=True) as tap:
             while True:
                 tap.channel.receive_message()
+
+
+def _is_private_ipv4(ip) -> bool:
+    """
+    Check if an IP address is a private IPv4 address.
+
+    Covers all RFC 1918 private ranges:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    """
+    try:
+        import ipaddress
+
+        addr = ipaddress.ip_address(ip) if not hasattr(ip, "is_private") else ip
+    except (ValueError, TypeError):
+        return False
+    else:
+        return addr.version == 4 and addr.is_private and not addr.is_loopback
+
+
+@cli.command("wifi-ip")
+def wifi_ip(
+    service_provider: ServiceProviderDep,
+    timeout: Annotated[
+        int,
+        typer.Option(help="Timeout in seconds to wait for a connection (0 = no timeout)"),
+    ] = 5,
+) -> None:
+    """
+    Get the device's WiFi IP address via USB.
+
+    Monitors network connections and returns the first private IPv4 address
+    found as the source of an outgoing connection.
+
+    This is useful when you need the device's WiFi IP but:
+    - WiFi Sync is not enabled on the device
+    - Bonjour/mDNS discovery is not working
+    - You need the IP for scripting or automation
+    - You want to use --rsd options for iOS 17+ tunneling
+
+    Supports all RFC 1918 private IP ranges (10.x, 172.16-31.x, 192.168.x).
+
+    \b
+    Examples:
+        pymobiledevice3 developer dvt wifi-ip
+        pymobiledevice3 developer dvt wifi-ip --timeout 10
+    """
+    import time
+
+    start_time = time.time()
+
+    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, NetworkMonitor(dvt) as monitor:
+        for event in monitor:
+            # Check timeout
+            if timeout > 0 and (time.time() - start_time) > timeout:
+                logger.error(f"Timeout after {timeout} seconds. No active network connections found.")
+                logger.info("Tip: Generate network activity on the device (e.g., open a webpage)")
+                raise typer.Exit(code=1)
+
+            if isinstance(event, ConnectionDetectionEvent):
+                local_ip = event.local_address.data.address
+                if _is_private_ipv4(local_ip):
+                    print(local_ip)
+                    return
+
+    # Should not reach here, but just in case
+    logger.error("No private IPv4 address found in active connections")
+    raise typer.Exit(code=1)
