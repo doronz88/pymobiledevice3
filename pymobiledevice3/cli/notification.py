@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 cli = InjectingTyper(
-    name="notifications",
+    name="notification",
     help="Post or observe Darwin notifications via notification_proxy.",
     no_args_is_help=True,
 )
