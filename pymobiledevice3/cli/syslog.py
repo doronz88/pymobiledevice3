@@ -104,9 +104,14 @@ def syslog_live(
     regex: list[str],
     insensitive_regex: list[str],
     image_offset: bool = False,
+    start_after: Optional[str] = None,
 ) -> None:
     match_regex = [re.compile(f".*({r}).*", re.DOTALL) for r in regex]
     match_regex += [re.compile(f".*({r}).*", re.IGNORECASE | re.DOTALL) for r in insensitive_regex]
+    started = start_after is None
+
+    if start_after is not None:
+        print(f'Waiting for "{start_after}" ...', flush=True)
 
     def replace(m):
         if len(m.groups()) and line:
@@ -122,6 +127,11 @@ def syslog_live(
 
         if line_no_style is None or line is None:
             continue
+
+        if not started:
+            if start_after not in line_no_style:
+                continue
+            started = True
 
         skip = False
 
@@ -244,6 +254,13 @@ def cli_syslog_live(
             help="Include image offset in log line",
         ),
     ] = False,
+    start_after: Annotated[
+        Optional[str],
+        typer.Option(
+            "--start-after",
+            help="Start printing only after this string is seen",
+        ),
+    ] = None,
 ) -> None:
     """view live syslog lines"""
 
@@ -259,6 +276,7 @@ def cli_syslog_live(
             regex or [],
             insensitive_regex or [],
             image_offset,
+            start_after,
         )
 
 
