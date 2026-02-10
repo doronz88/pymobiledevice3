@@ -120,13 +120,22 @@ def wifi_ip(
     start_time = time.time()
     service = PcapdService(lockdown=service_provider)
 
-    for packet in service.watch(interface_name=interface):
+    # pcapd stores interface name and unit number separately (e.g. "en" + 0 = "en0"),
+    # so we filter manually by combining them instead of using watch(interface_name=...)
+    for packet in service.watch():
         if timeout > 0 and (time.time() - start_time) > timeout:
             logger.error(f"Timeout after {timeout} seconds. No IP found on interface '{interface}'.")
             logger.info("Tip: Generate network activity on the device (e.g., open a webpage)")
             raise typer.Exit(code=1)
 
+        if f"{packet.interface_name}{packet.unit}" != interface:
+            continue
+
         if packet.protocol_family != CrossPlatformAddressFamily.AF_INET:
+            continue
+
+        # Only consider outgoing packets (io=1) so we get the device's own source IP
+        if packet.io != 1:
             continue
 
         # Extract source IPv4 from packet data:
