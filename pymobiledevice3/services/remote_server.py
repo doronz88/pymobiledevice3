@@ -1,9 +1,12 @@
 import contextlib
 import copy
 import io
+import logging
 import os
 import plistlib
+import threading
 import uuid
+from contextlib import suppress
 from functools import partial
 from pprint import pprint
 from queue import Empty, Queue
@@ -14,6 +17,7 @@ from bpylist2 import archiver
 from construct import (
     Adapter,
     Const,
+    Container,
     Default,
     GreedyBytes,
     GreedyRange,
@@ -200,6 +204,21 @@ class NSMutableString:
         return archive_obj.decode("NS.string")
 
 
+class XCTCapabilities:
+    def __init__(self, capabilities: dict):
+        self.capabilities = capabilities
+
+    def encode_archive(self, archive_obj: archiver.ArchivingObject):
+        archive_obj.encode("capabilities-dictionary", self.capabilities)
+
+    @staticmethod
+    def decode_archive(archive_obj: archiver.ArchivedObject):
+        return XCTCapabilities(archive_obj.decode("capabilities-dictionary"))
+
+    def __str__(self):
+        return f"XCTCapabilities({self.capabilities})"
+
+
 class XCTestConfiguration:
     _default: ClassVar = {
         # 'testBundleURL': UID(3),
@@ -234,7 +253,20 @@ class XCTestConfiguration:
         "testsToRun": None,
         "testsToSkip": None,
         "treatMissingBaselinesAsFailures": False,
-        "userAttachmentLifetime": 1,
+        "userAttachmentLifetime": 0,
+        "preferredScreenCaptureFormat": 2,
+        "IDECapabilities": XCTCapabilities({
+            "expected failure test capability": True,
+            "test case run configurations": True,
+            "test timeout capability": True,
+            "test iterations": True,
+            "request diagnostics for specific devices": True,
+            "delayed attachment transfer": True,
+            "skipped test capability": True,
+            "daemon container sandbox extension": True,
+            "ubiquitous test identifiers": True,
+            "XCTIssue capability": True,
+        }),
     }
 
     def __init__(self, kv: dict):
@@ -267,6 +299,7 @@ archiver.update_class_map({
     "NSMutableData": NSMutableData,
     "NSMutableString": NSMutableString,
     "XCTestConfiguration": XCTestConfiguration,
+    "XCTCapabilities": XCTCapabilities,
 })
 
 archiver.Archive.inline_types = list({*archiver.Archive.inline_types, bytes})
@@ -320,14 +353,12 @@ class ChannelFragmenter:
             self._packet_data += chunk
             if mheader.fragmentId == mheader.fragmentCount - 1:
                 # last message
-                self._messages.put(self._packet_data)
+                fake_header = mheader.copy()
+                fake_header.fragmentId = 0
+                fake_header.fragmentCount = 1
+                fake_header.lenght = len(self._packet_data)
+                self._messages.put((fake_header, self._packet_data))
                 self._packet_data = b""
-        else:
-            self._stream_packet_data += chunk
-            if mheader.fragmentId == mheader.fragmentCount - 1:
-                # last message
-                self._messages.put(self._stream_packet_data)
-                self._stream_packet_data = b""
 
 
 class RemoteServer(LockdownService):
@@ -378,7 +409,6 @@ class RemoteServer(LockdownService):
 
     BROADCAST_CHANNEL = 0
     INSTRUMENTS_MESSAGE_TYPE = 2
-    EXPECTS_REPLY_MASK = 0x1000
 
     def __init__(
         self,
@@ -392,12 +422,52 @@ class RemoteServer(LockdownService):
         if remove_ssl_context and hasattr(self.service.socket, "_sslobj"):
             self.service.socket._sslobj = None
 
+        self.lock = threading.RLock()
         self.supported_identifiers = {}
         self.last_channel_code = 0
         self.cur_message = 0
+        self.cur_remote_message = 0
         self.channel_cache = {}
         self.channel_messages = {self.BROADCAST_CHANNEL: ChannelFragmenter()}
         self.broadcast = Channel.create(0, self)
+
+    def _log_dtx_message(self, direction: str, mheader: Container | bytes, payload: bytes) -> None:
+        if not self.logger.isEnabledFor(logging.DEBUG):
+            return
+
+        if isinstance(mheader, bytes):
+            mheader = dtx_message_header_struct.parse(mheader)
+
+        s = io.BytesIO(payload)
+        pheader = dtx_message_payload_header_struct.parse_stream(s)
+        compression = pheader.flags == 0x0707
+        if compression:
+            raise NotImplementedError("Compressed")
+
+        aux = message_aux_t_struct.parse_stream(s).aux if pheader.auxiliaryLength else None
+        obj_size = pheader.totalLength - pheader.auxiliaryLength
+        data = s.read(obj_size) if obj_size else None
+
+        with suppress(Exception):
+            if pheader.auxiliaryLength:
+                aux = [c.value for c in aux]
+        with suppress(Exception):
+            if obj_size:
+                data = archiver.unarchive(data)
+
+        e = "e" if mheader.expectsReply else ""
+        self.logger.debug(
+            "x%d %-8s [c?]: <DTXMessage: i%d.%d%s c%d t:%d payload:%s aux:%s>",
+            self.service.socket.fileno(),
+            direction,
+            mheader.identifier,
+            mheader.conversationIndex,
+            e,
+            mheader.channelCode,
+            pheader.flags,
+            data,
+            aux,
+        )
 
     def shell(self):
         IPython.embed(
@@ -412,58 +482,84 @@ class RemoteServer(LockdownService):
     def perform_handshake(self):
         args = MessageAux()
         args.append_obj({"com.apple.private.DTXBlockCompression": 0, "com.apple.private.DTXConnection": 1})
-        self.send_message(0, "_notifyOfPublishedCapabilities:", args, expects_reply=False)
-        ret, aux = self.recv_plist()
-        if ret != "_notifyOfPublishedCapabilities:":
-            raise ValueError("Invalid answer")
-        if not len(aux[0]):
-            raise ValueError("Invalid answer")
-        self.supported_identifiers = aux[0].value
+
+        with self.lock:
+            self.send_message(0, "_notifyOfPublishedCapabilities:", args, expects_reply=False)
+            ret, aux = self.recv_plist()
+            if ret != "_notifyOfPublishedCapabilities:":
+                raise ValueError("Invalid answer")
+            if not len(aux[0]):
+                raise ValueError("Invalid answer")
+            self.supported_identifiers = aux[0].value
 
     def make_channel(self, identifier) -> Channel:
         # NOTE: There is also identifier not in self.supported_identifiers
         # assert identifier in self.supported_identifiers
-        if identifier in self.channel_cache:
-            return self.channel_cache[identifier]
+        with self.lock:
+            if identifier in self.channel_cache:
+                return self.channel_cache[identifier]
 
-        self.last_channel_code += 1
-        code = self.last_channel_code
-        args = MessageAux().append_int(code).append_obj(identifier)
-        self.send_message(0, "_requestChannelWithCode:identifier:", args)
-        ret, _aux = self.recv_plist()
-        assert ret is None
-        channel = Channel.create(code, self)
-        self.channel_cache[identifier] = channel
-        self.channel_messages[code] = ChannelFragmenter()
-        return channel
+            self.last_channel_code += 1
+            code = self.last_channel_code
+            args = MessageAux().append_int(code).append_obj(identifier)
+            self.send_message(0, "_requestChannelWithCode:identifier:", args)
+            ret, _aux = self.recv_plist()
+            assert ret is None
+            channel = Channel.create(code, self)
+            self.channel_cache[identifier] = channel
+            self.channel_messages[code] = ChannelFragmenter()
+            return channel
+
+    def serve_channel(self, identifier: str, channel: Optional[Channel] = None) -> Channel:
+        """acknoledge the remote part that they will find the expected identifier on the given channel"""
+        with self.lock:
+            msg = self.recv_plist(self.BROADCAST_CHANNEL)
+            assert msg[0] == "_requestChannelWithCode:identifier:", (
+                f"expected a request for a reverse channel, got: {msg}"
+            )
+            code = msg[1][0].value
+            assert channel is None or channel == code, (
+                f"expected a request for a reverse channel with channelCode:{channel}, got:{msg[1][0]}"
+            )
+            identifier = msg[1][1].value
+            assert identifier == msg[1][1].value, (
+                f"expected a request for a reverse channel with identifier:{identifier}, got:{msg[1][1].value}"
+            )
+            if channel is None:
+                channel = Channel.create(code, self)
+            if code not in self.channel_messages:
+                self.channel_messages[code] = ChannelFragmenter()
+            self.send_reply_ack(self.BROADCAST_CHANNEL, self.cur_remote_message, None, None)
+            return channel
 
     def send_message(
         self, channel: int, selector: Optional[str] = None, args: MessageAux = None, expects_reply: bool = True
     ):
-        self.cur_message += 1
-
         aux = bytes(args) if args is not None else b""
         sel = archiver.archive(selector) if selector is not None else b""
         flags = self.INSTRUMENTS_MESSAGE_TYPE
-        if expects_reply:
-            flags |= self.EXPECTS_REPLY_MASK
         pheader = dtx_message_payload_header_struct.build({
             "flags": flags,
             "auxiliaryLength": len(aux),
             "totalLength": len(aux) + len(sel),
         })
-        mheader = dtx_message_header_struct.build({
-            "cb": dtx_message_header_struct.sizeof(),
-            "fragmentId": 0,
-            "fragmentCount": 1,
-            "length": dtx_message_payload_header_struct.sizeof() + len(aux) + len(sel),
-            "identifier": self.cur_message,
-            "conversationIndex": 0,
-            "channelCode": channel,
-            "expectsReply": int(expects_reply),
-        })
-        msg = mheader + pheader + aux + sel
-        self.service.sendall(msg)
+
+        with self.lock:
+            self.cur_message += 1
+            mheader = dtx_message_header_struct.build({
+                "cb": dtx_message_header_struct.sizeof(),
+                "fragmentId": 0,
+                "fragmentCount": 1,
+                "length": dtx_message_payload_header_struct.sizeof() + len(aux) + len(sel),
+                "identifier": self.cur_message,
+                "conversationIndex": 0,
+                "channelCode": channel,
+                "expectsReply": int(expects_reply),
+            })
+            msg = mheader + pheader + aux + sel
+            self.service.sendall(msg)
+
+            self._log_dtx_message("sent", mheader, pheader + aux + sel)
 
     def recv_plist(self, channel: int = BROADCAST_CHANNEL):
         data, aux = self.recv_message(channel)
@@ -490,33 +586,96 @@ class RemoteServer(LockdownService):
         data = packet_stream.read(obj_size) if obj_size else None
         return data, aux
 
+    # TODO: rewrite the RemoteServer class (possibly even ServiceConnection) to continue consume messages
+    #     : and dispatch them asyncronously to the opened channels. Each channel is connected to a service and
+    #     : the DVT client ( us ) shall be able to provide some services as well. ( f.i. dtxproxy:XCTestDriverInterface:XCTestManager_IDEInterface ).
+    #     : It's important to note that the current implementation suppose that messages are sent and consumed in order and sequentially,
+    #     : as soon as you start multiple threads on the same connection, everything breaks down.
+    #     : This will require an extensive refactoring as the message identifier and conversation index must be kept until a reply
+    #     : is ready to send with conversationIndex+1 and the same message identifier.
+    #     : Draft: ReaderStream.recv_one -> srv = services_by_chan[chan] & send_reply(msg.id, srv.__call_method__(payload, aux))
+    #     : Draft: ReaderStream.recv_one -> replies[msg.id].put(msg) & wait_reply_for_msg(msg.id) -> msg
+    # FIXME: messages are independent of channels, they have an unique identifier that is reused only for replies (conversationIndex > 0).
+    #      : therefore the defragmenter shall work at the connection-level and store fragments by using this as hash: (msg.identifier, msg.conversationIndex).
+    #      : please note that the 2 ends of the connection have their own message identifier counter.
+
+    def _send_reply(
+        self,
+        channel: int,
+        msg_id: int,
+        msg_type: int,
+        payload: Optional[object] = None,
+        aux: Optional[MessageAux] = None,
+    ):
+        payload_bytes = archiver.archive(payload) if payload is not None else b""
+        aux_bytes = archiver.archive(aux) if aux is not None else b""
+        pheader = dtx_message_payload_header_struct.build({
+            "flags": msg_type,
+            "auxiliaryLength": len(aux_bytes),
+            "totalLength": len(payload_bytes) + len(aux_bytes),
+        })
+        mheader = dtx_message_header_struct.build({
+            "cb": dtx_message_header_struct.sizeof(),
+            "fragmentId": 0,
+            "fragmentCount": 1,
+            "length": dtx_message_payload_header_struct.sizeof() + len(payload_bytes) + len(aux_bytes),
+            "identifier": msg_id,
+            "conversationIndex": 1,
+            "channelCode": channel,
+            "expectsReply": (0),
+        })
+        msg = mheader + pheader + aux_bytes + payload_bytes
+        with self.lock:
+            self.service.sendall(msg)
+            self._log_dtx_message("sent", mheader, pheader + aux_bytes + payload_bytes)
+
+    def send_reply(self, channel: int, msg_id: int, payload: Optional[object] = None, aux: Optional[MessageAux] = None):
+        msg_type = 0x3  # ResponseWithReturnValueInPayload
+        self._send_reply(channel, msg_id, msg_type, payload, aux)
+
+    def send_reply_error(
+        self, channel: int, msg_id: int, payload: Optional[object] = None, aux: Optional[MessageAux] = None
+    ):
+        msg_type = 0x4  # DtxTypeError
+        self._send_reply(channel, msg_id, msg_type, payload, aux)
+
+    def send_reply_ack(
+        self, channel: int, msg_id: int, payload: Optional[object] = None, aux: Optional[MessageAux] = None
+    ):
+        msg_type = 0x0  # Ack
+        self._send_reply(channel, msg_id, msg_type, payload, aux)
+
     def _recv_packet_fragments(self, channel: int = BROADCAST_CHANNEL):
         while True:
             try:
                 # if we already have a message for this channel, just return it
-                message = self.channel_messages[channel].get()
+                with self.lock:
+                    # TODO: pthread_cond_wait with a background thread consuming messages
+                    mheader, message = self.channel_messages[channel].get()
+                    self.cur_remote_message = mheader.identifier
+                self._log_dtx_message("received", mheader, message)
                 return io.BytesIO(message)
             except Empty:
                 # if no message exists for the given channel code, just keep waiting and receive new messages
                 # until the waited message queue has at least one message
-                data = self.service.recvall(dtx_message_header_struct.sizeof())
-                mheader = dtx_message_header_struct.parse(data)
+                with self.lock:
+                    data = self.service.recvall(dtx_message_header_struct.sizeof())
+                    mheader = dtx_message_header_struct.parse(data)
 
-                # treat both as the negative and positive representation of the channel code in the response
-                # the same when performing fragmentation
-                received_channel_code = abs(mheader.channelCode)
+                    # treat both as the negative and positive representation of the channel code in the response
+                    # the same when performing fragmentation
+                    received_channel_code = mheader.channelCode
 
-                if received_channel_code not in self.channel_messages:
-                    self.channel_messages[received_channel_code] = ChannelFragmenter()
+                    if received_channel_code not in self.channel_messages:
+                        self.channel_messages[received_channel_code] = ChannelFragmenter()
 
-                if not mheader.conversationIndex and mheader.identifier > self.cur_message:
-                    self.cur_message = mheader.identifier
+                    if mheader.fragmentCount > 1 and mheader.fragmentId == 0:
+                        # when reading multiple message fragments, the first fragment contains only a message header
+                        continue
 
-                if mheader.fragmentCount > 1 and mheader.fragmentId == 0:
-                    # when reading multiple message fragments, the first fragment contains only a message header
-                    continue
-
-                self.channel_messages[received_channel_code].add_fragment(mheader, self.service.recvall(mheader.length))
+                    self.channel_messages[received_channel_code].add_fragment(
+                        mheader, self.service.recvall(mheader.length)
+                    )
 
     def __enter__(self):
         self.perform_handshake()
