@@ -440,4 +440,3 @@ def dvt_har(service_provider: ServiceProviderDep) -> None:
         with ActivityTraceTap(dvt, enable_http_archive_logging=True) as tap:
             while True:
                 tap.channel.receive_message()
-

@@ -86,48 +86,56 @@ def pcap(
 @cli.command("wifi-ip")
 def wifi_ip(
     service_provider: ServiceProviderDep,
+    interface: Annotated[
+        str,
+        typer.Option(
+            "--interface",
+            "-i",
+            help="Network interface name to capture on.",
+        ),
+    ] = "en0",
     timeout: Annotated[
         int,
-        typer.Option(help="Timeout in seconds to wait for a connection (0 = no timeout)"),
+        typer.Option(help="Timeout in seconds to wait for a valid IP (0 = no timeout)."),
     ] = 5,
 ) -> None:
     """
-    Get the device's WiFi IP address via USB.
+    Get the device's IP address on a specific network interface via USB.
 
-    Captures network packets and extracts the first private IPv4 source address,
-    which corresponds to the device's WiFi IP.
+    Captures packets on the given interface and returns the first private
+    IPv4 source address found.
 
-    This does not require developer mode to be enabled.
+    \b
+    Common interface names:
+        en0       — WiFi (default)
+        pdp_ip0   — Cellular
+        lo0       — Loopback
 
     \b
     Examples:
         pymobiledevice3 pcap wifi-ip
+        pymobiledevice3 pcap wifi-ip --interface pdp_ip0
         pymobiledevice3 pcap wifi-ip --timeout 10
     """
-    ETHERNET_HEADER_LEN = 14
-    IPV4_SRC_OFFSET = 12
-
-    service = PcapdService(lockdown=service_provider)
     start_time = time.time()
+    service = PcapdService(lockdown=service_provider)
 
-    for packet in service.watch():
+    for packet in service.watch(interface_name=interface):
         if timeout > 0 and (time.time() - start_time) > timeout:
-            logger.error(f"Timeout after {timeout} seconds. No WiFi IP found.")
+            logger.error(f"Timeout after {timeout} seconds. No IP found on interface '{interface}'.")
             logger.info("Tip: Generate network activity on the device (e.g., open a webpage)")
             raise typer.Exit(code=1)
 
         if packet.protocol_family != CrossPlatformAddressFamily.AF_INET:
             continue
 
-        if len(packet.data) < ETHERNET_HEADER_LEN + IPV4_SRC_OFFSET + 4:
-            continue
+        # Extract source IPv4 from packet data:
+        # 14-byte ethernet header + 12-byte offset to src address in IPv4 header
+        src_ip = ipaddress.IPv4Address(packet.data[26:30])
 
-        src_ip_bytes = packet.data[ETHERNET_HEADER_LEN + IPV4_SRC_OFFSET:ETHERNET_HEADER_LEN + IPV4_SRC_OFFSET + 4]
-        addr = ipaddress.IPv4Address(src_ip_bytes)
-
-        if addr.is_private and not addr.is_loopback and not addr.is_unspecified:
-            print(addr)
+        if src_ip.is_private and not src_ip.is_loopback and not src_ip.is_unspecified:
+            print(str(src_ip))
             return
 
-    logger.error("No private IPv4 address found")
+    logger.error(f"No private IPv4 address found on interface '{interface}'")
     raise typer.Exit(code=1)
