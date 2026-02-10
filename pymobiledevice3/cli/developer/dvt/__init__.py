@@ -3,6 +3,7 @@ import logging
 import os
 import posixpath
 import shlex
+import threading
 from datetime import datetime
 from enum import IntEnum
 from pathlib import Path
@@ -25,7 +26,7 @@ from pymobiledevice3.services.dvt.instruments.network_monitor import ConnectionD
 from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
-from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestService
+from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestListener, XCUITestService
 
 logger = logging.getLogger(__name__)
 
@@ -318,7 +319,24 @@ def dvt_screenshot(service_provider: ServiceProviderDep, out: Path) -> None:
 
 
 @cli.command("xcuitest")
-def xcuitest(service_provider: ServiceProviderDep, bundle_id: str) -> None:
+def xcuitest(
+    service_provider: ServiceProviderDep,
+    bundle_id: str,
+    output_log: Annotated[
+        Optional[Path],
+        typer.Option(help="log debug output file location ( default to python logger )"),
+    ] = None,
+    timeout: Annotated[
+        Optional[float],
+        typer.Option(help="maximum execution time, in seconds"),
+    ] = None,
+    env: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            help="Environment variable to pass to process given as key=value (can be specified multiple times)"
+        ),
+    ] = None,
+) -> None:
     """
     Start XCUITest
 
@@ -326,7 +344,22 @@ def xcuitest(service_provider: ServiceProviderDep, bundle_id: str) -> None:
     Usage example:
     \b    python3 -m pymobiledevice3 developer dvt xcuitest com.facebook.WebDriverAgentRunner.xctrunner
     """
-    XCUITestService(service_provider).run(bundle_id)
+    s = XCUITestService(service_provider)
+    consumer = s.start(bundle_id, test_runner_env=dict(var.split("=", 1) for var in env or ()))
+    if output_log is not None:
+
+        class MyListener(XCUITestListener):
+            def logDebugMessage_(self, args):
+                output_log.write_text(args[0].value)
+
+        consumer.set_listener(MyListener(consumer.main_dvt, consumer.main_chan, consumer.xctest_config))
+    t = threading.Thread(target=consumer.consume, name="XCUITestConsumer", daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        logger.warning("consumer thread timed out, exiting")
+        consumer.stop()
+        t.join(1)
 
 
 @cli.command("trace-codes")
