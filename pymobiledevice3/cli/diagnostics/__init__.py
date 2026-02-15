@@ -4,7 +4,7 @@ from typing import Annotated, Optional
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, print_json
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
 from pymobiledevice3.cli.diagnostics import battery
 from pymobiledevice3.lockdown import retry_create_using_usbmux
 from pymobiledevice3.services.diagnostics import DiagnosticsService
@@ -21,7 +21,8 @@ cli.add_typer(battery.cli)
 
 
 @cli.command("restart")
-def diagnostics_restart(
+@async_command
+async def diagnostics_restart(
     service_provider: ServiceProviderDep,
     reconnect: Annotated[
         bool,
@@ -33,43 +34,49 @@ def diagnostics_restart(
     ] = False,
 ) -> None:
     """Restart device"""
-    DiagnosticsService(lockdown=service_provider).restart()
+    await DiagnosticsService(lockdown=service_provider).restart()
     if reconnect:
         # Wait for the device to be available again
-        with retry_create_using_usbmux(None, serial=service_provider.udid):
-            print(f"Device Reconnected ({service_provider.udid}).")
+        lockdown = await retry_create_using_usbmux(None, serial=service_provider.udid)
+        await lockdown.close()
+        print(f"Device Reconnected ({service_provider.udid}).")
 
 
 @cli.command("shutdown")
-def diagnostics_shutdown(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def diagnostics_shutdown(service_provider: ServiceProviderDep) -> None:
     """Shutdown device"""
-    DiagnosticsService(lockdown=service_provider).shutdown()
+    await DiagnosticsService(lockdown=service_provider).shutdown()
 
 
 @cli.command("sleep")
-def diagnostics_sleep(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def diagnostics_sleep(service_provider: ServiceProviderDep) -> None:
     """Put device into sleep"""
-    DiagnosticsService(lockdown=service_provider).sleep()
+    await DiagnosticsService(lockdown=service_provider).sleep()
 
 
 @cli.command("info")
-def diagnostics_info(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def diagnostics_info(service_provider: ServiceProviderDep) -> None:
     """Get diagnostics info"""
-    print_json(DiagnosticsService(lockdown=service_provider).info())
+    print_json(await DiagnosticsService(lockdown=service_provider).info())
 
 
 @cli.command("ioregistry")
-def diagnostics_ioregistry(
+@async_command
+async def diagnostics_ioregistry(
     service_provider: ServiceProviderDep,
     plane: Annotated[Optional[str], typer.Option()] = None,
     name: Annotated[Optional[str], typer.Option()] = None,
     ioclass: Annotated[Optional[str], typer.Option()] = None,
 ) -> None:
     """Get ioregistry info"""
-    print_json(DiagnosticsService(lockdown=service_provider).ioregistry(plane=plane, name=name, ioclass=ioclass))
+    print_json(await DiagnosticsService(lockdown=service_provider).ioregistry(plane=plane, name=name, ioclass=ioclass))
 
 
 @cli.command("mg")
-def diagnostics_mg(service_provider: ServiceProviderDep, keys: Optional[list[str]] = None) -> None:
+@async_command
+async def diagnostics_mg(service_provider: ServiceProviderDep, keys: Optional[list[str]] = None) -> None:
     """Get MobileGestalt key values from given list. If empty, return all known."""
-    print_json(DiagnosticsService(lockdown=service_provider).mobilegestalt(keys=keys))
+    print_json(await DiagnosticsService(lockdown=service_provider).mobilegestalt(keys=keys))

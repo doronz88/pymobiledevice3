@@ -55,6 +55,7 @@ except ImportError:
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing
 from pymobiledevice3.ca import make_cert
 from pymobiledevice3.exceptions import (
+    ConnectionTerminatedError,
     InvalidServiceError,
     PairingError,
     PyMobileDevice3Exception,
@@ -203,9 +204,11 @@ class RemotePairingTunnel(ABC):
 
     async def stop_tunnel(self) -> None:
         self._logger.debug(f"[{asyncio.current_task().get_name()}] stopping tunnel")
-        self._tun_read_task.cancel()
-        with suppress(CancelledError):
-            await self._tun_read_task
+        if self._tun_read_task is not None:
+            self._tun_read_task.cancel()
+            with suppress(CancelledError):
+                await self._tun_read_task
+        self._tun_read_task = None
         if self.tun is not None:
             self.tun.close()
         self.tun = None
@@ -278,49 +281,89 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
 class RemotePairingTcpTunnel(RemotePairingTunnel):
     REQUESTED_MTU = 16000
 
-    def __init__(self, reader: StreamReader, writer: StreamWriter):
+    def __init__(
+        self,
+        reader: Optional[StreamReader] = None,
+        writer: Optional[StreamWriter] = None,
+        service: Optional[ServiceConnection] = None,
+    ):
         RemotePairingTunnel.__init__(self)
         self._reader = reader
         self._writer = writer
+        self._service = service
         self._sock_read_task = None
 
     async def send_packet_to_device(self, packet: bytes) -> None:
-        self._writer.write(packet)
-        await self._writer.drain()
+        if self._writer is not None:
+            self._writer.write(packet)
+            await self._writer.drain()
+            return
+        if self._service is None:
+            raise ConnectionError("missing writer/service for tcp tunnel")
+        await self._service.sendall(packet)
 
     @asyncio_print_traceback
     async def sock_read_task(self) -> None:
         try:
             while True:
                 try:
-                    ipv6_header = await self._reader.readexactly(IPV6_HEADER_SIZE)
-                    ipv6_length = struct.unpack(">H", ipv6_header[4:6])[0]
-                    ipv6_body = await self._reader.readexactly(ipv6_length)
+                    if self._reader is not None:
+                        ipv6_header = await self._reader.readexactly(IPV6_HEADER_SIZE)
+                        ipv6_length = struct.unpack(">H", ipv6_header[4:6])[0]
+                        ipv6_body = await self._reader.readexactly(ipv6_length)
+                    else:
+                        ipv6_header = await self._service.recvall(IPV6_HEADER_SIZE)
+                        ipv6_length = struct.unpack(">H", ipv6_header[4:6])[0]
+                        ipv6_body = await self._service.recvall(ipv6_length)
                     self.tun.write(LOOPBACK_HEADER + ipv6_header + ipv6_body)
-                except asyncio.exceptions.IncompleteReadError:
-                    await asyncio.sleep(1)
+                except (asyncio.exceptions.IncompleteReadError, ConnectionTerminatedError):
+                    return
         except OSError as e:
             self._logger.warning(f"got {e.__class__.__name__} in {asyncio.current_task().get_name()}")
-            await self.wait_closed()
+            return
 
     async def wait_closed(self) -> None:
-        with suppress(OSError):
-            await self._writer.wait_closed()
+        if self._sock_read_task is asyncio.current_task():
+            return
+        if self._sock_read_task is not None:
+            with suppress(asyncio.CancelledError):
+                await self._sock_read_task
+            return
+        if self._writer is not None:
+            with suppress(OSError):
+                await self._writer.wait_closed()
+
+    async def _recv_cdtunnel_packet_from_service(self) -> bytes:
+        header = await self._service.recvall(10)
+        payload_length = struct.unpack(">H", header[8:10])[0]
+        return header + await self._service.recvall(payload_length)
 
     async def request_tunnel_establish(self) -> dict:
-        self._writer.write(self._encode_cdtunnel_packet({"type": "clientHandshakeRequest", "mtu": self.REQUESTED_MTU}))
-        await self._writer.drain()
-        return json.loads(CDTunnelPacket.parse(await self._reader.read(self.REQUESTED_MTU)).body)
+        payload = self._encode_cdtunnel_packet({"type": "clientHandshakeRequest", "mtu": self.REQUESTED_MTU})
+        if self._writer is not None and self._reader is not None:
+            self._writer.write(payload)
+            await self._writer.drain()
+            return json.loads(CDTunnelPacket.parse(await self._reader.read(self.REQUESTED_MTU)).body)
+        if self._service is None:
+            raise ConnectionError("missing writer/service for tcp tunnel")
+        await self._service.sendall(payload)
+        return json.loads(CDTunnelPacket.parse(await self._recv_cdtunnel_packet_from_service()).body)
 
     def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
         super().start_tunnel(address, mtu, interface_name=interface_name)
         self._sock_read_task = asyncio.create_task(self.sock_read_task(), name=f"sock-read-task-{address}")
 
     async def stop_tunnel(self) -> None:
-        self._sock_read_task.cancel()
-        with suppress(CancelledError):
-            await self._sock_read_task
+        if self._sock_read_task is not None and self._sock_read_task is not asyncio.current_task():
+            self._sock_read_task.cancel()
+            with suppress(CancelledError):
+                await self._sock_read_task
         await super().stop_tunnel()
+        if self._writer is None:
+            if self._service is not None:
+                with suppress(OSError):
+                    await self._service.close()
+            return
         if not self._writer.is_closing():
             self._writer.close()
             with suppress(OSError):
@@ -496,7 +539,9 @@ class RemotePairingProtocol(StartTcpTunnel):
         sock = create_connection((host, port))
         OSUTIL.set_keepalive(sock)
         if sys.version_info >= (3, 13):
-            ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            ctx.maximum_version = ssl.TLSVersion.TLSv1_2
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
             ctx.set_ciphers("PSK")
@@ -506,15 +551,23 @@ class RemotePairingProtocol(StartTcpTunnel):
             ctx = SSLPSKContext(ssl.PROTOCOL_TLSv1_2)
             ctx.psk = self.encryption_key
             ctx.set_ciphers("PSK")
-        reader, writer = await asyncio.open_connection(sock=sock, ssl=ctx, server_hostname="")
+        try:
+            reader, writer = await asyncio.open_connection(sock=sock, ssl=ctx, server_hostname="")
+        except Exception:
+            sock.close()
+            raise
         tunnel = RemotePairingTcpTunnel(reader, writer)
-        handshake_response = await tunnel.request_tunnel_establish()
-
-        tunnel.start_tunnel(
-            handshake_response["clientParameters"]["address"],
-            handshake_response["clientParameters"]["mtu"],
-            interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
-        )
+        try:
+            handshake_response = await tunnel.request_tunnel_establish()
+            tunnel.start_tunnel(
+                handshake_response["clientParameters"]["address"],
+                handshake_response["clientParameters"]["mtu"],
+                interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
+            )
+        except Exception:
+            with suppress(Exception):
+                await tunnel.stop_tunnel()
+            raise
 
         try:
             yield TunnelResult(
@@ -951,7 +1004,7 @@ class RemotePairingTunnelService(RemotePairingProtocol):
         try:
             await self._attempt_pair_verify()
             if not await self._validate_pairing():
-                raise ConnectionAbortedError()
+                raise ConnectionTerminatedError()
             self._init_client_server_main_encryption_keys()
         except Exception:
             await self.close()
@@ -1005,7 +1058,7 @@ class CoreDeviceTunnelProxy(StartTcpTunnel):
 
     @classmethod
     async def create(cls, lockdown: LockdownServiceProvider) -> "CoreDeviceTunnelProxy":
-        return cls(await lockdown.aio_start_lockdown_service(cls.SERVICE_NAME), lockdown.udid)
+        return cls(await lockdown.start_lockdown_service(cls.SERVICE_NAME), lockdown.udid)
 
     def __init__(self, service: ServiceConnection, remote_identifier: str) -> None:
         self._service: ServiceConnection = service
@@ -1018,13 +1071,18 @@ class CoreDeviceTunnelProxy(StartTcpTunnel):
     @asynccontextmanager
     async def start_tcp_tunnel(self) -> AsyncGenerator["TunnelResult", None]:
         assert self._service is not None, "service must be connected first"
-        tunnel = RemotePairingTcpTunnel(self._service.reader, self._service.writer)
-        handshake_response = await tunnel.request_tunnel_establish()
-        tunnel.start_tunnel(
-            handshake_response["clientParameters"]["address"],
-            handshake_response["clientParameters"]["mtu"],
-            interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
-        )
+        tunnel = RemotePairingTcpTunnel(service=self._service)
+        try:
+            handshake_response = await tunnel.request_tunnel_establish()
+            tunnel.start_tunnel(
+                handshake_response["clientParameters"]["address"],
+                handshake_response["clientParameters"]["mtu"],
+                interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
+            )
+        except Exception:
+            with suppress(Exception):
+                await tunnel.stop_tunnel()
+            raise
         try:
             yield TunnelResult(
                 tunnel.tun.name,
@@ -1038,7 +1096,7 @@ class CoreDeviceTunnelProxy(StartTcpTunnel):
 
     async def close(self) -> None:
         if self._service is not None:
-            await self._service.aio_close()
+            await self._service.close()
 
 
 async def create_core_device_tunnel_service_using_rsd(
@@ -1062,7 +1120,11 @@ async def create_core_device_tunnel_service_using_remotepairing(
     remote_identifier: str, hostname: str, port: int, autopair: bool = True
 ) -> RemotePairingTunnelService:
     service = RemotePairingTunnelService(remote_identifier, hostname, port)
-    await service.connect(autopair=autopair)
+    try:
+        await service.connect(autopair=autopair)
+    except Exception:
+        await service.close()
+        raise
     return service
 
 
@@ -1118,7 +1180,7 @@ async def start_tunnel(
     protocol_handler: RemotePairingProtocol,
     secrets: Optional[TextIO] = None,
     max_idle_timeout: float = RemotePairingQuicTunnel.MAX_IDLE_TIMEOUT,
-    protocol: TunnelProtocol = TunnelProtocol.QUIC,
+    protocol: TunnelProtocol = TunnelProtocol.DEFAULT,
 ) -> AsyncGenerator[TunnelResult, None]:
     if isinstance(protocol_handler, CoreDeviceTunnelService):
         async with start_tunnel_over_core_device(
@@ -1179,9 +1241,17 @@ async def get_remote_pairing_tunnel_services(
                     )
                     result.append(conn)
                     break
-                except ConnectionAbortedError:
+                except (ConnectionTerminatedError, asyncio.IncompleteReadError, ConnectionResetError) as e:
                     if conn is not None:
                         await conn.close()
+                    logger.debug(
+                        "Skipping remote pairing service %s@%s:%s: %r",
+                        identifier,
+                        address.full_ip,
+                        answer.port,
+                        e,
+                    )
+                    continue
                 except OSError:
                     if conn is not None:
                         await conn.close()

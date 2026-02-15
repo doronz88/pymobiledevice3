@@ -1,14 +1,15 @@
 import logging
+from collections.abc import AsyncGenerator
+from typing import Any
 
 import pytest
 import pytest_asyncio
 
 from pymobiledevice3.exceptions import DeviceNotFoundError, InvalidServiceError
-from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.lockdown import UsbmuxLockdownClient, create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
-from pymobiledevice3.tunneld.api import async_get_tunneld_devices
+from pymobiledevice3.tunneld.api import get_tunneld_devices
 
 logging.getLogger("quic").disabled = True
 logging.getLogger("asyncio").disabled = True
@@ -42,7 +43,9 @@ def tunnel_option(request):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def service_provider(rsd_option, tunnel_option) -> LockdownServiceProvider:
+async def service_provider(
+    rsd_option, tunnel_option
+) -> AsyncGenerator[RemoteServiceDiscoveryService | UsbmuxLockdownClient, Any]:
     """
     Creates a new LockdownServiceProvider client for each test.
     """
@@ -50,7 +53,7 @@ async def service_provider(rsd_option, tunnel_option) -> LockdownServiceProvider
         async with RemoteServiceDiscoveryService(rsd_option) as rsd:
             yield rsd
     elif tunnel_option is not None:
-        rsds = await async_get_tunneld_devices()
+        rsds = await get_tunneld_devices()
         try:
             if tunnel_option == "":
                 yield rsds[0]
@@ -61,26 +64,26 @@ async def service_provider(rsd_option, tunnel_option) -> LockdownServiceProvider
         except IndexError as e:
             raise DeviceNotFoundError(tunnel_option) from e
     else:
-        with create_using_usbmux() as client:
+        async with await create_using_usbmux() as client:
             yield client
 
 
-@pytest.fixture(scope="function")
-def dvt(service_provider) -> DvtSecureSocketProxyService:
+@pytest_asyncio.fixture(scope="function")
+async def dvt(service_provider) -> AsyncGenerator[DvtSecureSocketProxyService, Any]:
     """
     Creates a new DvtSecureSocketProxyService client for each test.
     """
     try:
-        with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
             yield dvt
     except InvalidServiceError:
         pytest.skip("Skipping DVT-based test since the service isn't accessible")
 
 
-@pytest.fixture(scope="function")
-def lockdown() -> LockdownClient:
+@pytest_asyncio.fixture(scope="function")
+async def lockdown() -> AsyncGenerator[UsbmuxLockdownClient, Any]:
     """
     Creates a new lockdown client for each test.
     """
-    with create_using_usbmux() as client:
+    async with await create_using_usbmux() as client:
         yield client

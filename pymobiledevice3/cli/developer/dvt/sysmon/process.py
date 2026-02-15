@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import json
 import logging
@@ -10,7 +11,7 @@ from typing import Annotated, Optional
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, default_json_encoder, print_json
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, default_json_encoder, print_json
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
@@ -26,13 +27,14 @@ cli = InjectingTyper(
 
 
 @cli.command("monitor")
-def sysmon_process_monitor(service_provider: ServiceProviderDep, threshold: float) -> None:
+@async_command
+async def sysmon_process_monitor(service_provider: ServiceProviderDep, threshold: float) -> None:
     """monitor all most consuming processes by given cpuUsage threshold."""
 
     Process = namedtuple("process", "pid name cpuUsage physFootprint")
 
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, Sysmontap(dvt) as sysmon:
-        for process_snapshot in sysmon.iter_processes():
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, await Sysmontap.create(dvt) as sysmon:
+        async for process_snapshot in sysmon.iter_processes():
             entries = []
             for process in process_snapshot:
                 if (process["cpuUsage"] is not None) and (process["cpuUsage"] >= threshold):
@@ -49,7 +51,8 @@ def sysmon_process_monitor(service_provider: ServiceProviderDep, threshold: floa
 
 
 @cli.command("single")
-def sysmon_process_single(
+@async_command
+async def sysmon_process_single(
     service_provider: ServiceProviderDep,
     attributes: Annotated[
         Optional[list[str]],
@@ -65,41 +68,41 @@ def sysmon_process_single(
     count = 0
 
     result = []
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, await Sysmontap.create(dvt) as sysmon:
         device_info = DeviceInfo(dvt)
 
-        with Sysmontap(dvt) as sysmon:
-            for process_snapshot in sysmon.iter_processes():
-                count += 1
+        async for process_snapshot in sysmon.iter_processes():
+            count += 1
 
-                if count < 2:
-                    # first sample doesn't contain an initialized value for cpuUsage
+            if count < 2:
+                # first sample doesn't contain an initialized value for cpuUsage
+                continue
+
+            for process in process_snapshot:
+                skip = False
+                if attributes is not None:
+                    for filter_attr in attributes:
+                        filter_attr, filter_value = filter_attr.split("=", 1)
+                        if str(process[filter_attr]) != filter_value:
+                            skip = True
+                            break
+
+                if skip:
                     continue
 
-                for process in process_snapshot:
-                    skip = False
-                    if attributes is not None:
-                        for filter_attr in attributes:
-                            filter_attr, filter_value = filter_attr.split("=", 1)
-                            if str(process[filter_attr]) != filter_value:
-                                skip = True
-                                break
+                # adding "artificially" the execName field
+                process["execName"] = await device_info.execname_for_pid(process["pid"])
+                result.append(process)
 
-                    if skip:
-                        continue
-
-                    # adding "artificially" the execName field
-                    process["execName"] = device_info.execname_for_pid(process["pid"])
-                    result.append(process)
-
-                # exit after single snapshot
-                break
+            # exit after single snapshot
+            break
 
     print_json(result)
 
 
 @cli.command("monitor-single")
-def sysmon_process_monitor_single(
+@async_command
+async def sysmon_process_monitor_single(
     service_provider: ServiceProviderDep,
     attributes: Annotated[
         Optional[list[str]],
@@ -154,35 +157,38 @@ def sysmon_process_monitor_single(
     with contextlib.ExitStack() as stack:
         output_file = stack.enter_context(open(output, "w")) if output else None
 
-        dvt = stack.enter_context(DvtSecureSocketProxyService(lockdown=service_provider))
-        sysmon = stack.enter_context(Sysmontap(dvt))
+        async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, await Sysmontap.create(dvt) as sysmon:
+            async for process_snapshot in sysmon.iter_processes():
+                count += 1
 
-        for process_snapshot in sysmon.iter_processes():
-            count += 1
-
-            if count < 2:
-                continue
-
-            if start_time is None:
-                start_time = time.time()
-
-            if duration is not None:
-                elapsed_ms = (time.time() - start_time) * 1000
-                if elapsed_ms >= duration:
-                    break
-
-            for process in process_snapshot:
-                if not matches_filters(process):
+                if count < 2:
                     continue
 
-                process["timestamp"] = datetime.now(timezone.utc).isoformat()
+                if start_time is None:
+                    start_time = time.time()
 
-                if output_file:
-                    json_output = json.dumps(process, default=default_json_encoder)
-                    output_file.write(json_output + "\n")
-                    output_file.flush()
-                else:
-                    print_json(process)
+                if duration is not None:
+                    elapsed_ms = (time.time() - start_time) * 1000
+                    if elapsed_ms >= duration:
+                        break
 
-            if interval:
-                time.sleep(interval / 1000.0)
+                for process in process_snapshot:
+                    if not matches_filters(process):
+                        continue
+
+                    process["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+                    if output_file:
+                        json_output = json.dumps(process, default=default_json_encoder)
+                        output_file.write(json_output + "\n")
+                        output_file.flush()
+                    else:
+                        print_json(process)
+
+                if interval:
+                    await asyncio.sleep(interval / 1000.0)
+
+                if duration is not None:
+                    elapsed_ms = (time.time() - start_time) * 1000
+                    if elapsed_ms >= duration:
+                        break

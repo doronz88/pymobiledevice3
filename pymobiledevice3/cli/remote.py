@@ -1,4 +1,3 @@
-import asyncio
 import dataclasses
 import logging
 import sys
@@ -14,6 +13,7 @@ from typer_injector import InjectingTyper
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing_manual_pairing
 from pymobiledevice3.cli.cli_common import (
     RSDServiceProviderDep,
+    async_command,
     print_json,
     prompt_device_list,
     sudo_required,
@@ -24,7 +24,7 @@ from pymobiledevice3.exceptions import NoDeviceConnectedError
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, get_remote_pairing_record_filename
 from pymobiledevice3.remote.common import ConnectionType, TunnelProtocol
 from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_tunnel, verify_tunnel_imports
-from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
+from pymobiledevice3.remote.remote_service_discovery import RSD_PORT
 from pymobiledevice3.remote.tunnel_service import (
     RemotePairingManualPairingService,
     get_core_device_tunnel_services,
@@ -33,6 +33,7 @@ from pymobiledevice3.remote.tunnel_service import (
 from pymobiledevice3.remote.utils import get_rsds
 from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS
 from pymobiledevice3.tunneld.server import TunneldRunner
+from pymobiledevice3.utils import run_in_loop
 
 logger = logging.getLogger(__name__)
 
@@ -123,11 +124,12 @@ def cli_tunneld(
 
 
 @cli.command("browse")
-def browse(
+@async_command
+async def browse(
     timeout: Annotated[float, typer.Option(help="Bonjour timeout (in seconds)")] = DEFAULT_BONJOUR_TIMEOUT,
 ) -> None:
     """browse RemoteXPC devices using bonjour"""
-    asyncio.run(cli_browse(timeout), debug=True)
+    await cli_browse(timeout)
 
 
 @cli.command("rsd-info")
@@ -226,7 +228,8 @@ async def start_tunnel_task(
 
 @cli.command("start-tunnel")
 @sudo_required
-def cli_start_tunnel(
+@async_command
+async def cli_start_tunnel(
     connection_type: Annotated[
         ConnectionType,
         typer.Option(
@@ -266,16 +269,13 @@ def cli_start_tunnel(
     if not verify_tunnel_imports():
         return
     with secrets.open("wt") if secrets is not None else nullcontext() as secrets_file:
-        asyncio.run(
-            start_tunnel_task(
-                connection_type,
-                secrets_file,
-                udid,
-                script_mode,
-                max_idle_timeout=max_idle_timeout,
-                protocol=protocol,
-            ),
-            debug=True,
+        await start_tunnel_task(
+            connection_type,
+            secrets_file,
+            udid,
+            script_mode,
+            max_idle_timeout=max_idle_timeout,
+            protocol=protocol,
         )
 
 
@@ -319,30 +319,27 @@ async def start_remote_pair_task(device_name: Optional[str]) -> None:
 
 
 @cli.command("pair")
-def cli_pair(
+@async_command
+async def cli_pair(
     name: Annotated[
         Optional[str],
         typer.Option(help="Device name for a specific device to look for"),
     ] = None,
 ) -> None:
     """start remote pairing for devices which allow"""
-    asyncio.run(start_remote_pair_task(name), debug=True)
+    await start_remote_pair_task(name)
 
 
 @cli.command("delete-pair")
-@sudo_required
 def cli_delete_pair(udid: str) -> None:
-    """delete a pairing record"""
+    """Delete a pairing record"""
     pair_record_path = get_home_folder() / f"{get_remote_pairing_record_filename(udid)}.{PAIRING_RECORD_EXT}"
     pair_record_path.unlink()
 
 
-async def cli_service_task(service_provider: RemoteServiceDiscoveryService, service_name: str) -> None:
-    async with service_provider.start_remote_service(service_name) as service:
-        service.shell()
-
-
 @cli.command("service")
 def cli_service(service_provider: RSDServiceProviderDep, service_name: str) -> None:
-    """start an ipython shell for interacting with given service"""
-    asyncio.run(cli_service_task(service_provider, service_name), debug=True)
+    """Start an ipython shell for interacting with given service"""
+    service = service_provider.start_remote_service(service_name)
+    run_in_loop(service.connect())
+    service.shell()

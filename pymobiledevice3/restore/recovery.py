@@ -1,7 +1,7 @@
+import asyncio
 import contextlib
 import hashlib
 import logging
-import time
 from typing import Optional
 from zipfile import ZipFile
 
@@ -27,9 +27,9 @@ class Recovery(BaseRestore):
         self.tss_recoveryos_root_ticket = None
         self.restore_boot_args = None
 
-    def reconnect_irecv(self, is_recovery=None):
+    async def reconnect_irecv(self, is_recovery=None):
         self.logger.debug("waiting for device to reconnect...")
-        self.device.irecv = IRecv(ecid=self.device.ecid, is_recovery=is_recovery)
+        self.device.set_irecv(IRecv(ecid=await self.device.get_ecid(), is_recovery=is_recovery))
         self.logger.debug(f"connected mode: {self.device.irecv.mode}")
 
     def get_preboard_manifest(self):
@@ -60,16 +60,18 @@ class Recovery(BaseRestore):
         # populate parameters
         parameters = {}
 
-        parameters["ApECID"] = self.device.ecid
-        if self.device.ap_nonce is not None:
-            parameters["ApNonce"] = self.device.ap_nonce
+        parameters["ApECID"] = await self.device.get_ecid()
+        ap_nonce = await self.device.get_ap_nonce()
+        if ap_nonce is not None:
+            parameters["ApNonce"] = ap_nonce
 
-        if self.device.sep_nonce is not None:
-            parameters["ApSepNonce"] = self.device.sep_nonce
+        sep_nonce = await self.device.get_sep_nonce()
+        if sep_nonce is not None:
+            parameters["ApSepNonce"] = sep_nonce
 
         parameters["ApProductionMode"] = True
 
-        if self.device.is_image4_supported:
+        if await self.device.get_is_image4_supported():
             parameters["ApSecurityMode"] = True
             parameters["ApSupportsImg4"] = True
         else:
@@ -87,14 +89,14 @@ class Recovery(BaseRestore):
         #     tss.add_tags({manifest_property: build_manifest_info[manifest_property]})
 
         # add personalized parameters
-        if self.device.is_image4_supported:
+        if await self.device.get_is_image4_supported():
             tss.add_ap_img4_tags(parameters)
         else:
             tss.add_ap_img3_tags(parameters)
 
         # normal mode; request baseband ticket as well
         if self.device.lockdown is not None:
-            pinfo = self.device.firmware_preflight_info
+            pinfo = await self.device.get_firmware_preflight_info()
             if pinfo:
                 self.logger.debug("adding firmware preflight info")
 
@@ -144,23 +146,24 @@ class Recovery(BaseRestore):
         # send request and grab response
         return await tss.send_receive()
 
-    def get_local_policy_tss_response(self):
+    async def get_local_policy_tss_response(self):
         # populate parameters
         parameters = {
-            "ApECID": self.device.ecid,
+            "ApECID": await self.device.get_ecid(),
             "Ap,LocalBoot": False,
             "ApProductionMode": True,
         }
 
-        if self.device.ap_nonce:
-            parameters["ApNonce"] = self.device.ap_nonce
+        ap_nonce = await self.device.get_ap_nonce()
+        if ap_nonce:
+            parameters["ApNonce"] = ap_nonce
 
-        sep_nonce = self.device.sep_nonce
+        sep_nonce = await self.device.get_sep_nonce()
 
         if sep_nonce:
             parameters["ApSepNonce"] = sep_nonce
 
-        if self.device.is_image4_supported:
+        if await self.device.get_is_image4_supported():
             parameters["ApSecurityMode"] = True
             parameters["ApSupportsImg4"] = True
         else:
@@ -188,25 +191,26 @@ class Recovery(BaseRestore):
         # add common tags from manifest
         request.add_local_policy_tags(parameters)
 
-        return request.send_receive()
+        return await request.send_receive()
 
-    def get_recoveryos_root_ticket_tss_response(self):
+    async def get_recoveryos_root_ticket_tss_response(self):
         # populate parameters
         parameters = {
-            "ApECID": self.device.ecid,
+            "ApECID": await self.device.get_ecid(),
             "Ap,LocalBoot": False,
             "ApProductionMode": True,
         }
 
-        if self.device.ap_nonce:
-            parameters["ApNonce"] = self.device.ap_nonce
+        ap_nonce = await self.device.get_ap_nonce()
+        if ap_nonce:
+            parameters["ApNonce"] = ap_nonce
 
-        sep_nonce = self.device.sep_nonce
+        sep_nonce = await self.device.get_sep_nonce()
 
         if sep_nonce:
             parameters["ApSepNonce"] = sep_nonce
 
-        if self.device.is_image4_supported:
+        if await self.device.get_is_image4_supported():
             parameters["ApSecurityMode"] = True
             parameters["ApSupportsImg4"] = True
         else:
@@ -229,18 +233,20 @@ class Recovery(BaseRestore):
         # Fills digests & co
         request.add_ap_recovery_tags(parameters)
 
-        return request.send_receive()
+        return await request.send_receive()
 
     async def fetch_tss_record(self) -> TSSResponse:
-        if self.ipsw.build_manifest.build_major > 8 and self.device.ap_nonce is None:
+        await self.ensure_image4_supported()
+
+        if self.ipsw.build_manifest.build_major > 8 and await self.device.get_ap_nonce() is None:
             # the first nonce request with older firmware releases can fail, and it's OK
             self.logger.info("NOTE: Unable to get nonce from device")
 
         self.tss = await self.get_tss_response()
 
         if self.macos_variant:
-            self.tss_localpolicy = self.get_local_policy_tss_response()
-            self.tss_recoveryos_root_ticket = self.get_recoveryos_root_ticket_tss_response()
+            self.tss_localpolicy = await self.get_local_policy_tss_response()
+            self.tss_recoveryos_root_ticket = await self.get_recoveryos_root_ticket_tss_response()
         else:
             recovery_variant = self.build_identity["Info"].get("RecoveryVariant")
             if recovery_variant is not None:
@@ -248,7 +254,7 @@ class Recovery(BaseRestore):
 
         return self.tss
 
-    def send_component(self, name: str):
+    async def send_component(self, name: str):
         # Use a specific TSS ticket for the Ap,LocalPolicy component
         data = None
         tss = self.tss
@@ -257,21 +263,21 @@ class Recovery(BaseRestore):
             # If Ap,LocalPolicy => Inject an empty policy
             data = lpol_file
 
-        data = self.get_personalized_data(name, data=data, tss=tss)
+        data = await self.get_personalized_data(name, data=data, tss=tss)
         self.logger.info(f"Sending {name} ({len(data)} bytes)...")
         self.device.irecv.send_buffer(data)
 
-    def send_component_and_command(self, name, command):
-        self.send_component(name)
+    async def send_component_and_command(self, name, command):
+        await self.send_component(name)
         self.device.irecv.send_command(command)
 
-    def send_ibec(self):
+    async def send_ibec(self):
         component = "iBEC"
-        self.send_component(component)
+        await self.send_component(component)
         self.device.irecv.send_command("go", b_request=1)
         self.device.irecv.ctrl_transfer(0x21, 1)
 
-    def send_applelogo(self, allow_missing=True):
+    async def send_applelogo(self, allow_missing=True):
         component = "RestoreLogo"
 
         if not self.build_identity.has_component(component):
@@ -281,11 +287,11 @@ class Recovery(BaseRestore):
             else:
                 raise PyMobileDevice3Exception(f"missing component: {component}")
 
-        self.send_component(component)
+        await self.send_component(component)
         self.device.irecv.send_command("setpicture 4")
         self.device.irecv.send_command("bgcolor 0 0 0")
 
-    def send_loaded_by_iboot(self):
+    async def send_loaded_by_iboot(self):
         manifest = self.build_identity["Manifest"]
         for key, node in manifest.items():
             iboot = node["Info"].get("IsLoadedByiBoot", False)
@@ -296,9 +302,9 @@ class Recovery(BaseRestore):
 
             if iboot and not iboot_stg1:
                 self.logger.debug(f"{key} is loaded by iBoot")
-                self.send_component_and_command(key, "firmware")
+                await self.send_component_and_command(key, "firmware")
 
-    def send_iboot_stage1_components(self):
+    async def send_iboot_stage1_components(self):
         manifest = self.build_identity["Manifest"]
         for key, node in manifest.items():
             iboot = node["Info"].get("IsLoadedByiBoot", False)
@@ -309,25 +315,25 @@ class Recovery(BaseRestore):
 
             if iboot and iboot_stg1:
                 self.logger.debug(f"{key} is loaded by iBoot Stage 1")
-                self.send_component_and_command(key, "firmware")
+                await self.send_component_and_command(key, "firmware")
 
-    def send_ramdisk(self):
+    async def send_ramdisk(self):
         component = "RestoreRamDisk"
         ramdisk_size = self.device.irecv.getenv("ramdisk-size")
         self.logger.info(f"ramdisk-size: {ramdisk_size}")
 
-        self.send_component(component)
+        await self.send_component(component)
         ramdisk_delay = self.device.irecv.getenv("ramdisk-delay")
         self.logger.info(f"ramdisk-delay: {ramdisk_delay}")
 
         self.device.irecv.send_command("ramdisk")
 
-        time.sleep(2)
+        await asyncio.sleep(2)
 
-    def send_kernelcache(self):
+    async def send_kernelcache(self):
         component = "RestoreKernelCache"
 
-        self.send_component(component)
+        await self.send_component(component)
         with contextlib.suppress(USBError):
             self.device.irecv.ctrl_transfer(0x21, 1)
 
@@ -340,7 +346,7 @@ class Recovery(BaseRestore):
     def set_autoboot(self, enable: bool):
         self.device.irecv.set_autoboot(enable)
 
-    def enter_restore(self):
+    async def enter_restore(self):
         if self.macos_variant:
             self.restore_boot_args = "rd=md0 nand-enable-reformat=1 -progress -restore"
         elif self.ipsw.build_manifest.build_major >= 8:
@@ -352,11 +358,11 @@ class Recovery(BaseRestore):
         build_version = None
         while not build_version:
             self.logger.debug("build-version not yet supported. reconnecting...")
-            time.sleep(1)
+            await asyncio.sleep(1)
 
             # sometimes we manage to connect before iBEC actually started running
             build_version = self.device.irecv.getenv("build-version")
-            self.reconnect_irecv()
+            await self.reconnect_irecv()
 
         self.logger.info(f"iBoot build-version={build_version}")
 
@@ -374,27 +380,27 @@ class Recovery(BaseRestore):
         self.set_autoboot(False)
 
         # send logo and show it
-        self.send_applelogo()
+        await self.send_applelogo()
 
         # send components loaded by iBoot
-        self.send_loaded_by_iboot()
+        await self.send_loaded_by_iboot()
 
         # send ramdisk and run it
-        self.send_ramdisk()
+        await self.send_ramdisk()
 
         # send devicetree and load it
-        self.send_component_and_command("RestoreDeviceTree", "devicetree")
+        await self.send_component_and_command("RestoreDeviceTree", "devicetree")
 
         if self.build_identity.has_component("RestoreSEP"):
             # attempt to send rsepfirmware and load it, otherwise continue
             with contextlib.suppress(USBError):
-                self.send_component_and_command("RestoreSEP", "rsepfirmware")
+                await self.send_component_and_command("RestoreSEP", "rsepfirmware")
 
-        self.send_kernelcache()
+        await self.send_kernelcache()
 
     async def dfu_enter_recovery(self) -> None:
-        self.send_component("iBSS")
-        self.reconnect_irecv()
+        await self.send_component("iBSS")
+        await self.reconnect_irecv()
 
         if "SRTG" in self.device.irecv._device_info:
             raise PyMobileDevice3Exception("Device failed to enter recovery")
@@ -403,7 +409,7 @@ class Recovery(BaseRestore):
             old_nonce = self.device.irecv.ap_nonce
 
             # reconnect
-            self.reconnect_irecv()
+            await self.reconnect_irecv()
             nonce = self.device.irecv.ap_nonce
 
             if old_nonce != nonce:
@@ -415,18 +421,18 @@ class Recovery(BaseRestore):
             # Now, before sending iBEC, we must send necessary firmwares on new versions.
             if self.macos_variant:
                 # Without this empty policy file & its special signature, iBEC won't start.
-                self.send_component_and_command("Ap,LocalPolicy", "lpolrestore")
-                self.send_iboot_stage1_components()
+                await self.send_component_and_command("Ap,LocalPolicy", "lpolrestore")
+                await self.send_iboot_stage1_components()
                 self.device.irecv.set_autoboot(False)
                 self.device.irecv.send_command("setenvnp boot-args rd=md0 nand-enable-reformat=1 -progress -restore")
-                self.send_applelogo(allow_missing=False)
+                await self.send_applelogo(allow_missing=False)
 
             mode = self.device.irecv.mode
             # send iBEC
-            self.send_component("iBEC")
+            await self.send_component("iBEC")
 
             if self.device.irecv and mode.is_recovery:
-                time.sleep(1)
+                await asyncio.sleep(1)
                 self.device.irecv.send_command("go", b_request=1)
 
                 if self.build_identity.build_manifest.build_major < 20:
@@ -434,10 +440,10 @@ class Recovery(BaseRestore):
                         self.device.irecv.ctrl_transfer(0x21, 1, timeout=5000)
 
                 self.logger.debug("Waiting for device to disconnect...")
-                time.sleep(10)
+                await asyncio.sleep(10)
 
         self.logger.debug("Waiting for device to reconnect in recovery mode...")
-        self.reconnect_irecv(is_recovery=True)
+        await self.reconnect_irecv(is_recovery=True)
 
     async def boot_ramdisk(self) -> None:
         if self.tss is None:
@@ -449,12 +455,12 @@ class Recovery(BaseRestore):
             self.logger.info("going into Recovery")
 
             # In case lockdown has disconnected while waiting for a ticket
-            self.device.lockdown = create_using_usbmux(serial=self.device.lockdown.udid, connection_type="USB")
-            self.device.lockdown.enter_recovery()
+            self.device.set_lockdown(await create_using_usbmux(serial=self.device.lockdown.udid, connection_type="USB"))
+            await self.device.lockdown.enter_recovery()
 
-            self.device.lockdown = None
-            self.device.irecv = IRecv(self.device.ecid)
-            self.reconnect_irecv()
+            self.device.set_lockdown(None)
+            self.device.set_irecv(IRecv(await self.device.get_ecid()))
+            await self.reconnect_irecv()
 
         if self.device.irecv.mode == Mode.DFU_MODE:
             # device is currently in DFU mode, place it into recovery mode
@@ -463,11 +469,11 @@ class Recovery(BaseRestore):
         elif self.device.irecv.mode.is_recovery:
             # now we load the iBEC
             with contextlib.suppress(USBError):
-                self.send_ibec()
+                await self.send_ibec()
 
-            self.reconnect_irecv(is_recovery=True)
+            await self.reconnect_irecv(is_recovery=True)
 
         self.logger.info("device booted into recovery")
 
         # now finally do the magic to put the device into restore mode
-        self.enter_restore()
+        await self.enter_restore()

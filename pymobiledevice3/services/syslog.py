@@ -1,3 +1,6 @@
+from collections.abc import AsyncGenerator
+
+from pymobiledevice3.exceptions import ConnectionTerminatedError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -22,14 +25,14 @@ class SyslogService(LockdownService):
         else:
             super().__init__(service_provider, self.RSD_SERVICE_NAME)
 
-    def watch(self):
+    async def watch(self) -> AsyncGenerator[str, None]:
         buf = b""
         while True:
             # read in chunks till we have at least one syslog line
-            chunk = self.service.recv(CHUNK_SIZE)
+            chunk = await self.service.recv_any(CHUNK_SIZE)
 
             if len(chunk) == 0:
-                raise ConnectionAbortedError()
+                raise ConnectionTerminatedError()
 
             buf += chunk
 

@@ -6,14 +6,14 @@ async def test_back(webdriver):
     await webdriver.get("https://www.google.com")
     await webdriver.get("https://github.com")
     await webdriver.back()
-    assert (await webdriver.current_url).rstrip("/") == "https://www.google.com"
+    assert (await webdriver.get_current_url()).rstrip("/") == "https://www.google.com"
 
 
 async def test_current_url(webdriver):
-    assert not await webdriver.current_url
+    assert not await webdriver.get_current_url()
     url = "https://www.google.com"
     await webdriver.get(url)
-    assert (await webdriver.current_url).rstrip("/") == url
+    assert (await webdriver.get_current_url()).rstrip("/") == url
 
 
 async def test_forward(webdriver):
@@ -21,7 +21,7 @@ async def test_forward(webdriver):
     await webdriver.get("https://github.com")
     await webdriver.back()
     await webdriver.forward()
-    assert (await webdriver.current_url).rstrip("/") == "https://github.com"
+    assert (await webdriver.get_current_url()).rstrip("/") == "https://github.com"
 
 
 async def test_find_element(webdriver):

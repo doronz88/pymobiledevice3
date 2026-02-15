@@ -2,7 +2,7 @@ import logging
 
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, print_json
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
 from pymobiledevice3.services.amfi import AmfiService
 
 logger = logging.getLogger(__name__)
@@ -16,18 +16,24 @@ cli = InjectingTyper(
 
 
 @cli.command()
-def reveal_developer_mode(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def reveal_developer_mode(service_provider: ServiceProviderDep) -> None:
     """reveal developer mode option in device's UI"""
-    AmfiService(service_provider).reveal_developer_mode_option_in_ui()
+    await AmfiService(service_provider).reveal_developer_mode_option_in_ui()
 
 
 @cli.command()
-def enable_developer_mode(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def enable_developer_mode(service_provider: ServiceProviderDep) -> None:
     """enable developer mode"""
-    AmfiService(service_provider).enable_developer_mode()
+    if await service_provider.get_developer_mode_status():
+        logger.info("Developer mode is already enabled")
+        return
+    await AmfiService(service_provider).enable_developer_mode()
 
 
 @cli.command()
-def developer_mode_status(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def developer_mode_status(service_provider: ServiceProviderDep) -> None:
     """query developer mode status"""
-    print_json(service_provider.developer_mode_status)
+    print_json(await service_provider.get_developer_mode_status())

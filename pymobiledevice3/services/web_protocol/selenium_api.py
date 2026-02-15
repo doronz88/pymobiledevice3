@@ -13,9 +13,8 @@ class SeleniumApi(ABC):
     async def find_elements(self, by=By.ID, value=None):
         pass
 
-    @property
     @abstractmethod
-    async def screenshot_as_base64(self) -> str:
+    async def _get_screenshot_as_base64(self) -> str:
         pass
 
     async def find_element_by_class_name(self, name):
@@ -76,10 +75,10 @@ class SeleniumApi(ABC):
         return True
 
     async def screenshot_as_png(self) -> bytes:
-        return b64decode((await self.screenshot_as_base64).encode("ascii"))
+        return b64decode((await self._get_screenshot_as_base64()).encode("ascii"))
 
     async def get_screenshot_as_base64(self) -> str:
-        return await self.screenshot_as_base64
+        return await self._get_screenshot_as_base64()
 
     async def get_screenshot_as_file(self, filename):
         return await self.screenshot(filename)

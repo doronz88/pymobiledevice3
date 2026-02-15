@@ -502,13 +502,16 @@ class CdpTarget:
     async def _input_emulate_touch_from_mouse_event(self, message):
         params = message["params"]
         if params["type"] == "mouseWheel":
-            delta_x, delta_y = params["deltaX"] // self.screencast.scale, params["deltaY"] // self.screencast.scale
+            delta_x, delta_y = (
+                params["deltaX"] // self.screencast.get_scale(),
+                params["deltaY"] // self.screencast.get_scale(),
+            )
             await self.evaluate_and_result(message["id"], f"window.scrollBy({-delta_x}, {-delta_y})")
         elif params["type"] == "mouseReleased":
             pass
         else:
             modifiers = params["modifiers"]
-            x, y = params["x"] // self.screencast.scale, params["y"] // self.screencast.scale
+            x, y = params["x"] // self.screencast.get_scale(), params["y"] // self.screencast.get_scale()
             event_params = {
                 "screenX": x,
                 "screenY": y,

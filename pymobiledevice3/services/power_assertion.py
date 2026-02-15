@@ -17,8 +17,8 @@ class PowerAssertionService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    @contextlib.contextmanager
-    def create_power_assertion(self, type_: str, name: str, timeout: float, details: Optional[str] = None):
+    @contextlib.asynccontextmanager
+    async def create_power_assertion(self, type_: str, name: str, timeout: float, details: Optional[str] = None):
         """Trigger IOPMAssertionCreateWithName"""
         msg = {
             "CommandKey": "CommandCreateAssertion",
@@ -30,5 +30,6 @@ class PowerAssertionService(LockdownService):
         if details is not None:
             msg["AssertionDetailKey"] = details
 
-        self.service.send_recv_plist(msg)
+        await self.service.send_plist(msg)
+        await self.service.recv_plist()
         yield

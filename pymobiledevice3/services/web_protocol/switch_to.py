@@ -10,8 +10,7 @@ class SwitchTo:
         """
         self.session = session
 
-    @property
-    async def active_element(self) -> WebElement:
+    async def get_active_element(self) -> WebElement:
         """Returns the element with focus, or BODY if nothing has focus."""
         await self.session.wait_for_navigation_to_complete()
         elem = await self.session.evaluate_js_function(
@@ -19,8 +18,7 @@ class SwitchTo:
         )
         return WebElement(self.session, elem)
 
-    @property
-    def alert(self) -> Alert:
+    def get_alert(self) -> Alert:
         """Switches focus to an alert on the page."""
         return Alert(self.session)
 

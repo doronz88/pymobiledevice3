@@ -1,13 +1,13 @@
-import asyncio
 import datetime
 import json
 import logging
 import os
 import sys
 import uuid
+from collections.abc import Awaitable
 from functools import wraps
 from textwrap import dedent
-from typing import Annotated, Any, Callable, Optional
+from typing import Annotated, Any, Callable, Optional, ParamSpec, TypeVar
 
 import click
 import coloredlogs
@@ -19,13 +19,14 @@ from inquirer3.themes import GreenPassion
 from pygments import formatters, highlight, lexers
 from typer_injector import Depends
 
+from pymobiledevice3 import usbmux as usbmuxd
 from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, NoDeviceConnectedError
 from pymobiledevice3.lockdown import TcpLockdownClient, create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, async_get_tunneld_devices
-from pymobiledevice3.usbmux import select_devices_by_connection_type
+from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, get_tunneld_devices
+from pymobiledevice3.utils import get_asyncio_loop
 
 UDID_ENV_VAR = "PYMOBILEDEVICE3_UDID"
 TUNNEL_ENV_VAR = "PYMOBILEDEVICE3_TUNNEL"
@@ -38,6 +39,8 @@ OSUTILS = get_os_utils()
 
 # Global options
 COLORED_OUTPUT: bool = True
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 def default_json_encoder(obj):
@@ -123,6 +126,17 @@ def is_invoked_for_completion() -> bool:
     return any(env.startswith("_") and env.endswith("_COMPLETE") for env in os.environ)
 
 
+cli_loop = get_asyncio_loop()
+
+
+def async_command(func: Callable[P, Awaitable[R]]) -> Callable[P, R]:
+    @wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        return cli_loop.run_until_complete(func(*args, **kwargs))
+
+    return wrapper
+
+
 async def get_mobdev2_devices(udid: Optional[str] = None) -> list[TcpLockdownClient]:
     return [lockdown async for _, lockdown in get_mobdev2_lockdowns(udid=udid)]
 
@@ -136,7 +150,7 @@ async def _tunneld(udid: Optional[str] = None) -> Optional[RemoteServiceDiscover
     if ":" in udid:
         udid, port = udid.split(":")
 
-    rsds = await async_get_tunneld_devices((TUNNELD_DEFAULT_ADDRESS[0], int(port)))
+    rsds = await get_tunneld_devices((TUNNELD_DEFAULT_ADDRESS[0], int(port)))
     if len(rsds) == 0:
         raise NoDeviceConnectedError()
 
@@ -189,11 +203,11 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
 
         if rsd is not None:
             rsd_service = RemoteServiceDiscoveryService(rsd)
-            asyncio.run(rsd_service.connect(), debug=True)
+            cli_loop.run_until_complete(rsd_service.connect())
             return rsd_service
 
         if tunnel is not None or not allow_none:
-            return asyncio.run(_tunneld(tunnel or ""), debug=True)
+            return cli_loop.run_until_complete(_tunneld(tunnel or ""))
 
     return rsd_dependency
 
@@ -235,7 +249,7 @@ def any_service_provider_dependency(
         return rsd_service_provider
 
     if mobdev2:
-        devices = asyncio.run(get_mobdev2_devices(udid=udid))
+        devices = cli_loop.run_until_complete(get_mobdev2_devices(udid=udid))
         if not devices:
             raise NoDeviceConnectedError()
 
@@ -245,13 +259,19 @@ def any_service_provider_dependency(
         return prompt_device_list(devices)
 
     if udid is not None:
-        return create_using_usbmux(serial=udid, usbmux_address=usbmux)
+        return cli_loop.run_until_complete(create_using_usbmux(serial=udid, usbmux_address=usbmux))
 
-    devices = select_devices_by_connection_type(connection_type="USB", usbmux_address=usbmux)
+    devices = cli_loop.run_until_complete(
+        usbmuxd.select_devices_by_connection_type(connection_type="USB", usbmux_address=usbmux)
+    )
     if len(devices) <= 1:
-        return create_using_usbmux(usbmux_address=usbmux)
+        return cli_loop.run_until_complete(create_using_usbmux(usbmux_address=usbmux))
 
-    return prompt_device_list([create_using_usbmux(serial=device.serial, usbmux_address=usbmux) for device in devices])
+    lockdownds = [
+        cli_loop.run_until_complete(create_using_usbmux(serial=device.serial, usbmux_address=usbmux))
+        for device in devices
+    ]
+    return prompt_device_list(lockdownds)
 
 
 def no_autopair_service_provider_dependency(
@@ -275,7 +295,7 @@ def no_autopair_service_provider_dependency(
     if rsd_service_provider is not None:
         return rsd_service_provider
 
-    return create_using_usbmux(serial=udid, autopair=False)
+    return cli_loop.run_until_complete(create_using_usbmux(serial=udid, autopair=False))
 
 
 RSDServiceProviderDep = Annotated[
@@ -283,12 +303,10 @@ RSDServiceProviderDep = Annotated[
     Depends(make_rsd_dependency(allow_none=False)),
 ]
 
-
 ServiceProviderDep = Annotated[
     LockdownServiceProvider,
     Depends(any_service_provider_dependency),
 ]
-
 
 NoAutoPairServiceProviderDep = Annotated[
     LockdownServiceProvider,

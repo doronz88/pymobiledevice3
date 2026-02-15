@@ -1,9 +1,9 @@
+import asyncio
 import contextlib
 import logging
 import os
 import posixpath
 import shlex
-import threading
 from datetime import datetime
 from enum import IntEnum
 from pathlib import Path
@@ -13,7 +13,7 @@ import typer
 from click.exceptions import BadParameter, MissingParameter, UsageError
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, print_json, user_requested_colored_output
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json, user_requested_colored_output
 from pymobiledevice3.cli.developer.dvt import core_profile_session, simulate_location, sysmon
 from pymobiledevice3.exceptions import DvtDirListError, UnrecognizedSelectorError
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
@@ -27,6 +27,7 @@ from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestListener, XCUITestService
+from pymobiledevice3.services.remote_server import MessageAux
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +49,11 @@ cli.add_typer(simulate_location.cli)
 
 
 @cli.command("proclist")
-def proclist(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def proclist(service_provider: ServiceProviderDep) -> None:
     """Show processes (with start times) via DVT."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        processes = DeviceInfo(dvt).proclist()
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        processes = await DeviceInfo(dvt).proclist()
         for process in processes:
             if "startDate" in process:
                 process["startDate"] = str(process["startDate"])
@@ -60,24 +62,27 @@ def proclist(service_provider: ServiceProviderDep) -> None:
 
 
 @cli.command("is-running-pid")
-def is_running_pid(service_provider: ServiceProviderDep, pid: int) -> None:
+@async_command
+async def is_running_pid(service_provider: ServiceProviderDep, pid: int) -> None:
     """Check if a PID is currently running."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        print_json(DeviceInfo(dvt).is_running_pid(pid))
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        print_json(await DeviceInfo(dvt).is_running_pid(pid))
 
 
 @cli.command("memlimitoff")
-def memlimitoff(service_provider: ServiceProviderDep, pid: int) -> None:
+@async_command
+async def memlimitoff(service_provider: ServiceProviderDep, pid: int) -> None:
     """Disable jetsam memory limit for a PID."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        ProcessControl(dvt).disable_memory_limit_for_pid(pid)
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        await ProcessControl(dvt).disable_memory_limit_for_pid(pid)
 
 
 @cli.command("applist")
-def applist(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def applist(service_provider: ServiceProviderDep) -> None:
     """List installed applications via DVT."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        apps = ApplicationListing(dvt).applist()
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        apps = await ApplicationListing(dvt).applist()
         print_json(apps)
 
 
@@ -118,7 +123,8 @@ class Signals(IntEnum):
 
 
 @cli.command("signal")
-def send_signal(
+@async_command
+async def send_signal(
     service_provider: ServiceProviderDep,
     pid: int,
     sig: Annotated[
@@ -148,31 +154,33 @@ def send_signal(
     else:
         raise MissingParameter(param_type="argument|option", param_hint="'SIG|SIGNAL-NAME'")
 
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        ProcessControl(dvt).signal(pid, sig)
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        await ProcessControl(dvt).signal(pid, sig)
 
 
 @cli.command("kill")
-def kill(service_provider: ServiceProviderDep, pid: int) -> None:
+@async_command
+async def kill(service_provider: ServiceProviderDep, pid: int) -> None:
     """Kill a process by PID."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        ProcessControl(dvt).kill(pid)
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        await ProcessControl(dvt).kill(pid)
 
 
 @cli.command()
-def process_id_for_bundle_id(service_provider: ServiceProviderDep, app_bundle_identifier: str) -> None:
+@async_command
+async def process_id_for_bundle_id(service_provider: ServiceProviderDep, app_bundle_identifier: str) -> None:
     """Get PID of a bundle identifier (only returns a valid value if its running)."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        print(ProcessControl(dvt).process_identifier_for_bundle_identifier(app_bundle_identifier))
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        print(await ProcessControl(dvt).process_identifier_for_bundle_identifier(app_bundle_identifier))
 
 
-def get_matching_processes(
+async def get_matching_processes(
     device_info: DeviceInfo,
     name: Optional[str] = None,
     bundle_identifier: Optional[str] = None,
 ) -> list[MatchedProcessByPid]:
     result: list[MatchedProcessByPid] = []
-    for process in device_info.proclist():
+    for process in await device_info.proclist():
         current_name = process["name"]
         current_bundle_identifier = process.get("bundleIdentifier", "")
         pid = process["pid"]
@@ -184,7 +192,8 @@ def get_matching_processes(
 
 
 @cli.command("pkill")
-def pkill(
+@async_command
+async def pkill(
     service_provider: ServiceProviderDep,
     expressions: Annotated[
         list[str],
@@ -196,24 +205,25 @@ def pkill(
     ] = False,
 ) -> None:
     """Kill all processes containing each expression in their name."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         device_info = DeviceInfo(dvt)
         process_control = ProcessControl(dvt)
 
         for expression in expressions:
             matching_name = expression if not bundle else None
             matching_bundle_identifier = expression if bundle else None
-            matching_processes = get_matching_processes(
+            matching_processes = await get_matching_processes(
                 device_info, name=matching_name, bundle_identifier=matching_bundle_identifier
             )
 
             for process in matching_processes:
                 logger.info(f"Killing {process.name}({process.pid})")
-                process_control.kill(process.pid)
+                await process_control.kill(process.pid)
 
 
 @cli.command("launch")
-def launch(
+@async_command
+async def launch(
     service_provider: ServiceProviderDep,
     arguments: str,
     kill_existing: Annotated[
@@ -233,10 +243,10 @@ def launch(
     stream: bool = False,
 ) -> None:
     """Launch a process."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         parsed_arguments = shlex.split(arguments)
         process_control = ProcessControl(dvt)
-        pid = process_control.launch(
+        pid = await process_control.launch(
             bundle_id=parsed_arguments[0],
             arguments=parsed_arguments[1:],
             kill_existing=kill_existing,
@@ -244,8 +254,8 @@ def launch(
             environment=dict(var.split("=", 1) for var in env or ()),
         )
         print(f"Process launched with pid {pid}")
-        while stream:
-            for output_received in process_control:
+        if stream:
+            async for output_received in process_control:
                 logging.getLogger(f"PID:{output_received.pid}").info(output_received.message.strip())
 
 
@@ -256,9 +266,12 @@ def dvt_shell(service_provider: ServiceProviderDep) -> None:
         dvt.shell()
 
 
-def show_dirlist(device_info: DeviceInfo, dirname: str, recursive: bool = False) -> None:
+async def show_dirlist(channel, dirname: str, recursive: bool = False) -> None:
     try:
-        filenames = device_info.ls(dirname)
+        await channel.directoryListingForPath_(MessageAux().append_obj(dirname))
+        filenames = await channel.receive_plist()
+        if filenames is None:
+            raise DvtDirListError()
     except DvtDirListError:
         return
 
@@ -266,11 +279,12 @@ def show_dirlist(device_info: DeviceInfo, dirname: str, recursive: bool = False)
         filename = posixpath.join(dirname, filename)
         print(filename)
         if recursive:
-            show_dirlist(device_info, filename, recursive=recursive)
+            await show_dirlist(channel, filename, recursive=recursive)
 
 
 @cli.command("ls")
-def ls(
+@async_command
+async def ls(
     service_provider: ServiceProviderDep,
     path: Path,
     recursive: Annotated[
@@ -279,31 +293,34 @@ def ls(
     ] = False,
 ) -> None:
     """List directory"""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        show_dirlist(DeviceInfo(dvt), str(path), recursive=recursive)
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        channel = await dvt.make_channel(DeviceInfo.IDENTIFIER)
+        await show_dirlist(channel, str(path), recursive=recursive)
 
 
 @cli.command("device-information")
-def device_information(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def device_information(service_provider: ServiceProviderDep) -> None:
     """Print system information"""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         device_info = DeviceInfo(dvt)
         info = {
-            "hardware": device_info.hardware_information(),
-            "network": device_info.network_information(),
-            "kernel-name": device_info.mach_kernel_name(),
-            "kpep-database": device_info.kpep_database(),
+            "hardware": await device_info.hardware_information(),
+            "network": await device_info.network_information(),
+            "kernel-name": await device_info.mach_kernel_name(),
+            "kpep-database": await device_info.kpep_database(),
         }
         with contextlib.suppress(UnrecognizedSelectorError):
-            info["system"] = device_info.system_information()
+            info["system"] = await device_info.system_information()
         print_json(info)
 
 
 @cli.command("netstat")
-def netstat(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def netstat(service_provider: ServiceProviderDep) -> None:
     """Print information about current network activity."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, NetworkMonitor(dvt) as monitor:
-        for event in monitor:
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, NetworkMonitor(dvt) as monitor:
+        async for event in monitor:
             if isinstance(event, ConnectionDetectionEvent):
                 logger.info(
                     f"Connection detected: {event.local_address.data.address}:{event.local_address.port} -> "
@@ -312,14 +329,16 @@ def netstat(service_provider: ServiceProviderDep) -> None:
 
 
 @cli.command("screenshot")
-def dvt_screenshot(service_provider: ServiceProviderDep, out: Path) -> None:
+@async_command
+async def dvt_screenshot(service_provider: ServiceProviderDep, out: Path) -> None:
     """Take device screenshot"""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        out.write_bytes(Screenshot(dvt).get_screenshot())
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        out.write_bytes(await Screenshot(dvt).get_screenshot())
 
 
 @cli.command("xcuitest")
-def xcuitest(
+@async_command
+async def xcuitest(
     service_provider: ServiceProviderDep,
     bundle_id: str,
     output_log: Annotated[
@@ -345,7 +364,16 @@ def xcuitest(
     \b    python3 -m pymobiledevice3 developer dvt xcuitest com.facebook.WebDriverAgentRunner.xctrunner
     """
     s = XCUITestService(service_provider)
-    consumer = s.start(bundle_id, test_runner_env=dict(var.split("=", 1) for var in env or ()))
+    consumer = await s.start(bundle_id, test_runner_env=dict(var.split("=", 1) for var in env or ()))
+
+    async def stop_consumer_safely() -> None:
+        try:
+            await consumer.stop()
+        except RuntimeError as e:
+            if "no running event loop" not in str(e):
+                raise
+            logger.debug("Skipping consumer stop during event-loop teardown")
+
     if output_log is not None:
 
         class MyListener(XCUITestListener):
@@ -353,37 +381,45 @@ def xcuitest(
                 output_log.write_text(args[0].value)
 
         consumer.set_listener(MyListener(consumer.main_dvt, consumer.main_chan, consumer.xctest_config))
-    t = threading.Thread(target=consumer.consume, name="XCUITestConsumer", daemon=True)
-    t.start()
-    t.join(timeout)
-    if t.is_alive():
-        logger.warning("consumer thread timed out, exiting")
-        consumer.stop()
-        t.join(1)
+    try:
+        if timeout is not None:
+            await asyncio.wait_for(consumer.consume(), timeout=timeout)
+        else:
+            await consumer.consume()
+    except asyncio.TimeoutError:
+        logger.warning("consumer task timed out, exiting")
+        await stop_consumer_safely()
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        logger.info("xcuitest interrupted, exiting")
+        await stop_consumer_safely()
+        raise
 
 
 @cli.command("trace-codes")
-def dvt_trace_codes(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def dvt_trace_codes(service_provider: ServiceProviderDep) -> None:
     """Print KDebug trace codes."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         device_info = DeviceInfo(dvt)
-        print_json({hex(k): v for k, v in device_info.trace_codes().items()})
+        print_json({hex(k): v for k, v in (await device_info.trace_codes()).items()})
 
 
 @cli.command("name-for-uid")
-def dvt_name_for_uid(service_provider: ServiceProviderDep, uid: int) -> None:
+@async_command
+async def dvt_name_for_uid(service_provider: ServiceProviderDep, uid: int) -> None:
     """Print the assiciated username for the given uid."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         device_info = DeviceInfo(dvt)
-        print(device_info.name_for_uid(uid))
+        print(await device_info.name_for_uid(uid))
 
 
 @cli.command("name-for-gid")
-def dvt_name_for_gid(service_provider: ServiceProviderDep, gid: int) -> None:
+@async_command
+async def dvt_name_for_gid(service_provider: ServiceProviderDep, gid: int) -> None:
     """Print the assiciated group name for the given gid."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         device_info = DeviceInfo(dvt)
-        print(device_info.name_for_gid(gid))
+        print(await device_info.name_for_gid(gid))
 
 
 @cli.command("oslog")
@@ -426,7 +462,8 @@ def dvt_oslog(service_provider: ServiceProviderDep, pid: int) -> None:
 
 
 @cli.command("energy")
-def dvt_energy(service_provider: ServiceProviderDep, pid_list: list[str]) -> None:
+@async_command
+async def dvt_energy(service_provider: ServiceProviderDep, pid_list: list[str]) -> None:
     """Monitor the energy consumption for given PIDs"""
 
     if len(pid_list) == 0:
@@ -435,11 +472,11 @@ def dvt_energy(service_provider: ServiceProviderDep, pid_list: list[str]) -> Non
 
     pid_int_list = [int(pid) for pid in pid_list]
 
-    with (
+    async with (
         DvtSecureSocketProxyService(lockdown=service_provider) as dvt,
         EnergyMonitor(dvt, pid_int_list) as energy_monitor,
     ):
-        for telemetry in energy_monitor:
+        async for telemetry in energy_monitor:
             logger.info(telemetry)
 
 
@@ -452,10 +489,11 @@ def dvt_notifications(service_provider: ServiceProviderDep) -> None:
 
 
 @cli.command("graphics")
-def dvt_graphics(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def dvt_graphics(service_provider: ServiceProviderDep) -> None:
     """Monitor graphics-related information"""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, Graphics(dvt) as graphics:
-        for stats in graphics:
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, Graphics(dvt) as graphics:
+        async for stats in graphics:
             logger.info(stats)
 
 
