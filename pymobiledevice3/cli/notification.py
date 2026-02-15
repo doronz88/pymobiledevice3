@@ -4,7 +4,7 @@ from typing import Annotated
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
 from pymobiledevice3.resources.firmware_notifications import get_notifications
 from pymobiledevice3.services.notification_proxy import NotificationProxyService
 
@@ -19,7 +19,8 @@ cli = InjectingTyper(
 
 
 @cli.command()
-def post(
+@async_command
+async def post(
     service_provider: ServiceProviderDep,
     names: list[str],
     insecure: Annotated[
@@ -30,11 +31,12 @@ def post(
     """Post one or more Darwin notifications (notify_post)."""
     service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
     for name in names:
-        service.notify_post(name)
+        await service.notify_post(name)
 
 
 @cli.command()
-def observe(
+@async_command
+async def observe(
     service_provider: ServiceProviderDep,
     names: list[str],
     insecure: Annotated[
@@ -45,14 +47,15 @@ def observe(
     """Subscribe and stream notifications (notify_register_dispatch)."""
     service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
     for name in names:
-        service.notify_register_dispatch(name)
+        await service.notify_register_dispatch(name)
 
-    for event in service.receive_notification():
+    async for event in service.receive_notification():
         logger.info(event)
 
 
 @cli.command("observe-all")
-def observe_all(
+@async_command
+async def observe_all(
     service_provider: ServiceProviderDep,
     insecure: Annotated[
         bool,
@@ -62,7 +65,7 @@ def observe_all(
     """Subscribe to all known firmware notifications and stream events."""
     service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
     for notification in get_notifications():
-        service.notify_register_dispatch(notification)
+        await service.notify_register_dispatch(notification)
 
-    for event in service.receive_notification():
+    async for event in service.receive_notification():
         logger.info(event)

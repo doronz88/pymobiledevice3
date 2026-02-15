@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
+import asyncio
 import datetime
 import logging
 import os
 import plistlib
 import socket
-import sys
 import tempfile
 import time
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterable
+from collections.abc import AsyncIterable, Generator
 from contextlib import contextmanager, suppress
 from enum import Enum
-from functools import wraps
 from pathlib import Path
-from ssl import SSLError, SSLZeroReturnError, TLSVersion
-from typing import Optional
+from ssl import SSLZeroReturnError, TLSVersion
+from typing import Any, Optional
 
 import construct
 from cryptography import x509
@@ -32,7 +31,6 @@ from pymobiledevice3.exceptions import (
     BadDevError,
     CannotStopSessionError,
     ConnectionFailedError,
-    ConnectionTerminatedError,
     DeviceNotFoundError,
     FatalPairingError,
     GetProhibitedError,
@@ -42,6 +40,7 @@ from pymobiledevice3.exceptions import (
     InvalidServiceError,
     LockdownError,
     MissingValueError,
+    MuxException,
     NoDeviceConnectedError,
     NotPairedError,
     PairingDialogResponsePendingError,
@@ -76,32 +75,6 @@ class DeviceClass(Enum):
     WATCH = "Watch"
     APPLE_TV = "AppleTV"
     UNKNOWN = "Unknown"
-
-
-def _reconnect_on_remote_close(f):
-    """
-    lockdownd's _socket_select will close the connection after 60 seconds of "radio-silent" (no data has been
-    transmitted). When this happens, we'll attempt to reconnect.
-    """
-
-    def _reconnect(self: "LockdownClient"):
-        self._reestablish_connection()
-        self.validate_pairing()
-
-    @wraps(f)
-    def _inner_reconnect_on_remote_close(*args, **kwargs):
-        try:
-            return f(*args, **kwargs)
-        except (BrokenPipeError, ConnectionTerminatedError, SSLError):
-            _reconnect(args[0])
-            return f(*args, **kwargs)
-        except ConnectionAbortedError:
-            if sys.platform != "win32":
-                raise
-            _reconnect(args[0])
-            return f(*args, **kwargs)
-
-    return _inner_reconnect_on_remote_close
 
 
 class LockdownClient(ABC, LockdownServiceProvider):
@@ -141,17 +114,14 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.pairing_records_cache_folder = pairing_records_cache_folder
         self.port = port
 
-        if self.query_type() != "com.apple.mobile.lockdown":
-            raise IncorrectModeError()
-
-        self.all_values = self.get_value()
-        self.udid = self.all_values.get("UniqueDeviceID")
-        self.unique_chip_id = self.all_values.get("UniqueChipID")
-        self.device_public_key = self.all_values.get("DevicePublicKey")
-        self.product_type = self.all_values.get("ProductType")
+        self.all_values = {}
+        self.udid = None
+        self.unique_chip_id = None
+        self.device_public_key = None
+        self.product_type = None
 
     @classmethod
-    def create(
+    async def create(
         cls,
         service: ServiceConnection,
         identifier: Optional[str] = None,
@@ -197,8 +167,18 @@ class LockdownClient(ABC, LockdownServiceProvider):
             port=port,
             **cls_specific_args,
         )
-        lockdown_client._handle_autopair(autopair, pair_timeout, private_key=private_key)
+        await lockdown_client._initialize()
+        await lockdown_client._handle_autopair(autopair, pair_timeout, private_key=private_key)
         return lockdown_client
+
+    async def _initialize(self) -> None:
+        if (await self.query_type()) != "com.apple.mobile.lockdown":
+            raise IncorrectModeError()
+        self.all_values = await self.get_value()
+        self.udid = self.all_values.get("UniqueDeviceID")
+        self.unique_chip_id = self.all_values.get("UniqueChipID")
+        self.device_public_key = self.all_values.get("DevicePublicKey")
+        self.product_type = self.all_values.get("ProductType")
 
     def __repr__(self) -> str:
         return (
@@ -206,17 +186,11 @@ class LockdownClient(ABC, LockdownServiceProvider):
             f"TYPE:{self.product_type} PAIRED:{self.paired}>"
         )
 
-    def __enter__(self) -> "LockdownClient":
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.close()
-
     async def __aenter__(self) -> "LockdownClient":
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.close()
+        await self.close()
 
     @property
     def product_version(self) -> str:
@@ -249,65 +223,59 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
     @property
     def share_iphone_analytics_enabled(self) -> bool:
-        return self.get_value("com.apple.MobileDeviceCrashCopy", "ShouldSubmit")
+        return bool(self._domain_values("com.apple.MobileDeviceCrashCopy").get("ShouldSubmit", False))
 
     @property
     def assistive_touch(self) -> bool:
         """AssistiveTouch (the on-screen software home button)"""
-        return bool(self.get_value("com.apple.Accessibility").get("AssistiveTouchEnabledByiTunes", 0))
+        return bool(self._domain_values("com.apple.Accessibility").get("AssistiveTouchEnabledByiTunes", 0))
 
     @assistive_touch.setter
     def assistive_touch(self, value: bool) -> None:
-        """AssistiveTouch (the on-screen software home button)"""
-        self.set_value(int(value), "com.apple.Accessibility", "AssistiveTouchEnabledByiTunes")
+        raise RuntimeError("Use async set_assistive_touch()")
 
     @property
     def voice_over(self) -> bool:
-        return bool(self.get_value("com.apple.Accessibility").get("VoiceOverTouchEnabledByiTunes", 0))
+        return bool(self._domain_values("com.apple.Accessibility").get("VoiceOverTouchEnabledByiTunes", 0))
 
     @voice_over.setter
     def voice_over(self, value: bool) -> None:
-        self.set_value(int(value), "com.apple.Accessibility", "VoiceOverTouchEnabledByiTunes")
+        raise RuntimeError("Use async set_voice_over()")
 
     @property
     def invert_display(self) -> bool:
-        return bool(self.get_value("com.apple.Accessibility").get("InvertDisplayEnabledByiTunes", 0))
+        return bool(self._domain_values("com.apple.Accessibility").get("InvertDisplayEnabledByiTunes", 0))
 
     @invert_display.setter
     def invert_display(self, value: bool) -> None:
-        self.set_value(int(value), "com.apple.Accessibility", "InvertDisplayEnabledByiTunes")
+        raise RuntimeError("Use async set_invert_display()")
 
     @property
     def enable_wifi_connections(self) -> bool:
-        return self.get_value("com.apple.mobile.wireless_lockdown").get("EnableWifiConnections", False)
+        return self._domain_values("com.apple.mobile.wireless_lockdown").get("EnableWifiConnections", False)
 
     @enable_wifi_connections.setter
     def enable_wifi_connections(self, value: bool) -> None:
-        self.set_value(value, "com.apple.mobile.wireless_lockdown", "EnableWifiConnections")
+        raise RuntimeError("Use async set_enable_wifi_connections()")
 
     @property
     def ecid(self) -> int:
         return self.all_values["UniqueChipID"]
 
-    @property
-    def date(self) -> datetime.datetime:
-        return datetime.datetime.fromtimestamp(self.get_value(key="TimeIntervalSince1970"))
-
-    @property
     def language(self) -> str:
-        return self.get_value(key="Language", domain="com.apple.international")
+        return self._domain_values("com.apple.international").get("Language", "")
 
     @property
     def locale(self) -> str:
-        return self.get_value(key="Locale", domain="com.apple.international")
+        return self._domain_values("com.apple.international").get("Locale", "")
 
     @property
     def preflight_info(self) -> dict:
-        return self.get_value(key="PreflightInfo")
+        return self.all_values.get("PreflightInfo")
 
     @property
     def firmware_preflight_info(self) -> dict:
-        return self.get_value(key="FirmwarePreflightInfo")
+        return self.all_values.get("FirmwarePreflightInfo")
 
     @property
     def display_name(self) -> str:
@@ -333,48 +301,94 @@ class LockdownClient(ABC, LockdownServiceProvider):
             if irecv_device.product_type == self.product_type:
                 return irecv_device.chip_id
 
-    @property
-    def developer_mode_status(self) -> bool:
-        return self.get_value("com.apple.security.mac.amfi", "DeveloperModeStatus")
+    def _domain_values(self, domain: str) -> dict:
+        values = self.all_values.get(domain, {})
+        return values if isinstance(values, dict) else {}
 
-    def query_type(self) -> str:
-        return self._request("QueryType").get("Type")
+    async def query_type(self) -> str:
+        return (await self._request_async("QueryType")).get("Type")
 
-    def set_language(self, language: str) -> None:
-        self.set_value(language, key="Language", domain="com.apple.international")
+    async def set_language(self, language: str) -> None:
+        await self.set_value(language, key="Language", domain="com.apple.international")
 
-    def set_locale(self, locale: str) -> None:
-        self.set_value(locale, key="Locale", domain="com.apple.international")
+    async def get_language(self) -> str:
+        value = await self.get_value(domain="com.apple.international", key="Language")
+        return value if isinstance(value, str) else ""
 
-    def set_timezone(self, timezone: str) -> None:
-        self.set_value(timezone, key="TimeZone")
+    async def set_locale(self, locale: str) -> None:
+        await self.set_value(locale, key="Locale", domain="com.apple.international")
 
-    def set_uses24hClock(self, value: bool) -> None:
-        self.set_value(value, key="Uses24HourClock")
+    async def get_locale(self) -> str:
+        value = await self.get_value(domain="com.apple.international", key="Locale")
+        return value if isinstance(value, str) else ""
 
-    @_reconnect_on_remote_close
-    def enter_recovery(self):
-        return self._request("EnterRecovery")
+    async def set_timezone(self, timezone: str) -> None:
+        await self.set_value(timezone, key="TimeZone")
 
-    def stop_session(self) -> dict:
+    async def set_uses24h_clock(self, value: bool) -> None:
+        await self.set_value(value, key="Uses24HourClock")
+
+    async def set_uses24hClock(self, value: bool) -> None:
+        await self.set_uses24h_clock(value)
+
+    async def set_assistive_touch(self, value: bool) -> None:
+        await self.set_value(int(value), "com.apple.Accessibility", "AssistiveTouchEnabledByiTunes")
+
+    async def get_assistive_touch(self) -> bool:
+        value = await self.get_value(domain="com.apple.Accessibility", key="AssistiveTouchEnabledByiTunes")
+        return bool(value)
+
+    async def set_voice_over(self, value: bool) -> None:
+        await self.set_value(int(value), "com.apple.Accessibility", "VoiceOverTouchEnabledByiTunes")
+
+    async def get_voice_over(self) -> bool:
+        value = await self.get_value(domain="com.apple.Accessibility", key="VoiceOverTouchEnabledByiTunes")
+        return bool(value)
+
+    async def set_invert_display(self, value: bool) -> None:
+        await self.set_value(int(value), "com.apple.Accessibility", "InvertDisplayEnabledByiTunes")
+
+    async def get_invert_display(self) -> bool:
+        value = await self.get_value(domain="com.apple.Accessibility", key="InvertDisplayEnabledByiTunes")
+        return bool(value)
+
+    async def set_enable_wifi_connections(self, value: bool) -> None:
+        await self.set_value(value, "com.apple.mobile.wireless_lockdown", "EnableWifiConnections")
+
+    async def get_enable_wifi_connections(self) -> bool:
+        value = await self.get_value(domain="com.apple.mobile.wireless_lockdown", key="EnableWifiConnections")
+        return bool(value)
+
+    async def get_developer_mode_status(self) -> bool:
+        value = await self.get_value(domain="com.apple.security.mac.amfi", key="DeveloperModeStatus")
+        return bool(value)
+
+    async def get_date(self) -> datetime.datetime:
+        timestamp = await self.get_value(key="TimeIntervalSince1970")
+        return datetime.datetime.fromtimestamp(timestamp or 0)
+
+    async def enter_recovery(self):
+        return await self._request_async("EnterRecovery")
+
+    async def stop_session(self) -> dict:
         if self.session_id and self.service:
-            response = self._request("StopSession", {"SessionID": self.session_id})
+            response = await self._request_async("StopSession", {"SessionID": self.session_id})
             self.session_id = None
             if not response or response.get("Result") != "Success":
                 raise CannotStopSessionError()
             return response
         raise PyMobileDevice3Exception("No active session")
 
-    def validate_pairing(self) -> bool:
+    async def validate_pairing(self) -> bool:
         if self.pair_record is None:
-            self.fetch_pair_record()
+            await self.fetch_pair_record()
 
         if self.pair_record is None:
             return False
 
         if (Version(self.product_version) < Version("7.0")) and (self.device_class != DeviceClass.WATCH):
             try:
-                self._request("ValidatePair", {"PairRecord": self.pair_record})
+                await self._request_async("ValidatePair", {"PairRecord": self.pair_record})
             except PairingError:
                 return False
 
@@ -382,7 +396,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.system_buid = self.pair_record.get("SystemBUID", self.system_buid)
 
         try:
-            start_session = self._request("StartSession", {"HostID": self.host_id, "SystemBUID": self.system_buid})
+            start_session = await self._request_async(
+                "StartSession", {"HostID": self.host_id, "SystemBUID": self.system_buid}
+            )
         except (InvalidHostIDError, InvalidConnectionError):
             # no host id means there is no such pairing record
             return False
@@ -396,26 +412,25 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
             with self.ssl_file() as f:
                 try:
-                    self.service.ssl_start(f)
+                    await self.service.ssl_start(f)
                 except SSLZeroReturnError:
                     # possible when we have a pair record, but it was removed on-device
-                    self._reestablish_connection()
+                    await self.areestablish_connection()
                     return False
 
         self.paired = True
 
         # reload data after pairing
-        self.all_values = self.get_value()
+        self.all_values = await self.get_value()
         self.udid = self.all_values.get("UniqueDeviceID")
 
         return True
 
-    @_reconnect_on_remote_close
-    def pair(self, timeout: Optional[float] = None, private_key: Optional[RSAPrivateKey] = None) -> None:
-        self.device_public_key = self.get_value("", "DevicePublicKey")
+    async def pair(self, timeout: Optional[float] = None, private_key: Optional[RSAPrivateKey] = None) -> None:
+        self.device_public_key = await self.get_value("", "DevicePublicKey")
         if not self.device_public_key:
             self.logger.error("Unable to retrieve DevicePublicKey")
-            self.service.close()
+            await self.service.close()
             raise PairingError()
 
         self.logger.info("Creating host key & certificate")
@@ -442,7 +457,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             "PairingOptions": {"ExtendedPairingErrors": True},
         }
 
-        pair = self._request_pair(pair_options, timeout=timeout)
+        pair = await self._request_pair(pair_options, timeout=timeout)
 
         pair_record["HostPrivateKey"] = host_key_pem
         escrow_bag = pair.get("EscrowBag")
@@ -451,21 +466,20 @@ class LockdownClient(ABC, LockdownServiceProvider):
             pair_record["EscrowBag"] = pair.get("EscrowBag")
 
         self.pair_record = pair_record
-        self.save_pair_record()
+        await self.save_pair_record()
         self.paired = True
 
-    @_reconnect_on_remote_close
-    def pair_supervised(self, keybag_file: Path, timeout: Optional[float] = None) -> None:
+    async def pair_supervised(self, keybag_file: Path, timeout: Optional[float] = None) -> None:
         with open(keybag_file, "rb") as keybag_file:
             keybag_file = keybag_file.read()
         private_key = serialization.load_pem_private_key(keybag_file, password=None)
         cer = x509.load_pem_x509_certificate(keybag_file)
         public_key = cer.public_bytes(Encoding.DER)
 
-        self.device_public_key = self.get_value("", "DevicePublicKey")
+        self.device_public_key = await self.get_value("", "DevicePublicKey")
         if not self.device_public_key:
             self.logger.error("Unable to retrieve DevicePublicKey")
-            self.service.close()
+            await self.service.close()
             raise PairingError()
 
         self.logger.info("Creating host key & certificate")
@@ -491,7 +505,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         }
 
         # first pair with SupervisorCertificate as PairingOptions to get PairingChallenge
-        pair = self._request_pair(pair_options, timeout=timeout)
+        pair = await self._request_pair(pair_options, timeout=timeout)
         if pair.get("Error") == "MCChallengeRequired":
             extended_response = pair.get("ExtendedResponse")
             if extended_response is not None:
@@ -508,7 +522,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
                     "PairingOptions": {"ChallengeResponse": signed_response, "ExtendedPairingErrors": True},
                 }
                 # second pair with Response to Challenge
-                pair = self._request_pair(pair_options, timeout=timeout)
+                pair = await self._request_pair(pair_options, timeout=timeout)
 
         pair_record["HostPrivateKey"] = host_key_pem
         escrow_bag = pair.get("EscrowBag")
@@ -517,58 +531,63 @@ class LockdownClient(ABC, LockdownServiceProvider):
             pair_record["EscrowBag"] = pair.get("EscrowBag")
 
         self.pair_record = pair_record
-        self.save_pair_record()
+        await self.save_pair_record()
         self.paired = True
 
-    @_reconnect_on_remote_close
-    def unpair(self, host_id: Optional[str] = None) -> None:
+    async def unpair(self, host_id: Optional[str] = None) -> None:
         pair_record = self.pair_record if host_id is None else {"HostID": host_id}
-        self._request("Unpair", {"PairRecord": pair_record, "ProtocolVersion": "2"}, verify_request=False)
+        await self._request_async("Unpair", {"PairRecord": pair_record, "ProtocolVersion": "2"}, verify_request=False)
 
-    @_reconnect_on_remote_close
-    def reset_pairing(self):
-        return self._request("ResetPairing", {"FullReset": True})
+    async def reset_pairing(self):
+        return await self._request_async("ResetPairing", {"FullReset": True})
 
-    @_reconnect_on_remote_close
-    def get_value(self, domain: Optional[str] = None, key: Optional[str] = None):
+    async def get_value(self, domain: Optional[str] = None, key: Optional[str] = None):
         options = {}
-
         if domain:
             options["Domain"] = domain
         if key:
             options["Key"] = key
-
-        res = self._request("GetValue", options)
+        res = await self._request_async("GetValue", options)
         if res:
             r = res.get("Value")
             if hasattr(r, "data"):
                 return r.data
+            if domain is None and key is None and isinstance(r, dict):
+                self.all_values = r
             return r
 
-    @_reconnect_on_remote_close
-    def remove_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> dict:
+    async def remove_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> dict:
         options = {}
-
         if domain:
             options["Domain"] = domain
         if key:
             options["Key"] = key
+        result = await self._request_async("RemoveValue", options)
+        if domain and key:
+            domain_values = self._domain_values(domain)
+            domain_values.pop(key, None)
+            self.all_values[domain] = domain_values
+        elif key:
+            self.all_values.pop(key, None)
+        return result
 
-        return self._request("RemoveValue", options)
-
-    @_reconnect_on_remote_close
-    def set_value(self, value, domain: Optional[str] = None, key: Optional[str] = None) -> dict:
+    async def set_value(self, value, domain: Optional[str] = None, key: Optional[str] = None) -> dict:
         options = {}
-
         if domain:
             options["Domain"] = domain
         if key:
             options["Key"] = key
-
         options["Value"] = value
-        return self._request("SetValue", options)
+        result = await self._request_async("SetValue", options)
+        if domain and key:
+            domain_values = self._domain_values(domain)
+            domain_values[key] = value
+            self.all_values[domain] = domain_values
+        elif key:
+            self.all_values[key] = value
+        return result
 
-    def get_service_connection_attributes(self, name: str, include_escrow_bag: bool = False) -> dict:
+    async def get_service_connection_attributes(self, name: str, include_escrow_bag: bool = False) -> dict:
         if not self.paired:
             raise NotPairedError()
 
@@ -576,7 +595,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         if include_escrow_bag:
             options["EscrowBag"] = self.pair_record["EscrowBag"]
 
-        response = self._request("StartService", options)
+        response = await self._request_async("StartService", options)
         if not response or response.get("Error"):
             if response.get("Error", "") == "PasswordProtected":
                 raise PasswordRequiredError(
@@ -585,30 +604,20 @@ class LockdownClient(ABC, LockdownServiceProvider):
             raise StartServiceError(name, response.get("Error"))
         return response
 
-    @_reconnect_on_remote_close
-    def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
-        attr = self.get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
-        service_connection = self._create_service_connection(attr["Port"])
+    async def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
+        attr = await self.get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
+        service_connection = await self.create_service_connection(attr["Port"])
 
         if attr.get("EnableServiceSSL", False):
             with self.ssl_file() as f:
-                service_connection.ssl_start(f)
+                await service_connection.ssl_start(f)
         return service_connection
 
-    async def aio_start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
-        attr = self.get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
-        service_connection = self._create_service_connection(attr["Port"])
-
-        if attr.get("EnableServiceSSL", False):
-            with self.ssl_file() as f:
-                await service_connection.aio_ssl_start(f)
-        return service_connection
-
-    def close(self) -> None:
-        self.service.close()
+    async def close(self) -> None:
+        await self.service.close()
 
     @contextmanager
-    def ssl_file(self) -> str:
+    def ssl_file(self) -> Generator[str, Any, None]:
         cert_pem = self.pair_record["HostCertificate"]
         private_key_pem = self.pair_record["HostPrivateKey"]
 
@@ -623,30 +632,52 @@ class LockdownClient(ABC, LockdownServiceProvider):
         finally:
             os.unlink(filename)
 
-    def _handle_autopair(self, autopair: bool, timeout: float, private_key: Optional[RSAPrivateKey] = None) -> None:
-        if self.validate_pairing():
+    async def _handle_autopair(
+        self, autopair: bool, timeout: Optional[float], private_key: Optional[RSAPrivateKey] = None
+    ) -> None:
+        if await self.validate_pairing():
             return
 
         # device is not paired yet
         if not autopair:
             # but pairing by default was not requested
             return
-        self.pair(timeout=timeout, private_key=private_key)
+        await self.pair(timeout=timeout, private_key=private_key)
         # get session_id
-        if not self.validate_pairing():
+        if not await self.validate_pairing():
             raise FatalPairingError()
 
     @abstractmethod
-    def _create_service_connection(self, port: int) -> ServiceConnection:
-        """Used to establish a new ServiceConnection to a given port"""
+    async def create_service_connection(self, port: int) -> ServiceConnection:
+        """Used to establish a new ServiceConnection to a given port."""
         pass
 
-    def _request(self, request: str, options: Optional[dict] = None, verify_request: bool = True) -> dict:
+    async def _create_service_connection(self, port: int) -> ServiceConnection:
+        """Backward-compatible alias. Prefer `create_service_connection()`."""
+        return await self.create_service_connection(port)
+
+    async def _request_async(self, request: str, options: Optional[dict] = None, verify_request: bool = True) -> dict:
         message = {"Label": self.label, "Request": request}
         if options:
             message.update(options)
-        response = self.service.send_recv_plist(message)
+        try:
+            response = await self.service.send_recv_plist(message)
+        except (ConnectionResetError, ConnectionAbortedError, RuntimeError) as e:
+            # ServiceConnection streams are loop-bound; reconnect if this client was created in another loop.
+            if isinstance(e, RuntimeError) and "different event loop" not in str(e):
+                raise
+            await self.areestablish_connection()
+            response = await self.service.send_recv_plist(message)
+        try:
+            return self._verify_request_response(request, response, verify_request=verify_request)
+        except (InvalidConnectionError, LockdownError) as e:
+            if not (isinstance(e, InvalidConnectionError) or str(e) == "SessionInactive"):
+                raise
+            await self.areestablish_connection()
+            response = await self.service.send_recv_plist(message)
+            return self._verify_request_response(request, response, verify_request=verify_request)
 
+    def _verify_request_response(self, request: str, response: dict, *, verify_request: bool = True) -> dict:
         if verify_request and response.get("Request") != request:
             if response.get("Type") == RESTORED_SERVICE_TYPE:
                 raise IncorrectModeError(f"Incorrect mode returned. Got: {response}")
@@ -676,9 +707,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         return response
 
-    def _request_pair(self, pair_options: dict, timeout: Optional[float] = None) -> dict:
+    async def _request_pair(self, pair_options: dict, timeout: Optional[float] = None) -> dict:
         try:
-            return self._request("Pair", pair_options)
+            return await self._request_async("Pair", pair_options)
         except PairingDialogResponsePendingError:
             if timeout == 0:
                 raise
@@ -687,21 +718,28 @@ class LockdownClient(ABC, LockdownServiceProvider):
         start = time.time()
         while timeout is None or time.time() <= start + timeout:
             with suppress(PairingDialogResponsePendingError):
-                return self._request("Pair", pair_options)
-            time.sleep(1)
+                return await self._request_async("Pair", pair_options)
+            await asyncio.sleep(1)
         raise PairingDialogResponsePendingError()
 
-    def fetch_pair_record(self) -> None:
+    async def fetch_pair_record(self) -> None:
         if self.identifier is not None:
-            self.pair_record = get_preferred_pair_record(self.identifier, self.pairing_records_cache_folder)
+            self.pair_record = await get_preferred_pair_record(self.identifier, self.pairing_records_cache_folder)
 
-    def save_pair_record(self) -> None:
+    async def save_pair_record(self) -> None:
         pair_record_file = self.pairing_records_cache_folder / f"{self.identifier}.plist"
         pair_record_file.write_bytes(plistlib.dumps(self.pair_record))
 
     def _reestablish_connection(self) -> None:
-        self.close()
-        self.service = self._create_service_connection(self.port)
+        raise RuntimeError("Sync reconnection path was removed. Use asyncio APIs.")
+
+    async def areestablish_connection(self) -> None:
+        await self.close()
+        self.session_id = None
+        self.service = await self.create_service_connection(self.port)
+        self.paired = False
+        if self.pair_record is not None:
+            await self.validate_pairing()
 
 
 class UsbmuxLockdownClient(LockdownClient):
@@ -728,24 +766,24 @@ class UsbmuxLockdownClient(LockdownClient):
         short_info["ConnectionType"] = self.service.mux_device.connection_type
         return short_info
 
-    def fetch_pair_record(self) -> None:
+    async def fetch_pair_record(self) -> None:
         if self.identifier is not None:
-            self.pair_record = get_preferred_pair_record(
+            self.pair_record = await get_preferred_pair_record(
                 self.identifier, self.pairing_records_cache_folder, usbmux_address=self.usbmux_address
             )
 
-    def _create_service_connection(self, port: int) -> ServiceConnection:
-        return ServiceConnection.create_using_usbmux(
+    async def create_service_connection(self, port: int) -> ServiceConnection:
+        return await ServiceConnection.create_using_usbmux(
             self.identifier, port, self.service.mux_device.connection_type, usbmux_address=self.usbmux_address
         )
 
 
 class PlistUsbmuxLockdownClient(UsbmuxLockdownClient):
-    def save_pair_record(self) -> None:
-        super().save_pair_record()
+    async def save_pair_record(self) -> None:
+        await super().save_pair_record()
         record_data = plistlib.dumps(self.pair_record)
-        with usbmux.create_mux() as client:
-            client.save_pair_record(self.identifier, self.service.mux_device.devid, record_data)
+        async with await usbmux.create_mux() as client:
+            await client.save_pair_record(self.identifier, self.service.mux_device.devid, record_data)
 
 
 class TcpLockdownClient(LockdownClient):
@@ -783,24 +821,24 @@ class TcpLockdownClient(LockdownClient):
         self.hostname = hostname
         self.identifier = hostname
 
-    def _create_service_connection(self, port: int) -> ServiceConnection:
-        return ServiceConnection.create_using_tcp(self.hostname, port, keep_alive=self._keep_alive)
+    async def create_service_connection(self, port: int) -> ServiceConnection:
+        return await ServiceConnection.create_using_tcp(self.hostname, port, keep_alive=self._keep_alive)
 
 
 class RemoteLockdownClient(LockdownClient):
-    def _create_service_connection(self, port: int) -> ServiceConnection:
+    async def create_service_connection(self, port: int) -> ServiceConnection:
         raise NotImplementedError(
             "RemoteXPC service connections should only be created using RemoteServiceDiscoveryService"
         )
 
-    def _handle_autopair(self, *args, **kwargs):
+    async def _handle_autopair(self, *args, **kwargs):
         # The RemoteXPC version of lockdown doesn't support pairing operations
         return None
 
-    def pair(self, *args, **kwargs) -> None:
+    async def pair(self, *args, **kwargs) -> None:
         raise NotImplementedError("RemoteXPC lockdown version does not support pairing operations")
 
-    def unpair(self, timeout: Optional[float] = None) -> None:
+    async def unpair(self, timeout: Optional[float] = None) -> None:
         raise NotImplementedError("RemoteXPC lockdown version does not support pairing operations")
 
     def __init__(
@@ -831,7 +869,7 @@ class RemoteLockdownClient(LockdownClient):
         )
 
 
-def create_using_usbmux(
+async def create_using_usbmux(
     serial: Optional[str] = None,
     identifier: Optional[str] = None,
     label: str = DEFAULT_LABEL,
@@ -860,39 +898,45 @@ def create_using_usbmux(
     :param usbmux_address: usbmuxd address
     :return: UsbmuxLockdownClient instance
     """
-    service = ServiceConnection.create_using_usbmux(
+    service = await ServiceConnection.create_using_usbmux(
         serial, port, connection_type=connection_type, usbmux_address=usbmux_address
     )
     try:
         cls = UsbmuxLockdownClient
-        with usbmux.create_mux(usbmux_address=usbmux_address) as client:
+        system_buid = SYSTEM_BUID
+        async with await usbmux.create_mux(usbmux_address=usbmux_address) as client:
             if isinstance(client, PlistMuxConnection):
                 # Only the Plist version of usbmuxd supports this message type
-                system_buid = client.get_buid()
+                system_buid = await client.get_buid()
                 cls = PlistUsbmuxLockdownClient
 
         if identifier is None:
             # attempt get identifier from mux device serial
             identifier = service.mux_device.serial
 
-        return cls.create(
+        host_id = generate_host_id(local_hostname)
+        pairing_records_cache_folder = create_pairing_records_cache_folder(pairing_records_cache_folder)
+        lockdown_client = cls(
             service,
+            host_id=host_id,
             identifier=identifier,
             label=label,
             system_buid=system_buid,
-            local_hostname=local_hostname,
             pair_record=pair_record,
             pairing_records_cache_folder=pairing_records_cache_folder,
-            pair_timeout=pair_timeout,
-            autopair=autopair,
+            port=port,
             usbmux_address=usbmux_address,
         )
+        await lockdown_client._initialize()
+        await lockdown_client._handle_autopair(autopair, pair_timeout)
     except Exception:
-        service.close()
+        await service.close()
         raise
+    else:
+        return lockdown_client
 
 
-def retry_create_using_usbmux(retry_timeout: Optional[float] = None, **kwargs) -> UsbmuxLockdownClient:
+async def retry_create_using_usbmux(retry_timeout: Optional[float] = None, **kwargs) -> UsbmuxLockdownClient:
     """
     Repeatedly retry to create a UsbmuxLockdownClient instance while dismissing different errors that might occur
     while device is rebooting
@@ -903,11 +947,12 @@ def retry_create_using_usbmux(retry_timeout: Optional[float] = None, **kwargs) -
     start = time.time()
     while (retry_timeout is None) or (time.time() - start < retry_timeout):
         try:
-            return create_using_usbmux(**kwargs)
+            return await create_using_usbmux(**kwargs)
         except (
             NoDeviceConnectedError,
             ConnectionFailedError,
             BadDevError,
+            MuxException,
             OSError,
             construct.core.StreamError,
             DeviceNotFoundError,
@@ -915,7 +960,7 @@ def retry_create_using_usbmux(retry_timeout: Optional[float] = None, **kwargs) -
             pass
 
 
-def create_using_tcp(
+async def create_using_tcp(
     hostname: str,
     identifier: Optional[str] = None,
     label: str = DEFAULT_LABEL,
@@ -942,9 +987,9 @@ def create_using_tcp(
     :param keep_alive: use keep-alive to get notified when the connection is lost
     :return: TcpLockdownClient instance
     """
-    service = ServiceConnection.create_using_tcp(hostname, port, keep_alive=keep_alive)
+    service = await ServiceConnection.create_using_tcp(hostname, port, keep_alive=keep_alive)
     try:
-        return TcpLockdownClient.create(
+        return await TcpLockdownClient.create(
             service,
             identifier=identifier,
             label=label,
@@ -958,11 +1003,11 @@ def create_using_tcp(
             keep_alive=keep_alive,
         )
     except Exception:
-        service.close()
+        await service.close()
         raise
 
 
-def create_using_remote(
+async def create_using_remote(
     service: ServiceConnection,
     identifier: Optional[str] = None,
     label: str = DEFAULT_LABEL,
@@ -988,7 +1033,7 @@ def create_using_remote(
     :return: TcpLockdownClient instance
     """
     try:
-        return RemoteLockdownClient.create(
+        return await RemoteLockdownClient.create(
             service,
             identifier=identifier,
             label=label,
@@ -1000,7 +1045,7 @@ def create_using_remote(
             port=port,
         )
     except Exception:
-        service.close()
+        await service.close()
         raise
 
 
@@ -1034,10 +1079,10 @@ async def get_mobdev2_lockdowns(
 
         for address in answer.addresses:
             try:
-                lockdown = create_using_tcp(hostname=address.full_ip, autopair=False, pair_record=record)
+                lockdown = await create_using_tcp(hostname=address.full_ip, autopair=False, pair_record=record)
             except Exception:
                 continue
             if only_paired and not lockdown.paired:
-                lockdown.close()
+                await lockdown.service.close()
                 continue
             yield address.full_ip, lockdown

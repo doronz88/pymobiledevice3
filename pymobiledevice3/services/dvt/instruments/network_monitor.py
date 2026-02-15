@@ -1,6 +1,6 @@
 import ipaddress
 import logging
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Union
 
@@ -8,6 +8,7 @@ from construct import Adapter, Bytes, Int8ul, Int16ub, Int32ul, Switch, this
 from construct_typed import DataclassMixin, TStruct, csfield
 
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments import ChannelService
 
 
 class IpAddressAdapter(Adapter):
@@ -101,27 +102,29 @@ class ConnectionUpdateEvent:
 NetworkMonitorEvent = Union[InterfaceDetectionEvent, ConnectionDetectionEvent, ConnectionUpdateEvent]
 
 
-class NetworkMonitor:
+class NetworkMonitor(ChannelService):
     """Iterate over network monitoring events from the Instruments service."""
 
     IDENTIFIER = "com.apple.instruments.server.services.networking"
 
     def __init__(self, dvt: DvtSecureSocketProxyService):
         self.logger = logging.getLogger(__name__)
-        self._channel = dvt.make_channel(self.IDENTIFIER)
+        super().__init__(dvt)
 
-    def __enter__(self) -> "NetworkMonitor":
-        self._channel.startMonitoring(expects_reply=False)
+    async def __aenter__(self) -> "NetworkMonitor":
+        channel = await self._channel_ref()
+        await channel.startMonitoring(expects_reply=False)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self._channel.stopMonitoring()
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        channel = await self._channel_ref()
+        await channel.stopMonitoring()
 
-    def __iter__(self) -> Iterator[NetworkMonitorEvent]:
+    async def __aiter__(self) -> AsyncIterator[NetworkMonitorEvent]:
         """Yield network events as they arrive from the service."""
 
         while True:
-            message = self._channel.receive_plist()
+            message = await self._receive_message()
 
             event = None
 
@@ -156,3 +159,7 @@ class NetworkMonitor:
             else:
                 self.logger.warning(f"unsupported event type: {message[0]}")
             yield event
+
+    async def _receive_message(self):
+        channel = await self._channel_ref()
+        return await channel.receive_plist()

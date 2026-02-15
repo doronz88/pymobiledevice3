@@ -75,9 +75,9 @@ class InstallationProxyService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def _watch_completion(self, handler: Optional[Callable] = None, ipcc: bool = False, *args) -> None:
+    async def _watch_completion(self, handler: Optional[Callable] = None, ipcc: bool = False, *args) -> None:
         while True:
-            response = self.service.recv_plist()
+            response = await self.service.recv_plist()
             if not response:
                 break
             error = response.get("Error")
@@ -97,7 +97,7 @@ class InstallationProxyService(LockdownService):
                 return
         raise AppInstallError()
 
-    def send_cmd_for_bundle_identifier(
+    async def send_cmd_for_bundle_identifier(
         self,
         bundle_identifier: str,
         cmd: str = "Archive",
@@ -112,32 +112,34 @@ class InstallationProxyService(LockdownService):
             options = {}
 
         cmd.update({"ClientOptions": options})
-        self.service.send_plist(cmd)
-        self._watch_completion(handler, *args)
+        await self.service.send_plist(cmd)
+        await self._watch_completion(handler, *args)
 
-    def install(
+    async def install(
         self, package_path: str, options: Optional[dict] = None, handler: Optional[Callable] = None, *args
     ) -> None:
         """install given ipa/ipcc from device path"""
-        self.install_from_local(package_path, "Install", options, handler, args)
+        await self.install_from_local(package_path, "Install", options, handler, args)
 
-    def upgrade(self, ipa_path: str, options: Optional[dict] = None, handler: Optional[Callable] = None, *args) -> None:
+    async def upgrade(
+        self, ipa_path: str, options: Optional[dict] = None, handler: Optional[Callable] = None, *args
+    ) -> None:
         """upgrade given ipa from device path"""
-        self.install_from_local(ipa_path, "Upgrade", options, handler, args)
+        await self.install_from_local(ipa_path, "Upgrade", options, handler, args)
 
-    def restore(
+    async def restore(
         self, bundle_identifier: str, options: Optional[dict] = None, handler: Optional[Callable] = None, *args
     ) -> None:
         """no longer supported on newer iOS versions"""
-        self.send_cmd_for_bundle_identifier(bundle_identifier, "Restore", options, handler, args)
+        await self.send_cmd_for_bundle_identifier(bundle_identifier, "Restore", options, handler, args)
 
-    def uninstall(
+    async def uninstall(
         self, bundle_identifier: str, options: Optional[dict] = None, handler: Optional[Callable] = None, *args
     ) -> None:
         """uninstall given bundle_identifier"""
-        self.send_cmd_for_bundle_identifier(bundle_identifier, "Uninstall", options, handler, args)
+        await self.send_cmd_for_bundle_identifier(bundle_identifier, "Uninstall", options, handler, args)
 
-    def install_from_bytes(
+    async def install_from_bytes(
         self,
         package_bytes: bytes,
         cmd: str = "Install",
@@ -154,16 +156,16 @@ class InstallationProxyService(LockdownService):
         if ipcc_mode:
             options["PackageType"] = "CarrierBundle"
 
-        with AfcService(self.lockdown) as afc:
+        async with AfcService(self.lockdown) as afc:
             if not ipcc_mode:
-                afc.set_file_contents(TEMP_REMOTE_IPA_FILE, package_bytes)
+                await afc.set_file_contents(TEMP_REMOTE_IPA_FILE, package_bytes)
             else:
-                self.upload_ipcc_from_bytes(package_bytes, afc)
+                await self.upload_ipcc_from_bytes(package_bytes, afc)
 
-        self.send_package(cmd, options, handler, ipcc_mode, *args)
+        await self.send_package(cmd, options, handler, ipcc_mode, *args)
 
     @str_to_path("package_path")
-    def install_from_local(
+    async def install_from_local(
         self,
         package_path: Path,
         cmd: str = "Install",
@@ -191,58 +193,60 @@ class InstallationProxyService(LockdownService):
         if developer:
             options["PackageType"] = "Developer"
 
-        with AfcService(self.lockdown) as afc:
+        async with AfcService(self.lockdown) as afc:
             if not ipcc_mode:
-                afc.makedirs(TEMP_REMOTE_BASEDIR)
-                afc.set_file_contents(TEMP_REMOTE_IPA_FILE, ipa_contents)
+                await afc.makedirs(TEMP_REMOTE_BASEDIR)
+                await afc.set_file_contents(TEMP_REMOTE_IPA_FILE, ipa_contents)
 
             else:
-                self.upload_ipcc_from_path(package_path, afc)
+                await self.upload_ipcc_from_path(package_path, afc)
 
-        self.send_package(cmd, options, handler, ipcc_mode, *args)
+        await self.send_package(cmd, options, handler, ipcc_mode, *args)
 
-    def send_package(self, cmd: str, options: Optional[dict], handler: Callable, ipcc_mode: bool = False, *args):
-        self.service.send_plist({
+    async def send_package(self, cmd: str, options: Optional[dict], handler: Callable, ipcc_mode: bool = False, *args):
+        await self.service.send_plist({
             "Command": cmd,
             "ClientOptions": options,
             "PackagePath": (TEMP_REMOTE_IPCC_FOLDER if ipcc_mode else TEMP_REMOTE_IPA_FILE),
         })
 
-        self._watch_completion(handler, ipcc_mode, args)
+        await self._watch_completion(handler, ipcc_mode, args)
 
-    def upload_ipcc_from_path(self, file: Path, afc_client: AfcService) -> None:
+    async def upload_ipcc_from_path(self, file: Path, afc_client: AfcService) -> None:
         """Used to upload a .ipcc file to an iPhone as a folder"""
         with file.open("rb") as fb:
             file_name = file.name
             file_stream = BytesIO(fb.read())
-            self._upload_ipcc(file_stream, afc_client, file_name)
+            await self._upload_ipcc(file_stream, afc_client, file_name)
 
-    def upload_ipcc_from_bytes(self, file_bytes: bytes, afc_client: AfcService) -> None:
+    async def upload_ipcc_from_bytes(self, file_bytes: bytes, afc_client: AfcService) -> None:
         """Used to upload a .ipcc bytes array to an iPhone as a folder"""
         file_stream = BytesIO(file_bytes)
         file_name = "bytes"
-        self._upload_ipcc(file_stream, afc_client, file_name)
+        await self._upload_ipcc(file_stream, afc_client, file_name)
 
-    def _upload_ipcc(self, file_stream: BytesIO, afc_client: AfcService, file_name: str) -> None:
+    async def _upload_ipcc(self, file_stream: BytesIO, afc_client: AfcService, file_name: str) -> None:
         self.logger.info(f"Uploading {file_name} contents..")
 
-        afc_client.makedirs(TEMP_REMOTE_IPCC_FOLDER)
+        await afc_client.makedirs(TEMP_REMOTE_IPCC_FOLDER)
 
         # we unpack it and upload it directly instead of saving it in a temp folder
         with ZipFile(file_stream, "r") as file_zip:
             for file_name in file_zip.namelist():
                 if file_name.endswith(("/", "\\")):
-                    afc_client.makedirs(f"{TEMP_REMOTE_IPCC_FOLDER}/{file_name}")
+                    await afc_client.makedirs(f"{TEMP_REMOTE_IPCC_FOLDER}/{file_name}")
                     continue
 
                 with file_zip.open(file_name) as inside_file_zip:
                     file_data = inside_file_zip.read()
-                    afc_client.makedirs(TEMP_REMOTE_BASEDIR)
-                    afc_client.set_file_contents(f"{TEMP_REMOTE_IPCC_FOLDER}/{file_name}", file_data)
+                    await afc_client.makedirs(TEMP_REMOTE_BASEDIR)
+                    await afc_client.set_file_contents(f"{TEMP_REMOTE_IPCC_FOLDER}/{file_name}", file_data)
 
         self.logger.info("Upload complete.")
 
-    def check_capabilities_match(self, capabilities: Optional[dict] = None, options: Optional[dict] = None) -> dict:
+    async def check_capabilities_match(
+        self, capabilities: Optional[dict] = None, options: Optional[dict] = None
+    ) -> dict:
         if options is None:
             options = {}
         cmd = {"Command": "CheckCapabilitiesMatch", "ClientOptions": options}
@@ -250,9 +254,10 @@ class InstallationProxyService(LockdownService):
         if capabilities:
             cmd["Capabilities"] = capabilities
 
-        return self.service.send_recv_plist(cmd).get("LookupResult")
+        await self.service.send_plist(cmd)
+        return (await self.service.recv_plist()).get("LookupResult")
 
-    def browse(self, options: Optional[dict] = None, attributes: Optional[list[str]] = None) -> list[dict]:
+    async def browse(self, options: Optional[dict] = None, attributes: Optional[list[str]] = None) -> list[dict]:
         if options is None:
             options = {}
         if attributes:
@@ -260,11 +265,11 @@ class InstallationProxyService(LockdownService):
 
         cmd = {"Command": "Browse", "ClientOptions": options}
 
-        self.service.send_plist(cmd)
+        await self.service.send_plist(cmd)
 
         result = []
         while True:
-            response = self.service.recv_plist()
+            response = await self.service.recv_plist()
             if not response:
                 break
 
@@ -277,14 +282,15 @@ class InstallationProxyService(LockdownService):
 
         return result
 
-    def lookup(self, options: Optional[dict] = None) -> dict:
+    async def lookup(self, options: Optional[dict] = None) -> dict:
         """search installation database"""
         if options is None:
             options = {}
         cmd = {"Command": "Lookup", "ClientOptions": options}
-        return self.service.send_recv_plist(cmd).get("LookupResult")
+        await self.service.send_plist(cmd)
+        return (await self.service.recv_plist()).get("LookupResult")
 
-    def get_apps(
+    async def get_apps(
         self,
         application_type: str = "Any",
         calculate_sizes: bool = False,
@@ -296,10 +302,10 @@ class InstallationProxyService(LockdownService):
             options["BundleIDs"] = bundle_identifiers
 
         options["ApplicationType"] = application_type
-        result = self.lookup(options)
+        result = await self.lookup(options)
         if calculate_sizes:
             options.update(GET_APPS_ADDITIONAL_INFO)
-            additional_info = self.lookup(options)
+            additional_info = await self.lookup(options)
             for bundle_identifier, app in additional_info.items():
                 result[bundle_identifier].update(app)
         return result

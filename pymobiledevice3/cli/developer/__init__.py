@@ -5,7 +5,7 @@ from typing import Annotated
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
 from pymobiledevice3.cli.developer import (
     accessibility,
     arbitration,
@@ -57,6 +57,7 @@ def developer_shell(
 
 
 @cli.command()
-def screenshot(service_provider: ServiceProviderDep, out: Path) -> None:
+@async_command
+async def screenshot(service_provider: ServiceProviderDep, out: Path) -> None:
     """Capture a PNG screenshot (Depcrecated API)."""
-    out.write_bytes(ScreenshotService(lockdown=service_provider).take_screenshot())
+    out.write_bytes(await ScreenshotService(lockdown=service_provider).take_screenshot())

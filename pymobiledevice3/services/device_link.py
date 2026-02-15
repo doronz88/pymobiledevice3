@@ -50,14 +50,20 @@ class DeviceLink:
             "DLMessagePurgeDiskSpace": self.purge_disk_space,
         }
 
-    def dl_loop(self, progress_callback: Optional[ProgressCallback] = None) -> Any:
+    async def _sendall(self, payload: bytes) -> None:
+        await self.service.sendall(payload)
+
+    async def _recvall(self, size: int) -> bytes:
+        return await self.service.recvall(size)
+
+    async def dl_loop(self, progress_callback: Optional[ProgressCallback] = None) -> Any:
         def _noop(_: Any) -> None:
             return None
 
         callback: ProgressCallback = progress_callback if progress_callback is not None else _noop
 
         while True:
-            message = self.receive_message()
+            message = await self.receive_message()
             command = message[0]
 
             if command in (
@@ -76,25 +82,25 @@ class DeviceLink:
                     return message[1].get("Content")
                 else:
                     raise PyMobileDevice3Exception(f"Device link error: {message[1]}")
-            self._dl_handlers[command](message)
+            await self._dl_handlers[command](message)
 
-    def version_exchange(self) -> None:
-        dl_message_version_exchange = self.receive_message()
+    async def version_exchange(self) -> None:
+        dl_message_version_exchange = await self.receive_message()
         version_major = dl_message_version_exchange[1]
-        self.service.send_plist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
-        dl_message_device_ready = self.receive_message()
+        await self.service.send_plist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
+        dl_message_device_ready = await self.receive_message()
         if dl_message_device_ready[0] != "DLMessageDeviceReady":
             raise PyMobileDevice3Exception("Device link didn't return ready state")
 
-    def send_process_message(self, message: Mapping[str, Any]) -> None:
-        self.service.send_plist(["DLMessageProcessMessage", message])
+    async def send_process_message(self, message: Mapping[str, Any]) -> None:
+        await self.service.send_plist(["DLMessageProcessMessage", message])
 
-    def download_files(self, message: DLMessage) -> None:
+    async def download_files(self, message: DLMessage) -> None:
         status: dict[str, dict[str, Any]] = {}
         files = cast(Iterable[str], message[1])
         for file in files:
-            self.service.sendall(struct.pack(SIZE_FORMAT, len(file)))
-            self.service.sendall(file.encode())
+            await self._sendall(struct.pack(SIZE_FORMAT, len(file)))
+            await self._sendall(file.encode())
 
             try:
                 file_path = self.root_path / file
@@ -108,26 +114,26 @@ class DeviceLink:
                         chunk_data = file_handle.read(chunk_size)
                         if not chunk_data:
                             break
-                        self.service.sendall(struct.pack(SIZE_FORMAT, len(chunk_data) + struct.calcsize(CODE_FORMAT)))
-                        self.service.sendall(struct.pack(CODE_FORMAT, CODE_FILE_DATA) + chunk_data)
+                        await self._sendall(struct.pack(SIZE_FORMAT, len(chunk_data) + struct.calcsize(CODE_FORMAT)))
+                        await self._sendall(struct.pack(CODE_FORMAT, CODE_FILE_DATA) + chunk_data)
 
                 buffer = struct.pack(SIZE_FORMAT, struct.calcsize(CODE_FORMAT)) + struct.pack(CODE_FORMAT, CODE_SUCCESS)
-                self.service.sendall(buffer)
+                await self._sendall(buffer)
             except OSError as e:
                 status[file] = {
                     "DLFileErrorString": e.strerror,
                     "DLFileErrorCode": ctypes.c_uint64(ERRNO_TO_DEVICE_ERROR[e.errno]).value,
                 }
-                self.service.sendall(struct.pack(SIZE_FORMAT, len(e.strerror) + struct.calcsize(CODE_FORMAT)))
-                self.service.sendall(struct.pack(CODE_FORMAT, CODE_ERROR_LOCAL) + e.strerror.encode())
+                await self._sendall(struct.pack(SIZE_FORMAT, len(e.strerror) + struct.calcsize(CODE_FORMAT)))
+                await self._sendall(struct.pack(CODE_FORMAT, CODE_ERROR_LOCAL) + e.strerror.encode())
 
-        self.service.sendall(FILE_TRANSFER_TERMINATOR)
+        await self._sendall(FILE_TRANSFER_TERMINATOR)
         if status:
-            self.status_response(BULK_OPERATION_ERROR, "Multi status", status)
+            await self.status_response(BULK_OPERATION_ERROR, "Multi status", status)
         else:
-            self.status_response(0)
+            await self.status_response(0)
 
-    def contents_of_directory(self, message: DLMessage) -> None:
+    async def contents_of_directory(self, message: DLMessage) -> None:
         data = {}
         path = self.root_path / cast(str, message[1])
         for file in path.iterdir():
@@ -143,47 +149,47 @@ class DeviceLink:
                 "DLFileSize": file.stat().st_size,
                 "DLFileModificationDate": modifications_data,
             }
-        self.status_response(0, status_dict=data)
+        await self.status_response(0, status_dict=data)
 
-    def upload_files(self, _message: DLMessage) -> None:
+    async def upload_files(self, _message: DLMessage) -> None:
         while True:
-            device_name = self._prefixed_recv()
+            device_name = await self._prefixed_recv()
             if not device_name:
                 break
-            file_name = self._prefixed_recv()
-            (size,) = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
-            (code,) = struct.unpack(CODE_FORMAT, self.service.recvall(struct.calcsize(CODE_FORMAT)))
+            file_name = await self._prefixed_recv()
+            (size,) = struct.unpack(SIZE_FORMAT, await self._recvall(struct.calcsize(SIZE_FORMAT)))
+            (code,) = struct.unpack(CODE_FORMAT, await self._recvall(struct.calcsize(CODE_FORMAT)))
             size -= struct.calcsize(CODE_FORMAT)
             with open(self.root_path / file_name, "wb") as fd:
                 while size and code == CODE_FILE_DATA:
-                    fd.write(self.service.recvall(size))
-                    (size,) = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
-                    (code,) = struct.unpack(CODE_FORMAT, self.service.recvall(struct.calcsize(CODE_FORMAT)))
+                    fd.write(await self._recvall(size))
+                    (size,) = struct.unpack(SIZE_FORMAT, await self._recvall(struct.calcsize(SIZE_FORMAT)))
+                    (code,) = struct.unpack(CODE_FORMAT, await self._recvall(struct.calcsize(CODE_FORMAT)))
                     size -= struct.calcsize(CODE_FORMAT)
             if code == CODE_ERROR_REMOTE:
                 # iOS 17 beta devices give this error for: backup_manifest.db
-                error_message = self.service.recvall(size).decode()
+                error_message = (await self._recvall(size)).decode()
                 warnings.warn(
                     f"Failed to fully upload: {file_name}. Device file name: {device_name}. Reason: {error_message}",
                     stacklevel=2,
                 )
                 continue
             assert code == CODE_SUCCESS
-        self.status_response(0)
+        await self.status_response(0)
 
-    def get_free_disk_space(self, _message: DLMessage) -> None:
+    async def get_free_disk_space(self, _message: DLMessage) -> None:
         freespace = shutil.disk_usage(self.root_path).free
-        self.status_response(0, status_dict=freespace)
+        await self.status_response(0, status_dict=freespace)
 
-    def move_items(self, message: DLMessage) -> None:
+    async def move_items(self, message: DLMessage) -> None:
         items = cast(Mapping[str, str], message[1])
         for src, dst in items.items():
             dest = self.root_path / dst
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(self.root_path / src, dest)
-        self.status_response(0)
+        await self.status_response(0)
 
-    def copy_item(self, message: DLMessage) -> None:
+    async def copy_item(self, message: DLMessage) -> None:
         src = self.root_path / cast(str, message[1])
         dest = self.root_path / cast(str, message[2])
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -191,39 +197,39 @@ class DeviceLink:
             shutil.copytree(src, dest)
         else:
             shutil.copy(src, dest)
-        self.status_response(0)
+        await self.status_response(0)
 
-    def purge_disk_space(self, _message: DLMessage) -> None:
+    async def purge_disk_space(self, _message: DLMessage) -> None:
         raise NotEnoughDiskSpaceError()
 
-    def remove_items(self, message: DLMessage) -> None:
+    async def remove_items(self, message: DLMessage) -> None:
         for path in cast(Iterable[str], message[1]):
             rm_path = self.root_path / path
             if rm_path.is_dir():
                 shutil.rmtree(rm_path)
             else:
                 rm_path.unlink(missing_ok=True)
-        self.status_response(0)
+        await self.status_response(0)
 
-    def create_directory(self, message: DLMessage) -> None:
+    async def create_directory(self, message: DLMessage) -> None:
         path = cast(str, message[1])
         (self.root_path / path).mkdir(parents=True, exist_ok=True)
-        self.status_response(0)
+        await self.status_response(0)
 
-    def status_response(self, status_code: int, status_str: str = "", status_dict: Any = None) -> None:
-        self.service.send_plist([
+    async def status_response(self, status_code: int, status_str: str = "", status_dict: Any = None) -> None:
+        await self.service.send_plist([
             "DLMessageStatusResponse",
             ctypes.c_uint64(status_code).value,
             status_str if status_str else "___EmptyParameterString___",
             status_dict if status_dict is not None else {},
         ])
 
-    def receive_message(self) -> DLMessage:
-        return cast(DLMessage, self.service.recv_plist())
+    async def receive_message(self) -> DLMessage:
+        return cast(DLMessage, await self.service.recv_plist())
 
-    def disconnect(self) -> None:
-        self.service.send_plist(["DLMessageDisconnect", "___EmptyParameterString___"])
+    async def disconnect(self) -> None:
+        await self.service.send_plist(["DLMessageDisconnect", "___EmptyParameterString___"])
 
-    def _prefixed_recv(self) -> str:
-        (size,) = struct.unpack(SIZE_FORMAT, self.service.recvall(struct.calcsize(SIZE_FORMAT)))
-        return self.service.recvall(size).decode()
+    async def _prefixed_recv(self) -> str:
+        (size,) = struct.unpack(SIZE_FORMAT, await self._recvall(struct.calcsize(SIZE_FORMAT)))
+        return (await self._recvall(size)).decode()

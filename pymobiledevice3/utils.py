@@ -1,12 +1,15 @@
 import asyncio
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable, Optional
 
+import IPython
 import requests
 from construct import Int8ul, Int16ul, Int32ul, Int64ul, Select
 from tqdm import tqdm
+from traitlets.config import Config
 
 
 def plist_access_path(d, path: tuple, type_=None, required=False):
@@ -53,16 +56,33 @@ def asyncio_print_traceback(f: Callable):
     return wrapper
 
 
+_ASYNCIO_LOOP: Optional[asyncio.AbstractEventLoop] = None
+
+
 def get_asyncio_loop() -> asyncio.AbstractEventLoop:
+    global _ASYNCIO_LOOP
+    if _ASYNCIO_LOOP is None or _ASYNCIO_LOOP.is_closed():
+        _ASYNCIO_LOOP = asyncio.new_event_loop()
+    return _ASYNCIO_LOOP
+
+
+def run_async_compat(coro):
     try:
-        loop = asyncio.get_running_loop()
-        if loop.is_closed():
-            raise RuntimeError("The existing loop is closed.")
+        asyncio.get_running_loop()
     except RuntimeError:
-        # This happens when there is no current event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop
+        return get_asyncio_loop().run_until_complete(coro)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(lambda: asyncio.run(coro)).result()
+
+
+def start_ipython_shell(*, user_ns: Optional[dict[str, Any]] = None, header: Optional[str] = None) -> None:
+    # Keep IPython autoawait on the same loop used by CLI async wrappers.
+    asyncio.set_event_loop(get_asyncio_loop())
+    config = Config()
+    config.InteractiveShellApp.exec_lines = ["%autoawait asyncio"]
+    if header is not None:
+        print(header)
+    IPython.start_ipython(argv=[], config=config, user_ns=user_ns or {})
 
 
 def file_download(url: str, outfile: Path, chunk_size=1024) -> None:

@@ -1,14 +1,19 @@
+import pytest
+
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.pcapd import PcapdService
 
 
-def test_sniffing(lockdown: LockdownClient) -> None:
+@pytest.mark.asyncio
+async def test_sniffing(lockdown: LockdownClient) -> None:
     """
     Test sniffing device traffic.
     :param pymobiledevice3.lockdown.LockdownClient lockdown: Lockdown client.
     """
-    with PcapdService(lockdown) as pcapd:
-        packets = list(pcapd.watch(packets_count=2))
+    async with PcapdService(lockdown) as pcapd:
+        packets = []
+        async for packet in pcapd.watch(packets_count=2):
+            packets.append(packet)
         assert len(packets) == 2
 
         first_packet_time = packets[0].seconds + (packets[0].microseconds / 1000000)
