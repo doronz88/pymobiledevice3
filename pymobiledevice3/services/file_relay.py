@@ -29,22 +29,22 @@ class FileRelayService(LockdownService):
         super().__init__(lockdown, self.SERVICE_NAME)
         self.packet_num = 0
 
-    def stop_session(self):
+    async def stop_session(self):
         self.logger.info("Disconecting...")
-        self.service.close()
+        await self.service.close()
 
-    def request_sources(self, sources=None):
+    async def request_sources(self, sources=None):
         if sources is None:
             sources = ["UserDatabases"]
-        self.service.send_plist({"Sources": sources})
+        await self.service.send_plist({"Sources": sources})
         while 1:
-            res = self.service.recv_plist()
+            res = await self.service.recv_plist()
             if res:
                 s = res.get("Status")
                 if s == "Acknowledged":
-                    z = ""
+                    z = b""
                     while True:
-                        x = self.service.recv()
+                        x = self.service.recv_sync()
                         if not x:
                             break
                         z += x

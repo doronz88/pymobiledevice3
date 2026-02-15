@@ -21,7 +21,6 @@ pycrashreport>=1.2.7
 fastapi>=0.93.0
 uvicorn>=0.15.0
 wsproto
-nest_asyncio>=1.5.5
 Pillow
 inquirer3>=0.6.0
 ipsw_parser>=1.5.0

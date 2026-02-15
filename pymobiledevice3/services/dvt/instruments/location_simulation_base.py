@@ -1,6 +1,6 @@
+import asyncio
 import logging
 import random
-import time
 from abc import abstractmethod
 
 import gpxpy
@@ -11,14 +11,14 @@ class LocationSimulationBase:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @abstractmethod
-    def set(self, latitude: float, longitude: float) -> None:
+    async def set(self, latitude: float, longitude: float) -> None:
         pass
 
     @abstractmethod
-    def clear(self) -> None:
+    async def clear(self) -> None:
         pass
 
-    def play_gpx_file(self, filename: str, disable_sleep: bool = False, timing_randomness_range: int = 0):
+    async def play_gpx_file(self, filename: str, disable_sleep: bool = False, timing_randomness_range: int = 0):
         with open(filename) as f:
             gpx = gpxpy.parse(f)
 
@@ -37,7 +37,7 @@ class LocationSimulationBase:
                                 duration += gpx_timing_noise
 
                             self.logger.info(f"waiting for {duration:.3f}s")
-                            time.sleep(duration)
+                            await asyncio.sleep(duration)
                     last_time = point.time
                     self.logger.info(f"set location to {point.latitude} {point.longitude}")
-                    self.set(point.latitude, point.longitude)
+                    await self.set(point.latitude, point.longitude)

@@ -30,9 +30,6 @@ class BaseRestore:
         self.device = device
         self.tss = TSSResponse(tss) if tss is not None else None
 
-        if not self.device.is_image4_supported:
-            raise NotImplementedError("is_image4_supported is False")
-
         self.logger.info(f"connected device: {self.device}")
 
         self.logger.debug("scanning BuildManifest.plist for the correct BuildIdentity")
@@ -41,15 +38,16 @@ class BaseRestore:
             Behavior.Update: RESTORE_VARIANT_UPGRADE_INSTALL,
             Behavior.Erase: RESTORE_VARIANT_ERASE_INSTALL,
         }[behavior]
+        hardware_model = self.device.get_hardware_model_value()
 
         try:
             self.build_identity = self.ipsw.build_manifest.get_build_identity(
-                self.device.hardware_model, restore_behavior=behavior.value, variant=variant
+                hardware_model, restore_behavior=behavior.value, variant=variant
             )
         except NoSuchBuildIdentityError:
             if behavior == Behavior.Update:
                 self.build_identity = self.ipsw.build_manifest.get_build_identity(
-                    self.device.hardware_model, restore_behavior=behavior.value
+                    hardware_model, restore_behavior=behavior.value
                 )
             else:
                 raise
@@ -57,7 +55,7 @@ class BaseRestore:
         self.macos_variant = None
         try:
             self.macos_variant = self.ipsw.build_manifest.get_build_identity(
-                self.device.hardware_model, variant=RESTORE_VARIANT_MACOS_RECOVERY_OS
+                hardware_model, variant=RESTORE_VARIANT_MACOS_RECOVERY_OS
             )
             self.logger.info("Performing macOS restore")
         except NoSuchBuildIdentityError:
@@ -71,11 +69,15 @@ class BaseRestore:
         if device_class is None:
             raise PyMobileDevice3Exception('build identity does not contain an "DeviceClass" element')
 
+    async def ensure_image4_supported(self) -> None:
+        if not await self.device.get_is_image4_supported():
+            raise NotImplementedError("is_image4_supported is False")
+
     @property
     def logger(self) -> logging.Logger:
         return logging.getLogger(f"{asyncio.current_task().get_name()}-{self.__class__.__module__}")
 
-    def get_personalized_data(
+    async def get_personalized_data(
         self,
         component_name: str,
         data: Optional[bytes] = None,
@@ -87,7 +89,7 @@ class BaseRestore:
             self.build_identity.get_component(component_name, tss=tss, data=data, path=path).data,
             tss,
             self.build_identity,
-            self.device.ap_parameters,
+            await self.device.get_ap_parameters(),
         )
 
     def populate_tss_request_from_manifest(self, parameters: dict, additional_keys: Optional[list[str]] = None) -> None:

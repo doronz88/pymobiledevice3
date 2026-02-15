@@ -26,7 +26,7 @@ class Posix(OsUtils):
 
     @property
     def bonjour_timeout(self) -> int:
-        return 1
+        return 3
 
     @property
     def access_denied_error(self) -> str:

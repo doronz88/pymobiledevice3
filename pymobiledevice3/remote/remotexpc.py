@@ -1,12 +1,9 @@
 import asyncio
 import contextlib
-import sys
 from asyncio import IncompleteReadError
 from collections.abc import AsyncIterable
 from typing import Optional
 
-import IPython
-import nest_asyncio
 from construct import StreamError
 from hyperframe.frame import (
     DataFrame,
@@ -18,9 +15,8 @@ from hyperframe.frame import (
     WindowUpdateFrame,
 )
 from pygments import formatters, highlight, lexers
-from traitlets.config import Config
 
-from pymobiledevice3.exceptions import ProtocolError, StreamClosedError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, ProtocolError, StreamClosedError
 from pymobiledevice3.remote.xpc_message import (
     XpcFlags,
     XpcInt64Type,
@@ -29,6 +25,7 @@ from pymobiledevice3.remote.xpc_message import (
     create_xpc_wrapper,
     decode_xpc_object,
 )
+from pymobiledevice3.utils import start_ipython_shell
 
 # Extracted by sniffing `remoted` traffic via Wireshark
 DEFAULT_SETTINGS_MAX_CONCURRENT_STREAMS = 100
@@ -137,13 +134,8 @@ class RemoteXPCConnection:
         return await self.receive_response()
 
     def shell(self) -> None:
-        nest_asyncio.apply(asyncio.get_running_loop())
-        sys.argv = ["a"]
-        config = Config()
-        config.InteractiveShellApp.exec_lines = ["%autoawait asyncio"]
-        print(highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")))
-        IPython.start_ipython(
-            config=config,
+        start_ipython_shell(
+            header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")),
             user_ns={
                 "client": self,
                 "XpcInt64Type": XpcInt64Type,
@@ -222,6 +214,6 @@ class RemoteXPCConnection:
             try:
                 chunk = await self._reader.readexactly(size - len(data))
             except IncompleteReadError as e:
-                raise ConnectionAbortedError() from e
+                raise ConnectionTerminatedError() from e
             data += chunk
         return data

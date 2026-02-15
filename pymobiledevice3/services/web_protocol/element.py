@@ -29,7 +29,7 @@ class WebElement(SeleniumApi):
         """
         self.session = session
         self.id_ = id_
-        self.node_id = id_[f"session-node-{self.session.id_}"]
+        self.node_id = id_[f"session-node-{self.session.get_id()}"]
 
     async def clear(self):
         """Clears the text if it's a text entry element."""
@@ -45,7 +45,7 @@ class WebElement(SeleniumApi):
         rect, center, is_obscured = await self._compute_layout(use_viewport=True)
         if rect is None or is_obscured or center is None:
             return
-        if self.tag_name == "option":
+        if await self.get_tag_name() == "option":
             await self._select_option_element()
         else:
             await self.session.perform_mouse_interaction(
@@ -86,27 +86,23 @@ class WebElement(SeleniumApi):
         """Returns whether the element is selected. Can be used to check if a checkbox or radio button is selected."""
         return bool(await self.get_dom_attribute("selected"))
 
-    @property
-    async def location(self) -> Point:
+    async def get_location(self) -> Point:
         """The location of the element in the renderable canvas."""
-        rect = await self.rect
+        rect = await self.get_rect()
         return Point(x=rect.x, y=rect.y)
 
-    @property
-    async def location_once_scrolled_into_view(self) -> Point:
+    async def get_location_once_scrolled_into_view(self) -> Point:
         """Returns the top lefthand corner location on the screen, or ``None`` if the element is not visible."""
         rect = await self.session.execute_script(
             "arguments[0].scrollIntoView(true); return arguments[0].getBoundingClientRect(); ", self.id_
         )
         return Point(x=round(rect["x"]), y=round(rect["y"]))
 
-    @property
-    async def rect(self) -> Rect:
+    async def get_rect(self) -> Rect:
         """The size and location of the element."""
         return (await self._compute_layout(scroll_if_needed=False))[0]
 
-    @property
-    async def screenshot_as_base64(self) -> str:
+    async def _get_screenshot_as_base64(self) -> str:
         """Gets the screenshot of the current element as a base64 encoded string."""
         return await self.session.screenshot_as_base64(scroll=True, node_id=self.node_id)
 
@@ -136,10 +132,9 @@ class WebElement(SeleniumApi):
             interactions.append({"type": KeyboardInteractionType.KEY_RELEASE, "key": MODIFIER_TO_KEY[modifier]})
         await self.session.perform_keyboard_interactions(interactions)
 
-    @property
-    async def size(self) -> Size:
+    async def get_size(self) -> Size:
         """The size of the element."""
-        rect = await self.rect
+        rect = await self.get_rect()
         return Size(height=rect.height, width=rect.width)
 
     async def submit(self):
@@ -152,13 +147,11 @@ class WebElement(SeleniumApi):
         )
         await self.session.execute_script(submit_code, form.id_)
 
-    @property
-    async def tag_name(self) -> str:
+    async def get_tag_name(self) -> str:
         """This element's ``tagName`` property."""
         return await self._evaluate_js_function("function(element) { return element.tagName.toLowerCase() }")
 
-    @property
-    async def text(self) -> str:
+    async def get_text(self) -> str:
         """The text of the element."""
         return await self._evaluate_js_function(
             'function(element) { return element.innerText.replace(/^[^\\S\\xa0]+|[^\\S\\xa0]+$/g, "") }'
@@ -168,8 +161,8 @@ class WebElement(SeleniumApi):
         """Simulate touch interaction on the element."""
         _rect, center, _is_obscured = await self._compute_layout(use_viewport=True)
         await self.session.perform_interaction_sequence(
-            [{"sourceId": self.session.id_, "sourceType": "Touch"}],
-            [{"states": [{"sourceId": self.session.id_, "location": {"x": center.x, "y": center.y}}]}],
+            [{"sourceId": self.session.get_id(), "sourceType": "Touch"}],
+            [{"states": [{"sourceId": self.session.get_id(), "location": {"x": center.x, "y": center.y}}]}],
         )
 
     async def value_of_css_property(self, property_name) -> str:

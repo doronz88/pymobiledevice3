@@ -1,8 +1,9 @@
+import asyncio
 import logging
 import posixpath
 import re
 import time
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from json import JSONDecodeError
 from typing import Callable, ClassVar, Optional
 
@@ -54,21 +55,27 @@ class CrashReportsManager:
         self.afc = AfcService(lockdown, service_name=self.copy_mobile_service_name)
 
     def __enter__(self):
+        raise RuntimeError("Use async context manager: `async with ...`")
+
+    async def __aenter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
+        raise RuntimeError("Use async context manager: `async with ...`")
 
-    def close(self) -> None:
-        self.afc.close()
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
 
-    def clear(self) -> None:
+    async def close(self) -> None:
+        await self.afc.close()
+
+    async def clear(self) -> None:
         """
         Clear all crash reports.
         """
         undeleted_items = []
-        for filename in self.ls("/"):
-            undeleted_items.extend(self.afc.rm(filename, force=True))
+        for filename in await self.ls("/"):
+            undeleted_items.extend(await self.afc.rm(filename, force=True))
 
         for item in undeleted_items:
             # special case of file that sometimes created automatically right after delete,
@@ -76,16 +83,19 @@ class CrashReportsManager:
             if item != self.APPSTORED_PATH:
                 raise AfcException(f"failed to clear crash reports directory, undeleted items: {undeleted_items}", None)
 
-    def ls(self, path: str = "/", depth: int = 1) -> list[str]:
+    async def ls(self, path: str = "/", depth: int = 1) -> list[str]:
         """
         List file and folder in the crash report's directory.
         :param path: Path to list, relative to the crash report's directory.
         :param depth: Listing depth, -1 to list infinite.
         :return: List of files listed.
         """
-        return list(self.afc.dirlist(path, depth))[1:]  # skip the root path '/'
+        result = []
+        async for item in self.afc.dirlist(path, depth):
+            result.append(item)
+        return result[1:]  # skip the root path '/'
 
-    def pull(
+    async def pull(
         self, out: str, entry: str = "/", erase: bool = False, match: Optional[str] = None, progress_bar: bool = True
     ) -> None:
         """
@@ -99,25 +109,28 @@ class CrashReportsManager:
 
         def log(src: str, dst: str) -> None:
             self.logger.info(f"{src} --> {dst}")
-            if erase and not self.afc.isdir(src):
-                self.afc.rm_single(src, force=True)
+            # Cleanup is handled after transfer because callback is synchronous.
 
         match = None if match is None else re.compile(match)
-        self.afc.pull(entry, out, match, callback=log, progress_bar=progress_bar, ignore_errors=True)
+        await self.afc.pull(entry, out, match, callback=log, progress_bar=progress_bar, ignore_errors=True)
 
-    def flush(self) -> None:
+        if erase and not await self.afc.isdir(entry):
+            await self.afc.rm_single(entry, force=True)
+
+    async def flush(self) -> None:
         """Trigger com.apple.crashreportmover to flush all products into CrashReports directory"""
         ack = b"ping\x00"
-        assert ack == self.lockdown.start_lockdown_service(self.crash_mover_service_name).recvall(len(ack))
+        service = await self.lockdown.start_lockdown_service(self.crash_mover_service_name)
+        assert ack == await service.recvall(len(ack))
 
-    def watch(self, name: Optional[str] = None, raw: bool = False) -> Generator[str, None, None]:
+    async def watch(self, name: Optional[str] = None, raw: bool = False) -> AsyncGenerator[str, None]:
         """
         Monitor creation of new crash reports for a given process name.
 
         Return value can either be the raw crash string, or parsed result containing a more human-friendly
         representation for the crash.
         """
-        for syslog_entry in OsTraceService(lockdown=self.lockdown).syslog():
+        async for syslog_entry in OsTraceService(lockdown=self.lockdown).syslog():
             if (
                 (posixpath.basename(syslog_entry.filename) != "osanalyticshelper")
                 or (posixpath.basename(syslog_entry.image_name) != "OSAnalytics")
@@ -134,7 +147,7 @@ class CrashReportsManager:
 
             while True:
                 try:
-                    crash_report_raw = self.afc.get_file_contents(filename).decode()
+                    crash_report_raw = (await self.afc.get_file_contents(filename)).decode()
                     crash_report = get_crash_report_from_buf(crash_report_raw, filename=filename)
                     break
                 except (AfcFileNotFoundError, JSONDecodeError):
@@ -147,7 +160,7 @@ class CrashReportsManager:
                 else:
                     yield crash_report
 
-    def get_new_sysdiagnose(
+    async def get_new_sysdiagnose(
         self,
         out: str,
         erase: bool = True,
@@ -167,50 +180,50 @@ class CrashReportsManager:
         end_time = None
         if timeout is not None:
             end_time = start_time + timeout
-        sysdiagnose_filename = self._get_new_sysdiagnose_filename(end_time)
+        sysdiagnose_filename = await self._get_new_sysdiagnose_filename(end_time)
 
         if callback is not None:
             callback(time.monotonic() - start_time)
 
         self.logger.info("sysdiagnose tarball creation has been started")
-        self._wait_for_sysdiagnose_to_finish(timeout)
+        await self._wait_for_sysdiagnose_to_finish(timeout)
 
         if callback is not None:
             callback(time.monotonic() - start_time)
 
-        self.pull(out, entry=sysdiagnose_filename, erase=erase)
+        await self.pull(out, entry=sysdiagnose_filename, erase=erase)
 
         if callback is not None:
             callback(time.monotonic() - start_time)
 
-    def _wait_for_sysdiagnose_to_finish(self, end_time: Optional[float] = None) -> None:
-        with NotificationProxyService(self.lockdown, timeout=end_time) as service:
+    async def _wait_for_sysdiagnose_to_finish(self, end_time: Optional[float] = None) -> None:
+        async with NotificationProxyService(self.lockdown, timeout=end_time) as service:
             stop_notification = "com.apple.sysdiagnose.sysdiagnoseStopped"
-            service.notify_register_dispatch(stop_notification)
+            await service.notify_register_dispatch(stop_notification)
             try:
-                for event in service.receive_notification():
+                async for event in service.receive_notification():
                     if event["Name"] != stop_notification:
                         continue
                     self.logger.debug(f"Received {event}")
-                    time.sleep(IOS17_SYSDIAGNOSE_DELAY)
+                    await asyncio.sleep(IOS17_SYSDIAGNOSE_DELAY)
                     break
             except NotificationTimeoutError as e:
                 raise SysdiagnoseTimeoutError("Timeout waiting for sysdiagnose completion") from e
 
-    def _get_new_sysdiagnose_filename(self, end_time: Optional[float] = None) -> str:
+    async def _get_new_sysdiagnose_filename(self, end_time: Optional[float] = None) -> str:
         sysdiagnose_filename = None
         excluded_temp_files = []
 
         while sysdiagnose_filename is None:
             try:
-                for filename in self.afc.listdir(SYSDIAGNOSE_DIR):
+                for filename in await self.afc.listdir(SYSDIAGNOSE_DIR):
                     # search for an IN_PROGRESS archive
                     if filename not in excluded_temp_files and "IN_PROGRESS_" in filename:
                         for ext in self.IN_PROGRESS_SYSDIAGNOSE_EXTENSIONS:
                             if filename.endswith(ext):
                                 delta = (
-                                    self.lockdown.date
-                                    - self.afc.stat(posixpath.join(SYSDIAGNOSE_DIR, filename))["st_mtime"]
+                                    await self.lockdown.get_date()
+                                    - (await self.afc.stat(posixpath.join(SYSDIAGNOSE_DIR, filename)))["st_mtime"]
                                 )
                                 # Ignores IN_PROGRESS sysdiagnose files older than the defined time to live
                                 if delta.total_seconds() < SYSDIAGNOSE_IN_PROGRESS_MAX_TTL_SECS:
@@ -227,6 +240,7 @@ class CrashReportsManager:
 
             if self._check_timeout(end_time):
                 raise SysdiagnoseTimeoutError("Timeout finding in-progress sysdiagnose filename")
+            await asyncio.sleep(0.1)
 
     def _check_timeout(self, end_time: Optional[float] = None) -> bool:
         return end_time is not None and time.monotonic() > end_time

@@ -1,6 +1,10 @@
+import asyncio
+import contextlib
 import importlib.resources
 import json
 import logging
+import queue
+from enum import Enum
 from itertools import islice
 from pathlib import Path
 from typing import Annotated, Optional
@@ -13,14 +17,14 @@ import pymobiledevice3.resources
 from pymobiledevice3.cli.cli_common import (
     BASED_INT,
     ServiceProviderDep,
+    async_command,
     default_json_encoder,
     print_json,
     user_requested_colored_output,
 )
-from pymobiledevice3.exceptions import ExtractingStackshotError
+from pymobiledevice3.exceptions import DvtException, ExtractingStackshotError
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap
-from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +84,39 @@ ShowThreadID = Annotated[
 ]
 
 
+class TraceColorMode(str, Enum):
+    FAST = "fast"
+    RICH = "rich"
+
+
+_ANSI_RESET = "\033[0m"
+_ANSI_TS = "\033[2;36m"
+_ANSI_TID = "\033[35m"
+_ANSI_PROCESS = "\033[33m"
+_ANSI_EVENT = "\033[32m"
+
+
+def _colorize_parse_live_trace(trace: str, *, show_tid: bool) -> str:
+    # Keep this lightweight: fixed-width slicing of _format_trace() output.
+    ts_end = 27
+    tid_end = ts_end + (12 if show_tid else 0)
+    process_end = tid_end + 34
+    if len(trace) < process_end:
+        return trace
+
+    ts = trace[:ts_end]
+    tid = trace[ts_end:tid_end]
+    process = trace[tid_end:process_end]
+    event = trace[process_end:]
+
+    colored_trace = f"{_ANSI_TS}{ts}{_ANSI_RESET}"
+    if show_tid:
+        colored_trace += f"{_ANSI_TID}{tid}{_ANSI_RESET}"
+    colored_trace += f"{_ANSI_PROCESS}{process}{_ANSI_RESET}"
+    colored_trace += f"{_ANSI_EVENT}{event}{_ANSI_RESET}"
+    return colored_trace
+
+
 def parse_filters(subclasses: list[int], classes: list[int]) -> Optional[set[int]]:
     if not subclasses and not classes:
         return None
@@ -96,7 +133,8 @@ def parse_filters(subclasses: list[int], classes: list[int]) -> Optional[set[int
 
 
 @cli.command("live")
-def live_profile_session(
+@async_command
+async def live_profile_session(
     service_provider: ServiceProviderDep,
     *,
     count: Count = -1,
@@ -142,23 +180,37 @@ def live_profile_session(
     parser.show_tid = show_tid
     parser.show_process = process_name
     parser.show_args = args
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        trace_codes_map = DeviceInfo(dvt).trace_codes()
-        time_config = CoreProfileSessionTap.get_time_config(dvt)
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        trace_codes_map = await CoreProfileSessionTap.get_trace_codes(dvt)
+        time_config = await CoreProfileSessionTap.get_time_config(dvt)
         parser.numer = time_config["numer"]
         parser.denom = time_config["denom"]
         parser.mach_absolute_time = time_config["mach_absolute_time"]
         parser.usecs_since_epoch = time_config["usecs_since_epoch"]
         parser.timezone = time_config["timezone"]
-        with CoreProfileSessionTap(dvt, time_config, filters) as tap:
-            for i, event in enumerate(parser.formatted_kevents(tap.get_kdbuf_stream(), trace_codes_map)):
-                print(event)
-                if i == count:
-                    break
+        async with CoreProfileSessionTap(dvt, time_config, filters) as tap:
+            chunk_queue = queue.Queue()
+            stream = tap.get_kdbuf_stream(chunk_queue)
+            producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
+
+            def _print_events() -> None:
+                for i, event in enumerate(parser.formatted_kevents(stream, trace_codes_map)):
+                    print(event)
+                    if i == count:
+                        break
+
+            try:
+                await asyncio.to_thread(_print_events)
+            finally:
+                producer_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await producer_task
+                chunk_queue.put(None)
 
 
 @cli.command("save")
-def save_profile_session(
+@async_command
+async def save_profile_session(
     service_provider: ServiceProviderDep,
     out: Path,
     *,
@@ -170,26 +222,45 @@ def save_profile_session(
     if bsc:
         subclass_filters.append(BSC_SUBCLASS)
     filters = parse_filters(subclass_filters, class_filters)
-    with (
+    async with (
         DvtSecureSocketProxyService(lockdown=service_provider) as dvt,
         CoreProfileSessionTap(dvt, {}, filters) as tap,
-        out.open("wb") as out_file,
     ):
-        tap.dump(out_file)
+        with out.open("wb") as out_file:
+            await tap.dump(out_file)
 
 
 @cli.command("stackshot")
-def stackshot(
+@async_command
+async def stackshot(
     service_provider: ServiceProviderDep,
     out: Annotated[Optional[Path], typer.Option()] = None,
 ) -> None:
     """Dump stackshot information."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, CoreProfileSessionTap(dvt, {}) as tap:
-        try:
-            data = tap.get_stackshot()
-        except ExtractingStackshotError:
-            logger.exception("Extracting stackshot failed")
-            return
+    max_retries = 5
+    retry_delay_sec = 0.5
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        for attempt in range(max_retries + 1):
+            try:
+                async with CoreProfileSessionTap(dvt, {}) as tap:
+                    data = await tap.get_stackshot()
+                break
+            except DvtException as e:
+                message = str(e)
+                if "could not lock kperf" in message and attempt < max_retries:
+                    logger.warning(
+                        "Stackshot recording is busy (kperf lock). Retrying in %.1fs (%d/%d)...",
+                        retry_delay_sec,
+                        attempt + 1,
+                        max_retries,
+                    )
+                    await asyncio.sleep(retry_delay_sec)
+                    continue
+                logger.error(f"Extracting stackshot failed: {e}")
+                return
+            except ExtractingStackshotError as e:
+                logger.error(f"Extracting stackshot failed: {e}")
+                return
 
         if out is not None:
             out.write_text(json.dumps(data, indent=4, default=default_json_encoder))
@@ -198,7 +269,8 @@ def stackshot(
 
 
 @cli.command("parse-live")
-def parse_live_profile_session(
+@async_command
+async def parse_live_profile_session(
     service_provider: ServiceProviderDep,
     *,
     count: Count = None,
@@ -211,11 +283,18 @@ def parse_live_profile_session(
         Optional[str],
         typer.Option(help="Process ID / name to filter. Omit for all."),
     ] = None,
+    color_mode: Annotated[
+        TraceColorMode,
+        typer.Option(
+            help="Trace color style. 'fast' uses low-overhead ANSI coloring, 'rich' uses syntax highlighting.",
+            case_sensitive=False,
+        ),
+    ] = TraceColorMode.FAST,
 ) -> None:
     """Print traces (syscalls, thread events, etc.) received from the device in real time."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         print("Receiving time information")
-        time_config = CoreProfileSessionTap.get_time_config(dvt)
+        time_config = await CoreProfileSessionTap.get_time_config(dvt)
         parser = PyKdebugParser()
         parser.filter_class = list(class_filters)
         if bsc:
@@ -230,16 +309,32 @@ def parse_live_profile_session(
         parser.filter_tid = tid
         parser.filter_process = process
         parser.show_tid = show_tid
-        parser.color = user_requested_colored_output()
+        enable_color = user_requested_colored_output()
+        parser.color = enable_color and color_mode == TraceColorMode.RICH
 
-        with CoreProfileSessionTap(dvt, time_config, filters) as tap:
+        async with CoreProfileSessionTap(dvt, time_config, filters) as tap:
             if show_tid:
                 print("{:^32}|{:^11}|{:^33}|   Event".format("Time", "Thread", "Process"))
             else:
                 print("{:^32}|{:^33}|   Event".format("Time", "Process"))
 
-            for trace in islice(parser.formatted_traces(tap.get_kdbuf_stream()), count):
-                print(trace, flush=True)
+            chunk_queue = queue.Queue()
+            stream = tap.get_kdbuf_stream(chunk_queue)
+            producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
+
+            def _print_traces() -> None:
+                for trace in islice(parser.formatted_traces(stream), count):
+                    if enable_color and color_mode == TraceColorMode.FAST:
+                        trace = _colorize_parse_live_trace(trace, show_tid=show_tid)
+                    print(trace, flush=True)
+
+            try:
+                await asyncio.to_thread(_print_traces)
+            finally:
+                producer_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await producer_task
+                chunk_queue.put(None)
 
 
 def get_image_name(dsc_uuid_map, image_uuid, current_dsc_map):
@@ -261,7 +356,8 @@ def format_callstack(callstack: str, dsc_uuid_map, current_dsc_map) -> str:
 
 
 @cli.command("callstacks-live")
-def callstacks_live_profile_session(
+@async_command
+async def callstacks_live_profile_session(
     service_provider: ServiceProviderDep,
     count: Count = -1,
     process: Annotated[
@@ -272,9 +368,9 @@ def callstacks_live_profile_session(
     show_tid: ShowThreadID = False,
 ) -> None:
     """Print callstacks received from the device in real time."""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         print("Receiving time information")
-        time_config = CoreProfileSessionTap.get_time_config(dvt)
+        time_config = await CoreProfileSessionTap.get_time_config(dvt)
         parser = PyKdebugParser()
         parser.numer = time_config["numer"]
         parser.denom = time_config["denom"]
@@ -290,6 +386,19 @@ def callstacks_live_profile_session(
             dsc_uuid_map = json.load(fd)
 
         current_dsc_map = {}
-        with CoreProfileSessionTap(dvt, time_config) as tap:
-            for callstack in islice(parser.formatted_callstacks(tap.get_kdbuf_stream()), count):
-                print(format_callstack(callstack, dsc_uuid_map, current_dsc_map))
+        async with CoreProfileSessionTap(dvt, time_config) as tap:
+            chunk_queue = queue.Queue()
+            stream = tap.get_kdbuf_stream(chunk_queue)
+            producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
+
+            def _print_callstacks() -> None:
+                for callstack in islice(parser.formatted_callstacks(stream), count):
+                    print(format_callstack(callstack, dsc_uuid_map, current_dsc_map))
+
+            try:
+                await asyncio.to_thread(_print_callstacks)
+            finally:
+                producer_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await producer_task
+                chunk_queue.put(None)

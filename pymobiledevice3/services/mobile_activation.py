@@ -3,7 +3,7 @@ import dataclasses
 import logging
 import plistlib
 import xml.etree.ElementTree as ET
-from contextlib import closing
+from contextlib import aclosing
 from pathlib import Path
 from typing import Optional
 
@@ -58,21 +58,20 @@ class MobileActivationService:
         self.lockdown = lockdown
         self.logger = logging.getLogger(__name__)
 
-    @property
-    def state(self):
+    async def state(self):
         try:
-            return self.send_command("GetActivationStateRequest")["Value"]
+            return (await self.send_command("GetActivationStateRequest"))["Value"]
         except Exception:
-            return self.lockdown.get_value(key="ActivationState")
+            return await self.lockdown.get_value(key="ActivationState")
 
-    def wait_for_activation_session(self):
+    async def wait_for_activation_session(self):
         try:
-            blob = self.create_activation_session_info()
+            blob = await self.create_activation_session_info()
         except Exception:
             return
         handshake_request_message = blob["HandshakeRequestMessage"]
         while handshake_request_message == blob["HandshakeRequestMessage"]:
-            blob = self.create_activation_session_info()
+            blob = await self.create_activation_session_info()
 
     @staticmethod
     def _get_activation_form_from_response(content: str) -> ActivationForm:
@@ -94,13 +93,13 @@ class MobileActivationService:
             server_info[k] = v
         return ActivationForm(title=title, description=description, fields=fields, server_info=server_info)
 
-    def activate(self, skip_apple_id_query: bool = False) -> None:
-        if self.state != "Unactivated":
+    async def activate(self, skip_apple_id_query: bool = False) -> None:
+        if await self.state() != "Unactivated":
             self.logger.error("Device is already activated!")
             return
 
         try:
-            blob = self.create_activation_session_info()
+            blob = await self.create_activation_session_info()
             session_mode = True
         except Exception:
             session_mode = False
@@ -115,12 +114,12 @@ class MobileActivationService:
 
         activation_request = {}
         if session_mode:
-            activation_info = self.create_activation_info_with_session(content)
+            activation_info = await self.create_activation_info_with_session(content)
         else:
-            activation_info = self.lockdown.get_value(key="ActivationInfo")
+            activation_info = await self.lockdown.get_value(key="ActivationInfo")
             activation_request.update({
                 "InStoreActivation": False,
-                "AppleSerialNumber": self.lockdown.get_value(key="SerialNumber"),
+                "AppleSerialNumber": await self.lockdown.get_value(key="SerialNumber"),
             })
             if self.lockdown.all_values.get("TelephonyCapability"):
                 req_pair = {
@@ -173,34 +172,34 @@ class MobileActivationService:
 
         assert content_type == "text/xml"
         if session_mode:
-            self.activate_with_session(content, headers)
+            await self.activate_with_session(content, headers)
         else:
-            self.activate_with_lockdown(content)
+            await self.activate_with_lockdown(content)
 
         # set ActivationStateAcknowledged if we succeeded
-        self.lockdown.set_value(True, key="ActivationStateAcknowledged")
+        await self.lockdown.set_value(True, key="ActivationStateAcknowledged")
 
-    def deactivate(self):
+    async def deactivate(self):
         try:
-            return self.send_command("DeactivateRequest")
+            return await self.send_command("DeactivateRequest")
         except Exception:
-            return self.lockdown._request("Deactivate")
+            return await self.lockdown._request_async("Deactivate")
 
-    def create_activation_session_info(self):
-        response = self.send_command("CreateTunnel1SessionInfoRequest")
+    async def create_activation_session_info(self):
+        response = await self.send_command("CreateTunnel1SessionInfoRequest")
         error = response.get("Error")
         if error is not None:
             raise MobileActivationException(f"Mobile activation can not be done due to: {response}")
         return response["Value"]
 
-    def create_activation_info_with_session(self, handshake_response):
-        response = self.send_command("CreateTunnel1ActivationInfoRequest", handshake_response)
+    async def create_activation_info_with_session(self, handshake_response):
+        response = await self.send_command("CreateTunnel1ActivationInfoRequest", handshake_response)
         error = response.get("Error")
         if error is not None:
             raise MobileActivationException(f"Mobile activation can not be done due to: {response}")
         return response["Value"]
 
-    def activate_with_lockdown(self, activation_record):
+    async def activate_with_lockdown(self, activation_record):
         record = plistlib.loads(activation_record)
         node = record.get("iphone-activation")
         if node is None:
@@ -208,24 +207,24 @@ class MobileActivationService:
         if node is None:
             raise MobileActivationException("Activation record received is invalid")
 
-        self.lockdown._request("Activate", {"ActivationRecord": node.get("activation-record")})
+        await self.lockdown._request_async("Activate", {"ActivationRecord": node.get("activation-record")})
 
-    def activate_with_session(self, activation_record, headers):
+    async def activate_with_session(self, activation_record, headers):
         data = {
             "Command": "HandleActivationInfoWithSessionRequest",
             "Value": activation_record,
         }
         if headers:
             data["ActivationResponseHeaders"] = dict(headers)
-        with closing(self.lockdown.start_lockdown_service(self.SERVICE_NAME)) as service:
-            return service.send_recv_plist(data)
+        async with aclosing(await self.lockdown.start_lockdown_service(self.SERVICE_NAME)) as service:
+            return await service.send_recv_plist(data)
 
-    def send_command(self, command: str, value: str = ""):
+    async def send_command(self, command: str, value: str = ""):
         data = {"Command": command}
         if value:
             data["Value"] = value
-        with closing(self.lockdown.start_lockdown_service(self.SERVICE_NAME)) as service:
-            return service.send_recv_plist(data)
+        async with aclosing(await self.lockdown.start_lockdown_service(self.SERVICE_NAME)) as service:
+            return await service.send_recv_plist(data)
 
     def post(
         self, url: str, data: dict, headers: Optional[CaseInsensitiveDict[str, str]] = None

@@ -33,7 +33,7 @@ def generate_host_id(hostname: Optional[str] = None) -> str:
     return str(host_id).upper()
 
 
-def get_usbmux_pairing_record(identifier: str, usbmux_address: Optional[str] = None):
+async def get_usbmux_pairing_record(identifier: str, usbmux_address: Optional[str] = None):
     """
     Retrieve the pairing record from usbmuxd.
 
@@ -44,11 +44,15 @@ def get_usbmux_pairing_record(identifier: str, usbmux_address: Optional[str] = N
     :return: The pairing record if found, otherwise None.
     :rtype: dict or None
     """
-    with suppress(NotPairedError, MuxException), usbmux.create_mux(usbmux_address=usbmux_address) as mux:
-        if isinstance(mux, PlistMuxConnection):
-            pair_record = mux.get_pair_record(identifier)
-            if pair_record is not None:
-                return pair_record
+    with suppress(NotPairedError, MuxException):
+        mux = await usbmux.create_mux(usbmux_address=usbmux_address)
+        try:
+            if isinstance(mux, PlistMuxConnection):
+                pair_record = await mux.get_pair_record(identifier)
+                if pair_record is not None:
+                    return pair_record
+        finally:
+            await mux.close()
     return None
 
 
@@ -89,7 +93,7 @@ def get_local_pairing_record(identifier: str, pairing_records_cache_folder: Path
     return plistlib.loads(path.read_bytes())
 
 
-def get_preferred_pair_record(
+async def get_preferred_pair_record(
     identifier: str, pairing_records_cache_folder: Path, usbmux_address: Optional[str] = None
 ) -> dict:
     """
@@ -108,7 +112,7 @@ def get_preferred_pair_record(
     :rtype: dict
     """
     # usbmuxd
-    pair_record = get_usbmux_pairing_record(identifier=identifier, usbmux_address=usbmux_address)
+    pair_record = await get_usbmux_pairing_record(identifier=identifier, usbmux_address=usbmux_address)
     if pair_record is not None:
         return pair_record
 
