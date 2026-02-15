@@ -6,17 +6,18 @@ class Notifications:
 
     def __init__(self, dvt):
         self._dvt = dvt
-        self._channel = dvt.make_channel(self.IDENTIFIER)
+        self._channel = None
 
-    def __enter__(self):
-        self._channel.setApplicationStateNotificationsEnabled_(MessageAux().append_obj(True))
-        self._channel.setMemoryNotificationsEnabled_(MessageAux().append_obj(True))
+    async def __aenter__(self):
+        self._channel = await self._dvt.make_channel(self.IDENTIFIER)
+        await self._channel.setApplicationStateNotificationsEnabled_(MessageAux().append_obj(True))
+        await self._channel.setMemoryNotificationsEnabled_(MessageAux().append_obj(True))
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self._channel.setApplicationStateNotificationsEnabled_(MessageAux().append_obj(False))
-        self._channel.setMemoryNotificationsEnabled_(MessageAux().append_obj(False))
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self._channel.setApplicationStateNotificationsEnabled_(MessageAux().append_obj(False))
+        await self._channel.setMemoryNotificationsEnabled_(MessageAux().append_obj(False))
 
-    def __iter__(self):
+    async def __aiter__(self):
         while True:
-            yield self._dvt.recv_plist(self._channel)
+            yield await self._dvt.recv_plist(self._channel)

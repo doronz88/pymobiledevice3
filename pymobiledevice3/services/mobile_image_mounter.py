@@ -10,6 +10,7 @@ from packaging.version import Version
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import (
     AlreadyMountedError,
+    ConnectionTerminatedError,
     DeveloperDiskImageNotFoundError,
     DeveloperModeIsNotEnabledError,
     InternalError,
@@ -42,22 +43,25 @@ class MobileImageMounterService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def raise_if_cannot_mount(self) -> None:
-        if self.is_image_mounted(self.IMAGE_TYPE):
+    async def _send_recv(self, request: dict) -> dict:
+        return await self.service.send_recv_plist(request)
+
+    async def raise_if_cannot_mount(self) -> None:
+        if await self.is_image_mounted(self.IMAGE_TYPE):
             raise AlreadyMountedError()
-        if Version(self.lockdown.product_version).major >= 16 and not self.lockdown.developer_mode_status:
+        if Version(self.lockdown.product_version).major >= 16 and not await self.lockdown.get_developer_mode_status():
             raise DeveloperModeIsNotEnabledError()
 
-    def copy_devices(self) -> list[dict]:
+    async def copy_devices(self) -> list[dict]:
         """Copy mounted devices list."""
         try:
-            return self.service.send_recv_plist({"Command": "CopyDevices"})["EntryList"]
+            return (await self._send_recv({"Command": "CopyDevices"}))["EntryList"]
         except KeyError as e:
             raise MessageNotSupportedError from e
 
-    def lookup_image(self, image_type: str) -> bytes:
+    async def lookup_image(self, image_type: str) -> bytes:
         """Lookup mounted image by its name."""
-        response = self.service.send_recv_plist({"Command": "LookupImage", "ImageType": image_type})
+        response = await self._send_recv({"Command": "LookupImage", "ImageType": image_type})
 
         if not response or not response.get("ImagePresent", True):
             raise NotMountedError()
@@ -69,17 +73,17 @@ class MobileImageMounterService(LockdownService):
             return signature[0]
         return signature
 
-    def is_image_mounted(self, image_type: str) -> bool:
+    async def is_image_mounted(self, image_type: str) -> bool:
         try:
-            self.lookup_image(image_type)
+            await self.lookup_image(image_type)
         except NotMountedError:
             return False
         return True
 
-    def unmount_image(self, mount_path: str) -> None:
+    async def unmount_image(self, mount_path: str) -> None:
         """umount image (Added on iOS 14.0)"""
         request = {"Command": "UnmountImage", "MountPath": mount_path}
-        response = self.service.send_recv_plist(request)
+        response = await self._send_recv(request)
 
         error = response.get("Error")
         if error:
@@ -92,17 +96,17 @@ class MobileImageMounterService(LockdownService):
             else:
                 raise PyMobileDevice3Exception(response)
 
-    def mount_image(self, image_type: str, signature: bytes, extras: Optional[dict] = None) -> None:
+    async def mount_image(self, image_type: str, signature: bytes, extras: Optional[dict] = None) -> None:
         """Upload image into device."""
 
-        if self.is_image_mounted(image_type):
+        if await self.is_image_mounted(image_type):
             raise AlreadyMountedError()
 
         request = {"Command": "MountImage", "ImageType": image_type, "ImageSignature": signature}
 
         if extras is not None:
             request.update(extras)
-        response = self.service.send_recv_plist(request)
+        response = await self._send_recv(request)
 
         if "Developer mode is not enabled" in response.get("DetailedError", ""):
             raise DeveloperModeIsNotEnabledError()
@@ -112,62 +116,61 @@ class MobileImageMounterService(LockdownService):
         if status != "Complete":
             raise PyMobileDevice3Exception(f"command MountImage failed with: {response}")
 
-    def upload_image(self, image_type: str, image: bytes, signature: bytes) -> None:
+    async def upload_image(self, image_type: str, image: bytes, signature: bytes) -> None:
         """Upload image into device."""
-        self.service.send_plist({
+        result = await self.service.send_recv_plist({
             "Command": "ReceiveBytes",
             "ImageType": image_type,
             "ImageSize": len(image),
             "ImageSignature": signature,
         })
-        result = self.service.recv_plist()
 
         status = result.get("Status")
 
         if status != "ReceiveBytesAck":
             raise PyMobileDevice3Exception(f"command ReceiveBytes failed with: {result}")
 
-        self.service.sendall(image)
-        result = self.service.recv_plist()
+        await self.service.sendall(image)
+        result = await self.service.recv_plist()
 
         status = result.get("Status")
 
         if status != "Complete":
             raise PyMobileDevice3Exception(f"command ReceiveBytes failed to send bytes with: {result}")
 
-    def query_developer_mode_status(self) -> bool:
-        response = self.service.send_recv_plist({"Command": "QueryDeveloperModeStatus"})
+    async def query_developer_mode_status(self) -> bool:
+        response = await self._send_recv({"Command": "QueryDeveloperModeStatus"})
 
         try:
             return response["DeveloperModeStatus"]
         except KeyError as e:
             raise MessageNotSupportedError from e
 
-    def query_nonce(self, personalized_image_type: Optional[str] = None) -> bytes:
+    async def query_nonce(self, personalized_image_type: Optional[str] = None) -> bytes:
         request = {"Command": "QueryNonce"}
         if personalized_image_type is not None:
             request["PersonalizedImageType"] = personalized_image_type
-        response = self.service.send_recv_plist(request)
+        response = await self._send_recv(request)
         try:
             return response["PersonalizationNonce"]
         except KeyError as e:
             raise MessageNotSupportedError from e
 
-    def query_personalization_identifiers(self, image_type: Optional[str] = None) -> dict:
+    async def query_personalization_identifiers(self, image_type: Optional[str] = None) -> dict:
         request = {"Command": "QueryPersonalizationIdentifiers"}
 
         if image_type is not None:
             request["PersonalizedImageType"] = image_type
 
-        response = self.service.send_recv_plist(request)
+        response = await self._send_recv(request)
 
         try:
             return response["PersonalizationIdentifiers"]
         except KeyError as e:
             raise MessageNotSupportedError from e
 
-    def query_personalization_manifest(self, image_type: str, signature: bytes) -> bytes:
-        response = self.service.send_recv_plist({
+    async def query_personalization_manifest(self, image_type: str, signature: bytes) -> bytes:
+        response = await self._send_recv({
             "Command": "QueryPersonalizationManifest",
             "PersonalizedImageType": image_type,
             "ImageType": image_type,
@@ -179,32 +182,32 @@ class MobileImageMounterService(LockdownService):
         except KeyError as e:
             raise MissingManifestError() from e
 
-    def roll_personalization_nonce(self) -> None:
+    async def roll_personalization_nonce(self) -> None:
         try:
-            self.service.send_recv_plist({"Command": "RollPersonalizationNonce"})
-        except ConnectionAbortedError:
+            await self._send_recv({"Command": "RollPersonalizationNonce"})
+        except ConnectionTerminatedError:
             return
 
-    def roll_cryptex_nonce(self) -> None:
+    async def roll_cryptex_nonce(self) -> None:
         try:
-            self.service.send_recv_plist({"Command": "RollCryptexNonce"})
-        except ConnectionAbortedError:
+            await self._send_recv({"Command": "RollCryptexNonce"})
+        except ConnectionTerminatedError:
             return
 
 
 class DeveloperDiskImageMounter(MobileImageMounterService):
     IMAGE_TYPE = "Developer"
 
-    def mount(self, image: Path, signature: Path) -> None:
-        self.raise_if_cannot_mount()
+    async def mount(self, image: Path, signature: Path) -> None:
+        await self.raise_if_cannot_mount()
 
         image = Path(image).read_bytes()
         signature = Path(signature).read_bytes()
-        self.upload_image(self.IMAGE_TYPE, image, signature)
-        self.mount_image(self.IMAGE_TYPE, signature)
+        await self.upload_image(self.IMAGE_TYPE, image, signature)
+        await self.mount_image(self.IMAGE_TYPE, signature)
 
-    def umount(self) -> None:
-        self.unmount_image("/Developer")
+    async def umount(self) -> None:
+        await self.unmount_image("/Developer")
 
 
 class PersonalizedImageMounter(MobileImageMounterService):
@@ -213,7 +216,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
     async def mount(
         self, image: Path, build_manifest: Path, trust_cache: Path, info_plist: Optional[dict] = None
     ) -> None:
-        self.raise_if_cannot_mount()
+        await self.raise_if_cannot_mount()
 
         image = image.read_bytes()
         trust_cache = trust_cache.read_bytes()
@@ -222,26 +225,26 @@ class PersonalizedImageMounter(MobileImageMounterService):
         # in case of failure, the service will close the socket, so we'll have to reestablish the connection
         # and query the manifest from Apple's ticket server instead
         try:
-            manifest = self.query_personalization_manifest("DeveloperDiskImage", hashlib.sha384(image).digest())
+            manifest = await self.query_personalization_manifest("DeveloperDiskImage", hashlib.sha384(image).digest())
         except MissingManifestError:
-            self.service = self.lockdown.start_lockdown_service(self.service_name)
+            self.service = await self.lockdown.start_lockdown_service(self.service_name)
             manifest = await self.get_manifest_from_tss(plistlib.loads(build_manifest.read_bytes()))
 
-        self.upload_image(self.IMAGE_TYPE, image, manifest)
+        await self.upload_image(self.IMAGE_TYPE, image, manifest)
 
         extras = {}
         if info_plist is not None:
             extras["ImageInfoPlist"] = info_plist
         extras["ImageTrustCache"] = trust_cache
-        self.mount_image(self.IMAGE_TYPE, manifest, extras=extras)
+        await self.mount_image(self.IMAGE_TYPE, manifest, extras=extras)
 
-    def umount(self) -> None:
-        self.unmount_image("/System/Developer")
+    async def umount(self) -> None:
+        await self.unmount_image("/System/Developer")
 
     async def get_manifest_from_tss(self, build_manifest: dict) -> bytes:
         request = TSSRequest()
 
-        personalization_identifiers = self.query_personalization_identifiers()
+        personalization_identifiers = await self.query_personalization_identifiers()
         for key, value in personalization_identifiers.items():
             if key.startswith("Ap,"):
                 request.update({key: value})
@@ -274,7 +277,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
             "ApBoardID": board_id,
             "ApChipID": chip_id,
             "ApECID": self.lockdown.ecid,
-            "ApNonce": self.query_nonce("DeveloperDiskImage"),
+            "ApNonce": await self.query_nonce("DeveloperDiskImage"),
             "ApProductionMode": True,
             "ApSecurityDomain": 1,
             "ApSecurityMode": True,
@@ -314,7 +317,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
         return response["ApImg4Ticket"]
 
 
-def auto_mount_developer(
+async def auto_mount_developer(
     lockdown: LockdownServiceProvider, xcode: Optional[str] = None, version: Optional[str] = None
 ) -> None:
     """auto-detect correct DeveloperDiskImage and mount it"""
@@ -326,7 +329,7 @@ def auto_mount_developer(
             xcode.mkdir(parents=True, exist_ok=True)
 
     image_mounter = DeveloperDiskImageMounter(lockdown=lockdown)
-    if image_mounter.is_image_mounted("Developer"):
+    if await image_mounter.is_image_mounted("Developer"):
         raise AlreadyMountedError()
 
     if version is None:
@@ -353,7 +356,7 @@ def auto_mount_developer(
         image_path.write_bytes(developer_disk_image.image)
         signature.write_bytes(developer_disk_image.signature)
 
-    image_mounter.mount(image_path, signature)
+    await image_mounter.mount(image_path, signature)
 
 
 async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
@@ -389,6 +392,6 @@ async def auto_mount(
     lockdown: LockdownServiceProvider, xcode: Optional[str] = None, version: Optional[str] = None
 ) -> None:
     if Version(lockdown.product_version) < Version("17.0"):
-        auto_mount_developer(lockdown, xcode=xcode, version=version)
+        await auto_mount_developer(lockdown, xcode=xcode, version=version)
     else:
         await auto_mount_personalized(lockdown)

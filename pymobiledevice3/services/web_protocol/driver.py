@@ -51,14 +51,12 @@ class WebDriver(SeleniumApi):
         """Closes the current window."""
         await self.session.close_window()
 
-    @property
-    async def current_url(self):
+    async def get_current_url(self):
         """Gets the URL of the current page."""
         await self.session.wait_for_navigation_to_complete()
         return (await self.session.get_browsing_context())["url"]
 
-    @property
-    async def current_window_handle(self):
+    async def get_current_window_handle(self):
         """Returns the handle of the current window."""
         return (await self.session.get_browsing_context())["handle"]
 
@@ -122,8 +120,7 @@ class WebDriver(SeleniumApi):
         """Returns cookies visible in the current session."""
         return list(map(Cookie.from_automation, await self.session.get_all_cookies()))
 
-    @property
-    async def screenshot_as_base64(self) -> str:
+    async def _get_screenshot_as_base64(self) -> str:
         """Gets the screenshot of the current window as a base64 encoded string."""
         return await self.session.screenshot_as_base64()
 
@@ -159,8 +156,7 @@ class WebDriver(SeleniumApi):
         """Invokes the window manager-specific 'minimize' operation."""
         await self.session.hide_window()
 
-    @property
-    async def page_source(self) -> str:
+    async def get_page_source(self) -> str:
         """Gets the source of the current page."""
         return await self.session.evaluate_js_function("function() { return document.documentElement.outerHTML; }")
 
@@ -186,13 +182,11 @@ class WebDriver(SeleniumApi):
         """Creates a new session."""
         await self.session.start_session()
 
-    @property
-    async def title(self) -> str:
+    async def get_title(self) -> str:
         """Returns the title of the current page."""
         await self.session.wait_for_navigation_to_complete()
         return await self.session.evaluate_js_function("function() { return document.title; }")
 
-    @property
-    async def window_handles(self) -> list[str]:
+    async def get_window_handles(self) -> list[str]:
         """Returns the handles of all windows within the current session."""
         return await self.session.get_window_handles()

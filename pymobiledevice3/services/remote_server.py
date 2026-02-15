@@ -1,18 +1,17 @@
-import contextlib
+import asyncio
 import copy
 import io
 import logging
 import os
 import plistlib
-import threading
+import socket
 import uuid
+from collections.abc import Awaitable
 from contextlib import suppress
 from functools import partial
 from pprint import pprint
-from queue import Empty, Queue
-from typing import ClassVar, Optional
+from typing import Any, Callable, ClassVar, Optional
 
-import IPython
 from bpylist2 import archiver
 from construct import (
     Adapter,
@@ -33,9 +32,10 @@ from construct import (
 )
 from pygments import formatters, highlight, lexers
 
-from pymobiledevice3.exceptions import DvtException, UnrecognizedSelectorError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, DvtException, UnrecognizedSelectorError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
+from pymobiledevice3.utils import start_ipython_shell
 
 SHELL_USAGE = """
 # This shell allows you to send messages to the DVTSecureSocketProxy and receive answers easily.
@@ -308,21 +308,26 @@ archiver.Archive.inline_types = list({*archiver.Archive.inline_types, bytes})
 class Channel(int):
     @classmethod
     def create(cls, value: int, service: "RemoteServer"):
+        """Attach a `RemoteServer` instance to an integer channel code."""
         channel = cls(value)
         channel._service = service
         return channel
 
-    def receive_key_value(self):
-        return self._service.recv_plist(self)
+    async def receive_key_value(self):
+        """Receive a `(selector, aux)` tuple from this channel."""
+        return await self._service.recv_plist(self)
 
-    def receive_plist(self):
-        return self._service.recv_plist(self)[0]
+    async def receive_plist(self):
+        """Receive and return only the decoded selector/payload object."""
+        return (await self._service.recv_plist(self))[0]
 
-    def receive_message(self):
-        return self._service.recv_message(self)[0]
+    async def receive_message(self):
+        """Receive raw decoded message payload bytes and aux values."""
+        return (await self._service.recv_message(self))[0]
 
-    def send_message(self, selector: str, args: MessageAux = None, expects_reply: bool = True):
-        self._service.send_message(self, selector, args, expects_reply=expects_reply)
+    async def send_message(self, selector: str, args: MessageAux = None, expects_reply: bool = True):
+        """Send a selector call on this channel."""
+        await self._service.send_message(self, selector, args, expects_reply=expects_reply)
 
     @staticmethod
     def _sanitize_name(name: str):
@@ -332,33 +337,13 @@ class Channel(int):
         name = "_" + name[1:].replace("_", ":") if name.startswith("_") else name.replace("_", ":")
         return name
 
-    def __getitem__(self, item):
+    def __getitem__(self, item) -> Callable[[MessageAux], Awaitable[Any]]:
+        """Return a callable proxy for sending `item` as selector."""
         return partial(self._service.send_message, self, item)
 
-    def __getattr__(self, item):
+    def __getattr__(self, item) -> Callable[[MessageAux], Awaitable[Any]]:
+        """Resolve unknown attributes to Objective-C selector proxies."""
         return self[self._sanitize_name(item)]
-
-
-class ChannelFragmenter:
-    def __init__(self):
-        self._messages = Queue()
-        self._packet_data = b""
-        self._stream_packet_data = b""
-
-    def get(self):
-        return self._messages.get_nowait()
-
-    def add_fragment(self, mheader, chunk):
-        self._packet_data += chunk
-        if mheader.fragmentId == mheader.fragmentCount - 1:
-            # last message
-            fake_header = mheader.copy()
-            fake_header.fragmentId = 0
-            fake_header.fragmentCount = 1
-            fake_header.channelCode = abs(mheader.channelCode)
-            fake_header.lenght = len(self._packet_data)
-            self._messages.put((fake_header, self._packet_data))
-            self._packet_data = b""
 
 
 class RemoteServer(LockdownService):
@@ -405,6 +390,13 @@ class RemoteServer(LockdownService):
         }
     }
     ```
+
+    Lifecycle overview:
+    - `connect()` establishes the transport, optionally negotiates SSL, and starts `_reader_loop()`.
+    - `_reader_loop()` continuously reads frames, reassembles fragments, and enqueues complete messages by channel.
+    - API calls (`send_message`, `recv_message`, `recv_plist`) operate on those per-channel queues.
+    - `make_channel()` creates and caches channels with single-flight dedup for concurrent callers.
+    - `close()` sends `_channelCanceled:`, stops the reader, and closes the underlying lockdown service.
     """
 
     BROADCAST_CHANNEL = 0
@@ -417,21 +409,144 @@ class RemoteServer(LockdownService):
         remove_ssl_context: bool = True,
         is_developer_service: bool = True,
     ):
+        """Initialize connection state, channel registries, and synchronization primitives."""
         super().__init__(lockdown, service_name, is_developer_service=is_developer_service)
+        self._remove_ssl_context = remove_ssl_context
 
-        if remove_ssl_context and hasattr(self.service.socket, "_sslobj"):
-            self.service.socket._sslobj = None
-
-        self.lock = threading.RLock()
         self.supported_identifiers = {}
         self.last_channel_code = 0
         self.cur_message = 0
-        self.cur_remote_message = 0
         self.channel_cache = {}
-        self.channel_messages = {self.BROADCAST_CHANNEL: ChannelFragmenter()}
+        self.channel_messages = {self.BROADCAST_CHANNEL: asyncio.Queue()}
+        self._pending_channel_requests: dict[str, asyncio.Future] = {}
+        self._fragment_buffers: dict[tuple[int, int, int], bytes] = {}
+        self._send_lock = asyncio.Lock()
+        self._state_lock = asyncio.Lock()
+        self._reader_task: Optional[asyncio.Task] = None
+        self._reader_exception: Optional[BaseException] = None
         self.broadcast = Channel.create(0, self)
 
+    def _ensure_channel_fragmenter(self, channel: int) -> asyncio.Queue:
+        """Return (or lazily create) the inbound queue for a given channel code."""
+        if channel not in self.channel_messages:
+            self.channel_messages[channel] = asyncio.Queue()
+        return self.channel_messages[channel]
+
+    def _ensure_reader(self) -> None:
+        """Start the background reader task if it is not currently running."""
+        if self._reader_task is None or self._reader_task.done():
+            self._reader_exception = None
+            self._reader_task = asyncio.create_task(self._reader_loop(), name="remote-server-reader")
+
+    async def _stop_reader(self) -> None:
+        """Cancel and await the background reader task if present."""
+        if self._reader_task is None:
+            return
+        self._reader_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await self._reader_task
+        self._reader_task = None
+
+    async def _reader_loop(self) -> None:
+        """
+        Continuously read raw DTX frames, defragment by message key, and fan out complete
+        payloads into per-channel queues.
+
+        Notes:
+        - For fragmented messages, the first frame (fragmentId=0) carries only the DTX
+          message header. Subsequent fragments carry payload bytes.
+        - Fragment assembly is keyed by ``(identifier, conversationIndex, abs(channelCode))``
+          to keep request/reply and per-channel streams isolated.
+        - Once the final fragment arrives, a normalized single-fragment header and full
+          payload are pushed to the channel queue.
+        - On exit (error or cancellation), a ``(None, b"")`` sentinel is sent to every
+          channel queue so awaiters can terminate promptly.
+        """
+        try:
+            while True:
+                data = await self.service.recvall(dtx_message_header_struct.sizeof())
+                mheader = dtx_message_header_struct.parse(data)
+
+                if mheader.fragmentCount > 1 and mheader.fragmentId == 0:
+                    # when reading multiple message fragments, the first fragment contains only a message header
+                    continue
+
+                chunk = await self.service.recvall(mheader.length)
+
+                # treat both as the negative and positive representation of the channel code in the response
+                # the same when performing fragmentation
+                received_channel_code = abs(mheader.channelCode)
+                if not mheader.conversationIndex and mheader.identifier > self.cur_message:
+                    self.cur_message = mheader.identifier
+                fragment_key = (mheader.identifier, mheader.conversationIndex, received_channel_code)
+                payload = self._fragment_buffers.get(fragment_key, b"") + chunk
+                if mheader.fragmentId == mheader.fragmentCount - 1:
+                    self._fragment_buffers.pop(fragment_key, None)
+                    assembled_header = mheader.copy()
+                    assembled_header.fragmentId = 0
+                    assembled_header.fragmentCount = 1
+                    assembled_header.channelCode = received_channel_code
+                    assembled_header.length = len(payload)
+                    self._log_dtx_message("received", assembled_header, payload)
+                    self._ensure_channel_fragmenter(received_channel_code).put_nowait((assembled_header, payload))
+                else:
+                    self._fragment_buffers[fragment_key] = payload
+        except asyncio.CancelledError:
+            raise
+        except BaseException as e:
+            self._reader_exception = e
+        finally:
+            for queue in self.channel_messages.values():
+                queue.put_nowait((None, b""))
+
+    async def connect(self) -> None:
+        """Connect transport, complete protocol prerequisites, and ensure reader loop is active."""
+        if self._service is None and self._remove_ssl_context:
+            attr = await self.lockdown.get_service_connection_attributes(
+                self.service_name, include_escrow_bag=self._include_escrow_bag
+            )
+            self._service = await self.lockdown.create_service_connection(attr["Port"])
+            if attr.get("EnableServiceSSL", False) and hasattr(self.lockdown, "ssl_file"):
+                # Mirror the legacy sync flow: negotiate SSL once, then strip SSL context for raw DTX traffic.
+                # This is currently needed for RemoteServer services (DTX protocol) which only perform the
+                # handshake in TLS. This happens for:
+                # - AccessibilityAudit service
+                # - iOS < 14.0
+                with self.lockdown.ssl_file() as f:
+                    self._service.setblocking(True)
+                    self._service.ssl_start_sync(f)
+        else:
+            await super().connect()
+        if self._remove_ssl_context:
+            await self._recreate_connection_without_ssl_context()
+        self._ensure_reader()
+
+    async def _recreate_connection_without_ssl_context(self) -> None:
+        """Rebind to the underlying raw socket after TLS bootstrap to keep async stream mode."""
+        if self._service is None or self._service.socket is None:
+            return
+
+        ssl_socket = self._service.socket
+        if not hasattr(ssl_socket, "_sslobj"):
+            return
+
+        raw_socket = getattr(ssl_socket, "_sock", None)
+        if raw_socket is None:
+            # Python 3.14 may not expose ``_sock`` on SSLSocket. Detach the FD
+            # and recreate a plain socket so asyncio can attach stream transports.
+            fd = ssl_socket.detach()
+            raw_socket = socket.socket(fileno=fd)
+        else:
+            ssl_socket._sslobj = None
+
+        self._service.socket = raw_socket
+        self._service.reader = None
+        self._service.writer = None
+        self._service.socket.setblocking(False)
+        await self._service.start()
+
     def _log_dtx_message(self, direction: str, mheader: Container | bytes, payload: bytes) -> None:
+        """Best-effort DEBUG log formatter for DTX packets."""
         if not self.logger.isEnabledFor(logging.DEBUG):
             return
 
@@ -470,7 +585,8 @@ class RemoteServer(LockdownService):
         )
 
     def shell(self):
-        IPython.embed(
+        """Launch an IPython shell preloaded with this server and its broadcast channel."""
+        start_ipython_shell(
             header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")),
             user_ns={
                 "developer": self,
@@ -479,62 +595,103 @@ class RemoteServer(LockdownService):
             },
         )
 
-    def perform_handshake(self):
+    async def perform_handshake(self):
+        """Exchange published-capabilities messages and cache remote supported identifiers."""
         args = MessageAux()
         args.append_obj({"com.apple.private.DTXBlockCompression": 0, "com.apple.private.DTXConnection": 1})
 
-        with self.lock:
-            self.send_message(0, "_notifyOfPublishedCapabilities:", args, expects_reply=False)
-            ret, aux = self.recv_plist()
-            if ret != "_notifyOfPublishedCapabilities:":
-                raise ValueError("Invalid answer")
-            if not len(aux[0]):
-                raise ValueError("Invalid answer")
-            self.supported_identifiers = aux[0].value
+        await self.send_message(0, "_notifyOfPublishedCapabilities:", args, expects_reply=False)
+        ret, aux = await self.recv_plist()
+        if ret != "_notifyOfPublishedCapabilities:":
+            raise ValueError("Invalid answer")
+        if not len(aux[0]):
+            raise ValueError("Invalid answer")
+        self.supported_identifiers = aux[0].value
 
-    def make_channel(self, identifier) -> Channel:
+    async def make_channel(self, identifier: str) -> Channel:
+        """
+        Get or create a DTX channel for a service identifier.
+
+        Concurrency model:
+        - Fast path: return cached channel if already created.
+        - Dedup path: if another coroutine is already creating the same identifier,
+          await its shared Future instead of issuing another request.
+        - Create path: only one coroutine sends ``_requestChannelWithCode:identifier:``
+          and later publishes the created channel into ``channel_cache`` while resolving
+          the shared Future for waiters.
+
+        The ``_state_lock`` protects all shared mutable state involved in the above:
+        ``channel_cache``, ``_pending_channel_requests``, and ``last_channel_code``.
+        """
         # NOTE: There is also identifier not in self.supported_identifiers
         # assert identifier in self.supported_identifiers
-        with self.lock:
-            if identifier in self.channel_cache:
-                return self.channel_cache[identifier]
+        async with self._state_lock:
+            existing = self.channel_cache.get(identifier)
+            if existing is not None:
+                return existing
 
-            self.last_channel_code += 1
-            code = self.last_channel_code
+            pending_request = self._pending_channel_requests.get(identifier)
+            if pending_request is None:
+                pending_request = asyncio.get_running_loop().create_future()
+                self._pending_channel_requests[identifier] = pending_request
+                self.last_channel_code += 1
+                code = self.last_channel_code
+                create_channel = True
+            else:
+                create_channel = False
+
+        if not create_channel:
+            # Another coroutine already owns channel creation for this identifier.
+            return await pending_request
+
+        try:
             args = MessageAux().append_int(code).append_obj(identifier)
-            self.send_message(0, "_requestChannelWithCode:identifier:", args)
-            ret, _aux = self.recv_plist()
+            await self.send_message(0, "_requestChannelWithCode:identifier:", args)
+            ret, _aux = await self.recv_plist()
             assert ret is None
+            created_channel = Channel.create(code, self)
+        except BaseException as e:
+            pending_to_fail = None
+            async with self._state_lock:
+                pending_to_fail = self._pending_channel_requests.pop(identifier, None)
+            if pending_to_fail is not None and not pending_to_fail.done():
+                pending_to_fail.set_exception(e)
+            raise
+
+        pending_to_finish = None
+        async with self._state_lock:
+            existing = self.channel_cache.get(identifier)
+            if existing is None:
+                self.channel_cache[identifier] = created_channel
+                self._ensure_channel_fragmenter(code)
+                existing = created_channel
+            pending_to_finish = self._pending_channel_requests.pop(identifier, None)
+        if pending_to_finish is not None and not pending_to_finish.done():
+            pending_to_finish.set_result(existing)
+        return existing
+
+    async def serve_channel(self, identifier: str, channel: Optional[Channel] = None) -> Channel:
+        """Accept a reverse-channel request from peer and acknowledge it with an ACK reply."""
+        msg, mheader = await self.recv_plist(self.BROADCAST_CHANNEL, return_header=True)
+        assert msg[0] == "_requestChannelWithCode:identifier:", f"expected a request for a reverse channel, got: {msg}"
+        code = msg[1][0].value
+        assert channel is None or channel == code, (
+            f"expected a request for a reverse channel with channelCode:{channel}, got:{msg[1][0]}"
+        )
+        received_identifier = msg[1][1].value
+        assert identifier == received_identifier, (
+            f"expected a request for a reverse channel with identifier:{identifier}, got:{received_identifier}"
+        )
+        if channel is None:
             channel = Channel.create(code, self)
-            self.channel_cache[identifier] = channel
-            self.channel_messages[code] = ChannelFragmenter()
-            return channel
+        self._ensure_channel_fragmenter(code)
+        await self.send_reply_ack(self.BROADCAST_CHANNEL, mheader.identifier, None, None)
+        return channel
 
-    def serve_channel(self, identifier: str, channel: Optional[Channel] = None) -> Channel:
-        """acknoledge the remote part that they will find the expected identifier on the given channel"""
-        with self.lock:
-            msg = self.recv_plist(self.BROADCAST_CHANNEL)
-            assert msg[0] == "_requestChannelWithCode:identifier:", (
-                f"expected a request for a reverse channel, got: {msg}"
-            )
-            code = msg[1][0].value
-            assert channel is None or channel == code, (
-                f"expected a request for a reverse channel with channelCode:{channel}, got:{msg[1][0]}"
-            )
-            identifier = msg[1][1].value
-            assert identifier == msg[1][1].value, (
-                f"expected a request for a reverse channel with identifier:{identifier}, got:{msg[1][1].value}"
-            )
-            if channel is None:
-                channel = Channel.create(code, self)
-            if code not in self.channel_messages:
-                self.channel_messages[code] = ChannelFragmenter()
-            self.send_reply_ack(self.BROADCAST_CHANNEL, self.cur_remote_message, None, None)
-            return channel
-
-    def send_message(
+    async def send_message(
         self, channel: int, selector: Optional[str] = None, args: MessageAux = None, expects_reply: bool = True
     ):
+        """Serialize and send a DTX method invocation to a specific channel."""
         aux = bytes(args) if args is not None else b""
         sel = archiver.archive(selector) if selector is not None else b""
         flags = self.INSTRUMENTS_MESSAGE_TYPE
@@ -544,7 +701,7 @@ class RemoteServer(LockdownService):
             "totalLength": len(aux) + len(sel),
         })
 
-        with self.lock:
+        async with self._send_lock:
             self.cur_message += 1
             mheader = dtx_message_header_struct.build({
                 "cb": dtx_message_header_struct.sizeof(),
@@ -557,12 +714,16 @@ class RemoteServer(LockdownService):
                 "expectsReply": int(expects_reply),
             })
             msg = mheader + pheader + aux + sel
-            self.service.sendall(msg)
-
+            await self.service.sendall(msg)
             self._log_dtx_message("sent", mheader, pheader + aux + sel)
 
-    def recv_plist(self, channel: int = BROADCAST_CHANNEL):
-        data, aux = self.recv_message(channel)
+    async def recv_plist(self, channel: int = BROADCAST_CHANNEL, return_header: bool = False):
+        """Receive a channel message and decode plist/archived object payloads."""
+        recv_result = await self.recv_message(channel, return_header=return_header)
+        if return_header:
+            data, aux, mheader = recv_result
+        else:
+            data, aux = recv_result
         if data is not None:
             try:
                 data = archiver.unarchive(data)
@@ -571,10 +732,13 @@ class RemoteServer(LockdownService):
                 raise
             except plistlib.InvalidFileException:
                 self.logger.warning(f"got an invalid plist: {data[:40]}")
+        if return_header:
+            return (data, aux), mheader
         return data, aux
 
-    def recv_message(self, channel: int = BROADCAST_CHANNEL):
-        packet_stream = self._recv_packet_fragments(channel)
+    async def recv_message(self, channel: int = BROADCAST_CHANNEL, return_header: bool = False):
+        """Receive one complete DTX payload from a channel queue and parse its framing."""
+        mheader, packet_stream = await self._recv_packet_fragments(channel)
         pheader = dtx_message_payload_header_struct.parse_stream(packet_stream)
 
         compression = (pheader.flags & 0xFF000) >> 12
@@ -584,22 +748,14 @@ class RemoteServer(LockdownService):
         aux = message_aux_t_struct.parse_stream(packet_stream).aux if pheader.auxiliaryLength else None
         obj_size = pheader.totalLength - pheader.auxiliaryLength
         data = packet_stream.read(obj_size) if obj_size else None
+        if return_header:
+            return data, aux, mheader
         return data, aux
 
     # TODO: rewrite the RemoteServer class (possibly even ServiceConnection) to continue consume messages
-    #     : and dispatch them asyncronously to the opened channels. Each channel is connected to a service and
-    #     : the DVT client ( us ) shall be able to provide some services as well. ( f.i. dtxproxy:XCTestDriverInterface:XCTestManager_IDEInterface ).
-    #     : It's important to note that the current implementation suppose that messages are sent and consumed in order and sequentially,
-    #     : as soon as you start multiple threads on the same connection, everything breaks down.
-    #     : This will require an extensive refactoring as the message identifier and conversation index must be kept until a reply
-    #     : is ready to send with conversationIndex+1 and the same message identifier.
-    #     : Draft: ReaderStream.recv_one -> srv = services_by_chan[chan] & send_reply(msg.id, srv.__call_method__(payload, aux))
-    #     : Draft: ReaderStream.recv_one -> replies[msg.id].put(msg) & wait_reply_for_msg(msg.id) -> msg
-    # FIXME: messages are independent of channels, they have an unique identifier that is reused only for replies (conversationIndex > 0).
-    #      : therefore the defragmenter shall work at the connection-level and store fragments by using this as hash: (msg.identifier, msg.conversationIndex).
-    #      : please note that the 2 ends of the connection have their own message identifier counter.
+    # TODO: improve reply correlation by tracking expected replies with message IDs, rather than relying on channel-ordered consumers.
 
-    def _send_reply(
+    async def _send_reply(
         self,
         channel: int,
         msg_id: int,
@@ -607,6 +763,7 @@ class RemoteServer(LockdownService):
         payload: Optional[object] = None,
         aux: Optional[MessageAux] = None,
     ):
+        """Low-level DTX reply sender used by typed reply helpers."""
         payload_bytes = archiver.archive(payload) if payload is not None else b""
         aux_bytes = archiver.archive(aux) if aux is not None else b""
         pheader = dtx_message_payload_header_struct.build({
@@ -625,97 +782,122 @@ class RemoteServer(LockdownService):
             "expectsReply": (0),
         })
         msg = mheader + pheader + aux_bytes + payload_bytes
-        with self.lock:
-            self.service.sendall(msg)
+        async with self._send_lock:
+            await self.service.sendall(msg)
             self._log_dtx_message("sent", mheader, pheader + aux_bytes + payload_bytes)
 
-    def send_reply(self, channel: int, msg_id: int, payload: Optional[object] = None, aux: Optional[MessageAux] = None):
+    async def send_reply(
+        self, channel: int, msg_id: int, payload: Optional[object] = None, aux: Optional[MessageAux] = None
+    ):
+        """Send a success reply (`ResponseWithReturnValueInPayload`) for a request."""
         msg_type = 0x3  # ResponseWithReturnValueInPayload
-        self._send_reply(channel, msg_id, msg_type, payload, aux)
+        await self._send_reply(channel, msg_id, msg_type, payload, aux)
 
-    def send_reply_error(
+    async def send_reply_error(
         self, channel: int, msg_id: int, payload: Optional[object] = None, aux: Optional[MessageAux] = None
     ):
+        """Send an error reply (`DtxTypeError`) for a request."""
         msg_type = 0x4  # DtxTypeError
-        self._send_reply(channel, msg_id, msg_type, payload, aux)
+        await self._send_reply(channel, msg_id, msg_type, payload, aux)
 
-    def send_reply_ack(
+    async def send_reply_ack(
         self, channel: int, msg_id: int, payload: Optional[object] = None, aux: Optional[MessageAux] = None
     ):
+        """Send an ACK-only reply for a request."""
         msg_type = 0x0  # Ack
-        self._send_reply(channel, msg_id, msg_type, payload, aux)
+        await self._send_reply(channel, msg_id, msg_type, payload, aux)
 
-    def _recv_packet_fragments(self, channel: int = BROADCAST_CHANNEL):
-        while True:
-            try:
-                # if we already have a message for this channel, just return it
-                with self.lock:
-                    # TODO: pthread_cond_wait with a background thread consuming messages
-                    mheader, message = self.channel_messages[channel].get()
-                    self.cur_remote_message = mheader.identifier
-                self._log_dtx_message("received", mheader, message)
-                return io.BytesIO(message)
-            except Empty:
-                # if no message exists for the given channel code, just keep waiting and receive new messages
-                # until the waited message queue has at least one message
-                with self.lock:
-                    data = self.service.recvall(dtx_message_header_struct.sizeof())
-                    mheader = dtx_message_header_struct.parse(data)
-
-                    # treat both as the negative and positive representation of the channel code in the response
-                    # the same when performing fragmentation
-                    received_channel_code = abs(mheader.channelCode)
-
-                    if received_channel_code not in self.channel_messages:
-                        self.channel_messages[received_channel_code] = ChannelFragmenter()
-
-                    if not mheader.conversationIndex and mheader.identifier > self.cur_message:
-                        self.cur_message = mheader.identifier
-
-                    if mheader.fragmentCount > 1 and mheader.fragmentId == 0:
-                        # when reading multiple message fragments, the first fragment contains only a message header
-                        continue
-
-                    self.channel_messages[received_channel_code].add_fragment(
-                        mheader, self.service.recvall(mheader.length)
-                    )
+    async def _recv_packet_fragments(self, channel: int = BROADCAST_CHANNEL):
+        """Await next fully-assembled packet for `channel` from the reader loop."""
+        self._ensure_reader()
+        fragmenter = self._ensure_channel_fragmenter(channel)
+        mheader, message = await fragmenter.get()
+        if mheader is None:
+            if self._reader_exception is not None:
+                raise ConnectionTerminatedError() from self._reader_exception
+            raise ConnectionTerminatedError()
+        return mheader, io.BytesIO(message)
 
     def __enter__(self):
-        self.perform_handshake()
-        return self
+        """Synchronous context manager is intentionally unsupported."""
+        raise RuntimeError("Use async context manager: `async with ...`")
 
-    def close(self):
+    async def close(self):
+        """Gracefully shut down channels, stop reader loop, and close underlying service."""
         aux = MessageAux()
         codes = [code for code in self.channel_messages if code > 0]
         if codes:
             for code in codes:
                 aux.append_int(code)
 
-            with contextlib.suppress(OSError):
+            try:
+                await self.send_message(self.BROADCAST_CHANNEL, "_channelCanceled:", aux, expects_reply=False)
+            except OSError:
                 # ignore: OSError: [Errno 9] Bad file descriptor
-                self.send_message(self.BROADCAST_CHANNEL, "_channelCanceled:", aux, expects_reply=False)
-        super().close()
+                pass
+            except RuntimeError as e:
+                # Async generator teardown / interrupted CLI flows may close without a running loop.
+                if "no running event loop" not in str(e):
+                    raise
+        await self._stop_reader()
+        await super().close()
+
+    async def __aenter__(self):
+        """Connect, handshake, and return this instance for async context manager use."""
+        await self.connect()
+        await self.perform_handshake()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Ensure graceful shutdown on async context manager exit."""
+        await self.close()
 
 
-class Tap:
-    def __init__(self, dvt, channel_name: str, config: dict):
+class ChannelService:
+    """Lazy channel helper for DVT/RemoteServer-backed services."""
+
+    IDENTIFIER: str
+
+    def __init__(self, dvt: "RemoteServer", channel_name: Optional[str] = None) -> None:
+        """Store server reference and optional channel identifier override."""
         self._dvt = dvt
-        self._channel_name = channel_name
+        self._channel_name = channel_name if channel_name is not None else self.IDENTIFIER
+        self._channel = None
+
+    async def _channel_ref(self) -> Channel:
+        """Lazily create and cache the backing channel."""
+        if self._channel is None:
+            self._channel = await self._dvt.make_channel(self._channel_name)
+        return self._channel
+
+
+class Tap(ChannelService):
+    def __init__(self, dvt, channel_name: str, config: dict) -> None:
+        """Initialize a tap helper with channel name and tap configuration."""
+        super().__init__(dvt, channel_name=channel_name)
         self._config = config
         self.channel = None
 
     def __enter__(self):
-        self.channel = self._dvt.make_channel(self._channel_name)
-        self.channel.setConfig_(MessageAux().append_obj(self._config), expects_reply=False)
-        self.channel.start(expects_reply=False)
+        """Synchronous context manager is intentionally unsupported."""
+        raise RuntimeError("Use async context manager: `async with ...`")
 
+    async def __aenter__(self):
+        """Open channel, configure tap, and start streaming."""
+        self.channel = await self._channel_ref()
+        await self.channel.setConfig_(MessageAux().append_obj(self._config), expects_reply=False)
+        await self.channel.start(expects_reply=False)
         # first message is just kind of an ack
-        self.channel.receive_plist()
+        await self.channel.receive_plist()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.channel.clear(expects_reply=False)
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Stop tap streaming when leaving async context manager."""
+        if self.channel is not None:
+            await self.channel.stop(expects_reply=False)
 
-    def __iter__(self):
+    async def __aiter__(self):
+        """Yield messages continuously from the active tap stream."""
         while True:
-            yield from self.channel.receive_plist()
+            for message in await self.channel.receive_plist():
+                yield message

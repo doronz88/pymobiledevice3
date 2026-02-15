@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pymobiledevice3.exceptions import ConnectionFailedError, DeprecationError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import DeprecationError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -958,23 +958,17 @@ class DiagnosticsService(LockdownService):
     OLD_SERVICE_NAME = "com.apple.iosdiagnostics.relay"
 
     def __init__(self, lockdown: LockdownServiceProvider):
-        if isinstance(lockdown, LockdownClient):
-            try:
-                service = lockdown.start_lockdown_service(self.SERVICE_NAME)
-                service_name = self.SERVICE_NAME
-            except ConnectionFailedError:
-                service = lockdown.start_lockdown_service(self.OLD_SERVICE_NAME)
-                service_name = self.OLD_SERVICE_NAME
-        else:
-            service = None
-            service_name = self.RSD_SERVICE_NAME
+        service_name = self.SERVICE_NAME if isinstance(lockdown, LockdownClient) else self.RSD_SERVICE_NAME
+        super().__init__(lockdown, service_name, service=None)
 
-        super().__init__(lockdown, service_name, service=service)
+    async def _send_recv(self, request: dict) -> dict:
+        await self.service.send_plist(request)
+        return await self.service.recv_plist()
 
-    def mobilegestalt(self, keys: Optional[list[str]] = None) -> dict:
+    async def mobilegestalt(self, keys: Optional[list[str]] = None) -> dict:
         if keys is None or len(keys) == 0:
             keys = MobileGestaltKeys
-        response = self.service.send_recv_plist({"Request": "MobileGestalt", "MobileGestaltKeys": keys})
+        response = await self._send_recv({"Request": "MobileGestalt", "MobileGestaltKeys": keys})
 
         if response["Diagnostics"]["MobileGestalt"]["Status"] == "MobileGestaltDeprecated":
             err_msg = f"failed to query MobileGestalt, MobileGestalt deprecated (iOS >= 17.4). Got response {response}"
@@ -987,25 +981,25 @@ class DiagnosticsService(LockdownService):
 
         return response["Diagnostics"]["MobileGestalt"]
 
-    def action(self, action: str) -> Optional[dict]:
-        response = self.service.send_recv_plist({"Request": action})
+    async def action(self, action: str) -> Optional[dict]:
+        response = await self._send_recv({"Request": action})
         if response["Status"] != "Success":
             raise PyMobileDevice3Exception(f"failed to perform action: {action}")
         return response.get("Diagnostics")
 
-    def restart(self):
-        self.action("Restart")
+    async def restart(self):
+        await self.action("Restart")
 
-    def shutdown(self):
-        self.action("Shutdown")
+    async def shutdown(self):
+        await self.action("Shutdown")
 
-    def sleep(self):
-        self.action("Sleep")
+    async def sleep(self):
+        await self.action("Sleep")
 
-    def info(self, diag_type: str = "All") -> dict:
-        return self.action(diag_type)
+    async def info(self, diag_type: str = "All") -> dict:
+        return await self.action(diag_type)
 
-    def ioregistry(self, plane: Optional[str] = None, name: Optional[str] = None, ioclass: Optional[str] = None):
+    async def ioregistry(self, plane: Optional[str] = None, name: Optional[str] = None, ioclass: Optional[str] = None):
         d = {}
 
         if plane:
@@ -1019,7 +1013,7 @@ class DiagnosticsService(LockdownService):
 
         d["Request"] = "IORegistry"
 
-        response = self.service.send_recv_plist(d)
+        response = await self._send_recv(d)
         if response.get("Status") != "Success":
             raise PyMobileDevice3Exception(f"got invalid response: {response}")
 
@@ -1028,11 +1022,11 @@ class DiagnosticsService(LockdownService):
             return dd.get("IORegistry")
         return None
 
-    def get_battery(self) -> dict:
-        return self.ioregistry(ioclass="IOPMPowerSource")
+    async def get_battery(self) -> dict:
+        return await self.ioregistry(ioclass="IOPMPowerSource")
 
-    def get_wifi(self) -> dict:
-        result = self.ioregistry(name="AppleBCMWLANSkywalkInterface")
+    async def get_wifi(self) -> dict:
+        result = await self.ioregistry(name="AppleBCMWLANSkywalkInterface")
         if result:
             return result
-        return self.ioregistry(ioclass="IO80211Interface")
+        return await self.ioregistry(ioclass="IO80211Interface")

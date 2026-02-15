@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from pathlib import Path
 from typing import Annotated, Optional
@@ -8,7 +7,7 @@ from ipsw_parser.dsc import create_device_support_layout, get_device_support_pat
 from packaging.version import Version
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, print_json
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
 from pymobiledevice3.exceptions import RSDRequiredError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -27,7 +26,7 @@ cli = InjectingTyper(
 
 async def fetch_symbols_list_task(service_provider: LockdownServiceProvider) -> None:
     if Version(service_provider.product_version) < Version("17.0"):
-        print_json(DtFetchSymbols(service_provider).list_files())
+        print_json(await DtFetchSymbols(service_provider).list_files())
     else:
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
             raise RSDRequiredError(service_provider.identifier)
@@ -37,9 +36,10 @@ async def fetch_symbols_list_task(service_provider: LockdownServiceProvider) -> 
 
 
 @cli.command("list")
-def fetch_symbols_list(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def fetch_symbols_list(service_provider: ServiceProviderDep) -> None:
     """list of files to be downloaded"""
-    asyncio.run(fetch_symbols_list_task(service_provider), debug=True)
+    await fetch_symbols_list_task(service_provider)
 
 
 async def fetch_symbols_download_task(service_provider: LockdownServiceProvider, out: Optional[Path] = None) -> None:
@@ -57,7 +57,7 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
 
     if Version(service_provider.product_version) < Version("17.0"):
         fetch_symbols = DtFetchSymbols(service_provider)
-        files = fetch_symbols.list_files()
+        files = await fetch_symbols.list_files()
 
         downloaded_files = set()
 
@@ -76,7 +76,7 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
             with open(file, "ab") as f:
                 # same file may appear twice, so we'll need to append data into it
                 logger.info(f"writing to: {file}")
-                fetch_symbols.get_file(i, f)
+                await fetch_symbols.get_file(i, f)
     else:
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
             raise RSDRequiredError(service_provider.identifier)
@@ -91,7 +91,8 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
 
 
 @cli.command("download")
-def fetch_symbols_download(
+@async_command
+async def fetch_symbols_download(
     service_provider: ServiceProviderDep,
     out: Annotated[
         Optional[Path],
@@ -105,4 +106,4 @@ def fetch_symbols_download(
     be stored. If no output directory is provided, the symbols will be downloaded into the Xcode directory directly
     (DeviceSupport).
     """
-    asyncio.run(fetch_symbols_download_task(service_provider, out), debug=True)
+    await fetch_symbols_download_task(service_provider, out)

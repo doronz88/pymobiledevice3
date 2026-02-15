@@ -480,10 +480,10 @@ pymobiledevice3 developer dvt launch com.apple.mobilesafari --tunnel '11223344'
 This is of course also available via a python API:
 
 ```python
-from pymobiledevice3.tunneld.api import async_get_tunneld_devices
+from pymobiledevice3.tunneld.api import get_tunneld_devices
 from pymobiledevice3.services.os_trace import OsTraceService
 
-rsds = await async_get_tunneld_devices()
+rsds = await get_tunneld_devices()
 
 # We can now simply use the returned list of RSDs as any other LockdownClients
 for entry in OsTraceService(rsds[0]).syslog():

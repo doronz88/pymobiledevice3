@@ -1,10 +1,11 @@
+import asyncio
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 
 from pymobiledevice3.exceptions import AppInstallError
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 
@@ -16,15 +17,18 @@ def _make_minimal_ipa_bytes() -> bytes:
     return buffer.getvalue()
 
 
-def test_get_apps(lockdown: LockdownClient) -> None:
-    with InstallationProxyService(lockdown=lockdown) as installation_proxy:
-        apps = installation_proxy.get_apps()
+@pytest.mark.asyncio
+async def test_get_apps(lockdown: LockdownClient) -> None:
+    async with InstallationProxyService(lockdown=lockdown) as installation_proxy:
+        apps = await installation_proxy.get_apps()
         assert len(apps) > 1
 
 
-def test_get_system_apps(lockdown: LockdownClient) -> None:
-    with InstallationProxyService(lockdown=lockdown) as installation_proxy:
-        app_types = {app["ApplicationType"] for app in installation_proxy.get_apps(application_type="System").values()}
+@pytest.mark.asyncio
+async def test_get_system_apps(lockdown: LockdownClient) -> None:
+    async with InstallationProxyService(lockdown=lockdown) as installation_proxy:
+        system_apps = await installation_proxy.get_apps(application_type="System")
+        app_types = {app["ApplicationType"] for app in system_apps.values()}
         assert len(app_types) == 1
         assert app_types.pop() == "System"
 
@@ -37,32 +41,27 @@ async def test_parallel_installations_cleanup(lockdown: LockdownClient, monkeypa
     def wrap_send_plist(service, captured: list[dict]):
         original_send_plist = service.send_plist
 
-        def wrapped_send_plist(payload: dict) -> None:
+        async def wrapped_send_plist(payload: dict) -> None:
             if payload.get("Command") == "Install":
                 captured.append(payload.copy())
-            original_send_plist(payload)
+            await original_send_plist(payload)
 
         return wrapped_send_plist
 
-    with InstallationProxyService(lockdown=lockdown) as first, InstallationProxyService(lockdown=lockdown) as second:
+    async with (
+        await create_using_usbmux(serial=lockdown.identifier) as first_lockdown,
+        await create_using_usbmux(serial=lockdown.identifier) as second_lockdown,
+        InstallationProxyService(lockdown=first_lockdown) as first,
+        InstallationProxyService(lockdown=second_lockdown) as second,
+    ):
         monkeypatch.setattr(first.service, "send_plist", wrap_send_plist(first.service, captured_plists))
         monkeypatch.setattr(second.service, "send_plist", wrap_send_plist(second.service, captured_plists))
 
-        # TODO: perform those in parallel once ServiceConnection is thread safe (they read concurrently the "StartService" response)
-        # results = await asyncio.gather(
-        #     asyncio.to_thread(first.install_from_bytes, ipa_bytes),
-        #     asyncio.to_thread(second.install_from_bytes, ipa_bytes),
-        #     return_exceptions=True,
-        # )
-        try:
-            result1 = first.install_from_bytes(ipa_bytes)
-        except Exception as e:
-            result1 = e
-        try:
-            result2 = second.install_from_bytes(ipa_bytes)
-        except Exception as e:
-            result2 = e
-        results = [result1, result2]
+        results = await asyncio.gather(
+            first.install_from_bytes(ipa_bytes),
+            second.install_from_bytes(ipa_bytes),
+            return_exceptions=True,
+        )
 
     assert all(isinstance(result, AppInstallError) for result in results)
     assert len(captured_plists) == 2, f"Expected 2 captured plists, got {len(captured_plists)}"
@@ -70,6 +69,6 @@ async def test_parallel_installations_cleanup(lockdown: LockdownClient, monkeypa
     package_paths = [payload["PackagePath"] for payload in captured_plists]
     assert len(set(package_paths)) == 2, f"Expected different package paths for each installation, got {package_paths}"
 
-    with AfcService(lockdown=lockdown) as afc:
+    async with AfcService(lockdown=lockdown) as afc:
         for package_path in package_paths:
-            assert not afc.exists(package_path), f"Expected package path {package_path} to be cleaned up"
+            assert not await afc.exists(package_path), f"Expected package path {package_path} to be cleaned up"

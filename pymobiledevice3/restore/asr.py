@@ -34,8 +34,8 @@ class ASRClient:
         self.checksum_chunks: bool = False
 
     async def connect(self, port: int = DEFAULT_ASR_SYNC_PORT) -> None:
-        self.service = ServiceConnection.create_using_usbmux(self._udid, port, connection_type="USB")
-        await self.service.aio_start()
+        self.service = await ServiceConnection.create_using_usbmux(self._udid, port, connection_type="USB")
+        await self.service.start()
 
         # receive Initiate command message
         data = await self.recv_plist()
@@ -51,7 +51,7 @@ class ASRClient:
     async def recv_plist(self) -> dict:
         buf = b""
         while not buf.endswith(b"</plist>\n"):
-            buf += await self.service.aio_recvall(1)
+            buf += await self.service.recvall(1)
         return plistlib.loads(buf)
 
     async def send_plist(self, plist: dict) -> None:
@@ -59,7 +59,7 @@ class ASRClient:
         await self.send_buffer(plistlib.dumps(plist))
 
     async def send_buffer(self, buf: bytes) -> None:
-        await self.service.aio_sendall(buf)
+        await self.service.sendall(buf)
 
     async def handle_oob_data_request(self, packet: dict, filesystem: typing.IO):
         oob_length = packet["OOB Length"]
@@ -122,4 +122,4 @@ class ASRClient:
             await self.send_buffer(chunk)
 
     async def close(self) -> None:
-        await self.service.aio_close()
+        await self.service.close()

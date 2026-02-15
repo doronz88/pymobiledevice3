@@ -24,7 +24,7 @@ from pymobiledevice3.restore.base_restore import (
 )
 from pymobiledevice3.restore.consts import PROGRESS_BAR_OPERATIONS, lpol_file
 from pymobiledevice3.restore.device import Device
-from pymobiledevice3.restore.fdr import FDRClient, fdr_type, start_fdr_thread
+from pymobiledevice3.restore.fdr import FDRClient, fdr_type, start_fdr_task
 from pymobiledevice3.restore.ftab import Ftab
 from pymobiledevice3.restore.mbn import mbn_mav25_stitch, mbn_stitch
 from pymobiledevice3.restore.recovery import Behavior, Recovery
@@ -61,9 +61,9 @@ class Restore(BaseRestore):
         self._fdr: Optional[ServiceConnection] = None
         self._ignore_fdr = ignore_fdr
 
-        # query preflight info while device may still be in normal mode
-        self._preflight_info = self.device.preflight_info
-        self._firmware_preflight_info = self.device.firmware_preflight_info
+        # queried in update(), while device is still in normal mode.
+        self._preflight_info = None
+        self._firmware_preflight_info = None
 
         # prepare progress bar for OS component verify
         self._pb_verify_restore = None
@@ -169,18 +169,18 @@ class Restore(BaseRestore):
 
         await asr.close()
 
-    def get_build_identity_from_request(self, msg):
-        return self.get_build_identity(msg["Arguments"].get("IsRecoveryOS", False))
+    async def get_build_identity_from_request(self, msg):
+        return await self.get_build_identity(msg["Arguments"].get("IsRecoveryOS", False))
 
     async def send_buildidentity(self, message: dict) -> None:
         self.logger.info("About to send BuildIdentity Dict...")
         service = await self._get_service_for_data_request(message)
-        req = {"BuildIdentityDict": dict(self.get_build_identity_from_request(message))}
+        req = {"BuildIdentityDict": dict(await self.get_build_identity_from_request(message))}
         arguments = message["Arguments"]
         variant = arguments.get("Variant", "Erase")
         req["Variant"] = variant
         self.logger.info("Sending BuildIdentityDict now...")
-        await service.aio_send_plist(req)
+        await service.send_plist(req)
 
     def extract_global_manifest(self) -> dict:
         build_info = self.build_identity.get("Info")
@@ -212,15 +212,15 @@ class Restore(BaseRestore):
         elif image_name == "__SystemVersion__":
             data = self.ipsw.system_version
         else:
-            data = self.get_personalized_data(component_name, tss=self.recovery.tss)
+            data = await self.get_personalized_data(component_name, tss=self.recovery.tss)
 
         self.logger.info(f"Sending {component_name} now...")
         chunk_size = 8192
         for i in trange(0, len(data), chunk_size, dynamic_ncols=True):
-            await service.aio_send_plist({"FileData": data[i : i + chunk_size]})
+            await service.send_plist({"FileData": data[i : i + chunk_size]})
 
         # Send FileDataDone
-        await service.aio_send_plist({"FileDataDone": True})
+        await service.send_plist({"FileDataDone": True})
 
         self.logger.info(f"Done sending {component_name}")
 
@@ -239,18 +239,20 @@ class Restore(BaseRestore):
             data = self.ipsw.system_version
         else:
             data = (
-                self.get_build_identity_from_request(message).get_component(component_name, tss=self.recovery.tss).data
+                (await self.get_build_identity_from_request(message))
+                .get_component(component_name, tss=self.recovery.tss)
+                .data
             )
 
         self.logger.info(f"Sending {component_name} now...")
         chunk_size = 8192
         for i in trange(0, len(data), chunk_size, dynamic_ncols=True):
             chunk = data[i : i + chunk_size]
-            await service.aio_send_plist({"FileData": chunk})
+            await service.send_plist({"FileData": chunk})
             if i == 0 and chunk.startswith(b"AEA1"):
                 self.logger.debug("First chunk in a AEA")
                 try:
-                    message = await asyncio.wait_for(service.aio_recv_plist(), timeout=3)
+                    message = await asyncio.wait_for(service.recv_plist(), timeout=3)
                     if message["MsgType"] != "URLAsset":
                         raise asyncio.exceptions.TimeoutError()
                     await self.send_url_asset(message)
@@ -258,7 +260,7 @@ class Restore(BaseRestore):
                     self.logger.debug("No URLAsset was requested. Assuming it is not necessary")
 
         # Send FileDataDone
-        await service.aio_send_plist({"FileDataDone": True})
+        await service.send_plist({"FileDataDone": True})
 
         self.logger.info(f"Done sending {component_name}")
 
@@ -268,7 +270,7 @@ class Restore(BaseRestore):
 
         # populate parameters
         parameters = {
-            "ApECID": self.device.ecid,
+            "ApECID": await self.device.get_ecid(),
             "Ap,LocalBoot": True,
             "ApProductionMode": True,
             "ApSecurityMode": True,
@@ -301,7 +303,7 @@ class Restore(BaseRestore):
         self.logger.info("Requesting SHSH blobs...")
         return await request.send_receive()
 
-    def get_build_identity(self, is_recovery_os: bool):
+    async def get_build_identity(self, is_recovery_os: bool):
         if is_recovery_os:
             variant = RESTORE_VARIANT_MACOS_RECOVERY_OS
         elif self.build_identity.restore_behavior == Behavior.Erase.value:
@@ -309,20 +311,20 @@ class Restore(BaseRestore):
         else:
             variant = RESTORE_VARIANT_UPGRADE_INSTALL
 
-        return self.ipsw.build_manifest.get_build_identity(self.device.hardware_model, variant=variant)
+        return self.ipsw.build_manifest.get_build_identity(await self.device.get_hardware_model(), variant=variant)
 
     async def send_restore_local_policy(self, message: dict) -> None:
         component = "Ap,LocalPolicy"
         service = await self._get_service_for_data_request(message)
 
         # The Update mode does not have a specific build identity for the recovery os.
-        build_identity = self.get_build_identity(self.build_identity.restore_behavior == Behavior.Erase.value)
+        build_identity = await self.get_build_identity(self.build_identity.restore_behavior == Behavior.Erase.value)
         tss_localpolicy = await self.get_recovery_os_local_policy_tss_response(
             message["Arguments"], build_identity=build_identity
         )
 
-        await service.aio_send_plist({
-            "Ap,LocalPolicy": self.get_personalized_data(component, data=lpol_file, tss=tss_localpolicy)
+        await service.send_plist({
+            "Ap,LocalPolicy": await self.get_personalized_data(component, data=lpol_file, tss=tss_localpolicy)
         })
 
     async def send_recovery_os_root_ticket(self, message: dict) -> None:
@@ -332,7 +334,7 @@ class Restore(BaseRestore):
         if self.recovery.tss_recoveryos_root_ticket is None:
             raise PyMobileDevice3Exception("Cannot send RootTicket without TSS")
 
-        if self.device.is_image4_supported:
+        if await self.device.get_is_image4_supported():
             data = self.recovery.tss_recoveryos_root_ticket.ap_img4_ticket
         else:
             data = self.recovery.tss.ap_ticket
@@ -344,7 +346,7 @@ class Restore(BaseRestore):
             self.logger.warning("not sending RootTicketData (no data present)")
 
         self.logger.info("Sending RecoveryOSRootTicket now...")
-        await service.aio_send_plist(req)
+        await service.send_plist(req)
 
     async def send_root_ticket(self, message: dict) -> None:
         self.logger.info("About to send RootTicket...")
@@ -354,7 +356,7 @@ class Restore(BaseRestore):
             raise PyMobileDevice3Exception("Cannot send RootTicket without TSS")
 
         self.logger.info("Sending RootTicket now...")
-        await service.aio_send_plist({"RootTicketData": self.recovery.tss.ap_img4_ticket})
+        await service.send_plist({"RootTicketData": self.recovery.tss.ap_img4_ticket})
 
     async def send_nor(self, message: dict):
         self.logger.info("About to send NORData...")
@@ -396,7 +398,7 @@ class Restore(BaseRestore):
             raise PyMobileDevice3Exception("Unable to get list of firmware files.")
 
         component = "LLB"
-        llb_data = self.get_personalized_data(component, tss=self.recovery.tss, path=llb_path)
+        llb_data = await self.get_personalized_data(component, tss=self.recovery.tss, path=llb_path)
         req = {"LlbImageData": llb_data}
 
         norimage = {} if flash_version_1 else []
@@ -407,7 +409,7 @@ class Restore(BaseRestore):
                 # skip RestoreSEP, it's passed in RestoreSEPImageData
                 continue
 
-            nor_data = self.get_personalized_data(component, tss=self.recovery.tss, path=comppath)
+            nor_data = await self.get_personalized_data(component, tss=self.recovery.tss, path=comppath)
 
             if flash_version_1:
                 norimage[component] = nor_data
@@ -427,10 +429,10 @@ class Restore(BaseRestore):
             if comp.path:
                 if component == "SepStage1":
                     component = "SEPPatch"
-                req[f"{component}ImageData"] = self.get_personalized_data(comp.name, comp.data, self.recovery.tss)
+                req[f"{component}ImageData"] = await self.get_personalized_data(comp.name, comp.data, self.recovery.tss)
 
         self.logger.info("Sending NORData now...")
-        await service.aio_send_plist(req)
+        await service.send_plist(req)
 
     @staticmethod
     def get_bbfw_fn_for_element(elem: str, bb_chip_id: Optional[int] = None) -> str:
@@ -578,7 +580,7 @@ class Restore(BaseRestore):
 
         if (bb_nonce is None) or (self.bbtss is None):
             # populate parameters
-            parameters = {"ApECID": self.device.ecid}
+            parameters = {"ApECID": await self.device.get_ecid()}
             if bb_nonce:
                 parameters["BbNonce"] = bb_nonce
             parameters["BbChipID"] = bb_chip_id
@@ -614,7 +616,7 @@ class Restore(BaseRestore):
         buffer = self.sign_bbfw(bbfw, bbtss, bb_nonce, bb_chip_id)
 
         self.logger.info("Sending BasebandData now...")
-        await service.aio_send_plist({"BasebandData": buffer})
+        await service.send_plist({"BasebandData": buffer})
 
     async def send_fdr_trust_data(self, message: dict) -> None:
         self.logger.info("About to send FDR Trust data...")
@@ -624,7 +626,7 @@ class Restore(BaseRestore):
         # Sending an empty dict makes it continue with FDR
         # and this is what iTunes seems to be doing too
         self.logger.info("Sending FDR Trust data now...")
-        await service.aio_send_plist({})
+        await service.send_plist({})
 
     async def send_image_data(
         self, message: dict, image_list_k: Optional[str], image_type_k: Optional[str], image_data_k: Optional[str]
@@ -672,7 +674,7 @@ class Restore(BaseRestore):
                     else:
                         self.logger.info(f"found component '{component}'")
 
-                    data_dict[component] = self.get_personalized_data(component, tss=self.recovery.tss)
+                    data_dict[component] = await self.get_personalized_data(component, tss=self.recovery.tss)
 
         req = {}
         if want_image_list:
@@ -693,8 +695,8 @@ class Restore(BaseRestore):
     async def send_bootability_bundle_data(self, message: dict) -> None:
         self.logger.debug(f"send_bootability_bundle_data: {message}")
         service = await self._get_service_for_data_request(message)
-        await service.aio_sendall(self.ipsw.bootability)
-        await service.aio_close()
+        await service.sendall(self.ipsw.bootability)
+        await service.close()
 
     async def send_manifest(self) -> None:
         self.logger.debug("send_manifest")
@@ -838,7 +840,7 @@ class Restore(BaseRestore):
 
             parameters["ApProductionMode"] = True
 
-            if self.device.is_image4_supported:
+            if await self.device.get_is_image4_supported():
                 parameters["ApSecurityMode"] = True
                 parameters["ApSupportsImg4"] = True
             else:
@@ -991,7 +993,7 @@ class Restore(BaseRestore):
         self.populate_tss_request_from_manifest(parameters)
 
         parameters["ApProductionMode"] = True
-        if self.device.is_image4_supported:
+        if await self.device.get_is_image4_supported():
             parameters["ApSecurityMode"] = True
             parameters["ApSupportsImg4"] = True
         else:
@@ -1110,12 +1112,12 @@ class Restore(BaseRestore):
             raise PyMobileDevice3Exception(f"Got unknown updater name: {updater_name}")
 
         self.logger.info("Sending FirmwareResponse data now...")
-        await service.aio_send_plist({"FirmwareResponseData": fwdict})
+        await service.send_plist({"FirmwareResponseData": fwdict})
 
     async def send_firmware_updater_preflight(self, message: dict) -> None:
         self.logger.warning(f"send_firmware_updater_preflight: {message}")
         service = await self._get_service_for_data_request(message)
-        await service.aio_send_plist({})
+        await service.send_plist({})
 
     async def send_url_asset(self, message: dict) -> None:
         self.logger.info(f"send_url_asset: {message}")
@@ -1132,7 +1134,7 @@ class Restore(BaseRestore):
             with ThreadPoolExecutor() as executor:
                 response = await loop.run_in_executor(executor, requests.get, url)
             self._url_assets_cache[url] = response
-        await service.aio_send_plist(
+        await service.send_plist(
             {
                 "ResponseBody": response.content,
                 "ResponseBodyDone": True,
@@ -1141,7 +1143,7 @@ class Restore(BaseRestore):
             },
             fmt=plistlib.FMT_BINARY,
         )
-        await service.aio_close()
+        await service.close()
 
     async def send_streamed_image_decryption_key(self, message: dict) -> None:
         self.logger.info(f"send_streamed_image_decryption_key: {message}")
@@ -1153,7 +1155,7 @@ class Restore(BaseRestore):
             arguments["RequestURL"], headers=arguments["RequestAdditionalHeaders"], data=arguments["RequestBody"]
         )
         self.logger.info(f"response {response} {response.content}")
-        await service.aio_send_plist({
+        await service.send_plist({
             "ResponseBody": response.content,
             "ResponseBodyDone": True,
             "ResponseHeaders": dict(response.headers),
@@ -1166,7 +1168,7 @@ class Restore(BaseRestore):
 
         self.logger.info(f"Sending now {component_name}...")
         await self._restored.send({
-            f"{component_name}File": self.get_personalized_data(component, tss=self.recovery.tss)
+            f"{component_name}File": await self.get_personalized_data(component, tss=self.recovery.tss)
         })
 
     async def handle_data_request_msg(self, message: dict):
@@ -1264,7 +1266,9 @@ class Restore(BaseRestore):
 
         while True:
             try:
-                client = ServiceConnection.create_using_usbmux(self._restored.udid, data_port, connection_type="USB")
+                client = await ServiceConnection.create_using_usbmux(
+                    self._restored.udid, data_port, connection_type="USB"
+                )
                 break
             except ConnectionFailedError:
                 self.logger.debug("Retrying connection...")
@@ -1279,13 +1283,13 @@ class Restore(BaseRestore):
 
         with open(filename, "wb") as f:
             while True:
-                buf = client.recv()
+                buf = client.recv_sync()
                 if not buf:
                     break
                 f.write(buf)
 
         self.logger.debug("Closing connection of BasebandUpdaterOutputData data port")
-        client.close()
+        await client.close()
 
     async def handle_host_system_time(self, message: dict) -> None:
         await self._restored.send({"SetHostTimeOnDevice": time.time()})
@@ -1304,7 +1308,7 @@ class Restore(BaseRestore):
     async def _connect_to_restored_service(self):
         while True:
             try:
-                self._restored = await RestoredClient.create(self.device.ecid)
+                self._restored = await RestoredClient.create(await self.device.get_ecid())
                 break
             except (ConnectionFailedError, NoDeviceConnectedError):
                 await asyncio.sleep(1)
@@ -1323,12 +1327,12 @@ class Restore(BaseRestore):
 
         if self._ignore_fdr:
             self.logger.info("Establishing a mock FDR listener")
-            self._fdr = ServiceConnection.create_using_usbmux(
+            self._fdr = await ServiceConnection.create_using_usbmux(
                 self._restored.udid, FDRClient.SERVICE_PORT, connection_type="USB"
             )
         else:
-            self.logger.info("Starting FDR listener thread")
-            start_fdr_thread(fdr_type.FDR_CTRL)
+            self.logger.info("Starting FDR listener task")
+            self._tasks.append(start_fdr_task(fdr_type.FDR_CTRL))
 
         sep = self.build_identity["Manifest"]["SEP"].get("Info")
         spp = self.build_identity["Info"].get("SystemPartitionPadding")
@@ -1367,6 +1371,8 @@ class Restore(BaseRestore):
                 self.logger.debug(f"unhandled message type received: {message}")
 
     async def update(self):
+        self._preflight_info = await self.device.get_preflight_info()
+        self._firmware_preflight_info = await self.device.get_firmware_preflight_info()
         await self.recovery.boot_ramdisk()
 
         # device is finally in restore mode, let's do this
@@ -1383,7 +1389,9 @@ class Restore(BaseRestore):
 
         while True:
             try:
-                service = ServiceConnection.create_using_usbmux(self._restored.udid, data_port, connection_type="USB")
+                service = await ServiceConnection.create_using_usbmux(
+                    self._restored.udid, data_port, connection_type="USB"
+                )
                 break
             except ConnectionFailedError:
                 self.logger.debug("Retrying connection...")
@@ -1392,5 +1400,5 @@ class Restore(BaseRestore):
             raise ConnectionFailedError(f"failed to establish connection to {data_port}")
 
         self.logger.info(f"Connected to {data_type} data port ({data_port})")
-        await service.aio_start()
+        await service.start()
         return service

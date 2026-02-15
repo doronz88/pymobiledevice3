@@ -15,6 +15,6 @@ class DebugServerAppList(LockdownService):
     def get(self) -> dict:
         buf = b""
         while b"</plist>" not in buf:
-            buf += self.service.recv(CHUNK_SIZE)
+            buf += self.service.recv_sync(CHUNK_SIZE)
 
         return plistlib.loads(buf)

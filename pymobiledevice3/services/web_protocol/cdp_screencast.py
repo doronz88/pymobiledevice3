@@ -31,22 +31,19 @@ class ScreenCast:
         self._run = True
         self.recording_task: Optional[asyncio.Task] = None
 
-    @property
-    def scale(self) -> float:
+    def get_scale(self) -> float:
         """The amount screen pixels in one devtools pixel."""
         real_height = self.device_height * self.page_scale_factor
         real_width = self.device_width * self.page_scale_factor
         return min(self.max_height / real_height, self.max_width / real_width, 1) * self.page_scale_factor
 
-    @property
-    def scaled_width(self) -> int:
+    def get_scaled_width(self) -> int:
         """Width of screenshot after scaling."""
-        return int(self.scale * self.device_width)
+        return int(self.get_scale() * self.device_width)
 
-    @property
-    def scaled_height(self) -> int:
+    def get_scaled_height(self) -> int:
         """Height of screenshot after scaling."""
-        return int(self.scale * self.device_height)
+        return int(self.get_scale() * self.device_height)
 
     async def start(self, message_id: int):
         """
@@ -84,7 +81,7 @@ class ScreenCast:
         :return: Base 64 of resized JPEG data.
         """
         resized_img = Image.open(BytesIO(b64decode(data)))
-        resized_img = resized_img.resize((self.scaled_width, self.scaled_height), Image.ANTIALIAS)
+        resized_img = resized_img.resize((self.get_scaled_width(), self.get_scaled_height()), Image.ANTIALIAS)
         resized_img = resized_img.convert("RGB")
         resized = BytesIO()
         resized_img.save(resized, format="jpeg", quality="maximum")
@@ -136,8 +133,8 @@ class ScreenCast:
                     "metadata": {
                         "pageScaleFactor": self.page_scale_factor,
                         "offsetTop": offset_top,
-                        "deviceWidth": self.scaled_width,
-                        "deviceHeight": self.scaled_height,
+                        "deviceWidth": self.get_scaled_width(),
+                        "deviceHeight": self.get_scaled_height(),
                         "scrollOffsetX": scroll_offset_x,
                         "scrollOffsetY": scroll_offset_y,
                         "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f"),

@@ -147,7 +147,7 @@ class WebinspectorService:
         self._recv_task: Optional[asyncio.Task] = None
 
     async def connect(self, timeout: Optional[Union[float, int]] = None):
-        self.service = await self.lockdown.aio_start_lockdown_service(self.service_name)
+        self.service = await self.lockdown.start_lockdown_service(self.service_name)
         await self._report_identifier()
         try:
             await self._handle_recv(await asyncio.wait_for(self._recv_message(), timeout))
@@ -159,12 +159,12 @@ class WebinspectorService:
         self._recv_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await self._recv_task
-        await self.service.aio_close()
+        await self.service.close()
 
     async def _recv_message(self):
         while True:
             try:
-                return await self.service.aio_recv_plist()
+                return await self.service.recv_plist()
             except asyncio.IncompleteReadError:
                 await asyncio.sleep(0)
 
@@ -353,7 +353,7 @@ class WebinspectorService:
         if args is None:
             args = {}
         args["WIRConnectionIdentifierKey"] = self.connection_id
-        await self.service.aio_send_plist({"__selector": selector, "__argument": args})
+        await self.service.send_plist({"__selector": selector, "__argument": args})
 
     def _page_by_automation_session(self, session_id: str) -> Page:
         for app_id in self.application_pages:

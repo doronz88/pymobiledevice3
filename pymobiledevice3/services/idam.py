@@ -13,8 +13,10 @@ class IDAMService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def configuration_inquiry(self) -> dict:
-        return self.service.send_recv_plist({"Configuration Inquiry": True})
+    async def configuration_inquiry(self) -> dict:
+        await self.service.send_plist({"Configuration Inquiry": True})
+        return await self.service.recv_plist()
 
-    def set_idam_configuration(self, value: bool) -> None:
-        self.service.send_recv_plist({"Set IDAM Configuration": value})
+    async def set_idam_configuration(self, value: bool) -> None:
+        await self.service.send_plist({"Set IDAM Configuration": value})
+        await self.service.recv_plist()
