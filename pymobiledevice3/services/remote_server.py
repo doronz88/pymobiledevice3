@@ -349,16 +349,16 @@ class ChannelFragmenter:
         return self._messages.get_nowait()
 
     def add_fragment(self, mheader, chunk):
-        if mheader.channelCode >= 0:
-            self._packet_data += chunk
-            if mheader.fragmentId == mheader.fragmentCount - 1:
-                # last message
-                fake_header = mheader.copy()
-                fake_header.fragmentId = 0
-                fake_header.fragmentCount = 1
-                fake_header.lenght = len(self._packet_data)
-                self._messages.put((fake_header, self._packet_data))
-                self._packet_data = b""
+        self._packet_data += chunk
+        if mheader.fragmentId == mheader.fragmentCount - 1:
+            # last message
+            fake_header = mheader.copy()
+            fake_header.fragmentId = 0
+            fake_header.fragmentCount = 1
+            fake_header.channelCode = abs(mheader.channelCode)
+            fake_header.lenght = len(self._packet_data)
+            self._messages.put((fake_header, self._packet_data))
+            self._packet_data = b""
 
 
 class RemoteServer(LockdownService):
@@ -664,10 +664,13 @@ class RemoteServer(LockdownService):
 
                     # treat both as the negative and positive representation of the channel code in the response
                     # the same when performing fragmentation
-                    received_channel_code = mheader.channelCode
+                    received_channel_code = abs(mheader.channelCode)
 
                     if received_channel_code not in self.channel_messages:
                         self.channel_messages[received_channel_code] = ChannelFragmenter()
+
+                    if not mheader.conversationIndex and mheader.identifier > self.cur_message:
+                        self.cur_message = mheader.identifier
 
                     if mheader.fragmentCount > 1 and mheader.fragmentId == 0:
                         # when reading multiple message fragments, the first fragment contains only a message header
