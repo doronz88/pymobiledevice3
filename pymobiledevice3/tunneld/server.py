@@ -195,11 +195,11 @@ class TunneldCore:
         while True:
             mux = None
             try:
-                mux = usbmux.create_mux()
-                mux.listen()
+                mux = await usbmux.create_mux()
+                await mux.listen()
 
                 while True:
-                    await asyncio.to_thread(mux.receive_device_state_update)
+                    await mux.receive_device_state_update()
 
                     for mux_device in mux.devices:
                         task_identifier = f"usbmux-{mux_device.serial}-{mux_device.connection_type}"
@@ -211,7 +211,7 @@ class TunneldCore:
                             continue
                         service = None
                         try:
-                            with create_using_usbmux(mux_device.serial) as lockdown:
+                            async with await create_using_usbmux(mux_device.serial) as lockdown:
                                 service = await CoreDeviceTunnelProxy.create(lockdown)
                         except (
                             MuxException,
@@ -247,7 +247,7 @@ class TunneldCore:
                 break
             finally:
                 if mux is not None:
-                    mux.close()
+                    await mux.close()
 
     @asyncio_print_traceback
     async def monitor_mobdev2_task(self) -> None:
@@ -551,7 +551,7 @@ class TunneldRunner:
                 if not created_task and connection_type in ("usbmux", None):
                     task_identifier = f"usbmux-{udid}"
                     try:
-                        with create_using_usbmux(udid) as lockdown:
+                        async with await create_using_usbmux(udid) as lockdown:
                             service = await CoreDeviceTunnelProxy.create(lockdown)
                         task = asyncio.create_task(
                             self._tunneld_core.start_tunnel_task(

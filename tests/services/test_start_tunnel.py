@@ -18,7 +18,17 @@ async def test_start_tunnel(connection_type: ConnectionType) -> None:
         connection_type.WIFI: get_remote_pairing_tunnel_services,
     }
     tunnel_services = await get_tunnel_services[connection_type]()
-    async with start_tunnel(tunnel_services[0]):
-        await asyncio.sleep(1)
-    for tunnel_service in tunnel_services:
-        await tunnel_service.close()
+    if not tunnel_services:
+        pytest.skip(f"No {connection_type.value} tunnel services available")
+
+    try:
+        try:
+            async with start_tunnel(tunnel_services[0]):
+                await asyncio.sleep(1)
+        except Exception as e:
+            if "Failed to create any utun interface" in str(e):
+                pytest.skip("Skipping tunnel test: unable to create utun interface on this host")
+            raise
+    finally:
+        for tunnel_service in tunnel_services:
+            await tunnel_service.close()

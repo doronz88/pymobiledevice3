@@ -264,8 +264,12 @@ def device_might_need_tunneld(identifier: str) -> bool:
     :param identifier: A string representing the device identifier.
     :return: A boolean indicating whether the device might require tunneling.
     """
-    with create_using_usbmux(identifier) as lockdown:
-        return Version(lockdown.product_version) >= Version("17.0")
+
+    async def _device_might_need_tunneld() -> bool:
+        async with await create_using_usbmux(serial=identifier) as lockdown:
+            return Version(lockdown.product_version) >= Version("17.0")
+
+    return asyncio.run(_device_might_need_tunneld())
 
 
 class PossiblyMisplacedOption(click.NoSuchOption):
@@ -429,8 +433,8 @@ def main() -> None:
             break
         try:
             # Wait for the device to be available again
-            lockdown = retry_create_using_usbmux(None)
-            lockdown.close()
+            lockdown = asyncio.run(retry_create_using_usbmux(None))
+            asyncio.run(lockdown.close())
         except KeyboardInterrupt:
             print("Aborted.")
             break

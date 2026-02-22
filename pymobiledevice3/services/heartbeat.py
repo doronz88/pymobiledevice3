@@ -24,15 +24,15 @@ class HeartbeatService:
         else:
             self.service_name = self.RSD_SERVICE_NAME
 
-    def start(self, interval: Optional[float] = None) -> None:
+    async def start(self, interval: Optional[float] = None) -> None:
         start = time.time()
-        service = self.lockdown.start_lockdown_service(self.service_name)
+        service = await self.lockdown.start_lockdown_service(self.service_name)
 
         while True:
-            response = service.recv_plist()
+            response = await service.recv_plist()
             self.logger.debug(response)
 
             if interval is not None and time.time() >= start + interval:
                 break
 
-            service.send_plist({"Command": "Polo"})
+            await service.send_plist({"Command": "Polo"})

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from functools import update_wrapper
 from pathlib import Path
@@ -8,7 +7,7 @@ from urllib.error import URLError
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, print_json
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
 from pymobiledevice3.exceptions import (
     AlreadyMountedError,
     DeveloperDiskImageNotFoundError,
@@ -46,11 +45,12 @@ cli = InjectingTyper(
 
 
 @cli.command("list")
-def mounter_list(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def mounter_list(service_provider: ServiceProviderDep) -> None:
     """list all mounted images"""
     output = []
 
-    images = MobileImageMounterService(lockdown=service_provider).copy_devices()
+    images = await MobileImageMounterService(lockdown=service_provider).copy_devices()
     for image in images:
         image_signature = image.get("ImageSignature")
         if image_signature is not None:
@@ -61,10 +61,11 @@ def mounter_list(service_provider: ServiceProviderDep) -> None:
 
 
 @cli.command("lookup")
-def mounter_lookup(service_provider: ServiceProviderDep, image_type: str) -> None:
+@async_command
+async def mounter_lookup(service_provider: ServiceProviderDep, image_type: str) -> None:
     """lookup mounter image type"""
     try:
-        signature = MobileImageMounterService(lockdown=service_provider).lookup_image(image_type)
+        signature = await MobileImageMounterService(lockdown=service_provider).lookup_image(image_type)
         print_json(signature)
     except NotMountedError:
         logger.error(f"Disk image of type: {image_type} is not mounted")
@@ -72,10 +73,11 @@ def mounter_lookup(service_provider: ServiceProviderDep, image_type: str) -> Non
 
 @cli.command("umount-developer")
 @catch_errors
-def mounter_umount_developer(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def mounter_umount_developer(service_provider: ServiceProviderDep) -> None:
     """unmount Developer image"""
     try:
-        DeveloperDiskImageMounter(lockdown=service_provider).umount()
+        await DeveloperDiskImageMounter(lockdown=service_provider).umount()
         logger.info("Developer image unmounted successfully")
     except NotMountedError:
         logger.error("Developer image isn't currently mounted")
@@ -83,10 +85,11 @@ def mounter_umount_developer(service_provider: ServiceProviderDep) -> None:
 
 @cli.command("umount-personalized")
 @catch_errors
-def mounter_umount_personalized(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def mounter_umount_personalized(service_provider: ServiceProviderDep) -> None:
     """unmount Personalized image"""
     try:
-        PersonalizedImageMounter(lockdown=service_provider).umount()
+        await PersonalizedImageMounter(lockdown=service_provider).umount()
         logger.info("Personalized image unmounted successfully")
     except NotMountedError:
         logger.error("Personalized image isn't currently mounted")
@@ -94,7 +97,8 @@ def mounter_umount_personalized(service_provider: ServiceProviderDep) -> None:
 
 @cli.command("mount-developer")
 @catch_errors
-def mounter_mount_developer(
+@async_command
+async def mounter_mount_developer(
     service_provider: ServiceProviderDep,
     image: Annotated[
         Path,
@@ -114,7 +118,7 @@ def mounter_mount_developer(
     ],
 ) -> None:
     """mount developer image"""
-    DeveloperDiskImageMounter(lockdown=service_provider).mount(image, signature)
+    await DeveloperDiskImageMounter(lockdown=service_provider).mount(image, signature)
     logger.info("Developer image mounted successfully")
 
 
@@ -129,7 +133,8 @@ async def mounter_mount_personalized_task(
 
 @cli.command("mount-personalized")
 @catch_errors
-def mounter_mount_personalized(
+@async_command
+async def mounter_mount_personalized(
     service_provider: ServiceProviderDep,
     image: Annotated[
         Path,
@@ -157,12 +162,12 @@ def mounter_mount_personalized(
     ],
 ) -> None:
     """mount personalized image"""
-    asyncio.run(
-        mounter_mount_personalized_task(service_provider, str(image), str(trust_cache), str(build_manifest)), debug=True
-    )
+    await mounter_mount_personalized_task(service_provider, str(image), str(trust_cache), str(build_manifest))
 
 
-async def mounter_auto_mount_task(service_provider: LockdownServiceProvider, xcode: str, version: str) -> None:
+async def mounter_auto_mount_task(
+    service_provider: LockdownServiceProvider, xcode: Optional[str], version: Optional[str]
+) -> None:
     try:
         await auto_mount(service_provider, xcode=xcode, version=version)
         logger.info("DeveloperDiskImage mounted successfully")
@@ -180,7 +185,8 @@ async def mounter_auto_mount_task(service_provider: LockdownServiceProvider, xco
 
 
 @cli.command("auto-mount")
-def mounter_auto_mount(
+@async_command
+async def mounter_auto_mount(
     service_provider: ServiceProviderDep,
     xcode: Annotated[
         Optional[Path],
@@ -199,43 +205,51 @@ def mounter_auto_mount(
     ] = None,
 ) -> None:
     """auto-detect correct DeveloperDiskImage and mount it"""
-    asyncio.run(mounter_auto_mount_task(service_provider, str(xcode), version), debug=True)
+    await mounter_auto_mount_task(service_provider, str(xcode) if xcode is not None else None, version)
 
 
 @cli.command("query-developer-mode-status")
-def mounter_query_developer_mode_status(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def mounter_query_developer_mode_status(service_provider: ServiceProviderDep) -> None:
     """Query developer mode status"""
-    print_json(MobileImageMounterService(lockdown=service_provider).query_developer_mode_status())
+    print_json(await MobileImageMounterService(lockdown=service_provider).query_developer_mode_status())
 
 
 @cli.command("query-nonce")
-def mounter_query_nonce(service_provider: ServiceProviderDep, image_type: Annotated[str, typer.Option()]) -> None:
+@async_command
+async def mounter_query_nonce(service_provider: ServiceProviderDep, image_type: Annotated[str, typer.Option()]) -> None:
     """Query nonce"""
-    print_json(MobileImageMounterService(lockdown=service_provider).query_nonce(image_type))
+    print_json(await MobileImageMounterService(lockdown=service_provider).query_nonce(image_type))
 
 
 @cli.command("query-personalization-identifiers")
-def mounter_query_personalization_identifiers(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def mounter_query_personalization_identifiers(service_provider: ServiceProviderDep) -> None:
     """Query personalization identifiers"""
-    print_json(MobileImageMounterService(lockdown=service_provider).query_personalization_identifiers())
+    print_json(await MobileImageMounterService(lockdown=service_provider).query_personalization_identifiers())
 
 
 @cli.command("query-personalization-manifest")
-def mounter_query_personalization_manifest(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def mounter_query_personalization_manifest(service_provider: ServiceProviderDep) -> None:
     """Query personalization manifest"""
     result = []
     mounter = MobileImageMounterService(lockdown=service_provider)
-    for device in mounter.copy_devices():
-        result.append(mounter.query_personalization_manifest(device["PersonalizedImageType"], device["ImageSignature"]))
+    for device in await mounter.copy_devices():
+        result.append(
+            await mounter.query_personalization_manifest(device["PersonalizedImageType"], device["ImageSignature"])
+        )
     print_json(result)
 
 
 @cli.command("roll-personalization-nonce")
-def mounter_roll_personalization_nonce(service_provider: ServiceProviderDep) -> None:
-    MobileImageMounterService(lockdown=service_provider).roll_personalization_nonce()
+@async_command
+async def mounter_roll_personalization_nonce(service_provider: ServiceProviderDep) -> None:
+    await MobileImageMounterService(lockdown=service_provider).roll_personalization_nonce()
 
 
 @cli.command("roll-cryptex-nonce")
-def mounter_roll_cryptex_nonce(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def mounter_roll_cryptex_nonce(service_provider: ServiceProviderDep) -> None:
     """Roll cryptex nonce (will reboot)"""
-    MobileImageMounterService(lockdown=service_provider).roll_cryptex_nonce()
+    await MobileImageMounterService(lockdown=service_provider).roll_cryptex_nonce()

@@ -7,7 +7,7 @@ from pymobiledevice3.lockdown import LockdownClient
 
 @pytest.mark.asyncio
 async def test_mobdev2(lockdown: LockdownClient) -> None:
-    lockdown.enable_wifi_connections = True
+    await lockdown.set_enable_wifi_connections(True)
     assert len(await browse_mobdev2()) >= 1
 
 

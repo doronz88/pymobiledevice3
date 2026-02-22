@@ -57,14 +57,14 @@ class Device:
     @cached_property
     def is_image4_supported(self):
         if self.lockdown:
-            return self.lockdown.get_value(key="Image4Supported")
+            return self.lockdown.all_values.get("Image4Supported")
         return self.irecv.is_image4_supported
 
     @cached_property
     def ap_parameters(self) -> dict:
         if self.lockdown:
             try:
-                return self.lockdown.get_value(key="ApParameters")
+                return self.lockdown.all_values.get("ApParameters", {})
             except MissingValueError:
                 pass
         return {}
@@ -75,7 +75,7 @@ class Device:
             ap_nonce_from_ap_parameters = self.ap_parameters.get("ApNonce")
             if ap_nonce_from_ap_parameters:
                 return ap_nonce_from_ap_parameters
-            return self.lockdown.get_value(key="ApNonce")
+            return self.lockdown.all_values.get("ApNonce")
         return self.irecv.ap_nonce
 
     @cached_property
@@ -84,7 +84,7 @@ class Device:
             sep_nonce_from_ap_parameters = self.ap_parameters.get("SepNonce")
             if sep_nonce_from_ap_parameters:
                 return sep_nonce_from_ap_parameters
-            return self.lockdown.get_value(key="SEPNonce")
+            return self.lockdown.all_values.get("SEPNonce")
         return self.irecv.sep_nonce
 
     @cached_property

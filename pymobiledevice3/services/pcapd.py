@@ -2,7 +2,7 @@
 
 import enum
 import time
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from typing import Optional
 
 import pcapng.blocks as blocks
@@ -346,12 +346,12 @@ class PcapdService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def watch(
+    async def watch(
         self, packets_count: int = -1, process: Optional[str] = None, interface_name: Optional[str] = None
-    ) -> Generator[Container, None, None]:
+    ) -> AsyncGenerator[Container, None]:
         packet_index = 0
         while packet_index != packets_count:
-            d = self.service.recv_plist()
+            d = await self.service.recv_plist()
             if not d:
                 break
 
@@ -376,7 +376,7 @@ class PcapdService(LockdownService):
 
             packet_index += 1
 
-    def write_to_pcap(self, out, packet_generator) -> None:
+    async def write_to_pcap(self, out, packet_generator) -> None:
         shb = blocks.SectionHeader(
             options={
                 "shb_hardware": "artificial",
@@ -391,7 +391,7 @@ class PcapdService(LockdownService):
         )
         writer = FileWriter(out, shb)
 
-        for packet in packet_generator:
+        async for packet in packet_generator:
             packet_time = packet.timestamp if hasattr(packet, "timestamp") else time.time()
 
             timestamp_microseconds = int(packet_time * 1_000_000)

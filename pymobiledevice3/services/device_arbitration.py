@@ -9,20 +9,23 @@ class DtDeviceArbitration(LockdownService):
     def __init__(self, lockdown: LockdownClient):
         super().__init__(lockdown, self.SERVICE_NAME, is_developer_service=True)
 
-    @property
-    def version(self) -> dict:
-        return self.service.send_recv_plist({"command": "version"})
+    async def _send_recv(self, request: dict) -> dict:
+        await self.service.send_plist(request)
+        return await self.service.recv_plist()
 
-    def check_in(self, hostname: str, force: bool = False):
+    async def version(self) -> dict:
+        return await self._send_recv({"command": "version"})
+
+    async def check_in(self, hostname: str, force: bool = False):
         request = {"command": "check-in", "hostname": hostname}
         if force:
             request["command"] = "force-check-in"
-        response = self.service.send_recv_plist(request)
+        response = await self._send_recv(request)
         if response.get("result") != "success":
             raise DeviceAlreadyInUseError(response)
 
-    def check_out(self):
+    async def check_out(self):
         request = {"command": "check-out"}
-        response = self.service.send_recv_plist(request)
+        response = await self._send_recv(request)
         if response.get("result") != "success":
             raise ArbitrationError(f"failed with: {response}")
