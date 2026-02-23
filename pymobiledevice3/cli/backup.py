@@ -58,7 +58,7 @@ def backup(
         typer.Option(
             help="Whether to do a full backup. If full is True, any previous backup attempts will be discarded.",
         ),
-    ],
+    ] = False,
 ) -> None:
     """
     Backup device.
