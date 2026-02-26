@@ -34,9 +34,11 @@ class Posix(OsUtils):
 
     def get_ipv6_ips(self) -> list[str]:
         return [
-            f"{adapter.ips[0].ip[0]}%{adapter.nice_name}"
+            f"{ip.ip[0]}%{adapter.nice_name}"
             for adapter in get_adapters()
-            if adapter.ips[0].is_IPv6 and not adapter.nice_name.startswith("tun")
+            if not adapter.nice_name.startswith("tun")
+            for ip in (next((i for i in adapter.ips if i.is_IPv6), None),)
+            if ip
         ]
 
     def chown_to_non_sudo_if_needed(self, path: Path) -> None:
