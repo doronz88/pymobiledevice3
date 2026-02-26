@@ -1,4 +1,5 @@
 import os
+import uuid
 from enum import Enum
 from io import BytesIO
 from pathlib import Path
@@ -16,9 +17,7 @@ from pymobiledevice3.services.lockdown_service import LockdownService
 
 GET_APPS_ADDITIONAL_INFO = {"ReturnAttributes": ["CFBundleIdentifier", "StaticDiskUsage", "DynamicDiskUsage"]}
 
-TEMP_REMOTE_BASEDIR = "/PublicStaging"
-TEMP_REMOTE_IPA_FILE = f"{TEMP_REMOTE_BASEDIR}/pymobiledevice3.ipa"
-TEMP_REMOTE_IPCC_FOLDER = f"{TEMP_REMOTE_BASEDIR}/pymobiledevice3.ipcc"
+TEMP_REMOTE_BASEDIR = "/PublicStaging/pymobiledevice3"
 
 
 class ZipFileType(Enum):
@@ -49,8 +48,7 @@ def classify_zip_file(zip_bytes: bytes) -> ZipFileType:
     """checks the zipped bytes if it's a .ipcc or .ipa"""
     try:
         with ZipFile(BytesIO(zip_bytes), "r") as zip_file:
-            # sometimes packages at first index don't have enough infos to check
-            dirs = zip_file.namelist()[1].split("/")
+            dirs = next((name for name in zip_file.namelist() if "/" in name), "").split("/")
 
             if dirs[0] != "Payload":
                 raise AppInstallError("package does not have a payload")
@@ -75,7 +73,7 @@ class InstallationProxyService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def _watch_completion(self, handler: Optional[Callable] = None, ipcc: bool = False, *args) -> None:
+    def _watch_completion(self, handler: Optional[Callable] = None, *args) -> None:
         while True:
             response = self.service.recv_plist()
             if not response:
@@ -88,12 +86,9 @@ class InstallationProxyService(LockdownService):
                 if handler:
                     self.logger.debug("calling handler")
                     handler(completion, *args)
-                self.logger.info(f"{response.get('PercentComplete')}% Complete")
+                self.logger.info(f"{completion}% Complete")
             if response.get("Status") == "Complete":
-                if ipcc:
-                    # there is no progress when installing a .ipcc file,
-                    # so we just put a simple message indicating it's done
-                    self.logger.info("Installation succeed.")
+                self.logger.info("Installation succeed.")
                 return
         raise AppInstallError()
 
@@ -102,11 +97,11 @@ class InstallationProxyService(LockdownService):
         bundle_identifier: str,
         cmd: str = "Archive",
         options: Optional[dict] = None,
-        handler: Optional[dict] = None,
+        handler: Optional[Callable] = None,
         *args,
     ) -> None:
         """send a low-level command to installation relay"""
-        cmd = {"Command": cmd, "ApplicationIdentifier": bundle_identifier}
+        cmd: dict = {"Command": cmd, "ApplicationIdentifier": bundle_identifier}
 
         if options is None:
             options = {}
@@ -155,12 +150,17 @@ class InstallationProxyService(LockdownService):
             options["PackageType"] = "CarrierBundle"
 
         with AfcService(self.lockdown) as afc:
-            if not ipcc_mode:
-                afc.set_file_contents(TEMP_REMOTE_IPA_FILE, package_bytes)
-            else:
-                self.upload_ipcc_from_bytes(package_bytes, afc)
+            fpath = f"{TEMP_REMOTE_BASEDIR}/{uuid.uuid4()}.{'ipcc' if ipcc_mode else 'ipa'}"
+            try:
+                if not ipcc_mode:
+                    afc.makedirs(TEMP_REMOTE_BASEDIR)
+                    afc.set_file_contents(fpath, package_bytes)
+                else:
+                    self.upload_ipcc_from_bytes(package_bytes, fpath, afc)
 
-        self.send_package(cmd, options, handler, ipcc_mode, *args)
+                self.send_package(cmd, options, handler, fpath, *args)
+            finally:
+                afc.rm_single(fpath, force=True)
 
     @str_to_path("package_path")
     def install_from_local(
@@ -192,53 +192,56 @@ class InstallationProxyService(LockdownService):
             options["PackageType"] = "Developer"
 
         with AfcService(self.lockdown) as afc:
-            if not ipcc_mode:
-                afc.makedirs(TEMP_REMOTE_BASEDIR)
-                afc.set_file_contents(TEMP_REMOTE_IPA_FILE, ipa_contents)
+            fname = f"{TEMP_REMOTE_BASEDIR}/{uuid.uuid4()}.{'ipcc' if ipcc_mode else 'ipa'}"
+            try:
+                if not ipcc_mode:
+                    afc.makedirs(TEMP_REMOTE_BASEDIR)
+                    afc.set_file_contents(fname, ipa_contents)
 
-            else:
-                self.upload_ipcc_from_path(package_path, afc)
+                else:
+                    self.upload_ipcc_from_path(package_path, fname, afc)
 
-        self.send_package(cmd, options, handler, ipcc_mode, *args)
+                self.send_package(cmd, options, handler, fname, *args)
+            finally:
+                afc.rm_single(fname, force=True)
 
-    def send_package(self, cmd: str, options: Optional[dict], handler: Callable, ipcc_mode: bool = False, *args):
+    def send_package(self, cmd: str, options: Optional[dict], handler: Callable, package_path: str, *args):
         self.service.send_plist({
             "Command": cmd,
             "ClientOptions": options,
-            "PackagePath": (TEMP_REMOTE_IPCC_FOLDER if ipcc_mode else TEMP_REMOTE_IPA_FILE),
+            "PackagePath": package_path,
         })
 
-        self._watch_completion(handler, ipcc_mode, args)
+        self._watch_completion(handler, args)
 
-    def upload_ipcc_from_path(self, file: Path, afc_client: AfcService) -> None:
+    def upload_ipcc_from_path(self, file: Path, remote_path: str, afc_client: AfcService) -> None:
         """Used to upload a .ipcc file to an iPhone as a folder"""
         with file.open("rb") as fb:
             file_name = file.name
             file_stream = BytesIO(fb.read())
-            self._upload_ipcc(file_stream, afc_client, file_name)
+            self.logger.info(f"Uploading {file_name} contents..")
+            self._upload_ipcc(file_stream, afc_client, remote_path)
 
-    def upload_ipcc_from_bytes(self, file_bytes: bytes, afc_client: AfcService) -> None:
+    def upload_ipcc_from_bytes(self, file_bytes: bytes, remote_path: str, afc_client: AfcService) -> None:
         """Used to upload a .ipcc bytes array to an iPhone as a folder"""
         file_stream = BytesIO(file_bytes)
-        file_name = "bytes"
-        self._upload_ipcc(file_stream, afc_client, file_name)
+        self.logger.info("Uploading IPCC from given bytes..")
+        self._upload_ipcc(file_stream, afc_client, remote_path)
 
-    def _upload_ipcc(self, file_stream: BytesIO, afc_client: AfcService, file_name: str) -> None:
-        self.logger.info(f"Uploading {file_name} contents..")
-
-        afc_client.makedirs(TEMP_REMOTE_IPCC_FOLDER)
+    def _upload_ipcc(self, file_stream: BytesIO, afc_client: AfcService, dst: str) -> None:
+        afc_client.makedirs(dst)
 
         # we unpack it and upload it directly instead of saving it in a temp folder
         with ZipFile(file_stream, "r") as file_zip:
             for file_name in file_zip.namelist():
                 if file_name.endswith(("/", "\\")):
-                    afc_client.makedirs(f"{TEMP_REMOTE_IPCC_FOLDER}/{file_name}")
+                    afc_client.makedirs(f"{dst}/{file_name}")
                     continue
 
                 with file_zip.open(file_name) as inside_file_zip:
                     file_data = inside_file_zip.read()
-                    afc_client.makedirs(TEMP_REMOTE_BASEDIR)
-                    afc_client.set_file_contents(f"{TEMP_REMOTE_IPCC_FOLDER}/{file_name}", file_data)
+                    afc_client.makedirs(dst)
+                    afc_client.set_file_contents(f"{dst}/{file_name}", file_data)
 
         self.logger.info("Upload complete.")
 
