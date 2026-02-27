@@ -391,8 +391,17 @@ class TunneldCore:
                 rsd = None
                 raise asyncio.CancelledError()
 
+            try:
+                core_device_tunnel = await create_core_device_tunnel_service_using_rsd(rsd)
+            except InvalidServiceError as e:
+                logger.warning(
+                    f"[{asyncio.current_task().get_name()}] Skipping {rsd.product_type} ({rsd.product_version}): "
+                    f"{e.__class__.__name__}: {e}"
+                )
+                raise asyncio.CancelledError() from e
+
             await asyncio.create_task(
-                self.start_tunnel_task(ip, await create_core_device_tunnel_service_using_rsd(rsd)),
+                self.start_tunnel_task(ip, core_device_tunnel),
                 name=f"start-tunnel-task-usb-{ip}",
             )
         except asyncio.CancelledError:

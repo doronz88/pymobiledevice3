@@ -1,5 +1,6 @@
 import base64
 import logging
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional, Union
@@ -69,15 +70,24 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             self.peer_info = await self.service.receive_response()
             self.udid = self.peer_info["Properties"]["UniqueDeviceID"]
             self.product_type = self.peer_info["Properties"]["ProductType"]
-            try:
+
+            # Attempt to initialize a lockdown connection (May fail if RemoteXPC device does not offer this service,
+            # such as VirtualMac (virtual macOS instance)
+            self.lockdown: Optional[LockdownServiceProvider] = None
+
+            with suppress(InvalidServiceError):
                 self.lockdown = create_using_remote(
                     self.start_lockdown_service("com.apple.mobile.lockdown.remote.trusted")
                 )
-            except InvalidServiceError:
-                self.lockdown = create_using_remote(
-                    self.start_lockdown_service("com.apple.mobile.lockdown.remote.untrusted")
-                )
-            self.all_values = self.lockdown.all_values
+
+            if self.lockdown is None:
+                # Reattempt with the untrusted service variant
+                with suppress(InvalidServiceError):
+                    self.lockdown = create_using_remote(
+                        self.start_lockdown_service("com.apple.mobile.lockdown.remote.untrusted")
+                    )
+
+            self.all_values = self.lockdown.all_values if self.lockdown is not None else {}
         except Exception:
             await self.close()
             raise
