@@ -32,7 +32,12 @@ from construct import (
 )
 from pygments import formatters, highlight, lexers
 
-from pymobiledevice3.exceptions import ConnectionTerminatedError, DvtException, UnrecognizedSelectorError
+from pymobiledevice3.exceptions import (
+    ChannelClosedError,
+    ConnectionTerminatedError,
+    DvtException,
+    UnrecognizedSelectorError,
+)
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.utils import start_ipython_shell
@@ -401,6 +406,7 @@ class RemoteServer(LockdownService):
 
     BROADCAST_CHANNEL = 0
     INSTRUMENTS_MESSAGE_TYPE = 2
+    CHANNEL_CLOSED = (None, b"")
 
     def __init__(
         self,
@@ -414,38 +420,78 @@ class RemoteServer(LockdownService):
         self._remove_ssl_context = remove_ssl_context
 
         self.supported_identifiers = {}
-        self.last_channel_code = 0
-        self.cur_message = 0
-        self.channel_cache = {}
-        self.channel_messages = {self.BROADCAST_CHANNEL: asyncio.Queue()}
+
+        # channel_cache, _pending_channel_requests, last_channel_code, channel_messages
+        # work together to ensure only one active creator for each channel identifier.
+        # They are to be used only within the protection of _channel_lock.
+        # In any given moment, for a given channel identifier:
+        # - channel_cache contains its channel OR
+        # - _pending_channel_requests contains a Future for its creation OR
+        # - neither if it has not been requested yet.
+        # channel_messages is populated on demand ( on first read or write ),
+        # a value of (None, b"") is enqueued when the channel is closed.
+        self._channel_lock = asyncio.Lock()
+        self.channel_cache: dict[str, Channel] = {}
         self._pending_channel_requests: dict[str, asyncio.Future] = {}
+        self.last_channel_code = 0
+        self.channel_messages = {self.BROADCAST_CHANNEL: asyncio.Queue()}
+
         self._fragment_buffers: dict[tuple[int, int, int], bytes] = {}
+
+        # cur_message holds the identifier of the sent messages.
+        # It is independent of the identifier of the received messages.
+        # Send operations ( self.service.sendall ) and message counting ( self.cur_message++ )
+        # must be protected by _send_lock to avoid concurrent writing on the socket.
         self._send_lock = asyncio.Lock()
-        self._state_lock = asyncio.Lock()
+        self.cur_message = 0
+
+        # reader_task holds the background task responsible for reading from the socket,
+        # defragmenting messages, and dispatching them to channel queues.
+        # Ensure its existance using _ensure_reader() before any operation that expects incoming messages,
+        # and check _reader_closed to detect a closed connection.
+        self._reader_lock = asyncio.Lock()
         self._reader_task: Optional[asyncio.Task] = None
-        self._reader_exception: Optional[BaseException] = None
+        self._reader_closed = False
+
         self.broadcast = Channel.create(0, self)
 
-    def _ensure_channel_fragmenter(self, channel: int) -> asyncio.Queue:
+    async def _get_channel_queue(self, channel: int) -> asyncio.Queue:
         """Return (or lazily create) the inbound queue for a given channel code."""
-        if channel not in self.channel_messages:
-            self.channel_messages[channel] = asyncio.Queue()
-        return self.channel_messages[channel]
+        async with self._channel_lock:
+            if channel not in self.channel_messages:
+                self.channel_messages[channel] = asyncio.Queue()
+            return self.channel_messages[channel]
 
-    def _ensure_reader(self) -> None:
+    async def _ensure_reader(self) -> None:
         """Start the background reader task if it is not currently running."""
-        if self._reader_task is None or self._reader_task.done():
-            self._reader_exception = None
-            self._reader_task = asyncio.create_task(self._reader_loop(), name="remote-server-reader")
+        async with self._reader_lock:
+            if self._reader_closed:
+                raise ConnectionTerminatedError()
+            if self._reader_task is None:
+                self.logger.debug("starting reader task")
+                self._reader_task = asyncio.create_task(self._reader_loop(), name="remote-server-reader")
+                return
+            if not self._reader_task.done():
+                return  # reader running
+            try:
+                e = self._reader_task.exception()
+            except asyncio.CancelledError as e1:
+                e = e1
+            self.logger.exception("reader task exited unexpectedly", exc_info=e)
+            raise ConnectionTerminatedError() from e
 
     async def _stop_reader(self) -> None:
         """Cancel and await the background reader task if present."""
-        if self._reader_task is None:
-            return
-        self._reader_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await self._reader_task
-        self._reader_task = None
+        async with self._reader_lock:
+            if self._reader_closed:
+                return
+            self._reader_closed = True
+            t = self._reader_task
+        if t is not None:
+            self.logger.debug("stopping reader task")
+            t.cancel()
+            with suppress(asyncio.CancelledError):
+                await t
 
     async def _reader_loop(self) -> None:
         """
@@ -463,6 +509,7 @@ class RemoteServer(LockdownService):
           channel queue so awaiters can terminate promptly.
         """
         try:
+            # FIXME: pthread_cond_wait like on the _reader_lock + _reader_closed c
             while True:
                 data = await self.service.recvall(dtx_message_header_struct.sizeof())
                 mheader = dtx_message_header_struct.parse(data)
@@ -476,8 +523,6 @@ class RemoteServer(LockdownService):
                 # treat both as the negative and positive representation of the channel code in the response
                 # the same when performing fragmentation
                 received_channel_code = abs(mheader.channelCode)
-                if not mheader.conversationIndex and mheader.identifier > self.cur_message:
-                    self.cur_message = mheader.identifier
                 fragment_key = (mheader.identifier, mheader.conversationIndex, received_channel_code)
                 payload = self._fragment_buffers.get(fragment_key, b"") + chunk
                 if mheader.fragmentId == mheader.fragmentCount - 1:
@@ -488,16 +533,18 @@ class RemoteServer(LockdownService):
                     assembled_header.channelCode = received_channel_code
                     assembled_header.length = len(payload)
                     self._log_dtx_message("received", assembled_header, payload)
-                    self._ensure_channel_fragmenter(received_channel_code).put_nowait((assembled_header, payload))
+                    (await self._get_channel_queue(received_channel_code)).put_nowait((assembled_header, payload))
                 else:
                     self._fragment_buffers[fragment_key] = payload
-        except asyncio.CancelledError:
-            raise
-        except BaseException as e:
-            self._reader_exception = e
+        except ConnectionResetError:
+            self.logger.info("connection reset by peer, stopping reader loop")
+            async with self._reader_lock:
+                self._reader_closed = True
         finally:
-            for queue in self.channel_messages.values():
-                queue.put_nowait((None, b""))
+            self.logger.debug("reader loop exiting, closing all channels")
+            async with self._channel_lock:
+                for q in self.channel_messages.values():
+                    q.put_nowait(self.CHANNEL_CLOSED)
 
     async def connect(self) -> None:
         """Connect transport, complete protocol prerequisites, and ensure reader loop is active."""
@@ -519,7 +566,7 @@ class RemoteServer(LockdownService):
             await super().connect()
         if self._remove_ssl_context:
             await self._recreate_connection_without_ssl_context()
-        self._ensure_reader()
+        await self._ensure_reader()
 
     async def _recreate_connection_without_ssl_context(self) -> None:
         """Rebind to the underlying raw socket after TLS bootstrap to keep async stream mode."""
@@ -625,7 +672,7 @@ class RemoteServer(LockdownService):
         """
         # NOTE: There is also identifier not in self.supported_identifiers
         # assert identifier in self.supported_identifiers
-        async with self._state_lock:
+        async with self._channel_lock:
             existing = self.channel_cache.get(identifier)
             if existing is not None:
                 return existing
@@ -650,25 +697,17 @@ class RemoteServer(LockdownService):
             ret, _aux = await self.recv_plist()
             assert ret is None
             created_channel = Channel.create(code, self)
-        except BaseException as e:
-            pending_to_fail = None
-            async with self._state_lock:
-                pending_to_fail = self._pending_channel_requests.pop(identifier, None)
-            if pending_to_fail is not None and not pending_to_fail.done():
-                pending_to_fail.set_exception(e)
-            raise
-
-        pending_to_finish = None
-        async with self._state_lock:
-            existing = self.channel_cache.get(identifier)
-            if existing is None:
+            async with self._channel_lock:
                 self.channel_cache[identifier] = created_channel
-                self._ensure_channel_fragmenter(code)
-                existing = created_channel
-            pending_to_finish = self._pending_channel_requests.pop(identifier, None)
-        if pending_to_finish is not None and not pending_to_finish.done():
-            pending_to_finish.set_result(existing)
-        return existing
+                self._pending_channel_requests.pop(identifier, None)
+                pending_request.set_result(created_channel)
+        except BaseException as e:
+            async with self._channel_lock:
+                self.channel_cache.pop(identifier, None)
+                self._pending_channel_requests.pop(identifier, None)
+                pending_request.set_exception(e)
+            raise
+        return created_channel
 
     async def serve_channel(self, identifier: str, channel: Optional[Channel] = None) -> Channel:
         """Accept a reverse-channel request from peer and acknowledge it with an ACK reply."""
@@ -684,7 +723,6 @@ class RemoteServer(LockdownService):
         )
         if channel is None:
             channel = Channel.create(code, self)
-        self._ensure_channel_fragmenter(code)
         await self.send_reply_ack(self.BROADCAST_CHANNEL, mheader.identifier, None, None)
         return channel
 
@@ -809,13 +847,15 @@ class RemoteServer(LockdownService):
 
     async def _recv_packet_fragments(self, channel: int = BROADCAST_CHANNEL):
         """Await next fully-assembled packet for `channel` from the reader loop."""
-        self._ensure_reader()
-        fragmenter = self._ensure_channel_fragmenter(channel)
-        mheader, message = await fragmenter.get()
-        if mheader is None:
-            if self._reader_exception is not None:
-                raise ConnectionTerminatedError() from self._reader_exception
-            raise ConnectionTerminatedError()
+        # here the order matters: get the channel and then check for the reader
+        queue = await self._get_channel_queue(channel)
+        await self._ensure_reader()
+
+        mheader, message = await queue.get()
+
+        if (mheader, message) == self.CHANNEL_CLOSED:
+            await self._ensure_reader()  # this will raise ConnectionTerminatedError if the reader is closed
+            raise ChannelClosedError()  # otherwise the other end genuinely requested a channel close
         return mheader, io.BytesIO(message)
 
     def __enter__(self):
@@ -824,9 +864,10 @@ class RemoteServer(LockdownService):
 
     async def close(self):
         """Gracefully shut down channels, stop reader loop, and close underlying service."""
-        aux = MessageAux()
-        codes = [code for code in self.channel_messages if code > 0]
+        async with self._channel_lock:
+            codes = [code for code in self.channel_messages if code > 0]
         if codes:
+            aux = MessageAux()
             for code in codes:
                 aux.append_int(code)
 
@@ -839,6 +880,7 @@ class RemoteServer(LockdownService):
                 # Async generator teardown / interrupted CLI flows may close without a running loop.
                 if "no running event loop" not in str(e):
                     raise
+
         await self._stop_reader()
         await super().close()
 
