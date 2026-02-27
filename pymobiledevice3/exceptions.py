@@ -224,6 +224,12 @@ class ExtractingStackshotError(PyMobileDevice3Exception):
     pass
 
 
+class ChannelClosedError(PyMobileDevice3Exception):
+    """Raised when trying to send or read a message on a closed channel."""
+
+    pass
+
+
 class ConnectionTerminatedError(PyMobileDevice3Exception):
     """Raise when a connection is terminated abruptly."""
 
