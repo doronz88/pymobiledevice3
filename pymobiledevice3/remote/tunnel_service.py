@@ -55,6 +55,7 @@ except ImportError:
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing
 from pymobiledevice3.ca import make_cert
 from pymobiledevice3.exceptions import (
+    InvalidServiceError,
     PairingError,
     PyMobileDevice3Exception,
     QuicProtocolNotSupportedError,
@@ -916,7 +917,8 @@ class CoreDeviceTunnelService(RemotePairingProtocol, RemoteService):
 
     async def close(self) -> None:
         await self.rsd.close()
-        await self.service.close()
+        if self.service is not None:
+            await self.service.close()
 
     async def receive_response(self) -> dict:
         response = await self.service.receive_response()
@@ -1150,6 +1152,10 @@ async def get_core_device_tunnel_services(
             continue
         try:
             result.append(await create_core_device_tunnel_service_using_rsd(rsd))
+        except InvalidServiceError as e:
+            logger.debug(f"Skipping {rsd.udid}: {e}")
+            await rsd.close()
+            continue
         except Exception:
             logger.exception(f"Failed to start service: {rsd}")
             await rsd.close()
