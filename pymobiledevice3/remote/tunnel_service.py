@@ -57,6 +57,7 @@ from pymobiledevice3.ca import make_cert
 from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
     InvalidServiceError,
+    ConnectionTerminatedError,
     PairingError,
     PyMobileDevice3Exception,
     QuicProtocolNotSupportedError,
