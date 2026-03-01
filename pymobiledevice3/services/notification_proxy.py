@@ -1,5 +1,5 @@
 import socket
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from typing import Optional, Union
 
 from pymobiledevice3.exceptions import NotificationTimeoutError
@@ -31,18 +31,18 @@ class NotificationProxyService(LockdownService):
         if timeout is not None:
             self.service.socket.settimeout(timeout)
 
-    def notify_post(self, name: str) -> None:
+    async def notify_post(self, name: str) -> None:
         """Send notification to the device's notification_proxy."""
-        self.service.send_plist({"Command": "PostNotification", "Name": name})
+        await self.service.send_plist({"Command": "PostNotification", "Name": name})
 
-    def notify_register_dispatch(self, name: str) -> None:
+    async def notify_register_dispatch(self, name: str) -> None:
         """Tells the device to send a notification on the specified event."""
         self.logger.info(f"Observing {name}")
-        self.service.send_plist({"Command": "ObserveNotification", "Name": name})
+        await self.service.send_plist({"Command": "ObserveNotification", "Name": name})
 
-    def receive_notification(self) -> Generator[dict, None, None]:
+    async def receive_notification(self) -> AsyncGenerator[dict, None]:
         while True:
             try:
-                yield self.service.recv_plist()
+                yield await self.service.recv_plist()
             except socket.timeout as e:
                 raise NotificationTimeoutError from e

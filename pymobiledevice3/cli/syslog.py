@@ -11,6 +11,7 @@ from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import (
     ServiceProviderDep,
+    async_command,
     get_last_used_terminal_formatting,
     user_requested_colored_output,
 )
@@ -28,10 +29,12 @@ cli = InjectingTyper(
 
 
 @cli.command("live-old")
-def syslog_live_old(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def syslog_live_old(service_provider: ServiceProviderDep) -> None:
     """view live syslog lines in raw bytes form from old relay"""
-    for line in SyslogService(service_provider=service_provider).watch():
-        print(line)
+    async with SyslogService(service_provider=service_provider) as service:
+        async for line in service.watch():
+            print(line)
 
 
 def format_line(
@@ -93,7 +96,7 @@ def format_line(
     return line
 
 
-def syslog_live(
+async def syslog_live(
     service_provider: LockdownServiceProvider,
     out: Optional[TextIO],
     pid: int,
@@ -118,7 +121,7 @@ def syslog_live(
             return line.replace(m.group(1), typer.style(m.group(1), bold=True, underline=True))
         return ""
 
-    for syslog_entry in OsTraceService(lockdown=service_provider).syslog(pid=pid):
+    async for syslog_entry in OsTraceService(lockdown=service_provider).syslog(pid=pid):
         if process_name and posixpath.basename(syslog_entry.filename) != process_name:
             continue
 
@@ -185,7 +188,8 @@ def syslog_live(
 
 
 @cli.command("live")
-def cli_syslog_live(
+@async_command
+async def cli_syslog_live(
     service_provider: ServiceProviderDep,
     out: Annotated[
         Optional[Path],
@@ -265,7 +269,7 @@ def cli_syslog_live(
     """view live syslog lines"""
 
     with out.open("wt") if out else nullcontext() as out_file:
-        syslog_live(
+        await syslog_live(
             service_provider,
             out_file,
             pid,
@@ -281,7 +285,8 @@ def cli_syslog_live(
 
 
 @cli.command("collect")
-def syslog_collect(
+@async_command
+async def syslog_collect(
     service_provider: ServiceProviderDep,
     out: Annotated[
         Path,
@@ -326,6 +331,6 @@ def syslog_collect(
             "the file with the likes of the Console.app and the `log show` utilities"
         )
 
-    OsTraceService(lockdown=service_provider).collect(
+    await OsTraceService(lockdown=service_provider).collect(
         str(out), size_limit=size_limit, age_limit=age_limit, start_time=start_time
     )

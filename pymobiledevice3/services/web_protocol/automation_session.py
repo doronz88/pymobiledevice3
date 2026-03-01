@@ -165,8 +165,7 @@ class AutomationSession:
         self.page_load_timeout = 3000000
         self.script_timeout = -1
 
-    @property
-    def id_(self):
+    def get_id(self):
         return self.protocol.id_
 
     async def start_session(self):

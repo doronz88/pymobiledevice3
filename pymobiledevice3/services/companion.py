@@ -17,19 +17,19 @@ class CompanionProxyService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def list(self):
-        service = self.lockdown.start_lockdown_service(self.service_name)
-        return service.send_recv_plist({"Command": "GetDeviceRegistry"}).get("PairedDevicesArray", [])
+    async def list(self):
+        service = await self.lockdown.start_lockdown_service(self.service_name)
+        return (await service.send_recv_plist({"Command": "GetDeviceRegistry"})).get("PairedDevicesArray", [])
 
-    def listen_for_devices(self):
-        service = self.lockdown.start_lockdown_service(self.service_name)
-        service.send_plist({"Command": "StartListeningForDevices"})
+    async def listen_for_devices(self):
+        service = await self.lockdown.start_lockdown_service(self.service_name)
+        await service.send_plist({"Command": "StartListeningForDevices"})
         while True:
-            yield service.recv_plist()
+            yield await service.recv_plist()
 
-    def get_value(self, udid: str, key: str):
-        service = self.lockdown.start_lockdown_service(self.service_name)
-        response = service.send_recv_plist({
+    async def get_value(self, udid: str, key: str):
+        service = await self.lockdown.start_lockdown_service(self.service_name)
+        response = await service.send_recv_plist({
             "Command": "GetValueFromRegistry",
             "GetValueGizmoUDIDKey": udid,
             "GetValueKeyKey": key,
@@ -42,10 +42,10 @@ class CompanionProxyService(LockdownService):
         error = response.get("Error")
         raise PyMobileDevice3Exception(error)
 
-    def start_forwarding_service_port(
+    async def start_forwarding_service_port(
         self, remote_port: int, service_name: Optional[str] = None, options: Optional[dict] = None
     ):
-        service = self.lockdown.start_lockdown_service(self.service_name)
+        service = await self.lockdown.start_lockdown_service(self.service_name)
 
         request = {
             "Command": "StartForwardingServicePort",
@@ -60,11 +60,11 @@ class CompanionProxyService(LockdownService):
         if options is not None:
             request.update(options)
 
-        return service.send_recv_plist(request).get("CompanionProxyServicePort")
+        return (await service.send_recv_plist(request)).get("CompanionProxyServicePort")
 
-    def stop_forwarding_service_port(self, remote_port: int):
-        service = self.lockdown.start_lockdown_service(self.service_name)
+    async def stop_forwarding_service_port(self, remote_port: int):
+        service = await self.lockdown.start_lockdown_service(self.service_name)
 
         request = {"Command": "StopForwardingServicePort", "GizmoRemotePortNumber": remote_port}
 
-        return service.send_recv_plist(request)
+        return await service.send_recv_plist(request)

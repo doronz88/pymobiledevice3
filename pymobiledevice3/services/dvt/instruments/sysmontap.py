@@ -7,12 +7,7 @@ from pymobiledevice3.services.remote_server import Tap
 class Sysmontap(Tap):
     IDENTIFIER = "com.apple.instruments.server.services.sysmontap"
 
-    def __init__(self, dvt):
-        self._device_info = DeviceInfo(dvt)
-
-        process_attributes = list(self._device_info.request_information("sysmonProcessAttributes"))
-        system_attributes = list(self._device_info.request_information("sysmonSystemAttributes"))
-
+    def __init__(self, dvt, process_attributes: list[str], system_attributes: list[str]):
         self.process_attributes_cls = dataclasses.make_dataclass("SysmonProcessAttributes", process_attributes)
         self.system_attributes_cls = dataclasses.make_dataclass("SysmonSystemAttributes", system_attributes)
 
@@ -28,12 +23,15 @@ class Sysmontap(Tap):
 
         super().__init__(dvt, self.IDENTIFIER, config)
 
-    def __iter__(self):
-        while True:
-            yield from self.channel.receive_plist()
+    @classmethod
+    async def create(cls, dvt) -> "Sysmontap":
+        device_info = DeviceInfo(dvt)
+        process_attributes = list(await device_info.request_information("sysmonProcessAttributes"))
+        system_attributes = list(await device_info.request_information("sysmonSystemAttributes"))
+        return cls(dvt, process_attributes, system_attributes)
 
-    def iter_processes(self):
-        for row in self:
+    async def iter_processes(self):
+        async for row in self:
             if "Processes" not in row:
                 continue
 

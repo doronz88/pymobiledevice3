@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+import asyncio
 import plistlib
-import time
 import uuid
-from contextlib import contextmanager, suppress
+from asyncio import IncompleteReadError
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Union
@@ -10,9 +11,7 @@ from typing import Union
 from pymobiledevice3.exceptions import (
     AfcException,
     AfcFileNotFoundError,
-    ConnectionTerminatedError,
     LockdownError,
-    MissingValueError,
     PyMobileDevice3Exception,
 )
 from pymobiledevice3.lockdown import LockdownClient
@@ -57,11 +56,12 @@ class Mobilebackup2Service(LockdownService):
     @property
     def will_encrypt(self) -> bool:
         try:
-            return self.lockdown.get_value("com.apple.mobile.backup", "WillEncrypt")
+            domain_values = self.lockdown.all_values.get("com.apple.mobile.backup", {})
+            return bool(domain_values.get("WillEncrypt", False))
         except LockdownError:
             return False
 
-    def backup(
+    async def backup(
         self, full: bool = True, backup_directory: Union[str, Path] = ".", progress_callback=lambda x: None
     ) -> None:
         """
@@ -75,14 +75,14 @@ class Mobilebackup2Service(LockdownService):
         device_directory = backup_directory / self.lockdown.udid
         device_directory.mkdir(exist_ok=True, mode=0o755, parents=True)
 
-        with (
+        async with (
             self.device_link(backup_directory) as dl,
             NotificationProxyService(self.lockdown) as notification_proxy,
             AfcService(self.lockdown) as afc,
             self._backup_lock(afc, notification_proxy),
         ):
             # Initialize Info.plist
-            info_plist = self.init_mobile_backup_factory_info(afc)
+            info_plist = await self.init_mobile_backup_factory_info(afc)
             with open(device_directory / "Info.plist", "wb") as fd:
                 plistlib.dump(info_plist, fd)
 
@@ -111,10 +111,10 @@ class Mobilebackup2Service(LockdownService):
                 manifest_path.unlink(missing_ok=True)
             (device_directory / "Manifest.plist").touch()
 
-            dl.send_process_message({"MessageName": "Backup", "TargetIdentifier": self.lockdown.udid})
-            dl.dl_loop(progress_callback)
+            await dl.send_process_message({"MessageName": "Backup", "TargetIdentifier": self.lockdown.udid})
+            await dl.dl_loop(progress_callback)
 
-    def restore(
+    async def restore(
         self,
         backup_directory=".",
         system: bool = False,
@@ -145,7 +145,7 @@ class Mobilebackup2Service(LockdownService):
         source = source if source else self.lockdown.udid
         self._assert_backup_exists(backup_directory, source)
 
-        with (
+        async with (
             self.device_link(backup_directory) as dl,
             NotificationProxyService(self.lockdown) as notification_proxy,
             AfcService(self.lockdown) as afc,
@@ -168,7 +168,7 @@ class Mobilebackup2Service(LockdownService):
                 else:
                     self.logger.error("Backup is encrypted, please supply password.")
                     return
-            dl.send_process_message({
+            await dl.send_process_message({
                 "MessageName": "Restore",
                 "TargetIdentifier": self.lockdown.udid,
                 "SourceIdentifier": source,
@@ -181,12 +181,14 @@ class Mobilebackup2Service(LockdownService):
                 info_plist_path = backup_directory / source / "Info.plist"
                 applications = plistlib.loads(info_plist_path.read_bytes()).get("Applications")
                 if applications is not None:
-                    afc.makedirs("/iTunesRestore")
-                    afc.set_file_contents("/iTunesRestore/RestoreApplications.plist", plistlib.dumps(applications))
+                    await afc.makedirs("/iTunesRestore")
+                    await afc.set_file_contents(
+                        "/iTunesRestore/RestoreApplications.plist", plistlib.dumps(applications)
+                    )
 
-            dl.dl_loop(progress_callback)
+            await dl.dl_loop(progress_callback)
 
-    def info(self, backup_directory=".", source: str = "") -> str:
+    async def info(self, backup_directory=".", source: str = "") -> str:
         """
         Get information about a backup.
         :param backup_directory: Path of the backup directory.
@@ -195,15 +197,15 @@ class Mobilebackup2Service(LockdownService):
         """
         backup_dir = Path(backup_directory)
         self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
-        with self.device_link(backup_dir) as dl:
+        async with self.device_link(backup_dir) as dl:
             message = {"MessageName": "Info", "TargetIdentifier": self.lockdown.udid}
             if source:
                 message["SourceIdentifier"] = source
-            dl.send_process_message(message)
-            result = dl.dl_loop()
+            await dl.send_process_message(message)
+            result = await dl.dl_loop()
         return result
 
-    def list(self, backup_directory=".", source: str = "") -> str:
+    async def list(self, backup_directory=".", source: str = "") -> str:
         """
         List the files in the last backup.
         :param backup_directory: Path of the backup directory.
@@ -213,16 +215,16 @@ class Mobilebackup2Service(LockdownService):
         backup_dir = Path(backup_directory)
         source = source if source else self.lockdown.udid
         self._assert_backup_exists(backup_dir, source)
-        with self.device_link(backup_dir) as dl:
-            dl.send_process_message({
+        async with self.device_link(backup_dir) as dl:
+            await dl.send_process_message({
                 "MessageName": "List",
                 "TargetIdentifier": self.lockdown.udid,
                 "SourceIdentifier": source,
             })
-            result = dl.dl_loop()
+            result = await dl.dl_loop()
         return result
 
-    def unback(self, backup_directory=".", password: str = "", source: str = "") -> None:
+    async def unback(self, backup_directory=".", password: str = "", source: str = "") -> None:
         """
         Unpack a complete backup to its device hierarchy.
         :param backup_directory: Path of the backup directory.
@@ -231,16 +233,16 @@ class Mobilebackup2Service(LockdownService):
         """
         backup_dir = Path(backup_directory)
         self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
-        with self.device_link(backup_dir) as dl:
+        async with self.device_link(backup_dir) as dl:
             message = {"MessageName": "Unback", "TargetIdentifier": self.lockdown.udid}
             if source:
                 message["SourceIdentifier"] = source
             if password:
                 message["Password"] = password
-            dl.send_process_message(message)
-            dl.dl_loop()
+            await dl.send_process_message(message)
+            await dl.dl_loop()
 
-    def extract(
+    async def extract(
         self, domain_name: str, relative_path: str, backup_directory=".", password: str = "", source: str = ""
     ) -> None:
         """
@@ -253,7 +255,7 @@ class Mobilebackup2Service(LockdownService):
         """
         backup_dir = Path(backup_directory)
         self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
-        with self.device_link(backup_dir) as dl:
+        async with self.device_link(backup_dir) as dl:
             message = {
                 "MessageName": "Extract",
                 "TargetIdentifier": self.lockdown.udid,
@@ -264,34 +266,35 @@ class Mobilebackup2Service(LockdownService):
                 message["SourceIdentifier"] = source
             if password:
                 message["Password"] = password
-            dl.send_process_message(message)
-            dl.dl_loop()
+            await dl.send_process_message(message)
+            await dl.dl_loop()
 
-    def change_password(self, backup_directory=".", old: str = "", new: str = "") -> None:
+    async def change_password(self, backup_directory=".", old: str = "", new: str = "") -> None:
         """
         Change backup password.
         :param backup_directory: Backups directory.
         :param old: Previous password. Omit when enabling backup encryption.
         :param new: New password. Omit when disabling backup encryption.
         """
-        with self.device_link(Path(backup_directory)) as dl:
+        async with self.device_link(Path(backup_directory)) as dl:
             message = {"MessageName": "ChangePassword", "TargetIdentifier": self.lockdown.udid}
             if old:
                 message["OldPassword"] = old
             if new:
                 message["NewPassword"] = new
-            dl.send_process_message(message)
-            dl.dl_loop()
+            await dl.send_process_message(message)
+            await dl.dl_loop()
 
-    def erase_device(self, backup_directory=".") -> None:
+    async def erase_device(self, backup_directory=".") -> None:
         """
         Erase the device.
         """
-        with suppress(ConnectionTerminatedError), self.device_link(Path(backup_directory)) as dl:
-            dl.send_process_message({"MessageName": "EraseDevice", "TargetIdentifier": self.lockdown.udid})
-            dl.dl_loop()
+        with suppress(IncompleteReadError):
+            async with self.device_link(Path(backup_directory)) as dl:
+                await dl.send_process_message({"MessageName": "EraseDevice", "TargetIdentifier": self.lockdown.udid})
+                await dl.dl_loop()
 
-    def version_exchange(self, dl: DeviceLink, local_versions=None) -> None:
+    async def version_exchange(self, dl: DeviceLink, local_versions=None) -> None:
         """
         Exchange versions with the device and assert that the device supports our version of the protocol.
         :param dl: Initialized device link.
@@ -299,27 +302,26 @@ class Mobilebackup2Service(LockdownService):
         """
         if local_versions is None:
             local_versions = SUPPORTED_VERSIONS
-        dl.send_process_message({
+        await dl.send_process_message({
             "MessageName": "Hello",
             "SupportedProtocolVersions": local_versions,
         })
-        reply = dl.receive_message()
+        reply = await dl.receive_message()
         assert reply[0] == "DLMessageProcessMessage" and reply[1]["ErrorCode"] == 0
         assert reply[1]["ProtocolVersion"] in local_versions
 
-    def init_mobile_backup_factory_info(self, afc: AfcService):
-        with InstallationProxyService(self.lockdown) as ip, SpringBoardServicesService(self.lockdown) as sbs:
-            root_node = self.lockdown.get_value()
-            itunes_settings = self.lockdown.get_value(domain="com.apple.iTunes")
-            try:
-                min_itunes_version = self.lockdown.get_value("com.apple.mobile.iTunes", "MinITunesVersion")
-            except MissingValueError:
+    async def init_mobile_backup_factory_info(self, afc: AfcService):
+        async with InstallationProxyService(self.lockdown) as ip, SpringBoardServicesService(self.lockdown) as sbs:
+            root_node = self.lockdown.all_values
+            itunes_settings = self.lockdown.all_values.get("com.apple.iTunes", {})
+            min_itunes_version = self.lockdown.all_values.get("com.apple.mobile.iTunes", {}).get("MinITunesVersion")
+            if min_itunes_version is None:
                 # iPadOS may not contain this value. See:
                 # https://github.com/doronz88/pymobiledevice3/issues/1332
                 min_itunes_version = "10.0.1"
             app_dict = {}
             installed_apps = []
-            apps = ip.browse(
+            apps = await ip.browse(
                 options={"ApplicationType": "User"},
                 attributes=["CFBundleIdentifier", "ApplicationSINF", "iTunesMetadata"],
             )
@@ -331,13 +333,13 @@ class Mobilebackup2Service(LockdownService):
                         app_dict[bundle_id] = {
                             "ApplicationSINF": app["ApplicationSINF"],
                             "iTunesMetadata": app["iTunesMetadata"],
-                            "PlaceholderIcon": sbs.get_icon_pngdata(bundle_id),
+                            "PlaceholderIcon": await sbs.get_icon_pngdata(bundle_id),
                         }
 
             files = {}
             for file in ITUNES_FILES:
                 try:
-                    data_buf = afc.get_file_contents("/iTunes_Control/iTunes/" + file)
+                    data_buf = await afc.get_file_contents("/iTunes_Control/iTunes/" + file)
                 except AfcFileNotFoundError:
                     pass
                 else:
@@ -370,7 +372,7 @@ class Mobilebackup2Service(LockdownService):
                 ret["Phone Number"] = root_node["PhoneNumber"]
 
             try:
-                data_buf = afc.get_file_contents("/Books/iBooksData2.plist")
+                data_buf = await afc.get_file_contents("/Books/iBooksData2.plist")
             except AfcFileNotFoundError:
                 pass
             else:
@@ -379,33 +381,33 @@ class Mobilebackup2Service(LockdownService):
                 ret["iTunes Settings"] = itunes_settings
             return ret
 
-    @contextmanager
-    def _backup_lock(self, afc, notification_proxy):
-        notification_proxy.notify_post(NP_SYNC_WILL_START)
-        lockfile = afc.fopen("/com.apple.itunes.lock_sync", "r+")
+    @asynccontextmanager
+    async def _backup_lock(self, afc, notification_proxy):
+        await notification_proxy.notify_post(NP_SYNC_WILL_START)
+        lockfile = await afc.fopen("/com.apple.itunes.lock_sync", "r+")
         if lockfile:
-            notification_proxy.notify_post(NP_SYNC_LOCK_REQUEST)
+            await notification_proxy.notify_post(NP_SYNC_LOCK_REQUEST)
             for _ in range(50):
                 try:
-                    afc.lock(lockfile, AFC_LOCK_EX)
+                    await afc.lock(lockfile, AFC_LOCK_EX)
                 except AfcException as e:
                     if e.status == AfcError.OP_WOULD_BLOCK:
-                        time.sleep(0.2)
+                        await asyncio.sleep(0.2)
                     else:
-                        afc.fclose(lockfile)
+                        await afc.fclose(lockfile)
                         raise
                 else:
-                    notification_proxy.notify_post(NP_SYNC_DID_START)
+                    await notification_proxy.notify_post(NP_SYNC_DID_START)
                     break
             else:  # No break, lock failed.
-                afc.fclose(lockfile)
+                await afc.fclose(lockfile)
                 raise PyMobileDevice3Exception("Failed to lock itunes sync file")
         try:
             yield
         finally:
-            afc.lock(lockfile, AFC_LOCK_UN)
-            afc.fclose(lockfile)
-            notification_proxy.notify_post(NP_SYNC_DID_FINISH)
+            await afc.lock(lockfile, AFC_LOCK_UN)
+            await afc.fclose(lockfile)
+            await notification_proxy.notify_post(NP_SYNC_DID_FINISH)
 
     @staticmethod
     def _assert_backup_exists(backup_directory: Path, identifier: str):
@@ -414,12 +416,12 @@ class Mobilebackup2Service(LockdownService):
         assert (device_directory / "Manifest.plist").exists()
         assert (device_directory / "Status.plist").exists()
 
-    @contextmanager
-    def device_link(self, backup_directory):
+    @asynccontextmanager
+    async def device_link(self, backup_directory):
         dl = DeviceLink(self.service, backup_directory)
-        dl.version_exchange()
-        self.version_exchange(dl)
+        await dl.version_exchange()
+        await self.version_exchange(dl)
         try:
             yield dl
         finally:
-            dl.disconnect()
+            await dl.disconnect()
