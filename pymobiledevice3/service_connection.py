@@ -26,6 +26,7 @@ DEFAULT_AFTER_IDLE_SEC = 3
 DEFAULT_INTERVAL_SEC = 3
 DEFAULT_MAX_FAILS = 3
 DEFAULT_TIMEOUT = 1
+DEFAULT_SSL_HANDSHAKE_TIMEOUT = 10
 OSUTIL = get_os_utils()
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every service layer behind the lockdownd daemon.
@@ -372,9 +373,13 @@ class ServiceConnection:
         :param keyfile: The path to the key file (optional).
         """
         try:
+            self.socket.settimeout(DEFAULT_SSL_HANDSHAKE_TIMEOUT)
             self.socket = self.create_ssl_context(certfile, keyfile=keyfile).wrap_socket(self.socket)
         except OSError as e:
             raise ConnectionTerminatedError() from e
+        finally:
+            if self.socket is not None:
+                self.socket.settimeout(None)
 
     async def ssl_start(self, certfile: str, keyfile: Optional[str] = None) -> None:
         """
@@ -385,9 +390,13 @@ class ServiceConnection:
         """
         await self._ensure_started()
         try:
-            await self.writer.start_tls(
-                sslcontext=self.create_ssl_context(certfile, keyfile=keyfile),
-                server_hostname="",
+            await asyncio.wait_for(
+                self.writer.start_tls(
+                    sslcontext=self.create_ssl_context(certfile, keyfile=keyfile),
+                    server_hostname="",
+                    ssl_handshake_timeout=DEFAULT_SSL_HANDSHAKE_TIMEOUT,
+                ),
+                timeout=DEFAULT_SSL_HANDSHAKE_TIMEOUT,
             )
         except OSError as e:
             raise ConnectionTerminatedError() from e
