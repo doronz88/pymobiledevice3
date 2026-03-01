@@ -15,6 +15,7 @@ from pymobiledevice3.cli.developer import (
     dvt,
     fetch_symbols,
     simulate_location,
+    wda,
 )
 from pymobiledevice3.services.remote_server import RemoteServer
 from pymobiledevice3.services.screenshot import ScreenshotService
@@ -43,6 +44,7 @@ cli.add_typer(condition.cli)
 cli.add_typer(debugserver.cli)
 cli.add_typer(arbitration.cli)
 cli.add_typer(core_device.cli)
+cli.add_typer(wda.cli)
 
 
 @cli.command("shell")

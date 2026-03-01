@@ -40,3 +40,4 @@ pyimg4>=0.8.8
 typer>=0.20.0
 click>=8.2.0
 typer-injector>=0.2.0
+defusedxml
