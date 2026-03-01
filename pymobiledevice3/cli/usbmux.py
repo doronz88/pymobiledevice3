@@ -101,6 +101,13 @@ async def usbmux_list(
             help="show only network devices",
         ),
     ] = False,
+    simple: Annotated[
+        bool,
+        typer.Option(
+            "--simple",
+            help="List only UDIDs without connecting to lockdownd.",
+        ),
+    ] = False,
 ) -> None:
     """List devices known to usbmuxd (USB and Wi-Fi)."""
     connected_devices = []
@@ -111,6 +118,10 @@ async def usbmux_list(
             continue
 
         if network and not device.is_network:
+            continue
+
+        if simple:
+            connected_devices.append(udid)
             continue
 
         lockdown = await create_using_usbmux(
