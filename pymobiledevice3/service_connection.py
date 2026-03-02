@@ -409,6 +409,13 @@ class ServiceConnection:
             raise ConnectionTerminatedError()
         self.reader, self.writer = await asyncio.open_connection(sock=self.socket)
 
+    async def __aenter__(self) -> "ServiceConnection":
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.close()
+
     def shell(self) -> None:
         """Start an interactive shell."""
         start_ipython_shell(

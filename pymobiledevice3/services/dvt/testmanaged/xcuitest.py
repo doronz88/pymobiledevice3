@@ -7,7 +7,6 @@ from bpylist2 import archiver
 from packaging.version import Version
 
 from pymobiledevice3.exceptions import AppNotInstalledError, ConnectionTerminatedError
-from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.dvt_testmanaged_proxy import DvtTestmanagedProxyService
@@ -56,7 +55,12 @@ class ReverseRemoteService:
 class XCUITestListener(ReverseRemoteService):
     """dtxproxy:XCTestDriverInterface:XCTestManager_IDEInterface"""
 
-    def __init__(self, service: DvtTestmanagedProxyService, channel: int, test_configuration: XCTestConfiguration):
+    def __init__(
+        self,
+        service: DvtTestmanagedProxyService,
+        channel: int,
+        test_configuration: XCTestConfiguration,
+    ):
         super().__init__(service, channel)
         self.test_config = test_configuration
 
@@ -67,11 +71,11 @@ class XCUITestListener(ReverseRemoteService):
         self.logger.debug("logDebugMessage: %s", args[0].value.strip())
 
     def testRunnerReadyWithCapabilities_(self, args: Optional[MessageAux] = None):
-        self.logger.info("testRunnerReadyWithCapabilities: %s", args[0].value)
+        self.logger.debug("testRunnerReadyWithCapabilities: %s", args[0].value)
         return self.test_config
 
     def didFinishExecutingTestPlan(self, args: Optional[MessageAux] = None):
-        self.logger.info("didFinishExecutingTestPlan")
+        self.logger.debug("didFinishExecutingTestPlan")
 
 
 class XCUITestPlanConsumer:
@@ -126,7 +130,7 @@ class XCUITestPlanConsumer:
         self.__closing__ = True
         self.__running__ = False
 
-        logger.info("Killing UITest with pid %d ...", self.pid)
+        logger.debug("Killing UITest with pid %d ...", self.pid)
         try:
             await self.pctrl.kill(self.pid)
         except RuntimeError as e:
@@ -179,7 +183,7 @@ class XCUITestService:
         pid = await self.launch_test_app(
             session_identifier, app_info, bundle_id, xctest_path, test_runner_env, test_runner_args
         )
-        logger.info("Runner started with pid:%d, waiting for testBundleReady", pid)
+        logger.debug("Runner started with pid:%d, waiting for testBundleReady", pid)
 
         if self.product_major_version < 17:
             await asyncio.sleep(1)
@@ -223,7 +227,7 @@ class XCUITestService:
         ctrl_dvt = DvtTestmanagedProxyService(lockdown=self.service_provider)
         await ctrl_dvt.perform_handshake()
 
-        logger.info("make channel %s", self.IDENTIFIER)
+        logger.debug("make channel %s", self.IDENTIFIER)
         ctrl_chan = await ctrl_dvt.make_channel(self.IDENTIFIER)
         if self.product_major_version >= 17:
             await ctrl_dvt.send_message(
@@ -232,7 +236,7 @@ class XCUITestService:
                 MessageAux().append_obj(XCTCapabilities({})),
             )
             reply = await ctrl_chan.receive_plist()
-            logger.info("ctrl_conn handshake capabilities: %s", reply)
+            logger.debug("ctrl_conn handshake capabilities: %s", reply)
         elif self.product_major_version >= 11:
             await ctrl_dvt.send_message(
                 ctrl_chan,
@@ -240,7 +244,7 @@ class XCUITestService:
                 MessageAux().append_obj(self.XCODE_VERSION),
             )
             reply = await ctrl_chan.receive_plist()
-            logger.info("ctrl_conn handshake xcode version: %s", reply)
+            logger.debug("ctrl_conn handshake xcode version: %s", reply)
 
         main_dvt = DvtTestmanagedProxyService(lockdown=self.service_provider)
         await main_dvt.perform_handshake()
@@ -252,7 +256,7 @@ class XCUITestService:
                 args=MessageAux().append_obj(session_identifier).append_obj(ide_capabilities),
             )
             reply = await main_chan.receive_plist()
-            logger.info("main_conn handshake capabilities: %s", reply)
+            logger.debug("main_conn handshake capabilities: %s", reply)
         else:
             await main_dvt.send_message(
                 channel=main_chan,
@@ -264,7 +268,7 @@ class XCUITestService:
                 .append_obj(self.XCODE_VERSION),
             )
             reply = await main_chan.receive_plist()
-            logger.info("main_conn handshake xcode version: %s", reply)
+            logger.debug("main_conn handshake xcode version: %s", reply)
         return ctrl_dvt, ctrl_chan, main_dvt, main_chan
 
     async def setup_xcuitest(
@@ -307,7 +311,7 @@ class XCUITestService:
         await chan.send_message(selector, aux)
         reply = await chan.receive_plist()
         if isinstance(reply, bool) and reply is True:
-            logger.info("authorizing test session for pid %d successful %r", pid, reply)
+            logger.debug("authorizing test session for pid %d successful %r", pid, reply)
         else:
             raise RuntimeError(f"Failed to authorize test process id: {reply}")
 
@@ -323,7 +327,7 @@ class XCUITestService:
         app_container = app_info["Container"]
         app_path = app_info["Path"]
         exec_name = app_info["CFBundleExecutable"]
-        # # logger.info('CFBundleExecutable: %s', exec_name)
+        # # logger.debug()('CFBundleExecutable: %s', exec_name)
         # # CFBundleName always endswith -Runner
         assert exec_name.endswith("-Runner"), f"Invalid CFBundleExecutable: {exec_name}"
         target_name = exec_name[: -len("-Runner")]
@@ -384,7 +388,19 @@ class XCUITestService:
         )
 
 
-async def get_app_info(service_provider: LockdownClient, bundle_id: str) -> dict[str, Any]:
+async def start_xcuitest_runner(
+    service_provider: LockdownServiceProvider,
+    bundle_id: str,
+    test_runner_env: Optional[dict] = None,
+    test_runner_args: Optional[list] = None,
+) -> tuple[XCUITestPlanConsumer, asyncio.Task]:
+    service = XCUITestService(service_provider)
+    consumer = await service.start(bundle_id, test_runner_env, test_runner_args)
+    task = asyncio.create_task(consumer.consume())
+    return consumer, task
+
+
+async def get_app_info(service_provider: LockdownServiceProvider, bundle_id: str) -> dict[str, Any]:
     async with InstallationProxyService(lockdown=service_provider) as install_service:
         apps = await install_service.get_apps(bundle_identifiers=[bundle_id])
         if not apps:

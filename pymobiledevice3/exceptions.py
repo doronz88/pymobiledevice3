@@ -67,6 +67,7 @@ __all__ = [
     "UnrecognizedSelectorError",
     "UnsupportedCommandError",
     "UserDeniedPairingError",
+    "WdaError",
     "WebInspectorNotEnabledError",
     "WirError",
 ]
@@ -520,3 +521,11 @@ class TSSError(PyMobileDevice3Exception):
     """An unexpected message was received from apple ticket server"""
 
     pass
+
+
+class WdaError(PyMobileDevice3Exception):
+    """Raised for WebDriverAgent (WDA) errors."""
+
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
