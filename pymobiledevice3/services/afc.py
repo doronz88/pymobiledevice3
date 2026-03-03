@@ -8,7 +8,6 @@ interactive shell for navigating the device's file system rooted at /var/mobile/
 """
 
 import asyncio
-import atexit
 import contextlib
 import inspect
 import logging
@@ -46,7 +45,7 @@ from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, Argum
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
-from pymobiledevice3.utils import try_decode
+from pymobiledevice3.utils import get_asyncio_loop, try_decode
 
 MAXIMUM_READ_SIZE = 4 * 1024**2  # 4 MB
 MODE_MASK = 0o0000777
@@ -1051,29 +1050,25 @@ class AfcLsStub(LsStub):
 
 
 class _AsyncRunner:
-    """Run async coroutines on a dedicated event loop thread."""
+    """Run async coroutines on the shared CLI event loop."""
 
     def __init__(self) -> None:
-        self._loop = asyncio.new_event_loop()
-        self._thread = threading.Thread(target=self._run_loop, daemon=True)
-        self._thread.start()
-        atexit.register(self.stop)
-
-    def _run_loop(self) -> None:
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_forever()
+        self._loop = get_asyncio_loop()
+        self._lock = threading.Lock()
 
     def run(self, coro):
-        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        return fut.result()
+        with self._lock:
+            if self._loop.is_running():
+                loop_thread_id = getattr(self._loop, "_thread_id", None)
+                if loop_thread_id == threading.get_ident():
+                    raise RuntimeError("Cannot run blocking AFC shell command inside the running event loop thread")
+                fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
+                return fut.result()
+            return self._loop.run_until_complete(coro)
 
     def stop(self) -> None:
-        if self._loop.is_closed():
-            return
-        self._loop.call_soon_threadsafe(self._loop.stop)
-        self._thread.join(timeout=1)
-        with contextlib.suppress(Exception):
-            self._loop.close()
+        # The CLI event loop is process-global and managed elsewhere.
+        return
 
 
 class _SyncAsyncGenIterator:
@@ -1114,7 +1109,14 @@ class _SyncAfcProxy:
                 return _SyncAsyncGenIterator(result, self._lock, self._runner)
             if inspect.isawaitable(result):
                 with self._lock:
-                    return self._runner.run(result)
+                    try:
+                        return self._runner.run(result)
+                    except Exception:
+                        # Avoid "coroutine was never awaited" warnings when execution
+                        # is rejected (e.g. completion from a running event loop thread).
+                        if asyncio.iscoroutine(result):
+                            result.close()
+                        raise
             return result
 
         return sync_call
@@ -1138,20 +1140,27 @@ def path_completer(xsh, action, completer, alias, command) -> list[str]:
     pwd = shell.cwd
     is_absolute = command.prefix.startswith("/")
     dirpath = posixpath.join(pwd, command.prefix)
-    if not shell.afc.exists(dirpath):
-        dirpath = posixpath.dirname(dirpath)
+    try:
+        if not shell.afc.exists(dirpath):
+            dirpath = posixpath.dirname(dirpath)
+        shell._refresh_completion_cache_sync(dirpath)
+    except RuntimeError:
+        # prompt_toolkit completion runs inside an active loop thread where we
+        # cannot block for device I/O. Use cached entries and refresh in background.
+        shell._schedule_completion_cache_refresh(dirpath)
+        if not shell._get_completion_cache(dirpath):
+            dirpath = posixpath.dirname(dirpath)
+            shell._schedule_completion_cache_refresh(dirpath)
+
     result = []
-    for f in shell.afc.listdir(dirpath):
+    for f, is_dir in shell._get_completion_cache(dirpath):
         if is_absolute:
             completion_option = posixpath.join(dirpath, f)
         else:
             completion_option = posixpath.relpath(posixpath.join(dirpath, f), pwd)
-        try:
-            if shell.afc.isdir(posixpath.join(dirpath, f)):
-                result.append(f"{completion_option}/")
-            else:
-                result.append(completion_option)
-        except AfcException:
+        if is_dir:
+            result.append(f"{completion_option}/")
+        else:
             result.append(completion_option)
     return result
 
@@ -1173,19 +1182,27 @@ def dir_completer(xsh, action, completer, alias, command):
     pwd = shell.cwd
     is_absolute = command.prefix.startswith("/")
     dirpath = posixpath.join(pwd, command.prefix)
-    if not shell.afc.exists(dirpath):
-        dirpath = posixpath.dirname(dirpath)
+    try:
+        if not shell.afc.exists(dirpath):
+            dirpath = posixpath.dirname(dirpath)
+        shell._refresh_completion_cache_sync(dirpath)
+    except RuntimeError:
+        # prompt_toolkit completion runs inside an active loop thread where we
+        # cannot block for device I/O. Use cached entries and refresh in background.
+        shell._schedule_completion_cache_refresh(dirpath)
+        if not shell._get_completion_cache(dirpath):
+            dirpath = posixpath.dirname(dirpath)
+            shell._schedule_completion_cache_refresh(dirpath)
+
     result = []
-    for f in shell.afc.listdir(dirpath):
+    for f, is_dir in shell._get_completion_cache(dirpath):
+        if not is_dir:
+            continue
         if is_absolute:
             completion_option = posixpath.join(dirpath, f)
         else:
             completion_option = posixpath.relpath(posixpath.join(dirpath, f), pwd)
-        try:
-            if shell.afc.isdir(posixpath.join(dirpath, f)):
-                result.append(f"{completion_option}/")
-        except AfcException:
-            result.append(completion_option)
+        result.append(f"{completion_option}/")
     return result
 
 
@@ -1257,13 +1274,62 @@ class AfcShell:
         self._commands = {}
         self._orig_aliases = {}
         self._orig_prompt = XSH.env["PROMPT"]
+        self._completion_cache: dict[str, list[tuple[str, bool]]] = {}
+        self._completion_refreshing: set[str] = set()
+        self._completion_cache_lock = threading.Lock()
         self._setup_shell_commands()
+        self._schedule_completion_cache_refresh(self.cwd)
 
         print_color("""
         {BOLD_WHITE}Welcome to xonsh-afc shell! 👋{RESET}
         Use {CYAN}show-help{RESET} to view a list of all available special commands.
             These special commands will replace all already existing commands.
         """)
+
+    def _set_completion_cache(self, directory: str, entries: list[tuple[str, bool]]) -> None:
+        with self._completion_cache_lock:
+            self._completion_cache[directory] = entries
+            self._completion_refreshing.discard(directory)
+
+    def _get_completion_cache(self, directory: str) -> list[tuple[str, bool]]:
+        with self._completion_cache_lock:
+            return list(self._completion_cache.get(directory, []))
+
+    def _refresh_completion_cache_sync(self, directory: str) -> None:
+        entries = []
+        for name in self.afc.listdir(directory):
+            is_dir = False
+            with contextlib.suppress(AfcException):
+                is_dir = self.afc.isdir(posixpath.join(directory, name))
+            entries.append((name, is_dir))
+        self._set_completion_cache(directory, entries)
+
+    def _schedule_completion_cache_refresh(self, directory: str) -> None:
+        """
+        Schedules a refresh of the completion cache for a given directory in a separate thread.
+
+        This method ensures that completion cache updates for the specified directory are
+        processed without blocking the main thread. It uses a lock to avoid concurrent
+        cache updates for the same directory. Threads are created in a daemon mode,
+        allowing them to terminate when the main program exits.
+
+        Parameters:
+        directory : str
+            The path of the directory for which the completion cache should be refreshed.
+        """
+        with self._completion_cache_lock:
+            if directory in self._completion_refreshing:
+                return
+            self._completion_refreshing.add(directory)
+
+        def _refresh() -> None:
+            try:
+                self._refresh_completion_cache_sync(directory)
+            except Exception:
+                with self._completion_cache_lock:
+                    self._completion_refreshing.discard(directory)
+
+        threading.Thread(target=_refresh, daemon=True).start()
 
     def _register_arg_parse_alias(self, name: str, handler: Union[Callable, str]):
         """
@@ -1384,6 +1450,7 @@ class AfcShell:
         if self.afc.exists(directory):
             self.cwd = directory
             self._update_prompt()
+            self._schedule_completion_cache_refresh(self.cwd)
         else:
             print(f"[ERROR] {directory} does not exist")
 
