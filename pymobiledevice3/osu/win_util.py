@@ -1,4 +1,5 @@
 import datetime
+import logging
 import os
 import socket
 from pathlib import Path
@@ -55,7 +56,18 @@ class Win32(OsUtils):
         interval_sec: int = DEFAULT_INTERVAL_SEC,
         **kwargs,
     ) -> None:
-        sock.ioctl(socket.SIO_KEEPALIVE_VALS, (1, after_idle_sec * 1000, interval_sec * 1000))
+        ioctl_socket = sock
+        if not hasattr(ioctl_socket, "ioctl"):
+            # asyncio may return a wrapper (e.g. TransportSocket) that does not expose ioctl().
+            ioctl_socket = getattr(sock, "_sock", sock)
+
+        if hasattr(ioctl_socket, "ioctl"):
+            ioctl_socket.ioctl(socket.SIO_KEEPALIVE_VALS, (1, after_idle_sec * 1000, interval_sec * 1000))
+            return
+
+        # Fallback for wrappers that do not expose ioctl; keepalive timings remain OS defaults.
+        logging.getLogger(__name__).debug("Socket does not expose ioctl(); enabling SO_KEEPALIVE fallback")
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
 
     def parse_timestamp(self, time_stamp) -> datetime:
         return datetime.datetime.fromtimestamp(time_stamp / 1000)
