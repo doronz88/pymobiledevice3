@@ -93,23 +93,23 @@ async def afc(
 
 @cli.command("pull")
 @async_command
-async def pull(service_provider: ServiceProviderDep, bundle_id: str, remote_file: Path, local_file: Path) -> None:
+async def pull(service_provider: ServiceProviderDep, bundle_id: str, remote_file: str, local_file: Path) -> None:
     """Pull a file from an app container to a local path."""
     async with await HouseArrestService.create(lockdown=service_provider, bundle_id=bundle_id) as service:
-        await service.pull(str(remote_file), str(local_file))
+        await service.pull(remote_file, str(local_file))
 
 
 @cli.command("push")
 @async_command
-async def push(service_provider: ServiceProviderDep, bundle_id: str, local_file: Path, remote_file: Path) -> None:
+async def push(service_provider: ServiceProviderDep, bundle_id: str, local_file: Path, remote_file: str) -> None:
     """Push a local file into an app container."""
     async with await HouseArrestService.create(lockdown=service_provider, bundle_id=bundle_id) as service:
-        await service.push(str(local_file), str(remote_file))
+        await service.push(str(local_file), remote_file)
 
 
 @cli.command("rm")
 @async_command
-async def rm(service_provider: ServiceProviderDep, bundle_id: str, remote_file: Path) -> None:
+async def rm(service_provider: ServiceProviderDep, bundle_id: str, remote_file: str) -> None:
     """Delete a file from an app container."""
     async with await HouseArrestService.create(lockdown=service_provider, bundle_id=bundle_id) as service:
-        await service.rm(str(remote_file))
+        await service.rm(remote_file)

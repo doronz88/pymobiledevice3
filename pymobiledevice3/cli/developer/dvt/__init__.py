@@ -286,7 +286,7 @@ async def show_dirlist(channel, dirname: str, recursive: bool = False) -> None:
 @async_command
 async def ls(
     service_provider: ServiceProviderDep,
-    path: Path,
+    path: str,
     recursive: Annotated[
         bool,
         typer.Option("--recursive", "-r"),
@@ -295,7 +295,7 @@ async def ls(
     """List directory"""
     async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
         channel = await dvt.make_channel(DeviceInfo.IDENTIFIER)
-        await show_dirlist(channel, str(path), recursive=recursive)
+        await show_dirlist(channel, path, recursive=recursive)
 
 
 @cli.command("device-information")
