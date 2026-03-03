@@ -389,15 +389,35 @@ class ServiceConnection:
         :param keyfile: The path to the key file (optional).
         """
         await self._ensure_started()
+        ssl_context = self.create_ssl_context(certfile, keyfile=keyfile)
         try:
-            await asyncio.wait_for(
-                self.writer.start_tls(
-                    sslcontext=self.create_ssl_context(certfile, keyfile=keyfile),
+            # Python 3.11+ provides StreamWriter.start_tls(); older versions
+            # need loop.start_tls() and a new StreamWriter bound to the TLS transport.
+            if hasattr(self.writer, "start_tls"):
+                await asyncio.wait_for(
+                    self.writer.start_tls(
+                        sslcontext=ssl_context,
+                        server_hostname="",
+                        ssl_handshake_timeout=DEFAULT_SSL_HANDSHAKE_TIMEOUT,
+                    ),
+                    timeout=DEFAULT_SSL_HANDSHAKE_TIMEOUT,
+                )
+                return
+
+            loop = asyncio.get_running_loop()
+            protocol = self.writer._protocol  # type: ignore[attr-defined]
+            tls_transport = await asyncio.wait_for(
+                loop.start_tls(
+                    self.writer.transport,
+                    protocol,
+                    ssl_context,
+                    server_side=False,
                     server_hostname="",
                     ssl_handshake_timeout=DEFAULT_SSL_HANDSHAKE_TIMEOUT,
                 ),
                 timeout=DEFAULT_SSL_HANDSHAKE_TIMEOUT,
             )
+            self.writer = asyncio.StreamWriter(tls_transport, protocol, self.reader, loop)
         except OSError as e:
             raise ConnectionTerminatedError() from e
 

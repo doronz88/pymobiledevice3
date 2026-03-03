@@ -1,6 +1,6 @@
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, Union
 
 import pytest
 import pytest_asyncio
@@ -45,7 +45,7 @@ def tunnel_option(request):
 @pytest_asyncio.fixture(scope="function")
 async def service_provider(
     rsd_option, tunnel_option
-) -> AsyncGenerator[RemoteServiceDiscoveryService | UsbmuxLockdownClient, Any]:
+) -> AsyncGenerator[Union[RemoteServiceDiscoveryService, UsbmuxLockdownClient, Any]]:
     """
     Creates a new LockdownServiceProvider client for each test.
     """
