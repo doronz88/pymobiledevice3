@@ -1,6 +1,6 @@
 import logging
 from inspect import isawaitable
-from typing import Optional
+from typing import Optional, Union
 
 from typing_extensions import Self
 
@@ -54,7 +54,7 @@ class LockdownService:
         self.logger: logging.Logger = logging.getLogger(self.__module__)
 
     @property
-    def service(self) -> ServiceConnection | _LazyServiceConnection:
+    def service(self) -> Union[ServiceConnection, _LazyServiceConnection]:
         if self._service is not None:
             return self._service
         return self._service_proxy

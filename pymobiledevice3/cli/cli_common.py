@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Awaitable
 from functools import wraps
 from textwrap import dedent
-from typing import Annotated, Any, Callable, Optional, ParamSpec, TypeVar
+from typing import Annotated, Any, Callable, Optional, TypeVar
 
 import click
 import coloredlogs
@@ -18,6 +18,7 @@ from click import UsageError
 from inquirer3.themes import GreenPassion
 from pygments import formatters, highlight, lexers
 from typer_injector import Depends
+from typing_extensions import ParamSpec
 
 from pymobiledevice3 import usbmux as usbmuxd
 from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, NoDeviceConnectedError

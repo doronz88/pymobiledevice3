@@ -10,7 +10,7 @@ from collections.abc import Awaitable
 from contextlib import suppress
 from functools import partial
 from pprint import pprint
-from typing import Any, Callable, ClassVar, Optional
+from typing import Any, Callable, ClassVar, Optional, Union
 
 from bpylist2 import archiver
 from construct import (
@@ -592,7 +592,7 @@ class RemoteServer(LockdownService):
         self._service.socket.setblocking(False)
         await self._service.start()
 
-    def _log_dtx_message(self, direction: str, mheader: Container | bytes, payload: bytes) -> None:
+    def _log_dtx_message(self, direction: str, mheader: Union[Container, bytes], payload: bytes) -> None:
         """Best-effort DEBUG log formatter for DTX packets."""
         if not self.logger.isEnabledFor(logging.DEBUG):
             return
