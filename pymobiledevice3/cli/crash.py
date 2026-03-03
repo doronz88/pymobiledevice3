@@ -33,6 +33,54 @@ def crash_clear(
     crash_manager.clear()
 
 
+@cli.command("parse")
+def crash_parse(
+    service_provider: ServiceProviderDep,
+    remote_file: Path,
+) -> None:
+    """Parse a crash report file"""
+    print(CrashReportsManager(service_provider).parse(str(remote_file)))
+
+
+@cli.command("parse-latest")
+def crash_parse_latest(
+    service_provider: ServiceProviderDep,
+    match: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--match",
+            "-m",
+            help="Case-sensitive basename regex filter (repeatable; all must match)",
+        ),
+    ] = None,
+    match_insensitive: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--match-insensitive",
+            "-mi",
+            help="Case-insensitive basename regex filter (repeatable; all must match)",
+        ),
+    ] = None,
+    count: Annotated[
+        int,
+        typer.Option(
+            "--count",
+            "-n",
+            min=1,
+            help="Maximum number of latest reports to parse",
+        ),
+    ] = 1,
+) -> None:
+    """Parse latest crash report(s). Recursively searched, ordered by newest first"""
+    latest_reports = CrashReportsManager(service_provider).parse_latest(
+        match=match or [],
+        match_insensitive=match_insensitive or [],
+        count=count,
+    )
+    for report in latest_reports:
+        print(report)
+
+
 @cli.command("pull")
 def crash_pull(
     service_provider: ServiceProviderDep,

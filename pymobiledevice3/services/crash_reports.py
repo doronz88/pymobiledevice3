@@ -1,3 +1,4 @@
+import heapq
 import logging
 import posixpath
 import re
@@ -6,7 +7,7 @@ from collections.abc import Generator
 from json import JSONDecodeError
 from typing import Callable, ClassVar, Optional
 
-from pycrashreport.crash_report import get_crash_report_from_buf
+from pycrashreport.crash_report import CrashReportBase, get_crash_report_from_buf
 from xonsh.built_ins import XSH
 from xonsh.cli_utils import Annotated, Arg
 
@@ -84,6 +85,80 @@ class CrashReportsManager:
         :return: List of files listed.
         """
         return list(self.afc.dirlist(path, depth))[1:]  # skip the root path '/'
+
+    def parse(self, path: str = "/") -> CrashReportBase:
+        """
+        Parse a crash report file and return the parsed crash report object.
+
+        :param path: Path to a crash report file.
+        :return: Parsed crash report object.
+        """
+        return get_crash_report_from_buf(self.afc.get_file_contents(path).decode(), filename=path)
+
+    def parse_latest(
+        self,
+        match: Optional[list[str]] = None,
+        match_insensitive: Optional[list[str]] = None,
+        count: int = 1,
+    ) -> list[CrashReportBase]:
+        """
+        Parse latest crash report(s), optionally filtered by basename regex patterns.
+
+        Recursively scans the crash reports directory, filters regular files by basename,
+        and returns matches sorted by last modification time (newest first).
+
+        :param match: Case-sensitive regex patterns over report basename.
+        :param match_insensitive: Case-insensitive regex patterns over report basename.
+        :param count: Maximum number of latest matching reports to parse.
+        :return: Parsed crash report objects ordered from newest to oldest.
+                 Result length is between 1 and count.
+        :raises ValueError: If count < 1 or if no reports match the filters.
+
+        All provided patterns must match.
+        """
+
+        def get_match_arguments_description():
+            return ", ".join(
+                f"{name}={value!r}"
+                for name, value in (("match", match_patterns), ("match_insensitive", match_insensitive_patterns))
+                if value
+            )
+
+        if count < 1:
+            raise ValueError("count must be >= 1")
+
+        match_patterns = match or []
+        match_insensitive_patterns = match_insensitive or []
+
+        patterns = [re.compile(pattern) for pattern in match_patterns]
+        patterns.extend(re.compile(pattern, re.IGNORECASE) for pattern in match_insensitive_patterns)
+
+        matched_paths = []
+
+        for path in self.afc.dirlist("/", depth=-1):
+            if path == "/":
+                continue
+            stat = self.afc.stat(path)
+            if stat.get("st_ifmt") != "S_IFREG":
+                # Ignore non regular files
+                continue
+            if len(patterns) > 0 and not all(pattern.search(posixpath.basename(path)) for pattern in patterns):
+                # Filter according to all the patterns
+                continue
+            last_modified_time = stat["st_mtime"].timestamp()
+            matched_paths.append((last_modified_time, path))
+
+        if len(matched_paths) == 0:
+            match_arguments_description = get_match_arguments_description()
+            raise ValueError(
+                f"No reports found ({match_arguments_description})"
+                if match_arguments_description
+                else "No reports found"
+            )
+
+        latest_paths = [path for _, path in heapq.nlargest(count, matched_paths)]
+
+        return [self.parse(path) for path in latest_paths]
 
     def pull(
         self, out: str, entry: str = "/", erase: bool = False, match: Optional[str] = None, progress_bar: bool = True
@@ -242,10 +317,36 @@ class CrashReportsShell(AfcShell):
     def _setup_shell_commands(self):
         super()._setup_shell_commands()
         self._register_arg_parse_alias("parse", self._do_parse)
+        self._register_arg_parse_alias("parse-latest", self._do_parse_latest)
         self._register_arg_parse_alias("clear", self._do_clear)
 
     def _do_parse(self, filename: Annotated[str, Arg(completer=path_completer)]) -> None:
-        print(get_crash_report_from_buf(self.afc.get_file_contents(filename).decode(), filename=filename))
+        """
+        Parse and print a crash report by filename.
+
+        :param filename: Path to the crash report file
+        """
+        print(XSH.ctx["_manager"].parse(filename))
+
+    def _do_parse_latest(
+        self,
+        match: Annotated[Optional[list[str]], Arg("--match", "-m", action="append")] = None,
+        match_insensitive: Annotated[
+            Optional[list[str]],
+            Arg("--match-insensitive", "-mi", action="append"),
+        ] = None,
+        count: Annotated[int, Arg("--count", "-n")] = 1,
+    ) -> None:
+        """Parse latest crash report(s). Recursively searched, ordered by newest first"""
+        count = int(count)
+        latest_reports = XSH.ctx["_manager"].parse_latest(
+            match=match or [],
+            match_insensitive=match_insensitive or [],
+            count=count,
+        )
+        for report in latest_reports:
+            print(report)
 
     def _do_clear(self) -> None:
+        """Clear all crash reports from the device."""
         XSH.ctx["_manager"].clear()
