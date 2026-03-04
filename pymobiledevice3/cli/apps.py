@@ -87,18 +87,39 @@ def afc(
 
 
 @cli.command("pull")
-def pull(service_provider: ServiceProviderDep, bundle_id: str, remote_file: Path, local_file: Path) -> None:
+def pull(
+    service_provider: ServiceProviderDep,
+    bundle_id: str,
+    remote_file: str,
+    local_file: Path,
+    documents: Annotated[bool, typer.Option()] = False,
+) -> None:
     """Pull a file from an app container to a local path."""
-    HouseArrestService(lockdown=service_provider, bundle_id=bundle_id).pull(str(remote_file), str(local_file))
+    HouseArrestService(lockdown=service_provider, bundle_id=bundle_id, documents_only=documents).pull(
+        remote_file, str(local_file)
+    )
 
 
 @cli.command("push")
-def push(service_provider: ServiceProviderDep, bundle_id: str, local_file: Path, remote_file: Path) -> None:
+def push(
+    service_provider: ServiceProviderDep,
+    bundle_id: str,
+    local_file: Path,
+    remote_file: str,
+    documents: Annotated[bool, typer.Option()] = False,
+) -> None:
     """Push a local file into an app container."""
-    HouseArrestService(lockdown=service_provider, bundle_id=bundle_id).push(str(local_file), str(remote_file))
+    HouseArrestService(lockdown=service_provider, bundle_id=bundle_id, documents_only=documents).push(
+        str(local_file), remote_file
+    )
 
 
 @cli.command("rm")
-def rm(service_provider: ServiceProviderDep, bundle_id: str, remote_file: Path) -> None:
+def rm(
+    service_provider: ServiceProviderDep,
+    bundle_id: str,
+    remote_file: str,
+    documents: Annotated[bool, typer.Option()] = False,
+) -> None:
     """Delete a file from an app container."""
-    HouseArrestService(lockdown=service_provider, bundle_id=bundle_id).rm(str(remote_file))
+    HouseArrestService(lockdown=service_provider, bundle_id=bundle_id, documents_only=documents).rm(remote_file)
