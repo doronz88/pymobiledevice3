@@ -1,3 +1,6 @@
+import ipaddress
+import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Optional
@@ -7,7 +10,9 @@ from pygments import formatters, highlight, lexers
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, print_hex, user_requested_colored_output
-from pymobiledevice3.services.pcapd import PcapdService
+from pymobiledevice3.services.pcapd import CrossPlatformAddressFamily, PcapdService
+
+logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="pcap",
@@ -76,3 +81,70 @@ def pcap(
 
     for packet in packets_generator:
         print_packet(packet)
+
+
+@cli.command("wifi-ip")
+def wifi_ip(
+    service_provider: ServiceProviderDep,
+    interface: Annotated[
+        str,
+        typer.Option(
+            "--interface",
+            "-i",
+            help="Network interface name to capture on.",
+        ),
+    ] = "en0",
+    timeout: Annotated[
+        int,
+        typer.Option(help="Timeout in seconds to wait for a valid IP (0 = no timeout)."),
+    ] = 5,
+) -> None:
+    """
+    Get the device's IP address on a specific network interface via USB.
+
+    Captures packets on the given interface and returns the first private
+    IPv4 source address found.
+
+    \b
+    Common interface names:
+        en0       — WiFi (default)
+        pdp_ip0   — Cellular
+        lo0       — Loopback
+
+    \b
+    Examples:
+        pymobiledevice3 pcap wifi-ip
+        pymobiledevice3 pcap wifi-ip --interface pdp_ip0
+        pymobiledevice3 pcap wifi-ip --timeout 10
+    """
+    start_time = time.time()
+    service = PcapdService(lockdown=service_provider)
+
+    # pcapd stores interface name and unit number separately (e.g. "en" + 0 = "en0"),
+    # so we filter manually by combining them instead of using watch(interface_name=...)
+    for packet in service.watch():
+        if timeout > 0 and (time.time() - start_time) > timeout:
+            logger.error(f"Timeout after {timeout} seconds. No IP found on interface '{interface}'.")
+            logger.info("Tip: Generate network activity on the device (e.g., open a webpage)")
+            raise typer.Exit(code=1)
+
+        if f"{packet.interface_name}{packet.unit}" != interface:
+            continue
+
+        if packet.protocol_family != CrossPlatformAddressFamily.AF_INET:
+            continue
+
+        # Only consider outgoing packets (io=1) so we get the device's own source IP
+        if packet.io != 1:
+            continue
+
+        # Extract source IPv4 from packet data:
+        # 14-byte ethernet header + 12-byte offset to src address in IPv4 header
+        src_ip = ipaddress.IPv4Address(packet.data[26:30])
+
+        if src_ip.is_private and not src_ip.is_loopback and not src_ip.is_unspecified:
+            print(str(src_ip))
+            return
+
+    logger.error(f"No private IPv4 address found on interface '{interface}'")
+    raise typer.Exit(code=1)
