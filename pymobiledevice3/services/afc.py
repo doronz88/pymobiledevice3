@@ -21,7 +21,7 @@ from collections import namedtuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from re import Pattern
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, TextIO, Union
 
 import hexdump
 from click.exceptions import Exit
@@ -792,7 +792,7 @@ class AfcService(LockdownService):
         return filename
 
     @path_to_str()
-    def get_file_contents(self, filename):
+    def get_file_contents(self, filename: str):
         """
         Read and return the entire contents of a file.
 
@@ -858,7 +858,7 @@ class AfcService(LockdownService):
                 yield from self.walk(posixpath.join(dirname, d))
 
     @path_to_str()
-    def dirlist(self, root, depth=-1):
+    def dirlist(self, root: str, depth: int = -1):
         """
         List all files and directories recursively up to a specified depth.
 
@@ -967,20 +967,21 @@ class AfcService(LockdownService):
 
 class AfcLsStub(LsStub):
     """
-    Adapter class to make AfcShell compatible with pygnuutils ls implementation.
+    Adapter class to make AfcService compatible with pygnuutils ls implementation.
 
-    This stub provides an interface between the pygnuutils Ls class and the AFC
-    file system, translating calls to work with remote device paths.
+    This stub provides an interface between ``pygnuutils.Ls`` and ``AfcService``
+    so ls-like operations work on remote device paths.
     """
 
-    def __init__(self, afc_shell, stdout):
+    def __init__(self, afc: AfcService, stdout: Optional[TextIO] = sys.stdout):
         """
         Initialize the ls stub.
 
-        :param afc_shell: AfcShell instance providing device access
-        :param stdout: Output stream for ls results
+        :param afc: AFC service instance providing filesystem access.
+        :param stdout: Output stream for ls results. Defaults to ``sys.stdout``.
+            If ``None``, output is suppressed.
         """
-        self.afc_shell = afc_shell
+        self.afc = afc
         self.stdout = stdout
 
     @property
@@ -995,11 +996,11 @@ class AfcLsStub(LsStub):
 
     def stat(self, path, dir_fd=None, follow_symlinks=True):
         if follow_symlinks:
-            path = self.afc_shell.afc.resolve_path(path)
-        return self.afc_shell.afc.os_stat(path)
+            path = self.afc.resolve_path(path)
+        return self.afc.os_stat(path)
 
     def readlink(self, path, dir_fd=None):
-        return self.afc_shell.afc.resolve_path(path)
+        return self.afc.resolve_path(path)
 
     def isabs(self, path):
         return posixpath.isabs(path)
@@ -1017,10 +1018,10 @@ class AfcLsStub(LsStub):
         return "-"
 
     def now(self):
-        return self.afc_shell.lockdown.date
+        return self.afc.lockdown.date
 
     def listdir(self, path="."):
-        return self.afc_shell.afc.listdir(path)
+        return self.afc.listdir(path)
 
     def system(self):
         return "Darwin"
@@ -1028,8 +1029,17 @@ class AfcLsStub(LsStub):
     def getenv(self, key, default=None):
         return ""
 
-    def print(self, *objects, sep=" ", end="\n", file=sys.stdout, flush=False):
-        print(objects[0], end=end)
+    def print(self, *objects, sep=" ", end="\n", _=sys.stdout, flush=False):
+        """
+        Print ls output to the constructor-provided stream.
+
+        The fourth argument is accepted only for compatibility with Python's
+        ``print(file=...)`` style calls used by ``pygnuutils``. It is ignored.
+        Output is suppressed when ``self.stdout`` is ``None``.
+        """
+        if self.stdout is None:
+            return
+        print(*objects, sep=sep, end=end, file=self.stdout, flush=flush)
 
     def get_tty_width(self):
         return os.get_terminal_size().columns
@@ -1312,7 +1322,7 @@ class AfcShell:
             with ls_cli.make_context("ls", args) as ctx:
                 files = list(map(self._relative_path, ctx.params.pop("files")))
                 files = files if files else [self.cwd]
-                Ls(AfcLsStub(self, stdout))(*files, **ctx.params)
+                Ls(AfcLsStub(self.afc, stdout))(*files, **ctx.params)
         except Exit:
             pass
 
@@ -1328,7 +1338,7 @@ class AfcShell:
             for name in dirs:
                 print(posixpath.join(root, name))
 
-    def _do_cat(self, filename: str):
+    def _do_cat(self, filename: Annotated[str, Arg(completer=path_completer)]):
         """
         Display the contents of a file.
 
