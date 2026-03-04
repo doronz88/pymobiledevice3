@@ -23,7 +23,7 @@ def afc_shell(service_provider: ServiceProviderDep) -> None:
 @cli.command("pull")
 def afc_pull(
     service_provider: ServiceProviderDep,
-    remote_file: Path,
+    remote_file: str,
     local_file: Path,
     ignore_errors: Annotated[
         bool,
@@ -35,30 +35,30 @@ def afc_pull(
     ],
 ) -> None:
     """Download a remote path under /var/mobile/Media to the local filesystem."""
-    AfcService(lockdown=service_provider).pull(str(remote_file), str(local_file), ignore_errors=ignore_errors)
+    AfcService(lockdown=service_provider).pull(remote_file, str(local_file), ignore_errors=ignore_errors)
 
 
 @cli.command("push")
-def afc_push(service_provider: ServiceProviderDep, local_file: Path, remote_file: Path) -> None:
+def afc_push(service_provider: ServiceProviderDep, local_file: Path, remote_file: str) -> None:
     """Upload a local file into /var/mobile/Media."""
-    AfcService(lockdown=service_provider).push(str(local_file), str(remote_file))
+    AfcService(lockdown=service_provider).push(str(local_file), remote_file)
 
 
 @cli.command("ls")
 def afc_ls(
     service_provider: ServiceProviderDep,
-    remote_file: Path,
+    remote_file: str,
     recursive: Annotated[
         bool,
         typer.Option("--recursive", "-r", help="Recurse into subdirectories when listing."),
     ] = False,
 ) -> None:
     """List files under /var/mobile/Media (optionally recursively)."""
-    for path in AfcService(lockdown=service_provider).dirlist(str(remote_file), -1 if recursive else 1):
+    for path in AfcService(lockdown=service_provider).dirlist(remote_file, -1 if recursive else 1):
         print(path)
 
 
 @cli.command("rm")
-def afc_rm(service_provider: ServiceProviderDep, remote_file: Path) -> None:
+def afc_rm(service_provider: ServiceProviderDep, remote_file: str) -> None:
     """Delete a file under /var/mobile/Media."""
-    AfcService(lockdown=service_provider).rm(str(remote_file))
+    AfcService(lockdown=service_provider).rm(remote_file)
