@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7SignatureBuilder
 
-from pymobiledevice3.exceptions import CloudConfigurationAlreadyPresentError, ProfileError
+from pymobiledevice3.exceptions import CloudConfigurationAlreadyPresentError, ConnectionTerminatedError, ProfileError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -34,13 +34,13 @@ class MobileConfigService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def hello(self) -> None:
-        self._send_recv({"RequestType": "HelloHostIdentifier"})
+    async def hello(self) -> None:
+        await self._send_recv({"RequestType": "HelloHostIdentifier"})
 
-    def flush(self) -> None:
-        self._send_recv({"RequestType": "Flush"})
+    async def flush(self) -> None:
+        await self._send_recv({"RequestType": "Flush"})
 
-    def escalate(self, keybag_file: Path) -> None:
+    async def escalate(self, keybag_file: Path) -> None:
         """
         Authenticate with the device.
 
@@ -52,54 +52,54 @@ class MobileConfigService(LockdownService):
         private_key = serialization.load_pem_private_key(keybag_file, password=None)
         cer = x509.load_pem_x509_certificate(keybag_file)
         public_key = cer.public_bytes(Encoding.DER)
-        escalate_response = self._send_recv({"RequestType": "Escalate", "SupervisorCertificate": public_key})
+        escalate_response = await self._send_recv({"RequestType": "Escalate", "SupervisorCertificate": public_key})
         signed_challenge = (
             PKCS7SignatureBuilder()
             .set_data(escalate_response["Challenge"])
             .add_signer(cer, private_key, hashes.SHA256())
             .sign(Encoding.DER, [])
         )
-        self._send_recv({"RequestType": "EscalateResponse", "SignedRequest": signed_challenge})
-        self._send_recv({"RequestType": "ProceedWithKeybagMigration"})
+        await self._send_recv({"RequestType": "EscalateResponse", "SignedRequest": signed_challenge})
+        await self._send_recv({"RequestType": "ProceedWithKeybagMigration"})
 
-    def get_stored_profile(self, purpose: Purpose = Purpose.PostSetupInstallation) -> dict:
-        return self._send_recv({"RequestType": "GetStoredProfile", "Purpose": purpose.value})
+    async def get_stored_profile(self, purpose: Purpose = Purpose.PostSetupInstallation) -> dict:
+        return await self._send_recv({"RequestType": "GetStoredProfile", "Purpose": purpose.value})
 
-    def store_profile(self, profile_data: bytes, purpose: Purpose = Purpose.PostSetupInstallation) -> None:
-        self._send_recv({"RequestType": "StoreProfile", "ProfileData": profile_data, "Purpose": purpose.value})
+    async def store_profile(self, profile_data: bytes, purpose: Purpose = Purpose.PostSetupInstallation) -> None:
+        await self._send_recv({"RequestType": "StoreProfile", "ProfileData": profile_data, "Purpose": purpose.value})
 
-    def get_cloud_configuration(self) -> dict:
-        return self._send_recv({"RequestType": "GetCloudConfiguration"}).get("CloudConfiguration")
+    async def get_cloud_configuration(self) -> dict:
+        return (await self._send_recv({"RequestType": "GetCloudConfiguration"})).get("CloudConfiguration")
 
-    def set_cloud_configuration(self, cloud_configuration: dict) -> None:
-        self._send_recv({"RequestType": "SetCloudConfiguration", "CloudConfiguration": cloud_configuration})
+    async def set_cloud_configuration(self, cloud_configuration: dict) -> None:
+        await self._send_recv({"RequestType": "SetCloudConfiguration", "CloudConfiguration": cloud_configuration})
 
-    def establish_provisional_enrollment(self, nonce: bytes) -> None:
-        self._send_recv({"RequestType": "EstablishProvisionalEnrollment", "Nonce": nonce})
+    async def establish_provisional_enrollment(self, nonce: bytes) -> None:
+        await self._send_recv({"RequestType": "EstablishProvisionalEnrollment", "Nonce": nonce})
 
-    def set_wifi_power_state(self, state: bool) -> None:
-        self._send_recv({"RequestType": "SetWiFiPowerState", "PowerState": state})
+    async def set_wifi_power_state(self, state: bool) -> None:
+        await self._send_recv({"RequestType": "SetWiFiPowerState", "PowerState": state})
 
-    def erase_device(self, preserve_data_plan: bool, disallow_proximity_setup: bool) -> None:
-        with contextlib.suppress(ConnectionAbortedError):
-            self._send_recv({
+    async def erase_device(self, preserve_data_plan: bool, disallow_proximity_setup: bool) -> None:
+        with contextlib.suppress(ConnectionTerminatedError):
+            await self._send_recv({
                 "RequestType": "EraseDevice",
                 "PreserveDataPlan": preserve_data_plan,
                 "DisallowProximitySetup": disallow_proximity_setup,
             })
 
-    def get_profile_list(self) -> dict:
-        return self._send_recv({"RequestType": "GetProfileList"})
+    async def get_profile_list(self) -> dict:
+        return await self._send_recv({"RequestType": "GetProfileList"})
 
-    def install_profile(self, payload: bytes) -> None:
-        self._send_recv({"RequestType": "InstallProfile", "Payload": payload})
+    async def install_profile(self, payload: bytes) -> None:
+        await self._send_recv({"RequestType": "InstallProfile", "Payload": payload})
 
-    def install_profile_silent(self, keybag_file: Path, profile: bytes) -> None:
-        self.escalate(keybag_file)
-        self._send_recv({"RequestType": "InstallProfileSilent", "Payload": profile})
+    async def install_profile_silent(self, keybag_file: Path, profile: bytes) -> None:
+        await self.escalate(keybag_file)
+        await self._send_recv({"RequestType": "InstallProfileSilent", "Payload": profile})
 
-    def remove_profile(self, identifier: str) -> None:
-        profiles = self.get_profile_list()
+    async def remove_profile(self, identifier: str) -> None:
+        profiles = await self.get_profile_list()
         if not profiles:
             return
         if identifier not in profiles["ProfileMetadata"]:
@@ -112,10 +112,11 @@ class MobileConfigService(LockdownService):
             "PayloadUUID": meta["PayloadUUID"],
             "PayloadVersion": meta["PayloadVersion"],
         })
-        self._send_recv({"RequestType": "RemoveProfile", "ProfileIdentifier": data})
+        await self._send_recv({"RequestType": "RemoveProfile", "ProfileIdentifier": data})
 
-    def _send_recv(self, request: dict) -> dict:
-        response = self.service.send_recv_plist(request)
+    async def _send_recv(self, request: dict) -> dict:
+        await self.service.send_plist(request)
+        response = await self.service.recv_plist()
         if response.get("Status", None) != "Acknowledged":
             error_chain = response.get("ErrorChain")
             if error_chain is not None:
@@ -125,7 +126,7 @@ class MobileConfigService(LockdownService):
             raise ProfileError(f"invalid response {response}")
         return response
 
-    def install_wifi_profile(
+    async def install_wifi_profile(
         self,
         encryption_type: str,
         ssid: str,
@@ -138,7 +139,7 @@ class MobileConfigService(LockdownService):
         keybag_file: Optional[Path] = None,
     ) -> None:
         payload_uuid = str(uuid4())
-        self.install_managed_profile(
+        await self.install_managed_profile(
             f"WiFi Profile For {ssid}",
             {
                 "AutoJoin": auto_join,
@@ -160,9 +161,9 @@ class MobileConfigService(LockdownService):
             keybag_file=keybag_file,
         )
 
-    def install_http_proxy(self, server: str, server_port: int, keybag_file: Optional[Path] = None) -> None:
+    async def install_http_proxy(self, server: str, server_port: int, keybag_file: Optional[Path] = None) -> None:
         payload_uuid = str(uuid4())
-        self.install_managed_profile(
+        await self.install_managed_profile(
             f"HTTP Proxy for {server}:{server_port}",
             {
                 "PayloadDescription": "Global HTTP Proxy",
@@ -180,13 +181,13 @@ class MobileConfigService(LockdownService):
             keybag_file=keybag_file,
         )
 
-    def remove_http_proxy(self) -> None:
-        self.remove_profile(GLOBAL_HTTP_PROXY_UUID)
+    async def remove_http_proxy(self) -> None:
+        await self.remove_profile(GLOBAL_HTTP_PROXY_UUID)
 
-    def supervise(self, organization: str, keybag_file: Path) -> None:
+    async def supervise(self, organization: str, keybag_file: Path) -> None:
         cer = x509.load_pem_x509_certificate(keybag_file.read_bytes())
         public_key = cer.public_bytes(Encoding.DER)
-        self.set_cloud_configuration({
+        await self.set_cloud_configuration({
             "AllowPairing": True,
             "CloudConfigurationUIComplete": True,
             "ConfigurationSource": 2,
@@ -284,7 +285,7 @@ class MobileConfigService(LockdownService):
             "SupervisorHostCertificates": [public_key],
         })
 
-    def install_managed_profile(
+    async def install_managed_profile(
         self,
         display_name: str,
         payload_content: dict[str, Any],
@@ -301,17 +302,17 @@ class MobileConfigService(LockdownService):
             "PayloadVersion": 1,
         })
         if keybag_file is not None:
-            self.install_profile_silent(keybag_file, profile_data)
+            await self.install_profile_silent(keybag_file, profile_data)
         else:
-            self.install_profile(profile_data)
+            await self.install_profile(profile_data)
 
-    def install_restrictions_profile(
+    async def install_restrictions_profile(
         self,
         enforced_software_update_delay: int = 0,
         payload_uuid: str = GLOBAL_RESTRICTIONS_UUID,
         keybag_file: Optional[Path] = None,
     ) -> None:
-        self.install_managed_profile(
+        await self.install_managed_profile(
             "Restrictions",
             {
                 "PayloadDescription": "Configures restrictions",

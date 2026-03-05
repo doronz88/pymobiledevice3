@@ -15,7 +15,7 @@ from packaging.version import Version
 from plumbum import local
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, ServiceProviderDep, print_json
+from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, ServiceProviderDep, async_command, print_json
 from pymobiledevice3.exceptions import RSDRequiredError
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -51,7 +51,8 @@ def debugserver_applist(service_provider: ServiceProviderDep) -> None:
 
 
 @cli.command("start-server")
-def debugserver_start_server(
+@async_command
+async def debugserver_start_server(
     service_provider: ServiceProviderDep,
     local_port: Optional[int] = None,
     host: Annotated[
@@ -76,7 +77,7 @@ def debugserver_start_server(
         print(DEBUGSERVER_CONNECTION_STEPS.format(host=host, port=local_port))
         print("Started port forwarding. Press Ctrl-C to close this shell when done")
         sys.stdout.flush()
-        LockdownTcpForwarder(service_provider, local_port, service_name).start(address=host)
+        await LockdownTcpForwarder(service_provider, local_port, service_name).start(address=host)
     elif Version(service_provider.product_version) >= Version("17.0"):
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
             raise RSDRequiredError(service_provider.identifier)
@@ -87,7 +88,8 @@ def debugserver_start_server(
 
 
 @cli.command("lldb")
-def debugserver_lldb(
+@async_command
+async def debugserver_lldb(
     service_provider: RSDServiceProviderDep,
     project_or_ipa_path: Annotated[
         Path,
@@ -178,10 +180,12 @@ def debugserver_lldb(
     commands.append("platform select remote-ios")
     commands.append(f'target create "{local_app.absolute()}"')
 
-    with InstallationProxyService(create_using_usbmux()) as installation_proxy:
+    async with InstallationProxyService(await create_using_usbmux()) as installation_proxy:
         logger.info("Installing app")
-        installation_proxy.install_from_local(install_source)
-        remote_path = installation_proxy.get_apps(bundle_identifiers=[bundle_identifier])[bundle_identifier]["Path"]
+        await installation_proxy.install_from_local(install_source)
+        remote_path = (await installation_proxy.get_apps(bundle_identifiers=[bundle_identifier]))[bundle_identifier][
+            "Path"
+        ]
         logger.info(f"Remote path: {remote_path}")
         commands.append(f'script lldb.target.module[0].SetPlatformFileSpec(lldb.SBFileSpec("{remote_path}"))')
 

@@ -9,7 +9,7 @@ from enum import IntEnum
 from pathlib import Path
 from tarfile import TarFile
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.exceptions import ConnectionTerminatedError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -164,16 +164,18 @@ class OsTraceService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def get_pid_list(self):
-        self.service.send_plist({"Request": "PidList"})
+    async def get_pid_list(self):
+        await self.connect()
+        assert self.service is not None
+        await self.service.send_plist({"Request": "PidList"})
 
         # ignore first received unknown byte
-        self.service.recvall(1)
+        await self.service.recvall(1)
 
-        response = self.service.recv_prefixed()
+        response = await self.service.recv_prefixed()
         return plistlib.loads(response)
 
-    def create_archive(
+    async def create_archive(
         self,
         out: typing.IO,
         size_limit: typing.Optional[int] = None,
@@ -191,20 +193,22 @@ class OsTraceService(LockdownService):
         if start_time is not None:
             request.update({"StartTime": start_time})
 
-        self.service.send_plist(request)
+        await self.connect()
+        assert self.service is not None
+        await self.service.send_plist(request)
 
-        assert self.service.recvall(1)[0] == 1
+        assert (await self.service.recvall(1))[0] == 1
 
-        assert plistlib.loads(self.service.recv_prefixed()).get("Status") == "RequestSuccessful", "Invalid status"
+        assert plistlib.loads(await self.service.recv_prefixed()).get("Status") == "RequestSuccessful", "Invalid status"
 
         while True:
             try:
-                assert self.service.recvall(1)[0] == 3, "invalid magic"
-            except ConnectionAbortedError:
+                assert (await self.service.recvall(1))[0] == 3, "invalid magic"
+            except ConnectionTerminatedError:
                 break
-            out.write(self.service.recv_prefixed(endianity="<"))
+            out.write(await self.service.recv_prefixed(endianity="<"))
 
-    def collect(
+    async def collect(
         self,
         out: str,
         size_limit: typing.Optional[int] = None,
@@ -222,21 +226,28 @@ class OsTraceService(LockdownService):
         with tempfile.TemporaryDirectory() as temp_dir:
             file = Path(temp_dir) / "foo.tar"
             with open(file, "wb") as f:
-                self.create_archive(f, size_limit=size_limit, age_limit=age_limit, start_time=start_time)
+                await self.create_archive(f, size_limit=size_limit, age_limit=age_limit, start_time=start_time)
             TarFile(file).extractall(out)
 
-    def syslog(self, pid=-1) -> typing.Generator[SyslogEntry, None, None]:
-        self.service.send_plist({"Request": "StartActivity", "MessageFilter": 65535, "Pid": pid, "StreamFlags": 60})
+    async def syslog(self, pid=-1) -> typing.AsyncGenerator[SyslogEntry, None]:
+        await self.connect()
+        assert self.service is not None
+        await self.service.send_plist({
+            "Request": "StartActivity",
+            "MessageFilter": 65535,
+            "Pid": pid,
+            "StreamFlags": 60,
+        })
 
-        (length_length,) = struct.unpack("<I", self.service.recvall(4))
-        length = int(self.service.recvall(length_length)[::-1].hex(), 16)
-        response = plistlib.loads(self.service.recvall(length))
+        (length_length,) = struct.unpack("<I", await self.service.recvall(4))
+        length = int((await self.service.recvall(length_length))[::-1].hex(), 16)
+        response = plistlib.loads(await self.service.recvall(length))
 
         if response.get("Status") != "RequestSuccessful":
             raise PyMobileDevice3Exception(f"got invalid response: {response}")
 
         while True:
-            assert self.service.recvall(1) == b"\x02"
-            (length,) = struct.unpack("<I", self.service.recvall(4))
-            line = self.service.recvall(length)
+            assert await self.service.recvall(1) == b"\x02"
+            (length,) = struct.unpack("<I", await self.service.recvall(4))
+            line = await self.service.recvall(length)
             yield parse_syslog_entry(line)

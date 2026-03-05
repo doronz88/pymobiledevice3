@@ -28,30 +28,33 @@ class MisagentService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    def install(self, plist: BytesIO) -> dict:
-        response = self.service.send_recv_plist({
+    async def install(self, plist: BytesIO) -> dict:
+        await self.service.send_plist({
             "MessageType": "Install",
             "Profile": plist.read(),
             "ProfileType": "Provisioning",
         })
+        response = await self.service.recv_plist()
         if response["Status"]:
             raise PyMobileDevice3Exception(f"invalid status: {response}")
 
         return response
 
-    def remove(self, profile_id: str) -> dict:
-        response = self.service.send_recv_plist({
+    async def remove(self, profile_id: str) -> dict:
+        await self.service.send_plist({
             "MessageType": "Remove",
             "ProfileID": profile_id,
             "ProfileType": "Provisioning",
         })
+        response = await self.service.recv_plist()
         if response["Status"]:
             raise PyMobileDevice3Exception(f"invalid status: {response}")
 
         return response
 
-    def copy_all(self) -> list[ProvisioningProfile]:
-        response = self.service.send_recv_plist({"MessageType": "CopyAll", "ProfileType": "Provisioning"})
+    async def copy_all(self) -> list[ProvisioningProfile]:
+        await self.service.send_plist({"MessageType": "CopyAll", "ProfileType": "Provisioning"})
+        response = await self.service.recv_plist()
         if response["Status"]:
             raise PyMobileDevice3Exception(f"invalid status: {response}")
 

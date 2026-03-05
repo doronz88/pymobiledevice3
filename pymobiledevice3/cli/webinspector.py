@@ -1,4 +1,3 @@
-import asyncio
 import inspect
 import logging
 import re
@@ -11,8 +10,6 @@ from string import Template
 from typing import Annotated, Any, Optional
 
 import inquirer3
-import IPython
-import nest_asyncio
 import typer
 import uvicorn
 from inquirer3.themes import GreenPassion
@@ -28,7 +25,7 @@ from pygments import formatters, highlight, lexers
 from pygments.styles import get_style_by_name
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import (
     InspectorEvaluateError,
@@ -37,13 +34,13 @@ from pymobiledevice3.exceptions import (
     WebInspectorNotEnabledError,
     WirError,
 )
-from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.web_protocol.driver import By, Cookie, WebDriver
 from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
 from pymobiledevice3.services.webinspector import SAFARI, Application, ApplicationPage, WebinspectorService
+from pymobiledevice3.utils import start_ipython_shell
 
 SCRIPT = Template("""
 function inspectedPage_evalResult_getCompletions(primitiveType) {
@@ -200,7 +197,8 @@ async def opened_tabs_task(service_provider: LockdownServiceProvider, timeout: f
 
 @cli.command()
 @catch_errors
-def opened_tabs(
+@async_command
+async def opened_tabs(
     service_provider: ServiceProviderDep,
     timeout: Annotated[
         float,
@@ -216,7 +214,7 @@ def opened_tabs(
 
        iOS < 18: Settings -> Safari -> Advanced -> Web Inspector
     """
-    asyncio.run(opened_tabs_task(service_provider, timeout), debug=True)
+    await opened_tabs_task(service_provider, timeout)
 
 
 @catch_errors
@@ -235,7 +233,8 @@ async def launch_task(service_provider: LockdownServiceProvider, url, timeout) -
 
 @cli.command()
 @catch_errors
-def launch(
+@async_command
+async def launch(
     service_provider: ServiceProviderDep,
     url: str,
     timeout: Annotated[
@@ -256,7 +255,7 @@ def launch(
         Settings -> Safari -> Advanced -> Remote Automation
 
     """
-    asyncio.run(launch_task(service_provider, url, timeout), debug=True)
+    await launch_task(service_provider, url, timeout)
 
 
 SHELL_USAGE = """
@@ -286,8 +285,7 @@ async def shell_task(service_provider: LockdownServiceProvider, timeout: float) 
     session = await inspector.automation_session(safari)
     driver = WebDriver(session)
     try:
-        nest_asyncio.apply()
-        IPython.embed(
+        start_ipython_shell(
             header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")),
             user_ns={
                 "driver": driver,
@@ -302,7 +300,8 @@ async def shell_task(service_provider: LockdownServiceProvider, timeout: float) 
 
 @cli.command()
 @catch_errors
-def shell(
+@async_command
+async def shell(
     service_provider: ServiceProviderDep,
     timeout: Annotated[
         float,
@@ -321,12 +320,13 @@ def shell(
         Settings -> Safari -> Advanced -> Web Inspector
         Settings -> Safari -> Advanced -> Remote Automation
     """
-    asyncio.run(shell_task(service_provider, timeout), debug=True)
+    await shell_task(service_provider, timeout)
 
 
 @cli.command()
 @catch_errors
-def js_shell(
+@async_command
+async def js_shell(
     service_provider: ServiceProviderDep,
     url: str = "",
     timeout: Annotated[
@@ -357,20 +357,22 @@ def js_shell(
     """
 
     js_shell_class = AutomationJsShell if automation else InspectorJsShell
-    asyncio.run(run_js_shell(js_shell_class, service_provider, timeout, url, open_safari))
+    await run_js_shell(js_shell_class, service_provider, timeout, url, open_safari)
 
 
-udid = ""
+cdp_inspector: Optional[WebinspectorService] = None
 
 
 def create_app():
-    inspector = WebinspectorService(lockdown=create_using_usbmux(udid))
-    app.state.inspector = inspector
+    if cdp_inspector is None:
+        raise RuntimeError("CDP inspector is not initialized")
+    app.state.inspector = cdp_inspector
     return app
 
 
 @cli.command()
-def cdp(service_provider: ServiceProviderDep, host: str = "127.0.0.1", port: int = 9222) -> None:
+@async_command
+async def cdp(service_provider: ServiceProviderDep, host: str = "127.0.0.1", port: int = 9222) -> None:
     """
     Start a CDP server for debugging WebViews.
 
@@ -378,8 +380,8 @@ def cdp(service_provider: ServiceProviderDep, host: str = "127.0.0.1", port: int
     In order to debug the WebView that way, open in Google Chrome:
         chrome://inspect/#devices
     """
-    global udid
-    udid = service_provider.udid
+    global cdp_inspector
+    cdp_inspector = WebinspectorService(lockdown=service_provider)
     uvicorn.run(
         f"{__name__}:{create_app.__name__}",
         host=host,
@@ -409,7 +411,7 @@ class JsShellCompleter(Completer):
     def __init__(self, jsshell: "JsShell") -> None:
         self.jsshell: JsShell = jsshell
 
-    async def get_completions_async(
+    async def aget_completions(
         self,
         document: Document,
         complete_event: CompleteEvent,

@@ -1,13 +1,15 @@
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments import ChannelService
 
 
-class Screenshot:
+class Screenshot(ChannelService):
     IDENTIFIER = "com.apple.instruments.server.services.screenshot"
 
     def __init__(self, dvt: DvtSecureSocketProxyService):
-        self._channel = dvt.make_channel(self.IDENTIFIER)
+        super().__init__(dvt)
 
-    def get_screenshot(self) -> bytes:
+    async def get_screenshot(self) -> bytes:
         """get device screenshot"""
-        self._channel.takeScreenshot(expects_reply=True)
-        return self._channel.receive_plist()
+        channel = await self._channel_ref()
+        await channel.takeScreenshot(expects_reply=True)
+        return await channel.receive_plist()

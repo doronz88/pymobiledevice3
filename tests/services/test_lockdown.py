@@ -1,16 +1,19 @@
-import time
+import asyncio
+
+import pytest
 
 from pymobiledevice3.lockdown import LockdownClient
 
 LOCKDOWND_SOCKET_SELECT_TIMEOUT = 60
 
 
-def test_lockdown_reconnect(lockdown: LockdownClient) -> None:
-    d1 = lockdown.date
+@pytest.mark.asyncio
+async def test_lockdown_reconnect(lockdown: LockdownClient) -> None:
+    d1 = await lockdown.get_date()
 
     # add some threshold to make sure lockdownd closed the connection on its end
-    time.sleep(LOCKDOWND_SOCKET_SELECT_TIMEOUT + 5)
+    await asyncio.sleep(LOCKDOWND_SOCKET_SELECT_TIMEOUT + 5)
 
-    d2 = lockdown.date
+    d2 = await lockdown.get_date()
 
     assert d1 < d2
