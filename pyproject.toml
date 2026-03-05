@@ -36,6 +36,7 @@ dynamic = ["dependencies", "version"]
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio"]
+full = ["defusedxml", "pytest"]
 
 [project.urls]
 "Homepage" = "https://github.com/doronz88/pymobiledevice3"
@@ -113,7 +114,10 @@ ignore = [
     "TRY301",
     # Do not perform function call `csfield` in dataclass defaults
     "RUF009",
+    # Use X | None instead of Optional
+    "UP045",
 ]
+
 
 [tool.ruff.format]
 preview = true
