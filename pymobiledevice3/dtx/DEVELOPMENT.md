@@ -86,6 +86,7 @@ fragment index > 0:
 ```
 
 Memory limits enforced before any allocation:
+
 - `MAX_BUFFERED_COUNT = 100` — max concurrent in-flight messages
 - `MAX_BUFFERED_SIZE  = 30 MiB` — total buffered bytes
 - `MAX_MESSAGE_SIZE   = 128 MiB` — single message ceiling
@@ -102,7 +103,8 @@ Immediately after the transport is established both sides send
 `DTXConnection.connect()` method:
 
 1. Creates a `DTXChannel(0, "ctrl", …)` and a `DTXControlService` on it.
-2. Sends `_notifyOfPublishedCapabilities:` with `{"com.apple.private.DTXBlockCompression": 0, "com.apple.private.DTXConnection": 1}`.
+2. Sends `_notifyOfPublishedCapabilities:` with
+   `{"com.apple.private.DTXBlockCompression": 0, "com.apple.private.DTXConnection": 1}`.
 3. Awaits `_handshake_done` — resolved when the peer's capabilities arrive.
 
 ### `open_channel` flow

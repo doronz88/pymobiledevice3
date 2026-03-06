@@ -68,7 +68,7 @@ procs = await svc.runningProcesses()
 ## `@dtx_method` options
 
 | Form | Behaviour |
-|------|-----------|
+| ------ | ----------- |
 | `@dtx_method` | selector inferred from the Python method name |
 | `@dtx_method("setConfig:")` | explicit ObjC selector |
 | `@dtx_method(expects_reply=False)` | fire-and-forget |
@@ -79,7 +79,7 @@ procs = await svc.runningProcesses()
 ## `@dtx_on_invoke` options
 
 | Form | Behaviour |
-|------|-----------|
+| ------ | ----------- |
 | `@dtx_on_invoke` | selector inferred from the Python method name |
 | `@dtx_on_invoke("_XCT_logMessage:")` | explicit ObjC selector |
 | `@dtx_on_dispatch` | catch-all for unmatched selectors |
@@ -93,7 +93,7 @@ NSKeyedArchiver (as a BUFFER primitive). To send a raw integer or string
 instead, wrap with one of the Primitive wrappers:
 
 | Class | Alias | Wire type |
-|-------|-------|-----------|
+| ------- | ------- | ----------- |
 | `PrimitiveNull` | `PNull` | 10 — positional NULL |
 | `PrimitiveString` | `PStr` | 1 — length-prefixed UTF-8 |
 | `PrimitiveBuffer` | `PBuf` | 2 — raw bytes (no archiving) |
@@ -113,4 +113,3 @@ coercion is applied automatically at call time:
 async def request_channel(self, channel_code: PInt32, identifier: str) -> None:
     ...
 ```
-
