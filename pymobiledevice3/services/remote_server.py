@@ -1,16 +1,13 @@
 import asyncio
-import copy
 import io
 import logging
-import os
 import plistlib
 import socket
-import uuid
 from collections.abc import Awaitable
 from contextlib import suppress
 from functools import partial
 from pprint import pprint
-from typing import Any, Callable, ClassVar, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 from bpylist2 import archiver
 from construct import (
@@ -32,6 +29,9 @@ from construct import (
 )
 from pygments import formatters, highlight, lexers
 
+from pymobiledevice3.dtx.ns_types import (
+    NSError as _NsTypesNSError,
+)
 from pymobiledevice3.exceptions import (
     ChannelClosedError,
     ConnectionTerminatedError,
@@ -39,6 +39,7 @@ from pymobiledevice3.exceptions import (
     UnrecognizedSelectorError,
 )
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.dvt.testmanaged.xctest_types import XCTCapabilities, XCTestConfiguration  # noqa: F401
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.utils import start_ipython_shell
 
@@ -136,178 +137,6 @@ class MessageAux:
 
     def __bytes__(self):
         return message_aux_t_struct.build({"aux": self.values})
-
-
-class DTTapMessage:
-    @staticmethod
-    def decode_archive(archive_obj):
-        return archive_obj.decode("DTTapMessagePlist")
-
-
-class NSNull:
-    @staticmethod
-    def decode_archive(archive_obj):
-        return None
-
-
-class NSError:
-    @staticmethod
-    def encode_archive(archive_obj):
-        return archiver.archive(archive_obj)
-
-    @staticmethod
-    def decode_archive(archive_obj):
-        user_info = archive_obj.decode("NSUserInfo")
-        if user_info.get("NSLocalizedDescription", "").endswith(" - it does not respond to the selector"):
-            raise UnrecognizedSelectorError(user_info)
-        raise DvtException(archive_obj.decode("NSUserInfo"))
-
-
-class NSUUID(uuid.UUID):
-    @staticmethod
-    def uuid4():
-        """Generate a random UUID."""
-        return NSUUID(bytes=os.urandom(16))
-
-    def encode_archive(self, archive_obj: archiver.ArchivingObject):
-        archive_obj.encode("NS.uuidbytes", self.bytes)
-
-    @staticmethod
-    def decode_archive(archive_obj: archiver.ArchivedObject):
-        return NSUUID(bytes=archive_obj.decode("NS.uuidbytes"))
-
-
-class NSURL:
-    def __init__(self, base, relative):
-        self.base = base
-        self.relative = relative
-
-    def encode_archive(self, archive_obj: archiver.ArchivingObject):
-        archive_obj.encode("NS.base", self.base)
-        archive_obj.encode("NS.relative", self.relative)
-
-    @staticmethod
-    def decode_archive(archive_obj: archiver.ArchivedObject):
-        return NSURL(archive_obj.decode("NS.base"), archive_obj.decode("NS.relative"))
-
-
-class NSValue:
-    @staticmethod
-    def decode_archive(archive_obj: archiver.ArchivedObject):
-        return archive_obj.decode("NS.rectval")
-
-
-class NSMutableData:
-    @staticmethod
-    def decode_archive(archive_obj: archiver.ArchivedObject):
-        return archive_obj.decode("NS.data")
-
-
-class NSMutableString:
-    @staticmethod
-    def decode_archive(archive_obj: archiver.ArchivedObject):
-        return archive_obj.decode("NS.string")
-
-
-class XCTCapabilities:
-    def __init__(self, capabilities: dict):
-        self.capabilities = capabilities
-
-    def encode_archive(self, archive_obj: archiver.ArchivingObject):
-        archive_obj.encode("capabilities-dictionary", self.capabilities)
-
-    @staticmethod
-    def decode_archive(archive_obj: archiver.ArchivedObject):
-        return XCTCapabilities(archive_obj.decode("capabilities-dictionary"))
-
-    def __str__(self):
-        return f"XCTCapabilities({self.capabilities})"
-
-
-class XCTestConfiguration:
-    _default: ClassVar = {
-        # 'testBundleURL': UID(3),
-        # 'sessionIdentifier': UID(8), # UUID
-        "aggregateStatisticsBeforeCrash": {"XCSuiteRecordsKey": {}},
-        "automationFrameworkPath": "/Developer/Library/PrivateFrameworks/XCTAutomationSupport.framework",
-        "baselineFileRelativePath": None,
-        "baselineFileURL": None,
-        "defaultTestExecutionTimeAllowance": None,
-        "disablePerformanceMetrics": False,
-        "emitOSLogs": False,
-        "formatVersion": plistlib.UID(2),  # store in UID
-        "gatherLocalizableStringsData": False,
-        "initializeForUITesting": True,
-        "maximumTestExecutionTimeAllowance": None,
-        "productModuleName": "WebDriverAgentRunner",  # set to other value is also OK
-        "randomExecutionOrderingSeed": None,
-        "reportActivities": True,
-        "reportResultsToIDE": True,
-        "systemAttachmentLifetime": 2,
-        "targetApplicationArguments": [],  # maybe useless
-        "targetApplicationBundleID": None,
-        "targetApplicationEnvironment": None,
-        "targetApplicationPath": "/whatever-it-does-not-matter/but-should-not-be-empty",
-        "testApplicationDependencies": {},
-        "testApplicationUserOverrides": None,
-        "testBundleRelativePath": None,
-        "testExecutionOrdering": 0,
-        "testTimeoutsEnabled": False,
-        "testsDrivenByIDE": False,
-        "testsMustRunOnMainThread": True,
-        "testsToRun": None,
-        "testsToSkip": None,
-        "treatMissingBaselinesAsFailures": False,
-        "userAttachmentLifetime": 0,
-        "preferredScreenCaptureFormat": 2,
-        "IDECapabilities": XCTCapabilities({
-            "expected failure test capability": True,
-            "test case run configurations": True,
-            "test timeout capability": True,
-            "test iterations": True,
-            "request diagnostics for specific devices": True,
-            "delayed attachment transfer": True,
-            "skipped test capability": True,
-            "daemon container sandbox extension": True,
-            "ubiquitous test identifiers": True,
-            "XCTIssue capability": True,
-        }),
-    }
-
-    def __init__(self, kv: dict):
-        assert "testBundleURL" in kv
-        assert "sessionIdentifier" in kv
-        self._config = copy.deepcopy(self._default)
-        self._config.update(kv)
-
-    def encode_archive(self, archive_obj: archiver.ArchivingObject):
-        for k, v in self._config.items():
-            archive_obj.encode(k, v)
-
-    @staticmethod
-    def decode_archive(archive_obj: archiver.ArchivedObject):
-        return archive_obj.object
-
-
-archiver.update_class_map({
-    "DTSysmonTapMessage": DTTapMessage,
-    "DTTapHeartbeatMessage": DTTapMessage,
-    "DTTapStatusMessage": DTTapMessage,
-    "DTKTraceTapMessage": DTTapMessage,
-    "DTActivityTraceTapMessage": DTTapMessage,
-    "DTTapMessage": DTTapMessage,
-    "NSNull": NSNull,
-    "NSError": NSError,
-    "NSUUID": NSUUID,
-    "NSURL": NSURL,
-    "NSValue": NSValue,
-    "NSMutableData": NSMutableData,
-    "NSMutableString": NSMutableString,
-    "XCTestConfiguration": XCTestConfiguration,
-    "XCTCapabilities": XCTCapabilities,
-})
-
-archiver.Archive.inline_types = list({*archiver.Archive.inline_types, bytes})
 
 
 class Channel(int):
@@ -770,6 +599,11 @@ class RemoteServer(LockdownService):
                 raise
             except plistlib.InvalidFileException:
                 self.logger.warning(f"got an invalid plist: {data[:40]}")
+            if isinstance(data, _NsTypesNSError):
+                user_info = data.user_info or {}
+                if user_info.get("NSLocalizedDescription", "").endswith(" - it does not respond to the selector"):
+                    raise UnrecognizedSelectorError(user_info)
+                raise DvtException(user_info)
         if return_header:
             return (data, aux), mheader
         return data, aux

@@ -9,6 +9,7 @@ from pymobiledevice3.exceptions import DeviceNotFoundError, InvalidServiceError
 from pymobiledevice3.lockdown import UsbmuxLockdownClient, create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestService
 from pymobiledevice3.tunneld.api import get_tunneld_devices
 
 logging.getLogger("quic").disabled = True
@@ -24,6 +25,12 @@ logging.getLogger("urllib3.connectionpool").disabled = True
 def pytest_addoption(parser):
     parser.addoption("--rsd", default=None, type=str, nargs=2, action="store")
     parser.addoption("--tunnel", default=None, type=str, action="store")
+    parser.addoption(
+        "--xcuitest-config",
+        default=None,
+        metavar="PATH",
+        help="Path to xcuitest JSON config file",
+    )
 
 
 @pytest.fixture(scope="function")
@@ -87,3 +94,18 @@ async def lockdown() -> AsyncGenerator[UsbmuxLockdownClient, Any]:
     """
     async with await create_using_usbmux() as client:
         yield client
+
+
+@pytest_asyncio.fixture(scope="function")
+async def xcuitest_service(service_provider) -> AsyncGenerator[XCUITestService, Any]:
+    """
+    Creates a new XCUITestService client for each test.
+    """
+    try:
+        # check manually, as the XCUITestService currently connect to the needed services
+        # only when starting the test ( shall we change this? )
+        async with DvtSecureSocketProxyService(lockdown=service_provider):
+            pass
+        return XCUITestService(service_provider)
+    except InvalidServiceError:
+        pytest.skip("Skipping XCUITest-based test since the service isn't accessible")

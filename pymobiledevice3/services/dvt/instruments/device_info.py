@@ -2,6 +2,7 @@ import plistlib
 import typing
 from datetime import datetime
 
+from pymobiledevice3.dtx.ns_types import NSDate
 from pymobiledevice3.exceptions import DvtDirListError
 from pymobiledevice3.services.dvt.instruments import ChannelService
 from pymobiledevice3.services.remote_server import MessageAux
@@ -43,7 +44,8 @@ class DeviceInfo(ChannelService):
         assert isinstance(result, list)
         for process in result:
             if "startDate" in process:
-                process["startDate"] = datetime.fromtimestamp(process["startDate"])
+                d = process["startDate"]
+                process["startDate"] = d.utc if isinstance(d, NSDate) else datetime.fromtimestamp(d)
         return result
 
     async def is_running_pid(self, pid: int) -> bool:
