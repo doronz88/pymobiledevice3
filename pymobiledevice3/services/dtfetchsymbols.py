@@ -22,16 +22,17 @@ class DtFetchSymbols:
         await service.close()
         return files
 
-    async def get_file(self, fileno: int, stream: typing.IO):
+    async def get_file(self, fileno: int, stream: typing.IO, max_bytes: typing.Optional[int] = None):
         service = await self._start_command(self.CMD_GET_FILE)
         await service.sendall(struct.pack(">I", fileno))
 
         size = struct.unpack(">Q", await service.recvall(8))[0]
         self.logger.debug(f"file size: {size}")
 
+        limit = size if max_bytes is None else min(size, max_bytes)
         received = 0
-        while received < size:
-            chunk_size = min(size - received, self.MAX_CHUNK)
+        while received < limit:
+            chunk_size = min(limit - received, self.MAX_CHUNK)
             buf = await service.recvall(chunk_size)
             stream.write(buf)
             received += len(buf)
