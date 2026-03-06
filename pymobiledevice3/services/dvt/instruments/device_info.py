@@ -32,7 +32,7 @@ class _DeviceInfoService(DTXService):
 
 
 class _DeviceInfoChannel(DtxService[_DeviceInfoService]):
-    SERVICE_CLASS = _DeviceInfoService
+    pass
 
 
 class DeviceInfo:

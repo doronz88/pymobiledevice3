@@ -38,6 +38,7 @@ from typing_extensions import Self
 
 from pymobiledevice3.dtx import DTXConnection, DTXService
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 
 class DtxServiceProvider:
@@ -89,8 +90,6 @@ class DtxServiceProvider:
 
         Subclasses are free to override for non-standard selection logic.
         """
-        from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-
         if isinstance(service_provider, RemoteServiceDiscoveryService):
             return cls.RSD_SERVICE_NAME if cls.RSD_SERVICE_NAME is not None else cls.SERVICE_NAME
         if cls.OLD_SERVICE_NAME is not None and Version(service_provider.product_version).major < 14:
@@ -105,8 +104,6 @@ class DtxServiceProvider:
         names where the device gates DTX traffic behind a TLS handshake but
         expects raw bytes afterwards.  RSD connections never need it.
         """
-        from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-
         if isinstance(service_provider, RemoteServiceDiscoveryService):
             return False
         if cls.OLD_SERVICE_NAME is not None:
@@ -152,7 +149,7 @@ class DtxServiceProvider:
         """
         if self._dtx is not None:
             return
-        self._dtx = await self._open_dtx_connection(self.lockdown, self._service_name, strip_ssl=self._strip_ssl)
+        self._dtx = await self._open_dtx_connection(self._service_name, strip_ssl=self._strip_ssl)
         await self._dtx.connect()
         if self.REGISTER_SERVICES:
             self._dtx.register_services(*self.REGISTER_SERVICES)
@@ -174,9 +171,8 @@ class DtxServiceProvider:
     # Internal
     # ------------------------------------------------------------------
 
-    @staticmethod
     async def _open_dtx_connection(
-        lockdown: LockdownServiceProvider,
+        self,
         service_name: str,
         *,
         strip_ssl: bool = False,
@@ -189,6 +185,7 @@ class DtxServiceProvider:
         runs over the plain TCP transport — required for
         ``com.apple.instruments.remoteserver`` and similar pre-iOS 14 services.
         """
+        lockdown = self.lockdown
         attr = await lockdown.get_service_connection_attributes(service_name, False)
         svc = await lockdown.create_service_connection(attr["Port"])
         await svc._ensure_started()

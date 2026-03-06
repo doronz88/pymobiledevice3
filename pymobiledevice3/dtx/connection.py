@@ -23,7 +23,7 @@ import asyncio
 import logging
 import socket as _socket
 from contextlib import suppress
-from typing import Any, Callable, overload
+from typing import Any, Callable, Optional, overload
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 
@@ -213,7 +213,10 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
     @overload
     async def open_channel(self, cls: type[DTX_SERVICE_T]) -> DTX_SERVICE_T: ...
 
-    async def open_channel(self, identifier_or_cls: str | type[DTXService]) -> DTXService:
+    @overload
+    async def open_channel(self, identifier: str, cls: type[DTX_SERVICE_T]) -> DTX_SERVICE_T: ...
+
+    async def open_channel(self, identifier_or_cls: str, cls: Optional[type[DTXService]] = None) -> DTXService:
         """Open a named service channel and return the bound :class:`DTXService`.
 
         Looks up *identifier* in the per-connection service class registry.
@@ -232,15 +235,23 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
             svc = await conn.open_channel(DeviceInfoService.IDENTIFIER)
             result = await svc.do_invoke("runningProcesses")
         """
-        identifier: str = identifier_or_cls.IDENTIFIER if isinstance(identifier_or_cls, type) else identifier_or_cls
+        identifier: str = identifier_or_cls
+        if isinstance(identifier_or_cls, type):
+            if cls is not None:
+                raise ValueError(f"Cannot specify two types: {identifier_or_cls} and {cls}")
+            cls = identifier_or_cls
+            identifier: str = cls.IDENTIFIER
+
+        if not identifier:
+            raise ValueError("Identifier cannot be empty")
+
         async with self._channel_lock:
             code = self._next_channel_code
             self._next_channel_code += 1
             channel = DTXChannel(code, identifier, self)
             self._channels[code] = channel
-            if isinstance(identifier_or_cls, type):
-                cls = identifier_or_cls
-                s = cls(self.ctx.child(channel=channel))
+            if cls is not None:
+                s = self._instantiate_service_from_class(cls, channel)
             else:
                 s = self._instantiate_service(identifier, channel, remote=False)
 
@@ -284,6 +295,11 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         """
         if cls.IDENTIFIER is None:
             raise ValueError(f"{cls.__name__} must define IDENTIFIER")
+        old = self._services_cls.get(cls.IDENTIFIER)
+        if old is not None and old is not cls:
+            self.logger.warning(
+                "Overwriting existing service registration for identifier %r: %r -> %r", cls.IDENTIFIER, old, cls
+            )
         self._services_cls[cls.IDENTIFIER] = cls
 
     def register_services(self, *classes: type[DTXService]) -> None:
@@ -426,6 +442,10 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
     # Internal service instantiation helpers
     # ------------------------------------------------------------------
 
+    def _instantiate_service_from_class(self, cls: type[DTXService], channel: DTXChannel) -> DTXService:
+        """Instantiate a service directly from *cls*."""
+        return cls(self.ctx.child(channel=channel))
+
     def _instantiate_service(self, identifier: str, channel: DTXChannel, remote: bool) -> DTXService:
         """Synchronously create and return the service for *identifier*.
 
@@ -438,11 +458,10 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         if identifier.startswith("dtxproxy:"):
             return self._instantiate_dtxproxy(identifier, channel, remote=remote)
         cls = self._services_cls.get(identifier)
-        ctx = self.ctx.child(channel=channel)
         if cls is None:
             self.logger.debug("No service registered for %r, using DTXDynamicService", identifier)
-            return DTXDynamicService(ctx)
-        return cls(ctx)
+            cls = DTXDynamicService
+        return self._instantiate_service_from_class(cls, channel)
 
     def _instantiate_dtxproxy(self, identifier: str, channel: DTXChannel, remote: bool) -> DTXProxyService:
         """Synchronously assemble a :class:`DTXProxyService` for a dtxproxy channel.

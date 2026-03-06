@@ -1,4 +1,4 @@
-"""DTX (Distributed Transport eXchange) — public API.
+"""DTX (Developer Tools eXchange) — public API.
 
 Import everything you need from here::
 

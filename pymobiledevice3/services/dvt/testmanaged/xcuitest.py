@@ -20,8 +20,9 @@ from packaging.version import Version
 from pymobiledevice3.dtx import (
     NSURL,
     NSUUID,
-    DTXProxyService,
 )
+from pymobiledevice3.dtx.service import DTXProxyService as _DTXProxyService
+from pymobiledevice3.dtx_proxy_service import DtxProxyService
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import AppNotInstalledError, ConnectionTerminatedError
@@ -48,8 +49,6 @@ XCODE_VERSION = 36
 # Orchestrator
 # ---------------------------------------------------------------------------
 
-_PROXY_IDENTIFIER = "dtxproxy:XCTestManager_IDEInterface:XCTestManager_DaemonConnectionInterface"
-
 
 class _TestManagerProvider(DtxServiceProvider):
     """DTX transport to ``testmanagerd``.
@@ -61,38 +60,27 @@ class _TestManagerProvider(DtxServiceProvider):
     SERVICE_NAME = "com.apple.testmanagerd.lockdown.secure"
     RSD_SERVICE_NAME = "com.apple.dt.testmanagerd.remote"
     OLD_SERVICE_NAME = "com.apple.testmanagerd.lockdown"
-    REGISTER_SERVICES = (
-        XCTestManager_IDEInterface,
-        XCTestManager_DaemonConnectionInterface,
-        XCTestDriverInterface,
-    )
 
 
-class _XcuitestDvtProvider(InstrumentsDvtProvider):
-    """DTX transport to the Instruments / DVT daemon (ProcessControl)."""
-
-    REGISTER_SERVICES = (ProcessControlService,)
+class _ProxyIdeToDaemonService(DtxProxyService[XCTestManager_IDEInterface, XCTestManager_DaemonConnectionInterface]):
+    pass
 
 
-class _TestManagerProxyChannel(DtxService[DTXProxyService]):
-    """Opens the ``dtxproxy:`` channel to testmanagerd."""
+class _ProxyIdeToDriverService(DtxProxyService[XCTestManager_IDEInterface, XCTestDriverInterface]):
+    async def _acquire_channel(self) -> _DTXProxyService:
+        # Wait for the runner to open the reverse dtxproxy channel.
+        logger.debug("Waiting for XCTestDriverInterface from runner ...")
 
-    CHANNEL_IDENTIFIER = _PROXY_IDENTIFIER
+        try:
+            remote_svc = await self.dtx.wait_for_proxied_service(XCTestDriverInterface, remote=True, timeout=30.0)
+        except asyncio.TimeoutError:
+            raise RuntimeError("Timed out waiting for XCTestDriverInterface — runner did not connect") from None
+        else:
+            return remote_svc.dtxproxy
 
 
 class _ProcessControlChannel(DtxService[ProcessControlService]):
     """Opens the ProcessControl service channel on the DVT connection."""
-
-    SERVICE_CLASS = ProcessControlService
-
-
-class _XCTestDriverChannel(DtxService[XCTestDriverInterface]):
-    """Waits for the ``XCTestDriverInterface`` pushed *from* the test runner."""
-
-    SERVICE_CLASS = XCTestDriverInterface
-
-    async def _acquire_channel(self) -> XCTestDriverInterface:
-        return await self.dtx.wait_for_proxied_service(XCTestDriverInterface, remote=True, timeout=30.0)
 
 
 class XCUITestService:
@@ -145,25 +133,25 @@ class XCUITestService:
         args = cfg.runner_app_args
         xctest_path = f"/tmp/{str(sid).upper()}.xctestconfiguration"
 
-        ss = _XcuitestDvtProvider(self.lockdown)
-        tm = _TestManagerProvider(self.lockdown)
-        tm2 = _TestManagerProvider(self.lockdown)
+        dvt_provider = InstrumentsDvtProvider(self.lockdown)
+        control_test_manager_provider = _TestManagerProvider(self.lockdown)
+        main_test_manager_provider = _TestManagerProvider(self.lockdown)
 
-        async with ss, tm, tm2:
+        async with dvt_provider, control_test_manager_provider, main_test_manager_provider:
             # Inject per-run context into the TM connections after connect().
-            for tm_prov in (tm, tm2):
+            for tm_prov in (control_test_manager_provider, main_test_manager_provider):
                 tm_prov.dtx.ctx["xctest_config"] = xctest_config
                 tm_prov.dtx.ctx["test_done_event"] = test_done
                 if listener is not None:
                     tm_prov.dtx.ctx["xcuitest_listener"] = listener
 
             # Open control and main dtxproxy channels.
-            ctrl_proxy = _TestManagerProxyChannel(tm)
-            main_proxy = _TestManagerProxyChannel(tm2)
-            p_ctrl_ch = _ProcessControlChannel(ss)
-            driver_ch = _XCTestDriverChannel(tm2)
+            ctrl_proxy = _ProxyIdeToDaemonService(control_test_manager_provider)
+            main_proxy = _ProxyIdeToDaemonService(main_test_manager_provider)
+            process_control_channel = _ProcessControlChannel(dvt_provider)
+            driver_ch = _ProxyIdeToDriverService(main_test_manager_provider)
 
-            async with ctrl_proxy, main_proxy, p_ctrl_ch:
+            async with ctrl_proxy, main_proxy, process_control_channel:
                 ctrl_daemon = cast(
                     XCTestManager_DaemonConnectionInterface,
                     ctrl_proxy.service.remote_service,
@@ -182,10 +170,12 @@ class XCUITestService:
                 logger.debug("main session result: %r", main_result)
 
                 # Launch the test runner process.
-                largs, lenv, lopts = _generate_launch_args(
+                launch_args, launch_env, launch_options = _generate_launch_args(
                     product_major_version, sid, cfg.runner_app_info, xctest_path, env, args
                 )
-                pid = await p_ctrl_ch.service.launch_suspended_process("", bundle_id, lenv, largs, lopts)
+                pid = await process_control_channel.service.launch_suspended_process(
+                    "", bundle_id, launch_env, launch_args, launch_options
+                )
                 logger.debug("Launched test runner pid=%d", pid)
 
                 if product_major_version < 17:
@@ -197,45 +187,42 @@ class XCUITestService:
 
                 # Wait for the runner to open the reverse dtxproxy channel.
                 logger.debug("Waiting for XCTestDriverInterface from runner ...")
-                try:
-                    await driver_ch.connect()
-                except asyncio.TimeoutError:
-                    raise RuntimeError("Timed out waiting for XCTestDriverInterface — runner did not connect") from None
 
-                driver_iface = driver_ch.service
-                logger.debug("Starting test plan execution ...")
-                await driver_iface.start_executing_test_plan(XCODE_VERSION)
+                async with driver_ch:
+                    driver_iface = driver_ch.remote_service
+                    logger.debug("Starting test plan execution ...")
+                    await driver_iface.start_executing_test_plan(XCODE_VERSION)
 
-                timeout_str = f"{timeout:.1f}s" if timeout is not None else "unlimited time"
-                logger.debug("Waiting for test completion (timeout=%s) ...", timeout_str)
+                    timeout_str = f"{timeout:.1f}s" if timeout is not None else "unlimited time"
+                    logger.debug("Waiting for test completion (timeout=%s) ...", timeout_str)
 
-                # Race test-done event against the runner connection dropping.
-                # When the test runner terminates itself (e.g. because a test
-                # case calls Terminate on the xctrunner process), the DTX TCP
-                # connection is reset before _XCT_didFinishExecutingTestPlan
-                # can be sent.  In that case _disconnected fires first and we
-                # raise ConnectionTerminatedError rather than hanging.
-                done_fut = asyncio.ensure_future(test_done.wait())
-                disc_fut = asyncio.ensure_future(tm2.dtx.wait_disconnected())
-                try:
-                    done_set, _ = await asyncio.wait(
-                        {done_fut, disc_fut},
-                        timeout=timeout,
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                finally:
-                    done_fut.cancel()
-                    disc_fut.cancel()
-                    with suppress(asyncio.CancelledError, Exception):
-                        await asyncio.gather(done_fut, disc_fut, return_exceptions=True)
+                    # Race test-done event against the runner connection dropping.
+                    # When the test runner terminates itself (e.g. because a test
+                    # case calls Terminate on the xctrunner process), the DTX TCP
+                    # connection is reset before _XCT_didFinishExecutingTestPlan
+                    # can be sent.  In that case _disconnected fires first and we
+                    # raise ConnectionTerminatedError rather than hanging.
+                    done_fut = asyncio.ensure_future(test_done.wait())
+                    disc_fut = asyncio.ensure_future(main_test_manager_provider.dtx.wait_disconnected())
+                    try:
+                        done_set, _ = await asyncio.wait(
+                            {done_fut, disc_fut},
+                            timeout=timeout,
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                    finally:
+                        done_fut.cancel()
+                        disc_fut.cancel()
+                        with suppress(asyncio.CancelledError, Exception):
+                            await asyncio.gather(done_fut, disc_fut, return_exceptions=True)
 
-                if not done_set:
-                    raise TimeoutError(f"Test did not finish within {timeout_str}")
-                if not test_done.is_set():
-                    raise ConnectionTerminatedError(
-                        "Runner DTX connection closed before _XCT_didFinishExecutingTestPlan"
-                        " — the test runner likely terminated itself mid-plan"
-                    )
+                    if not done_set:
+                        raise TimeoutError(f"Test did not finish within {timeout_str}")
+                    if not test_done.is_set():
+                        raise ConnectionTerminatedError(
+                            "Runner DTX connection closed before _XCT_didFinishExecutingTestPlan"
+                            " — the test runner likely terminated itself mid-plan"
+                        )
 
 
 @dataclass
