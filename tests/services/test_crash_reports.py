@@ -1,6 +1,5 @@
 import glob
 import shutil
-import time
 from contextlib import suppress
 
 import pytest
@@ -81,7 +80,7 @@ async def test_pull(crash_manager, temp_directory) -> None:
 
 @pytest.mark.parametrize(
     ("end_time", "return_value"),
-    ((-1, True), (0, True), (time.monotonic() + 1000, False), (None, False)),
+    ((-1, True), (0, True), (float("inf"), False), (None, False)),
 )
 def test_check_timeout(crash_manager: CrashReportsManager, end_time: int, return_value: bool) -> None:
     assert crash_manager._check_timeout(end_time) is return_value
