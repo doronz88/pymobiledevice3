@@ -26,6 +26,7 @@ from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import AppNotInstalledError, ConnectionTerminatedError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider as InstrumentsDvtProvider
 from pymobiledevice3.services.dvt.testmanaged.dtx_services import (  # noqa: F401 — re-exported
     ProcessControlService,
     XCTestCaseResult,
@@ -67,12 +68,9 @@ class _TestManagerProvider(DtxServiceProvider):
     )
 
 
-class _DvtProvider(DtxServiceProvider):
+class _XcuitestDvtProvider(InstrumentsDvtProvider):
     """DTX transport to the Instruments / DVT daemon (ProcessControl)."""
 
-    SERVICE_NAME = "com.apple.instruments.remoteserver.DVTSecureSocketProxy"
-    RSD_SERVICE_NAME = "com.apple.instruments.dtservicehub"
-    OLD_SERVICE_NAME = "com.apple.instruments.remoteserver"
     REGISTER_SERVICES = (ProcessControlService,)
 
 
@@ -147,7 +145,7 @@ class XCUITestService:
         args = cfg.runner_app_args
         xctest_path = f"/tmp/{str(sid).upper()}.xctestconfiguration"
 
-        ss = _DvtProvider(self.lockdown)
+        ss = _XcuitestDvtProvider(self.lockdown)
         tm = _TestManagerProvider(self.lockdown)
         tm2 = _TestManagerProvider(self.lockdown)
 
