@@ -51,25 +51,25 @@ SHELL_USAGE = """
 developer.supported_identifiers
 
 # In order to send messages, you need to create a channel:
-channel = developer.make_channel('com.apple.instruments.server.services.deviceinfo')
+channel = await developer.make_channel('com.apple.instruments.server.services.deviceinfo')
 
 # After creating the channel you can call allowed selectors:
-channel.runningProcesses()
+await channel.runningProcesses()
 
 # If an answer is expected, you can receive it using the receive method:
-processes = channel.receive_plist()
+processes = await channel.receive_plist()
 
 # You can also call methods from the broadcast channel
-broadcast.someMethod()
+await broadcast.someMethod()
 
 # Sometimes the selector requires parameters, You can add them using MessageAux. For example lets kill a process:
-channel = developer.make_channel('com.apple.instruments.server.services.processcontrol')
+channel = await developer.make_channel('com.apple.instruments.server.services.processcontrol')
 args = MessageAux().append_obj(80) # This will kill pid 80
-channel.killPid_(args, expects_reply=False) # Killing a process doesn't require an answer.
+await channel.killPid_(args, expects_reply=False) # Killing a process doesn't require an answer.
 
 # In some rare cases, you might want to receive the auxiliary and the selector return value.
 # For that cases you can use the recv_plist method.
-return_value, auxiliary = developer.recv_plist()
+return_value, auxiliary = await developer.recv_plist()
 """
 
 

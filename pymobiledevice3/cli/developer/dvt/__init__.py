@@ -28,6 +28,7 @@ from pymobiledevice3.services.dvt.instruments.process_control import ProcessCont
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestListener, XCUITestService
 from pymobiledevice3.services.remote_server import MessageAux
+from pymobiledevice3.utils import run_in_loop
 
 logger = logging.getLogger(__name__)
 
@@ -262,8 +263,9 @@ async def launch(
 @cli.command("shell")
 def dvt_shell(service_provider: ServiceProviderDep) -> None:
     """Launch developer shell (used for pymobiledevice3 R&D)"""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        dvt.shell()
+    dvt = DvtSecureSocketProxyService(lockdown=service_provider)
+    run_in_loop(dvt.perform_handshake())
+    dvt.shell()
 
 
 async def show_dirlist(channel, dirname: str, recursive: bool = False) -> None:
