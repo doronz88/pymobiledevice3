@@ -46,21 +46,36 @@ WdaClientDep = Annotated[
 
 
 async def wait_for_xctest_app(service_provider: LockdownServiceProvider, xctrunner: str) -> asyncio.Future:
-
-    cfg = TestConfig.create_for(service_provider, xctrunner)
+    cfg = await TestConfig.create_for(service_provider, runner_bundle_id=xctrunner)
 
     ts = XCUITestService(service_provider)
-    xctrunner = asyncio.ensure_future(ts.run(cfg))
+    xctrunner_task = asyncio.create_task(ts.run(cfg), name="wda-xctrunner")
+    startup_timeout = 30.0
+    deadline = asyncio.get_running_loop().time() + startup_timeout
 
-    while True:
-        device = await usbmux.select_device(service_provider.udid)
-        try:
-            await device.connect(DEFAULT_WDA_PORT)
-        except ConnectionFailedError:
-            await asyncio.sleep(0.1)
-        else:
-            break
-    return xctrunner
+    try:
+        while True:
+            # If XCTest setup fails, surface the failure instead of waiting forever.
+            if xctrunner_task.done():
+                xctrunner_task.result()
+                raise RuntimeError("XCUITest runner exited before WDA became reachable")
+            if asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError(f"WDA did not become reachable on port {DEFAULT_WDA_PORT} within 30.0 seconds")
+
+            device = await usbmux.select_device(service_provider.udid)
+            try:
+                await device.connect(DEFAULT_WDA_PORT)
+            except ConnectionFailedError:
+                await asyncio.sleep(0.1)
+            else:
+                break
+    except Exception:
+        xctrunner_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await xctrunner_task
+        raise
+
+    return xctrunner_task
 
 
 def wda_xctest_dep(
