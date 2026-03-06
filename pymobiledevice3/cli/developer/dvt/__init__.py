@@ -14,11 +14,14 @@ from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json, user_requested_colored_output
 from pymobiledevice3.cli.developer.dvt import core_profile_session, simulate_location, sysmon
-from pymobiledevice3.exceptions import DvtDirListError, UnrecognizedSelectorError
+from pymobiledevice3.dtx import DTXNsError
+from pymobiledevice3.dtx.service import DTXService
+from pymobiledevice3.exceptions import UnrecognizedSelectorError
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
 from pymobiledevice3.services.dvt.instruments.graphics import Graphics
 from pymobiledevice3.services.dvt.instruments.network_monitor import ConnectionDetectionEvent, NetworkMonitor
@@ -57,7 +60,7 @@ cli.add_typer(simulate_location.cli)
 @async_command
 async def proclist(service_provider: ServiceProviderDep) -> None:
     """Show processes (with start times) via DVT."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         processes = await DeviceInfo(dvt).proclist()
         for process in processes:
             if "startDate" in process:
@@ -70,7 +73,7 @@ async def proclist(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def is_running_pid(service_provider: ServiceProviderDep, pid: int) -> None:
     """Check if a PID is currently running."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         print_json(await DeviceInfo(dvt).is_running_pid(pid))
 
 
@@ -210,8 +213,11 @@ async def pkill(
     ] = False,
 ) -> None:
     """Kill all processes containing each expression in their name."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        device_info = DeviceInfo(dvt)
+    async with (
+        DvtProvider(service_provider) as dvt_provider,
+        DvtSecureSocketProxyService(lockdown=service_provider) as dvt,
+    ):
+        device_info = DeviceInfo(dvt_provider)
         process_control = ProcessControl(dvt)
 
         for expression in expressions:
@@ -272,20 +278,19 @@ def dvt_shell(service_provider: ServiceProviderDep) -> None:
     dvt.shell()
 
 
-async def show_dirlist(channel, dirname: str, recursive: bool = False) -> None:
+async def show_dirlist(channel: DTXService, dirname: str, recursive: bool = False) -> None:
     try:
-        await channel.directoryListingForPath_(MessageAux().append_obj(dirname))
-        filenames = await channel.receive_plist()
-        if filenames is None:
-            raise DvtDirListError()
-    except DvtDirListError:
+        filenames = await channel.do_invoke("directoryListingForPath:", dirname)
+    except DTXNsError:
+        return
+    if not isinstance(filenames, list):
         return
 
     for filename in filenames:
-        filename = posixpath.join(dirname, filename)
-        print(filename)
+        child = posixpath.join(dirname, filename)
+        print(child)
         if recursive:
-            await show_dirlist(channel, filename, recursive=recursive)
+            await show_dirlist(channel, child, recursive=recursive)
 
 
 @cli.command("ls")
@@ -299,8 +304,8 @@ async def ls(
     ] = False,
 ) -> None:
     """List directory"""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        channel = await dvt.make_channel(DeviceInfo.IDENTIFIER)
+    async with DvtProvider(service_provider) as dvt:
+        channel = await dvt.dtx.open_channel(DeviceInfo.IDENTIFIER)
         await show_dirlist(channel, path, recursive=recursive)
 
 
@@ -308,7 +313,7 @@ async def ls(
 @async_command
 async def device_information(service_provider: ServiceProviderDep) -> None:
     """Print system information"""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         device_info = DeviceInfo(dvt)
         info = {
             "hardware": await device_info.hardware_information(),
@@ -451,7 +456,7 @@ async def xcuitest(
 @async_command
 async def dvt_trace_codes(service_provider: ServiceProviderDep) -> None:
     """Print KDebug trace codes."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         device_info = DeviceInfo(dvt)
         print_json({hex(k): v for k, v in (await device_info.trace_codes()).items()})
 
@@ -460,7 +465,7 @@ async def dvt_trace_codes(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def dvt_name_for_uid(service_provider: ServiceProviderDep, uid: int) -> None:
     """Print the assiciated username for the given uid."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         device_info = DeviceInfo(dvt)
         print(await device_info.name_for_uid(uid))
 
@@ -469,7 +474,7 @@ async def dvt_name_for_uid(service_provider: ServiceProviderDep, uid: int) -> No
 @async_command
 async def dvt_name_for_gid(service_provider: ServiceProviderDep, gid: int) -> None:
     """Print the assiciated group name for the given gid."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         device_info = DeviceInfo(dvt)
         print(await device_info.name_for_gid(gid))
 
