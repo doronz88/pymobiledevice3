@@ -174,16 +174,16 @@ class TunneldCore:
     async def monitor_wifi_task(self) -> None:
         try:
             while True:
+                remote_pairing_tunnel_services = []
+                claimed_services = set()
                 try:
                     remote_pairing_tunnel_services = await get_remote_pairing_tunnel_services()
                     for service in remote_pairing_tunnel_services:
                         if service.hostname in self.tunnel_tasks:
                             # skip tunnel if already exists for this ip
-                            await service.close()
                             continue
                         if self.tunnel_exists_for_udid(service.remote_identifier):
                             # skip tunnel if already exists for this udid
-                            await service.close()
                             continue
                         self.tunnel_tasks[service.hostname] = TunnelTask(
                             task=asyncio.create_task(
@@ -192,14 +192,20 @@ class TunneldCore:
                             ),
                             udid=service.remote_identifier,
                         )
+                        claimed_services.add(service)
                 except asyncio.exceptions.IncompleteReadError:
-                    continue
+                    logger.debug("Got IncompleteReadError from monitor-wifi-task")
                 except asyncio.CancelledError:
                     # Raise and cancel gracefully
                     raise
                 except Exception:
                     logger.error(f"Got exception from {asyncio.current_task().get_name()}")
-                    continue
+                finally:
+                    for service in remote_pairing_tunnel_services:
+                        if service in claimed_services:
+                            continue
+                        with suppress(Exception):
+                            await service.close()
                 await asyncio.sleep(REMOTEPAIRING_INTERVAL)
         except asyncio.CancelledError:
             # Cancel gracefully
