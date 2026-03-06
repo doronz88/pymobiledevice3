@@ -7,9 +7,8 @@ from enum import Enum, IntEnum
 
 from packaging.version import Version
 
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
-from pymobiledevice3.services.remote_server import MessageAux, RemoteServer
 
 
 class SerializedObject:
@@ -220,6 +219,15 @@ SERIALIZABLE_OBJECTS = {
     "AXAuditIssue_v1": AXAuditIssue_v1,
 }
 
+SHELL_USAGE = """
+# AccessibilityAudit shell (DTX API)
+# Use `accessibility` object methods directly, for example:
+# await accessibility.capabilities()
+# await accessibility.supported_audits_types()
+# await accessibility.settings()
+# await accessibility.run_audit([...])
+"""
+
 
 @dataclass
 class Event:
@@ -253,94 +261,131 @@ def deserialize_object(d):
         return SERIALIZABLE_OBJECTS[d["ObjectType"]](deserialize_object(d["Value"]))
 
 
-class AccessibilityAudit(RemoteServer):
+class _AccessibilityAuditProvider(DtxServiceProvider):
+    SERVICE_NAME = "com.apple.accessibility.axAuditDaemon.remoteserver"
+    RSD_SERVICE_NAME = "com.apple.accessibility.axAuditDaemon.remoteserver.shim.remote"
+    PERFORM_HANDSHAKE = False
+
+    def __init__(self, lockdown: LockdownServiceProvider):
+        super().__init__(lockdown, strip_ssl=True)
+
+
+class AccessibilityAudit:
     SERVICE_NAME = "com.apple.accessibility.axAuditDaemon.remoteserver"
     RSD_SERVICE_NAME = "com.apple.accessibility.axAuditDaemon.remoteserver.shim.remote"
 
     def __init__(self, lockdown: LockdownServiceProvider):
-        service_name = self.SERVICE_NAME if isinstance(lockdown, LockdownClient) else self.RSD_SERVICE_NAME
-
-        super().__init__(
-            lockdown,
-            service_name,
-            remove_ssl_context=True,
-            is_developer_service=False,
-        )
-
+        self._lockdown = lockdown
+        self._provider = _AccessibilityAuditProvider(lockdown)
+        self._event_queue: asyncio.Queue[tuple[str, list[typing.Any]]] | None = None
         self.product_version = Version(lockdown.product_version)
-        self._connected = False
         self._initial_messages_to_flush = 2 if self.product_version >= Version("15.0") else 1
         self._initial_messages_flushed = False
 
+    async def __aenter__(self):
+        try:
+            await self._ensure_ready()
+        except Exception:
+            await self.close()
+            raise
+        else:
+            return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
+
+    async def close(self) -> None:
+        if self._event_queue is not None:
+            self._provider.dtx.ctx.pop("control_dispatch_queue", None)
+            self._event_queue = None
+        await self._provider.close()
+
+    def shell(self) -> None:
+        from pymobiledevice3.utils import run_in_loop, start_ipython_shell
+
+        run_in_loop(self._ensure_ready())
+        try:
+            start_ipython_shell(header=SHELL_USAGE, user_ns={"accessibility": self, "dtx": self._provider.dtx})
+        finally:
+            run_in_loop(self.close())
+
+    async def _invoke(self, selector: str, *args: typing.Any, expects_reply: bool = True) -> typing.Any:
+        await self._provider.connect()
+        return await self._provider.dtx._ctrl_channel.invoke(selector, *args, expects_reply=expects_reply)
+
+    @staticmethod
+    def _extract_event_payload(args: list[typing.Any]) -> typing.Any:
+        if not args:
+            return None
+        payload = args[0] if len(args) == 1 else args
+        if isinstance(payload, list) and payload and isinstance(payload[0], dict) and "value" in payload[0]:
+            return [x["value"] for x in payload]
+        return payload
+
     async def _ensure_ready(self) -> None:
-        if self._connected:
+        await self._provider.connect()
+        if self._event_queue is None:
+            self._event_queue = asyncio.Queue()
+            self._provider.dtx.ctx["control_dispatch_queue"] = self._event_queue
+        if self._initial_messages_flushed:
             return
-        await self.connect()
-        if not self._initial_messages_flushed:
-            for _ in range(self._initial_messages_to_flush):
-                try:
-                    await asyncio.wait_for(self.recv_plist(), timeout=0.3)
-                except asyncio.TimeoutError:
-                    break
-            self._initial_messages_flushed = True
-        self._connected = True
+        for _ in range(self._initial_messages_to_flush):
+            try:
+                await asyncio.wait_for(self._event_queue.get(), timeout=0.3)
+            except asyncio.TimeoutError:
+                break
+        self._initial_messages_flushed = True
 
     async def capabilities(self) -> list[str]:
         await self._ensure_ready()
-        await self.broadcast.deviceCapabilities()
-        return (await self.recv_plist())[0]
+        return await self._invoke("deviceCapabilities")
 
     async def run_audit(self, value: list) -> list[AXAuditIssue_v1]:
         await self._ensure_ready()
         if self.product_version >= Version("15.0"):
-            await self.broadcast.deviceBeginAuditTypes_(MessageAux().append_obj(value))
+            await self._invoke("deviceBeginAuditTypes:", value, expects_reply=False)
         else:
-            await self.broadcast.deviceBeginAuditCaseIDs_(MessageAux().append_obj(value))
+            await self._invoke("deviceBeginAuditCaseIDs:", value, expects_reply=False)
 
         while True:
-            message = await self.recv_plist()
-            if message[1] is None or message[0] != "hostDeviceDidCompleteAuditCategoriesWithAuditIssues:":
+            assert self._event_queue is not None
+            name, args = await self._event_queue.get()
+            if name != "hostDeviceDidCompleteAuditCategoriesWithAuditIssues:":
                 continue
-            return deserialize_object(message[1])[0]["value"]
+            payload = self._extract_event_payload(args)
+            if payload is None:
+                continue
+            return deserialize_object(payload)[0]["value"]
 
     async def supported_audits_types(self) -> list:
         await self._ensure_ready()
         if self.product_version >= Version("15.0"):
-            await self.broadcast.deviceAllSupportedAuditTypes()
+            response = await self._invoke("deviceAllSupportedAuditTypes")
         else:
-            await self.broadcast.deviceAllAuditCaseIDs()
-        return deserialize_object((await self.recv_plist())[0])
+            response = await self._invoke("deviceAllAuditCaseIDs")
+        return deserialize_object(response)
 
     async def settings(self) -> list[AXAuditDeviceSetting_v1]:
         await self._ensure_ready()
-        await self.broadcast.deviceAccessibilitySettings()
-        return deserialize_object((await self.recv_plist())[0])
-
-    async def perform_handshake(self) -> None:
-        # this service acts differently from others, requiring no handshake
-        pass
+        return deserialize_object(await self._invoke("deviceAccessibilitySettings"))
 
     async def set_app_monitoring_enabled(self, value: bool) -> None:
         await self._ensure_ready()
-        await self.broadcast.deviceSetAppMonitoringEnabled_(MessageAux().append_obj(value), expects_reply=False)
+        await self._invoke("deviceSetAppMonitoringEnabled:", value, expects_reply=False)
 
     async def set_monitored_event_type(self, event_type: typing.Optional[int] = None) -> None:
         await self._ensure_ready()
         if event_type is None:
             event_type = 0
-        await self.broadcast.deviceInspectorSetMonitoredEventType_(
-            MessageAux().append_obj(event_type), expects_reply=False
-        )
+        await self._invoke("deviceInspectorSetMonitoredEventType:", event_type, expects_reply=False)
 
     async def set_show_ignored_elements(self, value: bool) -> None:
         await self._ensure_ready()
-        await self.broadcast.deviceInspectorShowIgnoredElements_(
-            MessageAux().append_obj(int(value)), expects_reply=False
-        )
+        await self._invoke("deviceInspectorShowIgnoredElements:", int(value), expects_reply=False)
 
     async def set_show_visuals(self, value: bool) -> None:
         await self._ensure_ready()
-        await self.broadcast.deviceInspectorShowVisuals_(MessageAux().append_obj(int(value)), expects_reply=False)
+        await self._invoke("deviceInspectorShowVisuals:", int(value), expects_reply=False)
 
     async def iter_events(
         self, app_monitoring_enabled=True, monitored_event_type: typing.Optional[int] = None
@@ -350,11 +395,12 @@ class AccessibilityAudit(RemoteServer):
         await self.set_monitored_event_type(monitored_event_type)
 
         while True:
-            message = await self.recv_plist()
-            if message[1] is None:
+            assert self._event_queue is not None
+            name, args = await self._event_queue.get()
+            payload = self._extract_event_payload(args)
+            if payload is None:
                 continue
-            data = [x["value"] for x in message[1]]
-            yield Event(name=message[0], data=deserialize_object(data))
+            yield Event(name=name, data=deserialize_object(payload))
 
     async def move_focus_next(self) -> None:
         await self.move_focus(Direction.Next)
@@ -410,9 +456,7 @@ class AccessibilityAudit(RemoteServer):
             },
         }
 
-        await self.broadcast.deviceElement_performAction_withValue_(
-            MessageAux().append_obj(element).append_obj(action).append_obj(0), expects_reply=False
-        )
+        await self._invoke("deviceElement:performAction:withValue:", element, action, 0, expects_reply=False)
 
     async def move_focus(self, direction: Direction) -> None:
         await self._ensure_ready()
@@ -434,7 +478,7 @@ class AccessibilityAudit(RemoteServer):
             },
         }
 
-        await self.broadcast.deviceInspectorMoveWithOptions_(MessageAux().append_obj(options), expects_reply=False)
+        await self._invoke("deviceInspectorMoveWithOptions:", options, expects_reply=False)
 
     async def set_setting(self, name: str, value: typing.Any) -> None:
         await self._ensure_ready()
@@ -451,14 +495,16 @@ class AccessibilityAudit(RemoteServer):
                 },
             },
         }
-        await self.broadcast.deviceUpdateAccessibilitySetting_withValue_(
-            MessageAux().append_obj(setting).append_obj({"ObjectType": "passthrough", "Value": value}),
+        await self._invoke(
+            "deviceUpdateAccessibilitySetting:withValue:",
+            setting,
+            {"ObjectType": "passthrough", "Value": value},
             expects_reply=False,
         )
 
     async def reset_settings(self) -> None:
         await self._ensure_ready()
-        await self.broadcast.deviceResetToDefaultAccessibilitySettings()
+        await self._invoke("deviceResetToDefaultAccessibilitySettings")
 
     async def iter_elements(self) -> AsyncGenerator[AXAuditInspectorFocus_v1, None]:
         await self._ensure_ready()
@@ -472,7 +518,8 @@ class AccessibilityAudit(RemoteServer):
 
         while True:
             try:
-                message = await asyncio.wait_for(self.recv_plist(), timeout=1.0)
+                assert self._event_queue is not None
+                name, args = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
                 consecutive_timeouts = 0
             except asyncio.TimeoutError as err:
                 consecutive_timeouts += 1
@@ -480,16 +527,21 @@ class AccessibilityAudit(RemoteServer):
                     raise TimeoutError("timed out waiting for accessibility focus events") from err
                 await self.move_focus_next()
                 continue
-            if message[1] is None:
+            payload = self._extract_event_payload(args)
+            if payload is None:
                 continue
-            data = [x["value"] for x in message[1]]
-            event = Event(name=message[0], data=deserialize_object(data))
+            event = Event(name=name, data=deserialize_object(payload))
             if event.name != "hostInspectorCurrentElementChanged:":
                 # ignore any other events
                 continue
 
             # each such event should contain exactly one element that became in focus
-            current_item = event.data[0]
+            if isinstance(event.data, list):
+                if not event.data:
+                    continue
+                current_item = event.data[0]
+            else:
+                current_item = event.data
             current_identifier = current_item.platform_identifier
 
             if current_identifier in visited_identifiers:

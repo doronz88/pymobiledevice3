@@ -1,31 +1,55 @@
-from pymobiledevice3.services.dvt.instruments import ChannelService
-from pymobiledevice3.services.remote_server import MessageAux
+from collections.abc import AsyncGenerator
+from typing import Any, Optional
+
+from pymobiledevice3.dtx import DTXService, dtx_method
+from pymobiledevice3.dtx_service import DtxService
+from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
 
-class EnergyMonitor(ChannelService):
+class _EnergyMonitorService(DTXService):
     IDENTIFIER = "com.apple.xcode.debug-gauge-data-providers.Energy"
 
-    def __init__(self, dvt, pid_list: list) -> None:
-        super().__init__(dvt)
+    @dtx_method("startSamplingForPIDs:", expects_reply=False)
+    async def start_sampling_for_pids_(self, pid_list: list[int]) -> None: ...
+
+    @dtx_method("stopSamplingForPIDs:", expects_reply=False)
+    async def stop_sampling_for_pids_(self, pid_list: list[int]) -> None: ...
+
+    @dtx_method("sampleAttributes:forPIDs:")
+    async def sample_attributes_for_pids_(self, attributes: dict, pid_list: list[int]) -> Any: ...
+
+
+class _EnergyMonitorChannel(DtxService[_EnergyMonitorService]):
+    pass
+
+
+class EnergyMonitor:
+    IDENTIFIER = _EnergyMonitorService.IDENTIFIER
+
+    def __init__(self, dvt: DtxServiceProvider, pid_list: list[int]) -> None:
+        self._provider = dvt
+        self._channel: Optional[_EnergyMonitorChannel] = None
         self._pid_list = pid_list
 
-    async def __aenter__(self):
-        channel = await self._channel_ref()
-        # stop monitoring if already monitored
-        await channel.stopSamplingForPIDs_(MessageAux().append_obj(self._pid_list))
+    async def _service_ref(self) -> _EnergyMonitorService:
+        if self._channel is None:
+            self._channel = _EnergyMonitorChannel(self._provider)
+        await self._channel.connect()
+        return self._channel.service
 
-        await channel.startSamplingForPIDs_(MessageAux().append_obj(self._pid_list))
+    async def __aenter__(self):
+        # stop monitoring if already monitored
+        await (await self._service_ref()).stop_sampling_for_pids_(self._pid_list)
+
+        await (await self._service_ref()).start_sampling_for_pids_(self._pid_list)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        channel = await self._channel_ref()
-        await channel.stopSamplingForPIDs_(MessageAux().append_obj(self._pid_list))
+        await (await self._service_ref()).stop_sampling_for_pids_(self._pid_list)
 
-    def __aiter__(self):
+    async def __aiter__(self) -> AsyncGenerator[Any, None]:
         while True:
-            yield self._sample_once()
+            yield await self._sample_once()
 
     async def _sample_once(self):
-        channel = await self._channel_ref()
-        await channel.sampleAttributes_forPIDs_(MessageAux().append_obj({}).append_obj(self._pid_list))
-        return await channel.receive_plist()
+        return await (await self._service_ref()).sample_attributes_for_pids_({}, self._pid_list)

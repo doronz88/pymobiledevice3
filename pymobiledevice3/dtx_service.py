@@ -1,108 +1,52 @@
-"""DTX service wrapper — manages a single DTX channel within a DtxServiceProvider.
-
-:class:`DtxService` is the DTX-layer counterpart of
-:class:`~pymobiledevice3.services.lockdown_service.LockdownService`:
-
-- :class:`~pymobiledevice3.lockdown_service_provider.LockdownServiceProvider`
-  manages the device/transport connection.
-- :class:`~pymobiledevice3.dtx_service_provider.DtxServiceProvider` owns the
-  :class:`~pymobiledevice3.dtx.DTXConnection`.
-- :class:`DtxService` wraps a single DTX channel
-  (:class:`~pymobiledevice3.dtx.DTXService`) opened via a
-  :class:`~pymobiledevice3.dtx_service_provider.DtxServiceProvider`.
-
-Typical usage (host-initiated channel)::
-
-    class DeviceInfoChannel(DtxService):
-        SERVICE_CLASS = DeviceInfoService  # a dtx.DTXService subclass
-
-    async with DvtProvider(lockdown) as provider:
-        async with DeviceInfoChannel(provider) as ch:
-            procs = await ch.service.runningProcesses()
-
-Remote-initiated channel (override :meth:`_acquire_channel`)::
-
-    class XCTestDriverChannel(DtxService):
-        SERVICE_CLASS = XCTestDriverInterface
-
-        async def _acquire_channel(self):
-            return await self.dtx.wait_for_proxied_service(
-                XCTestDriverInterface, remote=True, timeout=90.0
-            )
-
-Sharing a pre-opened channel::
-
-    async with DvtProvider(lockdown) as provider:
-        raw = await provider.dtx.open_channel(DeviceInfoService)
-        svc1 = DeviceInfoChannel(provider, service=raw)
-        svc2 = AnotherChannel(provider, service=raw)  # same channel, different wrapper
-"""
-
 from __future__ import annotations
 
 import logging
+import sys
 from typing import Any, ClassVar, Generic, Optional, TypeVar
 
 from typing_extensions import Self
 
 from pymobiledevice3.dtx import DTXConnection
+from pymobiledevice3.dtx import DTXDynamicService as _DTXDynamicService
 from pymobiledevice3.dtx import DTXService as _DTXService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
-_SVC_T = TypeVar("_SVC_T", bound=_DTXService)
+if sys.version_info >= (3, 13):
+    _SVC_T = TypeVar("_SVC_T", bound=_DTXService, default=_DTXDynamicService)
+else:
+    _SVC_T = TypeVar("_SVC_T", bound=_DTXService)
 
 
 class DtxService(Generic[_SVC_T]):
-    """Wraps a single DTX channel within a :class:`DtxServiceProvider`.
-
-    Subclasses declare the channel to open via :attr:`SERVICE_CLASS` (a
-    :class:`~pymobiledevice3.dtx.DTXService` subclass).
-    :attr:`CHANNEL_IDENTIFIER` is optional and overrides
-    ``SERVICE_CLASS.IDENTIFIER`` when set::
-
-        class DeviceInfo(DtxService):
-            SERVICE_CLASS = DeviceInfoService
-
-    For remote-initiated channels (e.g. channels pushed *from the device*
-    into a proxy slot), override :meth:`_acquire_channel`::
-
-        class XCTestDriver(DtxService):
-            SERVICE_CLASS = XCTestDriverInterface
-
-            async def _acquire_channel(self):
-                return await self.dtx.wait_for_proxied_service(
-                    XCTestDriverInterface, remote=True, timeout=90.0
-                )
-
-    Multiple channels over the same connection — share the provider::
-
-        async with TestManagerProvider(lockdown) as tm:
-            async with IDEInterfaceChannel(tm) as ide:
-                async with XCTestDriverChannel(tm) as driver:
-                    ...
-
-    Pass ``service=`` to inject a pre-opened
-    :class:`~pymobiledevice3.dtx.DTXService` instance (the
-    :class:`DtxService` wrapper does **not** own or close it)::
-
-        raw = await provider.dtx.open_channel(DeviceInfoService)
-        ch  = DeviceInfoChannel(provider, service=raw)
-    """
-
-    SERVICE_CLASS: ClassVar[type[_DTXService]]
-    """The :class:`~pymobiledevice3.dtx.DTXService` subclass to
-    instantiate when opening the channel.  **Must** be set by each subclass
-    unless :meth:`_acquire_channel` is fully overridden."""
-
     CHANNEL_IDENTIFIER: ClassVar[Optional[str]] = None
-    """Optional override for the channel identifier string.
+    """Optional raw channel identifier string.
 
-    When ``None`` (the default) :attr:`SERVICE_CLASS.IDENTIFIER
-    <pymobiledevice3.dtx.DTXService.IDENTIFIER>` is used.
-    Set this when you want to open a channel by a raw string rather than by
-    class lookup, or when you need a different identifier than the one baked
-    into :attr:`SERVICE_CLASS`.
+    When set, the channel is opened by this string rather than by the service
+    class resolved from ``_SVC_T`` or defaults to :class:`~pymobiledevice3.dtx.DTXDynamicService`.
+    This is the highest-priority resolution path.
     """
+
+    _inferred_service_class: ClassVar[Optional[type[_DTXService]]] = None
+    """Service class inferred from the ``_SVC_T`` type parameter.
+
+    Populated automatically by :meth:`__init_subclass__` when the subclass is
+    defined as ``DtxService[SomeClass]``.  Do not set this manually.
+    """
+
+    def __init_subclass__(cls, **kw: Any) -> None:
+        super().__init_subclass__(**kw)
+        # Look for a direct DtxService[X] base on *this* class only.
+        # Using ``base.__origin__ is DtxService`` (PEP 560 / Python 3.7+) is
+        # more precise than inspecting arg-count with typing.get_args —
+        # it won't accidentally match DtxProxyService[A, B] or unrelated bases.
+        for base in getattr(cls, "__orig_bases__", ()):
+            if getattr(base, "__origin__", None) is DtxService:
+                args = getattr(base, "__args__", ())
+                if args and isinstance(args[0], type) and issubclass(args[0], _DTXService):
+                    cls._inferred_service_class = args[0]
+                break
+        # Note: no validation here — DtxProxyService resets _inferred_service_class
+        # to None for its own subclasses and performs its own validation.
 
     def __init__(
         self,
@@ -143,7 +87,7 @@ class DtxService(Generic[_SVC_T]):
         """The active :class:`~pymobiledevice3.dtx.DTXService` channel.
 
         Raises :exc:`RuntimeError` if :meth:`connect` has not been called yet.
-        The return type matches :attr:`SERVICE_CLASS` (the ``_SVC_T`` type parameter).
+        The return type matches the ``_SVC_T`` type parameter or :class:`~pymobiledevice3.dtx.DTXDynamicService`.
         """
         if self._service is None:
             raise RuntimeError("not connected — use `async with` or await connect()")
@@ -156,8 +100,16 @@ class DtxService(Generic[_SVC_T]):
     async def _acquire_channel(self) -> _SVC_T:
         """Open and return the DTX channel for this service.
 
-        Default implementation opens the channel by :attr:`SERVICE_CLASS`
-        (or by :attr:`CHANNEL_IDENTIFIER` when set).
+        Resolution order:
+
+        1. :attr:`CHANNEL_IDENTIFIER` set **and** ``_SVC_T`` inferred →
+           ``open_channel(identifier, cls)`` (typed lookup by explicit id).
+        2. :attr:`CHANNEL_IDENTIFIER` set, no inferred class →
+           ``open_channel(identifier)`` (registry/dynamic lookup; used by
+           :class:`~pymobiledevice3.dtx_proxy_service.DtxProxyService` so the
+           sub-service registry wires the proxy correctly).
+        3. Only ``_SVC_T`` inferred → ``open_channel(cls)`` (identifier from
+           ``cls.IDENTIFIER``).
 
         Override for non-standard acquisition, for example to wait for a
         remote-initiated proxied channel::
@@ -166,17 +118,16 @@ class DtxService(Generic[_SVC_T]):
                 return await self.dtx.wait_for_proxied_service(
                     XCTestDriverInterface, remote=True, timeout=90.0
                 )
-
-        Or to wait for any service pushed by the device::
-
-            async def _acquire_channel(self):
-                return await self.dtx.wait_for_service(
-                    MyRemoteService, timeout=30.0
-                )
         """
         if self.CHANNEL_IDENTIFIER is not None:
+            if self._inferred_service_class is not None:
+                return await self._provider.dtx.open_channel(self.CHANNEL_IDENTIFIER, self._inferred_service_class)
             return await self._provider.dtx.open_channel(self.CHANNEL_IDENTIFIER)
-        return await self._provider.dtx.open_channel(self.SERVICE_CLASS)
+        assert self._inferred_service_class is not None, (
+            "Cannot infer service class — specify CHANNEL_IDENTIFIER or provide a concrete "
+            "type parameter, e.g. DtxService[MyService]"
+        )
+        return await self._provider.dtx.open_channel(self._inferred_service_class)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -189,6 +140,8 @@ class DtxService(Generic[_SVC_T]):
         connected yet (safe to call even when the provider is already live).
         """
         await self._provider.connect()
+        if self._inferred_service_class is not None:
+            self._provider.dtx.register_service(self._inferred_service_class)
         if self._service is not None:
             return
         self._service = await self._acquire_channel()

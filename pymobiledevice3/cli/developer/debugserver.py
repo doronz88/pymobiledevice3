@@ -20,7 +20,7 @@ from pymobiledevice3.exceptions import RSDRequiredError
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
-from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.tcp_forwarder import LockdownTcpForwarder
@@ -211,7 +211,7 @@ async def debugserver_lldb(
             commands.append(f'script lldb.target.module[0].SetPlatformFileSpec(lldb.SBFileSpec("{remote_path}"))')
 
     if local_app is None:
-        async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        async with DvtProvider(service_provider) as dvt:
             process_control = ProcessControl(dvt)
             bundle_mode_attach_pid = await process_control.process_identifier_for_bundle_identifier(bundle_identifier)
             if bundle_mode_attach_pid <= 0:

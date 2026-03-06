@@ -32,7 +32,7 @@ import re
 import sys
 from collections.abc import Awaitable
 from functools import partial, wraps
-from typing import Any, Callable, ClassVar, TypeVar, get_type_hints
+from typing import Any, Callable, ClassVar, Optional, TypeVar, get_type_hints
 
 from .channel import DTXChannel
 from .context import DTX_GLOBAL_CTX, DTXContext  # noqa: F401 — re-exported for back-compat
@@ -202,27 +202,28 @@ class DTXService:
     Channel callbacks are wired automatically in :meth:`__init__`.
     """
 
-    IDENTIFIER: ClassVar[str | None] = None
+    IDENTIFIER: ClassVar[Optional[str]] = None
 
     # Class-level routing tables, populated by __init_subclass__.
     _dtx_dispatch: ClassVar[dict[str, str]] = {}
-    _dtx_data_handler: ClassVar[str | None] = None
-    _dtx_notification_handler: ClassVar[str | None] = None
-    _dtx_dispatch_handler: ClassVar[str | None] = None
+    _dtx_data_handler: ClassVar[Optional[str]] = None
+    _dtx_notification_handler: ClassVar[Optional[str]] = None
+    _dtx_dispatch_handler: ClassVar[Optional[str]] = None
 
     def __init_subclass__(cls, **kw: Any) -> None:
         super().__init_subclass__(**kw)
 
         new_dispatch: dict[str, str] = {}
-        new_data_handler: str | None = None
-        new_notification_handler: str | None = None
-        new_dispatch_handler: str | None = None
+        new_data_handler: Optional[str] = None
+        new_notification_handler: Optional[str] = None
+        new_dispatch_handler: Optional[str] = None
 
         for name, val in vars(cls).items():
             if not callable(val):
                 continue
 
-            if (sel := getattr(val, "_dtx_on_invoke", _MISSING)) is not _MISSING:
+            sel = getattr(val, "_dtx_on_invoke", _MISSING)
+            if sel is not _MISSING:
                 new_dispatch[sel if sel is not None else _python_name_to_objc_selector(name)] = name
 
             if getattr(val, "_dtx_on_data", False):
@@ -234,7 +235,8 @@ class DTXService:
             if getattr(val, "_dtx_on_dispatch", False):
                 new_dispatch_handler = name
 
-            if (dtx := getattr(val, "_dtx_method", None)) is not None:
+            dtx = getattr(val, "_dtx_method", None)
+            if dtx is not None:
                 method_selector, invoke_kwargs = dtx
                 if method_selector is None:
                     method_selector = _python_name_to_objc_selector(name)
@@ -313,6 +315,11 @@ class DTXService:
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self._channel.__aexit__(exc_type, exc_val, exc_tb)
+
+    @property
+    def dtxproxy(self) -> Optional[DTXProxyService]:
+        """If this service is owned by a :class:`DTXProxyService`, return the proxy instance."""
+        return self._ctx.get("dtxproxy", None)
 
     async def __on_dispatch__(self, selector: str, args: list[Any]) -> Any:
         """Route an incoming DISPATCH to the right @dtx_on_invoke handler,
@@ -434,7 +441,7 @@ class DTXControlService(DTXService):
         await self._ctx["connection"]._on_capabilities_received(capabilities)
 
     @dtx_on_invoke("_requestChannelWithCode:identifier:")
-    async def _recv_channel_request(self, code: int, identifier: str) -> str | None:
+    async def _recv_channel_request(self, code: int, identifier: str) -> Optional[str]:
         return await self._ctx["connection"]._on_channel_request(code, identifier)
 
     @dtx_on_invoke("_channelCanceled:")
@@ -464,8 +471,8 @@ class DTXProxyService(DTXService):
 
     def __init__(self, ctx: DTXContext) -> None:
         super().__init__(ctx)
-        self._local_service: DTXService | None = None
-        self._remote_service: DTXService | None = None
+        self._local_service: Optional[DTXService] = None
+        self._remote_service: Optional[DTXService] = None
 
     @property
     def local_service(self) -> DTXService:

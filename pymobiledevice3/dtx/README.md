@@ -13,18 +13,27 @@ DTX stack.
 
 ```python
 import asyncio
-from pymobiledevice3.dtx import DTXConnection
+import logging
+from pymobiledevice3.dtx import DTXDynamicService
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
+from pymobiledevice3.tunneld.api import get_tunneld_devices
 
 async def main():
-    import socket
-    sock = socket.create_connection(("127.0.0.1", 9999))  # tunnel / lockdown
-    async with await DTXConnection.from_socket(sock) as conn:
-        # open_channel returns a DTXDynamicService by default
-        svc = await conn.open_channel(
-            "com.apple.instruments.server.services.deviceinfo"
-        )
-        result = await svc.do_invoke("runningProcesses")
-        print(result)
+    rsd = (await get_tunneld_devices())[0]
+    opts = {
+        "StartSuspendedKey": False,
+        "KillExisting": True,
+    }
+    async with rsd:
+        async with DvtProvider(rsd) as provider:
+            svc: DTXDynamicService = await provider.dtx.open_channel(
+                "com.apple.instruments.server.services.processcontrol"
+            )
+            svc.outputReceived_fromProcess_atTime_ = lambda output, pid, timestamp: logging.info("[process:%d] %s %s", pid, timestamp, output.rstrip())
+            pid = await svc.launchSuspendedProcessWithDevicePath_bundleIdentifier_environment_arguments_options_("", "com.example.MyBundleId", {}, [], opts)
+            logging.info("Launched process with PID %d", pid)
+            await asyncio.sleep(5)
+            await svc.killPid_(pid)
 
 asyncio.run(main())
 ```
