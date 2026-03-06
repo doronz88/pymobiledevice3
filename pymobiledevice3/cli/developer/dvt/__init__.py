@@ -1,4 +1,3 @@
-import asyncio
 import contextlib
 import logging
 import os
@@ -26,7 +25,12 @@ from pymobiledevice3.services.dvt.instruments.network_monitor import ConnectionD
 from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
-from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestListener, XCUITestService
+from pymobiledevice3.services.dvt.testmanaged.xcuitest import (
+    TestConfig,
+    XCTestCaseResult,
+    XCUITestListener,
+    XCUITestService,
+)
 from pymobiledevice3.services.remote_server import MessageAux
 from pymobiledevice3.utils import run_in_loop
 
@@ -342,7 +346,18 @@ async def dvt_screenshot(service_provider: ServiceProviderDep, out: Path) -> Non
 @async_command
 async def xcuitest(
     service_provider: ServiceProviderDep,
-    bundle_id: str,
+    bundle_id: Annotated[
+        str,
+        typer.Argument(
+            help="Bundle identifier of the XCTest runner (e.g. com.apple.test.WebDriverAgentRunner.xctrunner)"
+        ),
+    ],
+    target_bundle_id: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Bundle identifier of the target app (if different from runner, e.g. for testing app extensions)"
+        ),
+    ] = None,
     output_log: Annotated[
         Optional[Path],
         typer.Option(help="log debug output file location ( default to python logger )"),
@@ -365,36 +380,71 @@ async def xcuitest(
     Usage example:
     \b    python3 -m pymobiledevice3 developer dvt xcuitest com.facebook.WebDriverAgentRunner.xctrunner
     """
-    s = XCUITestService(service_provider)
-    consumer = await s.start(bundle_id, test_runner_env=dict(var.split("=", 1) for var in env or ()))
-
-    async def stop_consumer_safely() -> None:
-        try:
-            await consumer.stop()
-        except RuntimeError as e:
-            if "no running event loop" not in str(e):
-                raise
-            logger.debug("Skipping consumer stop during event-loop teardown")
+    env_dict = dict(var.split("=", 1) for var in env or ())
+    listener: Optional[XCUITestListener] = None
 
     if output_log is not None:
+        output_stream = output_log.open("w")
 
-        class MyListener(XCUITestListener):
-            def logDebugMessage_(self, args):
-                output_log.write_text(args[0].value)
+        def _write(line: str) -> None:
+            output_stream.write(line if line.endswith("\n") else line + "\n")
+            output_stream.flush()
 
-        consumer.set_listener(MyListener(consumer.main_dvt, consumer.main_chan, consumer.xctest_config))
-    try:
-        if timeout is not None:
-            await asyncio.wait_for(consumer.consume(), timeout=timeout)
-        else:
-            await consumer.consume()
-    except asyncio.TimeoutError:
-        logger.warning("consumer task timed out, exiting")
-        await stop_consumer_safely()
-    except (asyncio.CancelledError, KeyboardInterrupt):
-        logger.info("xcuitest interrupted, exiting")
-        await stop_consumer_safely()
-        raise
+        class _LogFileListener(XCUITestListener):
+            async def log_message(self, message: str) -> None:
+                _write(message)
+
+            async def log_debug_message(self, message: str) -> None:
+                _write(message)
+
+            async def did_begin_executing_test_plan(self) -> None:
+                _write("[plan] begin")
+
+            async def did_finish_executing_test_plan(self) -> None:
+                _write("[plan] finish")
+
+            async def test_suite_did_start(self, suite: str, started_at: str) -> None:
+                _write(f"[suite] start  {suite}  at={started_at}")
+
+            async def test_suite_did_finish(
+                self,
+                suite: str,
+                finished_at: str,
+                run_count: int,
+                failures: int,
+                unexpected: int,
+                test_duration: float,
+                total_duration: float,
+            ) -> None:
+                _write(
+                    f"[suite] finish {suite}  at={finished_at}"
+                    f"  run={run_count} fail={failures} dur={total_duration:.3f}s"
+                )
+
+            async def test_case_did_start(self, test_class: str, method: str) -> None:
+                _write(f"[case]  start  {test_class}/{method}")
+
+            async def test_case_did_finish(self, result: XCTestCaseResult) -> None:
+                _write(
+                    f"[case]  finish {result.test_class}/{result.method}"
+                    f"  status={result.status} dur={result.duration:.3f}s"
+                )
+
+            async def test_case_did_fail(
+                self, test_class: str, method: str, message: str, file: str, line: int
+            ) -> None:
+                _write(f"[case]  FAIL   {test_class}/{method}  {message}  ({file}:{line})")
+
+        listener = _LogFileListener()
+
+    cfg = await TestConfig.create_for(service_provider, bundle_id, target_bundle_id)
+    cfg.runner_app_env = env_dict or None
+    svc = XCUITestService(service_provider)
+    await svc.run(
+        cfg,
+        timeout=timeout,
+        listener=listener,
+    )
 
 
 @cli.command("trace-codes")
