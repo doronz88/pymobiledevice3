@@ -20,6 +20,8 @@ from pymobiledevice3.exceptions import RSDRequiredError
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
+from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.tcp_forwarder import LockdownTcpForwarder
 
@@ -91,9 +93,9 @@ async def debugserver_start_server(
 @async_command
 async def debugserver_lldb(
     service_provider: RSDServiceProviderDep,
-    project_or_ipa_path: Annotated[
-        Path,
-        typer.Argument(exists=True, file_okay=True, dir_okay=True),
+    project_or_ipa_or_bundle_id: Annotated[
+        str,
+        typer.Argument(help="Path to .xcodeproj/.ipa or an installed app bundle identifier"),
     ],
     configuration: Annotated[
         str,
@@ -117,13 +119,13 @@ async def debugserver_lldb(
     ] = None,
 ) -> None:
     """
-    Automate lldb launch for a given xcodeproj or IPA.
+    Automate lldb launch for a given xcodeproj, IPA, or installed bundle identifier.
 
     \b
     This will:
     - Build the given xcodeproj (if provided)
     - Extract the given IPA (if provided)
-    - Install it
+    - Install it (for xcodeproj/IPA inputs)
     - Start a debugserver attached to it
     - Place breakpoints if given any
     - Launch the application if requested
@@ -136,13 +138,22 @@ async def debugserver_lldb(
 
     commands = []
     temp_dir = None
-    local_app = None
-    install_source = None
+    local_app: Optional[Path] = None
+    install_source: Optional[Path] = None
+    bundle_identifier: Optional[str] = None
+    launched_suspended = False
+    bundle_mode_attach_pid: Optional[int] = None
 
-    if project_or_ipa_path.suffix == ".xcodeproj":
-        with local.cwd(project_or_ipa_path.parent):
-            logger.info(f"Building {project_or_ipa_path} for {configuration} configuration")
-            local["xcodebuild"]["-project", str(project_or_ipa_path), "-configuration", configuration, "build"]()
+    target = project_or_ipa_or_bundle_id.strip()
+    target_path = Path(target).expanduser()
+
+    if target_path.suffix == ".xcodeproj":
+        if not target_path.exists():
+            logger.error(f"xcodeproj not found: {target_path}")
+            return
+        with local.cwd(target_path.parent):
+            logger.info(f"Building {target_path} for {configuration} configuration")
+            local["xcodebuild"]["-project", str(target_path), "-configuration", configuration, "build"]()
             app_candidates = [app for app in Path("build").rglob("*.app") if (app / "Info.plist").exists()]
             if not app_candidates:
                 logger.error("No built .app with Info.plist found under build/.")
@@ -150,9 +161,12 @@ async def debugserver_lldb(
             app_candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             local_app = app_candidates[0].absolute()
             install_source = local_app
-    elif project_or_ipa_path.suffix == ".ipa":
+    elif target_path.suffix == ".ipa":
+        if not target_path.exists():
+            logger.error(f"IPA not found: {target_path}")
+            return
         temp_dir = TemporaryDirectory()
-        with ZipFile(project_or_ipa_path, "r") as ipa_zip:
+        with ZipFile(target_path, "r") as ipa_zip:
             ipa_zip.extractall(temp_dir.name)
         payload_dir = Path(temp_dir.name) / "Payload"
         apps = list(payload_dir.glob("*.app"))
@@ -165,41 +179,63 @@ async def debugserver_lldb(
             temp_dir.cleanup()
             return
         local_app = apps[0].absolute()
-        install_source = project_or_ipa_path
+        install_source = target_path
     else:
-        logger.error("Expected an .xcodeproj directory or an .ipa file.")
-        return
+        bundle_identifier = target
 
-    logger.info(f"Using app: {local_app}")
+    if local_app is not None:
+        logger.info(f"Using app: {local_app}")
+        info_plist_path = local_app / "Info.plist"
+        info_plist = plistlib.loads(info_plist_path.read_bytes())
+        bundle_identifier = info_plist["CFBundleIdentifier"]
 
-    info_plist_path = local_app / "Info.plist"
-    info_plist = plistlib.loads(info_plist_path.read_bytes())
-    bundle_identifier = info_plist["CFBundleIdentifier"]
     logger.info(f"Bundle identifier: {bundle_identifier}")
 
     commands.append("platform select remote-ios")
-    commands.append(f'target create "{local_app.absolute()}"')
 
     async with InstallationProxyService(await create_using_usbmux()) as installation_proxy:
-        logger.info("Installing app")
-        await installation_proxy.install_from_local(install_source)
-        remote_path = (await installation_proxy.get_apps(bundle_identifiers=[bundle_identifier]))[bundle_identifier][
-            "Path"
-        ]
+        if install_source is not None:
+            logger.info("Installing app")
+            await installation_proxy.install_from_local(install_source)
+
+        apps = await installation_proxy.get_apps(bundle_identifiers=[bundle_identifier])
+        if bundle_identifier not in apps:
+            logger.error(f"App with bundle identifier '{bundle_identifier}' is not installed on the device")
+            return
+
+        remote_path = apps[bundle_identifier]["Path"]
         logger.info(f"Remote path: {remote_path}")
-        commands.append(f'script lldb.target.module[0].SetPlatformFileSpec(lldb.SBFileSpec("{remote_path}"))')
+        if local_app is not None:
+            commands.append(f'target create "{local_app.absolute()}"')
+            commands.append(f'script lldb.target.module[0].SetPlatformFileSpec(lldb.SBFileSpec("{remote_path}"))')
+
+    if local_app is None:
+        async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+            process_control = ProcessControl(dvt)
+            bundle_mode_attach_pid = await process_control.process_identifier_for_bundle_identifier(bundle_identifier)
+            if bundle_mode_attach_pid <= 0:
+                logger.info("App is not running; launching suspended for debugger attach")
+                bundle_mode_attach_pid = await process_control.launch(
+                    bundle_id=bundle_identifier, kill_existing=False, start_suspended=True
+                )
+                launched_suspended = True
+            logger.info(f"Attaching to pid {bundle_mode_attach_pid}")
 
     debugserver_port = service_provider.get_service_port("com.apple.internal.dt.remote.debugproxy")
 
     # Add connection and launch commands
     commands.append(f"process connect connect://[{service_provider.service.address[0]}]:{debugserver_port}")
+    if bundle_mode_attach_pid is not None:
+        commands.append(f"process attach --pid {bundle_mode_attach_pid}")
 
     if breakpoints:
         for bp in breakpoints:
             commands.append(f'breakpoint set -n "{bp}"')
 
-    if launch:
+    if launch and local_app is not None:
         commands.append("process launch")
+    elif launch and launched_suspended:
+        commands.append("process continue")
 
     if user_commands:
         # Add user commands
