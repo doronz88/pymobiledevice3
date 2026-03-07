@@ -116,11 +116,16 @@ async def test_listdir_file(afc: AfcService):
     ],
 )
 async def test_makedirs_and_rm_dir(afc: AfcService, path: str) -> None:
-    assert not await afc.exists(path)
-    await afc.makedirs(path)
-    assert await afc.exists(path)
-    await afc.rm(pathlib.PosixPath(path.lstrip("/")).parts[0])
-    assert not await afc.exists(path)
+    root_dir = pathlib.PosixPath(path.lstrip("/")).parts[0]
+    await afc.rm(root_dir, force=True)
+    try:
+        assert not await afc.exists(path)
+        await afc.makedirs(path)
+        assert await afc.exists(path)
+        await afc.rm(root_dir)
+        assert not await afc.exists(path)
+    finally:
+        await afc.rm(root_dir, force=True)
 
 
 async def test_makedirs_file(afc: AfcService):
