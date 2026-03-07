@@ -534,10 +534,11 @@ async def dvt_energy(service_provider: ServiceProviderDep, pid_list: list[str]) 
 
 
 @cli.command("notifications")
-def dvt_notifications(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def dvt_notifications(service_provider: ServiceProviderDep) -> None:
     """Monitor memory and app notifications"""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, Notifications(dvt) as notifications:
-        for notification in notifications:
+    async with DvtProvider(service_provider) as dvt, Notifications(dvt) as notifications:
+        async for notification in notifications:
             logger.info(notification)
 
 
