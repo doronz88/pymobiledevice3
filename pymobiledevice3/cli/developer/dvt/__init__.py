@@ -326,7 +326,7 @@ async def device_information(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def netstat(service_provider: ServiceProviderDep) -> None:
     """Print information about current network activity."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, NetworkMonitor(dvt) as monitor:
+    async with DvtProvider(service_provider) as dvt, NetworkMonitor(dvt) as monitor:
         async for event in monitor:
             if isinstance(event, ConnectionDetectionEvent):
                 logger.info(
