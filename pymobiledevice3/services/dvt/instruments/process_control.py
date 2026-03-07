@@ -1,12 +1,13 @@
+import asyncio
 import dataclasses
 import typing
-from typing import Optional
+from typing import Any, Optional
 
+from pymobiledevice3.dtx import DTXService, PInt32, dtx_method, dtx_on_invoke
+from pymobiledevice3.dtx_service import DtxService
+from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import DisableMemoryLimitError
 from pymobiledevice3.osu.os_utils import get_os_utils
-from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
-from pymobiledevice3.services.dvt.instruments import ChannelService
-from pymobiledevice3.services.remote_server import MessageAux
 
 OSUTIL = get_os_utils()
 
@@ -18,20 +19,66 @@ class OutputReceivedEvent:
     message: str
 
     @classmethod
-    def create(cls, message) -> "OutputReceivedEvent":
+    def create(cls, message: list[Any]) -> "OutputReceivedEvent":
+        def _value(v: Any) -> Any:
+            return getattr(v, "value", v)
+
+        msg_value = _value(message[0])
+        pid_value = _value(message[1])
+        timestamp_value = _value(message[2])
         try:
-            date = OSUTIL.parse_timestamp(message[2].value)
+            date = OSUTIL.parse_timestamp(timestamp_value)
         except (ValueError, OSError):
             date = None
 
-        return cls(pid=message[1].value, date=date, message=message[0].value)
+        return cls(pid=pid_value, date=date, message=msg_value)
 
 
-class ProcessControl(ChannelService):
+class _ProcessControlService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.processcontrol"
 
-    def __init__(self, dvt: DvtSecureSocketProxyService):
-        super().__init__(dvt)
+    def __init__(self, ctx):
+        super().__init__(ctx)
+        self.output_events: asyncio.Queue[list[Any]] = asyncio.Queue()
+
+    @dtx_method("sendSignal:toPid:")
+    async def send_signal_to_pid_(self, sig: int, pid: int) -> Any: ...
+
+    @dtx_method("requestDisableMemoryLimitsForPid:")
+    async def request_disable_memory_limits_for_pid_(self, pid: PInt32) -> bool: ...
+
+    @dtx_method("killPid:", expects_reply=False)
+    async def kill_pid_(self, pid: int) -> None: ...
+
+    @dtx_method("processIdentifierForBundleIdentifier:")
+    async def process_identifier_for_bundle_identifier_(self, app_bundle_identifier: str) -> int: ...
+
+    @dtx_method("launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:")
+    async def launch_suspended_process_with_device_path_bundle_identifier_environment_arguments_options_(
+        self, device_path: str, bundle_id: str, environment: dict, arguments: list, options: dict
+    ) -> int: ...
+
+    @dtx_on_invoke("outputReceived:fromProcess:atTime:")
+    async def _on_output_received(self, message: str, pid: int, timestamp: Any) -> None:
+        await self.output_events.put([message, pid, timestamp])
+
+
+class _ProcessControlChannel(DtxService[_ProcessControlService]):
+    pass
+
+
+class ProcessControl:
+    IDENTIFIER = _ProcessControlService.IDENTIFIER
+
+    def __init__(self, dvt: DtxServiceProvider):
+        self._provider = dvt
+        self._channel: _ProcessControlChannel | None = None
+
+    async def _service_ref(self) -> _ProcessControlService:
+        if self._channel is None:
+            self._channel = _ProcessControlChannel(self._provider)
+        await self._channel.connect()
+        return self._channel.service
 
     async def signal(self, pid: int, sig: int):
         """
@@ -39,18 +86,14 @@ class ProcessControl(ChannelService):
         :param pid: PID of process to send signal.
         :param sig: SIGNAL to send
         """
-        channel = await self._channel_ref()
-        await channel.sendSignal_toPid_(MessageAux().append_obj(sig).append_obj(pid), expects_reply=True)
-        return await channel.receive_plist()
+        return await (await self._service_ref()).send_signal_to_pid_(sig, pid)
 
     async def disable_memory_limit_for_pid(self, pid: int) -> None:
         """
         Waive memory limit for a given pid
         :param pid: process id.
         """
-        channel = await self._channel_ref()
-        await channel.requestDisableMemoryLimitsForPid_(MessageAux().append_int(pid), expects_reply=True)
-        if not await channel.receive_plist():
+        if not await (await self._service_ref()).request_disable_memory_limits_for_pid_(pid):
             raise DisableMemoryLimitError()
 
     async def kill(self, pid: int):
@@ -58,15 +101,10 @@ class ProcessControl(ChannelService):
         Kill a process.
         :param pid: PID of process to kill.
         """
-        channel = await self._channel_ref()
-        await channel.killPid_(MessageAux().append_obj(pid), expects_reply=False)
+        await (await self._service_ref()).kill_pid_(pid)
 
     async def process_identifier_for_bundle_identifier(self, app_bundle_identifier: str) -> int:
-        channel = await self._channel_ref()
-        await channel.processIdentifierForBundleIdentifier_(
-            MessageAux().append_obj(app_bundle_identifier), expects_reply=True
-        )
-        return await channel.receive_plist()
+        return await (await self._service_ref()).process_identifier_for_bundle_identifier_(app_bundle_identifier)
 
     async def launch(
         self,
@@ -95,26 +133,15 @@ class ProcessControl(ChannelService):
         }
         if extra_options:
             options.update(extra_options)
-        args = (
-            MessageAux()
-            .append_obj("")
-            .append_obj(bundle_id)
-            .append_obj(environment)
-            .append_obj(arguments)
-            .append_obj(options)
+        result = await (
+            await self._service_ref()
+        ).launch_suspended_process_with_device_path_bundle_identifier_environment_arguments_options_(
+            "", bundle_id, environment, arguments, options
         )
-        channel = await self._channel_ref()
-        await channel.launchSuspendedProcessWithDevicePath_bundleIdentifier_environment_arguments_options_(args)
-        result = await channel.receive_plist()
         assert result
         return result
 
     async def __aiter__(self) -> typing.AsyncGenerator[OutputReceivedEvent, None]:
         while True:
-            key, value = await self._receive_key_value()
-            if key == "outputReceived:fromProcess:atTime:":
-                yield OutputReceivedEvent.create(value)
-
-    async def _receive_key_value(self):
-        channel = await self._channel_ref()
-        return await channel.receive_key_value()
+            value = await (await self._service_ref()).output_events.get()
+            yield OutputReceivedEvent.create(value)

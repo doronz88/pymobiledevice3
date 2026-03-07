@@ -80,7 +80,7 @@ async def is_running_pid(service_provider: ServiceProviderDep, pid: int) -> None
 @async_command
 async def memlimitoff(service_provider: ServiceProviderDep, pid: int) -> None:
     """Disable jetsam memory limit for a PID."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         await ProcessControl(dvt).disable_memory_limit_for_pid(pid)
 
 
@@ -161,7 +161,7 @@ async def send_signal(
     else:
         raise MissingParameter(param_type="argument|option", param_hint="'SIG|SIGNAL-NAME'")
 
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         await ProcessControl(dvt).signal(pid, sig)
 
 
@@ -169,7 +169,7 @@ async def send_signal(
 @async_command
 async def kill(service_provider: ServiceProviderDep, pid: int) -> None:
     """Kill a process by PID."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         await ProcessControl(dvt).kill(pid)
 
 
@@ -177,7 +177,7 @@ async def kill(service_provider: ServiceProviderDep, pid: int) -> None:
 @async_command
 async def process_id_for_bundle_id(service_provider: ServiceProviderDep, app_bundle_identifier: str) -> None:
     """Get PID of a bundle identifier (only returns a valid value if its running)."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         print(await ProcessControl(dvt).process_identifier_for_bundle_identifier(app_bundle_identifier))
 
 
@@ -212,12 +212,9 @@ async def pkill(
     ] = False,
 ) -> None:
     """Kill all processes containing each expression in their name."""
-    async with (
-        DvtProvider(service_provider) as dvt_provider,
-        DvtSecureSocketProxyService(lockdown=service_provider) as dvt,
-    ):
+    async with DvtProvider(service_provider) as dvt_provider:
         device_info = DeviceInfo(dvt_provider)
-        process_control = ProcessControl(dvt)
+        process_control = ProcessControl(dvt_provider)
 
         for expression in expressions:
             matching_name = expression if not bundle else None
@@ -253,7 +250,7 @@ async def launch(
     stream: bool = False,
 ) -> None:
     """Launch a process."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         parsed_arguments = shlex.split(arguments)
         process_control = ProcessControl(dvt)
         pid = await process_control.launch(

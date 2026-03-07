@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from pymobiledevice3.exceptions import DvtDirListError, UnrecognizedSelectorError
+from pymobiledevice3.exceptions import DvtDirListError, InvalidServiceError, UnrecognizedSelectorError
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
@@ -59,23 +59,31 @@ async def test_applist(dvt: DvtSecureSocketProxyService) -> None:
 
 
 @pytest.mark.asyncio
-async def test_memlimitoff(dvt: DvtSecureSocketProxyService, service_provider) -> None:
+async def test_memlimitoff(service_provider) -> None:
     """
     Test disabling memory limit.
     """
-    async with DvtProvider(service_provider) as dvt_provider:
-        process = await get_process_data(DeviceInfo(dvt_provider), "SpringBoard")
-    await ProcessControl(dvt).disable_memory_limit_for_pid(process["pid"])
+    try:
+        async with DvtProvider(service_provider) as dvt_provider:
+            process = await get_process_data(DeviceInfo(dvt_provider), "SpringBoard")
+        async with DvtProvider(service_provider) as dvt_provider:
+            await ProcessControl(dvt_provider).disable_memory_limit_for_pid(process["pid"])
+    except InvalidServiceError:
+        pytest.skip("Skipping process control test since DVT provider service isn't accessible")
 
 
 @pytest.mark.asyncio
-async def test_kill(dvt: DvtSecureSocketProxyService, service_provider) -> None:
+async def test_kill(service_provider) -> None:
     """
     Test killing a process.
     """
-    async with DvtProvider(service_provider) as dvt_provider:
-        aggregated = await get_process_data(DeviceInfo(dvt_provider), "SpringBoard")
-    await ProcessControl(dvt).kill(aggregated["pid"])
+    try:
+        async with DvtProvider(service_provider) as dvt_provider:
+            aggregated = await get_process_data(DeviceInfo(dvt_provider), "SpringBoard")
+        async with DvtProvider(service_provider) as dvt_provider:
+            await ProcessControl(dvt_provider).kill(aggregated["pid"])
+    except InvalidServiceError:
+        pytest.skip("Skipping process control test since DVT provider service isn't accessible")
     # give the os some time to start the process again
     await asyncio.sleep(3)
     async with DvtProvider(service_provider) as dvt_provider:
@@ -85,11 +93,15 @@ async def test_kill(dvt: DvtSecureSocketProxyService, service_provider) -> None:
 
 
 @pytest.mark.asyncio
-async def test_launch(dvt: DvtSecureSocketProxyService, service_provider) -> None:
+async def test_launch(service_provider) -> None:
     """
     Test launching a process.
     """
-    pid = await ProcessControl(dvt).launch("com.apple.mobilesafari")
+    try:
+        async with DvtProvider(service_provider) as dvt_provider:
+            pid = await ProcessControl(dvt_provider).launch("com.apple.mobilesafari")
+    except InvalidServiceError:
+        pytest.skip("Skipping process control test since DVT provider service isn't accessible")
     assert pid
     async with DvtProvider(service_provider) as dvt_provider:
         processes = await DeviceInfo(dvt_provider).proclist()
