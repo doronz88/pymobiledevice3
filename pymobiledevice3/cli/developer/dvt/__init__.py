@@ -546,7 +546,7 @@ async def dvt_notifications(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def dvt_graphics(service_provider: ServiceProviderDep) -> None:
     """Monitor graphics-related information"""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, Graphics(dvt) as graphics:
+    async with DvtProvider(service_provider) as dvt, Graphics(dvt) as graphics:
         async for stats in graphics:
             logger.info(stats)
 
