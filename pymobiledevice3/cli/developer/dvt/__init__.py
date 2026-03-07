@@ -34,7 +34,6 @@ from pymobiledevice3.services.dvt.testmanaged.xcuitest import (
     XCUITestListener,
     XCUITestService,
 )
-from pymobiledevice3.services.remote_server import MessageAux
 from pymobiledevice3.utils import run_in_loop
 
 logger = logging.getLogger(__name__)
@@ -343,7 +342,7 @@ async def netstat(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def dvt_screenshot(service_provider: ServiceProviderDep, out: Path) -> None:
     """Take device screenshot"""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         out.write_bytes(await Screenshot(dvt).get_screenshot())
 
 
