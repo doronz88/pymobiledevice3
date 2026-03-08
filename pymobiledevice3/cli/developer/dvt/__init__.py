@@ -10,6 +10,7 @@ from typing import Annotated, NamedTuple, Optional
 
 import typer
 from click.exceptions import BadParameter, MissingParameter, UsageError
+from pygments import formatters, highlight, lexers
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import (
@@ -23,7 +24,6 @@ from pymobiledevice3.cli.developer.dvt import core_profile_session, simulate_loc
 from pymobiledevice3.dtx import DTXNsError
 from pymobiledevice3.dtx.service import DTXService
 from pymobiledevice3.exceptions import UnrecognizedSelectorError
-from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.condition_inducer import ConditionInducer
@@ -41,9 +41,26 @@ from pymobiledevice3.services.dvt.testmanaged.xcuitest import (
     XCUITestListener,
     XCUITestService,
 )
-from pymobiledevice3.utils import run_in_loop
+from pymobiledevice3.utils import run_in_loop, start_ipython_shell
 
 logger = logging.getLogger(__name__)
+
+SHELL_USAGE = """
+# DVT shell (DtxServiceProvider-backed)
+# Connection is available as:
+# - dvt  : DvtProvider
+# - dtx  : DTXConnection
+#
+# Open a service channel:
+channel = await dtx.open_channel("com.apple.instruments.server.services.deviceinfo")
+#
+# Invoke a selector:
+procs = await channel.do_invoke("runningProcesses")
+#
+# Open process control and kill a PID:
+pc = await dtx.open_channel("com.apple.instruments.server.services.processcontrol")
+await pc.do_invoke("killPid:", 1234, expects_reply=False)
+"""
 
 
 class MatchedProcessByPid(NamedTuple):
@@ -308,9 +325,19 @@ async def launch(
 @cli.command("shell")
 def dvt_shell(service_provider: ServiceProviderDep) -> None:
     """Launch developer shell (used for pymobiledevice3 R&D)"""
-    dvt = DvtSecureSocketProxyService(lockdown=service_provider)
-    run_in_loop(dvt.perform_handshake())
-    dvt.shell()
+    dvt = DvtProvider(service_provider)
+    run_in_loop(dvt.connect())
+    try:
+        start_ipython_shell(
+            header=highlight(
+                SHELL_USAGE,
+                lexers.PythonLexer(),
+                formatters.Terminal256Formatter(style="native"),
+            ),
+            user_ns={"dvt": dvt, "dtx": dvt.dtx},
+        )
+    finally:
+        run_in_loop(dvt.close())
 
 
 async def show_dirlist(channel: DTXService, dirname: str, recursive: bool = False) -> None:
