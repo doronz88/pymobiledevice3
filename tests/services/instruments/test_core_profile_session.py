@@ -1,7 +1,7 @@
 import pytest
 from bpylist2 import archiver
 
-from pymobiledevice3.exceptions import DvtException, ExtractingStackshotError, InvalidServiceError
+from pymobiledevice3.exceptions import DvtException, ExtractingStackshotError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import (
@@ -10,17 +10,15 @@ from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import (
 
 
 @pytest.mark.asyncio
-async def test_stackshot(service_provider: LockdownServiceProvider) -> None:
+async def test_stackshot(service_provider: LockdownServiceProvider, dvt) -> None:
     """
     Test getting stackshot.
     """
-    try:
-        async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-            time_config = await CoreProfileSessionTap.get_time_config(dvt)
-            async with CoreProfileSessionTap(dvt, time_config) as tap:
-                data = await tap.get_stackshot()
-    except InvalidServiceError:
-        pytest.skip("Skipping DVT-based test since the service isn't accessible")
+    _ = dvt
+    async with DvtSecureSocketProxyService(lockdown=service_provider) as legacy_dvt:
+        time_config = await CoreProfileSessionTap.get_time_config(legacy_dvt)
+        async with CoreProfileSessionTap(legacy_dvt, time_config) as tap:
+            data = await tap.get_stackshot()
 
     assert "Darwin Kernel" in data["osversion"]
     # Constant kernel task data.

@@ -8,7 +8,7 @@ import pytest_asyncio
 from pymobiledevice3.exceptions import DeviceNotFoundError, InvalidServiceError
 from pymobiledevice3.lockdown import UsbmuxLockdownClient, create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestService
 from pymobiledevice3.tunneld.api import get_tunneld_devices
 
@@ -76,15 +76,15 @@ async def service_provider(
 
 
 @pytest_asyncio.fixture(scope="function")
-async def dvt(service_provider) -> AsyncGenerator[DvtSecureSocketProxyService, Any]:
+async def dvt(service_provider) -> AsyncGenerator[DvtProvider, Any]:
     """
-    Creates a new DvtSecureSocketProxyService client for each test.
+    Creates a new DVT provider for each test.
     """
     try:
-        async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+        async with DvtProvider(service_provider) as dvt:
             yield dvt
     except InvalidServiceError:
-        pytest.skip("Skipping DVT-based test since the service isn't accessible")
+        pytest.skip("Skipping DVT-based test since the DVT provider service isn't accessible")
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -104,7 +104,7 @@ async def xcuitest_service(service_provider) -> AsyncGenerator[XCUITestService, 
     try:
         # check manually, as the XCUITestService currently connect to the needed services
         # only when starting the test ( shall we change this? )
-        async with DvtSecureSocketProxyService(lockdown=service_provider):
+        async with DvtProvider(service_provider):
             pass
         return XCUITestService(service_provider)
     except InvalidServiceError:
