@@ -123,8 +123,8 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
     # Public lifecycle
     # ------------------------------------------------------------------
 
-    async def connect(self) -> None:
-        """Start the reader loop and perform the capability-notification handshake.
+    async def connect(self, *, perform_handshake: bool = True) -> None:
+        """Start the reader loop and optionally perform capability handshake.
 
         Paired with :meth:`aclose`.  Using the async context manager (``async with``)
         is equivalent and preferred when the lifetime is lexically scoped::
@@ -144,7 +144,13 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         """
         self._reader_task = asyncio.create_task(self._process_incoming_fragments(), name="dtx-reader")
         self._ctrl_channel._start()
-        await self._perform_handshake()
+        if perform_handshake:
+            await self._perform_handshake()
+        elif not self._handshake_done.done():
+            # Some DTX-like services do not participate in the published-capabilities
+            # handshake. Mark the future complete so reader-loop error handling does
+            # not treat this as a pre-handshake failure.
+            self._handshake_done.set_result({})
 
     async def aclose(self) -> None:
         """Stop the reader, cancel pending operations, and close all channels.

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import socket as _socket
+from contextlib import suppress
 from typing import Any, ClassVar, Optional
 
 from packaging.version import Version
@@ -71,6 +72,7 @@ class DtxServiceProvider:
     RSD_SERVICE_NAME: ClassVar[Optional[str]] = None
     OLD_SERVICE_NAME: ClassVar[Optional[str]] = None
     REGISTER_SERVICES: ClassVar[tuple[type[DTXService], ...]] = ()
+    PERFORM_HANDSHAKE: ClassVar[bool] = True
 
     # ------------------------------------------------------------------
     # Class-level helpers
@@ -149,10 +151,15 @@ class DtxServiceProvider:
         """
         if self._dtx is not None:
             return
-        self._dtx = await self._open_dtx_connection(self._service_name, strip_ssl=self._strip_ssl)
-        await self._dtx.connect()
-        if self.REGISTER_SERVICES:
-            self._dtx.register_services(*self.REGISTER_SERVICES)
+        dtx = await self._open_dtx_connection(self._service_name, strip_ssl=self._strip_ssl)
+        try:
+            await dtx.connect(perform_handshake=self.PERFORM_HANDSHAKE)
+            if self.REGISTER_SERVICES:
+                dtx.register_services(*self.REGISTER_SERVICES)
+            self._dtx = dtx
+        except Exception:
+            await dtx.aclose()
+            raise
 
     async def close(self) -> None:
         """Close the :class:`DTXConnection` if this provider owns it."""
@@ -203,11 +210,17 @@ class DtxServiceProvider:
             and attr.get("EnableServiceSSL", False)
             and (svc.socket is not None and hasattr(svc.socket, "_sslobj"))
         ):
+            old_writer = svc.writer
             raw_socket = getattr(svc.socket, "_sock", None)
             if raw_socket is None:
                 raw_socket = _socket.socket(fileno=svc.socket.detach())
             else:
                 svc.socket._sslobj = None
+            if old_writer is not None:
+                with suppress(Exception):
+                    old_writer.close()
+                with suppress(Exception):
+                    await old_writer.wait_closed()
             svc.socket = raw_socket
             svc.reader = None
             svc.writer = None

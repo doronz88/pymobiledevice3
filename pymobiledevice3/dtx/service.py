@@ -448,6 +448,13 @@ class DTXControlService(DTXService):
     async def _recv_channel_cancelled(self, code: int) -> None:
         await self._ctx["connection"]._on_channel_cancelled(code)
 
+    @dtx_on_dispatch
+    async def _recv_unknown_control_dispatch(self, selector: str, *args: Any) -> None:
+        queue = self._ctx["connection"].ctx.get("control_dispatch_queue")
+        if queue is not None:
+            await queue.put((selector, list(args)))
+        logger.debug("ignoring unknown control-channel selector %r with %d arg(s)", selector, len(args))
+
 
 class DTXProxyService(DTXService):
     """Bidirectional proxy that bridges two :class:`DTXService` instances on one channel.
