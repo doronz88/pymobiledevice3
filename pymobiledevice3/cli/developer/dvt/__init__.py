@@ -526,7 +526,7 @@ async def dvt_energy(service_provider: ServiceProviderDep, pid_list: list[str]) 
     pid_int_list = [int(pid) for pid in pid_list]
 
     async with (
-        DvtSecureSocketProxyService(lockdown=service_provider) as dvt,
+        DvtProvider(service_provider) as dvt,
         EnergyMonitor(dvt, pid_int_list) as energy_monitor,
     ):
         async for telemetry in energy_monitor:
