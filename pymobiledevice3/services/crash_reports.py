@@ -262,4 +262,12 @@ class CrashReportsShell(AfcShell):
         print(get_crash_report_from_buf(self.afc.get_file_contents(filename).decode(), filename=filename))
 
     def _do_clear(self) -> None:
-        XSH.ctx["_manager"].clear()
+        undeleted_items = []
+        for filename in self.afc.listdir("/"):
+            undeleted_items.extend(self.afc.rm(filename, force=True))
+
+        for item in undeleted_items:
+            # special case of file that sometimes created automatically right after delete,
+            # and then we can't delete the folder because it's not empty
+            if item != CrashReportsManager.APPSTORED_PATH:
+                raise AfcException(f"failed to clear crash reports directory, undeleted items: {undeleted_items}", None)
