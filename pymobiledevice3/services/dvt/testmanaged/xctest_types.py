@@ -14,6 +14,7 @@ Exported
 - :class:`XCTSourceCodeContext`
 - :class:`XCTSourceCodeLocation`
 - :class:`XCActivityRecord`
+- :class:`XCTAttachment`
 - :class:`XCTestCaseRunConfiguration`
 """
 
@@ -253,6 +254,37 @@ class XCActivityRecord:
 
 
 @dataclass
+class XCTAttachment:
+    """Decoded proxy for ``XCTAttachment`` — a file attachment (screenshot, logs, etc.)."""
+
+    name: str
+    uniformTypeIdentifier: str
+    timestamp: Any  # NSDate or None
+    data: Optional[bytes] = None
+    additional_data: dict = field(default_factory=dict)
+
+    @staticmethod
+    def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTAttachment:
+        name = archive_obj.decode("name") or ""
+        uti = archive_obj.decode("uniformTypeIdentifier") or ""
+        timestamp = archive_obj.decode("timestamp")
+        data = archive_obj.decode("data")
+        # Capture any additional fields that may be present
+        additional_data = {}
+        for key in ("metadata", "file-path", "file-url"):
+            val = archive_obj.decode(key)
+            if val is not None:
+                additional_data[key] = val
+        return XCTAttachment(
+            name=str(name) if name else "",
+            uniformTypeIdentifier=str(uti) if uti else "",
+            timestamp=timestamp,
+            data=data if isinstance(data, bytes) else None,
+            additional_data=additional_data,
+        )
+
+
+@dataclass
 class XCTestCaseRunConfiguration:
     """Decoded proxy for ``XCTestCaseRunConfiguration``."""
 
@@ -278,5 +310,6 @@ archiver.update_class_map({
     "XCTIssue": XCTIssue,
     "XCTMutableIssue": XCTIssue,
     "XCActivityRecord": XCActivityRecord,
+    "XCTAttachment": XCTAttachment,
     "XCTestCaseRunConfiguration": XCTestCaseRunConfiguration,
 })
