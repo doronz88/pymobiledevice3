@@ -12,7 +12,13 @@ import typer
 from click.exceptions import BadParameter, MissingParameter, UsageError
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json, user_requested_colored_output
+from pymobiledevice3.cli.cli_common import (
+    OSUTILS,
+    ServiceProviderDep,
+    async_command,
+    print_json,
+    user_requested_colored_output,
+)
 from pymobiledevice3.cli.developer.dvt import core_profile_session, simulate_location, sysmon
 from pymobiledevice3.dtx import DTXNsError
 from pymobiledevice3.dtx.service import DTXService
@@ -20,6 +26,7 @@ from pymobiledevice3.exceptions import UnrecognizedSelectorError
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
+from pymobiledevice3.services.dvt.instruments.condition_inducer import ConditionInducer
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
@@ -53,6 +60,38 @@ cli = InjectingTyper(
 cli.add_typer(sysmon.cli)
 cli.add_typer(core_profile_session.cli)
 cli.add_typer(simulate_location.cli)
+
+condition_cli = InjectingTyper(
+    name="condition",
+    help="Force predefined device conditions (network, thermal, battery) via DVT.",
+    no_args_is_help=True,
+)
+cli.add_typer(condition_cli)
+
+
+@condition_cli.command("list")
+@async_command
+async def condition_list(service_provider: ServiceProviderDep) -> None:
+    """List available condition profiles."""
+    async with DvtProvider(service_provider) as dvt:
+        print_json(await ConditionInducer(dvt).list())
+
+
+@condition_cli.command("clear")
+@async_command
+async def condition_clear(service_provider: ServiceProviderDep) -> None:
+    """Clear any active induced condition."""
+    async with DvtProvider(service_provider) as dvt:
+        await ConditionInducer(dvt).clear()
+
+
+@condition_cli.command("set")
+@async_command
+async def condition_set(service_provider: ServiceProviderDep, profile_identifier: str) -> None:
+    """Apply a specific condition profile by identifier."""
+    async with DvtProvider(service_provider) as dvt:
+        await ConditionInducer(dvt).set(profile_identifier)
+        OSUTILS.wait_return()
 
 
 @cli.command("proclist")

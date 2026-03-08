@@ -9,7 +9,6 @@ from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
 from pymobiledevice3.cli.developer import (
     accessibility,
     arbitration,
-    condition,
     core_device,
     debugserver,
     dvt,
@@ -40,7 +39,6 @@ cli.add_typer(dvt.cli)
 cli.add_typer(fetch_symbols.cli)
 cli.add_typer(simulate_location.cli)
 cli.add_typer(accessibility.cli)
-cli.add_typer(condition.cli)
 cli.add_typer(debugserver.cli)
 cli.add_typer(arbitration.cli)
 cli.add_typer(core_device.cli)
