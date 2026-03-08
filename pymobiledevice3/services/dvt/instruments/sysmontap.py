@@ -1,6 +1,7 @@
 import dataclasses
 
-from pymobiledevice3.services.remote_server import Tap
+from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
+from pymobiledevice3.services.dvt.instruments.tap import Tap
 
 
 class Sysmontap(Tap):
@@ -24,11 +25,9 @@ class Sysmontap(Tap):
 
     @classmethod
     async def create(cls, dvt) -> "Sysmontap":
-        device_info_channel = await dvt.make_channel("com.apple.instruments.server.services.deviceinfo")
-        await device_info_channel.sysmonProcessAttributes()
-        process_attributes = list(await device_info_channel.receive_plist())
-        await device_info_channel.sysmonSystemAttributes()
-        system_attributes = list(await device_info_channel.receive_plist())
+        device_info = DeviceInfo(dvt)
+        process_attributes = list(await device_info.request_information("sysmonProcessAttributes"))
+        system_attributes = list(await device_info.request_information("sysmonSystemAttributes"))
         return cls(dvt, process_attributes, system_attributes)
 
     async def iter_processes(self):

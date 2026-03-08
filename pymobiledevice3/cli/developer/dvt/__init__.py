@@ -515,10 +515,11 @@ async def dvt_name_for_gid(service_provider: ServiceProviderDep, gid: int) -> No
 
 
 @cli.command("oslog")
-def dvt_oslog(service_provider: ServiceProviderDep, pid: int) -> None:
+@async_command
+async def dvt_oslog(service_provider: ServiceProviderDep, pid: int) -> None:
     """Sniff device oslog (not very stable, but includes more data and normal syslog)"""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, ActivityTraceTap(dvt) as tap:
-        for message in tap:
+    async with DvtProvider(service_provider) as dvt, ActivityTraceTap(dvt) as tap:
+        async for message in tap:
             message_pid = message.process
             # without message_type maybe signpost have event_type
             message_type = (
@@ -591,7 +592,8 @@ async def dvt_graphics(service_provider: ServiceProviderDep) -> None:
 
 
 @cli.command("har")
-def dvt_har(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def dvt_har(service_provider: ServiceProviderDep) -> None:
     """
     Enable har-logging
 
@@ -599,8 +601,8 @@ def dvt_har(service_provider: ServiceProviderDep) -> None:
     For more information, please read:
     \b    https://github.com/doronz88/harlogger?tab=readme-ov-file#enable-http-instrumentation-method
     """
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         print("> Press Ctrl-C to abort")
-        with ActivityTraceTap(dvt, enable_http_archive_logging=True) as tap:
+        async with ActivityTraceTap(dvt, enable_http_archive_logging=True) as tap:
             while True:
-                tap.channel.receive_message()
+                await tap.channel.receive_message()

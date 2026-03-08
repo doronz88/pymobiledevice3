@@ -23,8 +23,8 @@ from pymobiledevice3.cli.cli_common import (
     user_requested_colored_output,
 )
 from pymobiledevice3.exceptions import DvtException, ExtractingStackshotError
-from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +180,7 @@ async def live_profile_session(
     parser.show_tid = show_tid
     parser.show_process = process_name
     parser.show_args = args
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         trace_codes_map = await CoreProfileSessionTap.get_trace_codes(dvt)
         time_config = await CoreProfileSessionTap.get_time_config(dvt)
         parser.numer = time_config["numer"]
@@ -222,10 +222,7 @@ async def save_profile_session(
     if bsc:
         subclass_filters.append(BSC_SUBCLASS)
     filters = parse_filters(subclass_filters, class_filters)
-    async with (
-        DvtSecureSocketProxyService(lockdown=service_provider) as dvt,
-        CoreProfileSessionTap(dvt, {}, filters) as tap,
-    ):
+    async with DvtProvider(service_provider) as dvt, CoreProfileSessionTap(dvt, {}, filters) as tap:
         with out.open("wb") as out_file:
             await tap.dump(out_file)
 
@@ -239,7 +236,7 @@ async def stackshot(
     """Dump stackshot information."""
     max_retries = 5
     retry_delay_sec = 0.5
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         for attempt in range(max_retries + 1):
             try:
                 async with CoreProfileSessionTap(dvt, {}) as tap:
@@ -292,7 +289,7 @@ async def parse_live_profile_session(
     ] = TraceColorMode.FAST,
 ) -> None:
     """Print traces (syscalls, thread events, etc.) received from the device in real time."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         print("Receiving time information")
         time_config = await CoreProfileSessionTap.get_time_config(dvt)
         parser = PyKdebugParser()
@@ -368,7 +365,7 @@ async def callstacks_live_profile_session(
     show_tid: ShowThreadID = False,
 ) -> None:
     """Print callstacks received from the device in real time."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         print("Receiving time information")
         time_config = await CoreProfileSessionTap.get_time_config(dvt)
         parser = PyKdebugParser()

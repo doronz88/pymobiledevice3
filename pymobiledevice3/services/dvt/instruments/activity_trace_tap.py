@@ -4,7 +4,7 @@ import os
 import struct
 from io import BytesIO
 
-from pymobiledevice3.services.remote_server import Tap
+from pymobiledevice3.services.dvt.instruments.tap import Tap
 
 CMD_DEFINE_TABLE = 1
 CMD_END_ROW = 2
@@ -106,11 +106,11 @@ class ActivityTraceTap(Tap):
         self.background = 0
         self.tables = []
 
-    def _get_next_message(self):
+    async def _get_next_message(self):
         message = b""
         while message.startswith(b"bplist") or len(message) == 0:
             # ignore heartbeat messages
-            message = self.channel.receive_message()
+            message = await self.channel.receive_message()
         self._set_current_message(message)
 
     def _set_current_message(self, message):
@@ -288,7 +288,8 @@ class ActivityTraceTap(Tap):
             except EOFError:
                 break
 
-    def __iter__(self):
+    async def __aiter__(self):
         while True:
-            self._get_next_message()
-            yield from self._parse()
+            await self._get_next_message()
+            for message in self._parse():
+                yield message

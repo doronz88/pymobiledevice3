@@ -5,9 +5,9 @@ from typing import Annotated, Optional
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
 from pymobiledevice3.cli.developer.dvt.sysmon import process
-from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,8 @@ cli.add_typer(process.cli)
 
 
 @cli.command("system")
-def sysmon_system(
+@async_command
+async def sysmon_system(
     service_provider: ServiceProviderDep,
     fields: Annotated[
         Optional[str],
@@ -37,14 +38,14 @@ def sysmon_system(
 
     split_fields = fields.split(",") if fields is not None else None
 
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        sysmontap = Sysmontap(dvt)
-        with sysmontap as sysmon:
+    async with DvtProvider(service_provider) as dvt:
+        sysmontap = await Sysmontap.create(dvt)
+        async with sysmontap as sysmon:
             system = None
             system_usage = None
             system_usage_seen = False  # Tracks if the first occurrence of SystemCPUUsage
 
-            for row in sysmon:
+            async for row in sysmon:
                 if "System" in row and system is None:
                     system = sysmon.system_attributes_cls(*row["System"])
 

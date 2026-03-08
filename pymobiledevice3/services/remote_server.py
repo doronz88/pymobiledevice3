@@ -745,35 +745,3 @@ class ChannelService:
         if self._channel is None:
             self._channel = await self._dvt.make_channel(self._channel_name)
         return self._channel
-
-
-class Tap(ChannelService):
-    def __init__(self, dvt, channel_name: str, config: dict) -> None:
-        """Initialize a tap helper with channel name and tap configuration."""
-        super().__init__(dvt, channel_name=channel_name)
-        self._config = config
-        self.channel = None
-
-    def __enter__(self):
-        """Synchronous context manager is intentionally unsupported."""
-        raise RuntimeError("Use async context manager: `async with ...`")
-
-    async def __aenter__(self):
-        """Open channel, configure tap, and start streaming."""
-        self.channel = await self._channel_ref()
-        await self.channel.setConfig_(MessageAux().append_obj(self._config), expects_reply=False)
-        await self.channel.start(expects_reply=False)
-        # first message is just kind of an ack
-        await self.channel.receive_plist()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Stop tap streaming when leaving async context manager."""
-        if self.channel is not None:
-            await self.channel.stop(expects_reply=False)
-
-    async def __aiter__(self):
-        """Yield messages continuously from the active tap stream."""
-        while True:
-            for message in await self.channel.receive_plist():
-                yield message
