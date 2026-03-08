@@ -1,4 +1,3 @@
-import asyncio
 import contextlib
 import logging
 import os
@@ -13,21 +12,35 @@ import typer
 from click.exceptions import BadParameter, MissingParameter, UsageError
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json, user_requested_colored_output
+from pymobiledevice3.cli.cli_common import (
+    OSUTILS,
+    ServiceProviderDep,
+    async_command,
+    print_json,
+    user_requested_colored_output,
+)
 from pymobiledevice3.cli.developer.dvt import core_profile_session, simulate_location, sysmon
-from pymobiledevice3.exceptions import DvtDirListError, UnrecognizedSelectorError
+from pymobiledevice3.dtx import DTXNsError
+from pymobiledevice3.dtx.service import DTXService
+from pymobiledevice3.exceptions import UnrecognizedSelectorError
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
+from pymobiledevice3.services.dvt.instruments.condition_inducer import ConditionInducer
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
 from pymobiledevice3.services.dvt.instruments.graphics import Graphics
 from pymobiledevice3.services.dvt.instruments.network_monitor import ConnectionDetectionEvent, NetworkMonitor
 from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
-from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestListener, XCUITestService
-from pymobiledevice3.services.remote_server import MessageAux
+from pymobiledevice3.services.dvt.testmanaged.xcuitest import (
+    TestConfig,
+    XCTestCaseResult,
+    XCUITestListener,
+    XCUITestService,
+)
 from pymobiledevice3.utils import run_in_loop
 
 logger = logging.getLogger(__name__)
@@ -48,12 +61,44 @@ cli.add_typer(sysmon.cli)
 cli.add_typer(core_profile_session.cli)
 cli.add_typer(simulate_location.cli)
 
+condition_cli = InjectingTyper(
+    name="condition",
+    help="Force predefined device conditions (network, thermal, battery) via DVT.",
+    no_args_is_help=True,
+)
+cli.add_typer(condition_cli)
+
+
+@condition_cli.command("list")
+@async_command
+async def condition_list(service_provider: ServiceProviderDep) -> None:
+    """List available condition profiles."""
+    async with DvtProvider(service_provider) as dvt:
+        print_json(await ConditionInducer(dvt).list())
+
+
+@condition_cli.command("clear")
+@async_command
+async def condition_clear(service_provider: ServiceProviderDep) -> None:
+    """Clear any active induced condition."""
+    async with DvtProvider(service_provider) as dvt:
+        await ConditionInducer(dvt).clear()
+
+
+@condition_cli.command("set")
+@async_command
+async def condition_set(service_provider: ServiceProviderDep, profile_identifier: str) -> None:
+    """Apply a specific condition profile by identifier."""
+    async with DvtProvider(service_provider) as dvt:
+        await ConditionInducer(dvt).set(profile_identifier)
+        OSUTILS.wait_return()
+
 
 @cli.command("proclist")
 @async_command
 async def proclist(service_provider: ServiceProviderDep) -> None:
     """Show processes (with start times) via DVT."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         processes = await DeviceInfo(dvt).proclist()
         for process in processes:
             if "startDate" in process:
@@ -66,7 +111,7 @@ async def proclist(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def is_running_pid(service_provider: ServiceProviderDep, pid: int) -> None:
     """Check if a PID is currently running."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         print_json(await DeviceInfo(dvt).is_running_pid(pid))
 
 
@@ -74,7 +119,7 @@ async def is_running_pid(service_provider: ServiceProviderDep, pid: int) -> None
 @async_command
 async def memlimitoff(service_provider: ServiceProviderDep, pid: int) -> None:
     """Disable jetsam memory limit for a PID."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         await ProcessControl(dvt).disable_memory_limit_for_pid(pid)
 
 
@@ -155,7 +200,7 @@ async def send_signal(
     else:
         raise MissingParameter(param_type="argument|option", param_hint="'SIG|SIGNAL-NAME'")
 
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         await ProcessControl(dvt).signal(pid, sig)
 
 
@@ -163,7 +208,7 @@ async def send_signal(
 @async_command
 async def kill(service_provider: ServiceProviderDep, pid: int) -> None:
     """Kill a process by PID."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         await ProcessControl(dvt).kill(pid)
 
 
@@ -171,7 +216,7 @@ async def kill(service_provider: ServiceProviderDep, pid: int) -> None:
 @async_command
 async def process_id_for_bundle_id(service_provider: ServiceProviderDep, app_bundle_identifier: str) -> None:
     """Get PID of a bundle identifier (only returns a valid value if its running)."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         print(await ProcessControl(dvt).process_identifier_for_bundle_identifier(app_bundle_identifier))
 
 
@@ -206,9 +251,9 @@ async def pkill(
     ] = False,
 ) -> None:
     """Kill all processes containing each expression in their name."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        device_info = DeviceInfo(dvt)
-        process_control = ProcessControl(dvt)
+    async with DvtProvider(service_provider) as dvt_provider:
+        device_info = DeviceInfo(dvt_provider)
+        process_control = ProcessControl(dvt_provider)
 
         for expression in expressions:
             matching_name = expression if not bundle else None
@@ -244,7 +289,7 @@ async def launch(
     stream: bool = False,
 ) -> None:
     """Launch a process."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         parsed_arguments = shlex.split(arguments)
         process_control = ProcessControl(dvt)
         pid = await process_control.launch(
@@ -268,20 +313,19 @@ def dvt_shell(service_provider: ServiceProviderDep) -> None:
     dvt.shell()
 
 
-async def show_dirlist(channel, dirname: str, recursive: bool = False) -> None:
+async def show_dirlist(channel: DTXService, dirname: str, recursive: bool = False) -> None:
     try:
-        await channel.directoryListingForPath_(MessageAux().append_obj(dirname))
-        filenames = await channel.receive_plist()
-        if filenames is None:
-            raise DvtDirListError()
-    except DvtDirListError:
+        filenames = await channel.do_invoke("directoryListingForPath:", dirname)
+    except DTXNsError:
+        return
+    if not isinstance(filenames, list):
         return
 
     for filename in filenames:
-        filename = posixpath.join(dirname, filename)
-        print(filename)
+        child = posixpath.join(dirname, filename)
+        print(child)
         if recursive:
-            await show_dirlist(channel, filename, recursive=recursive)
+            await show_dirlist(channel, child, recursive=recursive)
 
 
 @cli.command("ls")
@@ -295,8 +339,8 @@ async def ls(
     ] = False,
 ) -> None:
     """List directory"""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
-        channel = await dvt.make_channel(DeviceInfo.IDENTIFIER)
+    async with DvtProvider(service_provider) as dvt:
+        channel = await dvt.dtx.open_channel(DeviceInfo.IDENTIFIER)
         await show_dirlist(channel, path, recursive=recursive)
 
 
@@ -304,7 +348,7 @@ async def ls(
 @async_command
 async def device_information(service_provider: ServiceProviderDep) -> None:
     """Print system information"""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         device_info = DeviceInfo(dvt)
         info = {
             "hardware": await device_info.hardware_information(),
@@ -321,7 +365,7 @@ async def device_information(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def netstat(service_provider: ServiceProviderDep) -> None:
     """Print information about current network activity."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, NetworkMonitor(dvt) as monitor:
+    async with DvtProvider(service_provider) as dvt, NetworkMonitor(dvt) as monitor:
         async for event in monitor:
             if isinstance(event, ConnectionDetectionEvent):
                 logger.info(
@@ -334,7 +378,7 @@ async def netstat(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def dvt_screenshot(service_provider: ServiceProviderDep, out: Path) -> None:
     """Take device screenshot"""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         out.write_bytes(await Screenshot(dvt).get_screenshot())
 
 
@@ -342,7 +386,18 @@ async def dvt_screenshot(service_provider: ServiceProviderDep, out: Path) -> Non
 @async_command
 async def xcuitest(
     service_provider: ServiceProviderDep,
-    bundle_id: str,
+    bundle_id: Annotated[
+        str,
+        typer.Argument(
+            help="Bundle identifier of the XCTest runner (e.g. com.apple.test.WebDriverAgentRunner.xctrunner)"
+        ),
+    ],
+    target_bundle_id: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Bundle identifier of the target app (if different from runner, e.g. for testing app extensions)"
+        ),
+    ] = None,
     output_log: Annotated[
         Optional[Path],
         typer.Option(help="log debug output file location ( default to python logger )"),
@@ -365,43 +420,78 @@ async def xcuitest(
     Usage example:
     \b    python3 -m pymobiledevice3 developer dvt xcuitest com.facebook.WebDriverAgentRunner.xctrunner
     """
-    s = XCUITestService(service_provider)
-    consumer = await s.start(bundle_id, test_runner_env=dict(var.split("=", 1) for var in env or ()))
-
-    async def stop_consumer_safely() -> None:
-        try:
-            await consumer.stop()
-        except RuntimeError as e:
-            if "no running event loop" not in str(e):
-                raise
-            logger.debug("Skipping consumer stop during event-loop teardown")
+    env_dict = dict(var.split("=", 1) for var in env or ())
+    listener: Optional[XCUITestListener] = None
 
     if output_log is not None:
+        output_stream = output_log.open("w")
 
-        class MyListener(XCUITestListener):
-            def logDebugMessage_(self, args):
-                output_log.write_text(args[0].value)
+        def _write(line: str) -> None:
+            output_stream.write(line if line.endswith("\n") else line + "\n")
+            output_stream.flush()
 
-        consumer.set_listener(MyListener(consumer.main_dvt, consumer.main_chan, consumer.xctest_config))
-    try:
-        if timeout is not None:
-            await asyncio.wait_for(consumer.consume(), timeout=timeout)
-        else:
-            await consumer.consume()
-    except asyncio.TimeoutError:
-        logger.warning("consumer task timed out, exiting")
-        await stop_consumer_safely()
-    except (asyncio.CancelledError, KeyboardInterrupt):
-        logger.info("xcuitest interrupted, exiting")
-        await stop_consumer_safely()
-        raise
+        class _LogFileListener(XCUITestListener):
+            async def log_message(self, message: str) -> None:
+                _write(message)
+
+            async def log_debug_message(self, message: str) -> None:
+                _write(message)
+
+            async def did_begin_executing_test_plan(self) -> None:
+                _write("[plan] begin")
+
+            async def did_finish_executing_test_plan(self) -> None:
+                _write("[plan] finish")
+
+            async def test_suite_did_start(self, suite: str, started_at: str) -> None:
+                _write(f"[suite] start  {suite}  at={started_at}")
+
+            async def test_suite_did_finish(
+                self,
+                suite: str,
+                finished_at: str,
+                run_count: int,
+                failures: int,
+                unexpected: int,
+                test_duration: float,
+                total_duration: float,
+            ) -> None:
+                _write(
+                    f"[suite] finish {suite}  at={finished_at}"
+                    f"  run={run_count} fail={failures} dur={total_duration:.3f}s"
+                )
+
+            async def test_case_did_start(self, test_class: str, method: str) -> None:
+                _write(f"[case]  start  {test_class}/{method}")
+
+            async def test_case_did_finish(self, result: XCTestCaseResult) -> None:
+                _write(
+                    f"[case]  finish {result.test_class}/{result.method}"
+                    f"  status={result.status} dur={result.duration:.3f}s"
+                )
+
+            async def test_case_did_fail(
+                self, test_class: str, method: str, message: str, file: str, line: int
+            ) -> None:
+                _write(f"[case]  FAIL   {test_class}/{method}  {message}  ({file}:{line})")
+
+        listener = _LogFileListener()
+
+    cfg = await TestConfig.create_for(service_provider, bundle_id, target_bundle_id)
+    cfg.runner_app_env = env_dict or None
+    svc = XCUITestService(service_provider)
+    await svc.run(
+        cfg,
+        timeout=timeout,
+        listener=listener,
+    )
 
 
 @cli.command("trace-codes")
 @async_command
 async def dvt_trace_codes(service_provider: ServiceProviderDep) -> None:
     """Print KDebug trace codes."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         device_info = DeviceInfo(dvt)
         print_json({hex(k): v for k, v in (await device_info.trace_codes()).items()})
 
@@ -410,7 +500,7 @@ async def dvt_trace_codes(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def dvt_name_for_uid(service_provider: ServiceProviderDep, uid: int) -> None:
     """Print the assiciated username for the given uid."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         device_info = DeviceInfo(dvt)
         print(await device_info.name_for_uid(uid))
 
@@ -419,7 +509,7 @@ async def dvt_name_for_uid(service_provider: ServiceProviderDep, uid: int) -> No
 @async_command
 async def dvt_name_for_gid(service_provider: ServiceProviderDep, gid: int) -> None:
     """Print the assiciated group name for the given gid."""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt:
         device_info = DeviceInfo(dvt)
         print(await device_info.name_for_gid(gid))
 
@@ -475,7 +565,7 @@ async def dvt_energy(service_provider: ServiceProviderDep, pid_list: list[str]) 
     pid_int_list = [int(pid) for pid in pid_list]
 
     async with (
-        DvtSecureSocketProxyService(lockdown=service_provider) as dvt,
+        DvtProvider(service_provider) as dvt,
         EnergyMonitor(dvt, pid_int_list) as energy_monitor,
     ):
         async for telemetry in energy_monitor:
@@ -483,10 +573,11 @@ async def dvt_energy(service_provider: ServiceProviderDep, pid_list: list[str]) 
 
 
 @cli.command("notifications")
-def dvt_notifications(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def dvt_notifications(service_provider: ServiceProviderDep) -> None:
     """Monitor memory and app notifications"""
-    with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, Notifications(dvt) as notifications:
-        for notification in notifications:
+    async with DvtProvider(service_provider) as dvt, Notifications(dvt) as notifications:
+        async for notification in notifications:
             logger.info(notification)
 
 
@@ -494,7 +585,7 @@ def dvt_notifications(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def dvt_graphics(service_provider: ServiceProviderDep) -> None:
     """Monitor graphics-related information"""
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, Graphics(dvt) as graphics:
+    async with DvtProvider(service_provider) as dvt, Graphics(dvt) as graphics:
         async for stats in graphics:
             logger.info(stats)
 

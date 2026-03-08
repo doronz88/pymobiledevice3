@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import logging
@@ -5,6 +6,7 @@ import os
 import sys
 import uuid
 from collections.abc import Awaitable
+from contextlib import suppress
 from functools import wraps
 from textwrap import dedent
 from typing import Annotated, Any, Callable, Optional, TypeVar
@@ -133,7 +135,16 @@ cli_loop = get_asyncio_loop()
 def async_command(func: Callable[P, Awaitable[R]]) -> Callable[P, R]:
     @wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        return cli_loop.run_until_complete(func(*args, **kwargs))
+        task = cli_loop.create_task(func(*args, **kwargs))
+        try:
+            return cli_loop.run_until_complete(task)
+        except KeyboardInterrupt:
+            # Ensure graceful coroutine finalization on Ctrl-C; otherwise Python
+            # may report "coroutine ignored GeneratorExit" during GC shutdown.
+            task.cancel()
+            with suppress(asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                cli_loop.run_until_complete(asyncio.wait_for(task, timeout=0.25))
+            raise typer.Exit(code=130) from None
 
     return wrapper
 

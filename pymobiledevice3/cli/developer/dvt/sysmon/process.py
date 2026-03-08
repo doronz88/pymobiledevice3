@@ -13,7 +13,6 @@ from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, default_json_encoder, print_json
 from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
-from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 
 logger = logging.getLogger(__name__)
@@ -69,7 +68,7 @@ async def sysmon_process_single(
 
     result = []
     async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, await Sysmontap.create(dvt) as sysmon:
-        device_info = DeviceInfo(dvt)
+        device_info_channel = await dvt.make_channel("com.apple.instruments.server.services.deviceinfo")
 
         async for process_snapshot in sysmon.iter_processes():
             count += 1
@@ -91,7 +90,8 @@ async def sysmon_process_single(
                     continue
 
                 # adding "artificially" the execName field
-                process["execName"] = await device_info.execname_for_pid(process["pid"])
+                await device_info_channel.execnameForPid_(process["pid"])
+                process["execName"] = await device_info_channel.receive_plist()
                 result.append(process)
 
             # exit after single snapshot
