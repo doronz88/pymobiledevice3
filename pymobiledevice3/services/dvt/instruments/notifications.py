@@ -7,7 +7,7 @@ from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
 
-class _NotificationsService(DTXService):
+class NotificationsService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.mobilenotifications"
 
     def __init__(self, ctx):
@@ -29,20 +29,20 @@ class _NotificationsService(DTXService):
         await self.events.put(payload)
 
 
-class _NotificationsChannel(DtxService[_NotificationsService]):
+class NotificationsChannel(DtxService[NotificationsService]):
     pass
 
 
 class Notifications:
-    IDENTIFIER = _NotificationsService.IDENTIFIER
+    IDENTIFIER = NotificationsService.IDENTIFIER
 
     def __init__(self, dvt: DtxServiceProvider):
         self._provider = dvt
-        self._channel: _NotificationsChannel | None = None
+        self._channel: NotificationsChannel | None = None
 
-    async def _service_ref(self) -> _NotificationsService:
+    async def _service_ref(self) -> NotificationsService:
         if self._channel is None:
-            self._channel = _NotificationsChannel(self._provider)
+            self._channel = NotificationsChannel(self._provider)
         await self._channel.connect()
         return self._channel.service
 

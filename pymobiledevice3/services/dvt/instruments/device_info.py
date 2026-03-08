@@ -9,7 +9,7 @@ from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import DvtDirListError
 
 
-class _DeviceInfoService(DTXService):
+class DeviceInfoService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.deviceinfo"
 
     @dtx_method("directoryListingForPath:")
@@ -31,20 +31,20 @@ class _DeviceInfoService(DTXService):
     async def name_for_gid_(self, gid: int) -> str: ...
 
 
-class _DeviceInfoChannel(DtxService[_DeviceInfoService]):
+class DeviceInfoChannel(DtxService[DeviceInfoService]):
     pass
 
 
 class DeviceInfo:
-    IDENTIFIER = _DeviceInfoService.IDENTIFIER
+    IDENTIFIER = DeviceInfoService.IDENTIFIER
 
     def __init__(self, dvt: DtxServiceProvider):
         self._provider = dvt
-        self._channel: _DeviceInfoChannel | None = None
+        self._channel: DeviceInfoChannel | None = None
 
-    async def _service_ref(self) -> _DeviceInfoService:
+    async def _service_ref(self) -> DeviceInfoService:
         if self._channel is None:
-            self._channel = _DeviceInfoChannel(self._provider)
+            self._channel = DeviceInfoChannel(self._provider)
         await self._channel.connect()
         return self._channel.service
 

@@ -34,7 +34,7 @@ class OutputReceivedEvent:
         return cls(pid=pid_value, date=date, message=msg_value)
 
 
-class _ProcessControlService(DTXService):
+class ProcessControlService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.processcontrol"
 
     def __init__(self, ctx):
@@ -63,20 +63,20 @@ class _ProcessControlService(DTXService):
         await self.output_events.put([message, pid, timestamp])
 
 
-class _ProcessControlChannel(DtxService[_ProcessControlService]):
+class ProcessControlChannel(DtxService[ProcessControlService]):
     pass
 
 
 class ProcessControl:
-    IDENTIFIER = _ProcessControlService.IDENTIFIER
+    IDENTIFIER = ProcessControlService.IDENTIFIER
 
     def __init__(self, dvt: DtxServiceProvider):
         self._provider = dvt
-        self._channel: _ProcessControlChannel | None = None
+        self._channel: ProcessControlChannel | None = None
 
-    async def _service_ref(self) -> _ProcessControlService:
+    async def _service_ref(self) -> ProcessControlService:
         if self._channel is None:
-            self._channel = _ProcessControlChannel(self._provider)
+            self._channel = ProcessControlChannel(self._provider)
         await self._channel.connect()
         return self._channel.service
 

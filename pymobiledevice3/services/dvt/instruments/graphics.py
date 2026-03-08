@@ -7,7 +7,7 @@ from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
 
-class _GraphicsService(DTXService):
+class GraphicsService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.graphics.opengl"
 
     def __init__(self, ctx):
@@ -29,20 +29,20 @@ class _GraphicsService(DTXService):
         await self.events.put(payload)
 
 
-class _GraphicsChannel(DtxService[_GraphicsService]):
+class GraphicsChannel(DtxService[GraphicsService]):
     pass
 
 
 class Graphics:
-    IDENTIFIER = _GraphicsService.IDENTIFIER
+    IDENTIFIER = GraphicsService.IDENTIFIER
 
     def __init__(self, dvt: DtxServiceProvider):
         self._provider = dvt
-        self._channel: _GraphicsChannel | None = None
+        self._channel: GraphicsChannel | None = None
 
-    async def _service_ref(self) -> _GraphicsService:
+    async def _service_ref(self) -> GraphicsService:
         if self._channel is None:
-            self._channel = _GraphicsChannel(self._provider)
+            self._channel = GraphicsChannel(self._provider)
         await self._channel.connect()
         return self._channel.service
 

@@ -6,7 +6,7 @@ from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
 
-class _EnergyMonitorService(DTXService):
+class EnergyMonitorService(DTXService):
     IDENTIFIER = "com.apple.xcode.debug-gauge-data-providers.Energy"
 
     @dtx_method("startSamplingForPIDs:", expects_reply=False)
@@ -19,21 +19,21 @@ class _EnergyMonitorService(DTXService):
     async def sample_attributes_for_pids_(self, attributes: dict, pid_list: list[int]) -> Any: ...
 
 
-class _EnergyMonitorChannel(DtxService[_EnergyMonitorService]):
+class EnergyMonitorChannel(DtxService[EnergyMonitorService]):
     pass
 
 
 class EnergyMonitor:
-    IDENTIFIER = _EnergyMonitorService.IDENTIFIER
+    IDENTIFIER = EnergyMonitorService.IDENTIFIER
 
     def __init__(self, dvt: DtxServiceProvider, pid_list: list[int]) -> None:
         self._provider = dvt
-        self._channel: Optional[_EnergyMonitorChannel] = None
+        self._channel: Optional[EnergyMonitorChannel] = None
         self._pid_list = pid_list
 
-    async def _service_ref(self) -> _EnergyMonitorService:
+    async def _service_ref(self) -> EnergyMonitorService:
         if self._channel is None:
-            self._channel = _EnergyMonitorChannel(self._provider)
+            self._channel = EnergyMonitorChannel(self._provider)
         await self._channel.connect()
         return self._channel.service
 

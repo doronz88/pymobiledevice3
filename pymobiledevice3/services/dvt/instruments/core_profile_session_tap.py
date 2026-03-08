@@ -642,7 +642,7 @@ class KdBufStream:
         return self.current_chunk.read(size)
 
 
-class _CoreProfileSessionTapService(DTXService):
+class CoreProfileSessionTapService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.coreprofilesessiontap"
 
     def __init__(self, ctx):
@@ -670,7 +670,7 @@ class _CoreProfileSessionTapService(DTXService):
         await self.messages.put(archiver.archive(payload))
 
 
-class _CoreProfileSessionTapChannel(DtxService[_CoreProfileSessionTapService]):
+class CoreProfileSessionTapChannel(DtxService[CoreProfileSessionTapService]):
     pass
 
 
@@ -699,7 +699,7 @@ class CoreProfileSessionTap:
     This tap yields kdebug events.
     """
 
-    IDENTIFIER = _CoreProfileSessionTapService.IDENTIFIER
+    IDENTIFIER = CoreProfileSessionTapService.IDENTIFIER
 
     def __init__(self, dvt: DtxServiceProvider, time_config: dict, filters: typing.Optional[set] = None):
         """
@@ -709,7 +709,7 @@ class CoreProfileSessionTap:
         :param filters: Event filters to include, Include all if empty.
         """
         self._provider = dvt
-        self._channel: _CoreProfileSessionTapChannel | None = None
+        self._channel: CoreProfileSessionTapChannel | None = None
         self.channel = None
         self.stack_shot = None
         self.uuid = str(uuid.uuid4())
@@ -731,9 +731,9 @@ class CoreProfileSessionTap:
         }
         self._config = config
 
-    async def _service_ref(self) -> _CoreProfileSessionTapService:
+    async def _service_ref(self) -> CoreProfileSessionTapService:
         if self._channel is None:
-            self._channel = _CoreProfileSessionTapChannel(self._provider)
+            self._channel = CoreProfileSessionTapChannel(self._provider)
         await self._channel.connect()
         return self._channel.service
 

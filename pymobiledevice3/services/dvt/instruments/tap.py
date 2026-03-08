@@ -11,7 +11,7 @@ from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
 
-class _TapService(DTXService):
+class TapService(DTXService):
     def __init__(self, ctx):
         super().__init__(ctx)
         self.messages: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
@@ -34,7 +34,7 @@ class _TapService(DTXService):
         await self.messages.put(("plist", payload))
 
 
-class _TapChannel(DtxService[_TapService]):
+class TapChannel(DtxService[TapService]):
     def __init__(self, provider: DtxServiceProvider, channel_identifier: str):
         super().__init__(provider)
         self._channel_identifier = channel_identifier
@@ -45,12 +45,12 @@ class _TapChannel(DtxService[_TapService]):
             return
         self._service = await self._acquire_channel()
 
-    async def _acquire_channel(self) -> _TapService:
-        return await self.provider.dtx.open_channel(self._channel_identifier, _TapService)
+    async def _acquire_channel(self) -> TapService:
+        return await self.provider.dtx.open_channel(self._channel_identifier, TapService)
 
 
-class _TapMessageChannel:
-    def __init__(self, service: _TapService):
+class TapMessageChannel:
+    def __init__(self, service: TapService):
         self._service = service
 
     async def receive_key_value(self) -> tuple[Any, Any]:
@@ -85,12 +85,12 @@ class Tap:
         self._provider = dvt
         self._channel_name = channel_name
         self._config = config
-        self._channel: _TapChannel | None = None
-        self.channel: _TapMessageChannel | None = None
+        self._channel: TapChannel | None = None
+        self.channel: TapMessageChannel | None = None
 
-    async def _service_ref(self) -> _TapService:
+    async def _service_ref(self) -> TapService:
         if self._channel is None:
-            self._channel = _TapChannel(self._provider, self._channel_name)
+            self._channel = TapChannel(self._provider, self._channel_name)
         await self._channel.connect()
         return self._channel.service
 
@@ -99,7 +99,7 @@ class Tap:
 
     async def __aenter__(self):
         service = await self._service_ref()
-        self.channel = _TapMessageChannel(service)
+        self.channel = TapMessageChannel(service)
         await service.set_config_(self._config)
         await service.start()
         # first message is just kind of an ack

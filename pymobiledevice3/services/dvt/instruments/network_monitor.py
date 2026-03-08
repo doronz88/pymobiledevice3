@@ -104,7 +104,7 @@ class ConnectionUpdateEvent:
 NetworkMonitorEvent = Union[InterfaceDetectionEvent, ConnectionDetectionEvent, ConnectionUpdateEvent]
 
 
-class _NetworkMonitorService(DTXService):
+class NetworkMonitorService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.networking"
 
     def __init__(self, ctx) -> None:
@@ -126,23 +126,23 @@ class _NetworkMonitorService(DTXService):
         await self.events.put(payload)
 
 
-class _NetworkMonitorChannel(DtxService[_NetworkMonitorService]):
+class NetworkMonitorChannel(DtxService[NetworkMonitorService]):
     pass
 
 
 class NetworkMonitor:
     """Iterate over network monitoring events from the Instruments service."""
 
-    IDENTIFIER = _NetworkMonitorService.IDENTIFIER
+    IDENTIFIER = NetworkMonitorService.IDENTIFIER
 
     def __init__(self, dvt: DtxServiceProvider):
         self.logger = logging.getLogger(__name__)
         self._provider = dvt
-        self._channel: _NetworkMonitorChannel | None = None
+        self._channel: NetworkMonitorChannel | None = None
 
-    async def _service_ref(self) -> _NetworkMonitorService:
+    async def _service_ref(self) -> NetworkMonitorService:
         if self._channel is None:
-            self._channel = _NetworkMonitorChannel(self._provider)
+            self._channel = NetworkMonitorChannel(self._provider)
         await self._channel.connect()
         return self._channel.service
 

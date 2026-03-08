@@ -62,11 +62,11 @@ class _TestManagerProvider(DtxServiceProvider):
     OLD_SERVICE_NAME = "com.apple.testmanagerd.lockdown"
 
 
-class _ProxyIdeToDaemonService(DtxProxyService[XCTestManager_IDEInterface, XCTestManager_DaemonConnectionInterface]):
+class ProxyIdeToDaemonService(DtxProxyService[XCTestManager_IDEInterface, XCTestManager_DaemonConnectionInterface]):
     pass
 
 
-class _ProxyIdeToDriverService(DtxProxyService[XCTestManager_IDEInterface, XCTestDriverInterface]):
+class ProxyIdeToDriverService(DtxProxyService[XCTestManager_IDEInterface, XCTestDriverInterface]):
     async def _acquire_channel(self) -> _DTXProxyService:
         # Wait for the runner to open the reverse dtxproxy channel.
         logger.debug("Waiting for XCTestDriverInterface from runner ...")
@@ -79,7 +79,7 @@ class _ProxyIdeToDriverService(DtxProxyService[XCTestManager_IDEInterface, XCTes
             return remote_svc.dtxproxy
 
 
-class _ProcessControlChannel(DtxService[ProcessControlService]):
+class ProcessControlChannel(DtxService[ProcessControlService]):
     """Opens the ProcessControl service channel on the DVT connection."""
 
 
@@ -146,10 +146,10 @@ class XCUITestService:
                     tm_prov.dtx.ctx["xcuitest_listener"] = listener
 
             # Open control and main dtxproxy channels.
-            ctrl_proxy = _ProxyIdeToDaemonService(control_test_manager_provider)
-            main_proxy = _ProxyIdeToDaemonService(main_test_manager_provider)
-            process_control_channel = _ProcessControlChannel(dvt_provider)
-            driver_ch = _ProxyIdeToDriverService(main_test_manager_provider)
+            ctrl_proxy = ProxyIdeToDaemonService(control_test_manager_provider)
+            main_proxy = ProxyIdeToDaemonService(main_test_manager_provider)
+            process_control_channel = ProcessControlChannel(dvt_provider)
+            driver_ch = ProxyIdeToDriverService(main_test_manager_provider)
 
             async with ctrl_proxy, main_proxy, process_control_channel:
                 ctrl_daemon = cast(

@@ -6,7 +6,7 @@ from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 
 
-class _ConditionInducerService(DTXService):
+class ConditionInducerService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.ConditionInducer"
 
     @dtx_method("availableConditionInducers")
@@ -21,21 +21,21 @@ class _ConditionInducerService(DTXService):
     async def disable_active_condition(self) -> None: ...
 
 
-class _ConditionInducerChannel(DtxService[_ConditionInducerService]):
+class ConditionInducerChannel(DtxService[ConditionInducerService]):
     pass
 
 
 class ConditionInducer:
-    IDENTIFIER = _ConditionInducerService.IDENTIFIER
+    IDENTIFIER = ConditionInducerService.IDENTIFIER
 
     def __init__(self, dvt: DtxServiceProvider):
         self.logger = logging.getLogger(__name__)
         self._provider = dvt
-        self._channel: _ConditionInducerChannel | None = None
+        self._channel: ConditionInducerChannel | None = None
 
-    async def _service_ref(self) -> _ConditionInducerService:
+    async def _service_ref(self) -> ConditionInducerService:
         if self._channel is None:
-            self._channel = _ConditionInducerChannel(self._provider)
+            self._channel = ConditionInducerChannel(self._provider)
         await self._channel.connect()
         return self._channel.service
 

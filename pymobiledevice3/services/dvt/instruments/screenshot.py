@@ -5,27 +5,27 @@ from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
 
-class _ScreenshotService(DTXService):
+class ScreenshotService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.screenshot"
 
     @dtx_method("takeScreenshot")
     async def take_screenshot(self) -> bytes: ...
 
 
-class _ScreenshotChannel(DtxService[_ScreenshotService]):
+class ScreenshotChannel(DtxService[ScreenshotService]):
     pass
 
 
 class Screenshot:
-    IDENTIFIER = _ScreenshotService.IDENTIFIER
+    IDENTIFIER = ScreenshotService.IDENTIFIER
 
     def __init__(self, dvt: DtxServiceProvider):
         self._provider = dvt
-        self._channel: Optional[_ScreenshotChannel] = None
+        self._channel: Optional[ScreenshotChannel] = None
 
-    async def _service_ref(self) -> _ScreenshotService:
+    async def _service_ref(self) -> ScreenshotService:
         if self._channel is None:
-            self._channel = _ScreenshotChannel(self._provider)
+            self._channel = ScreenshotChannel(self._provider)
         await self._channel.connect()
         return self._channel.service
 

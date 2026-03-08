@@ -4,7 +4,7 @@ from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.services.dvt.instruments.location_simulation_base import LocationSimulationBase
 
 
-class _LocationSimulationService(DTXService):
+class LocationSimulationService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.LocationSimulation"
 
     @dtx_method("simulateLocationWithLatitude:longitude:")
@@ -14,21 +14,21 @@ class _LocationSimulationService(DTXService):
     async def stop_location_simulation(self) -> None: ...
 
 
-class _LocationSimulationChannel(DtxService[_LocationSimulationService]):
+class LocationSimulationChannel(DtxService[LocationSimulationService]):
     pass
 
 
 class LocationSimulation(LocationSimulationBase):
-    IDENTIFIER = _LocationSimulationService.IDENTIFIER
+    IDENTIFIER = LocationSimulationService.IDENTIFIER
 
     def __init__(self, dvt: DtxServiceProvider):
         super().__init__()
         self._provider = dvt
-        self._channel: _LocationSimulationChannel | None = None
+        self._channel: LocationSimulationChannel | None = None
 
-    async def _service_ref(self) -> _LocationSimulationService:
+    async def _service_ref(self) -> LocationSimulationService:
         if self._channel is None:
-            self._channel = _LocationSimulationChannel(self._provider)
+            self._channel = LocationSimulationChannel(self._provider)
         await self._channel.connect()
         return self._channel.service
 
