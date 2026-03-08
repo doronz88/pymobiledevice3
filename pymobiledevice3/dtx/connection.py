@@ -155,7 +155,10 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         if self._closed:
             return
         self._closed = True
-        if self._reader_task is not None and asyncio.current_task() is not self._reader_task:
+        current_task: Optional[asyncio.Task] = None
+        with suppress(RuntimeError):
+            current_task = asyncio.current_task()
+        if self._reader_task is not None and current_task is not self._reader_task:
             self._reader_task.cancel()
             with suppress(asyncio.CancelledError, Exception):
                 await self._reader_task
