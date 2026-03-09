@@ -47,9 +47,10 @@ cli = InjectingTyper(
 
 
 @cli.command("applist")
-def debugserver_applist(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def debugserver_applist(service_provider: ServiceProviderDep) -> None:
     """Print the debugserver applist XML for the device."""
-    print_json(DebugServerAppList(service_provider).get())
+    print_json(await DebugServerAppList(service_provider).get())
 
 
 @cli.command("start-server")
