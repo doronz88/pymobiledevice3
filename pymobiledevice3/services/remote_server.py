@@ -727,21 +727,3 @@ class RemoteServer(LockdownService):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Ensure graceful shutdown on async context manager exit."""
         await self.close()
-
-
-class ChannelService:
-    """Lazy channel helper for DVT/RemoteServer-backed services."""
-
-    IDENTIFIER: str
-
-    def __init__(self, dvt: "RemoteServer", channel_name: Optional[str] = None) -> None:
-        """Store server reference and optional channel identifier override."""
-        self._dvt = dvt
-        self._channel_name = channel_name if channel_name is not None else self.IDENTIFIER
-        self._channel = None
-
-    async def _channel_ref(self) -> Channel:
-        """Lazily create and cache the backing channel."""
-        if self._channel is None:
-            self._channel = await self._dvt.make_channel(self._channel_name)
-        return self._channel
