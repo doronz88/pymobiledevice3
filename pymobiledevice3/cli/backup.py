@@ -215,7 +215,7 @@ async def encryption(
     """
     async with Mobilebackup2Service(service_provider) as backup_client:
         should_encrypt = mode.lower() == "on"
-        if should_encrypt == backup_client.will_encrypt:
+        if should_encrypt == await backup_client.get_will_encrypt():
             logger.error("Encryption already " + ("on!" if should_encrypt else "off!"))
             return
         if should_encrypt:
@@ -236,7 +236,7 @@ async def change_password(
     Change the backup password.
     """
     async with Mobilebackup2Service(service_provider) as backup_client:
-        if not backup_client.will_encrypt:
+        if not await backup_client.get_will_encrypt():
             logger.error("Encryption is not turned on!")
             return
         await backup_client.change_password(str(backup_directory), old=old_password, new=new_password)
