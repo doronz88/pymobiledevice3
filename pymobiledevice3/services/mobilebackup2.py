@@ -53,11 +53,10 @@ class Mobilebackup2Service(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME, include_escrow_bag=True)
 
-    @property
-    def will_encrypt(self) -> bool:
+    async def get_will_encrypt(self) -> bool:
         try:
-            domain_values = self.lockdown.all_values.get("com.apple.mobile.backup", {})
-            return bool(domain_values.get("WillEncrypt", False))
+            will_encrypt = await self.lockdown.get_value("com.apple.mobile.backup", "WillEncrypt")
+            return bool(will_encrypt)
         except LockdownError:
             return False
 
