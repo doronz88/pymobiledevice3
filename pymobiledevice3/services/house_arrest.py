@@ -1,7 +1,7 @@
 from pymobiledevice3.exceptions import AppNotInstalledError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
-from pymobiledevice3.services.afc import AfcService
+from pymobiledevice3.services.afc import AfcService, AfcShell
 
 VEND_CONTAINER = "VendContainer"
 VEND_DOCUMENTS = "VendDocuments"
@@ -44,4 +44,4 @@ class HouseArrestService(AfcService):
                 raise PyMobileDevice3Exception(error)
 
     def shell(self) -> None:
-        raise RuntimeError("AFC shell is not available in async-only mode")
+        AfcShell.create(self.lockdown, service=self, auto_cd=DOCUMENTS_ROOT if self.documents_only else "/")
