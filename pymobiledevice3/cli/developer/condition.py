@@ -15,22 +15,22 @@ cli = InjectingTyper(
 @async_command
 async def condition_list(service_provider: ServiceProviderDep) -> None:
     """List available condition profiles."""
-    async with DvtProvider(service_provider) as dvt:
-        print_json(await ConditionInducer(dvt).list())
+    async with DvtProvider(service_provider) as dvt, ConditionInducer(dvt) as condition_inducer:
+        print_json(await condition_inducer.list())
 
 
 @cli.command("clear")
 @async_command
 async def condition_clear(service_provider: ServiceProviderDep) -> None:
     """Clear any active induced condition."""
-    async with DvtProvider(service_provider) as dvt:
-        await ConditionInducer(dvt).clear()
+    async with DvtProvider(service_provider) as dvt, ConditionInducer(dvt) as condition_inducer:
+        await condition_inducer.clear()
 
 
 @cli.command("set")
 @async_command
 async def condition_set(service_provider: ServiceProviderDep, profile_identifier: str) -> None:
     """Apply a specific condition profile by identifier."""
-    async with DvtProvider(service_provider) as dvt:
-        await ConditionInducer(dvt).set(profile_identifier)
+    async with DvtProvider(service_provider) as dvt, ConditionInducer(dvt) as condition_inducer:
+        await condition_inducer.set(profile_identifier)
         OSUTILS.wait_return()

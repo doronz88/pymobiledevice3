@@ -90,24 +90,24 @@ cli.add_typer(condition_cli)
 @async_command
 async def condition_list(service_provider: ServiceProviderDep) -> None:
     """List available condition profiles."""
-    async with DvtProvider(service_provider) as dvt:
-        print_json(await ConditionInducer(dvt).list())
+    async with DvtProvider(service_provider) as dvt, ConditionInducer(dvt) as condition_inducer:
+        print_json(await condition_inducer.list())
 
 
 @condition_cli.command("clear")
 @async_command
 async def condition_clear(service_provider: ServiceProviderDep) -> None:
     """Clear any active induced condition."""
-    async with DvtProvider(service_provider) as dvt:
-        await ConditionInducer(dvt).clear()
+    async with DvtProvider(service_provider) as dvt, ConditionInducer(dvt) as condition_inducer:
+        await condition_inducer.clear()
 
 
 @condition_cli.command("set")
 @async_command
 async def condition_set(service_provider: ServiceProviderDep, profile_identifier: str) -> None:
     """Apply a specific condition profile by identifier."""
-    async with DvtProvider(service_provider) as dvt:
-        await ConditionInducer(dvt).set(profile_identifier)
+    async with DvtProvider(service_provider) as dvt, ConditionInducer(dvt) as condition_inducer:
+        await condition_inducer.set(profile_identifier)
         OSUTILS.wait_return()
 
 
@@ -115,8 +115,8 @@ async def condition_set(service_provider: ServiceProviderDep, profile_identifier
 @async_command
 async def proclist(service_provider: ServiceProviderDep) -> None:
     """Show processes (with start times) via DVT."""
-    async with DvtProvider(service_provider) as dvt:
-        processes = await DeviceInfo(dvt).proclist()
+    async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
+        processes = await device_info.proclist()
         for process in processes:
             if "startDate" in process:
                 process["startDate"] = str(process["startDate"])
@@ -128,24 +128,24 @@ async def proclist(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def is_running_pid(service_provider: ServiceProviderDep, pid: int) -> None:
     """Check if a PID is currently running."""
-    async with DvtProvider(service_provider) as dvt:
-        print_json(await DeviceInfo(dvt).is_running_pid(pid))
+    async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
+        print_json(await device_info.is_running_pid(pid))
 
 
 @cli.command("memlimitoff")
 @async_command
 async def memlimitoff(service_provider: ServiceProviderDep, pid: int) -> None:
     """Disable jetsam memory limit for a PID."""
-    async with DvtProvider(service_provider) as dvt:
-        await ProcessControl(dvt).disable_memory_limit_for_pid(pid)
+    async with DvtProvider(service_provider) as dvt, ProcessControl(dvt) as process_control:
+        await process_control.disable_memory_limit_for_pid(pid)
 
 
 @cli.command("applist")
 @async_command
 async def applist(service_provider: ServiceProviderDep) -> None:
     """List installed applications via DVT."""
-    async with DvtProvider(service_provider) as dvt:
-        apps = await ApplicationListing(dvt).applist()
+    async with DvtProvider(service_provider) as dvt, ApplicationListing(dvt) as application_listing:
+        apps = await application_listing.applist()
         print_json(apps)
 
 
@@ -217,24 +217,24 @@ async def send_signal(
     else:
         raise MissingParameter(param_type="argument|option", param_hint="'SIG|SIGNAL-NAME'")
 
-    async with DvtProvider(service_provider) as dvt:
-        await ProcessControl(dvt).signal(pid, sig)
+    async with DvtProvider(service_provider) as dvt, ProcessControl(dvt) as process_control:
+        await process_control.signal(pid, sig)
 
 
 @cli.command("kill")
 @async_command
 async def kill(service_provider: ServiceProviderDep, pid: int) -> None:
     """Kill a process by PID."""
-    async with DvtProvider(service_provider) as dvt:
-        await ProcessControl(dvt).kill(pid)
+    async with DvtProvider(service_provider) as dvt, ProcessControl(dvt) as process_control:
+        await process_control.kill(pid)
 
 
 @cli.command()
 @async_command
 async def process_id_for_bundle_id(service_provider: ServiceProviderDep, app_bundle_identifier: str) -> None:
     """Get PID of a bundle identifier (only returns a valid value if its running)."""
-    async with DvtProvider(service_provider) as dvt:
-        print(await ProcessControl(dvt).process_identifier_for_bundle_identifier(app_bundle_identifier))
+    async with DvtProvider(service_provider) as dvt, ProcessControl(dvt) as process_control:
+        print(await process_control.process_identifier_for_bundle_identifier(app_bundle_identifier))
 
 
 async def get_matching_processes(
@@ -268,10 +268,11 @@ async def pkill(
     ] = False,
 ) -> None:
     """Kill all processes containing each expression in their name."""
-    async with DvtProvider(service_provider) as dvt_provider:
-        device_info = DeviceInfo(dvt_provider)
-        process_control = ProcessControl(dvt_provider)
-
+    async with (
+        DvtProvider(service_provider) as dvt_provider,
+        DeviceInfo(dvt_provider) as device_info,
+        ProcessControl(dvt_provider) as process_control,
+    ):
         for expression in expressions:
             matching_name = expression if not bundle else None
             matching_bundle_identifier = expression if bundle else None
@@ -306,9 +307,8 @@ async def launch(
     stream: bool = False,
 ) -> None:
     """Launch a process."""
-    async with DvtProvider(service_provider) as dvt:
+    async with DvtProvider(service_provider) as dvt, ProcessControl(dvt) as process_control:
         parsed_arguments = shlex.split(arguments)
-        process_control = ProcessControl(dvt)
         pid = await process_control.launch(
             bundle_id=parsed_arguments[0],
             arguments=parsed_arguments[1:],
@@ -375,8 +375,7 @@ async def ls(
 @async_command
 async def device_information(service_provider: ServiceProviderDep) -> None:
     """Print system information"""
-    async with DvtProvider(service_provider) as dvt:
-        device_info = DeviceInfo(dvt)
+    async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
         info = {
             "hardware": await device_info.hardware_information(),
             "network": await device_info.network_information(),
@@ -405,8 +404,8 @@ async def netstat(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def dvt_screenshot(service_provider: ServiceProviderDep, out: Path) -> None:
     """Take device screenshot"""
-    async with DvtProvider(service_provider) as dvt:
-        out.write_bytes(await Screenshot(dvt).get_screenshot())
+    async with DvtProvider(service_provider) as dvt, Screenshot(dvt) as screenshot:
+        out.write_bytes(await screenshot.get_screenshot())
 
 
 @cli.command("xcuitest")
@@ -518,8 +517,7 @@ async def xcuitest(
 @async_command
 async def dvt_trace_codes(service_provider: ServiceProviderDep) -> None:
     """Print KDebug trace codes."""
-    async with DvtProvider(service_provider) as dvt:
-        device_info = DeviceInfo(dvt)
+    async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
         print_json({hex(k): v for k, v in (await device_info.trace_codes()).items()})
 
 
@@ -527,8 +525,7 @@ async def dvt_trace_codes(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def dvt_name_for_uid(service_provider: ServiceProviderDep, uid: int) -> None:
     """Print the assiciated username for the given uid."""
-    async with DvtProvider(service_provider) as dvt:
-        device_info = DeviceInfo(dvt)
+    async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
         print(await device_info.name_for_uid(uid))
 
 
@@ -536,8 +533,7 @@ async def dvt_name_for_uid(service_provider: ServiceProviderDep, uid: int) -> No
 @async_command
 async def dvt_name_for_gid(service_provider: ServiceProviderDep, gid: int) -> None:
     """Print the assiciated group name for the given gid."""
-    async with DvtProvider(service_provider) as dvt:
-        device_info = DeviceInfo(dvt)
+    async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
         print(await device_info.name_for_gid(gid))
 
 

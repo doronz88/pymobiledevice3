@@ -10,7 +10,6 @@ from construct_typed import DataclassMixin, TStruct, csfield
 
 from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
-from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
 
 class IpAddressAdapter(Adapter):
@@ -126,32 +125,23 @@ class NetworkMonitorService(DTXService):
         await self.events.put(payload)
 
 
-class NetworkMonitorChannel(DtxService[NetworkMonitorService]):
-    pass
-
-
-class NetworkMonitor:
+class NetworkMonitor(DtxService[NetworkMonitorService]):
     """Iterate over network monitoring events from the Instruments service."""
 
+    SERVICE_CLASS = NetworkMonitorService
     IDENTIFIER = NetworkMonitorService.IDENTIFIER
 
-    def __init__(self, dvt: DtxServiceProvider):
+    def __init__(self, dvt):
+        super().__init__(dvt)
         self.logger = logging.getLogger(__name__)
-        self._provider = dvt
-        self._channel: NetworkMonitorChannel | None = None
-
-    async def _service_ref(self) -> NetworkMonitorService:
-        if self._channel is None:
-            self._channel = NetworkMonitorChannel(self._provider)
-        await self._channel.connect()
-        return self._channel.service
 
     async def __aenter__(self) -> "NetworkMonitor":
-        await (await self._service_ref()).start_monitoring()
+        await self.connect()
+        await self.service.start_monitoring()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        await (await self._service_ref()).stop_monitoring()
+        await self.service.stop_monitoring()
 
     async def __aiter__(self) -> AsyncIterator[NetworkMonitorEvent]:
         """Yield network events as they arrive from the service."""
@@ -197,4 +187,4 @@ class NetworkMonitor:
             yield event
 
     async def _receive_message(self):
-        return await (await self._service_ref()).events.get()
+        return await self.service.events.get()

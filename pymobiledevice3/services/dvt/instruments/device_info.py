@@ -5,7 +5,6 @@ from datetime import datetime
 from pymobiledevice3.dtx import DTXNsError, DTXService, dtx_method
 from pymobiledevice3.dtx.ns_types import NSDate
 from pymobiledevice3.dtx_service import DtxService
-from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import DvtDirListError
 
 
@@ -30,23 +29,37 @@ class DeviceInfoService(DTXService):
     @dtx_method("nameForGID:")
     async def name_for_gid_(self, gid: int) -> str: ...
 
+    @dtx_method("systemInformation")
+    async def system_information(self) -> dict: ...
 
-class DeviceInfoChannel(DtxService[DeviceInfoService]):
-    pass
+    @dtx_method("hardwareInformation")
+    async def hardware_information(self) -> dict: ...
+
+    @dtx_method("networkInformation")
+    async def network_information(self) -> dict: ...
+
+    @dtx_method("machTimeInfo")
+    async def mach_time_info(self) -> dict: ...
+
+    @dtx_method("machKernelName")
+    async def mach_kernel_name(self) -> str: ...
+
+    @dtx_method("kpepDatabase")
+    async def kpep_database(self) -> bytes | None: ...
+
+    @dtx_method("traceCodesFile")
+    async def trace_codes_file(self) -> str: ...
+
+    @dtx_method("sysmonProcessAttributes")
+    async def sysmon_process_attributes(self) -> list[str]: ...
+
+    @dtx_method("sysmonSystemAttributes")
+    async def sysmon_system_attributes(self) -> list[str]: ...
 
 
-class DeviceInfo:
+class DeviceInfo(DtxService[DeviceInfoService]):
+    SERVICE_CLASS = DeviceInfoService
     IDENTIFIER = DeviceInfoService.IDENTIFIER
-
-    def __init__(self, dvt: DtxServiceProvider):
-        self._provider = dvt
-        self._channel: DeviceInfoChannel | None = None
-
-    async def _service_ref(self) -> DeviceInfoService:
-        if self._channel is None:
-            self._channel = DeviceInfoChannel(self._provider)
-        await self._channel.connect()
-        return self._channel.service
 
     async def ls(self, path: str) -> list:
         """
@@ -55,7 +68,7 @@ class DeviceInfo:
         :return: Contents of the directory.
         """
         try:
-            result = await (await self._service_ref()).directory_listing_for_path_(path)
+            result = await self.service.directory_listing_for_path_(path)
         except DTXNsError as e:
             raise DvtDirListError() from e
         if result is None:
@@ -67,14 +80,14 @@ class DeviceInfo:
         get full path for given pid
         :param pid: process pid
         """
-        return await (await self._service_ref()).execname_for_pid_(pid)
+        return await self.service.execname_for_pid_(pid)
 
     async def proclist(self) -> list[dict]:
         """
         Get the process list from the device.
         :return: List of process and their attributes.
         """
-        result = await (await self._service_ref()).running_processes()
+        result = await self.service.running_processes()
         assert isinstance(result, list)
         for process in result:
             if "startDate" in process:
@@ -88,37 +101,40 @@ class DeviceInfo:
         :param pid: process identifier
         :return: whether if it is running or not
         """
-        return await (await self._service_ref()).is_running_pid_(pid)
+        return await self.service.is_running_pid_(pid)
 
     async def system_information(self):
-        return await self.request_information("systemInformation")
+        return await self.service.system_information()
 
     async def hardware_information(self):
-        return await self.request_information("hardwareInformation")
+        return await self.service.hardware_information()
 
     async def network_information(self):
-        return await self.request_information("networkInformation")
+        return await self.service.network_information()
 
     async def mach_time_info(self):
-        return await self.request_information("machTimeInfo")
+        return await self.service.mach_time_info()
 
     async def mach_kernel_name(self) -> str:
-        return await self.request_information("machKernelName")
+        return await self.service.mach_kernel_name()
 
     async def kpep_database(self) -> typing.Optional[dict]:
-        kpep_database = await self.request_information("kpepDatabase")
+        kpep_database = await self.service.kpep_database()
         if kpep_database is not None:
             return plistlib.loads(kpep_database)
 
     async def trace_codes(self):
-        codes_file = await self.request_information("traceCodesFile")
+        codes_file = await self.service.trace_codes_file()
         return {int(k, 16): v for k, v in (line.split() for line in codes_file.splitlines())}
 
-    async def request_information(self, selector_name):
-        return await (await self._service_ref()).do_invoke(selector_name)
+    async def sysmon_process_attributes(self) -> list[str]:
+        return await self.service.sysmon_process_attributes()
+
+    async def sysmon_system_attributes(self) -> list[str]:
+        return await self.service.sysmon_system_attributes()
 
     async def name_for_uid(self, uid: int) -> str:
-        return await (await self._service_ref()).name_for_uid_(uid)
+        return await self.service.name_for_uid_(uid)
 
     async def name_for_gid(self, gid: int) -> str:
-        return await (await self._service_ref()).name_for_gid_(gid)
+        return await self.service.name_for_gid_(gid)

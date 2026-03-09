@@ -5,7 +5,6 @@ from typing import Any, Optional
 
 from pymobiledevice3.dtx import DTXService, PInt32, dtx_method, dtx_on_invoke
 from pymobiledevice3.dtx_service import DtxService
-from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import DisableMemoryLimitError
 from pymobiledevice3.osu.os_utils import get_os_utils
 
@@ -63,22 +62,9 @@ class ProcessControlService(DTXService):
         await self.output_events.put([message, pid, timestamp])
 
 
-class ProcessControlChannel(DtxService[ProcessControlService]):
-    pass
-
-
-class ProcessControl:
+class ProcessControl(DtxService[ProcessControlService]):
+    SERVICE_CLASS = ProcessControlService
     IDENTIFIER = ProcessControlService.IDENTIFIER
-
-    def __init__(self, dvt: DtxServiceProvider):
-        self._provider = dvt
-        self._channel: ProcessControlChannel | None = None
-
-    async def _service_ref(self) -> ProcessControlService:
-        if self._channel is None:
-            self._channel = ProcessControlChannel(self._provider)
-        await self._channel.connect()
-        return self._channel.service
 
     async def signal(self, pid: int, sig: int):
         """
@@ -86,14 +72,14 @@ class ProcessControl:
         :param pid: PID of process to send signal.
         :param sig: SIGNAL to send
         """
-        return await (await self._service_ref()).send_signal_to_pid_(sig, pid)
+        return await self.service.send_signal_to_pid_(sig, pid)
 
     async def disable_memory_limit_for_pid(self, pid: int) -> None:
         """
         Waive memory limit for a given pid
         :param pid: process id.
         """
-        if not await (await self._service_ref()).request_disable_memory_limits_for_pid_(pid):
+        if not await self.service.request_disable_memory_limits_for_pid_(pid):
             raise DisableMemoryLimitError()
 
     async def kill(self, pid: int):
@@ -101,10 +87,10 @@ class ProcessControl:
         Kill a process.
         :param pid: PID of process to kill.
         """
-        await (await self._service_ref()).kill_pid_(pid)
+        await self.service.kill_pid_(pid)
 
     async def process_identifier_for_bundle_identifier(self, app_bundle_identifier: str) -> int:
-        return await (await self._service_ref()).process_identifier_for_bundle_identifier_(app_bundle_identifier)
+        return await self.service.process_identifier_for_bundle_identifier_(app_bundle_identifier)
 
     async def launch(
         self,
@@ -133,9 +119,7 @@ class ProcessControl:
         }
         if extra_options:
             options.update(extra_options)
-        result = await (
-            await self._service_ref()
-        ).launch_suspended_process_with_device_path_bundle_identifier_environment_arguments_options_(
+        result = await self.service.launch_suspended_process_with_device_path_bundle_identifier_environment_arguments_options_(
             "", bundle_id, environment, arguments, options
         )
         assert result
@@ -143,5 +127,5 @@ class ProcessControl:
 
     async def __aiter__(self) -> typing.AsyncGenerator[OutputReceivedEvent, None]:
         while True:
-            value = await (await self._service_ref()).output_events.get()
+            value = await self.service.output_events.get()
             yield OutputReceivedEvent.create(value)

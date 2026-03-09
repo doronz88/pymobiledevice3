@@ -211,8 +211,7 @@ async def debugserver_lldb(
             commands.append(f'script lldb.target.module[0].SetPlatformFileSpec(lldb.SBFileSpec("{remote_path}"))')
 
     if local_app is None:
-        async with DvtProvider(service_provider) as dvt:
-            process_control = ProcessControl(dvt)
+        async with DvtProvider(service_provider) as dvt, ProcessControl(dvt) as process_control:
             bundle_mode_attach_pid = await process_control.process_identifier_for_bundle_identifier(bundle_identifier)
             if bundle_mode_attach_pid <= 0:
                 logger.info("App is not running; launching suspended for debugger attach")

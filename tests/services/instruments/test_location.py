@@ -11,8 +11,8 @@ async def test_set_location(service_provider) -> None:
     """
     # set to liberty island
     try:
-        async with DvtProvider(service_provider) as dvt:
-            await LocationSimulation(dvt).set(40.690008, -74.045843)
+        async with DvtProvider(service_provider) as dvt, LocationSimulation(dvt) as location_simulation:
+            await location_simulation.set(40.690008, -74.045843)
     except InvalidServiceError:
         pytest.skip("Skipping location simulation test since DVT provider service isn't accessible")
 
@@ -23,7 +23,7 @@ async def test_clear_location(service_provider) -> None:
     """
     # set to liberty island
     try:
-        async with DvtProvider(service_provider) as dvt:
-            await LocationSimulation(dvt).clear()
+        async with DvtProvider(service_provider) as dvt, LocationSimulation(dvt) as location_simulation:
+            await location_simulation.clear()
     except InvalidServiceError:
         pytest.skip("Skipping location simulation test since DVT provider service isn't accessible")

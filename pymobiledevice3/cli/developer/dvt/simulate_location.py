@@ -19,8 +19,8 @@ cli = InjectingTyper(
 @async_command
 async def dvt_simulate_location_clear(service_provider: ServiceProviderDep) -> None:
     """Clear currently simulated location"""
-    async with DvtProvider(service_provider) as dvt:
-        await LocationSimulation(dvt).clear()
+    async with DvtProvider(service_provider) as dvt, LocationSimulation(dvt) as location_simulation:
+        await location_simulation.clear()
 
 
 @cli.command("set")
@@ -33,8 +33,8 @@ async def dvt_simulate_location_set(service_provider: ServiceProviderDep, latitu
     For example:
     \b    ... set -- 40.690008 -74.045843 for liberty island
     """
-    async with DvtProvider(service_provider) as dvt:
-        await LocationSimulation(dvt).set(latitude, longitude)
+    async with DvtProvider(service_provider) as dvt, LocationSimulation(dvt) as location_simulation:
+        await location_simulation.set(latitude, longitude)
         OSUTILS.wait_return()
 
 
@@ -50,8 +50,8 @@ async def dvt_simulate_location_play(
     disable_sleep: Annotated[bool, typer.Option()] = False,
 ) -> None:
     """Simulate inputs from a given .gpx file"""
-    async with DvtProvider(service_provider) as dvt:
-        await LocationSimulation(dvt).play_gpx_file(
+    async with DvtProvider(service_provider) as dvt, LocationSimulation(dvt) as location_simulation:
+        await location_simulation.play_gpx_file(
             str(filename),
             disable_sleep=disable_sleep,
             timing_randomness_range=timing_randomness_range,

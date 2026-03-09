@@ -14,8 +14,8 @@ async def test_screenshot(service_provider) -> None:
     :param pymobiledevice3.lockdown.LockdownClient lockdown: Lockdown client.
     """
     try:
-        async with DvtProvider(service_provider) as dvt:
-            screenshot = await Screenshot(dvt).get_screenshot()
+        async with DvtProvider(service_provider) as dvt, Screenshot(dvt) as screenshot_service:
+            screenshot = await screenshot_service.get_screenshot()
     except InvalidServiceError:
         pytest.skip("Skipping screenshot test since DVT provider service isn't accessible")
     assert screenshot.startswith(PNG_HEADER) or screenshot.startswith(TIFF_HEADER)

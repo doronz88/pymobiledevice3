@@ -18,7 +18,8 @@ async def test_ls(dvt) -> None:
     """
     Test listing a directory.
     """
-    ls = set(await DeviceInfo(dvt).ls("/"))
+    async with DeviceInfo(dvt) as device_info:
+        ls = set(await device_info.ls("/"))
     assert {"usr", "bin", "etc", "var", "private", "Applications", "Developer"} <= ls
 
 
@@ -27,8 +28,9 @@ async def test_ls_failure(dvt) -> None:
     """
     Test listing a directory.
     """
-    with pytest.raises(DvtDirListError):
-        await DeviceInfo(dvt).ls("Directory that does not exist")
+    async with DeviceInfo(dvt) as device_info:
+        with pytest.raises(DvtDirListError):
+            await device_info.ls("Directory that does not exist")
 
 
 @pytest.mark.asyncio
@@ -36,7 +38,8 @@ async def test_proclist(dvt) -> None:
     """
     Test listing processes.
     """
-    lockdownd = await get_process_data(DeviceInfo(dvt), "lockdownd")
+    async with DeviceInfo(dvt) as device_info:
+        lockdownd = await get_process_data(device_info, "lockdownd")
     assert lockdownd["realAppName"] == "/usr/libexec/lockdownd"
     assert not lockdownd["isApplication"]
 
@@ -46,7 +49,8 @@ async def test_applist(dvt) -> None:
     """
     Test listing applications.
     """
-    apps = await ApplicationListing(dvt).applist()
+    async with ApplicationListing(dvt) as application_listing:
+        apps = await application_listing.applist()
     safari = next(app for app in apps if app["DisplayName"] == "StocksWidget")
     assert safari["CFBundleIdentifier"] == "com.apple.stocks.widget"
     assert safari["Restricted"] == 1
@@ -58,8 +62,10 @@ async def test_memlimitoff(dvt) -> None:
     """
     Test disabling memory limit.
     """
-    process = await get_process_data(DeviceInfo(dvt), "SpringBoard")
-    await ProcessControl(dvt).disable_memory_limit_for_pid(process["pid"])
+    async with DeviceInfo(dvt) as device_info:
+        process = await get_process_data(device_info, "SpringBoard")
+    async with ProcessControl(dvt) as process_control:
+        await process_control.disable_memory_limit_for_pid(process["pid"])
 
 
 @pytest.mark.asyncio
@@ -67,12 +73,14 @@ async def test_kill(dvt, service_provider) -> None:
     """
     Test killing a process.
     """
-    aggregated = await get_process_data(DeviceInfo(dvt), "SpringBoard")
-    await ProcessControl(dvt).kill(aggregated["pid"])
+    async with DeviceInfo(dvt) as device_info:
+        aggregated = await get_process_data(device_info, "SpringBoard")
+    async with ProcessControl(dvt) as process_control:
+        await process_control.kill(aggregated["pid"])
     # give the os some time to start the process again
     await asyncio.sleep(3)
-    async with type(dvt)(service_provider) as second_dvt:
-        aggregated_after_kill = await get_process_data(DeviceInfo(second_dvt), "SpringBoard")
+    async with type(dvt)(service_provider) as second_dvt, DeviceInfo(second_dvt) as device_info:
+        aggregated_after_kill = await get_process_data(device_info, "SpringBoard")
     if "startDate" in aggregated:
         assert aggregated["startDate"] < aggregated_after_kill["startDate"]
 
@@ -82,10 +90,11 @@ async def test_launch(dvt, service_provider) -> None:
     """
     Test launching a process.
     """
-    pid = await ProcessControl(dvt).launch("com.apple.mobilesafari")
+    async with ProcessControl(dvt) as process_control:
+        pid = await process_control.launch("com.apple.mobilesafari")
     assert pid
-    async with type(dvt)(service_provider) as second_dvt:
-        processes = await DeviceInfo(second_dvt).proclist()
+    async with type(dvt)(service_provider) as second_dvt, DeviceInfo(second_dvt) as device_info:
+        processes = await device_info.proclist()
     for process in processes:
         if pid == process["pid"]:
             assert process["name"] == "MobileSafari"
@@ -96,10 +105,11 @@ async def test_system_information(dvt) -> None:
     """
     Test getting system information.
     """
-    try:
-        system_info = await DeviceInfo(dvt).system_information()
-    except UnrecognizedSelectorError:
-        pytest.skip("device doesn't support this method")
+    async with DeviceInfo(dvt) as device_info:
+        try:
+            system_info = await device_info.system_information()
+        except UnrecognizedSelectorError:
+            pytest.skip("device doesn't support this method")
     assert "_deviceDescription" in system_info and system_info["_deviceDescription"].startswith("Build Version")
 
 
@@ -108,7 +118,8 @@ async def test_hardware_information(dvt) -> None:
     """
     Test getting hardware information.
     """
-    hardware_info = await DeviceInfo(dvt).hardware_information()
+    async with DeviceInfo(dvt) as device_info:
+        hardware_info = await device_info.hardware_information()
     assert hardware_info["numberOfCpus"] > 0
 
 
@@ -117,5 +128,6 @@ async def test_network_information(dvt) -> None:
     """
     Test getting network information.
     """
-    network_info = await DeviceInfo(dvt).network_information()
+    async with DeviceInfo(dvt) as device_info:
+        network_info = await device_info.network_information()
     assert network_info["lo0"] == "Loopback"

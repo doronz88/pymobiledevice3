@@ -25,9 +25,9 @@ class Sysmontap(Tap):
 
     @classmethod
     async def create(cls, dvt) -> "Sysmontap":
-        device_info = DeviceInfo(dvt)
-        process_attributes = list(await device_info.request_information("sysmonProcessAttributes"))
-        system_attributes = list(await device_info.request_information("sysmonSystemAttributes"))
+        async with DeviceInfo(dvt) as device_info:
+            process_attributes = list(await device_info.sysmon_process_attributes())
+            system_attributes = list(await device_info.sysmon_system_attributes())
         return cls(dvt, process_attributes, system_attributes)
 
     async def iter_processes(self):

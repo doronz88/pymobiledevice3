@@ -852,7 +852,8 @@ class CoreProfileSessionTap:
 
     @staticmethod
     async def get_time_config(dvt: DtxServiceProvider):
-        time_info = await DeviceInfo(dvt).mach_time_info()
+        async with DeviceInfo(dvt) as device_info:
+            time_info = await device_info.mach_time_info()
         mach_absolute_time = time_info[0]
         numer = time_info[1]
         denom = time_info[2]
@@ -870,4 +871,5 @@ class CoreProfileSessionTap:
 
     @staticmethod
     async def get_trace_codes(dvt: DtxServiceProvider) -> dict[int, str]:
-        return await DeviceInfo(dvt).trace_codes()
+        async with DeviceInfo(dvt) as device_info:
+            return await device_info.trace_codes()
