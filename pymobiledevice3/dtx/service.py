@@ -345,7 +345,7 @@ class DTXService:
         """Send a server-bound notification and optionally await the reply."""
         return await self._channel.notify(notification, *aux_args, expects_reply=expects_reply)
 
-    async def do_invoke(self, method: str, *args: Any, expects_reply: bool = True) -> Any:
+    async def invoke(self, method: str, *args: Any, expects_reply: bool = True) -> Any:
         """Invoke *method* on this channel and return the decoded reply value.
 
         This is a high-level convenience wrapper around :meth:`DTXChannel.invoke`.
@@ -353,6 +353,10 @@ class DTXService:
         this method for ad-hoc or dynamic selector invocations.
         """
         return await self._channel.invoke(method, *args, expects_reply=expects_reply)
+
+    async def do_invoke(self, method: str, *args: Any, expects_reply: bool = True) -> Any:
+        """Backward-compatible alias for :meth:`invoke`."""
+        return await self.invoke(method, *args, expects_reply=expects_reply)
 
     async def send_data(self, data: bytes, *aux_args: Any, expects_reply: bool = False) -> Any:
         """Send a DATA frame and optionally await the reply."""
@@ -363,7 +367,7 @@ class DTXDynamicService(DTXService):
     """Dynamic proxy that maps attribute access to DTX selector calls.
 
     Any attribute not defined as a class method is routed through
-    ``__getattr__`` → ``__getitem__`` → ``do_invoke``, translating Python
+    ``__getattr__`` → ``__getitem__`` → ``invoke``, translating Python
     names to ObjC selectors via :func:`_python_name_to_objc_selector`.
 
     Incoming dispatches are handled by :meth:`__dynamic_dispatch__`: for each
@@ -373,7 +377,7 @@ class DTXDynamicService(DTXService):
 
     def __getitem__(self, item: str) -> Callable[..., Awaitable[Any]]:
         """Return a coroutine factory that invokes the given ObjC selector."""
-        return partial(self.do_invoke, item)
+        return partial(self.invoke, item)
 
     def __getattr__(self, name: str) -> Callable[..., Awaitable[Any]]:
         """Translate a Python attribute name to an ObjC selector and return a callable."""
@@ -460,7 +464,7 @@ class DTXProxyService(DTXService):
     """Bidirectional proxy that bridges two :class:`DTXService` instances on one channel.
 
     Incoming dispatches are forwarded to *local_service*; outgoing calls
-    (``send_notification``, ``do_invoke``, ``send_data``) are forwarded to
+    (``send_notification``, ``invoke``, ``send_data``) are forwarded to
     *remote_service*.
 
     Sub-services are assigned via the :attr:`local_service` and
@@ -537,9 +541,9 @@ class DTXProxyService(DTXService):
         """Forward a notification through the remote service."""
         return await self.remote_service.send_notification(notification, *aux_args, expects_reply=expects_reply)
 
-    async def do_invoke(self, method: str, *args: Any, expects_reply: bool = True) -> Any:
+    async def invoke(self, method: str, *args: Any, expects_reply: bool = True) -> Any:
         """Forward a selector invocation through the remote service."""
-        return await self.remote_service.do_invoke(method, *args, expects_reply=expects_reply)
+        return await self.remote_service.invoke(method, *args, expects_reply=expects_reply)
 
     async def send_data(self, data: bytes, *aux_args: Any, expects_reply: bool = False) -> Any:
         """Forward a DATA frame through the remote service."""

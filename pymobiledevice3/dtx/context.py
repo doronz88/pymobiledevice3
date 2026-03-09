@@ -40,7 +40,7 @@ class DTXContext(dict):
 
         # Reach up to the proxy from a proxied service:
         proxy = self._ctx["dtxproxy"]
-        await proxy.remote_service.do_invoke("ping")
+        await proxy.remote_service.invoke("ping")
     """
 
     def __init__(self, parent: DTXContext | None = None, **initial: Any) -> None:

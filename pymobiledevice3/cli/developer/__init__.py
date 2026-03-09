@@ -48,7 +48,7 @@ SHELL_USAGE = dedent("""\
     #
     # Raw mode (dynamic service):
     svc = await dtx.open_channel("com.apple.instruments.server.services.deviceinfo")
-    procs = await svc.do_invoke("runningProcesses")
+    procs = await svc.invoke("runningProcesses")
     print(len(procs))
     #
     # Also preloaded:

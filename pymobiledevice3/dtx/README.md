@@ -111,7 +111,7 @@ instead, wrap with one of the Primitive wrappers:
 | `PrimitiveDouble` | `PDouble` | 9 — IEEE-754 double |
 
 ```python
-await svc.do_invoke("requestChannelWithCode:identifier:", PInt32(42), "my.service")
+await svc.invoke("requestChannelWithCode:identifier:", PInt32(42), "my.service")
 ```
 
 If you annotate a `@dtx_method` stub parameter with a Primitive type, the

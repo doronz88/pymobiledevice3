@@ -55,11 +55,11 @@ SHELL_USAGE = """
 channel = await dtx.open_channel("com.apple.instruments.server.services.deviceinfo")
 #
 # Invoke a selector:
-procs = await channel.do_invoke("runningProcesses")
+procs = await channel.invoke("runningProcesses")
 #
 # Open process control and kill a PID:
 pc = await dtx.open_channel("com.apple.instruments.server.services.processcontrol")
-await pc.do_invoke("killPid:", 1234, expects_reply=False)
+await pc.invoke("killPid:", 1234, expects_reply=False)
 """
 
 
@@ -342,7 +342,7 @@ def dvt_shell(service_provider: ServiceProviderDep) -> None:
 
 async def show_dirlist(channel: DTXService, dirname: str, recursive: bool = False) -> None:
     try:
-        filenames = await channel.do_invoke("directoryListingForPath:", dirname)
+        filenames = await channel.invoke("directoryListingForPath:", dirname)
     except DTXNsError:
         return
     if not isinstance(filenames, list):

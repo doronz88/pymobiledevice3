@@ -14,7 +14,7 @@ Typical usage::
     conn = await DTXConnection.from_socket(sock)
     async with conn:
         svc = await conn.open_channel("com.apple.instruments.server.services.deviceinfo")
-        result = await svc.do_invoke("runningProcesses")
+        result = await svc.invoke("runningProcesses")
 """
 
 from __future__ import annotations
@@ -249,7 +249,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
 
             conn.register_service(DeviceInfoService)
             svc = await conn.open_channel(DeviceInfoService.IDENTIFIER)
-            result = await svc.do_invoke("runningProcesses")
+            result = await svc.invoke("runningProcesses")
         """
         identifier: str = identifier_or_cls
         if isinstance(identifier_or_cls, type):
