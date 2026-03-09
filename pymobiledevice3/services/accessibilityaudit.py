@@ -264,10 +264,10 @@ def deserialize_object(d):
 class _AccessibilityAuditProvider(DtxServiceProvider):
     SERVICE_NAME = "com.apple.accessibility.axAuditDaemon.remoteserver"
     RSD_SERVICE_NAME = "com.apple.accessibility.axAuditDaemon.remoteserver.shim.remote"
-    PERFORM_HANDSHAKE = False
 
     def __init__(self, lockdown: LockdownServiceProvider):
         super().__init__(lockdown, strip_ssl=True)
+        self.sent_capabilities = None
 
 
 class AccessibilityAudit:

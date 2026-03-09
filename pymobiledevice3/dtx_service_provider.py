@@ -72,7 +72,6 @@ class DtxServiceProvider:
     RSD_SERVICE_NAME: ClassVar[Optional[str]] = None
     OLD_SERVICE_NAME: ClassVar[Optional[str]] = None
     REGISTER_SERVICES: ClassVar[tuple[type[DTXService], ...]] = ()
-    PERFORM_HANDSHAKE: ClassVar[bool] = True
 
     # ------------------------------------------------------------------
     # Class-level helpers
@@ -136,6 +135,10 @@ class DtxServiceProvider:
         self._dtx: Optional[DTXConnection] = dtx
         self._owns_dtx: bool = dtx is None
         self.logger = logging.getLogger(self.__module__)
+        self.sent_capabilities: Optional[dict] = DTXConnection.DEFAULT_CAPABILITIES.copy()
+        """Capabilities to send during handshake.  Defaults to
+        :attr:`DTXConnection.DEFAULT_CAPABILITIES`.  Set to ``None`` to skip the handshake entirely
+        """
 
     @property
     def dtx(self) -> DTXConnection:
@@ -152,8 +155,9 @@ class DtxServiceProvider:
         if self._dtx is not None:
             return
         dtx = await self._open_dtx_connection(self._service_name, strip_ssl=self._strip_ssl)
+        dtx.sent_capabilities = self.sent_capabilities
         try:
-            await dtx.connect(perform_handshake=self.PERFORM_HANDSHAKE)
+            await dtx.connect()
             if self.REGISTER_SERVICES:
                 dtx.register_services(*self.REGISTER_SERVICES)
             self._dtx = dtx

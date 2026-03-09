@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import logging
 import typing
 from typing import Any, Optional
 
@@ -61,8 +62,25 @@ class ProcessControlService(DTXService):
     async def _on_output_received(self, message: str, pid: int, timestamp: Any) -> None:
         await self.output_events.put([message, pid, timestamp])
 
+    @dtx_method
+    async def startObservingPid_(self, pid: int) -> None: ...
+
+    @dtx_method
+    async def stopObservingPid_(self, pid: int) -> None: ...
+
+    @dtx_on_invoke("processWithPID:terminatedWithExitCode:orCrashingSignal:")
+    async def _on_process_terminated(self, pid: int, exit_code: Optional[int], crashing_signal: Optional[int]) -> None:
+        logger = self._ctx.get("logger") or logging.getLogger(__name__)
+        logger.warning(
+            f"Process with PID {pid} terminated with exit code {exit_code} or crashing signal {crashing_signal}"
+        )
+
 
 class ProcessControl(DtxService[ProcessControlService]):
+    async def connect(self):
+        await super().connect()
+        self._provider.dtx.ctx["logger"] = self.logger.getChild("dtx")
+
     async def signal(self, pid: int, sig: int):
         """
         Send signal to process

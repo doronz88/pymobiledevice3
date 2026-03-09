@@ -23,7 +23,7 @@ import asyncio
 import logging
 import socket as _socket
 from contextlib import suppress
-from typing import Any, Callable, Optional, overload
+from typing import Any, Callable, ClassVar, Optional, overload
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 
@@ -55,6 +55,11 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
     or instantiate directly with an ``asyncio.StreamReader`` / ``asyncio.StreamWriter``
     pair (useful when the caller already owns the streams).
     """
+
+    DEFAULT_CAPABILITIES: ClassVar[dict] = {
+        "com.apple.private.DTXBlockCompression": 0,
+        "com.apple.private.DTXConnection": 1,
+    }
 
     @classmethod
     async def from_socket(cls, sock: _socket.socket) -> DTXConnection:
@@ -93,11 +98,14 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         self._reader_task: asyncio.Task | None = None
         self._closed: bool = False
 
-        # Per-connection context — user populates this before/after connecting.
-        # Channel contexts are children of this.
-        # "connection" is set here so all child channel contexts can reach the
-        # DTXConnection via ctx["connection"] without walking _channel._connection.
         self.ctx: DTXContext = DTXContext(parent=DTX_GLOBAL_CTX, connection=self)
+        """
+        Per-connection :class:`DTXContext` - user populates this before/after connecting.
+
+        Channel contexts are children of this.
+        "connection" is set here so all child channel contexts can reach the
+        :class:`DTXConnection` via `ctx["connection"]`.
+        """
 
         # Per-connection service class registry: identifier → DTXService subclass.
         # DTXConnection instantiates the class with a channel context when needed.
@@ -115,8 +123,21 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         self._service_condition: asyncio.Condition = asyncio.Condition()
 
         # Resolved with the peer's capabilities dict on successful handshake.
-        self._handshake_done: asyncio.Future[dict] = asyncio.get_event_loop().create_future()
-        self.supported_identifiers: dict = {}
+        self._handshake_done: asyncio.Future[Optional[dict]] = asyncio.get_event_loop().create_future()
+        self.sent_capabilities: Optional[dict] = DTXConnection.DEFAULT_CAPABILITIES.copy()
+        """
+        Supported service identifiers published by the peer during handshake.
+
+        Set to None to skip the handshake exchange.
+        """
+        self.supported_identifiers: Optional[dict] = None
+        """
+        Capabilities received from the peer during handshake.
+
+        It's populated when the peer sends the ``_notifyOfPublishedCapabilities:`` message during the handshake.
+        Before the handshake completes, this is ``None``.
+        After a successful handshake, this is a dict of the peer's supported capabilities (e.g. ``{"com.apple.private.DTXBlockCompression": 0, ...}``).
+        """
 
         # Set when aclose() finishes — callers can await wait_disconnected() to know
         # when the TCP connection has actually been torn down (e.g. after a kill signal).
@@ -126,7 +147,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
     # Public lifecycle
     # ------------------------------------------------------------------
 
-    async def connect(self, *, perform_handshake: bool = True) -> None:
+    async def connect(self) -> None:
         """Start the reader loop and optionally perform capability handshake.
 
         Paired with :meth:`aclose`.  Using the async context manager (``async with``)
@@ -147,13 +168,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         """
         self._reader_task = asyncio.create_task(self._process_incoming_fragments(), name="dtx-reader")
         self._ctrl_channel._start()
-        if perform_handshake:
-            await self._perform_handshake()
-        elif not self._handshake_done.done():
-            # Some DTX-like services do not participate in the published-capabilities
-            # handshake. Mark the future complete so reader-loop error handling does
-            # not treat this as a pre-handshake failure.
-            self._handshake_done.set_result({})
+        await self._perform_handshake()
 
     async def aclose(self) -> None:
         """Stop the reader, cancel pending operations, and close all channels.
@@ -524,11 +539,13 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         Sends our capabilities dict and waits until the server's counterpart
         arrives (stored in :attr:`supported_identifiers`).
         """
-        capabilities = {
-            "com.apple.private.DTXBlockCompression": 0,
-            "com.apple.private.DTXConnection": 1,
-        }
-        await self._control_svc.notify_capabilities(capabilities)
+        if self.sent_capabilities is None:
+            self.logger.debug("Skipping capability handshake (sent_capabilities is None)")
+            self.supported_identifiers = None
+            if not self._handshake_done.done():
+                self._handshake_done.set_result(None)
+            return
+        await self._control_svc.notify_capabilities(self.sent_capabilities)
         try:
             await asyncio.wait_for(asyncio.shield(self._handshake_done), timeout=15.0)
         except asyncio.TimeoutError as exc:

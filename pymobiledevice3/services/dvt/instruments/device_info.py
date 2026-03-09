@@ -56,6 +56,11 @@ class DeviceInfoService(DTXService):
     @dtx_method("sysmonSystemAttributes")
     async def sysmon_system_attributes(self) -> list[str]: ...
 
+    # TODO: parsing: https://github.com/frida/frida-core/blob/1bdf9a2fd3171f83bb3dad0d7293b883bb171557/src/fruity/cs-signature.vala#L233
+
+    @dtx_method("symbolicatorSignatureForPid:trackingSelector:")
+    async def symbolicator_signature_for_pid_tracking_selector_(self, pid: int, selector: str) -> typing.Any: ...
+
 
 class DeviceInfo(DtxService[DeviceInfoService]):
     async def ls(self, path: str) -> list:

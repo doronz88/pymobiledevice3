@@ -1,4 +1,5 @@
 import asyncio
+from typing import Optional
 
 import pytest
 
@@ -98,6 +99,50 @@ async def test_launch(dvt, service_provider) -> None:
     for process in processes:
         if pid == process["pid"]:
             assert process["name"] == "MobileSafari"
+
+
+@pytest.mark.asyncio
+@pytest.mark.skip("this test is brittle, yet it was a quick way to test callbacks")
+async def test_observe(dvt, service_provider) -> None:
+    """
+    Test observing a launched process and receiving its termination callback.
+    """
+    process_terminated: asyncio.Future[tuple[int, int, Optional[int]]] = asyncio.get_event_loop().create_future()
+    signature_received: asyncio.Future[dict] = asyncio.get_event_loop().create_future()
+
+    async def on_process_terminated(pid: int, exit_code: int, crashing_signal: Optional[int]) -> None:
+        process_terminated.set_result((pid, exit_code, crashing_signal))
+
+    async def on_tracking_signature(obj: dict) -> None:
+        if not signature_received.done():
+            signature_received.set_result(obj)
+
+    async with ProcessControl(dvt) as process_control, DeviceInfo(dvt) as device_info:
+        process_control.service._on_process_terminated = on_process_terminated
+
+        # manually add a @dtx_on_invoke
+        device_info.service._on_tracking_signature = on_tracking_signature
+        device_info.service._dtx_dispatch["trackProcess:"] = "_on_tracking_signature"
+        device_info.service._channel.on_invoke = device_info.service.__on_dispatch__
+
+        pid = await process_control.launch("com.apple.mobilesafari")
+        assert pid
+        await process_control.service.startObservingPid_(pid)
+        x = await device_info.service.symbolicator_signature_for_pid_tracking_selector_(pid, "trackProcess:")
+        assert x is None or isinstance(x, bytes), (
+            f"Expected symbolicator signature to be bytes or None, got {type(x).__name__}"
+        )
+        obj = await asyncio.wait_for(signature_received, 3)
+        await process_control.kill(pid)
+        assert obj is not None, "Expected a tracking object but got None"
+        assert type(obj) is dict, f"Expected a tracking object of type dict but got {type(obj).__name__}"
+        assert "pid" in obj, "Expected 'pid' key in tracking object"
+        assert "signature" in obj, "Expected 'signature' key in tracking object"
+        assert isinstance(obj["signature"], bytes), (
+            f"Expected 'signature' value to be bytes but got {type(obj['signature']).__name__}"
+        )
+        terminated_pid, _exit_code, _crashing_signal = await asyncio.wait_for(process_terminated, 1)
+        assert terminated_pid == pid
 
 
 @pytest.mark.asyncio
