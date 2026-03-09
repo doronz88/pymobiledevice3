@@ -29,9 +29,6 @@ class NotificationsService(DTXService):
 
 
 class Notifications(DtxService[NotificationsService]):
-    SERVICE_CLASS = NotificationsService
-    IDENTIFIER = NotificationsService.IDENTIFIER
-
     async def __aenter__(self):
         await self.connect()
         await self.service.set_application_state_notifications_enabled_(True)

@@ -21,9 +21,6 @@ class ConditionInducerService(DTXService):
 
 
 class ConditionInducer(DtxService[ConditionInducerService]):
-    SERVICE_CLASS = ConditionInducerService
-    IDENTIFIER = ConditionInducerService.IDENTIFIER
-
     def __init__(self, dvt):
         super().__init__(dvt)
         self.logger = logging.getLogger(__name__)

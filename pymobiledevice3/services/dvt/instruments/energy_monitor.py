@@ -19,9 +19,6 @@ class EnergyMonitorService(DTXService):
 
 
 class EnergyMonitor(DtxService[EnergyMonitorService]):
-    SERVICE_CLASS = EnergyMonitorService
-    IDENTIFIER = EnergyMonitorService.IDENTIFIER
-
     def __init__(self, dvt, pid_list: list[int]) -> None:
         super().__init__(dvt)
         self._pid_list = pid_list

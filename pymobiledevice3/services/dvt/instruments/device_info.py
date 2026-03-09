@@ -58,9 +58,6 @@ class DeviceInfoService(DTXService):
 
 
 class DeviceInfo(DtxService[DeviceInfoService]):
-    SERVICE_CLASS = DeviceInfoService
-    IDENTIFIER = DeviceInfoService.IDENTIFIER
-
     async def ls(self, path: str) -> list:
         """
         List a directory.

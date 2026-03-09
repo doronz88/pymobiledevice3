@@ -63,9 +63,6 @@ class ProcessControlService(DTXService):
 
 
 class ProcessControl(DtxService[ProcessControlService]):
-    SERVICE_CLASS = ProcessControlService
-    IDENTIFIER = ProcessControlService.IDENTIFIER
-
     async def signal(self, pid: int, sig: int):
         """
         Send signal to process

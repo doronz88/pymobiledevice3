@@ -14,9 +14,6 @@ class LocationSimulationService(DTXService):
 
 
 class LocationSimulation(DtxService[LocationSimulationService], LocationSimulationBase):
-    SERVICE_CLASS = LocationSimulationService
-    IDENTIFIER = LocationSimulationService.IDENTIFIER
-
     def __init__(self, dvt):
         DtxService.__init__(self, dvt)
         LocationSimulationBase.__init__(self)

@@ -10,9 +10,6 @@ class ScreenshotService(DTXService):
 
 
 class Screenshot(DtxService[ScreenshotService]):
-    SERVICE_CLASS = ScreenshotService
-    IDENTIFIER = ScreenshotService.IDENTIFIER
-
     async def get_screenshot(self) -> bytes:
         """Get device screenshot."""
         return await self.service.take_screenshot()

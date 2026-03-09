@@ -12,9 +12,6 @@ class ApplicationListingService(DTXService):
 
 
 class ApplicationListing(DtxService[ApplicationListingService]):
-    SERVICE_CLASS = ApplicationListingService
-    IDENTIFIER = ApplicationListingService.IDENTIFIER
-
     async def applist(self) -> list:
         """
         Get the applications list from the device.

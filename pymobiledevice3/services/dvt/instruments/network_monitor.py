@@ -128,9 +128,6 @@ class NetworkMonitorService(DTXService):
 class NetworkMonitor(DtxService[NetworkMonitorService]):
     """Iterate over network monitoring events from the Instruments service."""
 
-    SERVICE_CLASS = NetworkMonitorService
-    IDENTIFIER = NetworkMonitorService.IDENTIFIER
-
     def __init__(self, dvt):
         super().__init__(dvt)
         self.logger = logging.getLogger(__name__)

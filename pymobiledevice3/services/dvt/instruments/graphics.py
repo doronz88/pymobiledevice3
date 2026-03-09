@@ -29,9 +29,6 @@ class GraphicsService(DTXService):
 
 
 class Graphics(DtxService[GraphicsService]):
-    SERVICE_CLASS = GraphicsService
-    IDENTIFIER = GraphicsService.IDENTIFIER
-
     async def __aenter__(self):
         await self.connect()
         await self.service.start_sampling_at_time_interval_(0.0)
