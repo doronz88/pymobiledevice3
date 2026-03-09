@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, cli_loop, print_json
 from pymobiledevice3.services.house_arrest import HouseArrestService
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 
@@ -83,12 +83,17 @@ async def install(
 
 
 @cli.command("afc")
-@async_command
-async def afc(
+def afc(
     service_provider: ServiceProviderDep, bundle_id: str, documents: Annotated[bool, typer.Option()] = False
 ) -> None:
     """Open an AFC shell into the app container; pass --documents for Documents-only."""
-    raise RuntimeError("AFC shell is not available in async-only mode")
+    service = cli_loop.run_until_complete(
+        HouseArrestService.create(lockdown=service_provider, bundle_id=bundle_id, documents_only=documents)
+    )
+    try:
+        service.shell()
+    finally:
+        cli_loop.run_until_complete(service.close())
 
 
 @cli.command("pull")
