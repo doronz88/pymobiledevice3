@@ -10,27 +10,24 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from .exceptions import DTXProtocolError
+from .fragment import DTXFragment
+from .fragmenter import DTXFragmenter
 from .message import (
-    FRAGMENT_HEADER_MIN_SIZE,
-    MAX_BUFFERED_COUNT,
-    MAX_BUFFERED_SIZE,
-    MAX_FRAGMENT_SIZE,
-    MAX_MESSAGE_SIZE,
-    MESSAGE_PAYLOAD_HEADER_SIZE,
-    DTXFragment,
-    DTXFragmenter,
     DTXMessage,
     DTXMessageType,
-    DTXProtocolError,
     DTXTransportFlags,
-    dtx_fragment_header,
-    dtx_payload_header,
-    format_dtx_message,
 )
 from .ns_types import NSError
 
 if TYPE_CHECKING:
     from .channel import DTXChannel
+
+MAX_BUFFERED_COUNT: int = 100
+"""Maximum number of in-flight multi-fragment messages buffered simultaneously."""
+
+MAX_BUFFERED_SIZE: int = 30 * 1024 * 1024  # 30 MiB
+"""Maximum total bytes buffered across all in-flight multi-fragment messages."""
 
 
 class _DTXReaderMixin:
@@ -49,7 +46,7 @@ class _DTXReaderMixin:
     - ``_closed`` — :class:`bool`
     - ``logger`` — :class:`logging.Logger`
     - ``close()`` — coroutine (provided by :class:`DTXConnection`)
-    - ``send_reply_error()`` — coroutine (provided by :class:`_DTXSenderMixin`)
+    - ``_schedule_reply_error()`` — schedule an error reply (provided by :class:`_DTXSenderMixin`)
     """
 
     # -- attributes provided by DTXConnection (declared for type checkers) --
@@ -69,9 +66,7 @@ class _DTXReaderMixin:
 
     def _log_message(self, direction: str, message: DTXMessage) -> None:
         """Best-effort DEBUG log line for a fully assembled DTXMessage."""
-        if not self.logger.isEnabledFor(logging.DEBUG):
-            return
-        self.logger.debug("%-8s %s", direction, format_dtx_message(message))
+        self.logger.debug("%-8s %r", direction, message)
 
     # ------------------------------------------------------------------
     # Fragment reader loop
@@ -81,12 +76,11 @@ class _DTXReaderMixin:
         """Background task: read fragments until the connection closes or errors."""
         try:
             while True:
-                fragment = await self._read_fragment()
+                fragment = await DTXFragment.read(self._reader)
 
                 if fragment.count == 1:
                     # Single-fragment message: process immediately.
-                    raw = bytearray(fragment.payload)  # type: ignore[arg-type]
-                    await self._process_message(raw, fragment)
+                    await self._process_message(fragment.payload, fragment)
                     continue
 
                 if fragment.index == 0:
@@ -98,7 +92,6 @@ class _DTXReaderMixin:
                     fragmenter = DTXFragmenter(
                         fragment,
                         self._total_buffered,
-                        MAX_MESSAGE_SIZE,
                         MAX_BUFFERED_SIZE,
                     )
                     self._fragmenters[fragment.identifier] = fragmenter
@@ -126,163 +119,74 @@ class _DTXReaderMixin:
                     self._handshake_done.set_exception(exc)
             await self.close()  # type: ignore[attr-defined]
 
-    async def _read_fragment(self) -> DTXFragment:
-        """Read exactly one DTX fragment from the transport stream."""
-        header_bytes = await self._reader.readexactly(FRAGMENT_HEADER_MIN_SIZE)
-        parsed = dtx_fragment_header.parse(header_bytes)
-
-        if parsed.cb < FRAGMENT_HEADER_MIN_SIZE:
-            raise DTXProtocolError(f"Fragment header cb={parsed.cb} is below minimum {FRAGMENT_HEADER_MIN_SIZE}")
-
-        # Skip any extra header bytes beyond the known 32-byte minimum.
-        # The frida-core reference implementation does the same (see read_fragment).
-        extra = parsed.cb - FRAGMENT_HEADER_MIN_SIZE
-        if extra > 0:
-            await self._reader.readexactly(extra)
-
-        fragment = DTXFragment(
-            index=parsed.index,
-            count=parsed.count,
-            data_size=parsed.data_size,
-            identifier=parsed.identifier,
-            conversation_index=parsed.conversation_index,
-            channel_code=parsed.channel_code,
-            flags=parsed.flags,
-        )
-
-        # The first fragment of a multi-fragment message carries no body bytes —
-        # data_size encodes the *total assembled size* for pre-allocation only.
-        # All other fragments must carry a non-empty body.
-        if fragment.count > 1 and fragment.index == 0:
-            fragment.payload = None
-        else:
-            if fragment.data_size == 0:
-                raise DTXProtocolError("Empty fragment body is not allowed")
-            if fragment.data_size > MAX_FRAGMENT_SIZE:
-                raise DTXProtocolError(
-                    f"Fragment data_size {fragment.data_size} exceeds MAX_FRAGMENT_SIZE {MAX_FRAGMENT_SIZE}"
-                )
-            fragment.payload = await self._reader.readexactly(fragment.data_size)
-
-        return fragment
-
     # ------------------------------------------------------------------
     # Message processing
     # ------------------------------------------------------------------
 
     async def _process_message(self, raw_message: bytearray, fragment: DTXFragment) -> None:
         """Parse *raw_message* and dispatch it to the appropriate channel or reply waiter."""
-        if len(raw_message) < MESSAGE_PAYLOAD_HEADER_SIZE:
-            raise DTXProtocolError("Malformed message: too short for payload header")
+        # this will riase DTXProtocolError if the message is malformed in any way (including unknown message type)
+        message = DTXMessage.parse(fragment, raw_message)
 
-        mv = memoryview(raw_message)
-        pheader = dtx_payload_header.parse(bytes(mv[:MESSAGE_PAYLOAD_HEADER_SIZE]))
-
-        try:
-            msg_type = DTXMessageType(pheader.msg_type)
-        except ValueError as e:
-            if fragment.flags & DTXTransportFlags.EXPECTS_REPLY == DTXTransportFlags.EXPECTS_REPLY:
-                err = NSError(
-                    1, "DTXMessage", {"NSLocalizedDescription": f"Unrecognized message type: {pheader.msg_type}"}
-                )
-                await self.send_reply_error(fragment.channel_code, fragment.identifier, err)  # type: ignore[attr-defined]
-            raise DTXProtocolError(
-                f"Unknown DTXMessageType value: {pheader.msg_type} err:{e} "
-                f"(fragment=id:{fragment.identifier} conv:{fragment.conversation_index} ch:{fragment.channel_code})"
-            ) from e
-
-        if msg_type == DTXMessageType.COMPRESSED:
-            if fragment.flags & DTXTransportFlags.EXPECTS_REPLY == DTXTransportFlags.EXPECTS_REPLY:
+        if message.type == DTXMessageType.COMPRESSED:
+            if DTXTransportFlags.EXPECTS_REPLY in fragment.flags:
                 err = NSError(
                     1,
                     "DTXMessage",
                     {"NSLocalizedDescription": "Compressed messages are not supported in this implementation"},
                 )
-                await self.send_reply_error(fragment.channel_code, fragment.identifier, err)  # type: ignore[attr-defined]
+                self._schedule_reply_error(  # type: ignore[attr-defined]
+                    fragment.channel_code, fragment.identifier, fragment.conversation_index + 1, err
+                )
             raise DTXProtocolError(
                 f"Received compressed fragment: identifier={fragment.identifier}, "
                 f"conversation_index={fragment.conversation_index}, channel_code={fragment.channel_code}"
             )
 
-        aux_size: int = pheader.aux_size
-        total_size: int = pheader.total_size
-        message_size = len(raw_message)
-
-        if (
-            aux_size > message_size
-            or total_size > message_size
-            or total_size != message_size - MESSAGE_PAYLOAD_HEADER_SIZE
-            or aux_size > total_size
-        ):
-            raise DTXProtocolError(
-                f"Malformed message: inconsistent size fields "
-                f"(message_size={message_size}, aux_size={aux_size}, total_size={total_size}, "
-                f"fragment=id:{fragment.identifier} conv:{fragment.conversation_index} ch:{fragment.channel_code})"
-            )
-
-        aux_end = MESSAGE_PAYLOAD_HEADER_SIZE + aux_size
-        # Slices share the backing bytearray — no extra copy.
-        aux_data = mv[MESSAGE_PAYLOAD_HEADER_SIZE:aux_end]
-        payload_data = mv[aux_end : aux_end + (total_size - aux_size)]
-
-        # Apply channel-code sign correction (frida-core dtx.vala, process_message).
-        # Server-initiated dispatches (conversation_index == 0) arrive with a negative
-        # channel_code on the wire; negate it to recover the registered positive code.
-        channel_code = fragment.channel_code
-        if fragment.conversation_index % 2 == 0:
-            channel_code = -channel_code
-
-        is_notification = fragment.conversation_index == 0
-
-        message = DTXMessage(
-            type=msg_type,
-            identifier=fragment.identifier,
-            conversation_index=fragment.conversation_index,
-            channel_code=channel_code,
-            transport_flags=DTXTransportFlags(fragment.flags),
-            aux_data=aux_data,
-            payload_data=payload_data,
-        )
-
         self._log_message("received", message)
 
-        if not is_notification and msg_type in (DTXMessageType.OK, DTXMessageType.OBJECT, DTXMessageType.ERROR):
+        is_notification = fragment.conversation_index == 0
+        if message.conversation_index % 2 == 0:
+            message.channel_code = -message.channel_code
+
+        if not is_notification and message.type in (DTXMessageType.OK, DTXMessageType.OBJECT, DTXMessageType.ERROR):
             # Correlate to a waiting reply future.
             if f := self._pending_replies.get(message.identifier):
                 if not f.done():
                     f.set_result(message)
                 else:
                     self.logger.debug(
-                        "Received duplicate reply message with id %d on channel %d",
-                        message.identifier,
-                        channel_code,
+                        "Received duplicate reply message %r",
+                        message,
                     )
             else:
                 self.logger.debug(
-                    "Received uncorrelated reply message with id %d on channel %d",
-                    message.identifier,
-                    channel_code,
+                    "Received uncorrelated reply message %r",
+                    message,
                 )
             return
 
-        channel = self._channels.get(channel_code)
+        channel = self._channels.get(message.channel_code)
         if channel is None:
             # The channel may not be registered yet: the remote end may have sent
             # messages on a reverse channel (e.g. -1) immediately after requesting
             # it, before our channel-0 handler task had a chance to run
             # _on_channel_request.  Yield once so pending tasks can register it.
             await asyncio.sleep(0)
-            channel = self._channels.get(channel_code)
+            channel = self._channels.get(message.channel_code)
         if channel is None:
+            self.logger.warning(
+                "No channel registered for code %d - dropping message %r", message.channel_code, message
+            )
             if DTXTransportFlags.EXPECTS_REPLY in message.transport_flags:
-                self.logger.warning(
-                    "No channel registered for code %d after yield - dropping EXPECTS_REPLY message"
-                    " (remote will not receive ACK): %s",
-                    channel_code,
-                    format_dtx_message(message),
+                error = NSError(
+                    1,
+                    "DTXMessage",
+                    {"NSLocalizedDescription": f"No channel registered for code {message.channel_code}"},
                 )
-            else:
-                self.logger.debug("No channel registered for code %d - dropping message", channel_code)
+                self._schedule_reply_error(  # type: ignore[attr-defined]
+                    message.channel_code, message.identifier, message.conversation_index + 1, error
+                )
             return
 
         channel._enqueue_message(message)

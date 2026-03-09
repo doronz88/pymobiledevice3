@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import io
 import logging
-from collections.abc import Sequence
 from typing import Any, ClassVar
 
 from bpylist2 import archiver
@@ -47,6 +46,7 @@ PRIMITIVE_DICTIONARY_HEADER_SIZE: int = 16
 """Byte length of the PrimitiveDictionary wire header (two u64 fields)."""
 
 logger = logging.getLogger(__name__)
+_MISSING = object()  # sentinel for "key not found" in dict lookups
 
 
 # ---------------------------------------------------------------------------
@@ -261,9 +261,13 @@ class PrimitiveDictionary(Construct):
     Keys are decoded/encoded with :class:`_PrimitiveValueCon` — they can be any
     primitive value (or ``None`` for an index/positional marker).
 
-    Parse → list of ``(key, value)`` tuples
+    The DTX aux dictionary allows duplicate keys (positional args all use ``None``
+    as the key).  The parsed representation therefore uses a ``dict[Any, list[Any]]``
+    mapping each key to the ordered list of values seen for that key.
 
-    Build ← list of ``(key, value)`` tuples (same as parsed form).
+    Parse → ``dict[Any, list[Any]]``
+
+    Build ← ``dict[Any, list[Any]]`` — for each key the values are emitted in list order.
     """
 
     # Base magic nibble. Upper bits carry optional flags observed as 0x100, 0x200 …
@@ -272,25 +276,25 @@ class PrimitiveDictionary(Construct):
 
     _item: ClassVar[_PrimitiveValueCon] = _PrimitiveValueCon()
 
-    def _parse(self, stream, context, path) -> list[tuple[Any, Any]]:
+    def _parse(self, stream, context, path) -> dict[Any, list[Any]]:
         magic = Int64ul._parse(stream, context, path)
         if (magic & 0xFF) != self._MAGIC_BASE:
             raise ConstructError(f"PrimitiveDictionary: unexpected magic {magic:#x}", path)
         body_len = Int64ul._parse(stream, context, path)
         body = io.BytesIO(stream.read(body_len))
-        entries = []
+        result: dict[Any, list[Any]] = {}
         while body.tell() < body_len:
             key = self._item._parse(body, context, path)
             value = self._item._parse(body, context, path)
-            entries.append((key, value))
+            result.setdefault(key, []).append(value)
+        return result
 
-        return entries
-
-    def _build(self, obj, stream, context, path):
+    def _build(self, obj: dict[Any, list[Any]], stream, context, path):
         buf = io.BytesIO()
-        for key, value in obj:
-            self._item._build(key, buf, context, path)
-            self._item._build(value, buf, context, path)
+        for key, values in obj.items():
+            for value in values:
+                self._item._build(key, buf, context, path)
+                self._item._build(value, buf, context, path)
         body = buf.getvalue()
         Int64ul._build(self._DEFAULT_MAGIC, stream, context, path)
         Int64ul._build(len(body), stream, context, path)
@@ -299,45 +303,3 @@ class PrimitiveDictionary(Construct):
 
     def _sizeof(self, context, path):
         raise SizeofError("variable-length primitive dictionary")
-
-
-# Module-level singleton used by _args_to_aux_bytes and parse_aux.
-_primitive_dict = PrimitiveDictionary()
-
-
-# ---------------------------------------------------------------------------
-# Public helpers
-# ---------------------------------------------------------------------------
-
-
-def _args_to_aux_bytes(args: Sequence[Any]) -> bytes:
-    """Serialise a positional argument list to a DTX primitive-dictionary bytestring.
-
-    Returns an empty ``bytes`` when *args* is empty.  Each element is encoded
-    by :class:`_PrimitiveValueCon`: :class:`_PrimitiveBase` instances use their
-    own wire type; everything else is NSKeyedArchive-encoded as BUFFER (type 2).
-    """
-    if not args:
-        return b""
-    buf = io.BytesIO()
-    _primitive_dict._build([(None, a) for a in args], buf, {}, "")
-    return buf.getvalue()
-
-
-def parse_aux(data: memoryview | bytes) -> list:
-    """Parse a DTX primitive dictionary and return its values as a plain list.
-
-    Each element is one of :class:`PrimitiveInt32`, :class:`PrimitiveInt64`,
-    :class:`PrimitiveDouble`, :class:`PrimitiveString`, a decoded NSKeyedArchive
-    object (BUFFER), or ``None`` (NULL).  The 16-byte dictionary header is consumed
-    by :class:`PrimitiveDictionary`.
-    """
-    if not data:
-        return []
-    if len(data) < PRIMITIVE_DICTIONARY_HEADER_SIZE:
-        return []
-    try:
-        d = _primitive_dict._parse(io.BytesIO(data), {}, "")
-        return [value for _, value in d]
-    except Exception:
-        return []

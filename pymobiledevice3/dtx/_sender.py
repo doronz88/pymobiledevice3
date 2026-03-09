@@ -9,26 +9,18 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Sequence
-from typing import Any
-
-from bpylist2 import archiver
+from typing import Any, Optional
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 
+from .exceptions import DTXProtocolError
+from .fragment import DTXTransportFlags
+from .fragmenter import DTXFragmenter
 from .message import (
-    DTX_FRAGMENT_MAGIC,
-    FRAGMENT_HEADER_MIN_SIZE,
-    MAX_FRAGMENT_SIZE,
-    MESSAGE_PAYLOAD_HEADER_SIZE,
     DTXMessage,
     DTXMessageType,
-    DTXProtocolError,
-    DTXTransportFlags,
-    dtx_fragment_header,
-    dtx_payload_header,
 )
 from .ns_types import NSError
-from .primitives import _args_to_aux_bytes
 
 
 class _DTXSenderMixin:
@@ -50,6 +42,7 @@ class _DTXSenderMixin:
     _send_lock: asyncio.Lock
     _next_msg_id: int
     _pending_replies: dict[int, asyncio.Future]
+    _pending_outgoing_replies: list[asyncio.Future]
     _closed: bool
     logger: logging.Logger
 
@@ -59,49 +52,35 @@ class _DTXSenderMixin:
 
     async def _send_message(self, message: DTXMessage) -> None:
         """Serialise and write *message* to the transport as a single fragment."""
-        assert len(message.aux_data) + len(message.payload_data) + MESSAGE_PAYLOAD_HEADER_SIZE <= MAX_FRAGMENT_SIZE, (
-            "Multi-fragment messages are not yet supported in this implementation"
-        )
-
         if self._closed:
             raise ConnectionTerminatedError("Cannot send message: connection is closed")
-
-        pheader = dtx_payload_header.build({
-            "msg_type": int(message.type),
-            "flags_a": 0,
-            "flags_b": 0,
-            "reserved": 0,
-            "aux_size": len(message.aux_data),
-            "total_size": len(message.aux_data) + len(message.payload_data),
-        })
-
-        wire_code = message.channel_code if message.conversation_index % 2 == 0 else -message.channel_code
 
         async with self._send_lock:
             if message.identifier == 0:
                 message.identifier = self._next_msg_id
                 self._next_msg_id += 1
+
+            wire_code = message.channel_code if message.conversation_index % 2 == 0 else -message.channel_code
+
             if DTXTransportFlags.EXPECTS_REPLY in message.transport_flags:
                 future: asyncio.Future = asyncio.get_running_loop().create_future()
                 self._pending_replies[message.identifier] = future
-            mheader = dtx_fragment_header.build({
-                "magic": DTX_FRAGMENT_MAGIC,
-                "cb": FRAGMENT_HEADER_MIN_SIZE,
-                "index": 0,
-                "count": 1,
-                "data_size": len(message.aux_data) + len(message.payload_data) + MESSAGE_PAYLOAD_HEADER_SIZE,
-                "identifier": message.identifier,
-                "conversation_index": message.conversation_index,
-                "channel_code": wire_code,
-                "flags": int(message.transport_flags),
-            })
-            self._writer.write(mheader)
-            self._writer.write(pheader)
-            self._writer.write(message.aux_data)
-            self._writer.write(message.payload_data)
+            try:
+                async for fragment in DTXFragmenter.fragment(*message.chunks()):
+                    fragment.identifier = message.identifier
+                    fragment.conversation_index = message.conversation_index
+                    fragment.channel_code = wire_code
+                    fragment.flags = message.transport_flags
+
+                    for chunk in fragment.chunks():
+                        self._writer.write(chunk)
+            except Exception as e:
+                self._pending_replies.pop(message.identifier, None)
+                raise DTXProtocolError(f"Failed to serialise DTXMessage: {e}") from e
             try:
                 await self._writer.drain()
             except (ConnectionResetError, BrokenPipeError, OSError) as e:
+                self._pending_replies.pop(message.identifier, None)
                 raise ConnectionTerminatedError("Connection lost while sending") from e
 
             self._log_message("sent", message)  # type: ignore[attr-defined]
@@ -122,15 +101,14 @@ class _DTXSenderMixin:
         Returns the assigned message identifier.
         """
         assert payload is not None, "Notifications must have a payload"
-        payload_bytes = archiver.archive(payload)
 
         msg = DTXMessage(
             type=DTXMessageType.ERROR if isinstance(payload, NSError) else DTXMessageType.OBJECT,
             channel_code=channel_code,
             transport_flags=DTXTransportFlags.EXPECTS_REPLY if expects_reply else DTXTransportFlags.NONE,
-            aux_data=memoryview(_args_to_aux_bytes(aux_args)),
-            payload_data=memoryview(payload_bytes),
         )
+        msg.payload = payload
+        msg.aux = aux_args
         await self._send_message(msg)
         return msg.identifier
 
@@ -149,9 +127,9 @@ class _DTXSenderMixin:
             type=DTXMessageType.DATA,
             channel_code=channel_code,
             transport_flags=DTXTransportFlags.EXPECTS_REPLY if expects_reply else DTXTransportFlags.NONE,
-            aux_data=memoryview(_args_to_aux_bytes(aux_args)),
-            payload_data=memoryview(data),
         )
+        msg.payload = data
+        msg.aux = aux_args
         await self._send_message(msg)
         return msg.identifier
 
@@ -166,15 +144,13 @@ class _DTXSenderMixin:
 
         Returns the assigned message identifier.
         """
-        payload_bytes = archiver.archive(method)
-
         msg = DTXMessage(
             type=DTXMessageType.DISPATCH,
             channel_code=channel_code,
             transport_flags=DTXTransportFlags.EXPECTS_REPLY if expects_reply else DTXTransportFlags.NONE,
-            aux_data=memoryview(_args_to_aux_bytes(args)),
-            payload_data=memoryview(payload_bytes),
         )
+        msg.payload = method
+        msg.aux = args
         await self._send_message(msg)
         return msg.identifier
 
@@ -185,22 +161,17 @@ class _DTXSenderMixin:
         conv_idx: int,
         msg_type: DTXMessageType,
         payload: Any = None,
-        aux_args: Sequence[Any] = (),
+        aux_args: Optional[Sequence[Any]] = None,
     ) -> None:
         """Send a typed reply (OK / OBJECT / ERROR) for a received request."""
-        assert msg_type in (DTXMessageType.OK, DTXMessageType.OBJECT, DTXMessageType.ERROR), (
-            f"Invalid reply message type: {msg_type}"
-        )
         assert conv_idx, f"Replies must have a non-zero conversation index (got {conv_idx})"
         if msg_type == DTXMessageType.OK:
             assert payload is None, "OK replies must not have a payload"
-            assert not aux_args, "OK replies must not have aux arguments"
+            assert aux_args is None, "OK replies must not have aux arguments"
         elif msg_type == DTXMessageType.ERROR:
             assert payload is not None, "ERROR replies must have a payload"
-            assert not aux_args, "ERROR replies must not have aux arguments"
+            assert aux_args is None, "ERROR replies must not have aux arguments"
             assert isinstance(payload, NSError), f"ERROR reply payload must be an NSError, got {type(payload)}"
-
-        payload_bytes = archiver.archive(payload) if payload is not None else b""
 
         msg = DTXMessage(
             type=msg_type,
@@ -208,9 +179,9 @@ class _DTXSenderMixin:
             conversation_index=conv_idx,
             channel_code=channel_code,
             transport_flags=DTXTransportFlags.NONE,
-            aux_data=memoryview(_args_to_aux_bytes(aux_args)),
-            payload_data=memoryview(payload_bytes),
         )
+        msg.payload = payload
+        msg.aux = aux_args
         await self._send_message(msg)
 
     # ------------------------------------------------------------------
@@ -218,7 +189,12 @@ class _DTXSenderMixin:
     # ------------------------------------------------------------------
 
     async def send_reply(
-        self, channel_code: int, msg_id: int, conv_idx: int, payload: Any = None, *aux_args: Any
+        self,
+        channel_code: int,
+        msg_id: int,
+        conv_idx: int,
+        payload: Any = None,
+        aux_args: Optional[Sequence[Any]] = None,
     ) -> None:
         """Send a success (OBJECT) reply carrying *payload*."""
         await self._send_reply(channel_code, msg_id, conv_idx, DTXMessageType.OBJECT, payload, aux_args)
@@ -230,6 +206,12 @@ class _DTXSenderMixin:
     async def send_reply_error(self, channel_code: int, msg_id: int, conv_idx: int, error: NSError) -> None:
         """Send an error (ERROR) reply with *error* as the payload."""
         await self._send_reply(channel_code, msg_id, conv_idx, DTXMessageType.ERROR, error)
+
+    def _schedule_reply_error(self, channel_code: int, msg_id: int, conv_idx: int, error: NSError) -> None:
+        """Schedule an error reply to be sent"""
+        t = asyncio.create_task(self.send_reply_error(channel_code, msg_id, conv_idx, error))
+        self._pending_outgoing_replies.append(t)
+        t.add_done_callback(self._pending_outgoing_replies.remove)
 
     # ------------------------------------------------------------------
     # Reply correlation

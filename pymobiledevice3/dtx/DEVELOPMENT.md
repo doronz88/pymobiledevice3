@@ -26,7 +26,7 @@ reliable byte stream (TCP socket).  Each fragment has:
 Offset  Size  Type      Field              Notes
 ------  ----  --------  -----------------  --------------------------------
  0       4    u32le     magic              0x1F3D5B79
- 4       4    u32le     cb                 total header byte length (≥ 32)
+ 4       4    u32le     header_size        total header byte length (≥ 32)
  8       2    u16le     index              0-based fragment index
 10       2    u16le     count              total fragment count for message
 12       4    u32le     data_size          body byte count (or total assembled
@@ -37,8 +37,8 @@ Offset  Size  Type      Field              Notes
 28       4    u32le     flags              DTXTransportFlags bitmask
 ```
 
-If `cb > 32` the extra `cb - 32` bytes are trailing header extensions and
-must be consumed (skipped) before reading the body.
+If `header_size > 32` the extra `header_size - 32` bytes are trailing header
+extensions and must be consumed (skipped) before reading the body.
 
 ---
 

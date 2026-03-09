@@ -6,7 +6,7 @@ Import everything you need from here::
         DTXConnection, DTXService, DTXChannel,
         dtx_method, dtx_on_invoke, dtx_on_notification,
         PInt32, PStr,
-        DTXNsError,
+        DTXNsError, DTXProtocolError,
     )
 
 For protocol internals and the full class hierarchy see the sub-modules:
@@ -24,7 +24,7 @@ from .connection import DTXConnection
 from .context import DTX_GLOBAL_CTX, DTXContext
 
 # Exceptions
-from .message import DTXNsError, DTXProtocolError
+from .exceptions import DTXNsError, DTXProtocolError
 
 # Common NS types returned by services
 from .ns_types import NSURL, NSUUID, NSError

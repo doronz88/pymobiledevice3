@@ -22,20 +22,15 @@ from contextlib import suppress
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable
 
-from bpylist2 import archiver
-
 from pymobiledevice3.exceptions import ConnectionTerminatedError, UnrecognizedSelectorError
 
+from .exceptions import DTXNSCodingError, DTXNsError, DTXProtocolError
 from .message import (
     DTXMessage,
     DTXMessageType,
-    DTXNsError,
-    DTXProtocolError,
     DTXTransportFlags,
-    format_dtx_message,
 )
 from .ns_types import NSError
-from .primitives import parse_aux
 
 if TYPE_CHECKING:
     from .connection import DTXConnection
@@ -119,7 +114,7 @@ class DTXChannel:
         if reply.type not in (DTXMessageType.OK, DTXMessageType.OBJECT, DTXMessageType.ERROR):
             raise DTXProtocolError(f"Unexpected reply type {reply.type!r} for {context} on channel {self.code}")
         if reply.type == DTXMessageType.ERROR:
-            error: NSError = archiver.unarchive(bytes(reply.payload_data))
+            error: NSError = reply.payload
             if not isinstance(error, NSError):
                 raise DTXProtocolError(
                     f"Expected NSError in ERROR reply for {context} on channel {self.code}, got {error!r}"
@@ -130,58 +125,41 @@ class DTXChannel:
                 raise UnrecognizedSelectorError(error.user_info["NSLocalizedDescription"])
             raise DTXNsError(error)
         if reply.type == DTXMessageType.OBJECT:
-            return archiver.unarchive(bytes(reply.payload_data))
+            return reply.payload
         return None  # OK
 
     async def _handle_dispatch(self, message: DTXMessage) -> Any:
         """Incoming DISPATCH: method name in payload, args in aux."""
         if self.on_invoke is None:
-            with suppress(Exception):
-                self.logger.warning(
-                    "Received DISPATCH message on channel %d with no handler: method=%r aux=%r",
-                    self.code,
-                    archiver.unarchive(bytes(message.payload_data)),
-                    parse_aux(message.aux_data),
-                )
+            self.logger.warning("Received DISPATCH message on channel %d with no handler: %r", self.code, message)
             return NSError(
                 1, "DTXMessage", {"NSLocalizedDescription": "No dispatch handler registered for this channel"}
             )
 
-        method = archiver.unarchive(bytes(message.payload_data))
+        method = message.payload
         if not isinstance(method, str):
-            with suppress(Exception):
-                self.logger.warning(
-                    "Received DISPATCH message on channel %d with non-string method name: payload=%r aux=%r",
-                    self.code,
-                    method,
-                    parse_aux(message.aux_data),
-                )
+            self.logger.warning(
+                "Received DISPATCH message on channel %d with non-string method name: %r", self.code, message
+            )
             return NSError(1, "DTXMessage", {"NSLocalizedDescription": f"Expected method name string, got {method!r}"})
-        aux = parse_aux(message.aux_data)
 
-        return await self.on_invoke(method, aux)
+        return await self.on_invoke(method, message.aux)
 
     async def _handle_notification(self, message: DTXMessage) -> Any:
         """Incoming server-initiated OBJECT / OK (conversation_index == 0)."""
         if self.on_notification is None:
-            with suppress(Exception):
-                self.logger.warning(
-                    "Received notification message on channel %d with no handler: payload=%r aux=%r",
-                    self.code,
-                    archiver.unarchive(bytes(message.payload_data)),
-                    parse_aux(message.aux_data),
-                )
+            self.logger.warning("Received notification message on channel %d with no handler: %r", self.code, message)
             return NSError(
                 1, "DTXMessage", {"NSLocalizedDescription": "No notification handler registered for this channel"}
             )
 
         if message.payload_data:
-            payload = archiver.unarchive(bytes(message.payload_data))
+            payload = message.payload
         else:
             self.logger.warning(
-                "Received notification message on channel %d with empty payload: aux=%r",
+                "Received notification message on channel %d with empty payload: %r",
                 self.code,
-                parse_aux(message.aux_data),
+                message,
             )
             payload = None
 
@@ -191,10 +169,9 @@ class DTXChannel:
         """Incoming DATA message: payload is opaque bytes, aux may have metadata."""
         if self.on_data is None:
             self.logger.warning(
-                "Received DATA message on channel %d with no handler: len(payload)=%d aux=%r",
+                "Received DATA message on channel %d with no handler: %r",
                 self.code,
-                len(message.payload_data),
-                parse_aux(message.aux_data),
+                message,
             )
             return NSError(1, "DTXMessage", {"NSLocalizedDescription": "No data handler registered for this channel"})
 
@@ -217,7 +194,8 @@ class DTXChannel:
                 res = await self._handle_dispatch(message)
             elif msg_type in (DTXMessageType.OK, DTXMessageType.OBJECT, DTXMessageType.ERROR):
                 assert message.conversation_index == 0, (
-                    f"Received reply message with conversation_index {message.conversation_index} != 0 on channel {self.code}"
+                    f"Replies shall be handled by DTXConnection, unexpected conversation_index "
+                    f"{message.conversation_index} in message {message!r}"
                 )
                 res = await self._handle_notification(message)
             elif msg_type == DTXMessageType.DATA:
@@ -233,6 +211,9 @@ class DTXChannel:
         except DTXProtocolError as e:
             self.logger.exception("Protocol error in message handling for channel %d: message=%r", self.code, message)
             res = NSError(1, "DTXMessage", {"NSLocalizedDescription": f"Protocol error in message handling: {e!r}"})
+        except DTXNSCodingError as e:
+            self.logger.exception("NSCoding error in message handling for channel %d: message=%r", self.code, message)
+            res = NSError(1, "DTXMessage", {"NSLocalizedDescription": f"NSCoding error in message handling: {e!r}"})
         except DTXNsError as e:
             res = e.error
         except Exception as e:
@@ -240,31 +221,24 @@ class DTXChannel:
             res = NSError(1, "DTXMessage", {"NSLocalizedDescription": f"Error in message handler: {e!r}"})
         finally:
             if DTXTransportFlags.EXPECTS_REPLY in message.transport_flags:
-                msg_type = (
-                    DTXMessageType.OK
-                    if res is None
-                    else (DTXMessageType.OBJECT if not isinstance(res, NSError) else DTXMessageType.ERROR)
-                )
-                msg = DTXMessage(
-                    type=msg_type,
-                    identifier=message.identifier,
-                    conversation_index=message.conversation_index + 1,
-                    channel_code=self.code,
-                    transport_flags=DTXTransportFlags.NONE,
-                    aux_data=memoryview(b""),
-                    payload_data=memoryview(archiver.archive(res) if res is not None else b""),
-                )
-                await self._connection._send_message(msg)
+                conv_idx = message.conversation_index + 1
+                if res is None:
+                    await self._connection.send_reply_ack(self.code, message.identifier, conv_idx)
+                elif isinstance(res, NSError):
+                    await self._connection.send_reply_error(self.code, message.identifier, conv_idx, res)
+                else:
+                    await self._connection.send_reply(self.code, message.identifier, conv_idx, res)
 
     def _handle_failure(self, exc: Exception, msg: DTXMessage) -> None:
         if isinstance(exc, ConnectionTerminatedError):
-            if self.logger.isEnabledFor(logging.WARNING):
-                self.logger.warning("received connection termination: %s", format_dtx_message(msg))
+            self.logger.warning("received connection termination: %r", msg)
             self._shutdown("connection terminated")
+        elif isinstance(exc, DTXProtocolError):
+            self.logger.exception("protocol error in message handling: %r", msg, exc_info=exc)
+            self.logger.error("DTXProtocol errors are unrecoverable, closing connection")
+            asyncio.get_event_loop().call_soon(partial(asyncio.create_task, self._connection.aclose()))
         else:
-            self.logger.exception(
-                "Error handling message on channel %d: message=%r", self.code, format_dtx_message(msg), exc_info=exc
-            )
+            self.logger.exception("Error handling message on channel %d: message=%r", self.code, msg, exc_info=exc)
 
     def _handle_done(self, fut: asyncio.Future, msg: DTXMessage) -> None:
         self._pending_tasks.discard(fut)

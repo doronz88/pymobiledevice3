@@ -31,7 +31,9 @@ from ._reader import _DTXReaderMixin
 from ._sender import _DTXSenderMixin
 from .channel import DTXChannel
 from .context import DTX_GLOBAL_CTX, DTXContext
-from .message import DTXFragmenter, DTXMessage, DTXProtocolError
+from .exceptions import DTXProtocolError
+from .fragmenter import DTXFragmenter
+from .message import DTXMessage
 from .ns_types import NSError
 from .service import DTX_SERVICE_T, DTXControlService, DTXDynamicService, DTXProxyService, DTXService
 
@@ -79,6 +81,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         self._next_msg_id: int = 1
         self._send_lock = asyncio.Lock()
         self._pending_replies: dict[int, asyncio.Future[DTXMessage]] = {}
+        self._pending_outgoing_replies: list[asyncio.Future] = []
 
         # Channel registry
         self._channels: dict[int, DTXChannel] = {}
@@ -186,6 +189,10 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
             if not f.done():
                 f.set_exception(ConnectionTerminatedError("Connection closed"))
         self._pending_replies.clear()
+        # these Futures have done callback whch removes them from the list, so we don't need to clear the list here
+        for f in list(self._pending_outgoing_replies):
+            if not f.done():
+                f.cancel()
 
         self._disconnected.set()
 
