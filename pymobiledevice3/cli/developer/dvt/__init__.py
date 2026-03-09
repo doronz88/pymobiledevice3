@@ -27,7 +27,7 @@ from pymobiledevice3.exceptions import UnrecognizedSelectorError
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.condition_inducer import ConditionInducer
-from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
+from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo, DeviceInfoService
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
 from pymobiledevice3.services.dvt.instruments.graphics import Graphics
@@ -367,7 +367,7 @@ async def ls(
 ) -> None:
     """List directory"""
     async with DvtProvider(service_provider) as dvt:
-        channel = await dvt.dtx.open_channel(DeviceInfo.IDENTIFIER)
+        channel = await dvt.dtx.open_channel(DeviceInfoService.IDENTIFIER)
         await show_dirlist(channel, path, recursive=recursive)
 
 
