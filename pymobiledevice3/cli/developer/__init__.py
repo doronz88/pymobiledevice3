@@ -37,11 +37,12 @@ SHELL_USAGE = dedent("""\
     # - dtx: DTXConnection
     #
     # Quick wins:
-    async with DeviceInfo(provider) as device_info:
-        procs = await device_info.proclist()
-        print(procs[:3])
+    device_info = DeviceInfo(provider)
+    await device_info.connect()
+    procs = await device_info.proclist()
+    print(procs[:3])
     #
-    async with ProcessControl(provider) as process_control:
+    async with ProcessControl(provider):
         pid = await process_control.process_identifier_for_bundle_identifier("com.apple.Preferences")
         print(pid)
     #
