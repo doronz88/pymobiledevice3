@@ -17,12 +17,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from pymobiledevice3.dtx import (
-    NSUUID,
-    DTXService,
-    dtx_method,
-    dtx_on_invoke,
-)
+from pymobiledevice3.dtx import NSUUID, DTXService, NSError, dtx_method, dtx_on_invoke
 from pymobiledevice3.services.dvt.testmanaged.xctest_types import (
     XCActivityRecord,
     XCTCapabilities,
@@ -57,7 +52,7 @@ class XCUITestListener:
     synchronous or ``async``.  The default implementations are no-ops.
     """
 
-    # --- plan -----------------------------------------------------------
+    # --- plan ---------------------------------------------------------------
 
     async def did_begin_executing_test_plan(self) -> None:
         """Invoked when the test runner begins executing the test plan."""
@@ -65,7 +60,7 @@ class XCUITestListener:
     async def did_finish_executing_test_plan(self) -> None:
         """Invoked when the test runner has finished the entire test plan."""
 
-    # --- bundle ---------------------------------------------------------
+    # --- bundle (protocol initialization) -----------------------------------
 
     async def test_bundle_ready(self) -> None:
         """Invoked when the test bundle signals readiness (old protocol)."""
@@ -82,7 +77,7 @@ class XCUITestListener:
     async def test_bundle_ready_with_protocol_version(self, protocol_version: int, minimum_version: int) -> None:
         """Invoked when the test bundle reports its protocol version."""
 
-    # --- suite ----------------------------------------------------------
+    # --- suite lifecycle ---------------------------------------------------
 
     async def test_suite_did_start(self, suite: str, started_at: str) -> None:
         """Invoked when a test suite starts."""
@@ -96,12 +91,17 @@ class XCUITestListener:
         unexpected: int,
         test_duration: float,
         total_duration: float,
+        skipped: int,
+        expected_failures: int,
+        uncaught_exceptions: int,
     ) -> None:
         """Invoked when a test suite finishes."""
 
-    # --- cases ----------------------------------------------------------
+    # --- case lifecycle ---------------------------------------------------
 
-    async def test_case_did_start(self, test_class: str, method: str) -> None:
+    async def test_case_did_start(
+        self, test_class: str, method: str, configuration: Optional[XCTestCaseRunConfiguration] = None
+    ) -> None:
         """Invoked when a single test case starts."""
 
     async def test_case_did_finish(self, result: XCTestCaseResult) -> None:
@@ -113,7 +113,20 @@ class XCUITestListener:
     async def test_case_did_stall(self, test_class: str, method: str, file: str, line: int) -> None:
         """Invoked when a test case stalls on the main thread."""
 
-    # --- misc -----------------------------------------------------------
+    # --- case activities --------------------------------------------------
+
+    async def test_case_will_start_activity(self, test_class: str, method: str, activity: XCActivityRecord) -> None:
+        """Invoked when a test case is about to start an activity."""
+
+    async def test_case_did_finish_activity(self, test_class: str, method: str, activity: XCActivityRecord) -> None:
+        """Invoked when a test case finishes an activity."""
+
+    async def test_method_did_measure_metric(
+        self, test_class: str, method: str, metric: str, file: str, line: int
+    ) -> None:
+        """Invoked when a test method measures a performance metric."""
+
+    # --- logging ---------------------------------------------------------
 
     async def log_message(self, message: str) -> None:
         """Invoked for informational log messages from the runner."""
@@ -121,8 +134,27 @@ class XCUITestListener:
     async def log_debug_message(self, message: str) -> None:
         """Invoked for debug log messages from the runner."""
 
+    # --- protocol --------------------------------------------------------
+
     async def exchange_protocol_version(self, current: int, minimum: int) -> None:
         """Invoked when the runner negotiates protocol versions."""
+
+    # --- XCTest (modern iOS 14+ lifecycle) --------------------------------
+
+    async def did_begin_initializing_for_ui_testing(self) -> None:
+        """Invoked when initialization for UI testing begins."""
+
+    async def did_form_plan(self, data: Any) -> None:
+        """Invoked when the test runner forms a test plan."""
+
+    async def get_progress_for_launch(self, token: Any) -> None:
+        """Invoked to get progress for a launch operation."""
+
+    async def initialization_for_ui_testing_did_fail(self, error: NSError) -> None:
+        """Invoked when UI testing initialization fails."""
+
+    async def did_fail_to_bootstrap(self, error: NSError) -> None:
+        """Invoked when the test runner fails to bootstrap."""
 
 
 # ---------------------------------------------------------------------------
@@ -246,13 +278,16 @@ class XCTestManager_IDEInterface(DTXService):
         li = self._listener()
         if li is not None:
             await li.test_suite_did_finish(
-                suite,
-                finished_at,
-                run_count,
-                failures,
-                unexpected,
-                test_duration,
-                total_duration,
+                suite=suite,
+                finished_at=finished_at,
+                run_count=run_count,
+                failures=failures,
+                unexpected=unexpected,
+                test_duration=test_duration,
+                total_duration=total_duration,
+                skipped=0,
+                expected_failures=0,
+                uncaught_exceptions=0,
             )
 
     # --- case lifecycle -------------------------------------------------
@@ -309,28 +344,63 @@ class XCTestManager_IDEInterface(DTXService):
     @dtx_on_invoke
     async def _XCT_didBeginInitializingForUITesting(self) -> None:
         logger.debug("[IDE] didBeginInitializingForUITesting")
+        li = self._listener()
+        if li is not None:
+            await li.did_begin_initializing_for_ui_testing()
 
     @dtx_on_invoke
     async def _XCT_didFormPlanWithData_(self, data: Any) -> None:
         logger.debug("[IDE] didFormPlanWithData: %s", data)
+        li = self._listener()
+        if li is not None:
+            await li.did_form_plan(data)
 
     @dtx_on_invoke
     async def _XCT_getProgressForLaunch_(self, token: Any) -> None:
         logger.debug("[IDE] getProgressForLaunch: %s", token)
+        li = self._listener()
+        if li is not None:
+            await li.get_progress_for_launch(token)
 
     @dtx_on_invoke
-    async def _XCT_initializationForUITestingDidFailWithError_(self, error: Any) -> None:
+    async def _XCT_initializationForUITestingDidFailWithError_(self, error: NSError) -> None:
         logger.error("[IDE] initializationForUITestingDidFailWithError: %s", error)
+        li = self._listener()
+        if li is not None:
+            await li.initialization_for_ui_testing_did_fail(error)
+
+    @dtx_on_invoke
+    async def _XCT_didFailToBootstrapWithError_(self, error: NSError) -> None:
+        logger.error("[IDE] didFailToBootstrapWithError: %s", error)
+        li = self._listener()
+        if li is not None:
+            await li.did_fail_to_bootstrap(error)
 
     @dtx_on_invoke
     async def _XCT_testSuiteWithIdentifier_didStartAt_(self, identifier: XCTTestIdentifier, started_at: str) -> None:
         suite = identifier.test_class
-        logger.info("[IDE] testSuiteWithIdentifier: %r didStartAt: %s", suite, started_at)
+        logger.info("[IDE] testSuiteWithIdentifier: %r didStartAt: %s", identifier, started_at)
         if not suite or suite == "All tests":
             return
         li = self._listener()
         if li is not None:
             await li.test_suite_did_start(suite, started_at)
+
+    @dtx_on_invoke
+    async def _XCT_testMethod_ofClass_didMeasureMetric_file_line_(
+        self, method: str, test_class: str, metric: str, file: str, line: int
+    ) -> None:
+        logger.info(
+            "[IDE] testMethod: %s ofClass: %s didMeasureMetric: %s at %s:%d",
+            method,
+            test_class,
+            metric,
+            file,
+            line,
+        )
+        li = self._listener()
+        if li is not None:
+            await li.test_method_did_measure_metric(test_class, method, metric, file, line)
 
     @dtx_on_invoke
     async def _XCT_testSuiteWithIdentifier_didFinishAt_runCount_skipCount_failureCount_expectedFailureCount_uncaughtExceptionCount_testDuration_totalDuration_(
@@ -347,11 +417,15 @@ class XCTestManager_IDEInterface(DTXService):
     ) -> None:
         suite = identifier.test_class
         logger.info(
-            "[IDE] testSuiteWithIdentifier: %r didFinishAt: %s run=%d fail=%d dur=%.3fs",
-            suite,
+            "[IDE] testSuiteWithIdentifier: %r didFinishAt: %s run=%d skip=%d fail=%d exp_fail=%d, unc=%d dur=%.3fs total=%.3fs",
+            identifier,
             finished_at,
             run_count,
+            skip_count,
             failure_count,
+            expected_failure_count,
+            uncaught_exception_count,
+            test_duration,
             total_duration,
         )
         if not suite or suite == "All tests":
@@ -359,13 +433,16 @@ class XCTestManager_IDEInterface(DTXService):
         li = self._listener()
         if li is not None:
             await li.test_suite_did_finish(
-                suite,
-                finished_at,
-                run_count,
-                failure_count,
-                uncaught_exception_count,
-                test_duration,
-                total_duration,
+                suite=suite,
+                finished_at=finished_at,
+                run_count=run_count,
+                failures=failure_count,
+                unexpected=failure_count - expected_failure_count,
+                test_duration=test_duration,
+                total_duration=total_duration,
+                skipped=skip_count,
+                expected_failures=expected_failure_count,
+                uncaught_exceptions=uncaught_exception_count,
             )
 
     @dtx_on_invoke
@@ -424,12 +501,36 @@ class XCTestManager_IDEInterface(DTXService):
         self, identifier: XCTTestIdentifier, activity: XCActivityRecord
     ) -> None:
         logger.debug("[IDE] testCase: %s willStartActivity: %s", identifier, activity)
+        li = self._listener()
+        if li is not None:
+            await li.test_case_will_start_activity(identifier.test_class, identifier.test_method or "", activity)
 
     @dtx_on_invoke
     async def _XCT_testCaseWithIdentifier_didFinishActivity_(
         self, identifier: XCTTestIdentifier, activity: XCActivityRecord
     ) -> None:
         logger.debug("[IDE] testCase: %s didFinishActivity: %s", identifier, activity)
+        li = self._listener()
+        if li is not None:
+            await li.test_case_did_finish_activity(identifier.test_class, identifier.test_method or "", activity)
+
+    @dtx_on_invoke
+    async def _XCT_testCase_method_didFinishActivity_(
+        self, test_class: str, method: str, activity: XCActivityRecord
+    ) -> None:
+        logger.debug("[IDE] testCase: %s/%s didFinishActivity: %s", test_class, method, activity)
+        li = self._listener()
+        if li is not None:
+            await li.test_case_did_finish_activity(test_class, method, activity)
+
+    @dtx_on_invoke
+    async def _XCT_testCase_method_willStartActivity_(
+        self, test_class: str, method: str, activity: XCActivityRecord
+    ) -> None:
+        logger.debug("[IDE] testCase: %s/%s willStartActivity: %s", test_class, method, activity)
+        li = self._listener()
+        if li is not None:
+            await li.test_case_will_start_activity(test_class, method, activity)
 
 
 class XCTestDriverInterface(DTXService):

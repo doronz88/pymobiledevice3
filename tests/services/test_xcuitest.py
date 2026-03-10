@@ -47,7 +47,17 @@ class _RecordingListener(XCUITestListener):
         self.events.append(f"suite_start:{suite}")
 
     async def test_suite_did_finish(
-        self, suite, finished_at, run_count, failures, unexpected, test_duration, total_duration
+        self,
+        suite,
+        finished_at,
+        run_count,
+        failures,
+        unexpected,
+        test_duration,
+        total_duration,
+        skipped,
+        expected_failures,
+        uncaught_exceptions,
     ) -> None:
         self.events.append(f"suite_finish:{suite}")
 
