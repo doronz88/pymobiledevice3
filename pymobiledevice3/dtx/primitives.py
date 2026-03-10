@@ -28,14 +28,18 @@ import io
 import logging
 from typing import Any, ClassVar
 
-from bpylist2 import archiver
 from construct import (
+    Bytes,
     Construct,
     ConstructError,
+    Container,
+    ExplicitError,
     Float64l,
     Int32ul,
     Int64ul,
     SizeofError,
+    stream_seek,
+    stream_tell,
 )
 
 # ---------------------------------------------------------------------------
@@ -46,32 +50,59 @@ PRIMITIVE_DICTIONARY_HEADER_SIZE: int = 16
 """Byte length of the PrimitiveDictionary wire header (two u64 fields)."""
 
 logger = logging.getLogger(__name__)
-_MISSING = object()  # sentinel for "key not found" in dict lookups
-
-
-# ---------------------------------------------------------------------------
-# Primitive value types  (wire codec + Python type in one class)
-# ---------------------------------------------------------------------------
+# Registry: wire type code → _PrimitiveBase subclass.
+_PRIMITIVE_REGISTRY: dict[int, type[_PrimitiveBase]] = {}
+# Base magic mask. Upper bits carry optional flags observed as 0x100, 0x200 …
+_PRIMITIVE_TYPE_MASK = 0xFF
 
 
 class _PrimitiveBase:
     """Mixin that gives a Python value class its DTX wire type code and codec.
 
     Subclasses inherit from both :class:`_PrimitiveBase` and a Python builtin
-    (``int``, ``float``, ``str``, or ``bytes``) so they can be used transparently
-    wherever that builtin is expected while still carrying encoding intent.
+    (``int``, ``float``, ``str``, or ``bytes``, ``list``, ``dict``) so they
+    can be used transparently wherever that builtin is expected while
+    still carrying encoding intent.
     """
 
     _type_code: ClassVar[int]
 
     @classmethod
-    def _read(cls, stream: io.RawIOBase, context: Any, path: str) -> _PrimitiveBase:
+    def _read(cls, stream, context, path) -> _PrimitiveBase:
         """Parse this value's bytes from *stream* and return a new instance."""
         raise NotImplementedError
 
-    def _write(self, stream: io.RawIOBase, context: Any, path: str) -> None:
+    def _write(self, stream, context, path) -> None:
         """Write the encoded value bytes to *stream* (type tag NOT included)."""
         raise NotImplementedError
+
+
+class PrimitiveValue(Construct):
+    """Construct for a single DTX primitive: u32 type tag followed by value bytes."""
+
+    def _parse(self, stream, context, path) -> Any:
+        context = context or {}
+        raw_type_code = Int32ul._parse(stream, context, path)
+        context["type_code_and_flags"] = raw_type_code
+        type_code = raw_type_code & _PRIMITIVE_TYPE_MASK
+
+        cls = _PRIMITIVE_REGISTRY.get(type_code)
+        if cls is None:
+            raise ConstructError(f"unknown primitive type code {raw_type_code:#x}", path)
+        return cls._read(stream, context, path)
+
+    def _build(self, obj, stream, context, path):
+        if not isinstance(obj, _PrimitiveBase):
+            raise ConstructError(
+                f"Expected a _PrimitiveBase instance for PrimitiveValue, got {type(obj).__name__}", path
+            )
+        return obj._write(stream, context, path)
+
+    def _sizeof(self, context, path):
+        raise SizeofError("variable-length primitive")
+
+
+_primitive_value_con = PrimitiveValue()
 
 
 class PrimitiveNull(_PrimitiveBase):
@@ -84,11 +115,17 @@ class PrimitiveNull(_PrimitiveBase):
     _type_code = 10
 
     @classmethod
-    def _read(cls, stream: io.RawIOBase, context: Any, path: str) -> None:  # type: ignore[override]
-        return None  # no value bytes follow the type tag
+    def _read(cls, stream, context, path) -> None:  # type: ignore[override]
+        return PNULL  # return the singleton instance for convenience
 
-    def _write(self, stream: io.RawIOBase, context: Any, path: str) -> None:
-        pass  # no value bytes to write
+    def _write(self, stream, context, path) -> None:
+        Int32ul._build(self._type_code, stream, context, path)  # type tag only, no value bytes
+
+    def __eq__(self, value):
+        return type(self) is type(value)  # all instances are equal, since there is no value data
+
+    def __hash__(self):
+        return id(PNULL)
 
 
 class PrimitiveString(_PrimitiveBase, str):
@@ -101,14 +138,16 @@ class PrimitiveString(_PrimitiveBase, str):
     _type_code = 1
 
     @classmethod
-    def _read(cls, stream: io.RawIOBase, context: Any, path: str) -> PrimitiveString:
+    def _read(cls, stream, context, path) -> PrimitiveString:
         length = Int32ul._parse(stream, context, path)
         return cls(stream.read(length).decode("utf-8", errors="replace"))
 
-    def _write(self, stream: io.RawIOBase, context: Any, path: str) -> None:
+    def _write(self, stream, context, path) -> None:
+        Int32ul._build(self._type_code, stream, context, path)
         raw = str(self).encode("utf-8")
-        Int32ul._build(len(raw), stream, context, path)
-        stream.write(raw)
+        length = len(raw)
+        Int32ul._build(length, stream, context, path)
+        Bytes(length)._build(raw, stream, context, path)
 
 
 class PrimitiveInt32(_PrimitiveBase, int):
@@ -122,10 +161,11 @@ class PrimitiveInt32(_PrimitiveBase, int):
     _type_code = 3
 
     @classmethod
-    def _read(cls, stream: io.RawIOBase, context: Any, path: str) -> PrimitiveInt32:
+    def _read(cls, stream, context, path) -> PrimitiveInt32:
         return cls(Int32ul._parse(stream, context, path))
 
-    def _write(self, stream: io.RawIOBase, context: Any, path: str) -> None:
+    def _write(self, stream, context, path) -> None:
+        Int32ul._build(self._type_code, stream, context, path)
         Int32ul._build(int(self), stream, context, path)
 
 
@@ -135,44 +175,29 @@ class PrimitiveInt64(_PrimitiveBase, int):
     _type_code = 6
 
     @classmethod
-    def _read(cls, stream: io.RawIOBase, context: Any, path: str) -> PrimitiveInt64:
+    def _read(cls, stream, context, path) -> PrimitiveInt64:
         return cls(Int64ul._parse(stream, context, path))
 
-    def _write(self, stream: io.RawIOBase, context: Any, path: str) -> None:
+    def _write(self, stream, context, path) -> None:
+        Int32ul._build(self._type_code, stream, context, path)
         Int64ul._build(int(self), stream, context, path)
 
 
 class PrimitiveBuffer(_PrimitiveBase, bytes):
-    """Raw bytes buffer (wire type 2).
-
-    Unlike plain Python objects (which are NSKeyedArchive-encoded before being
-    sent as BUFFER type 2), :class:`PrimitiveBuffer` sends the raw bytes
-    verbatim (length-prefixed), without archiving.
-
-    On the parse path, wire type 2 is first attempted as NSKeyedArchive; only
-    on decode failure are the raw bytes returned as a :class:`PrimitiveBuffer`.
-    Use :data:`PBuf` as a shorter alias.
-    """
+    """Raw bytes buffer (wire type 2)."""
 
     _type_code = 2
 
     @classmethod
-    def _read(cls, stream: io.RawIOBase, context: Any, path: str) -> Any:
+    def _read(cls, stream, context, path) -> PrimitiveBuffer:
         length = Int32ul._parse(stream, context, path)
-        if length == 0:
-            return cls(b"")
-        raw = stream.read(length)
-        if raw.startswith(b"bplist"):
-            try:
-                return archiver.unarchive(raw)
-            except Exception as e:
-                logger.error("Failed to decode NSKeyedArchive in PrimitiveBuffer: error=%s, buf[:100]=%s", e, raw[:100])
+        return cls(stream.read(length))
 
-        return cls(raw)
-
-    def _write(self, stream: io.RawIOBase, context: Any, path: str) -> None:
-        Int32ul._build(len(self), stream, context, path)
-        stream.write(bytes(self))
+    def _write(self, stream, context, path) -> None:
+        Int32ul._build(self._type_code, stream, context, path)
+        length = len(self)
+        Int32ul._build(length, stream, context, path)
+        Bytes(length)._build(bytes(self), stream, context, path)
 
 
 class PrimitiveDouble(_PrimitiveBase, float):
@@ -181,11 +206,71 @@ class PrimitiveDouble(_PrimitiveBase, float):
     _type_code = 9
 
     @classmethod
-    def _read(cls, stream: io.RawIOBase, context: Any, path: str) -> PrimitiveDouble:
+    def _read(cls, stream, context, path) -> PrimitiveDouble:
         return cls(Float64l._parse(stream, context, path))
 
-    def _write(self, stream: io.RawIOBase, context: Any, path: str) -> None:
+    def _write(self, stream, context, path) -> None:
+        Int32ul._build(self._type_code, stream, context, path)
         Float64l._build(float(self), stream, context, path)
+
+
+class PrimitiveDictionary(_PrimitiveBase, dict[Any, list[Any]]):
+    """A primitive dictionaary (wire type 0xF0). Use :data:`PDict` as a shorter alias.
+
+    Wire layout::
+        u32  type_anf_flags    0xF0 | optional flags in upper bits (0x100, 0x200 …)
+        u32  unknown_flags     0x0
+        u64  body_length       byte count of everything that follows
+        [key_primitive, value_primitive] x N entries
+    """
+
+    _type_code = 0xF0
+    _HEADER_SIZE: ClassVar[int] = 16
+    _DEFAULT_MAGIC: ClassVar[int] = 0x1F0  # 0x100 | 0xF0 — seen most often
+
+    @classmethod
+    def _read(cls, stream, context, path) -> dict[Any, list[Any]]:
+        unknown_flags = Int32ul._parse(stream, context, path)
+        body_len = Int64ul._parse(stream, context, path)
+        begin = stream_tell(stream, path)
+        result: dict[Any, list[Any]] = {}
+        subcontext = Container()
+        subcontext._ = context
+        i = 0
+        while stream_tell(stream, path) - begin < body_len:
+            key = _primitive_value_con._parse(stream, subcontext, f"{path}[{i}].key")
+            value = _primitive_value_con._parse(stream, subcontext, f"{path}[{i}].value")
+            result.setdefault(key, []).append(value)
+            i += 1
+        if unknown_flags != 0:
+            logger.warning(f"PrimitiveDictionary: non-zero unknown flags {unknown_flags:#x} at {path}: {result!r}")
+        return result
+
+    def _write(self, stream, context, path):
+        if any(not isinstance(values, list) for values in self.values()):
+            raise ExplicitError(
+                f"Expected a dict[Any, list[Any]] for PrimitiveDictionary, got dict[Any, {type(next(iter(self.values()))).__name__}]: {self!r}",
+                path,
+            )
+
+        start = stream_tell(stream, path)
+        stream_seek(stream, self._HEADER_SIZE, io.SEEK_CUR, path)  # reserve space for header
+        begin = stream_tell(stream, path)
+        i = 0
+        for key, values in self.items():
+            for value in values:
+                _primitive_value_con._build(key, stream, context, f"{path}[{i}].key")
+                _primitive_value_con._build(value, stream, context, f"{path}[{i}].value")
+                i += 1
+        end = stream_tell(stream, path)
+        body_len = end - begin
+        stream_seek(stream, start, io.SEEK_SET, path)
+        Int32ul._build(
+            self._DEFAULT_MAGIC, stream, context, path
+        )  # most observed magic value with type code and flags combined
+        Int32ul._build(0, stream, context, path)  # unknown flags, always 0 in observed samples
+        Int64ul._build(body_len, stream, context, path)
+        stream_seek(stream, end, io.SEEK_SET, path)
 
 
 # Convenience short aliases
@@ -195,111 +280,20 @@ PInt32 = PrimitiveInt32
 PInt64 = PrimitiveInt64
 PDouble = PrimitiveDouble
 PStr = PrimitiveString
+PDict = PrimitiveDictionary
 
-# Registry: wire type code → _PrimitiveBase subclass.
-# All six primitive types are represented; the _build path uses this for dispatch.
-_PRIMITIVE_REGISTRY: dict[int, type[_PrimitiveBase]] = {
+
+_PRIMITIVE_REGISTRY.update({
     cls._type_code: cls
-    for cls in (PrimitiveNull, PrimitiveBuffer, PrimitiveString, PrimitiveInt32, PrimitiveInt64, PrimitiveDouble)
-}
-
-
-# ---------------------------------------------------------------------------
-# Construct helpers for the primitive dictionary
-# ---------------------------------------------------------------------------
-
-
-class _PrimitiveValueCon(Construct):
-    """Construct for a single DTX primitive: u32 type tag followed by value bytes.
-
-    Parse → :class:`PrimitiveInt32` | :class:`PrimitiveInt64` |
-             :class:`PrimitiveDouble` | :class:`PrimitiveString` |
-             :class:`PrimitiveBuffer` (raw bytes on NSKeyedArchive decode failure) |
-             decoded Python object (NSKeyedArchive BUFFER, type 2) |
-             ``None`` (NULL, type 10)
-
-    Build ← :class:`_PrimitiveBase` instance (type inferred from class) |
-             ``None`` → NULL (convenience; same wire result as ``PrimitiveNull()``) |
-             any other Python object → NSKeyedArchive-encoded BUFFER (type 2)
-    """
-
-    def _parse(self, stream, context, path) -> Any:
-        type_code = Int32ul._parse(stream, context, path)
-        cls = _PRIMITIVE_REGISTRY.get(type_code)
-        if cls is None:
-            raise ConstructError(f"unknown primitive type code {type_code:#x}", path)
-        return cls._read(stream, context, path)
-
-    def _build(self, obj, stream, context, path):
-        if isinstance(obj, _PrimitiveBase):
-            Int32ul._build(type(obj)._type_code, stream, context, path)
-            obj._write(stream, context, path)
-        elif obj is None:
-            # Convenience: plain None → NULL (same wire result as PrimitiveNull())
-            Int32ul._build(PrimitiveNull._type_code, stream, context, path)
-        else:
-            # Any other Python value → NSKeyedArchive-encoded BUFFER (type 2)
-            enc = archiver.archive(obj)
-            Int32ul._build(PrimitiveBuffer._type_code, stream, context, path)
-            Int32ul._build(len(enc), stream, context, path)
-            stream.write(enc)
-        return obj
-
-    def _sizeof(self, context, path):
-        raise SizeofError("variable-length primitive")
-
-
-class PrimitiveDictionary(Construct):
-    """Construct for the full DTX primitive dictionary wire format.
-
-    Wire layout::
-
-        u64  magic_and_flags   0xf0 | optional flag bits (e.g. 0x100, 0x200)
-        u64  body_length       byte count of everything that follows
-        [key_primitive, value_primitive] x N entries
-
-    Keys are decoded/encoded with :class:`_PrimitiveValueCon` — they can be any
-    primitive value (or ``None`` for an index/positional marker).
-
-    The DTX aux dictionary allows duplicate keys (positional args all use ``None``
-    as the key).  The parsed representation therefore uses a ``dict[Any, list[Any]]``
-    mapping each key to the ordered list of values seen for that key.
-
-    Parse → ``dict[Any, list[Any]]``
-
-    Build ← ``dict[Any, list[Any]]`` — for each key the values are emitted in list order.
-    """
-
-    # Base magic nibble. Upper bits carry optional flags observed as 0x100, 0x200 …
-    _MAGIC_BASE: ClassVar[int] = 0xF0
-    _DEFAULT_MAGIC: ClassVar[int] = 0x1F0  # 0x100 | 0xF0 — seen most often
-
-    _item: ClassVar[_PrimitiveValueCon] = _PrimitiveValueCon()
-
-    def _parse(self, stream, context, path) -> dict[Any, list[Any]]:
-        magic = Int64ul._parse(stream, context, path)
-        if (magic & 0xFF) != self._MAGIC_BASE:
-            raise ConstructError(f"PrimitiveDictionary: unexpected magic {magic:#x}", path)
-        body_len = Int64ul._parse(stream, context, path)
-        body = io.BytesIO(stream.read(body_len))
-        result: dict[Any, list[Any]] = {}
-        while body.tell() < body_len:
-            key = self._item._parse(body, context, path)
-            value = self._item._parse(body, context, path)
-            result.setdefault(key, []).append(value)
-        return result
-
-    def _build(self, obj: dict[Any, list[Any]], stream, context, path):
-        buf = io.BytesIO()
-        for key, values in obj.items():
-            for value in values:
-                self._item._build(key, buf, context, path)
-                self._item._build(value, buf, context, path)
-        body = buf.getvalue()
-        Int64ul._build(self._DEFAULT_MAGIC, stream, context, path)
-        Int64ul._build(len(body), stream, context, path)
-        stream.write(body)
-        return obj
-
-    def _sizeof(self, context, path):
-        raise SizeofError("variable-length primitive dictionary")
+    for cls in [
+        PrimitiveNull,
+        PrimitiveString,
+        PrimitiveBuffer,
+        PrimitiveInt32,
+        PrimitiveInt64,
+        PrimitiveDouble,
+        PrimitiveDictionary,
+    ]
+})
+PNULL = PrimitiveNull()  # singleton instance for convenience
+PRIMITIVE_TYPES = tuple(_PRIMITIVE_REGISTRY.values())

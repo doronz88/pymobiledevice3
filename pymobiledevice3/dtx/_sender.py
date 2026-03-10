@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Sequence
-from typing import Any, Optional
+from typing import Any
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 
@@ -161,16 +161,16 @@ class _DTXSenderMixin:
         conv_idx: int,
         msg_type: DTXMessageType,
         payload: Any = None,
-        aux_args: Optional[Sequence[Any]] = None,
+        aux_args: Sequence[Any] = (),
     ) -> None:
         """Send a typed reply (OK / OBJECT / ERROR) for a received request."""
         assert conv_idx, f"Replies must have a non-zero conversation index (got {conv_idx})"
         if msg_type == DTXMessageType.OK:
             assert payload is None, "OK replies must not have a payload"
-            assert aux_args is None, "OK replies must not have aux arguments"
+            assert not aux_args, "OK replies must not have aux arguments"
         elif msg_type == DTXMessageType.ERROR:
             assert payload is not None, "ERROR replies must have a payload"
-            assert aux_args is None, "ERROR replies must not have aux arguments"
+            assert not aux_args, "ERROR replies must not have aux arguments"
             assert isinstance(payload, NSError), f"ERROR reply payload must be an NSError, got {type(payload)}"
 
         msg = DTXMessage(
@@ -194,7 +194,7 @@ class _DTXSenderMixin:
         msg_id: int,
         conv_idx: int,
         payload: Any = None,
-        aux_args: Optional[Sequence[Any]] = None,
+        aux_args: Sequence[Any] = (),
     ) -> None:
         """Send a success (OBJECT) reply carrying *payload*."""
         await self._send_reply(channel_code, msg_id, conv_idx, DTXMessageType.OBJECT, payload, aux_args)

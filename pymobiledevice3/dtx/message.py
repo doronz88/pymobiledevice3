@@ -19,18 +19,16 @@ import logging
 import plistlib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from bpylist2 import archiver
 
 from .exceptions import DTXNSCodingError, DTXProtocolError
 from .fragment import DTXFragment, DTXTransportFlags
-from .primitives import PrimitiveDictionary
+from .message_aux import MessageAux
 from .structs import MAX_MESSAGE_SIZE, MESSAGE_PAYLOAD_HEADER_SIZE, DTXMessageType, dtx_fragment_payload_header
 
 logger = logging.getLogger(__name__)
-
-_primitive_dictionary = PrimitiveDictionary()
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -68,35 +66,27 @@ class DTXMessage:
     @property
     def aux(self) -> Sequence[Any]:
         """Decoded auxiliary arguments (lazy, cached)."""
-        if len(self.aux_data) and self._aux_cache is None and self._aux_decode_exception is None:
+        if self._aux_cache is None and self._aux_decode_exception is None:
             try:
-                d = _primitive_dictionary.parse(self.aux_data)
-                if not d or None not in d:
-                    raise DTXNSCodingError(f"Decoded DTX aux args is not a dict with a None key: {d!r}")
-                if len(d) > 1:
-                    logger.warning(f"Decoded DTX aux args dict has unexpected extra keys besides None: {d!r}")
-                self._aux_cache = d[None]
+                self._aux_cache = MessageAux.parse(self.aux_data, {}, "aux_data")
             except Exception as e:
                 self._aux_decode_exception = e
         if self._aux_decode_exception is not None:
             raise DTXNSCodingError(
-                f"Failed to decode DTX aux args: {self!r}, aux_data={self.aux_data!r}"
+                f"Failed to decode DTX aux args: aux_data={bytes(self.aux_data)!r}"
             ) from self._aux_decode_exception
         if self._aux_cache is None:
             self._aux_cache = []
         return self._aux_cache
 
     @aux.setter
-    def aux(self, args: Optional[Sequence[Any]] = None) -> None:
+    def aux(self, args: Sequence[Any] = ()) -> None:
         """Set the auxiliary arguments to *args*, updating the underlying aux_data bytes."""
         buf = b""
-        if args is not None:
-            try:
-                buf = _primitive_dictionary.build({None: args})
-            except Exception as e:
-                raise DTXNSCodingError(
-                    f"Failed to encode DTX aux args object with PrimitiveDictionary: {args!r}"
-                ) from e
+        try:
+            buf = MessageAux.build(args, {}, "aux")  # validate the args before building the final buffer
+        except Exception as e:
+            raise DTXNSCodingError(f"Failed to encode DTX aux args object with PrimitiveDictionary: {args!r}") from e
         self.aux_data = memoryview(buf)
         self._aux_cache = args or []
         self._aux_decode_exception = None
@@ -114,12 +104,12 @@ class DTXMessage:
                         f"Failed to decode DTX payload with NSKeyedUnarchiver, but successfully decoded with plistlib: {e1}, decoded value: {self._payload_cache!r}"
                     )
             except Exception as e:
-                self._payload_decoded_exception = e
+                self._payload_decoded_exception = e.__cause__ or e
             self._payload_decoded = True
 
         if self._payload_decoded_exception is not None:
             raise DTXNSCodingError(
-                f"Failed to decode DTX payload: {self!r}, payload_data={self.payload_data!r}"
+                f"Failed to decode DTX payload: payload_data={bytes(self.payload_data)!r}"
             ) from self._payload_decoded_exception
         return self._payload_cache
 
