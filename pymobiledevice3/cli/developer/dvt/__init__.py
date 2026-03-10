@@ -21,13 +21,11 @@ from pymobiledevice3.cli.cli_common import (
     user_requested_colored_output,
 )
 from pymobiledevice3.cli.developer.dvt import core_profile_session, simulate_location, sysmon
-from pymobiledevice3.dtx import DTXNsError
-from pymobiledevice3.dtx.service import DTXService
-from pymobiledevice3.exceptions import UnrecognizedSelectorError
+from pymobiledevice3.exceptions import DvtDirListError, UnrecognizedSelectorError
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.condition_inducer import ConditionInducer
-from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo, DeviceInfoService
+from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
 from pymobiledevice3.services.dvt.instruments.graphics import Graphics
@@ -340,10 +338,11 @@ def dvt_shell(service_provider: ServiceProviderDep) -> None:
         run_in_loop(dvt.close())
 
 
-async def show_dirlist(channel: DTXService, dirname: str, recursive: bool = False) -> None:
+async def show_dirlist(device_info: DeviceInfo, dirname: str, recursive: bool = False) -> None:
     try:
-        filenames = await channel.invoke("directoryListingForPath:", dirname)
-    except DTXNsError:
+        filenames = await device_info.ls(dirname)
+    except DvtDirListError:
+        logging.error(f"Failed to list directory: {dirname}")
         return
     if not isinstance(filenames, list):
         return
@@ -352,7 +351,7 @@ async def show_dirlist(channel: DTXService, dirname: str, recursive: bool = Fals
         child = posixpath.join(dirname, filename)
         print(child)
         if recursive:
-            await show_dirlist(channel, child, recursive=recursive)
+            await show_dirlist(device_info, child, recursive=recursive)
 
 
 @cli.command("ls")
@@ -366,9 +365,8 @@ async def ls(
     ] = False,
 ) -> None:
     """List directory"""
-    async with DvtProvider(service_provider) as dvt:
-        channel = await dvt.dtx.open_channel(DeviceInfoService.IDENTIFIER)
-        await show_dirlist(channel, path, recursive=recursive)
+    async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
+        await show_dirlist(device_info, path, recursive=recursive)
 
 
 @cli.command("device-information")
