@@ -278,7 +278,10 @@ class ServiceConnection:
         :return: The received data.
         """
         await self._ensure_started()
-        return await self.reader.readexactly(size)
+        try:
+            return await self.reader.readexactly(size)
+        except asyncio.IncompleteReadError as e:
+            raise ConnectionTerminatedError() from e
 
     async def recv_prefixed(self, endianity: str = ">") -> bytes:
         """
