@@ -299,13 +299,35 @@ class InstallationProxyService(LockdownService):
         application_type: str = "Any",
         calculate_sizes: bool = False,
         bundle_identifiers: Optional[list[str]] = None,
+        show_placeholders: bool = False,
     ) -> dict[str, dict]:
-        """get applications according to given criteria"""
+        """
+        Retrieve application information based on specified criteria.
+
+        This asynchronous method fetches details about applications installed or available
+        on a system, based on provided filter options such as application type, bundle
+        identifiers, and whether placeholders should be included. Additionally, it allows
+        calculation of application sizes if requested.
+
+        :param application_type: The type of applications to fetch. Defaults to "Any". Examples
+            include "System" or "User".
+        :param calculate_sizes: A flag indicating whether to calculate and include application
+            size information. Defaults to False.
+        :param bundle_identifiers: A list of specific bundle identifiers to filter the
+            results. If None, all applications matching the other criteria are returned.
+        :param show_placeholders: A flag indicating whether to include placeholder
+            applications in the results. Defaults to False.
+            See: <https://github.com/doronz88/pymobiledevice3/issues/1602> for details.
+        :return: A dictionary where keys are bundle identifiers and values are nested
+            dictionaries containing application details.
+        """
         options = {}
         if bundle_identifiers is not None:
             options["BundleIDs"] = bundle_identifiers
 
         options["ApplicationType"] = application_type
+        if show_placeholders:
+            options["ShowPlaceholders"] = True
         result = await self.lookup(options)
         if calculate_sizes:
             options.update(GET_APPS_ADDITIONAL_INFO)

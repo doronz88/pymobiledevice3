@@ -31,11 +31,17 @@ async def apps_list(
         bool,
         typer.Option(help="Include app size information (slower)."),
     ] = False,
+    show_placeholders: Annotated[
+        bool,
+        typer.Option(help="Include placeholder apps in the results."),
+    ] = False,
 ) -> None:
     """List installed apps."""
     print_json(
         await InstallationProxyService(lockdown=service_provider).get_apps(
-            application_type=app_type, calculate_sizes=calculate_sizes
+            application_type=app_type,
+            calculate_sizes=calculate_sizes,
+            show_placeholders=show_placeholders,
         )
     )
 
