@@ -31,10 +31,12 @@ from construct import (
 )
 from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES
 
+from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_data, dtx_on_notification
+from pymobiledevice3.dtx_service import DtxService
+from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import DvtException, ExtractingStackshotError
 from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
-from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
-from pymobiledevice3.services.remote_server import Tap
+from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 
 kcdata_types = {
     "KCDATA_TYPE_INVALID": 0x0,
@@ -640,7 +642,39 @@ class KdBufStream:
         return self.current_chunk.read(size)
 
 
-class CoreProfileSessionTap(Tap):
+class CoreProfileSessionTapService(DTXService):
+    IDENTIFIER = "com.apple.instruments.server.services.coreprofilesessiontap"
+
+    def __init__(self, ctx):
+        super().__init__(ctx)
+        self.messages: asyncio.Queue[bytes] = asyncio.Queue()
+
+    @dtx_method("setConfig:", expects_reply=False)
+    async def set_config_(self, config: dict) -> None: ...
+
+    @dtx_method("start", expects_reply=False)
+    async def start(self) -> None: ...
+
+    @dtx_method("stop", expects_reply=False)
+    async def stop(self) -> None: ...
+
+    @dtx_on_data
+    async def _on_data(self, payload: bytes) -> None:
+        await self.messages.put(payload)
+
+    @dtx_on_notification
+    async def _on_notification(self, payload: typing.Any) -> None:
+        if payload is None:
+            await self.messages.put(b"")
+            return
+        await self.messages.put(archiver.archive(payload))
+
+
+class CoreProfileSessionTapChannel(DtxService[CoreProfileSessionTapService]):
+    pass
+
+
+class CoreProfileSessionTap:
     r"""
     Kdebug is a kernel facility for tracing events occurring on a system.
     This header defines reserved debugids, which are 32-bit values that describe
@@ -665,16 +699,18 @@ class CoreProfileSessionTap(Tap):
     This tap yields kdebug events.
     """
 
-    IDENTIFIER = "com.apple.instruments.server.services.coreprofilesessiontap"
+    IDENTIFIER = CoreProfileSessionTapService.IDENTIFIER
 
-    def __init__(self, dvt: DvtSecureSocketProxyService, time_config: dict, filters: typing.Optional[set] = None):
+    def __init__(self, dvt: DtxServiceProvider, time_config: dict, filters: typing.Optional[set] = None):
         """
         :param dvt: Instruments service proxy.
         :param time_config: Timing information - numer, denom, mach_absolute_time and matching usecs_since_epoch,
         timezone.
         :param filters: Event filters to include, Include all if empty.
         """
-        self.dvt = dvt
+        self._provider = dvt
+        self._channel: CoreProfileSessionTapChannel | None = None
+        self.channel = None
         self.stack_shot = None
         self.uuid = str(uuid.uuid4())
 
@@ -693,7 +729,32 @@ class CoreProfileSessionTap(Tap):
             "rp": 100,  # Recording priority
             "bm": 0,  # Buffer mode.
         }
-        super().__init__(dvt, self.IDENTIFIER, config)
+        self._config = config
+
+    async def _service_ref(self) -> CoreProfileSessionTapService:
+        if self._channel is None:
+            self._channel = CoreProfileSessionTapChannel(self._provider)
+        await self._channel.connect()
+        return self._channel.service
+
+    async def _next_message(self) -> bytes:
+        if self.channel is not None:
+            return await self.channel.receive_message()
+        return await (await self._service_ref()).messages.get()
+
+    def __enter__(self):
+        raise RuntimeError("Use async context manager: `async with ...`")
+
+    async def __aenter__(self):
+        service = await self._service_ref()
+        await service.set_config_(self._config)
+        await service.start()
+        # first message is an ack
+        await service.messages.get()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await (await self._service_ref()).stop()
 
     @staticmethod
     def _raise_if_tap_start_failed(data: bytes) -> None:
@@ -729,12 +790,12 @@ class CoreProfileSessionTap(Tap):
 
         while not data.startswith(STACKSHOT_HEADER) and not data.startswith(RAW_VERSION2_BYTES):
             if timeout is None:
-                data = await self.channel.receive_message()
+                data = await self._next_message()
             else:
                 remaining = timeout - (time.monotonic() - started_at)
                 if remaining <= 0:
                     raise ExtractingStackshotError("timed out waiting for stackshot data")
-                data = await asyncio.wait_for(self.channel.receive_message(), timeout=remaining)
+                data = await asyncio.wait_for(self._next_message(), timeout=remaining)
             self._raise_if_tap_start_failed(data)
 
         if data.startswith(RAW_VERSION2_BYTES):
@@ -762,7 +823,7 @@ class CoreProfileSessionTap(Tap):
         """
         start = time.time()
         while timeout is None or time.time() <= start + timeout:
-            data = await self.channel.receive_message()
+            data = await self._next_message()
             if data.startswith(STACKSHOT_HEADER) or data.startswith(b"bplist"):
                 # Skip not kernel trace data.
                 continue
@@ -772,7 +833,7 @@ class CoreProfileSessionTap(Tap):
 
     async def pump_kdbuf_chunks(self, chunk_queue: queue.Queue) -> None:
         while True:
-            chunk_queue.put(await self.channel.receive_message())
+            chunk_queue.put(await self._next_message())
 
     def get_kdbuf_stream(self, chunk_queue: queue.Queue):
         """
@@ -790,10 +851,9 @@ class CoreProfileSessionTap(Tap):
         return parsed_stack_shot[predefined_names[kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT]]
 
     @staticmethod
-    async def get_time_config(dvt):
-        device_info_channel = await dvt.make_channel("com.apple.instruments.server.services.deviceinfo")
-        await device_info_channel.machTimeInfo()
-        time_info = await device_info_channel.receive_plist()
+    async def get_time_config(dvt: DtxServiceProvider):
+        async with DeviceInfo(dvt) as device_info:
+            time_info = await device_info.mach_time_info()
         mach_absolute_time = time_info[0]
         numer = time_info[1]
         denom = time_info[2]
@@ -810,8 +870,6 @@ class CoreProfileSessionTap(Tap):
         }
 
     @staticmethod
-    async def get_trace_codes(dvt) -> dict[int, str]:
-        device_info_channel = await dvt.make_channel("com.apple.instruments.server.services.deviceinfo")
-        await device_info_channel.traceCodesFile()
-        codes_file = await device_info_channel.receive_plist()
-        return {int(k, 16): v for k, v in (line.split() for line in codes_file.splitlines())}
+    async def get_trace_codes(dvt: DtxServiceProvider) -> dict[int, str]:
+        async with DeviceInfo(dvt) as device_info:
+            return await device_info.trace_codes()

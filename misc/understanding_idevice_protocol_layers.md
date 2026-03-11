@@ -310,21 +310,19 @@ To access this different object use the following APIs:
 
 ```python
 from pymobiledevice3.lockdown import create_using_usbmux
-from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
 
 
 async def main() -> None:
   # Create a LockdownClient instance
   lockdown = await create_using_usbmux()
-  
-  # Use it to create a DVT instance
-  dvt = DvtSecureSocketProxyService(lockdown)
-  await dvt.perform_handshake()
-  
-  # Use it to invoke methods on a DVT channel
-  dvt_channel = Screenshot(dvt)
-  open('/tmp/screen.png', 'wb').write(await dvt_channel.get_screenshot())
+
+  # Use it to create a DVT provider (DTX lifecycle is handled automatically)
+  async with DvtProvider(lockdown) as dvt:
+    # Use it to invoke methods on a DVT channel
+    dvt_channel = Screenshot(dvt)
+    open('/tmp/screen.png', 'wb').write(await dvt_channel.get_screenshot())
 ```
 
 Looking for an unimplemented feature/channel? Feel free to play with it (and submit a PR afterward 🙏) using the

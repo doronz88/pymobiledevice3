@@ -1,20 +1,22 @@
-from pymobiledevice3.services.dvt.instruments import ChannelService
-from pymobiledevice3.services.remote_server import MessageAux
+from pymobiledevice3.dtx import DTXService, dtx_method
+from pymobiledevice3.dtx_service import DtxService
 
 
-class ApplicationListing(ChannelService):
+class ApplicationListingService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.device.applictionListing"
 
-    def __init__(self, dvt):
-        super().__init__(dvt)
+    @dtx_method("installedApplicationsMatching:registerUpdateToken:")
+    async def installed_applications_matching_register_update_token_(
+        self, options: dict, update_token: str
+    ) -> list: ...
 
+
+class ApplicationListing(DtxService[ApplicationListingService]):
     async def applist(self) -> list:
         """
         Get the applications list from the device.
         :return: List of applications and their attributes.
         """
-        channel = await self._channel_ref()
-        await channel.installedApplicationsMatching_registerUpdateToken_(MessageAux().append_obj({}).append_obj(""))
-        result = await channel.receive_plist()
+        result = await self.service.installed_applications_matching_register_update_token_({}, "")
         assert isinstance(result, list)
         return result

@@ -1,14 +1,15 @@
+import asyncio
 import ipaddress
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Union
+from typing import Any, Union
 
 from construct import Adapter, Bytes, Int8ul, Int16ub, Int32ul, Switch, this
 from construct_typed import DataclassMixin, TStruct, csfield
 
-from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
-from pymobiledevice3.services.dvt.instruments import ChannelService
+from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
+from pymobiledevice3.dtx_service import DtxService
 
 
 class IpAddressAdapter(Adapter):
@@ -102,23 +103,42 @@ class ConnectionUpdateEvent:
 NetworkMonitorEvent = Union[InterfaceDetectionEvent, ConnectionDetectionEvent, ConnectionUpdateEvent]
 
 
-class NetworkMonitor(ChannelService):
-    """Iterate over network monitoring events from the Instruments service."""
-
+class NetworkMonitorService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.networking"
 
-    def __init__(self, dvt: DvtSecureSocketProxyService):
-        self.logger = logging.getLogger(__name__)
+    def __init__(self, ctx) -> None:
+        super().__init__(ctx)
+        self.events: asyncio.Queue[Any] = asyncio.Queue()
+
+    @dtx_method("startMonitoring", expects_reply=False)
+    async def start_monitoring(self) -> None: ...
+
+    @dtx_method("stopMonitoring")
+    async def stop_monitoring(self) -> None: ...
+
+    @dtx_on_dispatch
+    async def _on_dispatch(self, selector: str, *args: Any) -> None:
+        await self.events.put((selector, list(args)))
+
+    @dtx_on_notification
+    async def _on_notification(self, payload: Any) -> None:
+        await self.events.put(payload)
+
+
+class NetworkMonitor(DtxService[NetworkMonitorService]):
+    """Iterate over network monitoring events from the Instruments service."""
+
+    def __init__(self, dvt):
         super().__init__(dvt)
+        self.logger = logging.getLogger(__name__)
 
     async def __aenter__(self) -> "NetworkMonitor":
-        channel = await self._channel_ref()
-        await channel.startMonitoring(expects_reply=False)
+        await self.connect()
+        await self.service.start_monitoring()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        channel = await self._channel_ref()
-        await channel.stopMonitoring()
+        await self.service.stop_monitoring()
 
     async def __aiter__(self) -> AsyncIterator[NetworkMonitorEvent]:
         """Yield network events as they arrive from the service."""
@@ -129,6 +149,9 @@ class NetworkMonitor(ChannelService):
             event = None
 
             if message is None:
+                continue
+            if not isinstance(message, (list, tuple)) or len(message) < 2:
+                self.logger.warning(f"unsupported event payload: {message!r}")
                 continue
 
             if message[0] == MESSAGE_TYPE_INTERFACE_DETECTION:
@@ -161,5 +184,4 @@ class NetworkMonitor(ChannelService):
             yield event
 
     async def _receive_message(self):
-        channel = await self._channel_ref()
-        return await channel.receive_plist()
+        return await self.service.events.get()

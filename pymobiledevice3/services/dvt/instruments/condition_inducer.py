@@ -1,36 +1,43 @@
 import logging
 
+from pymobiledevice3.dtx import DTXService, dtx_method
+from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
-from pymobiledevice3.services.dvt.instruments import ChannelService
-from pymobiledevice3.services.remote_server import MessageAux
 
 
-class ConditionInducer(ChannelService):
+class ConditionInducerService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.ConditionInducer"
 
-    def __init__(self, dvt):
-        self.logger = logging.getLogger(__name__)
-        super().__init__(dvt)
+    @dtx_method("availableConditionInducers")
+    async def available_condition_inducers(self) -> list: ...
 
-    async def list(self) -> list:
-        channel = await self._channel_ref()
-        await channel.availableConditionInducers()
-        return await channel.receive_plist()
+    @dtx_method("enableConditionWithIdentifier:profileIdentifier:")
+    async def enable_condition_with_identifier_profile_identifier_(
+        self, condition_identifier: str, profile_identifier: str
+    ) -> None: ...
+
+    @dtx_method("disableActiveCondition", expects_reply=False)
+    async def disable_active_condition(self) -> None: ...
+
+
+class ConditionInducer(DtxService[ConditionInducerService]):
+    def __init__(self, dvt):
+        super().__init__(dvt)
+        self.logger = logging.getLogger(__name__)
+
+    async def list(self) -> list[dict]:
+        return await self.service.available_condition_inducers()
 
     async def set(self, profile_identifier):
-        channel = await self._channel_ref()
         for group in await self.list():
             for profile in group.get("profiles"):
                 if profile_identifier == profile.get("identifier"):
                     self.logger.info(profile.get("description"))
-                    await channel.enableConditionWithIdentifier_profileIdentifier_(
-                        MessageAux().append_obj(group.get("identifier")).append_obj(profile.get("identifier"))
+                    await self.service.enable_condition_with_identifier_profile_identifier_(
+                        group.get("identifier"), profile.get("identifier")
                     )
-                    # wait for response which may be a raised NSError
-                    await channel.receive_plist()
                     return
         raise PyMobileDevice3Exception("Invalid profile identifier")
 
     async def clear(self):
-        channel = await self._channel_ref()
-        await channel.disableActiveCondition()
+        await self.service.disable_active_condition()

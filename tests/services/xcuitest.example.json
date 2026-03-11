@@ -1,0 +1,9 @@
+[
+  {
+    "id": "my_app",
+    "runner_bundle_id": "com.example.MyApp.xctrunner",
+    "target_bundle_id": "com.example.MyApp",
+    "runner_env": {},
+    "timeout": 30.0
+  }
+]

@@ -12,8 +12,8 @@ import typer
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, default_json_encoder, print_json
-from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ async def sysmon_process_monitor(service_provider: ServiceProviderDep, threshold
 
     Process = namedtuple("process", "pid name cpuUsage physFootprint")
 
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, await Sysmontap.create(dvt) as sysmon:
+    async with DvtProvider(service_provider) as dvt, await Sysmontap.create(dvt) as sysmon:
         async for process_snapshot in sysmon.iter_processes():
             entries = []
             for process in process_snapshot:
@@ -68,7 +68,7 @@ async def sysmon_process_single(
     count = 0
 
     result = []
-    async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, await Sysmontap.create(dvt) as sysmon:
+    async with DvtProvider(service_provider) as dvt, await Sysmontap.create(dvt) as sysmon:
         device_info = DeviceInfo(dvt)
 
         async for process_snapshot in sysmon.iter_processes():
@@ -157,7 +157,7 @@ async def sysmon_process_monitor_single(
     with contextlib.ExitStack() as stack:
         output_file = stack.enter_context(open(output, "w")) if output else None
 
-        async with DvtSecureSocketProxyService(lockdown=service_provider) as dvt, await Sysmontap.create(dvt) as sysmon:
+        async with DvtProvider(service_provider) as dvt, await Sysmontap.create(dvt) as sysmon:
             async for process_snapshot in sysmon.iter_processes():
                 count += 1
 
