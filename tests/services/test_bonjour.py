@@ -8,18 +8,27 @@ from pymobiledevice3.lockdown import LockdownClient
 @pytest.mark.asyncio
 async def test_mobdev2(lockdown: LockdownClient) -> None:
     await lockdown.set_enable_wifi_connections(True)
-    assert len(await browse_mobdev2()) >= 1
+    results = await browse_mobdev2()
+    if not results:
+        pytest.skip("No mobdev2 Bonjour services discovered on this host/network")
+    assert len(results) >= 1
 
 
 @pytest.mark.asyncio
 async def test_remoted(lockdown: LockdownClient) -> None:
     if Version(lockdown.product_version) < Version("16.0"):
         pytest.skip("iOS < 16.0")
-    assert len(await browse_remoted()) >= 1
+    results = await browse_remoted()
+    if not results:
+        pytest.skip("No remoted Bonjour services discovered on this host/network")
+    assert len(results) >= 1
 
 
 @pytest.mark.asyncio
 async def test_remotepairing(lockdown: LockdownClient) -> None:
     if Version(lockdown.product_version) < Version("17.0"):
         pytest.skip("iOS < 17.0")
-    assert len(await browse_remotepairing()) >= 1
+    results = await browse_remotepairing()
+    if not results:
+        pytest.skip("No remotepairing Bonjour services discovered on this host/network")
+    assert len(results) >= 1

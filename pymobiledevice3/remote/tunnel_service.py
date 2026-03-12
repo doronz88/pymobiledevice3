@@ -998,8 +998,16 @@ class RemotePairingTunnelService(RemotePairingProtocol):
         return self._remote_identifier
 
     async def connect(self, autopair: bool = True) -> None:
-        fut = asyncio.open_connection(self.hostname, self.port)
-        self._reader, self._writer = await asyncio.wait_for(fut, timeout=TIMEOUT)
+        connect_task = asyncio.create_task(asyncio.open_connection(self.hostname, self.port))
+        try:
+            self._reader, self._writer = await asyncio.wait_for(connect_task, timeout=TIMEOUT)
+        except BaseException:
+            if not connect_task.done():
+                connect_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await connect_task
+            await self.close()
+            raise
 
         try:
             await self._attempt_pair_verify()
@@ -1241,7 +1249,12 @@ async def get_remote_pairing_tunnel_services(
                     )
                     result.append(conn)
                     break
-                except (ConnectionTerminatedError, asyncio.IncompleteReadError, ConnectionResetError) as e:
+                except (
+                    ConnectionTerminatedError,
+                    asyncio.IncompleteReadError,
+                    ConnectionResetError,
+                    asyncio.TimeoutError,
+                ) as e:
                     if conn is not None:
                         await conn.close()
                     logger.debug(
