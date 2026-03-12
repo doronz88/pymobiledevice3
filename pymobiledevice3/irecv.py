@@ -83,7 +83,7 @@ class IRecv:
 
     @property
     def serial_number(self) -> int:
-        return int(self._device_info["SRNM"], 16)
+        return self._device_info["SRNM"]
 
     @property
     def iboot_version(self) -> str:
