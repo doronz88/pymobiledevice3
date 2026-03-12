@@ -63,13 +63,19 @@ async def service_provider(
         rsds = await get_tunneld_devices()
         try:
             if tunnel_option == "":
-                yield rsds[0]
+                try:
+                    selected_rsd = rsds[0]
+                except IndexError as e:
+                    raise DeviceNotFoundError(tunnel_option) from e
             else:
-                yield next(rsd for rsd in rsds if rsd.udid == tunnel_option)
+                selected_rsd = next((rsd for rsd in rsds if rsd.udid == tunnel_option), None)
+                if selected_rsd is None:
+                    raise DeviceNotFoundError(tunnel_option)
+
+            yield selected_rsd
+        finally:
             for rsd in rsds:
                 await rsd.close()
-        except IndexError as e:
-            raise DeviceNotFoundError(tunnel_option) from e
     else:
         async with await create_using_usbmux() as client:
             yield client
