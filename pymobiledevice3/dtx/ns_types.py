@@ -24,7 +24,7 @@ from __future__ import annotations
 import datetime
 import os
 import uuid
-from typing import Any
+from typing import Any, Optional
 
 from bpylist2 import archiver
 
@@ -54,10 +54,10 @@ class NSNull:
 class NSError:
     """Wraps an Objective-C NSError object received from the remote DTX peer."""
 
-    def __init__(self, code: int, domain: str, user_info: dict | None = None):
+    def __init__(self, code: int, domain: str, user_info: Optional[dict] = None):
         self.code: int = code
         self.domain: str = domain
-        self.user_info: dict | None = user_info
+        self.user_info: Optional[dict] = user_info
 
     def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
         """Encode this NSError into an NSKeyedArchive object."""

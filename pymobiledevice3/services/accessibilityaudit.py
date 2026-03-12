@@ -277,7 +277,7 @@ class AccessibilityAudit:
     def __init__(self, lockdown: LockdownServiceProvider):
         self._lockdown = lockdown
         self._provider = _AccessibilityAuditProvider(lockdown)
-        self._event_queue: asyncio.Queue[tuple[str, list[typing.Any]]] | None = None
+        self._event_queue: typing.Optional[asyncio.Queue[tuple[str, list[typing.Any]]]] = None
         self.product_version = Version(lockdown.product_version)
         self._initial_messages_to_flush = 2 if self.product_version >= Version("15.0") else 1
         self._initial_messages_flushed = False

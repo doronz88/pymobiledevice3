@@ -1,21 +1,32 @@
-# Contibuting
+# Contributing
 
-If you would like to contribute, feel free to report issues, start new discussions, or create pull requests.
+Contributions are welcome through issues, discussions, and pull requests.
 
-In general we recommend using our pre-commit hook which enforce the linter rules we use:
+## Development Setup
 
 ```shell
+python3 -m pip install -U -e ".[test]"
 python3 -m pip install -U pre-commit
 pre-commit install
 ```
 
-In addition, please note we prefer using `'` for strings instead of `"`.
+## Local Checks
 
-If you're having any troubles, You can also contact us on Discord:
+```shell
+pytest
+```
 
-<https://discord.gg/52mZGC3JXJ>
+## Style Notes
 
-If you are lacking knowledge in how the different communication protocols work together, or how the project is
-structured in design-form, you are advised to read:
+- Keep changes focused and include tests when behavior changes.
 
-[Understanding iDevice protocol layers](misc/understanding_idevice_protocol_layers.md)
+## Need Help?
+
+- Discord: <https://discord.gg/52mZGC3JXJ>
+
+## Recommended Reading
+
+- [Understanding iDevice protocol layers](misc/understanding_idevice_protocol_layers.md)
+- [Documentation index](docs/README.md)
+- [Writing commands with service_provider](docs/guides/writing-commands-with-service-provider.md)
+- [AGENTS](AGENTS.md)

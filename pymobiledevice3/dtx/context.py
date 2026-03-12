@@ -5,7 +5,7 @@ See :class:`DTXContext` and :data:`DTX_GLOBAL_CTX`.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, Optional, overload
 
 if TYPE_CHECKING:
     from .channel import DTXChannel
@@ -43,7 +43,7 @@ class DTXContext(dict):
         await proxy.remote_service.invoke("ping")
     """
 
-    def __init__(self, parent: DTXContext | None = None, **initial: Any) -> None:
+    def __init__(self, parent: Optional[DTXContext] = None, **initial: Any) -> None:
         super().__init__(**initial)
         self._parent = parent
 

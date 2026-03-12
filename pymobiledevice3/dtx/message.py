@@ -19,7 +19,7 @@ import logging
 import plistlib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 from bpylist2 import archiver
 
@@ -57,10 +57,10 @@ class DTXMessage:
     transport_flags: DTXTransportFlags = DTXTransportFlags.NONE
 
     def __post_init__(self) -> None:
-        self._aux_cache: list | None = None
-        self._aux_decode_exception: Exception | None = None
+        self._aux_cache: Optional[list] = None
+        self._aux_decode_exception: Optional[Exception] = None
         self._payload_decoded: bool = False
-        self._payload_decoded_exception: Exception | None = None
+        self._payload_decoded_exception: Optional[Exception] = None
         self._payload_cache: Any = None
 
     @property
@@ -210,7 +210,7 @@ class DTXMessage:
 
     def __repr__(self) -> str:
         payload = None
-        aux: list | None = None
+        aux: Optional[list] = None
 
         try:
             payload = self.payload

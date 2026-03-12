@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, Optional
 
 from bpylist2 import archiver
 
@@ -85,8 +85,8 @@ class Tap:
         self._provider = dvt
         self._channel_name = channel_name
         self._config = config
-        self._channel: TapChannel | None = None
-        self.channel: TapMessageChannel | None = None
+        self._channel: Optional[TapChannel] = None
+        self.channel: Optional[TapMessageChannel] = None
 
     async def _service_ref(self) -> TapService:
         if self._channel is None:
