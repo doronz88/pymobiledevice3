@@ -100,6 +100,8 @@ class ServiceConnection:
         # Async stream reader and writer used for stream mode.
         self.reader = None  # type: Optional[asyncio.StreamReader]
         self.writer = None  # type: Optional[asyncio.StreamWriter]
+        self._reader_lock = asyncio.Lock()
+        self._writer_lock = asyncio.Lock()
 
         # SSL/TLS version to be used for connecting to device
         # TLS v1.2 is supported since iOS 5
@@ -210,7 +212,8 @@ class ServiceConnection:
         Asynchronously receive up to ``length`` bytes from the socket/stream.
         """
         await self._ensure_started()
-        return await self.reader.read(length)
+        async with self._reader_lock:
+            return await self.reader.read(length)
 
     def sendall_sync(self, data: bytes) -> None:
         """
@@ -277,6 +280,11 @@ class ServiceConnection:
         :param size: The amount of data to receive.
         :return: The received data.
         """
+        async with self._reader_lock:
+            return await self._recvall_unlocked(size)
+
+    async def _recvall_unlocked(self, size: int) -> bytes:
+        """Read exactly ``size`` bytes. Caller must hold ``_reader_lock``."""
         await self._ensure_started()
         try:
             return await self.reader.readexactly(size)
@@ -290,9 +298,10 @@ class ServiceConnection:
         :param endianity: The byte order ('>' for big-endian, '<' for little-endian).
         :return: The received data block.
         """
-        size = await self.recvall(4)
-        size = struct.unpack(endianity + "L", size)[0]
-        return await self.recvall(size)
+        async with self._reader_lock:
+            size = await self._recvall_unlocked(4)
+            size = struct.unpack(endianity + "L", size)[0]
+            return await self._recvall_unlocked(size)
 
     async def send_prefixed(self, data: bytes) -> None:
         """
@@ -330,6 +339,11 @@ class ServiceConnection:
 
         :param payload: The data to send.
         """
+        async with self._writer_lock:
+            await self._sendall_unlocked(payload)
+
+    async def _sendall_unlocked(self, payload: bytes) -> None:
+        """Write payload bytes. Caller must hold ``_writer_lock``."""
         await self._ensure_started()
         try:
             self.writer.write(payload)
