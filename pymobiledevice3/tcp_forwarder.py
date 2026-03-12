@@ -70,22 +70,21 @@ class TcpForwarderBase:
     async def _handle_server_connection(self, local_reader: asyncio.StreamReader, local_writer: asyncio.StreamWriter):
         """accept the connection from local machine and attempt to connect at remote"""
         peer = str(local_writer.get_extra_info("peername"))
-        try:
-            remote_connection = await self._establish_remote_connection()
-            await remote_connection.start()
-        except ConnectionFailedError:
-            self.logger.error("failed to connect to remote endpoint")
-            local_writer.close()
-            await local_writer.wait_closed()
-            return
-
-        assert remote_connection.reader is not None
-        assert remote_connection.writer is not None
         task = asyncio.current_task()
         if task is not None:
             self._connection_tasks.add(task)
-        self.logger.info("connection established from %s", peer)
+        remote_connection: Optional[ServiceConnection] = None
         try:
+            try:
+                remote_connection = await self._establish_remote_connection()
+                await remote_connection.start()
+            except ConnectionFailedError:
+                self.logger.error("failed to connect to remote endpoint")
+                return
+
+            assert remote_connection.reader is not None
+            assert remote_connection.writer is not None
+            self.logger.info("connection established from %s", peer)
             client_to_remote = asyncio.create_task(
                 self._pipe(local_reader, remote_connection.writer, peer, "client->remote")
             )
@@ -105,10 +104,12 @@ class TcpForwarderBase:
                 if exc is not None and not isinstance(exc, ConnectionResetError):
                     self.logger.debug("connection %s ended with %r", peer, exc)
         finally:
-            await remote_connection.close()
+            if remote_connection is not None:
+                await remote_connection.close()
             local_writer.close()
             await local_writer.wait_closed()
-            self.logger.info("connection %s was closed", peer)
+            if remote_connection is not None:
+                self.logger.info("connection %s was closed", peer)
             if task is not None:
                 self._connection_tasks.discard(task)
 

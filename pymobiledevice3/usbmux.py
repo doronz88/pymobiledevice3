@@ -133,7 +133,7 @@ class MuxDevice:
         mux = await create_mux(usbmux_address=usbmux_address)
         try:
             return await mux.connect(self, port)
-        except Exception:
+        except BaseException:
             await mux.close()
             raise
 
