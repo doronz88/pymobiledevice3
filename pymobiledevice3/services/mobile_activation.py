@@ -3,7 +3,7 @@ import dataclasses
 import logging
 import plistlib
 import xml.etree.ElementTree as ET
-from contextlib import aclosing
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -26,6 +26,14 @@ DEFAULT_HEADERS = {
 
 ACTIVATION_REQUESTS_SUBDIR = Path("offline_requests")
 NONCE_CYCLE_INTERVAL = 60 * 5
+
+
+@asynccontextmanager
+async def _aclosing(resource):
+    try:
+        yield resource
+    finally:
+        await resource.aclose()
 
 
 @dataclasses.dataclass
@@ -216,14 +224,14 @@ class MobileActivationService:
         }
         if headers:
             data["ActivationResponseHeaders"] = dict(headers)
-        async with aclosing(await self.lockdown.start_lockdown_service(self.SERVICE_NAME)) as service:
+        async with _aclosing(await self.lockdown.start_lockdown_service(self.SERVICE_NAME)) as service:
             return await service.send_recv_plist(data)
 
     async def send_command(self, command: str, value: str = ""):
         data = {"Command": command}
         if value:
             data["Value"] = value
-        async with aclosing(await self.lockdown.start_lockdown_service(self.SERVICE_NAME)) as service:
+        async with _aclosing(await self.lockdown.start_lockdown_service(self.SERVICE_NAME)) as service:
             return await service.send_recv_plist(data)
 
     def post(

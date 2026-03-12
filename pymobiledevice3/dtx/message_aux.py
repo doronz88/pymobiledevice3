@@ -1,6 +1,6 @@
 import io
 import logging
-from typing import Any
+from typing import Any, Union
 
 from bpylist2 import archiver
 from construct import Bytes, ConstructError, Peek
@@ -15,7 +15,7 @@ class MessageAux(list[Any]):
     """An adapter that parse DISPTACH arguments from/to primitive dictionaries"""
 
     @classmethod
-    def parse(cls, obj: bytes | bytearray | memoryview, context, path):
+    def parse(cls, obj: Union[bytes, bytearray, memoryview], context, path):
         if len(obj) == 0:
             # interpret empty buffers as an empty list
             return []
