@@ -95,7 +95,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         self._services: dict[int, DTXService] = {}
 
         # Background reader task
-        self._reader_task: asyncio.Task | None = None
+        self._reader_task: Optional[asyncio.Task] = None
         self._closed: bool = False
 
         self.ctx: DTXContext = DTXContext(parent=DTX_GLOBAL_CTX, connection=self)
@@ -345,7 +345,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         self,
         predicate: type[DTX_SERVICE_T] | Callable[[DTXService], bool],
         *,
-        timeout: float | None = None,
+        timeout: Optional[float] = None,
     ) -> DTX_SERVICE_T:
         """Wait until a registered service matching *predicate* exists and return it.
 
@@ -385,7 +385,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         predicate: type[DTX_SERVICE_T] | Callable[[DTXService], bool],
         *,
         remote: bool,
-        timeout: float | None = None,
+        timeout: Optional[float] = None,
     ) -> DTX_SERVICE_T:
         """Wait for a sub-service of a :class:`DTXProxyService` matching *predicate*.
 
@@ -428,7 +428,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         self,
         code: int,
         identifier: str,
-    ) -> NSError | None:
+    ) -> Optional[NSError]:
         assert code > 0, f"Channel code must be positive, got {code}"
         code = -code  # negate to distinguish from locally initiated channels
 

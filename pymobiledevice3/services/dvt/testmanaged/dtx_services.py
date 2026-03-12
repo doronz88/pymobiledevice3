@@ -65,7 +65,7 @@ class XCUITestListener:
     async def test_bundle_ready(self) -> None:
         """Invoked when the test bundle signals readiness (old protocol)."""
 
-    async def test_bundle_ready_with_capabilities(self, capabilities: XCTCapabilities) -> XCTestConfiguration | None:
+    async def test_bundle_ready_with_capabilities(self, capabilities: XCTCapabilities) -> Optional[XCTestConfiguration]:
         """Invoked when the test bundle signals readiness with capabilities (new protocol).
 
         The default implementation ignores the capabilities and returns ``None``

@@ -20,7 +20,7 @@ import logging
 from collections.abc import Awaitable
 from contextlib import suppress
 from functools import partial
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError, UnrecognizedSelectorError
 
@@ -51,9 +51,9 @@ class DTXChannel:
     """
 
     # Optional async callbacks for received messages.
-    on_invoke: Callable[[str, list[Any]], Awaitable[Any]] | None = None
-    on_data: Callable[[bytes], Awaitable[Any]] | None = None
-    on_notification: Callable[[Any], Awaitable[Any]] | None = None
+    on_invoke: Optional[Callable[[str, list[Any]], Awaitable[Any]]] = None
+    on_data: Optional[Callable[[bytes], Awaitable[Any]]] = None
+    on_notification: Optional[Callable[[Any], Awaitable[Any]]] = None
 
     def __init__(self, code: int, identifier: str, connection: DTXConnection) -> None:
         self.code = code
@@ -62,7 +62,7 @@ class DTXChannel:
         self.logger = connection.logger.getChild(f"channel({code})")
 
         self._closed = False
-        self._reader_task: asyncio.Task | None = None
+        self._reader_task: Optional[asyncio.Task] = None
 
         self._queue: asyncio.Queue[DTXMessage] = asyncio.Queue()
         self._pending_tasks: set[asyncio.Task] = set()

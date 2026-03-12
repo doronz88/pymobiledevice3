@@ -709,7 +709,7 @@ class CoreProfileSessionTap:
         :param filters: Event filters to include, Include all if empty.
         """
         self._provider = dvt
-        self._channel: CoreProfileSessionTapChannel | None = None
+        self._channel: typing.Optional[CoreProfileSessionTapChannel] = None
         self.channel = None
         self.stack_shot = None
         self.uuid = str(uuid.uuid4())
