@@ -326,7 +326,7 @@ class AfcService(LockdownService):
         :param relative_src: Source path relative to src_dir on the device
         :param dst: Destination path on the local machine
         :param match: Optional regex pattern to filter files (by basename)
-        :param callback: Optional callback function called for each file copied (src, dst)
+        :param callback: Optional callback function called for each file copied (src, dst). Async callbacks are awaited.
         :param src_dir: Base directory for resolving relative_src
         :param ignore_errors: If True, continue on errors instead of raising exceptions
         :param progress_bar: If True, show progress bar for large files
@@ -354,7 +354,9 @@ class AfcService(LockdownService):
                     await self.fclose(handle)
             os.utime(dst, (os.stat(dst).st_atime, (await self.stat(src))["st_mtime"].timestamp()))
             if callback is not None:
-                callback(src, dst)
+                result = callback(src, dst)
+                if inspect.isawaitable(result):
+                    await result
         else:
             # directory
             dst_path = pathlib.Path(dst) / os.path.basename(relative_src)
