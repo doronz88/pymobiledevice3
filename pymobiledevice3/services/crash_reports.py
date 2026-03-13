@@ -107,15 +107,13 @@ class CrashReportsManager:
         :param progress_bar: Whether to show a progress bar when pulling large files.
         """
 
-        def log(src: str, dst: str) -> None:
+        async def _callback(src: str, dst: str) -> None:
             self.logger.info(f"{src} --> {dst}")
-            # Cleanup is handled after transfer because callback is synchronous.
+            if erase:
+                await self.afc.rm_single(src, force=True)
 
         match = None if match is None else re.compile(match)
-        await self.afc.pull(entry, out, match, callback=log, progress_bar=progress_bar, ignore_errors=True)
-
-        if erase and not await self.afc.isdir(entry):
-            await self.afc.rm_single(entry, force=True)
+        await self.afc.pull(entry, out, match, callback=_callback, progress_bar=progress_bar, ignore_errors=True)
 
     async def flush(self) -> None:
         """Trigger com.apple.crashreportmover to flush all products into CrashReports directory"""
