@@ -118,6 +118,24 @@ class WdaClient:
             return
         raise WdaError("WDA does not support pressButton or keys endpoints", status_code=404)
 
+    def unlock(self, session_id: Optional[str] = None) -> None:
+        """Unlock the device via WDA."""
+        session_id = session_id or self.session_id
+        if session_id:
+            try:
+                self._request_json("POST", f"/session/{session_id}/wda/unlock", {})
+            except WdaError as exc:
+                if exc.status_code != 404:
+                    raise
+            else:
+                return
+        try:
+            self._request_json("POST", "/wda/unlock", {})
+        except WdaError as exc:
+            if exc.status_code != 404:
+                raise
+            raise WdaError("WDA does not support unlock endpoint", status_code=404) from exc
+
     def get_source(self, session_id: Optional[str] = None) -> str:
         """Return the WDA XML source tree."""
         if session_id:
@@ -364,6 +382,24 @@ class WdaServiceClient:
             await self._request_json("POST", "/wda/homescreen", {})
             return
         raise WdaError("WDA does not support pressButton or keys endpoints", status_code=404)
+
+    async def unlock(self, session_id: Optional[str] = None) -> None:
+        """Unlock the device via WDA."""
+        session_id = session_id or self.session_id
+        if session_id:
+            try:
+                await self._request_json("POST", f"/session/{session_id}/wda/unlock", {})
+            except WdaError as exc:
+                if exc.status_code != 404:
+                    raise
+            else:
+                return
+        try:
+            await self._request_json("POST", "/wda/unlock", {})
+        except WdaError as exc:
+            if exc.status_code != 404:
+                raise
+            raise WdaError("WDA does not support unlock endpoint", status_code=404) from exc
 
     async def get_source(self, session_id: Optional[str] = None) -> str:
         """Return the WDA XML source tree."""
