@@ -97,6 +97,15 @@ pymobiledevice3 developer dvt screenshot /path/to/screen.png
 # Detailed process list
 pymobiledevice3 developer dvt sysmon process single
 
+# Stream processes above 50% CPU
+pymobiledevice3 developer dvt sysmon process monitor threshold 50
+
+# Stream one process and only show the selected fields
+pymobiledevice3 developer dvt sysmon process monitor pid 123 --key name --key cpuUsage --key physFootprint
+
+# Stream one process with human-readable memory sizes
+pymobiledevice3 developer dvt sysmon process monitor pid 123 --key name --key physFootprint --human
+
 # Stream oslog
 pymobiledevice3 developer dvt oslog
 
