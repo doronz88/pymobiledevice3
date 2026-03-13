@@ -32,8 +32,11 @@ Guidance for AI coding agents and automation contributors working in this reposi
 ## Testing Expectations
 
 - Add or update tests when behavior changes.
+- Prefer tests that exercise real physical devices over monkeypatched or
+  fully mocked coverage when the behavior depends on device interaction.
 - Reuse fixtures from `tests/conftest.py`, especially `service_provider`.
 - Run at least targeted tests for touched areas; run full `pytest` when practical.
+- Verify relevant linting for touched files when practical.
 
 ## Documentation Expectations
 
