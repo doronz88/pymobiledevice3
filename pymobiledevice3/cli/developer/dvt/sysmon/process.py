@@ -68,9 +68,11 @@ async def sysmon_process_single(
     count = 0
 
     result = []
-    async with DvtProvider(service_provider) as dvt, await Sysmontap.create(dvt) as sysmon:
-        device_info = DeviceInfo(dvt)
-
+    async with (
+        DvtProvider(service_provider) as dvt,
+        DeviceInfo(dvt) as device_info,
+        await Sysmontap.create(dvt) as sysmon,
+    ):
         async for process_snapshot in sysmon.iter_processes():
             count += 1
 
