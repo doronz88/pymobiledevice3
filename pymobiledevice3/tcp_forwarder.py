@@ -26,7 +26,7 @@ class TcpForwarderBase:
         """
         self.logger = logging.getLogger(__name__)
         self.src_port = src_port
-        self.server: Optional[asyncio.AbstractServer] = None
+        self.server: Optional[asyncio.Server] = None
         self.stopped = asyncio.Event()
         self.listening_event = listening_event
         self._connection_tasks: set[asyncio.Task] = set()
@@ -115,6 +115,14 @@ class TcpForwarderBase:
     def stop(self):
         """stop forwarding"""
         self.stopped.set()
+
+    @property
+    def listening_port(self) -> Optional[int]:
+        """Return the bound local port once the server has started listening."""
+        if self.server is None or not self.server.sockets:
+            return None
+        sockname = self.server.sockets[0].getsockname()
+        return sockname[1]
 
 
 class UsbmuxTcpForwarder(TcpForwarderBase):
