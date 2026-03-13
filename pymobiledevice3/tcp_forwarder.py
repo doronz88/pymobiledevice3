@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import threading
 from abc import abstractmethod
 from typing import Optional
 
@@ -17,13 +16,13 @@ class TcpForwarderBase:
 
     MAX_FORWARDED_CONNECTIONS = 200
 
-    def __init__(self, src_port: int, listening_event: Optional[threading.Event] = None):
+    def __init__(self, src_port: int, listening_event: Optional[asyncio.Event] = None):
         """
         Initialize a new tcp forwarder
 
         :param src_port: tcp port to listen on
         :param enable_ssl: enable ssl wrapping for the transferred data
-        :param listening_event: event to fire when the listening occurred
+        :param listening_event: asyncio event to fire when the listener is ready
         """
         self.logger = logging.getLogger(__name__)
         self.src_port = src_port
@@ -128,7 +127,7 @@ class UsbmuxTcpForwarder(TcpForwarderBase):
         serial: str,
         dst_port: int,
         src_port: int,
-        listening_event: Optional[threading.Event] = None,
+        listening_event: Optional[asyncio.Event] = None,
         usbmux_connection_type: Optional[str] = None,
         usbmux_address: Optional[str] = None,
     ):
@@ -138,7 +137,7 @@ class UsbmuxTcpForwarder(TcpForwarderBase):
         :param serial: device serial
         :param dst_port: tcp port to connect to each new connection via the supplied lockdown object
         :param src_port: tcp port to listen on
-        :param listening_event: event to fire when the listening occurred
+        :param listening_event: asyncio event to fire when the listener is ready
         :param usbmux_connection_type: preferred connection type
         :param usbmux_address: usbmuxd address
         """
@@ -170,14 +169,14 @@ class LockdownTcpForwarder(TcpForwarderBase):
         service_provider: LockdownServiceProvider,
         src_port: int,
         service_name: str,
-        listening_event: Optional[threading.Event] = None,
+        listening_event: Optional[asyncio.Event] = None,
     ):
         """
         Initialize a new tcp forwarder
 
         :param src_port: tcp port to listen on
         :param service_name: service name to connect to
-        :param listening_event: event to fire when the listening occurred
+        :param listening_event: asyncio event to fire when the listener is ready
         """
         super().__init__(src_port, listening_event)
         self.service_provider = service_provider
