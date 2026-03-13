@@ -1,6 +1,6 @@
-import glob
 import shutil
 from contextlib import suppress
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -67,15 +67,14 @@ async def test_clear(crash_manager, temp_directory) -> None:
             assert (await crash_manager.afc.stat(path))["st_birthtime"] > test_dir_birth_time
 
 
-async def test_pull(crash_manager, temp_directory) -> None:
+async def test_pull(crash_manager, temp_directory, tmp_path: Path) -> None:
     await crash_manager.afc.makedirs(PATH_COMPONENT)
     dir_list = await crash_manager.ls(depth=-1)
-    await crash_manager.pull(BASENAME)
-    pulled_list = [file[len(BASENAME) :] for file in glob.glob(f"{BASENAME}/**", recursive=True)][
-        1:
-    ]  # ignore root path
+    out_dir = tmp_path / BASENAME
+    await crash_manager.pull(str(out_dir))
+    pulled_list = [f"/{path.relative_to(out_dir).as_posix()}" for path in sorted(out_dir.rglob("*"))]
     assert sorted(dir_list) == sorted(pulled_list)
-    shutil.rmtree(BASENAME)
+    shutil.rmtree(out_dir)
 
 
 @pytest.mark.parametrize(
