@@ -10,6 +10,8 @@ Use this page as an entry point based on what you are trying to do.
   [iOS 17+ tunnels](guides/ios17-tunnels.md)
 - Common day-to-day commands:
   [CLI recipes](guides/cli-recipes.md)
+- WDA automation scripts:
+  [WDA scripting](guides/wda-scripting.md)
 
 ## For Python API Users
 
