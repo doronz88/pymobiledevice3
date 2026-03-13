@@ -166,7 +166,12 @@ async def wda_tap(
 async def wda_press(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
-    name: str,
+    names: Annotated[
+        list[str],
+        typer.Argument(
+            help="One or more device buttons to press in order (e.g. home lock volumeup).",
+        ),
+    ],
     session_id: Annotated[
         Optional[str],
         typer.Option(
@@ -176,10 +181,32 @@ async def wda_press(
         ),
     ] = None,
 ) -> None:
-    """Press a device button (e.g. home, volumeup, volumedown, lock)."""
+    """Press one or more device buttons (e.g. home, volumeup, volumedown, lock)."""
     if session_id is None:
         session_id = await client.start_session()
-    await client.press_button(name=name, session_id=session_id)
+    else:
+        client.session_id = session_id
+    for name in names:
+        await client.press_button(name=name, session_id=session_id)
+    await _cleanup_xctrunner(_xctrunner)
+
+
+@cli.command("unlock")
+@async_command
+async def wda_unlock(
+    client: WdaClientDep,
+    _xctrunner: WdaXcRunnerDep,
+    session_id: Annotated[
+        Optional[str],
+        typer.Option(
+            "--session-id",
+            "-s",
+            help="Existing WDA session id (optional; used for session-scoped unlock endpoints).",
+        ),
+    ] = None,
+) -> None:
+    """Unlock the device."""
+    await client.unlock(session_id=session_id)
     await _cleanup_xctrunner(_xctrunner)
 
 
