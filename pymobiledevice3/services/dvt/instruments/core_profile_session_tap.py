@@ -31,10 +31,10 @@ from construct import (
 )
 from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES
 
-from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_data, dtx_on_notification
+from pymobiledevice3.dtx import ConnectionAwareQueue, DTXService, dtx_method, dtx_on_data, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
-from pymobiledevice3.exceptions import DvtException, ExtractingStackshotError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, DvtException, ExtractingStackshotError
 from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 
@@ -630,6 +630,8 @@ class KdBufStream:
     def read(self, size):
         while size > len(self.current_chunk.getbuffer()) - self.current_chunk.tell():
             data = self.chunk_queue.get()
+            if isinstance(data, Exception):
+                raise data
             if data is None:
                 return b""
             if data.startswith(b"bplist"):
@@ -647,7 +649,7 @@ class CoreProfileSessionTapService(DTXService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self.messages: asyncio.Queue[bytes] = asyncio.Queue()
+        self.messages: asyncio.Queue[bytes] = ConnectionAwareQueue()
 
     @dtx_method("setConfig:", expects_reply=False)
     async def set_config_(self, config: dict) -> None: ...
@@ -740,7 +742,8 @@ class CoreProfileSessionTap:
     async def _next_message(self) -> bytes:
         if self.channel is not None:
             return await self.channel.receive_message()
-        return await (await self._service_ref()).messages.get()
+        service = await self._service_ref()
+        return await service.messages.get()
 
     def __enter__(self):
         raise RuntimeError("Use async context manager: `async with ...`")
@@ -832,8 +835,18 @@ class CoreProfileSessionTap:
             out.flush()
 
     async def pump_kdbuf_chunks(self, chunk_queue: queue.Queue) -> None:
-        while True:
-            chunk_queue.put(await self._next_message())
+        try:
+            while True:
+                chunk_queue.put(await self._next_message())
+        except asyncio.CancelledError:
+            raise
+        except ConnectionTerminatedError as e:
+            chunk_queue.put(e)
+        except Exception as e:
+            chunk_queue.put(e)
+            raise
+        finally:
+            chunk_queue.put(None)
 
     def get_kdbuf_stream(self, chunk_queue: queue.Queue):
         """

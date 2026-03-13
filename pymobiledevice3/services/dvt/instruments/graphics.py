@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
+from pymobiledevice3.dtx import ConnectionAwareQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 
 
@@ -11,7 +11,7 @@ class GraphicsService(DTXService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self.events: asyncio.Queue[Any] = asyncio.Queue()
+        self.events: asyncio.Queue[Any] = ConnectionAwareQueue()
 
     @dtx_method("startSamplingAtTimeInterval:")
     async def start_sampling_at_time_interval_(self, interval: float) -> Any: ...

@@ -30,9 +30,12 @@ import inspect
 import logging
 import re
 import sys
+from asyncio import Queue
 from collections.abc import Awaitable
 from functools import partial, wraps
 from typing import Any, Callable, ClassVar, Optional, TypeVar, get_type_hints
+
+from pymobiledevice3.exceptions import ConnectionTerminatedError
 
 from .channel import DTXChannel
 from .context import DTX_GLOBAL_CTX, DTXContext  # noqa: F401 — re-exported for back-compat
@@ -43,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 _MISSING = object()  # sentinel for missing attribute values in __init_subclass__
 DTX_SERVICE_T = TypeVar("DTX_SERVICE_T", bound="DTXService")
+QUEUE_ITEM_T = TypeVar("QUEUE_ITEM_T")
 
 __namespace_re__ = re.compile(r"^_([A-Z_]+_)+")
 
@@ -193,6 +197,16 @@ def dtx_on_dispatch(fn):
 # ---------------------------------------------------------------------------
 
 
+class ConnectionAwareQueue(Queue[QUEUE_ITEM_T]):
+    """Queue that turns connection-termination sentinels back into exceptions."""
+
+    async def get(self) -> QUEUE_ITEM_T:
+        item = await super().get()
+        if isinstance(item, ConnectionTerminatedError):
+            raise item
+        return item
+
+
 class DTXService:
     """Base class for services communicating over a DTX channel.
 
@@ -203,6 +217,7 @@ class DTXService:
     """
 
     IDENTIFIER: ClassVar[Optional[str]] = None
+    _queue_attrs_on_close: ClassVar[tuple[str, ...]] = ("messages", "events", "output_events")
 
     # Class-level routing tables, populated by __init_subclass__.
     _dtx_dispatch: ClassVar[dict[str, str]] = {}
@@ -315,6 +330,20 @@ class DTXService:
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self._channel.__aexit__(exc_type, exc_val, exc_tb)
+
+    def _on_connection_closed(self, exc: Optional[ConnectionTerminatedError] = None) -> None:
+        """Notify queue-backed consumers that the DTX connection has closed.
+
+        The default implementation pushes a :class:`ConnectionTerminatedError`
+        sentinel into common service queues such as ``messages`` / ``events`` /
+        ``output_events`` so consumers blocked on ``queue.get()`` wake up and
+        raise immediately instead of blocking forever.
+        """
+        exc = exc or ConnectionTerminatedError("Connection closed")
+        for attr_name in self._queue_attrs_on_close:
+            queue = getattr(self, attr_name, None)
+            if isinstance(queue, Queue):
+                queue.put_nowait(exc)
 
     @property
     def dtxproxy(self) -> Optional[DTXProxyService]:
