@@ -3,6 +3,7 @@ import queue
 import time
 import typing
 import uuid
+from contextlib import suppress
 from datetime import timedelta, timezone
 from io import BytesIO
 
@@ -34,7 +35,7 @@ from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES
 from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_data, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
-from pymobiledevice3.exceptions import DvtException, ExtractingStackshotError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, DvtException, ExtractingStackshotError
 from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 
@@ -754,7 +755,8 @@ class CoreProfileSessionTap:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await (await self._service_ref()).stop()
+        with suppress(ConnectionTerminatedError):
+            await (await self._service_ref()).stop()
 
     @staticmethod
     def _raise_if_tap_start_failed(data: bytes) -> None:
