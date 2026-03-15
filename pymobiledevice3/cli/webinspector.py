@@ -411,7 +411,7 @@ class JsShellCompleter(Completer):
     def __init__(self, jsshell: "JsShell") -> None:
         self.jsshell: JsShell = jsshell
 
-    async def aget_completions(
+    async def get_completions_async(
         self,
         document: Document,
         complete_event: CompleteEvent,
