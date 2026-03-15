@@ -362,6 +362,10 @@ class DTXService:
         """Send a DATA frame and optionally await the reply."""
         return await self._channel.send_data(data, *aux_args, expects_reply=expects_reply)
 
+    async def cancel(self) -> None:
+        """Cancel this service's channel."""
+        await self._channel.cancel()
+
 
 class DTXDynamicService(DTXService):
     """Dynamic proxy that maps attribute access to DTX selector calls.

@@ -100,6 +100,11 @@ class DTXChannel:
             return None
         return await self._unwrap_reply(msg_id, f"send_data(len={len(data)})")
 
+    async def cancel(self) -> None:
+        """Cancel this channel"""
+        self._check_open()
+        await self._connection.cancel_channel(self)
+
     # ------------------------------------------------------------------
     # Internal message handlers
     # ------------------------------------------------------------------
@@ -287,7 +292,8 @@ class DTXChannel:
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self._connection.cancel_channel(self)
+        if not self._closed:
+            await self.cancel()
 
     def _close(self) -> None:
         """Alias for :meth:`_shutdown` used by connection teardown."""
