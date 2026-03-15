@@ -169,14 +169,6 @@ async def sysmon_process_monitor_threshold(
             help="output file path for JSONL format (optional, defaults to stdout)",
         ),
     ] = None,
-    interval: Annotated[
-        Optional[int],
-        typer.Option(
-            "--interval",
-            "-i",
-            help="minimum interval in milliseconds between outputs (optional)",
-        ),
-    ] = None,
     duration: Annotated[
         Optional[int],
         typer.Option(
@@ -228,40 +220,34 @@ async def sysmon_process_monitor_threshold(
 
                     _write_process(output_file, _serialize_process(process, keys, human))
 
-                if interval:
-                    await asyncio.sleep(interval / 1000.0)
-
-                if duration is not None and ((asyncio.get_running_loop().time() - start_time) * 1000) >= duration:
-                    break
-
 
 @monitor_cli.command("pid")
 @async_command
 async def sysmon_process_monitor_pid(
     service_provider: ServiceProviderDep,
-    pid: Annotated[int, typer.Argument(help="process identifier to monitor")],
+    pid: Annotated[int, typer.Argument(help="Process identifier to monitor")],
     output: Annotated[
         Optional[Path],
         typer.Option(
             "--output",
             "-o",
-            help="output file path for JSONL format (optional, defaults to stdout)",
+            help="Output file path for JSONL format (optional, defaults to stdout)",
         ),
     ] = None,
     interval: Annotated[
-        Optional[int],
+        int,
         typer.Option(
             "--interval",
             "-i",
-            help="minimum interval in milliseconds between outputs (optional)",
+            help="Minimum interval in milliseconds between outputs (optional)",
         ),
-    ] = None,
+    ] = Sysmontap.DEFAULT_INTERVAL,
     duration: Annotated[
         Optional[int],
         typer.Option(
             "--duration",
             "-d",
-            help="maximum duration in milliseconds to run monitoring (optional)",
+            help="Maximum duration in milliseconds to run monitoring (optional)",
         ),
     ] = None,
     keys: Annotated[
@@ -269,14 +255,14 @@ async def sysmon_process_monitor_pid(
         typer.Option(
             "--key",
             "-k",
-            help="show only selected process keys for each emitted record. Can be specified multiple times.",
+            help="Show only selected process keys for each emitted record. Can be specified multiple times.",
         ),
     ] = None,
     human: Annotated[
         bool,
         typer.Option(
             "--human",
-            help="format known byte-count fields such as physFootprint using human-readable units.",
+            help="Format known byte-count fields such as physFootprint using human-readable units.",
         ),
     ] = False,
 ) -> None:
@@ -288,7 +274,7 @@ async def sysmon_process_monitor_pid(
     with contextlib.ExitStack() as stack:
         output_file = stack.enter_context(open(output, "w")) if output else None
 
-        async with DvtProvider(service_provider) as dvt, await Sysmontap.create(dvt) as sysmon:
+        async with DvtProvider(service_provider) as dvt, await Sysmontap.create(dvt, interval=interval) as sysmon:
             async for process_snapshot in sysmon.iter_processes():
                 count += 1
 
@@ -306,9 +292,6 @@ async def sysmon_process_monitor_pid(
                         continue
 
                     _write_process(output_file, _serialize_process(process, keys, human))
-
-                if interval:
-                    await asyncio.sleep(interval / 1000.0)
 
                 if duration is not None and ((asyncio.get_running_loop().time() - start_time) * 1000) >= duration:
                     break
