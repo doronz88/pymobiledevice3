@@ -2,7 +2,7 @@ import logging
 
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, print_json
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
 from pymobiledevice3.services.os_trace import OsTraceService
 
 logger = logging.getLogger(__name__)
@@ -16,15 +16,17 @@ cli = InjectingTyper(
 
 
 @cli.command("ps")
-def processes_ps(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def processes_ps(service_provider: ServiceProviderDep) -> None:
     """show process list"""
-    print_json(OsTraceService(lockdown=service_provider).get_pid_list().get("Payload"))
+    print_json((await OsTraceService(lockdown=service_provider).get_pid_list()).get("Payload"))
 
 
 @cli.command("pgrep")
-def processes_pgrep(service_provider: ServiceProviderDep, expression: str) -> None:
+@async_command
+async def processes_pgrep(service_provider: ServiceProviderDep, expression: str) -> None:
     """try to match processes pid by given expression (like pgrep)"""
-    processes_list = OsTraceService(lockdown=service_provider).get_pid_list().get("Payload")
+    processes_list = (await OsTraceService(lockdown=service_provider).get_pid_list()).get("Payload")
     for pid, process_info in processes_list.items():
         process_name = process_info.get("ProcessName")
         if expression in process_name:
