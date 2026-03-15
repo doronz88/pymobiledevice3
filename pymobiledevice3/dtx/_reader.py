@@ -7,11 +7,8 @@ all ``self.*`` references are resolved at runtime on the concrete class.
 from __future__ import annotations
 
 import asyncio
-import errno
 import logging
 from typing import TYPE_CHECKING
-
-from pymobiledevice3.exceptions import ConnectionTerminatedError
 
 from .exceptions import DTXProtocolError
 from .fragment import DTXFragment
@@ -31,14 +28,6 @@ MAX_BUFFERED_COUNT: int = 100
 
 MAX_BUFFERED_SIZE: int = 30 * 1024 * 1024  # 30 MiB
 """Maximum total bytes buffered across all in-flight multi-fragment messages."""
-
-TERMINATING_ERRNOS = {
-    errno.EPIPE,
-    errno.ECONNABORTED,
-    errno.ECONNRESET,
-    errno.ENOTCONN,
-    errno.ETIMEDOUT,
-}
 
 
 class _DTXReaderMixin:
@@ -78,22 +67,6 @@ class _DTXReaderMixin:
     def _log_message(self, direction: str, message: DTXMessage) -> None:
         """Best-effort DEBUG log line for a fully assembled DTXMessage."""
         self.logger.debug("%-8s %r", direction, message)
-
-    @staticmethod
-    def _normalize_reader_exception(exc: Exception) -> Exception:
-        if isinstance(
-            exc, (ConnectionTerminatedError, asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError)
-        ):
-            return ConnectionTerminatedError() if not isinstance(exc, ConnectionTerminatedError) else exc
-        if isinstance(exc, TimeoutError):
-            normalized = ConnectionTerminatedError()
-            normalized.__cause__ = exc
-            return normalized
-        if isinstance(exc, OSError) and exc.errno in TERMINATING_ERRNOS:
-            normalized = ConnectionTerminatedError()
-            normalized.__cause__ = exc
-            return normalized
-        return exc
 
     # ------------------------------------------------------------------
     # Fragment reader loop
@@ -135,21 +108,15 @@ class _DTXReaderMixin:
                     await self._process_message(raw, meta)
 
         except (asyncio.CancelledError, Exception) as exc:
-            normalized_exc = exc
-            if isinstance(exc, Exception):
-                normalized_exc = self._normalize_reader_exception(exc)
             if not isinstance(exc, asyncio.CancelledError):
-                if isinstance(normalized_exc, ConnectionTerminatedError):
-                    self.logger.info("DTX reader exiting: connection terminated")
-                else:
-                    self.logger.error("DTX reader exiting with error: %s", exc)
+                self.logger.error("DTX reader exiting with error: %s", exc)
             if not self._handshake_done.done():
                 if isinstance(exc, asyncio.CancelledError):
                     self._handshake_done.set_exception(
                         ConnectionResetError("DTX reader cancelled before handshake completed")
                     )
                 else:
-                    self._handshake_done.set_exception(normalized_exc)
+                    self._handshake_done.set_exception(exc)
             await self.close()  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------

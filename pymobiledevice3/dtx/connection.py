@@ -194,22 +194,15 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         with suppress(Exception):
             await asyncio.wait_for(self._writer.wait_closed(), timeout=5.0)
 
-        close_exc = ConnectionTerminatedError("Connection closed")
         async with self._channel_lock:
-            for service in list(self._services.values()):
-                with suppress(Exception):
-                    service._on_connection_closed(close_exc)
             for channel in list(self._channels.values()):
                 channel._shutdown("connection closing")
             self._channels.clear()
             self._services.clear()
 
-        async with self._service_condition:
-            self._service_condition.notify_all()
-
         for f in self._pending_replies.values():
             if not f.done():
-                f.set_exception(close_exc)
+                f.set_exception(ConnectionTerminatedError("Connection closed"))
         self._pending_replies.clear()
         # these Futures have done callback whch removes them from the list, so we don't need to clear the list here
         for f in list(self._pending_outgoing_replies):
@@ -380,8 +373,6 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         async def _find() -> DTXService:
             async with self._service_condition:
                 while True:
-                    if self._closed:
-                        raise ConnectionTerminatedError("Connection closed while waiting for service")
                     for svc in self._services.values():
                         if predicate(svc):
                             return svc
@@ -420,8 +411,6 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         async def _find() -> DTXService:
             async with self._service_condition:
                 while True:
-                    if self._closed:
-                        raise ConnectionTerminatedError("Connection closed while waiting for proxied service")
                     for svc in self._services.values():
                         if isinstance(svc, DTXProxyService):
                             candidate = svc.remote_service if remote else svc.local_service
