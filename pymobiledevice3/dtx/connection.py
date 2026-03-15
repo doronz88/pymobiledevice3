@@ -306,12 +306,12 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
 
     async def cancel_channel(self, channel: DTXChannel) -> None:
         """Cancel *channel* and remove it from the registry."""
+        await self._control_svc.cancel_channel(-channel.code)
         async with self._channel_lock:
             self._services.pop(channel.code, None)
             ch = self._channels.pop(channel.code, None)
-            if ch:
-                ch._shutdown("channel cancelled")
-        await self._control_svc.cancel_channel(channel.code)
+            assert ch is channel, f"Unmanaged channel passed to cancel_channel: ch={ch!r} channel={channel!r}"
+            ch._shutdown("channel cancelled")
 
     def register_service(self, cls: type[DTXService]) -> None:
         """Register a :class:`DTXService` subclass for *cls.IDENTIFIER*.
