@@ -6,8 +6,11 @@ This module provides:
   connection (usbmux, TCP, or RSD-backed) without requiring a local forwarder.
 """
 
+import argparse
+import asyncio
 import base64
 import json
+import shlex
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -20,6 +23,19 @@ from pymobiledevice3.service_connection import ServiceConnection
 
 DEFAULT_WDA_PORT = 8100
 DEFAULT_WDA_URL = "http://127.0.0.1:8100"
+
+
+@dataclass(frozen=True)
+class WdaScriptStep:
+    """A parsed WDA script step."""
+
+    line_number: int
+    command: str
+    args: tuple[Any, ...] = ()
+    kwargs: Optional[dict[str, Any]] = None
+
+    def get_kwargs(self) -> dict[str, Any]:
+        return self.kwargs or {}
 
 
 @dataclass
@@ -519,3 +535,152 @@ def normalize_wda_key_name(name: str) -> str:
         "power": "LOCK",
     }
     return aliases.get(key, name)
+
+
+def parse_wda_script(script: str) -> list[WdaScriptStep]:
+    """Parse a simple line-based WDA script."""
+    steps = []
+    for line_number, raw_line in enumerate(script.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            tokens = shlex.split(line, posix=True)
+        except ValueError as exc:
+            raise WdaError(f"script line {line_number}: failed to parse line: {exc}") from exc
+        if not tokens:
+            continue
+
+        command = tokens[0].lower().replace("-", "_")
+        args = tokens[1:]
+        steps.append(_parse_wda_script_step(line_number, command, args))
+    return steps
+
+
+class _WdaScriptArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser that raises WdaError instead of exiting."""
+
+    def __init__(self, line_number: int, *args, **kwargs) -> None:
+        super().__init__(*args, add_help=False, **kwargs)
+        self._line_number = line_number
+
+    def error(self, message: str) -> None:
+        raise WdaError(f"script line {self._line_number}: {message}")
+
+
+def _parse_wda_script_step(line_number: int, command: str, args: list[str]) -> WdaScriptStep:
+    """Parse one WDA script step."""
+    if command == "launch":
+        parser = _WdaScriptArgumentParser(line_number=line_number, prog="launch")
+        parser.add_argument("bundle_id")
+        parsed = parser.parse_args(args)
+        return WdaScriptStep(line_number=line_number, command=command, args=(parsed.bundle_id,))
+
+    if command == "tap":
+        parser = _WdaScriptArgumentParser(line_number=line_number, prog="tap")
+        parser.add_argument("selector")
+        parser.add_argument("--using", default="accessibility id")
+        parsed = parser.parse_args(args)
+        return WdaScriptStep(
+            line_number=line_number,
+            command=command,
+            args=(parsed.selector,),
+            kwargs={"using": parsed.using},
+        )
+
+    if command == "press":
+        parser = _WdaScriptArgumentParser(line_number=line_number, prog="press")
+        parser.add_argument("names", nargs="+")
+        parsed = parser.parse_args(args)
+        return WdaScriptStep(line_number=line_number, command=command, args=tuple(parsed.names))
+
+    if command == "type":
+        parser = _WdaScriptArgumentParser(line_number=line_number, prog="type")
+        parser.add_argument("text")
+        parsed = parser.parse_args(args)
+        return WdaScriptStep(line_number=line_number, command=command, args=(parsed.text,))
+
+    if command == "swipe":
+        parser = _WdaScriptArgumentParser(line_number=line_number, prog="swipe")
+        parser.add_argument("start_x", type=int)
+        parser.add_argument("start_y", type=int)
+        parser.add_argument("end_x", type=int)
+        parser.add_argument("end_y", type=int)
+        parser.add_argument("duration", nargs="?", type=float, default=0.2)
+        parsed = parser.parse_args(args)
+        return WdaScriptStep(
+            line_number=line_number,
+            command=command,
+            args=(parsed.start_x, parsed.start_y, parsed.end_x, parsed.end_y, parsed.duration),
+        )
+
+    if command == "wait":
+        parser = _WdaScriptArgumentParser(line_number=line_number, prog="wait")
+        parser.add_argument("duration", type=float)
+        parsed = parser.parse_args(args)
+        if parsed.duration < 0:
+            raise WdaError(f"script line {line_number}: wait duration must be non-negative")
+        return WdaScriptStep(line_number=line_number, command=command, args=(parsed.duration,))
+
+    if command == "unlock":
+        parser = _WdaScriptArgumentParser(line_number=line_number, prog="unlock")
+        parser.parse_args(args)
+        return WdaScriptStep(line_number=line_number, command=command)
+
+    raise WdaError(f"script line {line_number}: unsupported command: {command}")
+
+
+async def run_wda_script(client: WdaServiceClient, script: str) -> None:
+    """Execute a line-based WDA script with one shared WDA session."""
+    steps = parse_wda_script(script)
+    session_id = client.session_id
+
+    async def ensure_session(bundle_id: Optional[str] = None) -> str:
+        nonlocal session_id
+        if session_id is None:
+            session_id = await client.start_session(bundle_id=bundle_id)
+        return session_id
+
+    for step in steps:
+        try:
+            if step.command == "launch":
+                session_id = await client.start_session(bundle_id=step.args[0])
+                continue
+
+            if step.command == "tap":
+                current_session_id = await ensure_session()
+                using = step.get_kwargs().get("using", "accessibility id")
+                element_id = await client.find_element(using=using, value=step.args[0], session_id=current_session_id)
+                await client.click(element_id=element_id, session_id=current_session_id)
+                continue
+
+            if step.command == "press":
+                current_session_id = await ensure_session()
+                for name in step.args:
+                    await client.press_button(name=name, session_id=current_session_id)
+                continue
+
+            if step.command == "type":
+                current_session_id = await ensure_session()
+                await client.send_keys(step.args[0], session_id=current_session_id)
+                continue
+
+            if step.command == "swipe":
+                current_session_id = await ensure_session()
+                start_x, start_y, end_x, end_y, duration = step.args
+                await client.swipe(start_x, start_y, end_x, end_y, duration=duration, session_id=current_session_id)
+                continue
+
+            if step.command == "wait":
+                await asyncio.sleep(step.args[0])
+                continue
+
+            if step.command == "unlock":
+                await client.unlock(session_id=session_id)
+                continue
+
+            raise WdaError(f"script line {step.line_number}: unsupported command: {step.command}")
+        except WdaError as exc:
+            raise WdaError(f"script line {step.line_number}: {exc}", status_code=exc.status_code) from exc
+        except Exception as exc:
+            raise WdaError(f"script line {step.line_number}: {exc}") from exc

@@ -12,7 +12,7 @@ from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, pr
 from pymobiledevice3.exceptions import ConnectionFailedError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import TestConfig, XCUITestService
-from pymobiledevice3.services.wda import DEFAULT_WDA_PORT, WdaServiceClient
+from pymobiledevice3.services.wda import DEFAULT_WDA_PORT, WdaServiceClient, run_wda_script
 from pymobiledevice3.utils import get_asyncio_loop
 
 cli = InjectingTyper(
@@ -458,4 +458,16 @@ async def wda_window_size(
     else:
         client.session_id = session_id
     print_json(await client.get_window_size(session_id=session_id))
+    await _cleanup_xctrunner(_xctrunner)
+
+
+@cli.command("run-script")
+@async_command
+async def wda_run_script(
+    client: WdaClientDep,
+    _xctrunner: WdaXcRunnerDep,
+    script_file: Path,
+) -> None:
+    """Run a line-based WDA script file."""
+    await run_wda_script(client, script_file.read_text())
     await _cleanup_xctrunner(_xctrunner)
