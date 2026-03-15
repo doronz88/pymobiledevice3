@@ -2,7 +2,7 @@ import asyncio
 import typing
 from typing import Any
 
-from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
+from pymobiledevice3.dtx import ConnectionAwareQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 
 
@@ -11,7 +11,7 @@ class NotificationsService(DTXService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self.events: asyncio.Queue[Any] = asyncio.Queue()
+        self.events: asyncio.Queue[Any] = ConnectionAwareQueue()
 
     @dtx_method("setApplicationStateNotificationsEnabled:", expects_reply=False)
     async def set_application_state_notifications_enabled_(self, enabled: bool) -> None: ...
