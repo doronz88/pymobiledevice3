@@ -48,7 +48,6 @@ from .primitives import (
 # Service base classes & decorators
 from .service import (
     DTX_SERVICE_T,
-    ConnectionAwareQueue,
     DTXDynamicService,
     DTXProxyService,
     DTXService,
@@ -64,7 +63,6 @@ __all__ = [
     "DTX_SERVICE_T",
     "NSURL",
     "NSUUID",
-    "ConnectionAwareQueue",
     "DTXChannel",
     "DTXConnection",
     "DTXContext",

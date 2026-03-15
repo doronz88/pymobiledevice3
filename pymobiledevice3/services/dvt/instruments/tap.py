@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 from bpylist2 import archiver
 
-from pymobiledevice3.dtx import ConnectionAwareQueue, DTXService, dtx_method, dtx_on_data, dtx_on_notification
+from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_data, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
@@ -14,7 +14,7 @@ from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 class TapService(DTXService):
     def __init__(self, ctx):
         super().__init__(ctx)
-        self.messages: asyncio.Queue[tuple[str, Any]] = ConnectionAwareQueue()
+        self.messages: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
 
     @dtx_method("setConfig:", expects_reply=False)
     async def set_config_(self, config: dict) -> None: ...
