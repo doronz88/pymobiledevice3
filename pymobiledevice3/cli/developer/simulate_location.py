@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="simulate-location",
-    help="Simulate GPS location (set, clear, or replay GPX routes).",
+    help="Simulate GPS location on iOS versions below 17 (set, clear, or replay GPX routes).",
     no_args_is_help=True,
 )
 
@@ -21,7 +21,7 @@ cli = InjectingTyper(
 @cli.command("clear")
 @async_command
 async def simulate_location_clear(service_provider: ServiceProviderDep) -> None:
-    """Stop location simulation and resume real GPS."""
+    """Stop location simulation and resume real GPS on iOS versions below 17."""
     await DtSimulateLocation(service_provider).clear()
 
 
@@ -29,7 +29,7 @@ async def simulate_location_clear(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def simulate_location_set(service_provider: ServiceProviderDep, latitude: float, longitude: float) -> None:
     """
-    Set a fixed simulated location (latitude, longitude).
+    Set a fixed simulated location on iOS versions below 17 (latitude, longitude).
     Example: `set 40.690008 -74.045843` (Liberty Island).
     """
     await DtSimulateLocation(service_provider).set(latitude, longitude)
@@ -46,7 +46,7 @@ async def simulate_location_play(
     timing_randomness_range: int,
     disable_sleep: Annotated[bool, typer.Option()] = False,
 ) -> None:
-    """Replay a GPX route; optionally disable sleeps and add timing jitter."""
+    """Replay a GPX route on iOS versions below 17; optionally disable sleeps and add timing jitter."""
     await DtSimulateLocation(service_provider).play_gpx_file(
         str(filename),
         disable_sleep=disable_sleep,

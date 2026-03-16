@@ -10,7 +10,7 @@ from pymobiledevice3.services.dvt.instruments.location_simulation import Locatio
 
 cli = InjectingTyper(
     name="simulate-location",
-    help="Simulate device location by given input",
+    help="Simulate device location through DVT on iOS 17 and newer.",
     no_args_is_help=True,
 )
 
@@ -18,7 +18,7 @@ cli = InjectingTyper(
 @cli.command("clear")
 @async_command
 async def dvt_simulate_location_clear(service_provider: ServiceProviderDep) -> None:
-    """Clear currently simulated location"""
+    """Clear the currently simulated location on iOS 17 and newer."""
     async with DvtProvider(service_provider) as dvt, LocationSimulation(dvt) as location_simulation:
         await location_simulation.clear()
 
@@ -27,7 +27,7 @@ async def dvt_simulate_location_clear(service_provider: ServiceProviderDep) -> N
 @async_command
 async def dvt_simulate_location_set(service_provider: ServiceProviderDep, latitude: float, longitude: float) -> None:
     """
-    Set a simulated location.
+    Set a simulated location through DVT on iOS 17 and newer.
 
     \b
     For example:
@@ -49,7 +49,7 @@ async def dvt_simulate_location_play(
     timing_randomness_range: int = 0,
     disable_sleep: Annotated[bool, typer.Option()] = False,
 ) -> None:
-    """Simulate inputs from a given .gpx file"""
+    """Replay a GPX route through DVT on iOS 17 and newer."""
     async with DvtProvider(service_provider) as dvt, LocationSimulation(dvt) as location_simulation:
         await location_simulation.play_gpx_file(
             str(filename),
