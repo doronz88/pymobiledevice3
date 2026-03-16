@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator
+from contextlib import suppress
 from typing import Any, Optional
 
 from bpylist2 import archiver
@@ -9,11 +10,13 @@ from bpylist2 import archiver
 from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_data, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
+from pymobiledevice3.exceptions import ConnectionTerminatedError
 
 
 class TapService(DTXService):
     def __init__(self, ctx):
         super().__init__(ctx)
+        self.stop_exception: Optional[Exception] = None
         self.messages: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
 
     @dtx_method("setConfig:", expects_reply=False)
@@ -32,6 +35,11 @@ class TapService(DTXService):
     @dtx_on_notification
     async def _on_notification(self, payload: Any) -> None:
         await self.messages.put(("plist", payload))
+
+    async def aclose(self, reason: str, exc: Optional[Exception] = None) -> None:
+        self.stop_exception = exc
+        self.messages.shutdown()
+        await super().aclose(reason, exc)
 
 
 class TapChannel(DtxService[TapService]):
@@ -60,14 +68,10 @@ class TapMessageChannel:
         return payload, []
 
     async def receive_plist(self) -> Any:
-        while True:
-            kind, payload = await self._service.messages.get()
-            if kind == "plist":
-                return payload
-            try:
-                return archiver.unarchive(payload)
-            except Exception:
-                continue
+        kind, payload = await self._service.messages.get()
+        if kind == "plist":
+            return payload
+        return archiver.unarchive(payload)
 
     async def receive_message(self) -> bytes:
         kind, payload = await self._service.messages.get()
@@ -75,6 +79,7 @@ class TapMessageChannel:
             return payload
         if payload is None:
             return b""
+        # FIXME: shouldn't this be unarchive ?
         return archiver.archive(payload)
 
 
@@ -100,6 +105,7 @@ class Tap:
     async def __aenter__(self):
         service = await self._service_ref()
         self.channel = TapMessageChannel(service)
+        await service.__aenter__()
         await service.set_config_(self._config)
         await service.start()
         # first message is just kind of an ack
@@ -107,10 +113,16 @@ class Tap:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await (await self._service_ref()).stop()
+        with suppress(ConnectionTerminatedError):
+            await (await self._service_ref()).stop()
+        await (await self._service_ref()).__aexit__(exc_type, exc_val, exc_tb)
 
     async def __aiter__(self) -> AsyncGenerator[Any, None]:
         assert self.channel is not None
-        while True:
-            for message in await self.channel.receive_plist():
-                yield message
+        try:
+            while True:
+                yield await self.channel.receive_message()
+        except asyncio.QueueShutDown:
+            ex = (await self._service_ref()).stop_exception
+        if ex is not None:
+            raise ex

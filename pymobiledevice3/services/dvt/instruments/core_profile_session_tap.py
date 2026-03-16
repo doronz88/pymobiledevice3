@@ -649,6 +649,7 @@ class CoreProfileSessionTapService(DTXService):
     def __init__(self, ctx):
         super().__init__(ctx)
         self.messages: asyncio.Queue[bytes] = asyncio.Queue()
+        self.stop_exception: typing.Optional[Exception] = None
 
     @dtx_method("setConfig:", expects_reply=False)
     async def set_config_(self, config: dict) -> None: ...
@@ -669,6 +670,12 @@ class CoreProfileSessionTapService(DTXService):
             await self.messages.put(b"")
             return
         await self.messages.put(archiver.archive(payload))
+
+    async def aclose(self, reason, exc=None):
+        # or self._ctx["closed"].set()
+        self.stop_exception = exc
+        self.messages.shutdown()
+        await super().aclose(reason, exc)
 
 
 class CoreProfileSessionTapChannel(DtxService[CoreProfileSessionTapService]):
@@ -741,13 +748,18 @@ class CoreProfileSessionTap:
     async def _next_message(self) -> bytes:
         if self.channel is not None:
             return await self.channel.receive_message()
-        return await (await self._service_ref()).messages.get()
+        try:
+            return await (await self._service_ref()).messages.get()
+        except asyncio.QueueShutDown:
+            ex = (await self._service_ref()).stop_exception or ConnectionTerminatedError("Channel closed")
+        raise ex
 
     def __enter__(self):
         raise RuntimeError("Use async context manager: `async with ...`")
 
     async def __aenter__(self):
         service = await self._service_ref()
+        await service.__aenter__()
         await service.set_config_(self._config)
         await service.start()
         # first message is an ack

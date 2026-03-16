@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, Optional
 
 from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
@@ -12,6 +12,7 @@ class GraphicsService(DTXService):
     def __init__(self, ctx):
         super().__init__(ctx)
         self.events: asyncio.Queue[Any] = asyncio.Queue()
+        self.stop_exception: Optional[Exception] = None
 
     @dtx_method("startSamplingAtTimeInterval:")
     async def start_sampling_at_time_interval_(self, interval: float) -> Any: ...
@@ -27,6 +28,11 @@ class GraphicsService(DTXService):
     async def _on_notification(self, payload: Any) -> None:
         await self.events.put(payload)
 
+    async def aclose(self, reason: str, exc: Optional[Exception] = None) -> None:
+        self.stop_exception = exc
+        self.events.shutdown()
+        await super().aclose(reason, exc)
+
 
 class Graphics(DtxService[GraphicsService]):
     async def __aenter__(self):
@@ -36,7 +42,13 @@ class Graphics(DtxService[GraphicsService]):
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.service.stop_sampling()
+        await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def __aiter__(self) -> AsyncGenerator[Any, None]:
-        while True:
-            yield await self.service.events.get()
+        try:
+            while True:
+                yield await self.service.events.get()
+        except asyncio.QueueShutDown:
+            ex = self.service.stop_exception
+        if ex is not None:
+            raise ex
