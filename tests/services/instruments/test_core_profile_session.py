@@ -1,5 +1,6 @@
 import asyncio
 import queue
+import uuid
 from contextlib import suppress
 from typing import Optional
 
@@ -34,6 +35,7 @@ async def test_staskshot_channel_closed(dvt: DtxServiceProvider) -> None:
     Test that an exception is raised when the channel is closed while waiting for stackshot data.
     """
     producer_task: Optional[asyncio.Task] = None
+    random_reason = uuid.uuid4().hex
 
     try:
         time_config = await CoreProfileSessionTap.get_time_config(dvt)
@@ -48,13 +50,13 @@ async def test_staskshot_channel_closed(dvt: DtxServiceProvider) -> None:
                     await asyncio.sleep(0.01)
 
             await asyncio.wait_for(wait_not_empty(), timeout=0.5)
-            await (await tap._service_ref())._channel.cancel()
+            await (await tap._service_ref())._channel.cancel(random_reason)
             try:
                 await asyncio.wait_for(producer_task, timeout=0.5)
             except asyncio.TimeoutError:
                 pytest.fail("Producer task did not finish in time after channel cancellation")
-            except ConnectionTerminatedError:
-                pass
+            except ConnectionTerminatedError as e:
+                assert random_reason in str(e)
             except Exception as e:
                 pytest.fail(f"Unexpected exception raised: {e}")
     finally:
