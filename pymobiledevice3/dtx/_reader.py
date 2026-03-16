@@ -10,7 +10,9 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from .exceptions import DTXProtocolError
+from pymobiledevice3.exceptions import ConnectionTerminatedError
+
+from .exceptions import DTXProtocolError, is_connection_error
 from .fragment import DTXFragment
 from .fragmenter import DTXFragmenter
 from .message import (
@@ -45,7 +47,7 @@ class _DTXReaderMixin:
     - ``_pending_replies`` — ``dict[int, asyncio.Future[DTXMessage]]``
     - ``_closed`` — :class:`bool`
     - ``logger`` — :class:`logging.Logger`
-    - ``close()`` — coroutine (provided by :class:`DTXConnection`)
+    - ``aclose(reason: str, exc: Optional[Exception] = None)`` — coroutine (provided by :class:`DTXConnection`)
     - ``_schedule_reply_error()`` — schedule an error reply (provided by :class:`_DTXSenderMixin`)
     """
 
@@ -75,7 +77,7 @@ class _DTXReaderMixin:
     async def _process_incoming_fragments(self) -> None:
         """Background task: read fragments until the connection closes or errors."""
         try:
-            while True:
+            while not self._closed:
                 fragment = await DTXFragment.read(self._reader)
 
                 if fragment.count == 1:
@@ -109,7 +111,13 @@ class _DTXReaderMixin:
 
         except (asyncio.CancelledError, Exception) as exc:
             if not isinstance(exc, asyncio.CancelledError):
-                self.logger.error("DTX reader exiting with error: %s", exc)
+                if is_connection_error(exc):
+                    self.logger.info("DTX reader connection lost: %s", exc)
+                    normalized_ex = ConnectionTerminatedError("Connection lost")
+                    normalized_ex.__cause__ = exc
+                    exc = normalized_ex
+                else:
+                    self.logger.error("DTX reader exiting with error: %s", exc)
             if not self._handshake_done.done():
                 if isinstance(exc, asyncio.CancelledError):
                     self._handshake_done.set_exception(
@@ -117,7 +125,7 @@ class _DTXReaderMixin:
                     )
                 else:
                     self._handshake_done.set_exception(exc)
-            await self.close()  # type: ignore[attr-defined]
+            await self.aclose("reader exiting", exc)  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------
     # Message processing
