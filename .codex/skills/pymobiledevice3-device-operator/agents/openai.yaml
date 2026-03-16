@@ -1,0 +1,4 @@
+interface:
+  display_name: "PyMobileDevice3 Device Operator"
+  short_description: "Operate iOS devices via pymobiledevice3"
+  default_prompt: "Use $pymobiledevice3-device-operator to inspect or control a connected iPhone or iPad with pymobiledevice3."

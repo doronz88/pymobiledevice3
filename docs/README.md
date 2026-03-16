@@ -37,3 +37,7 @@ Use this page as an entry point based on what you are trying to do.
   [CODE_OF_CONDUCT](../CODE_OF_CONDUCT.md)
 - Agent workflow guidance:
   [AGENTS](../AGENTS.md)
+- Codex device-operation workflow:
+  [Codex device operator skill](guides/codex-device-operator-skill.md)
+- Remote-usage note:
+  The Codex skill guide includes copy-pasteable GitHub URLs for using the skill remotely.
