@@ -32,7 +32,7 @@ import re
 import sys
 from collections.abc import Awaitable
 from functools import partial, wraps
-from typing import Any, Callable, ClassVar, Optional, TypeVar, get_type_hints
+from typing import Any, Callable, ClassVar, Optional, Self, TypeVar, get_type_hints
 
 from .channel import DTXChannel
 from .context import DTX_GLOBAL_CTX, DTXContext  # noqa: F401 — re-exported for back-compat
@@ -313,7 +313,12 @@ class DTXService:
         await self._channel.__aenter__()
         return self
 
+    async def aclose(self, reason: str, exc: Optional[Exception] = None) -> None:
+        """Close the underlying channel and clean up resources."""
+        await self._channel.aclose(reason, exc)
+
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.aclose("context exit", exc_val)
         await self._channel.__aexit__(exc_type, exc_val, exc_tb)
 
     @property
@@ -353,10 +358,6 @@ class DTXService:
         this method for ad-hoc or dynamic selector invocations.
         """
         return await self._channel.invoke(method, *args, expects_reply=expects_reply)
-
-    async def do_invoke(self, method: str, *args: Any, expects_reply: bool = True) -> Any:
-        """Backward-compatible alias for :meth:`invoke`."""
-        return await self.invoke(method, *args, expects_reply=expects_reply)
 
     async def send_data(self, data: bytes, *aux_args: Any, expects_reply: bool = False) -> Any:
         """Send a DATA frame and optionally await the reply."""
@@ -458,10 +459,18 @@ class DTXControlService(DTXService):
 
     @dtx_on_dispatch
     async def _recv_unknown_control_dispatch(self, selector: str, *args: Any) -> None:
-        queue = self._ctx["connection"].ctx.get("control_dispatch_queue")
+        # FIXME: this queue workaround doens't reply with the expected result or NSError.
+        #      : DtxServiceProvider shall be able to specify a DTXControlService subclass with custom dispatch handling.
+        queue = self._ctx.get("control_dispatch_queue")
         if queue is not None:
             await queue.put((selector, list(args)))
         logger.debug("ignoring unknown control-channel selector %r with %d arg(s)", selector, len(args))
+
+    # ------------------------------------------------------------------
+    # unexpected closure handling
+    # ------------------------------------------------------------------
+    async def aclose(self, reason: str, exc: Optional[Exception] = None) -> None:
+        await self._ctx["connection"].aclose(f"control channel closed: {reason}", exc)
 
 
 class DTXProxyService(DTXService):
@@ -502,12 +511,15 @@ class DTXProxyService(DTXService):
         # Wire the channel's dispatch/data callbacks to this proxy's handlers,
         # which delegate to the local service.  Re-wire on every assignment so
         # the proxy always reflects the current local service.
-        cls = type(self)
+        cls = type(svc)
         if cls._dtx_dispatch or cls._dtx_dispatch_handler is not None:
-            self._channel.on_invoke = self.__on_dispatch__
+            self._channel.on_invoke = svc.__on_dispatch__
         data_handler = cls._dtx_data_handler
         if data_handler is not None:
-            self._channel.on_data = getattr(self, data_handler)
+            self._channel.on_data = getattr(svc, data_handler)
+        notification_handler = cls._dtx_notification_handler
+        if notification_handler is not None:
+            self._channel.on_notification = getattr(svc, notification_handler)
 
     @property
     def remote_service(self) -> DTXService:
@@ -519,27 +531,6 @@ class DTXProxyService(DTXService):
     @remote_service.setter
     def remote_service(self, svc: DTXService) -> None:
         self._remote_service = svc
-        notif_handler = type(self)._dtx_notification_handler
-        if notif_handler is not None:
-            self._channel.on_notification = getattr(self, notif_handler)
-
-    @dtx_on_dispatch
-    async def __proxy_dispatch__(self, selector: str, *args: Any) -> Any:
-        return await self.local_service.__on_dispatch__(selector, list(args))
-
-    @dtx_on_data
-    async def __proxy_data__(self, data: bytes) -> Any:
-        handler = type(self.local_service)._dtx_data_handler
-        if handler:
-            return await getattr(self.local_service, handler)(data)
-        return None
-
-    @dtx_on_notification
-    async def __proxy_notification__(self, notification: Any) -> Any:
-        handler = type(self.remote_service)._dtx_notification_handler
-        if handler:
-            return await getattr(self.remote_service, handler)(notification)
-        return None
 
     async def send_notification(self, notification: Any, *aux_args: Any, expects_reply: bool = False) -> Any:
         """Forward a notification through the remote service."""
@@ -552,3 +543,24 @@ class DTXProxyService(DTXService):
     async def send_data(self, data: bytes, *aux_args: Any, expects_reply: bool = False) -> Any:
         """Forward a DATA frame through the remote service."""
         return await self.remote_service.send_data(data, *aux_args, expects_reply=expects_reply)
+
+    async def __aenter__(self) -> Self:
+        await super().__aenter__()
+        for svc in (self._local_service, self._remote_service):
+            if svc is not None:
+                await svc.__aenter__()
+        return self
+
+    async def aclose(self, reason: str, exc: Optional[Exception] = None) -> None:
+        await super().aclose(reason, exc)
+        # Propagate channel closure to both sides of the proxy.
+        for svc in (self._local_service, self._remote_service):
+            if svc is not None:
+                await svc.aclose(reason, exc)
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.aclose("context exit", exc_val)
+        await super().__aexit__(exc_type, exc_val, exc_tb)
+        for svc in (self._local_service, self._remote_service):
+            if svc is not None:
+                await svc.__aexit__(exc_type, exc_val, exc_tb)
