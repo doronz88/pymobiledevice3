@@ -32,7 +32,7 @@ import re
 import sys
 from collections.abc import Awaitable
 from functools import partial, wraps
-from typing import Any, Callable, ClassVar, Optional, Self, TypeVar, get_type_hints
+from typing import Any, Callable, ClassVar, Optional, TypeVar, get_type_hints
 
 from .channel import DTXChannel
 from .context import DTX_GLOBAL_CTX, DTXContext  # noqa: F401 — re-exported for back-compat
@@ -544,7 +544,7 @@ class DTXProxyService(DTXService):
         """Forward a DATA frame through the remote service."""
         return await self.remote_service.send_data(data, *aux_args, expects_reply=expects_reply)
 
-    async def __aenter__(self) -> Self:
+    async def __aenter__(self) -> DTXProxyService:
         await super().__aenter__()
         for svc in (self._local_service, self._remote_service):
             if svc is not None:
