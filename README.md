@@ -70,13 +70,14 @@ pymobiledevice3 apps list
     [wsl2]
     networkingMode=mirrored
     ```
-
 - Linux:
   - Install `usbmuxd`: <https://github.com/libimobiledevice/usbmuxd>
-  - Recovery/DFU support requires `libusb`.
 
 - OpenSSL:
   - OpenSSL is explicitly required for older iOS versions (`< 13`).
+
+- Recovery/DFU support
+  - Requires `libusb`.
 
 ### Support Matrix (Developer Services)
 
