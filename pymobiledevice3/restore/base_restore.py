@@ -2,7 +2,6 @@ import asyncio
 import logging
 from enum import Enum
 from typing import Optional
-from zipfile import ZipFile
 
 from ipsw_parser.exceptions import NoSuchBuildIdentityError
 from ipsw_parser.ipsw import IPSW
@@ -24,9 +23,9 @@ class Behavior(Enum):
 
 class BaseRestore:
     def __init__(
-        self, ipsw: ZipFile, device: Device, tss: Optional[dict] = None, behavior: Behavior = Behavior.Update
+        self, ipsw: IPSW, device: Device, tss: Optional[dict] = None, behavior: Behavior = Behavior.Update
     ) -> None:
-        self.ipsw = IPSW(ipsw)
+        self.ipsw = ipsw
         self.device = device
         self.tss = TSSResponse(tss) if tss is not None else None
 
