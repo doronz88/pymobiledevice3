@@ -1500,4 +1500,27 @@ IRECV_DEVICES = (
         chip_id=0x8030,
         display_name="Studio Display",
     ),
+    # Apple Vision Pro
+    IRecvDevice(
+        product_type="RealityDevice14,1",
+        hardware_model="n301ap",
+        board_id=0x42,
+        chip_id=0x8112,
+        display_name="Apple Vision Pro",
+    ),
+    IRecvDevice(
+        product_type="RealityDevice17,1",
+        hardware_model="n301aap",
+        board_id=0x42,
+        chip_id=0x8142,
+        display_name="Apple Vision Pro (M5)",
+    ),
+    # Virtual iPhone Research Environment
+    IRecvDevice(
+        product_type="iPhone99,11",
+        hardware_model="vresearch101ap",
+        board_id=0x90,
+        chip_id=0xFE01,
+        display_name="Virtual iPhone (99,11)",
+    ),
 )
