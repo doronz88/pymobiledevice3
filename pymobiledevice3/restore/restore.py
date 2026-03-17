@@ -7,11 +7,12 @@ import struct
 import tempfile
 import time
 import typing
-import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
+from zipfile import ZipFile, ZipInfo
 
 import requests
+from ipsw_parser.ipsw import IPSW
 from tqdm import tqdm, trange
 
 from pymobiledevice3.exceptions import ConnectionFailedError, NoDeviceConnectedError, PyMobileDevice3Exception
@@ -47,9 +48,7 @@ known_errors = {
 
 
 class Restore(BaseRestore):
-    def __init__(
-        self, ipsw: zipfile.ZipFile, device: Device, tss=None, behavior: Behavior = Behavior.Update, ignore_fdr=False
-    ):
+    def __init__(self, ipsw: IPSW, device: Device, tss=None, behavior: Behavior = Behavior.Update, ignore_fdr=False):
         super().__init__(ipsw, device, tss, behavior)
         self.recovery = Recovery(ipsw, device, tss=tss, behavior=behavior)
         self.bbtss: Optional[TSSResponse] = None
@@ -380,7 +379,7 @@ class Restore(BaseRestore):
         try:
             firmware = self.ipsw.get_firmware(firmware_path)
             firmware_files = firmware.get_files()
-        except KeyError:
+        except (KeyError, FileNotFoundError):
             self.logger.info("Getting firmware manifest from build identity")
             build_id_manifest = self.build_identity["Manifest"]
             for component, manifest_entry in build_id_manifest.items():
@@ -492,8 +491,8 @@ class Restore(BaseRestore):
             tmp_zip_read_name = tmp_zip_read.name
 
         try:
-            with zipfile.ZipFile(tmp_zip_read_name, "r") as bbfw_orig, tempfile.NamedTemporaryFile() as tmp_zip_write:
-                bbfw_patched = zipfile.ZipFile(tmp_zip_write, "w")
+            with ZipFile(tmp_zip_read_name, "r") as bbfw_orig, tempfile.NamedTemporaryFile() as tmp_zip_write:
+                bbfw_patched = ZipFile(tmp_zip_write, "w")
 
                 for key, blob in bbfw_dict.items():
                     if key.endswith("-Blob") and isinstance(blob, bytes):
@@ -550,7 +549,7 @@ class Restore(BaseRestore):
                         bbfw_patched.writestr("ebl.fls", data)
                     else:
                         # add BBTicket as bbticket.der
-                        zname = zipfile.ZipInfo("bbticket.der")
+                        zname = ZipInfo("bbticket.der")
                         zname.filename = "bbticket.der"
                         ZIP_EXT_ATTR_FILE = 0o100000
                         zname.external_attr = (0o644 | ZIP_EXT_ATTR_FILE) << 16

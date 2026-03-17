@@ -6,11 +6,11 @@ import traceback
 from collections.abc import Iterator
 from pathlib import Path
 from typing import IO, Annotated, Optional
-from zipfile import ZipFile
 
 import click
 import requests
 import typer
+from ipsw_parser.ipsw import IPSW
 from pygments import formatters, highlight, lexers
 from typer_injector import Depends, InjectingTyper
 
@@ -101,16 +101,17 @@ DeviceDep = Annotated[
 
 
 @contextlib.contextmanager
-def tempzip_download_ctx(url: str) -> Iterator[ZipFile]:
+def tempzip_download_ctx(url: str) -> Iterator[IPSW]:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpzip = Path(tmpdir) / url.split("/")[-1]
         file_download(url, tmpzip)
-        yield ZipFile(tmpzip)
+        with ipsw_ctx(tmpzip) as ipsw:
+            yield ipsw
 
 
 @contextlib.contextmanager
-def zipfile_ctx(path: str) -> Iterator[ZipFile]:
-    yield ZipFile(path)
+def ipsw_ctx(path: str | Path) -> Iterator[IPSW]:
+    yield IPSW.create_from_path(path)
 
 
 def ipsw_ctx_dependency(
@@ -123,9 +124,9 @@ def ipsw_ctx_dependency(
             help="Path or URL to an IPSW. If omitted, choose a signed build interactively.",
         ),
     ] = None,
-) -> contextlib.AbstractContextManager[ZipFile]:
+) -> contextlib.AbstractContextManager[IPSW]:
     if ipsw and not ipsw.startswith(("http://", "https://")):
-        return zipfile_ctx(ipsw)
+        return ipsw_ctx(ipsw)
 
     url = ipsw
     if url is None:
@@ -134,7 +135,7 @@ def ipsw_ctx_dependency(
 
 
 IPSWCtxDep = Annotated[
-    contextlib.AbstractContextManager[ZipFile],
+    contextlib.AbstractContextManager[IPSW],
     Depends(ipsw_ctx_dependency),
 ]
 
@@ -165,9 +166,7 @@ def query_ipswme(identifier: str) -> str:
     return firmwares[idx]["url"]
 
 
-async def restore_update_task(
-    device: Device, ipsw: ZipFile, tss: Optional[dict], erase: bool, ignore_fdr: bool
-) -> None:
+async def restore_update_task(device: Device, ipsw: IPSW, tss: Optional[dict], erase: bool, ignore_fdr: bool) -> None:
     behavior = Behavior.Update
     if erase:
         behavior = Behavior.Erase
@@ -219,7 +218,7 @@ async def restore_restart(device: DeviceDep) -> None:
 
 
 async def restore_tss_task(
-    device: Device, ipsw_ctx: contextlib.AbstractContextManager[ZipFile], out: Optional[IO]
+    device: Device, ipsw_ctx: contextlib.AbstractContextManager[IPSW], out: Optional[IO]
 ) -> None:
     with ipsw_ctx as ipsw:
         tss = await Recovery(ipsw, device).fetch_tss_record()
@@ -236,7 +235,7 @@ async def restore_tss(device: DeviceDep, ipsw_ctx: IPSWCtxDep, out: Optional[Pat
         await restore_tss_task(device, ipsw_ctx, out_file)
 
 
-async def restore_ramdisk_task(device: Device, ipsw_ctx: contextlib.AbstractContextManager[ZipFile]) -> None:
+async def restore_ramdisk_task(device: Device, ipsw_ctx: contextlib.AbstractContextManager[IPSW]) -> None:
     with ipsw_ctx as ipsw:
         await Recovery(ipsw, device).boot_ramdisk()
 

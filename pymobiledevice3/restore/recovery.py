@@ -3,8 +3,8 @@ import contextlib
 import hashlib
 import logging
 from typing import Optional
-from zipfile import ZipFile
 
+from ipsw_parser.ipsw import IPSW
 from usb import USBError
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
@@ -21,7 +21,7 @@ RESTORE_VARIANT_MACOS_RECOVERY_OS = "macOS Customer"
 
 
 class Recovery(BaseRestore):
-    def __init__(self, ipsw: ZipFile, device: Device, tss: Optional[dict] = None, behavior: Behavior = Behavior.Update):
+    def __init__(self, ipsw: IPSW, device: Device, tss: Optional[dict] = None, behavior: Behavior = Behavior.Update):
         super().__init__(ipsw, device, tss, behavior)
         self.tss_localpolicy = None
         self.tss_recoveryos_root_ticket = None
