@@ -196,9 +196,6 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
 
         close_exc = ConnectionTerminatedError("Connection closed")
         async with self._channel_lock:
-            for service in list(self._services.values()):
-                with suppress(Exception):
-                    service._on_connection_closed(close_exc)
             for channel in list(self._channels.values()):
                 channel._shutdown("connection closing")
             self._channels.clear()

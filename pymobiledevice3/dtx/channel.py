@@ -43,17 +43,19 @@ class DTXChannel:
 
     Each channel owns an asyncio message queue and a reader task that
     dequeues messages and dispatches them to the appropriate handler.
-    Three optional async callback slots can be set on an instance:
+    Four optional callback slots can be set on an instance:
 
     - ``on_invoke``: called for incoming DISPATCH messages (method, args).
     - ``on_data``: called for incoming DATA frames (raw bytes payload).
     - ``on_notification``: called for server-initiated OBJECT/OK messages.
+    - ``on_closed``: called when the channel is shut down.
     """
 
-    # Optional async callbacks for received messages.
+    # Optional callbacks for received messages and channel shutdown.
     on_invoke: Optional[Callable[[str, list[Any]], Awaitable[Any]]] = None
     on_data: Optional[Callable[[bytes], Awaitable[Any]]] = None
     on_notification: Optional[Callable[[Any], Awaitable[Any]]] = None
+    on_closed: Optional[Callable[[str], Any]] = None
 
     def __init__(self, code: int, identifier: str, connection: DTXConnection) -> None:
         self.code = code
@@ -282,6 +284,11 @@ class DTXChannel:
             self.logger.debug("Stopping reader task for channel %d (%s)", self.code, reason or "requested")
             self._reader_task.cancel()
             self._reader_task = None
+        if self.on_closed is not None:
+            try:
+                self.on_closed(reason)
+            except Exception:
+                self.logger.exception("Error in channel on_closed handler for channel %d", self.code)
 
     async def __aenter__(self) -> DTXChannel:
         return self

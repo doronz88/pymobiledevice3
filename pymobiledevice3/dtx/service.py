@@ -30,12 +30,9 @@ import inspect
 import logging
 import re
 import sys
-from asyncio import Queue
 from collections.abc import Awaitable
 from functools import partial, wraps
 from typing import Any, Callable, ClassVar, Optional, TypeVar, get_type_hints
-
-from pymobiledevice3.exceptions import ConnectionTerminatedError
 
 from .channel import DTXChannel
 from .context import DTX_GLOBAL_CTX, DTXContext  # noqa: F401 — re-exported for back-compat
@@ -46,7 +43,6 @@ logger = logging.getLogger(__name__)
 
 _MISSING = object()  # sentinel for missing attribute values in __init_subclass__
 DTX_SERVICE_T = TypeVar("DTX_SERVICE_T", bound="DTXService")
-QUEUE_ITEM_T = TypeVar("QUEUE_ITEM_T")
 
 __namespace_re__ = re.compile(r"^_([A-Z_]+_)+")
 
@@ -197,16 +193,6 @@ def dtx_on_dispatch(fn):
 # ---------------------------------------------------------------------------
 
 
-class ConnectionAwareQueue(Queue[QUEUE_ITEM_T]):
-    """Queue that turns connection-termination sentinels back into exceptions."""
-
-    async def get(self) -> QUEUE_ITEM_T:
-        item = await super().get()
-        if isinstance(item, ConnectionTerminatedError):
-            raise item
-        return item
-
-
 class DTXService:
     """Base class for services communicating over a DTX channel.
 
@@ -217,7 +203,6 @@ class DTXService:
     """
 
     IDENTIFIER: ClassVar[Optional[str]] = None
-    _queue_attrs_on_close: ClassVar[tuple[str, ...]] = ("messages", "events", "output_events")
 
     # Class-level routing tables, populated by __init_subclass__.
     _dtx_dispatch: ClassVar[dict[str, str]] = {}
@@ -323,6 +308,7 @@ class DTXService:
         notif_handler = cls._dtx_notification_handler
         if notif_handler is not None:
             self._channel.on_notification = getattr(self, notif_handler)
+        self._channel.on_closed = self.__on_closed__
 
     async def __aenter__(self: DTX_SERVICE_T) -> DTX_SERVICE_T:
         await self._channel.__aenter__()
@@ -331,19 +317,18 @@ class DTXService:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self._channel.__aexit__(exc_type, exc_val, exc_tb)
 
-    def _on_connection_closed(self, exc: Optional[ConnectionTerminatedError] = None) -> None:
-        """Notify queue-backed consumers that the DTX connection has closed.
+    def on_closed(self, reason: str = "") -> None:
+        """Handle channel shutdown.
 
-        The default implementation pushes a :class:`ConnectionTerminatedError`
-        sentinel into common service queues such as ``messages`` / ``events`` /
-        ``output_events`` so consumers blocked on ``queue.get()`` wake up and
-        raise immediately instead of blocking forever.
+        Subclasses may override this to release channel-scoped resources.
         """
-        exc = exc or ConnectionTerminatedError("Connection closed")
-        for attr_name in self._queue_attrs_on_close:
-            queue = getattr(self, attr_name, None)
-            if isinstance(queue, Queue):
-                queue.put_nowait(exc)
+
+    def shutdown_queue(self, queue: Any, *, immediate: bool = True) -> None:
+        """Shutdown a queue owned by this service if it supports that API."""
+        shutdown = getattr(queue, "shutdown", None)
+        if shutdown is None:
+            raise TypeError(f"{type(queue).__name__} does not support shutdown()")
+        shutdown(immediate=immediate)
 
     @property
     def dtxproxy(self) -> Optional[DTXProxyService]:
@@ -365,6 +350,9 @@ class DTXService:
             selector,
         )
         return NSError.create_doesnt_respond_to_selector(selector)
+
+    def __on_closed__(self, reason: str) -> None:
+        self.on_closed(reason)
 
     # ------------------------------------------------------------------
     # Convenience wrappers for outgoing messages (usable without @dtx_method)
@@ -533,6 +521,7 @@ class DTXProxyService(DTXService):
         data_handler = cls._dtx_data_handler
         if data_handler is not None:
             self._channel.on_data = getattr(self, data_handler)
+        self._channel.on_closed = self.__on_closed__
 
     @property
     def remote_service(self) -> DTXService:
@@ -547,6 +536,7 @@ class DTXProxyService(DTXService):
         notif_handler = type(self)._dtx_notification_handler
         if notif_handler is not None:
             self._channel.on_notification = getattr(self, notif_handler)
+        self._channel.on_closed = self.__on_closed__
 
     @dtx_on_dispatch
     async def __proxy_dispatch__(self, selector: str, *args: Any) -> Any:
@@ -577,3 +567,10 @@ class DTXProxyService(DTXService):
     async def send_data(self, data: bytes, *aux_args: Any, expects_reply: bool = False) -> Any:
         """Forward a DATA frame through the remote service."""
         return await self.remote_service.send_data(data, *aux_args, expects_reply=expects_reply)
+
+    def on_closed(self, reason: str = "") -> None:
+        super().on_closed(reason)
+        if self._local_service is not None:
+            self._local_service.on_closed(reason)
+        if self._remote_service is not None:
+            self._remote_service.on_closed(reason)
