@@ -14,6 +14,7 @@ class LockdownServiceProvider:
         # Populated by concrete implementations after successful connection/initialization.
         self.udid: Optional[str] = None
         self.product_type: Optional[str] = None
+        self.all_values: dict[str, Any] = {}
 
     @property
     @abstractmethod

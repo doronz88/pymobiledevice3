@@ -25,7 +25,7 @@ from collections import namedtuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from re import Pattern
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, TextIO, Union
 
 import hexdump
 from click.exceptions import Exit
@@ -804,7 +804,7 @@ class AfcService(LockdownService):
         return filename
 
     @path_to_str()
-    async def get_file_contents(self, filename):
+    async def get_file_contents(self, filename: str):
         """
         Read and return the entire contents of a file.
 
@@ -871,7 +871,7 @@ class AfcService(LockdownService):
                     yield item
 
     @path_to_str()
-    async def dirlist(self, root, depth=-1):
+    async def dirlist(self, root: str, depth: int = -1):
         """
         List all files and directories recursively up to a specified depth.
 
@@ -988,7 +988,7 @@ class AfcLsStub(LsStub):
     file system, translating calls to work with remote device paths.
     """
 
-    def __init__(self, afc_shell, stdout):
+    def __init__(self, afc_shell, stdout: Optional[TextIO] = sys.stdout):
         """
         Initialize the ls stub.
 
@@ -1044,8 +1044,17 @@ class AfcLsStub(LsStub):
     def getenv(self, key, default=None):
         return ""
 
-    def print(self, *objects, sep=" ", end="\n", file=sys.stdout, flush=False):
-        print(objects[0], end=end)
+    def print(self, *objects, sep=" ", end="\n", _=sys.stdout, flush=False):
+        """
+        Print ls output to the constructor-provided stream.
+
+        The fourth argument is accepted only for compatibility with Python's
+        ``print(file=...)`` style calls used by ``pygnuutils``. It is ignored.
+        Output is suppressed when ``self.stdout`` is ``None``.
+        """
+        if self.stdout is None:
+            return
+        print(*objects, sep=sep, end=end, file=self.stdout, flush=flush)
 
     def get_tty_width(self):
         return os.get_terminal_size().columns
@@ -1482,7 +1491,7 @@ class AfcShell:
             for name in dirs:
                 print(posixpath.join(root, name))
 
-    def _do_cat(self, filename: str):
+    def _do_cat(self, filename: Annotated[str, Arg(completer=path_completer)]):
         """
         Display the contents of a file.
 
