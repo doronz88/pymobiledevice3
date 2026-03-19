@@ -55,7 +55,7 @@ class RestoredClient:
 
     async def _connect(self) -> None:
         self.hardware_info = (await self.query_value("HardwareInfo"))["HardwareInfo"]
-        self.ecid = self.hardware_info["UniqueChipID"]
+        self.ecid = self.hardware_info["UniqueChipID"] & 0xFFFFFFFFFFFFFFFF
         self.saved_debug_info = (await self.query_value("SavedDebugInfo"))["SavedDebugInfo"]
 
     @staticmethod
