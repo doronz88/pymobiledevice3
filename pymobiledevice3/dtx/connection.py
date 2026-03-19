@@ -305,12 +305,19 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
 
     async def cancel_channel(self, channel: DTXChannel, reason: str = "") -> None:
         """Cancel *channel* and remove it from the registry."""
+        async with self._channel_lock:
+            ch = self._channels.get(channel.code)
+
+        if ch is None:
+            self.logger.error("Attempted to cancel unknown channel: %d", channel.code)
+            raise ValueError(f"Attempted to cancel unknown channel: {channel.code}")
+
         await self._control_svc.cancel_channel(-channel.code)
+
+        # remove from channel lookup table only after the remote end acknoledged the cancellation
         async with self._channel_lock:
             s = self._services.pop(channel.code, None)
-            ch = self._channels.pop(channel.code, None)
-
-        assert ch is channel, f"Unmanaged channel passed to cancel_channel: ch={ch!r} channel={channel!r}"
+            self._channels.pop(channel.code, None)
 
         r = f"channel cancelled: {reason or 'unknown reason'}"
         ex = ConnectionTerminatedError(r)  # FIXME: use dtx-specific exception types
