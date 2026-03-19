@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import suppress
 from typing import Any, Optional
@@ -11,6 +12,8 @@ from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_data, dtx_on_noti
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import ConnectionTerminatedError
+
+logger = logging.getLogger(__name__)
 
 
 class TapService(DTXService):
@@ -119,10 +122,14 @@ class Tap:
 
     async def __aiter__(self) -> AsyncGenerator[Any, None]:
         assert self.channel is not None
-        try:
-            while True:
-                yield await self.channel.receive_message()
-        except asyncio.QueueShutDown:
-            ex = (await self._service_ref()).stop_exception
+        ex = None
+        while True:
+            try:
+                yield await self.channel.receive_plist()
+            except asyncio.QueueShutDown:
+                ex = (await self._service_ref()).stop_exception
+                break
+            except Exception as e:
+                logger.error("Error while reading TAP message: %s", e)
         if ex is not None:
             raise ex
