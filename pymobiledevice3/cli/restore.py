@@ -158,6 +158,12 @@ TSSDep = Annotated[
 ]
 
 
+BehaviorOption = Annotated[
+    Behavior,
+    typer.Option(help="Restore behavior to use when selecting the BuildIdentity."),
+]
+
+
 def query_ipswme(identifier: str) -> str:
     resp = requests.get(IPSWME_API + identifier, headers={"Accept": "application/json"})
     firmwares = resp.json()["firmwares"]
@@ -218,10 +224,13 @@ async def restore_restart(device: DeviceDep) -> None:
 
 
 async def restore_tss_task(
-    device: Device, ipsw_ctx: contextlib.AbstractContextManager[IPSW], out: Optional[IO]
+    device: Device,
+    ipsw_ctx: contextlib.AbstractContextManager[IPSW],
+    out: Optional[IO],
+    behavior: Behavior = Behavior.Update,
 ) -> None:
     with ipsw_ctx as ipsw:
-        tss = await Recovery(ipsw, device).fetch_tss_record()
+        tss = await Recovery(ipsw, device, behavior=behavior).fetch_tss_record()
     if out:
         plistlib.dump(tss, out)
     print_json(tss)
@@ -229,10 +238,15 @@ async def restore_tss_task(
 
 @cli.command("tss")
 @async_command
-async def restore_tss(device: DeviceDep, ipsw_ctx: IPSWCtxDep, out: Optional[Path] = None) -> None:
+async def restore_tss(
+    device: DeviceDep,
+    ipsw_ctx: IPSWCtxDep,
+    out: Optional[Path] = None,
+    behavior: BehaviorOption = Behavior.Update,
+) -> None:
     """query SHSH blobs"""
     with out.open("wb") if out else contextlib.nullcontext() as out_file:
-        await restore_tss_task(device, ipsw_ctx, out_file)
+        await restore_tss_task(device, ipsw_ctx, out_file, behavior=behavior)
 
 
 async def restore_ramdisk_task(device: Device, ipsw_ctx: contextlib.AbstractContextManager[IPSW]) -> None:
