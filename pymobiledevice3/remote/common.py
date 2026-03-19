@@ -2,12 +2,12 @@ import sys
 from enum import Enum
 
 
-class ConnectionType(Enum):
+class ConnectionType(str, Enum):
     USB = "usb"
     WIFI = "wifi"
 
 
-class TunnelProtocol(Enum):
+class TunnelProtocol(str, Enum):
     TCP = "tcp"
     QUIC = "quic"
 
