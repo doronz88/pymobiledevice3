@@ -22,6 +22,8 @@ from typer_injector import InjectingTyper
 from pymobiledevice3.cli.cli_common import TUNNEL_ENV_VAR, isatty, set_color_flag, set_verbosity
 from pymobiledevice3.exceptions import (
     AccessDeniedError,
+    AfcException,
+    AfcFileNotFoundError,
     CloudConfigurationAlreadyPresentError,
     ConnectionFailedError,
     ConnectionFailedToUsbmuxdError,
@@ -416,6 +418,10 @@ def invoke_cli_with_error_handling() -> bool:
             )
         else:
             logger.error(f"Failed to start: {e.service_name} with. Received error: {e.message}.")
+    except AfcFileNotFoundError as e:
+        logger.error(f"File [{e.filename}] not found during afc operation: {e}")
+    except AfcException as e:
+        logger.error(f"Failed to perform Afc operation: {e}")
     except click.ClickException as e:
         from typer import rich_utils
 

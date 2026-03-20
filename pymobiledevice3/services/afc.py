@@ -578,7 +578,7 @@ class AfcService(LockdownService):
         :raises: AfcException if the path is not a directory or doesn't exist
         """
         data = await self._do_operation(
-            AfcOpcode.READ_DIR, afc_read_dir_req_t.build(AfcReadDirRequest(filename=filename))
+            AfcOpcode.READ_DIR, afc_read_dir_req_t.build(AfcReadDirRequest(filename=filename)), filename
         )
         return afc_read_dir_resp_t.parse(data).filenames[2:]  # skip the . and ..
 
@@ -593,7 +593,9 @@ class AfcService(LockdownService):
         :param filename: Path of the directory to create
         :return: Response data from the operation
         """
-        return await self._do_operation(AfcOpcode.MAKE_DIR, afc_mkdir_req_t.build(AfcMkdirRequest(filename=filename)))
+        return await self._do_operation(
+            AfcOpcode.MAKE_DIR, afc_mkdir_req_t.build(AfcMkdirRequest(filename=filename)), filename
+        )
 
     @path_to_str()
     async def isdir(self, filename: str) -> bool:
@@ -818,7 +820,7 @@ class AfcService(LockdownService):
         info = await self.stat(filename)
 
         if info["st_ifmt"] != "S_IFREG":
-            raise AfcException(f"{filename} isn't a file", AfcError.INVALID_ARG)
+            raise AfcException(f"{filename} isn't a file", AfcError.INVALID_ARG, filename)
 
         h = await self.fopen(filename)
         if not h:
