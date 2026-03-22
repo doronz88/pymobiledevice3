@@ -7,7 +7,7 @@ from collections.abc import AsyncGenerator
 from json import JSONDecodeError
 from typing import Callable, ClassVar, Optional
 
-from pycrashreport.crash_report import get_crash_report_from_buf
+from pycrashreport.crash_report import CrashReportBase, get_crash_report_from_buf
 from xonsh.built_ins import XSH
 from xonsh.cli_utils import Annotated, Arg
 
@@ -69,19 +69,21 @@ class CrashReportsManager:
     async def close(self) -> None:
         await self.afc.close()
 
-    async def clear(self) -> None:
+    async def clear(self, path: str = "/") -> None:
         """
-        Clear all crash reports.
+        Clear crash reports under a path.
         """
         undeleted_items = []
-        for filename in await self.ls("/"):
+        for filename in await self.ls(path, depth=1):
             undeleted_items.extend(await self.afc.rm(filename, force=True))
 
         for item in undeleted_items:
             # special case of file that sometimes created automatically right after delete,
             # and then we can't delete the folder because it's not empty
             if item != self.APPSTORED_PATH:
-                raise AfcException(f"failed to clear crash reports directory, undeleted items: {undeleted_items}", None)
+                raise AfcException(
+                    f"failed to clear crash reports under {path!r}, undeleted items: {undeleted_items}", None
+                )
 
     async def ls(self, path: str = "/", depth: int = 1) -> list[str]:
         """
@@ -94,6 +96,76 @@ class CrashReportsManager:
         async for item in self.afc.dirlist(path, depth):
             result.append(item)
         return result[1:]  # skip the root path '/'
+
+    async def parse(self, path: str = "/") -> CrashReportBase:
+        """
+        Parse a crash report file and return the parsed crash report object.
+
+        :param path: Path to a crash report file.
+        :return: Parsed crash report object.
+        """
+        return get_crash_report_from_buf((await self.afc.get_file_contents(path)).decode(), filename=path)
+
+    async def parse_latest(
+        self,
+        path: str = "/",
+        match: Optional[list[str]] = None,
+        match_insensitive: Optional[list[str]] = None,
+        count: int = 1,
+    ) -> list[CrashReportBase]:
+        """
+        Parse latest top-level crash report(s) under a path, optionally filtered by basename regex patterns.
+
+        Scans the top level of the given path, filters regular files by basename,
+        and returns matches sorted by last modification time (newest first).
+
+        :param path: Path whose top-level entries should be considered. Defaults to '/'
+        :param match: Case-sensitive regex patterns over report basename.
+        :param match_insensitive: Case-insensitive regex patterns over report basename.
+        :param count: Maximum number of latest matching reports to parse.
+        :return: Parsed crash report objects ordered from newest to oldest.
+                 Result length is between 1 and count.
+        :raises ValueError: If count < 1 or if no reports match the filters.
+
+        All provided patterns must match.
+        """
+
+        def get_match_arguments_description():
+            return ", ".join(
+                f"{name}={value!r}"
+                for name, value in (("match", match_patterns), ("match_insensitive", match_insensitive_patterns))
+                if value
+            )
+
+        if count < 1:
+            raise ValueError("count must be >= 1")
+
+        match_patterns = match or []
+        match_insensitive_patterns = match_insensitive or []
+
+        patterns = [re.compile(pattern) for pattern in match_patterns]
+        patterns.extend(re.compile(pattern, re.IGNORECASE) for pattern in match_insensitive_patterns)
+
+        matching_entries_by_mtime = sorted(
+            [
+                (stat["st_mtime"].timestamp(), entry)
+                async for entry in self.afc.dirlist(path, depth=1)
+                if entry != path
+                and (stat := await self.afc.stat(entry)).get("st_ifmt") == "S_IFREG"
+                and (not patterns or all(pattern.search(posixpath.basename(entry)) for pattern in patterns))
+            ],
+            reverse=True,
+        )
+
+        if len(matching_entries_by_mtime) == 0:
+            match_arguments_description = get_match_arguments_description()
+            raise ValueError(
+                f"No reports found ({match_arguments_description})"
+                if match_arguments_description
+                else "No reports found"
+            )
+
+        return [await self.parse(report_path) for _, report_path in matching_entries_by_mtime[:count]]
 
     async def pull(
         self, out: str, entry: str = "/", erase: bool = False, match: Optional[str] = None, progress_bar: bool = True
@@ -254,18 +326,39 @@ class CrashReportsShell(AfcShell):
     def _setup_shell_commands(self):
         super()._setup_shell_commands()
         self._register_arg_parse_alias("parse", self._do_parse)
+        self._register_arg_parse_alias("parse-latest", self._do_parse_latest)
         self._register_arg_parse_alias("clear", self._do_clear)
 
     def _do_parse(self, filename: Annotated[str, Arg(completer=path_completer)]) -> None:
-        print(get_crash_report_from_buf(self.afc.get_file_contents(filename).decode(), filename=filename))
+        """
+        Parse and print a crash report by filename.
 
-    def _do_clear(self) -> None:
-        undeleted_items = []
-        for filename in self.afc.listdir("/"):
-            undeleted_items.extend(self.afc.rm(filename, force=True))
+        :param filename: Path to the crash report file
+        """
+        print(XSH.ctx["_shell"]._async_runner.run(XSH.ctx["_manager"].parse(filename)))
 
-        for item in undeleted_items:
-            # special case of file that sometimes created automatically right after delete,
-            # and then we can't delete the folder because it's not empty
-            if item != CrashReportsManager.APPSTORED_PATH:
-                raise AfcException(f"failed to clear crash reports directory, undeleted items: {undeleted_items}", None)
+    def _do_parse_latest(
+        self,
+        path: Annotated[str, Arg(completer=path_completer)] = "/",
+        match: Annotated[Optional[list[str]], Arg("--match", "-m", action="append")] = None,
+        match_insensitive: Annotated[
+            Optional[list[str]],
+            Arg("--match-insensitive", "-mi", action="append"),
+        ] = None,
+        count: Annotated[int, Arg("--count", "-n")] = 1,
+    ) -> None:
+        """Parse latest top-level crash report(s) under a path, ordered by newest first"""
+        latest_reports = XSH.ctx["_shell"]._async_runner.run(
+            XSH.ctx["_manager"].parse_latest(
+                path=path,
+                match=match or [],
+                match_insensitive=match_insensitive or [],
+                count=count,
+            )
+        )
+        for report in latest_reports:
+            print(report)
+
+    def _do_clear(self, path: Annotated[str, Arg(completer=path_completer)] = "/") -> None:
+        """Clear crash reports from the device under a path."""
+        XSH.ctx["_shell"]._async_runner.run(XSH.ctx["_manager"].clear(path))

@@ -25,7 +25,7 @@ from collections import namedtuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from re import Pattern
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, TextIO, Union
 
 import hexdump
 from click.exceptions import Exit
@@ -578,7 +578,7 @@ class AfcService(LockdownService):
         :raises: AfcException if the path is not a directory or doesn't exist
         """
         data = await self._do_operation(
-            AfcOpcode.READ_DIR, afc_read_dir_req_t.build(AfcReadDirRequest(filename=filename))
+            AfcOpcode.READ_DIR, afc_read_dir_req_t.build(AfcReadDirRequest(filename=filename)), filename
         )
         return afc_read_dir_resp_t.parse(data).filenames[2:]  # skip the . and ..
 
@@ -593,7 +593,9 @@ class AfcService(LockdownService):
         :param filename: Path of the directory to create
         :return: Response data from the operation
         """
-        return await self._do_operation(AfcOpcode.MAKE_DIR, afc_mkdir_req_t.build(AfcMkdirRequest(filename=filename)))
+        return await self._do_operation(
+            AfcOpcode.MAKE_DIR, afc_mkdir_req_t.build(AfcMkdirRequest(filename=filename)), filename
+        )
 
     @path_to_str()
     async def isdir(self, filename: str) -> bool:
@@ -804,7 +806,7 @@ class AfcService(LockdownService):
         return filename
 
     @path_to_str()
-    async def get_file_contents(self, filename):
+    async def get_file_contents(self, filename: str):
         """
         Read and return the entire contents of a file.
 
@@ -818,7 +820,7 @@ class AfcService(LockdownService):
         info = await self.stat(filename)
 
         if info["st_ifmt"] != "S_IFREG":
-            raise AfcException(f"{filename} isn't a file", AfcError.INVALID_ARG)
+            raise AfcException(f"{filename} isn't a file", AfcError.INVALID_ARG, filename)
 
         h = await self.fopen(filename)
         if not h:
@@ -871,7 +873,7 @@ class AfcService(LockdownService):
                     yield item
 
     @path_to_str()
-    async def dirlist(self, root, depth=-1):
+    async def dirlist(self, root: str, depth: int = -1):
         """
         List all files and directories recursively up to a specified depth.
 
@@ -988,7 +990,7 @@ class AfcLsStub(LsStub):
     file system, translating calls to work with remote device paths.
     """
 
-    def __init__(self, afc_shell, stdout):
+    def __init__(self, afc_shell, stdout: Optional[TextIO] = sys.stdout):
         """
         Initialize the ls stub.
 
@@ -1044,8 +1046,17 @@ class AfcLsStub(LsStub):
     def getenv(self, key, default=None):
         return ""
 
-    def print(self, *objects, sep=" ", end="\n", file=sys.stdout, flush=False):
-        print(objects[0], end=end)
+    def print(self, *objects, sep=" ", end="\n", _=sys.stdout, flush=False):
+        """
+        Print ls output to the constructor-provided stream.
+
+        The fourth argument is accepted only for compatibility with Python's
+        ``print(file=...)`` style calls used by ``pygnuutils``. It is ignored.
+        Output is suppressed when ``self.stdout`` is ``None``.
+        """
+        if self.stdout is None:
+            return
+        print(*objects, sep=sep, end=end, file=self.stdout, flush=flush)
 
     def get_tty_width(self):
         return os.get_terminal_size().columns
@@ -1482,7 +1493,7 @@ class AfcShell:
             for name in dirs:
                 print(posixpath.join(root, name))
 
-    def _do_cat(self, filename: str):
+    def _do_cat(self, filename: Annotated[str, Arg(completer=path_completer)]):
         """
         Display the contents of a file.
 
