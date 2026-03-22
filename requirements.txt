@@ -17,7 +17,7 @@ parameter_decorators
 packaging
 pygnuutils>=0.0.7
 cryptography>=41.0.1
-pycrashreport>=1.2.7
+pycrashreport>=1.2.8
 fastapi>=0.93.0
 uvicorn>=0.15.0
 wsproto
