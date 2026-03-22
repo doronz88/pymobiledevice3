@@ -326,8 +326,8 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
             await s.aclose(r, ex)
         await ch.aclose(r, ex)
 
-    def register_service(self, cls: type[DTXService]) -> None:
-        """Register a :class:`DTXService` subclass for *cls.IDENTIFIER*.
+    def register_service(self, cls: type[DTXService], identifier: Optional[str] = None) -> None:
+        """Register a :class:`DTXService` subclass for *identifier* or *cls.IDENTIFIER*.
 
         When the identifier is subsequently opened (either by
         :meth:`open_channel` or by an incoming ``_requestChannelWithCode:``
@@ -337,14 +337,15 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
             conn.register_service(DeviceInfoService)
             conn.register_service(ProcessControlService)
         """
-        if cls.IDENTIFIER is None:
-            raise ValueError(f"{cls.__name__} must define IDENTIFIER")
-        old = self._services_cls.get(cls.IDENTIFIER)
+        if cls.IDENTIFIER is None and identifier is None:
+            raise ValueError(f"{cls.__name__} must define IDENTIFIER or provide an identifier")
+        id_to_use = identifier or cls.IDENTIFIER
+        old = self._services_cls.get(id_to_use)
         if old is not None and old is not cls:
             self.logger.warning(
-                "Overwriting existing service registration for identifier %r: %r -> %r", cls.IDENTIFIER, old, cls
+                "Overwriting existing service registration for identifier %r: %r -> %r", id_to_use, old, cls
             )
-        self._services_cls[cls.IDENTIFIER] = cls
+        self._services_cls[id_to_use] = cls
 
     def register_services(self, *classes: type[DTXService]) -> None:
         """Register multiple :class:`DTXService` subclasses at once::

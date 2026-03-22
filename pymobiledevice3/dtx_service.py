@@ -141,7 +141,7 @@ class DtxService(Generic[_SVC_T]):
         """
         await self._provider.connect()
         if self._inferred_service_class is not None:
-            self._provider.dtx.register_service(self._inferred_service_class)
+            self._provider.dtx.register_service(self._inferred_service_class, self.CHANNEL_IDENTIFIER)
         if self._service is not None:
             return
         self._service = await self._acquire_channel()
