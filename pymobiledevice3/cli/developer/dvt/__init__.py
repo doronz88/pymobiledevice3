@@ -628,5 +628,5 @@ async def dvt_har(service_provider: ServiceProviderDep) -> None:
     async with DvtProvider(service_provider) as dvt:
         print("> Press Ctrl-C to abort")
         async with ActivityTraceTap(dvt, enable_http_archive_logging=True) as tap:
-            while True:
-                await tap.channel.receive_message()
+            async for _ in tap.messages():
+                pass

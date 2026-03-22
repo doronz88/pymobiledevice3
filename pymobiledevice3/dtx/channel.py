@@ -48,12 +48,16 @@ class DTXChannel:
     - ``on_invoke``: called for incoming DISPATCH messages (method, args).
     - ``on_data``: called for incoming DATA frames (raw bytes payload).
     - ``on_notification``: called for server-initiated OBJECT/OK messages.
+    - ``on_close``: called when the channel is closed (e.g., by remote).
+
     """
 
     # Optional async callbacks for received messages.
     on_invoke: Optional[Callable[[str, list[Any]], Awaitable[Any]]] = None
     on_data: Optional[Callable[[bytes], Awaitable[Any]]] = None
     on_notification: Optional[Callable[[Any], Awaitable[Any]]] = None
+    # Optional callback for channel closure (e.g. by remote).
+    on_close: Optional[Callable[[str, Optional[Exception]], Awaitable[None]]] = None
 
     def __init__(self, code: int, identifier: str, connection: DTXConnection) -> None:
         self.code = code
@@ -99,6 +103,11 @@ class DTXChannel:
         if not expects_reply:
             return None
         return await self._unwrap_reply(msg_id, f"send_data(len={len(data)})")
+
+    async def cancel(self, reason: str = "") -> None:
+        """Cancel this channel"""
+        self._check_open()
+        await self._connection.cancel_channel(self, reason)
 
     # ------------------------------------------------------------------
     # Internal message handlers
@@ -232,11 +241,13 @@ class DTXChannel:
     def _handle_failure(self, exc: Exception, msg: DTXMessage) -> None:
         if isinstance(exc, ConnectionTerminatedError):
             self.logger.warning("received connection termination: %r", msg)
-            self._shutdown("connection terminated")
         elif isinstance(exc, DTXProtocolError):
             self.logger.exception("protocol error in message handling: %r", msg, exc_info=exc)
             self.logger.error("DTXProtocol errors are unrecoverable, closing connection")
-            asyncio.get_event_loop().call_soon(partial(asyncio.create_task, self._connection.aclose()))
+            reason = f"protocol error in message handling: {msg!r}"
+            asyncio.get_event_loop().call_soon(partial(asyncio.create_task, self._connection.aclose(reason, exc)))  # type: ignore[attr-defined]
+        elif isinstance(exc, asyncio.CancelledError):
+            self.logger.debug("message handler task cancelled: %r", msg)
         else:
             self.logger.exception("Error handling message on channel %d: message=%r", self.code, msg, exc_info=exc)
 
@@ -249,19 +260,34 @@ class DTXChannel:
 
     def _enqueue_message(self, message: DTXMessage) -> None:
         """Enqueue an incoming message for processing by the reader loop."""
-        self._check_open()
+        if self._closed:
+            self.logger.warning(
+                "Received message for channel '%s' after channel was closed: %r", self.identifier, message
+            )
+            return
+
         self._queue.put_nowait(message)
+        if self._reader_task is None:
+            self.logger.warning(
+                "Received message on channel '%s' with no reader task ( have you called start_reader / async with? ): %r",
+                self.identifier,
+                message,
+            )
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def _start(self) -> None:
+    def _start_reader(self) -> None:
+        """Start the reader loop for this channel, if needed."""
         if self._reader_task is not None:
             return
-        self._reader_task = asyncio.create_task(self._reader_loop(), name=f"DTXChannelReader-{self.code}")
+        if self._closed:
+            raise ConnectionTerminatedError("Cannot read from a closed channel")
+        if any(handler is not None for handler in (self.on_invoke, self.on_data, self.on_notification)):
+            self._reader_task = asyncio.create_task(self._reader_loop(), name=f"DTXChannelReader-{self.code}")
 
-    def _shutdown(self, reason: str = "") -> None:
+    async def aclose(self, reason: str = "", exc: Optional[Exception] = None) -> None:
         """Close and stop the channel, draining and warning about any queued messages."""
         if self._closed:
             return
@@ -269,29 +295,42 @@ class DTXChannel:
         pending = self._queue.qsize()
         if pending:
             self.logger.warning(
-                "Channel %d shutting down (%s) with %d unprocessed message(s) in queue",
-                self.code,
+                "Channel '%s' shutting down (%s) with %d unprocessed message(s) in queue",
+                self.identifier,
                 reason or "requested",
                 pending,
             )
-        # Drain the queue so no stale messages linger.
-        while not self._queue.empty():
-            with suppress(Exception):
-                self._queue.get_nowait()
+
+        self._queue.shutdown(True)
         if self._reader_task is not None:
-            self.logger.debug("Stopping reader task for channel %d (%s)", self.code, reason or "requested")
-            self._reader_task.cancel()
+            for ft in self._pending_tasks:
+                ft.cancel()
+            if not self._reader_task.done():
+                self.logger.debug("Stopping reader task: %s", reason or "requested")
+                self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                self.logger.exception("Error while waiting for reader task to finish")
             self._reader_task = None
 
+        if self.on_close is not None:
+            try:
+                await self.on_close(reason or "unknown", exc)
+            except Exception:
+                self.logger.exception("Error in on_close handler for channel '%s'", self.identifier)
+
     async def __aenter__(self) -> DTXChannel:
+        self._start_reader()
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self._connection.cancel_channel(self)
-
-    def _close(self) -> None:
-        """Alias for :meth:`_shutdown` used by connection teardown."""
-        self._shutdown("connection closed")
+        if not self._closed:
+            with suppress(ConnectionTerminatedError):
+                await self.cancel()
+        await self.aclose("context exit", exc_val)
 
     def _check_open(self) -> None:
         if self._closed:
@@ -303,9 +342,6 @@ class DTXChannel:
         while not self._closed:
             try:
                 message = await self._queue.get()
-                if message is None:
-                    self.logger.warning("Channel reader loop exiting: None message received")
-                    break
                 if message.type == DTXMessageType.BARRIER and self._pending_tasks:
                     self.logger.debug(
                         "Waiting for %d pending message handler tasks to complete before processing BARRIER message on channel %d",
@@ -322,11 +358,17 @@ class DTXChannel:
                 if not self._closed:
                     self.logger.exception("Channel reader loop cancelled")
                 break
+            except asyncio.QueueShutDown:
+                if not self._closed:
+                    self.logger.exception("Channel reader loop exiting: queue shutdown")
+                break
             except ConnectionTerminatedError:
                 self.logger.debug("Channel reader loop exiting: connection terminated")
                 break
-            except Exception:
+            except Exception as e:
                 if not self._closed:
-                    self.logger.exception("Error in channel reader loop for channel %d", self.code)
+                    self.logger.exception("Error in channel reader loop for channel '%s'", self.identifier)
+                    asyncio.get_running_loop().call_soon(
+                        partial(asyncio.create_task, self.aclose("reader loop error", e))
+                    )
                 break
-        self._shutdown("reader loop exiting")

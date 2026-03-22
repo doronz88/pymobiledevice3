@@ -167,10 +167,10 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
             await conn.aclose()
         """
         self._reader_task = asyncio.create_task(self._process_incoming_fragments(), name="dtx-reader")
-        self._ctrl_channel._start()
+        await self._ctrl_channel.__aenter__()
         await self._perform_handshake()
 
-    async def aclose(self) -> None:
+    async def aclose(self, reason: str = "", exc: Optional[Exception] = None) -> None:
         """Stop the reader, cancel pending operations, and close all channels.
 
         This is the canonical async-resource close method (``contextlib.aclosing``
@@ -194,22 +194,19 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         with suppress(Exception):
             await asyncio.wait_for(self._writer.wait_closed(), timeout=5.0)
 
-        close_exc = ConnectionTerminatedError("Connection closed")
+        r = f"connection closed: {reason or 'unknown reason'}"
+
         async with self._channel_lock:
-            for service in list(self._services.values()):
-                with suppress(Exception):
-                    service._on_connection_closed(close_exc)
+            for svc in self._services.values():
+                await svc.aclose(r, exc)
             for channel in list(self._channels.values()):
-                channel._shutdown("connection closing")
+                await channel.aclose(r, exc)
             self._channels.clear()
             self._services.clear()
 
-        async with self._service_condition:
-            self._service_condition.notify_all()
-
         for f in self._pending_replies.values():
             if not f.done():
-                f.set_exception(close_exc)
+                f.set_exception(exc or ConnectionTerminatedError(r))
         self._pending_replies.clear()
         # these Futures have done callback whch removes them from the list, so we don't need to clear the list here
         for f in list(self._pending_outgoing_replies):
@@ -230,16 +227,12 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         """
         await self._disconnected.wait()
 
-    async def close(self) -> None:
-        """Alias for :meth:`aclose` kept for back-compatibility."""
-        await self.aclose()
-
     async def __aenter__(self) -> DTXConnection:
         await self.connect()
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.aclose()
+        await self.aclose("exiting context", exc_val)
 
     # ------------------------------------------------------------------
     # Channel management
@@ -292,36 +285,49 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
                 s = self._instantiate_service_from_class(cls, channel)
             else:
                 s = self._instantiate_service(identifier, channel, remote=False)
+            self._services[code] = s
 
         try:
             await self._control_svc.request_channel(code, identifier)
-        except Exception:
+        except Exception as e:
             async with self._channel_lock:
                 self._channels.pop(code, None)
+                self._services.pop(code, None)
             self.logger.exception("Error opening channel identifier=%r code=%d", identifier, code)
-            channel._shutdown("open channel error")
+            await s.aclose("failed to open channel", e)
+            await channel.aclose("failed to open channel", e)
             raise
-
-        async with self._channel_lock:
-            self._services[code] = s
-            channel._start()
 
         async with self._service_condition:
             self._service_condition.notify_all()
 
         return s
 
-    async def cancel_channel(self, channel: DTXChannel) -> None:
+    async def cancel_channel(self, channel: DTXChannel, reason: str = "") -> None:
         """Cancel *channel* and remove it from the registry."""
         async with self._channel_lock:
-            self._services.pop(channel.code, None)
-            ch = self._channels.pop(channel.code, None)
-            if ch:
-                ch._shutdown("channel cancelled")
-        await self._control_svc.cancel_channel(channel.code)
+            ch = self._channels.get(channel.code)
 
-    def register_service(self, cls: type[DTXService]) -> None:
-        """Register a :class:`DTXService` subclass for *cls.IDENTIFIER*.
+        if ch is None:
+            self.logger.error("Attempted to cancel unknown channel: %d", channel.code)
+            raise ValueError(f"Attempted to cancel unknown channel: {channel.code}")
+
+        await self._control_svc.cancel_channel(-channel.code)
+
+        # remove from channel lookup table only after the remote end acknoledged the cancellation
+        async with self._channel_lock:
+            s = self._services.pop(channel.code, None)
+            self._channels.pop(channel.code, None)
+
+        r = f"channel cancelled: {reason or 'unknown reason'}"
+        ex = ConnectionTerminatedError(r)  # FIXME: use dtx-specific exception types
+
+        if s is not None:
+            await s.aclose(r, ex)
+        await ch.aclose(r, ex)
+
+    def register_service(self, cls: type[DTXService], identifier: Optional[str] = None) -> None:
+        """Register a :class:`DTXService` subclass for *identifier* or *cls.IDENTIFIER*.
 
         When the identifier is subsequently opened (either by
         :meth:`open_channel` or by an incoming ``_requestChannelWithCode:``
@@ -331,14 +337,15 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
             conn.register_service(DeviceInfoService)
             conn.register_service(ProcessControlService)
         """
-        if cls.IDENTIFIER is None:
-            raise ValueError(f"{cls.__name__} must define IDENTIFIER")
-        old = self._services_cls.get(cls.IDENTIFIER)
+        if cls.IDENTIFIER is None and identifier is None:
+            raise ValueError(f"{cls.__name__} must define IDENTIFIER or provide an identifier")
+        id_to_use = identifier or cls.IDENTIFIER
+        old = self._services_cls.get(id_to_use)
         if old is not None and old is not cls:
             self.logger.warning(
-                "Overwriting existing service registration for identifier %r: %r -> %r", cls.IDENTIFIER, old, cls
+                "Overwriting existing service registration for identifier %r: %r -> %r", id_to_use, old, cls
             )
-        self._services_cls[cls.IDENTIFIER] = cls
+        self._services_cls[id_to_use] = cls
 
     def register_services(self, *classes: type[DTXService]) -> None:
         """Register multiple :class:`DTXService` subclasses at once::
@@ -380,8 +387,6 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         async def _find() -> DTXService:
             async with self._service_condition:
                 while True:
-                    if self._closed:
-                        raise ConnectionTerminatedError("Connection closed while waiting for service")
                     for svc in self._services.values():
                         if predicate(svc):
                             return svc
@@ -420,8 +425,6 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         async def _find() -> DTXService:
             async with self._service_condition:
                 while True:
-                    if self._closed:
-                        raise ConnectionTerminatedError("Connection closed while waiting for proxied service")
                     for svc in self._services.values():
                         if isinstance(svc, DTXProxyService):
                             candidate = svc.remote_service if remote else svc.local_service
@@ -457,7 +460,6 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
                     1, "DTXMessage", {"NSLocalizedDescription": f"Failed to instantiate {identifier!r}: {e!r}"}
                 )
             self._services[code] = s
-            channel._start()
 
         async with self._service_condition:
             self._service_condition.notify_all()
@@ -466,13 +468,17 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
     async def _on_channel_cancelled(self, channel_code: int) -> None:
         self.logger.warning("Received channel cancellation for code %d", channel_code)
         async with self._channel_lock:
-            self._services.pop(channel_code, None)
+            s = self._services.pop(channel_code, None)
             ch = self._channels.pop(channel_code, None)
-            if ch:
-                ch._shutdown("channel cancelled by remote")
-            else:
-                self.logger.error("Received cancellation for unknown channel %d", channel_code)
-                raise DTXProtocolError(f"Received channel cancellation for unknown channel {channel_code}")
+        r = "channel cancelled by remote"
+        ex = ConnectionTerminatedError(r)  # FIXME: use dtx-specific exception types
+        if s:
+            await s.aclose(r, ex)
+        if ch:
+            await ch.aclose(r, ex)
+        else:
+            self.logger.error("Received cancellation for unknown channel %d", channel_code)
+            raise DTXProtocolError(f"Received channel cancellation for unknown channel {channel_code}")
 
     async def _on_capabilities_received(self, capabilities: dict) -> None:
         self.logger.debug("Received capabilities from remote: %r", capabilities)

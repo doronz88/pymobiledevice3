@@ -4,7 +4,7 @@ import logging
 import typing
 from typing import Any, Optional
 
-from pymobiledevice3.dtx import ConnectionAwareQueue, DTXService, PInt32, dtx_method, dtx_on_invoke
+from pymobiledevice3.dtx import DTXService, PInt32, dtx_method, dtx_on_invoke
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.exceptions import DisableMemoryLimitError
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -39,7 +39,8 @@ class ProcessControlService(DTXService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self.output_events: asyncio.Queue[list[Any]] = ConnectionAwareQueue()
+        self.stop_exception: Optional[Exception] = None
+        self.output_events: asyncio.Queue[list[Any]] = asyncio.Queue()
 
     @dtx_method("sendSignal:toPid:")
     async def send_signal_to_pid_(self, sig: int, pid: int) -> Any: ...
@@ -74,6 +75,11 @@ class ProcessControlService(DTXService):
         logger.warning(
             f"Process with PID {pid} terminated with exit code {exit_code} or crashing signal {crashing_signal}"
         )
+
+    async def aclose(self, reason: str, exc: Optional[Exception] = None) -> None:
+        self.stop_exception = exc
+        self.output_events.shutdown()
+        await super().aclose(reason, exc)
 
 
 class ProcessControl(DtxService[ProcessControlService]):
@@ -141,6 +147,11 @@ class ProcessControl(DtxService[ProcessControlService]):
         return result
 
     async def __aiter__(self) -> typing.AsyncGenerator[OutputReceivedEvent, None]:
-        while True:
-            value = await self.service.output_events.get()
-            yield OutputReceivedEvent.create(value)
+        try:
+            while True:
+                value = await self.service.output_events.get()
+                yield OutputReceivedEvent.create(value)
+        except asyncio.QueueShutDown:
+            pass
+        if self.service.stop_exception is not None:
+            raise self.service.stop_exception

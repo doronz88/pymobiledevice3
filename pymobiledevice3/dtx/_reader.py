@@ -7,13 +7,12 @@ all ``self.*`` references are resolved at runtime on the concrete class.
 from __future__ import annotations
 
 import asyncio
-import errno
 import logging
 from typing import TYPE_CHECKING
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 
-from .exceptions import DTXProtocolError
+from .exceptions import DTXProtocolError, is_connection_error
 from .fragment import DTXFragment
 from .fragmenter import DTXFragmenter
 from .message import (
@@ -32,14 +31,6 @@ MAX_BUFFERED_COUNT: int = 100
 MAX_BUFFERED_SIZE: int = 30 * 1024 * 1024  # 30 MiB
 """Maximum total bytes buffered across all in-flight multi-fragment messages."""
 
-TERMINATING_ERRNOS = {
-    errno.EPIPE,
-    errno.ECONNABORTED,
-    errno.ECONNRESET,
-    errno.ENOTCONN,
-    errno.ETIMEDOUT,
-}
-
 
 class _DTXReaderMixin:
     """Read-path methods for :class:`DTXConnection`.
@@ -56,7 +47,7 @@ class _DTXReaderMixin:
     - ``_pending_replies`` — ``dict[int, asyncio.Future[DTXMessage]]``
     - ``_closed`` — :class:`bool`
     - ``logger`` — :class:`logging.Logger`
-    - ``close()`` — coroutine (provided by :class:`DTXConnection`)
+    - ``aclose(reason: str, exc: Optional[Exception] = None)`` — coroutine (provided by :class:`DTXConnection`)
     - ``_schedule_reply_error()`` — schedule an error reply (provided by :class:`_DTXSenderMixin`)
     """
 
@@ -79,22 +70,6 @@ class _DTXReaderMixin:
         """Best-effort DEBUG log line for a fully assembled DTXMessage."""
         self.logger.debug("%-8s %r", direction, message)
 
-    @staticmethod
-    def _normalize_reader_exception(exc: Exception) -> Exception:
-        if isinstance(
-            exc, (ConnectionTerminatedError, asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError)
-        ):
-            return ConnectionTerminatedError() if not isinstance(exc, ConnectionTerminatedError) else exc
-        if isinstance(exc, TimeoutError):
-            normalized = ConnectionTerminatedError()
-            normalized.__cause__ = exc
-            return normalized
-        if isinstance(exc, OSError) and exc.errno in TERMINATING_ERRNOS:
-            normalized = ConnectionTerminatedError()
-            normalized.__cause__ = exc
-            return normalized
-        return exc
-
     # ------------------------------------------------------------------
     # Fragment reader loop
     # ------------------------------------------------------------------
@@ -102,7 +77,7 @@ class _DTXReaderMixin:
     async def _process_incoming_fragments(self) -> None:
         """Background task: read fragments until the connection closes or errors."""
         try:
-            while True:
+            while not self._closed:
                 fragment = await DTXFragment.read(self._reader)
 
                 if fragment.count == 1:
@@ -135,12 +110,12 @@ class _DTXReaderMixin:
                     await self._process_message(raw, meta)
 
         except (asyncio.CancelledError, Exception) as exc:
-            normalized_exc = exc
-            if isinstance(exc, Exception):
-                normalized_exc = self._normalize_reader_exception(exc)
             if not isinstance(exc, asyncio.CancelledError):
-                if isinstance(normalized_exc, ConnectionTerminatedError):
-                    self.logger.info("DTX reader exiting: connection terminated")
+                if is_connection_error(exc):
+                    self.logger.info("DTX reader connection lost: %s", exc)
+                    normalized_ex = ConnectionTerminatedError("Connection lost")
+                    normalized_ex.__cause__ = exc
+                    exc = normalized_ex
                 else:
                     self.logger.error("DTX reader exiting with error: %s", exc)
             if not self._handshake_done.done():
@@ -149,8 +124,8 @@ class _DTXReaderMixin:
                         ConnectionResetError("DTX reader cancelled before handshake completed")
                     )
                 else:
-                    self._handshake_done.set_exception(normalized_exc)
-            await self.close()  # type: ignore[attr-defined]
+                    self._handshake_done.set_exception(exc)
+            await self.aclose("reader exiting", exc)  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------
     # Message processing

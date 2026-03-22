@@ -35,7 +35,9 @@ from construct import (
     Container,
     ExplicitError,
     Float64l,
+    Int32sl,
     Int32ul,
+    Int64sl,
     Int64ul,
     SizeofError,
     stream_seek,
@@ -151,7 +153,7 @@ class PrimitiveString(_PrimitiveBase, str):
 
 
 class PrimitiveInt32(_PrimitiveBase, int):
-    """32-bit unsigned integer primitive (wire type 3).
+    """32-bit integer primitive (wire type 3).
 
     Wrap a call-site value—or annotate a :func:`~pymobiledevice3.dtx.service.dtx_method`
     stub parameter—to send it as INT32 rather than as an NSKeyedArchive buffer.
@@ -162,25 +164,25 @@ class PrimitiveInt32(_PrimitiveBase, int):
 
     @classmethod
     def _read(cls, stream, context, path) -> PrimitiveInt32:
-        return cls(Int32ul._parse(stream, context, path))
+        return cls(Int32sl._parse(stream, context, path))
 
     def _write(self, stream, context, path) -> None:
         Int32ul._build(self._type_code, stream, context, path)
-        Int32ul._build(int(self), stream, context, path)
+        Int32sl._build(int(self), stream, context, path)
 
 
 class PrimitiveInt64(_PrimitiveBase, int):
-    """64-bit unsigned integer primitive (wire type 6).  Use :data:`PInt64`."""
+    """64-bit integer primitive (wire type 6).  Use :data:`PInt64` as a shorter alias."""
 
     _type_code = 6
 
     @classmethod
     def _read(cls, stream, context, path) -> PrimitiveInt64:
-        return cls(Int64ul._parse(stream, context, path))
+        return cls(Int64sl._parse(stream, context, path))
 
     def _write(self, stream, context, path) -> None:
         Int32ul._build(self._type_code, stream, context, path)
-        Int64ul._build(int(self), stream, context, path)
+        Int64sl._build(int(self), stream, context, path)
 
 
 class PrimitiveBuffer(_PrimitiveBase, bytes):

@@ -141,7 +141,7 @@ class DtxService(Generic[_SVC_T]):
         """
         await self._provider.connect()
         if self._inferred_service_class is not None:
-            self._provider.dtx.register_service(self._inferred_service_class)
+            self._provider.dtx.register_service(self._inferred_service_class, self.CHANNEL_IDENTIFIER)
         if self._service is not None:
             return
         self._service = await self._acquire_channel()
@@ -153,9 +153,20 @@ class DtxService(Generic[_SVC_T]):
         a graceful shutdown message) before the connection is closed.
         """
 
+    async def on_channel_closed(self, reason: str, exc: Optional[Exception] = None) -> None:
+        """Called when the underlying channel is closed.
+
+        The default implementation does nothing.  Override to perform cleanup
+        when the channel is closed by either end (e.g. to unblock pending
+        operations or raise a specific exception on disconnect).
+        """
+
     async def __aenter__(self) -> Self:
         await self.connect()
+        self._service._channel.on_close = self.on_channel_closed
+        await self._service.__aenter__()
         return self
 
-    async def __aexit__(self, *_: Any) -> None:
+    async def __aexit__(self, *args: Any) -> None:
         await self.close()
+        await self._service.__aexit__(*args)
