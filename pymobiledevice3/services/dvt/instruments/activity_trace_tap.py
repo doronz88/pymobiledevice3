@@ -4,6 +4,7 @@ import os
 import struct
 from io import BytesIO
 
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.tap import Tap
 
 CMD_DEFINE_TABLE = 1
@@ -75,14 +76,15 @@ def decode_message_format(message) -> str:
 
 
 class ActivityTraceTap(Tap):
-    IDENTIFIER = "com.apple.instruments.server.services.activitytracetap"
+    CHANNEL_IDENTIFIER = "com.apple.instruments.server.services.activitytracetap"
 
-    def __init__(self, dvt, enable_http_archive_logging=False):
+    def __init__(self, dvt: DvtProvider, enable_http_archive_logging=False):
+        super().__init__(dvt)
         # TODO:
         #   reverse: [DTOSLogLoader _handleRecord:], DTTableRowEncoder::*
         #   to understand each row's structure.
 
-        config = {
+        self.__config__ = {
             "bm": 0,  # buffer mode
             "combineDataScope": 0,
             "machTimebaseDenom": 3,
@@ -99,19 +101,19 @@ class ActivityTraceTap(Tap):
             "ur": 500,
         }
 
-        super().__init__(dvt, self.IDENTIFIER, config)
-
         self.stack = []
         self.generation = 0
         self.background = 0
         self.tables = []
 
+    async def config(self):
+        return self.__config__
+
     async def _get_next_message(self):
-        message = b""
-        while message.startswith(b"bplist") or len(message) == 0:
-            # ignore heartbeat messages
-            message = await self.channel.receive_message()
-        self._set_current_message(message)
+        async for data in self.data():
+            if data is not None and len(data) > 0 and not data.startswith(b"bplist"):
+                self._set_current_message(data)
+                return
 
     def _set_current_message(self, message):
         self._message = BytesIO(message)
