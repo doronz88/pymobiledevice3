@@ -64,10 +64,10 @@ class CrashReportsManager:
         raise RuntimeError("Use async context manager: `async with ...`")
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.close()
+        await self.aclose()
 
-    async def close(self) -> None:
-        await self.afc.close()
+    async def aclose(self) -> None:
+        await self.afc.aclose()
 
     async def clear(self, path: str = "/") -> None:
         """

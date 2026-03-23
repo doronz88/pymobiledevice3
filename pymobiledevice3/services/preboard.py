@@ -16,9 +16,7 @@ class PreboardService(LockdownService):
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     async def create_stashbag(self, manifest):
-        await self.service.send_plist({"Command": "CreateStashbag", "Manifest": manifest})
-        return await self.service.recv_plist()
+        return await self.service.send_recv_plist({"Command": "CreateStashbag", "Manifest": manifest})
 
     async def commit(self, manifest):
-        await self.service.send_plist({"Command": "CommitStashbag", "Manifest": manifest})
-        return await self.service.recv_plist()
+        return await self.service.send_recv_plist({"Command": "CommitStashbag", "Manifest": manifest})

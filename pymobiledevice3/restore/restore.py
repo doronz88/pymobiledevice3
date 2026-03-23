@@ -1282,7 +1282,7 @@ class Restore(BaseRestore):
 
         with open(filename, "wb") as f:
             while True:
-                buf = client.recv_sync()
+                buf = await client.recv_any()
                 if not buf:
                     break
                 f.write(buf)

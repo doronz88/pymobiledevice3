@@ -30,6 +30,5 @@ class PowerAssertionService(LockdownService):
         if details is not None:
             msg["AssertionDetailKey"] = details
 
-        await self.service.send_plist(msg)
-        await self.service.recv_plist()
+        await self.service.send_recv_plist(msg)
         yield

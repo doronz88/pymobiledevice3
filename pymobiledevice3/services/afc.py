@@ -41,7 +41,7 @@ from xonsh.cli_utils import Annotated, Arg, ArgParserAlias
 from xonsh.main import main as xonsh_main
 from xonsh.tools import print_color
 
-from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError
+from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError, ConnectionTerminatedError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -284,7 +284,10 @@ class AfcService(LockdownService):
     rename, and directory operations.
 
     The service communicates using a custom binary protocol with operation codes for
-    different file system operations.
+    different file system operations. AFC responses echo the ``packet_num`` from the
+    request, enabling full concurrent operation: multiple callers may issue operations
+    simultaneously and a background reader task routes each response to the correct waiter
+    via a per-``packet_num`` Future.
 
     Attributes:
         SERVICE_NAME: Service identifier for lockdown-based connections
@@ -306,6 +309,64 @@ class AfcService(LockdownService):
             service_name = self.SERVICE_NAME if isinstance(lockdown, LockdownClient) else self.RSD_SERVICE_NAME
         super().__init__(lockdown, service_name)
         self.packet_num = 0
+        # Demux state — populated in __aenter__, torn down in __aexit__
+        self._afc_pending: dict[int, asyncio.Future] = {}
+        self._afc_write_lock = asyncio.Lock()
+        self._afc_reader_task: Optional[asyncio.Task] = None
+
+    async def __aenter__(self):
+        await super().__aenter__()
+        self._afc_reader_task = asyncio.create_task(self._afc_reader_loop(), name="afc-reader")
+        return self
+
+    async def aclose(self) -> None:
+        if self._afc_reader_task is not None:
+            self._afc_reader_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._afc_reader_task
+            self._afc_reader_task = None
+        for fut in self._afc_pending.values():
+            if not fut.done():
+                fut.set_exception(ConnectionTerminatedError())
+        self._afc_pending.clear()
+        await super().close()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.aclose()
+
+    async def _afc_reader_loop(self) -> None:
+        """Background task: read AFC response packets and route them to waiting callers."""
+        try:
+            while True:
+                header_bytes = await self.service.recvall(afc_header_t.sizeof())
+                if not header_bytes:
+                    break
+                header = afc_header_t.parse(header_bytes)
+                assert header.entire_length >= afc_header_t.sizeof()
+                length = header.entire_length - afc_header_t.sizeof()
+                data = await self.service.recvall(length) if length else b""
+
+                status = AfcError.SUCCESS
+                if header.operation == AfcOpcode.STATUS:
+                    if length != 8:
+                        self.logger.error("Status length != 8")
+                    status = afc_error_construct.parse(data)
+                elif header.operation != AfcOpcode.DATA:
+                    self.logger.debug("Unexpected AFC opcode %s", header.operation)
+
+                fut = self._afc_pending.pop(header.packet_num, None)
+                if fut is not None and not fut.done():
+                    fut.set_result((status, data))
+                else:
+                    self.logger.warning("AFC: no waiter for packet_num=%d", header.packet_num)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            # Propagate to all pending waiters so they don't hang
+            for fut in self._afc_pending.values():
+                if not fut.done():
+                    fut.set_exception(e)
+            self._afc_pending.clear()
 
     async def pull(
         self,
@@ -740,6 +801,8 @@ class AfcService(LockdownService):
         Read data from an open file handle.
 
         Automatically handles large reads by splitting into multiple operations.
+        Each chunk send+receive is performed atomically via the demux reader so
+        concurrent callers on the same AfcService instance are safe.
 
         :param handle: File handle returned from fopen
         :param sz: Number of bytes to read
@@ -749,10 +812,9 @@ class AfcService(LockdownService):
         data = b""
         while sz > 0:
             to_read = MAXIMUM_READ_SIZE if sz > MAXIMUM_READ_SIZE else sz
-            await self._dispatch_packet(
+            status, chunk = await self._send_and_wait(
                 AfcOpcode.READ, afc_fread_req_t.build(AfcFreadRequest(handle=handle, size=to_read))
             )
-            status, chunk = await self._receive_data()
             if status != AfcError.SUCCESS:
                 raise AfcException("fread error", status)
             sz -= to_read
@@ -764,6 +826,8 @@ class AfcService(LockdownService):
         Write data to an open file handle.
 
         Automatically handles large writes by splitting into multiple operations.
+        Each chunk send+receive is performed atomically via the demux reader so
+        concurrent callers on the same AfcService instance are safe.
 
         :param handle: File handle returned from fopen
         :param data: Bytes to write
@@ -774,17 +838,13 @@ class AfcService(LockdownService):
         chunks_count = len(data) // chunk_size
         for i in range(chunks_count):
             chunk = data[i * chunk_size : (i + 1) * chunk_size]
-            await self._dispatch_packet(AfcOpcode.WRITE, file_handle + chunk, this_length=48)
-
-            status, _response = await self._receive_data()
+            status, _ = await self._send_and_wait(AfcOpcode.WRITE, file_handle + chunk, this_length=48)
             if status != AfcError.SUCCESS:
                 raise AfcException(f"failed to write chunk: {status}", status)
 
         if len(data) % chunk_size:
             chunk = data[chunks_count * chunk_size :]
-            await self._dispatch_packet(AfcOpcode.WRITE, file_handle + chunk, this_length=48)
-
-            status, _response = await self._receive_data()
+            status, _ = await self._send_and_wait(AfcOpcode.WRITE, file_handle + chunk, this_length=48)
             if status != AfcError.SUCCESS:
                 raise AfcException(f"failed to write last chunk: {status}", status)
 
@@ -903,29 +963,36 @@ class AfcService(LockdownService):
             AfcOpcode.FILE_LOCK, afc_lock_t.build(AfcLockRequest(handle=handle, op=operation))
         )
 
-    async def _dispatch_packet(self, operation: AfcOpcode, data: bytes, this_length: int = 0) -> None:
+    async def _dispatch_packet(self, operation: AfcOpcode, data: bytes, this_length: int = 0) -> int:
         """
         Send an AFC protocol packet to the device.
 
         :param operation: AFC operation code
         :param data: Packet payload data
         :param this_length: Override for the packet length field (0 for auto-calculation)
+        :return: The packet_num assigned to this packet (used to match the response)
         """
+        pkt_num = self.packet_num
         entire_length = afc_header_t.sizeof() + len(data)
         header = afc_header_t.build(
             AfcHeader(
                 entire_length=entire_length,
                 this_length=this_length or entire_length,
-                packet_num=self.packet_num,
+                packet_num=pkt_num,
                 operation=operation,
             )
         )
         self.packet_num += 1
         await self.service.sendall(header + data)
+        return pkt_num
 
     async def _receive_data(self):
         """
         Receive an AFC protocol response packet from the device.
+
+        .. deprecated::
+            Internal use only. External callers should use :meth:`_do_operation` or
+            :meth:`_send_and_wait` which use the background demux reader.
 
         :return: Tuple of (status_code, response_data)
         """
@@ -945,17 +1012,55 @@ class AfcService(LockdownService):
                 self.logger.debug("Unexpected AFC opcode %s", header.operation)
         return status, data
 
+    async def _send_and_wait(self, operation: AfcOpcode, data: bytes, this_length: int = 0):
+        """
+        Atomically send one AFC packet and wait for its response via the demux reader.
+
+        The write lock ensures that ``packet_num`` assignment, Future registration, and
+        the actual ``sendall`` are an uninterruptible unit so the background reader always
+        finds a registered Future before the response arrives.
+
+        If the background reader task has not been started yet (e.g. when the service is
+        used without ``async with``), it is started lazily on the first call.
+
+        :param operation: AFC operation code
+        :param data: Packet payload
+        :param this_length: Override for the ``this_length`` header field
+        :return: Tuple of (AfcError, response_bytes)
+        """
+        # Ensure we're connected (lazy connect for non-async-with usage)
+        await self.connect()
+        # Start background reader lazily for callers that don't use async with.
+        # Also restart it if it exited (e.g. connection error): the new task will
+        # fail immediately on the broken socket and propagate the error to the caller
+        # via _afc_pending, giving a clean exception rather than an infinite hang.
+        if self._afc_reader_task is None or self._afc_reader_task.done():
+            self._afc_reader_task = asyncio.create_task(self._afc_reader_loop(), name="afc-reader")
+        loop = asyncio.get_event_loop()
+        async with self._afc_write_lock:
+            fut: asyncio.Future = loop.create_future()
+            # Register *before* sending so the reader never misses the response
+            pkt_num = self.packet_num
+            self._afc_pending[pkt_num] = fut
+            try:
+                await self._dispatch_packet(operation, data, this_length)
+            except BaseException:
+                self._afc_pending.pop(pkt_num, None)
+                raise
+        return await fut
+
     async def _do_operation(self, opcode: AfcOpcode, data: bytes = b"", filename: Optional[str] = None) -> bytes:
         """
         Performs a low-level operation using the specified opcode and additional data.
 
         This method dispatches a packet with the given opcode and data, waits for a
-        response, and processes the result to determine success or failure. If the
-        operation is unsuccessful, an appropriate exception is raised.
+        response via the background demux reader, and processes the result to determine
+        success or failure. Multiple callers may call this concurrently on the same
+        instance; each operation is matched to its response by ``packet_num``.
 
         :param opcode: The operation code specifying the type of operation to perform.
         :param data: The additional data to send along with the operation. Defaults to an empty byte string.
-        :param  filename: The filename associated with the operation, if applicable. Defaults to None.
+        :param filename: The filename associated with the operation, if applicable. Defaults to None.
 
         :returns: bytes: The data received as a response to the operation.
 
@@ -965,8 +1070,7 @@ class AfcService(LockdownService):
             AfcFileNotFoundError: Exception raised when the operation fails due to
                                   an object not being found (e.g., file or directory).
         """
-        await self._dispatch_packet(opcode, data)
-        status, data = await self._receive_data()
+        status, data = await self._send_and_wait(opcode, data)
 
         exception = AfcException
         if status != AfcError.SUCCESS:

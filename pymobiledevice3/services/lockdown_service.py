@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from inspect import isawaitable
 from typing import Optional, Union
@@ -52,6 +53,9 @@ class LockdownService:
         self._service: Optional[ServiceConnection] = service
         self._service_proxy = _LazyServiceConnection(self)
         self.logger: logging.Logger = logging.getLogger(self.__module__)
+        # Shared Future: the first connect() call creates it; concurrent callers join it
+        # instead of racing to call start_lockdown_service() multiple times.
+        self._connect_future: Optional[asyncio.Future] = None
 
     @property
     def service(self) -> Union[ServiceConnection, _LazyServiceConnection]:
@@ -76,13 +80,27 @@ class LockdownService:
         if self._service is not None:
             await self._service.close()
             self._service = None
+        self._connect_future = None
 
     async def connect(self) -> None:
         if self._service is not None:
             return
+        if self._connect_future is not None:
+            return await self._connect_future
+        fut = asyncio.get_running_loop().create_future()
+        self._connect_future = fut
         start_service = (
             self.lockdown.start_lockdown_developer_service
             if self._is_developer_service
             else self.lockdown.start_lockdown_service
         )
-        self._service = await start_service(self.service_name, include_escrow_bag=self._include_escrow_bag)
+        try:
+            self._service = await start_service(self.service_name, include_escrow_bag=self._include_escrow_bag)
+            fut.set_result(None)
+        except BaseException as e:
+            self._connect_future = None  # allow retry
+            if isinstance(e, asyncio.CancelledError):
+                fut.cancel()
+            else:
+                fut.set_exception(e)
+            raise

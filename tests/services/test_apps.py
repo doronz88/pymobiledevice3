@@ -49,10 +49,9 @@ async def test_parallel_installations_cleanup(lockdown: LockdownClient, monkeypa
         return wrapped_send_plist
 
     async with (
-        await create_using_usbmux(serial=lockdown.identifier) as first_lockdown,
-        await create_using_usbmux(serial=lockdown.identifier) as second_lockdown,
-        InstallationProxyService(lockdown=first_lockdown) as first,
-        InstallationProxyService(lockdown=second_lockdown) as second,
+        await create_using_usbmux(serial=lockdown.identifier) as inner_lockdown,
+        InstallationProxyService(lockdown=inner_lockdown) as first,
+        InstallationProxyService(lockdown=inner_lockdown) as second,
     ):
         monkeypatch.setattr(first.service, "send_plist", wrap_send_plist(first.service, captured_plists))
         monkeypatch.setattr(second.service, "send_plist", wrap_send_plist(second.service, captured_plists))
@@ -63,7 +62,15 @@ async def test_parallel_installations_cleanup(lockdown: LockdownClient, monkeypa
             return_exceptions=True,
         )
 
-    assert all(isinstance(result, AppInstallError) for result in results)
+    # https://github.com/doronz88/pymobiledevice3/issues/1595
+    # will fails with:
+    # >       assert all(isinstance(result, AppInstallError) for result in results), f"Expected both installations to fail with AppInstallError, got {results}"
+    # E       AssertionError: Expected both installations to fail with AppInstallError, got [AppInstallError('APIInternalError: Error Domain=IXErrorDomain Code=13 "Failed to get bundle ID from /private/var/tmp/com.apple.appinstall.temp/temp.oX9BMG/Extracted/Payload/Test.app" UserInfo={NSLocalizedDescription=Failed to get bundle ID from /private/var/tmp/com.apple.appinstall.temp/temp.oX9BMG/Extracted/Payload/Test.app, FunctionName=+[IXPlaceholder _placeholderForBundle:client:withParent:installType:metadata:placeholderType:mayBeDeltaPackage:isFromSerializedPlaceholder:location:error:], SourceFileLine=752, NSLocalizedFailureReason=Missing bundle ID.}'), RuntimeError('readexactly() called while another coroutine is already waiting for incoming data')]
+    # E       assert False
+    # E        +  where False = all(<generator object test_parallel_installations_cleanup.<locals>.<genexpr> at 0x1121d7760>)
+    assert all(isinstance(result, AppInstallError) for result in results), (
+        f"Expected both installations to fail with AppInstallError, got {results}"
+    )
     assert len(captured_plists) == 2, f"Expected 2 captured plists, got {len(captured_plists)}"
 
     package_paths = [payload["PackagePath"] for payload in captured_plists]
