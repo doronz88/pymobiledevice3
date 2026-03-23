@@ -1,3 +1,4 @@
+import asyncio
 import pathlib
 from datetime import datetime
 
@@ -361,3 +362,28 @@ async def test_push_pull_bigger_than_max_chunk(afc: AfcService) -> None:
     await afc.set_file_contents("test", contents)
     assert contents == await afc.get_file_contents("test")
     await afc.rm("test")
+
+
+async def test_concurrent_operations(lockdown: LockdownClient) -> None:
+    """
+    Verify that a single AfcService instance handles multiple concurrent operations
+    correctly via the packet_num demultiplexer.
+
+    Before the background reader + packet_num demux was implemented this test failed with:
+        RuntimeError: readexactly() called while another coroutine is already waiting
+    """
+    async with AfcService(lockdown) as afc:
+        # 10 concurrent get_device_info calls — all must return non-empty dicts
+        results = await asyncio.gather(*[afc.get_device_info() for _ in range(10)])
+        assert all(isinstance(r, dict) and len(r) > 0 for r in results), (
+            f"Expected all concurrent get_device_info calls to return non-empty dicts, got {results}"
+        )
+
+        # 5 concurrent listdir("/") — all must return the same non-empty listing
+        listings = await asyncio.gather(*[afc.listdir("/") for _ in range(5)])
+        assert all(isinstance(r, list) and len(r) > 0 for r in listings), (
+            f"Expected all concurrent listdir calls to return non-empty lists, got {listings}"
+        )
+        assert all(sorted(r) == sorted(listings[0]) for r in listings), (
+            f"Expected all concurrent listdir results to be identical, got {listings}"
+        )

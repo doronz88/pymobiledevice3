@@ -49,9 +49,9 @@ async def test_parallel_installations_cleanup(lockdown: LockdownClient, monkeypa
         return wrapped_send_plist
 
     async with (
-        await create_using_usbmux(serial=lockdown.identifier) as lockdown,
-        InstallationProxyService(lockdown=lockdown) as first,
-        InstallationProxyService(lockdown=lockdown) as second,
+        await create_using_usbmux(serial=lockdown.identifier) as inner_lockdown,
+        InstallationProxyService(lockdown=inner_lockdown) as first,
+        InstallationProxyService(lockdown=inner_lockdown) as second,
     ):
         monkeypatch.setattr(first.service, "send_plist", wrap_send_plist(first.service, captured_plists))
         monkeypatch.setattr(second.service, "send_plist", wrap_send_plist(second.service, captured_plists))

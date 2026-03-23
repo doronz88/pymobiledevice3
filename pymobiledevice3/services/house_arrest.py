@@ -34,8 +34,7 @@ class HouseArrestService(AfcService):
         return service
 
     async def send_command(self, bundle_id: str, cmd: str = "VendContainer") -> None:
-        await self.service.send_plist({"Command": cmd, "Identifier": bundle_id})
-        response = await self.service.recv_plist()
+        response = await self.service.send_recv_plist({"Command": cmd, "Identifier": bundle_id})
         error = response.get("Error")
         if error:
             if error == "ApplicationLookupFailed":

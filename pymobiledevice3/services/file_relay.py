@@ -44,7 +44,7 @@ class FileRelayService(LockdownService):
                 if s == "Acknowledged":
                     z = b""
                     while True:
-                        x = self.service.recv_sync()
+                        x = await self.service.recv_any()
                         if not x:
                             break
                         z += x

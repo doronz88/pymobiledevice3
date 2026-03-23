@@ -117,7 +117,7 @@ class FDRClient:
     async def _proxy_service_to_host(self, host_socket: socket.socket) -> None:
         loop = asyncio.get_running_loop()
         while True:
-            buf = await asyncio.to_thread(self.service.recv_sync, CHUNK_SIZE)
+            buf = await self.service.recv_any(CHUNK_SIZE)
             if not buf:
                 return
             await loop.sock_sendall(host_socket, buf)
@@ -131,7 +131,7 @@ class FDRClient:
             await self.service.sendall(buf)
 
     async def handle_proxy_cmd(self) -> None:
-        buf = await asyncio.to_thread(self.service.recv_sync, CHUNK_SIZE)
+        buf = await self.service.recv_any(CHUNK_SIZE)
         logger.debug(f"got proxy command with {len(buf)} bytes")
 
         # acknowledge request and payload

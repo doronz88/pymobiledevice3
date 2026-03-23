@@ -10,8 +10,7 @@ class DtDeviceArbitration(LockdownService):
         super().__init__(lockdown, self.SERVICE_NAME, is_developer_service=True)
 
     async def _send_recv(self, request: dict) -> dict:
-        await self.service.send_plist(request)
-        return await self.service.recv_plist()
+        return await self.service.send_recv_plist(request)
 
     async def version(self) -> dict:
         return await self._send_recv({"command": "version"})

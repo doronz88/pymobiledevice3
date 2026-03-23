@@ -962,8 +962,7 @@ class DiagnosticsService(LockdownService):
         super().__init__(lockdown, service_name, service=None)
 
     async def _send_recv(self, request: dict) -> dict:
-        await self.service.send_plist(request)
-        return await self.service.recv_plist()
+        return await self.service.send_recv_plist(request)
 
     async def mobilegestalt(self, keys: Optional[list[str]] = None) -> dict:
         if keys is None or len(keys) == 0:

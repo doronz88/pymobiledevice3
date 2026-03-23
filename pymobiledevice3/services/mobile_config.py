@@ -115,8 +115,7 @@ class MobileConfigService(LockdownService):
         await self._send_recv({"RequestType": "RemoveProfile", "ProfileIdentifier": data})
 
     async def _send_recv(self, request: dict) -> dict:
-        await self.service.send_plist(request)
-        response = await self.service.recv_plist()
+        response = await self.service.send_recv_plist(request)
         if response.get("Status", None) != "Acknowledged":
             error_chain = response.get("ErrorChain")
             if error_chain is not None:

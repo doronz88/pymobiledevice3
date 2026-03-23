@@ -107,6 +107,14 @@ class ServiceConnection:
         self.max_ssl_proto = ssl.TLSVersion.TLSv1_3
         self.socket.setblocking(False)
 
+        # Shared Future used by _ensure_started() to avoid duplicate start() calls when
+        # multiple coroutines race to use a not-yet-started connection simultaneously.
+        self._start_future: Optional[asyncio.Future] = None
+
+        # Held across the full send→recv pair in send_recv_plist() so that concurrent
+        # callers (e.g. LockdownClient shared by many tasks) are serialised automatically.
+        self._transaction_lock = asyncio.Lock()
+
     @staticmethod
     async def create_using_tcp(
         hostname: str, port: int, keep_alive: bool = True, create_connection_timeout: int = DEFAULT_TIMEOUT
@@ -170,7 +178,20 @@ class ServiceConnection:
     async def _ensure_started(self) -> None:
         if self.reader is not None and self.writer is not None:
             return
-        await self.start()
+        if self._start_future is not None:
+            return await self._start_future
+        fut = asyncio.get_running_loop().create_future()
+        self._start_future = fut
+        try:
+            await self.start()
+            fut.set_result(None)
+        except BaseException as e:
+            self._start_future = None  # allow retry on next call
+            if isinstance(e, asyncio.CancelledError):
+                fut.cancel()
+            else:
+                fut.set_exception(e)
+            raise
 
     async def aclose(self) -> None:
         """Asynchronously close the connection."""
@@ -192,6 +213,7 @@ class ServiceConnection:
         self.socket = None
         self.writer = None
         self.reader = None
+        self._start_future = None
 
     def recv_sync(self, length: int = 4096) -> bytes:
         """
@@ -224,17 +246,36 @@ class ServiceConnection:
         except ssl.SSLEOFError as e:
             raise ConnectionTerminatedError from e
 
+    async def send_recv_prefixed(self, data: bytes, endianity: str = ">") -> bytes:
+        """
+        Atomically send raw bytes and receive a length-prefixed response, under the
+        transaction lock.
+
+        This is the lowest-level concurrent-safe send→recv primitive. Higher-level
+        methods such as :meth:`send_recv_plist` are built on top of it.
+
+        :param data: Raw bytes to send (already serialised by the caller).
+        :param endianity: The byte order for the length prefix.
+        :return: The raw response bytes (may be empty).
+        """
+        async with self._transaction_lock:
+            await self.sendall(data)
+            return await self.recv_prefixed(endianity=endianity)
+
     async def send_recv_plist(self, data: dict, endianity: str = ">", fmt: Enum = plistlib.FMT_XML) -> Any:
         """
         Asynchronously send a plist to the socket and receive a plist response.
+
+        This method is safe to call concurrently from multiple coroutines on the same
+        connection: a per-connection lock serialises each send→recv pair atomically so
+        that responses are always matched to their request.
 
         :param data: The dictionary to send as a plist.
         :param endianity: The byte order ('>' for big-endian, '<' for little-endian).
         :param fmt: The plist format (e.g., plistlib.FMT_XML).
         :return: The received plist as a dictionary.
         """
-        await self.send_plist(data, endianity=endianity, fmt=fmt)
-        return await self.recv_plist(endianity=endianity)
+        return parse_plist(await self.send_recv_prefixed(build_plist(data, endianity, fmt), endianity))
 
     def recvall_sync(self, size: int) -> bytes:
         """
