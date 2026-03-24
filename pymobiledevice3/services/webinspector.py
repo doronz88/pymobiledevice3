@@ -156,10 +156,13 @@ class WebinspectorService:
         self._recv_task = asyncio.create_task(self._receiving_task())
 
     async def close(self):
-        self._recv_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await self._recv_task
-        await self.service.close()
+        if self._recv_task is not None:
+            self._recv_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._recv_task
+
+        if self.service is not None:
+            await self.service.close()
 
     async def _recv_message(self):
         while True:
