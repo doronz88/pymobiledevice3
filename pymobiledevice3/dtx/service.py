@@ -36,6 +36,7 @@ from typing import Any, Callable, ClassVar, Optional, TypeVar, get_type_hints
 
 from .channel import DTXChannel
 from .context import DTX_GLOBAL_CTX, DTXContext  # noqa: F401 — re-exported for back-compat
+from .exceptions import copy_exception
 from .ns_types import NSError
 from .primitives import PInt32, _PrimitiveBase
 
@@ -318,7 +319,7 @@ class DTXService:
         await self._channel.aclose(reason, exc)
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.aclose("context exit", exc_val)
+        await self.aclose("context exit", copy_exception(exc_val))
         await self._channel.__aexit__(exc_type, exc_val, exc_tb)
 
     @property
@@ -559,7 +560,7 @@ class DTXProxyService(DTXService):
                 await svc.aclose(reason, exc)
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.aclose("context exit", exc_val)
+        await self.aclose("context exit", copy_exception(exc_val))
         await super().__aexit__(exc_type, exc_val, exc_tb)
         for svc in (self._local_service, self._remote_service):
             if svc is not None:

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 
-from .exceptions import DTXProtocolError, is_connection_error
+from .exceptions import DTXProtocolError, copy_exception, is_connection_error
 from .fragment import DTXFragment
 from .fragmenter import DTXFragmenter
 from .message import (
@@ -125,7 +125,7 @@ class _DTXReaderMixin:
                     )
                 else:
                     self._handshake_done.set_exception(exc)
-            await self.aclose("reader exiting", exc)  # type: ignore[attr-defined]
+            await self.aclose("reader exiting", copy_exception(exc))  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------
     # Message processing

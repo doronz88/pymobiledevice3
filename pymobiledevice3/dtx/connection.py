@@ -31,7 +31,7 @@ from ._reader import _DTXReaderMixin
 from ._sender import _DTXSenderMixin
 from .channel import DTXChannel
 from .context import DTX_GLOBAL_CTX, DTXContext
-from .exceptions import DTXProtocolError
+from .exceptions import DTXProtocolError, copy_exception
 from .fragmenter import DTXFragmenter
 from .message import DTXMessage
 from .ns_types import NSError
@@ -232,7 +232,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.aclose("exiting context", exc_val)
+        await self.aclose("exiting context", copy_exception(exc_val))
 
     # ------------------------------------------------------------------
     # Channel management
@@ -294,8 +294,9 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
                 self._channels.pop(code, None)
                 self._services.pop(code, None)
             self.logger.exception("Error opening channel identifier=%r code=%d", identifier, code)
-            await s.aclose("failed to open channel", e)
-            await channel.aclose("failed to open channel", e)
+            e_copy = copy_exception(e)
+            await s.aclose("failed to open channel", e_copy)
+            await channel.aclose("failed to open channel", e_copy)
             raise
 
         async with self._service_condition:

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError, UnrecognizedSelectorError
 
-from .exceptions import DTXNSCodingError, DTXNsError, DTXProtocolError
+from .exceptions import DTXNSCodingError, DTXNsError, DTXProtocolError, copy_exception
 from .message import (
     DTXMessage,
     DTXMessageType,
@@ -330,7 +330,7 @@ class DTXChannel:
         if not self._closed:
             with suppress(ConnectionTerminatedError):
                 await self.cancel()
-        await self.aclose("context exit", exc_val)
+        await self.aclose("context exit", copy_exception(exc_val))
 
     def _check_open(self) -> None:
         if self._closed:
@@ -369,6 +369,6 @@ class DTXChannel:
                 if not self._closed:
                     self.logger.exception("Error in channel reader loop for channel '%s'", self.identifier)
                     asyncio.get_running_loop().call_soon(
-                        partial(asyncio.create_task, self.aclose("reader loop error", e))
+                        partial(asyncio.create_task, self.aclose("reader loop error", copy_exception(e)))
                     )
                 break

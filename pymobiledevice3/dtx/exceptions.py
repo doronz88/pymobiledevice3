@@ -1,9 +1,40 @@
 import asyncio
+import copy
 import errno
+from typing import Optional, TypeVar
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 
 from .ns_types import NSError
+
+E = TypeVar("E", bound=BaseException)
+
+
+def copy_exception(exc: Optional[E]) -> Optional[E]:
+    """Return a shallow copy of *exc* with its current ``__traceback__`` snapshotted.
+
+    When a Future holds a reference to an exception and is later awaited,
+    Python prepends new frames to ``exc.__traceback__`` in-place — before any
+    ``except``/``suppress`` handler can act.  Passing the original exception
+    object to ``aclose()`` and then calling ``wait_closed()`` (whose transport
+    close-waiter may hold the same object) causes that traceback pollution to
+    be visible when the exception is eventually re-raised by a consumer such as
+    ``TapService.messages()``.
+
+    This utility creates a fresh object of the same type so subsequent raises of
+    the ORIGINAL object do not pollute this copy's ``__traceback__``.
+
+    Returns *None* unchanged so call sites can pass ``exc_val`` directly without
+    a ``None``-guard.
+    """
+    if exc is None:
+        return None
+    new_exc = copy.copy(exc)
+    new_exc.__traceback__ = exc.__traceback__
+    new_exc.__cause__ = exc.__cause__
+    new_exc.__context__ = exc.__context__
+    new_exc.__suppress_context__ = exc.__suppress_context__
+    return new_exc  # type: ignore[return-value]
 
 
 def get_root_exception(exc: BaseException) -> BaseException:
