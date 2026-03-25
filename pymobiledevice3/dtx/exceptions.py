@@ -68,6 +68,9 @@ def is_connection_error(exc: BaseException) -> bool:
         errno.EPIPE,
         errno.ECONNABORTED,
         errno.ETIMEDOUT,
+        errno.EHOSTUNREACH,
+        errno.ENETDOWN,
+        errno.ENETUNREACH,
     )
 
 
