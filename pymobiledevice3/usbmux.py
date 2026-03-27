@@ -1,5 +1,6 @@
 import abc
 import asyncio
+import os
 import plistlib
 import socket
 import struct
@@ -155,6 +156,8 @@ class MuxConnection:
 
     @staticmethod
     def _resolve_usbmux_address(usbmux_address: Optional[str] = None):
+        if usbmux_address is None:
+            usbmux_address = os.environ.get("USBMUXD_SOCKET_ADDRESS")
         if usbmux_address is not None:
             if ":" in usbmux_address:
                 hostname, port = usbmux_address.split(":")
