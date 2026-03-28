@@ -293,7 +293,7 @@ async def start_remote_pair_task(device_name: Optional[str]) -> None:
 
     devices: list[RemotePairingManualPairingDevice] = []
     for answer in await browse_remotepairing_manual_pairing():
-        current_device_name = answer.properties[b"name"].decode()
+        current_device_name = answer.properties["name"]
 
         if device_name is not None and current_device_name != device_name:
             continue
@@ -304,7 +304,7 @@ async def start_remote_pair_task(device_name: Optional[str]) -> None:
                     ip=address.full_ip,
                     port=answer.port,
                     device_name=current_device_name,
-                    identifier=answer.properties[b"identifier"].decode(),
+                    identifier=answer.properties["identifier"],
                 )
             )
 

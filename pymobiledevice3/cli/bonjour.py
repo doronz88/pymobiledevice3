@@ -65,7 +65,7 @@ async def cli_remotepairing_manual_pairing_task(timeout: float) -> None:
             output.append({
                 "hostname": address.full_ip,
                 "port": answer.port,
-                "name": answer.properties[b"name"].decode(),
+                "name": answer.properties["name"],
             })
     print_json(output)
 
