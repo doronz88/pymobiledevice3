@@ -71,6 +71,7 @@ def is_connection_error(exc: BaseException) -> bool:
         errno.EHOSTUNREACH,
         errno.ENETDOWN,
         errno.ENETUNREACH,
+        errno.ETIMEDOUT,
     )
 
 
