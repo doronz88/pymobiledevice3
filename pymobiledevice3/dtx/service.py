@@ -319,8 +319,10 @@ class DTXService:
         await self._channel.aclose(reason, exc)
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.aclose("context exit", copy_exception(exc_val))
-        await self._channel.__aexit__(exc_type, exc_val, exc_tb)
+        if self._channel._closed:
+            await self.aclose("context exit", copy_exception(exc_val))
+            return
+        await self._channel.cancel("context exit")
 
     @property
     def dtxproxy(self) -> Optional[DTXProxyService]:
