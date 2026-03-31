@@ -3,7 +3,7 @@ import copy
 import errno
 from typing import Optional, TypeVar
 
-from pymobiledevice3.exceptions import ConnectionTerminatedError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, InvalidServiceError
 
 from .ns_types import NSError
 
@@ -41,9 +41,13 @@ def get_root_exception(exc: BaseException) -> BaseException:
     """Recursively get the root cause of *exc*."""
     cause = exc.__cause__
     if cause is not None:
+        if isinstance(cause, InvalidServiceError):
+            return exc
         return get_root_exception(cause)
     context = exc.__context__
     if context is not None:
+        if isinstance(context, InvalidServiceError):
+            return exc
         return get_root_exception(context)
     return exc
 
