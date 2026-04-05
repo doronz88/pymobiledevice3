@@ -121,6 +121,7 @@ CLI_GROUPS = {
     "usbmux": "usbmux",
     "webinspector": "webinspector",
     "idam": "idam",
+    "screen-mirror": "screen_mirror",
     "version": "version",
 }
 
