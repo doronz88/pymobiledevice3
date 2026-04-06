@@ -76,12 +76,19 @@ class _DTXSenderMixin:
                         self._writer.write(chunk)
             except Exception as e:
                 self._pending_replies.pop(message.identifier, None)
-                raise DTXProtocolError(f"Failed to serialise DTXMessage: {e}") from e
+                pe = DTXProtocolError(f"Failed to serialise DTXMessage: {e}")
+                pe.__cause__ = e
+                await self.aclose("message serialization failed", pe)  # type: ignore[attr-defined]
+                raise pe from e
             try:
                 await self._writer.drain()
-            except (ConnectionResetError, BrokenPipeError, OSError) as e:
+            except Exception as e:
                 self._pending_replies.pop(message.identifier, None)
-                raise ConnectionTerminatedError("Connection lost while sending") from e
+                self.logger.info("DTX writer connection lost: %s", e)
+                normalized_exc = ConnectionTerminatedError("Connection lost")
+                normalized_exc.__cause__ = e
+                await self.aclose("failed to drain after sending message", normalized_exc)  # type: ignore[attr-defined]
+                raise normalized_exc from e
 
             self._log_message("sent", message)  # type: ignore[attr-defined]
 

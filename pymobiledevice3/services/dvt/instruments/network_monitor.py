@@ -2,14 +2,16 @@ import asyncio
 import ipaddress
 import logging
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 from construct import Adapter, Bytes, Int8ul, Int16ub, Int32ul, Switch, this
 from construct_typed import DataclassMixin, TStruct, csfield
 
-from pymobiledevice3.dtx import ConnectionAwareQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
+from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
+from pymobiledevice3.exceptions import ConnectionTerminatedError
 
 
 class IpAddressAdapter(Adapter):
@@ -108,7 +110,8 @@ class NetworkMonitorService(DTXService):
 
     def __init__(self, ctx) -> None:
         super().__init__(ctx)
-        self.events: asyncio.Queue[Any] = ConnectionAwareQueue()
+        self.events: asyncio.Queue[Any] = asyncio.Queue()
+        self.stop_exception: Optional[Exception] = None
 
     @dtx_method("startMonitoring", expects_reply=False)
     async def start_monitoring(self) -> None: ...
@@ -124,6 +127,11 @@ class NetworkMonitorService(DTXService):
     async def _on_notification(self, payload: Any) -> None:
         await self.events.put(payload)
 
+    async def aclose(self, reason: str, exc: Optional[Exception] = None) -> None:
+        self.stop_exception = exc
+        self.events.shutdown()
+        await super().aclose(reason, exc)
+
 
 class NetworkMonitor(DtxService[NetworkMonitorService]):
     """Iterate over network monitoring events from the Instruments service."""
@@ -133,12 +141,14 @@ class NetworkMonitor(DtxService[NetworkMonitorService]):
         self.logger = logging.getLogger(__name__)
 
     async def __aenter__(self) -> "NetworkMonitor":
-        await self.connect()
+        await super().__aenter__()
         await self.service.start_monitoring()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        await self.service.stop_monitoring()
+        with suppress(ConnectionTerminatedError):
+            await self.service.stop_monitoring()
+        await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def __aiter__(self) -> AsyncIterator[NetworkMonitorEvent]:
         """Yield network events as they arrive from the service."""
@@ -184,4 +194,7 @@ class NetworkMonitor(DtxService[NetworkMonitorService]):
             yield event
 
     async def _receive_message(self):
-        return await self.service.events.get()
+        try:
+            return await self.service.events.get()
+        except asyncio.QueueShutDown:
+            raise StopAsyncIteration from None
