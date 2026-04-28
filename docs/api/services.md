@@ -27,3 +27,5 @@ from `LockdownService`.
 ::: pymobiledevice3.services.crash_reports.CrashReportsManager
 
 ::: pymobiledevice3.services.mobile_image_mounter.MobileImageMounterService
+
+::: pymobiledevice3.services.bt_packet_logger.BtPacketLoggerService

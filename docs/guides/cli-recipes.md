@@ -32,6 +32,12 @@ pymobiledevice3 syslog live -m SpringBoard
 # Exclude syslog lines
 pymobiledevice3 syslog live -v unwanted_log
 
+# Capture Bluetooth HCI traffic in PacketLogger format
+pymobiledevice3 btlogger trace.pklg
+
+# Capture Bluetooth HCI traffic as pcapng for Wireshark
+pymobiledevice3 btlogger -f pcapng trace.pcapng
+
 # Restart device
 pymobiledevice3 diagnostics restart
 
