@@ -122,6 +122,7 @@ CLI_GROUPS = {
     "webinspector": "webinspector",
     "idam": "idam",
     "valeria": "valeria",
+    "screen-mirror": "screen_mirror",
     "version": "version",
 }
 

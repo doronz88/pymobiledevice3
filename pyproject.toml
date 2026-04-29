@@ -37,6 +37,7 @@ dynamic = ["dependencies", "version"]
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio"]
 full = ["defusedxml", "pytest"]
+screen-mirror = ["aiohttp"]
 
 [project.urls]
 "Homepage" = "https://github.com/doronz88/pymobiledevice3"
