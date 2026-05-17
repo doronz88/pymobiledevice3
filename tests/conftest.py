@@ -12,14 +12,12 @@ from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestService
 from pymobiledevice3.tunneld.api import get_tunneld_devices
 
-logging.getLogger("quic").disabled = True
-logging.getLogger("asyncio").disabled = True
-logging.getLogger("parso.cache").disabled = True
-logging.getLogger("parso.cache.pickle").disabled = True
-logging.getLogger("parso.python.diff").disabled = True
-logging.getLogger("humanfriendly.prompts").disabled = True
-logging.getLogger("blib2to3.pgen2.driver").disabled = True
-logging.getLogger("urllib3.connectionpool").disabled = True
+logging.getLogger("quic").setLevel(logging.CRITICAL + 1)
+logging.getLogger("asyncio").setLevel(logging.CRITICAL + 1)
+logging.getLogger("parso").setLevel(logging.CRITICAL + 1)
+logging.getLogger("humanfriendly").setLevel(logging.CRITICAL + 1)
+logging.getLogger("blib2to3").setLevel(logging.CRITICAL + 1)
+logging.getLogger("urllib3").setLevel(logging.CRITICAL + 1)
 
 
 def pytest_addoption(parser):
