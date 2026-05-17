@@ -56,14 +56,12 @@ from pymobiledevice3.osu.os_utils import get_os_utils
 
 coloredlogs.install(level=logging.INFO)
 
-logging.getLogger("quic").disabled = True
-logging.getLogger("asyncio").disabled = True
-logging.getLogger("parso.cache").disabled = True
-logging.getLogger("parso.cache.pickle").disabled = True
-logging.getLogger("parso.python.diff").disabled = True
-logging.getLogger("humanfriendly.prompts").disabled = True
-logging.getLogger("blib2to3.pgen2.driver").disabled = True
-logging.getLogger("urllib3.connectionpool").disabled = True
+logging.getLogger("quic").setLevel(logging.CRITICAL + 1)
+logging.getLogger("asyncio").setLevel(logging.CRITICAL + 1)
+logging.getLogger("parso").setLevel(logging.CRITICAL + 1)
+logging.getLogger("humanfriendly").setLevel(logging.CRITICAL + 1)
+logging.getLogger("blib2to3").setLevel(logging.CRITICAL + 1)
+logging.getLogger("urllib3").setLevel(logging.CRITICAL + 1)
 
 logger = logging.getLogger(__name__)
 

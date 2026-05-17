@@ -1368,8 +1368,7 @@ class AfcShell:
             XSH.ctx["_service"] = AfcService(service_provider, service_name=service_name)
 
         try:
-            logging.getLogger("parso.python.diff").disabled = True
-            logging.getLogger("parso.cache").disabled = True
+            logging.getLogger("parso").setLevel(logging.CRITICAL + 1)
             xonsh_main(args)
         except SystemExit:
             pass
