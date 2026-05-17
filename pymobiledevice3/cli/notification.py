@@ -26,7 +26,7 @@ async def post(
     insecure: Annotated[
         bool,
         typer.Option(help="Use the insecure relay meant for untrusted clients instead of the trusted channel."),
-    ],
+    ] = False,
 ) -> None:
     """Post one or more Darwin notifications (notify_post)."""
     service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
