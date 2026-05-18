@@ -529,3 +529,24 @@ class WdaError(PyMobileDevice3Exception):
     def __init__(self, message: str, status_code: Optional[int] = None):
         super().__init__(message)
         self.status_code = status_code
+
+
+class MultipleDevicesError(PyMobileDevice3Exception):
+    """Multiple iOS devices are present and the requested one cannot be
+    disambiguated. Common on macOS without root when two same-model devices
+    are attached."""
+
+    pass
+
+
+class ScreenRecordingPermissionError(PyMobileDevice3Exception):
+    """The macOS Screen Recording TCC privilege is not granted to the parent
+    process. Required for CoreMediaIO to enumerate iOS capture devices."""
+
+    pass
+
+
+class BackendUnavailableError(PyMobileDevice3Exception):
+    """The requested capture backend cannot run on this platform."""
+
+    pass
