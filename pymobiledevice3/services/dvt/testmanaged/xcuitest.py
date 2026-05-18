@@ -345,11 +345,12 @@ def _generate_launch_args(
     }
 
     if product_major_version >= 11:
-        app_env["DYLD_INSERT_LIBRARIES"] = "/Developer/usr/lib/libMainThreadChecker.dylib"
         app_env["OS_ACTIVITY_DT_MODE"] = "YES"
+        if product_major_version < 17:
+            app_env["DYLD_INSERT_LIBRARIES"] = "/Developer/usr/lib/libMainThreadChecker.dylib"
     if product_major_version >= 17:
-        app_env["DYLD_FRAMEWORK_PATH"] = f"${app_env['DYLD_FRAMEWORK_PATH']}/System/Developer/Library/Frameworks:"
-        app_env["DYLD_LIBRARY_PATH"] = f"${app_env['DYLD_LIBRARY_PATH']}:/System/Developer/usr/lib"
+        app_env["DYLD_FRAMEWORK_PATH"] = f"{app_env['DYLD_FRAMEWORK_PATH']}/System/Developer/Library/Frameworks:"
+        app_env["DYLD_LIBRARY_PATH"] = f"{app_env['DYLD_LIBRARY_PATH']}:/System/Developer/usr/lib"
         app_env["XCTestConfigurationFilePath"] = ""  # sent as return value of _XCT_testRunnerReadyWithCapabilities
         app_env["XCTestManagerVariant"] = "DDI"
 
