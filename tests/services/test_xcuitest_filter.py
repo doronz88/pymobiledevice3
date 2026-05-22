@@ -64,7 +64,9 @@ from pymobiledevice3.services.dvt.testmanaged.xctest_types import (
     XCTTestIdentifier,
 )
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import (
-    TestConfig,
+    TestConfig as _TestConfig,
+)
+from pymobiledevice3.services.dvt.testmanaged.xcuitest import (
     XCTestCaseResult,
     XCUITestListener,
     XCUITestService,
@@ -176,7 +178,7 @@ async def xcuitest_svc(service_provider) -> XCUITestService:
 
 async def _run_with_listener(
     svc: XCUITestService,
-    cfg: TestConfig,
+    cfg: _TestConfig,
     *,
     timeout: float = RUN_TIMEOUT,
 ) -> _RecordingListener:
@@ -202,7 +204,7 @@ async def test_baseline_no_filter(xcuitest_svc: XCUITestService, xcuitest_cfg: d
     - All expected tests ran (if ``all_tests`` is provided in the config).
     """
     timeout = xcuitest_cfg.get("timeout", RUN_TIMEOUT)
-    cfg = await TestConfig.create_for(
+    cfg = await _TestConfig.create_for(
         xcuitest_svc.lockdown,
         runner_bundle_id=xcuitest_cfg["runner_bundle_id"],
         target_bundle_id=xcuitest_cfg["target_bundle_id"],
@@ -250,7 +252,7 @@ async def test_filter_with_plain_strings(xcuitest_svc: XCUITestService, xcuitest
         pytest.skip("'filter_test' not set in xcuitest config")
 
     timeout = xcuitest_cfg.get("timeout", RUN_TIMEOUT)
-    cfg = await TestConfig.create_for(
+    cfg = await _TestConfig.create_for(
         xcuitest_svc.lockdown,
         runner_bundle_id=xcuitest_cfg["runner_bundle_id"],
         target_bundle_id=xcuitest_cfg["target_bundle_id"],
@@ -296,7 +298,7 @@ async def test_filter_with_xct_identifiers(xcuitest_svc: XCUITestService, xcuite
     assert callable(identifier.__hash__), "XCTTestIdentifier is not hashable"
 
     timeout = xcuitest_cfg.get("timeout", RUN_TIMEOUT)
-    cfg = await TestConfig.create_for(
+    cfg = await _TestConfig.create_for(
         xcuitest_svc.lockdown,
         runner_bundle_id=xcuitest_cfg["runner_bundle_id"],
         target_bundle_id=xcuitest_cfg["target_bundle_id"],
