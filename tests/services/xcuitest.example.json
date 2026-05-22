@@ -4,6 +4,11 @@
     "runner_bundle_id": "com.example.MyApp.xctrunner",
     "target_bundle_id": "com.example.MyApp",
     "runner_env": {},
-    "timeout": 30.0
+    "timeout": 60.0,
+    "filter_test": "MyAppUITests/testSomething",
+    "all_tests": [
+      "MyAppUITests/testSomething",
+      "MyAppUITests/testSomethingElse"
+    ]
   }
 ]
