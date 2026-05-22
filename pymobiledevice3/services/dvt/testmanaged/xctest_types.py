@@ -27,6 +27,37 @@ from typing import Any, ClassVar, Optional
 
 from bpylist2 import archiver
 
+# ---------------------------------------------------------------------------
+# NSMutableArray — encodes as NSMutableArray (subclass of NSArray)
+# ---------------------------------------------------------------------------
+
+
+class NSMutableArray:
+    """Python wrapper that forces NSMutableArray encoding in NSKeyedArchive.
+
+    bpylist2 encodes Python ``list`` as NSArray.  The ``XCTTestIdentifierSet``
+    ``identifiers`` property is typed as ``NSMutableArray<XCTTestIdentifier *>``
+    in XCTest's private headers; sending NSArray causes a silent type-mismatch.
+    """
+
+    def __init__(self, items: list) -> None:
+        self.items = list(items)
+
+    def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
+        # bpylist2's encode() would wrap the list in another NSArray UID; we
+        # must write NS.objects as a raw list of UIDs directly into the dict.
+        a = archive_obj._archiver  # type: ignore[attr-defined]
+        archive_obj._archive_obj["NS.objects"] = [a.archive(item) for item in self.items]  # type: ignore[attr-defined]
+
+    @staticmethod
+    def decode_archive(archive_obj: archiver.ArchivedObject) -> NSMutableArray:
+        raw = archive_obj.decode("NS.objects") or []
+        return NSMutableArray(list(raw))
+
+
+archiver.ARCHIVE_CLASS_MAP[NSMutableArray] = "NSMutableArray"  # type: ignore[index]
+archiver.update_class_map({"NSMutableArray": NSMutableArray})
+
 
 class XCTCapabilities:
     """Proxy for XCTest's ``XCTCapabilities`` dictionary wrapper."""
@@ -77,7 +108,9 @@ class XCTestConfiguration:
         "testsDrivenByIDE": False,
         "testsMustRunOnMainThread": True,
         "testsToRun": None,
+        "testIdentifiersToRun": None,
         "testsToSkip": None,
+        "testIdentifiersToSkip": None,
         "treatMissingBaselinesAsFailures": False,
         "userAttachmentLifetime": 0,
         "preferredScreenCaptureFormat": 2,
@@ -124,14 +157,31 @@ archiver.update_class_map({
 
 @dataclass
 class XCTTestIdentifier:
-    """Decoded proxy for ``XCTTestIdentifier``.
+    """Proxy for ``XCTTestIdentifier``.
 
     ``components`` is the ordered list of name parts, e.g.
     ``["DemoAppUITests", "testFail"]``.  Use :attr:`test_class` /
     :attr:`test_method` as shortcuts.
+
+    ``options`` follows XCTest's convention:
+    - ``2`` — leaf (class + method)
+    - ``3`` — class-level (class only, matches all methods)
     """
 
     components: list[str] = field(default_factory=list)
+    options: int = 2
+
+    @classmethod
+    def from_string(cls, test_spec: str) -> XCTTestIdentifier:
+        """Parse ``'ClassName/methodName'`` or ``'ClassName'`` into an identifier.
+
+        The ``options`` value follows the XCTest convention used by Xcode 15 /
+        go-ios: ``3`` for a class-level selector (no method), ``2`` for a
+        leaf (class + method).
+        """
+        parts = [p for p in test_spec.split("/") if p]
+        options = 3 if len(parts) == 1 else 2
+        return cls(components=parts, options=options)
 
     @property
     def test_class(self) -> str:
@@ -144,11 +194,57 @@ class XCTTestIdentifier:
     def __str__(self) -> str:
         return "/".join(self.components)
 
+    def __hash__(self) -> int:
+        return hash((tuple(self.components), self.options))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, XCTTestIdentifier):
+            return NotImplemented
+        return self.components == other.components and self.options == other.options
+
+    def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
+        archive_obj.encode("c", list(self.components))
+        archive_obj.encode("o", self.options)
+
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTTestIdentifier:
         raw = archive_obj.decode("c")
         components = list(raw) if raw else []
-        return XCTTestIdentifier(components=components)
+        options = archive_obj.decode("o") or 2
+        return XCTTestIdentifier(components=components, options=int(options))
+
+
+@dataclass
+class XCTTestIdentifierSet:
+    """Proxy for ``XCTTestIdentifierSet`` — the iOS 17+ filter type.
+
+    On iOS 17+, ``XCTestConfiguration`` recognises ``testIdentifiersToRun``
+    and ``testIdentifiersToSkip`` keys whose values are ``XCTTestIdentifierSet``
+    objects.  The legacy ``testsToRun``/``testsToSkip`` NSSet<NSString> keys
+    are ignored by modern runners.
+
+    ``identifiers`` is encoded as ``NSMutableArray<XCTTestIdentifier *>``
+    (``identifiers`` key) — matching the private-framework wire format used by
+    Xcode 15 and go-ios.
+    """
+
+    identifiers: list[XCTTestIdentifier] = field(default_factory=list)
+
+    @classmethod
+    def from_strings(cls, test_specs: list[str]) -> XCTTestIdentifierSet:
+        """Build a set from human-readable ``'ClassName/method'`` strings."""
+        return cls(identifiers=[XCTTestIdentifier.from_string(s) for s in test_specs])
+
+    def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
+        # Must be NSMutableArray — XCTTestIdentifierSet.identifiers is typed as
+        # NSMutableArray<XCTTestIdentifier *> in XCTest's private headers.
+        archive_obj.encode("identifiers", NSMutableArray(self.identifiers))
+
+    @staticmethod
+    def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTTestIdentifierSet:
+        raw = archive_obj.decode("identifiers")
+        identifiers = list(raw.items) if isinstance(raw, NSMutableArray) else (list(raw) if raw else [])
+        return XCTTestIdentifierSet(identifiers=identifiers)
 
 
 @dataclass
@@ -305,6 +401,7 @@ class XCTestCaseRunConfiguration:
 
 archiver.update_class_map({
     "XCTTestIdentifier": XCTTestIdentifier,
+    "XCTTestIdentifierSet": XCTTestIdentifierSet,
     "XCTSourceCodeLocation": XCTSourceCodeLocation,
     "XCTSourceCodeContext": XCTSourceCodeContext,
     "XCTIssue": XCTIssue,
@@ -313,3 +410,8 @@ archiver.update_class_map({
     "XCTAttachment": XCTAttachment,
     "XCTestCaseRunConfiguration": XCTestCaseRunConfiguration,
 })
+
+# Register XCTTestIdentifier and XCTTestIdentifierSet in the encoding map so
+# bpylist2 can archive them (used when building XCTestConfiguration).
+archiver.ARCHIVE_CLASS_MAP[XCTTestIdentifier] = "XCTTestIdentifier"  # type: ignore[index]
+archiver.ARCHIVE_CLASS_MAP[XCTTestIdentifierSet] = "XCTTestIdentifierSet"  # type: ignore[index]

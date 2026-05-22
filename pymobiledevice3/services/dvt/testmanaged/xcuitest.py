@@ -38,6 +38,7 @@ from pymobiledevice3.services.dvt.testmanaged.dtx_services import (  # noqa: F40
 )
 from pymobiledevice3.services.dvt.testmanaged.xctest_types import (
     XCTestConfiguration,
+    XCTTestIdentifierSet,
 )
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 
@@ -297,11 +298,28 @@ class TestConfig:
                 "targetApplicationBundleID must be set if target_app_info is provided"
             )
 
+        # Build test-filter fields.  iOS 17+ runners use testIdentifiersToRun /
+        # testIdentifiersToSkip (XCTTestIdentifierSet with XCTTestIdentifier
+        # objects).  The legacy testsToRun / testsToSkip NSSet<NSString> fields
+        # are also populated for compatibility with older runners.
+        def _to_filter_pair(
+            specs: Optional[list],
+        ) -> tuple[Optional[set], Optional[XCTTestIdentifierSet]]:
+            if not specs:
+                return None, None
+            strings = [str(s) for s in specs]
+            return set(strings), XCTTestIdentifierSet.from_strings(strings)
+
+        tests_to_run_set, tests_to_run_ids = _to_filter_pair(self.tests_to_run)
+        tests_to_skip_set, tests_to_skip_ids = _to_filter_pair(self.tests_to_skip)
+
         return XCTestConfiguration({
             "testBundleURL": NSURL(None, f"file://{self.runner_app_info['Path']}/PlugIns/{config_name}.xctest"),
             "sessionIdentifier": session_identifier,
-            "testsToRun": self.tests_to_run or set(),
-            "testsToSkip": self.tests_to_skip or set(),
+            "testsToRun": tests_to_run_set,
+            "testIdentifiersToRun": tests_to_run_ids,
+            "testsToSkip": tests_to_skip_set,
+            "testIdentifiersToSkip": tests_to_skip_ids,
             "testsMustRunOnMainThread": True,
             "reportResultsToIDE": True,
             "reportActivities": True,
