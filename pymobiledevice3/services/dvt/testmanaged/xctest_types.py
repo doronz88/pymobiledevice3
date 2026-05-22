@@ -28,6 +28,33 @@ from typing import Any, ClassVar, Optional
 from bpylist2 import archiver
 
 # ---------------------------------------------------------------------------
+# NSKeyedArchive class-hierarchy helper
+# ---------------------------------------------------------------------------
+# bpylist2's Archive.uid_for_archiver only emits ['ClassName'] in '$classes',
+# omitting the full inheritance chain required by NSSecureCoding.  Rather than
+# patching bpylist2 globally, each XCTest type that requires a correct chain
+# calls _patch_class_hierarchy from its encode_archive — mirroring the
+# buildClassDict("ClassName", …, "NSObject") calls in go-ios.
+
+
+def _patch_class_hierarchy(
+    archive_obj: archiver.ArchivingObject,
+    class_name: str,
+    hierarchy: list[str],
+) -> None:
+    """Overwrite the '$classes' list for *class_name* in the live archive.
+
+    bpylist2 creates the class dict in ``uid_for_archiver`` before calling
+    ``encode_archive``, so by the time we get here the entry already exists in
+    ``Archive.objects`` and we can update it in-place.
+    """
+    a = archive_obj._archiver  # type: ignore[attr-defined]
+    uid = a.class_map.get(class_name)
+    if uid is not None:
+        a.objects[uid.data]["$classes"] = hierarchy
+
+
+# ---------------------------------------------------------------------------
 # NSMutableArray — encodes as NSMutableArray (subclass of NSArray)
 # ---------------------------------------------------------------------------
 
@@ -48,6 +75,7 @@ class NSMutableArray:
         # must write NS.objects as a raw list of UIDs directly into the dict.
         a = archive_obj._archiver  # type: ignore[attr-defined]
         archive_obj._archive_obj["NS.objects"] = [a.archive(item) for item in self.items]  # type: ignore[attr-defined]
+        _patch_class_hierarchy(archive_obj, "NSMutableArray", ["NSMutableArray", "NSArray", "NSObject"])
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> NSMutableArray:
@@ -205,6 +233,7 @@ class XCTTestIdentifier:
     def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
         archive_obj.encode("c", list(self.components))
         archive_obj.encode("o", self.options)
+        _patch_class_hierarchy(archive_obj, "XCTTestIdentifier", ["XCTTestIdentifier", "NSObject"])
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTTestIdentifier:
@@ -239,6 +268,7 @@ class XCTTestIdentifierSet:
         # Must be NSMutableArray — XCTTestIdentifierSet.identifiers is typed as
         # NSMutableArray<XCTTestIdentifier *> in XCTest's private headers.
         archive_obj.encode("identifiers", NSMutableArray(self.identifiers))
+        _patch_class_hierarchy(archive_obj, "XCTTestIdentifierSet", ["XCTTestIdentifierSet", "NSObject"])
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTTestIdentifierSet:
