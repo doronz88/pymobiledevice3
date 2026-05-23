@@ -1,4 +1,4 @@
-import ast
+import json
 import logging
 
 from typer_injector import InjectingTyper
@@ -33,7 +33,7 @@ async def accessibility_settings_set(service_provider: ServiceProviderDep, setti
     in order to list all available use the "show" command
     """
     service = AccessibilityAudit(service_provider)
-    await service.set_setting(setting, ast.literal_eval(value))
+    await service.set_setting(setting, json.loads(value))
     OSUTILS.wait_return()
 
 
