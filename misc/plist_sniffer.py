@@ -38,7 +38,7 @@ class PcapSniffer:
                 self.file.write("---\n")
                 self.file.write(pprint.pformat(plist))
                 self.file.write("\n---\n")
-        except ValueError:
+        except (ValueError, TypeError):
             print("failed to print plist")
 
 
