@@ -42,7 +42,7 @@ async def observe(
     insecure: Annotated[
         bool,
         typer.Option(help="Use the insecure relay meant for untrusted clients instead of the trusted channel."),
-    ],
+    ] = False,
 ) -> None:
     """Subscribe and stream notifications (notify_register_dispatch)."""
     service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
@@ -60,7 +60,7 @@ async def observe_all(
     insecure: Annotated[
         bool,
         typer.Option(help="Use the insecure relay meant for untrusted clients instead of the trusted channel."),
-    ],
+    ] = False,
 ) -> None:
     """Subscribe to all known firmware notifications and stream events."""
     service = NotificationProxyService(lockdown=service_provider, insecure=insecure)
