@@ -1,7 +1,6 @@
 import asyncio
 import contextlib
 import json
-import logging
 import uuid
 from dataclasses import dataclass, fields
 from enum import Enum
@@ -14,7 +13,7 @@ from pymobiledevice3.exceptions import (
 )
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
-from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.services.web_protocol.automation_session import AutomationSession
 from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
@@ -115,19 +114,12 @@ class ApplicationPage:
         return f"<{self.application.name}({self.application.pid}) TYPE:{self.page.type_.value} URL:{self.page.web_url}>"
 
 
-class WebinspectorService:
+class WebinspectorService(LockdownService):
     SERVICE_NAME = "com.apple.webinspector"
     RSD_SERVICE_NAME = "com.apple.webinspector.shim.remote"
 
-    def __init__(self, lockdown: LockdownServiceProvider):
-        if isinstance(lockdown, LockdownClient):
-            self.service_name = self.SERVICE_NAME
-        else:
-            self.service_name = self.RSD_SERVICE_NAME
-
-        self.logger = logging.getLogger(__name__)
-        self.lockdown = lockdown
-        self.service: Optional[ServiceConnection] = None
+    def __init__(self, lockdown: LockdownServiceProvider) -> None:
+        super().__init__(lockdown, self.SERVICE_NAME if isinstance(lockdown, LockdownClient) else self.RSD_SERVICE_NAME)
         self.connection_id = str(uuid.uuid4()).upper()
         self.state = None
         self.connected_application = {}
@@ -147,7 +139,7 @@ class WebinspectorService:
         self._recv_task: Optional[asyncio.Task] = None
 
     async def connect(self, timeout: Optional[Union[float, int]] = None):
-        self.service = await self.lockdown.start_lockdown_service(self.service_name)
+        await asyncio.wait_for(super().connect(), timeout)
         await self._report_identifier()
         try:
             await self._handle_recv(await asyncio.wait_for(self._recv_message(), timeout))
@@ -160,9 +152,7 @@ class WebinspectorService:
             self._recv_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._recv_task
-
-        if self.service is not None:
-            await self.service.close()
+        await super().close()
 
     async def _recv_message(self):
         while True:

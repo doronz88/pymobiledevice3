@@ -63,15 +63,9 @@ class LockdownService:
             return self._service
         return self._service_proxy
 
-    def __enter__(self) -> Self:
-        raise RuntimeError("Use async context manager: `async with ...`")
-
     async def __aenter__(self) -> Self:
         await self.connect()
         return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        raise RuntimeError("Use async context manager: `async with ...`")
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
