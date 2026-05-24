@@ -19,6 +19,45 @@ def test_cli_main_interface():
     assert r2.exit_code == 0
 
 
+def test_install_completion_uses_fish_for_xonsh_when_available(monkeypatch, tmp_path):
+    monkeypatch.setattr(__main__, "_ORIGINAL_SHELLINGHAM_DETECT", lambda: ("xonsh", "/bin/xonsh"))
+    monkeypatch.setattr(__main__.shutil, "which", lambda command: "/usr/bin/fish" if command == "fish" else None)
+
+    result = CliRunner().invoke(
+        __main__.app,
+        ["--install-completion"],
+        env={"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)},
+        prog_name="pymobiledevice3",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "fish completion installed" in result.output
+
+    completion_path = tmp_path / ".config" / "fish" / "completions" / "pymobiledevice3.fish"
+    assert completion_path.is_file()
+    assert "_PYMOBILEDEVICE3_COMPLETE=complete_fish" in completion_path.read_text()
+
+
+def test_install_completion_falls_back_to_bash_for_xonsh(monkeypatch, tmp_path):
+    monkeypatch.setattr(__main__, "_ORIGINAL_SHELLINGHAM_DETECT", lambda: ("xonsh", "/bin/xonsh"))
+    monkeypatch.setattr(__main__.shutil, "which", lambda command: None)
+
+    result = CliRunner().invoke(
+        __main__.app,
+        ["--install-completion"],
+        env={"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)},
+        prog_name="pymobiledevice3",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "bash completion installed" in result.output
+
+    completion_path = tmp_path / ".bash_completions" / "pymobiledevice3.sh"
+    assert completion_path.is_file()
+    assert "_PYMOBILEDEVICE3_COMPLETE=complete_bash" in completion_path.read_text()
+    assert f"source '{completion_path}'" in (tmp_path / ".bashrc").read_text()
+
+
 @pytest.mark.parametrize(
     "keyword,suggestions",
     [
