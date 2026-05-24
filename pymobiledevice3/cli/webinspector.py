@@ -573,6 +573,9 @@ class InspectorJsShell(JsShell):
         if not available_pages:
             logger.error("Unable to find available pages (try to unlock device)")
             return None
+        
+        if len(available_pages) == 1:
+            return available_pages[0]
 
         page_query = [inquirer3.List("page", message="choose page", choices=available_pages, carousel=True)]
         page = inquirer3.prompt(page_query, theme=GreenPassion(), raise_keyboard_interrupt=True)["page"]
