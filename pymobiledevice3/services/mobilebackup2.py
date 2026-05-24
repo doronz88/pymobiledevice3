@@ -16,6 +16,7 @@ from typing import Optional, Union
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.keywrap import aes_key_unwrap
+from pyiosbackup import Backup
 from pyiosbackup.keybag import Keybag, encryption_key_struct
 from pyiosbackup.manifest_plist import ManifestPlist
 
@@ -143,6 +144,7 @@ class Mobilebackup2Service(LockdownService):
         progress_callback=lambda x: None,
         filter_callback: Optional[BackupFilterCallback] = None,
         password: str = "",
+        unback: bool = False,
     ) -> None:
         """
         Backup a device.
@@ -151,6 +153,7 @@ class Mobilebackup2Service(LockdownService):
         :param progress_callback: Function to be called as the backup progresses.
         :param filter_callback: Callback deciding whether to keep a backup file.
         :param password: Password of the backup if it is encrypted.
+        :param unback: Also unpack the completed backup locally using pyiosbackup.
         The function shall receive the percentage as a parameter.
         """
         full = full or filter_callback is not None
@@ -203,6 +206,8 @@ class Mobilebackup2Service(LockdownService):
             await dl.dl_loop(progress_callback)
             if filter_callback is not None:
                 self.prune_backup_directory(device_directory, filter_callback, password=password)
+            if unback:
+                self.unback_with_pyiosbackup(device_directory, password=password)
 
     async def restore(
         self,
@@ -331,6 +336,15 @@ class Mobilebackup2Service(LockdownService):
                 message["Password"] = password
             await dl.send_process_message(message)
             await dl.dl_loop()
+
+    @staticmethod
+    def unback_with_pyiosbackup(device_directory: Path, password: str = "") -> Path:
+        output_directory = device_directory.with_name(f"{device_directory.name}.unback")
+        if output_directory.exists():
+            shutil.rmtree(output_directory)
+        output_directory.mkdir(parents=True)
+        Backup.from_path(device_directory, password).unback(output_directory)
+        return output_directory
 
     async def extract(
         self, domain_name: str, relative_path: str, backup_directory=".", password: str = "", source: str = ""

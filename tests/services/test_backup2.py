@@ -112,6 +112,40 @@ def test_should_preserve_backup_file_keeps_metadata() -> None:
     assert Mobilebackup2Service.should_preserve_backup_file("Manifest.db", "ignored", None)
 
 
+def test_unback_with_pyiosbackup_replaces_existing_output(monkeypatch, tmp_path: Path) -> None:
+    device_directory = tmp_path / "device"
+    output_directory = tmp_path / "device.unback"
+    device_directory.mkdir()
+    output_directory.mkdir()
+    (output_directory / "stale").write_text("old")
+    observed = {}
+
+    class FakeBackup:
+        def unback(self, path):
+            observed["path"] = Path(path)
+            (Path(path) / "fresh").write_text("new")
+
+    class FakeBackupFactory:
+        @staticmethod
+        def from_path(path, password=""):
+            observed["backup_path"] = path
+            observed["password"] = password
+            return FakeBackup()
+
+    monkeypatch.setattr("pymobiledevice3.services.mobilebackup2.Backup", FakeBackupFactory)
+
+    result = Mobilebackup2Service.unback_with_pyiosbackup(device_directory, password=PASSWORD)
+
+    assert result == output_directory
+    assert observed == {
+        "backup_path": device_directory,
+        "password": PASSWORD,
+        "path": output_directory,
+    }
+    assert not (output_directory / "stale").exists()
+    assert (output_directory / "fresh").read_text() == "new"
+
+
 def test_prune_backup_directory_keeps_only_selected_files(tmp_path: Path) -> None:
     device_directory = tmp_path / "device"
     device_directory.mkdir()

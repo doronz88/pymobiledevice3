@@ -93,6 +93,13 @@ async def backup(
     only: BackupSelectionOption = None,
     only_regex: BackupRegexOption = None,
     password: PasswordOption = "",
+    unback: Annotated[
+        bool,
+        typer.Option(
+            "--unback",
+            help="Also unpack the completed backup locally using pyiosbackup. Existing unpacked contents are replaced.",
+        ),
+    ] = False,
 ) -> None:
     """
     Backup device.
@@ -127,6 +134,7 @@ async def backup(
                 progress_callback=update_bar,
                 filter_callback=filter_callback,
                 password=password,
+                unback=unback,
             )
 
 
