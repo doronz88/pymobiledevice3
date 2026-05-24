@@ -4,6 +4,7 @@ import importlib
 import logging
 import os
 import re
+import shutil
 import sys
 import textwrap
 import traceback
@@ -18,6 +19,11 @@ import typer.core
 from packaging.version import Version
 from typer.core import TyperGroup
 from typer_injector import InjectingTyper
+
+try:
+    import shellingham
+except ImportError:  # pragma: no cover
+    shellingham = None
 
 from pymobiledevice3.cli.cli_common import TUNNEL_ENV_VAR, isatty, set_color_flag, set_verbosity
 from pymobiledevice3.exceptions import (
@@ -124,6 +130,34 @@ CLI_GROUPS = {
 
 # Set if used the `--reconnect` option
 RECONNECT = False
+_ORIGINAL_SHELLINGHAM_DETECT = None
+
+
+def _detect_shell_for_completion() -> tuple[str, str]:
+    shell, executable = _ORIGINAL_SHELLINGHAM_DETECT()
+    if shell == "xonsh":
+        return ("fish" if shutil.which("fish") else "bash"), executable
+    return shell, executable
+
+
+def _patch_xonsh_completion_detection() -> None:
+    """Let Typer install fish completions for xonsh when available, otherwise bash."""
+    global _ORIGINAL_SHELLINGHAM_DETECT
+
+    if shellingham is None:
+        return
+
+    detect_shell = shellingham.detect_shell
+    _ORIGINAL_SHELLINGHAM_DETECT = getattr(detect_shell, "_pymobiledevice3_original", detect_shell)
+    if getattr(detect_shell, "_pymobiledevice3_xonsh_patched", False):
+        return
+
+    _detect_shell_for_completion._pymobiledevice3_original = _ORIGINAL_SHELLINGHAM_DETECT
+    _detect_shell_for_completion._pymobiledevice3_xonsh_patched = True
+    shellingham.detect_shell = _detect_shell_for_completion
+
+
+_patch_xonsh_completion_detection()
 
 
 class Pmd3TyperGroup(TyperGroup):
