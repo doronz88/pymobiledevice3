@@ -13,6 +13,7 @@ Exported classes
 - :class:`NSUUID`
 - :class:`NSURL`
 - :class:`NSValue`
+- :class:`NSMutableArray`
 - :class:`NSMutableData`
 - :class:`NSMutableString`
 - :class:`DTTapMessage`
@@ -31,6 +32,18 @@ from bpylist2 import archiver
 # ---------------------------------------------------------------------------
 # NS archive helpers
 # ---------------------------------------------------------------------------
+
+
+def patch_class_hierarchy(
+    archive_obj: archiver.ArchivingObject,
+    class_name: str,
+    hierarchy: list[str],
+) -> None:
+    """Overwrite the '$classes' list for *class_name* in the live archive."""
+    a = archive_obj._archiver  # type: ignore[attr-defined]
+    uid = a.class_map.get(class_name)
+    if uid is not None:
+        a.objects[uid.data]["$classes"] = hierarchy
 
 
 class DTTapMessage:
@@ -138,6 +151,25 @@ class NSValue:
         return archive_obj.decode("NS.rectval")
 
 
+class NSMutableArray(list):
+    """List subclass that preserves NSMutableArray NSKeyedArchive encoding.
+
+    bpylist2 normally encodes Python ``list`` as NSArray.  Some private DVT
+    APIs require NSMutableArray on the wire, while decode paths still expect
+    Foundation arrays to behave like ordinary Python lists.
+    """
+
+    def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
+        a = archive_obj._archiver  # type: ignore[attr-defined]
+        archive_obj._archive_obj["NS.objects"] = [a.archive(item) for item in self]  # type: ignore[attr-defined]
+        patch_class_hierarchy(archive_obj, "NSMutableArray", ["NSMutableArray", "NSArray", "NSObject"])
+
+    @staticmethod
+    def decode_archive(archive_obj: archiver.ArchivedObject) -> NSMutableArray:
+        raw = archive_obj.decode("NS.objects") or []
+        return NSMutableArray([archive_obj.decode_index(item) for item in raw])
+
+
 class NSMutableData:
     """Proxy for Objective-C ``NSMutableData``."""
 
@@ -199,9 +231,11 @@ archiver.update_class_map({
     "NSUUID": NSUUID,
     "NSURL": NSURL,
     "NSValue": NSValue,
+    "NSMutableArray": NSMutableArray,
     "NSMutableData": NSMutableData,
     "NSMutableString": NSMutableString,
     "NSDate": NSDate,
 })
 
+archiver.ARCHIVE_CLASS_MAP[NSMutableArray] = "NSMutableArray"  # type: ignore[index]
 archiver.Archive.inline_types = list({*archiver.Archive.inline_types, bytes})

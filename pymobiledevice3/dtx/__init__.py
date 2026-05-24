@@ -27,7 +27,7 @@ from .context import DTX_GLOBAL_CTX, DTXContext
 from .exceptions import DTXNsError, DTXProtocolError
 
 # Common NS types returned by services
-from .ns_types import NSURL, NSUUID, NSError
+from .ns_types import NSURL, NSUUID, NSError, NSMutableArray
 
 # Primitive argument types
 from .primitives import (
@@ -72,6 +72,7 @@ __all__ = [
     "DTXProxyService",
     "DTXService",
     "NSError",
+    "NSMutableArray",
     "PBuf",
     "PDouble",
     "PInt32",

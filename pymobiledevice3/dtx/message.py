@@ -23,6 +23,7 @@ from typing import Any, Optional
 
 from bpylist2 import archiver
 
+from . import ns_types as _ns_types  # noqa: F401 - registers common NSKeyedArchive classes
 from .exceptions import DTXNSCodingError, DTXProtocolError
 from .fragment import DTXFragment, DTXTransportFlags
 from .message_aux import MessageAux

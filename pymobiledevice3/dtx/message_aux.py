@@ -5,6 +5,7 @@ from typing import Any, Union
 from bpylist2 import archiver
 from construct import Bytes, ConstructError, Peek
 
+from . import ns_types as _ns_types  # noqa: F401 - registers common NSKeyedArchive classes
 from .primitives import PNULL, PBuf, PDict, _primitive_value_con, _PrimitiveBase
 
 logger = logging.getLogger(__name__)
