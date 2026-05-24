@@ -59,28 +59,29 @@ def _patch_class_hierarchy(
 # ---------------------------------------------------------------------------
 
 
-class NSMutableArray:
+class NSMutableArray(list):
     """Python wrapper that forces NSMutableArray encoding in NSKeyedArchive.
 
     bpylist2 encodes Python ``list`` as NSArray.  The ``XCTTestIdentifierSet``
     ``identifiers`` property is typed as ``NSMutableArray<XCTTestIdentifier *>``
     in XCTest's private headers; sending NSArray causes a silent type-mismatch.
-    """
 
-    def __init__(self, items: list) -> None:
-        self.items = list(items)
+    Decode paths across DVT expect Foundation arrays to behave like ordinary
+    Python lists.  Keep that contract by subclassing ``list`` while preserving
+    explicit NSMutableArray archive encoding for outgoing XCTest payloads.
+    """
 
     def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
         # bpylist2's encode() would wrap the list in another NSArray UID; we
         # must write NS.objects as a raw list of UIDs directly into the dict.
         a = archive_obj._archiver  # type: ignore[attr-defined]
-        archive_obj._archive_obj["NS.objects"] = [a.archive(item) for item in self.items]  # type: ignore[attr-defined]
+        archive_obj._archive_obj["NS.objects"] = [a.archive(item) for item in self]  # type: ignore[attr-defined]
         _patch_class_hierarchy(archive_obj, "NSMutableArray", ["NSMutableArray", "NSArray", "NSObject"])
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> NSMutableArray:
         raw = archive_obj.decode("NS.objects") or []
-        return NSMutableArray(list(raw))
+        return NSMutableArray([archive_obj.decode_index(item) for item in raw])
 
 
 archiver.ARCHIVE_CLASS_MAP[NSMutableArray] = "NSMutableArray"  # type: ignore[index]
@@ -273,7 +274,7 @@ class XCTTestIdentifierSet:
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTTestIdentifierSet:
         raw = archive_obj.decode("identifiers")
-        identifiers = list(raw.items) if isinstance(raw, NSMutableArray) else (list(raw) if raw else [])
+        identifiers = list(raw) if raw else []
         return XCTTestIdentifierSet(identifiers=identifiers)
 
 
