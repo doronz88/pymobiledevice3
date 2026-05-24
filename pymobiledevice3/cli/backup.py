@@ -92,6 +92,14 @@ async def backup(
     ] = False,
     only: BackupSelectionOption = None,
     only_regex: BackupRegexOption = None,
+    password: PasswordOption = "",
+    unback: Annotated[
+        bool,
+        typer.Option(
+            "--unback",
+            help="Also unpack the completed backup locally using pyiosbackup. Existing unpacked contents are replaced.",
+        ),
+    ] = False,
 ) -> None:
     """
     Backup device.
@@ -108,6 +116,12 @@ async def backup(
     )
 
     async with Mobilebackup2Service(service_provider) as backup_client:
+        if filter_callback is not None and not password and await backup_client.get_will_encrypt():
+            raise typer.BadParameter(
+                "--password is required when using --only or --only-regex with encrypted backups.",
+                param_hint="--password",
+            )
+
         with tqdm(total=100, dynamic_ncols=True) as pbar:
 
             def update_bar(percentage) -> None:
@@ -119,6 +133,8 @@ async def backup(
                 backup_directory=str(backup_directory),
                 progress_callback=update_bar,
                 filter_callback=filter_callback,
+                password=password,
+                unback=unback,
             )
 
 

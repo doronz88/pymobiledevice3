@@ -4,6 +4,7 @@ import plistlib
 import re
 import shutil
 import sqlite3
+import tempfile
 import uuid
 from asyncio import IncompleteReadError
 from collections.abc import Callable, Sequence
@@ -13,9 +14,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
 
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.keywrap import aes_key_unwrap
+from pyiosbackup import Backup
+from pyiosbackup.keybag import Keybag, encryption_key_struct
+from pyiosbackup.manifest_plist import ManifestPlist
+
 from pymobiledevice3.exceptions import (
     AfcException,
     AfcFileNotFoundError,
+    BackupFilterPasswordRequiredError,
     LockdownError,
     PyMobileDevice3Exception,
 )
@@ -135,6 +143,8 @@ class Mobilebackup2Service(LockdownService):
         backup_directory: Union[str, Path] = ".",
         progress_callback=lambda x: None,
         filter_callback: Optional[BackupFilterCallback] = None,
+        password: str = "",
+        unback: bool = False,
     ) -> None:
         """
         Backup a device.
@@ -142,6 +152,8 @@ class Mobilebackup2Service(LockdownService):
         :param backup_directory: Directory to write backup to.
         :param progress_callback: Function to be called as the backup progresses.
         :param filter_callback: Callback deciding whether to keep a backup file.
+        :param password: Password of the backup if it is encrypted.
+        :param unback: Also unpack the completed backup locally using pyiosbackup.
         The function shall receive the percentage as a parameter.
         """
         full = full or filter_callback is not None
@@ -149,8 +161,13 @@ class Mobilebackup2Service(LockdownService):
         device_directory = backup_directory / self.lockdown.udid
         device_directory.mkdir(exist_ok=True, mode=0o755, parents=True)
 
+        if filter_callback is not None and not password and await self.get_will_encrypt():
+            raise BackupFilterPasswordRequiredError(
+                "Backup filtering requires the backup password when encryption is enabled"
+            )
+
         async with (
-            self.device_link(backup_directory, filter_callback=filter_callback) as dl,
+            self.device_link(backup_directory, filter_callback=filter_callback, password=password) as dl,
             NotificationProxyService(self.lockdown) as notification_proxy,
             AfcService(self.lockdown) as afc,
             self._backup_lock(afc, notification_proxy),
@@ -188,7 +205,9 @@ class Mobilebackup2Service(LockdownService):
             await dl.send_process_message({"MessageName": "Backup", "TargetIdentifier": self.lockdown.udid})
             await dl.dl_loop(progress_callback)
             if filter_callback is not None:
-                self.prune_backup_directory(device_directory, filter_callback)
+                self.prune_backup_directory(device_directory, filter_callback, password=password)
+            if unback:
+                self.unback_with_pyiosbackup(device_directory, password=password)
 
     async def restore(
         self,
@@ -317,6 +336,15 @@ class Mobilebackup2Service(LockdownService):
                 message["Password"] = password
             await dl.send_process_message(message)
             await dl.dl_loop()
+
+    @staticmethod
+    def unback_with_pyiosbackup(device_directory: Path, password: str = "") -> Path:
+        output_directory = device_directory.with_name(f"{device_directory.name}.unback")
+        if output_directory.exists():
+            shutil.rmtree(output_directory)
+        output_directory.mkdir(parents=True)
+        Backup.from_path(device_directory, password).unback(output_directory)
+        return output_directory
 
     async def extract(
         self, domain_name: str, relative_path: str, backup_directory=".", password: str = "", source: str = ""
@@ -641,11 +669,13 @@ class Mobilebackup2Service(LockdownService):
         return _filter
 
     @classmethod
-    def prune_backup_directory(cls, device_directory: Path, filter_callback: Optional[BackupFilterCallback]) -> None:
+    def prune_backup_directory(
+        cls, device_directory: Path, filter_callback: Optional[BackupFilterCallback], password: str = ""
+    ) -> None:
         if filter_callback is None:
             return
 
-        allowed_file_ids = cls.prune_backup_manifest(device_directory, filter_callback)
+        allowed_file_ids = cls.prune_backup_manifest(device_directory, filter_callback, password=password)
         allowed_prefixes = {file_id[:2] for file_id in allowed_file_ids}
         for path in list(device_directory.iterdir()):
             if path.name in BACKUP_METADATA_FILES:
@@ -667,8 +697,19 @@ class Mobilebackup2Service(LockdownService):
                     path.unlink(missing_ok=True)
 
     @classmethod
-    def prune_backup_manifest(cls, device_directory: Path, filter_callback: Optional[BackupFilterCallback]) -> set[str]:
-        return cls._prune_manifest_db(device_directory / "Manifest.db", filter_callback)
+    def prune_backup_manifest(
+        cls, device_directory: Path, filter_callback: Optional[BackupFilterCallback], password: str = ""
+    ) -> set[str]:
+        manifest_db_path = device_directory / "Manifest.db"
+        if not cls._is_encrypted_backup(device_directory):
+            return cls._prune_manifest_db(manifest_db_path, filter_callback)
+
+        with tempfile.NamedTemporaryFile(suffix=".sqlite3") as decrypted_manifest:
+            decrypted_manifest_path = Path(decrypted_manifest.name)
+            manifest_key = cls._decrypt_backup_manifest_db(device_directory, password, decrypted_manifest_path)
+            allowed_file_ids = cls._prune_manifest_db(decrypted_manifest_path, filter_callback)
+            cls._encrypt_backup_manifest_db(decrypted_manifest_path, manifest_db_path, manifest_key)
+            return allowed_file_ids
 
     @staticmethod
     def _prune_manifest_db(manifest_db_path: Path, filter_callback: Optional[BackupFilterCallback]) -> set[str]:
@@ -694,16 +735,61 @@ class Mobilebackup2Service(LockdownService):
 
         return allowed_file_ids
 
+    @staticmethod
+    def _is_encrypted_backup(device_directory: Path) -> bool:
+        manifest_plist_path = Mobilebackup2Service._backup_manifest_plist_path(device_directory)
+        if manifest_plist_path is None:
+            return False
+        return bool(plistlib.loads(manifest_plist_path.read_bytes()).get("IsEncrypted", False))
+
+    @staticmethod
+    def _backup_manifest_plist_path(device_directory: Path) -> Optional[Path]:
+        for manifest_plist_path in (
+            device_directory / "Manifest.plist",
+            device_directory / "Snapshot" / "Manifest.plist",
+        ):
+            if manifest_plist_path.exists() and manifest_plist_path.stat().st_size > 0:
+                return manifest_plist_path
+        return None
+
+    @staticmethod
+    def _decrypt_backup_manifest_db(device_directory: Path, password: str, decrypted_manifest_path: Path) -> bytes:
+        if not password:
+            raise BackupFilterPasswordRequiredError(
+                "Backup filtering requires the backup password when encryption is enabled"
+            )
+
+        manifest_plist_path = Mobilebackup2Service._backup_manifest_plist_path(device_directory)
+        if manifest_plist_path is None:
+            raise PyMobileDevice3Exception("Encrypted backup Manifest.plist was not received before Manifest.db")
+
+        manifest = ManifestPlist.from_path(manifest_plist_path)
+        keybag = Keybag.from_manifest(manifest, password)
+        manifest_db = device_directory / "Manifest.db"
+        decrypted_manifest_path.write_bytes(keybag.decrypt(manifest_db.read_bytes(), manifest.manifest_key))
+
+        parsed_key = encryption_key_struct.parse(manifest.manifest_key)
+        return aes_key_unwrap(keybag.get_key(parsed_key.class_), parsed_key.key)
+
+    @staticmethod
+    def _encrypt_backup_manifest_db(decrypted_manifest_path: Path, manifest_db_path: Path, manifest_key: bytes) -> None:
+        plaintext = decrypted_manifest_path.read_bytes()
+        if len(plaintext) % (algorithms.AES.block_size // 8):
+            raise PyMobileDevice3Exception("Decrypted backup Manifest.db is not AES block aligned")
+
+        cipher = Cipher(algorithms.AES(manifest_key), modes.CBC(b"\x00" * 16))
+        encryptor = cipher.encryptor()
+        manifest_db_path.write_bytes(encryptor.update(plaintext) + encryptor.finalize())
+
     @asynccontextmanager
-    async def device_link(self, backup_directory, filter_callback: Optional[BackupFilterCallback] = None):
+    async def device_link(
+        self, backup_directory, filter_callback: Optional[BackupFilterCallback] = None, password: str = ""
+    ):
         dl = DeviceLink(
             self.service,
             backup_directory,
             preserve_file=lambda file_name, device_name: self.should_preserve_backup_file(
                 file_name, device_name, filter_callback
-            ),
-            post_file_receive=lambda file_name, _device_name: self._handle_backup_file_received(
-                backup_directory, file_name, filter_callback
             ),
         )
         await dl.version_exchange()
@@ -712,12 +798,3 @@ class Mobilebackup2Service(LockdownService):
             yield dl
         finally:
             await dl.disconnect()
-
-    def _handle_backup_file_received(
-        self, backup_directory: Union[str, Path], file_name: str, filter_callback: Optional[BackupFilterCallback]
-    ) -> None:
-        if filter_callback is None:
-            return
-        if Path(file_name).name not in {"Manifest.db", "Manifest.db-shm", "Manifest.db-wal"}:
-            return
-        self.prune_backup_manifest(Path(backup_directory) / self.lockdown.udid, filter_callback)

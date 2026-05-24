@@ -6,6 +6,7 @@ __all__ = [
     "AmfiError",
     "ArbitrationError",
     "ArgumentError",
+    "BackupFilterPasswordRequiredError",
     "BadCommandError",
     "BadDevError",
     "CannotStopSessionError",
@@ -104,6 +105,10 @@ class CannotStopSessionError(PyMobileDevice3Exception):
 
 
 class PasswordRequiredError(PairingError):
+    pass
+
+
+class BackupFilterPasswordRequiredError(PyMobileDevice3Exception):
     pass
 
 

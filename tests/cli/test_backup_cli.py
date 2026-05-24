@@ -11,3 +11,21 @@ def test_backup_only_regex_invalid_pattern(tmp_path):
     assert result.exit_code != 0
     assert "Invalid value for '--only-regex'" in result.output
     assert "Invalid regex pattern '['" in result.output
+
+
+def test_backup_command_has_password_option():
+    runner = CliRunner()
+
+    result = runner.invoke(__main__.app, ["backup2", "backup", "--help"])
+
+    assert result.exit_code == 0
+    assert "--password" in result.output
+
+
+def test_backup_command_has_unback_option():
+    runner = CliRunner()
+
+    result = runner.invoke(__main__.app, ["backup2", "backup", "--help"])
+
+    assert result.exit_code == 0
+    assert "--unback" in result.output
