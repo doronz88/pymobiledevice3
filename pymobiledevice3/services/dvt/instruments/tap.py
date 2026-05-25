@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncGenerator
 from typing import Any, Optional
 
 from bpylist2 import archiver
 
-from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_data, dtx_on_notification
+from pymobiledevice3.dtx import DTXQueue, DTXService, dtx_method, dtx_on_data, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
@@ -14,7 +13,7 @@ from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 class TapService(DTXService):
     def __init__(self, ctx):
         super().__init__(ctx)
-        self.messages: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+        self.messages: DTXQueue[tuple[str, Any]] = DTXQueue()
 
     def on_closed(self, reason: str = "") -> None:
         self.shutdown_queue(self.messages)

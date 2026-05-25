@@ -1,4 +1,3 @@
-import asyncio
 import ipaddress
 import logging
 from collections.abc import AsyncIterator
@@ -8,7 +7,7 @@ from typing import Any, Union
 from construct import Adapter, Bytes, Int8ul, Int16ub, Int32ul, Switch, this
 from construct_typed import DataclassMixin, TStruct, csfield
 
-from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
+from pymobiledevice3.dtx import DTXQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 
 
@@ -108,7 +107,7 @@ class NetworkMonitorService(DTXService):
 
     def __init__(self, ctx) -> None:
         super().__init__(ctx)
-        self.events: asyncio.Queue[Any] = asyncio.Queue()
+        self.events: DTXQueue[Any] = DTXQueue()
 
     def on_closed(self, reason: str = "") -> None:
         self.shutdown_queue(self.events)

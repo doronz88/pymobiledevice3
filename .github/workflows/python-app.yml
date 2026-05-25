@@ -28,18 +28,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install pre-commit
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            requirements.txt
       - name: Run pre-commit hooks
-        run: |
-          pre-commit run --all-files
-      - name: Test install
-        run: |
-          python -m pip install -U '.[test]'
+        run: uvx pre-commit run --all-files
       - name: Test show usage
-        run: pytest -m cli
+        run: uv run --extra test pytest -m cli

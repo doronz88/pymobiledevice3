@@ -26,6 +26,7 @@ Helper functions
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import re
@@ -43,6 +44,62 @@ logger = logging.getLogger(__name__)
 
 _MISSING = object()  # sentinel for missing attribute values in __init_subclass__
 DTX_SERVICE_T = TypeVar("DTX_SERVICE_T", bound="DTXService")
+QUEUE_ITEM_T = TypeVar("QUEUE_ITEM_T")
+
+if hasattr(asyncio, "QueueShutDown"):
+    QueueShutDown = asyncio.QueueShutDown
+    DTXQueue = asyncio.Queue
+else:
+
+    class QueueShutDown(Exception):
+        """Raised when operating on a shut down DTXQueue."""
+
+    class DTXQueue(asyncio.Queue[QUEUE_ITEM_T]):
+        """asyncio.Queue with shutdown support on Python versions before 3.13."""
+
+        _SHUTDOWN_SENTINEL = object()
+
+        def __init__(self, maxsize: int = 0) -> None:
+            super().__init__(maxsize=maxsize)
+            self._shutdown = False
+
+        def shutdown(self, immediate: bool = False) -> None:
+            if self._shutdown:
+                return
+
+            self._shutdown = True
+            if immediate:
+                while True:
+                    try:
+                        super().get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+            super().put_nowait(self._SHUTDOWN_SENTINEL)
+
+        async def put(self, item: QUEUE_ITEM_T) -> None:
+            if self._shutdown:
+                raise QueueShutDown("Queue is shut down")
+            await super().put(item)
+
+        def put_nowait(self, item: QUEUE_ITEM_T) -> None:
+            if self._shutdown:
+                raise QueueShutDown("Queue is shut down")
+            super().put_nowait(item)
+
+        async def get(self) -> QUEUE_ITEM_T:
+            item = await super().get()
+            if item is self._SHUTDOWN_SENTINEL:
+                super().put_nowait(self._SHUTDOWN_SENTINEL)
+                raise QueueShutDown("Queue is shut down")
+            return item
+
+        def get_nowait(self) -> QUEUE_ITEM_T:
+            item = super().get_nowait()
+            if item is self._SHUTDOWN_SENTINEL:
+                super().put_nowait(self._SHUTDOWN_SENTINEL)
+                raise QueueShutDown("Queue is shut down")
+            return item
+
 
 __namespace_re__ = re.compile(r"^_([A-Z_]+_)+")
 

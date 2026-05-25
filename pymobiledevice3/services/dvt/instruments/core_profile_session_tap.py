@@ -31,7 +31,7 @@ from construct import (
 )
 from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES
 
-from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_data, dtx_on_notification
+from pymobiledevice3.dtx import DTXQueue, DTXService, dtx_method, dtx_on_data, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import ConnectionTerminatedError, DvtException, ExtractingStackshotError
@@ -649,7 +649,7 @@ class CoreProfileSessionTapService(DTXService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self.messages: asyncio.Queue[bytes] = asyncio.Queue()
+        self.messages: DTXQueue[bytes] = DTXQueue()
 
     def on_closed(self, reason: str = "") -> None:
         self.shutdown_queue(self.messages)
