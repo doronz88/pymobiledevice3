@@ -347,6 +347,13 @@ async def js_shell(
             ),
         ),
     ] = None,
+    console_enable: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--console-enable/--no-console-enable",
+            help="Enable console events for Inspector mode. Cannot be combined with --automation.",
+        ),
+    ] = None,
     open_safari: Annotated[
         bool,
         typer.Option(help="Open Safari before selecting a page."),
@@ -366,8 +373,14 @@ async def js_shell(
         iOS < 18: Settings -> Safari -> Advanced -> Remote Automation
     """
 
+    if automation and console_enable is not None:
+        raise typer.BadParameter("--console-enable/--no-console-enable cannot be combined with --automation.")
+
     js_shell_class = AutomationJsShell if automation else InspectorJsShell
-    await run_js_shell(js_shell_class, service_provider, timeout, url, open_safari, bundle_identifier)
+    create_kwargs = {}
+    if console_enable is not None:
+        create_kwargs["console_enable"] = console_enable
+    await run_js_shell(js_shell_class, service_provider, timeout, url, open_safari, bundle_identifier, **create_kwargs)
 
 
 cdp_inspector: Optional[WebinspectorService] = None
@@ -474,6 +487,7 @@ class JsShell(ABC):
         timeout: float,
         open_safari: bool,
         bundle_identifier: Optional[str] = None,
+        **kwargs,
     ) -> "AbstractAsyncContextManager[JsShell]": ...
 
     @abstractmethod
@@ -526,6 +540,7 @@ class AutomationJsShell(JsShell):
         timeout: float,
         open_safari: bool,
         bundle_identifier: Optional[str] = None,
+        **kwargs,
     ) -> "AsyncIterator[AutomationJsShell]":
         if bundle_identifier is None:
             bundle_identifier = SAFARI
@@ -559,6 +574,8 @@ class InspectorJsShell(JsShell):
         timeout: float,
         open_safari: bool,
         bundle_identifier: Optional[str] = None,
+        *,
+        console_enable: bool = True,
     ) -> "AsyncIterator[InspectorJsShell]":
         inspector = WebinspectorService(lockdown=lockdown)
         await inspector.connect(timeout)
@@ -571,7 +588,8 @@ class InspectorJsShell(JsShell):
             raise typer.Exit()
 
         inspector_session = await inspector.inspector_session(application_page.application, application_page.page)
-        await inspector_session.console_enable()
+        if console_enable:
+            await inspector_session.console_enable()
         await inspector_session.runtime_enable()
 
         try:
@@ -619,6 +637,9 @@ async def run_js_shell(
     url: str,
     open_safari: bool,
     bundle_identifier: Optional[str] = None,
+    **create_kwargs: Any,
 ) -> None:
-    async with js_shell_class.create(lockdown, timeout, open_safari, bundle_identifier) as js_shell_instance:
+    async with js_shell_class.create(
+        lockdown, timeout, open_safari, bundle_identifier, **create_kwargs
+    ) as js_shell_instance:
         await js_shell_instance.start(url)

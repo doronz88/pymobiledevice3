@@ -151,6 +151,9 @@ pymobiledevice3 webinspector js-shell
 # JavaScript shell filtered to one app's WebViews
 pymobiledevice3 webinspector js-shell --bundle-id com.example.MyApp
 
+# JavaScript shell without inspector console events
+pymobiledevice3 webinspector js-shell --no-console-enable
+
 # List opened tabs
 pymobiledevice3 webinspector opened-tabs
 
