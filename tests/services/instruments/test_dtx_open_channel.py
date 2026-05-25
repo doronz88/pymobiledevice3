@@ -17,7 +17,7 @@ Plain channels (DVT):
 
 Proxy channels (testmanagerd):
   5. ``open_channel(identifier: str)`` for a dtxproxy  → ``DTXProxyService``
-     with ``DTXDynamicService`` sub-services
+     with provider-registered typed sub-services
   6. ``open_channel(identifier: str, cls)`` for a
      dtxproxy where ``cls`` is a ``DTXProxyService``
      subclass                                          → ``DTXProxyService``
@@ -184,8 +184,10 @@ async def test_open_channel_two_classes_raises(service_provider) -> None:
 
 
 @pytest.mark.asyncio
-async def test_open_proxy_channel_by_string_returns_proxy_service(service_provider) -> None:
-    """open_channel(proxy_identifier: str) → DTXProxyService with DTXDynamicService sub-services."""
+async def test_open_proxy_channel_by_string_returns_proxy_service_with_registered_sub_services(
+    service_provider,
+) -> None:
+    """open_channel(proxy_identifier: str) → DTXProxyService with provider-registered sub-services."""
     try:
         async with _TestManagerProvider(service_provider) as provider:
             svc = await provider.dtx.open_channel(_PROXY_ID)
@@ -193,12 +195,12 @@ async def test_open_proxy_channel_by_string_returns_proxy_service(service_provid
         pytest.skip("testmanagerd not accessible")
 
     assert isinstance(svc, _DTXProxyService), f"Expected DTXProxyService, got {type(svc).__name__}"
-    # Without registered sub-services the proxy falls back to DTXDynamicService sub-services.
-    assert isinstance(svc.local_service, DTXDynamicService), (
-        f"Expected local_service to be a DTXDynamicService, got {type(svc.local_service).__name__}"
+    assert isinstance(svc.local_service, XCTestManager_IDEInterface), (
+        f"Expected local_service to be XCTestManager_IDEInterface, got {type(svc.local_service).__name__}"
     )
-    assert isinstance(svc.remote_service, DTXDynamicService), (
-        f"Expected remote_service to be a DTXDynamicService, got {type(svc.remote_service).__name__}"
+    assert isinstance(svc.remote_service, XCTestManager_DaemonConnectionInterface), (
+        "Expected remote_service to be XCTestManager_DaemonConnectionInterface, "
+        f"got {type(svc.remote_service).__name__}"
     )
 
 
