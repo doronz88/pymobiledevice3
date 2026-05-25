@@ -8,6 +8,14 @@ Guidance for AI coding agents and automation contributors working in this reposi
 - Do not refactor unrelated areas in the same change.
 - Prefer extending existing modules/patterns over introducing new abstractions.
 
+## Commit Expectations
+
+- Use scoped commit subjects consistent with repository history, for example
+  `dtx: Fix queue shutdown on Python 3.12`.
+- Keep a behavior change and its corresponding tests in the same commit.
+- Split unrelated documentation or contributor-guidance changes into their own
+  commits.
+
 ## Project Conventions
 
 - Python: 3.9+.
