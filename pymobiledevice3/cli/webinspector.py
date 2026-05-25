@@ -337,9 +337,19 @@ async def js_shell(
         bool,
         typer.Option(help="Use remote automation (requires Remote Automation toggle)."),
     ] = False,
+    bundle_identifier: Annotated[
+        Optional[str],
+        typer.Option(
+            "--bundle-id",
+            help=(
+                "Target app bundle identifier. Inspector: filter open pages (omit for all). "
+                "Automation: launch app (omit for Safari)."
+            ),
+        ),
+    ] = None,
     open_safari: Annotated[
         bool,
-        typer.Option(help="Use an existing WebView; skip auto-opening Safari."),
+        typer.Option(help="Open Safari before selecting a page."),
     ] = False,
 ) -> None:
     """
@@ -357,7 +367,7 @@ async def js_shell(
     """
 
     js_shell_class = AutomationJsShell if automation else InspectorJsShell
-    await run_js_shell(js_shell_class, service_provider, timeout, url, open_safari)
+    await run_js_shell(js_shell_class, service_provider, timeout, url, open_safari, bundle_identifier)
 
 
 cdp_inspector: Optional[WebinspectorService] = None
@@ -459,7 +469,11 @@ class JsShell(ABC):
     @classmethod
     @abstractmethod
     def create(
-        cls, lockdown: LockdownServiceProvider, timeout: float, open_safari: bool
+        cls,
+        lockdown: LockdownServiceProvider,
+        timeout: float,
+        open_safari: bool,
+        bundle_identifier: Optional[str] = None,
     ) -> "AbstractAsyncContextManager[JsShell]": ...
 
     @abstractmethod
@@ -507,9 +521,15 @@ class AutomationJsShell(JsShell):
     @classmethod
     @asynccontextmanager
     async def create(
-        cls, lockdown: LockdownServiceProvider, timeout: float, open_safari: bool
+        cls,
+        lockdown: LockdownServiceProvider,
+        timeout: float,
+        open_safari: bool,
+        bundle_identifier: Optional[str] = None,
     ) -> "AsyncIterator[AutomationJsShell]":
-        inspector, application = await create_webinspector_and_launch_app(lockdown, timeout, SAFARI)
+        if bundle_identifier is None:
+            bundle_identifier = SAFARI
+        inspector, application = await create_webinspector_and_launch_app(lockdown, timeout, bundle_identifier)
         automation_session = await inspector.automation_session(application)
         driver = WebDriver(automation_session)
         await driver.start_session()
@@ -534,13 +554,19 @@ class InspectorJsShell(JsShell):
     @classmethod
     @asynccontextmanager
     async def create(
-        cls, lockdown: LockdownServiceProvider, timeout: float, open_safari: bool
+        cls,
+        lockdown: LockdownServiceProvider,
+        timeout: float,
+        open_safari: bool,
+        bundle_identifier: Optional[str] = None,
     ) -> "AsyncIterator[InspectorJsShell]":
         inspector = WebinspectorService(lockdown=lockdown)
         await inspector.connect(timeout)
         if open_safari:
             _ = await inspector.open_app(SAFARI)
-        application_page = await cls.query_page(inspector, bundle_identifier=SAFARI if open_safari else None)
+        application_page = await cls.query_page(
+            inspector, bundle_identifier=SAFARI if open_safari else bundle_identifier
+        )
         if application_page is None:
             raise typer.Exit()
 
@@ -571,9 +597,13 @@ class InspectorJsShell(JsShell):
                 if application_page.application.bundle == bundle_identifier
             ]
         if not available_pages:
-            logger.error("Unable to find available pages (try to unlock device)")
+            logger.error(
+                "Unable to find available pages, try different filters or try to unlock the page"
+                if bundle_identifier is not None
+                else "Unable to find available pages (try to unlock the page)"
+            )
             return None
-        
+
         if len(available_pages) == 1:
             return available_pages[0]
 
@@ -583,7 +613,12 @@ class InspectorJsShell(JsShell):
 
 
 async def run_js_shell(
-    js_shell_class: type[JsShell], lockdown: LockdownServiceProvider, timeout: float, url: str, open_safari: bool
+    js_shell_class: type[JsShell],
+    lockdown: LockdownServiceProvider,
+    timeout: float,
+    url: str,
+    open_safari: bool,
+    bundle_identifier: Optional[str] = None,
 ) -> None:
-    async with js_shell_class.create(lockdown, timeout, open_safari) as js_shell_instance:
+    async with js_shell_class.create(lockdown, timeout, open_safari, bundle_identifier) as js_shell_instance:
         await js_shell_instance.start(url)
