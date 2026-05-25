@@ -1,8 +1,7 @@
-import asyncio
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from pymobiledevice3.dtx import DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
+from pymobiledevice3.dtx import DTXQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 
 
@@ -11,7 +10,7 @@ class GraphicsService(DTXService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self.events: asyncio.Queue[Any] = asyncio.Queue()
+        self.events: DTXQueue[Any] = DTXQueue()
 
     def on_closed(self, reason: str = "") -> None:
         self.shutdown_queue(self.events)

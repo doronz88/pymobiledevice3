@@ -1,10 +1,9 @@
-import asyncio
 import dataclasses
 import logging
 import typing
 from typing import Any, Optional
 
-from pymobiledevice3.dtx import DTXService, PInt32, dtx_method, dtx_on_invoke
+from pymobiledevice3.dtx import DTXQueue, DTXService, PInt32, dtx_method, dtx_on_invoke
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.exceptions import DisableMemoryLimitError
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -39,7 +38,7 @@ class ProcessControlService(DTXService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self.output_events: asyncio.Queue[list[Any]] = asyncio.Queue()
+        self.output_events: DTXQueue[list[Any]] = DTXQueue()
 
     def on_closed(self, reason: str = "") -> None:
         self.shutdown_queue(self.output_events)
