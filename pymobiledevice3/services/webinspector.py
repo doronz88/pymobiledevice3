@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Optional, Union
 
 from pymobiledevice3.exceptions import (
+    ConnectionTerminatedError,
     LaunchingApplicationError,
     RemoteAutomationNotEnabledError,
     WebInspectorNotEnabledError,
@@ -14,11 +15,13 @@ from pymobiledevice3.exceptions import (
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
+from pymobiledevice3.services.notification_proxy import NotificationProxyService
 from pymobiledevice3.services.web_protocol.automation_session import AutomationSession
 from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 
 SAFARI = "com.apple.mobilesafari"
+WEBINSPECTORD_DISABLED_NOTIFICATION = "com.apple.webinspectord.disabled"
 
 
 def key_to_pid(key: str) -> int:
@@ -138,20 +141,19 @@ class WebinspectorService(LockdownService):
         }
         self._recv_task: Optional[asyncio.Task] = None
 
-    async def connect(self, timeout: Optional[Union[float, int]] = None):
-        await asyncio.wait_for(super().connect(), timeout)
-        await self._report_identifier()
-        try:
-            await self._handle_recv(await asyncio.wait_for(self._recv_message(), timeout))
-        except asyncio.TimeoutError as e:
-            raise WebInspectorNotEnabledError from e
+    async def connect(self) -> None:
+        if self._recv_task is not None:
+            return
+
+        await self._connect_or_raise_disabled()
         self._recv_task = asyncio.create_task(self._receiving_task())
 
     async def close(self):
         if self._recv_task is not None:
             self._recv_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
+            with contextlib.suppress(asyncio.CancelledError, ConnectionTerminatedError):
                 await self._recv_task
+            self._recv_task = None
         await super().close()
 
     async def _recv_message(self):
@@ -160,6 +162,42 @@ class WebinspectorService(LockdownService):
                 return await self.service.recv_plist()
             except asyncio.IncompleteReadError:
                 await asyncio.sleep(0)
+
+    async def _wait_for_disabled_notification(self, notification_proxy: NotificationProxyService) -> None:
+        async for event in notification_proxy.receive_notification():
+            if event.get("Name") == WEBINSPECTORD_DISABLED_NOTIFICATION:
+                raise WebInspectorNotEnabledError
+
+    async def _connect_or_raise_disabled(self) -> None:
+        async with NotificationProxyService(self.lockdown) as notification_proxy:
+            await notification_proxy.notify_register_dispatch(WEBINSPECTORD_DISABLED_NOTIFICATION)
+            disabled_task = asyncio.create_task(self._wait_for_disabled_notification(notification_proxy))
+            try:
+                # Keep the disabled notification watcher active for the full WebInspector handshake. A disabled
+                # device may report either the explicit notification or an abrupt service termination.
+                await self._await_or_raise_disabled(super().connect(), disabled_task)
+                await self._await_or_raise_disabled(self._report_identifier(), disabled_task)
+                await self._handle_recv(await self._await_or_raise_disabled(self._recv_message(), disabled_task))
+            finally:
+                disabled_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await disabled_task
+
+    async def _await_or_raise_disabled(self, coro, disabled_task: asyncio.Task):
+        task = asyncio.create_task(coro)
+        done, _ = await asyncio.wait(
+            {task, disabled_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if disabled_task in done:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            await disabled_task
+        try:
+            return await task
+        except ConnectionTerminatedError as e:
+            raise WebInspectorNotEnabledError from e
 
     async def _receiving_task(self):
         while True:
