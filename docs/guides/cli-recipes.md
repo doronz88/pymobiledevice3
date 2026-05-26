@@ -148,11 +148,20 @@ pymobiledevice3 developer dvt energy PID1 PID2 ...
 # JavaScript shell on open tab (requires Web Inspector enabled)
 pymobiledevice3 webinspector js-shell
 
+# JavaScript shell filtered to one app's WebViews
+pymobiledevice3 webinspector js-shell --bundle-id com.example.MyApp
+
+# JavaScript shell without inspector console events
+pymobiledevice3 webinspector js-shell --no-console-enable
+
 # List opened tabs
 pymobiledevice3 webinspector opened-tabs
 
 # JavaScript shell on automation tab (requires Remote Automation enabled)
 pymobiledevice3 webinspector js-shell --automation
+
+# JavaScript automation shell for a specific app
+pymobiledevice3 webinspector js-shell --automation --bundle-id com.example.MyApp
 
 # Launch automation session to URL
 pymobiledevice3 webinspector launch URL
