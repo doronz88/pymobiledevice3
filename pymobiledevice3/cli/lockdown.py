@@ -39,17 +39,23 @@ async def lockdown_recovery(service_provider: ServiceProviderDep) -> None:
 
 
 @cli.command("service")
-async def lockdown_service(service_provider: ServiceProviderDep, service_name: str) -> None:
+def lockdown_service(service_provider: ServiceProviderDep, service_name: str) -> None:
     """send-receive raw service messages with a given service name"""
     service = run_in_loop(service_provider.start_lockdown_service(service_name))
-    service.shell()
+    try:
+        service.shell()
+    finally:
+        run_in_loop(service.close())
 
 
 @cli.command("developer-service")
-async def lockdown_developer_service(service_provider: ServiceProviderDep, service_name: str) -> None:
+def lockdown_developer_service(service_provider: ServiceProviderDep, service_name: str) -> None:
     """send-receive raw service messages with a given developer service name"""
     service = run_in_loop(service_provider.start_lockdown_developer_service(service_name))
-    service.shell()
+    try:
+        service.shell()
+    finally:
+        run_in_loop(service.close())
 
 
 @cli.command("info")
