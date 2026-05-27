@@ -178,7 +178,7 @@ async def reload_pages(inspector: WebinspectorService) -> None:
 
 
 @asynccontextmanager
-async def webinspector_service(lockdown: LockdownServiceProvider, timeout: float) -> AsyncIterator[WebinspectorService]:
+async def webinspector_service(lockdown: LockdownServiceProvider) -> AsyncIterator[WebinspectorService]:
     inspector = WebinspectorService(lockdown=lockdown)
     try:
         await inspector.connect()
@@ -189,7 +189,7 @@ async def webinspector_service(lockdown: LockdownServiceProvider, timeout: float
 
 
 async def opened_tabs_task(service_provider: LockdownServiceProvider, timeout: float) -> None:
-    async with webinspector_service(service_provider, timeout) as inspector:
+    async with webinspector_service(service_provider) as inspector:
         application_pages = await inspector.get_open_application_pages(timeout=timeout)
         for application_page in application_pages:
             print(application_page)
@@ -219,7 +219,7 @@ async def opened_tabs(
 
 @catch_errors
 async def launch_task(service_provider: LockdownServiceProvider, url, timeout) -> None:
-    async with webinspector_service(service_provider, timeout) as inspector:
+    async with webinspector_service(service_provider) as inspector:
         safari = await inspector.open_app(SAFARI)
         session = await inspector.automation_session(safari)
         driver = WebDriver(session)
@@ -283,7 +283,7 @@ driver.add_cookie(
 
 @catch_errors
 async def shell_task(service_provider: LockdownServiceProvider, timeout: float) -> None:
-    async with webinspector_service(service_provider, timeout) as inspector:
+    async with webinspector_service(service_provider) as inspector:
         safari = await inspector.open_app(SAFARI)
         session = await inspector.automation_session(safari)
         driver = WebDriver(session)
@@ -546,7 +546,7 @@ class AutomationJsShell(JsShell):
     ) -> "AsyncIterator[AutomationJsShell]":
         if bundle_identifier is None:
             bundle_identifier = SAFARI
-        async with webinspector_service(lockdown, timeout) as inspector:
+        async with webinspector_service(lockdown) as inspector:
             application = await inspector.open_app(bundle_identifier)
             automation_session = await inspector.automation_session(application)
             driver = WebDriver(automation_session)
@@ -579,7 +579,7 @@ class InspectorJsShell(JsShell):
         *,
         console_enable: bool = True,
     ) -> "AsyncIterator[InspectorJsShell]":
-        async with webinspector_service(lockdown, timeout) as inspector:
+        async with webinspector_service(lockdown) as inspector:
             if open_safari:
                 _ = await inspector.open_app(SAFARI)
             application_page = await cls.query_page(
