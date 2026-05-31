@@ -1,3 +1,4 @@
+import re
 import subprocess
 import sys
 
@@ -7,6 +8,7 @@ from typer.testing import CliRunner
 from pymobiledevice3 import __main__
 
 pytestmark = [pytest.mark.cli]
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 @pytest.mark.xfail(reason="Looks like click broke something")
@@ -17,6 +19,30 @@ def test_cli_main_interface():
 
     r2 = runner.invoke(__main__.app)
     assert r2.exit_code == 0
+
+
+def test_cli_from_python_m_without_args():
+    result = subprocess.run(
+        [sys.executable, "-m", "pymobiledevice3"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "Usage:" in result.stdout
+    assert "NoArgsIsHelpError" not in result.stderr
+
+
+def test_cli_from_python_m_with_invalid_option():
+    result = subprocess.run(
+        [sys.executable, "-m", "pymobiledevice3", "--definitely-invalid"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "No such option: --definitely-invalid" in ANSI_ESCAPE.sub("", result.stderr)
+    assert "Traceback" not in result.stderr
 
 
 def test_install_completion_uses_fish_for_xonsh_when_available(monkeypatch, tmp_path):

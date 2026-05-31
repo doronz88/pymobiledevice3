@@ -9,13 +9,10 @@ import sys
 import textwrap
 import traceback
 import warnings
-from collections.abc import Sequence
-from typing import Annotated, Optional, Union
+from typing import Annotated, Union
 
-import click
 import coloredlogs
 import typer
-import typer.core
 from packaging.version import Version
 from typer.core import TyperGroup
 from typer_injector import InjectingTyper
@@ -161,11 +158,11 @@ _patch_xonsh_completion_detection()
 
 
 class Pmd3TyperGroup(TyperGroup):
-    def list_commands(self, ctx: click.Context) -> list[str]:
+    def list_commands(self, ctx) -> list[str]:
         # Order is preserved by dict insertion; adjust if you want alphabetical
         return list(CLI_GROUPS.keys())
 
-    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command:
+    def get_command(self, ctx, cmd_name: str):
         if cmd_name not in CLI_GROUPS:
             self.handle_invalid_command(ctx, cmd_name)
         return self.import_and_get_command(ctx, cmd_name)
@@ -184,7 +181,7 @@ class Pmd3TyperGroup(TyperGroup):
         return f"\nDid you mean:\n{cmds}"
 
     @staticmethod
-    def import_and_get_command(ctx: click.Context, name: str) -> click.Command:
+    def import_and_get_command(ctx, name: str):
         module_name = f"pymobiledevice3.cli.{CLI_GROUPS[name]}"
         mod = importlib.import_module(module_name)
         # submodules expose a Typer Group named "cli"
@@ -196,7 +193,7 @@ class Pmd3TyperGroup(TyperGroup):
         return re.sub(f"({keyword})", typer.style("\\1", bold=True), text, flags=re.IGNORECASE)
 
     @staticmethod
-    def collect_commands(command: Union[TyperGroup, click.Command]) -> Union[str, list[str]]:
+    def collect_commands(command) -> Union[str, list[str]]:
         if isinstance(command, TyperGroup):  # group
             cmds = []
             for v in command.commands.values():
@@ -234,9 +231,7 @@ class Pmd3TyperGroup(TyperGroup):
                 all_commands.append(cmd)
         return all_commands
 
-    def resolve_command(
-        self, ctx: click.Context, args: list[str]
-    ) -> tuple[Optional[str], Optional[click.Command], list[str]]:
+    def resolve_command(self, ctx, args: list[str]):
         return super().resolve_command(ctx, args)
 
 
@@ -307,42 +302,6 @@ def device_might_need_tunneld(identifier: str) -> bool:
     return asyncio.run(_device_might_need_tunneld())
 
 
-class PossiblyMisplacedOption(click.NoSuchOption):
-    def __init__(
-        self,
-        option_name: str,
-        message: Optional[str] = None,
-        possibilities: Optional[Sequence[str]] = None,
-        ctx: Optional[click.Context] = None,
-        suggested_ctx: Optional[click.Context] = None,
-    ) -> None:
-        super().__init__(option_name, message, possibilities, ctx)
-        if suggested_ctx is not None:
-            if ctx is not None:
-                self.message += f" for subcommand: {ctx.command_path}"
-
-            suggestion = f"{suggested_ctx.command_path} {option_name}"
-            suggestion += ctx.command_path.removeprefix(suggested_ctx.command_path) if ctx is not None else " ..."
-
-            self.message += f"\nDid you mean: {suggestion}?"
-
-    @staticmethod
-    def from_no_such_option(e: click.NoSuchOption) -> "PossiblyMisplacedOption":
-        ctx = e.ctx
-        while ctx:
-            for param in ctx.command.params:
-                if isinstance(param, typer.core.TyperOption) and (
-                    e.option_name in param.opts or e.option_name in param.secondary_opts
-                ):
-                    break
-            else:
-                ctx = ctx.parent
-                continue
-            break
-
-        return PossiblyMisplacedOption(e.option_name, e.message, e.possibilities, e.ctx, ctx)
-
-
 def invoke_cli_with_error_handling() -> bool:
     """
     Invoke the command line interface and return `True` if the failure reason of the command was that the device was
@@ -350,10 +309,7 @@ def invoke_cli_with_error_handling() -> bool:
     """
     try:
         # Typer apps are callable; this executes the CLI with current sys.argv
-        try:
-            app(standalone_mode=False)
-        except click.NoSuchOption as e:
-            raise PossiblyMisplacedOption.from_no_such_option(e) from e
+        app(args=["--help"] if len(sys.argv) == 1 else None)
     except NoDeviceConnectedError:
         logger.error("Device is not connected")
         return True
@@ -454,12 +410,6 @@ def invoke_cli_with_error_handling() -> bool:
         logger.error(f"File [{e.filename}] not found during afc operation: {e}")
     except AfcException as e:
         logger.error(f"Failed to perform Afc operation: {e}")
-    except click.ClickException as e:
-        from typer import rich_utils
-
-        rich_utils.rich_format_error(e)
-        sys.exit(e.exit_code)
-
     return False
 
 
