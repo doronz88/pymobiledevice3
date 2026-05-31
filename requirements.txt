@@ -38,6 +38,7 @@ python-pcapng>=2.1.1
 plumbum
 pyimg4>=0.8.8
 pyiosbackup>=0.2.4
-typer>=0.20.0
+typer>=0.23.2,<0.24.0;python_version<'3.10'
+typer>=0.26.0;python_version>='3.10'
 typer-injector>=0.2.0
 defusedxml
