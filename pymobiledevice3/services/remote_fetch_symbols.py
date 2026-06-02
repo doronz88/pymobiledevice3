@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import uuid
 from pathlib import Path
@@ -6,6 +7,8 @@ from tqdm import tqdm
 
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+
+MAX_CONCURRENT_DOWNLOADS = 4
 
 
 @dataclasses.dataclass
@@ -38,16 +41,33 @@ class RemoteFetchSymbolsService(RemoteService):
 
     async def download(self, out: Path) -> None:
         files = await self.get_dsc_file_list()
-        with tqdm(total=len(files), dynamic_ncols=True, desc="Downloading DSC") as total_pb:
-            for i, file in enumerate(files):
-                total_pb.set_description("Downloading DSC")
-                out_file = out / file.file_path[1:]  # trim the "/" prefix
-                out_file.parent.mkdir(parents=True, exist_ok=True)
-                with (
-                    open(out_file, "wb") as f,
-                    tqdm(total=files[i].file_size, dynamic_ncols=True, desc=file.file_path.rsplit("/", 1)[-1]) as pb,
-                ):
-                    async for chunk in self.service.iter_file_chunks(files[i].file_size, file_idx=i):
-                        f.write(chunk)
-                        pb.update(len(chunk))
-                total_pb.update(1)
+        file_indexes: asyncio.Queue[int] = asyncio.Queue()
+        for i in range(len(files)):
+            file_indexes.put_nowait(i)
+
+        with tqdm(
+            total=sum(file.file_size for file in files),
+            unit="B",
+            unit_scale=True,
+            dynamic_ncols=True,
+            desc="Downloading DSC",
+        ) as pb:
+            workers = [self._download_files(files, file_indexes, out, pb) for _ in files[:MAX_CONCURRENT_DOWNLOADS]]
+            await asyncio.gather(*workers)
+
+    async def _download_files(
+        self, files: list[DSCFile], file_indexes: asyncio.Queue[int], out: Path, pb: tqdm
+    ) -> None:
+        while True:
+            try:
+                i = file_indexes.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+
+            file = files[i]
+            out_file = out / file.file_path[1:]  # trim the "/" prefix
+            out_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(out_file, "wb") as f:
+                async for chunk in self.service.iter_file_chunks(file.file_size, file_idx=i):
+                    f.write(chunk)
+                    pb.update(len(chunk))

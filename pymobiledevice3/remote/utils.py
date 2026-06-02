@@ -1,4 +1,6 @@
+import asyncio
 import contextlib
+import logging
 import platform
 from collections.abc import Generator
 from typing import Optional
@@ -6,10 +8,11 @@ from typing import Optional
 import psutil
 
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
-from pymobiledevice3.exceptions import AccessDeniedError
+from pymobiledevice3.exceptions import AccessDeniedError, ConnectionTerminatedError
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
 
 REMOTED_PATH = "/usr/libexec/remoted"
+logger = logging.getLogger(__name__)
 
 
 async def get_rsds(
@@ -22,9 +25,14 @@ async def get_rsds(
                 rsd = RemoteServiceDiscoveryService((address.full_ip, RSD_PORT))
                 try:
                     await rsd.connect()
-                except ConnectionRefusedError:
-                    continue
-                except OSError:
+                except (
+                    ConnectionTerminatedError,
+                    asyncio.IncompleteReadError,
+                    ConnectionResetError,
+                    asyncio.TimeoutError,
+                    OSError,
+                ) as e:
+                    logger.debug("Skipping RSD endpoint %s: %r", address.full_ip, e)
                     continue
                 if udid is None or rsd.udid == udid:
                     result.append(rsd)

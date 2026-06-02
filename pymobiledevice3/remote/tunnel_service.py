@@ -1226,6 +1226,16 @@ async def get_core_device_tunnel_services(
             logger.debug(f"Skipping {rsd.udid}: {e}")
             await rsd.close()
             continue
+        except (
+            ConnectionTerminatedError,
+            asyncio.IncompleteReadError,
+            ConnectionResetError,
+            asyncio.TimeoutError,
+            OSError,
+        ) as e:
+            logger.debug("Skipping CoreDevice tunnel service %s: %r", rsd.udid, e)
+            await rsd.close()
+            continue
         except Exception:
             logger.exception(f"Failed to start service: {rsd}")
             await rsd.close()

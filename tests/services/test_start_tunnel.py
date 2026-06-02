@@ -2,13 +2,44 @@ import asyncio
 
 import pytest
 
-from pymobiledevice3.exceptions import AccessDeniedError, QuicProtocolNotSupportedError
+from pymobiledevice3.exceptions import AccessDeniedError, ConnectionTerminatedError, QuicProtocolNotSupportedError
+from pymobiledevice3.remote import tunnel_service
 from pymobiledevice3.remote.common import ConnectionType
 from pymobiledevice3.remote.tunnel_service import (
     get_core_device_tunnel_services,
     get_remote_pairing_tunnel_services,
     start_tunnel,
 )
+
+
+@pytest.mark.asyncio
+async def test_get_core_device_tunnel_services_skips_terminated_service(monkeypatch) -> None:
+    class Rsd:
+        udid = "udid"
+        product_version = "17.0"
+        product_type = "iPhone"
+
+        def __init__(self):
+            self.closed = False
+
+        async def close(self):
+            self.closed = True
+
+    rsd = Rsd()
+
+    async def get_rsds(bonjour_timeout, udid):
+        return [rsd]
+
+    async def create_core_device_tunnel_service_using_rsd(rsd):
+        raise ConnectionTerminatedError
+
+    monkeypatch.setattr(tunnel_service, "get_rsds", get_rsds)
+    monkeypatch.setattr(
+        tunnel_service, "create_core_device_tunnel_service_using_rsd", create_core_device_tunnel_service_using_rsd
+    )
+
+    assert await tunnel_service.get_core_device_tunnel_services() == []
+    assert rsd.closed
 
 
 @pytest.mark.parametrize("connection_type", [ConnectionType.USB, ConnectionType.WIFI])

@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 from asyncio import IncompleteReadError
 from collections.abc import AsyncIterable
-from typing import Optional
+from typing import Optional, Union
 
 from construct import StreamError
 from hyperframe.frame import (
@@ -29,8 +29,10 @@ from pymobiledevice3.utils import start_ipython_shell
 
 # Extracted by sniffing `remoted` traffic via Wireshark
 DEFAULT_SETTINGS_MAX_CONCURRENT_STREAMS = 100
-DEFAULT_SETTINGS_INITIAL_WINDOW_SIZE = 1048576
-DEFAULT_WIN_SIZE_INCR = 983041
+# Keep enough file-transfer data in flight to avoid frequent flow-control round trips.
+DEFAULT_SETTINGS_INITIAL_WINDOW_SIZE = 16 * 1024 * 1024
+DEFAULT_WIN_SIZE_INCR = DEFAULT_SETTINGS_INITIAL_WINDOW_SIZE - 65535
+WINDOW_UPDATE_THRESHOLD = 1024 * 1024
 
 FRAME_HEADER_SIZE = 9
 HTTP2_MAGIC = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
@@ -56,6 +58,9 @@ class RemoteXPCConnection:
         self.peer_info = None
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
+        self._pending_window_updates: dict[int, int] = {}
+        self._file_chunk_queues: dict[int, asyncio.Queue[Union[bytes, BaseException]]] = {}
+        self._file_chunk_reader_task: Optional[asyncio.Task] = None
 
     async def __aenter__(self) -> "RemoteXPCConnection":
         await self.connect()
@@ -73,10 +78,17 @@ class RemoteXPCConnection:
             raise
 
     async def close(self) -> None:
+        self._pending_window_updates.clear()
+        if self._file_chunk_reader_task is not None:
+            self._file_chunk_reader_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._file_chunk_reader_task
+            self._file_chunk_reader_task = None
+        self._file_chunk_queues.clear()
         if self._writer is None:
             return
         self._writer.close()
-        with contextlib.suppress(ConnectionResetError):
+        with contextlib.suppress(Exception):
             await self._writer.wait_closed()
         self._writer = None
         self._reader = None
@@ -90,22 +102,49 @@ class RemoteXPCConnection:
 
     async def iter_file_chunks(self, total_size: int, file_idx: int = 0) -> AsyncIterable[bytes]:
         stream_id = (file_idx + 1) * 2
-        await self._open_channel(stream_id, XpcFlags.FILE_TX_STREAM_RESPONSE)
-        size = 0
-        while size < total_size:
-            frame = await self._receive_next_data_frame()
+        chunk_queue: asyncio.Queue[Union[bytes, BaseException]] = asyncio.Queue()
+        self._file_chunk_queues[stream_id] = chunk_queue
+        try:
+            await self._open_channel(stream_id, XpcFlags.FILE_TX_STREAM_RESPONSE)
+            if self._file_chunk_reader_task is None:
+                self._file_chunk_reader_task = asyncio.create_task(self._route_file_chunks())
 
-            if "END_STREAM" in frame.flags:
-                continue
+            size = 0
+            while size < total_size:
+                chunk = await chunk_queue.get()
+                if isinstance(chunk, BaseException):
+                    raise chunk
+                size += len(chunk)
+                yield chunk
+        finally:
+            self._file_chunk_queues.pop(stream_id, None)
+            await self._replenish_receive_window(stream_id, force=True)
+            if not self._file_chunk_queues and self._file_chunk_reader_task is not None:
+                self._file_chunk_reader_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._file_chunk_reader_task
+                self._file_chunk_reader_task = None
 
-            if frame.stream_id != stream_id:
-                xpc_wrapper = XpcWrapper.parse(frame.data)
-                if xpc_wrapper.flags.FILE_TX_STREAM_REQUEST:
+    async def _route_file_chunks(self) -> None:
+        try:
+            while self._file_chunk_queues:
+                frame = await self._receive_next_data_frame()
+                if "END_STREAM" in frame.flags:
                     continue
 
-            assert frame.stream_id == stream_id, f"got {frame.stream_id} instead of {stream_id}"
-            size += len(frame.data)
-            yield frame.data
+                chunk_queue = self._file_chunk_queues.get(frame.stream_id)
+                if chunk_queue is not None:
+                    chunk_queue.put_nowait(frame.data)
+                    continue
+
+                xpc_wrapper = XpcWrapper.parse(frame.data)
+                if not xpc_wrapper.flags.FILE_TX_STREAM_REQUEST:
+                    raise ProtocolError(f"Got unexpected file transfer stream: {frame.stream_id}")
+        except asyncio.CancelledError:
+            raise
+        except BaseException as e:
+            for chunk_queue in self._file_chunk_queues.values():
+                chunk_queue.put_nowait(e)
 
     async def receive_file(self, total_size: int) -> bytes:
         buf = b""
@@ -197,10 +236,22 @@ class RemoteXPCConnection:
                 continue
 
             if frame.stream_id % 2 == 0 and frame.body_len > 0:
-                await self._send_frame(WindowUpdateFrame(stream_id=0, window_increment=frame.body_len))
-                await self._send_frame(WindowUpdateFrame(stream_id=frame.stream_id, window_increment=frame.body_len))
+                await self._replenish_receive_window(frame.stream_id, frame.body_len)
 
             return frame
+
+    async def _replenish_receive_window(self, stream_id: int, increment: int = 0, force: bool = False) -> None:
+        pending_increment = self._pending_window_updates.get(stream_id, 0) + increment
+        if not force and pending_increment < WINDOW_UPDATE_THRESHOLD:
+            self._pending_window_updates[stream_id] = pending_increment
+            return
+        if pending_increment == 0:
+            return
+
+        self._pending_window_updates.pop(stream_id, None)
+        self._writer.write(WindowUpdateFrame(stream_id=0, window_increment=pending_increment).serialize())
+        self._writer.write(WindowUpdateFrame(stream_id=stream_id, window_increment=pending_increment).serialize())
+        await self._writer.drain()
 
     async def _receive_frame(self) -> Frame:
         buf = await self._reader.readexactly(FRAME_HEADER_SIZE)
