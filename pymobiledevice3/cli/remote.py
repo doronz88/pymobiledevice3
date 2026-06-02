@@ -39,6 +39,8 @@ from pymobiledevice3.utils import run_in_loop
 
 logger = logging.getLogger(__name__)
 
+TUNNEL_SERVICE_DISCOVERY_ATTEMPTS = 3
+
 
 async def browse_rsd(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[dict]:
     devices = []
@@ -217,7 +219,12 @@ async def start_tunnel_task(
         connection_type.USB: get_core_device_tunnel_services,
         connection_type.WIFI: get_remote_pairing_tunnel_services,
     }
-    tunnel_services = await get_tunnel_services[connection_type](udid=udid)
+    for attempt in range(TUNNEL_SERVICE_DISCOVERY_ATTEMPTS):
+        tunnel_services = await get_tunnel_services[connection_type](udid=udid)
+        if tunnel_services:
+            break
+        if attempt < TUNNEL_SERVICE_DISCOVERY_ATTEMPTS - 1:
+            logger.info("No tunnel services discovered, trying again")
     if not tunnel_services:
         # no devices were found
         raise NoDeviceConnectedError()
