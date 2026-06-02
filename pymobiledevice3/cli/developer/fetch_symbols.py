@@ -51,9 +51,11 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
         )
         should_create_device_support_layout = True
 
-    logger.info(f"Downloading DSC into: {out}")
+    symbols_out = out / "Symbols" if should_create_device_support_layout else out
 
-    out.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Downloading DSC into: {symbols_out}")
+
+    symbols_out.mkdir(parents=True, exist_ok=True)
 
     if Version(service_provider.product_version) < Version("17.0"):
         fetch_symbols = DtFetchSymbols(service_provider)
@@ -65,7 +67,7 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
             if file.startswith("/"):
                 # trim root to allow relative download
                 file = file[1:]
-            file = out / file
+            file = symbols_out / file
 
             if file not in downloaded_files:
                 # first time the file was seen in list, means we can safely remove any old copy if any
@@ -81,12 +83,15 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
             raise RSDRequiredError(service_provider.identifier)
         async with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
-            await fetch_symbols.download(out)
+            await fetch_symbols.download(symbols_out)
 
     if should_create_device_support_layout:
         assert service_provider.product_type is not None  # for type checker
         create_device_support_layout(
-            service_provider.product_type, service_provider.product_version, service_provider.product_build_version, out
+            service_provider.product_type,
+            service_provider.product_version,
+            service_provider.product_build_version,
+            symbols_out,
         )
 
 
