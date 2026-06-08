@@ -26,7 +26,7 @@ def main() -> None:
     hidden_imports = []
 
     for module in pymobiledevice3_cli_path.iterdir():
-        if module.name.endswith(".py") and module.name != "__init__.py":  # Avoid including the __init__.py
+        if (module.name.endswith(".py") and module.name != "__init__.py") or module.is_dir():
             # Create the module name to be added to hidden imports
             module_name = "pymobiledevice3.cli." + os.path.splitext(module.name)[0]
             hidden_imports.append("--hidden-import=" + module_name)
@@ -41,7 +41,6 @@ def main() -> None:
         "--hidden-import=readchar",
         "--copy-metadata=pyimg4",
         "--copy-metadata=readchar",
-        "--copy-metadata=apple_compress",
         "--onefile",
     ]
     if sys.platform == "win32":
