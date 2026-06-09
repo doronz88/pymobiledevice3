@@ -486,8 +486,19 @@ class ScreenStreamServer:
         self._active_session_id: Optional[uuid.UUID] = None
         self._active_sock: Optional[socket.socket] = None
         self._active_recv_task: Optional[asyncio.Task] = None
+        self._active_rtcp_task: Optional[asyncio.Task] = None
         self._stream_lock = asyncio.Lock()
         self._stream_dirty = True  # True → next request must restart the stream
+
+        # RTCP feedback bookkeeping. The streamConfig the device returns sets
+        # ``RTCPTimeoutEnabled=True`` -- without periodic Receiver Reports the
+        # encoder stalls after a few tens of seconds. Filled in when the
+        # stream starts; the RTCP task reads them.
+        self._rtcp_dest: Optional[tuple[str, int]] = None  # (ipv6, port)
+        self._local_ssrc: int = 0
+        self._remote_ssrc: int = 0
+        self._rtp_highest_seq: int = 0  # extended (cycles<<16 | seq16)
+        self._rtp_packets_received: int = 0
 
         # Lazy-opened HID services for browser-driven touch / buttons. The
         # auth gate is already held open by the active media stream above,
@@ -562,6 +573,16 @@ class ScreenStreamServer:
             # AU corrupt so we drop it at the next marker.
             seq = int.from_bytes(data[2:4], "big")
             stats_packets += 1
+            # Maintain the extended highest-seq counter for RTCP RR.
+            self._rtp_packets_received += 1
+            cur_ext = self._rtp_highest_seq
+            cycles = (cur_ext >> 16) & 0xFFFF
+            last_seq16 = cur_ext & 0xFFFF
+            if seq < last_seq16 and (last_seq16 - seq) > 0x8000:
+                cycles = (cycles + 1) & 0xFFFF  # seq number wrapped
+            new_ext = (cycles << 16) | seq
+            if cur_ext == 0 or ((new_ext - cur_ext) & 0xFFFFFFFF) < 0x80000000:
+                self._rtp_highest_seq = new_ext
             if last_seq is not None and seq != ((last_seq + 1) & 0xFFFF):
                 forward = ((seq - last_seq) & 0xFFFF) < 0x8000  # heuristic for "ahead"
                 if forward:
@@ -647,16 +668,80 @@ class ScreenStreamServer:
                 au_is_key = False
                 au_corrupt = False
 
+    # ----- RTCP feedback ----------------------------------------------------
+    def _build_rtcp_rr(self) -> bytes:
+        """Build a minimal RTCP Receiver Report for the active stream.
+
+        The device's ``streamConfig`` says ``RTCPTimeoutEnabled=True`` -- if we
+        never send RTs the encoder stalls within ~25 s. A single Receiver
+        Report (32 bytes) every second is enough to keep it producing frames.
+
+        Format (RFC 3550 §6.4.2): one RR with one report block::
+
+            byte 0  : V=2 P=0 RC=1     (0x81)
+            byte 1  : PT=201 (RR)      (0xC9)
+            bytes 2-3: length=7 (8 words total)
+            bytes 4-7: sender SSRC      (our LocalSSRC)
+            bytes 8-11: SSRC_1          (device's SSRC = RemoteSSRC)
+            byte 12 : fraction lost (0)
+            13-15   : cumulative packets lost (0)
+            16-19   : extended highest seq received
+            20-23   : interarrival jitter (0)
+            24-27   : last SR timestamp (0 -- we never received SR)
+            28-31   : delay since last SR (0)
+        """
+        import struct as _struct
+
+        return _struct.pack(
+            "!BBHII BBBB IIII",
+            0x81,
+            0xC9,
+            7,
+            self._local_ssrc & 0xFFFFFFFF,
+            self._remote_ssrc & 0xFFFFFFFF,
+            0,  # fraction lost
+            0,
+            0,
+            0,  # cumulative loss (3 bytes — packed as 3x B)
+            self._rtp_highest_seq & 0xFFFFFFFF,
+            0,
+            0,
+            0,
+        )
+
+    async def _rtcp_send_loop(self, sock: socket.socket) -> None:
+        """Periodically send RTCP RR to the device so the encoder doesn't time out."""
+        loop = asyncio.get_running_loop()
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+            except asyncio.CancelledError:
+                return
+            if self._rtcp_dest is None or self._rtp_packets_received == 0:
+                continue
+            packet = self._build_rtcp_rr()
+            try:
+                await loop.sock_sendto(sock, packet, (*self._rtcp_dest, 0, 0))
+            except OSError as exc:
+                logger.debug("RTCP send failed (%s); the socket may be torn down", exc)
+                return
+
     # ----- device-stream lifecycle ------------------------------------------
     async def _stop_active_stream(self) -> None:
         svc = self._active_service
         sid = self._active_session_id
         sock_to_close = self._active_sock
         task_to_cancel = self._active_recv_task
+        rtcp_task = self._active_rtcp_task
         self._active_service = None
         self._active_session_id = None
         self._active_sock = None
         self._active_recv_task = None
+        self._active_rtcp_task = None
+        if rtcp_task is not None:
+            rtcp_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await rtcp_task
         if task_to_cancel is not None:
             task_to_cancel.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -722,10 +807,33 @@ class ScreenStreamServer:
             sid = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
             if not isinstance(sid, uuid.UUID):
                 sid = uuid.UUID(sid)
+            # Extract RTCP destination + SSRCs from the streamConfig the device
+            # returned. Without this the encoder stalls every ~25 s waiting
+            # for Receiver Reports (RTCPTimeoutEnabled=True in the config).
+            # The names in streamConfig are from the device's perspective, so
+            # ``LocalSSRC`` is the device's SSRC and ``RemoteSSRC`` is ours.
+            # In an RR we send, the sender SSRC is OURS (RemoteSSRC) and the
+            # SSRC being reported on is the device's (LocalSSRC).
+            stream_cfg = answer["connection"].get("streamConfig", {})
+            source_port = int(stream_cfg.get("SourcePort", 0))
+            self._local_ssrc = int(stream_cfg.get("RemoteSSRC", 0))  # ours
+            self._remote_ssrc = int(stream_cfg.get("LocalSSRC", 0))  # device's
+            self._rtp_highest_seq = 0
+            self._rtp_packets_received = 0
+            self._rtcp_dest = (self._sender_ip, source_port) if source_port else None
             self._active_service = svc
             self._active_session_id = sid
             self._active_sock = sock
             self._active_recv_task = asyncio.create_task(self._udp_recv_and_depacketize(sock))
+            if self._rtcp_dest is not None and self._local_ssrc and self._remote_ssrc:
+                self._active_rtcp_task = asyncio.create_task(self._rtcp_send_loop(sock))
+            else:
+                logger.warning(
+                    "RTCP feedback disabled (missing fields in streamConfig: SourcePort=%s LocalSSRC=%s RemoteSSRC=%s)",
+                    source_port,
+                    self._local_ssrc,
+                    self._remote_ssrc,
+                )
             # Seed the stall timer to "now" so the watchdog gives the new
             # stream ``_STALL_RESTART_SECS`` to produce its first AU instead
             # of firing immediately on its zero-initialised value.
