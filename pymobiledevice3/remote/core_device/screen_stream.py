@@ -213,12 +213,15 @@ function touchCoords(e) {
 }
 
 async function postJson(path, payload) {
+    // Note: do NOT pass {keepalive: true} -- that triggers fetch's
+    // "send during page unload" path which has body-size limits and
+    // queues requests differently; we want plain HTTP/1.1 keep-alive
+    // (the default) so pointer events stream over one TCP.
     try {
         await fetch(path, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload),
-            keepalive: true,
         });
     } catch (e) { log(path + ' err: ' + e.message); }
 }
@@ -499,6 +502,9 @@ class ScreenStreamServer:
         self._remote_ssrc: int = 0
         self._rtp_highest_seq: int = 0  # extended (cycles<<16 | seq16)
         self._rtp_packets_received: int = 0
+        # PLI tasks in flight -- keep a reference so the GC doesn't drop
+        # them while awaiting the sendto (and ruff is happy with create_task).
+        self._pli_tasks: set[asyncio.Task] = set()
 
         # Lazy-opened HID services for browser-driven touch / buttons. The
         # auth gate is already held open by the active media stream above,
@@ -646,6 +652,14 @@ class ScreenStreamServer:
             if marker:
                 if au_corrupt:
                     stats_corrupt_aus += 1
+                    # Ask the device's encoder to emit a fresh IDR. Without
+                    # this, every subsequent delta references slices we
+                    # never delivered, the browser decoder errors and gets
+                    # stuck waiting for a keyframe that on a long-GOP
+                    # stream may never come naturally.
+                    pli_task = asyncio.create_task(self._send_rtcp_pli())
+                    self._pli_tasks.add(pli_task)
+                    pli_task.add_done_callback(self._pli_tasks.discard)
                 if current_au and not au_corrupt:
                     annexb = b"".join(b"\x00\x00\x00\x01" + nal for nal in current_au)
                     type_byte = b"\x00" if au_is_key else b"\x01"
@@ -677,6 +691,45 @@ class ScreenStreamServer:
                 au_corrupt = False
 
     # ----- RTCP feedback ----------------------------------------------------
+    def _build_rtcp_pli(self) -> bytes:
+        """Build an RTCP Picture Loss Indication (RFC 4585 §6.3.1).
+
+        Sent when we detect dropped AUs so the device-side encoder emits a
+        fresh IDR. Without this the browser's decoder gets stuck waiting
+        for a keyframe that, on a long-GOP stream, may never come.
+
+        Format (12 bytes total)::
+
+            byte 0  : V=2 P=0 FMT=1   (0x81)
+            byte 1  : PT=206 PSFB     (0xCE)
+            bytes 2-3: length=2 (3 words)
+            bytes 4-7: sender SSRC (ours)
+            bytes 8-11: media source SSRC (device's)
+        """
+        import struct as _struct
+
+        return _struct.pack(
+            "!BBHII",
+            0x81,
+            0xCE,
+            2,
+            self._local_ssrc & 0xFFFFFFFF,
+            self._remote_ssrc & 0xFFFFFFFF,
+        )
+
+    async def _send_rtcp_pli(self) -> None:
+        sock = self._active_sock
+        if sock is None or self._rtcp_dest is None:
+            return
+        if not (self._local_ssrc and self._remote_ssrc):
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.sock_sendto(sock, self._build_rtcp_pli(), (*self._rtcp_dest, 0, 0))
+            logger.info("sent RTCP PLI (requested fresh keyframe)")
+        except OSError as exc:
+            logger.debug("PLI send failed (%s)", exc)
+
     def _build_rtcp_rr(self) -> bytes:
         """Build a minimal RTCP Receiver Report for the active stream.
 
@@ -1016,6 +1069,7 @@ class ScreenStreamServer:
 
             if method == "POST" and path in ("/touch", "/button"):
                 body = await self._read_body(reader, headers)
+                logger.info("enqueue %s body=%r conn=%s", path, body[:80], headers.get("connection", "?"))
                 # Fire-and-forget: drop into the queue and answer 200 NOW.
                 # The single HID worker will dispatch in order without
                 # blocking the HTTP-server loop or starving the stream
