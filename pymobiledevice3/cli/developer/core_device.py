@@ -23,6 +23,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
     IndigoHIDService,
     UniversalHIDServiceService,
 )
+from pymobiledevice3.remote.core_device.location_service import LocationService
 from pymobiledevice3.remote.core_device.screen_capture_service import ScreenCaptureService
 from pymobiledevice3.remote.core_device.screen_stream import ScreenStreamServer, capture_rtp_to_file
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -544,3 +545,22 @@ async def core_device_display_serve_video_stream(
         display_id=display_id,
     )
     await server.serve()
+
+
+# ---------------------------------------------------------------------------
+# Location service — com.apple.coredevice.locationservice
+# ---------------------------------------------------------------------------
+location_cli = InjectingTyper(
+    name="location",
+    help="Simulate the device's location (com.apple.coredevice.locationservice).",
+    no_args_is_help=True,
+)
+cli.add_typer(location_cli)
+
+
+@location_cli.command("available-scenarios")
+@async_command
+async def core_device_location_available_scenarios(service_provider: RSDServiceProviderDep) -> None:
+    """List the device's built-in simulation scenarios."""
+    async with LocationService(service_provider) as service:
+        print_json(await service.available_location_scenarios())

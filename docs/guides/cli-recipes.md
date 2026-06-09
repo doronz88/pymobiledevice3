@@ -195,6 +195,13 @@ misc/rtp_dump.py /tmp/cap.rtp /tmp/cap.h265
 ffplay -framerate 60 /tmp/cap.h265
 ```
 
+### Location
+
+```shell
+# List the location-simulation scenarios baked into the device
+pymobiledevice3 developer core-device location available-scenarios
+```
+
 ## WebInspector Automation
 
 ```shell
