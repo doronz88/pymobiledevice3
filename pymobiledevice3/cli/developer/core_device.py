@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import posixpath
+import sys
 import time
 from pathlib import Path
 from typing import IO, Annotated, Optional
@@ -17,11 +18,16 @@ from pymobiledevice3.remote.core_device.diagnostics_service import DiagnosticsSe
 from pymobiledevice3.remote.core_device.display_service import DisplayService
 from pymobiledevice3.remote.core_device.file_service import APPLE_DOMAIN_DICT, FileServiceService
 from pymobiledevice3.remote.core_device.hid_service import (
+    DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
+    DIGITIZER_SURFACE_TOUCHSCREEN_GESTURE,
     HID_BUTTON_STATE_CANCELED,
     HID_BUTTON_STATE_DOWN,
     HID_BUTTON_STATE_UP,
+    TOUCHSCREEN_STATE_CONTACT,
+    TOUCHSCREEN_STATE_RELEASE,
     IndigoHIDService,
     UniversalHIDServiceService,
+    touch_session,
 )
 from pymobiledevice3.remote.core_device.location_service import LocationService
 from pymobiledevice3.remote.core_device.screen_capture_service import ScreenCaptureService
@@ -470,6 +476,221 @@ async def core_device_universal_hid_service_send_report(
     """
     async with UniversalHIDServiceService(service_provider) as service:
         await service.send_report(_parse_int_auto(service_id), bytes.fromhex(report_hex))
+
+
+# ---------------------------------------------------------------------------
+# Touch gestures (tap / drag / swipe / session) — composed atop send_report
+# ---------------------------------------------------------------------------
+# These commands auto-open a media stream via :func:`touch_session` so
+# backboardd treats our connection as builtIn+authenticated and dispatches
+# the reports to UIKit. See the module-level comment in hid_service.py.
+#
+# COORDINATE SYSTEM
+# -----------------
+# X/Y are 16-bit (0..65535) normalised across the device's display, so
+# (0, 0) is top-left and (65535, 65535) is bottom-right *regardless of
+# the device's pixel resolution*. To convert from a pixel target on a
+# specific device, look up the screen size and scale linearly::
+#
+#     px_w, px_h = (828, 1792)            # e.g. iPhone 11; query with
+#                                         # `developer core-device get-display-info`
+#                                         # → displays[0].currentMode.size
+#     hid_x = round(px_x * 65535 / px_w)
+#     hid_y = round(px_y * 65535 / px_h)
+#
+# Useful anchors regardless of resolution:
+#
+#     center                (32768, 32768)
+#     top-center            (32768,  5000)
+#     bottom-center         (32768, 60000)
+#     home-indicator area   (32768, 62000+)
+
+
+async def _do_swipe(
+    svc: UniversalHIDServiceService,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    steps: int,
+    duration: float,
+    *,
+    sid: int,
+) -> None:
+    """Pure pointer-motion stream on the gesture surface — no touch contact."""
+    frame_interval = duration / max(steps, 1)
+    for i in range(steps + 1):
+        t = i / steps if steps else 1.0
+        x = round(x1 + (x2 - x1) * t)
+        y = round(y1 + (y2 - y1) * t)
+        await svc.send_digitizer(x, y, service_id=sid)
+        if i < steps:
+            await asyncio.sleep(frame_interval)
+
+
+async def _do_tap(svc: UniversalHIDServiceService, x: int, y: int, *, tsid: int) -> None:
+    """One CONTACT + one RELEASE at the same position."""
+    await svc.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y, service_id=tsid)
+    await asyncio.sleep(0.05)
+    await svc.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x, y, service_id=tsid)
+
+
+async def _do_drag(
+    svc: UniversalHIDServiceService,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    steps: int,
+    duration: float,
+    *,
+    tsid: int,
+) -> None:
+    """Stream of CONTACT reports advancing X/Y, then one closing RELEASE."""
+    frame_interval = duration / max(steps, 1)
+    for i in range(steps):
+        t = i / steps
+        x = round(x1 + (x2 - x1) * t)
+        y = round(y1 + (y2 - y1) * t)
+        await svc.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y, service_id=tsid)
+        await asyncio.sleep(frame_interval)
+    await svc.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x2, y2, service_id=tsid)
+    await svc.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x2, y2, service_id=tsid)
+
+
+@universal_hid_service_cli.command("tap")
+@async_command
+async def core_device_universal_hid_service_tap(
+    service_provider: RSDServiceProviderDep,
+    x: Annotated[int, typer.Argument(help="X (0..65535, 0=left, 65535=right)")],
+    y: Annotated[int, typer.Argument(help="Y (0..65535, 0=top, 65535=bottom)")],
+    touch_service_id: Annotated[
+        str,
+        typer.Option("--touch-service-id", help="mainTouchscreen _ServiceID"),
+    ] = str(DIGITIZER_SURFACE_MAIN_TOUCHSCREEN),
+) -> None:
+    """Tap at (X, Y) — one mainTouchscreen CONTACT + RELEASE pair.
+
+    X/Y are 0..65535 normalised across the device's screen — see the
+    coordinate-system comment at the top of this section, or
+    ``developer core-device get-display-info`` for pixel dimensions.
+    Auto-opens a media stream so the touch reaches UIKit.
+    """
+    async with touch_session(service_provider) as service:
+        await _do_tap(service, x, y, tsid=_parse_int_auto(touch_service_id))
+
+
+@universal_hid_service_cli.command("drag")
+@async_command
+async def core_device_universal_hid_service_drag(
+    service_provider: RSDServiceProviderDep,
+    x1: Annotated[int, typer.Argument(help="Start X (0..65535, screen-normalised)")],
+    y1: Annotated[int, typer.Argument(help="Start Y (0..65535, screen-normalised)")],
+    x2: Annotated[int, typer.Argument(help="End X (0..65535)")],
+    y2: Annotated[int, typer.Argument(help="End Y (0..65535)")],
+    steps: Annotated[int, typer.Option("--steps")] = 30,
+    duration: Annotated[float, typer.Option("--duration", help="Drag time, seconds")] = 0.6,
+    touch_service_id: Annotated[
+        str,
+        typer.Option("--touch-service-id", help="mainTouchscreen _ServiceID"),
+    ] = str(DIGITIZER_SURFACE_MAIN_TOUCHSCREEN),
+) -> None:
+    """Drag from (X1, Y1) to (X2, Y2) — streaming CONTACT reports, then RELEASE.
+
+    X/Y are 0..65535 normalised across the device's screen. Use
+    ``developer core-device get-display-info`` to look up the device's
+    pixel dimensions if you need to convert from pixel coordinates.
+    """
+    async with touch_session(service_provider) as service:
+        await _do_drag(service, x1, y1, x2, y2, steps, duration, tsid=_parse_int_auto(touch_service_id))
+
+
+@universal_hid_service_cli.command("swipe")
+@async_command
+async def core_device_universal_hid_service_swipe(
+    service_provider: RSDServiceProviderDep,
+    x1: Annotated[int, typer.Argument(help="Start X (Int32)")],
+    y1: Annotated[int, typer.Argument(help="Start Y (Int32)")],
+    x2: Annotated[int, typer.Argument(help="End X (Int32)")],
+    y2: Annotated[int, typer.Argument(help="End Y (Int32)")],
+    steps: Annotated[int, typer.Option("--steps", help="Interpolated frames")] = 30,
+    duration: Annotated[float, typer.Option("--duration", help="Swipe time, seconds")] = 0.3,
+    service_id: Annotated[
+        str,
+        typer.Option("--service-id", help="Gesture surface _ServiceID; default 1281 = touchscreenGesture"),
+    ] = str(DIGITIZER_SURFACE_TOUCHSCREEN_GESTURE),
+) -> None:
+    """Pure pointer-motion gesture — moves the cursor without a contact event."""
+    async with touch_session(service_provider) as service:
+        await _do_swipe(service, x1, y1, x2, y2, steps, duration, sid=_parse_int_auto(service_id))
+
+
+@universal_hid_service_cli.command("session")
+@async_command
+async def core_device_universal_hid_service_session(
+    service_provider: RSDServiceProviderDep,
+    script: Annotated[
+        Optional[Path],
+        typer.Option("--script", help="Read gesture lines from this file (default: stdin)"),
+    ] = None,
+    gesture_service_id: Annotated[
+        str,
+        typer.Option("--gesture-service-id", help="Gesture surface _ServiceID (for `move`/`swipe`)"),
+    ] = str(DIGITIZER_SURFACE_TOUCHSCREEN_GESTURE),
+    touch_service_id: Annotated[
+        str,
+        typer.Option("--touch-service-id", help="mainTouchscreen _ServiceID (for `tap`/`drag`)"),
+    ] = str(DIGITIZER_SURFACE_MAIN_TOUCHSCREEN),
+) -> None:
+    """Run a sequence of gestures inside ONE auth-gated media stream.
+
+    Avoids stream-churn timeouts when firing many tap/drag calls back-to-back —
+    the stream is opened once for the whole batch.
+
+    Recognised commands (whitespace-separated; ``#`` and blank lines ignored)::
+
+        tap   X Y                              # CONTACT + RELEASE
+        drag  X1 Y1 X2 Y2 [STEPS [DURATION]]   # continuous contact with motion
+        swipe X1 Y1 X2 Y2 [STEPS [DURATION]]   # pure pointer motion (no contact)
+        move  X Y                              # one gesture-surface sample
+        sleep SECONDS
+
+    Example::
+
+        printf 'tap 30000 40000\\nsleep 0.3\\ndrag 30000 8000 30000 60000\\n' | \\
+            pymobiledevice3 developer core-device universal-hid-service session
+    """
+    gsid = _parse_int_auto(gesture_service_id)
+    tsid = _parse_int_auto(touch_service_id)
+    lines = (script.read_text() if script else sys.stdin.read()).splitlines()
+    async with touch_session(service_provider) as service:
+        for lineno, raw in enumerate(lines, 1):
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            parts = line.split()
+            op, args = parts[0], parts[1:]
+            try:
+                if op == "tap" and len(args) == 2:
+                    await _do_tap(service, int(args[0]), int(args[1]), tsid=tsid)
+                elif op == "move" and len(args) == 2:
+                    await service.send_digitizer(int(args[0]), int(args[1]), service_id=gsid)
+                elif op == "swipe" and 4 <= len(args) <= 6:
+                    s = int(args[4]) if len(args) >= 5 else 30
+                    d = float(args[5]) if len(args) >= 6 else 0.3
+                    await _do_swipe(service, int(args[0]), int(args[1]), int(args[2]), int(args[3]), s, d, sid=gsid)
+                elif op == "drag" and 4 <= len(args) <= 6:
+                    s = int(args[4]) if len(args) >= 5 else 30
+                    d = float(args[5]) if len(args) >= 6 else 0.6
+                    await _do_drag(service, int(args[0]), int(args[1]), int(args[2]), int(args[3]), s, d, tsid=tsid)
+                elif op == "sleep" and len(args) == 1:
+                    await asyncio.sleep(float(args[0]))
+                else:
+                    raise ValueError(f"unrecognised command or wrong arg count: {line!r}")
+            except Exception as e:
+                raise typer.BadParameter(f"line {lineno}: {e}") from e
+
+
 # ---------------------------------------------------------------------------
 # Display service — com.apple.coredevice.displayservice
 # ---------------------------------------------------------------------------

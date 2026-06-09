@@ -173,6 +173,35 @@ pymobiledevice3 developer core-device universal-hid-service list-connected
 # surface-specific; capture devicectl traffic with misc/remotexpc_sniffer.py
 # to learn it for a new surface.
 pymobiledevice3 developer core-device universal-hid-service send-report 1281 <hex>
+
+# --- touch gestures (auto-managed media stream — see hid_service.py) ---
+#
+# X/Y are UInt16 (0..65535) normalised across the device's screen, so
+# (0, 0) is top-left and (65535, 65535) is bottom-right regardless of the
+# device's pixel resolution. Useful anchors regardless of model:
+#   center                (32768, 32768)
+#   top-center            (32768,  5000)
+#   bottom-center         (32768, 60000)
+#   home-indicator area   (32768, 62000+)
+#
+# To convert from pixel coordinates, query the device's pixel size first:
+#   pymobiledevice3 developer core-device get-display-info
+#       # → displays[0].currentMode.size = [828, 1792] for an iPhone 11, etc.
+# then scale linearly: hid_x = round(px_x * 65535 / px_w).
+
+# Tap at the screen center
+pymobiledevice3 developer core-device universal-hid-service tap -- 32768 32768
+
+# Drag from near the top to near the bottom (e.g. pull-down)
+pymobiledevice3 developer core-device universal-hid-service drag -- 32768 5000 32768 60000
+
+# Pure pointer-motion gesture (moves cursor without registering a contact)
+pymobiledevice3 developer core-device universal-hid-service swipe -- 100 400 700 400
+
+# Batched gestures inside ONE media stream — reads stdin / a script file.
+# Recognised lines: tap, drag, swipe, move, sleep (and # comments).
+printf 'tap 32768 32768\nsleep 0.3\ndrag 32768 5000 32768 60000\n' | \
+    pymobiledevice3 developer core-device universal-hid-service session
 ```
 
 ### Screen streaming (HEVC video)
