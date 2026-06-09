@@ -77,6 +77,19 @@ class RemoteXPCConnection:
             await self.close()
             raise
 
+    @property
+    def local_address(self) -> tuple[str, int]:
+        """``(host, port)`` of the local end of the connection to the device.
+
+        Useful when sending the device a callback endpoint that lives on this
+        host's tunnel interface — e.g. an RTP receiver port in
+        ``mediastreamstart``. Only valid while the connection is open.
+        """
+        if self._writer is None:
+            raise RuntimeError("connection is not open")
+        sockname = self._writer.get_extra_info("sockname")
+        return sockname[0], sockname[1]
+
     async def close(self) -> None:
         self._pending_window_updates.clear()
         if self._file_chunk_reader_task is not None:
@@ -99,6 +112,7 @@ class RemoteXPCConnection:
         )
         self._writer.write(DataFrame(stream_id=ROOT_CHANNEL, data=xpc_wrapper).serialize())
         await self._writer.drain()
+        self.next_message_id[ROOT_CHANNEL] += 1
 
     async def iter_file_chunks(self, total_size: int, file_idx: int = 0) -> AsyncIterable[bytes]:
         stream_id = (file_idx + 1) * 2
@@ -198,13 +212,26 @@ class RemoteXPCConnection:
         await self._send_frame(WindowUpdateFrame(stream_id=0, window_increment=DEFAULT_WIN_SIZE_INCR))
         await self._send_frame(HeadersFrame(stream_id=ROOT_CHANNEL, flags=["END_HEADERS"]))
 
-        # send first actual requests
+        # send first actual requests — frame order matches what devicectl emits:
+        #   Headers#1, Data#1(init), Headers#3, Data#1(term=0x0201), Data#3(INIT_HANDSHAKE).
+        # The receiving daemon validates frame ordering at the RemoteServiceDiscovery
+        # layer and rejects with "Invalid or missing remote device connection version
+        # flags" + xpc_connection_cancel() if Headers#3 isn't seen before Data#1's term.
         await self.send_request({})
+        await self._send_frame(HeadersFrame(stream_id=REPLY_CHANNEL, flags=["END_HEADERS"]))
         await self._send_frame(
             DataFrame(stream_id=ROOT_CHANNEL, data=XpcWrapper.build({"size": 0, "flags": 0x0201, "payload": None}))
         )
-        self.next_message_id[ROOT_CHANNEL] += 1
-        await self._open_channel(REPLY_CHANNEL, XpcFlags.INIT_HANDSHAKE)
+        await self._send_frame(
+            DataFrame(
+                stream_id=REPLY_CHANNEL,
+                data=XpcWrapper.build({
+                    "size": 0,
+                    "flags": XpcFlags.ALWAYS_SET | XpcFlags.INIT_HANDSHAKE,
+                    "payload": None,
+                }),
+            )
+        )
         self.next_message_id[REPLY_CHANNEL] += 1
 
         settings_frame = await asyncio.wait_for(self._receive_frame(), FIRST_REPLY_TIMEOUT)
