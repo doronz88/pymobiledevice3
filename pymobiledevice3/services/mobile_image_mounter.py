@@ -28,7 +28,7 @@ from pymobiledevice3.services.lockdown_service import LockdownService
 
 logger = logging.getLogger(__name__)
 
-LATEST_DDI_BUILD_ID = "17E5179g"
+LATEST_DDI_BUILD_ID = "27A5194q"
 
 
 class MobileImageMounterService(LockdownService):
