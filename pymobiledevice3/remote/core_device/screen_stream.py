@@ -14,6 +14,7 @@ Layering::
 
 import asyncio
 import contextlib
+import json
 import logging
 import socket
 import uuid
@@ -21,7 +22,29 @@ from pathlib import Path
 from typing import Optional
 
 from pymobiledevice3.remote.core_device.display_service import DisplayService
+from pymobiledevice3.remote.core_device.hid_service import (
+    DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
+    HID_BUTTON_STATE_DOWN,
+    HID_BUTTON_STATE_UP,
+    TOUCHSCREEN_STATE_CONTACT,
+    TOUCHSCREEN_STATE_RELEASE,
+    IndigoHIDService,
+    UniversalHIDServiceService,
+)
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+
+# Named iOS hardware buttons → (usage_page, usage_code). Mirrors the table in
+# cli/developer/core_device.py so the browser viewer can offer a friendly UI.
+_NAMED_BUTTONS: dict[str, tuple[int, int]] = {
+    "home": (0x0C, 0x40),
+    "power": (0x0C, 0x30),
+    "lock": (0x0C, 0x30),
+    "sleep": (0x0C, 0x32),
+    "volume-up": (0x0C, 0xE9),
+    "volume-down": (0x0C, 0xEA),
+    "mute": (0x0C, 0xE2),
+    "siri": (0x0C, 0xCF),
+}
 
 logger = logging.getLogger(__name__)
 
@@ -133,14 +156,31 @@ VIEWER_HTML = rb"""<!doctype html>
 <html><head><meta charset="utf-8"><title>iPhone screen</title>
 <style>
  body{margin:0;background:#111;color:#ccc;font-family:system-ui;
-      display:flex;align-items:center;justify-content:center;min-height:100vh}
- canvas{max-width:100vw;max-height:100vh;image-rendering:auto}
+      display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+      min-height:100vh;gap:8px;padding:8px;box-sizing:border-box}
+ canvas{max-width:100vw;max-height:calc(100vh - 80px);image-rendering:auto;
+        touch-action:none;cursor:crosshair;background:#000}
+ #buttons{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+ #buttons button{background:#222;color:#ddd;border:1px solid #444;border-radius:6px;
+                 padding:8px 14px;font-size:13px;cursor:pointer}
+ #buttons button:hover{background:#333}
+ #buttons button:active{background:#4a4a4a}
  #status{position:fixed;top:8px;left:12px;font-size:12px;opacity:.8;
          background:#0008;padding:4px 8px;border-radius:4px;white-space:pre;
-         max-width:90vw;overflow:hidden}
+         max-width:90vw;overflow:hidden;pointer-events:none}
 </style></head>
 <body>
 <canvas id="c"></canvas>
+<div id="buttons">
+ <button data-btn="home">Home</button>
+ <button data-btn="power">Power</button>
+ <button data-btn="lock">Lock</button>
+ <button data-btn="sleep">Sleep</button>
+ <button data-btn="volume-up">Vol +</button>
+ <button data-btn="volume-down">Vol -</button>
+ <button data-btn="mute">Mute</button>
+ <button data-btn="siri">Siri</button>
+</div>
 <div id="status">connecting...</div>
 <script>
 const canvas = document.getElementById('c');
@@ -157,6 +197,64 @@ function hex(u8, n=24) {
     for (let i = 0; i < Math.min(u8.length, n); i++) s += u8[i].toString(16).padStart(2,'0');
     return s;
 }
+
+// ----- input: pointer -> /touch, hardware-buttons -> /button -----
+// HID coords are UInt16 (0..65535) normalised across the device screen.
+// We project from the canvas's CSS bounding box, NOT canvas.width/.height,
+// because the canvas is auto-scaled by max-width/max-height.
+function touchCoords(e) {
+    const rect = canvas.getBoundingClientRect();
+    const xn = (e.clientX - rect.left) / rect.width;
+    const yn = (e.clientY - rect.top) / rect.height;
+    return {
+        x: Math.max(0, Math.min(65535, Math.round(xn * 65535))),
+        y: Math.max(0, Math.min(65535, Math.round(yn * 65535))),
+    };
+}
+
+async function postJson(path, payload) {
+    try {
+        await fetch(path, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+            keepalive: true,
+        });
+    } catch (e) { log(path + ' err: ' + e.message); }
+}
+
+let activePointer = null;
+canvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;   // primary button only
+    e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
+    activePointer = e.pointerId;
+    const c = touchCoords(e);
+    postJson('/touch', {type: 'contact', x: c.x, y: c.y});
+});
+canvas.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== activePointer) return;
+    e.preventDefault();
+    const c = touchCoords(e);
+    postJson('/touch', {type: 'contact', x: c.x, y: c.y});
+});
+function endContact(e) {
+    if (e.pointerId !== activePointer) return;
+    e.preventDefault();
+    activePointer = null;
+    const c = touchCoords(e);
+    postJson('/touch', {type: 'release', x: c.x, y: c.y});
+}
+canvas.addEventListener('pointerup', endContact);
+canvas.addEventListener('pointercancel', endContact);
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+document.querySelectorAll('#buttons button').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const name = btn.dataset.btn;
+        postJson('/button', {name, state: 'press'}).then(() => log('button: ' + name));
+    });
+});
 
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));
@@ -340,6 +438,13 @@ class ScreenStreamServer:
         self._stream_lock = asyncio.Lock()
         self._stream_dirty = True  # True → next request must restart the stream
 
+        # Lazy-opened HID services for browser-driven touch / buttons. The
+        # auth gate is already held open by the active media stream above,
+        # so we don't need :func:`hid_service.touch_session`.
+        self._uhs: Optional[UniversalHIDServiceService] = None
+        self._indigo: Optional[IndigoHIDService] = None
+        self._hid_lock = asyncio.Lock()
+
     # ----- per-session UDP receiver -----------------------------------------
     async def _udp_recv_and_depacketize(self, sock: socket.socket) -> None:
         sock.setblocking(False)
@@ -464,18 +569,146 @@ class ScreenStreamServer:
             self._active_recv_task = asyncio.create_task(self._udp_recv_and_depacketize(sock))
             self._stream_dirty = False
 
+    # ----- HID (touch + buttons) -------------------------------------------
+    async def _ensure_hid(self) -> None:
+        """Lazily open the HID services on first input event."""
+        async with self._hid_lock:
+            if self._uhs is None:
+                uhs = UniversalHIDServiceService(self._rsd)
+                await uhs.connect()
+                self._uhs = uhs
+            if self._indigo is None:
+                indigo = IndigoHIDService(self._rsd)
+                await indigo.connect()
+                self._indigo = indigo
+
+    async def _stop_hid(self) -> None:
+        async with self._hid_lock:
+            if self._uhs is not None:
+                with contextlib.suppress(Exception):
+                    await self._uhs.close()
+                self._uhs = None
+            if self._indigo is not None:
+                with contextlib.suppress(Exception):
+                    await self._indigo.close()
+                self._indigo = None
+
+    async def _handle_touch(self, body: bytes) -> tuple[int, bytes]:
+        """POST /touch — JSON ``{type, x, y}``.
+
+        ``type`` is one of:
+          - ``"contact"``  → CONTACT (in-contact sample at x, y)
+          - ``"release"``  → RELEASE (lift the touch at x, y)
+          - ``"tap"``      → CONTACT + brief sleep + RELEASE at the same point
+
+        Drags are just a stream of ``"contact"`` updates ending in ``"release"``
+        — the browser fires them straight from pointerdown / pointermove /
+        pointerup, so the device sees the same shape as a real Xcode drag.
+        """
+        try:
+            data = json.loads(body)
+            op = str(data["type"])
+            x = int(data["x"])
+            y = int(data["y"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return 400, f"invalid touch request: {exc}".encode()
+        await self._ensure_hid()
+        assert self._uhs is not None
+        if op == "contact":
+            await self._uhs.send_touchscreen(
+                TOUCHSCREEN_STATE_CONTACT, x, y, service_id=DIGITIZER_SURFACE_MAIN_TOUCHSCREEN
+            )
+        elif op == "release":
+            await self._uhs.send_touchscreen(
+                TOUCHSCREEN_STATE_RELEASE, x, y, service_id=DIGITIZER_SURFACE_MAIN_TOUCHSCREEN
+            )
+        elif op == "tap":
+            await self._uhs.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y)
+            await asyncio.sleep(0.05)
+            await self._uhs.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x, y)
+        else:
+            return 400, f"unknown touch type {op!r}".encode()
+        return 200, b"ok"
+
+    async def _handle_button(self, body: bytes) -> tuple[int, bytes]:
+        """POST /button — JSON ``{name, state}``.
+
+        ``name`` is one of the keys in :data:`_NAMED_BUTTONS` (home, power,
+        lock, sleep, volume-up, volume-down, mute, siri). ``state`` is one of
+        ``"press"`` (default — fires down then up), ``"down"``, ``"up"``.
+        """
+        try:
+            data = json.loads(body)
+            name = str(data["name"])
+            state = str(data.get("state", "press"))
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return 400, f"invalid button request: {exc}".encode()
+        if name not in _NAMED_BUTTONS:
+            return 400, f"unknown button {name!r}".encode()
+        usage_page, usage_code = _NAMED_BUTTONS[name]
+        await self._ensure_hid()
+        assert self._indigo is not None
+        if state == "press":
+            await self._indigo.send_button(usage_page, usage_code, HID_BUTTON_STATE_DOWN)
+            await self._indigo.send_button(usage_page, usage_code, HID_BUTTON_STATE_UP)
+        elif state == "down":
+            await self._indigo.send_button(usage_page, usage_code, HID_BUTTON_STATE_DOWN)
+        elif state == "up":
+            await self._indigo.send_button(usage_page, usage_code, HID_BUTTON_STATE_UP)
+        else:
+            return 400, f"unknown button state {state!r}".encode()
+        return 200, b"ok"
+
+    @staticmethod
+    async def _read_body(reader: asyncio.StreamReader, headers: dict[str, str]) -> bytes:
+        try:
+            length = int(headers.get("content-length", "0"))
+        except ValueError:
+            length = 0
+        if length <= 0:
+            return b""
+        # Cap the body to a sane size — touch/button POSTs are tens of bytes.
+        return await reader.readexactly(min(length, 65536))
+
     # ----- HTTP request handler ---------------------------------------------
     async def _handle_http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         request_line = await reader.readline()
         if not request_line:
             writer.close()
             return
+        headers: dict[str, str] = {}
         while True:
             line = await reader.readline()
             if line in (b"\r\n", b""):
                 break
+            try:
+                name, _, value = line.decode("latin-1").partition(":")
+                headers[name.strip().lower()] = value.strip()
+            except UnicodeDecodeError:
+                pass
         parts = request_line.split()
+        method = parts[0].decode() if parts else "GET"
         path = parts[1].decode() if len(parts) >= 2 else "/"
+
+        if method == "POST" and path in ("/touch", "/button"):
+            body = await self._read_body(reader, headers)
+            try:
+                handler = self._handle_touch if path == "/touch" else self._handle_button
+                code, msg = await handler(body)
+            except Exception as exc:
+                logger.exception("input handler crashed")
+                code, msg = 500, f"internal error: {exc}".encode()
+            status_line = {200: b"200 OK", 400: b"400 Bad Request", 500: b"500 Internal"}.get(code, b"500 Internal")
+            writer.write(
+                b"HTTP/1.1 " + status_line + b"\r\n"
+                b"Content-Type: text/plain\r\n"
+                b"Content-Length: " + str(len(msg)).encode() + b"\r\n"
+                b"Connection: close\r\n\r\n" + msg
+            )
+            await writer.drain()
+            writer.close()
+            return
+
         if path in ("/", "/index.html"):
             writer.write(
                 b"HTTP/1.1 200 OK\r\n"
@@ -552,6 +785,7 @@ class ScreenStreamServer:
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
+            await self._stop_hid()
             async with self._stream_lock:
                 await self._stop_active_stream()
             http_server.close()
