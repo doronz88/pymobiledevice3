@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import posixpath
 import time
@@ -14,6 +15,13 @@ from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
 from pymobiledevice3.remote.core_device.diagnostics_service import DiagnosticsServiceService
 from pymobiledevice3.remote.core_device.file_service import APPLE_DOMAIN_DICT, FileServiceService
+from pymobiledevice3.remote.core_device.hid_service import (
+    HID_BUTTON_STATE_CANCELED,
+    HID_BUTTON_STATE_DOWN,
+    HID_BUTTON_STATE_UP,
+    IndigoHIDService,
+    UniversalHIDServiceService,
+)
 from pymobiledevice3.remote.core_device.screen_capture_service import ScreenCaptureService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.crash_reports import CrashReportsManager
@@ -329,3 +337,133 @@ async def core_device_screen_capture_screenshot(
 ) -> None:
     """Capture a PNG screenshot of the device's screen."""
     await core_device_screen_capture_screenshot_task(service_provider, output, display_unique_id)
+
+
+# ---------------------------------------------------------------------------
+# HID (Indigo) — com.apple.coredevice.hid.indigo
+# ---------------------------------------------------------------------------
+hid_cli = InjectingTyper(
+    name="hid",
+    help="Send HID button events (com.apple.coredevice.hid.indigo).",
+    no_args_is_help=True,
+)
+cli.add_typer(hid_cli)
+
+
+def _parse_int_auto(value: str) -> int:
+    """Parse an int that may be decimal, ``0xHEX``, ``0o755``, ``0b1010``, etc."""
+    return int(value, 0)
+
+
+_BUTTON_STATE_CHOICES = {
+    "down": HID_BUTTON_STATE_DOWN,
+    "up": HID_BUTTON_STATE_UP,
+    "canceled": HID_BUTTON_STATE_CANCELED,
+}
+
+# Named iOS hardware buttons → (usage_page, usage_code).
+# Most physical iOS buttons live on the Consumer page (0x0C).
+_NAMED_BUTTONS: dict[str, tuple[int, int]] = {
+    "home": (0x0C, 0x40),  # Consumer / Menu
+    "power": (0x0C, 0x30),  # Consumer / Power
+    "lock": (0x0C, 0x30),  # alias for power
+    "sleep": (0x0C, 0x32),  # Consumer / Sleep
+    "volume-up": (0x0C, 0xE9),  # Consumer / Volume Increment
+    "volume-down": (0x0C, 0xEA),  # Consumer / Volume Decrement
+    "mute": (0x0C, 0xE2),  # Consumer / Mute
+    "siri": (0x0C, 0xCF),  # Consumer / Voice Command
+}
+
+
+async def _send_button_press(service: IndigoHIDService, usage_page: int, usage_code: int, state: str) -> None:
+    """Dispatch a single button state (down/up/canceled), or down+up for ``press``."""
+    if state == "press":
+        await service.send_button(usage_page, usage_code, HID_BUTTON_STATE_DOWN)
+        await service.send_button(usage_page, usage_code, HID_BUTTON_STATE_UP)
+    else:
+        await service.send_button(usage_page, usage_code, _BUTTON_STATE_CHOICES[state])
+    # dtuhidd dispatches messages async; if we close immediately the FIN can arrive
+    # before the last enqueued body gets delivered to the handler and the message is
+    # dropped during channel cancel.
+    await asyncio.sleep(0.1)
+
+
+@hid_cli.command("button")
+@async_command
+async def core_device_hid_button(
+    service_provider: RSDServiceProviderDep,
+    name: Annotated[
+        str,
+        typer.Argument(
+            click_type=click.Choice(list(_NAMED_BUTTONS)),
+            help="Named hardware button (home, power, volume-up, ...)",
+        ),
+    ],
+    state: Annotated[
+        str,
+        typer.Argument(
+            click_type=click.Choice(["press", *_BUTTON_STATE_CHOICES]),
+            help="press = send down+up; otherwise send a single state event",
+        ),
+    ] = "press",
+) -> None:
+    """Press a named iOS hardware button (home / power / volume-up / etc.)."""
+    usage_page, usage_code = _NAMED_BUTTONS[name]
+    async with IndigoHIDService(service_provider) as service:
+        await _send_button_press(service, usage_page, usage_code, state)
+
+
+@hid_cli.command("raw-button")
+@async_command
+async def core_device_hid_raw_button(
+    service_provider: RSDServiceProviderDep,
+    usage_page: Annotated[str, typer.Argument(help="HID usage page (decimal or 0xHEX), e.g. 0x0C for Consumer")],
+    usage_code: Annotated[str, typer.Argument(help="HID usage code (decimal or 0xHEX)")],
+    state: Annotated[
+        str,
+        typer.Argument(
+            click_type=click.Choice(["press", *_BUTTON_STATE_CHOICES]),
+            help="press = send down+up; otherwise send a single state event",
+        ),
+    ] = "press",
+) -> None:
+    """Send a HID button event by raw usage page/code (for buttons not in the named list)."""
+    async with IndigoHIDService(service_provider) as service:
+        await _send_button_press(service, _parse_int_auto(usage_page), _parse_int_auto(usage_code), state)
+
+
+# ---------------------------------------------------------------------------
+# Universal HID Service — com.apple.coredevice.hid.universalhidservice
+# ---------------------------------------------------------------------------
+universal_hid_service_cli = InjectingTyper(
+    name="universal-hid-service",
+    help="Register/inspect virtual HID services (com.apple.coredevice.hid.universalhidservice).",
+    no_args_is_help=True,
+)
+cli.add_typer(universal_hid_service_cli)
+
+
+@universal_hid_service_cli.command("list-connected")
+@async_command
+async def core_device_universal_hid_service_list(service_provider: RSDServiceProviderDep) -> None:
+    """List currently connected virtual HID services."""
+    async with UniversalHIDServiceService(service_provider) as service:
+        print_json(await service.list_connected_services())
+
+
+@universal_hid_service_cli.command("send-report")
+@async_command
+async def core_device_universal_hid_service_send_report(
+    service_provider: RSDServiceProviderDep,
+    service_id: Annotated[str, typer.Argument(help="Target _ServiceID (from list-connected; decimal or 0xHEX)")],
+    report_hex: Annotated[str, typer.Argument(help="Raw HID report bytes as hex (first byte is the report ID)")],
+) -> None:
+    """Send a raw HID report to a connected HID surface.
+
+    Use ``list-connected`` to discover ServiceIDs. Touch goes via 257
+    (mainTouchscreen, true digitizer) or 1281 (touchscreenGesture, trackpad-like
+    pointer). Report bytes are surface-specific — capture devicectl traffic with
+    misc/remotexpc_sniffer.py to learn the layout.
+    """
+    async with UniversalHIDServiceService(service_provider) as service:
+        await service.send_report(_parse_int_auto(service_id), bytes.fromhex(report_hex))

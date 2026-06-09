@@ -152,6 +152,29 @@ See [iOS 17+ tunnels](ios17-tunnels.md) for tunnel setup.
 pymobiledevice3 developer core-device screen-capture screenshot /path/to/screen.png
 ```
 
+### HID input
+
+```shell
+# Press a named hardware button (home, power, lock, sleep, volume-up, volume-down, mute, siri)
+pymobiledevice3 developer core-device hid button home press
+
+# Hold/release a named button (states: down, up, canceled)
+pymobiledevice3 developer core-device hid button volume-up down
+pymobiledevice3 developer core-device hid button volume-up up
+
+# Press by raw HID (usage_page, usage_code) — decimal or 0xHEX
+pymobiledevice3 developer core-device hid raw-button 0x0C 0x40 press
+
+# List the device's registered HID surfaces (each has a _ServiceID).
+# Touch goes via 257 (mainTouchscreen) or 1281 (touchscreenGesture).
+pymobiledevice3 developer core-device universal-hid-service list-connected
+
+# Deliver a raw HID report to a connected surface. The layout is
+# surface-specific; capture devicectl traffic with misc/remotexpc_sniffer.py
+# to learn it for a new surface.
+pymobiledevice3 developer core-device universal-hid-service send-report 1281 <hex>
+```
+
 ## WebInspector Automation
 
 ```shell
