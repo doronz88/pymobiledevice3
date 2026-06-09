@@ -507,6 +507,14 @@ class ScreenStreamServer:
         self._indigo: Optional[IndigoHIDService] = None
         self._hid_lock = asyncio.Lock()
 
+        # HID input queue. We accept /touch and /button POSTs into this
+        # queue and return 200 immediately, then a single worker task
+        # dispatches them via the XPC connection. This decouples HTTP
+        # handling latency from device-write latency so a touch flood
+        # can't starve the stream-broadcast loop.
+        self._hid_queue: asyncio.Queue[tuple[str, bytes]] = asyncio.Queue()
+        self._hid_worker_task: Optional[asyncio.Task] = None
+
         # Stall-detection bookkeeping. Updated whenever an AU is forwarded;
         # the watchdog restarts the stream (forcing a fresh IDR) if no AU
         # has progressed within :data:`_STALL_RESTART_SECS` while we have
@@ -842,7 +850,7 @@ class ScreenStreamServer:
 
     # ----- HID (touch + buttons) -------------------------------------------
     async def _ensure_hid(self) -> None:
-        """Lazily open the HID services on first input event."""
+        """Lazily open the HID services + worker on first input event."""
         async with self._hid_lock:
             if self._uhs is None:
                 uhs = UniversalHIDServiceService(self._rsd)
@@ -852,8 +860,20 @@ class ScreenStreamServer:
                 indigo = IndigoHIDService(self._rsd)
                 await indigo.connect()
                 self._indigo = indigo
+            if self._hid_worker_task is None or self._hid_worker_task.done():
+                self._hid_worker_task = asyncio.create_task(self._hid_worker())
 
     async def _stop_hid(self) -> None:
+        task = self._hid_worker_task
+        self._hid_worker_task = None
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+        # Drain any pending requests so a restart starts clean.
+        while not self._hid_queue.empty():
+            with contextlib.suppress(asyncio.QueueEmpty):
+                self._hid_queue.get_nowait()
         async with self._hid_lock:
             if self._uhs is not None:
                 with contextlib.suppress(Exception):
@@ -863,6 +883,28 @@ class ScreenStreamServer:
                 with contextlib.suppress(Exception):
                     await self._indigo.close()
                 self._indigo = None
+
+    async def _hid_worker(self) -> None:
+        """Single consumer that serially dispatches queued HID requests so
+        order is preserved and HTTP handlers can return 200 immediately.
+        Lazily opens the HID services on the first queued request."""
+        while True:
+            try:
+                path, body = await self._hid_queue.get()
+            except asyncio.CancelledError:
+                return
+            try:
+                # Open the HID services on first need (skips the
+                # lock-and-check fast path inside the existing handlers,
+                # which assert self._uhs / self._indigo is non-None).
+                if self._uhs is None or self._indigo is None:
+                    await self._ensure_hid()
+                handler = self._handle_touch if path == "/touch" else self._handle_button
+                code, msg = await handler(body)
+                if code != 200:
+                    logger.warning("queued %s -> %d %s", path, code, msg.decode("utf-8", "replace"))
+            except Exception:
+                logger.exception("queued HID dispatch failed: %s body=%r", path, body[:200])
 
     async def _handle_touch(self, body: bytes) -> tuple[int, bytes]:
         """POST /touch — JSON ``{type, x, y}``.
@@ -943,44 +985,50 @@ class ScreenStreamServer:
 
     # ----- HTTP request handler ---------------------------------------------
     async def _handle_http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        request_line = await reader.readline()
-        if not request_line:
-            writer.close()
-            return
-        headers: dict[str, str] = {}
+        # POSTs to /touch and /button support keep-alive: one TCP carries
+        # many requests, which is what the browser uses for pointermove.
+        # Everything else (/, /codec, /stream.bin) is one-and-done.
         while True:
-            line = await reader.readline()
-            if line in (b"\r\n", b""):
-                break
-            try:
-                name, _, value = line.decode("latin-1").partition(":")
-                headers[name.strip().lower()] = value.strip()
-            except UnicodeDecodeError:
-                pass
-        parts = request_line.split()
-        method = parts[0].decode() if parts else "GET"
-        path = parts[1].decode() if len(parts) >= 2 else "/"
+            request_line = await reader.readline()
+            if not request_line:
+                writer.close()
+                return
+            headers: dict[str, str] = {}
+            while True:
+                line = await reader.readline()
+                if line in (b"\r\n", b""):
+                    break
+                try:
+                    name, _, value = line.decode("latin-1").partition(":")
+                    headers[name.strip().lower()] = value.strip()
+                except UnicodeDecodeError:
+                    pass
+            parts = request_line.split()
+            method = parts[0].decode() if parts else "GET"
+            path = parts[1].decode() if len(parts) >= 2 else "/"
 
-        if method == "POST" and path in ("/touch", "/button"):
-            body = await self._read_body(reader, headers)
-            try:
-                handler = self._handle_touch if path == "/touch" else self._handle_button
-                code, msg = await handler(body)
-                if code != 200:
-                    logger.warning("%s -> %d %s", path, code, msg.decode("utf-8", "replace"))
-            except Exception as exc:
-                logger.exception("input handler crashed: %s body=%r", path, body[:200])
-                code, msg = 500, f"internal error: {exc}".encode()
-            status_line = {200: b"200 OK", 400: b"400 Bad Request", 500: b"500 Internal"}.get(code, b"500 Internal")
-            writer.write(
-                b"HTTP/1.1 " + status_line + b"\r\n"
-                b"Content-Type: text/plain\r\n"
-                b"Content-Length: " + str(len(msg)).encode() + b"\r\n"
-                b"Connection: close\r\n\r\n" + msg
-            )
-            await writer.drain()
-            writer.close()
-            return
+            if method == "POST" and path in ("/touch", "/button"):
+                body = await self._read_body(reader, headers)
+                # Fire-and-forget: drop into the queue and answer 200 NOW.
+                # The single HID worker will dispatch in order without
+                # blocking the HTTP-server loop or starving the stream
+                # broadcast.
+                self._hid_queue.put_nowait((path, body))
+                keep_alive = headers.get("connection", "").lower() != "close"
+                conn_hdr = b"keep-alive" if keep_alive else b"close"
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Content-Length: 2\r\n"
+                    b"Connection: " + conn_hdr + b"\r\n\r\nok"
+                )
+                await writer.drain()
+                if not keep_alive:
+                    writer.close()
+                    return
+                continue
+            # Anything else falls through to the single-shot handlers below.
+            break
 
         if path in ("/", "/index.html"):
             writer.write(
@@ -1099,6 +1147,9 @@ class ScreenStreamServer:
         """Run the HTTP server until cancelled / Ctrl-C."""
         http_server = await asyncio.start_server(self._handle_http, self._bind, self._http_port)
         watchdog = asyncio.create_task(self._stall_watchdog())
+        # Eagerly start the HID worker so queued /touch requests are
+        # processed even before the device-stream is fully up.
+        self._hid_worker_task = asyncio.create_task(self._hid_worker())
         try:
             logger.info(f"Open http://{self._bind}:{self._http_port}/ in Safari/Chrome. Ctrl-C to stop.")
             await http_server.serve_forever()
