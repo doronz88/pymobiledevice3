@@ -14,6 +14,7 @@ from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
 from pymobiledevice3.remote.core_device.diagnostics_service import DiagnosticsServiceService
+from pymobiledevice3.remote.core_device.display_service import DisplayService
 from pymobiledevice3.remote.core_device.file_service import APPLE_DOMAIN_DICT, FileServiceService
 from pymobiledevice3.remote.core_device.hid_service import (
     HID_BUTTON_STATE_CANCELED,
@@ -23,6 +24,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
     UniversalHIDServiceService,
 )
 from pymobiledevice3.remote.core_device.screen_capture_service import ScreenCaptureService
+from pymobiledevice3.remote.core_device.screen_stream import ScreenStreamServer, capture_rtp_to_file
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.crash_reports import CrashReportsManager
 from pymobiledevice3.utils import try_decode
@@ -467,3 +469,78 @@ async def core_device_universal_hid_service_send_report(
     """
     async with UniversalHIDServiceService(service_provider) as service:
         await service.send_report(_parse_int_auto(service_id), bytes.fromhex(report_hex))
+# ---------------------------------------------------------------------------
+# Display service — com.apple.coredevice.displayservice
+# ---------------------------------------------------------------------------
+display_cli = InjectingTyper(
+    name="display",
+    help="Query media-stream capabilities (com.apple.coredevice.displayservice).",
+    no_args_is_help=True,
+)
+cli.add_typer(display_cli)
+
+
+@display_cli.command("get-media-support-info")
+@async_command
+async def core_device_display_get_media_support_info(service_provider: RSDServiceProviderDep) -> None:
+    """Return the device's supported media-stream features and AVC framework version."""
+    async with DisplayService(service_provider) as service:
+        print_json(await service.get_media_support_info())
+
+
+@display_cli.command("get-media-stream-server-status")
+@async_command
+async def core_device_display_get_media_stream_server_status(service_provider: RSDServiceProviderDep) -> None:
+    """Return the media-stream server's running state and active sessions."""
+    async with DisplayService(service_provider) as service:
+        print_json(await service.get_media_stream_server_status())
+
+
+@display_cli.command("start-video-stream")
+@async_command
+async def core_device_display_start_video_stream(
+    service_provider: RSDServiceProviderDep,
+    output: Annotated[Path, typer.Argument(help="Write received RTP packet bytes to this file")],
+    display_id: Annotated[int, typer.Option("--display-id")] = 1,
+    duration: Annotated[float, typer.Option("--duration", help="Seconds to capture")] = 5.0,
+    receiver_port: Annotated[int, typer.Option("--port")] = 0,
+) -> None:
+    """Capture raw RTP/HEVC packets from a display into a file.
+
+    Each packet is written as ``[4-byte BE length][packet bytes]``. Use
+    ``misc/rtp_dump.py`` to depacketize into an Annex-B ``.h265`` bitstream.
+    """
+    await capture_rtp_to_file(
+        service_provider,
+        output,
+        display_id=display_id,
+        duration=duration,
+        receiver_port=receiver_port,
+    )
+
+
+@display_cli.command("serve-video-stream")
+@async_command
+async def core_device_display_serve_video_stream(
+    service_provider: RSDServiceProviderDep,
+    display_id: Annotated[int, typer.Option("--display-id")] = 1,
+    bind: Annotated[str, typer.Option("--bind", help="Host to bind the webserver on")] = "127.0.0.1",
+    http_port: Annotated[int, typer.Option("--http-port", help="Port for the webserver")] = 8080,
+) -> None:
+    """Serve the device's screen via HTTP — view in any modern browser.
+
+    Pipeline (no external executables):
+
+        device → asyncio UDP receive → RFC 7798 RTP/HEVC depacketize
+               → HTTP chunked stream → browser WebCodecs decoder → canvas
+
+    Open ``http://<bind>:<http_port>/`` in Safari or Chrome (macOS Chrome needs
+    HEVC support — recent versions enable it by default if the OS supports it).
+    """
+    server = ScreenStreamServer(
+        service_provider,
+        bind=bind,
+        http_port=http_port,
+        display_id=display_id,
+    )
+    await server.serve()
