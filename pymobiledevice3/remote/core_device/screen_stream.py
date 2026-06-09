@@ -768,13 +768,18 @@ class ScreenStreamServer:
         async with self._stream_lock:
             if self._active_service is not None and not self._stream_dirty and not force:
                 return
+            had_active_stream = self._active_service is not None
             await self._stop_active_stream()
-            # The new device-side media stream re-publishes its IOHIDService
-            # surfaces under fresh IDs; backboardd re-matches the auth flags
-            # only for surfaces that were attached AFTER the new stream came
-            # up. Drop our HID handles so the next /touch or /button opens
-            # fresh ones against the new context.
-            await self._stop_hid()
+            if had_active_stream:
+                # The new device-side media stream re-publishes its
+                # IOHIDService surfaces under fresh IDs; backboardd
+                # re-matches the auth flags only for surfaces attached
+                # AFTER the new stream is up. Drop our HID handles so the
+                # next /touch or /button opens fresh ones against the new
+                # context. On a *cold* first start we skip this so the
+                # worker we just spawned in serve() isn't killed before it
+                # processes its first request.
+                await self._stop_hid()
             self._init_sequence = None
             self._codec_string = None
             self._saw_first_key = False
@@ -888,23 +893,25 @@ class ScreenStreamServer:
         """Single consumer that serially dispatches queued HID requests so
         order is preserved and HTTP handlers can return 200 immediately.
         Lazily opens the HID services on the first queued request."""
-        while True:
-            try:
+        logger.info("hid worker started")
+        try:
+            while True:
                 path, body = await self._hid_queue.get()
-            except asyncio.CancelledError:
-                return
-            try:
-                # Open the HID services on first need (skips the
-                # lock-and-check fast path inside the existing handlers,
-                # which assert self._uhs / self._indigo is non-None).
-                if self._uhs is None or self._indigo is None:
-                    await self._ensure_hid()
-                handler = self._handle_touch if path == "/touch" else self._handle_button
-                code, msg = await handler(body)
-                if code != 200:
-                    logger.warning("queued %s -> %d %s", path, code, msg.decode("utf-8", "replace"))
-            except Exception:
-                logger.exception("queued HID dispatch failed: %s body=%r", path, body[:200])
+                try:
+                    if self._uhs is None or self._indigo is None:
+                        await self._ensure_hid()
+                    handler = self._handle_touch if path == "/touch" else self._handle_button
+                    code, msg = await handler(body)
+                    if code != 200:
+                        logger.warning("queued %s -> %d %s", path, code, msg.decode("utf-8", "replace"))
+                except Exception:
+                    logger.exception("queued HID dispatch failed: %s body=%r", path, body[:200])
+        except asyncio.CancelledError:
+            logger.info("hid worker cancelled")
+            raise
+        except Exception:
+            logger.exception("hid worker crashed")
+            raise
 
     async def _handle_touch(self, body: bytes) -> tuple[int, bytes]:
         """POST /touch — JSON ``{type, x, y}``.
