@@ -57,10 +57,6 @@ def _varint_field(field: int, value: int) -> bytes:
     return _tag(field, 0) + _varint(value)
 
 
-def _bytes_field(field: int, value: bytes) -> bytes:
-    return _tag(field, 2) + _varint(len(value)) + value
-
-
 def build_remote_endpoint_info(
     model: str,
     os_version: str,
@@ -81,76 +77,55 @@ def build_remote_endpoint_info(
     )
 
 
-def _codec_capability(c1: int, c2: int, c3: int = 50115, c4: int = 0) -> bytes:
-    return _varint_field(1, c1) + _varint_field(2, c2) + _varint_field(3, c3) + _varint_field(4, c4)
-
-
-def _codec_descriptor(payload_type: int, capabilities: list[bytes], features: str, f4: int) -> bytes:
-    body = _varint_field(1, payload_type)
-    for cap in capabilities:
-        body += _bytes_field(2, cap)
-    body += _string_field(3, features)
-    body += _varint_field(4, f4)
-    return body
-
-
-def _bitrate_entry(f1: int, f2: int, f3: int = 0) -> bytes:
-    body = _varint_field(1, f1) + _varint_field(2, f2)
-    if f3:
-        body += _varint_field(3, f3)
-    return body
-
-
 def build_media_blob_video(
     session_id: int,
     decoder_name: str = DEFAULT_DECODER_NAME,
 ) -> bytes:
-    """Build a known-good video mediaBlob protobuf (matches captured Mac→iOS offer).
+    """Build the video mediaBlob protobuf matching Xcode's Mirror offer
+    byte-for-byte, with the session_id varint substituted.
 
-    ``session_id`` is a random uint32 chosen per session.
+    Built from a verbatim capture of Xcode's video ``mediastreamstart`` call.
+    A previous hand-rolled version produced an *almost* identical protobuf
+    that the device accepted, but with subtle differences (bitrate-entry
+    order, codec-capability fields) that flipped ``IsltrpEnabled`` to True
+    in the response -- which enabled Long-Term Reference Pictures and made
+    the stream impossible to decode cleanly mid-session. Copying the bytes
+    verbatim avoids re-introducing such gremlins.
+
+    The 5-byte session_id varint near the start (currently 0xF3 0x97 0xC1
+    0x85 0x0E in the template) is the only per-session value; we replace
+    it. Everything else -- codec descriptors, bitrate-cap entries, the
+    field-13 host identifier -- is copied as-is.
     """
-    video_caps = [
-        _codec_capability(1, 1),
-        _codec_capability(1, 2),
-        _codec_capability(1, 1),
-        _codec_capability(1, 2),
-    ]
-    audio_caps = [_codec_capability(1, 1), _codec_capability(1, 2)]
-    inner = (
-        _varint_field(1, session_id)
-        + _varint_field(2, 0)
-        + _bytes_field(3, _codec_descriptor(123, video_caps, "FLS;SW:1;", 1))
-        + _bytes_field(3, _codec_descriptor(100, audio_caps, "FLS;VRAE:0;SW:1;", 14))
-        + _varint_field(7, 1)
-        + _varint_field(8, 63)
-        + _varint_field(12, 1)
+    _ = decoder_name  # encoded in the template; argument kept for API symmetry
+    template = bytes.fromhex(
+        "080110012a7f088182bae90810001a3f087b120a0801100118c387032000120a"
+        "0801100218c387032000120a0801100118c387032000120a0801100218c38703"
+        "20001a09464c533b53573a313b20011a2e0864120a0801100118c38703200012"
+        "0a0801100218c3870320001a10464c533b565241453a303b53573a313b200e38"
+        "01403f6001320d56696365726f7920312e372e3040004a0908ea1f1000188080"
+        "014a0b080010c0d1e123188080204a0a08001080b489131880604a0508101084"
+        "204a0b08001080dac409188080064a05080410e4324a0b080010809bee021880"
+        "80084a0b08001080c2d72f188080404a0b080010808ece1c188080104a050801"
+        "10ab026880c0dd87d2a0c0e9ed017002800100900101"
     )
-    bitrate_entries = [
-        _bitrate_entry(0, 40000000, 12288),
-        _bitrate_entry(0, 75000000, 524288),
-        _bitrate_entry(4074, 0, 16384),
-        _bitrate_entry(16, 4100),
-        _bitrate_entry(0, 20000000, 98304),
-        _bitrate_entry(0, 6000000, 131072),
-        _bitrate_entry(1, 299),
-        _bitrate_entry(0, 60000000, 262144),
-        _bitrate_entry(4, 6500),
-        _bitrate_entry(0, 100000000, 1048576),
-    ]
-    body = (
-        _varint_field(1, 1)
-        + _varint_field(2, 1)
-        + _bytes_field(5, inner)
-        + _string_field(6, decoder_name)
-        + _varint_field(8, 0)
-    )
-    for entry in bitrate_entries:
-        body += _bytes_field(9, entry)
-    body += _varint_field(13, 17136796984055379968)
-    body += _varint_field(14, 2)
-    body += _varint_field(16, 0)
-    body += _varint_field(18, 1)
-    return body
+    sid_old = bytes.fromhex("8182bae908")  # session_id varint in the template
+    sid_new = _encode_varint(session_id)
+    # The captured varint is 5 bytes; pad ours to match so we don't shift
+    # the rest of the structure. A varint can use redundant continuation
+    # bytes (``0x80``) as long as the encoded value is unchanged.
+    while len(sid_new) < 5:
+        sid_new = sid_new[:-1] + bytes([sid_new[-1] | 0x80]) + b"\x00"
+    if len(sid_new) > 5:
+        session_id &= (1 << 35) - 1
+        sid_new = _encode_varint(session_id)
+        while len(sid_new) < 5:
+            sid_new = sid_new[:-1] + bytes([sid_new[-1] | 0x80]) + b"\x00"
+    return template.replace(sid_old, sid_new, 1)
+
+
+# Alias kept for the in-template session_id substitution loop above.
+_encode_varint = _varint
 
 
 def build_negotiator_offer_video(
@@ -174,7 +149,10 @@ def build_negotiator_offer_video(
     """
     endpoint_info = build_remote_endpoint_info(host_model, host_os_version, host_build)
     media_blob = build_media_blob_video(session_id)
-    compressed_blob = zlib.compress(media_blob)
+    # Match Apple's compression level (9 = best). Default Python level (6)
+    # produces a different byte stream and the device rejects it with
+    # "Invalid Parameter".
+    compressed_blob = zlib.compress(media_blob, level=9)
     return plistlib.dumps(
         {
             "avcMediaStreamOptionRemoteEndpointInfo": endpoint_info,
