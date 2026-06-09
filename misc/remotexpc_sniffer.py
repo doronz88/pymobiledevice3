@@ -1,3 +1,16 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.9"
+# dependencies = [
+#     "click",
+#     "coloredlogs",
+#     "construct",
+#     "hexdump",
+#     "hyperframe",
+#     "pymobiledevice3",
+#     "scapy",
+# ]
+# ///
 import logging
 from pprint import pformat
 from typing import Optional
@@ -14,7 +27,13 @@ from scapy.sendrecv import sniff
 
 from pymobiledevice3.remote.remotexpc import HTTP2_MAGIC
 from pymobiledevice3.remote.tunnel_service import PairingDataComponentTLVBuf
-from pymobiledevice3.remote.xpc_message import XpcWrapper, decode_xpc_object
+from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type, XpcWrapper, decode_xpc_object
+
+# Preserve XPC int subtypes in pformat output — both XpcInt64Type and XpcUInt64Type
+# subclass `int` and otherwise display as plain ints, losing the wire-type distinction
+# (which we need to reproduce the wire format exactly when implementing a client).
+XpcInt64Type.__repr__ = lambda self: f"Int64({int(self)})"
+XpcUInt64Type.__repr__ = lambda self: f"UInt64({int(self)})"
 
 logger = logging.getLogger()
 
@@ -152,6 +171,7 @@ class RemoteXPCSniffer:
             return
 
         logger.info(f"As Python Object (#{frame.stream_id}): {pformat(xpc_message)}")
+        logger.info(f"Raw XPC frame (#{frame.stream_id}) {len(frame.data)} bytes:\n{frame.data.hex()}")
 
         # print `pairingData` if exists, since it contains an inner struct
         if "value" not in xpc_message:
