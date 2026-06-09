@@ -273,7 +273,9 @@ async function run() {
     log('isConfigSupported: ' + JSON.stringify(support));
     if (!support.supported) { log('FAIL: codec not supported'); return; }
 
-    const decoder = new VideoDecoder({
+    let decodeErrCount = 0;
+    let needsResync = false;     // skip deltas until we see the next key after an error
+    const buildDecoder = () => new VideoDecoder({
         output: (frame) => {
             if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
                 canvas.width = frame.displayWidth;
@@ -284,8 +286,16 @@ async function run() {
             frame.close();
             frameCount++;
         },
-        error: (e) => { log('error cb: ' + e.message); },
+        // Decoder errors propagate asynchronously via this callback. After one,
+        // the decoder transitions to 'closed' -- we re-create it and wait for
+        // the next keyframe before feeding it again.
+        error: (e) => {
+            decodeErrCount++;
+            log('decode err #' + decodeErrCount + ': ' + e.message);
+            needsResync = true;
+        },
     });
+    let decoder = buildDecoder();
     decoder.configure({ codec });
     log('state after configure: ' + decoder.state);
 
@@ -309,12 +319,22 @@ async function run() {
             buf = buf.subarray(4 + len);
             if (type === 0) {
                 gotKey = true;
-                log('key AU #' + sentCount + ' len=' + data.length + ' head=' + hex(data));
+                if (needsResync) {
+                    // Recover after a decoder error: rebuild and reconfigure.
+                    decoder = buildDecoder();
+                    decoder.configure({ codec });
+                    needsResync = false;
+                    log('resynced @ key after ' + decodeErrCount + ' decode err(s)');
+                }
             }
             if (!gotKey) continue;
+            if (needsResync) continue;       // hold deltas until the next key arrives
             if (decoder.state !== 'configured') {
-                log('decoder ' + decoder.state + ' after ' + sentCount + ' chunks');
-                return;
+                log('decoder ' + decoder.state + ' @' + sentCount + ' - rebuilding');
+                decoder = buildDecoder();
+                decoder.configure({ codec });
+                needsResync = true;          // wait for next key before feeding again
+                continue;
             }
             try {
                 decoder.decode(new EncodedVideoChunk({
@@ -325,8 +345,9 @@ async function run() {
                 timestamp += 16666;
                 sentCount++;
             } catch (e) {
+                // Synchronous throw (rare - usually means decoder state mismatch).
                 log('sync decode err @' + sentCount + ': ' + e.message);
-                return;
+                needsResync = true;
             }
         }
     }
@@ -394,6 +415,33 @@ async def capture_rtp_to_file(
 # ---------------------------------------------------------------------------
 # HTTP webserver that decodes in-browser via WebCodecs
 # ---------------------------------------------------------------------------
+class _SubState:
+    """Per-subscriber broadcast state — set ``needs_key`` after a queue drop
+    so we don't feed the decoder a delta without its reference keyframe.
+    """
+
+    __slots__ = ("needs_key",)
+
+    def __init__(self) -> None:
+        self.needs_key = False
+
+
+# Watchdog tuning. We learned the hard way that restarts are expensive --
+# they churn the device's coredeviced and, if fired too frequently, wedge it
+# into a state where new RemoteXPC handshakes time out and only a reboot
+# recovers. So we err on the side of patience:
+#
+# - ``_STALL_RESTART_SECS``: only restart after a sustained gap, not a blip.
+# - ``_STALL_RESTART_COOLDOWN_SECS``: long enough that legitimate idles
+#   (locked device, no on-screen activity) don't loop us into a hot restart.
+# - ``_MAX_STALL_RESTARTS``: an absolute backstop -- if this many restarts
+#   in a row don't fix things, the device daemon is wedged and another
+#   restart will just make it worse. Bail and require a manual page reload.
+_STALL_RESTART_SECS = 5.0
+_STALL_RESTART_COOLDOWN_SECS = 15.0
+_MAX_STALL_RESTARTS = 3
+
+
 class ScreenStreamServer:
     """Pure-stdlib HTTP server that broadcasts the device's screen stream to
     browsers using WebCodecs for in-browser HEVC decode.
@@ -424,7 +472,10 @@ class ScreenStreamServer:
 
         # Broadcast state — each subscriber gets framed access units written as:
         #   [4-byte BE length] [1-byte type: 0=key, 1=delta] [Annex-B HEVC bytes]
-        self._subscribers: set[asyncio.Queue[bytes]] = set()
+        # A subscriber that falls behind has its queue cleared and its
+        # ``needs_key`` flag set; we then hold further frames until the next
+        # keyframe arrives so the decoder never sees a delta without a key.
+        self._subscribers: dict[asyncio.Queue[bytes], _SubState] = {}
         self._init_sequence: Optional[bytes] = None
         self._codec_string: Optional[str] = None
         self._saw_first_key = False
@@ -445,6 +496,14 @@ class ScreenStreamServer:
         self._indigo: Optional[IndigoHIDService] = None
         self._hid_lock = asyncio.Lock()
 
+        # Stall-detection bookkeeping. Updated whenever an AU is forwarded;
+        # the watchdog restarts the stream (forcing a fresh IDR) if no AU
+        # has progressed within :data:`_STALL_RESTART_SECS` while we have
+        # at least one subscriber attached.
+        self._last_good_au_t: float = 0.0
+        self._last_restart_t: float = 0.0
+        self._consecutive_restarts: int = 0
+
     # ----- per-session UDP receiver -----------------------------------------
     async def _udp_recv_and_depacketize(self, sock: socket.socket) -> None:
         sock.setblocking(False)
@@ -453,6 +512,30 @@ class ScreenStreamServer:
         current_au: list[bytes] = []
         au_is_key = False
         nals: list[bytes] = []
+        # Track RTP sequence numbers and drop the entire AU on any gap. We
+        # learned the hard way that Apple's VideoToolbox is lenient about
+        # missing slices — it renders the partial frame as a visible artifact
+        # rather than throwing, so the browser-side resync never fires and
+        # the corruption propagates through every subsequent delta until the
+        # encoder happens to send a fresh IDR (which, on a busy stream, may
+        # never happen).
+        #
+        # Dropping AUs means a brief picture freeze on each loss, recovered
+        # at the encoder's next IDR. To bound the freeze when the encoder
+        # is slow to emit a fresh key (or stops entirely), the dispatch loop
+        # also restarts the whole media stream once we've held the picture
+        # for more than ``_STALL_RESTART_SECS`` — see ``_stall_watchdog``.
+        last_seq: Optional[int] = None
+        au_corrupt = False
+        # Stats for diagnosing the corruption pattern. Sampled into the log
+        # every ~5 s — if forward_gaps >> reorders, it's true UDP loss; if
+        # they're comparable, the QUIC carrier is reordering packets and we
+        # need a small jitter buffer to recover them.
+        stats_packets = 0
+        stats_forward_gaps = 0
+        stats_reorders = 0
+        stats_corrupt_aus = 0
+        stats_last_log = asyncio.get_running_loop().time()
         while True:
             try:
                 data = await loop.sock_recv(sock, 65535)
@@ -474,6 +557,47 @@ class ScreenStreamServer:
                 header_len += 4 + ext_len * 4
             payload = data[header_len:]
 
+            # Any RTP gap → discard the in-flight FU buffer (don't stitch
+            # non-contiguous payloads into a single NAL) AND mark the whole
+            # AU corrupt so we drop it at the next marker.
+            seq = int.from_bytes(data[2:4], "big")
+            stats_packets += 1
+            if last_seq is not None and seq != ((last_seq + 1) & 0xFFFF):
+                forward = ((seq - last_seq) & 0xFFFF) < 0x8000  # heuristic for "ahead"
+                if forward:
+                    stats_forward_gaps += 1
+                else:
+                    stats_reorders += 1
+                logger.debug(
+                    "RTP %s: expected %d, got %d",
+                    "gap" if forward else "reorder",
+                    (last_seq + 1) & 0xFFFF,
+                    seq,
+                )
+                fu_buffer.clear()
+                au_corrupt = True
+            # Only advance last_seq forward (drop late stragglers) so a single
+            # out-of-order packet doesn't reset our notion of "newest seen".
+            if last_seq is None or ((seq - last_seq) & 0xFFFF) < 0x8000:
+                last_seq = seq
+
+            now = loop.time()
+            if now - stats_last_log > 5.0:
+                if stats_forward_gaps or stats_reorders or stats_corrupt_aus:
+                    logger.info(
+                        "RTP stats (last %.1fs): packets=%d forward_gaps=%d reorders=%d dropped_AUs=%d",
+                        now - stats_last_log,
+                        stats_packets,
+                        stats_forward_gaps,
+                        stats_reorders,
+                        stats_corrupt_aus,
+                    )
+                stats_packets = 0
+                stats_forward_gaps = 0
+                stats_reorders = 0
+                stats_corrupt_aus = 0
+                stats_last_log = now
+
             nals.clear()
             depacketize_hevc(payload, fu_buffer, nals)
             for nal in nals:
@@ -491,7 +615,9 @@ class ScreenStreamServer:
                 current_au.append(nal)
 
             if marker:
-                if current_au:
+                if au_corrupt:
+                    stats_corrupt_aus += 1
+                if current_au and not au_corrupt:
                     annexb = b"".join(b"\x00\x00\x00\x01" + nal for nal in current_au)
                     type_byte = b"\x00" if au_is_key else b"\x01"
                     msg = (len(annexb) + 1).to_bytes(4, "big") + type_byte + annexb
@@ -500,14 +626,26 @@ class ScreenStreamServer:
                         self._saw_first_key = True
                         if self._codec_string is not None:
                             self._stream_ready.set()
+                    self._last_good_au_t = loop.time()
                     if self._saw_first_key:
-                        for q in list(self._subscribers):
+                        for q, state in list(self._subscribers.items()):
                             if q.full():
-                                with contextlib.suppress(asyncio.QueueEmpty):
-                                    q.get_nowait()
+                                # Subscriber falling behind — flush everything
+                                # and wait for the next keyframe before feeding
+                                # again, so we never deliver a delta without
+                                # its reference key.
+                                while not q.empty():
+                                    with contextlib.suppress(asyncio.QueueEmpty):
+                                        q.get_nowait()
+                                state.needs_key = True
+                            if state.needs_key:
+                                if not au_is_key:
+                                    continue
+                                state.needs_key = False
                             q.put_nowait(msg)
                 current_au = []
                 au_is_key = False
+                au_corrupt = False
 
     # ----- device-stream lifecycle ------------------------------------------
     async def _stop_active_stream(self) -> None:
@@ -538,17 +676,38 @@ class ScreenStreamServer:
             if self._active_service is not None and not self._stream_dirty and not force:
                 return
             await self._stop_active_stream()
+            # The new device-side media stream re-publishes its IOHIDService
+            # surfaces under fresh IDs; backboardd re-matches the auth flags
+            # only for surfaces that were attached AFTER the new stream came
+            # up. Drop our HID handles so the next /touch or /button opens
+            # fresh ones against the new context.
+            await self._stop_hid()
             self._init_sequence = None
             self._codec_string = None
             self._saw_first_key = False
             self._stream_ready.clear()
-            self._subscribers.clear()
+            # Preserve any connected subscribers across the restart — flush
+            # their queues and flag them needs_key so they'll lock onto the
+            # first IDR from the new stream instead of seeing the connection
+            # break. (On a fresh /stream.bin request there are no subscribers
+            # yet, so this is a no-op for cold starts.)
+            for q, state in self._subscribers.items():
+                while not q.empty():
+                    with contextlib.suppress(asyncio.QueueEmpty):
+                        q.get_nowait()
+                state.needs_key = True
 
             # Fresh socket — no buffered packets from a previous session can
             # corrupt the new session's FU reassembly.
             sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
             sock.bind(("::", 0))
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
+            # Pump SO_RCVBUF as high as the kernel will allow (capped by
+            # kern.ipc.maxsockbuf, typically 8 MB on macOS). Larger buffer =
+            # tolerates longer event-loop stalls without kernel-level UDP drops.
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 * 1024 * 1024)
+            except OSError:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
             port = sock.getsockname()[1]
 
             svc = DisplayService(self._rsd)
@@ -567,6 +726,10 @@ class ScreenStreamServer:
             self._active_session_id = sid
             self._active_sock = sock
             self._active_recv_task = asyncio.create_task(self._udp_recv_and_depacketize(sock))
+            # Seed the stall timer to "now" so the watchdog gives the new
+            # stream ``_STALL_RESTART_SECS`` to produce its first AU instead
+            # of firing immediately on its zero-initialised value.
+            self._last_good_au_t = asyncio.get_running_loop().time()
             self._stream_dirty = False
 
     # ----- HID (touch + buttons) -------------------------------------------
@@ -695,8 +858,10 @@ class ScreenStreamServer:
             try:
                 handler = self._handle_touch if path == "/touch" else self._handle_button
                 code, msg = await handler(body)
+                if code != 200:
+                    logger.warning("%s -> %d %s", path, code, msg.decode("utf-8", "replace"))
             except Exception as exc:
-                logger.exception("input handler crashed")
+                logger.exception("input handler crashed: %s body=%r", path, body[:200])
                 code, msg = 500, f"internal error: {exc}".encode()
             status_line = {200: b"200 OK", 400: b"400 Bad Request", 500: b"500 Internal"}.get(code, b"500 Internal")
             writer.write(
@@ -759,11 +924,14 @@ class ScreenStreamServer:
             b"Connection: close\r\n\r\n"
         )
         await writer.drain()
-        queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=8)
+        # Bumped from 8 to 32: gives the browser more headroom during bursty
+        # arrival (e.g. when the JS event loop is busy posting input events)
+        # before we have to flush and resync from the next keyframe.
+        queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=32)
         # Send the cached init sequence (VPS/SPS/PPS+IDR) so the decoder has a keyframe.
         if self._init_sequence is not None:
             queue.put_nowait(self._init_sequence)
-        self._subscribers.add(queue)
+        self._subscribers[queue] = _SubState()
         try:
             while True:
                 msg = await queue.get()
@@ -772,19 +940,66 @@ class ScreenStreamServer:
         except (ConnectionResetError, BrokenPipeError, asyncio.CancelledError):
             pass
         finally:
-            self._subscribers.discard(queue)
+            self._subscribers.pop(queue, None)
             with contextlib.suppress(Exception):
                 writer.close()
+
+    async def _stall_watchdog(self) -> None:
+        """Restart the media stream if AU progress stalls — typically when
+        persistent UDP loss causes us to drop every AU and the encoder
+        hasn't sent a fresh IDR. Restarting forces a new IDR from the device.
+
+        Honours :data:`_STALL_RESTART_COOLDOWN_SECS` so a legitimate idle
+        (e.g. the device is locked) doesn't loop us into a hot restart cycle.
+        """
+        loop = asyncio.get_running_loop()
+        check_interval = max(_STALL_RESTART_SECS / 4, 0.25)
+        while True:
+            try:
+                await asyncio.sleep(check_interval)
+            except asyncio.CancelledError:
+                return
+            if not self._subscribers:
+                continue
+            if self._active_service is None:
+                continue
+            now = loop.time()
+            if now - self._last_good_au_t <= _STALL_RESTART_SECS:
+                # Stream is making progress -- any prior restarts are forgiven.
+                self._consecutive_restarts = 0
+                continue
+            if now - self._last_restart_t < _STALL_RESTART_COOLDOWN_SECS:
+                continue
+            if self._consecutive_restarts >= _MAX_STALL_RESTARTS:
+                # Further restarts aren't fixing things. Stop pummelling the
+                # device daemon -- next time the user reloads the page the
+                # cold /codec path will attempt a fresh start anyway.
+                continue
+            self._consecutive_restarts += 1
+            logger.warning(
+                "no AU progress in %.1fs (subscribers=%d, attempt %d/%d) - restarting stream",
+                now - self._last_good_au_t,
+                len(self._subscribers),
+                self._consecutive_restarts,
+                _MAX_STALL_RESTARTS,
+            )
+            self._last_restart_t = now
+            with contextlib.suppress(Exception):
+                await self._ensure_fresh_stream(force=True)
 
     async def serve(self) -> None:
         """Run the HTTP server until cancelled / Ctrl-C."""
         http_server = await asyncio.start_server(self._handle_http, self._bind, self._http_port)
+        watchdog = asyncio.create_task(self._stall_watchdog())
         try:
             logger.info(f"Open http://{self._bind}:{self._http_port}/ in Safari/Chrome. Ctrl-C to stop.")
             await http_server.serve_forever()
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
+            watchdog.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await watchdog
             await self._stop_hid()
             async with self._stream_lock:
                 await self._stop_active_stream()

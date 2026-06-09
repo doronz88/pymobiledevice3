@@ -156,7 +156,11 @@ def build_media_blob_video(
 def build_negotiator_offer_video(
     call_id: str,
     session_id: int,
-    host_model: str = "Mac16,11",
+    # Default to the same identity Xcode uses (Mac15,9 = M2 Air, macOS 25F80).
+    # The device may pick encoder parameters based on this — under our
+    # original Mac16,11 identity we saw frequent encoder stalls; under
+    # Mac15,9 Xcode's mirror is rock-solid.
+    host_model: str = "Mac15,9",
     host_os_version: str = "2205.3.1",
     host_build: str = "25F80",
 ) -> bytes:
