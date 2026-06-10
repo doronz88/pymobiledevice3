@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 from pymobiledevice3.remote.core_device.display_service import DisplayService
+from pymobiledevice3.remote.core_device.hevc_phantom import build_phantoms_for_bootstrap
 from pymobiledevice3.remote.core_device.hid_service import (
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     HID_BUTTON_STATE_DOWN,
@@ -494,6 +495,16 @@ class ScreenStreamServer:
         self._codec_string: Optional[str] = None
         self._saw_first_key = False
         self._stream_ready = asyncio.Event()
+        # Raw parameter-set / IDR NALs cached for phantom synthesis. The
+        # phantom NAL block bridges the bootstrap POC gap (Apple's encoder
+        # emits IDR=POC0 then jumps the first delta to POC=~163 with refs
+        # to a sparse set the decoder never received). Synthesising
+        # phantoms at the needed POCs lets WebCodecs decode the chain.
+        self._cached_vps_nal: Optional[bytes] = None
+        self._cached_sps_nal: Optional[bytes] = None
+        self._cached_pps_nal: Optional[bytes] = None
+        self._cached_idr_nal: Optional[bytes] = None
+        self._phantoms_built = False
 
         # Active device-stream session.
         self._active_service: Optional[DisplayService] = None
@@ -656,6 +667,16 @@ class ScreenStreamServer:
                         logger.info(f"WebCodecs codec string: {self._codec_string}")
                     except Exception as exc:
                         logger.warning(f"failed to parse SPS: {exc}")
+                # Cache the parameter sets + IDR slice as raw NALs so we
+                # can synthesise phantoms later from the captured IDR body.
+                if nt == _HEVC_NAL_VPS:
+                    self._cached_vps_nal = bytes(nal)
+                elif nt == _HEVC_NAL_SPS:
+                    self._cached_sps_nal = bytes(nal)
+                elif nt == _HEVC_NAL_PPS:
+                    self._cached_pps_nal = bytes(nal)
+                elif _is_key_nal(nt):
+                    self._cached_idr_nal = bytes(nal)
                 if _is_key_nal(nt):
                     au_is_key = True
                 current_au.append(nal)
@@ -698,12 +719,53 @@ class ScreenStreamServer:
                             self._stream_ready.set()
                     self._last_good_au_t = loop.time()
                     if self._saw_first_key:
+                        # First non-key AU after the IDR is the moment we
+                        # can synthesise phantoms (we need the delta's
+                        # slice header to know which POCs are referenced).
+                        phantom_msgs: list[bytes] = []
+                        if (
+                            not au_is_key
+                            and not self._phantoms_built
+                            and self._cached_vps_nal is not None
+                            and self._cached_sps_nal is not None
+                            and self._cached_pps_nal is not None
+                            and self._cached_idr_nal is not None
+                        ):
+                            try:
+                                first_delta_nal = current_au[0]
+                                phantoms = build_phantoms_for_bootstrap(
+                                    self._cached_vps_nal,
+                                    self._cached_sps_nal,
+                                    self._cached_pps_nal,
+                                    self._cached_idr_nal,
+                                    first_delta_nal,
+                                )
+                                logger.info(
+                                    "Phantom synthesis: first delta NAL %d B (type=%d), produced %d phantoms",
+                                    len(first_delta_nal),
+                                    (first_delta_nal[0] >> 1) & 0x3F,
+                                    len(phantoms),
+                                )
+                            except Exception:
+                                logger.exception("phantom synthesis failed")
+                                phantoms = []
+                            if phantoms:
+                                logger.info(
+                                    "Synthesised %d phantom NALs for bootstrap",
+                                    len(phantoms),
+                                )
+                                for ph in phantoms:
+                                    ph_annexb = b"\x00\x00\x00\x01" + ph
+                                    ph_msg = (len(ph_annexb) + 1).to_bytes(4, "big") + b"\x00" + ph_annexb
+                                    phantom_msgs.append(ph_msg)
+                                # Bake into init_sequence so late-joining
+                                # subscribers also get them.
+                                if self._init_sequence is not None:
+                                    self._init_sequence = self._init_sequence + b"".join(phantom_msgs)
+                            self._phantoms_built = True
+
                         for q, state in list(self._subscribers.items()):
                             if q.full():
-                                # Subscriber falling behind — flush everything
-                                # and wait for the next keyframe before feeding
-                                # again, so we never deliver a delta without
-                                # its reference key.
                                 while not q.empty():
                                     with contextlib.suppress(asyncio.QueueEmpty):
                                         q.get_nowait()
@@ -719,6 +781,8 @@ class ScreenStreamServer:
                                 # holds stale reference frames.
                                 q.put_nowait(msg_reset)
                                 continue
+                            for pm in phantom_msgs:
+                                q.put_nowait(pm)
                             q.put_nowait(msg)
                 current_au = []
                 au_is_key = False
@@ -871,6 +935,11 @@ class ScreenStreamServer:
             self._codec_string = None
             self._saw_first_key = False
             self._stream_ready.clear()
+            self._cached_vps_nal = None
+            self._cached_sps_nal = None
+            self._cached_pps_nal = None
+            self._cached_idr_nal = None
+            self._phantoms_built = False
             # Preserve any connected subscribers across the restart — flush
             # their queues and flag them needs_key so they'll lock onto the
             # first IDR from the new stream instead of seeing the connection
