@@ -168,7 +168,8 @@ VIEWER_HTML = rb"""<!doctype html>
  #buttons button:active{background:#4a4a4a}
  #status{position:fixed;top:8px;left:12px;font-size:12px;opacity:.8;
          background:#0008;padding:4px 8px;border-radius:4px;white-space:pre;
-         max-width:90vw;overflow:hidden;pointer-events:none}
+         max-width:90vw;overflow:hidden;user-select:text;-webkit-user-select:text;
+         cursor:text;pointer-events:auto}
 </style></head>
 <body>
 <canvas id="c"></canvas>
@@ -181,9 +182,13 @@ VIEWER_HTML = rb"""<!doctype html>
  <button data-btn="volume-down">Vol -</button>
  <button data-btn="mute">Mute</button>
  <button data-btn="siri">Siri</button>
+ <button id="sound-toggle" type="button">Enable Sound</button>
+ <button id="forced-reset" type="button">Forced Reset</button>
+ <button id="restart" type="button">Force Restart</button>
 </div>
 <div id="status">connecting...</div>
 <script>
+window.AUDIO_DEFAULT_ON = __AUDIO_DEFAULT_ON__;
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
@@ -253,19 +258,195 @@ canvas.addEventListener('pointerup', endContact);
 canvas.addEventListener('pointercancel', endContact);
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-document.querySelectorAll('#buttons button').forEach(btn => {
+document.querySelectorAll('#buttons button[data-btn]').forEach(btn => {
     btn.addEventListener('click', () => {
         const name = btn.dataset.btn;
         postJson('/button', {name, state: 'press'}).then(() => log('button: ' + name));
     });
 });
 
+// ----- Forced Reset: tell the server to spin up a fresh video stream
+// (new IDR will reach this still-open /stream.bin connection via the
+// type=2 reset path -- no page reload, audio context preserved).
+// Fire-and-forget: the server's /restart endpoint responds 202 right
+// away and runs the actual restart in the background, so the click
+// feels instant.
+document.getElementById('forced-reset').addEventListener('click', () => {
+    log('forced reset');
+    fetch('/restart', {method: 'POST', cache: 'no-store'})
+        .then(r => log('forced reset: HTTP ' + r.status))
+        .catch(e => log('forced reset err: ' + (e.message || e)));
+});
+
+// ----- Force Restart: drop the current video stream + reload the page.
+// Heavier hammer than Forced Reset -- wipes all client-side state too.
+document.getElementById('restart').addEventListener('click', async () => {
+    log('forcing restart + reload...');
+    try {
+        await fetch('/restart', {method: 'POST', cache: 'no-store'});
+    } catch (e) { log('restart err: ' + e.message); }
+    setTimeout(() => location.reload(), 100);
+});
+
+// ----- Sound toggle: connect to /audio.bin which streams PRE-DECODED
+// PCM (s16le, 48 kHz, stereo interleaved). The server uses pyav's
+// aac_at codec (macOS AudioToolbox, hardware-backed) to decode AAC-ELD
+// because Chrome's WebCodecs doesn't recognise mp4a.40.39 -- AAC-ELD
+// isn't in its supported AAC object types. Decoding host-side is
+// trivially cheap and adds ~1.5 Mbps over localhost.
+let audioCtx = null;
+let audioAbort = null;
+let audioActive = false;
+let audioReconnectPending = false;
+const soundBtn = document.getElementById('sound-toggle');
+
+async function startAudio() {
+    if (audioActive) return;
+    audioActive = true;
+    soundBtn.textContent = 'Disable Sound';
+    audioAbort = new AbortController();
+    try {
+        audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+        await audioCtx.resume();
+    } catch (e) { log('audioCtx err: ' + e.message); stopAudio(); return; }
+    let nextStart = audioCtx.currentTime + 0.1; // 100 ms initial buffer
+    let totalSamples = 0;
+
+    const playPcm = (pcmBytes) => {
+        // pcmBytes is interleaved int16 little-endian, stereo, 48 kHz.
+        const i16 = new Int16Array(pcmBytes.buffer, pcmBytes.byteOffset,
+                                   pcmBytes.byteLength >> 1);
+        const frames = i16.length >> 1; // 2 channels
+        if (frames === 0) return;
+        const buf = audioCtx.createBuffer(2, frames, 48000);
+        const left = buf.getChannelData(0);
+        const right = buf.getChannelData(1);
+        const INV = 1 / 32768;
+        for (let i = 0, j = 0; i < frames; i++, j += 2) {
+            left[i] = i16[j] * INV;
+            right[i] = i16[j + 1] * INV;
+        }
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        src.connect(audioCtx.destination);
+        if (nextStart < audioCtx.currentTime) {
+            // Schedule fell behind (UI stall) -- jump forward to keep latency bounded.
+            nextStart = audioCtx.currentTime + 0.05;
+        }
+        src.start(nextStart);
+        nextStart += buf.duration;
+        totalSamples += frames;
+    };
+
+    try {
+        const resp = await fetch('/audio.bin', { signal: audioAbort.signal });
+        if (!resp.ok) {
+            const body = await resp.text();
+            log('audio HTTP ' + resp.status + ': ' + body.trim());
+            stopAudio();
+            return;
+        }
+        const reader = resp.body.getReader();
+        let buf = new Uint8Array(0);
+        log('audio stream open');
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            const merged = new Uint8Array(buf.length + value.length);
+            merged.set(buf); merged.set(value, buf.length);
+            buf = merged;
+            while (buf.length >= 4) {
+                const len = (buf[0]<<24)|(buf[1]<<16)|(buf[2]<<8)|buf[3];
+                if (buf.length < 4 + len) break;
+                const pcmBytes = buf.slice(4, 4 + len);
+                buf = buf.subarray(4 + len);
+                if (!pcmBytes.length) continue;
+                try { playPcm(pcmBytes); }
+                catch (e) { log('audio play err: ' + e.message); }
+            }
+        }
+    } catch (e) {
+        if (e.name !== 'AbortError') log('audio fetch err: ' + e.message);
+    }
+    log('audio stream closed (' + totalSamples + ' samples)');
+    // If we didn't stop voluntarily (e.g. server tore down audio after a
+    // /restart), auto-reconnect after a short delay -- iOS needs ~1 s
+    // between sessions to come back cleanly. The reconnect is cancelled
+    // if the user clicks Disable Sound in the interim.
+    const wasActive = audioActive;
+    audioActive = false;
+    soundBtn.textContent = 'Enable Sound';
+    if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
+    audioAbort = null;
+    if (wasActive) {
+        audioReconnectPending = true;
+        log('audio: auto-reconnecting in 1 s');
+        setTimeout(() => {
+            if (audioReconnectPending) {
+                audioReconnectPending = false;
+                startAudio();
+            }
+        }, 1000);
+    }
+}
+
+function stopAudio() {
+    audioActive = false;
+    audioReconnectPending = false;
+    soundBtn.textContent = 'Enable Sound';
+    if (audioAbort) { try { audioAbort.abort(); } catch (_) {} audioAbort = null; }
+    if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
+}
+
+soundBtn.addEventListener('click', () => {
+    if (audioActive) stopAudio(); else startAudio();
+});
+
+// AUDIO_DEFAULT_ON is templated by the server at request time (replaced
+// in the HTML body by the /index.html handler). When true, we start the
+// audio pipeline immediately so the browser is already buffering PCM by
+// the time the user does something -- their first gesture resumes the
+// suspended AudioContext and they hear audio with no extra clicks.
+if (window.AUDIO_DEFAULT_ON) {
+    startAudio();
+    function resumeAudioOnGesture() {
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().then(() => log('audio resumed (state=' + audioCtx.state + ')'));
+        }
+    }
+    ['pointerdown', 'click', 'keydown', 'touchstart'].forEach(ev => {
+        document.addEventListener(ev, resumeAudioOnGesture, { capture: true });
+    });
+}
+
+async function fetchCodecWithRetry() {
+    // /codec triggers a device-side stream restart on first call -- on a
+    // cold daemon that can take 6-10 s, and sometimes the RemoteXPC
+    // handshake just fails outright. Retry with backoff so a transient
+    // failure doesn't leave the viewer permanently dead.
+    const delays = [200, 500, 1000, 2000, 3000, 4000];
+    let lastErr = '';
+    for (let attempt = 0; attempt <= delays.length; attempt++) {
+        if (attempt > 0) {
+            log('codec retry #' + attempt + ' in ' + delays[attempt - 1] + 'ms (' + lastErr + ')');
+            await new Promise(r => setTimeout(r, delays[attempt - 1]));
+        }
+        try {
+            const resp = await fetch('/codec', { cache: 'no-store' });
+            if (!resp.ok) { lastErr = 'HTTP ' + resp.status; continue; }
+            const codec = (await resp.text()).trim();
+            if (!codec) { lastErr = 'empty body (SPS not yet seen)'; continue; }
+            return codec;
+        } catch (e) {
+            lastErr = e.message || String(e);
+        }
+    }
+    throw new Error('codec unreachable after retries: ' + lastErr);
+}
+
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));
-    // /codec blocks server-side until the device stream has emitted its SPS.
-    const codecResp = await fetch('/codec', { cache: 'no-store' });
-    const codec = (await codecResp.text()).trim();
-    if (!codec) { log('FAIL: no SPS arrived'); return; }
+    const codec = await fetchCodecWithRetry();
     log('codec: ' + codec);
 
     let support;
@@ -279,6 +460,7 @@ async function run() {
 
     let decodeErrCount = 0;
     let needsResync = false;     // skip deltas until we see the next key after an error
+    let autoRestartUsed = false; // self-heal once if the bootstrap path errors
     const buildDecoder = () => new VideoDecoder({
         output: (frame) => {
             // Apple's encoder signals slightly different displayWidth/Height
@@ -304,13 +486,48 @@ async function run() {
             decodeErrCount++;
             log('decode err #' + decodeErrCount + ': ' + e.message);
             needsResync = true;
+            // Bootstrap-failure self-heal: if we error out before we've
+            // shown even a handful of frames, Apple's encoder almost
+            // certainly emitted a POC chain WebCodecs can't follow (the
+            // server-side phantom synthesis didn't bridge it cleanly for
+            // this device's encoder). Asking the server for a fresh
+            // stream often produces a sequential POC chain that decodes
+            // cleanly. Do it at most once -- if it errors again the
+            // problem isn't transient and the user can click "Forced
+            // Reset" manually.
+            if (!autoRestartUsed && frameCount < 5) {
+                autoRestartUsed = true;
+                log('auto /restart (bootstrap decode err)');
+                fetch('/restart', {method: 'POST', cache: 'no-store'})
+                    .then(r => log('auto restart: HTTP ' + r.status))
+                    .catch(err => log('auto restart err: ' + err.message));
+            }
         },
     });
     let decoder = buildDecoder();
     decoder.configure({ codec, optimizeForLatency: true });
     log('state after configure: ' + decoder.state);
 
-    const resp = await fetch('/stream.bin');
+    // /stream.bin can return 503 if the force-restart on the server failed
+    // (e.g. RemoteXPC handshake stuck) -- retry with backoff so a flaky
+    // device daemon doesn't leave the viewer permanently dead.
+    let resp = null;
+    const streamDelays = [200, 500, 1000, 2000, 3000, 5000];
+    for (let a = 0; a <= streamDelays.length; a++) {
+        if (a > 0) {
+            log('stream retry #' + a + ' in ' + streamDelays[a - 1] + 'ms');
+            await new Promise(r => setTimeout(r, streamDelays[a - 1]));
+        }
+        try {
+            const r = await fetch('/stream.bin', { cache: 'no-store' });
+            if (r.ok) { resp = r; break; }
+            const body = await r.text();
+            log('stream HTTP ' + r.status + ': ' + body.slice(0, 80));
+        } catch (e) {
+            log('stream fetch err: ' + (e.message || e));
+        }
+    }
+    if (!resp) { log('FAIL: /stream.bin unreachable'); return; }
     const reader = resp.body.getReader();
     let buf = new Uint8Array(0);
     let timestamp = 0;
@@ -521,6 +738,173 @@ _STALL_RESTART_COOLDOWN_SECS = 15.0
 _MAX_STALL_RESTARTS = 3
 
 
+# ---------------------------------------------------------------------------
+# AAC-ELD decoder via macOS AudioToolbox (called through ctypes).
+# ---------------------------------------------------------------------------
+# Why not pyav / ffmpeg's aac_at wrapper? Both go through the same
+# AudioToolbox under the hood, but the wrappers don't surface
+# ``mFramesPerPacket`` -- AAC-ELD uses 480-sample frames, but if the
+# converter is left at its 1024-default it interprets each input AU as a
+# longer block and produces clipped garbage (peak hits int16 max on every
+# packet). Driving AudioConverter directly lets us pin the field.
+class _AACELDDecoder:
+    """Apple AudioToolbox AAC-ELD -> s16le 48 kHz stereo PCM converter.
+    macOS only. Each call to :meth:`decode` consumes ONE AAC-ELD AU and
+    emits its 480-sample stereo PCM (1920 bytes)."""
+
+    _DYLIB = "/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox"
+    _FRAMES = 480
+    _PCM_BYTES = _FRAMES * 4  # stereo s16
+
+    def __init__(self, magic_cookie: bytes) -> None:
+        import ctypes
+        import sys
+
+        if sys.platform != "darwin":
+            raise RuntimeError("AAC-ELD decode requires macOS (AudioToolbox)")
+
+        def fourcc(s: str) -> int:
+            return int.from_bytes(s.encode(), "big")
+
+        class _ASBD(ctypes.Structure):
+            _fields_ = [
+                ("mSampleRate", ctypes.c_double),
+                ("mFormatID", ctypes.c_uint32),
+                ("mFormatFlags", ctypes.c_uint32),
+                ("mBytesPerPacket", ctypes.c_uint32),
+                ("mFramesPerPacket", ctypes.c_uint32),
+                ("mBytesPerFrame", ctypes.c_uint32),
+                ("mChannelsPerFrame", ctypes.c_uint32),
+                ("mBitsPerChannel", ctypes.c_uint32),
+                ("mReserved", ctypes.c_uint32),
+            ]
+
+        class _AudioBuffer(ctypes.Structure):
+            _fields_ = [
+                ("mNumberChannels", ctypes.c_uint32),
+                ("mDataByteSize", ctypes.c_uint32),
+                ("mData", ctypes.c_void_p),
+            ]
+
+        class _BufferList(ctypes.Structure):
+            _fields_ = [
+                ("mNumberBuffers", ctypes.c_uint32),
+                ("mBuffers", _AudioBuffer * 1),
+            ]
+
+        class _APD(ctypes.Structure):
+            _fields_ = [
+                ("mStartOffset", ctypes.c_int64),
+                ("mVariableFramesInPacket", ctypes.c_uint32),
+                ("mDataByteSize", ctypes.c_uint32),
+            ]
+
+        # Stash classes for later use by decode()
+        self._ctypes = ctypes
+        self._BufferList = _BufferList
+        self._AudioBuffer = _AudioBuffer
+        self._APD = _APD
+
+        AT = ctypes.CDLL(self._DYLIB)
+        self._AT = AT
+
+        # Source: AAC-ELD, 48 kHz stereo, 480 samples/packet
+        src = _ASBD(
+            48000.0,
+            fourcc("aace"),
+            0,
+            0,
+            self._FRAMES,
+            0,
+            2,
+            0,
+            0,
+        )
+        # Destination: signed 16-bit packed interleaved stereo PCM
+        flags = (1 << 2) | (1 << 3)  # kLinearPCMFormatFlagIsSignedInteger | IsPacked
+        dst = _ASBD(48000.0, fourcc("lpcm"), flags, 4, 1, 4, 2, 16, 0)
+
+        conv = ctypes.c_void_p()
+        res = AT.AudioConverterNew(ctypes.byref(src), ctypes.byref(dst), ctypes.byref(conv))
+        if res != 0:
+            raise RuntimeError(f"AudioConverterNew failed: 0x{res:x}")
+        self._conv = conv
+
+        # Decompression magic cookie = AudioSpecificConfig (AAC-ELD 48k stereo 480)
+        AT.AudioConverterSetProperty(conv, fourcc("dmgc"), len(magic_cookie), magic_cookie)
+
+        # InputProc bound once -- holds a reference to the current AU
+        self._InputCB = ctypes.CFUNCTYPE(
+            ctypes.c_int32,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_uint32),
+            ctypes.POINTER(_BufferList),
+            ctypes.POINTER(ctypes.POINTER(_APD)),
+            ctypes.c_void_p,
+        )
+        self._pending: Optional[bytes] = None
+        self._pending_buf = None
+        self._pending_pd = _APD(0, 0, 0)
+
+        def _input_proc(decoder, ioN, ioData, outPD, _):
+            au = self._pending
+            if au is None:
+                ioN[0] = 0
+                return 0
+            self._pending = None  # one-shot per FillComplexBuffer call
+            self._pending_buf = ctypes.create_string_buffer(au)
+            ioN[0] = 1
+            ioData[0].mNumberBuffers = 1
+            ioData[0].mBuffers[0].mNumberChannels = 2
+            ioData[0].mBuffers[0].mDataByteSize = len(au)
+            ioData[0].mBuffers[0].mData = ctypes.cast(self._pending_buf, ctypes.c_void_p)
+            self._pending_pd = _APD(0, 0, len(au))
+            if outPD:
+                outPD[0] = ctypes.cast(ctypes.pointer(self._pending_pd), ctypes.POINTER(_APD))
+            return 0
+
+        self._cb_obj = _input_proc  # keep python ref
+        self._cb = self._InputCB(_input_proc)
+
+        AT.AudioConverterFillComplexBuffer.argtypes = [
+            ctypes.c_void_p,
+            self._InputCB,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_uint32),
+            ctypes.POINTER(_BufferList),
+            ctypes.c_void_p,
+        ]
+
+        self._out_buf = (ctypes.c_uint8 * self._PCM_BYTES)()
+
+    def decode(self, au: bytes) -> bytes:
+        """Decode one AAC-ELD AU. Returns 1920 bytes of PCM (480 stereo
+        s16 samples = 10 ms @ 48 kHz). Returns empty bytes if the
+        converter consumed the AU without emitting (latency frames)."""
+        ctypes = self._ctypes
+        self._pending = au
+        n = ctypes.c_uint32(self._FRAMES)
+        ad = self._BufferList()
+        ad.mNumberBuffers = 1
+        ad.mBuffers[0].mNumberChannels = 2
+        ad.mBuffers[0].mDataByteSize = self._PCM_BYTES
+        ad.mBuffers[0].mData = ctypes.cast(self._out_buf, ctypes.c_void_p)
+        res = self._AT.AudioConverterFillComplexBuffer(
+            self._conv, self._cb, None, ctypes.byref(n), ctypes.byref(ad), None
+        )
+        if res != 0:
+            raise RuntimeError(f"AudioConverterFillComplexBuffer: 0x{res:x}")
+        size = ad.mBuffers[0].mDataByteSize
+        return bytes(self._out_buf[:size]) if size else b""
+
+    def __del__(self):
+        try:
+            if getattr(self, "_conv", None):
+                self._AT.AudioConverterDispose(self._conv)
+        except Exception:
+            pass
+
+
 class ScreenStreamServer:
     """Pure-stdlib HTTP server that broadcasts the device's screen stream to
     browsers using WebCodecs for in-browser HEVC decode.
@@ -542,11 +926,13 @@ class ScreenStreamServer:
         bind: str = "127.0.0.1",
         http_port: int = 8080,
         display_id: int = 1,
+        audio_default_on: bool = True,
     ) -> None:
         self._rsd = rsd
         self._bind = bind
         self._http_port = http_port
         self._display_id = display_id
+        self._audio_default_on = audio_default_on
         self._sender_ip = rsd.service.address[0]
 
         # Broadcast state — each subscriber gets framed access units written as:
@@ -578,6 +964,16 @@ class ScreenStreamServer:
         self._active_rtcp_task: Optional[asyncio.Task] = None
         self._stream_lock = asyncio.Lock()
         self._stream_dirty = True  # True → next request must restart the stream
+
+        # Audio stream session (parallel to video, started lazily when a
+        # browser tab subscribes to /audio.bin). Each AAC-ELD AU is
+        # broadcast as a length-prefixed chunk.
+        self._audio_service: Optional[DisplayService] = None
+        self._audio_session_id: Optional[uuid.UUID] = None
+        self._audio_sock: Optional[socket.socket] = None
+        self._audio_recv_task: Optional[asyncio.Task] = None
+        self._audio_subscribers: dict[asyncio.Queue[bytes], None] = {}
+        self._audio_lock = asyncio.Lock()
 
         # RTCP feedback bookkeeping. The streamConfig the device returns sets
         # ``RTCPTimeoutEnabled=True`` -- without periodic Receiver Reports the
@@ -949,6 +1345,161 @@ class ScreenStreamServer:
                 logger.debug("RTCP send failed (%s); the socket may be torn down", exc)
                 return
 
+    @staticmethod
+    def _missing_audio_deps() -> list[str]:
+        """Audio decode uses macOS's AudioToolbox via ctypes -- no pip
+        dependencies required. Kept as a method so /audio.bin can return
+        a clear error on non-macOS hosts."""
+        import sys
+
+        return [] if sys.platform == "darwin" else ["macOS (AudioToolbox)"]
+
+    # ----- audio-stream lifecycle (parallel to video) ----------------------
+    # AAC-ELD decode runs through macOS's AudioToolbox directly via ctypes.
+    # We tried pyav's ``aac_at`` codec earlier, but its wrapper doesn't
+    # set mFramesPerPacket=480 on the AudioConverter, so the underlying
+    # decoder treated each input AU as if it were 1024 samples and
+    # produced clipped garbage (peak hit int16 max on every chunk).
+    # Calling AudioConverter ourselves with the right framing gives
+    # exact 1:1 input-to-output AUs at 480 samples / 10 ms each.
+    #
+    # Output: s16le 48 kHz stereo interleaved PCM, broadcast in
+    # length-prefixed chunks to /audio.bin subscribers (~192 KB/s).
+    _AAC_ELD_ASC = bytes([0xF8, 0xE6, 0x40, 0x00])
+
+    async def _audio_udp_recv(self, sock: socket.socket) -> None:
+        """Receive RTP audio packets, strip the RTP header, decode the
+        AAC-ELD AU via AudioToolbox, and broadcast the interleaved s16le
+        PCM to /audio.bin subscribers."""
+        try:
+            decoder = _AACELDDecoder(self._AAC_ELD_ASC)
+        except Exception:
+            logger.exception("AudioToolbox AAC-ELD decoder failed to open")
+            return
+        logger.info("audio decoder ready: AudioToolbox AAC-ELD -> s16le 48k stereo")
+
+        sock.setblocking(False)
+        loop = asyncio.get_running_loop()
+        # Volume changes on the device side can land us with a packet
+        # the decoder rejects -- and once AudioConverter has errored, all
+        # subsequent FillComplexBuffer calls fail too. Track consecutive
+        # failures and recreate the decoder from scratch when we cross
+        # the threshold so a single hiccup doesn't permanently kill the
+        # audio stream.
+        consecutive_errors = 0
+        _ERR_RECREATE_THRESHOLD = 5
+
+        while True:
+            try:
+                data = await loop.sock_recv(sock, 65535)
+            except (OSError, asyncio.CancelledError):
+                return
+            except Exception:
+                logger.exception("audio recv task crashed")
+                return
+            if len(data) < 12:
+                continue
+            pt = data[1] & 0x7F
+            if 64 <= pt <= 95:  # RTCP -- ignore
+                continue
+            cc = data[0] & 0x0F
+            header_len = 12 + cc * 4
+            if data[0] & 0x10:  # extension
+                if header_len + 4 > len(data):
+                    continue
+                ext_len = int.from_bytes(data[header_len + 2 : header_len + 4], "big")
+                header_len += 4 + ext_len * 4
+            payload = data[header_len:]
+            if not payload:
+                continue
+            try:
+                pcm = decoder.decode(payload)
+                consecutive_errors = 0
+            except Exception as exc:
+                consecutive_errors += 1
+                logger.debug("audio decode failed (%s) -- dropping packet", exc)
+                if consecutive_errors >= _ERR_RECREATE_THRESHOLD:
+                    logger.warning(
+                        "audio decoder stuck after %d consecutive errors -- recreating",
+                        consecutive_errors,
+                    )
+                    try:
+                        decoder = _AACELDDecoder(self._AAC_ELD_ASC)
+                        consecutive_errors = 0
+                    except Exception:
+                        logger.exception("audio decoder recreation failed")
+                continue
+            if not pcm:
+                continue
+            msg = len(pcm).to_bytes(4, "big") + pcm
+            for q in list(self._audio_subscribers.keys()):
+                if q.full():
+                    with contextlib.suppress(asyncio.QueueEmpty):
+                        q.get_nowait()
+                q.put_nowait(msg)
+
+    async def _stop_audio_stream(self) -> None:
+        svc = self._audio_service
+        sid = self._audio_session_id
+        sock = self._audio_sock
+        task = self._audio_recv_task
+        self._audio_service = None
+        self._audio_session_id = None
+        self._audio_sock = None
+        self._audio_recv_task = None
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+        if sock is not None:
+            with contextlib.suppress(Exception):
+                sock.close()
+        if svc is not None:
+            with contextlib.suppress(Exception):
+                if sid is not None:
+                    await svc.stop_media_stream(sid)
+            with contextlib.suppress(Exception):
+                await svc.close()
+
+    async def _ensure_audio_stream(self) -> None:
+        async with self._audio_lock:
+            if (
+                self._audio_service is not None
+                and self._audio_recv_task is not None
+                and not self._audio_recv_task.done()
+            ):
+                return
+            await self._stop_audio_stream()
+            sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+            sock.bind(("::", 0))
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
+            except OSError:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 * 1024 * 1024)
+            port = sock.getsockname()[1]
+            svc = DisplayService(self._rsd)
+            await svc.connect()
+            local_ip = svc.service.local_address[0]
+            answer = await svc.start_audio_stream(
+                receiver_ip=local_ip,
+                receiver_port=port,
+                sender_ip=self._sender_ip,
+            )
+            sid = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
+            if not isinstance(sid, uuid.UUID):
+                sid = uuid.UUID(sid)
+            cfg = answer["connection"].get("streamConfig", {})
+            logger.info(
+                "audio stream started: PT=%s mode=%s sender_port=%s",
+                cfg.get("RxPayloadType"),
+                cfg.get("AudioStreamMode"),
+                cfg.get("SourcePort"),
+            )
+            self._audio_service = svc
+            self._audio_session_id = sid
+            self._audio_sock = sock
+            self._audio_recv_task = asyncio.create_task(self._audio_udp_recv(sock))
+
     # ----- device-stream lifecycle ------------------------------------------
     async def _stop_active_stream(self) -> None:
         svc = self._active_service
@@ -1258,18 +1809,34 @@ class ScreenStreamServer:
             break
 
         if path in ("/", "/index.html"):
+            body = VIEWER_HTML.replace(
+                b"__AUDIO_DEFAULT_ON__",
+                b"true" if self._audio_default_on else b"false",
+            )
             writer.write(
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: text/html; charset=utf-8\r\n"
-                b"Content-Length: " + str(len(VIEWER_HTML)).encode() + b"\r\n"
-                b"Connection: close\r\n\r\n" + VIEWER_HTML
+                b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                b"Connection: close\r\n\r\n" + body
             )
             await writer.drain()
             writer.close()
             return
         if path == "/codec":
+            # Bounded path so the browser never sees a fetch hang: cap the
+            # whole thing at ~7 s. If the device-stream isn't up by then
+            # return 503 -- the JS retries with backoff, and meanwhile
+            # the in-flight ensure_fresh_stream keeps running so a later
+            # /codec usually succeeds. Without this bound the cold path
+            # can stall for ~30 s on a stuck CoreDevice daemon and the
+            # browser surfaces it as "failed to fetch".
             try:
-                await self._ensure_fresh_stream(force=False)
+                await asyncio.wait_for(self._ensure_fresh_stream(force=False), timeout=5.0)
+            except asyncio.TimeoutError:
+                writer.write(b"HTTP/1.1 503 Stream Starting\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                await writer.drain()
+                writer.close()
+                return
             except Exception:
                 logger.exception("failed to start device stream")
                 writer.write(b"HTTP/1.1 500 Internal\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
@@ -1277,10 +1844,11 @@ class ScreenStreamServer:
                 writer.close()
                 return
             with contextlib.suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(self._stream_ready.wait(), timeout=8.0)
+                await asyncio.wait_for(self._stream_ready.wait(), timeout=2.0)
             body = (self._codec_string or "").encode()
+            status = b"200 OK" if body else b"503 Stream Starting"
             writer.write(
-                b"HTTP/1.1 200 OK\r\n"
+                b"HTTP/1.1 " + status + b"\r\n"
                 b"Content-Type: text/plain\r\n"
                 b"Cache-Control: no-store\r\n"
                 b"Content-Length: " + str(len(body)).encode() + b"\r\n"
@@ -1289,27 +1857,126 @@ class ScreenStreamServer:
             await writer.drain()
             writer.close()
             return
+        if path == "/restart":
+            # Respond 202 immediately and run the actual restart in the
+            # background. The video restart + audio teardown takes
+            # several seconds (device-side start_video_stream RPC), and
+            # the caller doesn't need to wait for it -- the new IDR
+            # reaches their /stream.bin connection via the type=2 reset
+            # path whenever the device gets around to emitting it, and
+            # the audio JS auto-reconnects /audio.bin on its own. (Also
+            # avoids the "button feels slow" effect that comes from JS
+            # awaiting a slow round-trip.)
+            async def _restart_bg():
+                with contextlib.suppress(Exception):
+                    await self._ensure_fresh_stream(force=True)
+                async with self._audio_lock:
+                    with contextlib.suppress(Exception):
+                        await self._stop_audio_stream()
+
+            bg = asyncio.create_task(_restart_bg())
+            self._pli_tasks.add(bg)  # piggy-back on the existing keep-alive set
+            bg.add_done_callback(self._pli_tasks.discard)
+            writer.write(b"HTTP/1.1 202 Accepted\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            await writer.drain()
+            writer.close()
+            return
+        if path == "/audio.bin":
+            # Up-front dep check so the browser doesn't silently see "0
+            # samples" when av/numpy aren't installed (the old failure
+            # mode -- the audio recv task would crash on the first
+            # frame.to_ndarray() and /audio.bin would just hang).
+            missing = self._missing_audio_deps()
+            if missing:
+                body = (
+                    f"audio disabled: missing python package(s): {', '.join(missing)}.\n"
+                    f"reinstall pymobiledevice3 (uv tool install ... --reinstall) or pip install {' '.join(missing)}."
+                ).encode()
+                writer.write(
+                    b"HTTP/1.1 503 Audio Unavailable\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + body
+                )
+                await writer.drain()
+                writer.close()
+                return
+            try:
+                await self._ensure_audio_stream()
+            except Exception:
+                logger.exception("failed to start audio stream")
+                writer.write(b"HTTP/1.1 500 Internal\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                await writer.drain()
+                writer.close()
+                return
+            writer.write(
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/octet-stream\r\n"
+                b"Cache-Control: no-cache\r\n"
+                b"Transfer-Encoding: chunked\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+            await writer.drain()
+            # ~64 packets at 10 ms each = 640 ms of headroom. Enough to
+            # absorb a JS hiccup without dropping audio in the kernel.
+            queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=64)
+            self._audio_subscribers[queue] = None
+            try:
+                while True:
+                    msg = await queue.get()
+                    writer.write(f"{len(msg):x}\r\n".encode() + msg + b"\r\n")
+                    await writer.drain()
+            except (ConnectionResetError, BrokenPipeError, asyncio.CancelledError):
+                pass
+            finally:
+                self._audio_subscribers.pop(queue, None)
+                with contextlib.suppress(Exception):
+                    writer.close()
+                # We DON'T tear down the iOS audio session when the last
+                # subscriber leaves. Empirically iOS refuses to deliver
+                # packets after a few session restarts in the same server
+                # process -- start_audio_stream returns success but the
+                # device sends nothing. Once started, we keep the session
+                # alive for the rest of the server's lifetime so subsequent
+                # /audio.bin connects always reuse the working session.
+                # (Cleaned up at shutdown by serve()'s finally block.)
+            return
         if path != "/stream.bin":
             writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
             await writer.drain()
             writer.close()
             return
 
-        # Force a fresh stream on every /stream.bin connect. Replaying a
-        # cached _init_sequence is only safe immediately after the IDR was
-        # received -- on a long-GOP stream the cached IDR may be minutes
-        # old, and the live deltas we'd push next reference frames the
-        # new subscriber never saw. ffmpeg flags this as "Could not find
-        # ref with POC <N>" for every post-connect AU; VideoToolbox /
-        # WebCodecs often render it as silent tearing without firing
-        # decoder.error -- so we'd never resync.
+        # Try to force a fresh stream so this subscriber sees a clean POC
+        # chain from POC=0 -- replaying a stale cached IDR followed by
+        # live deltas references frames the subscriber never saw, which
+        # WebCodecs/VideoToolbox usually render as silent tears. PLI
+        # alone doesn't trigger an IDR on this device's encoder; a full
+        # stream restart always begins with one.
         #
-        # PLI alone doesn't reliably make this device's encoder emit a
-        # fresh IDR. A full stream restart always begins with one. Costs
-        # ~500ms per browser-tab refresh but it's the only correct path.
-        await self._ensure_fresh_stream(force=True)
+        # The restart can fail (RemoteXPC handshake timeout, daemon
+        # stuck after a back-to-back restart, etc). If it does, fall
+        # back to the existing eager-started stream rather than dropping
+        # the connection -- the JS will see a 503 only when we have
+        # nothing usable, and can retry.
+        try:
+            await asyncio.wait_for(self._ensure_fresh_stream(force=True), timeout=10.0)
+        except (asyncio.TimeoutError, Exception):
+            logger.exception("/stream.bin: force-restart failed -- falling back to existing stream")
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(self._stream_ready.wait(), timeout=3.0)
+
+        if self._init_sequence is None or self._active_service is None:
+            body = b"stream not ready -- retry in a moment"
+            writer.write(
+                b"HTTP/1.1 503 Service Unavailable\r\n"
+                b"Content-Type: text/plain\r\n"
+                b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                b"Connection: close\r\n\r\n" + body
+            )
+            await writer.drain()
+            writer.close()
+            return
 
         writer.write(
             b"HTTP/1.1 200 OK\r\n"
@@ -1381,6 +2048,17 @@ class ScreenStreamServer:
             with contextlib.suppress(Exception):
                 await self._ensure_fresh_stream(force=True)
 
+    async def _eager_stream_start(self) -> None:
+        """Start the device-side video stream at server boot so the codec
+        string is already cached by the time the browser opens. Without
+        this the first /codec request triggers the full ~6-10 s cold
+        start while the browser is waiting, frequently surfacing as
+        "failed to fetch" in the JS log."""
+        try:
+            await self._ensure_fresh_stream(force=False)
+        except Exception:
+            logger.warning("eager stream start failed (will retry on first /codec)", exc_info=True)
+
     async def serve(self) -> None:
         """Run the HTTP server until cancelled / Ctrl-C."""
         http_server = await asyncio.start_server(self._handle_http, self._bind, self._http_port)
@@ -1388,26 +2066,106 @@ class ScreenStreamServer:
         # Eagerly start the HID worker so queued /touch requests are
         # processed even before the device-stream is fully up.
         self._hid_worker_task = asyncio.create_task(self._hid_worker())
+        # Kick off the video stream in the background. We don't await it
+        # here -- the HTTP server should accept connections immediately
+        # so the user sees a working /index.html even if the device-side
+        # handshake is slow.
+        eager_start = asyncio.create_task(self._eager_stream_start())
+
+        # Install signal handlers so Ctrl-C / SIGTERM trigger an
+        # orderly, fast shutdown instead of waiting for blocked RPCs.
+        # On Windows add_signal_handler isn't supported -- fall back to
+        # the default KeyboardInterrupt-raising behaviour.
+        loop = asyncio.get_running_loop()
+        stop_event = asyncio.Event()
+
+        def _request_stop():
+            if not stop_event.is_set():
+                logger.info("shutting down...")
+                stop_event.set()
+
+        for signame in ("SIGINT", "SIGTERM"):
+            with contextlib.suppress(NotImplementedError, AttributeError):
+                import signal
+
+                loop.add_signal_handler(getattr(signal, signame), _request_stop)
+
+        async def _serve_until_stop():
+            serve_task = asyncio.create_task(http_server.serve_forever())
+            stop_task = asyncio.create_task(stop_event.wait())
+            _, pending = await asyncio.wait([serve_task, stop_task], return_when=asyncio.FIRST_COMPLETED)
+            for t in pending:
+                t.cancel()
+            for t in (serve_task, stop_task):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await t
+
+        async def _bounded(coro, label, timeout=3.0):
+            """Run an async cleanup step with a hard timeout so a hung
+            RPC can't keep us alive at shutdown."""
+            try:
+                await asyncio.wait_for(coro, timeout=timeout)
+            except asyncio.TimeoutError:
+                logger.warning("shutdown: %s timed out after %.1fs", label, timeout)
+            except Exception:
+                logger.exception("shutdown: %s raised", label)
+
         try:
             logger.info(f"Open http://{self._bind}:{self._http_port}/ in Safari/Chrome. Ctrl-C to stop.")
-            await http_server.serve_forever()
+            await _serve_until_stop()
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
+            logger.info("shutdown: cancelling watchdog")
             watchdog.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await watchdog
-            await self._stop_hid()
-            # _stop_hid no longer cancels the worker (it stays alive across
-            # in-session stream restarts) -- so on real shutdown we cancel
-            # it explicitly here.
+            logger.info("shutdown: cancelling eager_start")
+            eager_start.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await eager_start
+            # Close the HTTP listener first so no new connections come in
+            # while we tear the device-side streams down.
+            logger.info("shutdown: closing HTTP server")
+            http_server.close()
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(http_server.wait_closed(), timeout=2.0)
+            logger.info("shutdown: stopping HID")
+            await _bounded(self._stop_hid(), "_stop_hid")
             task = self._hid_worker_task
             self._hid_worker_task = None
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
-            async with self._stream_lock:
-                await self._stop_active_stream()
-            http_server.close()
-            await http_server.wait_closed()
+
+            # _stop_active_stream / _stop_audio_stream issue
+            # stop_media_stream RPCs to the device daemon -- if the
+            # daemon is hung, these would block forever without a bound.
+            async def _stop_video():
+                async with self._stream_lock:
+                    await self._stop_active_stream()
+
+            async def _stop_audio():
+                async with self._audio_lock:
+                    await self._stop_audio_stream()
+
+            logger.info("shutdown: stopping video stream")
+            await _bounded(_stop_video(), "_stop_active_stream")
+            logger.info("shutdown: stopping audio stream")
+            await _bounded(_stop_audio(), "_stop_audio_stream")
+            # Cancel any lingering connection-handler tasks that the
+            # HTTP server's wait_closed couldn't drain (e.g. a
+            # /stream.bin or /audio.bin handler blocked in queue.get()
+            # because the listener was closed before they finished
+            # writing). Without this they hold the asyncio loop alive
+            # and the process never exits.
+            current = asyncio.current_task()
+            stragglers = [t for t in asyncio.all_tasks(loop) if t is not current and not t.done()]
+            if stragglers:
+                logger.info("shutdown: cancelling %d straggler task(s)", len(stragglers))
+                for t in stragglers:
+                    t.cancel()
+                with contextlib.suppress(Exception):
+                    await asyncio.wait(stragglers, timeout=2.0)
+            logger.info("shutdown complete")

@@ -775,6 +775,13 @@ async def core_device_display_serve_video_stream(
     display_id: Annotated[int, typer.Option("--display-id")] = 1,
     bind: Annotated[str, typer.Option("--bind", help="Host to bind the webserver on")] = "127.0.0.1",
     http_port: Annotated[int, typer.Option("--http-port", help="Port for the webserver")] = 8080,
+    no_audio: Annotated[
+        bool,
+        typer.Option(
+            "--no-audio",
+            help="Don't auto-enable sound in the viewer (user can still click Enable Sound).",
+        ),
+    ] = False,
 ) -> None:
     """Serve the device's screen via HTTP — view in any modern browser.
 
@@ -791,6 +798,7 @@ async def core_device_display_serve_video_stream(
         bind=bind,
         http_port=http_port,
         display_id=display_id,
+        audio_default_on=not no_audio,
     )
     await server.serve()
 
