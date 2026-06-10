@@ -281,10 +281,17 @@ async function run() {
     let needsResync = false;     // skip deltas until we see the next key after an error
     const buildDecoder = () => new VideoDecoder({
         output: (frame) => {
-            if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
+            // Apple's encoder signals slightly different displayWidth/Height
+            // across frames (we've measured 1264x2752 oscillating with
+            // 1264x2736 mid-stream as the iOS home indicator toggles). If
+            // we resize the canvas on every change the entire <canvas>
+            // visibly shrinks/expands -- that's the "screen changing size"
+            // pattern the user sees. Lock the canvas to the largest size
+            // we've seen so frames just draw into the existing surface.
+            if (frame.displayWidth > canvas.width || frame.displayHeight > canvas.height) {
                 canvas.width = frame.displayWidth;
                 canvas.height = frame.displayHeight;
-                log('first frame: ' + frame.displayWidth + 'x' + frame.displayHeight);
+                log('canvas set: ' + canvas.width + 'x' + canvas.height);
             }
             ctx.drawImage(frame, 0, 0);
             frame.close();
