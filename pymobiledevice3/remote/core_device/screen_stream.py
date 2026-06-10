@@ -320,10 +320,22 @@ async function run() {
             const type = buf[4];
             const data = buf.slice(5, 4 + len);  // .slice copies the backing buffer
             buf = buf.subarray(4 + len);
-            if (type === 0) {
+            // type:
+            //   0 = key (IDR) -- decode normally
+            //   1 = delta
+            //   2 = key WITH RESET -- server detected an upstream drop; the
+            //       decoder's reference state may be silently stale, so
+            //       rebuild before decoding this IDR. (VideoToolbox often
+            //       renders torn frames without firing the error callback.)
+            if (type === 2) {
+                decoder = buildDecoder();
+                decoder.configure({ codec });
+                needsResync = false;
+                gotKey = true;
+                log('forced reset @ key after upstream drop');
+            } else if (type === 0) {
                 gotKey = true;
                 if (needsResync) {
-                    // Recover after a decoder error: rebuild and reconfigure.
                     decoder = buildDecoder();
                     decoder.configure({ codec });
                     needsResync = false;
@@ -331,24 +343,23 @@ async function run() {
                 }
             }
             if (!gotKey) continue;
-            if (needsResync) continue;       // hold deltas until the next key arrives
+            if (needsResync) continue;
             if (decoder.state !== 'configured') {
                 log('decoder ' + decoder.state + ' @' + sentCount + ' - rebuilding');
                 decoder = buildDecoder();
                 decoder.configure({ codec });
-                needsResync = true;          // wait for next key before feeding again
+                needsResync = true;
                 continue;
             }
             try {
                 decoder.decode(new EncodedVideoChunk({
-                    type: type === 0 ? 'key' : 'delta',
+                    type: (type === 0 || type === 2) ? 'key' : 'delta',
                     timestamp: timestamp,
                     data: data,
                 }));
                 timestamp += 16666;
                 sentCount++;
             } catch (e) {
-                // Synchronous throw (rare - usually means decoder state mismatch).
                 log('sync decode err @' + sentCount + ': ' + e.message);
                 needsResync = true;
             }
@@ -660,10 +671,26 @@ class ScreenStreamServer:
                     pli_task = asyncio.create_task(self._send_rtcp_pli())
                     self._pli_tasks.add(pli_task)
                     pli_task.add_done_callback(self._pli_tasks.discard)
+                    # Also force every connected subscriber to wait for the
+                    # next IDR before feeding the decoder again. VideoToolbox
+                    # often *doesn't* throw on a broken-reference delta -- it
+                    # renders visible tearing without firing the error
+                    # callback -- so we can't rely on the browser to notice
+                    # on its own. Marking needs_key here means: skip frames
+                    # until our PLI-induced IDR arrives, then full reset.
+                    for state in self._subscribers.values():
+                        state.needs_key = True
                 if current_au and not au_corrupt:
                     annexb = b"".join(b"\x00\x00\x00\x01" + nal for nal in current_au)
+                    # Three framing types:
+                    #   0 = key (IDR) - decode normally
+                    #   1 = delta
+                    #   2 = key WITH RESET - browser must rebuild the decoder
+                    #       before decoding this AU. Used when a prior drop
+                    #       left the decoder's reference state stale.
                     type_byte = b"\x00" if au_is_key else b"\x01"
                     msg = (len(annexb) + 1).to_bytes(4, "big") + type_byte + annexb
+                    msg_reset = (len(annexb) + 1).to_bytes(4, "big") + b"\x02" + annexb if au_is_key else msg
                     if au_is_key:
                         self._init_sequence = msg
                         self._saw_first_key = True
@@ -685,6 +712,13 @@ class ScreenStreamServer:
                                 if not au_is_key:
                                     continue
                                 state.needs_key = False
+                                # Use the reset variant so the browser
+                                # rebuilds its decoder before this key --
+                                # the prior decoder may have absorbed a
+                                # broken delta without erroring and now
+                                # holds stale reference frames.
+                                q.put_nowait(msg_reset)
+                                continue
                             q.put_nowait(msg)
                 current_au = []
                 au_is_key = False
@@ -922,13 +956,12 @@ class ScreenStreamServer:
                 self._hid_worker_task = asyncio.create_task(self._hid_worker())
 
     async def _stop_hid(self) -> None:
-        task = self._hid_worker_task
-        self._hid_worker_task = None
-        if task is not None:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await task
-        # Drain any pending requests so a restart starts clean.
+        # Drain pending requests so the new stream context doesn't get
+        # POSTs queued against the old one. We keep the worker task ALIVE
+        # though -- on the next /touch it will lazily re-open UHS/Indigo
+        # against the fresh stream via _ensure_hid. Cancelling the worker
+        # here would leave us with no consumer of _hid_queue after a
+        # forced restart and touches would silently stall.
         while not self._hid_queue.empty():
             with contextlib.suppress(asyncio.QueueEmpty):
                 self._hid_queue.get_nowait()
@@ -1129,7 +1162,19 @@ class ScreenStreamServer:
             writer.close()
             return
 
-        await self._ensure_fresh_stream()
+        # Force a fresh stream on every /stream.bin connect. Replaying a
+        # cached _init_sequence is only safe immediately after the IDR was
+        # received -- on a long-GOP stream the cached IDR may be minutes
+        # old, and the live deltas we'd push next reference frames the
+        # new subscriber never saw. ffmpeg flags this as "Could not find
+        # ref with POC <N>" for every post-connect AU; VideoToolbox /
+        # WebCodecs often render it as silent tearing without firing
+        # decoder.error -- so we'd never resync.
+        #
+        # PLI alone doesn't reliably make this device's encoder emit a
+        # fresh IDR. A full stream restart always begins with one. Costs
+        # ~500ms per browser-tab refresh but it's the only correct path.
+        await self._ensure_fresh_stream(force=True)
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(self._stream_ready.wait(), timeout=3.0)
 
@@ -1145,7 +1190,6 @@ class ScreenStreamServer:
         # arrival (e.g. when the JS event loop is busy posting input events)
         # before we have to flush and resync from the next keyframe.
         queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=32)
-        # Send the cached init sequence (VPS/SPS/PPS+IDR) so the decoder has a keyframe.
         if self._init_sequence is not None:
             queue.put_nowait(self._init_sequence)
         self._subscribers[queue] = _SubState()
@@ -1221,6 +1265,15 @@ class ScreenStreamServer:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await watchdog
             await self._stop_hid()
+            # _stop_hid no longer cancels the worker (it stays alive across
+            # in-session stream restarts) -- so on real shutdown we cancel
+            # it explicitly here.
+            task = self._hid_worker_task
+            self._hid_worker_task = None
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
             async with self._stream_lock:
                 await self._stop_active_stream()
             http_server.close()
