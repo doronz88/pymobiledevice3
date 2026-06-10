@@ -307,7 +307,7 @@ async function run() {
         },
     });
     let decoder = buildDecoder();
-    decoder.configure({ codec });
+    decoder.configure({ codec, optimizeForLatency: true });
     log('state after configure: ' + decoder.state);
 
     const resp = await fetch('/stream.bin');
@@ -337,7 +337,7 @@ async function run() {
             //       renders torn frames without firing the error callback.)
             if (type === 2) {
                 decoder = buildDecoder();
-                decoder.configure({ codec });
+                decoder.configure({ codec, optimizeForLatency: true });
                 needsResync = false;
                 gotKey = true;
                 log('forced reset @ key after upstream drop');
@@ -345,7 +345,7 @@ async function run() {
                 gotKey = true;
                 if (needsResync) {
                     decoder = buildDecoder();
-                    decoder.configure({ codec });
+                    decoder.configure({ codec, optimizeForLatency: true });
                     needsResync = false;
                     log('resynced @ key after ' + decodeErrCount + ' decode err(s)');
                 }
@@ -355,7 +355,7 @@ async function run() {
             if (decoder.state !== 'configured') {
                 log('decoder ' + decoder.state + ' @' + sentCount + ' - rebuilding');
                 decoder = buildDecoder();
-                decoder.configure({ codec });
+                decoder.configure({ codec, optimizeForLatency: true });
                 needsResync = true;
                 continue;
             }
