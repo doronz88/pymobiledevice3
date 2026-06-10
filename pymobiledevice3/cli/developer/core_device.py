@@ -31,7 +31,11 @@ from pymobiledevice3.remote.core_device.hid_service import (
 )
 from pymobiledevice3.remote.core_device.location_service import LocationService
 from pymobiledevice3.remote.core_device.screen_capture_service import ScreenCaptureService
-from pymobiledevice3.remote.core_device.screen_stream import ScreenStreamServer, capture_rtp_to_file
+from pymobiledevice3.remote.core_device.screen_stream import (
+    ScreenStreamServer,
+    capture_audio_rtp_to_file,
+    capture_rtp_to_file,
+)
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.crash_reports import CrashReportsManager
 from pymobiledevice3.utils import try_decode
@@ -736,6 +740,29 @@ async def core_device_display_start_video_stream(
         service_provider,
         output,
         display_id=display_id,
+        duration=duration,
+        receiver_port=receiver_port,
+    )
+
+
+@display_cli.command("start-audio-stream")
+@async_command
+async def core_device_display_start_audio_stream(
+    service_provider: RSDServiceProviderDep,
+    output: Annotated[Path, typer.Argument(help="Write received RTP packet bytes to this file")],
+    duration: Annotated[float, typer.Option("--duration", help="Seconds to capture")] = 10.0,
+    receiver_port: Annotated[int, typer.Option("--port")] = 0,
+) -> None:
+    """Capture raw RTP audio packets from the device's system-audio output.
+
+    Each packet is written as ``[4-byte BE length][packet bytes]``. The
+    device advertises ``RxPayloadType=101`` and ``AudioStreamMode=8`` —
+    inspect the captured payloads to identify the codec before building
+    browser playback.
+    """
+    await capture_audio_rtp_to_file(
+        service_provider,
+        output,
         duration=duration,
         receiver_port=receiver_port,
     )

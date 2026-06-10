@@ -4,6 +4,7 @@ from typing import Optional
 
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.core_device.media_stream_offer import (
+    build_negotiator_offer_audio,
     build_negotiator_offer_video,
     new_call_id,
 )
@@ -92,6 +93,60 @@ class DisplayService(CoreDeviceService):
             "senderIP": sender_ip,
             "timeout": XpcUInt64Type(timeout),
             "type": "video",
+        }
+        return await self.invoke(
+            "com.apple.coredevice.feature.startmediastream",
+            request,
+            action_identifier="com.apple.coredevice.action.mediastreamstart",
+        )
+
+    async def start_audio_stream(
+        self,
+        receiver_ip: str,
+        receiver_port: int,
+        sender_ip: str,
+        timeout: int = 20,
+        client_session_id: Optional[uuid.UUID] = None,
+    ) -> dict:
+        """Start an RTP audio stream of the device's system audio output.
+
+        Xcode's Mirror pairs an audio stream with the video stream using the
+        SAME ``client_session_id`` — pass the value you used for the video
+        start to keep them grouped on the device side.
+
+        :param receiver_ip: Host IPv6 address where the device should send
+                            RTP/RTCP audio packets.
+        :param receiver_port: Host UDP port (must already be bound).
+        :param sender_ip: Device's IPv6 address (the RSD tunnel peer).
+        :param timeout: Negotiation timeout in seconds.
+        :param client_session_id: Shared session UUID; a fresh one is
+                                  generated when omitted.
+        :return: Response dict with ``connection`` (carries ``sender`` port,
+                 ``source.audioSystemOutput`` marker, full ``streamConfig``
+                 — ``RxPayloadType=101``, ``AudioStreamMode=8``) and
+                 ``negotiatorAnswer``.
+        """
+        if client_session_id is None:
+            client_session_id = uuid.uuid4()
+        call_id = new_call_id()
+        session_id = random.randint(0, 0xFFFFFFFF)
+        negotiator_offer = build_negotiator_offer_audio(call_id=call_id, session_id=session_id)
+        request = {
+            "clientSupportedFeatures": XpcUInt64Type(_CLIENT_SUPPORTED_FEATURES),
+            "direction": "output",
+            "negotiatorOffer": negotiator_offer,
+            "options": {
+                "AVCMediaStreamNegotiatorAccessNetworkType": {"int": XpcInt64Type(_DEFAULT_ACCESS_NETWORK_TYPE)},
+                "AVCMediaStreamNegotiatorTransportProtocolType": {
+                    "int": XpcInt64Type(_DEFAULT_TRANSPORT_PROTOCOL_TYPE)
+                },
+                "avcMediaStreamOptionClientSessionID": {"uuid": client_session_id},
+            },
+            "receiverIP": receiver_ip,
+            "receiverPort": XpcUInt64Type(receiver_port),
+            "senderIP": sender_ip,
+            "timeout": XpcUInt64Type(timeout),
+            "type": "audio",
         }
         return await self.invoke(
             "com.apple.coredevice.feature.startmediastream",

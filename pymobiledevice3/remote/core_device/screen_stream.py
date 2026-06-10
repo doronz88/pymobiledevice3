@@ -434,6 +434,63 @@ async def capture_rtp_to_file(
     return captured
 
 
+async def capture_audio_rtp_to_file(
+    rsd: RemoteServiceDiscoveryService,
+    output_path: Path,
+    *,
+    duration: float = 10.0,
+    receiver_port: int = 0,
+) -> int:
+    """Audio counterpart of :func:`capture_rtp_to_file`. Saves the raw RTP
+    packets (length-prefixed) the device pushes for ``type='audio'``.
+
+    The streamConfig the device returns advertises ``RxPayloadType=101`` and
+    ``AudioStreamMode=8`` -- Apple AAC-ELD at 48 kHz stereo, 480 samples/frame
+    (10 ms). Used by ``pymobiledevice3 ... display start-audio-stream``.
+    """
+    sender_ip = rsd.service.address[0]
+    sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+    sock.bind(("::", receiver_port))
+    bound_port = sock.getsockname()[1]
+    logger.info(f"Listening for AUDIO RTP on [{sender_ip}] → ::{bound_port}")
+
+    captured = 0
+    async with DisplayService(rsd) as service:
+        local_ip = service.service.local_address[0]
+        answer = await service.start_audio_stream(
+            receiver_ip=local_ip,
+            receiver_port=bound_port,
+            sender_ip=sender_ip,
+        )
+        cfg = answer["connection"].get("streamConfig", {})
+        logger.info(
+            "Audio stream started: PT=%s mode=%s sender_port=%s",
+            cfg.get("RxPayloadType"),
+            cfg.get("AudioStreamMode"),
+            cfg.get("SourcePort"),
+        )
+        sock.setblocking(False)
+        loop = asyncio.get_running_loop()
+        with open(output_path, "wb") as fp:
+            deadline = loop.time() + duration
+            while loop.time() < deadline:
+                remaining = deadline - loop.time()
+                try:
+                    data = await asyncio.wait_for(loop.sock_recv(sock, 65535), timeout=remaining)
+                except asyncio.TimeoutError:
+                    break
+                fp.write(len(data).to_bytes(4, "big") + data)
+                captured += 1
+        logger.info(f"Captured {captured} audio packets to {output_path}")
+        client_session_id = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
+        if not isinstance(client_session_id, uuid.UUID):
+            client_session_id = uuid.UUID(client_session_id)
+        with contextlib.suppress(Exception):
+            await service.stop_media_stream(client_session_id)
+    sock.close()
+    return captured
+
+
 # ---------------------------------------------------------------------------
 # HTTP webserver that decodes in-browser via WebCodecs
 # ---------------------------------------------------------------------------
