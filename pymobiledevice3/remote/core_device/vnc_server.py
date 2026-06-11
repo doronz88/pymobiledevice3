@@ -38,8 +38,11 @@ from pymobiledevice3.remote.core_device.display_service import DisplayService
 from pymobiledevice3.remote.core_device.hevc_phantom import build_phantoms_for_bootstrap
 from pymobiledevice3.remote.core_device.hid_service import (
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
+    HID_BUTTON_STATE_DOWN,
+    HID_BUTTON_STATE_UP,
     TOUCHSCREEN_STATE_CONTACT,
     TOUCHSCREEN_STATE_RELEASE,
+    IndigoHIDService,
     UniversalHIDServiceService,
 )
 from pymobiledevice3.remote.core_device.screen_stream import depacketize_hevc
@@ -71,6 +74,44 @@ _ENC_LAST_RECT = -224
 
 _SERVER_NAME = b"iPhone screen (pymobiledevice3)"
 
+# Named iOS hardware buttons → (usage_page, usage_code). Same table as
+# ``cli/developer/core_device.py``; replicated rather than imported so
+# this server module stays decoupled from the CLI layer.
+_BTN_HOME = (0x0C, 0x40)
+_BTN_LOCK = (0x0C, 0x30)
+_BTN_VOL_UP = (0x0C, 0xE9)
+_BTN_VOL_DOWN = (0x0C, 0xEA)
+_BTN_MUTE = (0x0C, 0xE2)
+_BTN_SIRI = (0x0C, 0xCF)
+
+# RFB mouse-button bit (zero-indexed) -> iOS button.
+# Left button (bit 0) is the touch-pointer, handled separately.
+_MOUSE_BUTTON_TO_HID: dict[int, tuple[int, int]] = {
+    1: _BTN_LOCK,  # middle click
+    2: _BTN_HOME,  # right click
+}
+
+# X11 keysym -> iOS button. Picked for keys that virtually never get
+# typed into iOS apps:
+#   Home  / End          (Fn+← / Fn+→ on a Mac keyboard)
+#   PageUp / PageDown    (Fn+↑ / Fn+↓ on a Mac keyboard)
+#   F-keys               (hold Fn+F1-F4 if your Mac has the default
+#                         "media keys" preference, or just F1-F4 if
+#                         you've ticked "Use F1, F2, etc. as standard
+#                         function keys" in System Settings)
+_KEYSYM_TO_HID: dict[int, tuple[int, int]] = {
+    0xFF50: _BTN_HOME,  # Home key
+    0xFF57: _BTN_LOCK,  # End key
+    0xFF55: _BTN_VOL_UP,  # Page Up
+    0xFF56: _BTN_VOL_DOWN,  # Page Down
+    0xFFBE: _BTN_HOME,  # F1
+    0xFFBF: _BTN_VOL_UP,  # F2
+    0xFFC0: _BTN_VOL_DOWN,  # F3
+    0xFFC1: _BTN_MUTE,  # F4
+    0xFFC2: _BTN_LOCK,  # F5
+    0xFFC3: _BTN_SIRI,  # F6
+}
+
 
 class _VncClient:
     """Per-connection state."""
@@ -87,6 +128,10 @@ class _VncClient:
         self.pressed = False
         self.last_x = 0
         self.last_y = 0
+        # Previous RFB button mask, used to diff non-left buttons
+        # (right/middle) on each PointerEvent so we can fire the
+        # mapped iOS hardware button on the down->up edge.
+        self.last_button_mask = 0
 
 
 class VncStreamServer:
@@ -163,8 +208,11 @@ class VncStreamServer:
         self._audio_session_id: Optional[uuid.UUID] = None
         self._audio_svc: Optional[DisplayService] = None
 
-        # HID for pointer-event translation.
+        # HID for pointer-event translation (UniversalHIDService for the
+        # touchscreen surface, IndigoHIDService for hardware buttons
+        # like Home / Lock / Volume / Siri / Mute).
         self._uhs: Optional[UniversalHIDServiceService] = None
+        self._indigo: Optional[IndigoHIDService] = None
         self._hid_lock = asyncio.Lock()
 
     # ----- HEVC -> BGRA callback marshalling --------------------------------
@@ -573,20 +621,52 @@ class VncStreamServer:
                 await uhs.connect()
                 self._uhs = uhs
 
+    async def _ensure_indigo(self) -> None:
+        async with self._hid_lock:
+            if self._indigo is None:
+                ihs = IndigoHIDService(self._rsd)
+                await ihs.connect()
+                self._indigo = ihs
+
     async def _stop_hid(self) -> None:
         if self._uhs is not None:
             with contextlib.suppress(Exception):
                 await self._uhs.close()
             self._uhs = None
+        if self._indigo is not None:
+            with contextlib.suppress(Exception):
+                await self._indigo.close()
+            self._indigo = None
+
+    async def _send_hid_button(self, page: int, code: int, *, down: bool) -> None:
+        state = HID_BUTTON_STATE_DOWN if down else HID_BUTTON_STATE_UP
+        try:
+            await self._ensure_indigo()
+            assert self._indigo is not None
+            await self._indigo.send_button(page, code, state)
+        except Exception:
+            logger.exception("HID button send failed (page=0x%02X code=0x%02X)", page, code)
 
     async def _handle_pointer(self, client: _VncClient, button_mask: int, x: int, y: int) -> None:
-        """Translate an RFB PointerEvent into HID touchscreen contact.
+        """Translate an RFB PointerEvent into HID activity.
 
-        The device's HID coords are uint16 normalised across the full
-        display; we rescale from framebuffer pixels (0..fb_w/h) to
-        0..65535. Left mouse button (bit 0) == finger touch."""
+        Left button (bit 0)  -> touchscreen contact at (x, y).
+        Right button (bit 2) -> iOS Home button.
+        Middle button (bit 1) -> iOS Lock/Power button.
+
+        Touch coords are rescaled from framebuffer pixels to the
+        device's uint16 normalised range (0..65535)."""
         if self._fb_width <= 0 or self._fb_height <= 0:
             return
+
+        # Diff non-left buttons for press/release edge detection.
+        changed = button_mask ^ client.last_button_mask
+        for bit, (page, code) in _MOUSE_BUTTON_TO_HID.items():
+            mask = 1 << bit
+            if changed & mask:
+                await self._send_hid_button(page, code, down=bool(button_mask & mask))
+        client.last_button_mask = button_mask
+
         hid_x = max(0, min(65535, int(x * 65535 / max(1, self._fb_width - 1))))
         hid_y = max(0, min(65535, int(y * 65535 / max(1, self._fb_height - 1))))
         pressed = bool(button_mask & 1)
@@ -614,6 +694,16 @@ class VncStreamServer:
         client.pressed = pressed
         client.last_x = hid_x
         client.last_y = hid_y
+
+    async def _handle_key(self, down: bool, keysym: int) -> None:
+        """Forward mapped X11 keysyms to iOS hardware buttons. See
+        ``_KEYSYM_TO_HID`` for the table. Unmapped keys are dropped --
+        full keyboard input isn't a goal for this server."""
+        mapping = _KEYSYM_TO_HID.get(keysym)
+        if mapping is None:
+            return
+        page, code = mapping
+        await self._send_hid_button(page, code, down=down)
 
     # ----- RFB protocol -----------------------------------------------------
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -816,8 +906,10 @@ class VncStreamServer:
                 )
                 client.wants_update.set()
             elif msg_type == 4:
-                # KeyEvent: down-flag(1) + padding(2) + key(4). Ignored.
-                await r.readexactly(7)
+                # KeyEvent: down-flag(1) + padding(2) + key(4)  (X11 keysym).
+                payload = await r.readexactly(7)
+                down_flag, keysym = struct.unpack(">B2xI", payload)
+                await self._handle_key(bool(down_flag), keysym)
             elif msg_type == 5:
                 # PointerEvent: button-mask(1) + x(2) + y(2)
                 data = await r.readexactly(5)
