@@ -407,10 +407,14 @@ class VncStreamServer:
         """
         loop = asyncio.get_running_loop()
         motion_threshold_bps = 100_000  # 100 KB/s = motion
-        active_interval = 1.5  # fire this often during sustained motion
+        # Aggressive sustained-motion refresh: lower = fewer accumulated
+        # tears, more 30 ms chops per second. 0.6 s means ~5 % of motion
+        # time is chop, in exchange for limiting LTRP staleness to one
+        # refresh interval. Try-and-see -- bump back up if too choppy.
+        active_interval = 0.6
         settle_delay = 0.4  # wait after motion ends
         heartbeat = 10.0  # max between refreshes when idle
-        min_interval = 0.8  # cap back-to-back refreshes
+        min_interval = 0.4  # cap back-to-back refreshes
         while True:
             try:
                 await asyncio.sleep(0.1)
