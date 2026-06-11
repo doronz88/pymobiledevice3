@@ -29,6 +29,7 @@ import contextlib
 import ctypes
 import ctypes.util
 import queue
+import sys
 import threading
 from ctypes import (
     CFUNCTYPE,
@@ -44,13 +45,13 @@ from ctypes import (
     cast,
 )
 
-# ---------------------------------------------------------------------------
-# Framework handles
-# ---------------------------------------------------------------------------
-vt = ctypes.CDLL(ctypes.util.find_library("VideoToolbox"))
-cm = ctypes.CDLL(ctypes.util.find_library("CoreMedia"))
-cf = ctypes.CDLL(ctypes.util.find_library("CoreFoundation"))
-cv = ctypes.CDLL(ctypes.util.find_library("CoreVideo"))
+# Pure-Python type/constant declarations live at module top so importers
+# on non-Darwin platforms (Linux/Windows) can `import vt_jpeg` without
+# triggering the framework loads below. The macOS-only setup -- CDLLs,
+# function signatures, in_dll constants, helpers that close over them
+# -- all sit behind the platform guard. The classes themselves raise a
+# clear "macOS only" error at construction time on other platforms.
+_IS_DARWIN = sys.platform == "darwin"
 
 OSStatus = c_int32
 
@@ -64,87 +65,11 @@ class _CMTime(Structure):
     ]
 
 
-# ---------------------------------------------------------------------------
-# CoreFoundation primitives
-# ---------------------------------------------------------------------------
-cf.CFRetain.restype = c_void_p
-cf.CFRetain.argtypes = [c_void_p]
-cf.CFRelease.restype = None
-cf.CFRelease.argtypes = [c_void_p]
-cf.CFDictionaryCreate.restype = c_void_p
-cf.CFDictionaryCreate.argtypes = [c_void_p, POINTER(c_void_p), POINTER(c_void_p), c_size_t, c_void_p, c_void_p]
-cf.CFNumberCreate.restype = c_void_p
-cf.CFNumberCreate.argtypes = [c_void_p, c_int32, c_void_p]
-kCFBooleanTrue = c_void_p.in_dll(cf, "kCFBooleanTrue")
-kCFBooleanFalse = c_void_p.in_dll(cf, "kCFBooleanFalse")
-kCFTypeDictionaryKeyCallBacks = c_void_p.in_dll(cf, "kCFTypeDictionaryKeyCallBacks")
-kCFTypeDictionaryValueCallBacks = c_void_p.in_dll(cf, "kCFTypeDictionaryValueCallBacks")
-kCFNumberSInt32Type = 3
-
-
-def _cfnumber_i32(value: int) -> c_void_p:
-    v = c_int32(value)
-    return c_void_p(cf.CFNumberCreate(None, kCFNumberSInt32Type, byref(v)))
-
-
-# ---------------------------------------------------------------------------
-# CoreMedia bindings
-# ---------------------------------------------------------------------------
-cm.CMVideoFormatDescriptionCreateFromHEVCParameterSets.restype = OSStatus
-cm.CMVideoFormatDescriptionCreateFromHEVCParameterSets.argtypes = [
-    c_void_p,
-    c_size_t,
-    POINTER(c_void_p),
-    POINTER(c_size_t),
-    c_int,
-    c_void_p,
-    POINTER(c_void_p),
-]
-
-
 class _CMVideoDimensions(Structure):
     _fields_ = [("width", c_int32), ("height", c_int32)]
 
 
-cm.CMVideoFormatDescriptionGetDimensions.restype = _CMVideoDimensions
-cm.CMVideoFormatDescriptionGetDimensions.argtypes = [c_void_p]
-
-cm.CMBlockBufferCreateWithMemoryBlock.restype = OSStatus
-cm.CMBlockBufferCreateWithMemoryBlock.argtypes = [
-    c_void_p,
-    c_void_p,
-    c_size_t,
-    c_void_p,
-    c_void_p,
-    c_size_t,
-    c_size_t,
-    c_uint32,
-    POINTER(c_void_p),
-]
-cm.CMBlockBufferReplaceDataBytes.restype = OSStatus
-cm.CMBlockBufferReplaceDataBytes.argtypes = [c_void_p, c_void_p, c_size_t, c_size_t]
-cm.CMSampleBufferCreateReady.restype = OSStatus
-cm.CMSampleBufferCreateReady.argtypes = [
-    c_void_p,
-    c_void_p,
-    c_void_p,
-    c_int64,
-    c_int64,
-    c_void_p,
-    c_int64,
-    POINTER(c_size_t),
-    POINTER(c_void_p),
-]
-cm.CMSampleBufferGetDataBuffer.restype = c_void_p
-cm.CMSampleBufferGetDataBuffer.argtypes = [c_void_p]
-cm.CMBlockBufferGetDataLength.restype = c_size_t
-cm.CMBlockBufferGetDataLength.argtypes = [c_void_p]
-cm.CMBlockBufferCopyDataBytes.restype = OSStatus
-cm.CMBlockBufferCopyDataBytes.argtypes = [c_void_p, c_size_t, c_size_t, c_void_p]
-
-# ---------------------------------------------------------------------------
-# VideoToolbox decoder
-# ---------------------------------------------------------------------------
+# CFUNCTYPE / Structure definitions don't need a CDLL, only ctypes itself.
 VTDecompressionOutputCallback = CFUNCTYPE(
     None,
     c_void_p,
@@ -164,63 +89,133 @@ class _VTDecompressionOutputCallbackRecord(Structure):
     ]
 
 
-vt.VTDecompressionSessionCreate.restype = OSStatus
-vt.VTDecompressionSessionCreate.argtypes = [
-    c_void_p,
-    c_void_p,
-    c_void_p,
-    c_void_p,
-    POINTER(_VTDecompressionOutputCallbackRecord),
-    POINTER(c_void_p),
-]
-vt.VTDecompressionSessionDecodeFrame.restype = OSStatus
-vt.VTDecompressionSessionDecodeFrame.argtypes = [
-    c_void_p,
-    c_void_p,
-    c_uint32,
-    c_void_p,
-    POINTER(c_uint32),
-]
-vt.VTDecompressionSessionWaitForAsynchronousFrames.restype = OSStatus
-vt.VTDecompressionSessionWaitForAsynchronousFrames.argtypes = [c_void_p]
-vt.VTDecompressionSessionInvalidate.restype = None
-vt.VTDecompressionSessionInvalidate.argtypes = [c_void_p]
-
+# Integer/byte constants are pure data, no CDLL needed.
+kCFNumberSInt32Type = 3
 kVTDecodeFrame_EnableAsynchronousDecompression = 1 << 0
 kVTDecodeFrame_1xRealTimePlayback = 1 << 2
-
-# ---------------------------------------------------------------------------
-# CoreVideo pixel-buffer accessors (for direct BGRA readout)
-# ---------------------------------------------------------------------------
-cv.CVPixelBufferLockBaseAddress.restype = c_int32
-cv.CVPixelBufferLockBaseAddress.argtypes = [c_void_p, c_uint32]
-cv.CVPixelBufferUnlockBaseAddress.restype = c_int32
-cv.CVPixelBufferUnlockBaseAddress.argtypes = [c_void_p, c_uint32]
-cv.CVPixelBufferGetBaseAddress.restype = c_void_p
-cv.CVPixelBufferGetBaseAddress.argtypes = [c_void_p]
-cv.CVPixelBufferGetBytesPerRow.restype = c_size_t
-cv.CVPixelBufferGetBytesPerRow.argtypes = [c_void_p]
-cv.CVPixelBufferGetWidth.restype = c_size_t
-cv.CVPixelBufferGetWidth.argtypes = [c_void_p]
-cv.CVPixelBufferGetHeight.restype = c_size_t
-cv.CVPixelBufferGetHeight.argtypes = [c_void_p]
-
 kCVPixelBufferLock_ReadOnly = 1
 kCVPixelFormatType_32BGRA = 0x42475241  # 'BGRA'
-kCVPixelBufferPixelFormatTypeKey = c_void_p.in_dll(cv, "kCVPixelBufferPixelFormatTypeKey")
 
+if _IS_DARWIN:
+    # ---- Framework handles --------------------------------------------------
+    vt = ctypes.CDLL(ctypes.util.find_library("VideoToolbox"))
+    cm = ctypes.CDLL(ctypes.util.find_library("CoreMedia"))
+    cf = ctypes.CDLL(ctypes.util.find_library("CoreFoundation"))
+    cv = ctypes.CDLL(ctypes.util.find_library("CoreVideo"))
 
-def _build_dest_attrs_bgra() -> c_void_p:
-    """Build a destinationImageBufferAttributes dict that pins the
-    decoded output to 32-bit BGRA -- so we can read the framebuffer
-    directly off the CVPixelBuffer instead of going through a JPEG
-    round-trip."""
-    fmt_num = _cfnumber_i32(kCVPixelFormatType_32BGRA)
-    keys = (c_void_p * 1)(kCVPixelBufferPixelFormatTypeKey)
-    values = (c_void_p * 1)(fmt_num)
-    d = cf.CFDictionaryCreate(None, keys, values, 1, kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks)
-    cf.CFRelease(fmt_num)
-    return c_void_p(d)
+    # ---- CoreFoundation primitives -----------------------------------------
+    cf.CFRetain.restype = c_void_p
+    cf.CFRetain.argtypes = [c_void_p]
+    cf.CFRelease.restype = None
+    cf.CFRelease.argtypes = [c_void_p]
+    cf.CFDictionaryCreate.restype = c_void_p
+    cf.CFDictionaryCreate.argtypes = [c_void_p, POINTER(c_void_p), POINTER(c_void_p), c_size_t, c_void_p, c_void_p]
+    cf.CFNumberCreate.restype = c_void_p
+    cf.CFNumberCreate.argtypes = [c_void_p, c_int32, c_void_p]
+    kCFBooleanTrue = c_void_p.in_dll(cf, "kCFBooleanTrue")
+    kCFBooleanFalse = c_void_p.in_dll(cf, "kCFBooleanFalse")
+    kCFTypeDictionaryKeyCallBacks = c_void_p.in_dll(cf, "kCFTypeDictionaryKeyCallBacks")
+    kCFTypeDictionaryValueCallBacks = c_void_p.in_dll(cf, "kCFTypeDictionaryValueCallBacks")
+
+    def _cfnumber_i32(value: int) -> c_void_p:
+        v = c_int32(value)
+        return c_void_p(cf.CFNumberCreate(None, kCFNumberSInt32Type, byref(v)))
+
+    # ---- CoreMedia bindings ------------------------------------------------
+    cm.CMVideoFormatDescriptionCreateFromHEVCParameterSets.restype = OSStatus
+    cm.CMVideoFormatDescriptionCreateFromHEVCParameterSets.argtypes = [
+        c_void_p,
+        c_size_t,
+        POINTER(c_void_p),
+        POINTER(c_size_t),
+        c_int,
+        c_void_p,
+        POINTER(c_void_p),
+    ]
+    cm.CMVideoFormatDescriptionGetDimensions.restype = _CMVideoDimensions
+    cm.CMVideoFormatDescriptionGetDimensions.argtypes = [c_void_p]
+    cm.CMBlockBufferCreateWithMemoryBlock.restype = OSStatus
+    cm.CMBlockBufferCreateWithMemoryBlock.argtypes = [
+        c_void_p,
+        c_void_p,
+        c_size_t,
+        c_void_p,
+        c_void_p,
+        c_size_t,
+        c_size_t,
+        c_uint32,
+        POINTER(c_void_p),
+    ]
+    cm.CMBlockBufferReplaceDataBytes.restype = OSStatus
+    cm.CMBlockBufferReplaceDataBytes.argtypes = [c_void_p, c_void_p, c_size_t, c_size_t]
+    cm.CMSampleBufferCreateReady.restype = OSStatus
+    cm.CMSampleBufferCreateReady.argtypes = [
+        c_void_p,
+        c_void_p,
+        c_void_p,
+        c_int64,
+        c_int64,
+        c_void_p,
+        c_int64,
+        POINTER(c_size_t),
+        POINTER(c_void_p),
+    ]
+    cm.CMSampleBufferGetDataBuffer.restype = c_void_p
+    cm.CMSampleBufferGetDataBuffer.argtypes = [c_void_p]
+    cm.CMBlockBufferGetDataLength.restype = c_size_t
+    cm.CMBlockBufferGetDataLength.argtypes = [c_void_p]
+    cm.CMBlockBufferCopyDataBytes.restype = OSStatus
+    cm.CMBlockBufferCopyDataBytes.argtypes = [c_void_p, c_size_t, c_size_t, c_void_p]
+
+    # ---- VideoToolbox decoder ----------------------------------------------
+    vt.VTDecompressionSessionCreate.restype = OSStatus
+    vt.VTDecompressionSessionCreate.argtypes = [
+        c_void_p,
+        c_void_p,
+        c_void_p,
+        c_void_p,
+        POINTER(_VTDecompressionOutputCallbackRecord),
+        POINTER(c_void_p),
+    ]
+    vt.VTDecompressionSessionDecodeFrame.restype = OSStatus
+    vt.VTDecompressionSessionDecodeFrame.argtypes = [
+        c_void_p,
+        c_void_p,
+        c_uint32,
+        c_void_p,
+        POINTER(c_uint32),
+    ]
+    vt.VTDecompressionSessionWaitForAsynchronousFrames.restype = OSStatus
+    vt.VTDecompressionSessionWaitForAsynchronousFrames.argtypes = [c_void_p]
+    vt.VTDecompressionSessionInvalidate.restype = None
+    vt.VTDecompressionSessionInvalidate.argtypes = [c_void_p]
+
+    # ---- CoreVideo pixel-buffer accessors (for direct BGRA readout) --------
+    cv.CVPixelBufferLockBaseAddress.restype = c_int32
+    cv.CVPixelBufferLockBaseAddress.argtypes = [c_void_p, c_uint32]
+    cv.CVPixelBufferUnlockBaseAddress.restype = c_int32
+    cv.CVPixelBufferUnlockBaseAddress.argtypes = [c_void_p, c_uint32]
+    cv.CVPixelBufferGetBaseAddress.restype = c_void_p
+    cv.CVPixelBufferGetBaseAddress.argtypes = [c_void_p]
+    cv.CVPixelBufferGetBytesPerRow.restype = c_size_t
+    cv.CVPixelBufferGetBytesPerRow.argtypes = [c_void_p]
+    cv.CVPixelBufferGetWidth.restype = c_size_t
+    cv.CVPixelBufferGetWidth.argtypes = [c_void_p]
+    cv.CVPixelBufferGetHeight.restype = c_size_t
+    cv.CVPixelBufferGetHeight.argtypes = [c_void_p]
+    kCVPixelBufferPixelFormatTypeKey = c_void_p.in_dll(cv, "kCVPixelBufferPixelFormatTypeKey")
+
+    def _build_dest_attrs_bgra() -> c_void_p:
+        """Build a destinationImageBufferAttributes dict that pins the
+        decoded output to 32-bit BGRA -- so we can read the framebuffer
+        directly off the CVPixelBuffer instead of going through a JPEG
+        round-trip."""
+        fmt_num = _cfnumber_i32(kCVPixelFormatType_32BGRA)
+        keys = (c_void_p * 1)(kCVPixelBufferPixelFormatTypeKey)
+        values = (c_void_p * 1)(fmt_num)
+        d = cf.CFDictionaryCreate(None, keys, values, 1, kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks)
+        cf.CFRelease(fmt_num)
+        return c_void_p(d)
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +257,8 @@ class HEVCDecoder:
     re-encode step."""
 
     def __init__(self, vps: bytes, sps: bytes, pps: bytes, *, bgra_output: bool = False) -> None:
+        if not _IS_DARWIN:
+            raise RuntimeError("HEVCDecoder requires macOS (VideoToolbox)")
         self._ps_buffers = [ctypes.create_string_buffer(b, len(b)) for b in (vps, sps, pps)]
         ps_ptrs = (c_void_p * 3)(*[cast(b, c_void_p) for b in self._ps_buffers])
         ps_sizes = (c_size_t * 3)(*[len(b) for b in (vps, sps, pps)])

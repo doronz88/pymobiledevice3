@@ -18,6 +18,7 @@ import ctypes
 import ctypes.util
 import logging
 import queue as _queue
+import sys
 from ctypes import (
     CFUNCTYPE,
     POINTER,
@@ -31,7 +32,11 @@ from ctypes import (
 
 logger = logging.getLogger(__name__)
 
-at = ctypes.CDLL(ctypes.util.find_library("AudioToolbox"))
+# Pure-Python type / Structure declarations stay at module top so the
+# module is importable on non-Darwin platforms; the macOS-only CDLL +
+# signature setup sits behind the platform guard and AudioQueuePlayer
+# raises in __init__ on other platforms.
+_IS_DARWIN = sys.platform == "darwin"
 
 OSStatus = c_int32
 
@@ -64,29 +69,31 @@ class _AudioQueueBuffer(Structure):
 
 _AudioQueueBufferRef = POINTER(_AudioQueueBuffer)
 _AudioQueueRef = c_void_p
-
 _AudioQueueOutputCallback = CFUNCTYPE(None, c_void_p, _AudioQueueRef, _AudioQueueBufferRef)
 
-at.AudioQueueNewOutput.restype = OSStatus
-at.AudioQueueNewOutput.argtypes = [
-    POINTER(_ASBD),
-    _AudioQueueOutputCallback,
-    c_void_p,
-    c_void_p,  # CFRunLoopRef -- NULL = AudioQueue picks an internal thread
-    c_void_p,  # CFStringRef
-    c_uint32,
-    POINTER(_AudioQueueRef),
-]
-at.AudioQueueAllocateBuffer.restype = OSStatus
-at.AudioQueueAllocateBuffer.argtypes = [_AudioQueueRef, c_uint32, POINTER(_AudioQueueBufferRef)]
-at.AudioQueueEnqueueBuffer.restype = OSStatus
-at.AudioQueueEnqueueBuffer.argtypes = [_AudioQueueRef, _AudioQueueBufferRef, c_uint32, c_void_p]
-at.AudioQueueStart.restype = OSStatus
-at.AudioQueueStart.argtypes = [_AudioQueueRef, c_void_p]
-at.AudioQueueStop.restype = OSStatus
-at.AudioQueueStop.argtypes = [_AudioQueueRef, c_uint32]
-at.AudioQueueDispose.restype = OSStatus
-at.AudioQueueDispose.argtypes = [_AudioQueueRef, c_uint32]
+if _IS_DARWIN:
+    at = ctypes.CDLL(ctypes.util.find_library("AudioToolbox"))
+
+    at.AudioQueueNewOutput.restype = OSStatus
+    at.AudioQueueNewOutput.argtypes = [
+        POINTER(_ASBD),
+        _AudioQueueOutputCallback,
+        c_void_p,
+        c_void_p,  # CFRunLoopRef -- NULL = AudioQueue picks an internal thread
+        c_void_p,  # CFStringRef
+        c_uint32,
+        POINTER(_AudioQueueRef),
+    ]
+    at.AudioQueueAllocateBuffer.restype = OSStatus
+    at.AudioQueueAllocateBuffer.argtypes = [_AudioQueueRef, c_uint32, POINTER(_AudioQueueBufferRef)]
+    at.AudioQueueEnqueueBuffer.restype = OSStatus
+    at.AudioQueueEnqueueBuffer.argtypes = [_AudioQueueRef, _AudioQueueBufferRef, c_uint32, c_void_p]
+    at.AudioQueueStart.restype = OSStatus
+    at.AudioQueueStart.argtypes = [_AudioQueueRef, c_void_p]
+    at.AudioQueueStop.restype = OSStatus
+    at.AudioQueueStop.argtypes = [_AudioQueueRef, c_uint32]
+    at.AudioQueueDispose.restype = OSStatus
+    at.AudioQueueDispose.argtypes = [_AudioQueueRef, c_uint32]
 
 
 class AudioQueuePlayer:
@@ -114,6 +121,8 @@ class AudioQueuePlayer:
         # latency doesn't track pool size.
         num_buffers: int = 24,
     ) -> None:
+        if not _IS_DARWIN:
+            raise RuntimeError("AudioQueuePlayer requires macOS (AudioToolbox)")
         fmt = _ASBD(
             mSampleRate=float(sample_rate),
             mFormatID=int.from_bytes(b"lpcm", "big"),
