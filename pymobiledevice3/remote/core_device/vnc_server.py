@@ -91,25 +91,37 @@ _MOUSE_BUTTON_TO_HID: dict[int, tuple[int, int]] = {
     2: _BTN_HOME,  # right click
 }
 
-# X11 keysym -> iOS button. Picked for keys that virtually never get
-# typed into iOS apps:
-#   Home  / End          (Fn+← / Fn+→ on a Mac keyboard)
-#   PageUp / PageDown    (Fn+↑ / Fn+↓ on a Mac keyboard)
-#   F-keys               (hold Fn+F1-F4 if your Mac has the default
-#                         "media keys" preference, or just F1-F4 if
-#                         you've ticked "Use F1, F2, etc. as standard
-#                         function keys" in System Settings)
-_KEYSYM_TO_HID: dict[int, tuple[int, int]] = {
-    0xFF50: _BTN_HOME,  # Home key
-    0xFF57: _BTN_LOCK,  # End key
-    0xFF55: _BTN_VOL_UP,  # Page Up
-    0xFF56: _BTN_VOL_DOWN,  # Page Down
-    0xFFBE: _BTN_HOME,  # F1
-    0xFFBF: _BTN_VOL_UP,  # F2
-    0xFFC0: _BTN_VOL_DOWN,  # F3
-    0xFFC1: _BTN_MUTE,  # F4
-    0xFFC2: _BTN_LOCK,  # F5
-    0xFFC3: _BTN_SIRI,  # F6
+# Modifier keysyms. macOS Screen Sharing sends each modifier as its
+# own KeyEvent down/up around the letter, so we track state per
+# client and gate the hotkey lookup on Ctrl being held.
+_KEYSYM_CTRL = frozenset({0xFFE3, 0xFFE4})  # Control_L / Control_R
+_KEYSYM_SHIFT = frozenset({0xFFE1, 0xFFE2})
+_KEYSYM_ALT = frozenset({0xFFE9, 0xFFEA})  # Alt_L (Option) / Alt_R
+_KEYSYM_CMD = frozenset({0xFFE7, 0xFFE8, 0xFFEB, 0xFFEC})  # Meta_L/R or Super_L/R
+
+# Ctrl + keysym -> iOS button. Ctrl is the prefix because:
+# - No Fn required: every Mac keyboard has a real Ctrl key.
+# - Cmd never reaches us: Screen Sharing.app intercepts Cmd+anything
+#   for its own window shortcuts.
+# - Option+letter emits special chars on Mac (Opt+s -> ß etc.) which
+#   Screen Sharing forwards as those chars, not the base letter.
+# - Reserves plain letters / symbols for the upcoming text-input HID
+#   path, so hotkeys won't collide with typing once we add it.
+# Both ASCII cases are mapped, so Caps Lock or held-Shift don't break
+# a hotkey (e.g. Ctrl+] vs Ctrl+}).
+_CTRL_COMBO_TO_HID: dict[int, tuple[int, int]] = {
+    ord("h"): _BTN_HOME,
+    ord("H"): _BTN_HOME,
+    ord("l"): _BTN_LOCK,
+    ord("L"): _BTN_LOCK,
+    ord("["): _BTN_VOL_DOWN,
+    ord("{"): _BTN_VOL_DOWN,
+    ord("]"): _BTN_VOL_UP,
+    ord("}"): _BTN_VOL_UP,
+    ord("\\"): _BTN_MUTE,
+    ord("|"): _BTN_MUTE,
+    ord("s"): _BTN_SIRI,
+    ord("S"): _BTN_SIRI,
 }
 
 
@@ -132,6 +144,17 @@ class _VncClient:
         # (right/middle) on each PointerEvent so we can fire the
         # mapped iOS hardware button on the down->up edge.
         self.last_button_mask = 0
+        # Modifier state -- Ctrl is the only one consulted for hotkey
+        # gating today; the rest are tracked for symmetry / future use.
+        self.mod_ctrl = False
+        self.mod_shift = False
+        self.mod_alt = False
+        self.mod_cmd = False
+        # keysym -> (page, code) for hotkeys whose key-down fired a
+        # button-down. We need this so that on key-up we send the
+        # matching button-up regardless of whether the user released
+        # Ctrl first.
+        self.active_combos: dict[int, tuple[int, int]] = {}
 
 
 class VncStreamServer:
@@ -695,15 +718,42 @@ class VncStreamServer:
         client.last_x = hid_x
         client.last_y = hid_y
 
-    async def _handle_key(self, down: bool, keysym: int) -> None:
-        """Forward mapped X11 keysyms to iOS hardware buttons. See
-        ``_KEYSYM_TO_HID`` for the table. Unmapped keys are dropped --
-        full keyboard input isn't a goal for this server."""
-        mapping = _KEYSYM_TO_HID.get(keysym)
-        if mapping is None:
+    async def _handle_key(self, client: _VncClient, down: bool, keysym: int) -> None:
+        """Forward Ctrl+<key> combos to iOS hardware buttons. Tracks
+        modifier state per client because RFB sends each modifier as
+        its own KeyEvent down/up around the letter. See
+        ``_CTRL_COMBO_TO_HID`` for the table. Unmapped keys are dropped
+        -- full keyboard input isn't a goal for this server (yet)."""
+        # Modifier-only events update state and stop here.
+        if keysym in _KEYSYM_CTRL:
+            client.mod_ctrl = down
             return
-        page, code = mapping
-        await self._send_hid_button(page, code, down=down)
+        if keysym in _KEYSYM_SHIFT:
+            client.mod_shift = down
+            return
+        if keysym in _KEYSYM_ALT:
+            client.mod_alt = down
+            return
+        if keysym in _KEYSYM_CMD:
+            client.mod_cmd = down
+            return
+
+        if down:
+            # Combo activation requires Ctrl held. No Ctrl -> dropped.
+            if not client.mod_ctrl:
+                return
+            mapping = _CTRL_COMBO_TO_HID.get(keysym)
+            if mapping is None:
+                return
+            client.active_combos[keysym] = mapping
+            await self._send_hid_button(mapping[0], mapping[1], down=True)
+        else:
+            # Release whatever combo this key-down activated, even if
+            # the user released Ctrl first -- otherwise a held HID
+            # button gets stuck down on the device.
+            active = client.active_combos.pop(keysym, None)
+            if active is not None:
+                await self._send_hid_button(active[0], active[1], down=False)
 
     # ----- RFB protocol -----------------------------------------------------
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -909,7 +959,7 @@ class VncStreamServer:
                 # KeyEvent: down-flag(1) + padding(2) + key(4)  (X11 keysym).
                 payload = await r.readexactly(7)
                 down_flag, keysym = struct.unpack(">B2xI", payload)
-                await self._handle_key(bool(down_flag), keysym)
+                await self._handle_key(client, bool(down_flag), keysym)
             elif msg_type == 5:
                 # PointerEvent: button-mask(1) + x(2) + y(2)
                 data = await r.readexactly(5)
