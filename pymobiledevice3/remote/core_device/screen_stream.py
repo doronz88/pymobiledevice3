@@ -2090,16 +2090,6 @@ class ScreenStreamServer:
 
                 loop.add_signal_handler(getattr(signal, signame), _request_stop)
 
-        async def _serve_until_stop():
-            serve_task = asyncio.create_task(http_server.serve_forever())
-            stop_task = asyncio.create_task(stop_event.wait())
-            _, pending = await asyncio.wait([serve_task, stop_task], return_when=asyncio.FIRST_COMPLETED)
-            for t in pending:
-                t.cancel()
-            for t in (serve_task, stop_task):
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await t
-
         async def _bounded(coro, label, timeout=3.0):
             """Run an async cleanup step with a hard timeout so a hung
             RPC can't keep us alive at shutdown."""
@@ -2110,12 +2100,20 @@ class ScreenStreamServer:
             except Exception:
                 logger.exception("shutdown: %s raised", label)
 
+        # Run the server until stop_event fires. Spawn serve_forever() as a
+        # background task so we can cancel it cheaply from the signal path
+        # without awaiting it -- awaiting a cancelled serve_forever() with
+        # active connection handlers can wedge the shutdown indefinitely
+        # (the straggler cancel at the end of this function mops it up).
+        serve_task = asyncio.create_task(http_server.serve_forever(), name="serve_forever")
         try:
             logger.info(f"Open http://{self._bind}:{self._http_port}/ in Safari/Chrome. Ctrl-C to stop.")
-            await _serve_until_stop()
+            await stop_event.wait()
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
+            if not serve_task.done():
+                serve_task.cancel()
             logger.info("shutdown: cancelling watchdog")
             watchdog.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
