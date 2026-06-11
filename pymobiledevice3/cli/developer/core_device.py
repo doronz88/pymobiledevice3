@@ -770,9 +770,9 @@ async def core_device_display_start_audio_stream(
     )
 
 
-@display_cli.command("serve-video-stream")
+@display_cli.command("serve-web")
 @async_command
-async def core_device_display_serve_video_stream(
+async def core_device_display_serve_web(
     service_provider: RSDServiceProviderDep,
     display_id: Annotated[int, typer.Option("--display-id")] = 1,
     bind: Annotated[str, typer.Option("--bind", help="Host to bind the webserver on")] = "127.0.0.1",
@@ -820,7 +820,7 @@ async def core_device_display_serve_video_stream_jpeg(
         ),
     ] = 0.7,
 ) -> None:
-    """Serve the device's screen as MJPEG -- alternative to serve-video-stream.
+    """Serve the device's screen as MJPEG -- alternative to serve-web.
 
     Pipeline (requires ffmpeg on PATH):
 
@@ -828,7 +828,7 @@ async def core_device_display_serve_video_stream_jpeg(
         decode, MJPEG encode) -> HTTP multipart/x-mixed-replace ->
         browser <img> element renders each JPEG natively
 
-    Why have both: the WebCodecs HEVC path (serve-video-stream)
+    Why have both: the WebCodecs HEVC path (serve-web)
     silently accumulates decoder reference-picture state under heavy
     motion and renders torn frames. The MJPEG path sends each frame as
     a complete JPEG -- no decoder state to corrupt, no tears, but ~5-10x
