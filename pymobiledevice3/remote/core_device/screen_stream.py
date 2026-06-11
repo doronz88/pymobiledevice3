@@ -2164,10 +2164,11 @@ class ScreenStreamServer:
         IDR (which is what a full page reload achieves).
 
         Triggers:
-        1. **Input-burst-settled**: shortly (~1 s) after the user stops
-           sending touch / button input. This is when tears typically
-           appear and persist -- matches the manual-reload pattern of
-           "swipe a lot, stop, see clean".
+        1. **During-input**: any /touch or /button arrived in the last
+           ~1 s. Fires aggressively during interaction (gated by
+           min_interval) so tears clear continuously, not just after
+           the user stops -- matches the user's preference for
+           "every little motion".
         2. **Heartbeat**: every 5 s as a safety net for cases where
            tears appear from device-side activity without our input.
 
@@ -2178,15 +2179,17 @@ class ScreenStreamServer:
         - the broadcast loop sends that IDR as a RESET keyframe (type=2)
         - the JS closes its old decoder, builds a new one, decodes
 
-        Cost is roughly one extra IDR per refresh (~5-10x a delta).
+        Cost: one extra IDR per refresh (~5-10x a delta). At
+        min_interval=0.5 s during continuous motion that's ~2 IDRs/s,
+        which the encoder handles comfortably.
         """
         loop = asyncio.get_running_loop()
-        idle_threshold = 1.0  # input is "settled" after this gap
+        recent_input_window = 1.0  # consider input "recent" within this gap
         heartbeat = 5.0  # max time between refreshes when idle
-        min_interval = 1.5  # don't fire more often than this
+        min_interval = 0.5  # cap on refresh rate during continuous motion
         while True:
             try:
-                await asyncio.sleep(0.25)
+                await asyncio.sleep(0.1)
             except asyncio.CancelledError:
                 return
             if not self._subscribers:
@@ -2197,15 +2200,15 @@ class ScreenStreamServer:
             since_refresh = now - self._last_refresh_t
             if since_refresh < min_interval:
                 continue
-            # Settled-burst trigger: there was input after the last
-            # refresh, and the last input was >=idle_threshold ago.
-            input_after_refresh = self._last_input_t > self._last_refresh_t
-            settled = input_after_refresh and (now - self._last_input_t) >= idle_threshold
+            # During-input trigger: any /touch or /button in the last
+            # recent_input_window seconds counts. Fires repeatedly while
+            # motion continues (gated by min_interval above).
+            during_input = (now - self._last_input_t) < recent_input_window
             # Heartbeat trigger.
             heartbeat_due = since_refresh >= heartbeat
-            if not (settled or heartbeat_due):
+            if not (during_input or heartbeat_due):
                 continue
-            self._fire_decoder_refresh(now, reason="settled" if settled else "heartbeat")
+            self._fire_decoder_refresh(now, reason="motion" if during_input else "heartbeat")
 
     def _fire_decoder_refresh(self, now: float, *, reason: str) -> None:
         for q, state in self._subscribers.items():
