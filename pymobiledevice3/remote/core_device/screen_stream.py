@@ -18,6 +18,7 @@ import json
 import logging
 import socket
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import Optional
 
@@ -1009,12 +1010,19 @@ class ScreenStreamServer:
         # PLI tasks in flight -- keep a reference so the GC doesn't drop
         # them while awaiting the sendto (and ruff is happy with create_task).
         self._pli_tasks: set[asyncio.Task] = set()
-        # Last decoder-refresh timestamp. The refresh loop fires a
-        # fresh-IDR + reset-keyframe sequence at a fixed cadence to keep
-        # the browser's WebCodecs/VideoToolbox decoder state from
-        # accumulating silent tears -- the same recovery the user gets
-        # from a manual page reload, but automatic.
+        # Last decoder-refresh timestamp + the byte-rate motion window
+        # the refresh loop uses to detect "motion just ended" -- the
+        # moment when tears accumulate and a fresh-IDR rebuild is most
+        # useful. Catches device-side touches too (real finger on the
+        # device) because they drive the encoder's byte rate up just
+        # like browser-driven /touch.
         self._last_refresh_t: float = 0.0
+        # (timestamp, AU bytes) entries pruned to the last 1 s.
+        self._au_byte_window: deque = deque()
+        # True while AU byte rate is above the motion threshold.
+        self._motion_active: bool = False
+        # When the active->idle transition happened (0 = never / since reset).
+        self._motion_ended_t: float = 0.0
 
         # Lazy-opened HID services for browser-driven touch / buttons. The
         # auth gate is already held open by the active media stream above,
@@ -1206,6 +1214,9 @@ class ScreenStreamServer:
                         if self._codec_string is not None:
                             self._stream_ready.set()
                     self._last_good_au_t = loop.time()
+                    # Feed the motion-detection window. The refresh loop
+                    # reads this to know when motion settles.
+                    self._au_byte_window.append((self._last_good_au_t, len(annexb)))
                     if self._saw_first_key:
                         # First non-key AU after the IDR is the moment we
                         # can synthesise phantoms (we need the delta's
@@ -2146,44 +2157,69 @@ class ScreenStreamServer:
                 writer.close()
 
     async def _decoder_refresh_loop(self) -> None:
-        """Force connected browsers to rebuild their video decoders at a
-        fixed cadence (default every 0.5 s while a subscriber is
-        attached).
+        """Force connected browsers to rebuild their video decoders
+        WHEN it's likely to help, not on a fixed timer.
 
         VideoToolbox (and Safari's WebCodecs wrapper around it) silently
         accumulates stale long-term-reference-picture state under heavy
         motion -- decode reports success on every frame but the rendered
         pixels are torn. There's no error callback; the only known
-        recovery is to throw the decoder away and start fresh from an
-        IDR (which is what a full page reload achieves).
+        recovery is to rebuild the decoder around a fresh IDR (what a
+        manual page reload achieves).
 
-        We tried fancier triggers (input-burst-settled, byte-rate motion
-        detection) and ended up here: just refresh constantly. Catches
-        every tear source -- browser-driven input, real finger on the
-        device, system animations -- without needing a heuristic to
-        guess when to fire. Cost is roughly one extra IDR per refresh
-        (~5-10x a delta), so at 2 refreshes/sec maybe 10-15% extra
-        encoder load, which the hardware encoder handles comfortably.
+        Each rebuild has a small cost: a ~30 ms frame gap while we wait
+        for the IDR + the new decoder's first output. At high cadences
+        (e.g. 2 refreshes/sec) the gap becomes visible "chop". The
+        smoothest experience is one rebuild per motion event, fired
+        right after motion settles -- the same UX pattern as a manual
+        reload after the user finishes interacting.
 
-        Each refresh:
-        - drains every subscriber's pending queue so the reset reaches
-          the browser before buffered deltas
-        - sends a PLI to the device for a fresh IDR
-        - the broadcast loop sends that IDR as a RESET keyframe (type=2)
-        - the JS closes its old decoder, builds a new one, decodes
+        We use the device's RTP byte rate as the motion signal (works
+        for ANY motion source -- browser /touch, finger on the device,
+        a system animation). Idle is ~30-60 KB/s, motion is 150+ KB/s.
+
+        Triggers:
+        1. Motion settled: AU byte rate dropped below the threshold
+           AFTER having been above it, and ``settle_delay`` has passed.
+        2. Heartbeat: max ``heartbeat`` seconds between refreshes as a
+           safety net for slow-creeping tears that don't correlate with
+           our motion signal.
+
+        ``min_interval`` caps back-to-back refreshes regardless of
+        trigger.
         """
-        interval = 0.5
         loop = asyncio.get_running_loop()
+        motion_threshold_bps = 100_000  # 100 KB/s = motion
+        settle_delay = 0.4  # wait after motion ends before refresh
+        heartbeat = 10.0  # max between refreshes when idle
+        min_interval = 1.0  # don't fire more often than this
         while True:
             try:
-                await asyncio.sleep(interval)
+                await asyncio.sleep(0.1)
             except asyncio.CancelledError:
                 return
             if not self._subscribers:
                 continue
             if self._active_service is None or self._rtcp_dest is None:
                 continue
-            self._fire_decoder_refresh(loop.time(), reason="periodic")
+            now = loop.time()
+            # Prune the byte window to the last 1 s.
+            while self._au_byte_window and self._au_byte_window[0][0] < now - 1.0:
+                self._au_byte_window.popleft()
+            window_bytes = sum(s for _, s in self._au_byte_window)
+            currently_active = window_bytes >= motion_threshold_bps
+            # Detect active->idle transition (motion just ended).
+            if self._motion_active and not currently_active:
+                self._motion_ended_t = now
+            self._motion_active = currently_active
+            since_refresh = now - self._last_refresh_t
+            if since_refresh < min_interval:
+                continue
+            settled = self._motion_ended_t > self._last_refresh_t and (now - self._motion_ended_t) >= settle_delay
+            heartbeat_due = since_refresh >= heartbeat
+            if not (settled or heartbeat_due):
+                continue
+            self._fire_decoder_refresh(now, reason="settled" if settled else "heartbeat")
 
     def _fire_decoder_refresh(self, now: float, *, reason: str) -> None:
         for q, state in self._subscribers.items():
@@ -2195,10 +2231,15 @@ class ScreenStreamServer:
         self._pli_tasks.add(pli_task)
         pli_task.add_done_callback(self._pli_tasks.discard)
         self._last_refresh_t = now
-        logger.debug(
-            "decoder-refresh (%s): %d subscriber(s)",
+        # Window-bytes here are just the current 1 s sum; useful when
+        # tuning the motion threshold against real byte-rates from the
+        # device's encoder under various activity levels.
+        window_bps = sum(s for _, s in self._au_byte_window)
+        logger.info(
+            "decoder-refresh (%s): %d subscriber(s), %d B/s window",
             reason,
             len(self._subscribers),
+            window_bps,
         )
 
     async def _stall_watchdog(self) -> None:
