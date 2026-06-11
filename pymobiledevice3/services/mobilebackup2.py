@@ -54,6 +54,20 @@ NP_SYNC_WILL_START = "com.apple.itunes-mobdev.syncWillStart"
 NP_SYNC_DID_START = "com.apple.itunes-mobdev.syncDidStart"
 NP_SYNC_LOCK_REQUEST = "com.apple.itunes-mobdev.syncLockRequest"
 NP_SYNC_DID_FINISH = "com.apple.itunes-mobdev.syncDidFinish"
+NP_SYNC_CANCEL_REQUEST = "com.apple.itunes-client.syncCancelRequest"
+NP_SYNC_SUSPEND_REQUEST = "com.apple.itunes-client.syncSuspendRequest"
+NP_SYNC_RESUME_REQUEST = "com.apple.itunes-client.syncResumeRequest"
+NP_BACKUP_DOMAIN_CHANGED = "com.apple.mobile.backup.domain_changed"
+NP_LOCAL_AUTH_PRESENTED = "com.apple.LocalAuthentication.ui.presented"
+NP_LOCAL_AUTH_DISMISSED = "com.apple.LocalAuthentication.ui.dismissed"
+BACKUP_OBSERVED_NOTIFICATIONS = (
+    NP_SYNC_CANCEL_REQUEST,
+    NP_SYNC_SUSPEND_REQUEST,
+    NP_SYNC_RESUME_REQUEST,
+    NP_BACKUP_DOMAIN_CHANGED,
+    NP_LOCAL_AUTH_PRESENTED,
+    NP_LOCAL_AUTH_DISMISSED,
+)
 BACKUP_METADATA_FILES = frozenset({
     "Info.plist",
     "Manifest.plist",
@@ -172,42 +186,68 @@ class Mobilebackup2Service(LockdownService):
             AfcService(self.lockdown) as afc,
             self._backup_lock(afc, notification_proxy),
         ):
+            await self._observe_backup_notifications(notification_proxy)
+            notification_task = asyncio.create_task(self._log_backup_notifications(notification_proxy))
             # Initialize Info.plist
-            info_plist = await self.init_mobile_backup_factory_info(afc)
-            with open(device_directory / "Info.plist", "wb") as fd:
-                plistlib.dump(info_plist, fd)
+            try:
+                info_plist = await self.init_mobile_backup_factory_info(afc)
+                with open(device_directory / "Info.plist", "wb") as fd:
+                    plistlib.dump(info_plist, fd)
 
-            # Initialize Status.plist file if doesn't exist.
-            status_path = device_directory / "Status.plist"
-            current_date = datetime.now()
-            current_date = current_date.replace(tzinfo=None)
-            if full or not status_path.exists():
-                with open(device_directory / "Status.plist", "wb") as fd:
-                    plistlib.dump(
-                        {
-                            "BackupState": "new",
-                            "Date": current_date,
-                            "IsFullBackup": full,
-                            "Version": "3.3",
-                            "SnapshotState": "finished",
-                            "UUID": str(uuid.uuid4()).upper(),
-                        },
-                        fd,
-                        fmt=plistlib.FMT_BINARY,
-                    )
+                # Initialize Status.plist file if doesn't exist.
+                status_path = device_directory / "Status.plist"
+                current_date = datetime.now()
+                current_date = current_date.replace(tzinfo=None)
+                if full or not status_path.exists():
+                    with open(device_directory / "Status.plist", "wb") as fd:
+                        plistlib.dump(
+                            {
+                                "BackupState": "new",
+                                "Date": current_date,
+                                "IsFullBackup": full,
+                                "Version": "3.3",
+                                "SnapshotState": "finished",
+                                "UUID": str(uuid.uuid4()).upper(),
+                            },
+                            fd,
+                            fmt=plistlib.FMT_BINARY,
+                        )
 
-            # Create Manifest.plist if doesn't exist.
-            manifest_path = device_directory / "Manifest.plist"
-            if full:
-                manifest_path.unlink(missing_ok=True)
-            (device_directory / "Manifest.plist").touch()
+                # Create Manifest.plist if doesn't exist.
+                manifest_path = device_directory / "Manifest.plist"
+                if full:
+                    manifest_path.unlink(missing_ok=True)
+                (device_directory / "Manifest.plist").touch()
 
-            await dl.send_process_message({"MessageName": "Backup", "TargetIdentifier": self.lockdown.udid})
-            await dl.dl_loop(progress_callback)
-            if filter_callback is not None:
-                self.prune_backup_directory(device_directory, filter_callback, password=password)
-            if unback:
-                self.unback_with_pyiosbackup(device_directory, password=password)
+                await dl.send_process_message({"MessageName": "Backup", "TargetIdentifier": self.lockdown.udid})
+                await dl.dl_loop(progress_callback)
+                if filter_callback is not None:
+                    self.prune_backup_directory(device_directory, filter_callback, password=password)
+                if unback:
+                    self.unback_with_pyiosbackup(device_directory, password=password)
+            finally:
+                notification_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await notification_task
+
+    async def _observe_backup_notifications(self, notification_proxy: NotificationProxyService) -> None:
+        for notification in BACKUP_OBSERVED_NOTIFICATIONS:
+            await notification_proxy.notify_register_dispatch(notification)
+
+    async def _log_backup_notifications(self, notification_proxy: NotificationProxyService) -> None:
+        async for event in notification_proxy.receive_notification():
+            self._log_backup_notification(event)
+
+    def _log_backup_notification(self, event: dict) -> None:
+        name = event.get("Name")
+        if name == NP_LOCAL_AUTH_PRESENTED:
+            self.logger.warning("Please enter the device passcode to continue the backup")
+        elif name == NP_LOCAL_AUTH_DISMISSED:
+            self.logger.info("Device passcode prompt dismissed")
+        elif name == NP_SYNC_CANCEL_REQUEST:
+            self.logger.warning("User has cancelled the backup process on the device")
+        else:
+            self.logger.debug("Received backup notification: %s", event)
 
     async def restore(
         self,

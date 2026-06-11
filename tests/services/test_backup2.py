@@ -4,14 +4,22 @@ import time
 from contextlib import closing
 from pathlib import Path
 from ssl import SSLEOFError
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
 from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.device_link import DeviceLink
-from pymobiledevice3.services.mobilebackup2 import BACKUP_SELECTIONS, BackupFile, Mobilebackup2Service
+from pymobiledevice3.services.mobilebackup2 import (
+    BACKUP_OBSERVED_NOTIFICATIONS,
+    BACKUP_SELECTIONS,
+    NP_LOCAL_AUTH_DISMISSED,
+    NP_LOCAL_AUTH_PRESENTED,
+    NP_SYNC_CANCEL_REQUEST,
+    BackupFile,
+    Mobilebackup2Service,
+)
 
 PASSWORD = "1234"
 
@@ -110,6 +118,32 @@ def test_selection_filter_callback_matches_upload_and_manifest_forms() -> None:
 
 def test_should_preserve_backup_file_keeps_metadata() -> None:
     assert Mobilebackup2Service.should_preserve_backup_file("Manifest.db", "ignored", None)
+
+
+@pytest.mark.asyncio
+async def test_observe_backup_notifications_registers_passcode_and_backup_notifications() -> None:
+    notification_proxy = Mock()
+    notification_proxy.notify_register_dispatch = AsyncMock()
+
+    service = object.__new__(Mobilebackup2Service)
+    await service._observe_backup_notifications(notification_proxy)
+
+    notification_proxy.notify_register_dispatch.assert_has_awaits([
+        call(notification) for notification in BACKUP_OBSERVED_NOTIFICATIONS
+    ])
+
+
+def test_log_backup_notification_surfaces_passcode_prompt_to_operator() -> None:
+    service = object.__new__(Mobilebackup2Service)
+    service.logger = Mock()
+
+    service._log_backup_notification({"Name": NP_LOCAL_AUTH_PRESENTED})
+    service._log_backup_notification({"Name": NP_LOCAL_AUTH_DISMISSED})
+    service._log_backup_notification({"Name": NP_SYNC_CANCEL_REQUEST})
+
+    service.logger.warning.assert_any_call("Please enter the device passcode to continue the backup")
+    service.logger.info.assert_called_once_with("Device passcode prompt dismissed")
+    service.logger.warning.assert_any_call("User has cancelled the backup process on the device")
 
 
 def test_unback_with_pyiosbackup_replaces_existing_output(monkeypatch, tmp_path: Path) -> None:
