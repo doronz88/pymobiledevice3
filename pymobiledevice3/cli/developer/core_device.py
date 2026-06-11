@@ -36,6 +36,7 @@ from pymobiledevice3.remote.core_device.screen_stream import (
     capture_audio_rtp_to_file,
     capture_rtp_to_file,
 )
+from pymobiledevice3.remote.core_device.vnc_server import VncStreamServer
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.crash_reports import CrashReportsManager
 from pymobiledevice3.utils import try_decode
@@ -799,6 +800,49 @@ async def core_device_display_serve_web(
         http_port=http_port,
         display_id=display_id,
         audio_default_on=not no_audio,
+    )
+    await server.serve()
+
+
+@display_cli.command("serve-vnc")
+@async_command
+async def core_device_display_serve_vnc(
+    service_provider: RSDServiceProviderDep,
+    display_id: Annotated[int, typer.Option("--display-id")] = 1,
+    bind: Annotated[str, typer.Option("--bind", help="Host to bind the VNC listener on")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", help="TCP port for the VNC listener")] = 5901,
+    audio: Annotated[
+        bool,
+        typer.Option(
+            "--audio",
+            help="Play device audio out the host Mac's speakers (off by default).",
+        ),
+    ] = False,
+) -> None:
+    """Serve the device's screen as a VNC (RFB 3.8) server.
+
+    Connect from any VNC client. macOS Finder: ``Cmd+K`` -> enter
+    ``vnc://<bind>:<port>`` (default ``vnc://127.0.0.1:5901``; port
+    5900 is owned by macOS's own Screen Sharing daemon). No browser
+    involved -- the OS's native screen-sharing renders the framebuffer
+    directly.
+
+    Pipeline: device HEVC -> VideoToolbox decode (BGRA output) ->
+    RFB Raw framebuffer updates. No JPEG round-trip; the bytes that
+    came out of the HW decoder go straight onto the wire. Mouse clicks
+    in the screen-sharing window translate to HID touch events on the
+    device.
+
+    Audio: pass ``--audio`` to decode the device's AAC-ELD audio
+    stream and play it through the host Mac's speakers (RFB has no
+    audio of its own, so the playback is host-local).
+    """
+    server = VncStreamServer(
+        service_provider,
+        bind=bind,
+        port=port,
+        display_id=display_id,
+        audio=audio,
     )
     await server.serve()
 
