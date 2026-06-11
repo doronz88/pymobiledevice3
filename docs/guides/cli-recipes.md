@@ -142,6 +142,104 @@ pymobiledevice3 developer dvt device-information
 pymobiledevice3 developer dvt energy PID1 PID2 ...
 ```
 
+## Core Device (iOS 17+)
+
+These commands talk to iOS 17+ `CoreDevice` services through the RSD tunnel.
+See [iOS 17+ tunnels](ios17-tunnels.md) for tunnel setup.
+
+```shell
+# Take a screenshot (PNG)
+pymobiledevice3 developer core-device screen-capture screenshot /path/to/screen.png
+```
+
+### HID input
+
+```shell
+# Press a named hardware button (home, power, lock, sleep, volume-up, volume-down, mute, siri)
+pymobiledevice3 developer core-device hid button home press
+
+# Hold/release a named button (states: down, up, canceled)
+pymobiledevice3 developer core-device hid button volume-up down
+pymobiledevice3 developer core-device hid button volume-up up
+
+# Press by raw HID (usage_page, usage_code) — decimal or 0xHEX
+pymobiledevice3 developer core-device hid raw-button 0x0C 0x40 press
+
+# List the device's registered HID surfaces (each has a _ServiceID).
+# Touch goes via 257 (mainTouchscreen) or 1281 (touchscreenGesture).
+pymobiledevice3 developer core-device universal-hid-service list-connected
+
+# Deliver a raw HID report to a connected surface. The layout is
+# surface-specific; capture devicectl traffic with misc/remotexpc_sniffer.py
+# to learn it for a new surface.
+pymobiledevice3 developer core-device universal-hid-service send-report 1281 <hex>
+
+# --- touch gestures (auto-managed media stream — see hid_service.py) ---
+#
+# X/Y are UInt16 (0..65535) normalised across the device's screen, so
+# (0, 0) is top-left and (65535, 65535) is bottom-right regardless of the
+# device's pixel resolution. Useful anchors regardless of model:
+#   center                (32768, 32768)
+#   top-center            (32768,  5000)
+#   bottom-center         (32768, 60000)
+#   home-indicator area   (32768, 62000+)
+#
+# To convert from pixel coordinates, query the device's pixel size first:
+#   pymobiledevice3 developer core-device get-display-info
+#       # → displays[0].currentMode.size = [828, 1792] for an iPhone 11, etc.
+# then scale linearly: hid_x = round(px_x * 65535 / px_w).
+
+# Tap at the screen center
+pymobiledevice3 developer core-device universal-hid-service tap -- 32768 32768
+
+# Drag from near the top to near the bottom (e.g. pull-down)
+pymobiledevice3 developer core-device universal-hid-service drag -- 32768 5000 32768 60000
+
+# Pure pointer-motion gesture (moves cursor without registering a contact)
+pymobiledevice3 developer core-device universal-hid-service swipe -- 100 400 700 400
+
+# Batched gestures inside ONE media stream — reads stdin / a script file.
+# Recognised lines: tap, drag, swipe, move, sleep (and # comments).
+printf 'tap 32768 32768\nsleep 0.3\ndrag 32768 5000 32768 60000\n' | \
+    pymobiledevice3 developer core-device universal-hid-service session
+```
+
+### Screen streaming (HEVC video)
+
+```shell
+# Query what the device's media-stream server supports
+pymobiledevice3 developer core-device display get-media-support-info
+pymobiledevice3 developer core-device display get-media-stream-server-status
+
+# Serve the device screen live to any modern browser (Safari / HEVC-enabled
+# Chrome). Decode happens in-browser via WebCodecs — no ffmpeg required.
+pymobiledevice3 developer core-device display serve-web
+# then open http://127.0.0.1:8080/
+
+# Serve the device screen as a VNC (RFB 3.8) server -- view via macOS
+# Screen Sharing.app (Finder ⌘K -> vnc://) or any VNC client.
+# macOS-only (server-side HEVC decode through VideoToolbox).
+# Right-click in the viewer = Home button; Ctrl+H/L/[/]/\\/S = Home /
+# Lock / VolDown / VolUp / Mute / Siri. Add --audio to also play the
+# device's system audio out the host Mac's speakers.
+pymobiledevice3 developer core-device display serve-vnc
+# then Finder ⌘K -> vnc://127.0.0.1:5901
+
+# Capture raw RTP/HEVC packets to a file (length-prefixed)
+pymobiledevice3 developer core-device display start-video-stream /tmp/cap.rtp --duration 10
+
+# Convert that capture to an Annex-B .h265 bitstream playable by ffplay/VLC
+misc/rtp_dump.py /tmp/cap.rtp /tmp/cap.h265
+ffplay -framerate 60 /tmp/cap.h265
+```
+
+### Location
+
+```shell
+# List the location-simulation scenarios baked into the device
+pymobiledevice3 developer core-device location available-scenarios
+```
+
 ## WebInspector Automation
 
 ```shell
