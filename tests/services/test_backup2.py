@@ -1,3 +1,4 @@
+import asyncio
 import sqlite3
 import struct
 import time
@@ -8,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
-from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError
+from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.mobilebackup2 import (
@@ -261,6 +262,38 @@ async def test_device_link_move_items_skips_missing_filtered_source(tmp_path: Pa
     await device_link.move_items(["DLMessageMoveItems", {"missing/source": "54/hash"}])
 
     service.send_plist.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_device_link_receive_message_returns_received_message(tmp_path: Path) -> None:
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(return_value=["DLMessageDeviceReady"])
+    device_link = DeviceLink(service, tmp_path, receive_timeout=1)
+
+    assert await device_link.receive_message() == ["DLMessageDeviceReady"]
+
+
+@pytest.mark.asyncio
+async def test_device_link_zero_receive_timeout_disables_timeout(tmp_path: Path) -> None:
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(return_value=["DLMessageDeviceReady"])
+    device_link = DeviceLink(service, tmp_path, receive_timeout=0)
+
+    assert device_link.receive_timeout is None
+    assert await device_link.receive_message() == ["DLMessageDeviceReady"]
+
+
+@pytest.mark.asyncio
+async def test_device_link_receive_message_times_out(tmp_path: Path) -> None:
+    async def never_return():
+        await asyncio.Event().wait()
+
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(side_effect=never_return)
+    device_link = DeviceLink(service, tmp_path, receive_timeout=0.01)
+
+    with pytest.raises(PyMobileDevice3Exception, match=r"Timed out after 0\.01s waiting for DeviceLink message"):
+        await device_link.receive_message()
 
 
 @pytest.mark.asyncio

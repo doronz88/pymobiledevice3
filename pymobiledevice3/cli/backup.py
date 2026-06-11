@@ -100,6 +100,14 @@ async def backup(
             help="Also unpack the completed backup locally using pyiosbackup. Existing unpacked contents are replaced.",
         ),
     ] = False,
+    device_link_timeout: Annotated[
+        Optional[float],
+        typer.Option(
+            "--device-link-timeout",
+            min=0,
+            help="Optional timeout in seconds for each DeviceLink message during backup. Use 0 to disable.",
+        ),
+    ] = None,
 ) -> None:
     """
     Backup device.
@@ -135,6 +143,7 @@ async def backup(
                 filter_callback=filter_callback,
                 password=password,
                 unback=unback,
+                device_link_timeout=device_link_timeout,
             )
 
 

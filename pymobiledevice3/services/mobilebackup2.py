@@ -159,6 +159,7 @@ class Mobilebackup2Service(LockdownService):
         filter_callback: Optional[BackupFilterCallback] = None,
         password: str = "",
         unback: bool = False,
+        device_link_timeout: Optional[float] = None,
     ) -> None:
         """
         Backup a device.
@@ -168,6 +169,7 @@ class Mobilebackup2Service(LockdownService):
         :param filter_callback: Callback deciding whether to keep a backup file.
         :param password: Password of the backup if it is encrypted.
         :param unback: Also unpack the completed backup locally using pyiosbackup.
+        :param device_link_timeout: Optional timeout in seconds for each DeviceLink message.
         The function shall receive the percentage as a parameter.
         """
         full = full or filter_callback is not None
@@ -181,7 +183,12 @@ class Mobilebackup2Service(LockdownService):
             )
 
         async with (
-            self.device_link(backup_directory, filter_callback=filter_callback, password=password) as dl,
+            self.device_link(
+                backup_directory,
+                filter_callback=filter_callback,
+                password=password,
+                receive_timeout=device_link_timeout,
+            ) as dl,
             NotificationProxyService(self.lockdown) as notification_proxy,
             AfcService(self.lockdown) as afc,
             self._backup_lock(afc, notification_proxy),
@@ -823,7 +830,11 @@ class Mobilebackup2Service(LockdownService):
 
     @asynccontextmanager
     async def device_link(
-        self, backup_directory, filter_callback: Optional[BackupFilterCallback] = None, password: str = ""
+        self,
+        backup_directory,
+        filter_callback: Optional[BackupFilterCallback] = None,
+        password: str = "",
+        receive_timeout: Optional[float] = None,
     ):
         dl = DeviceLink(
             self.service,
@@ -831,6 +842,7 @@ class Mobilebackup2Service(LockdownService):
             preserve_file=lambda file_name, device_name: self.should_preserve_backup_file(
                 file_name, device_name, filter_callback
             ),
+            receive_timeout=receive_timeout,
         )
         await dl.version_exchange()
         await self.version_exchange(dl)

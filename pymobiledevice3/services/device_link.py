@@ -1,3 +1,4 @@
+import asyncio
 import ctypes
 import datetime
 import shutil
@@ -42,11 +43,13 @@ class DeviceLink:
         root_path: Path,
         preserve_file: Optional[Callable[[str, str], bool]] = None,
         post_file_receive: Optional[Callable[[str, str], None]] = None,
+        receive_timeout: Optional[float] = None,
     ) -> None:
         self.service: ServiceConnection = service
         self.root_path: Path = root_path
         self.preserve_file = preserve_file
         self.post_file_receive = post_file_receive
+        self.receive_timeout = receive_timeout if receive_timeout and receive_timeout > 0 else None
         self._dl_handlers: dict[str, DLHandler] = {
             "DLMessageCreateDirectory": self.create_directory,
             "DLMessageUploadFiles": self.upload_files,
@@ -268,7 +271,16 @@ class DeviceLink:
         ])
 
     async def receive_message(self) -> DLMessage:
-        return cast(DLMessage, await self.service.recv_plist())
+        try:
+            if self.receive_timeout is None:
+                message = await self.service.recv_plist()
+            else:
+                message = await asyncio.wait_for(self.service.recv_plist(), timeout=self.receive_timeout)
+        except asyncio.TimeoutError as e:
+            raise PyMobileDevice3Exception(
+                f"Timed out after {self.receive_timeout:g}s waiting for DeviceLink message"
+            ) from e
+        return cast(DLMessage, message)
 
     async def disconnect(self) -> None:
         await self.service.send_plist(["DLMessageDisconnect", "___EmptyParameterString___"])
