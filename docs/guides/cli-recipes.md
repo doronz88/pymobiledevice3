@@ -204,6 +204,27 @@ printf 'tap 32768 32768\nsleep 0.3\ndrag 32768 5000 32768 60000\n' | \
     pymobiledevice3 developer core-device universal-hid-service session
 ```
 
+### Screen streaming (HEVC video)
+
+```shell
+# Query what the device's media-stream server supports
+pymobiledevice3 developer core-device display get-media-support-info
+pymobiledevice3 developer core-device display get-media-stream-server-status
+
+# Serve the device screen live to any modern browser (Safari / HEVC-enabled
+# Chrome). Decode happens in-browser via WebCodecs — no ffmpeg required.
+pymobiledevice3 developer core-device display serve-web
+# then open http://127.0.0.1:8080/
+
+
+# Capture raw RTP/HEVC packets to a file (length-prefixed)
+pymobiledevice3 developer core-device display start-video-stream /tmp/cap.rtp --duration 10
+
+# Convert that capture to an Annex-B .h265 bitstream playable by ffplay/VLC
+misc/rtp_dump.py /tmp/cap.rtp /tmp/cap.h265
+ffplay -framerate 60 /tmp/cap.h265
+```
+
 ### Location
 
 ```shell
