@@ -213,8 +213,17 @@ pymobiledevice3 developer core-device display get-media-stream-server-status
 
 # Serve the device screen live to any modern browser (Safari / HEVC-enabled
 # Chrome). Decode happens in-browser via WebCodecs — no ffmpeg required.
-pymobiledevice3 developer core-device display serve-video-stream
+pymobiledevice3 developer core-device display serve-web
 # then open http://127.0.0.1:8080/
+
+# Serve the device screen as a VNC (RFB 3.8) server -- view via macOS
+# Screen Sharing.app (Finder ⌘K -> vnc://) or any VNC client.
+# macOS-only (server-side HEVC decode through VideoToolbox).
+# Right-click in the viewer = Home button; Ctrl+H/L/[/]/\\/S = Home /
+# Lock / VolDown / VolUp / Mute / Siri. Add --audio to also play the
+# device's system audio out the host Mac's speakers.
+pymobiledevice3 developer core-device display serve-vnc
+# then Finder ⌘K -> vnc://127.0.0.1:5901
 
 # Capture raw RTP/HEVC packets to a file (length-prefixed)
 pymobiledevice3 developer core-device display start-video-stream /tmp/cap.rtp --duration 10
