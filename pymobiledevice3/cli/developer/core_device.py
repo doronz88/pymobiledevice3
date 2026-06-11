@@ -37,6 +37,7 @@ from pymobiledevice3.remote.core_device.screen_stream import (
     capture_rtp_to_file,
 )
 from pymobiledevice3.remote.core_device.screen_stream_jpeg import JpegStreamServer
+from pymobiledevice3.remote.core_device.vnc_server import VncStreamServer
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.crash_reports import CrashReportsManager
 from pymobiledevice3.utils import try_decode
@@ -841,6 +842,46 @@ async def core_device_display_serve_video_stream_jpeg(
         service_provider,
         bind=bind,
         http_port=http_port,
+        display_id=display_id,
+        jpeg_quality=jpeg_quality,
+    )
+    await server.serve()
+
+
+@display_cli.command("serve-vnc")
+@async_command
+async def core_device_display_serve_vnc(
+    service_provider: RSDServiceProviderDep,
+    display_id: Annotated[int, typer.Option("--display-id")] = 1,
+    bind: Annotated[str, typer.Option("--bind", help="Host to bind the VNC listener on")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", help="TCP port for the VNC listener")] = 5901,
+    jpeg_quality: Annotated[
+        float,
+        typer.Option(
+            "--jpeg-quality",
+            help="JPEG quality 0.0-1.0 for Tight-encoded framebuffer updates. Default 0.7.",
+        ),
+    ] = 0.7,
+) -> None:
+    """Serve the device's screen as a VNC (RFB 3.8) server.
+
+    Connect from any VNC client. macOS Finder: ``Cmd+K`` -> enter
+    ``vnc://<bind>:<port>`` (default ``vnc://127.0.0.1:5901``; port
+    5900 is owned by macOS's own Screen Sharing daemon). No browser
+    involved -- the OS's native screen-sharing renders the framebuffer
+    directly.
+
+    Pipeline: device HEVC -> VideoToolbox decode -> VideoToolbox JPEG
+    encode -> RFB Tight-JPEG framebuffer updates. The Tight encoding
+    forwards the same JPEG bytes the JPEG variant uses but framed as
+    a single full-screen rectangle per update, which macOS Screen
+    Sharing decodes natively. Mouse clicks in the screen-sharing
+    window translate to HID touch events on the device.
+    """
+    server = VncStreamServer(
+        service_provider,
+        bind=bind,
+        port=port,
         display_id=display_id,
         jpeg_quality=jpeg_quality,
     )
