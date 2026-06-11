@@ -974,6 +974,14 @@ class ScreenStreamServer:
         self._audio_recv_task: Optional[asyncio.Task] = None
         self._audio_subscribers: dict[asyncio.Queue[bytes], None] = {}
         self._audio_lock = asyncio.Lock()
+        # Xcode's Mirror uses ONE client_session_id for both the audio
+        # and video mediastreamstart calls (confirmed verbatim in the
+        # remotexpc-sniff4 capture: same UUID in both 'CoreDevice.input'
+        # payloads). Pairing them on the device's media-session manager
+        # is what marks us as a real Mirror client rather than two
+        # unrelated callers; without it iOS may treat the lone video
+        # session as a second-class consumer and throttle the encoder.
+        self._shared_session_id: uuid.UUID = uuid.uuid4()
 
         # RTCP feedback bookkeeping. The streamConfig the device returns sets
         # ``RTCPTimeoutEnabled=True`` -- without periodic Receiver Reports the
@@ -1480,10 +1488,14 @@ class ScreenStreamServer:
             svc = DisplayService(self._rsd)
             await svc.connect()
             local_ip = svc.service.local_address[0]
+            # Same shared client_session_id as the video stream so the
+            # device pairs them on its media-session manager (Xcode's
+            # Mirror does this -- confirmed in the remotexpc sniff).
             answer = await svc.start_audio_stream(
                 receiver_ip=local_ip,
                 receiver_port=port,
                 sender_ip=self._sender_ip,
+                client_session_id=self._shared_session_id,
             )
             sid = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
             if not isinstance(sid, uuid.UUID):
@@ -1582,11 +1594,14 @@ class ScreenStreamServer:
             svc = DisplayService(self._rsd)
             await svc.connect()
             local_ip = svc.service.local_address[0]
+            # Pass the shared client_session_id so the device sees us as
+            # one Mirror client across audio + video, matching Xcode.
             answer = await svc.start_video_stream(
                 receiver_ip=local_ip,
                 receiver_port=port,
                 sender_ip=self._sender_ip,
                 display_id=self._display_id,
+                client_session_id=self._shared_session_id,
             )
             sid = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
             if not isinstance(sid, uuid.UUID):
@@ -2049,15 +2064,31 @@ class ScreenStreamServer:
                 await self._ensure_fresh_stream(force=True)
 
     async def _eager_stream_start(self) -> None:
-        """Start the device-side video stream at server boot so the codec
-        string is already cached by the time the browser opens. Without
-        this the first /codec request triggers the full ~6-10 s cold
-        start while the browser is waiting, frequently surfacing as
-        "failed to fetch" in the JS log."""
+        """Bring the device-side streams up at server boot.
+
+        Two reasons to start eagerly:
+        1. The video codec string is cached by the time the browser
+           opens, avoiding the ~6-10 s cold-start "failed to fetch"
+           on the first /codec request.
+        2. Xcode's Mirror always brings up BOTH audio and video at
+           session start with a shared client_session_id (sniff4
+           confirms). Without the paired audio session, iOS's media
+           manager treats us as a lone video client and may throttle
+           the encoder. Audio runs from boot regardless of whether a
+           /audio.bin subscriber is attached -- it's a session
+           liveness signal, not just a feature for the user.
+
+        Sequence matches Xcode verbatim: audio first, then video.
+        Failures in either branch are logged but don't block the HTTP
+        server -- /codec and /stream.bin retry on their own."""
+        try:
+            await self._ensure_audio_stream()
+        except Exception:
+            logger.warning("eager audio start failed (will retry on /audio.bin connect)", exc_info=True)
         try:
             await self._ensure_fresh_stream(force=False)
         except Exception:
-            logger.warning("eager stream start failed (will retry on first /codec)", exc_info=True)
+            logger.warning("eager video start failed (will retry on first /codec)", exc_info=True)
 
     async def serve(self) -> None:
         """Run the HTTP server until cancelled / Ctrl-C."""
