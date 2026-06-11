@@ -204,6 +204,13 @@ printf 'tap 32768 32768\nsleep 0.3\ndrag 32768 5000 32768 60000\n' | \
     pymobiledevice3 developer core-device universal-hid-service session
 ```
 
+### Location
+
+```shell
+# List the location-simulation scenarios baked into the device
+pymobiledevice3 developer core-device location available-scenarios
+```
+
 ## WebInspector Automation
 
 ```shell
