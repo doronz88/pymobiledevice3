@@ -15,6 +15,7 @@ from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
 from pymobiledevice3.remote.core_device.diagnostics_service import DiagnosticsServiceService
+from pymobiledevice3.remote.core_device.display_service import DisplayService
 from pymobiledevice3.remote.core_device.file_service import APPLE_DOMAIN_DICT, FileServiceService
 from pymobiledevice3.remote.core_device.hid_service import (
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
@@ -686,3 +687,30 @@ async def core_device_universal_hid_service_session(
                     raise ValueError(f"unrecognised command or wrong arg count: {line!r}")
             except Exception as e:
                 raise typer.BadParameter(f"line {lineno}: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# Display service — com.apple.coredevice.displayservice
+# ---------------------------------------------------------------------------
+display_cli = InjectingTyper(
+    name="display",
+    help="Query media-stream capabilities (com.apple.coredevice.displayservice).",
+    no_args_is_help=True,
+)
+cli.add_typer(display_cli)
+
+
+@display_cli.command("get-media-support-info")
+@async_command
+async def core_device_display_get_media_support_info(service_provider: RSDServiceProviderDep) -> None:
+    """Return the device's supported media-stream features and AVC framework version."""
+    async with DisplayService(service_provider) as service:
+        print_json(await service.get_media_support_info())
+
+
+@display_cli.command("get-media-stream-server-status")
+@async_command
+async def core_device_display_get_media_stream_server_status(service_provider: RSDServiceProviderDep) -> None:
+    """Return the media-stream server's running state and active sessions."""
+    async with DisplayService(service_provider) as service:
+        print_json(await service.get_media_stream_server_status())
