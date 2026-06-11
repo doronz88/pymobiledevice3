@@ -471,10 +471,22 @@ async function run() {
             // visibly shrinks/expands -- that's the "screen changing size"
             // pattern the user sees. Lock the canvas to the largest size
             // we've seen so frames just draw into the existing surface.
-            if (frame.displayWidth > canvas.width || frame.displayHeight > canvas.height) {
+            // Resize the canvas buffer to match each frame's exact
+            // dimensions. We used to lock the canvas to the largest size
+            // ever seen (to keep the page layout from jittering when iOS
+            // toggles the home-indicator between 2752/2736 pixels mid-
+            // stream), but that left the canvas buffer at max-ever size
+            // forever -- and even with drawImage-stretch fillout, the
+            // browser still carries stale GPU-side state from prior
+            // frames that shows up as torn strips during motion.
+            // Reassigning canvas.width/.height resets the entire buffer
+            // and reattaches a fresh GPU texture, mirroring what a full
+            // page reload does. Page layout stability comes from the
+            // canvas CSS (max-width/max-height + aspect-ratio if you want
+            // to lock that explicitly).
+            if (frame.displayWidth !== canvas.width || frame.displayHeight !== canvas.height) {
                 canvas.width = frame.displayWidth;
                 canvas.height = frame.displayHeight;
-                log('canvas set: ' + canvas.width + 'x' + canvas.height);
             }
             ctx.drawImage(frame, 0, 0);
             frame.close();
