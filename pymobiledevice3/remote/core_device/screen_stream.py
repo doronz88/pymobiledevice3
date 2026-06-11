@@ -1883,11 +1883,16 @@ class ScreenStreamServer:
             # avoids the "button feels slow" effect that comes from JS
             # awaiting a slow round-trip.)
             async def _restart_bg():
+                # Just restart video. Leave audio alone -- audio shares
+                # the client_session_id with video (Xcode-style pairing),
+                # so tearing audio down between video restart and the
+                # browser's /audio.bin reconnect leaves the device with
+                # an unpaired lone video session, which iOS treats as a
+                # second-class client and throttles. Symptom was the
+                # browser sticking on "frames: 1" after a Forced Reset
+                # until the user reloaded and re-attached /audio.bin.
                 with contextlib.suppress(Exception):
                     await self._ensure_fresh_stream(force=True)
-                async with self._audio_lock:
-                    with contextlib.suppress(Exception):
-                        await self._stop_audio_stream()
 
             bg = asyncio.create_task(_restart_bg())
             self._pli_tasks.add(bg)  # piggy-back on the existing keep-alive set
