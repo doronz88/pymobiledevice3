@@ -21,6 +21,7 @@ Protocol references:
 import asyncio
 import contextlib
 import logging
+import os
 import socket
 import struct
 import uuid
@@ -361,29 +362,44 @@ class VncStreamServer:
                 minor = int(client_version[8:11])
         except ValueError:
             minor = 8
+        # macOS Screen Sharing's password dialog refuses an empty entry
+        # even when the server advertises None auth, so we advertise
+        # VNC Auth (security type 2) and accept whatever the client
+        # sends in the challenge/response -- the user can type any
+        # password and the connection proceeds. Standard "open VNC
+        # server with mock auth" pattern.
         if minor < 7:
-            # RFB 3.3: send U32 security-type = None (1). No list, no
-            # client pick, no SecurityResult for None auth.
-            w.write(struct.pack(">I", 1))
+            # RFB 3.3: server unilaterally picks the security type.
+            w.write(struct.pack(">I", 2))  # VNC Auth
             await w.drain()
-            logger.info("handshake: 3.3 path -- server picked None auth")
+            logger.info("handshake: 3.3 path -- server picked VNC Auth")
         else:
-            # RFB 3.7 / 3.8: send security list, client picks.
-            w.write(b"\x01\x01")  # count=1, type=None=1
+            # RFB 3.7 / 3.8: send security list, client picks. Offer
+            # only VNC Auth so we always end up in the same code path.
+            w.write(b"\x01\x02")
             await w.drain()
-            logger.info("handshake: sent security types [None=1]")
+            logger.info("handshake: sent security types [VNC Auth=2]")
             chosen = (await r.readexactly(1))[0]
             logger.info("handshake: client picked security=%d", chosen)
-            if chosen != 1:
+            if chosen != 2:
                 msg = b"unsupported security type"
                 w.write(struct.pack(">I", 1) + struct.pack(">I", len(msg)) + msg)
                 await w.drain()
                 raise ConnectionError(f"client picked unsupported security={chosen}")
-            if minor >= 8:
-                # 3.8 sends SecurityResult even for None auth.
-                w.write(b"\x00\x00\x00\x00")
-                await w.drain()
-                logger.info("handshake: sent SecurityResult=OK")
+        # VNC Auth challenge/response. Send 16 random bytes; the
+        # client encrypts them with DES using its (up to) 8-byte
+        # password as the key and sends the 16-byte ciphertext back.
+        # We don't actually verify the response -- any input is OK.
+        challenge = os.urandom(16)
+        w.write(challenge)
+        await w.drain()
+        await r.readexactly(16)  # response (ignored)
+        logger.info("handshake: VNC Auth accepted (any password)")
+        # 3.x always sends SecurityResult AFTER VNC Auth, regardless of
+        # whether None auth would have skipped it.
+        w.write(b"\x00\x00\x00\x00")
+        await w.drain()
+        logger.info("handshake: sent SecurityResult=OK")
         # ClientInit (shared flag — we don't care).
         shared = (await r.readexactly(1))[0]
         logger.info("handshake: client shared=%d", shared)
