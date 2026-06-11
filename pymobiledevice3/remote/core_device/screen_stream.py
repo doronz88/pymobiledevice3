@@ -553,6 +553,7 @@ async function run() {
             //       rebuild before decoding this IDR. (VideoToolbox often
             //       renders torn frames without firing the error callback.)
             if (type === 2) {
+                try { decoder.close(); } catch (e) {}
                 decoder = buildDecoder();
                 decoder.configure({ codec, optimizeForLatency: true });
                 needsResync = false;
@@ -561,6 +562,7 @@ async function run() {
             } else if (type === 0) {
                 gotKey = true;
                 if (needsResync) {
+                    try { decoder.close(); } catch (e) {}
                     decoder = buildDecoder();
                     decoder.configure({ codec, optimizeForLatency: true });
                     needsResync = false;
@@ -571,6 +573,7 @@ async function run() {
             if (needsResync) continue;
             if (decoder.state !== 'configured') {
                 log('decoder ' + decoder.state + ' @' + sentCount + ' - rebuilding');
+                try { decoder.close(); } catch (e) {}
                 decoder = buildDecoder();
                 decoder.configure({ codec, optimizeForLatency: true });
                 needsResync = true;
@@ -1006,6 +1009,12 @@ class ScreenStreamServer:
         # PLI tasks in flight -- keep a reference so the GC doesn't drop
         # them while awaiting the sendto (and ruff is happy with create_task).
         self._pli_tasks: set[asyncio.Task] = set()
+        # Last-input timestamp + last decoder-refresh timestamp. The
+        # refresh loop fires a fresh-IDR + reset-keyframe sequence after
+        # an input burst settles -- the same recovery the user gets from
+        # a manual page reload, but automatic.
+        self._last_input_t: float = 0.0
+        self._last_refresh_t: float = 0.0
 
         # Lazy-opened HID services for browser-driven touch / buttons. The
         # auth gate is already held open by the active media stream above,
@@ -1814,6 +1823,9 @@ class ScreenStreamServer:
             y = int(data["y"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return 400, f"invalid touch request: {exc}".encode()
+        # Track input timing so the decoder-refresh loop knows when to
+        # fire a fresh-IDR cycle (right after the user stops interacting).
+        self._last_input_t = asyncio.get_running_loop().time()
         await self._ensure_hid()
         assert self._uhs is not None
         if op == "contact":
@@ -1847,6 +1859,9 @@ class ScreenStreamServer:
             return 400, f"invalid button request: {exc}".encode()
         if name not in _NAMED_BUTTONS:
             return 400, f"unknown button {name!r}".encode()
+        # Track input timing so the decoder-refresh loop knows when to
+        # fire a fresh-IDR cycle (right after the user stops interacting).
+        self._last_input_t = asyncio.get_running_loop().time()
         usage_page, usage_code = _NAMED_BUTTONS[name]
         await self._ensure_hid()
         assert self._indigo is not None
@@ -2136,6 +2151,78 @@ class ScreenStreamServer:
             with contextlib.suppress(Exception):
                 writer.close()
 
+    async def _decoder_refresh_loop(self) -> None:
+        """Force connected browsers to rebuild their video decoders
+        whenever the device's encoder is likely to have produced silent
+        tears.
+
+        VideoToolbox (and Safari's WebCodecs wrapper around it) silently
+        accumulates stale long-term-reference-picture state under heavy
+        motion -- decode reports success on every frame but the rendered
+        pixels are torn. There's no error callback; the only known
+        recovery is to throw the decoder away and start fresh from an
+        IDR (which is what a full page reload achieves).
+
+        Triggers:
+        1. **Input-burst-settled**: shortly (~1 s) after the user stops
+           sending touch / button input. This is when tears typically
+           appear and persist -- matches the manual-reload pattern of
+           "swipe a lot, stop, see clean".
+        2. **Heartbeat**: every 5 s as a safety net for cases where
+           tears appear from device-side activity without our input.
+
+        Each trigger:
+        - drains every subscriber's pending queue so the reset reaches
+          the browser before buffered deltas
+        - sends a PLI to the device for a fresh IDR
+        - the broadcast loop sends that IDR as a RESET keyframe (type=2)
+        - the JS closes its old decoder, builds a new one, decodes
+
+        Cost is roughly one extra IDR per refresh (~5-10x a delta).
+        """
+        loop = asyncio.get_running_loop()
+        idle_threshold = 1.0  # input is "settled" after this gap
+        heartbeat = 5.0  # max time between refreshes when idle
+        min_interval = 1.5  # don't fire more often than this
+        while True:
+            try:
+                await asyncio.sleep(0.25)
+            except asyncio.CancelledError:
+                return
+            if not self._subscribers:
+                continue
+            if self._active_service is None or self._rtcp_dest is None:
+                continue
+            now = loop.time()
+            since_refresh = now - self._last_refresh_t
+            if since_refresh < min_interval:
+                continue
+            # Settled-burst trigger: there was input after the last
+            # refresh, and the last input was >=idle_threshold ago.
+            input_after_refresh = self._last_input_t > self._last_refresh_t
+            settled = input_after_refresh and (now - self._last_input_t) >= idle_threshold
+            # Heartbeat trigger.
+            heartbeat_due = since_refresh >= heartbeat
+            if not (settled or heartbeat_due):
+                continue
+            self._fire_decoder_refresh(now, reason="settled" if settled else "heartbeat")
+
+    def _fire_decoder_refresh(self, now: float, *, reason: str) -> None:
+        for q, state in self._subscribers.items():
+            while not q.empty():
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    q.get_nowait()
+            state.needs_key = True
+        pli_task = asyncio.create_task(self._send_rtcp_pli())
+        self._pli_tasks.add(pli_task)
+        pli_task.add_done_callback(self._pli_tasks.discard)
+        self._last_refresh_t = now
+        logger.debug(
+            "decoder-refresh (%s): %d subscriber(s)",
+            reason,
+            len(self._subscribers),
+        )
+
     async def _stall_watchdog(self) -> None:
         """Restart the media stream if AU progress stalls — typically when
         persistent UDP loss causes us to drop every AU and the encoder
@@ -2210,6 +2297,7 @@ class ScreenStreamServer:
         """Run the HTTP server until cancelled / Ctrl-C."""
         http_server = await asyncio.start_server(self._handle_http, self._bind, self._http_port)
         watchdog = asyncio.create_task(self._stall_watchdog())
+        decoder_refresh = asyncio.create_task(self._decoder_refresh_loop())
         # Eagerly start the HID worker so queued /touch requests are
         # processed even before the device-stream is fully up.
         self._hid_worker_task = asyncio.create_task(self._hid_worker())
@@ -2265,6 +2353,9 @@ class ScreenStreamServer:
             watchdog.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await watchdog
+            decoder_refresh.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await decoder_refresh
             logger.info("shutdown: cancelling eager_start")
             eager_start.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
