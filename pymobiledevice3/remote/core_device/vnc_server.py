@@ -32,6 +32,8 @@ import uuid
 from collections import deque
 from typing import Optional
 
+from pymobiledevice3.remote.core_device.aac_eld import AACELDDecoder
+from pymobiledevice3.remote.core_device.audio_player import AudioQueuePlayer
 from pymobiledevice3.remote.core_device.display_service import DisplayService
 from pymobiledevice3.remote.core_device.hevc_phantom import build_phantoms_for_bootstrap
 from pymobiledevice3.remote.core_device.hid_service import (
@@ -98,11 +100,13 @@ class VncStreamServer:
         bind: str = "127.0.0.1",
         port: int = 5901,
         display_id: int = 1,
+        audio: bool = True,
     ) -> None:
         self._rsd = rsd
         self._bind = bind
         self._port = port
         self._display_id = display_id
+        self._audio_enabled = audio
         self._sender_ip = rsd.service.address[0]
 
         # Filled once we have a decoder + first frame.
@@ -142,6 +146,22 @@ class VncStreamServer:
         # stop feeding deltas to the existing transcoder so we don't
         # accumulate MORE stale state while waiting for the IDR.
         self._refresh_pending = False
+
+        # Audio state -- mirrors screen_stream.py's audio side.
+        # Decoded PCM goes straight to the host's speakers via the
+        # AudioQueuePlayer; nothing is broadcast over RFB (RFB has no
+        # audio of its own). The audio session is paired with the
+        # video session on the device by sharing client_session_id.
+        self._audio_player: Optional[AudioQueuePlayer] = None
+        self._audio_decoder: Optional[AACELDDecoder] = None
+        self._audio_sock: Optional[socket.socket] = None
+        self._audio_local_ssrc: int = 0
+        self._audio_remote_ssrc: int = 0
+        self._audio_rtcp_dest: Optional[tuple[str, int]] = None
+        self._audio_rtp_packets_received: int = 0
+        self._audio_rtp_highest_seq: int = 0
+        self._audio_session_id: Optional[uuid.UUID] = None
+        self._audio_svc: Optional[DisplayService] = None
 
         # HID for pointer-event translation.
         self._uhs: Optional[UniversalHIDServiceService] = None
@@ -418,6 +438,132 @@ class VncStreamServer:
                 continue
             reason = "active" if active else ("settled" if settled else "heartbeat")
             self._fire_decoder_refresh(now, reason=reason)
+
+    # ----- Audio: AAC-ELD recv + decode + play ------------------------------
+    async def _audio_udp_recv(self, sock: socket.socket) -> None:
+        """Receive RTP audio packets, strip the RTP header, decode the
+        AAC-ELD AU via AudioToolbox, and feed the PCM to the local
+        AudioQueue. Mirrors :meth:`screen_stream.ScreenStreamServer._audio_udp_recv`
+        but plays locally instead of broadcasting."""
+        sock.setblocking(False)
+        loop = asyncio.get_running_loop()
+        consecutive_errors = 0
+        _ERR_RECREATE_THRESHOLD = 5
+        pkt_count = 0
+        last_stat_t = loop.time()
+        while True:
+            try:
+                data = await loop.sock_recv(sock, 65535)
+            except (OSError, asyncio.CancelledError):
+                return
+            if len(data) < 12:
+                continue
+            pt = data[1] & 0x7F
+            if 64 <= pt <= 95:  # RTCP -- ignore
+                continue
+            # Track sequence + receive count so our RR reports a sensible
+            # extended-highest-seq field. Without this the device reaps
+            # the audio session after 20 s (RTCPTimeoutInterval).
+            self._audio_rtp_packets_received += 1
+            seq = int.from_bytes(data[2:4], "big")
+            cur_ext = self._audio_rtp_highest_seq
+            cycles = (cur_ext >> 16) & 0xFFFF
+            last_seq16 = cur_ext & 0xFFFF
+            if seq < last_seq16 and (last_seq16 - seq) > 0x8000:
+                cycles = (cycles + 1) & 0xFFFF
+            new_ext = (cycles << 16) | seq
+            if cur_ext == 0 or ((new_ext - cur_ext) & 0xFFFFFFFF) < 0x80000000:
+                self._audio_rtp_highest_seq = new_ext
+            cc = data[0] & 0x0F
+            header_len = 12 + cc * 4
+            if data[0] & 0x10:  # extension
+                if header_len + 4 > len(data):
+                    continue
+                ext_len = int.from_bytes(data[header_len + 2 : header_len + 4], "big")
+                header_len += 4 + ext_len * 4
+            payload = data[header_len:]
+            if not payload:
+                continue
+            decoder = self._audio_decoder
+            player = self._audio_player
+            if decoder is None or player is None:
+                continue
+            try:
+                pcm = decoder.decode(payload)
+                consecutive_errors = 0
+            except Exception as exc:
+                consecutive_errors += 1
+                logger.debug("audio decode failed (%s) -- dropping", exc)
+                if consecutive_errors >= _ERR_RECREATE_THRESHOLD:
+                    logger.warning(
+                        "audio decoder stuck after %d consecutive errors -- recreating",
+                        consecutive_errors,
+                    )
+                    try:
+                        self._audio_decoder = AACELDDecoder()
+                        consecutive_errors = 0
+                    except Exception:
+                        logger.exception("audio decoder recreation failed")
+                continue
+            if pcm:
+                player.play(pcm)
+            pkt_count += 1
+            now = loop.time()
+            if now - last_stat_t >= 5.0:
+                played, dropped, enq_err = player.stats()
+                logger.info(
+                    "audio stats: rtp=%d, played=%d, dropped=%d, enq_err=%d",
+                    pkt_count,
+                    played,
+                    dropped,
+                    enq_err,
+                )
+                pkt_count = 0
+                last_stat_t = now
+
+    def _build_audio_rtcp_rr(self) -> bytes:
+        """Audio-side counterpart of :meth:`_build_rtcp_pli` -- a minimal
+        Receiver Report. The device's audio session has
+        ``RTCPTimeoutInterval=20 s``; without these RRs the encoder
+        stops emitting silently after ~20 s."""
+        return struct.pack(
+            "!BBHII BBBB IIII",
+            0x81,  # V=2, P=0, RC=1
+            0xC9,  # PT=201 (RR)
+            7,
+            self._audio_local_ssrc & 0xFFFFFFFF,
+            self._audio_remote_ssrc & 0xFFFFFFFF,
+            0,
+            0,
+            0,
+            0,  # fraction lost / cumulative loss
+            self._audio_rtp_highest_seq & 0xFFFFFFFF,
+            0,
+            0,
+            0,  # jitter / lsr / dlsr
+        )
+
+    async def _audio_rtcp_send_loop(self, sock: socket.socket) -> None:
+        loop = asyncio.get_running_loop()
+        sent = 0
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+            except asyncio.CancelledError:
+                return
+            if self._audio_rtcp_dest is None or self._audio_rtp_packets_received == 0:
+                continue
+            try:
+                await loop.sock_sendto(sock, self._build_audio_rtcp_rr(), (*self._audio_rtcp_dest, 0, 0))
+                sent += 1
+                # One log line per 30 RRs (every 30 s) confirms the
+                # session keepalive is firing -- useful when triaging
+                # "audio stopped after a while" reports.
+                if sent % 30 == 0:
+                    logger.info("audio RTCP RR: %d sent (highest_seq=0x%08x)", sent, self._audio_rtp_highest_seq)
+            except OSError as exc:
+                logger.debug("audio RTCP send failed (%s); socket may be torn down", exc)
+                return
 
     # ----- HID --------------------------------------------------------------
     async def _ensure_hid(self) -> None:
@@ -740,7 +886,11 @@ class VncStreamServer:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 * 1024 * 1024)
         port = sock.getsockname()[1]
 
-        # 2) Start device-side video stream.
+        # 2) Start device-side video stream. Generate a single
+        # client_session_id up front so the audio stream (started
+        # below) gets paired with the video session on the device --
+        # this is what Xcode's Mirror does.
+        shared_session_id = uuid.uuid4()
         svc = DisplayService(self._rsd)
         await svc.connect()
         local_ip = svc.service.local_address[0]
@@ -749,6 +899,7 @@ class VncStreamServer:
             receiver_port=port,
             sender_ip=self._sender_ip,
             display_id=self._display_id,
+            client_session_id=shared_session_id,
         )
         sid = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
         if not isinstance(sid, uuid.UUID):
@@ -787,11 +938,73 @@ class VncStreamServer:
                 self._remote_ssrc,
             )
 
-        # 3) Background tasks.
+        # 3) Audio stream (optional). RFB has no audio; we play the
+        # decoded PCM through the host's speakers via AudioQueue. The
+        # device's audio session shares ``client_session_id`` with the
+        # video session so they're paired on the device-side media
+        # manager (same as Xcode's Mirror). Without RR keepalives the
+        # device reaps the audio session after ~20 s.
+        audio_recv_task: Optional[asyncio.Task] = None
+        audio_rtcp_task: Optional[asyncio.Task] = None
+        if self._audio_enabled:
+            try:
+                audio_sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+                audio_sock.bind(("::", 0))
+                with contextlib.suppress(OSError):
+                    audio_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
+                audio_port = audio_sock.getsockname()[1]
+                audio_svc = DisplayService(self._rsd)
+                await audio_svc.connect()
+                audio_answer = await audio_svc.start_audio_stream(
+                    receiver_ip=local_ip,
+                    receiver_port=audio_port,
+                    sender_ip=self._sender_ip,
+                    client_session_id=shared_session_id,
+                )
+                audio_sid_raw = audio_answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
+                audio_sid = audio_sid_raw if isinstance(audio_sid_raw, uuid.UUID) else uuid.UUID(audio_sid_raw)
+                audio_cfg = audio_answer["connection"].get("streamConfig", {})
+                a_source_port = int(audio_cfg.get("SourcePort", 0))
+                self._audio_local_ssrc = int(audio_cfg.get("RemoteSSRC", 0))
+                self._audio_remote_ssrc = int(audio_cfg.get("LocalSSRC", 0))
+                self._audio_rtcp_dest = (self._sender_ip, a_source_port) if a_source_port else None
+                self._audio_sock = audio_sock
+                self._audio_svc = audio_svc
+                self._audio_session_id = audio_sid
+                self._audio_decoder = AACELDDecoder()
+                self._audio_player = AudioQueuePlayer()
+                logger.info(
+                    "audio stream up: PT=%s mode=%s sender_port=%s",
+                    audio_cfg.get("RxPayloadType"),
+                    audio_cfg.get("AudioStreamMode"),
+                    a_source_port,
+                )
+            except Exception:
+                logger.exception("audio startup failed -- continuing without audio")
+                self._audio_enabled = False
+                # Tear down anything we managed to create before the error.
+                if self._audio_player is not None:
+                    with contextlib.suppress(Exception):
+                        self._audio_player.close()
+                    self._audio_player = None
+                self._audio_decoder = None
+                self._audio_sock = None
+                self._audio_svc = None
+                self._audio_session_id = None
+
+        # 4) Background tasks.
         loop = asyncio.get_running_loop()
         self._loop = loop
         feed_task = asyncio.create_task(self._udp_recv_and_pipe(sock))
         refresh_task = asyncio.create_task(self._decoder_refresh_loop())
+        if self._audio_enabled and self._audio_sock is not None:
+            audio_recv_task = asyncio.create_task(self._audio_udp_recv(self._audio_sock))
+            if self._audio_rtcp_dest and self._audio_local_ssrc and self._audio_remote_ssrc:
+                audio_rtcp_task = asyncio.create_task(self._audio_rtcp_send_loop(self._audio_sock))
+            else:
+                logger.warning(
+                    "audio RTCP disabled (missing fields in streamConfig) -- session will be reaped after ~20 s"
+                )
 
         # 4) TCP listener for VNC clients.
         server = await asyncio.start_server(self._handle_client, self._bind, self._port)
@@ -844,6 +1057,30 @@ class VncStreamServer:
                 self._transcoder = None
             with contextlib.suppress(Exception):
                 sock.close()
+            if audio_recv_task is not None:
+                logger.info("shutdown: stopping audio recv loop")
+                audio_recv_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await audio_recv_task
+            if audio_rtcp_task is not None:
+                logger.info("shutdown: stopping audio RTCP loop")
+                audio_rtcp_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await audio_rtcp_task
+            if self._audio_player is not None:
+                logger.info("shutdown: stopping AudioQueue player")
+                with contextlib.suppress(Exception):
+                    self._audio_player.close()
+                self._audio_player = None
+            if self._audio_svc is not None and self._audio_session_id is not None:
+                logger.info("shutdown: stopping audio stream")
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(self._audio_svc.stop_media_stream(self._audio_session_id), timeout=3.0)
+                with contextlib.suppress(Exception):
+                    await self._audio_svc.close()
+            if self._audio_sock is not None:
+                with contextlib.suppress(Exception):
+                    self._audio_sock.close()
             logger.info("shutdown: stopping device stream")
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(svc.stop_media_stream(sid), timeout=3.0)

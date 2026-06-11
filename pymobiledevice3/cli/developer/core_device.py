@@ -855,6 +855,13 @@ async def core_device_display_serve_vnc(
     display_id: Annotated[int, typer.Option("--display-id")] = 1,
     bind: Annotated[str, typer.Option("--bind", help="Host to bind the VNC listener on")] = "127.0.0.1",
     port: Annotated[int, typer.Option("--port", help="TCP port for the VNC listener")] = 5901,
+    no_audio: Annotated[
+        bool,
+        typer.Option(
+            "--no-audio",
+            help="Disable device-audio playback through host speakers (default: on).",
+        ),
+    ] = False,
 ) -> None:
     """Serve the device's screen as a VNC (RFB 3.8) server.
 
@@ -869,12 +876,17 @@ async def core_device_display_serve_vnc(
     came out of the HW decoder go straight onto the wire. Mouse clicks
     in the screen-sharing window translate to HID touch events on the
     device.
+
+    Audio: the device's system audio is decoded from AAC-ELD and
+    played out the host Mac's speakers (RFB has no audio of its own).
+    Pass ``--no-audio`` to disable.
     """
     server = VncStreamServer(
         service_provider,
         bind=bind,
         port=port,
         display_id=display_id,
+        audio=not no_audio,
     )
     await server.serve()
 
