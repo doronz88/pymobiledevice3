@@ -337,22 +337,56 @@ class VncStreamServer:
         # 1. ProtocolVersion (12 bytes each way).
         w.write(b"RFB 003.008\n")
         await w.drain()
-        await r.readexactly(12)
-        # 2. Security: offer None=1 only.
-        w.write(b"\x01\x01")
-        await w.drain()
-        chosen = (await r.readexactly(1))[0]
-        if chosen != 1:
-            # SecurityResult: failed.
-            msg = b"unsupported security type"
-            w.write(struct.pack(">I", 1) + struct.pack(">I", len(msg)) + msg)
+        logger.info("handshake: sent server version RFB 003.008")
+        client_version_bytes = await r.readexactly(12)
+        client_version = client_version_bytes.decode("ascii", errors="replace").rstrip()
+        logger.info("handshake: client version %r", client_version)
+        # Parse minor version. The protocol changes between 3.3 / 3.7 /
+        # 3.8 across the security handshake:
+        #
+        #   3.3 -- server unilaterally picks ONE security type and sends
+        #          it as a U32. No SecurityResult on None auth.
+        #   3.7 -- server sends a list (count + types[]), client picks.
+        #          No SecurityResult on None auth.
+        #   3.8 -- server sends a list, client picks, server always
+        #          sends SecurityResult.
+        #
+        # macOS Screen Sharing.app picks 3.3 (regardless of our offer)
+        # because that's the protocol Apple Remote Desktop wraps. So
+        # we MUST support 3.3 if we want to be reachable from Finder
+        # Cmd+K -> vnc:// out of the box.
+        minor = 8
+        try:
+            if client_version.startswith("RFB 003."):
+                minor = int(client_version[8:11])
+        except ValueError:
+            minor = 8
+        if minor < 7:
+            # RFB 3.3: send U32 security-type = None (1). No list, no
+            # client pick, no SecurityResult for None auth.
+            w.write(struct.pack(">I", 1))
             await w.drain()
-            raise ConnectionError(f"client picked unsupported security={chosen}")
-        # 3. SecurityResult: OK.
-        w.write(b"\x00\x00\x00\x00")
-        await w.drain()
-        # 4. ClientInit (shared flag — we don't care).
-        await r.readexactly(1)
+            logger.info("handshake: 3.3 path -- server picked None auth")
+        else:
+            # RFB 3.7 / 3.8: send security list, client picks.
+            w.write(b"\x01\x01")  # count=1, type=None=1
+            await w.drain()
+            logger.info("handshake: sent security types [None=1]")
+            chosen = (await r.readexactly(1))[0]
+            logger.info("handshake: client picked security=%d", chosen)
+            if chosen != 1:
+                msg = b"unsupported security type"
+                w.write(struct.pack(">I", 1) + struct.pack(">I", len(msg)) + msg)
+                await w.drain()
+                raise ConnectionError(f"client picked unsupported security={chosen}")
+            if minor >= 8:
+                # 3.8 sends SecurityResult even for None auth.
+                w.write(b"\x00\x00\x00\x00")
+                await w.drain()
+                logger.info("handshake: sent SecurityResult=OK")
+        # ClientInit (shared flag — we don't care).
+        shared = (await r.readexactly(1))[0]
+        logger.info("handshake: client shared=%d", shared)
         # 5. ServerInit: width, height, pixel format, name.
         # Pixel format = 32bpp little-endian BGRA. (For Tight-JPEG the
         # client doesn't need this to match the JPEG; for Raw we'd
@@ -380,6 +414,7 @@ class VncStreamServer:
         )
         w.write(server_init)
         await w.drain()
+        logger.info("handshake: sent ServerInit (%dx%d, name=%r)", self._fb_width, self._fb_height, _SERVER_NAME)
 
     async def _client_recv_loop(self, client: _VncClient) -> None:
         r = client.reader
