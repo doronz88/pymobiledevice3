@@ -103,6 +103,9 @@ pymobiledevice3 usbmux list
 # Watch syslog
 pymobiledevice3 syslog live
 
+# Capture Bluetooth HCI traffic
+pymobiledevice3 btlogger trace.pklg
+
 # Pull crash reports
 pymobiledevice3 crash pull /path/to/crashes
 
