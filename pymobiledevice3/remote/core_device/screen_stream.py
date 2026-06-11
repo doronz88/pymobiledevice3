@@ -974,6 +974,17 @@ class ScreenStreamServer:
         self._audio_recv_task: Optional[asyncio.Task] = None
         self._audio_subscribers: dict[asyncio.Queue[bytes], None] = {}
         self._audio_lock = asyncio.Lock()
+        # Audio RTCP bookkeeping -- parallel to the video fields below.
+        # The device's audio streamConfig has the same RTCPTimeoutEnabled
+        # + RTCPTimeoutInterval=20s as video; without a periodic RR the
+        # audio session gets reaped after ~20 s (the encoder stops
+        # emitting RTP audio and mediastreamstatus drops the session).
+        self._audio_rtcp_dest: Optional[tuple[str, int]] = None
+        self._audio_local_ssrc: int = 0
+        self._audio_remote_ssrc: int = 0
+        self._audio_rtp_highest_seq: int = 0
+        self._audio_rtp_packets_received: int = 0
+        self._audio_rtcp_task: Optional[asyncio.Task] = None
         # Xcode's Mirror uses ONE client_session_id for both the audio
         # and video mediastreamstart calls (confirmed verbatim in the
         # remotexpc-sniff4 capture: same UUID in both 'CoreDevice.input'
@@ -1353,6 +1364,50 @@ class ScreenStreamServer:
                 logger.debug("RTCP send failed (%s); the socket may be torn down", exc)
                 return
 
+    def _build_audio_rtcp_rr(self) -> bytes:
+        """Audio-side counterpart of :meth:`_build_rtcp_rr` (RFC 3550 §6.4.2).
+        Identical packet shape; just uses the audio session's SSRCs and
+        extended-highest-seq counter."""
+        import struct as _struct
+
+        return _struct.pack(
+            "!BBHII BBBB IIII",
+            0x81,
+            0xC9,
+            7,
+            self._audio_local_ssrc & 0xFFFFFFFF,
+            self._audio_remote_ssrc & 0xFFFFFFFF,
+            0,
+            0,
+            0,
+            0,
+            self._audio_rtp_highest_seq & 0xFFFFFFFF,
+            0,
+            0,
+            0,
+        )
+
+    async def _audio_rtcp_send_loop(self, sock: socket.socket) -> None:
+        """Periodically send RTCP RR for the audio stream. Without this
+        the device reaps the audio session after ~20 s (RTCPTimeoutInterval)
+        and the encoder silently stops emitting RTP audio packets --
+        mediastreamstatus confirmed the audio session disappears from the
+        sessions list when we don't RR."""
+        loop = asyncio.get_running_loop()
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+            except asyncio.CancelledError:
+                return
+            if self._audio_rtcp_dest is None or self._audio_rtp_packets_received == 0:
+                continue
+            packet = self._build_audio_rtcp_rr()
+            try:
+                await loop.sock_sendto(sock, packet, (*self._audio_rtcp_dest, 0, 0))
+            except OSError as exc:
+                logger.debug("audio RTCP send failed (%s); the socket may be torn down", exc)
+                return
+
     @staticmethod
     def _missing_audio_deps() -> list[str]:
         """Audio decode uses macOS's AudioToolbox via ctypes -- no pip
@@ -1410,6 +1465,19 @@ class ScreenStreamServer:
             pt = data[1] & 0x7F
             if 64 <= pt <= 95:  # RTCP -- ignore
                 continue
+            # Track sequence + receive count so our RR reports a sensible
+            # extended-highest-seq field. Without this the encoder reaps
+            # the audio session after 20 s (RTCPTimeoutInterval).
+            self._audio_rtp_packets_received += 1
+            seq = int.from_bytes(data[2:4], "big")
+            cur_ext = self._audio_rtp_highest_seq
+            cycles = (cur_ext >> 16) & 0xFFFF
+            last_seq16 = cur_ext & 0xFFFF
+            if seq < last_seq16 and (last_seq16 - seq) > 0x8000:
+                cycles = (cycles + 1) & 0xFFFF
+            new_ext = (cycles << 16) | seq
+            if cur_ext == 0 or ((new_ext - cur_ext) & 0xFFFFFFFF) < 0x80000000:
+                self._audio_rtp_highest_seq = new_ext
             cc = data[0] & 0x0F
             header_len = 12 + cc * 4
             if data[0] & 0x10:  # extension
@@ -1451,10 +1519,17 @@ class ScreenStreamServer:
         sid = self._audio_session_id
         sock = self._audio_sock
         task = self._audio_recv_task
+        rtcp_task = self._audio_rtcp_task
         self._audio_service = None
         self._audio_session_id = None
         self._audio_sock = None
         self._audio_recv_task = None
+        self._audio_rtcp_task = None
+        self._audio_rtcp_dest = None
+        if rtcp_task is not None:
+            rtcp_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await rtcp_task
         if task is not None:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -1507,10 +1582,32 @@ class ScreenStreamServer:
                 cfg.get("AudioStreamMode"),
                 cfg.get("SourcePort"),
             )
+            # Same SSRC-naming convention as video: device's streamConfig
+            # uses its perspective, so LocalSSRC is the device's, RemoteSSRC
+            # is ours. Source-port + sender-IP is where we send RTCP.
+            source_port = int(cfg.get("SourcePort", 0))
+            self._audio_local_ssrc = int(cfg.get("RemoteSSRC", 0))  # ours
+            self._audio_remote_ssrc = int(cfg.get("LocalSSRC", 0))  # device's
+            self._audio_rtp_highest_seq = 0
+            self._audio_rtp_packets_received = 0
+            self._audio_rtcp_dest = (self._sender_ip, source_port) if source_port else None
             self._audio_service = svc
             self._audio_session_id = sid
             self._audio_sock = sock
             self._audio_recv_task = asyncio.create_task(self._audio_udp_recv(sock))
+            # Keep the audio session alive by RR'ing every second.
+            # RTCPTimeoutInterval=20 s by default; without this the
+            # device reaps the audio session, mediastreamstatus drops it,
+            # and the encoder stops emitting (silently).
+            if self._audio_rtcp_dest is not None and self._audio_local_ssrc and self._audio_remote_ssrc:
+                self._audio_rtcp_task = asyncio.create_task(self._audio_rtcp_send_loop(sock))
+            else:
+                logger.warning(
+                    "audio RTCP disabled (missing fields: SourcePort=%s LocalSSRC=%s RemoteSSRC=%s)",
+                    source_port,
+                    self._audio_local_ssrc,
+                    self._audio_remote_ssrc,
+                )
 
     # ----- device-stream lifecycle ------------------------------------------
     async def _stop_active_stream(self) -> None:
