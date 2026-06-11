@@ -36,6 +36,7 @@ from pymobiledevice3.remote.core_device.screen_stream import (
     capture_audio_rtp_to_file,
     capture_rtp_to_file,
 )
+from pymobiledevice3.remote.core_device.screen_stream_jpeg import JpegStreamServer
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.crash_reports import CrashReportsManager
 from pymobiledevice3.utils import try_decode
@@ -799,6 +800,49 @@ async def core_device_display_serve_video_stream(
         http_port=http_port,
         display_id=display_id,
         audio_default_on=not no_audio,
+    )
+    await server.serve()
+
+
+@display_cli.command("serve-video-stream-jpeg")
+@async_command
+async def core_device_display_serve_video_stream_jpeg(
+    service_provider: RSDServiceProviderDep,
+    display_id: Annotated[int, typer.Option("--display-id")] = 1,
+    bind: Annotated[str, typer.Option("--bind", help="Host to bind the webserver on")] = "127.0.0.1",
+    http_port: Annotated[int, typer.Option("--http-port", help="Port for the webserver")] = 8081,
+    jpeg_quality: Annotated[
+        float,
+        typer.Option(
+            "--jpeg-quality",
+            help="JPEG quality 0.0-1.0 (higher = better quality / bigger frames). Default 0.7.",
+        ),
+    ] = 0.7,
+) -> None:
+    """Serve the device's screen as MJPEG -- alternative to serve-video-stream.
+
+    Pipeline (requires ffmpeg on PATH):
+
+        device -> RTP/HEVC -> depacketize -> ffmpeg (VideoToolbox HEVC
+        decode, MJPEG encode) -> HTTP multipart/x-mixed-replace ->
+        browser <img> element renders each JPEG natively
+
+    Why have both: the WebCodecs HEVC path (serve-video-stream)
+    silently accumulates decoder reference-picture state under heavy
+    motion and renders torn frames. The MJPEG path sends each frame as
+    a complete JPEG -- no decoder state to corrupt, no tears, but ~5-10x
+    bandwidth (fine on localhost / LAN) and ~5-10x host CPU.
+
+    Open ``http://<bind>:<http_port>/`` in any browser (no WebCodecs
+    support required). Defaults to port 8081 so you can run both
+    servers simultaneously and A/B them.
+    """
+    server = JpegStreamServer(
+        service_provider,
+        bind=bind,
+        http_port=http_port,
+        display_id=display_id,
+        jpeg_quality=jpeg_quality,
     )
     await server.serve()
 
