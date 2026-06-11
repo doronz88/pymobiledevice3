@@ -142,6 +142,16 @@ pymobiledevice3 developer dvt device-information
 pymobiledevice3 developer dvt energy PID1 PID2 ...
 ```
 
+## Core Device (iOS 17+)
+
+These commands talk to iOS 17+ `CoreDevice` services through the RSD tunnel.
+See [iOS 17+ tunnels](ios17-tunnels.md) for tunnel setup.
+
+```shell
+# Take a screenshot (PNG)
+pymobiledevice3 developer core-device screen-capture screenshot /path/to/screen.png
+```
+
 ## WebInspector Automation
 
 ```shell

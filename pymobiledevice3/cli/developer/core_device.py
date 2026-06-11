@@ -14,6 +14,7 @@ from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
 from pymobiledevice3.remote.core_device.diagnostics_service import DiagnosticsServiceService
 from pymobiledevice3.remote.core_device.file_service import APPLE_DOMAIN_DICT, FileServiceService
+from pymobiledevice3.remote.core_device.screen_capture_service import ScreenCaptureService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.crash_reports import CrashReportsManager
 from pymobiledevice3.utils import try_decode
@@ -300,3 +301,31 @@ async def core_device_sysdiagnose(
 ) -> None:
     """Execute sysdiagnose and fetch the output file"""
     await core_device_sysdiagnose_task(service_provider, output)
+
+
+screen_capture_cli = InjectingTyper(
+    name="screen-capture",
+    help="Capture content from the device's screen (com.apple.coredevice.screencaptureservice).",
+    no_args_is_help=True,
+)
+cli.add_typer(screen_capture_cli)
+
+
+async def core_device_screen_capture_screenshot_task(
+    service_provider: RemoteServiceDiscoveryService, output: Path, display_unique_id: Optional[str]
+) -> None:
+    async with ScreenCaptureService(service_provider) as service:
+        response = await service.capture_screenshot(display_unique_id=display_unique_id)
+    output.write_bytes(response["image"])
+    logger.info(f"Screenshot saved to: {output}")
+
+
+@screen_capture_cli.command("screenshot")
+@async_command
+async def core_device_screen_capture_screenshot(
+    service_provider: RSDServiceProviderDep,
+    output: Annotated[Path, typer.Argument()],
+    display_unique_id: Annotated[Optional[str], typer.Option("--display-unique-id")] = None,
+) -> None:
+    """Capture a PNG screenshot of the device's screen."""
+    await core_device_screen_capture_screenshot_task(service_provider, output, display_unique_id)
