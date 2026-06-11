@@ -10,10 +10,10 @@ from construct import (
     Const,
     CString,
     Default,
-    Double,
     Enum,
     ExprAdapter,
     FlagsEnum,
+    Float64l,
     GreedyBytes,
     Hex,
     If,
@@ -75,7 +75,7 @@ XpcNull = Pass
 XpcBool = Int32ul
 XpcInt64 = Int64sl
 XpcUInt64 = Int64ul
-XpcDouble = Double
+XpcDouble = Float64l  # wire format is little-endian (matches the other Int*l types)
 XpcPointer = None
 XpcDate = Int64ul
 XpcData = Aligned(4, Prefixed(Int32ul, GreedyBytes))
