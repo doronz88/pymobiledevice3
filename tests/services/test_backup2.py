@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 import struct
 import time
@@ -8,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
-from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError
+from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.mobilebackup2 import (
@@ -261,6 +262,54 @@ async def test_device_link_move_items_skips_missing_filtered_source(tmp_path: Pa
     await device_link.move_items(["DLMessageMoveItems", {"missing/source": "54/hash"}])
 
     service.send_plist.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_device_link_loop_dispatches_known_command(tmp_path: Path) -> None:
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(
+        side_effect=[
+            ["DLMessageGetFreeDiskSpace"],
+            ["DLMessageProcessMessage", {"ErrorCode": 0, "Content": "done"}],
+        ]
+    )
+    device_link = DeviceLink(service, tmp_path)
+
+    assert await device_link.dl_loop() == "done"
+    status_response = service.send_plist.await_args_list[0].args[0]
+    assert status_response[0] == "DLMessageStatusResponse"
+    assert status_response[1] == 0
+    assert status_response[2] == "___EmptyParameterString___"
+    assert isinstance(status_response[3], int)
+
+
+@pytest.mark.asyncio
+async def test_device_link_loop_returns_success_process_message(tmp_path: Path) -> None:
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(return_value=["DLMessageProcessMessage", {"ErrorCode": 0, "Content": {"ok": True}}])
+    device_link = DeviceLink(service, tmp_path)
+
+    assert await device_link.dl_loop() == {"ok": True}
+    service.send_plist.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_device_link_loop_reports_unsupported_command_without_payload(tmp_path: Path, caplog) -> None:
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(return_value=["DLMessageFutureCommand", {"secret": "payload"}])
+    device_link = DeviceLink(service, tmp_path)
+
+    with (
+        caplog.at_level(logging.DEBUG, logger="pymobiledevice3.services.device_link"),
+        pytest.raises(PyMobileDevice3Exception) as exc_info,
+    ):
+        await device_link.dl_loop()
+
+    message = str(exc_info.value)
+    assert message == "Unsupported DeviceLink command: DLMessageFutureCommand"
+    assert "payload" not in message
+    assert "Unsupported DeviceLink message" in caplog.text
+    assert "payload" in caplog.text
 
 
 @pytest.mark.asyncio

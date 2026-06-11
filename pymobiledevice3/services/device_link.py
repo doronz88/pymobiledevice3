@@ -1,5 +1,6 @@
 import ctypes
 import datetime
+import logging
 import shutil
 import struct
 import warnings
@@ -33,6 +34,7 @@ ERRNO_TO_DEVICE_ERROR = {
 DLMessage = Sequence[Any]
 ProgressCallback = Callable[[Any], None]
 DLHandler = Callable[[DLMessage], None]
+logger = logging.getLogger(__name__)
 
 
 class DeviceLink:
@@ -91,7 +93,12 @@ class DeviceLink:
                     return message[1].get("Content")
                 else:
                     raise PyMobileDevice3Exception(f"Device link error: {message[1]}")
-            await self._dl_handlers[command](message)
+
+            handler = self._dl_handlers.get(command)
+            if handler is None:
+                logger.debug("Unsupported DeviceLink message: %s", message)
+                raise PyMobileDevice3Exception(f"Unsupported DeviceLink command: {command}")
+            await handler(message)
 
     async def version_exchange(self) -> None:
         dl_message_version_exchange = await self.receive_message()
