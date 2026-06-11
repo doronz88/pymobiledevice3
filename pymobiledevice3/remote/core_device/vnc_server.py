@@ -100,7 +100,7 @@ class VncStreamServer:
         bind: str = "127.0.0.1",
         port: int = 5901,
         display_id: int = 1,
-        audio: bool = True,
+        audio: bool = False,
     ) -> None:
         self._rsd = rsd
         self._bind = bind
