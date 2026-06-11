@@ -1009,11 +1009,11 @@ class ScreenStreamServer:
         # PLI tasks in flight -- keep a reference so the GC doesn't drop
         # them while awaiting the sendto (and ruff is happy with create_task).
         self._pli_tasks: set[asyncio.Task] = set()
-        # Last-input timestamp + last decoder-refresh timestamp. The
-        # refresh loop fires a fresh-IDR + reset-keyframe sequence after
-        # an input burst settles -- the same recovery the user gets from
-        # a manual page reload, but automatic.
-        self._last_input_t: float = 0.0
+        # Last decoder-refresh timestamp. The refresh loop fires a
+        # fresh-IDR + reset-keyframe sequence at a fixed cadence to keep
+        # the browser's WebCodecs/VideoToolbox decoder state from
+        # accumulating silent tears -- the same recovery the user gets
+        # from a manual page reload, but automatic.
         self._last_refresh_t: float = 0.0
 
         # Lazy-opened HID services for browser-driven touch / buttons. The
@@ -1823,9 +1823,6 @@ class ScreenStreamServer:
             y = int(data["y"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return 400, f"invalid touch request: {exc}".encode()
-        # Track input timing so the decoder-refresh loop knows when to
-        # fire a fresh-IDR cycle (right after the user stops interacting).
-        self._last_input_t = asyncio.get_running_loop().time()
         await self._ensure_hid()
         assert self._uhs is not None
         if op == "contact":
@@ -1859,9 +1856,6 @@ class ScreenStreamServer:
             return 400, f"invalid button request: {exc}".encode()
         if name not in _NAMED_BUTTONS:
             return 400, f"unknown button {name!r}".encode()
-        # Track input timing so the decoder-refresh loop knows when to
-        # fire a fresh-IDR cycle (right after the user stops interacting).
-        self._last_input_t = asyncio.get_running_loop().time()
         usage_page, usage_code = _NAMED_BUTTONS[name]
         await self._ensure_hid()
         assert self._indigo is not None
@@ -2152,9 +2146,9 @@ class ScreenStreamServer:
                 writer.close()
 
     async def _decoder_refresh_loop(self) -> None:
-        """Force connected browsers to rebuild their video decoders
-        whenever the device's encoder is likely to have produced silent
-        tears.
+        """Force connected browsers to rebuild their video decoders at a
+        fixed cadence (default every 0.5 s while a subscriber is
+        attached).
 
         VideoToolbox (and Safari's WebCodecs wrapper around it) silently
         accumulates stale long-term-reference-picture state under heavy
@@ -2163,52 +2157,33 @@ class ScreenStreamServer:
         recovery is to throw the decoder away and start fresh from an
         IDR (which is what a full page reload achieves).
 
-        Triggers:
-        1. **During-input**: any /touch or /button arrived in the last
-           ~1 s. Fires aggressively during interaction (gated by
-           min_interval) so tears clear continuously, not just after
-           the user stops -- matches the user's preference for
-           "every little motion".
-        2. **Heartbeat**: every 5 s as a safety net for cases where
-           tears appear from device-side activity without our input.
+        We tried fancier triggers (input-burst-settled, byte-rate motion
+        detection) and ended up here: just refresh constantly. Catches
+        every tear source -- browser-driven input, real finger on the
+        device, system animations -- without needing a heuristic to
+        guess when to fire. Cost is roughly one extra IDR per refresh
+        (~5-10x a delta), so at 2 refreshes/sec maybe 10-15% extra
+        encoder load, which the hardware encoder handles comfortably.
 
-        Each trigger:
+        Each refresh:
         - drains every subscriber's pending queue so the reset reaches
           the browser before buffered deltas
         - sends a PLI to the device for a fresh IDR
         - the broadcast loop sends that IDR as a RESET keyframe (type=2)
         - the JS closes its old decoder, builds a new one, decodes
-
-        Cost: one extra IDR per refresh (~5-10x a delta). At
-        min_interval=0.5 s during continuous motion that's ~2 IDRs/s,
-        which the encoder handles comfortably.
         """
+        interval = 0.5
         loop = asyncio.get_running_loop()
-        recent_input_window = 1.0  # consider input "recent" within this gap
-        heartbeat = 5.0  # max time between refreshes when idle
-        min_interval = 0.5  # cap on refresh rate during continuous motion
         while True:
             try:
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(interval)
             except asyncio.CancelledError:
                 return
             if not self._subscribers:
                 continue
             if self._active_service is None or self._rtcp_dest is None:
                 continue
-            now = loop.time()
-            since_refresh = now - self._last_refresh_t
-            if since_refresh < min_interval:
-                continue
-            # During-input trigger: any /touch or /button in the last
-            # recent_input_window seconds counts. Fires repeatedly while
-            # motion continues (gated by min_interval above).
-            during_input = (now - self._last_input_t) < recent_input_window
-            # Heartbeat trigger.
-            heartbeat_due = since_refresh >= heartbeat
-            if not (during_input or heartbeat_due):
-                continue
-            self._fire_decoder_refresh(now, reason="motion" if during_input else "heartbeat")
+            self._fire_decoder_refresh(loop.time(), reason="periodic")
 
     def _fire_decoder_refresh(self, now: float, *, reason: str) -> None:
         for q, state in self._subscribers.items():
