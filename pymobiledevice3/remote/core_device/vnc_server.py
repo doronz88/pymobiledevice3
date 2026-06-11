@@ -258,7 +258,7 @@ class VncStreamServer:
 
     # ----- RTP recv + phantom-NAL bridge ------------------------------------
     async def _udp_recv_and_pipe(self, sock: socket.socket) -> None:
-        """Same depacketize loop as ScreenStreamServer / JpegStreamServer:
+        """Same depacketize loop as ScreenStreamServer:
         gather Annex-B AUs, inject phantom NALs once at bootstrap, feed
         the VT transcoder."""
         sock.setblocking(False)

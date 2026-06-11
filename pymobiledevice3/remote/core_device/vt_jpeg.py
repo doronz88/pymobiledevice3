@@ -1,28 +1,26 @@
 """
-HEVC -> JPEG transcoder via Apple VideoToolbox (macOS only, pure ctypes).
+HEVC -> BGRA decoder via Apple VideoToolbox (macOS only, pure ctypes).
 
 Why this module exists:
     ffmpeg's libavcodec HEVC parser cannot construct a reference picture
     set for the bitstream Apple's screen-mirror encoder emits ("Could
     not find ref with POC N / Error constructing the frame RPS"). VT
     silently tolerates the same bytes -- it's what Xcode uses. To get
-    HEVC -> JPEG without the LTRP/RPS pain we have to go VT direct.
+    HEVC -> pixels without the LTRP/RPS pain we have to go VT direct.
 
 Pipeline::
 
     Annex-B HEVC AU
-        -> VTDecompressionSession (HW HEVC decode)
-        -> CVPixelBuffer (NV12 by default)
-        -> VTCompressionSession (codec='jpeg')
-        -> JPEG bytes (one self-contained file per frame)
+        -> VTDecompressionSession (HW HEVC decode, BGRA output)
+        -> CVPixelBuffer
+        -> raw BGRA bytes (width*height*4)
 
 Output goes through a thread-safe queue so the asyncio caller can drain
-JPEGs without touching VT's internal threads.
+frames without touching VT's internal threads.
 
-The HEVCDecoder + JpegEncoder pair are largely the same shape as the
-H.264 transcoder I built earlier in this session (later reverted) --
-the JPEG encoder is simpler because there are no parameter sets to
-extract or framing to massage.
+(The file name predates the redesign that dropped the JPEG round-trip;
+left as-is to avoid an import churn. The current exports are
+``HEVCDecoder`` and ``HevcToBgraTranscoder``.)
 """
 
 from __future__ import annotations
@@ -226,62 +224,6 @@ def _build_dest_attrs_bgra() -> c_void_p:
 
 
 # ---------------------------------------------------------------------------
-# VideoToolbox compression (JPEG output)
-# ---------------------------------------------------------------------------
-VTCompressionOutputCallback = CFUNCTYPE(
-    None,
-    c_void_p,
-    c_void_p,
-    OSStatus,
-    c_uint32,
-    c_void_p,
-)
-
-vt.VTCompressionSessionCreate.restype = OSStatus
-vt.VTCompressionSessionCreate.argtypes = [
-    c_void_p,
-    c_int32,
-    c_int32,
-    c_uint32,
-    c_void_p,
-    c_void_p,
-    c_void_p,
-    VTCompressionOutputCallback,
-    c_void_p,
-    POINTER(c_void_p),
-]
-vt.VTCompressionSessionEncodeFrame.restype = OSStatus
-vt.VTCompressionSessionEncodeFrame.argtypes = [
-    c_void_p,
-    c_void_p,
-    _CMTime,
-    _CMTime,
-    c_void_p,
-    c_void_p,
-    POINTER(c_uint32),
-]
-vt.VTCompressionSessionCompleteFrames.restype = OSStatus
-vt.VTCompressionSessionCompleteFrames.argtypes = [c_void_p, _CMTime]
-vt.VTCompressionSessionInvalidate.restype = None
-vt.VTCompressionSessionInvalidate.argtypes = [c_void_p]
-vt.VTSessionSetProperty.restype = OSStatus
-vt.VTSessionSetProperty.argtypes = [c_void_p, c_void_p, c_void_p]
-
-# codec FourCC = 'jpeg'
-kCMVideoCodecType_JPEG = 0x6A706567
-
-kVTCompressionPropertyKey_RealTime = c_void_p.in_dll(vt, "kVTCompressionPropertyKey_RealTime")
-kVTCompressionPropertyKey_Quality = c_void_p.in_dll(vt, "kVTCompressionPropertyKey_Quality")
-
-
-def _cfnumber_f32(value: float) -> c_void_p:
-    cf.CFNumberCreate.argtypes = [c_void_p, c_int32, c_void_p]
-    v = ctypes.c_float(value)
-    # kCFNumberFloat32Type = 5
-    return c_void_p(cf.CFNumberCreate(None, 5, byref(v)))
-
-
-# ---------------------------------------------------------------------------
 # Annex-B helpers
 # ---------------------------------------------------------------------------
 def _annexb_to_avcc(annexb: bytes) -> bytes:
@@ -395,154 +337,6 @@ class HEVCDecoder:
     def __del__(self) -> None:
         with contextlib.suppress(Exception):
             self.close()
-
-
-# ---------------------------------------------------------------------------
-# JpegEncoder
-# ---------------------------------------------------------------------------
-class JpegEncoder:
-    """CVPixelBuffer -> JPEG bytes via VTCompressionSession (HW)."""
-
-    def __init__(self, width: int, height: int, quality: float = 0.7) -> None:
-        self.width = width
-        self.height = height
-        self._cb = VTCompressionOutputCallback(self._on_output)
-        self._session = c_void_p(0)
-        st = vt.VTCompressionSessionCreate(
-            None,
-            width,
-            height,
-            kCMVideoCodecType_JPEG,
-            None,
-            None,
-            None,
-            self._cb,
-            None,
-            byref(self._session),
-        )
-        if st != 0:
-            raise RuntimeError(f"VTCompressionSessionCreate(jpeg): OSStatus={st}")
-        # Properties: real-time, quality 0.0-1.0
-        vt.VTSessionSetProperty(self._session, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue)
-        q = _cfnumber_f32(quality)
-        vt.VTSessionSetProperty(self._session, kVTCompressionPropertyKey_Quality, q)
-        cf.CFRelease(q)
-        self._outputs: queue.Queue = queue.Queue()
-
-    def _on_output(self, refcon, src_ref, status, info_flags, sample_buf):
-        if status != 0 or not sample_buf:
-            self._outputs.put(None)
-            return
-        try:
-            bb = cm.CMSampleBufferGetDataBuffer(sample_buf)
-            if not bb:
-                self._outputs.put(None)
-                return
-            n = cm.CMBlockBufferGetDataLength(bb)
-            scratch = ctypes.create_string_buffer(n)
-            cm.CMBlockBufferCopyDataBytes(bb, 0, n, scratch)
-            self._outputs.put(ctypes.string_at(scratch, n))
-        except Exception:
-            self._outputs.put(None)
-
-    def feed(self, image_buf: int, pts_ticks: int, timescale: int = 90_000) -> None:
-        pts = _CMTime(pts_ticks, timescale, 1, 0)
-        dur = _CMTime(timescale // 60, timescale, 1, 0)
-        info = c_uint32(0)
-        st = vt.VTCompressionSessionEncodeFrame(self._session, image_buf, pts, dur, None, None, byref(info))
-        if st != 0:
-            self._outputs.put(None)
-
-    def drain(self):
-        try:
-            while True:
-                yield self._outputs.get_nowait()
-        except queue.Empty:
-            return
-
-    def flush(self) -> None:
-        vt.VTCompressionSessionCompleteFrames(self._session, _CMTime(0, 0, 0, 0))
-
-    def close(self) -> None:
-        if self._session.value:
-            self.flush()
-            vt.VTCompressionSessionInvalidate(self._session)
-            cf.CFRelease(self._session)
-            self._session = c_void_p(0)
-
-    def __del__(self) -> None:
-        with contextlib.suppress(Exception):
-            self.close()
-
-
-# ---------------------------------------------------------------------------
-# Combined transcoder
-# ---------------------------------------------------------------------------
-class HevcToJpegTranscoder:
-    """Decoupling worker: caller pushes Annex-B HEVC AUs via ``feed()``,
-    a background thread runs them through the VT decoder + JPEG encoder
-    and fires ``on_jpeg(bytes)`` for each finished JPEG frame.
-
-    The callback runs on the worker thread; if your caller is asyncio
-    you'll typically marshal back with ``loop.call_soon_threadsafe``."""
-
-    def __init__(
-        self,
-        vps: bytes,
-        sps: bytes,
-        pps: bytes,
-        *,
-        on_jpeg,
-        quality: float = 0.7,
-    ) -> None:
-        self._dec = HEVCDecoder(vps, sps, pps)
-        self._enc = JpegEncoder(self._dec.width, self._dec.height, quality=quality)
-        self._on_jpeg = on_jpeg
-        self.width = self._dec.width
-        self.height = self._dec.height
-        self._inq: queue.Queue = queue.Queue()
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="vt-hevc-jpeg", daemon=True)
-        self._thread.start()
-
-    def feed(self, annexb: bytes) -> None:
-        self._inq.put(annexb)
-
-    def close(self) -> None:
-        self._stop.set()
-        self._inq.put(None)
-        self._thread.join(timeout=2.0)
-        self._enc.close()
-        self._dec.close()
-
-    def _drain_enc_to_callback(self) -> None:
-        for jpeg in self._enc.drain():
-            if jpeg:
-                with contextlib.suppress(Exception):
-                    self._on_jpeg(jpeg)
-
-    def _run(self) -> None:
-        pts = 0
-        tick = 90_000 // 60
-        while not self._stop.is_set():
-            try:
-                item = self._inq.get(timeout=0.05)
-            except queue.Empty:
-                self._drain_enc_to_callback()
-                continue
-            if item is None:
-                break
-            try:
-                self._dec.feed_annexb(item)
-            except Exception:
-                continue
-            for status, image_buf in self._dec.drain():
-                if status != 0 or not image_buf:
-                    continue
-                self._enc.feed(image_buf, pts_ticks=pts)
-                pts += tick
-                cf.CFRelease(image_buf)
-            self._drain_enc_to_callback()
 
 
 # ---------------------------------------------------------------------------
