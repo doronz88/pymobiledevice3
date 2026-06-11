@@ -855,13 +855,6 @@ async def core_device_display_serve_vnc(
     display_id: Annotated[int, typer.Option("--display-id")] = 1,
     bind: Annotated[str, typer.Option("--bind", help="Host to bind the VNC listener on")] = "127.0.0.1",
     port: Annotated[int, typer.Option("--port", help="TCP port for the VNC listener")] = 5901,
-    jpeg_quality: Annotated[
-        float,
-        typer.Option(
-            "--jpeg-quality",
-            help="JPEG quality 0.0-1.0 for Tight-encoded framebuffer updates. Default 0.7.",
-        ),
-    ] = 0.7,
 ) -> None:
     """Serve the device's screen as a VNC (RFB 3.8) server.
 
@@ -871,19 +864,17 @@ async def core_device_display_serve_vnc(
     involved -- the OS's native screen-sharing renders the framebuffer
     directly.
 
-    Pipeline: device HEVC -> VideoToolbox decode -> VideoToolbox JPEG
-    encode -> RFB Tight-JPEG framebuffer updates. The Tight encoding
-    forwards the same JPEG bytes the JPEG variant uses but framed as
-    a single full-screen rectangle per update, which macOS Screen
-    Sharing decodes natively. Mouse clicks in the screen-sharing
-    window translate to HID touch events on the device.
+    Pipeline: device HEVC -> VideoToolbox decode (BGRA output) ->
+    RFB Raw framebuffer updates. No JPEG round-trip; the bytes that
+    came out of the HW decoder go straight onto the wire. Mouse clicks
+    in the screen-sharing window translate to HID touch events on the
+    device.
     """
     server = VncStreamServer(
         service_provider,
         bind=bind,
         port=port,
         display_id=display_id,
-        jpeg_quality=jpeg_quality,
     )
     await server.serve()
 

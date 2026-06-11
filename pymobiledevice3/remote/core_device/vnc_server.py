@@ -1,21 +1,25 @@
 """
 RFB 3.8 (VNC) server for the device's screen.
 
-Open via macOS Finder ``Cmd+K`` → ``vnc://127.0.0.1:5900`` (or any
+Open via macOS Finder ``Cmd+K`` → ``vnc://127.0.0.1:5901`` (or any
 VNC client). No browser, no WebCodecs, no canvas state to corrupt --
-each framebuffer update is a fresh JPEG decoded by the OS's native
-client. Mouse clicks on the screen-sharing window translate to HID
-touch on the device.
+each framebuffer update is a fresh BGRA frame straight from the
+VideoToolbox HEVC decoder.
 
-Encoding negotiated: Tight (with JPEG sub-encoding) when the client
-advertises it; Raw fallback otherwise. Both deliver the JPEG bytes
-produced by ``vt_jpeg.HevcToJpegTranscoder`` -- Raw decodes the JPEG
-host-side first, Tight forwards the JPEG straight through.
+Pipeline: RTP/HEVC -> VTDecompressionSession (BGRA output) -> Raw VNC.
 
-Protocol references:
-- RFC 6143 (RFB 3.8)
-- Tight encoding: see TightVNC's "rfbproto.rst" for the JPEG sub-encoding
-  (high-nibble 0x9 in the compression-control byte + compact length).
+No JPEG round-trip on this path. The previous design encoded BGRA ->
+JPEG -> decoded JPEG -> BGRA again before sending; macOS Screen
+Sharing's client doesn't advertise Tight, so the JPEG was always
+thrown away. Skipping it removes the second lossy step (q=0.7 JPEG on
+top of the device's already-tear-y HEVC frame under motion) and the
+encode+decode CPU work.
+
+Only the Raw encoding is offered. Raw is mandatory per RFC 6143 §7.7.1
+-- every VNC client supports it, including macOS Screen Sharing and
+every third-party viewer that doesn't speak Apple-private encodings.
+
+Protocol reference: RFC 6143 (RFB 3.8).
 """
 
 import asyncio
@@ -25,6 +29,7 @@ import os
 import socket
 import struct
 import uuid
+from collections import deque
 from typing import Optional
 
 from pymobiledevice3.remote.core_device.display_service import DisplayService
@@ -36,7 +41,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
     UniversalHIDServiceService,
 )
 from pymobiledevice3.remote.core_device.screen_stream import depacketize_hevc
-from pymobiledevice3.remote.core_device.vt_jpeg import HevcToJpegTranscoder
+from pymobiledevice3.remote.core_device.vt_jpeg import HevcToBgraTranscoder
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 logger = logging.getLogger(__name__)
@@ -56,7 +61,6 @@ def _is_key_nal(nt: int) -> bool:
 # RFB encoding identifiers
 _ENC_RAW = 0
 _ENC_COPY_RECT = 1
-_ENC_TIGHT = 7
 # pseudo-encodings (negative int32, but client lists them as positive in
 # SetEncodings; we just match what the client advertises)
 _ENC_CURSOR = -239
@@ -64,16 +68,6 @@ _ENC_DESKTOP_SIZE = -223
 _ENC_LAST_RECT = -224
 
 _SERVER_NAME = b"iPhone screen (pymobiledevice3)"
-
-
-def _tight_compact_len(n: int) -> bytes:
-    """RFB Tight encoding's compact length: 1-3 bytes, low 7 bits per
-    byte with high bit = continuation."""
-    if n < 0x80:
-        return bytes([n])
-    if n < 0x4000:
-        return bytes([(n & 0x7F) | 0x80, (n >> 7) & 0x7F])
-    return bytes([(n & 0x7F) | 0x80, ((n >> 7) & 0x7F) | 0x80, (n >> 14) & 0xFF])
 
 
 class _VncClient:
@@ -84,7 +78,9 @@ class _VncClient:
         self.writer = writer
         self.encodings: list[int] = []
         self.wants_update = asyncio.Event()
-        self.last_sent_jpeg: Optional[bytes] = None
+        # Identity-keyed dedupe: the broadcaster swaps in a new ``bytes``
+        # object per frame, so reference equality is enough.
+        self.last_sent_frame: Optional[bytes] = None
         # Pointer button state for click->drag->release synthesis.
         self.pressed = False
         self.last_x = 0
@@ -92,8 +88,8 @@ class _VncClient:
 
 
 class VncStreamServer:
-    """RFB 3.8 server. Streams the device screen as JPEG-encoded Tight
-    (or Raw fallback) framebuffer updates."""
+    """RFB 3.8 server. Streams the device screen as Raw BGRA
+    framebuffer updates."""
 
     def __init__(
         self,
@@ -102,39 +98,66 @@ class VncStreamServer:
         bind: str = "127.0.0.1",
         port: int = 5901,
         display_id: int = 1,
-        jpeg_quality: float = 0.7,
     ) -> None:
         self._rsd = rsd
         self._bind = bind
         self._port = port
         self._display_id = display_id
-        self._jpeg_quality = jpeg_quality
         self._sender_ip = rsd.service.address[0]
 
         # Filled once we have a decoder + first frame.
         self._fb_width = 0
         self._fb_height = 0
         self._ready = asyncio.Event()
-        self._latest_jpeg: Optional[bytes] = None
+        # Raw BGRA bytes of the most recent decoded frame. Exactly
+        # ``fb_width * fb_height * 4`` bytes once ``_ready`` is set.
+        self._latest_frame: Optional[bytes] = None
 
         self._clients: set[_VncClient] = set()
-        self._transcoder: Optional[HevcToJpegTranscoder] = None
+        self._transcoder: Optional[HevcToBgraTranscoder] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._frames_emitted = 0
+
+        # RTCP feedback (PLI = "send me a fresh IDR"). Populated from
+        # ``streamConfig`` after start_video_stream returns. Without
+        # these we can't kick the encoder, and decoder-refresh becomes
+        # a no-op.
+        self._active_sock: Optional[socket.socket] = None
+        self._local_ssrc: int = 0
+        self._remote_ssrc: int = 0
+        self._rtcp_dest: Optional[tuple[str, int]] = None
+        self._pli_tasks: set[asyncio.Task] = set()
+
+        # Motion-based decoder-rebuild state. Mirrors screen_stream.py's
+        # _decoder_refresh_loop: the VT decoder accumulates stale
+        # long-term-reference-picture state under motion and renders
+        # torn frames without erroring. Recovery is to send PLI + tear
+        # the decoder down + rebuild from the next IDR -- the exact
+        # thing a manual page reload does for the browser path.
+        self._au_byte_window: deque[tuple[float, int]] = deque()
+        self._motion_active = False
+        self._motion_ended_t: float = 0.0
+        self._last_refresh_t: float = 0.0
+        # When True, the next IDR triggers a transcoder rebuild. We
+        # stop feeding deltas to the existing transcoder so we don't
+        # accumulate MORE stale state while waiting for the IDR.
+        self._refresh_pending = False
 
         # HID for pointer-event translation.
         self._uhs: Optional[UniversalHIDServiceService] = None
         self._hid_lock = asyncio.Lock()
 
-    # ----- HEVC -> JPEG callback marshalling --------------------------------
-    def _on_jpeg_from_worker(self, jpeg: bytes) -> None:
+    # ----- HEVC -> BGRA callback marshalling --------------------------------
+    def _on_frame_from_worker(self, bgra: bytes) -> None:
         """Called from the VT transcoder worker thread."""
         loop = self._loop
         if loop is None:
             return
-        loop.call_soon_threadsafe(self._broadcast_jpeg, jpeg)
+        loop.call_soon_threadsafe(self._broadcast_frame, bgra)
 
-    def _broadcast_jpeg(self, jpeg: bytes) -> None:
-        self._latest_jpeg = jpeg
+    def _broadcast_frame(self, bgra: bytes) -> None:
+        self._latest_frame = bgra
+        self._frames_emitted += 1
         if not self._ready.is_set() and self._transcoder is not None:
             self._fb_width = self._transcoder.width
             self._fb_height = self._transcoder.height
@@ -160,6 +183,10 @@ class VncStreamServer:
         cached_pps: Optional[bytes] = None
         cached_idr: Optional[bytes] = None
         phantoms_built = False
+        rtp_packets = 0
+        feed_count = 0
+        frame_count_at_last_log = 0
+        last_stat_t = loop.time()
         while True:
             try:
                 data = await loop.sock_recv(sock, 65535)
@@ -204,6 +231,20 @@ class VncStreamServer:
 
             if marker:
                 if current_au and not au_corrupt:
+                    # Motion signal: track AU sizes in a 1 s window so
+                    # the refresh loop can detect motion start/end.
+                    au_bytes = sum(len(n) for n in current_au)
+                    self._au_byte_window.append((loop.time(), au_bytes))
+                    # Decoder rebuild on a fresh IDR -- the previous
+                    # transcoder's LTRP table is suspected stale, so we
+                    # close it and let the bootstrap branch below build
+                    # a fresh one from this very IDR.
+                    if self._refresh_pending and au_is_key and self._transcoder is not None:
+                        with contextlib.suppress(Exception):
+                            self._transcoder.close()
+                        self._transcoder = None
+                        self._refresh_pending = False
+                        logger.info("decoder rebuilt on fresh IDR")
                     if (
                         self._transcoder is None
                         and au_is_key
@@ -212,18 +253,16 @@ class VncStreamServer:
                         and cached_pps is not None
                     ):
                         try:
-                            self._transcoder = HevcToJpegTranscoder(
+                            self._transcoder = HevcToBgraTranscoder(
                                 cached_vps,
                                 cached_sps,
                                 cached_pps,
-                                on_jpeg=self._on_jpeg_from_worker,
-                                quality=self._jpeg_quality,
+                                on_frame=self._on_frame_from_worker,
                             )
                             logger.info(
-                                "VT transcoder started: HEVC %dx%d -> JPEG (q=%.2f)",
+                                "VT transcoder started: HEVC %dx%d -> BGRA",
                                 self._transcoder.width,
                                 self._transcoder.height,
-                                self._jpeg_quality,
                             )
                         except Exception:
                             logger.exception("VT transcoder failed to start")
@@ -246,12 +285,139 @@ class VncStreamServer:
                         except Exception:
                             logger.exception("phantom synthesis failed")
                         phantoms_built = True
-                    if self._transcoder is not None:
+                    # While ``_refresh_pending`` is true we have already
+                    # PLIed and are waiting for the IDR that will be the
+                    # new decoder's first frame. Don't feed the existing
+                    # transcoder any more deltas -- they'd just compound
+                    # the LTRP staleness we're trying to escape.
+                    if self._transcoder is not None and not self._refresh_pending:
                         annexb = b"".join(b"\x00\x00\x00\x01" + nal for nal in current_au)
                         self._transcoder.feed(annexb)
+                        feed_count += 1
                 current_au = []
                 au_is_key = False
                 au_corrupt = False
+
+            rtp_packets += 1
+            now = loop.time()
+            if now - last_stat_t >= 2.0:
+                frames_now = self._frames_emitted
+                logger.info(
+                    "ingress stats: rtp=%d feeds=%d frames=%d (Δframes=%d / %.1fs)",
+                    rtp_packets,
+                    feed_count,
+                    frames_now,
+                    frames_now - frame_count_at_last_log,
+                    now - last_stat_t,
+                )
+                rtp_packets = 0
+                feed_count = 0
+                frame_count_at_last_log = frames_now
+                last_stat_t = now
+
+    # ----- RTCP PLI + decoder refresh ---------------------------------------
+    def _build_rtcp_pli(self) -> bytes:
+        """RTCP Picture Loss Indication (RFC 4585 §6.3.1). 12 bytes.
+
+        Asks the device's encoder to emit a fresh IDR. The PLI is what
+        gets us out from under stale long-term-reference state -- we
+        send it, the device sends a new IDR, we rebuild the decoder
+        from that IDR."""
+        return struct.pack(
+            "!BBHII",
+            0x81,  # V=2, P=0, FMT=1
+            0xCE,  # PT=206 (PSFB)
+            2,  # length = 2 (3 words after this header)
+            self._local_ssrc & 0xFFFFFFFF,
+            self._remote_ssrc & 0xFFFFFFFF,
+        )
+
+    async def _send_rtcp_pli(self) -> None:
+        sock = self._active_sock
+        if sock is None or self._rtcp_dest is None:
+            return
+        if not (self._local_ssrc and self._remote_ssrc):
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.sock_sendto(sock, self._build_rtcp_pli(), (*self._rtcp_dest, 0, 0))
+            logger.info("sent RTCP PLI (requested fresh keyframe)")
+        except OSError as exc:
+            logger.debug("PLI send failed (%s)", exc)
+
+    def _fire_decoder_refresh(self, now: float, *, reason: str) -> None:
+        """Arm the decoder-rebuild + PLI sequence. The recv loop will
+        close the transcoder when the IDR arrives."""
+        if self._refresh_pending:
+            return  # already armed; let the IDR land first
+        self._refresh_pending = True
+        pli_task = asyncio.create_task(self._send_rtcp_pli())
+        self._pli_tasks.add(pli_task)
+        pli_task.add_done_callback(self._pli_tasks.discard)
+        self._last_refresh_t = now
+        window_bps = sum(s for _, s in self._au_byte_window)
+        logger.info(
+            "decoder-refresh (%s): %d client(s), %d B/s window",
+            reason,
+            len(self._clients),
+            window_bps,
+        )
+
+    async def _decoder_refresh_loop(self) -> None:
+        """Watch the RTP byte rate as a motion signal; rebuild the VT
+        decoder periodically while motion is ongoing, after motion
+        settles, and as an idle heartbeat. This is the VNC analogue of
+        screen_stream's _decoder_refresh_loop -- the same trick a
+        browser page-reload pulls.
+
+        Triggers (in order of priority):
+          1. ``active`` -- motion is currently happening and it's been
+             ``active_interval`` since the last refresh. Without this,
+             sustained motion shows tears the entire time the user is
+             interacting; the next refresh wouldn't come until either
+             motion ends + settle_delay (the ``settled`` path) or the
+             heartbeat fires, which can be many seconds.
+          2. ``settled`` -- motion just ended and settle_delay has
+             passed. Catches the tail end of an interaction.
+          3. ``heartbeat`` -- nothing's happening, but it's been long
+             enough that we want a safety-net refresh anyway.
+
+        ``min_interval`` caps back-to-back refreshes (each one costs a
+        ~30 ms gap while the new decoder waits for its first IDR).
+        """
+        loop = asyncio.get_running_loop()
+        motion_threshold_bps = 100_000  # 100 KB/s = motion
+        active_interval = 1.5  # fire this often during sustained motion
+        settle_delay = 0.4  # wait after motion ends
+        heartbeat = 10.0  # max between refreshes when idle
+        min_interval = 0.8  # cap back-to-back refreshes
+        while True:
+            try:
+                await asyncio.sleep(0.1)
+            except asyncio.CancelledError:
+                return
+            if not self._clients:
+                continue
+            if self._transcoder is None or self._rtcp_dest is None:
+                continue
+            now = loop.time()
+            while self._au_byte_window and self._au_byte_window[0][0] < now - 1.0:
+                self._au_byte_window.popleft()
+            window_bytes = sum(s for _, s in self._au_byte_window)
+            currently_active = window_bytes >= motion_threshold_bps
+            if self._motion_active and not currently_active:
+                self._motion_ended_t = now
+            self._motion_active = currently_active
+            since_refresh = now - self._last_refresh_t
+            if since_refresh < min_interval:
+                continue
+            active = currently_active and since_refresh >= active_interval
+            settled = self._motion_ended_t > self._last_refresh_t and (now - self._motion_ended_t) >= settle_delay
+            heartbeat_due = since_refresh >= heartbeat
+            if not (active or settled or heartbeat_due):
+                continue
+            reason = "active" if active else ("settled" if settled else "heartbeat")
+            self._fire_decoder_refresh(now, reason=reason)
 
     # ----- HID --------------------------------------------------------------
     async def _ensure_hid(self) -> None:
@@ -317,6 +483,16 @@ class VncStreamServer:
                 return
             await self._handshake(client)
             self._clients.add(client)
+            # Force a decoder rebuild for this client. The VT decoder
+            # may have been accumulating stale LTRP state for the
+            # entire time the server has been running before this
+            # client connected; trigger the same refresh path that
+            # motion-settled and heartbeat use so the very first
+            # framebuffer update is decoded from a fresh IDR.
+            if self._transcoder is not None and self._rtcp_dest is not None:
+                loop = self._loop
+                if loop is not None:
+                    self._fire_decoder_refresh(loop.time(), reason="client-connect")
             await asyncio.gather(
                 self._client_send_loop(client),
                 self._client_recv_loop(client),
@@ -438,9 +614,29 @@ class VncStreamServer:
             msg_type_b = await r.readexactly(1)
             msg_type = msg_type_b[0]
             if msg_type == 0:
-                # SetPixelFormat: padding(3) + pixel-format(16). Ignored
-                # -- we always send Tight-JPEG; client must accept ours.
-                await r.readexactly(3 + 16)
+                # SetPixelFormat: padding(3) + pixel-format(16). We
+                # always send pixels in the format ServerInit advertised
+                # (32-bit BGRX); we don't honor the client's preferred
+                # format. Log it so we can see whether mac Screen
+                # Sharing tried to switch us to something else.
+                await r.readexactly(3)
+                pf = await r.readexactly(16)
+                bpp, depth, big, true_c, rmax, gmax, bmax, rshift, gshift, bshift = struct.unpack(
+                    ">BBBB HHH BBB", pf[:13]
+                )
+                logger.info(
+                    "SetPixelFormat ignored: bpp=%d depth=%d big=%d true_c=%d max=(%d,%d,%d) shift=(%d,%d,%d)",
+                    bpp,
+                    depth,
+                    big,
+                    true_c,
+                    rmax,
+                    gmax,
+                    bmax,
+                    rshift,
+                    gshift,
+                    bshift,
+                )
             elif msg_type == 2:
                 # SetEncodings: padding(1) + n(2) + n * int32
                 await r.readexactly(1)
@@ -453,7 +649,6 @@ class VncStreamServer:
                         {
                             _ENC_RAW: "Raw",
                             _ENC_COPY_RECT: "CopyRect",
-                            _ENC_TIGHT: "Tight",
                             _ENC_CURSOR: "Cursor",
                             _ENC_DESKTOP_SIZE: "DesktopSize",
                             _ENC_LAST_RECT: "LastRect",
@@ -463,7 +658,16 @@ class VncStreamServer:
                 )
             elif msg_type == 3:
                 # FramebufferUpdateRequest: incremental(1) + x(2) + y(2) + w(2) + h(2)
-                await r.readexactly(9)
+                payload = await r.readexactly(9)
+                inc, fx, fy, fw, fh = struct.unpack(">BHHHH", payload)
+                logger.info(
+                    "FramebufferUpdateRequest incremental=%d (%d,%d) %dx%d",
+                    inc,
+                    fx,
+                    fy,
+                    fw,
+                    fh,
+                )
                 client.wants_update.set()
             elif msg_type == 4:
                 # KeyEvent: down-flag(1) + padding(2) + key(4). Ignored.
@@ -485,49 +689,43 @@ class VncStreamServer:
 
     async def _client_send_loop(self, client: _VncClient) -> None:
         w = client.writer
+        expected = self._fb_width * self._fb_height * 4
         while True:
             await client.wants_update.wait()
             client.wants_update.clear()
-            jpeg = self._latest_jpeg
-            if jpeg is None or jpeg is client.last_sent_jpeg:
+            frame = self._latest_frame
+            if frame is None or frame is client.last_sent_frame:
                 continue
-            client.last_sent_jpeg = jpeg
-            # FramebufferUpdate: msg-type(1) + padding(1) + n-rects(2) + rects
-            #
-            # Tight rect: x(2) y(2) w(2) h(2) encoding(4=Tight=7)
-            #             control-byte(1) + compact-length + JPEG bytes
-            # Tight control-byte for JPEG sub-encoding: 0x90
-            # (high nibble 1001 = JPEG, low nibble 0000).
-            #
-            # We always send the WHOLE framebuffer as a single rect.
-            # Tight is *not* a true "diff"; we just pay the JPEG once.
-            use_tight = _ENC_TIGHT in client.encodings
-            if use_tight:
-                rect_header = struct.pack(
-                    ">HHHHi",
-                    0,
-                    0,
+            if len(frame) != expected:
+                # SPS-locked dimensions shouldn't change mid-session,
+                # but if VT ever hands us a differently sized buffer we
+                # skip rather than desync the TCP stream.
+                logger.warning(
+                    "frame size mismatch: got %d bytes, fb expects %d (%dx%d * 4) -- dropping",
+                    len(frame),
+                    expected,
                     self._fb_width,
                     self._fb_height,
-                    _ENC_TIGHT,
                 )
-                jpeg_body = b"\x90" + _tight_compact_len(len(jpeg)) + jpeg
-                payload = (
-                    b"\x00"  # msg-type = FramebufferUpdate
-                    b"\x00"  # padding
-                    + struct.pack(">H", 1)  # one rect
-                    + rect_header
-                    + jpeg_body
-                )
-            else:
-                # Raw fallback. We'd need to decode the JPEG and send
-                # BGRA pixels. Not implementing for v1 -- modern clients
-                # (including macOS Screen Sharing) advertise Tight.
-                logger.warning(
-                    "VNC client doesn't support Tight encoding; Raw fallback not implemented, dropping connection"
-                )
-                return
-            w.write(payload)
+                continue
+            client.last_sent_frame = frame
+            # FramebufferUpdate: msg-type(1) + padding(1) + n-rects(2) +
+            # rect-header(12) + pixel bytes. One full-frame Raw rect.
+            rect_header = struct.pack(
+                ">HHHHi",
+                0,
+                0,
+                self._fb_width,
+                self._fb_height,
+                _ENC_RAW,
+            )
+            header = (
+                b"\x00\x00"  # msg-type + padding
+                + struct.pack(">H", 1)  # one rect
+                + rect_header
+            )
+            w.write(header)
+            w.write(frame)
             try:
                 await w.drain()
             except (ConnectionResetError, BrokenPipeError):
@@ -563,10 +761,37 @@ class VncStreamServer:
             cfg.get("SourcePort"),
         )
 
+        # RTCP feedback setup: ``LocalSSRC``/``RemoteSSRC`` in
+        # streamConfig are from the device's perspective, so OURS is
+        # ``RemoteSSRC`` and THEIRS is ``LocalSSRC`` (yes, really).
+        # Without all three of (source_port, local_ssrc, remote_ssrc)
+        # we can't send PLI and the decoder-refresh loop will skip.
+        source_port = int(cfg.get("SourcePort", 0))
+        self._local_ssrc = int(cfg.get("RemoteSSRC", 0))
+        self._remote_ssrc = int(cfg.get("LocalSSRC", 0))
+        self._rtcp_dest = (self._sender_ip, source_port) if source_port else None
+        self._active_sock = sock
+        if self._rtcp_dest and self._local_ssrc and self._remote_ssrc:
+            logger.info(
+                "RTCP feedback enabled: dest=%s, ours=%d, theirs=%d",
+                self._rtcp_dest,
+                self._local_ssrc,
+                self._remote_ssrc,
+            )
+        else:
+            logger.warning(
+                "RTCP feedback disabled (missing fields: SourcePort=%s LocalSSRC=%s RemoteSSRC=%s)"
+                " -- decoder-refresh will be a no-op; tears under motion will not be cleaned up",
+                source_port,
+                self._local_ssrc,
+                self._remote_ssrc,
+            )
+
         # 3) Background tasks.
         loop = asyncio.get_running_loop()
         self._loop = loop
         feed_task = asyncio.create_task(self._udp_recv_and_pipe(sock))
+        refresh_task = asyncio.create_task(self._decoder_refresh_loop())
 
         # 4) TCP listener for VNC clients.
         server = await asyncio.start_server(self._handle_client, self._bind, self._port)
@@ -602,10 +827,17 @@ class VncStreamServer:
                 await asyncio.wait_for(server.wait_closed(), timeout=2.0)
             logger.info("shutdown: stopping HID")
             await self._stop_hid()
+            logger.info("shutdown: stopping refresh loop")
+            refresh_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await refresh_task
             logger.info("shutdown: stopping VT transcoder")
             feed_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await feed_task
+            if self._pli_tasks:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait(list(self._pli_tasks), timeout=1.0)
             if self._transcoder is not None:
                 with contextlib.suppress(Exception):
                     self._transcoder.close()

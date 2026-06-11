@@ -192,6 +192,40 @@ kVTDecodeFrame_EnableAsynchronousDecompression = 1 << 0
 kVTDecodeFrame_1xRealTimePlayback = 1 << 2
 
 # ---------------------------------------------------------------------------
+# CoreVideo pixel-buffer accessors (for direct BGRA readout)
+# ---------------------------------------------------------------------------
+cv.CVPixelBufferLockBaseAddress.restype = c_int32
+cv.CVPixelBufferLockBaseAddress.argtypes = [c_void_p, c_uint32]
+cv.CVPixelBufferUnlockBaseAddress.restype = c_int32
+cv.CVPixelBufferUnlockBaseAddress.argtypes = [c_void_p, c_uint32]
+cv.CVPixelBufferGetBaseAddress.restype = c_void_p
+cv.CVPixelBufferGetBaseAddress.argtypes = [c_void_p]
+cv.CVPixelBufferGetBytesPerRow.restype = c_size_t
+cv.CVPixelBufferGetBytesPerRow.argtypes = [c_void_p]
+cv.CVPixelBufferGetWidth.restype = c_size_t
+cv.CVPixelBufferGetWidth.argtypes = [c_void_p]
+cv.CVPixelBufferGetHeight.restype = c_size_t
+cv.CVPixelBufferGetHeight.argtypes = [c_void_p]
+
+kCVPixelBufferLock_ReadOnly = 1
+kCVPixelFormatType_32BGRA = 0x42475241  # 'BGRA'
+kCVPixelBufferPixelFormatTypeKey = c_void_p.in_dll(cv, "kCVPixelBufferPixelFormatTypeKey")
+
+
+def _build_dest_attrs_bgra() -> c_void_p:
+    """Build a destinationImageBufferAttributes dict that pins the
+    decoded output to 32-bit BGRA -- so we can read the framebuffer
+    directly off the CVPixelBuffer instead of going through a JPEG
+    round-trip."""
+    fmt_num = _cfnumber_i32(kCVPixelFormatType_32BGRA)
+    keys = (c_void_p * 1)(kCVPixelBufferPixelFormatTypeKey)
+    values = (c_void_p * 1)(fmt_num)
+    d = cf.CFDictionaryCreate(None, keys, values, 1, kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks)
+    cf.CFRelease(fmt_num)
+    return c_void_p(d)
+
+
+# ---------------------------------------------------------------------------
 # VideoToolbox compression (JPEG output)
 # ---------------------------------------------------------------------------
 VTCompressionOutputCallback = CFUNCTYPE(
@@ -278,9 +312,14 @@ def _annexb_to_avcc(annexb: bytes) -> bytes:
 # HEVCDecoder
 # ---------------------------------------------------------------------------
 class HEVCDecoder:
-    """Annex-B HEVC -> CVPixelBuffer via VTDecompressionSession."""
+    """Annex-B HEVC -> CVPixelBuffer via VTDecompressionSession.
 
-    def __init__(self, vps: bytes, sps: bytes, pps: bytes) -> None:
+    Pass ``bgra_output=True`` to force the decoder to emit 32-bit BGRA
+    pixel buffers (CPU-readable) instead of VT's default NV12. Useful
+    when the consumer wants pixel bytes without going through a
+    re-encode step."""
+
+    def __init__(self, vps: bytes, sps: bytes, pps: bytes, *, bgra_output: bool = False) -> None:
         self._ps_buffers = [ctypes.create_string_buffer(b, len(b)) for b in (vps, sps, pps)]
         ps_ptrs = (c_void_p * 3)(*[cast(b, c_void_p) for b in self._ps_buffers])
         ps_sizes = (c_size_t * 3)(*[len(b) for b in (vps, sps, pps)])
@@ -295,7 +334,10 @@ class HEVCDecoder:
         self._cb = VTDecompressionOutputCallback(self._on_output)
         cb_rec = _VTDecompressionOutputCallbackRecord(self._cb, None)
         self._session = c_void_p(0)
-        st = vt.VTDecompressionSessionCreate(None, self._fmt, None, None, byref(cb_rec), byref(self._session))
+        dest_attrs = _build_dest_attrs_bgra() if bgra_output else None
+        st = vt.VTDecompressionSessionCreate(None, self._fmt, None, dest_attrs, byref(cb_rec), byref(self._session))
+        if dest_attrs is not None:
+            cf.CFRelease(dest_attrs)
         if st != 0:
             raise RuntimeError(f"VTDecompressionSessionCreate: OSStatus={st}")
 
@@ -501,3 +543,93 @@ class HevcToJpegTranscoder:
                 pts += tick
                 cf.CFRelease(image_buf)
             self._drain_enc_to_callback()
+
+
+# ---------------------------------------------------------------------------
+# HevcToBgraTranscoder
+# ---------------------------------------------------------------------------
+class HevcToBgraTranscoder:
+    """Annex-B HEVC -> raw BGRA bytes, no JPEG round-trip.
+
+    The VTDecompressionSession is configured with
+    ``destinationImageBufferAttributes={kCVPixelFormatType: 32BGRA}`` so
+    we get a CPU-readable BGRA pixel buffer per frame. The worker thread
+    locks the buffer, copies the bytes out, and fires ``on_frame(bgra)``
+    on the caller's behalf.
+
+    Bytes are exactly ``width * height * 4`` (B, G, R, A in memory
+    order). The A channel is forced to 0xff so VNC clients that treat
+    the 4th byte as alpha don't render frames as transparent.
+
+    The callback runs on the worker thread; asyncio callers should
+    marshal back with ``loop.call_soon_threadsafe``."""
+
+    def __init__(
+        self,
+        vps: bytes,
+        sps: bytes,
+        pps: bytes,
+        *,
+        on_frame,
+    ) -> None:
+        self._dec = HEVCDecoder(vps, sps, pps, bgra_output=True)
+        self._on_frame = on_frame
+        self.width = self._dec.width
+        self.height = self._dec.height
+        self._inq: queue.Queue = queue.Queue()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="vt-hevc-bgra", daemon=True)
+        self._thread.start()
+
+    def feed(self, annexb: bytes) -> None:
+        self._inq.put(annexb)
+
+    def close(self) -> None:
+        self._stop.set()
+        self._inq.put(None)
+        self._thread.join(timeout=2.0)
+        self._dec.close()
+
+    def _emit(self, image_buf: int) -> None:
+        st = cv.CVPixelBufferLockBaseAddress(image_buf, kCVPixelBufferLock_ReadOnly)
+        if st != 0:
+            return
+        try:
+            w = int(cv.CVPixelBufferGetWidth(image_buf))
+            h = int(cv.CVPixelBufferGetHeight(image_buf))
+            bpr = int(cv.CVPixelBufferGetBytesPerRow(image_buf))
+            base = cv.CVPixelBufferGetBaseAddress(image_buf)
+            if not base or w <= 0 or h <= 0:
+                return
+            if bpr == w * 4:
+                data = ctypes.string_at(base, h * bpr)
+            else:
+                # Strip per-row padding when VT chose a wider stride.
+                rows = [ctypes.string_at(base + y * bpr, w * 4) for y in range(h)]
+                data = b"".join(rows)
+        finally:
+            cv.CVPixelBufferUnlockBaseAddress(image_buf, kCVPixelBufferLock_ReadOnly)
+        ba = bytearray(data)
+        ba[3::4] = b"\xff" * (len(ba) // 4)
+        with contextlib.suppress(Exception):
+            self._on_frame(bytes(ba))
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                item = self._inq.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            if item is None:
+                break
+            try:
+                self._dec.feed_annexb(item)
+            except Exception:
+                continue
+            for status, image_buf in self._dec.drain():
+                if status != 0 or not image_buf:
+                    continue
+                try:
+                    self._emit(image_buf)
+                finally:
+                    cf.CFRelease(image_buf)
