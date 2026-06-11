@@ -1962,24 +1962,31 @@ class ScreenStreamServer:
             writer.close()
             return
 
-        # Try to force a fresh stream so this subscriber sees a clean POC
-        # chain from POC=0 -- replaying a stale cached IDR followed by
-        # live deltas references frames the subscriber never saw, which
-        # WebCodecs/VideoToolbox usually render as silent tears. PLI
-        # alone doesn't trigger an IDR on this device's encoder; a full
-        # stream restart always begins with one.
-        #
-        # The restart can fail (RemoteXPC handshake timeout, daemon
-        # stuck after a back-to-back restart, etc). If it does, fall
-        # back to the existing eager-started stream rather than dropping
-        # the connection -- the JS will see a 503 only when we have
-        # nothing usable, and can retry.
-        try:
-            await asyncio.wait_for(self._ensure_fresh_stream(force=True), timeout=10.0)
-        except (asyncio.TimeoutError, Exception):
-            logger.exception("/stream.bin: force-restart failed -- falling back to existing stream")
+        # Bring the stream up if it isn't already, but don't force a
+        # restart when it's already running. The previous behaviour
+        # (force=True on every subscriber connect) tore the device-side
+        # session down and back up for every new tab; under stress that
+        # left the device's DisplayService XPC channel wedged (handshake
+        # timeouts) and matched nothing Xcode does in the sniff. Instead
+        # we send a PLI below and mark this subscriber as ``needs_key``
+        # so it sees the live stream cleanly from the next IDR onward.
+        if self._active_service is None or self._init_sequence is None:
+            try:
+                await asyncio.wait_for(self._ensure_fresh_stream(force=False), timeout=10.0)
+            except (asyncio.TimeoutError, Exception):
+                logger.exception("/stream.bin: stream start failed -- replying 503")
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(self._stream_ready.wait(), timeout=3.0)
+
+        # Ask the device to emit a fresh IDR for this new subscriber.
+        # Combined with the ``needs_key=True`` state on the subscriber
+        # below, the broadcast loop will skip live deltas until the
+        # IDR arrives and then send it as a RESET keyframe so the
+        # browser rebuilds its decoder cleanly.
+        if self._active_service is not None and self._rtcp_dest is not None:
+            pli_task = asyncio.create_task(self._send_rtcp_pli())
+            self._pli_tasks.add(pli_task)
+            pli_task.add_done_callback(self._pli_tasks.discard)
 
         if self._init_sequence is None or self._active_service is None:
             body = b"stream not ready -- retry in a moment"
@@ -2007,7 +2014,14 @@ class ScreenStreamServer:
         queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=32)
         if self._init_sequence is not None:
             queue.put_nowait(self._init_sequence)
-        self._subscribers[queue] = _SubState()
+        # New subscribers start with needs_key=True so the broadcast
+        # loop holds live deltas until the PLI-induced IDR arrives
+        # (deltas reference frames this subscriber never saw, otherwise
+        # WebCodecs renders them as silent tears). The IDR will land as
+        # a RESET keyframe, prompting the browser to rebuild its decoder.
+        state = _SubState()
+        state.needs_key = True
+        self._subscribers[queue] = state
         try:
             while True:
                 msg = await queue.get()
