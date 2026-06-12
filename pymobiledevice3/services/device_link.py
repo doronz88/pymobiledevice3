@@ -1,5 +1,6 @@
 import ctypes
 import datetime
+import logging
 import shutil
 import struct
 import warnings
@@ -20,6 +21,24 @@ CODE_SUCCESS = 0
 FILE_TRANSFER_TERMINATOR = b"\x00\x00\x00\x00"
 BULK_OPERATION_ERROR = -13
 APPLE_EPOCH = 978307200
+PROCESS_ERROR_DESCRIPTION_KEYS = (
+    "ErrorDescription",
+    "NSLocalizedDescription",
+    "LocalizedDescription",
+    "Description",
+    "Error",
+    "Message",
+)
+PROCESS_ERROR_DOMAIN_KEYS = (
+    "ErrorDomain",
+    "Domain",
+    "NSErrorDomain",
+)
+PROCESS_ERROR_REASON_KEYS = (
+    "NSLocalizedFailureReason",
+    "FailureReason",
+    "Reason",
+)
 ERRNO_TO_DEVICE_ERROR = {
     2: -6,
     17: -7,
@@ -33,6 +52,7 @@ ERRNO_TO_DEVICE_ERROR = {
 DLMessage = Sequence[Any]
 ProgressCallback = Callable[[Any], None]
 DLHandler = Callable[[DLMessage], None]
+logger = logging.getLogger(__name__)
 
 
 class DeviceLink:
@@ -90,8 +110,59 @@ class DeviceLink:
                 if not message[1]["ErrorCode"]:
                     return message[1].get("Content")
                 else:
-                    raise PyMobileDevice3Exception(f"Device link error: {message[1]}")
+                    logger.debug("DeviceLink process error response: %s", message[1])
+                    raise PyMobileDevice3Exception(self.format_process_error(message[1]))
             await self._dl_handlers[command](message)
+
+    @classmethod
+    def format_process_error(cls, response: Mapping[str, Any]) -> str:
+        error_code = response.get("ErrorCode")
+        domain = cls._first_string(response, PROCESS_ERROR_DOMAIN_KEYS)
+        description = cls._first_string(response, PROCESS_ERROR_DESCRIPTION_KEYS)
+        reason = cls._first_string(response, PROCESS_ERROR_REASON_KEYS)
+        guidance = cls._process_error_guidance(error_code, description, reason)
+
+        message = f"DeviceLink process failed with error {error_code if error_code is not None else 'unknown'}"
+        if domain:
+            message += f" ({domain})"
+        if description:
+            message += f": {description}"
+        if reason and reason != description:
+            message += f" ({reason})"
+        if guidance:
+            message = message.rstrip(". ")
+            message += f". {guidance}"
+        return message
+
+    @classmethod
+    def _first_string(cls, response: Mapping[str, Any], keys: Sequence[str]) -> Optional[str]:
+        for container in cls._error_containers(response):
+            for key in keys:
+                value = container.get(key)
+                if isinstance(value, str) and value:
+                    return value
+        return None
+
+    @staticmethod
+    def _error_containers(response: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+        user_info = response.get("UserInfo")
+        if isinstance(user_info, Mapping):
+            return response, user_info
+        return (response,)
+
+    @staticmethod
+    def _process_error_guidance(error_code: Any, description: Optional[str], reason: Optional[str]) -> Optional[str]:
+        combined_text = " ".join(value.lower() for value in (description, reason) if value)
+        if "cancel" in combined_text:
+            return "The operation was cancelled on the device."
+        if "password" in combined_text and "encrypt" in combined_text:
+            return "Provide the backup password for encrypted backup operations."
+        if error_code == 205 or "backup propert" in combined_text or "manifest" in combined_text:
+            return (
+                "The local backup state may be missing or incomplete; retry the initial backup with --full "
+                "or use a fresh backup directory."
+            )
+        return None
 
     async def version_exchange(self) -> None:
         dl_message_version_exchange = await self.receive_message()

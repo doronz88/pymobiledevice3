@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 import struct
 import time
@@ -8,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
-from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError
+from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.mobilebackup2 import (
@@ -146,6 +147,18 @@ def test_log_backup_notification_surfaces_passcode_prompt_to_operator() -> None:
     service.logger.warning.assert_any_call("User has cancelled the backup process on the device")
 
 
+def test_device_link_format_process_error_reports_cancellation_guidance() -> None:
+    assert DeviceLink.format_process_error({"ErrorCode": 101, "ErrorDescription": "Authentication canceled."}) == (
+        "DeviceLink process failed with error 101: Authentication canceled. The operation was cancelled on the device."
+    )
+
+
+def test_device_link_format_process_error_reports_unknown_error_safely() -> None:
+    assert DeviceLink.format_process_error({"ErrorCode": 42, "Content": {"secret": "payload"}}) == (
+        "DeviceLink process failed with error 42"
+    )
+
+
 def test_unback_with_pyiosbackup_replaces_existing_output(monkeypatch, tmp_path: Path) -> None:
     device_directory = tmp_path / "device"
     output_directory = tmp_path / "device.unback"
@@ -261,6 +274,75 @@ async def test_device_link_move_items_skips_missing_filtered_source(tmp_path: Pa
     await device_link.move_items(["DLMessageMoveItems", {"missing/source": "54/hash"}])
 
     service.send_plist.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_device_link_loop_returns_success_process_message(tmp_path: Path) -> None:
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(return_value=["DLMessageProcessMessage", {"ErrorCode": 0, "Content": {"ok": True}}])
+    device_link = DeviceLink(service, tmp_path)
+
+    assert await device_link.dl_loop() == {"ok": True}
+    service.send_plist.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_device_link_loop_formats_backup_properties_error_without_payload(tmp_path: Path, caplog) -> None:
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(
+        return_value=[
+            "DLMessageProcessMessage",
+            {
+                "Content": {"TargetIdentifier": "secret-udid"},
+                "ErrorCode": 205,
+                "ErrorDescription": "Error reading Backup Properties",
+                "ErrorDomain": "MBErrorDomain",
+            },
+        ]
+    )
+    device_link = DeviceLink(service, tmp_path)
+
+    with (
+        caplog.at_level(logging.DEBUG, logger="pymobiledevice3.services.device_link"),
+        pytest.raises(PyMobileDevice3Exception) as exc_info,
+    ):
+        await device_link.dl_loop()
+
+    message = str(exc_info.value)
+    assert message == (
+        "DeviceLink process failed with error 205 (MBErrorDomain): Error reading Backup Properties. "
+        "The local backup state may be missing or incomplete; retry the initial backup with --full "
+        "or use a fresh backup directory."
+    )
+    assert "secret-udid" not in message
+    assert "DeviceLink process error response" in caplog.text
+    assert "secret-udid" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_device_link_loop_formats_nested_user_info_error(tmp_path: Path) -> None:
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(
+        return_value=[
+            "DLMessageProcessMessage",
+            {
+                "ErrorCode": 106,
+                "UserInfo": {
+                    "NSLocalizedDescription": "Encrypted backup password required",
+                    "NSLocalizedFailureReason": "No backup password was provided",
+                },
+            },
+        ]
+    )
+    device_link = DeviceLink(service, tmp_path)
+
+    with pytest.raises(PyMobileDevice3Exception) as exc_info:
+        await device_link.dl_loop()
+
+    assert str(exc_info.value) == (
+        "DeviceLink process failed with error 106: Encrypted backup password required "
+        "(No backup password was provided). Provide the backup password for encrypted backup operations."
+    )
 
 
 @pytest.mark.asyncio
