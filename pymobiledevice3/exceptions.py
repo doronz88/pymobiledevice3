@@ -7,6 +7,7 @@ __all__ = [
     "ArbitrationError",
     "ArgumentError",
     "BackupFilterPasswordRequiredError",
+    "BackupValidationError",
     "BadCommandError",
     "BadDevError",
     "CannotStopSessionError",
@@ -109,6 +110,10 @@ class PasswordRequiredError(PairingError):
 
 
 class BackupFilterPasswordRequiredError(PyMobileDevice3Exception):
+    pass
+
+
+class BackupValidationError(PyMobileDevice3Exception):
     pass
 
 

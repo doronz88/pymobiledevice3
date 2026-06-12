@@ -1,3 +1,4 @@
+import plistlib
 import sqlite3
 import struct
 import time
@@ -8,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
-from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError
+from pymobiledevice3.exceptions import BackupValidationError, ConnectionFailedError, ConnectionTerminatedError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.mobilebackup2 import (
@@ -22,6 +23,51 @@ from pymobiledevice3.services.mobilebackup2 import (
 )
 
 PASSWORD = "1234"
+BACKUP_SOURCE = "test-source"
+
+
+def create_test_backup(backup_directory: Path, source: str = BACKUP_SOURCE, encrypted: bool = False) -> Path:
+    device_directory = backup_directory / source
+    device_directory.mkdir()
+    (device_directory / "Info.plist").write_bytes(
+        plistlib.dumps({
+            "Build Version": "23A000",
+            "Product Type": "iPhone1,1",
+            "Product Version": "1.0",
+            "Target Type": "Device",
+            "iTunes Version": "10.0.1",
+        })
+    )
+    (device_directory / "Manifest.plist").write_bytes(
+        plistlib.dumps({
+            "Date": "2026-01-01T00:00:00Z",
+            "IsEncrypted": encrypted,
+            "Version": "10.0",
+        })
+    )
+    (device_directory / "Status.plist").write_bytes(
+        plistlib.dumps({
+            "BackupState": "new",
+            "IsFullBackup": True,
+            "SnapshotState": "finished",
+            "Version": "3.3",
+        })
+    )
+    manifest_db = device_directory / "Manifest.db"
+    if encrypted:
+        manifest_db.write_bytes(b"encrypted manifest db")
+    else:
+        with closing(sqlite3.connect(manifest_db)) as connection:
+            connection.execute("CREATE TABLE Files (fileID TEXT, domain TEXT, relativePath TEXT)")
+            connection.executemany(
+                "INSERT INTO Files (fileID, domain, relativePath) VALUES (?, ?, ?)",
+                [
+                    ("file-1", "HomeDomain", "Library/SMS/sms.db"),
+                    ("file-2", "HomeDomain", "Library/Safari/Bookmarks.db"),
+                ],
+            )
+            connection.commit()
+    return device_directory
 
 
 def ignore_connection_errors(f):
@@ -118,6 +164,71 @@ def test_selection_filter_callback_matches_upload_and_manifest_forms() -> None:
 
 def test_should_preserve_backup_file_keeps_metadata() -> None:
     assert Mobilebackup2Service.should_preserve_backup_file("Manifest.db", "ignored", None)
+
+
+def test_resolve_backup_source_uses_single_backup_directory(tmp_path: Path) -> None:
+    create_test_backup(tmp_path)
+
+    assert Mobilebackup2Service.resolve_backup_source(tmp_path) == BACKUP_SOURCE
+
+
+def test_resolve_backup_source_requires_source_for_multiple_backups(tmp_path: Path) -> None:
+    create_test_backup(tmp_path)
+    create_test_backup(tmp_path, source="second-source")
+
+    with pytest.raises(BackupValidationError, match="Pass --source"):
+        Mobilebackup2Service.resolve_backup_source(tmp_path)
+
+
+def test_resolve_backup_source_reports_missing_backup_directory(tmp_path: Path) -> None:
+    with pytest.raises(BackupValidationError, match="does not exist"):
+        Mobilebackup2Service.resolve_backup_source(tmp_path / "missing")
+
+
+def test_validate_backup_accepts_complete_unencrypted_backup(tmp_path: Path) -> None:
+    create_test_backup(tmp_path)
+
+    result = Mobilebackup2Service.validate_backup(tmp_path, BACKUP_SOURCE, include_file_summary=True)
+
+    assert result.identifier == BACKUP_SOURCE
+    assert result.is_encrypted is False
+    assert result.manifest_file_count == 2
+    assert result.filesystem_file_count == 4
+    assert result.filesystem_size
+    assert result.required_file_sizes["Manifest.db"] > 0
+    assert result.to_dict()["complete"] is True
+
+
+def test_validate_backup_accepts_encrypted_manifest_db_without_sqlite_parse(tmp_path: Path) -> None:
+    create_test_backup(tmp_path, encrypted=True)
+
+    result = Mobilebackup2Service.validate_backup(tmp_path, BACKUP_SOURCE)
+
+    assert result.is_encrypted is True
+    assert result.manifest_file_count is None
+
+
+def test_validate_backup_reports_missing_metadata(tmp_path: Path) -> None:
+    (tmp_path / BACKUP_SOURCE).mkdir()
+
+    with pytest.raises(BackupValidationError, match=r"Info\.plist is missing"):
+        Mobilebackup2Service.validate_backup(tmp_path, BACKUP_SOURCE)
+
+
+def test_validate_backup_reports_empty_manifest_plist(tmp_path: Path) -> None:
+    device_directory = create_test_backup(tmp_path)
+    (device_directory / "Manifest.plist").write_bytes(b"")
+
+    with pytest.raises(BackupValidationError, match=r"Manifest\.plist is empty"):
+        Mobilebackup2Service.validate_backup(tmp_path, BACKUP_SOURCE)
+
+
+def test_validate_backup_reports_invalid_manifest_db(tmp_path: Path) -> None:
+    device_directory = create_test_backup(tmp_path)
+    (device_directory / "Manifest.db").write_bytes(b"not sqlite")
+
+    with pytest.raises(BackupValidationError, match=r"Manifest\.db is not a readable"):
+        Mobilebackup2Service.validate_backup(tmp_path, BACKUP_SOURCE)
 
 
 @pytest.mark.asyncio

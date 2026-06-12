@@ -9,7 +9,8 @@ from click import Context
 from tqdm import tqdm
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
+from pymobiledevice3.exceptions import BackupValidationError
 from pymobiledevice3.services.mobilebackup2 import BACKUP_SELECTIONS, Mobilebackup2Service
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,20 @@ async def backup(
                 password=password,
                 unback=unback,
             )
+
+
+@cli.command()
+def verify(backup_directory: BackupDirectoryArg, source: SourceOption = "") -> None:
+    """
+    Validate local backup metadata without connecting to a device.
+    """
+    try:
+        source = Mobilebackup2Service.resolve_backup_source(backup_directory, source)
+        result = Mobilebackup2Service.validate_backup(backup_directory, source, include_file_summary=True)
+    except BackupValidationError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    print_json(result.to_dict(), colored=False)
 
 
 @cli.command()

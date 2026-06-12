@@ -24,6 +24,7 @@ from pymobiledevice3.exceptions import (
     AfcException,
     AfcFileNotFoundError,
     BackupFilterPasswordRequiredError,
+    BackupValidationError,
     LockdownError,
     PyMobileDevice3Exception,
 )
@@ -76,6 +77,7 @@ BACKUP_METADATA_FILES = frozenset({
     "Manifest.db-wal",
     "Status.plist",
 })
+REQUIRED_BACKUP_METADATA_FILES = ("Info.plist", "Manifest.plist", "Manifest.db", "Status.plist")
 
 
 @dataclass(frozen=True)
@@ -101,6 +103,50 @@ class BackupFile:
     relative_path: Optional[str] = None
     file_name: Optional[str] = None
     device_name: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class BackupValidationResult:
+    identifier: str
+    device_directory: Path
+    required_file_sizes: dict[str, int]
+    is_encrypted: bool
+    manifest_file_count: Optional[int]
+    filesystem_file_count: Optional[int]
+    filesystem_size: Optional[int]
+    info: dict
+    manifest: dict
+    status: dict
+
+    def to_dict(self) -> dict:
+        info_summary = {
+            key: self.info.get(key)
+            for key in ("Build Version", "Product Type", "Product Version", "Target Type", "iTunes Version")
+            if key in self.info
+        }
+        manifest_summary = {
+            key: self.manifest.get(key)
+            for key in ("Date", "IsEncrypted", "ProductVersion", "Version", "WasPasscodeSet")
+            if key in self.manifest
+        }
+        status_summary = {
+            key: self.status.get(key)
+            for key in ("BackupState", "Date", "IsFullBackup", "SnapshotState", "Version")
+            if key in self.status
+        }
+        return {
+            "complete": True,
+            "source": self.identifier,
+            "path": str(self.device_directory),
+            "encrypted": self.is_encrypted,
+            "manifest_file_count": self.manifest_file_count,
+            "filesystem_file_count": self.filesystem_file_count,
+            "filesystem_size": self.filesystem_size,
+            "required_file_sizes": self.required_file_sizes,
+            "info": info_summary,
+            "manifest": manifest_summary,
+            "status": status_summary,
+        }
 
 
 BackupFilterCallback = Callable[[BackupFile], bool]
@@ -223,6 +269,18 @@ class Mobilebackup2Service(LockdownService):
                 await dl.dl_loop(progress_callback)
                 if filter_callback is not None:
                     self.prune_backup_directory(device_directory, filter_callback, password=password)
+                validation_result = self.validate_backup(
+                    backup_directory,
+                    self.lockdown.udid,
+                    include_file_summary=True,
+                )
+                self.logger.info(
+                    "Backup completed: encrypted=%s, manifest files=%s, filesystem files=%s, filesystem size=%s",
+                    validation_result.is_encrypted,
+                    validation_result.manifest_file_count,
+                    validation_result.filesystem_file_count,
+                    validation_result.filesystem_size,
+                )
                 if unback:
                     self.unback_with_pyiosbackup(device_directory, password=password)
             finally:
@@ -278,7 +336,7 @@ class Mobilebackup2Service(LockdownService):
         """
         backup_directory = Path(backup_directory)
         source = source if source else self.lockdown.udid
-        self._assert_backup_exists(backup_directory, source)
+        self.validate_backup(backup_directory, source)
 
         async with (
             self.device_link(backup_directory) as dl,
@@ -331,7 +389,7 @@ class Mobilebackup2Service(LockdownService):
         :return: Information about a backup.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
+        self.validate_backup(backup_dir, source if source else self.lockdown.udid)
         async with self.device_link(backup_dir) as dl:
             message = {"MessageName": "Info", "TargetIdentifier": self.lockdown.udid}
             if source:
@@ -349,7 +407,7 @@ class Mobilebackup2Service(LockdownService):
         """
         backup_dir = Path(backup_directory)
         source = source if source else self.lockdown.udid
-        self._assert_backup_exists(backup_dir, source)
+        self.validate_backup(backup_dir, source)
         async with self.device_link(backup_dir) as dl:
             await dl.send_process_message({
                 "MessageName": "List",
@@ -367,7 +425,7 @@ class Mobilebackup2Service(LockdownService):
         :param source: Identifier of device to unpack its backup.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
+        self.validate_backup(backup_dir, source if source else self.lockdown.udid)
         async with self.device_link(backup_dir) as dl:
             message = {"MessageName": "Unback", "TargetIdentifier": self.lockdown.udid}
             if source:
@@ -398,7 +456,7 @@ class Mobilebackup2Service(LockdownService):
         :param source: Identifier of device to extract file from its backup.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
+        self.validate_backup(backup_dir, source if source else self.lockdown.udid)
         async with self.device_link(backup_dir) as dl:
             message = {
                 "MessageName": "Extract",
@@ -555,10 +613,122 @@ class Mobilebackup2Service(LockdownService):
 
     @staticmethod
     def _assert_backup_exists(backup_directory: Path, identifier: str):
-        device_directory = backup_directory / identifier
-        assert (device_directory / "Info.plist").exists()
-        assert (device_directory / "Manifest.plist").exists()
-        assert (device_directory / "Status.plist").exists()
+        Mobilebackup2Service.validate_backup(backup_directory, identifier)
+
+    @staticmethod
+    def resolve_backup_source(backup_directory: Union[str, Path], identifier: str = "") -> str:
+        backup_directory = Path(backup_directory)
+        if identifier:
+            return identifier
+        if not backup_directory.exists():
+            raise BackupValidationError(f"Backup directory {backup_directory} does not exist")
+        if not backup_directory.is_dir():
+            raise BackupValidationError(f"Backup path {backup_directory} is not a directory")
+
+        candidates = sorted(
+            path.name for path in backup_directory.iterdir() if path.is_dir() and (path / "Info.plist").exists()
+        )
+        if len(candidates) == 1:
+            return candidates[0]
+        if not candidates:
+            raise BackupValidationError(
+                f"No backup source was found under {backup_directory}. "
+                "Expected a device backup directory containing Info.plist."
+            )
+        raise BackupValidationError(
+            f"Multiple backup sources were found under {backup_directory}. Pass --source to select one."
+        )
+
+    @classmethod
+    def validate_backup(
+        cls,
+        backup_directory: Union[str, Path],
+        identifier: str,
+        *,
+        include_file_summary: bool = False,
+    ) -> BackupValidationResult:
+        if not identifier:
+            identifier = cls.resolve_backup_source(backup_directory)
+
+        device_directory = Path(backup_directory) / identifier
+        errors = []
+        required_file_sizes = {}
+        if not device_directory.exists():
+            errors.append("backup directory is missing")
+        elif not device_directory.is_dir():
+            errors.append("backup path is not a directory")
+        else:
+            for name in REQUIRED_BACKUP_METADATA_FILES:
+                path = device_directory / name
+                if not path.exists():
+                    errors.append(f"{name} is missing")
+                    continue
+                if not path.is_file():
+                    errors.append(f"{name} is not a file")
+                    continue
+                size = path.stat().st_size
+                if size == 0:
+                    errors.append(f"{name} is empty")
+                required_file_sizes[name] = size
+
+        if errors:
+            raise BackupValidationError(f"Incomplete backup for source {identifier}: {'; '.join(errors)}")
+
+        info = cls._load_backup_plist(device_directory / "Info.plist")
+        manifest = cls._load_backup_plist(device_directory / "Manifest.plist")
+        status = cls._load_backup_plist(device_directory / "Status.plist")
+        is_encrypted = bool(manifest.get("IsEncrypted", False))
+        manifest_file_count = None if is_encrypted else cls._count_manifest_files(device_directory / "Manifest.db")
+
+        filesystem_file_count = None
+        filesystem_size = None
+        if include_file_summary:
+            filesystem_file_count, filesystem_size = cls._summarize_backup_filesystem(device_directory)
+
+        return BackupValidationResult(
+            identifier=identifier,
+            device_directory=device_directory,
+            required_file_sizes=required_file_sizes,
+            is_encrypted=is_encrypted,
+            manifest_file_count=manifest_file_count,
+            filesystem_file_count=filesystem_file_count,
+            filesystem_size=filesystem_size,
+            info=info,
+            manifest=manifest,
+            status=status,
+        )
+
+    @staticmethod
+    def _load_backup_plist(path: Path) -> dict:
+        try:
+            with path.open("rb") as fd:
+                data = plistlib.load(fd)
+        except (plistlib.InvalidFileException, EOFError, OSError) as exc:
+            raise BackupValidationError(f"{path.name} is not a valid plist") from exc
+        if not isinstance(data, dict):
+            raise BackupValidationError(f"{path.name} is not a plist dictionary")
+        return data
+
+    @staticmethod
+    def _count_manifest_files(manifest_db_path: Path) -> int:
+        uri = f"{manifest_db_path.resolve().as_uri()}?mode=ro"
+        try:
+            with closing(sqlite3.connect(uri, uri=True)) as connection:
+                row = connection.execute("SELECT count(*) FROM Files").fetchone()
+        except sqlite3.DatabaseError as exc:
+            raise BackupValidationError("Manifest.db is not a readable MobileBackup2 SQLite database") from exc
+        return int(row[0])
+
+    @staticmethod
+    def _summarize_backup_filesystem(device_directory: Path) -> tuple[int, int]:
+        file_count = 0
+        total_size = 0
+        for path in device_directory.rglob("*"):
+            if not path.is_file():
+                continue
+            file_count += 1
+            total_size += path.stat().st_size
+        return file_count, total_size
 
     @staticmethod
     def resolve_backup_selection(only: Optional[Sequence[str]]) -> tuple[BackupSelectionRule, ...]:
