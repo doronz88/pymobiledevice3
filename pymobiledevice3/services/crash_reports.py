@@ -256,7 +256,7 @@ class CrashReportsManager:
             callback(time.monotonic() - start_time)
 
         self.logger.info("sysdiagnose tarball creation has been started")
-        await self._wait_for_sysdiagnose_to_finish(timeout)
+        await self._wait_for_sysdiagnose_to_finish(end_time)
 
         if callback is not None:
             callback(time.monotonic() - start_time)
@@ -267,7 +267,13 @@ class CrashReportsManager:
             callback(time.monotonic() - start_time)
 
     async def _wait_for_sysdiagnose_to_finish(self, end_time: Optional[float] = None) -> None:
-        async with NotificationProxyService(self.lockdown, timeout=end_time) as service:
+        notification_timeout = None
+        if end_time is not None:
+            notification_timeout = end_time - time.monotonic()
+            if notification_timeout <= 0:
+                raise SysdiagnoseTimeoutError("Timeout waiting for sysdiagnose completion")
+
+        async with NotificationProxyService(self.lockdown, timeout=notification_timeout) as service:
             stop_notification = "com.apple.sysdiagnose.sysdiagnoseStopped"
             await service.notify_register_dispatch(stop_notification)
             try:

@@ -9,8 +9,9 @@ from typing import Optional
 import pytest
 import pytest_asyncio
 
-from pymobiledevice3.exceptions import AfcFileNotFoundError
+from pymobiledevice3.exceptions import AfcFileNotFoundError, SysdiagnoseTimeoutError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services import crash_reports as crash_reports_module
 from pymobiledevice3.services.crash_reports import CrashReportsManager
 
 BASENAME = "__pymobiledevice3_tests"
@@ -158,6 +159,80 @@ async def test_parse_invalid_raises(crash_manager: CrashReportsManager, remote_t
 )
 def test_check_timeout(crash_manager: CrashReportsManager, end_time: int, return_value: bool) -> None:
     assert crash_manager._check_timeout(end_time) is return_value
+
+
+async def test_get_new_sysdiagnose_uses_absolute_timeout_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = CrashReportsManager(object())
+    calls = {}
+
+    async def fake_get_new_sysdiagnose_filename(end_time: Optional[float] = None) -> str:
+        calls["filename_end_time"] = end_time
+        return "DiagnosticLogs/sysdiagnose/sysdiagnose.tar.gz"
+
+    async def fake_wait_for_sysdiagnose_to_finish(end_time: Optional[float] = None) -> None:
+        calls["wait_end_time"] = end_time
+
+    async def fake_pull(out: str, entry: str, erase: bool = True) -> None:
+        calls["pull"] = (out, entry, erase)
+
+    monkeypatch.setattr(crash_reports_module.time, "monotonic", lambda: 100.0)
+    manager._get_new_sysdiagnose_filename = fake_get_new_sysdiagnose_filename
+    manager._wait_for_sysdiagnose_to_finish = fake_wait_for_sysdiagnose_to_finish
+    manager.pull = fake_pull
+
+    await manager.get_new_sysdiagnose("/tmp/out", timeout=30, erase=False)
+
+    assert calls == {
+        "filename_end_time": 130.0,
+        "wait_end_time": 130.0,
+        "pull": ("/tmp/out", "DiagnosticLogs/sysdiagnose/sysdiagnose.tar.gz", False),
+    }
+
+
+async def test_wait_for_sysdiagnose_uses_remaining_notification_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = CrashReportsManager(object())
+    calls = {}
+
+    class FakeNotificationProxyService:
+        def __init__(self, lockdown, timeout: Optional[float] = None) -> None:
+            calls["lockdown"] = lockdown
+            calls["timeout"] = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+        async def notify_register_dispatch(self, name: str) -> None:
+            calls["registered"] = name
+
+        async def receive_notification(self):
+            yield {"Name": "com.apple.other"}
+            yield {"Name": "com.apple.sysdiagnose.sysdiagnoseStopped"}
+
+    async def fake_sleep(delay: float) -> None:
+        calls["sleep"] = delay
+
+    monkeypatch.setattr(crash_reports_module.time, "monotonic", lambda: 125.0)
+    monkeypatch.setattr(crash_reports_module, "NotificationProxyService", FakeNotificationProxyService)
+    monkeypatch.setattr(crash_reports_module.asyncio, "sleep", fake_sleep)
+
+    await manager._wait_for_sysdiagnose_to_finish(130.0)
+
+    assert calls["lockdown"] is manager.lockdown
+    assert calls["timeout"] == 5.0
+    assert calls["registered"] == "com.apple.sysdiagnose.sysdiagnoseStopped"
+    assert calls["sleep"] == crash_reports_module.IOS17_SYSDIAGNOSE_DELAY
+
+
+async def test_wait_for_sysdiagnose_raises_when_deadline_expired(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = CrashReportsManager(object())
+
+    monkeypatch.setattr(crash_reports_module.time, "monotonic", lambda: 125.0)
+
+    with pytest.raises(SysdiagnoseTimeoutError, match="Timeout waiting for sysdiagnose completion"):
+        await manager._wait_for_sysdiagnose_to_finish(120.0)
 
 
 async def test_parse_latest(crash_manager: CrashReportsManager, remote_temp_directory: str) -> None:

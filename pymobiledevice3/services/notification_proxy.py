@@ -1,3 +1,4 @@
+import asyncio
 import socket
 from collections.abc import AsyncGenerator
 from typing import Optional, Union
@@ -28,8 +29,7 @@ class NotificationProxyService(LockdownService):
         else:
             super().__init__(lockdown, secure_service_name)
 
-        if timeout is not None:
-            self.service.socket.settimeout(timeout)
+        self._timeout = timeout
 
     async def notify_post(self, name: str) -> None:
         """Send notification to the device's notification_proxy."""
@@ -43,6 +43,9 @@ class NotificationProxyService(LockdownService):
     async def receive_notification(self) -> AsyncGenerator[dict, None]:
         while True:
             try:
-                yield await self.service.recv_plist()
-            except socket.timeout as e:
+                if self._timeout is None:
+                    yield await self.service.recv_plist()
+                else:
+                    yield await asyncio.wait_for(self.service.recv_plist(), timeout=self._timeout)
+            except (asyncio.TimeoutError, socket.timeout) as e:
                 raise NotificationTimeoutError from e
