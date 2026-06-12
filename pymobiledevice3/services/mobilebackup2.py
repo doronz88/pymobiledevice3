@@ -76,6 +76,9 @@ BACKUP_METADATA_FILES = frozenset({
     "Manifest.db-wal",
     "Status.plist",
 })
+BACKUP_DOMAIN = "com.apple.mobile.backup"
+BACKUP_WILL_ENCRYPT_KEY = "WillEncrypt"
+BACKUP_REQUIRES_ENCRYPTION_KEY = "RequiresEncryption"
 
 
 @dataclass(frozen=True)
@@ -145,9 +148,20 @@ class Mobilebackup2Service(LockdownService):
             super().__init__(lockdown, self.RSD_SERVICE_NAME, include_escrow_bag=True)
 
     async def get_will_encrypt(self) -> bool:
+        return await self._get_backup_domain_bool(BACKUP_WILL_ENCRYPT_KEY)
+
+    async def get_requires_encryption(self) -> bool:
+        return await self._get_backup_domain_bool(BACKUP_REQUIRES_ENCRYPTION_KEY)
+
+    async def get_encryption_status(self) -> dict[str, bool]:
+        return {
+            "will_encrypt": await self.get_will_encrypt(),
+            "requires_encryption": await self.get_requires_encryption(),
+        }
+
+    async def _get_backup_domain_bool(self, key: str) -> bool:
         try:
-            will_encrypt = await self.lockdown.get_value("com.apple.mobile.backup", "WillEncrypt")
-            return bool(will_encrypt)
+            return bool(await self.lockdown.get_value(BACKUP_DOMAIN, key))
         except LockdownError:
             return False
 

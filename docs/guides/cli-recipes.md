@@ -49,6 +49,9 @@ pymobiledevice3 apps query BUNDLE_ID1 BUNDLE_ID2
 # Full backup
 pymobiledevice3 backup2 backup --full DIRECTORY
 
+# Show local backup encryption status
+pymobiledevice3 backup2 encryption-status
+
 # Preserve only selected backup payloads
 pymobiledevice3 backup2 backup --only sms DIRECTORY
 pymobiledevice3 backup2 backup --only whatsapp DIRECTORY

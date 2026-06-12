@@ -29,3 +29,22 @@ def test_backup_command_has_unback_option():
 
     assert result.exit_code == 0
     assert "--unback" in result.output
+
+
+def test_backup2_has_encryption_status_command():
+    runner = CliRunner()
+
+    result = runner.invoke(__main__.app, ["backup2", "--help"])
+
+    assert result.exit_code == 0
+    assert "encryption-status" in result.output
+
+
+def test_backup2_encryption_status_help_describes_output():
+    runner = CliRunner()
+
+    result = runner.invoke(__main__.app, ["backup2", "encryption-status", "--help"])
+
+    assert result.exit_code == 0
+    assert "will_encrypt" in result.output
+    assert "requires_encryption" in result.output

@@ -9,7 +9,7 @@ from click import Context
 from tqdm import tqdm
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
 from pymobiledevice3.services.mobilebackup2 import BACKUP_SELECTIONS, Mobilebackup2Service
 
 logger = logging.getLogger(__name__)
@@ -284,6 +284,18 @@ async def encryption(
             await backup_client.change_password(str(backup_directory), new=password)
         else:
             await backup_client.change_password(str(backup_directory), old=password)
+
+
+@cli.command("encryption-status")
+@async_command
+async def encryption_status(service_provider: ServiceProviderDep) -> None:
+    """
+    Show backup encryption status.
+
+    Outputs will_encrypt for whether future local backups are encrypted and requires_encryption for device policy.
+    """
+    async with Mobilebackup2Service(service_provider) as backup_client:
+        print_json(await backup_client.get_encryption_status(), colored=False)
 
 
 @cli.command()

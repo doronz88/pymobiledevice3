@@ -8,12 +8,15 @@ from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
-from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError
+from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError, LockdownError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.mobilebackup2 import (
+    BACKUP_DOMAIN,
     BACKUP_OBSERVED_NOTIFICATIONS,
+    BACKUP_REQUIRES_ENCRYPTION_KEY,
     BACKUP_SELECTIONS,
+    BACKUP_WILL_ENCRYPT_KEY,
     NP_LOCAL_AUTH_DISMISSED,
     NP_LOCAL_AUTH_PRESENTED,
     NP_SYNC_CANCEL_REQUEST,
@@ -131,6 +134,38 @@ async def test_observe_backup_notifications_registers_passcode_and_backup_notifi
     notification_proxy.notify_register_dispatch.assert_has_awaits([
         call(notification) for notification in BACKUP_OBSERVED_NOTIFICATIONS
     ])
+
+
+@pytest.mark.asyncio
+async def test_get_encryption_status_reads_backup_domain_flags() -> None:
+    lockdown = Mock()
+    lockdown.get_value = AsyncMock(
+        side_effect=lambda domain, key: {
+            (BACKUP_DOMAIN, BACKUP_WILL_ENCRYPT_KEY): True,
+            (BACKUP_DOMAIN, BACKUP_REQUIRES_ENCRYPTION_KEY): False,
+        }[(domain, key)]
+    )
+    service = object.__new__(Mobilebackup2Service)
+    service.lockdown = lockdown
+
+    assert await service.get_encryption_status() == {
+        "will_encrypt": True,
+        "requires_encryption": False,
+    }
+    lockdown.get_value.assert_has_awaits([
+        call(BACKUP_DOMAIN, BACKUP_WILL_ENCRYPT_KEY),
+        call(BACKUP_DOMAIN, BACKUP_REQUIRES_ENCRYPTION_KEY),
+    ])
+
+
+@pytest.mark.asyncio
+async def test_get_backup_domain_bool_returns_false_on_lockdown_error() -> None:
+    lockdown = Mock()
+    lockdown.get_value = AsyncMock(side_effect=LockdownError("missing"))
+    service = object.__new__(Mobilebackup2Service)
+    service.lockdown = lockdown
+
+    assert not await service.get_requires_encryption()
 
 
 def test_log_backup_notification_surfaces_passcode_prompt_to_operator() -> None:
