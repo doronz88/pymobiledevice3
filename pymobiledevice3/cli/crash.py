@@ -4,7 +4,7 @@ from typing import Annotated, Optional
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
 from pymobiledevice3.services.crash_reports import CrashReportsManager, CrashReportsShell
 
 cli = InjectingTyper(
@@ -186,8 +186,17 @@ async def crash_sysdiagnose(
             help="Maximum time in seconds to wait for the completion of sysdiagnose archive",
         ),
     ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Print a JSON summary with remote path, local artifact metadata, and stage durations.",
+        ),
+    ] = False,
 ) -> None:
     """get a sysdiagnose archive from device (requires user interaction)"""
     print("Press Power+VolUp+VolDown for 0.215 seconds")
     async with CrashReportsManager(service_provider) as crash_manager:
-        await crash_manager.get_new_sysdiagnose(str(out), erase=erase, timeout=timeout)
+        result = await crash_manager.get_new_sysdiagnose(str(out), erase=erase, timeout=timeout)
+        if json_output:
+            print_json(result)

@@ -5,13 +5,20 @@ from datetime import datetime, timezone
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Optional
+from unittest.mock import Mock
 
 import pytest
 import pytest_asyncio
 
-from pymobiledevice3.exceptions import AfcFileNotFoundError
+from pymobiledevice3.exceptions import AfcFileNotFoundError, SysdiagnoseTimeoutError
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.crash_reports import CrashReportsManager
+from pymobiledevice3.services import crash_reports as crash_reports_module
+from pymobiledevice3.services.crash_reports import (
+    SYSDIAGNOSE_STAGE_DETECTING_ARCHIVE,
+    SYSDIAGNOSE_STAGE_PULLING_ARCHIVE,
+    SYSDIAGNOSE_STAGE_WAITING_FOR_COMPLETION,
+    CrashReportsManager,
+)
 
 BASENAME = "__pymobiledevice3_tests"
 PATH_COMPONENT = f"/{BASENAME}"
@@ -58,6 +65,14 @@ def _nested_paths(root: str, depth: int) -> list[str]:
     for _ in range(1, depth):
         paths.append(posixpath.join(paths[-1], BASENAME))
     return paths
+
+
+class FakeTime:
+    def __init__(self, monotonic_values: list[float]) -> None:
+        self.monotonic_values = iter(monotonic_values)
+
+    def monotonic(self) -> float:
+        return next(self.monotonic_values)
 
 
 async def test_ls_default(crash_manager: CrashReportsManager, remote_temp_directory: str) -> None:
@@ -315,3 +330,104 @@ async def test_parse_latest_no_matches(
 
     with pytest.raises(ValueError):
         await crash_manager.parse_latest(path=remote_temp_directory, match=match, match_insensitive=match_insensitive)
+
+
+async def test_get_new_sysdiagnose_returns_summary(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    crash_manager = CrashReportsManager(Mock())
+    remote_path = "DiagnosticLogs/sysdiagnose/sysdiagnose_test.tar.gz"
+
+    monkeypatch.setattr(crash_reports_module, "time", FakeTime([10.0, 10.5, 14.0, 15.25, 15.3]))
+
+    async def get_new_sysdiagnose_filename(end_time: float) -> str:
+        assert end_time == 70.0
+        return remote_path
+
+    async def wait_for_sysdiagnose_to_finish(timeout: float) -> None:
+        assert timeout == 60.0
+
+    async def pull(out: str, entry: str = "/", erase: bool = False, **_: object) -> None:
+        assert entry == remote_path
+        assert erase is False
+        (Path(out) / posixpath.basename(remote_path)).write_bytes(b"sysdiagnose")
+
+    monkeypatch.setattr(crash_manager, "_get_new_sysdiagnose_filename", get_new_sysdiagnose_filename)
+    monkeypatch.setattr(crash_manager, "_wait_for_sysdiagnose_to_finish", wait_for_sysdiagnose_to_finish)
+    monkeypatch.setattr(crash_manager, "pull", pull)
+
+    result = await crash_manager.get_new_sysdiagnose(str(tmp_path), erase=False, timeout=60.0)
+
+    artifact_path = tmp_path / posixpath.basename(remote_path)
+    assert result == {
+        "artifact": {
+            "modified_at": result["artifact"]["modified_at"],
+            "name": artifact_path.name,
+            "path": str(artifact_path),
+            "size": len(b"sysdiagnose"),
+        },
+        "duration": 5.3,
+        "erase": False,
+        "remote_path": remote_path,
+        "stages": {
+            SYSDIAGNOSE_STAGE_DETECTING_ARCHIVE: 0.5,
+            SYSDIAGNOSE_STAGE_WAITING_FOR_COMPLETION: 3.5,
+            SYSDIAGNOSE_STAGE_PULLING_ARCHIVE: 1.25,
+        },
+        "status": "completed",
+        "timeout": {
+            "phase": None,
+            "seconds": 60.0,
+        },
+    }
+    assert result["artifact"]["modified_at"].endswith("+00:00")
+
+
+async def test_get_new_sysdiagnose_annotates_detect_timeout_phase(monkeypatch: pytest.MonkeyPatch) -> None:
+    crash_manager = CrashReportsManager(Mock())
+
+    async def get_new_sysdiagnose_filename(end_time: float) -> str:
+        raise SysdiagnoseTimeoutError("Timeout finding in-progress sysdiagnose filename")
+
+    monkeypatch.setattr(crash_manager, "_get_new_sysdiagnose_filename", get_new_sysdiagnose_filename)
+
+    with pytest.raises(SysdiagnoseTimeoutError) as exc_info:
+        await crash_manager.get_new_sysdiagnose("unused", timeout=1.0)
+
+    assert exc_info.value.phase == SYSDIAGNOSE_STAGE_DETECTING_ARCHIVE
+
+
+async def test_get_new_sysdiagnose_annotates_wait_timeout_phase(monkeypatch: pytest.MonkeyPatch) -> None:
+    crash_manager = CrashReportsManager(Mock())
+    remote_path = "DiagnosticLogs/sysdiagnose/sysdiagnose_test.tar.gz"
+
+    monkeypatch.setattr(crash_reports_module, "time", FakeTime([10.0, 10.5]))
+
+    async def get_new_sysdiagnose_filename(end_time: float) -> str:
+        return remote_path
+
+    async def wait_for_sysdiagnose_to_finish(timeout: float) -> None:
+        raise SysdiagnoseTimeoutError("Timeout waiting for sysdiagnose completion")
+
+    monkeypatch.setattr(crash_manager, "_get_new_sysdiagnose_filename", get_new_sysdiagnose_filename)
+    monkeypatch.setattr(crash_manager, "_wait_for_sysdiagnose_to_finish", wait_for_sysdiagnose_to_finish)
+
+    with pytest.raises(SysdiagnoseTimeoutError) as exc_info:
+        await crash_manager.get_new_sysdiagnose("unused", timeout=60.0)
+
+    assert exc_info.value.phase == SYSDIAGNOSE_STAGE_WAITING_FOR_COMPLETION
+
+
+def test_resolve_local_pull_path_uses_directory_basename(tmp_path: Path) -> None:
+    assert CrashReportsManager._resolve_local_pull_path(
+        str(tmp_path), "DiagnosticLogs/sysdiagnose/sysdiagnose_test.tar.gz"
+    ) == (tmp_path / "sysdiagnose_test.tar.gz")
+
+
+def test_resolve_local_pull_path_keeps_file_destination(tmp_path: Path) -> None:
+    output_path = tmp_path / "custom.tar.gz"
+
+    assert (
+        CrashReportsManager._resolve_local_pull_path(
+            str(output_path), "DiagnosticLogs/sysdiagnose/sysdiagnose_test.tar.gz"
+        )
+        == output_path
+    )

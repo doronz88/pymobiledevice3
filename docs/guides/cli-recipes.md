@@ -32,6 +32,9 @@ pymobiledevice3 diagnostics restart
 
 # Pull crash reports
 pymobiledevice3 crash pull /path/to/crashes
+
+# Pull a sysdiagnose archive and print a JSON result summary
+pymobiledevice3 crash sysdiagnose /path/to/sysdiagnose.tar.gz --json
 ```
 
 ## Files, Apps, and Backup

@@ -1,10 +1,12 @@
 import asyncio
+import datetime
 import logging
 import posixpath
 import re
 import time
 from collections.abc import AsyncGenerator
 from json import JSONDecodeError
+from pathlib import Path
 from typing import Callable, ClassVar, Optional
 
 from pycrashreport.crash_report import CrashReportBase, get_crash_report_from_buf
@@ -29,6 +31,9 @@ SYSDIAGNOSE_IN_PROGRESS_MAX_TTL_SECS = 600
 
 # on iOS17, we need to wait for a moment before trying to fetch the sysdiagnose archive
 IOS17_SYSDIAGNOSE_DELAY = 3
+SYSDIAGNOSE_STAGE_DETECTING_ARCHIVE = "detecting_archive"
+SYSDIAGNOSE_STAGE_WAITING_FOR_COMPLETION = "waiting_for_completion"
+SYSDIAGNOSE_STAGE_PULLING_ARCHIVE = "pulling_archive"
 
 
 class CrashReportsManager:
@@ -237,7 +242,7 @@ class CrashReportsManager:
         *,
         timeout: Optional[float] = None,
         callback: Optional[Callable[[float], None]] = None,
-    ) -> None:
+    ) -> dict:
         """
         Monitor the creation of a newly created sysdiagnose archive and pull it
         :param out: filename
@@ -250,21 +255,54 @@ class CrashReportsManager:
         end_time = None
         if timeout is not None:
             end_time = start_time + timeout
-        sysdiagnose_filename = await self._get_new_sysdiagnose_filename(end_time)
+        stage_started_at = start_time
+        stage_durations = {}
+        timeout_phase = SYSDIAGNOSE_STAGE_DETECTING_ARCHIVE
+
+        try:
+            sysdiagnose_filename = await self._get_new_sysdiagnose_filename(end_time)
+            stage_started_at = self._record_sysdiagnose_stage_duration(
+                stage_durations, SYSDIAGNOSE_STAGE_DETECTING_ARCHIVE, stage_started_at
+            )
+
+            if callback is not None:
+                callback(time.monotonic() - start_time)
+
+            self.logger.info("sysdiagnose tarball creation has been started")
+            timeout_phase = SYSDIAGNOSE_STAGE_WAITING_FOR_COMPLETION
+            await self._wait_for_sysdiagnose_to_finish(timeout)
+            stage_started_at = self._record_sysdiagnose_stage_duration(
+                stage_durations, SYSDIAGNOSE_STAGE_WAITING_FOR_COMPLETION, stage_started_at
+            )
+
+            if callback is not None:
+                callback(time.monotonic() - start_time)
+
+            timeout_phase = SYSDIAGNOSE_STAGE_PULLING_ARCHIVE
+            await self.pull(out, entry=sysdiagnose_filename, erase=erase)
+            self._record_sysdiagnose_stage_duration(
+                stage_durations, SYSDIAGNOSE_STAGE_PULLING_ARCHIVE, stage_started_at
+            )
+        except SysdiagnoseTimeoutError as e:
+            e.phase = timeout_phase
+            raise
 
         if callback is not None:
             callback(time.monotonic() - start_time)
 
-        self.logger.info("sysdiagnose tarball creation has been started")
-        await self._wait_for_sysdiagnose_to_finish(timeout)
-
-        if callback is not None:
-            callback(time.monotonic() - start_time)
-
-        await self.pull(out, entry=sysdiagnose_filename, erase=erase)
-
-        if callback is not None:
-            callback(time.monotonic() - start_time)
+        local_path = self._resolve_local_pull_path(out, sysdiagnose_filename)
+        return {
+            "artifact": self._local_file_metadata(local_path),
+            "duration": round(time.monotonic() - start_time, 3),
+            "erase": erase,
+            "remote_path": sysdiagnose_filename,
+            "stages": stage_durations,
+            "status": "completed",
+            "timeout": {
+                "phase": None,
+                "seconds": timeout,
+            },
+        }
 
     async def _wait_for_sysdiagnose_to_finish(self, end_time: Optional[float] = None) -> None:
         async with NotificationProxyService(self.lockdown, timeout=end_time) as service:
@@ -314,6 +352,29 @@ class CrashReportsManager:
 
     def _check_timeout(self, end_time: Optional[float] = None) -> bool:
         return end_time is not None and time.monotonic() > end_time
+
+    @staticmethod
+    def _record_sysdiagnose_stage_duration(stage_durations: dict, stage_name: str, stage_started_at: float) -> float:
+        now = time.monotonic()
+        stage_durations[stage_name] = round(now - stage_started_at, 3)
+        return now
+
+    @staticmethod
+    def _resolve_local_pull_path(out: str, remote_path: str) -> Path:
+        local_path = Path(out)
+        if local_path.is_dir():
+            return local_path / posixpath.basename(remote_path)
+        return local_path
+
+    @staticmethod
+    def _local_file_metadata(path: Path) -> dict:
+        stat = path.stat()
+        return {
+            "modified_at": datetime.datetime.fromtimestamp(stat.st_mtime, datetime.timezone.utc).isoformat(),
+            "name": path.name,
+            "path": str(path),
+            "size": stat.st_size,
+        }
 
 
 class CrashReportsShell(AfcShell):
