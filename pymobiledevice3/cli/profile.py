@@ -29,6 +29,13 @@ async def profile_list(service_provider: ServiceProviderDep) -> None:
     print_json(await MobileConfigService(lockdown=service_provider).get_profile_list())
 
 
+@cli.command("audit")
+@async_command
+async def profile_audit(service_provider: ServiceProviderDep) -> None:
+    """Summarize installed profile payloads and audit-relevant flags"""
+    print_json(await MobileConfigService(lockdown=service_provider).get_profile_audit())
+
+
 @cli.command("install")
 @async_command
 async def profile_install(

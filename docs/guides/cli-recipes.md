@@ -46,6 +46,9 @@ pymobiledevice3 apps list
 # Query specific app bundle IDs
 pymobiledevice3 apps query BUNDLE_ID1 BUNDLE_ID2
 
+# Summarize installed configuration-profile payloads
+pymobiledevice3 profile audit
+
 # Full backup
 pymobiledevice3 backup2 backup --full DIRECTORY
 

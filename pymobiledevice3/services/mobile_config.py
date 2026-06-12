@@ -1,5 +1,6 @@
 import contextlib
 import plistlib
+from collections import Counter
 from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
@@ -18,6 +19,55 @@ from pymobiledevice3.services.lockdown_service import LockdownService
 ERROR_CLOUD_CONFIGURATION_ALREADY_PRESENT = 14002
 GLOBAL_HTTP_PROXY_UUID = "86a52338-52f7-4c09-b005-52baf3dc4882"
 GLOBAL_RESTRICTIONS_UUID = "e22a0a66-08a8-43f5-9bbc-5279af35bb2b"
+CERTIFICATE_PAYLOAD_TYPES = {
+    "com.apple.security.acme",
+    "com.apple.security.certificatepreference",
+    "com.apple.security.identitypreference",
+    "com.apple.security.pem",
+    "com.apple.security.pkcs1",
+    "com.apple.security.pkcs12",
+    "com.apple.security.root",
+    "com.apple.security.scep",
+}
+ROOT_CERTIFICATE_PAYLOAD_TYPES = {"com.apple.security.root"}
+NON_ROOT_CERTIFICATE_PAYLOAD_TYPES = CERTIFICATE_PAYLOAD_TYPES - ROOT_CERTIFICATE_PAYLOAD_TYPES
+VPN_PAYLOAD_TYPES = {
+    "com.apple.vpn.managed",
+    "com.apple.vpn.managed.applayer",
+}
+AUDIT_PAYLOAD_RULES = (
+    ("mdm", "high", "has_mdm", {"com.apple.mdm"}),
+    ("global_http_proxy", "high", "has_global_http_proxy", {"com.apple.proxy.http.global"}),
+    ("vpn", "medium", "has_vpn", VPN_PAYLOAD_TYPES),
+    ("root_certificate", "medium", "has_root_certificates", ROOT_CERTIFICATE_PAYLOAD_TYPES),
+    ("certificate", "medium", "has_certificates", NON_ROOT_CERTIFICATE_PAYLOAD_TYPES),
+    ("web_content_filter", "medium", "has_web_content_filter", {"com.apple.webcontent-filter"}),
+    ("dns_settings", "medium", "has_dns_settings", {"com.apple.dnsProxy.managed", "com.apple.dnsSettings.managed"}),
+    ("wifi", "low", "has_wifi", {"com.apple.wifi.managed"}),
+    ("restrictions", "low", "has_restrictions", {"com.apple.applicationaccess"}),
+)
+AUDIT_FLAG_NAMES = (
+    *(rule[2] for rule in AUDIT_PAYLOAD_RULES),
+    "has_removal_disallowed_profiles",
+)
+PROFILE_SUMMARY_KEYS = {
+    "IsEncrypted": "is_encrypted",
+    "PayloadDisplayName": "display_name",
+    "PayloadExpirationDate": "expiration_date",
+    "PayloadIdentifier": "identifier",
+    "PayloadOrganization": "organization",
+    "PayloadRemovalDate": "removal_date",
+    "PayloadRemovalDisallowed": "removal_disallowed",
+    "PayloadUUID": "uuid",
+    "PayloadVersion": "version",
+}
+PAYLOAD_SUMMARY_KEYS = {
+    "PayloadDisplayName": "display_name",
+    "PayloadIdentifier": "identifier",
+    "PayloadType": "type",
+    "PayloadUUID": "uuid",
+    "PayloadVersion": "version",
+}
 
 
 class Purpose(Enum):
@@ -90,6 +140,106 @@ class MobileConfigService(LockdownService):
 
     async def get_profile_list(self) -> dict:
         return await self._send_recv({"RequestType": "GetProfileList"})
+
+    async def get_profile_audit(self) -> dict:
+        return self.audit_profile_list(await self.get_profile_list())
+
+    @classmethod
+    def audit_profile_list(cls, profile_list: dict) -> dict:
+        profile_metadata = profile_list.get("ProfileMetadata") or {}
+        profile_manifest = profile_list.get("ProfileManifest") or {}
+        ordered_identifiers = profile_list.get("OrderedIdentifiers") or []
+        unordered_identifiers = sorted((set(profile_metadata) | set(profile_manifest)) - set(ordered_identifiers))
+        identifiers = list(
+            dict.fromkeys([
+                *ordered_identifiers,
+                *unordered_identifiers,
+            ])
+        )
+
+        profiles = []
+        payload_type_counts: Counter[str] = Counter()
+        findings = []
+        flags = dict.fromkeys(AUDIT_FLAG_NAMES, False)
+
+        for fallback_identifier in identifiers:
+            metadata = profile_metadata.get(fallback_identifier) or {}
+            manifest = profile_manifest.get(fallback_identifier) or {}
+            payloads = list(cls._iter_profile_payloads(metadata)) or list(cls._iter_profile_payloads(manifest))
+            payload_summaries = [cls._payload_summary(payload) for payload in payloads]
+            payload_types = sorted({
+                payload_summary["type"] for payload_summary in payload_summaries if payload_summary.get("type")
+            })
+
+            summary = {
+                "identifier": metadata.get("PayloadIdentifier") or fallback_identifier,
+                "payload_count": len(payload_summaries),
+                "payload_types": payload_types,
+                "payloads": payload_summaries,
+            }
+            for source_key, output_key in PROFILE_SUMMARY_KEYS.items():
+                if source_key in metadata and output_key != "identifier":
+                    summary[output_key] = metadata[source_key]
+
+            flags["has_removal_disallowed_profiles"] = (
+                flags["has_removal_disallowed_profiles"] or summary.get("removal_disallowed") is True
+            )
+
+            for payload_summary in payload_summaries:
+                payload_type = payload_summary.get("type")
+                if payload_type is not None:
+                    payload_type_counts[payload_type] += 1
+                if payload_type in CERTIFICATE_PAYLOAD_TYPES:
+                    flags["has_certificates"] = True
+
+                for category, severity, flag_name, payload_types_to_flag in AUDIT_PAYLOAD_RULES:
+                    if payload_type not in payload_types_to_flag:
+                        continue
+                    flags[flag_name] = True
+                    findings.append({
+                        "category": category,
+                        "payload_display_name": payload_summary.get("display_name"),
+                        "payload_identifier": payload_summary.get("identifier"),
+                        "payload_type": payload_type,
+                        "profile_identifier": summary["identifier"],
+                        "severity": severity,
+                    })
+
+            profiles.append(summary)
+
+        return {
+            "findings": findings,
+            "flags": flags,
+            "payload_count": sum(payload_type_counts.values()),
+            "payload_types": dict(sorted(payload_type_counts.items())),
+            "profile_count": len(profiles),
+            "profiles": profiles,
+        }
+
+    @classmethod
+    def _iter_profile_payloads(cls, value: Any):
+        if isinstance(value, list):
+            for item in value:
+                yield from cls._iter_profile_payloads(item)
+            return
+
+        if not isinstance(value, dict):
+            return
+
+        payload_type = value.get("PayloadType")
+        if payload_type is not None and payload_type != "Configuration":
+            yield value
+
+        for child_key in ("PayloadContent", "PayloadItems"):
+            yield from cls._iter_profile_payloads(value.get(child_key))
+
+    @staticmethod
+    def _payload_summary(payload: dict) -> dict:
+        return {
+            output_key: payload[source_key]
+            for source_key, output_key in PAYLOAD_SUMMARY_KEYS.items()
+            if source_key in payload
+        }
 
     async def install_profile(self, payload: bytes) -> None:
         await self._send_recv({"RequestType": "InstallProfile", "Payload": payload})
