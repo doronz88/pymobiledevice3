@@ -1,10 +1,11 @@
 import os
 import uuid
+from collections import Counter
 from enum import Enum
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from parameter_decorators import str_to_path
@@ -18,6 +19,52 @@ from pymobiledevice3.services.lockdown_service import LockdownService
 GET_APPS_ADDITIONAL_INFO = {"ReturnAttributes": ["CFBundleIdentifier", "StaticDiskUsage", "DynamicDiskUsage"]}
 
 TEMP_REMOTE_BASEDIR = "/PublicStaging/pymobiledevice3"
+APP_STORE_SIGNER_IDENTITIES = {"Apple iPhone OS Application Signing"}
+APP_SUMMARY_KEYS = {
+    "ApplicationType": "application_type",
+    "CFBundleDisplayName": "display_name",
+    "CFBundleIdentifier": "bundle_identifier",
+    "CFBundleName": "name",
+    "CFBundleShortVersionString": "short_version",
+    "CFBundleVersion": "version",
+    "DynamicDiskUsage": "dynamic_disk_usage",
+    "HasSettingsBundle": "has_settings_bundle",
+    "IsAppClip": "is_app_clip",
+    "IsDemotedApp": "is_demoted",
+    "IsPlaceholder": "is_placeholder",
+    "IsUpgradeable": "is_upgradeable",
+    "MinimumOSVersion": "minimum_os_version",
+    "SequenceNumber": "sequence_number",
+    "SignerIdentity": "signer_identity",
+    "StaticDiskUsage": "static_disk_usage",
+    "UIFileSharingEnabled": "file_sharing_enabled",
+}
+APP_PRIVACY_USAGE_KEYS = {
+    "NSAppleMusicUsageDescription": "media_library",
+    "NSBluetoothAlwaysUsageDescription": "bluetooth",
+    "NSBluetoothPeripheralUsageDescription": "bluetooth",
+    "NSCalendarsFullAccessUsageDescription": "calendar",
+    "NSCalendarsUsageDescription": "calendar",
+    "NSCalendarsWriteOnlyAccessUsageDescription": "calendar",
+    "NSCameraUsageDescription": "camera",
+    "NSContactsUsageDescription": "contacts",
+    "NSFaceIDUsageDescription": "face_id",
+    "NSHealthShareUsageDescription": "health",
+    "NSHealthUpdateUsageDescription": "health",
+    "NSHomeKitUsageDescription": "homekit",
+    "NSLocalNetworkUsageDescription": "local_network",
+    "NSLocationAlwaysAndWhenInUseUsageDescription": "location",
+    "NSLocationAlwaysUsageDescription": "location",
+    "NSLocationUsageDescription": "location",
+    "NSLocationWhenInUseUsageDescription": "location",
+    "NSMicrophoneUsageDescription": "microphone",
+    "NSMotionUsageDescription": "motion",
+    "NSPhotoLibraryAddUsageDescription": "photos",
+    "NSPhotoLibraryUsageDescription": "photos",
+    "NSRemindersUsageDescription": "reminders",
+    "NSSiriUsageDescription": "siri",
+    "NSSpeechRecognitionUsageDescription": "speech_recognition",
+}
 
 
 class ZipFileType(Enum):
@@ -510,3 +557,190 @@ class InstallationProxyService(LockdownService):
             for bundle_identifier, app in additional_info.items():
                 result[bundle_identifier].update(app)
         return result
+
+    async def get_apps_audit(
+        self,
+        application_type: str = "Any",
+        calculate_sizes: bool = False,
+        show_placeholders: bool = False,
+    ) -> dict:
+        return self.audit_apps(
+            await self.get_apps(
+                application_type=application_type,
+                calculate_sizes=calculate_sizes,
+                show_placeholders=show_placeholders,
+            )
+        )
+
+    @classmethod
+    def audit_apps(cls, apps: dict[str, dict]) -> dict:
+        application_type_counts: Counter[str] = Counter()
+        background_mode_counts: Counter[str] = Counter()
+        privacy_usage_counts: Counter[str] = Counter()
+        signer_identity_counts: Counter[str] = Counter()
+        findings = []
+        summaries = []
+        flags = {
+            "has_app_clips": False,
+            "has_beta_apps": False,
+            "has_debuggable_apps": False,
+            "has_demoted_apps": False,
+            "has_file_sharing_enabled_apps": False,
+            "has_non_app_store_user_apps": False,
+            "has_placeholder_apps": False,
+            "has_user_apps": False,
+        }
+
+        for fallback_bundle_identifier, app in sorted(apps.items()):
+            summary = cls._app_summary(fallback_bundle_identifier, app)
+            application_type = summary.get("application_type", "<missing>")
+            application_type_counts[application_type] += 1
+            flags["has_user_apps"] = flags["has_user_apps"] or application_type == "User"
+
+            signer_identity = summary.get("signer_identity")
+            if signer_identity is not None:
+                signer_identity_counts[signer_identity] += 1
+
+            background_modes = cls._string_list(app.get("UIBackgroundModes"))
+            if background_modes:
+                summary["background_modes"] = sorted(background_modes)
+                background_mode_counts.update(background_modes)
+
+            privacy_usages = sorted({category for key, category in APP_PRIVACY_USAGE_KEYS.items() if key in app})
+            if privacy_usages:
+                summary["privacy_usage_descriptions"] = privacy_usages
+                privacy_usage_counts.update(privacy_usages)
+
+            url_scheme_count = cls._url_scheme_count(app)
+            if url_scheme_count:
+                summary["url_scheme_count"] = url_scheme_count
+
+            entitlement_summary = cls._entitlement_summary(app.get("Entitlements"))
+            if entitlement_summary:
+                summary["entitlements"] = entitlement_summary
+
+            bundle_identifier = summary["bundle_identifier"]
+            if cls._is_true(app.get("IsPlaceholder")):
+                flags["has_placeholder_apps"] = True
+                findings.append(cls._finding("placeholder", "medium", bundle_identifier, application_type))
+            if cls._is_true(app.get("IsDemotedApp")):
+                flags["has_demoted_apps"] = True
+                findings.append(cls._finding("demoted", "low", bundle_identifier, application_type))
+            if cls._is_true(app.get("IsAppClip")):
+                flags["has_app_clips"] = True
+                findings.append(cls._finding("app_clip", "low", bundle_identifier, application_type))
+            if cls._is_true(app.get("UIFileSharingEnabled")):
+                flags["has_file_sharing_enabled_apps"] = True
+                findings.append(cls._finding("file_sharing_enabled", "low", bundle_identifier, application_type))
+            if cls._is_beta_app(app):
+                flags["has_beta_apps"] = True
+                findings.append(cls._finding("beta", "medium", bundle_identifier, application_type))
+            if cls._is_debuggable(app):
+                flags["has_debuggable_apps"] = True
+                findings.append(cls._finding("debuggable", "high", bundle_identifier, application_type))
+            if cls._is_non_app_store_user_app(summary):
+                flags["has_non_app_store_user_apps"] = True
+                findings.append(cls._finding("non_app_store_signer", "medium", bundle_identifier, application_type))
+
+            summaries.append(summary)
+
+        return {
+            "app_count": len(summaries),
+            "application_types": dict(sorted(application_type_counts.items())),
+            "background_modes": dict(sorted(background_mode_counts.items())),
+            "findings": findings,
+            "flags": flags,
+            "privacy_usage_descriptions": dict(sorted(privacy_usage_counts.items())),
+            "signer_identities": dict(sorted(signer_identity_counts.items())),
+            "apps": summaries,
+        }
+
+    @staticmethod
+    def _app_summary(fallback_bundle_identifier: str, app: dict) -> dict:
+        summary = {
+            output_key: app[source_key] for source_key, output_key in APP_SUMMARY_KEYS.items() if source_key in app
+        }
+        summary.setdefault("bundle_identifier", fallback_bundle_identifier)
+        return summary
+
+    @staticmethod
+    def _entitlement_summary(entitlements: Any) -> dict:
+        if not isinstance(entitlements, dict):
+            return {}
+
+        summary = {}
+        application_groups = InstallationProxyService._string_list(
+            entitlements.get("com.apple.security.application-groups")
+        )
+        associated_domains = InstallationProxyService._string_list(
+            entitlements.get("com.apple.developer.associated-domains")
+        )
+        keychain_access_groups = InstallationProxyService._string_list(entitlements.get("keychain-access-groups"))
+        if application_groups:
+            summary["application_group_count"] = len(application_groups)
+        if associated_domains:
+            summary["associated_domain_count"] = len(associated_domains)
+        if keychain_access_groups:
+            summary["keychain_access_group_count"] = len(keychain_access_groups)
+        if "aps-environment" in entitlements:
+            summary["has_aps_environment"] = True
+        if InstallationProxyService._is_true(entitlements.get("beta-reports-active")):
+            summary["beta_reports_active"] = True
+        if InstallationProxyService._is_true(entitlements.get("get-task-allow")):
+            summary["get_task_allow"] = True
+        return summary
+
+    @staticmethod
+    def _finding(category: str, severity: str, bundle_identifier: str, application_type: str) -> dict:
+        return {
+            "application_type": application_type,
+            "bundle_identifier": bundle_identifier,
+            "category": category,
+            "severity": severity,
+        }
+
+    @staticmethod
+    def _is_true(value: Any) -> bool:
+        if isinstance(value, str):
+            return value.lower() == "true"
+        return value is True
+
+    @staticmethod
+    def _is_beta_app(app: dict) -> bool:
+        entitlements = app.get("Entitlements")
+        beta_reports_active = isinstance(entitlements, dict) and InstallationProxyService._is_true(
+            entitlements.get("beta-reports-active")
+        )
+        return (
+            InstallationProxyService._is_true(app.get("BetaApp"))
+            or InstallationProxyService._is_true(app.get("IsBetaApp"))
+            or beta_reports_active
+        )
+
+    @staticmethod
+    def _is_debuggable(app: dict) -> bool:
+        entitlements = app.get("Entitlements")
+        return isinstance(entitlements, dict) and InstallationProxyService._is_true(entitlements.get("get-task-allow"))
+
+    @staticmethod
+    def _is_non_app_store_user_app(summary: dict) -> bool:
+        return (
+            summary.get("application_type") == "User"
+            and summary.get("signer_identity") is not None
+            and summary["signer_identity"] not in APP_STORE_SIGNER_IDENTITIES
+        )
+
+    @staticmethod
+    def _url_scheme_count(app: dict) -> int:
+        count = 0
+        for url_type in app.get("CFBundleURLTypes") or ():
+            if not isinstance(url_type, dict):
+                continue
+            count += len(InstallationProxyService._string_list(url_type.get("CFBundleURLSchemes")))
+        return count
+
+    @staticmethod
+    def _string_list(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, str)]

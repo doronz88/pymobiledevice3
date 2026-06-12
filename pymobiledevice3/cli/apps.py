@@ -46,6 +46,37 @@ async def apps_list(
     )
 
 
+@cli.command("audit")
+@async_command
+async def apps_audit(
+    service_provider: ServiceProviderDep,
+    app_type: Annotated[
+        Literal["System", "User", "Hidden", "Any"],
+        typer.Option(
+            "--type",
+            "-t",
+            help="Filter by application type (System/User/Hidden/Any).",
+        ),
+    ] = "Any",
+    calculate_sizes: Annotated[
+        bool,
+        typer.Option(help="Include app size information (slower)."),
+    ] = False,
+    show_placeholders: Annotated[
+        bool,
+        typer.Option(help="Include placeholder apps in the results."),
+    ] = False,
+) -> None:
+    """Summarize installed apps and audit-relevant flags."""
+    print_json(
+        await InstallationProxyService(lockdown=service_provider).get_apps_audit(
+            application_type=app_type,
+            calculate_sizes=calculate_sizes,
+            show_placeholders=show_placeholders,
+        )
+    )
+
+
 @cli.command("query")
 @async_command
 async def apps_query(

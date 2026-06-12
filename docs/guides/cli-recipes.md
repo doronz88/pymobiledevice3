@@ -43,6 +43,9 @@ pymobiledevice3 afc shell
 # List installed apps
 pymobiledevice3 apps list
 
+# Summarize installed apps and audit-relevant flags
+pymobiledevice3 apps audit --type User
+
 # Query specific app bundle IDs
 pymobiledevice3 apps query BUNDLE_ID1 BUNDLE_ID2
 
