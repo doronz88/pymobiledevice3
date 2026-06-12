@@ -32,6 +32,9 @@ pymobiledevice3 diagnostics restart
 
 # Pull crash reports
 pymobiledevice3 crash pull /path/to/crashes
+
+# Create a JSON manifest for collected artifacts
+pymobiledevice3 acquisition manifest /path/to/backup /path/to/crashes --output manifest.json
 ```
 
 ## Files, Apps, and Backup

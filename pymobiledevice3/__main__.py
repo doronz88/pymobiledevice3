@@ -98,6 +98,7 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 
 # Mapping of index options to import file names
 CLI_GROUPS = {
     "activation": "activation",
+    "acquisition": "acquisition",
     "afc": "afc",
     "amfi": "amfi",
     "apps": "apps",
