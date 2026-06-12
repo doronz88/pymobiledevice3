@@ -29,3 +29,22 @@ def test_backup_command_has_unback_option():
 
     assert result.exit_code == 0
     assert "--unback" in result.output
+
+
+def test_backup2_has_diagnose_command():
+    runner = CliRunner()
+
+    result = runner.invoke(__main__.app, ["backup2", "--help"])
+
+    assert result.exit_code == 0
+    assert "diagnose" in result.output
+
+
+def test_backup2_diagnose_help_describes_sanitized_output():
+    runner = CliRunner()
+
+    result = runner.invoke(__main__.app, ["backup2", "diagnose", "--help"])
+
+    assert result.exit_code == 0
+    assert "sanitized" in result.output
+    assert "backup readiness" in result.output

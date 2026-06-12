@@ -49,6 +49,9 @@ pymobiledevice3 apps query BUNDLE_ID1 BUNDLE_ID2
 # Full backup
 pymobiledevice3 backup2 backup --full DIRECTORY
 
+# Diagnose backup readiness without changing backup settings
+pymobiledevice3 backup2 diagnose DIRECTORY
+
 # Preserve only selected backup payloads
 pymobiledevice3 backup2 backup --only sms DIRECTORY
 pymobiledevice3 backup2 backup --only whatsapp DIRECTORY

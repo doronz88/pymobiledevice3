@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager, closing, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.keywrap import aes_key_unwrap
@@ -76,6 +76,18 @@ BACKUP_METADATA_FILES = frozenset({
     "Manifest.db-wal",
     "Status.plist",
 })
+BACKUP_DOMAIN = "com.apple.mobile.backup"
+BACKUP_DIAGNOSTIC_BOOLEAN_KEYS = {
+    "cloud_backup_enabled": "CloudBackupEnabled",
+    "requires_encryption": "RequiresEncryption",
+    "will_encrypt": "WillEncrypt",
+}
+BACKUP_DIAGNOSTIC_METADATA_FILES = (
+    "Info.plist",
+    "Manifest.plist",
+    "Manifest.db",
+    "Status.plist",
+)
 
 
 @dataclass(frozen=True)
@@ -146,10 +158,99 @@ class Mobilebackup2Service(LockdownService):
 
     async def get_will_encrypt(self) -> bool:
         try:
-            will_encrypt = await self.lockdown.get_value("com.apple.mobile.backup", "WillEncrypt")
+            will_encrypt = await self.lockdown.get_value(BACKUP_DOMAIN, "WillEncrypt")
             return bool(will_encrypt)
         except LockdownError:
             return False
+
+    async def diagnose(self, backup_directory: Union[str, Path] = ".", source: str = "") -> dict[str, Any]:
+        identifier = source or self.lockdown.udid or ""
+        return {
+            "device": self._device_diagnostics(),
+            "backup_domain": await self._backup_domain_diagnostics(),
+            "wireless_lockdown": await self._wireless_lockdown_diagnostics(),
+            "local_backup": self.diagnose_local_backup(
+                Path(backup_directory), identifier=identifier, source_provided=bool(source)
+            ),
+        }
+
+    def _device_diagnostics(self) -> dict[str, Any]:
+        all_values = self.lockdown.all_values
+        return {
+            "device_class": all_values.get("DeviceClass"),
+            "host_attached": self._bool_or_none(all_values.get("HostAttached")),
+            "password_protected": self._bool_or_none(all_values.get("PasswordProtected")),
+            "product_build_version": getattr(self.lockdown, "product_build_version", None),
+            "product_type": self.lockdown.product_type,
+            "product_version": getattr(self.lockdown, "product_version", None),
+            "trusted_host_attached": self._bool_or_none(all_values.get("TrustedHostAttached")),
+        }
+
+    async def _backup_domain_diagnostics(self) -> dict[str, Any]:
+        diagnostics = {
+            key: self._bool_or_none(await self._get_backup_domain_value(lockdown_key))
+            for key, lockdown_key in BACKUP_DIAGNOSTIC_BOOLEAN_KEYS.items()
+        }
+        diagnostics["version"] = await self._get_backup_domain_value("Version")
+        return diagnostics
+
+    async def _wireless_lockdown_diagnostics(self) -> dict[str, Optional[bool]]:
+        try:
+            enable_wifi_connections = await self.lockdown.get_enable_wifi_connections()
+        except LockdownError:
+            enable_wifi_connections = None
+        return {"enable_wifi_connections": self._bool_or_none(enable_wifi_connections)}
+
+    async def _get_backup_domain_value(self, key: str) -> Any:
+        try:
+            return await self.lockdown.get_value(BACKUP_DOMAIN, key)
+        except LockdownError:
+            return None
+
+    @classmethod
+    def diagnose_local_backup(cls, backup_directory: Path, identifier: str, source_provided: bool = False) -> dict:
+        backup_directory_exists = backup_directory.exists()
+        backup_directory_is_dir = backup_directory.is_dir()
+        source_directories = (
+            [path for path in backup_directory.iterdir() if path.is_dir()] if backup_directory_is_dir else []
+        )
+        source_directory = backup_directory / identifier if identifier else None
+        metadata = {
+            name: cls._diagnose_local_file(source_directory / name if source_directory else None)
+            for name in BACKUP_DIAGNOSTIC_METADATA_FILES
+        }
+        metadata_complete_for_incremental = all(
+            file_diagnostics["is_file"] and bool(file_diagnostics["size"]) for file_diagnostics in metadata.values()
+        )
+
+        return {
+            "available_source_count": len(source_directories),
+            "backup_directory_exists": backup_directory_exists,
+            "backup_directory_is_dir": backup_directory_is_dir,
+            "metadata": metadata,
+            "metadata_complete_for_incremental": metadata_complete_for_incremental,
+            "source_directory_exists": bool(source_directory and source_directory.exists()),
+            "source_directory_is_dir": bool(source_directory and source_directory.is_dir()),
+            "source_selection": "provided" if source_provided else "current_device",
+        }
+
+    @staticmethod
+    def _diagnose_local_file(path: Optional[Path]) -> dict[str, Any]:
+        if path is None:
+            return {"exists": False, "is_file": False, "size": None}
+        exists = path.exists()
+        is_file = path.is_file()
+        return {
+            "exists": exists,
+            "is_file": is_file,
+            "size": path.stat().st_size if exists and is_file else None,
+        }
+
+    @staticmethod
+    def _bool_or_none(value: Any) -> Optional[bool]:
+        if value is None:
+            return None
+        return bool(value)
 
     async def backup(
         self,

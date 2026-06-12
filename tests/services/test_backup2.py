@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import struct
 import time
@@ -8,10 +9,11 @@ from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
-from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError
+from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError, LockdownError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.mobilebackup2 import (
+    BACKUP_DIAGNOSTIC_METADATA_FILES,
     BACKUP_OBSERVED_NOTIFICATIONS,
     BACKUP_SELECTIONS,
     NP_LOCAL_AUTH_DISMISSED,
@@ -131,6 +133,120 @@ async def test_observe_backup_notifications_registers_passcode_and_backup_notifi
     notification_proxy.notify_register_dispatch.assert_has_awaits([
         call(notification) for notification in BACKUP_OBSERVED_NOTIFICATIONS
     ])
+
+
+def test_diagnose_local_backup_reports_metadata_state_without_identifier(tmp_path: Path) -> None:
+    source_identifier = "secret-udid"
+    device_directory = tmp_path / source_identifier
+    device_directory.mkdir()
+    for file_name in BACKUP_DIAGNOSTIC_METADATA_FILES:
+        (device_directory / file_name).write_bytes(b"metadata")
+
+    result = Mobilebackup2Service.diagnose_local_backup(tmp_path, identifier=source_identifier)
+
+    assert result["available_source_count"] == 1
+    assert result["backup_directory_exists"]
+    assert result["source_directory_exists"]
+    assert result["metadata_complete_for_incremental"]
+    assert "secret-udid" not in json.dumps(result)
+
+
+def test_diagnose_local_backup_reports_incomplete_metadata(tmp_path: Path) -> None:
+    device_directory = tmp_path / "source"
+    device_directory.mkdir()
+    (device_directory / "Info.plist").write_bytes(b"metadata")
+    (device_directory / "Manifest.plist").touch()
+
+    result = Mobilebackup2Service.diagnose_local_backup(tmp_path, identifier="source", source_provided=True)
+
+    assert result["source_selection"] == "provided"
+    assert not result["metadata_complete_for_incremental"]
+    assert result["metadata"]["Info.plist"] == {
+        "exists": True,
+        "is_file": True,
+        "size": len(b"metadata"),
+    }
+    assert result["metadata"]["Manifest.plist"] == {
+        "exists": True,
+        "is_file": True,
+        "size": 0,
+    }
+    assert result["metadata"]["Manifest.db"] == {
+        "exists": False,
+        "is_file": False,
+        "size": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_diagnose_reports_sanitized_device_and_backup_status(tmp_path: Path) -> None:
+    lockdown = Mock()
+    lockdown.udid = "secret-udid"
+    lockdown.product_type = "iPhone16,2"
+    lockdown.product_version = "26.5"
+    lockdown.product_build_version = "23F77"
+    lockdown.all_values = {
+        "DeviceClass": "iPhone",
+        "HostAttached": True,
+        "PasswordProtected": False,
+        "TrustedHostAttached": True,
+    }
+    lockdown.get_enable_wifi_connections = AsyncMock(return_value=True)
+    lockdown.get_value = AsyncMock(
+        side_effect=lambda domain, key: {
+            ("com.apple.mobile.backup", "CloudBackupEnabled"): False,
+            ("com.apple.mobile.backup", "RequiresEncryption"): 0,
+            ("com.apple.mobile.backup", "WillEncrypt"): True,
+            ("com.apple.mobile.backup", "Version"): "2.0",
+        }[(domain, key)]
+    )
+    service = object.__new__(Mobilebackup2Service)
+    service.lockdown = lockdown
+
+    result = await service.diagnose(tmp_path)
+
+    assert result["device"] == {
+        "device_class": "iPhone",
+        "host_attached": True,
+        "password_protected": False,
+        "product_build_version": "23F77",
+        "product_type": "iPhone16,2",
+        "product_version": "26.5",
+        "trusted_host_attached": True,
+    }
+    assert result["backup_domain"] == {
+        "cloud_backup_enabled": False,
+        "requires_encryption": False,
+        "will_encrypt": True,
+        "version": "2.0",
+    }
+    assert result["wireless_lockdown"] == {"enable_wifi_connections": True}
+    assert "secret-udid" not in json.dumps(result)
+
+
+@pytest.mark.asyncio
+async def test_diagnose_tolerates_unavailable_optional_lockdown_values(tmp_path: Path) -> None:
+    lockdown = Mock()
+    lockdown.udid = "secret-udid"
+    lockdown.product_type = None
+    lockdown.product_version = None
+    lockdown.product_build_version = None
+    lockdown.all_values = {}
+    lockdown.get_enable_wifi_connections = AsyncMock(side_effect=LockdownError("missing"))
+    lockdown.get_value = AsyncMock(side_effect=LockdownError("missing"))
+    service = object.__new__(Mobilebackup2Service)
+    service.lockdown = lockdown
+
+    result = await service.diagnose(tmp_path)
+
+    assert result["backup_domain"] == {
+        "cloud_backup_enabled": None,
+        "requires_encryption": None,
+        "will_encrypt": None,
+        "version": None,
+    }
+    assert result["wireless_lockdown"] == {"enable_wifi_connections": None}
+    assert "secret-udid" not in json.dumps(result)
 
 
 def test_log_backup_notification_surfaces_passcode_prompt_to_operator() -> None:

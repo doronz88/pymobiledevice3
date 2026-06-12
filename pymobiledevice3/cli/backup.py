@@ -9,7 +9,7 @@ from click import Context
 from tqdm import tqdm
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
 from pymobiledevice3.services.mobilebackup2 import BACKUP_SELECTIONS, Mobilebackup2Service
 
 logger = logging.getLogger(__name__)
@@ -194,6 +194,22 @@ async def restore(
                 source=source,
                 skip_apps=skip_apps,
             )
+
+
+@cli.command()
+@async_command
+async def diagnose(
+    service_provider: ServiceProviderDep,
+    backup_directory: BackupDirectoryArg = Path("."),
+    source: SourceOption = "",
+) -> None:
+    """
+    Print sanitized backup readiness diagnostics.
+
+    The output avoids device identifiers and inspects local backup metadata without changing backup settings.
+    """
+    backup_client = Mobilebackup2Service(service_provider)
+    print_json(await backup_client.diagnose(backup_directory=str(backup_directory), source=source), colored=False)
 
 
 @cli.command()
