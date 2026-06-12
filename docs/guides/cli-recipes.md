@@ -40,6 +40,12 @@ pymobiledevice3 crash pull /path/to/crashes
 # Open AFC shell (media directory)
 pymobiledevice3 afc shell
 
+# Request a compressed CPIO archive from the legacy file_relay service
+# iOS 8.0 and newer normally restrict or remove this service; use
+# --allow-unsupported only when intentionally testing an unsupported device.
+pymobiledevice3 file-relay list-sources
+pymobiledevice3 file-relay request --source CrashReporter --source WiFi file_relay.cpio.gz
+
 # List installed apps
 pymobiledevice3 apps list
 

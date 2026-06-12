@@ -28,6 +28,7 @@ __all__ = [
     "ExtractingStackshotError",
     "FatalPairingError",
     "FeatureNotSupportedError",
+    "FileRelayError",
     "GetProhibitedError",
     "IRecvError",
     "IRecvNoDeviceConnectedError",
@@ -110,6 +111,12 @@ class PasswordRequiredError(PairingError):
 
 class BackupFilterPasswordRequiredError(PyMobileDevice3Exception):
     pass
+
+
+class FileRelayError(PyMobileDevice3Exception):
+    def __init__(self, message: str, response: Optional[dict] = None) -> None:
+        super().__init__(message)
+        self.response = response
 
 
 class StartServiceError(PyMobileDevice3Exception):

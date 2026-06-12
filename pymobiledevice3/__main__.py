@@ -107,6 +107,7 @@ CLI_GROUPS = {
     "crash": "crash",
     "developer": "developer",
     "diagnostics": "diagnostics",
+    "file-relay": "file_relay",
     "lockdown": "lockdown",
     "mounter": "mounter",
     "notification": "notification",
