@@ -120,6 +120,33 @@ def test_should_preserve_backup_file_keeps_metadata() -> None:
     assert Mobilebackup2Service.should_preserve_backup_file("Manifest.db", "ignored", None)
 
 
+def test_should_do_full_backup_when_incremental_metadata_is_missing(tmp_path: Path) -> None:
+    assert Mobilebackup2Service._should_do_full_backup(False, tmp_path) is True
+
+
+def test_should_do_incremental_backup_when_metadata_exists(tmp_path: Path) -> None:
+    for filename in ("Manifest.plist", "Manifest.db", "Status.plist"):
+        (tmp_path / filename).write_text("data")
+
+    assert Mobilebackup2Service._should_do_full_backup(False, tmp_path) is False
+
+
+def test_should_do_full_backup_when_incremental_metadata_is_empty(tmp_path: Path) -> None:
+    (tmp_path / "Manifest.plist").write_text("")
+    (tmp_path / "Manifest.db").write_text("data")
+    (tmp_path / "Status.plist").write_text("data")
+
+    assert Mobilebackup2Service._should_do_full_backup(False, tmp_path) is True
+
+
+def test_should_do_full_backup_when_explicit_or_filtered(tmp_path: Path) -> None:
+    for filename in ("Manifest.plist", "Manifest.db", "Status.plist"):
+        (tmp_path / filename).write_text("data")
+
+    assert Mobilebackup2Service._should_do_full_backup(True, tmp_path) is True
+    assert Mobilebackup2Service._should_do_full_backup(False, tmp_path, filter_callback=lambda _file: True) is True
+
+
 @pytest.mark.asyncio
 async def test_observe_backup_notifications_registers_passcode_and_backup_notifications() -> None:
     notification_proxy = Mock()

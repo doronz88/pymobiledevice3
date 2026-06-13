@@ -76,6 +76,7 @@ BACKUP_METADATA_FILES = frozenset({
     "Manifest.db-wal",
     "Status.plist",
 })
+INCREMENTAL_BACKUP_REQUIRED_FILES = ("Manifest.plist", "Manifest.db", "Status.plist")
 
 
 @dataclass(frozen=True)
@@ -170,10 +171,10 @@ class Mobilebackup2Service(LockdownService):
         :param unback: Also unpack the completed backup locally using pyiosbackup.
         The function shall receive the percentage as a parameter.
         """
-        full = full or filter_callback is not None
         backup_directory = Path(backup_directory)
         device_directory = backup_directory / self.lockdown.udid
         device_directory.mkdir(exist_ok=True, mode=0o755, parents=True)
+        full = self._should_do_full_backup(full, device_directory, filter_callback)
 
         if filter_callback is not None and not password and await self.get_will_encrypt():
             raise BackupFilterPasswordRequiredError(
@@ -229,6 +230,22 @@ class Mobilebackup2Service(LockdownService):
                 notification_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await notification_task
+
+    @classmethod
+    def _should_do_full_backup(
+        cls,
+        full: bool,
+        device_directory: Path,
+        filter_callback: Optional[BackupFilterCallback] = None,
+    ) -> bool:
+        return full or filter_callback is not None or not cls._has_incremental_backup_metadata(device_directory)
+
+    @staticmethod
+    def _has_incremental_backup_metadata(device_directory: Path) -> bool:
+        return all(
+            (device_directory / filename).is_file() and (device_directory / filename).stat().st_size > 0
+            for filename in INCREMENTAL_BACKUP_REQUIRED_FILES
+        )
 
     async def _observe_backup_notifications(self, notification_proxy: NotificationProxyService) -> None:
         for notification in BACKUP_OBSERVED_NOTIFICATIONS:

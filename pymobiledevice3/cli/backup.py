@@ -87,7 +87,11 @@ async def backup(
     full: Annotated[
         bool,
         typer.Option(
-            help="Whether to do a full backup. If full is True, any previous backup attempts will be discarded.",
+            help=(
+                "Force a full backup and discard previous local backup state. "
+                "By default, backup is incremental when valid local metadata exists, "
+                "and automatically becomes full for an empty or incomplete backup directory."
+            ),
         ),
     ] = False,
     only: BackupSelectionOption = None,
