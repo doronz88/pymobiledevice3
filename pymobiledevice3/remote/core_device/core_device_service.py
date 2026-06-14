@@ -21,7 +21,7 @@ CORE_DEVICE_VERSION = _generate_core_device_version_dict("629.3")
 class CoreDeviceService(RemoteService):
     async def invoke(
         self,
-        feature_identifier: str,
+        feature_identifier: Optional[str] = None,
         input_: Optional[dict] = None,
         action_identifier: Optional[str] = None,
     ) -> Any:
@@ -29,13 +29,14 @@ class CoreDeviceService(RemoteService):
             input_ = {}
         request = {
             "CoreDevice.CoreDeviceDDIProtocolVersion": XpcInt64Type(2),
-            "CoreDevice.action": {},
             "CoreDevice.coreDeviceVersion": CORE_DEVICE_VERSION,
             "CoreDevice.deviceIdentifier": str(uuid.uuid4()),
-            "CoreDevice.featureIdentifier": feature_identifier,
             "CoreDevice.input": input_,
             "CoreDevice.invocationIdentifier": str(uuid.uuid4()),
         }
+        if feature_identifier is not None:
+            request["CoreDevice.featureIdentifier"] = feature_identifier
+            request["CoreDevice.action"] = {}
         if action_identifier is not None:
             request["CoreDevice.actionIdentifier"] = action_identifier
         response = await self.service.send_receive_request(request)
