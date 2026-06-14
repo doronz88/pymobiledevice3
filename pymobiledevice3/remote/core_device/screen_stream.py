@@ -155,10 +155,11 @@ def hevc_codec_string_from_sps(sps_nal: bytes) -> str:
 # WebCodecs uses the OS hardware HEVC decoder (VideoToolbox on macOS / Media
 # Foundation on Windows) so playback latency is minimal and there's no external
 # ffmpeg/ffplay/VLC needed.
-# Non-ASCII glyphs (emoji button labels) require a str literal --
-# bytes literals are ASCII-only. We encode once to UTF-8 below so the
-# rest of the file's .replace() / len() byte ops keep working as-is.
-VIEWER_HTML = rb"""<!doctype html>
+# Non-ASCII glyphs (← / → arrows on the swipe buttons, plus em-dashes
+# in JS comments) require a str literal -- bytes literals are
+# ASCII-only. Encoded to UTF-8 at the end of the template so the rest
+# of the file's .replace() / len() byte ops keep working as-is.
+VIEWER_HTML = r"""<!doctype html>
 <html><head><meta charset="utf-8"><title>iPhone screen</title>
 <style>
  body{margin:0;background:#111;color:#ccc;font-family:system-ui;
@@ -217,7 +218,9 @@ VIEWER_HTML = rb"""<!doctype html>
  </div>
 </div>
 <div id="bottom-row">
+ <button class="btn" data-swipe="left" title="Swipe left across the middle of the screen">Swipe ←</button>
  <button class="btn" data-btn="home" title="Ctrl+H">Home</button>
+ <button class="btn" data-swipe="right" title="Swipe right across the middle of the screen">Swipe →</button>
 </div>
 <div id="util-tray">
  <button class="btn" id="sound-toggle" type="button">Enable Sound</button>
@@ -301,6 +304,31 @@ document.querySelectorAll('button[data-btn]').forEach(btn => {
         const name = btn.dataset.btn;
         postJson('/button', {name, state: 'press'}).then(() => log('button: ' + name));
     });
+});
+
+// Swipe synthesis: contact at the start edge, 10 intermediate
+// contacts along the path, release at the end edge. ~200 ms total
+// is in the same ballpark as a finger swipe, so iOS recognises it
+// as a real gesture (faster gets misread as a flick + page snap,
+// slower as a drag). Y stays at the vertical midpoint; X sweeps
+// nearly edge-to-edge.
+async function swipe(direction) {
+    const yMid = 32768;
+    const xStart = direction === 'left' ? 60000 : 5000;
+    const xEnd   = direction === 'left' ? 5000  : 60000;
+    const steps = 10;
+    const dt = 20;  // ms between samples
+    await postJson('/touch', {type: 'contact', x: xStart, y: yMid});
+    for (let i = 1; i <= steps; i++) {
+        const x = Math.round(xStart + (xEnd - xStart) * (i / steps));
+        await new Promise(r => setTimeout(r, dt));
+        await postJson('/touch', {type: 'contact', x, y: yMid});
+    }
+    await postJson('/touch', {type: 'release', x: xEnd, y: yMid});
+    log('swipe ' + direction);
+}
+document.querySelectorAll('button[data-swipe]').forEach(btn => {
+    btn.addEventListener('click', () => swipe(btn.dataset.swipe));
 });
 
 // Ctrl-hotkeys mirroring serve-vnc's _CTRL_COMBO_TO_HID:
@@ -679,7 +707,7 @@ async function run() {
 run().catch(e => log('fatal: ' + e.message));
 </script>
 </body></html>
-"""
+""".encode()
 
 
 # ---------------------------------------------------------------------------
