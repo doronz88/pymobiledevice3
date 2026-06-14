@@ -36,6 +36,7 @@ from pymobiledevice3.remote.core_device.aac_eld import AACELDDecoder
 from pymobiledevice3.remote.core_device.audio_player import AudioQueuePlayer
 from pymobiledevice3.remote.core_device.display_service import DisplayService
 from pymobiledevice3.remote.core_device.hevc_phantom import build_phantoms_for_bootstrap
+from pymobiledevice3.remote.core_device.hevc_rps import HevcRpsTracker, is_slice_nal
 from pymobiledevice3.remote.core_device.hid_service import (
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     HID_BUTTON_STATE_DOWN,
@@ -226,6 +227,14 @@ class VncStreamServer:
         # corrupted, leaving the decoder stuck on stale references.
         self._keyframe_required = False
         self._idr_observed = False
+        # Pre-decode reference-picture-set tracker. Parses incoming
+        # slice headers and reports when a P-slice references a POC
+        # we never saw -- the decoder will silently conceal that
+        # frame (the visible tear). Firing PLI on this signal is
+        # one full frame ahead of waiting for VT to surface a
+        # decode error, and catches the silent-conceal case where
+        # VT never errors at all.
+        self._rps_tracker = HevcRpsTracker()
         # Suppress decode errors for this long after we feed an IDR --
         # the VT queue may still hold pre-IDR P-frames that error
         # against the freshly reset reference set, which is expected
@@ -375,6 +384,7 @@ class VncStreamServer:
                     cached_vps = bytes(nal)
                 elif nt == _HEVC_NAL_SPS:
                     cached_sps = bytes(nal)
+                    self._rps_tracker.feed_sps(cached_sps)
                 elif nt == _HEVC_NAL_PPS:
                     cached_pps = bytes(nal)
                 elif _is_key_nal(nt):
@@ -397,6 +407,14 @@ class VncStreamServer:
                             self._transcoder.close()
                         self._transcoder = None
                         self._refresh_pending = False
+                        # Drop the RPS DPB shadow with the decoder. A
+                        # rebuilt VT only has the next IDR's POC in
+                        # its DPB; old POCs are gone. If we kept the
+                        # tracker's seen set, false-negatives would
+                        # silently let a P-slice referencing a
+                        # pre-rebuild POC slip past the pre-decode
+                        # check straight into a guaranteed tear.
+                        self._rps_tracker.reset()
                         # Sticky-keyframe IDR observation: the new
                         # transcoder built below will be seeded by
                         # this very IDR. Stamp the grace window now
@@ -455,9 +473,40 @@ class VncStreamServer:
                     # transcoder any more deltas -- they'd just compound
                     # the LTRP staleness we're trying to escape.
                     if self._transcoder is not None and not self._refresh_pending:
+                        # Pre-decode RPS check: parse the first slice
+                        # NAL's short-term RPS. If any used-by-curr
+                        # reference points to a POC we never saw, the
+                        # decoder will silently conceal -- fire PLI
+                        # now and skip the guaranteed-tear feed.
+                        # ``check_slice`` also stamps the POC parser
+                        # state regardless of outcome.
+                        slice_nal = next(
+                            (n for n in current_au if is_slice_nal((n[0] >> 1) & 0x3F)),
+                            None,
+                        )
+                        missing: set[int] = set()
+                        if slice_nal is not None:
+                            missing = self._rps_tracker.check_slice(slice_nal)
+                        if missing and not au_is_key:
+                            logger.info(
+                                "rps: P-slice references missing POCs %s -- pre-decode PLI",
+                                sorted(missing),
+                            )
+                            self._on_decode_error()
+                            if self._refresh_pending:
+                                current_au = []
+                                au_is_key = False
+                                au_corrupt = False
+                                rtp_packets += 1
+                                continue
                         annexb = b"".join(b"\x00\x00\x00\x01" + nal for nal in current_au)
                         self._transcoder.feed(annexb)
                         feed_count += 1
+                        # Add this slice's POC to the DPB shadow so
+                        # later slices can reference it. For IDRs
+                        # this stamps POC=0; for P-slices it stamps
+                        # the derived POC from check_slice above.
+                        self._rps_tracker.commit_decoded()
                         # Sticky-keyframe IDR observation: half of the
                         # two-condition clear (the other half is a
                         # clean decoded frame, handled in
