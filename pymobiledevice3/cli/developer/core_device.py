@@ -818,6 +818,17 @@ async def core_device_display_serve_vnc(
             help="Play device audio out the host Mac's speakers (off by default).",
         ),
     ] = False,
+    decoder: Annotated[
+        str,
+        typer.Option(
+            "--decoder",
+            help=(
+                "HEVC decoder: 'auto' (VideoToolbox on macOS, libav elsewhere), "
+                "'vt' (force VideoToolbox -- macOS only), or 'av' (force libav / PyAV). "
+                "Forcing 'av' on macOS comes with audio choppiness from GIL contention."
+            ),
+        ),
+    ] = "auto",
 ) -> None:
     """Serve the device's screen as a VNC (RFB 3.8) server.
 
@@ -827,11 +838,11 @@ async def core_device_display_serve_vnc(
     involved -- the OS's native screen-sharing renders the framebuffer
     directly.
 
-    Pipeline: device HEVC -> VideoToolbox decode (BGRA output) ->
-    RFB Raw framebuffer updates. No JPEG round-trip; the bytes that
-    came out of the HW decoder go straight onto the wire. Mouse clicks
-    in the screen-sharing window translate to HID touch events on the
-    device.
+    Pipeline: device HEVC -> VideoToolbox (macOS) or libav (cross-platform)
+    decode (BGRA output) -> RFB Raw framebuffer updates. No JPEG
+    round-trip; the bytes that came out of the decoder go straight onto
+    the wire. Mouse clicks in the screen-sharing window translate to HID
+    touch events on the device.
 
     Audio: pass ``--audio`` to decode the device's AAC-ELD audio
     stream and play it through the host Mac's speakers (RFB has no
@@ -843,6 +854,7 @@ async def core_device_display_serve_vnc(
         port=port,
         display_id=display_id,
         audio=audio,
+        decoder=decoder,
     )
     await server.serve()
 

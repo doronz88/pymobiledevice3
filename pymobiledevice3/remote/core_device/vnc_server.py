@@ -28,6 +28,7 @@ import logging
 import os
 import socket
 import struct
+import sys
 import uuid
 from collections import deque
 from typing import Optional
@@ -47,10 +48,39 @@ from pymobiledevice3.remote.core_device.hid_service import (
     UniversalHIDServiceService,
 )
 from pymobiledevice3.remote.core_device.screen_stream import depacketize_hevc
-from pymobiledevice3.remote.core_device.vt_jpeg import HevcToBgraTranscoder
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_decoder(choice: str):
+    """Pick the HEVC decoder class.
+
+    ``choice`` is one of ``"auto"`` (VideoToolbox on macOS, libav
+    everywhere else), ``"vt"`` (force VideoToolbox), or ``"av"``
+    (force libav / PyAV). ``PYMD3_HEVC_DECODER=av`` overrides
+    ``"auto"`` for parity with the CLI flag.
+
+    Both classes expose the same ``feed`` / ``on_frame`` /
+    ``on_decode_error`` / ``width`` / ``height`` / ``close`` surface so
+    the recv loop below doesn't branch on the choice.
+    """
+    choice = (choice or "auto").lower()
+    if choice == "auto":
+        if os.environ.get("PYMD3_HEVC_DECODER", "").lower() == "av":
+            choice = "av"
+        else:
+            choice = "vt" if sys.platform == "darwin" else "av"
+    if choice == "vt":
+        from pymobiledevice3.remote.core_device.vt_jpeg import HevcToBgraTranscoder
+
+        return HevcToBgraTranscoder
+    if choice == "av":
+        from pymobiledevice3.remote.core_device.hevc_av import HevcToBgraTranscoder
+
+        return HevcToBgraTranscoder
+    raise ValueError(f"unknown decoder choice: {choice!r}")
+
 
 _HEVC_NAL_IDR_W_RADL = 19
 _HEVC_NAL_IDR_N_LP = 20
@@ -170,6 +200,7 @@ class VncStreamServer:
         port: int = 5901,
         display_id: int = 1,
         audio: bool = False,
+        decoder: str = "auto",
     ) -> None:
         self._rsd = rsd
         self._bind = bind
@@ -177,6 +208,8 @@ class VncStreamServer:
         self._display_id = display_id
         self._audio_enabled = audio
         self._sender_ip = rsd.service.address[0]
+        self._transcoder_cls = _resolve_decoder(decoder)
+        logger.info("HEVC decoder: %s", self._transcoder_cls.__module__)
 
         # Filled once we have a decoder + first frame.
         self._fb_width = 0
@@ -187,7 +220,7 @@ class VncStreamServer:
         self._latest_frame: Optional[bytes] = None
 
         self._clients: set[_VncClient] = set()
-        self._transcoder: Optional[HevcToBgraTranscoder] = None
+        self._transcoder = None  # type: ignore[assignment]
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._frames_emitted = 0
 
@@ -434,7 +467,7 @@ class VncStreamServer:
                         and cached_pps is not None
                     ):
                         try:
-                            self._transcoder = HevcToBgraTranscoder(
+                            self._transcoder = self._transcoder_cls(
                                 cached_vps,
                                 cached_sps,
                                 cached_pps,
