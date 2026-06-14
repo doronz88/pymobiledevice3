@@ -515,6 +515,13 @@ async function run() {
                 fetch('/restart', {method: 'POST', cache: 'no-store'})
                     .then(r => log('auto restart: HTTP ' + r.status))
                     .catch(err => log('auto restart err: ' + err.message));
+            } else {
+                // Post-bootstrap decode error: kick the device for a
+                // fresh IDR via the lightweight /pli path (no full
+                // session restart). The next IDR triggers the
+                // `needsResync` rebuild below in the data loop.
+                fetch('/pli', {method: 'POST', cache: 'no-store'})
+                    .catch(err => log('/pli err: ' + err.message));
             }
         },
     });
@@ -1856,6 +1863,23 @@ class ScreenStreamServer:
             await writer.drain()
             writer.close()
             return
+        if path == "/pli":
+            # Lightweight recovery: ask the device for a fresh IDR via
+            # RTCP PLI and mark all subscribers as needing a key, but
+            # DO NOT restart the DisplayService session. ``/restart``
+            # tears down + re-RPCs the whole pipeline (~several
+            # seconds, several-MB IDR burst); ``/pli`` is a single
+            # RTCP packet and the new IDR arrives in ~100-300 ms.
+            # The browser's decode-error handler hits this when
+            # WebCodecs throws post-bootstrap, instead of waiting for
+            # the next ``_decoder_refresh_loop`` tick.
+            loop = asyncio.get_running_loop()
+            if self._active_service is not None and self._rtcp_dest is not None:
+                self._fire_decoder_refresh(loop.time(), reason="browser-pli")
+            writer.write(b"HTTP/1.1 202 Accepted\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            await writer.drain()
+            writer.close()
+            return
         if path == "/audio.bin":
             # Up-front dep check so the browser doesn't silently see "0
             # samples" when av/numpy aren't installed (the old failure
@@ -2017,9 +2041,14 @@ class ScreenStreamServer:
         a system animation). Idle is ~30-60 KB/s, motion is 150+ KB/s.
 
         Triggers:
-        1. Motion settled: AU byte rate dropped below the threshold
+        1. Active: motion is currently happening and ``active_interval``
+           has passed since the last refresh. Without this, tears
+           accumulate the entire time the user is interacting; the next
+           refresh wouldn't come until motion ends + settle_delay or
+           the heartbeat fires (up to 10 s later).
+        2. Motion settled: AU byte rate dropped below the threshold
            AFTER having been above it, and ``settle_delay`` has passed.
-        2. Heartbeat: max ``heartbeat`` seconds between refreshes as a
+        3. Heartbeat: max ``heartbeat`` seconds between refreshes as a
            safety net for slow-creeping tears that don't correlate with
            our motion signal.
 
@@ -2028,6 +2057,7 @@ class ScreenStreamServer:
         """
         loop = asyncio.get_running_loop()
         motion_threshold_bps = 100_000  # 100 KB/s = motion
+        active_interval = 1.5  # fire this often during sustained motion
         settle_delay = 0.4  # wait after motion ends before refresh
         heartbeat = 10.0  # max between refreshes when idle
         min_interval = 1.0  # don't fire more often than this
@@ -2053,11 +2083,13 @@ class ScreenStreamServer:
             since_refresh = now - self._last_refresh_t
             if since_refresh < min_interval:
                 continue
+            active = currently_active and since_refresh >= active_interval
             settled = self._motion_ended_t > self._last_refresh_t and (now - self._motion_ended_t) >= settle_delay
             heartbeat_due = since_refresh >= heartbeat
-            if not (settled or heartbeat_due):
+            if not (active or settled or heartbeat_due):
                 continue
-            self._fire_decoder_refresh(now, reason="settled" if settled else "heartbeat")
+            reason = "active" if active else ("settled" if settled else "heartbeat")
+            self._fire_decoder_refresh(now, reason=reason)
 
     def _fire_decoder_refresh(self, now: float, *, reason: str) -> None:
         for q, state in self._subscribers.items():
