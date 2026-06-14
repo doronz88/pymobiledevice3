@@ -215,6 +215,25 @@ class VncStreamServer:
         # accumulate MORE stale state while waiting for the IDR.
         self._refresh_pending = False
 
+        # Decoder-error sticky keyframe-required state (ported from
+        # iSharScreen's FrameQualityGate -- the libwebrtc two-condition
+        # pattern). Motion-based refresh handles the "torn frame, no
+        # error reported" case; this handles the converse "VT reported
+        # a decode failure, recover before the stream silently freezes."
+        # Cleared only when BOTH a fresh IDR was fed AND a clean frame
+        # decoded post-IDR -- guards against the silent-freeze failure
+        # where the IDR response to our PLI is itself lost or arrives
+        # corrupted, leaving the decoder stuck on stale references.
+        self._keyframe_required = False
+        self._idr_observed = False
+        # Suppress decode errors for this long after we feed an IDR --
+        # the VT queue may still hold pre-IDR P-frames that error
+        # against the freshly reset reference set, which is expected
+        # drain noise, not a real recovery failure.
+        self._idr_observed_at: float = 0.0
+        self._fir_attempts: int = 0
+        self._cap_warned: bool = False
+
         # Audio state -- mirrors screen_stream.py's audio side.
         # Decoded PCM goes straight to the host's speakers via the
         # AudioQueuePlayer; nothing is broadcast over RFB (RFB has no
@@ -246,6 +265,38 @@ class VncStreamServer:
             return
         loop.call_soon_threadsafe(self._broadcast_frame, bgra)
 
+    def _on_decode_error_from_worker(self) -> None:
+        """Worker-thread hook for VT decode failures / FrameDropped."""
+        loop = self._loop
+        if loop is None:
+            return
+        loop.call_soon_threadsafe(self._on_decode_error)
+
+    def _on_decode_error(self) -> None:
+        """Loop-thread handler. Promotes a decode error into the sticky
+        keyframe-required state and arms a refresh, subject to the
+        post-IDR grace window and the existing ``_refresh_pending``
+        gate (don't double-arm an in-flight recovery)."""
+        loop = self._loop
+        if loop is None:
+            return
+        now = loop.time()
+        # Post-IDR grace: errors right after we fed an IDR are almost
+        # always queued pre-IDR P-frames decoding against the freshly
+        # reset reference set. Suppress them so they don't trigger
+        # back-to-back PLI storms. 500 ms covers the typical drain.
+        if self._idr_observed_at > 0.0 and (now - self._idr_observed_at) < 0.5:
+            return
+        if self._refresh_pending:
+            return  # already armed; let the IDR land first
+        if self._keyframe_required:
+            # Already in recovery -- the periodic re-arm in
+            # _decoder_refresh_loop handles further PLI attempts.
+            return
+        self._keyframe_required = True
+        self._idr_observed = False
+        self._fire_decoder_refresh(now, reason="decode-error")
+
     def _broadcast_frame(self, bgra: bytes) -> None:
         self._latest_frame = bgra
         self._frames_emitted += 1
@@ -253,6 +304,17 @@ class VncStreamServer:
             self._fb_width = self._transcoder.width
             self._fb_height = self._transcoder.height
             self._ready.set()
+        # Sticky-keyframe two-condition clear: a clean decoded frame
+        # only counts as "recovered" if we already saw the IDR fed
+        # for this recovery cycle. Without `_idr_observed` we'd
+        # false-clear on a pre-IDR P-frame that happened to decode
+        # without an API error.
+        if self._keyframe_required and self._idr_observed:
+            self._keyframe_required = False
+            self._idr_observed = False
+            self._fir_attempts = 0
+            self._cap_warned = False
+            logger.info("decode recovered (IDR + clean frame)")
         for c in self._clients:
             c.wants_update.set()
 
@@ -335,6 +397,16 @@ class VncStreamServer:
                             self._transcoder.close()
                         self._transcoder = None
                         self._refresh_pending = False
+                        # Sticky-keyframe IDR observation: the new
+                        # transcoder built below will be seeded by
+                        # this very IDR. Stamp the grace window now
+                        # so the new VT's first few frames aren't
+                        # treated as fresh decode errors, and arm
+                        # the IDR-observed half of the two-condition
+                        # clear if recovery was in progress.
+                        self._idr_observed_at = loop.time()
+                        if self._keyframe_required:
+                            self._idr_observed = True
                         logger.info("decoder rebuilt on fresh IDR")
                     if (
                         self._transcoder is None
@@ -349,6 +421,7 @@ class VncStreamServer:
                                 cached_sps,
                                 cached_pps,
                                 on_frame=self._on_frame_from_worker,
+                                on_decode_error=self._on_decode_error_from_worker,
                             )
                             logger.info(
                                 "VT transcoder started: HEVC %dx%d -> BGRA",
@@ -385,6 +458,17 @@ class VncStreamServer:
                         annexb = b"".join(b"\x00\x00\x00\x01" + nal for nal in current_au)
                         self._transcoder.feed(annexb)
                         feed_count += 1
+                        # Sticky-keyframe IDR observation: half of the
+                        # two-condition clear (the other half is a
+                        # clean decoded frame, handled in
+                        # ``_broadcast_frame``). Also stamps the
+                        # post-IDR grace window so the in-flight
+                        # pre-IDR P-frames in VT's queue don't
+                        # re-trigger ``_on_decode_error``.
+                        if au_is_key:
+                            self._idr_observed_at = loop.time()
+                            if self._keyframe_required:
+                                self._idr_observed = True
                 current_au = []
                 au_is_key = False
                 au_corrupt = False
@@ -482,6 +566,18 @@ class VncStreamServer:
         settle_delay = 0.4  # wait after motion ends
         heartbeat = 10.0  # max between refreshes when idle
         min_interval = 0.8  # cap back-to-back refreshes
+        # Sticky-keyframe re-arm cadence + cap. Ported from
+        # iSharScreen's FrameQualityGate: while we're in
+        # ``_keyframe_required`` and Apple's encoder hasn't responded
+        # to our PLI with a usable IDR, keep re-emitting PLI at
+        # ``re_arm_interval`` (the encoder's typical IDR generate+
+        # transmit window settles in ~100-300 ms; 1.0 s leaves
+        # headroom against overlapping IDR responses). After
+        # ``re_arm_cap`` attempts give up and clear the flag so we
+        # stop flooding -- the motion/heartbeat triggers above will
+        # still catch the next natural refresh window.
+        re_arm_interval = 1.0
+        re_arm_cap = 8
         while True:
             try:
                 await asyncio.sleep(0.1)
@@ -492,6 +588,33 @@ class VncStreamServer:
             if self._transcoder is None or self._rtcp_dest is None:
                 continue
             now = loop.time()
+            # Sticky re-arm: highest priority -- if the decoder is
+            # still in keyframe_required after a previous refresh
+            # cleared `_refresh_pending`, keep firing PLI on the
+            # re-arm cadence until either a clean post-IDR frame
+            # arrives (clears keyframe_required in `_broadcast_frame`)
+            # or we hit the cap.
+            if (
+                self._keyframe_required
+                and not self._refresh_pending
+                and (now - self._last_refresh_t) >= re_arm_interval
+            ):
+                self._fir_attempts += 1
+                if self._fir_attempts >= re_arm_cap:
+                    if not self._cap_warned:
+                        logger.warning(
+                            "decoder still tearing after %d PLI attempts; "
+                            "giving up sticky recovery (motion/heartbeat "
+                            "refresh remains armed)",
+                            self._fir_attempts,
+                        )
+                        self._cap_warned = True
+                    self._keyframe_required = False
+                    self._idr_observed = False
+                    self._fir_attempts = 0
+                else:
+                    self._fire_decoder_refresh(now, reason="re-arm")
+                    continue
             while self._au_byte_window and self._au_byte_window[0][0] < now - 1.0:
                 self._au_byte_window.popleft()
             window_bytes = sum(s for _, s in self._au_byte_window)

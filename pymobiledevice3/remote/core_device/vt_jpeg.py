@@ -93,6 +93,7 @@ class _VTDecompressionOutputCallbackRecord(Structure):
 kCFNumberSInt32Type = 3
 kVTDecodeFrame_EnableAsynchronousDecompression = 1 << 0
 kVTDecodeFrame_1xRealTimePlayback = 1 << 2
+kVTDecodeInfo_FrameDropped = 1 << 1
 kCVPixelBufferLock_ReadOnly = 1
 kCVPixelFormatType_32BGRA = 0x42475241  # 'BGRA'
 
@@ -285,8 +286,12 @@ class HEVCDecoder:
         self.height = int(dims.height)
 
     def _on_output(self, refcon, src_ref, status, info_flags, image_buf, pts, dur):
-        if status != 0 or not image_buf:
-            self._outputs.put((status, None))
+        # kVTDecodeInfo_FrameDropped is set when VT concealed a frame --
+        # the status may be 0 (no API-level error) yet output is corrupt.
+        # Treat as an error so callers can drive a sticky keyframe-required
+        # recovery off the same signal as a non-zero OSStatus.
+        if status != 0 or not image_buf or (info_flags & kVTDecodeInfo_FrameDropped):
+            self._outputs.put((status if status != 0 else -1, None))
             return
         cf.CFRetain(image_buf)
         self._outputs.put((0, image_buf))
@@ -362,9 +367,14 @@ class HevcToBgraTranscoder:
         pps: bytes,
         *,
         on_frame,
+        on_decode_error=None,
     ) -> None:
         self._dec = HEVCDecoder(vps, sps, pps, bgra_output=True)
         self._on_frame = on_frame
+        # Optional hook fired when VT reports a decode failure or a
+        # FrameDropped infoFlag. Always invoked on the worker thread --
+        # asyncio consumers must marshal with ``call_soon_threadsafe``.
+        self._on_decode_error = on_decode_error
         self.width = self._dec.width
         self.height = self._dec.height
         self._inq: queue.Queue = queue.Queue()
@@ -419,6 +429,10 @@ class HevcToBgraTranscoder:
                 continue
             for status, image_buf in self._dec.drain():
                 if status != 0 or not image_buf:
+                    cb = self._on_decode_error
+                    if cb is not None:
+                        with contextlib.suppress(Exception):
+                            cb()
                     continue
                 try:
                     self._emit(image_buf)
