@@ -155,38 +155,77 @@ def hevc_codec_string_from_sps(sps_nal: bytes) -> str:
 # WebCodecs uses the OS hardware HEVC decoder (VideoToolbox on macOS / Media
 # Foundation on Windows) so playback latency is minimal and there's no external
 # ffmpeg/ffplay/VLC needed.
-VIEWER_HTML = rb"""<!doctype html>
+# Non-ASCII glyphs (← / → arrows on the swipe buttons, plus em-dashes
+# in JS comments) require a str literal -- bytes literals are
+# ASCII-only. Encoded to UTF-8 at the end of the template so the rest
+# of the file's .replace() / len() byte ops keep working as-is.
+VIEWER_HTML = r"""<!doctype html>
 <html><head><meta charset="utf-8"><title>iPhone screen</title>
 <style>
  body{margin:0;background:#111;color:#ccc;font-family:system-ui;
       display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
       min-height:100vh;gap:8px;padding:8px;box-sizing:border-box}
- canvas{max-width:100vw;max-height:calc(100vh - 80px);image-rendering:auto;
-        touch-action:none;cursor:crosshair;background:#000}
- #buttons{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
- #buttons button{background:#222;color:#ddd;border:1px solid #444;border-radius:6px;
-                 padding:8px 14px;font-size:13px;cursor:pointer}
- #buttons button:hover{background:#333}
- #buttons button:active{background:#4a4a4a}
+ /* Stage: device-side-mounted buttons flanking the canvas, matching
+    where they live on an iPhone. Vol/Mute on the left side, Power/
+    Siri on the right side. Home + utility actions sit below. */
+ #stage{display:flex;align-items:stretch;justify-content:center;gap:8px;
+        max-width:100vw}
+ .side{display:flex;flex-direction:column;gap:6px;padding-top:18%}
+ #side-left{align-items:flex-end}
+ #side-right{align-items:flex-start}
+ canvas{max-width:calc(100vw - 160px);max-height:calc(100vh - 120px);
+        image-rendering:auto;touch-action:none;cursor:crosshair;background:#000}
+ #bottom-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
+             max-width:100vw}
+ button.btn{background:#222;color:#ddd;border:1px solid #444;border-radius:6px;
+            padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap}
+ button.btn:hover{background:#333}
+ button.btn:active{background:#4a4a4a}
+ /* Utility tray pinned to top-right: sound-toggle / forced-reset /
+    force-restart -- low-frequency controls, kept out of the main
+    button areas so the bottom row can stay device-only (Home). */
+ #util-tray{position:fixed;top:8px;right:8px;display:flex;gap:6px;z-index:10}
+ /* On narrow viewports give up the side-mounted layout and let the
+    buttons wrap below the canvas like before. */
+ @media (max-width: 700px){
+  #stage{flex-direction:column;align-items:center}
+  .side{flex-direction:row;flex-wrap:wrap;justify-content:center;padding-top:0}
+  canvas{max-width:100vw;max-height:calc(100vh - 200px)}
+ }
+ /* Status / log overlay: pinned to top-left and capped at 220 px
+    so it stays clear of the left-flank Vol / Mute buttons. */
  #status{position:fixed;top:8px;left:12px;font-size:12px;opacity:.8;
          background:#0008;padding:4px 8px;border-radius:4px;white-space:pre;
-         max-width:90vw;overflow:hidden;user-select:text;-webkit-user-select:text;
-         cursor:text;pointer-events:auto}
+         width:220px;max-width:40vw;overflow:hidden;user-select:text;
+         -webkit-user-select:text;cursor:text;pointer-events:auto;
+         z-index:10}
 </style></head>
 <body>
-<canvas id="c"></canvas>
-<div id="buttons">
- <button data-btn="home">Home</button>
- <button data-btn="power">Power</button>
- <button data-btn="lock">Lock</button>
- <button data-btn="sleep">Sleep</button>
- <button data-btn="volume-up">Vol +</button>
- <button data-btn="volume-down">Vol -</button>
- <button data-btn="mute">Mute</button>
- <button data-btn="siri">Siri</button>
- <button id="sound-toggle" type="button">Enable Sound</button>
- <button id="forced-reset" type="button">Forced Reset</button>
- <button id="restart" type="button">Force Restart</button>
+<div id="stage">
+ <!-- Left side of the device: mute switch + volume rocker -->
+ <div id="side-left" class="side">
+  <button class="btn" data-btn="mute" title="Ctrl+\">Mute</button>
+  <button class="btn" data-btn="volume-up" title="Ctrl+]">Vol +</button>
+  <button class="btn" data-btn="volume-down" title="Ctrl+[">Vol -</button>
+ </div>
+ <canvas id="c"></canvas>
+ <!-- Right side of the device: side / power button (and Siri lives here too) -->
+ <div id="side-right" class="side">
+  <button class="btn" data-btn="power">Power</button>
+  <button class="btn" data-btn="lock" title="Ctrl+L">Lock</button>
+  <button class="btn" data-btn="sleep">Sleep</button>
+  <button class="btn" data-btn="siri" title="Ctrl+S">Siri</button>
+ </div>
+</div>
+<div id="bottom-row">
+ <button class="btn" data-swipe="left" title="Swipe left across the middle of the screen">Swipe ←</button>
+ <button class="btn" data-btn="home" title="Ctrl+H">Home</button>
+ <button class="btn" data-swipe="right" title="Swipe right across the middle of the screen">Swipe →</button>
+</div>
+<div id="util-tray">
+ <button class="btn" id="sound-toggle" type="button">Enable Sound</button>
+ <button class="btn" id="forced-reset" type="button" title="rebuild decoder + new IDR">Forced Reset</button>
+ <button class="btn" id="restart" type="button" title="full DisplayService restart">Force Restart</button>
 </div>
 <div id="status">connecting...</div>
 <script>
@@ -260,11 +299,61 @@ canvas.addEventListener('pointerup', endContact);
 canvas.addEventListener('pointercancel', endContact);
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-document.querySelectorAll('#buttons button[data-btn]').forEach(btn => {
+document.querySelectorAll('button[data-btn]').forEach(btn => {
     btn.addEventListener('click', () => {
         const name = btn.dataset.btn;
         postJson('/button', {name, state: 'press'}).then(() => log('button: ' + name));
     });
+});
+
+// Swipe synthesis: contact at the start edge, 10 intermediate
+// contacts along the path, release at the end edge. ~200 ms total
+// is in the same ballpark as a finger swipe, so iOS recognises it
+// as a real gesture (faster gets misread as a flick + page snap,
+// slower as a drag). Y stays at the vertical midpoint; X sweeps
+// nearly edge-to-edge.
+async function swipe(direction) {
+    const yMid = 32768;
+    const xStart = direction === 'left' ? 60000 : 5000;
+    const xEnd   = direction === 'left' ? 5000  : 60000;
+    const steps = 10;
+    const dt = 20;  // ms between samples
+    await postJson('/touch', {type: 'contact', x: xStart, y: yMid});
+    for (let i = 1; i <= steps; i++) {
+        const x = Math.round(xStart + (xEnd - xStart) * (i / steps));
+        await new Promise(r => setTimeout(r, dt));
+        await postJson('/touch', {type: 'contact', x, y: yMid});
+    }
+    await postJson('/touch', {type: 'release', x: xEnd, y: yMid});
+    log('swipe ' + direction);
+}
+document.querySelectorAll('button[data-swipe]').forEach(btn => {
+    btn.addEventListener('click', () => swipe(btn.dataset.swipe));
+});
+
+// Ctrl-hotkeys mirroring serve-vnc's _CTRL_COMBO_TO_HID:
+//   Ctrl+H = Home, Ctrl+L = Lock, Ctrl+[ = Vol Down, Ctrl+] = Vol Up,
+//   Ctrl+\ = Mute, Ctrl+S = Siri.
+// Tooltips on the buttons advertise these. We use ctrlKey on every
+// platform (Cmd is intercepted by browser shortcuts on macOS), match
+// case-insensitively for letters, and preventDefault so we don't
+// trigger the browser's own bindings (Ctrl+S = save, Ctrl+L = focus
+// address bar in some browsers, etc.).
+const CTRL_HOTKEYS = {
+    'h': 'home',
+    'l': 'lock',
+    '[': 'volume-down',
+    ']': 'volume-up',
+    '\\': 'mute',
+    's': 'siri',
+};
+window.addEventListener('keydown', (e) => {
+    if (!e.ctrlKey || e.altKey || e.metaKey) return;
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const name = CTRL_HOTKEYS[key];
+    if (!name) return;
+    e.preventDefault();
+    postJson('/button', {name, state: 'press'}).then(() => log('hotkey: ' + name));
 });
 
 // ----- Forced Reset: tell the server to spin up a fresh video stream
@@ -515,6 +604,13 @@ async function run() {
                 fetch('/restart', {method: 'POST', cache: 'no-store'})
                     .then(r => log('auto restart: HTTP ' + r.status))
                     .catch(err => log('auto restart err: ' + err.message));
+            } else {
+                // Post-bootstrap decode error: kick the device for a
+                // fresh IDR via the lightweight /pli path (no full
+                // session restart). The next IDR triggers the
+                // `needsResync` rebuild below in the data loop.
+                fetch('/pli', {method: 'POST', cache: 'no-store'})
+                    .catch(err => log('/pli err: ' + err.message));
             }
         },
     });
@@ -611,7 +707,7 @@ async function run() {
 run().catch(e => log('fatal: ' + e.message));
 </script>
 </body></html>
-"""
+""".encode()
 
 
 # ---------------------------------------------------------------------------
@@ -1856,6 +1952,23 @@ class ScreenStreamServer:
             await writer.drain()
             writer.close()
             return
+        if path == "/pli":
+            # Lightweight recovery: ask the device for a fresh IDR via
+            # RTCP PLI and mark all subscribers as needing a key, but
+            # DO NOT restart the DisplayService session. ``/restart``
+            # tears down + re-RPCs the whole pipeline (~several
+            # seconds, several-MB IDR burst); ``/pli`` is a single
+            # RTCP packet and the new IDR arrives in ~100-300 ms.
+            # The browser's decode-error handler hits this when
+            # WebCodecs throws post-bootstrap, instead of waiting for
+            # the next ``_decoder_refresh_loop`` tick.
+            loop = asyncio.get_running_loop()
+            if self._active_service is not None and self._rtcp_dest is not None:
+                self._fire_decoder_refresh(loop.time(), reason="browser-pli")
+            writer.write(b"HTTP/1.1 202 Accepted\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            await writer.drain()
+            writer.close()
+            return
         if path == "/audio.bin":
             # Up-front dep check so the browser doesn't silently see "0
             # samples" when av/numpy aren't installed (the old failure
@@ -2017,9 +2130,14 @@ class ScreenStreamServer:
         a system animation). Idle is ~30-60 KB/s, motion is 150+ KB/s.
 
         Triggers:
-        1. Motion settled: AU byte rate dropped below the threshold
+        1. Active: motion is currently happening and ``active_interval``
+           has passed since the last refresh. Without this, tears
+           accumulate the entire time the user is interacting; the next
+           refresh wouldn't come until motion ends + settle_delay or
+           the heartbeat fires (up to 10 s later).
+        2. Motion settled: AU byte rate dropped below the threshold
            AFTER having been above it, and ``settle_delay`` has passed.
-        2. Heartbeat: max ``heartbeat`` seconds between refreshes as a
+        3. Heartbeat: max ``heartbeat`` seconds between refreshes as a
            safety net for slow-creeping tears that don't correlate with
            our motion signal.
 
@@ -2028,6 +2146,7 @@ class ScreenStreamServer:
         """
         loop = asyncio.get_running_loop()
         motion_threshold_bps = 100_000  # 100 KB/s = motion
+        active_interval = 1.5  # fire this often during sustained motion
         settle_delay = 0.4  # wait after motion ends before refresh
         heartbeat = 10.0  # max between refreshes when idle
         min_interval = 1.0  # don't fire more often than this
@@ -2053,11 +2172,13 @@ class ScreenStreamServer:
             since_refresh = now - self._last_refresh_t
             if since_refresh < min_interval:
                 continue
+            active = currently_active and since_refresh >= active_interval
             settled = self._motion_ended_t > self._last_refresh_t and (now - self._motion_ended_t) >= settle_delay
             heartbeat_due = since_refresh >= heartbeat
-            if not (settled or heartbeat_due):
+            if not (active or settled or heartbeat_due):
                 continue
-            self._fire_decoder_refresh(now, reason="settled" if settled else "heartbeat")
+            reason = "active" if active else ("settled" if settled else "heartbeat")
+            self._fire_decoder_refresh(now, reason=reason)
 
     def _fire_decoder_refresh(self, now: float, *, reason: str) -> None:
         for q, state in self._subscribers.items():
