@@ -13,6 +13,7 @@ from typer_injector import InjectingTyper
 from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, async_command, print_json
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
+from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
 from pymobiledevice3.remote.core_device.diagnostics_service import DiagnosticsServiceService
 from pymobiledevice3.remote.core_device.display_service import DisplayService
@@ -282,6 +283,20 @@ async def core_device_get_lockstate_task(service_provider: RemoteServiceDiscover
 async def core_device_get_lockstate(service_provider: RSDServiceProviderDep) -> None:
     """Get lockstate"""
     await core_device_get_lockstate_task(service_provider)
+
+
+@cli.command("user-interface-style")
+@async_command
+async def core_device_user_interface_style(
+    service_provider: RSDServiceProviderDep,
+    style: Annotated[Optional[str], typer.Argument(click_type=click.Choice(["dark", "light"]))] = None,
+) -> None:
+    """Get the active user-interface style; pass dark/light to set it."""
+    async with ConfigurationService(service_provider) as config:
+        if style is None:
+            print_json(await config.get_user_interface_style())
+        else:
+            await config.set_user_interface_style(style)
 
 
 async def core_device_list_apps_task(service_provider: RemoteServiceDiscoveryService) -> None:

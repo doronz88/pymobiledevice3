@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 from pymobiledevice3.remote.core_device.aac_eld import AAC_ELD_ASC_48K_STEREO_480, AACELDDecoder
+from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
 from pymobiledevice3.remote.core_device.display_service import DisplayService
 from pymobiledevice3.remote.core_device.hevc_phantom import build_phantoms_for_bootstrap
 from pymobiledevice3.remote.core_device.hid_service import (
@@ -224,6 +225,7 @@ VIEWER_HTML = r"""<!doctype html>
 </div>
 <div id="util-tray">
  <button class="btn" id="sound-toggle" type="button">Enable Sound</button>
+ <button class="btn" id="style-toggle" type="button" title="toggle dark/light user-interface style">Style: ?</button>
  <button class="btn" id="forced-reset" type="button" title="rebuild decoder + new IDR">Forced Reset</button>
  <button class="btn" id="restart" type="button" title="full DisplayService restart">Force Restart</button>
 </div>
@@ -378,6 +380,34 @@ document.getElementById('restart').addEventListener('click', async () => {
     } catch (e) { log('restart err: ' + e.message); }
     setTimeout(() => location.reload(), 100);
 });
+
+// ----- Dark / light toggle: GET /style reads the current style,
+// POST /style with {"style":"dark"|"light"} flips it. Button label
+// shows the CURRENT style so the click reads as "toggle to the other".
+const styleBtn = document.getElementById('style-toggle');
+function setStyleLabel(s) { styleBtn.textContent = 'Style: ' + s; }
+async function refreshStyle() {
+    try {
+        const r = await fetch('/style', {cache: 'no-store'});
+        if (!r.ok) return;
+        const j = await r.json();
+        if (j && j.style) setStyleLabel(j.style);
+    } catch (e) { log('style get err: ' + (e.message || e)); }
+}
+styleBtn.addEventListener('click', async () => {
+    const cur = styleBtn.textContent.replace('Style: ', '').trim();
+    const next = cur === 'dark' ? 'light' : 'dark';
+    try {
+        const r = await fetch('/style', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({style: next}),
+        });
+        if (r.ok) { setStyleLabel(next); log('style: ' + next); }
+        else { log('style set HTTP ' + r.status); }
+    } catch (e) { log('style set err: ' + (e.message || e)); }
+});
+refreshStyle();
 
 // ----- Sound toggle: connect to /audio.bin which streams PRE-DECODED
 // PCM (s16le, 48 kHz, stereo interleaved). The server uses pyav's
@@ -1949,6 +1979,44 @@ class ScreenStreamServer:
             self._pli_tasks.add(bg)  # piggy-back on the existing keep-alive set
             bg.add_done_callback(self._pli_tasks.discard)
             writer.write(b"HTTP/1.1 202 Accepted\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            await writer.drain()
+            writer.close()
+            return
+        if path == "/style":
+            try:
+                if method == "POST":
+                    body = await self._read_body(reader, headers)
+                    try:
+                        style = str(json.loads(body)["style"])
+                    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                        writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        await writer.drain()
+                        writer.close()
+                        logger.debug("style POST: bad body %r (%s)", body, exc)
+                        return
+                    async with ConfigurationService(self._rsd) as cfg:
+                        await cfg.set_user_interface_style(style)
+                    resp_body = json.dumps({"style": style}).encode()
+                else:
+                    async with ConfigurationService(self._rsd) as cfg:
+                        style = await cfg.get_user_interface_style()
+                    resp_body = json.dumps({"style": style}).encode()
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Cache-Control: no-store\r\n"
+                    b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + resp_body
+                )
+            except Exception as exc:
+                logger.exception("style endpoint failed")
+                err = f"style endpoint error: {exc}".encode()
+                writer.write(
+                    b"HTTP/1.1 500 Internal\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Content-Length: " + str(len(err)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + err
+                )
             await writer.drain()
             writer.close()
             return
