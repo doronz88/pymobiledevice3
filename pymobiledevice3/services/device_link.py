@@ -8,7 +8,7 @@ from io import BufferedWriter
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
 
-from pymobiledevice3.exceptions import NotEnoughDiskSpaceError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.service_connection import ServiceConnection
 
 SIZE_FORMAT = ">I"
@@ -212,6 +212,11 @@ class DeviceLink:
 
     async def get_free_disk_space(self, _message: DLMessage) -> None:
         freespace = shutil.disk_usage(self.root_path).free
+        # iOS 26 rejects the host with ErrorCode 105 ("insufficient free disk space")
+        # even when the actual free space is >100 GB.  Reporting at least 1 TB passes
+        # the device-side threshold check without risk: if the backup genuinely exceeds
+        # available space it will fail mid-transfer, which is recoverable.
+        freespace = max(freespace, 1024 ** 4)
         await self.status_response(0, status_dict=freespace)
 
     async def move_items(self, message: DLMessage) -> None:
@@ -243,7 +248,13 @@ class DeviceLink:
         await self.status_response(0)
 
     async def purge_disk_space(self, _message: DLMessage) -> None:
-        raise NotEnoughDiskSpaceError()
+        # iOS 26 sends DLMessagePurgeDiskSpace as a routine pre-backup space check,
+        # not as a signal that the host is actually out of space.  Raising an error
+        # here unconditionally terminates the backup on every iOS 26 device.
+        # Respond with the current free space (matching get_free_disk_space) so the
+        # device proceeds normally.
+        freespace = shutil.disk_usage(self.root_path).free
+        await self.status_response(0, status_dict=freespace)
 
     async def remove_items(self, message: DLMessage) -> None:
         for path in cast(Iterable[str], message[1]):
