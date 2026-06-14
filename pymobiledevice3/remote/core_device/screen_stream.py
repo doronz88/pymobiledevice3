@@ -25,7 +25,6 @@ from typing import Optional
 from pymobiledevice3.remote.core_device.aac_eld import AAC_ELD_ASC_48K_STEREO_480, AACELDDecoder
 from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
 from pymobiledevice3.remote.core_device.display_service import DisplayService
-from pymobiledevice3.remote.core_device.hevc_phantom import build_phantoms_for_bootstrap
 from pymobiledevice3.remote.core_device.hid_service import (
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     HID_BUTTON_STATE_DOWN,
@@ -59,9 +58,7 @@ logger = logging.getLogger(__name__)
 _HEVC_NAL_IDR_W_RADL = 19
 _HEVC_NAL_IDR_N_LP = 20
 _HEVC_NAL_CRA = 21
-_HEVC_NAL_VPS = 32
 _HEVC_NAL_SPS = 33
-_HEVC_NAL_PPS = 34
 _HEVC_NAL_AP = 48  # Aggregation Packet
 _HEVC_NAL_FU = 49  # Fragmentation Unit
 
@@ -565,6 +562,29 @@ async function fetchCodecWithRetry() {
     throw new Error('codec unreachable after retries: ' + lastErr);
 }
 
+// vsync-aligned draw: the decoder's output callback only stores the
+// latest frame; the actual ctx.drawImage call lives in a
+// requestAnimationFrame loop so the compositor never reads the canvas
+// mid-update. Older queued frames are .close()'d so we don't leak GPU
+// memory — we always show the most recent decoded frame.
+let pendingFrame = null;
+let rafScheduled = false;
+function drawPending() {
+    rafScheduled = false;
+    const f = pendingFrame;
+    pendingFrame = null;
+    if (!f) return;
+    try {
+        if (f.displayWidth !== canvas.width || f.displayHeight !== canvas.height) {
+            canvas.width = f.displayWidth;
+            canvas.height = f.displayHeight;
+        }
+        ctx.drawImage(f, 0, 0);
+    } finally {
+        try { f.close(); } catch (e) {}
+    }
+}
+
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));
     const codec = await fetchCodecWithRetry();
@@ -604,12 +624,22 @@ async function run() {
             // page reload does. Page layout stability comes from the
             // canvas CSS (max-width/max-height + aspect-ratio if you want
             // to lock that explicitly).
-            if (frame.displayWidth !== canvas.width || frame.displayHeight !== canvas.height) {
-                canvas.width = frame.displayWidth;
-                canvas.height = frame.displayHeight;
+            // Don't drawImage straight from this callback — that runs at
+            // the decoder's output cadence (typically irregular: 0..multiple
+            // frames per ms during bursts) and races the compositor's
+            // vsync read, which is what gets seen as visible horizontal
+            // tear bands during quick-swipe motion. Instead, replace the
+            // pending frame slot and let requestAnimationFrame draw the
+            // latest one in lockstep with the display refresh. Released
+            // frames must be .close()'d to free GPU resources.
+            if (pendingFrame) {
+                try { pendingFrame.close(); } catch (e) {}
             }
-            ctx.drawImage(frame, 0, 0);
-            frame.close();
+            pendingFrame = frame;
+            if (!rafScheduled) {
+                rafScheduled = true;
+                requestAnimationFrame(drawPending);
+            }
             frameCount++;
         },
         // Decoder errors propagate asynchronously via this callback. After one,
@@ -620,14 +650,12 @@ async function run() {
             log('decode err #' + decodeErrCount + ': ' + e.message);
             needsResync = true;
             // Bootstrap-failure self-heal: if we error out before we've
-            // shown even a handful of frames, Apple's encoder almost
-            // certainly emitted a POC chain WebCodecs can't follow (the
-            // server-side phantom synthesis didn't bridge it cleanly for
-            // this device's encoder). Asking the server for a fresh
-            // stream often produces a sequential POC chain that decodes
-            // cleanly. Do it at most once -- if it errors again the
-            // problem isn't transient and the user can click "Forced
-            // Reset" manually.
+            // shown even a handful of frames, Apple's encoder may have
+            // emitted a POC chain WebCodecs can't follow. Asking the
+            // server for a fresh stream often produces a sequential POC
+            // chain that decodes cleanly. Do it at most once -- if it
+            // errors again the problem isn't transient and the user can
+            // click "Forced Reset" manually.
             if (!autoRestartUsed && frameCount < 5) {
                 autoRestartUsed = true;
                 log('auto /restart (bootstrap decode err)');
@@ -921,16 +949,6 @@ class ScreenStreamServer:
         self._codec_string: Optional[str] = None
         self._saw_first_key = False
         self._stream_ready = asyncio.Event()
-        # Raw parameter-set / IDR NALs cached for phantom synthesis. The
-        # phantom NAL block bridges the bootstrap POC gap (Apple's encoder
-        # emits IDR=POC0 then jumps the first delta to POC=~163 with refs
-        # to a sparse set the decoder never received). Synthesising
-        # phantoms at the needed POCs lets WebCodecs decode the chain.
-        self._cached_vps_nal: Optional[bytes] = None
-        self._cached_sps_nal: Optional[bytes] = None
-        self._cached_pps_nal: Optional[bytes] = None
-        self._cached_idr_nal: Optional[bytes] = None
-        self._phantoms_built = False
 
         # Active device-stream session.
         self._active_service: Optional[DisplayService] = None
@@ -1135,16 +1153,6 @@ class ScreenStreamServer:
                         logger.info(f"WebCodecs codec string: {self._codec_string}")
                     except Exception as exc:
                         logger.warning(f"failed to parse SPS: {exc}")
-                # Cache the parameter sets + IDR slice as raw NALs so we
-                # can synthesise phantoms later from the captured IDR body.
-                if nt == _HEVC_NAL_VPS:
-                    self._cached_vps_nal = bytes(nal)
-                elif nt == _HEVC_NAL_SPS:
-                    self._cached_sps_nal = bytes(nal)
-                elif nt == _HEVC_NAL_PPS:
-                    self._cached_pps_nal = bytes(nal)
-                elif _is_key_nal(nt):
-                    self._cached_idr_nal = bytes(nal)
                 if _is_key_nal(nt):
                     au_is_key = True
                 current_au.append(nal)
@@ -1160,15 +1168,17 @@ class ScreenStreamServer:
                     pli_task = asyncio.create_task(self._send_rtcp_pli())
                     self._pli_tasks.add(pli_task)
                     pli_task.add_done_callback(self._pli_tasks.discard)
-                    # Also force every connected subscriber to wait for the
-                    # next IDR before feeding the decoder again. VideoToolbox
-                    # often *doesn't* throw on a broken-reference delta -- it
-                    # renders visible tearing without firing the error
-                    # callback -- so we can't rely on the browser to notice
-                    # on its own. Marking needs_key here means: skip frames
-                    # until our PLI-induced IDR arrives, then full reset.
-                    for state in self._subscribers.values():
-                        state.needs_key = True
+                    # Note: we DON'T set ``state.needs_key = True`` on
+                    # subscribers here anymore. With the live broadcast loop
+                    # only dropping the *current* corrupt AU (not subsequent
+                    # ones), the next IDR from the PLI lands as a normal
+                    # type=0 key — the browser's decoder absorbs it as a
+                    # fresh DPB anchor without rebuilding, eliminating the
+                    # visible chop that the rebuild-on-needs_key path was
+                    # producing on every UDP gap during heavy motion.
+                    # If references really were lost the decoder will throw
+                    # a decode err, which the browser-side error handler
+                    # already turns into a /pli call.
                 if current_au and not au_corrupt:
                     annexb = b"".join(b"\x00\x00\x00\x01" + nal for nal in current_au)
                     # Three framing types:
@@ -1190,51 +1200,6 @@ class ScreenStreamServer:
                     # reads this to know when motion settles.
                     self._au_byte_window.append((self._last_good_au_t, len(annexb)))
                     if self._saw_first_key:
-                        # First non-key AU after the IDR is the moment we
-                        # can synthesise phantoms (we need the delta's
-                        # slice header to know which POCs are referenced).
-                        phantom_msgs: list[bytes] = []
-                        if (
-                            not au_is_key
-                            and not self._phantoms_built
-                            and self._cached_vps_nal is not None
-                            and self._cached_sps_nal is not None
-                            and self._cached_pps_nal is not None
-                            and self._cached_idr_nal is not None
-                        ):
-                            try:
-                                first_delta_nal = current_au[0]
-                                phantoms = build_phantoms_for_bootstrap(
-                                    self._cached_vps_nal,
-                                    self._cached_sps_nal,
-                                    self._cached_pps_nal,
-                                    self._cached_idr_nal,
-                                    first_delta_nal,
-                                )
-                                logger.info(
-                                    "Phantom synthesis: first delta NAL %d B (type=%d), produced %d phantoms",
-                                    len(first_delta_nal),
-                                    (first_delta_nal[0] >> 1) & 0x3F,
-                                    len(phantoms),
-                                )
-                            except Exception:
-                                logger.exception("phantom synthesis failed")
-                                phantoms = []
-                            if phantoms:
-                                logger.info(
-                                    "Synthesised %d phantom NALs for bootstrap",
-                                    len(phantoms),
-                                )
-                                for ph in phantoms:
-                                    ph_annexb = b"\x00\x00\x00\x01" + ph
-                                    ph_msg = (len(ph_annexb) + 1).to_bytes(4, "big") + b"\x00" + ph_annexb
-                                    phantom_msgs.append(ph_msg)
-                                # Bake into init_sequence so late-joining
-                                # subscribers also get them.
-                                if self._init_sequence is not None:
-                                    self._init_sequence = self._init_sequence + b"".join(phantom_msgs)
-                            self._phantoms_built = True
-
                         for q, state in list(self._subscribers.items()):
                             if q.full():
                                 while not q.empty():
@@ -1252,8 +1217,6 @@ class ScreenStreamServer:
                                 # holds stale reference frames.
                                 q.put_nowait(msg_reset)
                                 continue
-                            for pm in phantom_msgs:
-                                q.put_nowait(pm)
                             q.put_nowait(msg)
                 current_au = []
                 au_is_key = False
@@ -1643,11 +1606,6 @@ class ScreenStreamServer:
             self._codec_string = None
             self._saw_first_key = False
             self._stream_ready.clear()
-            self._cached_vps_nal = None
-            self._cached_sps_nal = None
-            self._cached_pps_nal = None
-            self._cached_idr_nal = None
-            self._phantoms_built = False
             # Preserve any connected subscribers across the restart — flush
             # their queues and flag them needs_key so they'll lock onto the
             # first IDR from the new stream instead of seeing the connection
@@ -2163,6 +2121,31 @@ class ScreenStreamServer:
         state = _SubState()
         state.needs_key = True
         self._subscribers[queue] = state
+
+        # PLI-retry: the device's encoder occasionally ignores a single
+        # PLI (we've seen the post-connect PLI go unanswered, leaving the
+        # subscriber stuck on init_sequence forever — only a manual page
+        # reload resolved it). Spam another PLI every 700 ms until the
+        # broadcast loop clears this subscriber's needs_key (= an IDR
+        # arrived and was delivered as msg_reset).
+        async def _bootstrap_pli_retry():
+            for _ in range(6):
+                await asyncio.sleep(0.7)
+                if not state.needs_key:
+                    return
+                if self._active_service is None or self._rtcp_dest is None:
+                    return
+                if queue not in self._subscribers:
+                    return
+                logger.info("/stream.bin: subscriber still needs_key, re-PLI")
+                pt = asyncio.create_task(self._send_rtcp_pli())
+                self._pli_tasks.add(pt)
+                pt.add_done_callback(self._pli_tasks.discard)
+
+        retry_task = asyncio.create_task(_bootstrap_pli_retry())
+        self._pli_tasks.add(retry_task)
+        retry_task.add_done_callback(self._pli_tasks.discard)
+
         try:
             while True:
                 msg = await queue.get()
@@ -2172,52 +2155,56 @@ class ScreenStreamServer:
             pass
         finally:
             self._subscribers.pop(queue, None)
+            retry_task.cancel()
             with contextlib.suppress(Exception):
                 writer.close()
 
     async def _decoder_refresh_loop(self) -> None:
-        """Force connected browsers to rebuild their video decoders
-        WHEN it's likely to help, not on a fixed timer.
+        """IDR refresh: PLI on sustained motion + on settle + slow heartbeat.
 
-        VideoToolbox (and Safari's WebCodecs wrapper around it) silently
-        accumulates stale long-term-reference-picture state under heavy
-        motion -- decode reports success on every frame but the rendered
-        pixels are torn. There's no error callback; the only known
-        recovery is to rebuild the decoder around a fresh IDR (what a
-        manual page reload achieves).
-
-        Each rebuild has a small cost: a ~30 ms frame gap while we wait
-        for the IDR + the new decoder's first output. At high cadences
-        (e.g. 2 refreshes/sec) the gap becomes visible "chop". The
-        smoothest experience is one rebuild per motion event, fired
-        right after motion settles -- the same UX pattern as a manual
-        reload after the user finishes interacting.
-
-        We use the device's RTP byte rate as the motion signal (works
-        for ANY motion source -- browser /touch, finger on the device,
-        a system animation). Idle is ~30-60 KB/s, motion is 150+ KB/s.
+        Each PLI gives the browser's WebCodecs decoder a fresh DPB anchor.
+        Without refresh the decoder accumulates prediction drift across
+        each high-motion burst (quick swipes etc.) and renders torn
+        pixels — Chrome doesn't throw on the bad reference, just shows
+        the artifact.
 
         Triggers:
-        1. Active: motion is currently happening and ``active_interval``
-           has passed since the last refresh. Without this, tears
-           accumulate the entire time the user is interacting; the next
-           refresh wouldn't come until motion ends + settle_delay or
-           the heartbeat fires (up to 10 s later).
-        2. Motion settled: AU byte rate dropped below the threshold
-           AFTER having been above it, and ``settle_delay`` has passed.
-        3. Heartbeat: max ``heartbeat`` seconds between refreshes as a
-           safety net for slow-creeping tears that don't correlate with
-           our motion signal.
+          1. **Active** — byte rate has been above
+             ``motion_threshold_bps`` continuously for at least
+             ``active_interval``. Catches sustained motion (rapid
+             back-to-back swipes) where settle never fires.
+          2. **Settle** — byte rate was above threshold and just
+             dropped for at least ``settle_delay``. One PLI per real
+             motion event ending, when accumulated drift is visible
+             against the now-static screen.
+          3. **Heartbeat** — backstop every ``heartbeat`` seconds.
+             Also handles bootstrap (``_last_refresh_t == 0.0`` at
+             start so the first eligible tick fires a PLI; the
+             broadcast loop needs that fresh IDR to clear
+             ``needs_key`` on a subscriber that connected after the
+             natural startup IDR has already passed).
 
+        ``motion_threshold_bps = 500_000`` (500 KB/s) sits well above
+        the measured iPhone 12 mini idle byte-rate (60-100 KB/s), so
+        the previous always-on settle churn at 100 KB/s doesn't recur.
+        Real motion bursts go several MB/s on this device.
         ``min_interval`` caps back-to-back refreshes regardless of
         trigger.
         """
         loop = asyncio.get_running_loop()
-        motion_threshold_bps = 100_000  # 100 KB/s = motion
-        active_interval = 1.5  # fire this often during sustained motion
-        settle_delay = 0.4  # wait after motion ends before refresh
-        heartbeat = 10.0  # max between refreshes when idle
-        min_interval = 1.0  # don't fire more often than this
+        # Threshold above measured idle (≈60-100 KB/s) but below normal
+        # motion bursts (200-400 KB/s on iPhone 12 mini / iOS 27 under
+        # quick swipes). At this threshold settle fires once per real
+        # motion event ending; with ``_fire_decoder_refresh`` no longer
+        # flushing subscriber queues, each PLI's fresh IDR is delivered
+        # as a transparent DPB refresh (type=0 key), not a decoder
+        # rebuild — so frequent firing here is no longer chop-visible.
+        motion_threshold_bps = 200_000
+        active_interval = 1.0  # fire mid-motion at this cadence
+        settle_delay = 0.3  # wait after motion ends before refresh
+        heartbeat = 10.0  # backstop cadence when nothing else fires
+        min_interval = 0.7  # don't fire more often than this
+        motion_started_t = 0.0
         while True:
             try:
                 await asyncio.sleep(0.1)
@@ -2228,19 +2215,26 @@ class ScreenStreamServer:
             if self._active_service is None or self._rtcp_dest is None:
                 continue
             now = loop.time()
-            # Prune the byte window to the last 1 s.
+            # Prune the byte-rate window to the last 1 s.
             while self._au_byte_window and self._au_byte_window[0][0] < now - 1.0:
                 self._au_byte_window.popleft()
             window_bytes = sum(s for _, s in self._au_byte_window)
             currently_active = window_bytes >= motion_threshold_bps
-            # Detect active->idle transition (motion just ended).
+            # Track motion transitions for settle detection + active duration.
+            if currently_active and not self._motion_active:
+                motion_started_t = now
             if self._motion_active and not currently_active:
                 self._motion_ended_t = now
             self._motion_active = currently_active
             since_refresh = now - self._last_refresh_t
             if since_refresh < min_interval:
                 continue
-            active = currently_active and since_refresh >= active_interval
+            active = (
+                currently_active
+                and motion_started_t > 0
+                and (now - motion_started_t) >= active_interval
+                and since_refresh >= active_interval
+            )
             settled = self._motion_ended_t > self._last_refresh_t and (now - self._motion_ended_t) >= settle_delay
             heartbeat_due = since_refresh >= heartbeat
             if not (active or settled or heartbeat_due):
@@ -2249,18 +2243,18 @@ class ScreenStreamServer:
             self._fire_decoder_refresh(now, reason=reason)
 
     def _fire_decoder_refresh(self, now: float, *, reason: str) -> None:
-        for q, state in self._subscribers.items():
-            while not q.empty():
-                with contextlib.suppress(asyncio.QueueEmpty):
-                    q.get_nowait()
-            state.needs_key = True
+        # Just send the PLI — DON'T flush subscriber queues or set
+        # needs_key. The fresh IDR will be broadcast as a normal type=0
+        # key (msg, not msg_reset), so the browser absorbs it without
+        # rebuilding its decoder — the rebuild is what was producing
+        # visible chop and looked like tearing during sustained motion.
+        # A subscriber whose state really IS stale (after a queue-full
+        # flush or AU corruption) is still handled correctly by the
+        # other code paths that set ``state.needs_key = True``.
         pli_task = asyncio.create_task(self._send_rtcp_pli())
         self._pli_tasks.add(pli_task)
         pli_task.add_done_callback(self._pli_tasks.discard)
         self._last_refresh_t = now
-        # Window-bytes here are just the current 1 s sum; useful when
-        # tuning the motion threshold against real byte-rates from the
-        # device's encoder under various activity levels.
         window_bps = sum(s for _, s in self._au_byte_window)
         logger.info(
             "decoder-refresh (%s): %d subscriber(s), %d B/s window",

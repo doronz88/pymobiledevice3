@@ -36,7 +36,6 @@ from typing import Optional
 from pymobiledevice3.remote.core_device.aac_eld import AACELDDecoder
 from pymobiledevice3.remote.core_device.audio_player import AudioQueuePlayer
 from pymobiledevice3.remote.core_device.display_service import DisplayService
-from pymobiledevice3.remote.core_device.hevc_phantom import build_phantoms_for_bootstrap
 from pymobiledevice3.remote.core_device.hevc_rps import HevcRpsTracker, is_slice_nal
 from pymobiledevice3.remote.core_device.hid_service import (
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
@@ -360,11 +359,10 @@ class VncStreamServer:
         for c in self._clients:
             c.wants_update.set()
 
-    # ----- RTP recv + phantom-NAL bridge ------------------------------------
+    # ----- RTP recv + transcoder feed ---------------------------------------
     async def _udp_recv_and_pipe(self, sock: socket.socket) -> None:
-        """Same depacketize loop as ScreenStreamServer:
-        gather Annex-B AUs, inject phantom NALs once at bootstrap, feed
-        the VT transcoder."""
+        """Same depacketize loop as ScreenStreamServer: gather Annex-B
+        AUs and feed the VT transcoder."""
         sock.setblocking(False)
         loop = asyncio.get_running_loop()
         fu_buffer = bytearray()
@@ -376,8 +374,6 @@ class VncStreamServer:
         cached_vps: Optional[bytes] = None
         cached_sps: Optional[bytes] = None
         cached_pps: Optional[bytes] = None
-        cached_idr: Optional[bytes] = None
-        phantoms_built = False
         rtp_packets = 0
         feed_count = 0
         frame_count_at_last_log = 0
@@ -421,7 +417,6 @@ class VncStreamServer:
                 elif nt == _HEVC_NAL_PPS:
                     cached_pps = bytes(nal)
                 elif _is_key_nal(nt):
-                    cached_idr = bytes(nal)
                     au_is_key = True
                 current_au.append(nal)
 
@@ -481,25 +476,6 @@ class VncStreamServer:
                             )
                         except Exception:
                             logger.exception("VT transcoder failed to start")
-                    if (
-                        self._transcoder is not None
-                        and not au_is_key
-                        and not phantoms_built
-                        and cached_vps is not None
-                        and cached_sps is not None
-                        and cached_pps is not None
-                        and cached_idr is not None
-                    ):
-                        try:
-                            phantoms = build_phantoms_for_bootstrap(
-                                cached_vps, cached_sps, cached_pps, cached_idr, current_au[0]
-                            )
-                            logger.info("phantom synthesis: %d NALs", len(phantoms))
-                            for ph in phantoms:
-                                self._transcoder.feed(b"\x00\x00\x00\x01" + ph)
-                        except Exception:
-                            logger.exception("phantom synthesis failed")
-                        phantoms_built = True
                     # While ``_refresh_pending`` is true we have already
                     # PLIed and are waiting for the IDR that will be the
                     # new decoder's first frame. Don't feed the existing
