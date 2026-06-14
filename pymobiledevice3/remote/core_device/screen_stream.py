@@ -155,38 +155,74 @@ def hevc_codec_string_from_sps(sps_nal: bytes) -> str:
 # WebCodecs uses the OS hardware HEVC decoder (VideoToolbox on macOS / Media
 # Foundation on Windows) so playback latency is minimal and there's no external
 # ffmpeg/ffplay/VLC needed.
+# Non-ASCII glyphs (emoji button labels) require a str literal --
+# bytes literals are ASCII-only. We encode once to UTF-8 below so the
+# rest of the file's .replace() / len() byte ops keep working as-is.
 VIEWER_HTML = rb"""<!doctype html>
 <html><head><meta charset="utf-8"><title>iPhone screen</title>
 <style>
  body{margin:0;background:#111;color:#ccc;font-family:system-ui;
       display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
       min-height:100vh;gap:8px;padding:8px;box-sizing:border-box}
- canvas{max-width:100vw;max-height:calc(100vh - 80px);image-rendering:auto;
-        touch-action:none;cursor:crosshair;background:#000}
- #buttons{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
- #buttons button{background:#222;color:#ddd;border:1px solid #444;border-radius:6px;
-                 padding:8px 14px;font-size:13px;cursor:pointer}
- #buttons button:hover{background:#333}
- #buttons button:active{background:#4a4a4a}
+ /* Stage: device-side-mounted buttons flanking the canvas, matching
+    where they live on an iPhone. Vol/Mute on the left side, Power/
+    Siri on the right side. Home + utility actions sit below. */
+ #stage{display:flex;align-items:stretch;justify-content:center;gap:8px;
+        max-width:100vw}
+ .side{display:flex;flex-direction:column;gap:6px;padding-top:18%}
+ #side-left{align-items:flex-end}
+ #side-right{align-items:flex-start}
+ canvas{max-width:calc(100vw - 160px);max-height:calc(100vh - 120px);
+        image-rendering:auto;touch-action:none;cursor:crosshair;background:#000}
+ #bottom-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
+             max-width:100vw}
+ button.btn{background:#222;color:#ddd;border:1px solid #444;border-radius:6px;
+            padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap}
+ button.btn:hover{background:#333}
+ button.btn:active{background:#4a4a4a}
+ /* Utility tray pinned to top-right: sound-toggle / forced-reset /
+    force-restart -- low-frequency controls, kept out of the main
+    button areas so the bottom row can stay device-only (Home). */
+ #util-tray{position:fixed;top:8px;right:8px;display:flex;gap:6px;z-index:10}
+ /* On narrow viewports give up the side-mounted layout and let the
+    buttons wrap below the canvas like before. */
+ @media (max-width: 700px){
+  #stage{flex-direction:column;align-items:center}
+  .side{flex-direction:row;flex-wrap:wrap;justify-content:center;padding-top:0}
+  canvas{max-width:100vw;max-height:calc(100vh - 200px)}
+ }
+ /* Status / log overlay: pinned to top-left and capped at 220 px
+    so it stays clear of the left-flank Vol / Mute buttons. */
  #status{position:fixed;top:8px;left:12px;font-size:12px;opacity:.8;
          background:#0008;padding:4px 8px;border-radius:4px;white-space:pre;
-         max-width:90vw;overflow:hidden;user-select:text;-webkit-user-select:text;
-         cursor:text;pointer-events:auto}
+         width:220px;max-width:40vw;overflow:hidden;user-select:text;
+         -webkit-user-select:text;cursor:text;pointer-events:auto;
+         z-index:10}
 </style></head>
 <body>
-<canvas id="c"></canvas>
-<div id="buttons">
- <button data-btn="home">Home</button>
- <button data-btn="power">Power</button>
- <button data-btn="lock">Lock</button>
- <button data-btn="sleep">Sleep</button>
- <button data-btn="volume-up">Vol +</button>
- <button data-btn="volume-down">Vol -</button>
- <button data-btn="mute">Mute</button>
- <button data-btn="siri">Siri</button>
- <button id="sound-toggle" type="button">Enable Sound</button>
- <button id="forced-reset" type="button">Forced Reset</button>
- <button id="restart" type="button">Force Restart</button>
+<div id="stage">
+ <!-- Left side of the device: mute switch + volume rocker -->
+ <div id="side-left" class="side">
+  <button class="btn" data-btn="mute" title="Ctrl+\">Mute</button>
+  <button class="btn" data-btn="volume-up" title="Ctrl+]">Vol +</button>
+  <button class="btn" data-btn="volume-down" title="Ctrl+[">Vol -</button>
+ </div>
+ <canvas id="c"></canvas>
+ <!-- Right side of the device: side / power button (and Siri lives here too) -->
+ <div id="side-right" class="side">
+  <button class="btn" data-btn="power">Power</button>
+  <button class="btn" data-btn="lock" title="Ctrl+L">Lock</button>
+  <button class="btn" data-btn="sleep">Sleep</button>
+  <button class="btn" data-btn="siri" title="Ctrl+S">Siri</button>
+ </div>
+</div>
+<div id="bottom-row">
+ <button class="btn" data-btn="home" title="Ctrl+H">Home</button>
+</div>
+<div id="util-tray">
+ <button class="btn" id="sound-toggle" type="button">Enable Sound</button>
+ <button class="btn" id="forced-reset" type="button" title="rebuild decoder + new IDR">Forced Reset</button>
+ <button class="btn" id="restart" type="button" title="full DisplayService restart">Force Restart</button>
 </div>
 <div id="status">connecting...</div>
 <script>
@@ -260,11 +296,36 @@ canvas.addEventListener('pointerup', endContact);
 canvas.addEventListener('pointercancel', endContact);
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-document.querySelectorAll('#buttons button[data-btn]').forEach(btn => {
+document.querySelectorAll('button[data-btn]').forEach(btn => {
     btn.addEventListener('click', () => {
         const name = btn.dataset.btn;
         postJson('/button', {name, state: 'press'}).then(() => log('button: ' + name));
     });
+});
+
+// Ctrl-hotkeys mirroring serve-vnc's _CTRL_COMBO_TO_HID:
+//   Ctrl+H = Home, Ctrl+L = Lock, Ctrl+[ = Vol Down, Ctrl+] = Vol Up,
+//   Ctrl+\ = Mute, Ctrl+S = Siri.
+// Tooltips on the buttons advertise these. We use ctrlKey on every
+// platform (Cmd is intercepted by browser shortcuts on macOS), match
+// case-insensitively for letters, and preventDefault so we don't
+// trigger the browser's own bindings (Ctrl+S = save, Ctrl+L = focus
+// address bar in some browsers, etc.).
+const CTRL_HOTKEYS = {
+    'h': 'home',
+    'l': 'lock',
+    '[': 'volume-down',
+    ']': 'volume-up',
+    '\\': 'mute',
+    's': 'siri',
+};
+window.addEventListener('keydown', (e) => {
+    if (!e.ctrlKey || e.altKey || e.metaKey) return;
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const name = CTRL_HOTKEYS[key];
+    if (!name) return;
+    e.preventDefault();
+    postJson('/button', {name, state: 'press'}).then(() => log('hotkey: ' + name));
 });
 
 // ----- Forced Reset: tell the server to spin up a fresh video stream
