@@ -1,0 +1,34 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>iPhone screen</title>
+<link rel="stylesheet" href="/viewer.css"></head>
+<body class="frame-on">
+<div id="stage">
+ <!-- Left side of the device: mute switch + volume rocker -->
+ <div id="side-left" class="side">
+  <button class="btn" data-btn="mute" title="Ctrl+\">Mute</button>
+  <button class="btn" data-btn="volume-up" title="Ctrl+]">Vol +</button>
+  <button class="btn" data-btn="volume-down" title="Ctrl+[">Vol -</button>
+ </div>
+ <div id="device-frame">
+  <canvas id="c"></canvas>
+ </div>
+ <!-- Right side of the device: side button (lock) and Siri -->
+ <div id="side-right" class="side">
+  <button class="btn" data-btn="lock" title="Ctrl+L">Lock</button>
+  <button class="btn" data-btn="siri" title="Ctrl+S">Siri</button>
+ </div>
+</div>
+<div id="bottom-row">
+ <button class="btn" data-swipe="left" title="Swipe left across the middle of the screen">Swipe ←</button>
+ <button class="btn" data-btn="home" title="Ctrl+H">Home</button>
+ <button class="btn" data-swipe="right" title="Swipe right across the middle of the screen">Swipe →</button>
+</div>
+<div id="util-tray">
+ <button class="btn" id="sound-toggle" type="button">Enable Sound</button>
+ <button class="btn" id="style-toggle" type="button" title="toggle dark/light user-interface style">Style: ?</button>
+ <button class="btn" id="frame-toggle" type="button" title="toggle cosmetic iPhone bezel around the canvas">Frame: ?</button>
+ <button class="btn" id="restart" type="button" title="full DisplayService restart">Force Restart</button>
+</div>
+<div id="status">connecting...</div>
+<script src="/viewer.js"></script>
+</body></html>

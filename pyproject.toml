@@ -50,6 +50,9 @@ package-data = { "pymobiledevice3" = [
     "resources/webinspector/*.js",
     "resources/dsc_uuid_map.json",
     "resources/notifications.txt",
+    "resources/serve_web/viewer.html",
+    "resources/serve_web/viewer.css",
+    "resources/serve_web/viewer.js",
 ] }
 
 [tool.setuptools.packages.find]
