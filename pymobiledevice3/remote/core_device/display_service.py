@@ -53,6 +53,11 @@ class DisplayService(CoreDeviceService):
         display_id: int = 1,
         timeout: int = 20,
         client_session_id: Optional[uuid.UUID] = None,
+        *,
+        allow_rtcp_fb: bool = False,
+        ltrp_enabled: bool = False,
+        fec_enabled: bool = True,
+        tiles_per_frame: int = 1,
     ) -> dict:
         """Start an RTP video stream of one of the device's displays.
 
@@ -67,6 +72,16 @@ class DisplayService(CoreDeviceService):
         :param timeout: Negotiation timeout in seconds.
         :param client_session_id: Stable UUID identifying this session. A fresh UUID
                                   is generated when omitted.
+        :param allow_rtcp_fb: Set the protobuf-level ``allowRTCPFB`` flag. Default
+                              ``False``; shows no observable effect in the device's
+                              ``streamConfig`` answer but kept as an opt-in knob in
+                              case it changes internal encoder behaviour.
+        :param ltrp_enabled: Set the protobuf-level ``ltrpEnabled`` flag. Default
+                             ``False`` -- the device honours the request (confirmed
+                             by ``IsltrpEnabled: false`` in the answer's
+                             streamConfig), and LTRP-off eliminates mid-stream
+                             tearing under UDP loss. Apple's captured Xcode offer
+                             used ``True``; opt back in if you suspect a regression.
         :return: Response dict with ``connection`` (carries ``sender`` port + full
                  ``streamConfig``) and ``negotiatorAnswer``.
         """
@@ -74,7 +89,14 @@ class DisplayService(CoreDeviceService):
             client_session_id = uuid.uuid4()
         call_id = new_call_id()
         session_id = random.randint(0, 0xFFFFFFFF)
-        negotiator_offer = build_negotiator_offer_video(call_id=call_id, session_id=session_id)
+        negotiator_offer = build_negotiator_offer_video(
+            call_id=call_id,
+            session_id=session_id,
+            allow_rtcp_fb=allow_rtcp_fb,
+            ltrp_enabled=ltrp_enabled,
+            fec_enabled=fec_enabled,
+            tiles_per_frame=tiles_per_frame,
+        )
         request = {
             "clientSupportedFeatures": XpcUInt64Type(_CLIENT_SUPPORTED_FEATURES),
             "direction": "output",

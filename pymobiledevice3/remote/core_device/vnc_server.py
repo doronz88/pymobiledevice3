@@ -262,11 +262,13 @@ class VncStreamServer:
         self,
         rsd: RemoteServiceDiscoveryService,
         *,
-        bind: str = "127.0.0.1",
+        bind: str = "0.0.0.0",
         port: int = 5901,
         display_id: int = 1,
         audio: bool = False,
         decoder: str = "auto",
+        allow_rtcp_fb: bool = False,
+        ltrp_enabled: bool = False,
     ) -> None:
         self._rsd = rsd
         self._bind = bind
@@ -274,6 +276,9 @@ class VncStreamServer:
         self._display_id = display_id
         self._audio_enabled = audio
         self._sender_ip = rsd.service.address[0]
+        # Protobuf-level negotiation knobs; see media_stream_offer.py.
+        self._allow_rtcp_fb = allow_rtcp_fb
+        self._ltrp_enabled = ltrp_enabled
         self._transcoder_cls = _resolve_decoder(decoder)
         logger.info("HEVC decoder: %s", self._transcoder_cls.__module__)
 
@@ -1341,6 +1346,8 @@ class VncStreamServer:
             sender_ip=self._sender_ip,
             display_id=self._display_id,
             client_session_id=shared_session_id,
+            allow_rtcp_fb=self._allow_rtcp_fb,
+            ltrp_enabled=self._ltrp_enabled,
         )
         sid = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
         if not isinstance(sid, uuid.UUID):

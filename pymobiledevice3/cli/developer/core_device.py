@@ -836,13 +836,64 @@ async def core_device_display_start_audio_stream(
 async def core_device_display_serve_web(
     service_provider: RSDServiceProviderDep,
     display_id: Annotated[int, typer.Option("--display-id")] = 1,
-    bind: Annotated[str, typer.Option("--bind", help="Host to bind the webserver on")] = "127.0.0.1",
+    bind: Annotated[
+        str,
+        typer.Option(
+            "--bind",
+            help=(
+                "Host to bind the webserver on. Defaults to ``0.0.0.0`` so the "
+                "viewer is reachable from any device on the LAN. The /touch / "
+                "/button / /key endpoints have no auth, so anyone reaching this "
+                "port can both watch and control the iPhone -- pass ``127.0.0.1`` "
+                "if that's not what you want."
+            ),
+        ),
+    ] = "0.0.0.0",
     http_port: Annotated[int, typer.Option("--http-port", help="Port for the webserver")] = 8080,
     no_audio: Annotated[
         bool,
         typer.Option(
             "--no-audio",
             help="Don't auto-enable sound in the viewer (user can still click Enable Sound).",
+        ),
+    ] = False,
+    ltrp: Annotated[
+        bool,
+        typer.Option(
+            "--ltrp",
+            help=(
+                "Opt back into LTRP (long-term reference pictures). LTRP is OFF "
+                "by default because on-device probing showed the device honours "
+                "the protobuf-level switch (`IsltrpEnabled: false` in the "
+                "answer) and LTRP-off eliminates the mid-stream tearing pattern "
+                "under UDP loss. Apple's captured Xcode offer used LTRP-on; "
+                "this flag restores that for regression testing."
+            ),
+        ),
+    ] = False,
+    rtcp_fb: Annotated[
+        bool,
+        typer.Option(
+            "--rtcp-fb",
+            help=(
+                "Negotiate `allowRTCPFB=True` in the mediaBlob. No observable "
+                "effect in streamConfig but may influence internal encoder "
+                "behaviour."
+            ),
+        ),
+    ] = False,
+    https: Annotated[
+        bool,
+        typer.Option(
+            "--https",
+            help=(
+                "Serve over HTTPS using an ephemeral self-signed certificate. "
+                "Required for WebCodecs when accessing the viewer from a non-"
+                "loopback origin: the browser's secure-context policy refuses "
+                "WebCodecs over plain http:// from any LAN IP. The browser will "
+                "warn on first visit -- accept the cert and the viewer works "
+                "normally afterwards."
+            ),
         ),
     ] = False,
 ) -> None:
@@ -855,6 +906,8 @@ async def core_device_display_serve_web(
 
     Open ``http://<bind>:<http_port>/`` in Safari or Chrome (macOS Chrome needs
     HEVC support — recent versions enable it by default if the OS supports it).
+    Pass ``--https`` when connecting from another LAN host (browsers gate
+    WebCodecs on a secure context; only loopback origins bypass that).
     """
     server = ScreenStreamServer(
         service_provider,
@@ -862,6 +915,9 @@ async def core_device_display_serve_web(
         http_port=http_port,
         display_id=display_id,
         audio_default_on=not no_audio,
+        allow_rtcp_fb=rtcp_fb,
+        ltrp_enabled=ltrp,
+        https=https,
     )
     await server.serve()
 
@@ -871,7 +927,18 @@ async def core_device_display_serve_web(
 async def core_device_display_serve_vnc(
     service_provider: RSDServiceProviderDep,
     display_id: Annotated[int, typer.Option("--display-id")] = 1,
-    bind: Annotated[str, typer.Option("--bind", help="Host to bind the VNC listener on")] = "127.0.0.1",
+    bind: Annotated[
+        str,
+        typer.Option(
+            "--bind",
+            help=(
+                "Host to bind the VNC listener on. Defaults to ``0.0.0.0`` so "
+                "any device on the LAN can connect. The VNC server has no "
+                "password, so anyone reaching this port can watch AND control "
+                "the iPhone -- pass ``127.0.0.1`` if that's not acceptable."
+            ),
+        ),
+    ] = "0.0.0.0",
     port: Annotated[int, typer.Option("--port", help="TCP port for the VNC listener")] = 5901,
     audio: Annotated[
         bool,
@@ -891,6 +958,20 @@ async def core_device_display_serve_vnc(
             ),
         ),
     ] = "auto",
+    ltrp: Annotated[
+        bool,
+        typer.Option(
+            "--ltrp",
+            help="Opt back into LTRP (off by default; see serve-web for context).",
+        ),
+    ] = False,
+    rtcp_fb: Annotated[
+        bool,
+        typer.Option(
+            "--rtcp-fb",
+            help="Negotiate allowRTCPFB=True in the mediaBlob (experimental).",
+        ),
+    ] = False,
 ) -> None:
     """Serve the device's screen as a VNC (RFB 3.8) server.
 
@@ -917,6 +998,8 @@ async def core_device_display_serve_vnc(
         display_id=display_id,
         audio=audio,
         decoder=decoder,
+        allow_rtcp_fb=rtcp_fb,
+        ltrp_enabled=ltrp,
     )
     await server.serve()
 
