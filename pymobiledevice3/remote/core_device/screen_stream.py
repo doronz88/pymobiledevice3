@@ -34,6 +34,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 import pymobiledevice3.resources
+from pymobiledevice3.lockdown import create_using_usbmux as _create_lockdown_usbmux
 from pymobiledevice3.remote.core_device.aac_eld import AAC_ELD_ASC_48K_STEREO_480, AACELDDecoder
 from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
 from pymobiledevice3.remote.core_device.display_service import DisplayService
@@ -46,7 +47,9 @@ from pymobiledevice3.remote.core_device.hid_service import (
     IndigoHIDService,
     UniversalHIDServiceService,
 )
+from pymobiledevice3.remote.core_device.orientation_service import OrientationService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 
 # Named iOS hardware buttons → (usage_page, usage_code, hold_seconds).
 # Mirrors the table in cli/developer/core_device.py so the browser viewer
@@ -540,6 +543,16 @@ class ScreenStreamServer:
         self._last_good_au_t: float = 0.0
         self._last_restart_t: float = 0.0
         self._consecutive_restarts: int = 0
+
+        # Lazy lockdown handle + AccessibilityAudit cache for the
+        # accessibility sidebar -- opened on the first /accessibility
+        # request so a serve-web run without any accessibility use
+        # never has to touch usbmuxd. The audit's DTX reader tasks are
+        # closed during shutdown; otherwise they trigger a flurry of
+        # CancelledError tracebacks from the connection-cleanup path.
+        self._lockdown = None
+        self._accessibility: Optional[AccessibilityAudit] = None
+        self._accessibility_lock = asyncio.Lock()
 
     # ----- per-session UDP receiver -----------------------------------------
     async def _udp_recv_and_depacketize(self, sock: socket.socket) -> None:
@@ -1185,6 +1198,59 @@ class ScreenStreamServer:
             self._stream_dirty = False
 
     # ----- HID (touch + buttons) -------------------------------------------
+    # ----- Accessibility settings (lockdown / DTX) --------------------------
+    async def _ensure_accessibility(self) -> AccessibilityAudit:
+        """Lazy-open the lockdown + AccessibilityAudit handles. Cached
+        for the server's lifetime so we don't churn the DTX channel on
+        every panel interaction; closed in :meth:`serve`'s shutdown."""
+        if self._accessibility is None:
+            if self._lockdown is None:
+                self._lockdown = await _create_lockdown_usbmux(self._rsd.udid)
+            self._accessibility = AccessibilityAudit(self._lockdown)
+        return self._accessibility
+
+    async def _accessibility_list(self) -> list[dict]:
+        async with self._accessibility_lock:
+            audit = await self._ensure_accessibility()
+            settings = await audit.settings()
+        out: list[dict] = []
+        for s in settings:
+            val = s.value
+            # Whitelist serialisable scalars; everything else is dropped so
+            # bad responses don't break json.dumps for the whole list.
+            if isinstance(val, (bool, int, float, str)):
+                out.append({"key": s.key, "value": val})
+        return out
+
+    async def _accessibility_set(self, key: str, value) -> None:
+        async with self._accessibility_lock:
+            audit = await self._ensure_accessibility()
+            await audit.set_setting(key, value)
+
+    async def _accessibility_reset(self) -> None:
+        async with self._accessibility_lock:
+            audit = await self._ensure_accessibility()
+            await audit.reset_settings()
+
+    async def _stop_accessibility(self) -> None:
+        """Tear down the cached AccessibilityAudit (closes its DTX reader
+        task) so shutdown doesn't drag stale channels into the cancel
+        path -- their reader-loop CancelledError would otherwise log a
+        full traceback at ERROR level for each open channel.
+
+        Acquires ``_accessibility_lock`` first so an in-flight panel
+        request can finish before we pull the underlying DTX channel
+        out from under it; closing mid-decode produces a 'coroutine
+        ignored GeneratorExit' warning on Python 3.14 when the
+        in-flight bplist read can't unwind cleanly."""
+        with contextlib.suppress(Exception):
+            async with self._accessibility_lock:
+                audit = self._accessibility
+                self._accessibility = None
+                if audit is not None:
+                    with contextlib.suppress(Exception):
+                        await audit.close()
+
     async def _ensure_hid(self) -> None:
         """Lazily open the HID services + worker on first input event."""
         async with self._hid_lock:
@@ -1218,6 +1284,12 @@ class ScreenStreamServer:
                 with contextlib.suppress(Exception):
                     await self._indigo.close()
                 self._indigo = None
+            # The keyboard surface is host-registered against the live
+            # media stream; after a stream restart that ID points at a
+            # stale dtuhidd session and every report posted to it is
+            # silently dropped. Forget it so _ensure_keyboard re-creates
+            # one against the new stream on the next /key.
+            self._kb_service_id = None
 
     async def _hid_worker(self) -> None:
         """Single consumer that serially dispatches queued HID requests so
@@ -1500,6 +1572,46 @@ class ScreenStreamServer:
             await writer.drain()
             writer.close()
             return
+        if path.startswith("/accessibility"):
+            try:
+                resp_body: bytes
+                if path == "/accessibility" and method == "GET":
+                    settings = await self._accessibility_list()
+                    resp_body = json.dumps({"settings": settings}).encode()
+                elif path == "/accessibility/set" and method == "POST":
+                    body = await self._read_body(reader, headers)
+                    payload = json.loads(body)
+                    key = str(payload["key"])
+                    value = payload["value"]
+                    await self._accessibility_set(key, value)
+                    resp_body = b'{"ok":true}'
+                elif path == "/accessibility/reset" and method == "POST":
+                    await self._accessibility_reset()
+                    resp_body = b'{"ok":true}'
+                else:
+                    writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    await writer.drain()
+                    writer.close()
+                    return
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Cache-Control: no-store\r\n"
+                    b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + resp_body
+                )
+            except Exception as exc:
+                logger.exception("accessibility endpoint failed")
+                err = f"accessibility error: {exc}".encode()
+                writer.write(
+                    b"HTTP/1.1 500 Internal\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Content-Length: " + str(len(err)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + err
+                )
+            await writer.drain()
+            writer.close()
+            return
         if path == "/style":
             try:
                 if method == "POST":
@@ -1529,6 +1641,43 @@ class ScreenStreamServer:
             except Exception as exc:
                 logger.exception("style endpoint failed")
                 err = f"style endpoint error: {exc}".encode()
+                writer.write(
+                    b"HTTP/1.1 500 Internal\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Content-Length: " + str(len(err)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + err
+                )
+            await writer.drain()
+            writer.close()
+            return
+        if path == "/rotate" and method == "POST":
+            # 90 degree rotation step. JSON body: ``{"direction": "left"|"right"}``.
+            # The reply is the device's resulting orientation, which the viewer
+            # uses to apply a matching CSS transform to the canvas so the user
+            # sees the rotated content upright in the browser too.
+            body = await self._read_body(reader, headers)
+            try:
+                direction = str(json.loads(body)["direction"])
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                await writer.drain()
+                writer.close()
+                logger.debug("rotate POST: bad body %r (%s)", body, exc)
+                return
+            try:
+                async with OrientationService(self._rsd) as svc:
+                    state = await svc.rotate(direction)
+                resp_body = json.dumps({k: v for k, v in state.items() if isinstance(v, (str, bool))}).encode()
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Cache-Control: no-store\r\n"
+                    b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + resp_body
+                )
+            except Exception as exc:
+                logger.exception("rotate endpoint failed")
+                err = f"rotate error: {exc}".encode()
                 writer.write(
                     b"HTTP/1.1 500 Internal\r\n"
                     b"Content-Type: text/plain\r\n"
@@ -1997,6 +2146,15 @@ class ScreenStreamServer:
             await _bounded(_stop_video(), "_stop_active_stream")
             logger.debug("shutdown: stopping audio stream")
             await _bounded(_stop_audio(), "_stop_audio_stream")
+            # Close the accessibility audit BEFORE cancelling stragglers --
+            # otherwise its DTX reader task is one of the stragglers and
+            # its cancellation logs a 'Channel reader loop cancelled'
+            # ERROR-with-traceback. Closing first sets _closed=True on
+            # the channel so the reader exits silently. Any in-flight
+            # /accessibility request gets an exception out of its
+            # await audit.* call and falls through to its try/except.
+            logger.debug("shutdown: closing accessibility audit")
+            await _bounded(self._stop_accessibility(), "_stop_accessibility")
             # Cancel any lingering connection-handler tasks that the
             # HTTP server's wait_closed couldn't drain (e.g. a
             # /stream.bin or /audio.bin handler blocked in queue.get()

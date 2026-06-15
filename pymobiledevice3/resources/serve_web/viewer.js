@@ -15,11 +15,18 @@ function fitCanvasToViewport() {
     const dpr = window.devicePixelRatio || 1;
     const naturalW = canvas.width / dpr;
     const naturalH = canvas.height / dpr;
-    // Reserve room for the flanking side buttons + bottom row + util
-    // tray; ~30 px extra when the cosmetic bezel is on (14 px padding
-    // either side of the canvas).
+    // Reserve room for the flanking trays + side buttons + bottom row.
+    // We MEASURE the actual edge widths so collapse/uncollapse of either
+    // tray immediately reclaims space for the canvas. ~30 px extra when
+    // the cosmetic bezel is on (14 px padding either side).
+    const trayW = (id) => {
+        const el = document.getElementById(id);
+        return el ? el.getBoundingClientRect().width : 0;
+    };
+    const sideButtonsW = 80 + 80;  // side-left + side-right rough widths
     const frameSlack = document.body.classList.contains('frame-on') ? 32 : 0;
-    const availW = Math.max(100, window.innerWidth - 160 - frameSlack);
+    const reservedW = trayW('left-tray') + trayW('right-tray') + sideButtonsW + frameSlack + 40;
+    const availW = Math.max(100, window.innerWidth - reservedW);
     const availH = Math.max(100, window.innerHeight - 120 - frameSlack);
     const scale = Math.min(1, availW / naturalW, availH / naturalH);
     canvas.style.width  = (naturalW * scale) + 'px';
@@ -41,15 +48,37 @@ function hex(u8, n=24) {
 
 // ----- input: pointer -> /touch, hardware-buttons -> /button -----
 // HID coords are UInt16 (0..65535) normalised across the device screen.
-// We project from the canvas's CSS bounding box, NOT canvas.width/.height,
-// because the canvas is auto-scaled by max-width/max-height.
+//
+// `visualRotation` is how much the captured device buffer is rotated
+// when drawn into the canvas (signed multiples of 90, CSS convention:
+// positive = CW). The rotation lives INSIDE the canvas — i.e. we
+// resize the canvas to the rotated footprint and call ctx.rotate before
+// drawImage — so the canvas's CSS box already matches what the user
+// sees and the surrounding flex layout / cosmetic bezel wrap it
+// correctly even when the device is in landscape. touchCoords()
+// therefore has to inverse-rotate clicks back into the device buffer's
+// own coordinate system before normalising to HID 0..65535.
+let visualRotation = 0;
 function touchCoords(e) {
     const rect = canvas.getBoundingClientRect();
-    const xn = (e.clientX - rect.left) / rect.width;
-    const yn = (e.clientY - rect.top) / rect.height;
+    // Click in canvas backing-store pixel space.
+    const sx = (e.clientX - rect.left) * canvas.width  / rect.width;
+    const sy = (e.clientY - rect.top)  * canvas.height / rect.height;
+    const cw = canvas.width, ch = canvas.height;
+    const sideways = Math.abs(visualRotation % 180) === 90;
+    // Device buffer dims (un-rotated); canvas dims = rotated buffer dims.
+    const dw = sideways ? ch : cw;
+    const dh = sideways ? cw : ch;
+    const dx = sx - cw / 2;
+    const dy = sy - ch / 2;
+    // Inverse of ctx.rotate(visualRotation): rotate the click by -visualRotation.
+    const rad = -visualRotation * Math.PI / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const bx = dx * cos - dy * sin + dw / 2;
+    const by = dx * sin + dy * cos + dh / 2;
     return {
-        x: Math.max(0, Math.min(65535, Math.round(xn * 65535))),
-        y: Math.max(0, Math.min(65535, Math.round(yn * 65535))),
+        x: Math.max(0, Math.min(65535, Math.round(bx / dw * 65535))),
+        y: Math.max(0, Math.min(65535, Math.round(by / dh * 65535))),
     };
 }
 
@@ -204,7 +233,75 @@ function postKeys() {
     lastKeyPost = lastKeyPost.then(() => postJson('/key', {usages: snapshot}));
 }
 
+// Toggle for whether host keystrokes get forwarded to the device.
+// When off, all keydown/keyup events bypass our handlers so the
+// browser receives them normally (Cmd-L to focus the URL bar, Cmd-W
+// to close the tab, devtools shortcuts, etc.). Persisted across page
+// loads via localStorage so the user doesn't have to flip it every
+// reload.
+const kbBtn = document.getElementById('keyboard-toggle');
+let keyboardCaptureOn = true;
+try {
+    if (localStorage.getItem('keyboardCapture') === 'false') keyboardCaptureOn = false;
+} catch (e) {}
+function setKbLabel() {
+    kbBtn.textContent = 'Keyboard: ' + (keyboardCaptureOn ? 'on' : 'off');
+}
+setKbLabel();
+function releaseAllKeys() {
+    if (pressedUsages.size) {
+        pressedUsages.clear();
+        postKeys();
+    }
+}
+kbBtn.addEventListener('click', () => {
+    keyboardCaptureOn = !keyboardCaptureOn;
+    setKbLabel();
+    try { localStorage.setItem('keyboardCapture', keyboardCaptureOn ? 'true' : 'false'); } catch (e) {}
+});
+
+// Help modal: opened by '?' (or the '?' button), dismissed by Esc /
+// click outside / close-X. The shortcut works regardless of the
+// keyboard-capture toggle so the user can always reach it; while the
+// modal is open we gate all forwarding to the device so typing into
+// the page doesn't leak through.
+const helpOverlay = document.getElementById('help-overlay');
+function setHelpOpen(open) {
+    helpOverlay.classList.toggle('hidden', !open);
+    helpOverlay.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+function helpIsOpen() { return !helpOverlay.classList.contains('hidden'); }
+document.getElementById('help-toggle').addEventListener('click', () => setHelpOpen(true));
+document.getElementById('help-close').addEventListener('click', () => setHelpOpen(false));
+helpOverlay.addEventListener('click', (e) => {
+    // Click on the dimmed backdrop (outside the modal card) closes.
+    if (e.target === helpOverlay) setHelpOpen(false);
+});
+
 window.addEventListener('keydown', (e) => {
+    // '?' always opens help; Esc closes it. Both pre-empt the
+    // keyboard-capture gate so they work even when capture is off
+    // (and when on, we don't also forward shift+/ to the device).
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setHelpOpen(true);
+        return;
+    }
+    if (e.key === 'Escape' && helpIsOpen()) {
+        e.preventDefault();
+        setHelpOpen(false);
+        return;
+    }
+    // While help is open the device shouldn't see any keystrokes.
+    if (helpIsOpen()) { e.preventDefault(); return; }
+    // Local hotkeys (handled in the browser, never forwarded to the
+    // device) -- run BEFORE the keyboard-capture gate so they work
+    // regardless of whether forwarding is on.
+    if (e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
+        const k = e.key.toLowerCase();
+        if (k === 'p') { e.preventDefault(); takeScreenshot(); return; }
+    }
+    if (!keyboardCaptureOn) return;
     // Ctrl-hotkey path consumes the event; don't also type it.
     if (e.ctrlKey && !e.altKey && !e.metaKey) {
         const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
@@ -225,6 +322,7 @@ window.addEventListener('keydown', (e) => {
     }
 });
 window.addEventListener('keyup', (e) => {
+    if (helpIsOpen() || !keyboardCaptureOn) return;
     const usage = CODE_TO_HID[e.code];
     if (usage === undefined) return;
     e.preventDefault();
@@ -233,10 +331,130 @@ window.addEventListener('keyup', (e) => {
 window.addEventListener('blur', () => {
     // Window-blur means we won't see keyup; flush the bitmap so no
     // key ends up stuck-down on the device.
-    if (pressedUsages.size) {
-        pressedUsages.clear();
-        postKeys();
-    }
+    releaseAllKeys();
+});
+
+// ----- Orientation: POST /rotate with {direction: 'left'|'right'} and
+// keep the canvas in sync with the device's reported state.
+// Updating `visualRotation` triggers an immediate redraw of the most-
+// recent video frame at the new orientation (no wait for the next
+// decoded frame). If iOS subsequently re-renders the buffer in the
+// new orientation (its aspect ratio flips between portrait and
+// landscape), drawPending() auto-resets the rotation to 0 to avoid
+// double-rotating the now-natively-oriented content.
+const deviceFrameEl = document.getElementById('device-frame');
+function setVisualRotation(deg) {
+    deg = ((deg % 360) + 540) % 360 - 180;  // normalise to (-180, 180]
+    if (deg === visualRotation) return;
+    // Pick the shortest signed delta around the circle so a 180 ->
+    // -180 transition doesn't sweep the long way around.
+    let delta = deg - visualRotation;
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+    visualRotation = deg;
+    // Canvas-internal rotation snaps immediately (so dim swap + layout
+    // reflow happen now), then the device-frame's CSS transform is
+    // set to -delta degrees so the *visual* position matches where
+    // the canvas was a moment ago. We then animate the transform
+    // back to identity, giving a smooth perceived rotation while the
+    // surrounding layout has already moved.
+    redrawWithCurrentRotation();
+    deviceFrameEl.style.transition = 'none';
+    deviceFrameEl.style.transform = `rotate(${-delta}deg)`;
+    // Two RAFs to make sure the no-transition initial transform paints
+    // before we install the animating transition; one RAF is usually
+    // enough but two is safer across browsers.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        deviceFrameEl.style.transition = 'transform 0.3s cubic-bezier(.4,0,.2,1)';
+        deviceFrameEl.style.transform = '';
+    }));
+}
+// Device-reported orientation -> in-canvas rotation that mirrors how
+// the user is physically holding the device. landscapeLeft means the
+// device is tilted 90° CCW (home button on the right), so the captured
+// buffer content rotates CCW in the canvas (-90) — the device's top
+// edge ends up on the left of the canvas just like in the user's view.
+const ORIENTATION_DEGREES = {
+    portrait: 0,
+    landscapeLeft: -90,
+    portraitUpsideDown: 180,
+    landscapeRight: 90,
+};
+async function postRotate(direction) {
+    setVisualRotation(visualRotation + (direction === 'left' ? -90 : 90));
+    try {
+        const r = await fetch('/rotate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({direction}),
+        });
+        if (!r.ok) { log('rotate HTTP ' + r.status); return; }
+        const j = await r.json();
+        const target = ORIENTATION_DEGREES[j.currentDeviceOrientation];
+        if (typeof target === 'number') setVisualRotation(target);
+        log('rotate: ' + j.currentDeviceOrientation);
+    } catch (e) { log('rotate err: ' + (e.message || e)); }
+}
+document.getElementById('rotate-left').addEventListener('click', () => postRotate('left'));
+document.getElementById('rotate-right').addEventListener('click', () => postRotate('right'));
+
+// ----- Screenshot: save what's drawn into the canvas as a PNG.
+// Reads the existing backing store (including any in-canvas rotation),
+// so the file matches what the user sees -- no extra server round-trip.
+function tsStamp() {
+    const d = new Date();
+    const z = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
+}
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function takeScreenshot() {
+    if (!canvas.width || !canvas.height) { log('screenshot: canvas empty'); return; }
+    canvas.toBlob((blob) => {
+        if (!blob) { log('screenshot: toBlob returned null'); return; }
+        const name = `screenshot-${tsStamp()}.png`;
+        downloadBlob(blob, name);
+        log('saved ' + name);
+    }, 'image/png');
+}
+document.getElementById('screenshot').addEventListener('click', takeScreenshot);
+
+// ----- Reload window: full page reload. Useful when something is stuck
+// and Force Restart (which only restarts the device-side stream) isn't
+// enough.
+document.getElementById('reload-window').addEventListener('click', () => {
+    log('reloading page…');
+    setTimeout(() => location.reload(), 50);
+});
+
+// ----- Collapsible side trays. Persist the open/closed state per tray
+// so the layout survives a reload. Each tray button has data-tray=
+// {"left","right"}.
+function applyTrayState(side) {
+    const el = document.getElementById(side + '-tray');
+    if (!el) return;
+    let collapsed = false;
+    try { collapsed = localStorage.getItem('tray-' + side) === 'collapsed'; } catch (e) {}
+    el.classList.toggle('collapsed', collapsed);
+}
+function toggleTray(side) {
+    const el = document.getElementById(side + '-tray');
+    if (!el) return;
+    const collapsed = !el.classList.contains('collapsed');
+    el.classList.toggle('collapsed', collapsed);
+    try { localStorage.setItem('tray-' + side, collapsed ? 'collapsed' : 'open'); } catch (e) {}
+    fitCanvasToViewport();
+}
+applyTrayState('left'); applyTrayState('right');
+document.querySelectorAll('.tray-toggle').forEach(btn => {
+    btn.addEventListener('click', () => toggleTray(btn.dataset.tray));
 });
 
 // ----- Force Restart: drop the current video stream + reload the page.
@@ -457,22 +675,138 @@ async function fetchCodecWithRetry() {
 // memory — we always show the most recent decoded frame.
 let pendingFrame = null;
 let rafScheduled = false;
+// The most recent decoded VideoFrame, kept alive so we can redraw it
+// at a new rotation without waiting for the next decode. Closed when
+// it's replaced or when the page is unloaded.
+let lastFrame = null;
+// Last frame's buffer-aspect orientation (true = landscape, false =
+// portrait). When iOS re-renders after a rotation the buffer aspect
+// flips — that signals the content is now natively oriented in the
+// buffer, so we drop our in-canvas rotation to avoid double-rotating.
+let lastFrameLandscape = null;
+function drawFrame(f) {
+    const sideways = Math.abs(visualRotation % 180) === 90;
+    const targetW = sideways ? f.displayHeight : f.displayWidth;
+    const targetH = sideways ? f.displayWidth  : f.displayHeight;
+    if (targetW !== canvas.width || targetH !== canvas.height) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+        fitCanvasToViewport();
+    }
+    ctx.save();
+    ctx.translate(targetW / 2, targetH / 2);
+    if (visualRotation) ctx.rotate(visualRotation * Math.PI / 180);
+    ctx.drawImage(f, -f.displayWidth / 2, -f.displayHeight / 2);
+    ctx.restore();
+}
+function redrawWithCurrentRotation() {
+    if (lastFrame) drawFrame(lastFrame);
+}
 function drawPending() {
     rafScheduled = false;
     const f = pendingFrame;
     pendingFrame = null;
     if (!f) return;
-    try {
-        if (f.displayWidth !== canvas.width || f.displayHeight !== canvas.height) {
-            canvas.width = f.displayWidth;
-            canvas.height = f.displayHeight;
-            fitCanvasToViewport();
-        }
-        ctx.drawImage(f, 0, 0);
-    } finally {
-        try { f.close(); } catch (e) {}
+    const landscape = f.displayWidth > f.displayHeight;
+    if (lastFrameLandscape !== null && landscape !== lastFrameLandscape && visualRotation !== 0) {
+        // iOS rerendered the buffer in the new orientation — content is
+        // now natively upright, so drop our in-canvas rotation.
+        visualRotation = 0;
     }
+    lastFrameLandscape = landscape;
+    try {
+        drawFrame(f);
+    } catch (e) {
+        log('draw err: ' + (e.message || e));
+    }
+    if (lastFrame && lastFrame !== f) {
+        try { lastFrame.close(); } catch (_) {}
+    }
+    lastFrame = f;
 }
+
+// ----- Offline overlay: show a banner over the canvas if frames stop
+// flowing. We sample frameCount once a second; if it hasn't moved for
+// ~3 consecutive seconds AND the stream has actually started (we've
+// drawn at least one frame), reveal the overlay. The moment a new
+// frame lands, hide it again.
+const offlineOverlay = document.getElementById('offline-overlay');
+const OFFLINE_GRACE_SECS = 3;
+let _lastFc = -1, _stableSec = 0;
+setInterval(() => {
+    if (frameCount === 0) { offlineOverlay.classList.add('hidden'); _lastFc = 0; _stableSec = 0; return; }
+    if (frameCount === _lastFc) {
+        _stableSec += 1;
+        if (_stableSec >= OFFLINE_GRACE_SECS) offlineOverlay.classList.remove('hidden');
+    } else {
+        _stableSec = 0;
+        offlineOverlay.classList.add('hidden');
+    }
+    _lastFc = frameCount;
+}, 1000);
+
+// ----- Accessibility panel: GET /accessibility lists current settings,
+// POST /accessibility/set with {key, value} updates one, POST
+// /accessibility/reset wipes everything back to defaults. Values can
+// be bool (checkbox) or float (slider 0..1) -- the device's
+// DYNAMIC_TYPE setting is a float; everything else we've observed is
+// a bool.
+const axList = document.getElementById('accessibility-list');
+function renderAxRow(setting) {
+    const row = document.createElement('div');
+    row.className = 'axrow';
+    const id = 'ax-' + setting.key;
+    const label = document.createElement('label');
+    label.setAttribute('for', id);
+    label.textContent = setting.key.replace(/_/g, ' ').toLowerCase();
+    label.title = setting.key;
+    row.appendChild(label);
+    if (typeof setting.value === 'boolean') {
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.id = id; cb.checked = setting.value;
+        cb.addEventListener('change', () => postAxSet(setting.key, cb.checked));
+        row.appendChild(cb);
+    } else {
+        const sl = document.createElement('input');
+        sl.type = 'range'; sl.id = id; sl.min = '0'; sl.max = '1'; sl.step = '0.05';
+        sl.value = String(setting.value);
+        const v = document.createElement('span');
+        v.className = 'axvalue'; v.textContent = Number(setting.value).toFixed(2);
+        sl.addEventListener('input', () => { v.textContent = Number(sl.value).toFixed(2); });
+        sl.addEventListener('change', () => postAxSet(setting.key, Number(sl.value)));
+        row.appendChild(sl); row.appendChild(v);
+    }
+    return row;
+}
+async function reloadAccessibility() {
+    try {
+        const r = await fetch('/accessibility', { cache: 'no-store' });
+        if (!r.ok) { axList.textContent = 'load failed: HTTP ' + r.status; return; }
+        const j = await r.json();
+        axList.innerHTML = '';
+        for (const s of j.settings || []) axList.appendChild(renderAxRow(s));
+    } catch (e) { axList.textContent = 'load err: ' + (e.message || e); }
+}
+async function postAxSet(key, value) {
+    try {
+        const r = await fetch('/accessibility/set', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({key, value}),
+        });
+        if (!r.ok) log('ax set ' + key + ': HTTP ' + r.status);
+        else log('ax: ' + key + ' = ' + value);
+    } catch (e) { log('ax set err: ' + (e.message || e)); }
+}
+document.getElementById('accessibility-reset').addEventListener('click', async () => {
+    try {
+        const r = await fetch('/accessibility/reset', {method: 'POST'});
+        if (!r.ok) { log('ax reset HTTP ' + r.status); return; }
+        log('accessibility reset');
+        reloadAccessibility();
+    } catch (e) { log('ax reset err: ' + (e.message || e)); }
+});
+reloadAccessibility();
 
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));
