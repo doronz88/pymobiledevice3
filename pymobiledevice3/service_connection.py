@@ -205,6 +205,7 @@ class ServiceConnection:
                 fut.cancel()
             else:
                 fut.set_exception(e)
+                fut.exception()  # prevent "Future exception was never retrieved" warning
             raise
 
     async def aclose(self) -> None:
