@@ -41,15 +41,37 @@ function hex(u8, n=24) {
 
 // ----- input: pointer -> /touch, hardware-buttons -> /button -----
 // HID coords are UInt16 (0..65535) normalised across the device screen.
-// We project from the canvas's CSS bounding box, NOT canvas.width/.height,
-// because the canvas is auto-scaled by max-width/max-height.
+//
+// `visualRotation` is how much the captured device buffer is rotated
+// when drawn into the canvas (signed multiples of 90, CSS convention:
+// positive = CW). The rotation lives INSIDE the canvas — i.e. we
+// resize the canvas to the rotated footprint and call ctx.rotate before
+// drawImage — so the canvas's CSS box already matches what the user
+// sees and the surrounding flex layout / cosmetic bezel wrap it
+// correctly even when the device is in landscape. touchCoords()
+// therefore has to inverse-rotate clicks back into the device buffer's
+// own coordinate system before normalising to HID 0..65535.
+let visualRotation = 0;
 function touchCoords(e) {
     const rect = canvas.getBoundingClientRect();
-    const xn = (e.clientX - rect.left) / rect.width;
-    const yn = (e.clientY - rect.top) / rect.height;
+    // Click in canvas backing-store pixel space.
+    const sx = (e.clientX - rect.left) * canvas.width  / rect.width;
+    const sy = (e.clientY - rect.top)  * canvas.height / rect.height;
+    const cw = canvas.width, ch = canvas.height;
+    const sideways = Math.abs(visualRotation % 180) === 90;
+    // Device buffer dims (un-rotated); canvas dims = rotated buffer dims.
+    const dw = sideways ? ch : cw;
+    const dh = sideways ? cw : ch;
+    const dx = sx - cw / 2;
+    const dy = sy - ch / 2;
+    // Inverse of ctx.rotate(visualRotation): rotate the click by -visualRotation.
+    const rad = -visualRotation * Math.PI / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const bx = dx * cos - dy * sin + dw / 2;
+    const by = dx * sin + dy * cos + dh / 2;
     return {
-        x: Math.max(0, Math.min(65535, Math.round(xn * 65535))),
-        y: Math.max(0, Math.min(65535, Math.round(yn * 65535))),
+        x: Math.max(0, Math.min(65535, Math.round(bx / dw * 65535))),
+        y: Math.max(0, Math.min(65535, Math.round(by / dh * 65535))),
     };
 }
 
@@ -238,6 +260,49 @@ window.addEventListener('blur', () => {
         postKeys();
     }
 });
+
+// ----- Orientation: POST /rotate with {direction: 'left'|'right'} and
+// keep the canvas in sync with the device's reported state.
+// Updating `visualRotation` triggers an immediate redraw of the most-
+// recent video frame at the new orientation (no wait for the next
+// decoded frame). If iOS subsequently re-renders the buffer in the
+// new orientation (its aspect ratio flips between portrait and
+// landscape), drawPending() auto-resets the rotation to 0 to avoid
+// double-rotating the now-natively-oriented content.
+function setVisualRotation(deg) {
+    deg = ((deg % 360) + 540) % 360 - 180;  // normalise to (-180, 180]
+    if (deg === visualRotation) return;
+    visualRotation = deg;
+    redrawWithCurrentRotation();
+}
+// Device-reported orientation -> in-canvas rotation that mirrors how
+// the user is physically holding the device. landscapeLeft means the
+// device is tilted 90° CCW (home button on the right), so the captured
+// buffer content rotates CCW in the canvas (-90) — the device's top
+// edge ends up on the left of the canvas just like in the user's view.
+const ORIENTATION_DEGREES = {
+    portrait: 0,
+    landscapeLeft: -90,
+    portraitUpsideDown: 180,
+    landscapeRight: 90,
+};
+async function postRotate(direction) {
+    setVisualRotation(visualRotation + (direction === 'left' ? -90 : 90));
+    try {
+        const r = await fetch('/rotate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({direction}),
+        });
+        if (!r.ok) { log('rotate HTTP ' + r.status); return; }
+        const j = await r.json();
+        const target = ORIENTATION_DEGREES[j.currentDeviceOrientation];
+        if (typeof target === 'number') setVisualRotation(target);
+        log('rotate: ' + j.currentDeviceOrientation);
+    } catch (e) { log('rotate err: ' + (e.message || e)); }
+}
+document.getElementById('rotate-left').addEventListener('click', () => postRotate('left'));
+document.getElementById('rotate-right').addEventListener('click', () => postRotate('right'));
 
 // ----- Force Restart: drop the current video stream + reload the page.
 // Wipes all client-side state and pulls a fresh IDR from a new stream.
@@ -457,21 +522,54 @@ async function fetchCodecWithRetry() {
 // memory — we always show the most recent decoded frame.
 let pendingFrame = null;
 let rafScheduled = false;
+// The most recent decoded VideoFrame, kept alive so we can redraw it
+// at a new rotation without waiting for the next decode. Closed when
+// it's replaced or when the page is unloaded.
+let lastFrame = null;
+// Last frame's buffer-aspect orientation (true = landscape, false =
+// portrait). When iOS re-renders after a rotation the buffer aspect
+// flips — that signals the content is now natively oriented in the
+// buffer, so we drop our in-canvas rotation to avoid double-rotating.
+let lastFrameLandscape = null;
+function drawFrame(f) {
+    const sideways = Math.abs(visualRotation % 180) === 90;
+    const targetW = sideways ? f.displayHeight : f.displayWidth;
+    const targetH = sideways ? f.displayWidth  : f.displayHeight;
+    if (targetW !== canvas.width || targetH !== canvas.height) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+        fitCanvasToViewport();
+    }
+    ctx.save();
+    ctx.translate(targetW / 2, targetH / 2);
+    if (visualRotation) ctx.rotate(visualRotation * Math.PI / 180);
+    ctx.drawImage(f, -f.displayWidth / 2, -f.displayHeight / 2);
+    ctx.restore();
+}
+function redrawWithCurrentRotation() {
+    if (lastFrame) drawFrame(lastFrame);
+}
 function drawPending() {
     rafScheduled = false;
     const f = pendingFrame;
     pendingFrame = null;
     if (!f) return;
-    try {
-        if (f.displayWidth !== canvas.width || f.displayHeight !== canvas.height) {
-            canvas.width = f.displayWidth;
-            canvas.height = f.displayHeight;
-            fitCanvasToViewport();
-        }
-        ctx.drawImage(f, 0, 0);
-    } finally {
-        try { f.close(); } catch (e) {}
+    const landscape = f.displayWidth > f.displayHeight;
+    if (lastFrameLandscape !== null && landscape !== lastFrameLandscape && visualRotation !== 0) {
+        // iOS rerendered the buffer in the new orientation — content is
+        // now natively upright, so drop our in-canvas rotation.
+        visualRotation = 0;
     }
+    lastFrameLandscape = landscape;
+    try {
+        drawFrame(f);
+    } catch (e) {
+        log('draw err: ' + (e.message || e));
+    }
+    if (lastFrame && lastFrame !== f) {
+        try { lastFrame.close(); } catch (_) {}
+    }
+    lastFrame = f;
 }
 
 async function run() {

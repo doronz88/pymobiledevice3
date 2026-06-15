@@ -46,6 +46,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
     IndigoHIDService,
     UniversalHIDServiceService,
 )
+from pymobiledevice3.remote.core_device.orientation_service import OrientationService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 # Named iOS hardware buttons → (usage_page, usage_code, hold_seconds).
@@ -1529,6 +1530,43 @@ class ScreenStreamServer:
             except Exception as exc:
                 logger.exception("style endpoint failed")
                 err = f"style endpoint error: {exc}".encode()
+                writer.write(
+                    b"HTTP/1.1 500 Internal\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Content-Length: " + str(len(err)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + err
+                )
+            await writer.drain()
+            writer.close()
+            return
+        if path == "/rotate" and method == "POST":
+            # 90 degree rotation step. JSON body: ``{"direction": "left"|"right"}``.
+            # The reply is the device's resulting orientation, which the viewer
+            # uses to apply a matching CSS transform to the canvas so the user
+            # sees the rotated content upright in the browser too.
+            body = await self._read_body(reader, headers)
+            try:
+                direction = str(json.loads(body)["direction"])
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                await writer.drain()
+                writer.close()
+                logger.debug("rotate POST: bad body %r (%s)", body, exc)
+                return
+            try:
+                async with OrientationService(self._rsd) as svc:
+                    state = await svc.rotate(direction)
+                resp_body = json.dumps({k: v for k, v in state.items() if isinstance(v, (str, bool))}).encode()
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Cache-Control: no-store\r\n"
+                    b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + resp_body
+                )
+            except Exception as exc:
+                logger.exception("rotate endpoint failed")
+                err = f"rotate error: {exc}".encode()
                 writer.write(
                     b"HTTP/1.1 500 Internal\r\n"
                     b"Content-Type: text/plain\r\n"
