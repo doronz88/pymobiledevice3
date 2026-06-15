@@ -268,7 +268,7 @@ class VncStreamServer:
         audio: bool = False,
         decoder: str = "auto",
         allow_rtcp_fb: bool = False,
-        ltrp_enabled: bool = True,
+        ltrp_enabled: bool = False,
     ) -> None:
         self._rsd = rsd
         self._bind = bind

@@ -219,7 +219,7 @@ def build_media_blob_video(
     session_id: int,
     *,
     allow_rtcp_fb: bool = False,
-    ltrp_enabled: bool = True,
+    ltrp_enabled: bool = False,
     hevc_payload_type: int = 123,
     avc_payload_type: int = 100,
     hevc_features: str = _DEFAULT_HEVC_FEATURES,
@@ -380,7 +380,7 @@ def build_negotiator_offer_video(
     host_build: str = "25F80",
     *,
     allow_rtcp_fb: bool = False,
-    ltrp_enabled: bool = True,
+    ltrp_enabled: bool = False,
     hevc_features: str = _DEFAULT_HEVC_FEATURES,
     avc_features: str = _DEFAULT_AVC_FEATURES,
 ) -> bytes:
@@ -452,8 +452,15 @@ _CAPTURED_AUDIO_SESSION_ID = 2934526132
 
 
 def _self_check() -> None:
-    """Assert default-args builders byte-equal the captured Xcode templates."""
-    vid = build_media_blob_video(_CAPTURED_VIDEO_SESSION_ID)
+    """Assert the builders can still reproduce the captured Xcode templates.
+
+    The captured template had ``ltrp_enabled=True``; the default flipped to
+    ``False`` after on-device probing showed the device honours the
+    protobuf-level switch and LTRP-off eliminates mid-stream tearing under
+    UDP loss. Pass ``ltrp_enabled=True`` here to keep the byte-equivalence
+    regression check meaningful.
+    """
+    vid = build_media_blob_video(_CAPTURED_VIDEO_SESSION_ID, ltrp_enabled=True)
     assert vid == _CAPTURED_VIDEO_TEMPLATE, (
         f"video builder drifted from Xcode capture: "
         f"len(built)={len(vid)} vs len(captured)={len(_CAPTURED_VIDEO_TEMPLATE)}"

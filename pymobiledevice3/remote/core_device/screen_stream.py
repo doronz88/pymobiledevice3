@@ -334,7 +334,7 @@ class ScreenStreamServer:
         display_id: int = 1,
         audio_default_on: bool = True,
         allow_rtcp_fb: bool = False,
-        ltrp_enabled: bool = True,
+        ltrp_enabled: bool = False,
     ) -> None:
         self._rsd = rsd
         self._bind = bind
@@ -342,9 +342,10 @@ class ScreenStreamServer:
         self._display_id = display_id
         self._audio_default_on = audio_default_on
         # Protobuf-level negotiation knobs forwarded to every
-        # ``DisplayService.start_video_stream`` we issue. Defaults match the
-        # captured Xcode offer; the user-facing CLI can override them to
-        # probe LTRP / RTCP-feedback behaviour (see media_stream_offer.py).
+        # ``DisplayService.start_video_stream`` we issue. ``ltrp_enabled=False``
+        # default came out of on-device probing: the device honours the
+        # request and LTRP-off eliminates mid-stream tearing under UDP loss.
+        # See media_stream_offer.py for the full schema notes.
         self._allow_rtcp_fb = allow_rtcp_fb
         self._ltrp_enabled = ltrp_enabled
         self._sender_ip = rsd.service.address[0]

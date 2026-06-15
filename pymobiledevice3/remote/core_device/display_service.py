@@ -55,7 +55,7 @@ class DisplayService(CoreDeviceService):
         client_session_id: Optional[uuid.UUID] = None,
         *,
         allow_rtcp_fb: bool = False,
-        ltrp_enabled: bool = True,
+        ltrp_enabled: bool = False,
     ) -> dict:
         """Start an RTP video stream of one of the device's displays.
 
@@ -71,15 +71,15 @@ class DisplayService(CoreDeviceService):
         :param client_session_id: Stable UUID identifying this session. A fresh UUID
                                   is generated when omitted.
         :param allow_rtcp_fb: Set the protobuf-level ``allowRTCPFB`` flag. Default
-                              ``False`` matches Apple's captured Xcode offer; flip
-                              to ``True`` to invite the device to honour our RTCP
-                              feedback (RR/REMB/TWCC) for closed-loop rate control.
+                              ``False``; shows no observable effect in the device's
+                              ``streamConfig`` answer but kept as an opt-in knob in
+                              case it changes internal encoder behaviour.
         :param ltrp_enabled: Set the protobuf-level ``ltrpEnabled`` flag. Default
-                             ``True`` matches Apple's capture (and is what
-                             produces the LTRP-driven mid-stream tearing on
-                             iPhone). Flip to ``False`` to negotiate an LTRP-free
-                             stream -- distinct from the outer options-dict knob
-                             previously probed.
+                             ``False`` -- the device honours the request (confirmed
+                             by ``IsltrpEnabled: false`` in the answer's
+                             streamConfig), and LTRP-off eliminates mid-stream
+                             tearing under UDP loss. Apple's captured Xcode offer
+                             used ``True``; opt back in if you suspect a regression.
         :return: Response dict with ``connection`` (carries ``sender`` port + full
                  ``streamConfig``) and ``negotiatorAnswer``.
         """
