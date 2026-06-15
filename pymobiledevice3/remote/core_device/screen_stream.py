@@ -178,8 +178,17 @@ VIEWER_HTML = r"""<!doctype html>
  .side{display:flex;flex-direction:column;gap:6px;padding-top:18%}
  #side-left{align-items:flex-end}
  #side-right{align-items:flex-start}
- canvas{max-width:calc(100vw - 160px);max-height:calc(100vh - 120px);
-        image-rendering:auto;touch-action:none;cursor:crosshair;background:#000}
+ /* Canvas display size is set by JS (`fitCanvasToViewport`) so the
+    CSS-pixel dimensions map cleanly to device pixels at the current
+    devicePixelRatio. On a Retina/HiDPI screen that means every backing-
+    store pixel lands on exactly one device pixel = the crisp 1:1 look
+    even when the panel is logically "downscaled" to fit the viewport.
+    `image-rendering: high-quality` is a Chrome hint that picks the
+    best filter when JS does end up forcing further downscaling on
+    low-DPR / small-window setups. */
+ canvas{touch-action:none;cursor:crosshair;background:#000;
+        image-rendering:-webkit-optimize-contrast;
+        image-rendering:high-quality}
  /* Cosmetic iPhone bezel: a padded rounded-rect around the canvas.
     Pure CSS, no device-model awareness -- the frame just wraps whatever
     aspect ratio the canvas ends up at. Toggle via `body.frame-on` so
@@ -189,8 +198,7 @@ VIEWER_HTML = r"""<!doctype html>
    padding:14px;border-radius:46px;
    background:linear-gradient(145deg,#2a2a2c,#101012);
    box-shadow:0 0 0 1px #3a3a3c inset, 0 10px 36px rgba(0,0,0,.55)}
- body.frame-on canvas{border-radius:32px;
-   max-width:calc(100vw - 200px);max-height:calc(100vh - 170px)}
+ body.frame-on canvas{border-radius:32px}
  #bottom-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
              max-width:100vw}
  button.btn{background:#222;color:#ddd;border:1px solid #444;border-radius:6px;
@@ -206,8 +214,6 @@ VIEWER_HTML = r"""<!doctype html>
  @media (max-width: 700px){
   #stage{flex-direction:column;align-items:center}
   .side{flex-direction:row;flex-wrap:wrap;justify-content:center;padding-top:0}
-  canvas{max-width:100vw;max-height:calc(100vh - 200px)}
-  body.frame-on canvas{max-width:calc(100vw - 30px);max-height:calc(100vh - 230px)}
  }
  /* Status / log overlay: pinned to top-left and capped at 220 px
     so it stays clear of the left-flank Vol / Mute buttons. */
@@ -250,6 +256,31 @@ VIEWER_HTML = r"""<!doctype html>
 window.AUDIO_DEFAULT_ON = __AUDIO_DEFAULT_ON__;
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+
+// Size the canvas in CSS pixels so its display dimensions divide
+// cleanly by devicePixelRatio -- on a 2x screen each backing-store
+// pixel lands on one device pixel, giving the 1:1 native-resolution
+// look while still fitting inside the viewport. When the viewport
+// can't even fit the DPR-divided size we fall back to a further
+// proportional shrink (still anchored to integer-ish device pixels
+// where possible); image-rendering:high-quality keeps that fallback
+// path from going visibly blocky.
+function fitCanvasToViewport() {
+    if (!canvas.width || !canvas.height) return;
+    const dpr = window.devicePixelRatio || 1;
+    const naturalW = canvas.width / dpr;
+    const naturalH = canvas.height / dpr;
+    // Reserve room for the flanking side buttons + bottom row + util
+    // tray; ~30 px extra when the cosmetic bezel is on (14 px padding
+    // either side of the canvas).
+    const frameSlack = document.body.classList.contains('frame-on') ? 32 : 0;
+    const availW = Math.max(100, window.innerWidth - 160 - frameSlack);
+    const availH = Math.max(100, window.innerHeight - 120 - frameSlack);
+    const scale = Math.min(1, availW / naturalW, availH / naturalH);
+    canvas.style.width  = (naturalW * scale) + 'px';
+    canvas.style.height = (naturalH * scale) + 'px';
+}
+window.addEventListener('resize', fitCanvasToViewport);
 const statusEl = document.getElementById('status');
 let frameCount = 0;
 const lines = ['connecting...'];
@@ -514,6 +545,7 @@ setFrameLabel();
 frameBtn.addEventListener('click', () => {
     const on = document.body.classList.toggle('frame-on');
     setFrameLabel();
+    fitCanvasToViewport();
     try { localStorage.setItem('frameOn', on ? 'true' : 'false'); } catch (e) {}
 });
 
@@ -689,6 +721,7 @@ function drawPending() {
         if (f.displayWidth !== canvas.width || f.displayHeight !== canvas.height) {
             canvas.width = f.displayWidth;
             canvas.height = f.displayHeight;
+            fitCanvasToViewport();
         }
         ctx.drawImage(f, 0, 0);
     } finally {
