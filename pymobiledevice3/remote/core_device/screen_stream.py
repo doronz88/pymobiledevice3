@@ -333,12 +333,20 @@ class ScreenStreamServer:
         http_port: int = 8080,
         display_id: int = 1,
         audio_default_on: bool = True,
+        allow_rtcp_fb: bool = False,
+        ltrp_enabled: bool = True,
     ) -> None:
         self._rsd = rsd
         self._bind = bind
         self._http_port = http_port
         self._display_id = display_id
         self._audio_default_on = audio_default_on
+        # Protobuf-level negotiation knobs forwarded to every
+        # ``DisplayService.start_video_stream`` we issue. Defaults match the
+        # captured Xcode offer; the user-facing CLI can override them to
+        # probe LTRP / RTCP-feedback behaviour (see media_stream_offer.py).
+        self._allow_rtcp_fb = allow_rtcp_fb
+        self._ltrp_enabled = ltrp_enabled
         self._sender_ip = rsd.service.address[0]
 
         # Broadcast state — each subscriber gets framed access units written as:
@@ -1046,6 +1054,8 @@ class ScreenStreamServer:
                 sender_ip=self._sender_ip,
                 display_id=self._display_id,
                 client_session_id=self._shared_session_id,
+                allow_rtcp_fb=self._allow_rtcp_fb,
+                ltrp_enabled=self._ltrp_enabled,
             )
             sid = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
             if not isinstance(sid, uuid.UUID):

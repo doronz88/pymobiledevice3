@@ -845,6 +845,29 @@ async def core_device_display_serve_web(
             help="Don't auto-enable sound in the viewer (user can still click Enable Sound).",
         ),
     ] = False,
+    no_ltrp: Annotated[
+        bool,
+        typer.Option(
+            "--no-ltrp",
+            help=(
+                "Negotiate `ltrpEnabled=False` in the mediaBlob. Experimental: "
+                "LTRP-driven mid-stream tearing should disappear, at the cost "
+                "of more periodic IDRs. Default off (matches Apple's captured "
+                "Xcode offer)."
+            ),
+        ),
+    ] = False,
+    rtcp_fb: Annotated[
+        bool,
+        typer.Option(
+            "--rtcp-fb",
+            help=(
+                "Negotiate `allowRTCPFB=True` in the mediaBlob. Experimental: "
+                "may invite the device's encoder to honour our RTCP feedback "
+                "(RR / REMB / TWCC), closing the open-loop rate control."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Serve the device's screen via HTTP — view in any modern browser.
 
@@ -862,6 +885,8 @@ async def core_device_display_serve_web(
         http_port=http_port,
         display_id=display_id,
         audio_default_on=not no_audio,
+        allow_rtcp_fb=rtcp_fb,
+        ltrp_enabled=not no_ltrp,
     )
     await server.serve()
 
@@ -891,6 +916,20 @@ async def core_device_display_serve_vnc(
             ),
         ),
     ] = "auto",
+    no_ltrp: Annotated[
+        bool,
+        typer.Option(
+            "--no-ltrp",
+            help="Negotiate ltrpEnabled=False in the mediaBlob (experimental).",
+        ),
+    ] = False,
+    rtcp_fb: Annotated[
+        bool,
+        typer.Option(
+            "--rtcp-fb",
+            help="Negotiate allowRTCPFB=True in the mediaBlob (experimental).",
+        ),
+    ] = False,
 ) -> None:
     """Serve the device's screen as a VNC (RFB 3.8) server.
 
@@ -917,6 +956,8 @@ async def core_device_display_serve_vnc(
         display_id=display_id,
         audio=audio,
         decoder=decoder,
+        allow_rtcp_fb=rtcp_fb,
+        ltrp_enabled=not no_ltrp,
     )
     await server.serve()
 

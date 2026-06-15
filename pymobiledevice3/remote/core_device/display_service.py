@@ -53,6 +53,9 @@ class DisplayService(CoreDeviceService):
         display_id: int = 1,
         timeout: int = 20,
         client_session_id: Optional[uuid.UUID] = None,
+        *,
+        allow_rtcp_fb: bool = False,
+        ltrp_enabled: bool = True,
     ) -> dict:
         """Start an RTP video stream of one of the device's displays.
 
@@ -67,6 +70,16 @@ class DisplayService(CoreDeviceService):
         :param timeout: Negotiation timeout in seconds.
         :param client_session_id: Stable UUID identifying this session. A fresh UUID
                                   is generated when omitted.
+        :param allow_rtcp_fb: Set the protobuf-level ``allowRTCPFB`` flag. Default
+                              ``False`` matches Apple's captured Xcode offer; flip
+                              to ``True`` to invite the device to honour our RTCP
+                              feedback (RR/REMB/TWCC) for closed-loop rate control.
+        :param ltrp_enabled: Set the protobuf-level ``ltrpEnabled`` flag. Default
+                             ``True`` matches Apple's capture (and is what
+                             produces the LTRP-driven mid-stream tearing on
+                             iPhone). Flip to ``False`` to negotiate an LTRP-free
+                             stream -- distinct from the outer options-dict knob
+                             previously probed.
         :return: Response dict with ``connection`` (carries ``sender`` port + full
                  ``streamConfig``) and ``negotiatorAnswer``.
         """
@@ -74,7 +87,12 @@ class DisplayService(CoreDeviceService):
             client_session_id = uuid.uuid4()
         call_id = new_call_id()
         session_id = random.randint(0, 0xFFFFFFFF)
-        negotiator_offer = build_negotiator_offer_video(call_id=call_id, session_id=session_id)
+        negotiator_offer = build_negotiator_offer_video(
+            call_id=call_id,
+            session_id=session_id,
+            allow_rtcp_fb=allow_rtcp_fb,
+            ltrp_enabled=ltrp_enabled,
+        )
         request = {
             "clientSupportedFeatures": XpcUInt64Type(_CLIENT_SUPPORTED_FEATURES),
             "direction": "output",
