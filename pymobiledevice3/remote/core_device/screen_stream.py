@@ -14,14 +14,24 @@ Layering::
 
 import asyncio
 import contextlib
+import datetime
 import importlib.resources
+import ipaddress
 import json
 import logging
+import os
 import socket
+import ssl
+import tempfile
 import uuid
 from collections import deque
 from pathlib import Path
 from typing import Optional
+
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.x509.oid import NameOID
 
 import pymobiledevice3.resources
 from pymobiledevice3.remote.core_device.aac_eld import AAC_ELD_ASC_48K_STEREO_480, AACELDDecoder
@@ -168,6 +178,64 @@ _VIEWER_DIR = importlib.resources.files(pymobiledevice3.resources) / "serve_web"
 VIEWER_HTML = (_VIEWER_DIR / "viewer.html").read_bytes()
 VIEWER_CSS = (_VIEWER_DIR / "viewer.css").read_bytes()
 VIEWER_JS_TEMPLATE = (_VIEWER_DIR / "viewer.js").read_bytes()
+
+
+# ---------------------------------------------------------------------------
+# Self-signed HTTPS for the WebCodecs secure-context requirement
+# ---------------------------------------------------------------------------
+# Browsers refuse to expose WebCodecs on plain http:// from any origin that
+# isn't a loopback address. To make the viewer reachable from another machine
+# on the LAN we need TLS. Generate an ephemeral ed25519 self-signed cert
+# covering the bind address + common SANs; the browser will warn on first
+# visit and remember the override after the user accepts it.
+def _build_self_signed_ssl_context(bind: str) -> ssl.SSLContext:
+    key = ed25519.Ed25519PrivateKey.generate()
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "pymobiledevice3 serve-web")])
+    san_entries: list[x509.GeneralName] = [
+        x509.DNSName("localhost"),
+        x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+        x509.IPAddress(ipaddress.IPv6Address("::1")),
+    ]
+    # Add the bind address itself as a SAN when it's a concrete IP -- 0.0.0.0
+    # is a wildcard so we skip it; browsers connect by the URL they're given,
+    # which will be the host's actual LAN IP.
+    if bind and bind != "0.0.0.0":
+        try:
+            san_entries.append(x509.IPAddress(ipaddress.ip_address(bind)))
+        except ValueError:
+            san_entries.append(x509.DNSName(bind))
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (
+        x509
+        .CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=5))
+        .not_valid_after(now + datetime.timedelta(days=365))
+        .add_extension(x509.SubjectAlternativeName(san_entries), critical=False)
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .sign(key, algorithm=None)  # ed25519 doesn't take a hash algorithm
+    )
+    # ssl.SSLContext.load_cert_chain only accepts file paths, not bytes. Drop
+    # the PEM into a closed-then-unlinked tempfile and load before deleting.
+    cert_pem = cert.public_bytes(serialization.Encoding.PEM)
+    key_pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pem") as f:
+        f.write(cert_pem + key_pem)
+        path = f.name
+    try:
+        ctx.load_cert_chain(certfile=path, keyfile=path)
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(path)
+    return ctx
 
 
 # ---------------------------------------------------------------------------
@@ -335,12 +403,14 @@ class ScreenStreamServer:
         audio_default_on: bool = True,
         allow_rtcp_fb: bool = False,
         ltrp_enabled: bool = False,
+        https: bool = False,
     ) -> None:
         self._rsd = rsd
         self._bind = bind
         self._http_port = http_port
         self._display_id = display_id
         self._audio_default_on = audio_default_on
+        self._https = https
         # Protobuf-level negotiation knobs forwarded to every
         # ``DisplayService.start_video_stream`` we issue. ``ltrp_enabled=False``
         # default came out of on-device probing: the device honours the
@@ -1805,7 +1875,13 @@ class ScreenStreamServer:
 
     async def serve(self) -> None:
         """Run the HTTP server until cancelled / Ctrl-C."""
-        http_server = await asyncio.start_server(self._handle_http, self._bind, self._http_port)
+        ssl_ctx = _build_self_signed_ssl_context(self._bind) if self._https else None
+        http_server = await asyncio.start_server(
+            self._handle_http,
+            self._bind,
+            self._http_port,
+            ssl=ssl_ctx,
+        )
         watchdog = asyncio.create_task(self._stall_watchdog())
         decoder_refresh = asyncio.create_task(self._decoder_refresh_loop())
         # Eagerly start the HID worker so queued /touch requests are
@@ -1852,7 +1928,8 @@ class ScreenStreamServer:
         # (the straggler cancel at the end of this function mops it up).
         serve_task = asyncio.create_task(http_server.serve_forever(), name="serve_forever")
         try:
-            logger.info(f"Open http://{self._bind}:{self._http_port}/ in Safari/Chrome. Ctrl-C to stop.")
+            scheme = "https" if self._https else "http"
+            logger.info(f"Open {scheme}://{self._bind}:{self._http_port}/ in Safari/Chrome. Ctrl-C to stop.")
             await stop_event.wait()
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass

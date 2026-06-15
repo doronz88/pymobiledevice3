@@ -882,6 +882,20 @@ async def core_device_display_serve_web(
             ),
         ),
     ] = False,
+    https: Annotated[
+        bool,
+        typer.Option(
+            "--https",
+            help=(
+                "Serve over HTTPS using an ephemeral self-signed certificate. "
+                "Required for WebCodecs when accessing the viewer from a non-"
+                "loopback origin: the browser's secure-context policy refuses "
+                "WebCodecs over plain http:// from any LAN IP. The browser will "
+                "warn on first visit -- accept the cert and the viewer works "
+                "normally afterwards."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Serve the device's screen via HTTP — view in any modern browser.
 
@@ -892,6 +906,8 @@ async def core_device_display_serve_web(
 
     Open ``http://<bind>:<http_port>/`` in Safari or Chrome (macOS Chrome needs
     HEVC support — recent versions enable it by default if the OS supports it).
+    Pass ``--https`` when connecting from another LAN host (browsers gate
+    WebCodecs on a secure context; only loopback origins bypass that).
     """
     server = ScreenStreamServer(
         service_provider,
@@ -901,6 +917,7 @@ async def core_device_display_serve_web(
         audio_default_on=not no_audio,
         allow_rtcp_fb=rtcp_fb,
         ltrp_enabled=ltrp,
+        https=https,
     )
     await server.serve()
 
