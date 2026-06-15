@@ -292,29 +292,57 @@ async function postJson(path, payload) {
 }
 
 let activePointer = null;
+let lastCoords = {x: 0, y: 0};
+// Drag-outside-then-release leaves the device-side contact stuck if we
+// only listen on the canvas: pointer capture is silently dropped on
+// window blur / Cmd-Tab / right-click menus / OS-level interruptions,
+// and the eventual pointerup then dispatches to whatever element the
+// cursor is over (often nothing). Mirror up / cancel / lostcapture
+// listeners onto `window` so we always see the release.
+function releaseActive() {
+    if (activePointer === null) return;
+    activePointer = null;
+    postJson('/touch', {type: 'release', x: lastCoords.x, y: lastCoords.y});
+}
 canvas.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;   // primary button only
     e.preventDefault();
-    canvas.setPointerCapture(e.pointerId);
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
     activePointer = e.pointerId;
-    const c = touchCoords(e);
-    postJson('/touch', {type: 'contact', x: c.x, y: c.y});
+    lastCoords = touchCoords(e);
+    postJson('/touch', {type: 'contact', x: lastCoords.x, y: lastCoords.y});
 });
-canvas.addEventListener('pointermove', (e) => {
+function onMove(e) {
     if (e.pointerId !== activePointer) return;
     e.preventDefault();
-    const c = touchCoords(e);
-    postJson('/touch', {type: 'contact', x: c.x, y: c.y});
-});
-function endContact(e) {
-    if (e.pointerId !== activePointer) return;
-    e.preventDefault();
-    activePointer = null;
-    const c = touchCoords(e);
-    postJson('/touch', {type: 'release', x: c.x, y: c.y});
+    lastCoords = touchCoords(e);
+    postJson('/touch', {type: 'contact', x: lastCoords.x, y: lastCoords.y});
 }
-canvas.addEventListener('pointerup', endContact);
-canvas.addEventListener('pointercancel', endContact);
+function onUp(e) {
+    if (e.pointerId !== activePointer) return;
+    e.preventDefault();
+    lastCoords = touchCoords(e);
+    releaseActive();
+}
+canvas.addEventListener('pointermove', onMove);
+window.addEventListener('pointermove', onMove);
+canvas.addEventListener('pointerup', onUp);
+window.addEventListener('pointerup', onUp);
+canvas.addEventListener('pointercancel', onUp);
+window.addEventListener('pointercancel', onUp);
+// `lostpointercapture` fires whenever capture is released for ANY
+// reason (including the browser dropping it silently); use it as a
+// final backstop so the contact never gets pinned indefinitely.
+canvas.addEventListener('lostpointercapture', (e) => {
+    if (e.pointerId === activePointer) releaseActive();
+});
+// Tab switch / window blur kills capture without firing up. Treat
+// either as an implicit release so a stuck contact doesn't survive
+// the user looking away.
+window.addEventListener('blur', releaseActive);
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') releaseActive();
+});
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 document.querySelectorAll('button[data-btn]').forEach(btn => {
