@@ -186,9 +186,9 @@ VIEWER_HTML = r"""<!doctype html>
             padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap}
  button.btn:hover{background:#333}
  button.btn:active{background:#4a4a4a}
- /* Utility tray pinned to top-right: sound-toggle / forced-reset /
-    force-restart -- low-frequency controls, kept out of the main
-    button areas so the bottom row can stay device-only (Home). */
+ /* Utility tray pinned to top-right: sound-toggle / force-restart --
+    low-frequency controls, kept out of the main button areas so the
+    bottom row can stay device-only (Home). */
  #util-tray{position:fixed;top:8px;right:8px;display:flex;gap:6px;z-index:10}
  /* On narrow viewports give up the side-mounted layout and let the
     buttons wrap below the canvas like before. */
@@ -228,7 +228,6 @@ VIEWER_HTML = r"""<!doctype html>
 <div id="util-tray">
  <button class="btn" id="sound-toggle" type="button">Enable Sound</button>
  <button class="btn" id="style-toggle" type="button" title="toggle dark/light user-interface style">Style: ?</button>
- <button class="btn" id="forced-reset" type="button" title="rebuild decoder + new IDR">Forced Reset</button>
  <button class="btn" id="restart" type="button" title="full DisplayService restart">Force Restart</button>
 </div>
 <div id="status">connecting...</div>
@@ -421,21 +420,8 @@ window.addEventListener('blur', () => {
     }
 });
 
-// ----- Forced Reset: tell the server to spin up a fresh video stream
-// (new IDR will reach this still-open /stream.bin connection via the
-// type=2 reset path -- no page reload, audio context preserved).
-// Fire-and-forget: the server's /restart endpoint responds 202 right
-// away and runs the actual restart in the background, so the click
-// feels instant.
-document.getElementById('forced-reset').addEventListener('click', () => {
-    log('forced reset');
-    fetch('/restart', {method: 'POST', cache: 'no-store'})
-        .then(r => log('forced reset: HTTP ' + r.status))
-        .catch(e => log('forced reset err: ' + (e.message || e)));
-});
-
 // ----- Force Restart: drop the current video stream + reload the page.
-// Heavier hammer than Forced Reset -- wipes all client-side state too.
+// Wipes all client-side state and pulls a fresh IDR from a new stream.
 document.getElementById('restart').addEventListener('click', async () => {
     log('forcing restart + reload...');
     try {
@@ -721,7 +707,7 @@ async function run() {
             // server for a fresh stream often produces a sequential POC
             // chain that decodes cleanly. Do it at most once -- if it
             // errors again the problem isn't transient and the user can
-            // click "Forced Reset" manually.
+            // click Force Restart manually.
             if (!autoRestartUsed && frameCount < 5) {
                 autoRestartUsed = true;
                 log('auto /restart (bootstrap decode err)');
@@ -792,7 +778,7 @@ async function run() {
                 decoder.configure({ codec, optimizeForLatency: true });
                 needsResync = false;
                 gotKey = true;
-                log('forced reset @ key after upstream drop');
+                log('force-restart @ key after upstream drop');
             } else if (type === 0) {
                 gotKey = true;
                 if (needsResync) {
@@ -2033,7 +2019,7 @@ class ScreenStreamServer:
                 # browser's /audio.bin reconnect leaves the device with
                 # an unpaired lone video session, which iOS treats as a
                 # second-class client and throttles. Symptom was the
-                # browser sticking on "frames: 1" after a Forced Reset
+                # browser sticking on "frames: 1" after a /restart
                 # until the user reloaded and re-attached /audio.bin.
                 with contextlib.suppress(Exception):
                     await self._ensure_fresh_stream(force=True)
