@@ -402,9 +402,7 @@ _BUTTON_STATE_CHOICES = {
 # only the tap-class buttons fire on it.
 _NAMED_BUTTONS: dict[str, tuple[int, int, float]] = {
     "home": (0x0C, 0x40, 0.05),  # Consumer / Menu
-    "power": (0x0C, 0x30, 0.05),  # Consumer / Power
-    "lock": (0x0C, 0x30, 0.5),  # alias for power, with the sleep-hold duration
-    "sleep": (0x0C, 0x32, 0.05),  # Consumer / Sleep
+    "lock": (0x0C, 0x30, 0.5),  # Consumer / Power, held long enough for iOS to sleep
     "volume-up": (0x0C, 0xE9, 0.05),  # Consumer / Volume Increment
     "volume-down": (0x0C, 0xEA, 0.05),  # Consumer / Volume Decrement
     "mute": (0x0C, 0xE2, 0.05),  # Consumer / Mute

@@ -49,9 +49,7 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 # N ms". Empirically, 0.5 s sleeps the device, 1.0 s starts Siri.
 _NAMED_BUTTONS: dict[str, tuple[int, int, float]] = {
     "home": (0x0C, 0x40, 0.05),
-    "power": (0x0C, 0x30, 0.05),
     "lock": (0x0C, 0x30, 0.5),
-    "sleep": (0x0C, 0x32, 0.05),
     "volume-up": (0x0C, 0xE9, 0.05),
     "volume-down": (0x0C, 0xEA, 0.05),
     "mute": (0x0C, 0xE2, 0.05),
@@ -216,11 +214,9 @@ VIEWER_HTML = r"""<!doctype html>
   <button class="btn" data-btn="volume-down" title="Ctrl+[">Vol -</button>
  </div>
  <canvas id="c"></canvas>
- <!-- Right side of the device: side / power button (and Siri lives here too) -->
+ <!-- Right side of the device: side button (lock) and Siri -->
  <div id="side-right" class="side">
-  <button class="btn" data-btn="power">Power</button>
   <button class="btn" data-btn="lock" title="Ctrl+L">Lock</button>
-  <button class="btn" data-btn="sleep">Sleep</button>
   <button class="btn" data-btn="siri" title="Ctrl+S">Siri</button>
  </div>
 </div>
@@ -1881,9 +1877,9 @@ class ScreenStreamServer:
     async def _handle_button(self, body: bytes) -> tuple[int, bytes]:
         """POST /button — JSON ``{name, state}``.
 
-        ``name`` is one of the keys in :data:`_NAMED_BUTTONS` (home, power,
-        lock, sleep, volume-up, volume-down, mute, siri). ``state`` is one of
-        ``"press"`` (default — fires down then up), ``"down"``, ``"up"``.
+        ``name`` is one of the keys in :data:`_NAMED_BUTTONS` (home, lock,
+        volume-up, volume-down, mute, siri). ``state`` is one of ``"press"``
+        (default — fires down then up), ``"down"``, ``"up"``.
         """
         try:
             data = json.loads(body)
