@@ -196,14 +196,32 @@ def _build_self_signed_ssl_context(bind: str) -> ssl.SSLContext:
         x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
         x509.IPAddress(ipaddress.IPv6Address("::1")),
     ]
-    # Add the bind address itself as a SAN when it's a concrete IP -- 0.0.0.0
-    # is a wildcard so we skip it; browsers connect by the URL they're given,
-    # which will be the host's actual LAN IP.
-    if bind and bind != "0.0.0.0":
+    # If bind is a concrete address, include it; if it's the 0.0.0.0 wildcard,
+    # enumerate every local interface IP so the cert SAN covers whatever LAN
+    # address the user types in their browser. Without this Chrome shows a
+    # "Not private" warning for the typed IP even when the cert would otherwise
+    # be acceptable, and Safari may refuse the connection outright.
+    extra: set[str] = set()
+    if bind and bind not in ("0.0.0.0", "::"):
+        extra.add(bind)
+    else:
+        with contextlib.suppress(OSError):
+            for info in socket.getaddrinfo(socket.gethostname(), None):
+                extra.add(info[4][0])
+        # Probe the routable outbound IP via a UDP socket (no packets actually
+        # sent -- `connect` on UDP just fills the local address from routing).
+        with contextlib.suppress(OSError):
+            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                probe.connect(("8.8.8.8", 80))
+                extra.add(probe.getsockname()[0])
+            finally:
+                probe.close()
+    for ip in extra:
         try:
-            san_entries.append(x509.IPAddress(ipaddress.ip_address(bind)))
+            san_entries.append(x509.IPAddress(ipaddress.ip_address(ip)))
         except ValueError:
-            san_entries.append(x509.DNSName(bind))
+            san_entries.append(x509.DNSName(ip))
     now = datetime.datetime.now(datetime.timezone.utc)
     cert = (
         x509
