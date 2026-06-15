@@ -760,8 +760,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
             with self.ssl_file() as f:
                 try:
                     await self.service.ssl_start(f)
-                except SSLZeroReturnError:
+                except (SSLZeroReturnError, ConnectionTerminatedError):
                     # possible when we have a pair record, but it was removed on-device
+                    self.pair_record = None
                     await self.areestablish_connection()
                     return False
 
