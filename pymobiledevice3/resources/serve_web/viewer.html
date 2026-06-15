@@ -47,6 +47,16 @@
    <button class="btn" data-swipe="right" title="Swipe right across the middle of the screen">Swipe →</button>
   </div>
  </div>
+
+ <!-- Right tray: accessibility settings. Same collapse model. -->
+ <aside id="right-tray" class="tray">
+  <button class="tray-toggle btn" data-tray="right" title="Collapse this panel" aria-label="Collapse right panel">›</button>
+  <div class="tray-content">
+   <h3>Accessibility</h3>
+   <div id="accessibility-list">loading…</div>
+   <button class="btn" id="accessibility-reset" type="button" title="Reset all accessibility settings to defaults">Reset all</button>
+  </div>
+ </aside>
 </div>
 
 <div id="status">connecting...</div>
@@ -66,7 +76,7 @@
    <tr><td>?</td><td>Show this help</td></tr>
    <tr><td>Esc</td><td>Close this help</td></tr>
   </table>
-  <p>Click + drag on the canvas to interact with the touchscreen. Letter / arrow / modifier keys type into the device while <b>Keyboard: on</b> — flip it off when you want Ctrl-L, Cmd-W and other browser shortcuts to work normally. Rotate ↺ / ↻ flip the device 90° (both the device and the canvas).</p>
+  <p>Click + drag on the canvas to interact with the touchscreen. Letter / arrow / modifier keys type into the device while <b>Keyboard: on</b> — flip it off when you want Ctrl-L, Cmd-W and other browser shortcuts to work normally. Rotate ↺ / ↻ flip the device 90° (both the device and the canvas). The right-side panel mirrors <code>pymobiledevice3 developer accessibility settings show</code>.</p>
  </div>
 </div>
 <script src="/viewer.js"></script>

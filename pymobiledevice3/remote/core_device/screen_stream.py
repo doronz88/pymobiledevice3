@@ -34,6 +34,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 import pymobiledevice3.resources
+from pymobiledevice3.lockdown import create_using_usbmux as _create_lockdown_usbmux
 from pymobiledevice3.remote.core_device.aac_eld import AAC_ELD_ASC_48K_STEREO_480, AACELDDecoder
 from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
 from pymobiledevice3.remote.core_device.display_service import DisplayService
@@ -48,6 +49,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
 )
 from pymobiledevice3.remote.core_device.orientation_service import OrientationService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 
 # Named iOS hardware buttons → (usage_page, usage_code, hold_seconds).
 # Mirrors the table in cli/developer/core_device.py so the browser viewer
@@ -541,6 +543,12 @@ class ScreenStreamServer:
         self._last_good_au_t: float = 0.0
         self._last_restart_t: float = 0.0
         self._consecutive_restarts: int = 0
+
+        # Lazy lockdown handle for the accessibility sidebar -- opened on
+        # the first /accessibility request so a serve-web run without any
+        # accessibility use never has to touch usbmuxd.
+        self._lockdown = None
+        self._accessibility_lock = asyncio.Lock()
 
     # ----- per-session UDP receiver -----------------------------------------
     async def _udp_recv_and_depacketize(self, sock: socket.socket) -> None:
@@ -1186,6 +1194,37 @@ class ScreenStreamServer:
             self._stream_dirty = False
 
     # ----- HID (touch + buttons) -------------------------------------------
+    # ----- Accessibility settings (lockdown / DTX) --------------------------
+    async def _ensure_lockdown(self):
+        """Lazy-open a usbmux lockdown handle (for the accessibility audit).
+        Cached for the server's lifetime."""
+        if self._lockdown is None:
+            self._lockdown = await _create_lockdown_usbmux(self._rsd.udid)
+        return self._lockdown
+
+    async def _accessibility_list(self) -> list[dict]:
+        async with self._accessibility_lock:
+            lockdown = await self._ensure_lockdown()
+            settings = await AccessibilityAudit(lockdown).settings()
+        out: list[dict] = []
+        for s in settings:
+            val = s.value
+            # Whitelist serialisable scalars; everything else is dropped so
+            # bad responses don't break json.dumps for the whole list.
+            if isinstance(val, (bool, int, float, str)):
+                out.append({"key": s.key, "value": val})
+        return out
+
+    async def _accessibility_set(self, key: str, value) -> None:
+        async with self._accessibility_lock:
+            lockdown = await self._ensure_lockdown()
+            await AccessibilityAudit(lockdown).set_setting(key, value)
+
+    async def _accessibility_reset(self) -> None:
+        async with self._accessibility_lock:
+            lockdown = await self._ensure_lockdown()
+            await AccessibilityAudit(lockdown).reset_settings()
+
     async def _ensure_hid(self) -> None:
         """Lazily open the HID services + worker on first input event."""
         async with self._hid_lock:
@@ -1504,6 +1543,46 @@ class ScreenStreamServer:
             self._pli_tasks.add(bg)  # piggy-back on the existing keep-alive set
             bg.add_done_callback(self._pli_tasks.discard)
             writer.write(b"HTTP/1.1 202 Accepted\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            await writer.drain()
+            writer.close()
+            return
+        if path.startswith("/accessibility"):
+            try:
+                resp_body: bytes
+                if path == "/accessibility" and method == "GET":
+                    settings = await self._accessibility_list()
+                    resp_body = json.dumps({"settings": settings}).encode()
+                elif path == "/accessibility/set" and method == "POST":
+                    body = await self._read_body(reader, headers)
+                    payload = json.loads(body)
+                    key = str(payload["key"])
+                    value = payload["value"]
+                    await self._accessibility_set(key, value)
+                    resp_body = b'{"ok":true}'
+                elif path == "/accessibility/reset" and method == "POST":
+                    await self._accessibility_reset()
+                    resp_body = b'{"ok":true}'
+                else:
+                    writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    await writer.drain()
+                    writer.close()
+                    return
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Cache-Control: no-store\r\n"
+                    b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + resp_body
+                )
+            except Exception as exc:
+                logger.exception("accessibility endpoint failed")
+                err = f"accessibility error: {exc}".encode()
+                writer.write(
+                    b"HTTP/1.1 500 Internal\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Content-Length: " + str(len(err)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + err
+                )
             await writer.drain()
             writer.close()
             return

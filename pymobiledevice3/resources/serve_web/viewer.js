@@ -724,6 +724,69 @@ setInterval(() => {
     _lastFc = frameCount;
 }, 1000);
 
+// ----- Accessibility panel: GET /accessibility lists current settings,
+// POST /accessibility/set with {key, value} updates one, POST
+// /accessibility/reset wipes everything back to defaults. Values can
+// be bool (checkbox) or float (slider 0..1) -- the device's
+// DYNAMIC_TYPE setting is a float; everything else we've observed is
+// a bool.
+const axList = document.getElementById('accessibility-list');
+function renderAxRow(setting) {
+    const row = document.createElement('div');
+    row.className = 'axrow';
+    const id = 'ax-' + setting.key;
+    const label = document.createElement('label');
+    label.setAttribute('for', id);
+    label.textContent = setting.key.replace(/_/g, ' ').toLowerCase();
+    label.title = setting.key;
+    row.appendChild(label);
+    if (typeof setting.value === 'boolean') {
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.id = id; cb.checked = setting.value;
+        cb.addEventListener('change', () => postAxSet(setting.key, cb.checked));
+        row.appendChild(cb);
+    } else {
+        const sl = document.createElement('input');
+        sl.type = 'range'; sl.id = id; sl.min = '0'; sl.max = '1'; sl.step = '0.05';
+        sl.value = String(setting.value);
+        const v = document.createElement('span');
+        v.className = 'axvalue'; v.textContent = Number(setting.value).toFixed(2);
+        sl.addEventListener('input', () => { v.textContent = Number(sl.value).toFixed(2); });
+        sl.addEventListener('change', () => postAxSet(setting.key, Number(sl.value)));
+        row.appendChild(sl); row.appendChild(v);
+    }
+    return row;
+}
+async function reloadAccessibility() {
+    try {
+        const r = await fetch('/accessibility', { cache: 'no-store' });
+        if (!r.ok) { axList.textContent = 'load failed: HTTP ' + r.status; return; }
+        const j = await r.json();
+        axList.innerHTML = '';
+        for (const s of j.settings || []) axList.appendChild(renderAxRow(s));
+    } catch (e) { axList.textContent = 'load err: ' + (e.message || e); }
+}
+async function postAxSet(key, value) {
+    try {
+        const r = await fetch('/accessibility/set', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({key, value}),
+        });
+        if (!r.ok) log('ax set ' + key + ': HTTP ' + r.status);
+        else log('ax: ' + key + ' = ' + value);
+    } catch (e) { log('ax set err: ' + (e.message || e)); }
+}
+document.getElementById('accessibility-reset').addEventListener('click', async () => {
+    try {
+        const r = await fetch('/accessibility/reset', {method: 'POST'});
+        if (!r.ok) { log('ax reset HTTP ' + r.status); return; }
+        log('accessibility reset');
+        reloadAccessibility();
+    } catch (e) { log('ax reset err: ' + (e.message || e)); }
+});
+reloadAccessibility();
+
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));
     const codec = await fetchCodecWithRetry();

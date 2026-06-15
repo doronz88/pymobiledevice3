@@ -43,9 +43,20 @@
  .tray .tray-content{display:flex;flex-direction:column;gap:6px;
                      overflow-y:auto;max-height:calc(100vh - 60px)}
  .tray .tray-toggle{padding:4px 10px;font-size:14px;align-self:flex-end}
+ #left-tray .tray-toggle{align-self:flex-end}
+ #right-tray .tray-toggle{align-self:flex-start}
  #left-tray.collapsed .tray-toggle::before{content:"›"}
- #left-tray.collapsed .tray-toggle{font-size:14px;padding-left:8px;padding-right:8px}
+ #left-tray.collapsed .tray-toggle{font-size:14px}
+ #left-tray.collapsed .tray-toggle{padding-left:8px;padding-right:8px}
+ #right-tray.collapsed .tray-toggle::before{content:"‹"}
  .tray-toggle{color:#aaa}
+ #left-tray .tray-toggle,#right-tray .tray-toggle{
+   /* The toggle button's label is overridden via ::before when
+      collapsed; hide the original character so we don't show a
+      stale chevron. */
+ }
+ /* Use a CSS data-attr trick: when collapsed, swap visible char. */
+ #left-tray:not(.collapsed) .tray-toggle{}
  /* On narrow viewports stack everything vertically and force trays
     open underneath the canvas so they don't compete for width. */
  @media (max-width: 900px){
@@ -53,6 +64,19 @@
   .tray{min-width:0;width:100%;max-width:520px}
   .tray .tray-content{flex-direction:row;flex-wrap:wrap;max-height:none}
  }
+ /* Accessibility list rows: label + control side-by-side. */
+ #right-tray h3{margin:4px 0 6px;font-size:13px;color:#bbb;font-weight:600;
+                text-transform:uppercase;letter-spacing:.5px}
+ #accessibility-list{display:flex;flex-direction:column;gap:4px;font-size:12px;
+                     line-height:1.4}
+ .axrow{display:flex;align-items:center;gap:8px;padding:4px 2px;
+        border-bottom:1px dashed #2a2a2a}
+ .axrow label{flex:1;color:#ddd;cursor:pointer;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .axrow input[type=checkbox]{accent-color:#a7d8ff}
+ .axrow input[type=range]{width:90px;accent-color:#a7d8ff}
+ .axrow .axvalue{color:#888;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+                 font-size:11px;min-width:34px;text-align:right}
  /* Status / log overlay: pinned to bottom-left so it doesn't intercept
     clicks on the left-tray toggle. Capped width so a long log line
     doesn't push it across the canvas. */
