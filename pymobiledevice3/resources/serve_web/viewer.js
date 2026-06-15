@@ -253,7 +253,40 @@ kbBtn.addEventListener('click', () => {
     try { localStorage.setItem('keyboardCapture', keyboardCaptureOn ? 'true' : 'false'); } catch (e) {}
 });
 
+// Help modal: opened by '?' (or the '?' button), dismissed by Esc /
+// click outside / close-X. The shortcut works regardless of the
+// keyboard-capture toggle so the user can always reach it; while the
+// modal is open we gate all forwarding to the device so typing into
+// the page doesn't leak through.
+const helpOverlay = document.getElementById('help-overlay');
+function setHelpOpen(open) {
+    helpOverlay.classList.toggle('hidden', !open);
+    helpOverlay.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+function helpIsOpen() { return !helpOverlay.classList.contains('hidden'); }
+document.getElementById('help-toggle').addEventListener('click', () => setHelpOpen(true));
+document.getElementById('help-close').addEventListener('click', () => setHelpOpen(false));
+helpOverlay.addEventListener('click', (e) => {
+    // Click on the dimmed backdrop (outside the modal card) closes.
+    if (e.target === helpOverlay) setHelpOpen(false);
+});
+
 window.addEventListener('keydown', (e) => {
+    // '?' always opens help; Esc closes it. Both pre-empt the
+    // keyboard-capture gate so they work even when capture is off
+    // (and when on, we don't also forward shift+/ to the device).
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setHelpOpen(true);
+        return;
+    }
+    if (e.key === 'Escape' && helpIsOpen()) {
+        e.preventDefault();
+        setHelpOpen(false);
+        return;
+    }
+    // While help is open the device shouldn't see any keystrokes.
+    if (helpIsOpen()) { e.preventDefault(); return; }
     if (!keyboardCaptureOn) return;
     // Ctrl-hotkey path consumes the event; don't also type it.
     if (e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -275,7 +308,7 @@ window.addEventListener('keydown', (e) => {
     }
 });
 window.addEventListener('keyup', (e) => {
-    if (!keyboardCaptureOn) return;
+    if (helpIsOpen() || !keyboardCaptureOn) return;
     const usage = CODE_TO_HID[e.code];
     if (usage === undefined) return;
     e.preventDefault();

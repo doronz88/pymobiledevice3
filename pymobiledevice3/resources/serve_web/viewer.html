@@ -31,7 +31,26 @@
  <button class="btn" id="style-toggle" type="button" title="toggle dark/light user-interface style">Style: ?</button>
  <button class="btn" id="frame-toggle" type="button" title="toggle cosmetic iPhone bezel around the canvas">Frame: ?</button>
  <button class="btn" id="restart" type="button" title="full DisplayService restart">Force Restart</button>
+ <button class="btn" id="help-toggle" type="button" title="Show keyboard shortcuts and tips (?)">?</button>
 </div>
 <div id="status">connecting...</div>
+<div id="help-overlay" class="hidden" aria-hidden="true">
+ <div id="help-modal" role="dialog" aria-modal="true" aria-label="Shortcuts and tips">
+  <button id="help-close" class="btn" type="button" aria-label="Close">×</button>
+  <h2>Shortcuts</h2>
+  <table>
+   <tr><th>Key</th><th>Action</th></tr>
+   <tr><td>Ctrl + H</td><td>Home</td></tr>
+   <tr><td>Ctrl + L</td><td>Lock / Power</td></tr>
+   <tr><td>Ctrl + ]</td><td>Volume Up</td></tr>
+   <tr><td>Ctrl + [</td><td>Volume Down</td></tr>
+   <tr><td>Ctrl + \</td><td>Mute</td></tr>
+   <tr><td>Ctrl + S</td><td>Siri</td></tr>
+   <tr><td>?</td><td>Show this help</td></tr>
+   <tr><td>Esc</td><td>Close this help</td></tr>
+  </table>
+  <p>Click + drag on the canvas to interact with the touchscreen. Letter / arrow / modifier keys type into the device while <b>Keyboard: on</b> — flip it off when you want Ctrl-L, Cmd-W and other browser shortcuts to work normally. Rotate ↺ / ↻ flip the device 90° (both the device and the canvas).</p>
+ </div>
+</div>
 <script src="/viewer.js"></script>
 </body></html>

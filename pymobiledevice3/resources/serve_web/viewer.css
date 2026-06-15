@@ -53,3 +53,26 @@
          width:220px;max-width:40vw;overflow:hidden;user-select:text;
          -webkit-user-select:text;cursor:text;pointer-events:auto;
          z-index:10}
+ /* Help modal: dimmed full-page backdrop with a centered dark-themed
+    card. Hidden by toggling .hidden on #help-overlay. Pointer-events
+    only land on the overlay/modal so the underlying canvas is fully
+    inert while help is open. */
+ #help-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);
+               display:flex;align-items:center;justify-content:center;
+               z-index:100}
+ #help-overlay.hidden{display:none}
+ #help-modal{background:#1c1c1e;color:#eee;border:1px solid #3a3a3c;
+             border-radius:12px;padding:20px 24px;max-width:560px;width:90%;
+             box-shadow:0 12px 48px rgba(0,0,0,.6);position:relative;
+             font-size:14px;line-height:1.5}
+ #help-modal h2{margin:0 0 12px;font-size:16px;font-weight:600}
+ #help-modal table{border-collapse:collapse;width:100%;margin-bottom:12px}
+ #help-modal th,#help-modal td{padding:4px 8px;text-align:left;border-bottom:1px solid #2c2c2e}
+ #help-modal th{color:#999;font-weight:600;font-size:12px}
+ #help-modal td:first-child{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+                            color:#a7d8ff;white-space:nowrap;width:140px}
+ #help-modal p{margin:8px 0 0;color:#ccc}
+ #help-close{position:absolute;top:8px;right:8px;padding:2px 10px;
+             font-size:18px;line-height:1;background:transparent;border:0;
+             color:#888;cursor:pointer}
+ #help-close:hover{color:#fff}
