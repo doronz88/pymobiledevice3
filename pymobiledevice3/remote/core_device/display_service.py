@@ -56,6 +56,8 @@ class DisplayService(CoreDeviceService):
         *,
         allow_rtcp_fb: bool = False,
         ltrp_enabled: bool = False,
+        fec_enabled: bool = False,
+        tiles_per_frame: int = 1,
     ) -> dict:
         """Start an RTP video stream of one of the device's displays.
 
@@ -92,6 +94,8 @@ class DisplayService(CoreDeviceService):
             session_id=session_id,
             allow_rtcp_fb=allow_rtcp_fb,
             ltrp_enabled=ltrp_enabled,
+            fec_enabled=fec_enabled,
+            tiles_per_frame=tiles_per_frame,
         )
         request = {
             "clientSupportedFeatures": XpcUInt64Type(_CLIENT_SUPPORTED_FEATURES),

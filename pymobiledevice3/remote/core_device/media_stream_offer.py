@@ -219,7 +219,10 @@ def build_media_blob_video(
     session_id: int,
     *,
     allow_rtcp_fb: bool = False,
+    tiles_per_frame: int = 1,
     ltrp_enabled: bool = False,
+    fec_enabled: bool = False,
+    rtx_enabled: bool = False,
     hevc_payload_type: int = 123,
     avc_payload_type: int = 100,
     hevc_features: str = _DEFAULT_HEVC_FEATURES,
@@ -230,18 +233,34 @@ def build_media_blob_video(
 ) -> bytes:
     """Build the video mediaBlob protobuf programmatically.
 
-    Defaults are tuned to be byte-identical to the previously-shipped verbatim
-    Xcode capture; tweak the kwargs to experiment with negotiation knobs.
-    The kwargs we know matter for screen-tear / latency on iPhone:
+    Field-number → property mapping recovered by dumping the
+    ``__objc_methname`` table of ``VCMediaNegotiationBlobVideoSettings``
+    (f1=SSRC, f2=allowRTCPFB, f3=videoPayloadCollections,
+    f4=customVideoWidth, f5=customVideoHeight, f6=tilesPerFrame,
+    f7=ltrpEnabled, f8=pixelFormats, f9=hdrModesSupported,
+    f10=fecEnabled, f11=rtxEnabled, f12=blackFrameOnClearScreenEnabled,
+    f13=foveationSupported, f14=enableInterleavedEncoding).
 
-    * ``ltrp_enabled=False`` -- the protobuf-level LTRP switch. The outer
-      options-dict equivalent (memory: ``project_displayservice_resolution_locked``)
-      was confirmed ignored, but this one feeds straight into the encoder
-      config and hasn't been probed yet.
-    * ``allow_rtcp_fb=True`` -- enables the RTCP feedback path. The device's
-      AVCRC is open-loop today (memory: ``project_avcrc_ignores_rr``); flipping
-      this is the first step in seeing whether the encoder will start honouring
-      our RR / REMB / TWCC.
+    Kwargs we've probed:
+
+    * ``ltrp_enabled=False`` (default after probe) -- LTRP-off eliminates
+      mid-stream tearing under UDP loss. Device honours the request.
+
+    Kwargs probed on-device (2026-06-15, iPhone18,4 iOS 27.0):
+
+    * ``fec_enabled=True`` -- forward error correction. ACCEPTED by the
+      device (not Invalid Parameter), but no echo in the answer's
+      VideoSettings and no ``fecEnabled`` key in streamConfig. Either
+      silently honoured or silently dropped; can't confirm without
+      monitoring on-wire RTP for FEC packets.
+    * ``rtx_enabled=True`` -- REJECTED with ``Invalid Parameter``. The
+      screen-blob path likely requires a separate RTX-SSRC field
+      (initializer signature mentions ``localRTXSSRC``/``remoteRTXSSRC``);
+      we don't have that wired yet.
+    * ``tiles_per_frame=4`` -- ACCEPTED but ignored: the device negotiates
+      AVC over our HEVC bank (probably because our HEVC feature string is
+      too sparse) and AVC has no tile-level parallelism, so the encoder
+      stays at 1 tile regardless.
     """
     video_settings = (
         _tag(1, 0)
@@ -249,8 +268,11 @@ def build_media_blob_video(
         + _f_varint(2, 1 if allow_rtcp_fb else 0)
         + _f_bytes(3, _codec_bank(hevc_payload_type, hevc_features, 1, res_pair_count=4))
         + _f_bytes(3, _codec_bank(avc_payload_type, avc_features, 14, res_pair_count=2))
+        + (_f_varint(6, tiles_per_frame) if tiles_per_frame != 1 else b"")
         + _f_varint(7, 1 if ltrp_enabled else 0)
         + _f_varint(8, 63)
+        + (_f_varint(10, 1) if fec_enabled else b"")
+        + (_f_varint(11, 1) if rtx_enabled else b"")
         + _f_varint(12, 1)
     )
     return _build_top_level(
@@ -381,6 +403,8 @@ def build_negotiator_offer_video(
     *,
     allow_rtcp_fb: bool = False,
     ltrp_enabled: bool = False,
+    fec_enabled: bool = False,
+    tiles_per_frame: int = 1,
     hevc_features: str = _DEFAULT_HEVC_FEATURES,
     avc_features: str = _DEFAULT_AVC_FEATURES,
 ) -> bytes:
@@ -393,6 +417,8 @@ def build_negotiator_offer_video(
     :param host_build: Host OS build (e.g. ``"25F80"``).
     :param allow_rtcp_fb: Pass through to :func:`build_media_blob_video`.
     :param ltrp_enabled: Pass through to :func:`build_media_blob_video`.
+    :param fec_enabled: Pass through to :func:`build_media_blob_video`.
+    :param tiles_per_frame: Pass through to :func:`build_media_blob_video`.
     :param hevc_features: HEVC capability string declared inside the bank.
     :param avc_features: AVC capability string declared inside the bank.
     """
@@ -401,6 +427,8 @@ def build_negotiator_offer_video(
         session_id,
         allow_rtcp_fb=allow_rtcp_fb,
         ltrp_enabled=ltrp_enabled,
+        fec_enabled=fec_enabled,
+        tiles_per_frame=tiles_per_frame,
         hevc_features=hevc_features,
         avc_features=avc_features,
     )
