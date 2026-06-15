@@ -342,11 +342,32 @@ window.addEventListener('blur', () => {
 // new orientation (its aspect ratio flips between portrait and
 // landscape), drawPending() auto-resets the rotation to 0 to avoid
 // double-rotating the now-natively-oriented content.
+const deviceFrameEl = document.getElementById('device-frame');
 function setVisualRotation(deg) {
     deg = ((deg % 360) + 540) % 360 - 180;  // normalise to (-180, 180]
     if (deg === visualRotation) return;
+    // Pick the shortest signed delta around the circle so a 180 ->
+    // -180 transition doesn't sweep the long way around.
+    let delta = deg - visualRotation;
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
     visualRotation = deg;
+    // Canvas-internal rotation snaps immediately (so dim swap + layout
+    // reflow happen now), then the device-frame's CSS transform is
+    // set to -delta degrees so the *visual* position matches where
+    // the canvas was a moment ago. We then animate the transform
+    // back to identity, giving a smooth perceived rotation while the
+    // surrounding layout has already moved.
     redrawWithCurrentRotation();
+    deviceFrameEl.style.transition = 'none';
+    deviceFrameEl.style.transform = `rotate(${-delta}deg)`;
+    // Two RAFs to make sure the no-transition initial transform paints
+    // before we install the animating transition; one RAF is usually
+    // enough but two is safer across browsers.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        deviceFrameEl.style.transition = 'transform 0.3s cubic-bezier(.4,0,.2,1)';
+        deviceFrameEl.style.transform = '';
+    }));
 }
 // Device-reported orientation -> in-canvas rotation that mirrors how
 // the user is physically holding the device. landscapeLeft means the

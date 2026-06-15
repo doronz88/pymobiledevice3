@@ -19,7 +19,8 @@
  canvas{touch-action:none;cursor:crosshair;background:#000;
         image-rendering:-webkit-optimize-contrast;
         image-rendering:high-quality;display:block}
- #device-frame{display:inline-block;position:relative;line-height:0;font-size:0}
+ #device-frame{display:inline-block;position:relative;line-height:0;font-size:0;
+              transform-origin:center center;will-change:transform}
  body.frame-on #device-frame{
    padding:14px;border-radius:46px;
    background:linear-gradient(145deg,#2a2a2c,#101012);
