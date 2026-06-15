@@ -355,7 +355,7 @@ class VncStreamServer:
             self._idr_observed = False
             self._fir_attempts = 0
             self._cap_warned = False
-            logger.info("decode recovered (IDR + clean frame)")
+            logger.debug("decode recovered (IDR + clean frame)")
         for c in self._clients:
             c.wants_update.set()
 
@@ -453,7 +453,7 @@ class VncStreamServer:
                         self._idr_observed_at = loop.time()
                         if self._keyframe_required:
                             self._idr_observed = True
-                        logger.info("decoder rebuilt on fresh IDR")
+                        logger.debug("decoder rebuilt on fresh IDR")
                     if (
                         self._transcoder is None
                         and au_is_key
@@ -497,7 +497,7 @@ class VncStreamServer:
                         if slice_nal is not None:
                             missing = self._rps_tracker.check_slice(slice_nal)
                         if missing and not au_is_key:
-                            logger.info(
+                            logger.debug(
                                 "rps: P-slice references missing POCs %s -- pre-decode PLI",
                                 sorted(missing),
                             )
@@ -535,7 +535,7 @@ class VncStreamServer:
             now = loop.time()
             if now - last_stat_t >= 2.0:
                 frames_now = self._frames_emitted
-                logger.info(
+                logger.debug(
                     "ingress stats: rtp=%d feeds=%d frames=%d (Δframes=%d / %.1fs)",
                     rtp_packets,
                     feed_count,
@@ -574,7 +574,7 @@ class VncStreamServer:
         try:
             loop = asyncio.get_running_loop()
             await loop.sock_sendto(sock, self._build_rtcp_pli(), (*self._rtcp_dest, 0, 0))
-            logger.info("sent RTCP PLI (requested fresh keyframe)")
+            logger.debug("sent RTCP PLI (requested fresh keyframe)")
         except OSError as exc:
             logger.debug("PLI send failed (%s)", exc)
 
@@ -589,7 +589,7 @@ class VncStreamServer:
         pli_task.add_done_callback(self._pli_tasks.discard)
         self._last_refresh_t = now
         window_bps = sum(s for _, s in self._au_byte_window)
-        logger.info(
+        logger.debug(
             "decoder-refresh (%s): %d client(s), %d B/s window",
             reason,
             len(self._clients),
@@ -763,7 +763,7 @@ class VncStreamServer:
             now = loop.time()
             if now - last_stat_t >= 5.0:
                 played, dropped, enq_err = player.stats()
-                logger.info(
+                logger.debug(
                     "audio stats: rtp=%d, played=%d, dropped=%d, enq_err=%d",
                     pkt_count,
                     played,
@@ -812,7 +812,7 @@ class VncStreamServer:
                 # session keepalive is firing -- useful when triaging
                 # "audio stopped after a while" reports.
                 if sent % 30 == 0:
-                    logger.info("audio RTCP RR: %d sent (highest_seq=0x%08x)", sent, self._audio_rtp_highest_seq)
+                    logger.debug("audio RTCP RR: %d sent (highest_seq=0x%08x)", sent, self._audio_rtp_highest_seq)
             except OSError as exc:
                 logger.debug("audio RTCP send failed (%s); socket may be torn down", exc)
                 return
@@ -981,10 +981,10 @@ class VncStreamServer:
         # 1. ProtocolVersion (12 bytes each way).
         w.write(b"RFB 003.008\n")
         await w.drain()
-        logger.info("handshake: sent server version RFB 003.008")
+        logger.debug("handshake: sent server version RFB 003.008")
         client_version_bytes = await r.readexactly(12)
         client_version = client_version_bytes.decode("ascii", errors="replace").rstrip()
-        logger.info("handshake: client version %r", client_version)
+        logger.debug("handshake: client version %r", client_version)
         # Parse minor version. The protocol changes between 3.3 / 3.7 /
         # 3.8 across the security handshake:
         #
@@ -1015,15 +1015,15 @@ class VncStreamServer:
             # RFB 3.3: server unilaterally picks the security type.
             w.write(struct.pack(">I", 2))  # VNC Auth
             await w.drain()
-            logger.info("handshake: 3.3 path -- server picked VNC Auth")
+            logger.debug("handshake: 3.3 path -- server picked VNC Auth")
         else:
             # RFB 3.7 / 3.8: send security list, client picks. Offer
             # only VNC Auth so we always end up in the same code path.
             w.write(b"\x01\x02")
             await w.drain()
-            logger.info("handshake: sent security types [VNC Auth=2]")
+            logger.debug("handshake: sent security types [VNC Auth=2]")
             chosen = (await r.readexactly(1))[0]
-            logger.info("handshake: client picked security=%d", chosen)
+            logger.debug("handshake: client picked security=%d", chosen)
             if chosen != 2:
                 msg = b"unsupported security type"
                 w.write(struct.pack(">I", 1) + struct.pack(">I", len(msg)) + msg)
@@ -1037,15 +1037,15 @@ class VncStreamServer:
         w.write(challenge)
         await w.drain()
         await r.readexactly(16)  # response (ignored)
-        logger.info("handshake: VNC Auth accepted (any password)")
+        logger.debug("handshake: VNC Auth accepted (any password)")
         # 3.x always sends SecurityResult AFTER VNC Auth, regardless of
         # whether None auth would have skipped it.
         w.write(b"\x00\x00\x00\x00")
         await w.drain()
-        logger.info("handshake: sent SecurityResult=OK")
+        logger.debug("handshake: sent SecurityResult=OK")
         # ClientInit (shared flag — we don't care).
         shared = (await r.readexactly(1))[0]
-        logger.info("handshake: client shared=%d", shared)
+        logger.debug("handshake: client shared=%d", shared)
         # 5. ServerInit: width, height, pixel format, name.
         # Pixel format = 32bpp little-endian BGRA. (For Tight-JPEG the
         # client doesn't need this to match the JPEG; for Raw we'd
@@ -1073,7 +1073,7 @@ class VncStreamServer:
         )
         w.write(server_init)
         await w.drain()
-        logger.info("handshake: sent ServerInit (%dx%d, name=%r)", self._fb_width, self._fb_height, _SERVER_NAME)
+        logger.debug("handshake: sent ServerInit (%dx%d, name=%r)", self._fb_width, self._fb_height, _SERVER_NAME)
 
     async def _client_recv_loop(self, client: _VncClient) -> None:
         r = client.reader
@@ -1091,7 +1091,7 @@ class VncStreamServer:
                 bpp, depth, big, true_c, rmax, gmax, bmax, rshift, gshift, bshift = struct.unpack(
                     ">BBBB HHH BBB", pf[:13]
                 )
-                logger.info(
+                logger.debug(
                     "SetPixelFormat ignored: bpp=%d depth=%d big=%d true_c=%d max=(%d,%d,%d) shift=(%d,%d,%d)",
                     bpp,
                     depth,
@@ -1110,7 +1110,7 @@ class VncStreamServer:
                 n = struct.unpack(">H", await r.readexactly(2))[0]
                 raw = await r.readexactly(4 * n)
                 client.encodings = list(struct.unpack(f">{n}i", raw))
-                logger.info(
+                logger.debug(
                     "VNC client encodings: %s",
                     [
                         {
@@ -1127,7 +1127,7 @@ class VncStreamServer:
                 # FramebufferUpdateRequest: incremental(1) + x(2) + y(2) + w(2) + h(2)
                 payload = await r.readexactly(9)
                 inc, fx, fy, fw, fh = struct.unpack(">BHHHH", payload)
-                logger.info(
+                logger.debug(
                     "FramebufferUpdateRequest incremental=%d (%d,%d) %dx%d",
                     inc,
                     fx,
@@ -1357,17 +1357,17 @@ class VncStreamServer:
         finally:
             if not serve_task.done():
                 serve_task.cancel()
-            logger.info("shutdown: closing TCP listener")
+            logger.debug("shutdown: closing TCP listener")
             server.close()
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(server.wait_closed(), timeout=2.0)
-            logger.info("shutdown: stopping HID")
+            logger.debug("shutdown: stopping HID")
             await self._stop_hid()
-            logger.info("shutdown: stopping refresh loop")
+            logger.debug("shutdown: stopping refresh loop")
             refresh_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await refresh_task
-            logger.info("shutdown: stopping VT transcoder")
+            logger.debug("shutdown: stopping VT transcoder")
             feed_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await feed_task
@@ -1381,22 +1381,22 @@ class VncStreamServer:
             with contextlib.suppress(Exception):
                 sock.close()
             if audio_recv_task is not None:
-                logger.info("shutdown: stopping audio recv loop")
+                logger.debug("shutdown: stopping audio recv loop")
                 audio_recv_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await audio_recv_task
             if audio_rtcp_task is not None:
-                logger.info("shutdown: stopping audio RTCP loop")
+                logger.debug("shutdown: stopping audio RTCP loop")
                 audio_rtcp_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await audio_rtcp_task
             if self._audio_player is not None:
-                logger.info("shutdown: stopping AudioQueue player")
+                logger.debug("shutdown: stopping AudioQueue player")
                 with contextlib.suppress(Exception):
                     self._audio_player.close()
                 self._audio_player = None
             if self._audio_svc is not None and self._audio_session_id is not None:
-                logger.info("shutdown: stopping audio stream")
+                logger.debug("shutdown: stopping audio stream")
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(self._audio_svc.stop_media_stream(self._audio_session_id), timeout=3.0)
                 with contextlib.suppress(Exception):
@@ -1404,7 +1404,7 @@ class VncStreamServer:
             if self._audio_sock is not None:
                 with contextlib.suppress(Exception):
                     self._audio_sock.close()
-            logger.info("shutdown: stopping device stream")
+            logger.debug("shutdown: stopping device stream")
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(svc.stop_media_stream(sid), timeout=3.0)
             with contextlib.suppress(Exception):

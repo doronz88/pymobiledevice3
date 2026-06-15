@@ -365,7 +365,7 @@ class HevcRpsTracker:
                 return
             stripped = remove_emulation_prevention(sps_rbsp_with_nal_header[2:])
             self.sps = parse_sps(stripped)
-            logger.info(
+            logger.debug(
                 "hevc_rps: SPS log2_max_poc_lsb=%d pic=%dx%d num_st_rps=%d",
                 self.sps.log2_max_pic_order_cnt_lsb,
                 self.sps.pic_width_in_luma_samples,

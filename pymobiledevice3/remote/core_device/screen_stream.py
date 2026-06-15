@@ -1127,7 +1127,7 @@ class ScreenStreamServer:
             now = loop.time()
             if now - stats_last_log > 5.0:
                 if stats_forward_gaps or stats_reorders or stats_corrupt_aus:
-                    logger.info(
+                    logger.debug(
                         "RTP stats (last %.1fs): packets=%d forward_gaps=%d reorders=%d dropped_AUs=%d",
                         now - stats_last_log,
                         stats_packets,
@@ -1258,7 +1258,7 @@ class ScreenStreamServer:
         try:
             loop = asyncio.get_running_loop()
             await loop.sock_sendto(sock, self._build_rtcp_pli(), (*self._rtcp_dest, 0, 0))
-            logger.info("sent RTCP PLI (requested fresh keyframe)")
+            logger.debug("sent RTCP PLI (requested fresh keyframe)")
         except OSError as exc:
             logger.debug("PLI send failed (%s)", exc)
 
@@ -1840,7 +1840,7 @@ class ScreenStreamServer:
 
             if method == "POST" and path in ("/touch", "/button"):
                 body = await self._read_body(reader, headers)
-                logger.info("enqueue %s body=%r conn=%s", path, body[:80], headers.get("connection", "?"))
+                logger.debug("enqueue %s body=%r conn=%s", path, body[:80], headers.get("connection", "?"))
                 # Fire-and-forget: drop into the queue and answer 200 NOW.
                 # The single HID worker will dispatch in order without
                 # blocking the HTTP-server loop or starving the stream
@@ -2137,7 +2137,7 @@ class ScreenStreamServer:
                     return
                 if queue not in self._subscribers:
                     return
-                logger.info("/stream.bin: subscriber still needs_key, re-PLI")
+                logger.debug("/stream.bin: subscriber still needs_key, re-PLI")
                 pt = asyncio.create_task(self._send_rtcp_pli())
                 self._pli_tasks.add(pt)
                 pt.add_done_callback(self._pli_tasks.discard)
@@ -2256,7 +2256,7 @@ class ScreenStreamServer:
         pli_task.add_done_callback(self._pli_tasks.discard)
         self._last_refresh_t = now
         window_bps = sum(s for _, s in self._au_byte_window)
-        logger.info(
+        logger.debug(
             "decoder-refresh (%s): %d subscriber(s), %d B/s window",
             reason,
             len(self._subscribers),
@@ -2389,24 +2389,24 @@ class ScreenStreamServer:
         finally:
             if not serve_task.done():
                 serve_task.cancel()
-            logger.info("shutdown: cancelling watchdog")
+            logger.debug("shutdown: cancelling watchdog")
             watchdog.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await watchdog
             decoder_refresh.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await decoder_refresh
-            logger.info("shutdown: cancelling eager_start")
+            logger.debug("shutdown: cancelling eager_start")
             eager_start.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await eager_start
             # Close the HTTP listener first so no new connections come in
             # while we tear the device-side streams down.
-            logger.info("shutdown: closing HTTP server")
+            logger.debug("shutdown: closing HTTP server")
             http_server.close()
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(http_server.wait_closed(), timeout=2.0)
-            logger.info("shutdown: stopping HID")
+            logger.debug("shutdown: stopping HID")
             await _bounded(self._stop_hid(), "_stop_hid")
             task = self._hid_worker_task
             self._hid_worker_task = None
@@ -2426,9 +2426,9 @@ class ScreenStreamServer:
                 async with self._audio_lock:
                     await self._stop_audio_stream()
 
-            logger.info("shutdown: stopping video stream")
+            logger.debug("shutdown: stopping video stream")
             await _bounded(_stop_video(), "_stop_active_stream")
-            logger.info("shutdown: stopping audio stream")
+            logger.debug("shutdown: stopping audio stream")
             await _bounded(_stop_audio(), "_stop_audio_stream")
             # Cancel any lingering connection-handler tasks that the
             # HTTP server's wait_closed couldn't drain (e.g. a
@@ -2439,7 +2439,7 @@ class ScreenStreamServer:
             current = asyncio.current_task()
             stragglers = [t for t in asyncio.all_tasks(loop) if t is not current and not t.done()]
             if stragglers:
-                logger.info("shutdown: cancelling %d straggler task(s)", len(stragglers))
+                logger.debug("shutdown: cancelling %d straggler task(s)", len(stragglers))
                 for t in stragglers:
                     t.cancel()
                 with contextlib.suppress(Exception):
