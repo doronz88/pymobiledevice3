@@ -38,9 +38,28 @@ from pymobiledevice3.remote.core_device.audio_player import AudioQueuePlayer
 from pymobiledevice3.remote.core_device.display_service import DisplayService
 from pymobiledevice3.remote.core_device.hevc_rps import HevcRpsTracker, is_slice_nal
 from pymobiledevice3.remote.core_device.hid_service import (
+    ASCII_TO_HID,
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     HID_BUTTON_STATE_DOWN,
     HID_BUTTON_STATE_UP,
+    KEY_BACKSPACE,
+    KEY_CAPS_LOCK,
+    KEY_DOWN,
+    KEY_ENTER,
+    KEY_ESC,
+    KEY_F1,
+    KEY_LEFT,
+    KEY_LEFT_ALT,
+    KEY_LEFT_CTRL,
+    KEY_LEFT_GUI,
+    KEY_LEFT_SHIFT,
+    KEY_RIGHT,
+    KEY_RIGHT_ALT,
+    KEY_RIGHT_CTRL,
+    KEY_RIGHT_GUI,
+    KEY_RIGHT_SHIFT,
+    KEY_TAB,
+    KEY_UP,
     TOUCHSCREEN_STATE_CONTACT,
     TOUCHSCREEN_STATE_RELEASE,
     IndigoHIDService,
@@ -129,6 +148,46 @@ _KEYSYM_SHIFT = frozenset({0xFFE1, 0xFFE2})
 _KEYSYM_ALT = frozenset({0xFFE9, 0xFFEA})  # Alt_L (Option) / Alt_R
 _KEYSYM_CMD = frozenset({0xFFE7, 0xFFE8, 0xFFEB, 0xFFEC})  # Meta_L/R or Super_L/R
 
+# X11 modifier-keysym -> HID modifier usage. Both sides of the keyboard
+# are kept so a client distinguishing L/R shift still works (we just
+# treat them as separate bits in the bitmap).
+_KEYSYM_TO_HID_MODIFIER: dict[int, int] = {
+    0xFFE1: KEY_LEFT_SHIFT,
+    0xFFE2: KEY_RIGHT_SHIFT,
+    0xFFE3: KEY_LEFT_CTRL,
+    0xFFE4: KEY_RIGHT_CTRL,
+    0xFFE7: KEY_LEFT_GUI,
+    0xFFE8: KEY_RIGHT_GUI,  # Meta_L / Meta_R
+    0xFFE9: KEY_LEFT_ALT,
+    0xFFEA: KEY_RIGHT_ALT,
+    0xFFEB: KEY_LEFT_GUI,
+    0xFFEC: KEY_RIGHT_GUI,  # Super_L / Super_R
+}
+
+# X11 special keysyms (non-printable) -> HID usage.
+_KEYSYM_TO_HID_SPECIAL: dict[int, int] = {
+    0xFF08: KEY_BACKSPACE,
+    0xFF09: KEY_TAB,
+    0xFF0D: KEY_ENTER,
+    0xFF8D: KEY_ENTER,  # Return / KP_Enter
+    0xFF1B: KEY_ESC,
+    0xFFE5: KEY_CAPS_LOCK,
+    0xFF50: 0x4A,  # Home
+    0xFF51: KEY_LEFT,
+    0xFF52: KEY_UP,
+    0xFF53: KEY_RIGHT,
+    0xFF54: KEY_DOWN,
+    0xFF55: 0x4B,  # Page_Up
+    0xFF56: 0x4E,  # Page_Down
+    0xFF57: 0x4D,  # End
+    0xFF63: 0x49,  # Insert
+    0xFFFF: 0x4C,  # Delete (forward)
+    # F1..F12 are sequential keysyms 0xFFBE..0xFFC9 and sequential HID
+    # usages KEY_F1..KEY_F12.
+    **{0xFFBE + i: KEY_F1 + i for i in range(12)},
+}
+
+
 # Ctrl + keysym -> iOS button. Ctrl is the prefix because:
 # - No Fn required: every Mac keyboard has a real Ctrl key.
 # - Cmd never reaches us: Screen Sharing.app intercepts Cmd+anything
@@ -185,6 +244,14 @@ class _VncClient:
         # matching button-up regardless of whether the user released
         # Ctrl first.
         self.active_combos: dict[int, tuple[int, int]] = {}
+        # Currently-held HID keyboard usage codes. Every key event
+        # rewrites this set and re-emits the full bitmap report.
+        self.pressed_keys: set[int] = set()
+        # keysym -> set of usage codes the key-down emitted. Tracked so
+        # key-up can release the same usages, even if the host's
+        # interpretation of the keysym (e.g. shifted vs unshifted) has
+        # drifted between the down and the up.
+        self.active_typing: dict[int, tuple[int, ...]] = {}
 
 
 class VncStreamServer:
@@ -297,6 +364,11 @@ class VncStreamServer:
         self._uhs: Optional[UniversalHIDServiceService] = None
         self._indigo: Optional[IndigoHIDService] = None
         self._hid_lock = asyncio.Lock()
+        # _ServiceID dtuhidd assigned to our host-registered virtual
+        # keyboard. Lazily filled on first key event; serialized by
+        # ``_hid_lock`` so a burst of keystrokes at startup doesn't race
+        # multiple createService calls.
+        self._kb_service_id: Optional[int] = None
 
     # ----- HEVC -> BGRA callback marshalling --------------------------------
     def _on_frame_from_worker(self, bgra: bytes) -> None:
@@ -842,6 +914,14 @@ class VncStreamServer:
                 await self._indigo.close()
             self._indigo = None
 
+    async def _ensure_keyboard(self) -> None:
+        await self._ensure_hid()
+        if self._kb_service_id is None:
+            async with self._hid_lock:
+                if self._kb_service_id is None:
+                    assert self._uhs is not None
+                    self._kb_service_id = await self._uhs.create_keyboard_service()
+
     async def _send_hid_button(self, page: int, code: int, *, down: bool) -> None:
         state = HID_BUTTON_STATE_DOWN if down else HID_BUTTON_STATE_UP
         try:
@@ -900,41 +980,79 @@ class VncStreamServer:
         client.last_y = hid_y
 
     async def _handle_key(self, client: _VncClient, down: bool, keysym: int) -> None:
-        """Forward Ctrl+<key> combos to iOS hardware buttons. Tracks
-        modifier state per client because RFB sends each modifier as
-        its own KeyEvent down/up around the letter. See
-        ``_CTRL_COMBO_TO_HID`` for the table. Unmapped keys are dropped
-        -- full keyboard input isn't a goal for this server (yet)."""
-        # Modifier-only events update state and stop here.
+        """Translate an RFB KeyEvent into HID activity.
+
+        Three paths:
+
+        - Ctrl+<key> combos in ``_CTRL_COMBO_TO_HID`` fire an Indigo hardware
+          button (Home / Lock / Vol / Mute / Siri).
+        - Modifier keysyms (Shift/Ctrl/Alt/GUI) toggle the matching HID
+          modifier usages in the virtual-keyboard bitmap, and also update
+          the legacy ``mod_*`` flags that the Ctrl-combo path consults.
+        - Anything else -- printable ASCII via :data:`ASCII_TO_HID`, or
+          named keys via ``_KEYSYM_TO_HID_SPECIAL`` -- toggles its usage in
+          the virtual-keyboard bitmap and re-emits the full report.
+
+        Key-up always releases the same usages the matching key-down
+        emitted, even if the host's interpretation of the keysym drifted
+        in between (e.g. Shift released before the letter).
+        """
+        # Track the legacy modifier-bool state so the Ctrl-combo path
+        # below keeps working alongside the keyboard path.
         if keysym in _KEYSYM_CTRL:
             client.mod_ctrl = down
-            return
-        if keysym in _KEYSYM_SHIFT:
+        elif keysym in _KEYSYM_SHIFT:
             client.mod_shift = down
-            return
-        if keysym in _KEYSYM_ALT:
+        elif keysym in _KEYSYM_ALT:
             client.mod_alt = down
-            return
-        if keysym in _KEYSYM_CMD:
+        elif keysym in _KEYSYM_CMD:
             client.mod_cmd = down
+
+        # Ctrl-prefixed hardware-button hotkeys. Eat the event so the
+        # letter doesn't also get typed on the device.
+        if down and client.mod_ctrl and keysym in _CTRL_COMBO_TO_HID:
+            mapping = _CTRL_COMBO_TO_HID[keysym]
+            client.active_combos[keysym] = mapping
+            await self._send_hid_button(mapping[0], mapping[1], down=True)
+            return
+        if not down and keysym in client.active_combos:
+            active = client.active_combos.pop(keysym)
+            await self._send_hid_button(active[0], active[1], down=False)
+            return
+
+        # Resolve the keysym to one or more HID usages.
+        usages: tuple[int, ...] = ()
+        if keysym in _KEYSYM_TO_HID_MODIFIER:
+            usages = (_KEYSYM_TO_HID_MODIFIER[keysym],)
+        elif keysym in _KEYSYM_TO_HID_SPECIAL:
+            usages = (_KEYSYM_TO_HID_SPECIAL[keysym],)
+        elif 0x20 <= keysym <= 0x7E:
+            mapping = ASCII_TO_HID.get(chr(keysym))
+            if mapping is not None:
+                usage, needs_shift = mapping
+                # Shifted character on key-down: synthesise Shift in the
+                # bitmap if no client-tracked Shift is already held.
+                if needs_shift and not (
+                    KEY_LEFT_SHIFT in client.pressed_keys or KEY_RIGHT_SHIFT in client.pressed_keys
+                ):
+                    usages = (KEY_LEFT_SHIFT, usage)
+                else:
+                    usages = (usage,)
+        if not usages:
             return
 
         if down:
-            # Combo activation requires Ctrl held. No Ctrl -> dropped.
-            if not client.mod_ctrl:
-                return
-            mapping = _CTRL_COMBO_TO_HID.get(keysym)
-            if mapping is None:
-                return
-            client.active_combos[keysym] = mapping
-            await self._send_hid_button(mapping[0], mapping[1], down=True)
+            client.active_typing[keysym] = usages
+            client.pressed_keys.update(usages)
         else:
-            # Release whatever combo this key-down activated, even if
-            # the user released Ctrl first -- otherwise a held HID
-            # button gets stuck down on the device.
-            active = client.active_combos.pop(keysym, None)
-            if active is not None:
-                await self._send_hid_button(active[0], active[1], down=False)
+            for u in client.active_typing.pop(keysym, usages):
+                client.pressed_keys.discard(u)
+        try:
+            await self._ensure_keyboard()
+            assert self._uhs is not None and self._kb_service_id is not None
+            await self._uhs.send_keyboard(self._kb_service_id, client.pressed_keys)
+        except Exception:
+            logger.exception("HID keyboard send failed (keysym=0x%04X down=%s)", keysym, down)
 
     # ----- RFB protocol -----------------------------------------------------
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:

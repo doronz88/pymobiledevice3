@@ -346,13 +346,74 @@ const CTRL_HOTKEYS = {
     '\\': 'mute',
     's': 'siri',
 };
+
+// ----- input: physical key -> HID Keyboard usage -> /key -----
+// KeyboardEvent.code is layout-independent (the physical key, not the
+// typed character), which matches the HID usage table exactly. Anything
+// not in this map is ignored.
+const CODE_TO_HID = (() => {
+    const m = {};
+    for (let i = 0; i < 26; i++) m['Key' + String.fromCharCode(65 + i)] = 0x04 + i;
+    // Digits: KeyboardEvent uses Digit1..Digit9, Digit0; HID uses 0x1E..0x26, then 0x27.
+    for (let i = 1; i <= 9; i++) m['Digit' + i] = 0x1D + i;
+    m['Digit0'] = 0x27;
+    Object.assign(m, {
+        Enter: 0x28, Escape: 0x29, Backspace: 0x2A, Tab: 0x2B, Space: 0x2C,
+        Minus: 0x2D, Equal: 0x2E, BracketLeft: 0x2F, BracketRight: 0x30,
+        Backslash: 0x31, Semicolon: 0x33, Quote: 0x34, Backquote: 0x35,
+        Comma: 0x36, Period: 0x37, Slash: 0x38, CapsLock: 0x39,
+        ArrowRight: 0x4F, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
+        ShiftLeft: 0xE1, ShiftRight: 0xE5,
+        ControlLeft: 0xE0, ControlRight: 0xE4,
+        AltLeft: 0xE2, AltRight: 0xE6,
+        MetaLeft: 0xE3, MetaRight: 0xE7,
+    });
+    for (let i = 1; i <= 12; i++) m['F' + i] = 0x39 + i;
+    return m;
+})();
+
+const pressedUsages = new Set();
+let lastKeyPost = Promise.resolve();
+function postKeys() {
+    // Serialize POSTs so the device sees them in order even when the
+    // browser fires keydown bursts faster than the HTTP round-trip.
+    const snapshot = [...pressedUsages];
+    lastKeyPost = lastKeyPost.then(() => postJson('/key', {usages: snapshot}));
+}
+
 window.addEventListener('keydown', (e) => {
-    if (!e.ctrlKey || e.altKey || e.metaKey) return;
-    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-    const name = CTRL_HOTKEYS[key];
-    if (!name) return;
+    // Ctrl-hotkey path consumes the event; don't also type it.
+    if (e.ctrlKey && !e.altKey && !e.metaKey) {
+        const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+        const name = CTRL_HOTKEYS[key];
+        if (name) {
+            e.preventDefault();
+            postJson('/button', {name, state: 'press'}).then(() => log('hotkey: ' + name));
+            return;
+        }
+    }
+    const usage = CODE_TO_HID[e.code];
+    if (usage === undefined) return;
     e.preventDefault();
-    postJson('/button', {name, state: 'press'}).then(() => log('hotkey: ' + name));
+    if (e.repeat) return;            // host autorepeat -- the device does its own
+    if (!pressedUsages.has(usage)) {
+        pressedUsages.add(usage);
+        postKeys();
+    }
+});
+window.addEventListener('keyup', (e) => {
+    const usage = CODE_TO_HID[e.code];
+    if (usage === undefined) return;
+    e.preventDefault();
+    if (pressedUsages.delete(usage)) postKeys();
+});
+window.addEventListener('blur', () => {
+    // Window-blur means we won't see keyup; flush the bitmap so no
+    // key ends up stuck-down on the device.
+    if (pressedUsages.size) {
+        pressedUsages.clear();
+        postKeys();
+    }
 });
 
 // ----- Forced Reset: tell the server to spin up a fresh video stream
@@ -1020,8 +1081,11 @@ class ScreenStreamServer:
         self._uhs: Optional[UniversalHIDServiceService] = None
         self._indigo: Optional[IndigoHIDService] = None
         self._hid_lock = asyncio.Lock()
+        # _ServiceID dtuhidd assigned to our host-registered virtual
+        # keyboard. Lazily filled on the first /key POST.
+        self._kb_service_id: Optional[int] = None
 
-        # HID input queue. We accept /touch and /button POSTs into this
+        # HID input queue. We accept /touch /button /key POSTs into this
         # queue and return 200 immediately, then a single worker task
         # dispatches them via the XPC connection. This decouples HTTP
         # handling latency from device-write latency so a touch flood
@@ -1724,7 +1788,12 @@ class ScreenStreamServer:
                 try:
                     if self._uhs is None or self._indigo is None:
                         await self._ensure_hid()
-                    handler = self._handle_touch if path == "/touch" else self._handle_button
+                    if path == "/touch":
+                        handler = self._handle_touch
+                    elif path == "/button":
+                        handler = self._handle_button
+                    else:
+                        handler = self._handle_key
                     code, msg = await handler(body)
                     if code != 200:
                         logger.warning("queued %s -> %d %s", path, code, msg.decode("utf-8", "replace"))
@@ -1774,6 +1843,32 @@ class ScreenStreamServer:
             return 400, f"unknown touch type {op!r}".encode()
         return 200, b"ok"
 
+    async def _ensure_keyboard(self) -> None:
+        await self._ensure_hid()
+        if self._kb_service_id is None:
+            async with self._hid_lock:
+                if self._kb_service_id is None:
+                    assert self._uhs is not None
+                    self._kb_service_id = await self._uhs.create_keyboard_service()
+
+    async def _handle_key(self, body: bytes) -> tuple[int, bytes]:
+        """POST /key — JSON ``{usages: [int, int, ...]}``.
+
+        The browser sends the *full set* of HID Keyboard usages currently
+        held down; we forward verbatim. Empty list = all keys released.
+        Translating browser KeyboardEvents to HID usages happens client-side
+        so the server has no per-connection state to keep in sync.
+        """
+        try:
+            data = json.loads(body)
+            usages = [int(u) for u in data.get("usages", [])]
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            return 400, f"invalid key request: {exc}".encode()
+        await self._ensure_keyboard()
+        assert self._uhs is not None and self._kb_service_id is not None
+        await self._uhs.send_keyboard(self._kb_service_id, usages)
+        return 200, b"ok"
+
     async def _handle_button(self, body: bytes) -> tuple[int, bytes]:
         """POST /button — JSON ``{name, state}``.
 
@@ -1811,12 +1906,12 @@ class ScreenStreamServer:
             length = 0
         if length <= 0:
             return b""
-        # Cap the body to a sane size — touch/button POSTs are tens of bytes.
+        # Cap the body to a sane size — touch/button/key POSTs are tens of bytes.
         return await reader.readexactly(min(length, 65536))
 
     # ----- HTTP request handler ---------------------------------------------
     async def _handle_http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        # POSTs to /touch and /button support keep-alive: one TCP carries
+        # POSTs to /touch /button /key support keep-alive: one TCP carries
         # many requests, which is what the browser uses for pointermove.
         # Everything else (/, /codec, /stream.bin) is one-and-done.
         while True:
@@ -1838,7 +1933,7 @@ class ScreenStreamServer:
             method = parts[0].decode() if parts else "GET"
             path = parts[1].decode() if len(parts) >= 2 else "/"
 
-            if method == "POST" and path in ("/touch", "/button"):
+            if method == "POST" and path in ("/touch", "/button", "/key"):
                 body = await self._read_body(reader, headers)
                 logger.debug("enqueue %s body=%r conn=%s", path, body[:80], headers.get("connection", "?"))
                 # Fire-and-forget: drop into the queue and answer 200 NOW.

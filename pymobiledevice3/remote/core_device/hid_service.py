@@ -26,12 +26,12 @@ import socket
 import struct
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 from typing import Optional
 
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.remote.xpc_message import XpcUInt64Type
+from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 
 HID_BUTTON_STATE_DOWN = 1
 HID_BUTTON_STATE_UP = 2
@@ -40,7 +40,7 @@ HID_BUTTON_STATE_CANCELED = 3
 # Wire formats and authentication model for the universalhidservice touch path.
 # Decoded by sniffing Xcode-mirror sessions with ``misc/remotexpc_sniffer.py``.
 #
-# Two surfaces, two report shapes:
+# Three surfaces, three report shapes:
 #
 # 1) **Gesture / pointer surface** — 19-byte report (rid=0x13). Drives the
 #    *visual* cursor in the mirror window. The target ``_ServiceID`` is
@@ -77,6 +77,28 @@ HID_BUTTON_STATE_CANCELED = 3
 #    by one ``RELEASE`` at the final position — there is no separate
 #    touch-begin/end opcode; every ``CONTACT`` is "in contact at this position".
 #
+# 3) **Virtual keyboard** — 39-byte report (rid=0x01). Unlike the two touch
+#    surfaces this one isn't pre-registered on the device; the host has to
+#    call ``createService`` first with a HID keyboard report descriptor +
+#    ``UniversalControlVirtualService=True`` and a chosen ``_ServiceID``
+#    (decoded from a sniff of macOS Universal Control mirroring a hardware
+#    keyboard onto the device).
+#
+#        | byte  | meaning                                  |
+#        |-------|------------------------------------------|
+#        | 0     | report ID (0x01)                         |
+#        | 1-30  | 240-bit usage bitmap (LE bit order)      |
+#        | 31-36 | host timestamp (Mach-abs, 6 bytes LE)    |
+#        | 37-38 | reserved (0x0000)                        |
+#
+#    The bitmap covers HID Keyboard usage page 0x07. Bit ``u % 8`` of
+#    byte ``1 + (u // 8)`` set ⇔ usage code ``u`` is currently pressed.
+#    ASCII letters ``a..z`` are usages 0x04..0x1D; modifiers Ctrl/Shift/
+#    Alt/GUI are 0xE0..0xE7. Every report carries the *full pressed set*
+#    — to release a key, resend the report with that bit cleared. Each
+#    keypress in the sniff = one report with the bit set, then one with
+#    it cleared.
+#
 # **Authentication gate — an active media stream is required.** Without one,
 # dtuhidd publishes our HID surfaces as ``authenticated: NO; builtIn: NO;
 # eventSource: externalAccessory`` and backboardd silently drops every
@@ -90,12 +112,168 @@ HID_BUTTON_STATE_CANCELED = 3
 
 DIGITIZER_REPORT_ID = 0x13  # gesture surface — rid byte
 TOUCHSCREEN_REPORT_ID = 0x09  # mainTouchscreen — rid byte
+KEYBOARD_REPORT_ID = 0x01  # virtual keyboard — rid byte
 TOUCHSCREEN_STATE_CONTACT = 0xC2  # "contact in progress at this position"
 TOUCHSCREEN_STATE_RELEASE = 0x02  # release contact
 
 # _ServiceIDs of statically-registered surfaces (see ``list_connected_services``):
 DIGITIZER_SURFACE_MAIN_TOUCHSCREEN = 257  # 0x101 — true digitizer (58-byte rid=0x09)
 DIGITIZER_SURFACE_TOUCHSCREEN_GESTURE = 1281  # 0x501 — trackpad-style pointer (19-byte rid=0x13)
+# Default _ServiceID for the host-registered virtual keyboard. The high
+# bit-32 marks it as session-specific, matching the convention macOS
+# Universal Control uses for its mirrored peripherals.
+KEYBOARD_SURFACE_DEFAULT_SERVICE_ID = 0x100002001
+
+# HID Keyboard usage codes (page 0x07) -- the bits that go into the
+# 240-bit bitmap of :func:`build_keyboard_report`. Only the keys we
+# actually translate to from the VNC/web frontends are named; arbitrary
+# usages can still be sent by their raw integer.
+KEY_A, KEY_B, KEY_C, KEY_D, KEY_E, KEY_F, KEY_G, KEY_H = 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B
+KEY_I, KEY_J, KEY_K, KEY_L, KEY_M, KEY_N, KEY_O, KEY_P = 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13
+KEY_Q, KEY_R, KEY_S, KEY_T, KEY_U, KEY_V, KEY_W, KEY_X = 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B
+KEY_Y, KEY_Z = 0x1C, 0x1D
+KEY_1, KEY_2, KEY_3, KEY_4, KEY_5 = 0x1E, 0x1F, 0x20, 0x21, 0x22
+KEY_6, KEY_7, KEY_8, KEY_9, KEY_0 = 0x23, 0x24, 0x25, 0x26, 0x27
+KEY_ENTER, KEY_ESC, KEY_BACKSPACE, KEY_TAB, KEY_SPACE = 0x28, 0x29, 0x2A, 0x2B, 0x2C
+KEY_MINUS, KEY_EQUAL, KEY_LBRACKET, KEY_RBRACKET = 0x2D, 0x2E, 0x2F, 0x30
+KEY_BACKSLASH, KEY_SEMICOLON, KEY_APOSTROPHE = 0x31, 0x33, 0x34
+KEY_GRAVE, KEY_COMMA, KEY_DOT, KEY_SLASH = 0x35, 0x36, 0x37, 0x38
+KEY_CAPS_LOCK = 0x39
+KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6 = 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F
+KEY_F7, KEY_F8, KEY_F9, KEY_F10, KEY_F11, KEY_F12 = 0x40, 0x41, 0x42, 0x43, 0x44, 0x45
+KEY_RIGHT, KEY_LEFT, KEY_DOWN, KEY_UP = 0x4F, 0x50, 0x51, 0x52
+KEY_LEFT_CTRL, KEY_LEFT_SHIFT, KEY_LEFT_ALT, KEY_LEFT_GUI = 0xE0, 0xE1, 0xE2, 0xE3
+KEY_RIGHT_CTRL, KEY_RIGHT_SHIFT, KEY_RIGHT_ALT, KEY_RIGHT_GUI = 0xE4, 0xE5, 0xE6, 0xE7
+
+# Map a printable ASCII character to the (usage, shift?) it produces on a
+# US keyboard layout. ``shift`` is True iff the host must hold Left-Shift
+# to produce the character (e.g. ``!`` is shift-1). Used by the CLI's
+# ``keyboard type`` and by the web viewer's keydown handler when an event
+# only carries the resolved character (no ``KeyboardEvent.code``).
+ASCII_TO_HID: dict[str, tuple[int, bool]] = {}
+for _ch, _usage in zip("abcdefghijklmnopqrstuvwxyz", range(KEY_A, KEY_Z + 1)):
+    ASCII_TO_HID[_ch] = (_usage, False)
+    ASCII_TO_HID[_ch.upper()] = (_usage, True)
+for _ch, _usage in zip("1234567890", range(KEY_1, KEY_0 + 1)):
+    ASCII_TO_HID[_ch] = (_usage, False)
+for _ch, _shifted, _usage in [
+    ("!", "1", KEY_1),
+    ("@", "2", KEY_2),
+    ("#", "3", KEY_3),
+    ("$", "4", KEY_4),
+    ("%", "5", KEY_5),
+    ("^", "6", KEY_6),
+    ("&", "7", KEY_7),
+    ("*", "8", KEY_8),
+    ("(", "9", KEY_9),
+    (")", "0", KEY_0),
+]:
+    ASCII_TO_HID[_ch] = (_usage, True)
+ASCII_TO_HID.update({
+    " ": (KEY_SPACE, False),
+    "\t": (KEY_TAB, False),
+    "\n": (KEY_ENTER, False),
+    "-": (KEY_MINUS, False),
+    "_": (KEY_MINUS, True),
+    "=": (KEY_EQUAL, False),
+    "+": (KEY_EQUAL, True),
+    "[": (KEY_LBRACKET, False),
+    "{": (KEY_LBRACKET, True),
+    "]": (KEY_RBRACKET, False),
+    "}": (KEY_RBRACKET, True),
+    "\\": (KEY_BACKSLASH, False),
+    "|": (KEY_BACKSLASH, True),
+    ";": (KEY_SEMICOLON, False),
+    ":": (KEY_SEMICOLON, True),
+    "'": (KEY_APOSTROPHE, False),
+    '"': (KEY_APOSTROPHE, True),
+    "`": (KEY_GRAVE, False),
+    "~": (KEY_GRAVE, True),
+    ",": (KEY_COMMA, False),
+    "<": (KEY_COMMA, True),
+    ".": (KEY_DOT, False),
+    ">": (KEY_DOT, True),
+    "/": (KEY_SLASH, False),
+    "?": (KEY_SLASH, True),
+})
+
+# HID descriptor declaring this surface as a Generic-Desktop Keyboard.
+# The bitmap report we actually send doesn't match this descriptor's
+# layout (modifier byte + 6-key array); dtuhidd accepts the divergence
+# because the same divergence shows up in the captured Universal Control
+# session. The descriptor's job is just to identify the surface as a
+# keyboard so backboardd hides the on-screen software keyboard while the
+# host is connected.
+_KEYBOARD_REPORT_DESCRIPTOR = bytes([
+    0x05,
+    0x01,  # Usage Page (Generic Desktop)
+    0x09,
+    0x06,  # Usage (Keyboard)
+    0xA1,
+    0x01,  # Collection (Application)
+    0x05,
+    0x07,  # Usage Page (Keyboard)
+    0x19,
+    0xE0,
+    0x29,
+    0xE7,  # Usage Min/Max -> 8 modifier keys
+    0x15,
+    0x00,
+    0x25,
+    0x01,
+    0x95,
+    0x08,
+    0x75,
+    0x01,
+    0x81,
+    0x02,  # 8-bit modifier byte
+    0x95,
+    0x01,
+    0x75,
+    0x08,
+    0x81,
+    0x01,  # 8-bit reserved
+    0x05,
+    0x07,
+    0x19,
+    0x00,
+    0x29,
+    0xFF,
+    0x15,
+    0x00,
+    0x26,
+    0xFF,
+    0x00,
+    0x95,
+    0x06,
+    0x75,
+    0x08,
+    0x81,
+    0x00,  # 6-key array
+    0x05,
+    0x08,
+    0x19,
+    0x01,
+    0x29,
+    0x05,
+    0x15,
+    0x00,
+    0x25,
+    0x01,
+    0x95,
+    0x05,
+    0x75,
+    0x01,
+    0x91,
+    0x02,  # LED output
+    0x95,
+    0x01,
+    0x75,
+    0x03,
+    0x91,
+    0x01,  # 3 padding bits
+    0xC0,
+])
 
 
 def build_digitizer_report(x: int, y: int, timestamp: Optional[int] = None) -> bytes:
@@ -114,6 +292,29 @@ def build_digitizer_report(x: int, y: int, timestamp: Optional[int] = None) -> b
         + timestamp.to_bytes(6, "little")
         + b"\x00\x00"
     )
+
+
+def build_keyboard_report(
+    usage_codes: Iterable[int],
+    timestamp: Optional[int] = None,
+) -> bytes:
+    """Build a 39-byte virtual-keyboard HID report (report ID 0x01).
+
+    ``usage_codes`` is the set of HID Keyboard usages currently pressed.
+    Pass an empty iterable to release all keys. ``timestamp`` is a 48-bit
+    Mach-abs monotonic value (defaults to ``time.monotonic_ns()``
+    truncated to 48 bits).
+
+    Bit ``u % 8`` of byte ``1 + (u // 8)`` is set ⇔ usage ``u`` is pressed.
+    Usages above 239 cannot be encoded in this report.
+    """
+    if timestamp is None:
+        timestamp = time.monotonic_ns() & ((1 << 48) - 1)
+    bitmap = bytearray(30)
+    for usage in usage_codes:
+        if 0 <= usage < 240:
+            bitmap[usage // 8] |= 1 << (usage % 8)
+    return bytes([KEYBOARD_REPORT_ID]) + bytes(bitmap) + timestamp.to_bytes(6, "little") + b"\x00\x00"
 
 
 def build_touchscreen_report(
@@ -240,6 +441,108 @@ class UniversalHIDServiceService(RemoteService):
         sample or :data:`TOUCHSCREEN_STATE_RELEASE` to lift.
         """
         await self.send_report(service_id, build_touchscreen_report(state, x, y, timestamp))
+
+    async def create_keyboard_service(
+        self,
+        service_id: int = KEYBOARD_SURFACE_DEFAULT_SERVICE_ID,
+        product: str = "pymobiledevice3 virtual keyboard",
+        manufacturer: str = "pymobiledevice3",
+        vendor_id: int = 0x05AC,
+        product_id: int = 0x0250,
+    ) -> int:
+        """Register a host-side virtual HID keyboard with ``dtuhidd``.
+
+        Returns the ``_ServiceID`` ``dtuhidd`` ends up using -- usually the
+        one we requested. Subsequent reports must be addressed to that ID.
+
+        Same auth gate as touch: a media stream must be running, otherwise
+        backboardd publishes the new surface as ``externalAccessory`` and
+        drops every report. Open :func:`touch_session` first (or any
+        equivalent ``DisplayService.start_video_stream`` context) and call
+        this inside it.
+
+        Payload structure mirrors a sniffed macOS Universal Control session
+        registering a real Keychron keyboard onto the device. Notable type
+        choices, all confirmed against that sniff:
+
+        - ``PrimaryUsage``/``PrimaryUsagePage`` are ``UInt64`` at the top
+          level, ``Int64`` inside ``_CoreDevice_codablePropertyStorage``.
+        - ``ProductID``/``VendorID``/``DeviceUsage*`` are ``Int64`` everywhere.
+        - ``_ServiceID`` is ``UInt64`` everywhere.
+        - ``UniversalControlVirtualService``/``ReportDescriptor``/
+          ``Manufacturer``/``Transport`` live ONLY inside the storage block.
+        - Every value inside the storage block is wrapped in a Swift-
+          Codable type envelope -- ``{"bool": ...}`` / ``{"int": ...}`` /
+          ``{"string": ...}`` / ``{"data": ...}`` / ``{"array": [...]}`` /
+          ``{"dictionary": {...}}`` / ``{"uint": ...}``. dtuhidd's
+          decoder rejects raw bools/ints under that key with
+          ``DecodingError.typeMismatch: dictionary required here``.
+        """
+        usage_page_i = XpcInt64Type(1)
+        usage_i = XpcInt64Type(6)
+        vendor = XpcInt64Type(vendor_id)
+        prod = XpcInt64Type(product_id)
+        svc_id = XpcUInt64Type(service_id)
+        top_pair = {"DeviceUsage": usage_i, "DeviceUsagePage": usage_page_i}
+        # Storage block follows the Swift Codable property-list shape:
+        # every leaf is {<type-tag>: <value>}, every dict is
+        # {"dictionary": {...}}, every list is {"array": [...]}.
+        storage = {
+            "Manufacturer": {"string": manufacturer},
+            "Product": {"string": product},
+            "ProductID": {"int": prod},
+            "VendorID": {"int": vendor},
+            "PrimaryUsage": {"int": usage_i},
+            "PrimaryUsagePage": {"int": usage_page_i},
+            "DeviceUsagePairs": {
+                "array": [
+                    {
+                        "dictionary": {
+                            "DeviceUsage": {"int": usage_i},
+                            "DeviceUsagePage": {"int": usage_page_i},
+                        }
+                    }
+                ]
+            },
+            "Transport": {"string": "USB"},
+            "ReportDescriptor": {"data": _KEYBOARD_REPORT_DESCRIPTOR},
+            "UniversalControlVirtualService": {"bool": True},
+            "_ServiceID": {"uint": svc_id},
+        }
+        response = await self.service.send_receive_request({
+            "featureIdentifier": "com.apple.coredevice.feature.remote.universalhidservice",
+            "messageType": "Request",
+            "payload": {
+                "createService": {
+                    "_0": {
+                        "DeviceUsagePairs": [top_pair],
+                        "PrimaryUsage": XpcUInt64Type(6),
+                        "PrimaryUsagePage": XpcUInt64Type(1),
+                        "Product": product,
+                        "ProductID": prod,
+                        "VendorID": vendor,
+                        "_CoreDevice_codablePropertyStorage": storage,
+                        "_ServiceID": svc_id,
+                    }
+                }
+            },
+        })
+        return int(response.get("serviceID", service_id))
+
+    async def send_keyboard(
+        self,
+        service_id: int,
+        usage_codes: Iterable[int] = (),
+        timestamp: Optional[int] = None,
+    ) -> None:
+        """Send a single 39-byte virtual-keyboard report.
+
+        ``usage_codes`` is the *full set* of HID Keyboard usages currently
+        held down. Pass an empty iterable to release all keys. The report
+        is delta-less: every send overwrites whatever the device thought
+        was pressed.
+        """
+        await self.send_report(service_id, build_keyboard_report(usage_codes, timestamp))
 
 
 @contextlib.asynccontextmanager

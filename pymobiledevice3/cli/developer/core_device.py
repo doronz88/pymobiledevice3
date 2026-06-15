@@ -19,11 +19,13 @@ from pymobiledevice3.remote.core_device.diagnostics_service import DiagnosticsSe
 from pymobiledevice3.remote.core_device.display_service import DisplayService
 from pymobiledevice3.remote.core_device.file_service import APPLE_DOMAIN_DICT, FileServiceService
 from pymobiledevice3.remote.core_device.hid_service import (
+    ASCII_TO_HID,
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     DIGITIZER_SURFACE_TOUCHSCREEN_GESTURE,
     HID_BUTTON_STATE_CANCELED,
     HID_BUTTON_STATE_DOWN,
     HID_BUTTON_STATE_UP,
+    KEY_LEFT_SHIFT,
     TOUCHSCREEN_STATE_CONTACT,
     TOUCHSCREEN_STATE_RELEASE,
     IndigoHIDService,
@@ -709,6 +711,44 @@ async def core_device_universal_hid_service_session(
                     raise ValueError(f"unrecognised command or wrong arg count: {line!r}")
             except Exception as e:
                 raise typer.BadParameter(f"line {lineno}: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# Keyboard typing — virtual HID keyboard registered atop universalhidservice
+# ---------------------------------------------------------------------------
+@universal_hid_service_cli.command("type")
+@async_command
+async def core_device_universal_hid_service_type(
+    service_provider: RSDServiceProviderDep,
+    text: Annotated[str, typer.Argument(help="Text to type (printable ASCII)")],
+    char_delay: Annotated[
+        float,
+        typer.Option("--char-delay", help="Seconds between key down and key up"),
+    ] = 0.04,
+    inter_delay: Annotated[
+        float,
+        typer.Option("--inter-delay", help="Seconds between characters"),
+    ] = 0.02,
+) -> None:
+    """Type ``TEXT`` on the device via a host-registered virtual keyboard.
+
+    Auto-opens a media stream (the dtuhidd auth gate) and registers a
+    virtual keyboard surface, then emits one ``down``/``up`` HID Keyboard
+    report pair per character. Capital letters and shifted symbols
+    synthesise the matching Left-Shift bit in the bitmap.
+    """
+    async with touch_session(service_provider) as service:
+        kb_service_id = await service.create_keyboard_service()
+        for ch in text:
+            mapping = ASCII_TO_HID.get(ch)
+            if mapping is None:
+                raise typer.BadParameter(f"unsupported character: {ch!r}")
+            usage, needs_shift = mapping
+            usages = (KEY_LEFT_SHIFT, usage) if needs_shift else (usage,)
+            await service.send_keyboard(kb_service_id, usages)
+            await asyncio.sleep(char_delay)
+            await service.send_keyboard(kb_service_id, ())
+            await asyncio.sleep(inter_delay)
 
 
 # ---------------------------------------------------------------------------
