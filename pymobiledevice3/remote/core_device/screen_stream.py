@@ -544,10 +544,14 @@ class ScreenStreamServer:
         self._last_restart_t: float = 0.0
         self._consecutive_restarts: int = 0
 
-        # Lazy lockdown handle for the accessibility sidebar -- opened on
-        # the first /accessibility request so a serve-web run without any
-        # accessibility use never has to touch usbmuxd.
+        # Lazy lockdown handle + AccessibilityAudit cache for the
+        # accessibility sidebar -- opened on the first /accessibility
+        # request so a serve-web run without any accessibility use
+        # never has to touch usbmuxd. The audit's DTX reader tasks are
+        # closed during shutdown; otherwise they trigger a flurry of
+        # CancelledError tracebacks from the connection-cleanup path.
         self._lockdown = None
+        self._accessibility: Optional[AccessibilityAudit] = None
         self._accessibility_lock = asyncio.Lock()
 
     # ----- per-session UDP receiver -----------------------------------------
@@ -1195,17 +1199,20 @@ class ScreenStreamServer:
 
     # ----- HID (touch + buttons) -------------------------------------------
     # ----- Accessibility settings (lockdown / DTX) --------------------------
-    async def _ensure_lockdown(self):
-        """Lazy-open a usbmux lockdown handle (for the accessibility audit).
-        Cached for the server's lifetime."""
-        if self._lockdown is None:
-            self._lockdown = await _create_lockdown_usbmux(self._rsd.udid)
-        return self._lockdown
+    async def _ensure_accessibility(self) -> AccessibilityAudit:
+        """Lazy-open the lockdown + AccessibilityAudit handles. Cached
+        for the server's lifetime so we don't churn the DTX channel on
+        every panel interaction; closed in :meth:`serve`'s shutdown."""
+        if self._accessibility is None:
+            if self._lockdown is None:
+                self._lockdown = await _create_lockdown_usbmux(self._rsd.udid)
+            self._accessibility = AccessibilityAudit(self._lockdown)
+        return self._accessibility
 
     async def _accessibility_list(self) -> list[dict]:
         async with self._accessibility_lock:
-            lockdown = await self._ensure_lockdown()
-            settings = await AccessibilityAudit(lockdown).settings()
+            audit = await self._ensure_accessibility()
+            settings = await audit.settings()
         out: list[dict] = []
         for s in settings:
             val = s.value
@@ -1217,13 +1224,24 @@ class ScreenStreamServer:
 
     async def _accessibility_set(self, key: str, value) -> None:
         async with self._accessibility_lock:
-            lockdown = await self._ensure_lockdown()
-            await AccessibilityAudit(lockdown).set_setting(key, value)
+            audit = await self._ensure_accessibility()
+            await audit.set_setting(key, value)
 
     async def _accessibility_reset(self) -> None:
         async with self._accessibility_lock:
-            lockdown = await self._ensure_lockdown()
-            await AccessibilityAudit(lockdown).reset_settings()
+            audit = await self._ensure_accessibility()
+            await audit.reset_settings()
+
+    async def _stop_accessibility(self) -> None:
+        """Tear down the cached AccessibilityAudit (closes its DTX reader
+        task) so shutdown doesn't drag stale channels into the cancel
+        path -- their reader-loop CancelledError would otherwise log a
+        full traceback at ERROR level for each open channel."""
+        audit = self._accessibility
+        self._accessibility = None
+        if audit is not None:
+            with contextlib.suppress(Exception):
+                await audit.close()
 
     async def _ensure_hid(self) -> None:
         """Lazily open the HID services + worker on first input event."""
@@ -2120,6 +2138,8 @@ class ScreenStreamServer:
             await _bounded(_stop_video(), "_stop_active_stream")
             logger.debug("shutdown: stopping audio stream")
             await _bounded(_stop_audio(), "_stop_audio_stream")
+            logger.debug("shutdown: closing accessibility audit")
+            await _bounded(self._stop_accessibility(), "_stop_accessibility")
             # Cancel any lingering connection-handler tasks that the
             # HTTP server's wait_closed couldn't drain (e.g. a
             # /stream.bin or /audio.bin handler blocked in queue.get()
