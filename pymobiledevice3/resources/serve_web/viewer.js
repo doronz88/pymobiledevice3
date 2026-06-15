@@ -226,7 +226,35 @@ function postKeys() {
     lastKeyPost = lastKeyPost.then(() => postJson('/key', {usages: snapshot}));
 }
 
+// Toggle for whether host keystrokes get forwarded to the device.
+// When off, all keydown/keyup events bypass our handlers so the
+// browser receives them normally (Cmd-L to focus the URL bar, Cmd-W
+// to close the tab, devtools shortcuts, etc.). Persisted across page
+// loads via localStorage so the user doesn't have to flip it every
+// reload.
+const kbBtn = document.getElementById('keyboard-toggle');
+let keyboardCaptureOn = true;
+try {
+    if (localStorage.getItem('keyboardCapture') === 'false') keyboardCaptureOn = false;
+} catch (e) {}
+function setKbLabel() {
+    kbBtn.textContent = 'Keyboard: ' + (keyboardCaptureOn ? 'on' : 'off');
+}
+setKbLabel();
+function releaseAllKeys() {
+    if (pressedUsages.size) {
+        pressedUsages.clear();
+        postKeys();
+    }
+}
+kbBtn.addEventListener('click', () => {
+    keyboardCaptureOn = !keyboardCaptureOn;
+    setKbLabel();
+    try { localStorage.setItem('keyboardCapture', keyboardCaptureOn ? 'true' : 'false'); } catch (e) {}
+});
+
 window.addEventListener('keydown', (e) => {
+    if (!keyboardCaptureOn) return;
     // Ctrl-hotkey path consumes the event; don't also type it.
     if (e.ctrlKey && !e.altKey && !e.metaKey) {
         const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
@@ -247,6 +275,7 @@ window.addEventListener('keydown', (e) => {
     }
 });
 window.addEventListener('keyup', (e) => {
+    if (!keyboardCaptureOn) return;
     const usage = CODE_TO_HID[e.code];
     if (usage === undefined) return;
     e.preventDefault();
@@ -255,10 +284,7 @@ window.addEventListener('keyup', (e) => {
 window.addEventListener('blur', () => {
     // Window-blur means we won't see keyup; flush the bitmap so no
     // key ends up stuck-down on the device.
-    if (pressedUsages.size) {
-        pressedUsages.clear();
-        postKeys();
-    }
+    releaseAllKeys();
 });
 
 // ----- Orientation: POST /rotate with {direction: 'left'|'right'} and
