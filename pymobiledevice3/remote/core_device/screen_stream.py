@@ -36,17 +36,26 @@ from pymobiledevice3.remote.core_device.hid_service import (
 )
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
-# Named iOS hardware buttons → (usage_page, usage_code). Mirrors the table in
-# cli/developer/core_device.py so the browser viewer can offer a friendly UI.
-_NAMED_BUTTONS: dict[str, tuple[int, int]] = {
-    "home": (0x0C, 0x40),
-    "power": (0x0C, 0x30),
-    "lock": (0x0C, 0x30),
-    "sleep": (0x0C, 0x32),
-    "volume-up": (0x0C, 0xE9),
-    "volume-down": (0x0C, 0xEA),
-    "mute": (0x0C, 0xE2),
-    "siri": (0x0C, 0xCF),
+# Named iOS hardware buttons → (usage_page, usage_code, hold_seconds).
+# Mirrors the table in cli/developer/core_device.py so the browser viewer
+# can offer a friendly UI.
+#
+# ``hold_seconds`` is how long to keep the button "pressed" between the
+# DOWN and UP IndigoButtonEvents. Most buttons want a near-instant tap
+# (0.05 s -- long enough that iOS doesn't reject it as a debounce
+# bounce, short enough to feel like a tap). Lock and Siri are explicit
+# press-and-holds: iOS won't sleep / start Siri on a microsecond-long
+# tap, because the same usage on real hardware is "side button held for
+# N ms". Empirically, 0.5 s sleeps the device, 1.0 s starts Siri.
+_NAMED_BUTTONS: dict[str, tuple[int, int, float]] = {
+    "home": (0x0C, 0x40, 0.05),
+    "power": (0x0C, 0x30, 0.05),
+    "lock": (0x0C, 0x30, 0.5),
+    "sleep": (0x0C, 0x32, 0.05),
+    "volume-up": (0x0C, 0xE9, 0.05),
+    "volume-down": (0x0C, 0xEA, 0.05),
+    "mute": (0x0C, 0xE2, 0.05),
+    "siri": (0x0C, 0xCF, 1.0),
 }
 
 logger = logging.getLogger(__name__)
@@ -1884,11 +1893,16 @@ class ScreenStreamServer:
             return 400, f"invalid button request: {exc}".encode()
         if name not in _NAMED_BUTTONS:
             return 400, f"unknown button {name!r}".encode()
-        usage_page, usage_code = _NAMED_BUTTONS[name]
+        usage_page, usage_code, hold_seconds = _NAMED_BUTTONS[name]
         await self._ensure_hid()
         assert self._indigo is not None
         if state == "press":
             await self._indigo.send_button(usage_page, usage_code, HID_BUTTON_STATE_DOWN)
+            # Hold matters: Home is a tap (fires on any duration), but Lock
+            # wants ~0.5 s for iOS to sleep the device and Siri ~1.0 s for
+            # iOS to start listening. A 70 µs DOWN→UP gap (no sleep) is
+            # treated as bounce-noise for these buttons.
+            await asyncio.sleep(hold_seconds)
             await self._indigo.send_button(usage_page, usage_code, HID_BUTTON_STATE_UP)
         elif state == "down":
             await self._indigo.send_button(usage_page, usage_code, HID_BUTTON_STATE_DOWN)
