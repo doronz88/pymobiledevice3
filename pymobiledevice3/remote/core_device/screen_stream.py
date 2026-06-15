@@ -1236,12 +1236,20 @@ class ScreenStreamServer:
         """Tear down the cached AccessibilityAudit (closes its DTX reader
         task) so shutdown doesn't drag stale channels into the cancel
         path -- their reader-loop CancelledError would otherwise log a
-        full traceback at ERROR level for each open channel."""
-        audit = self._accessibility
-        self._accessibility = None
-        if audit is not None:
-            with contextlib.suppress(Exception):
-                await audit.close()
+        full traceback at ERROR level for each open channel.
+
+        Acquires ``_accessibility_lock`` first so an in-flight panel
+        request can finish before we pull the underlying DTX channel
+        out from under it; closing mid-decode produces a 'coroutine
+        ignored GeneratorExit' warning on Python 3.14 when the
+        in-flight bplist read can't unwind cleanly."""
+        with contextlib.suppress(Exception):
+            async with self._accessibility_lock:
+                audit = self._accessibility
+                self._accessibility = None
+                if audit is not None:
+                    with contextlib.suppress(Exception):
+                        await audit.close()
 
     async def _ensure_hid(self) -> None:
         """Lazily open the HID services + worker on first input event."""
@@ -2138,6 +2146,13 @@ class ScreenStreamServer:
             await _bounded(_stop_video(), "_stop_active_stream")
             logger.debug("shutdown: stopping audio stream")
             await _bounded(_stop_audio(), "_stop_audio_stream")
+            # Close the accessibility audit BEFORE cancelling stragglers --
+            # otherwise its DTX reader task is one of the stragglers and
+            # its cancellation logs a 'Channel reader loop cancelled'
+            # ERROR-with-traceback. Closing first sets _closed=True on
+            # the channel so the reader exits silently. Any in-flight
+            # /accessibility request gets an exception out of its
+            # await audit.* call and falls through to its try/except.
             logger.debug("shutdown: closing accessibility audit")
             await _bounded(self._stop_accessibility(), "_stop_accessibility")
             # Cancel any lingering connection-handler tasks that the
