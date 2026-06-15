@@ -1219,6 +1219,12 @@ class ScreenStreamServer:
                 with contextlib.suppress(Exception):
                     await self._indigo.close()
                 self._indigo = None
+            # The keyboard surface is host-registered against the live
+            # media stream; after a stream restart that ID points at a
+            # stale dtuhidd session and every report posted to it is
+            # silently dropped. Forget it so _ensure_keyboard re-creates
+            # one against the new stream on the next /key.
+            self._kb_service_id = None
 
     async def _hid_worker(self) -> None:
         """Single consumer that serially dispatches queued HID requests so
