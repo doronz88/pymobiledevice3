@@ -2,37 +2,53 @@
 <html><head><meta charset="utf-8"><title>iPhone screen</title>
 <link rel="stylesheet" href="/viewer.css"></head>
 <body class="frame-on">
-<div id="stage">
- <!-- Left side of the device: mute switch + volume rocker -->
- <div id="side-left" class="side">
-  <button class="btn" data-btn="mute" title="Ctrl+\">Mute</button>
-  <button class="btn" data-btn="volume-up" title="Ctrl+]">Vol +</button>
-  <button class="btn" data-btn="volume-down" title="Ctrl+[">Vol -</button>
- </div>
- <div id="device-frame">
-  <canvas id="c"></canvas>
- </div>
- <!-- Right side of the device: side button (lock) and Siri -->
- <div id="side-right" class="side">
-  <button class="btn" data-btn="lock" title="Ctrl+L">Lock</button>
-  <button class="btn" data-btn="siri" title="Ctrl+S">Siri</button>
+<div id="workspace">
+ <!-- Left tray: utility actions. Collapsible so the canvas can keep
+      the full viewport width when needed; pinned to the page flow
+      (not position:fixed) so a wide / rotated canvas can't slide
+      underneath it. -->
+ <aside id="left-tray" class="tray">
+  <button class="tray-toggle btn" data-tray="left" title="Collapse this panel" aria-label="Collapse left panel">‹</button>
+  <div class="tray-content">
+   <button class="btn" id="screenshot" type="button" title="Save current frame as PNG (Ctrl+P)">Screenshot</button>
+   <button class="btn" id="rotate-left" type="button" title="Rotate device 90° CCW">Rotate ↺</button>
+   <button class="btn" id="rotate-right" type="button" title="Rotate device 90° CW">Rotate ↻</button>
+   <button class="btn" id="sound-toggle" type="button">Enable Sound</button>
+   <button class="btn" id="keyboard-toggle" type="button" title="When off, keystrokes stay in the browser instead of being forwarded to the device">Keyboard: on</button>
+   <button class="btn" id="style-toggle" type="button" title="toggle dark/light user-interface style">Style: ?</button>
+   <button class="btn" id="frame-toggle" type="button" title="toggle cosmetic iPhone bezel around the canvas">Frame: ?</button>
+   <button class="btn" id="reload-window" type="button" title="Reload this viewer page">Reload</button>
+   <button class="btn" id="restart" type="button" title="full DisplayService restart">Force Restart</button>
+   <button class="btn" id="help-toggle" type="button" title="Show keyboard shortcuts and tips (?)">?</button>
+  </div>
+ </aside>
+
+ <div id="stage-wrap">
+  <div id="stage">
+   <!-- Left side of the device: mute switch + volume rocker -->
+   <div id="side-left" class="side">
+    <button class="btn" data-btn="mute" title="Ctrl+\">Mute</button>
+    <button class="btn" data-btn="volume-up" title="Ctrl+]">Vol +</button>
+    <button class="btn" data-btn="volume-down" title="Ctrl+[">Vol -</button>
+   </div>
+   <div id="device-frame">
+    <canvas id="c"></canvas>
+    <div id="offline-overlay" class="hidden"><span>Stream offline — waiting for frames…</span></div>
+   </div>
+   <!-- Right side of the device: side button (lock) and Siri -->
+   <div id="side-right" class="side">
+    <button class="btn" data-btn="lock" title="Ctrl+L">Lock</button>
+    <button class="btn" data-btn="siri" title="Ctrl+S">Siri</button>
+   </div>
+  </div>
+  <div id="bottom-row">
+   <button class="btn" data-swipe="left" title="Swipe left across the middle of the screen">Swipe ←</button>
+   <button class="btn" data-btn="home" title="Ctrl+H">Home</button>
+   <button class="btn" data-swipe="right" title="Swipe right across the middle of the screen">Swipe →</button>
+  </div>
  </div>
 </div>
-<div id="bottom-row">
- <button class="btn" data-swipe="left" title="Swipe left across the middle of the screen">Swipe ←</button>
- <button class="btn" data-btn="home" title="Ctrl+H">Home</button>
- <button class="btn" data-swipe="right" title="Swipe right across the middle of the screen">Swipe →</button>
-</div>
-<div id="util-tray">
- <button class="btn" id="rotate-left" type="button" title="Rotate device 90° CCW">Rotate ↺</button>
- <button class="btn" id="rotate-right" type="button" title="Rotate device 90° CW">Rotate ↻</button>
- <button class="btn" id="sound-toggle" type="button">Enable Sound</button>
- <button class="btn" id="keyboard-toggle" type="button" title="When off, keystrokes stay in the browser instead of being forwarded to the device">Keyboard: on</button>
- <button class="btn" id="style-toggle" type="button" title="toggle dark/light user-interface style">Style: ?</button>
- <button class="btn" id="frame-toggle" type="button" title="toggle cosmetic iPhone bezel around the canvas">Frame: ?</button>
- <button class="btn" id="restart" type="button" title="full DisplayService restart">Force Restart</button>
- <button class="btn" id="help-toggle" type="button" title="Show keyboard shortcuts and tips (?)">?</button>
-</div>
+
 <div id="status">connecting...</div>
 <div id="help-overlay" class="hidden" aria-hidden="true">
  <div id="help-modal" role="dialog" aria-modal="true" aria-label="Shortcuts and tips">
@@ -46,6 +62,7 @@
    <tr><td>Ctrl + [</td><td>Volume Down</td></tr>
    <tr><td>Ctrl + \</td><td>Mute</td></tr>
    <tr><td>Ctrl + S</td><td>Siri</td></tr>
+   <tr><td>Ctrl + P</td><td>Screenshot</td></tr>
    <tr><td>?</td><td>Show this help</td></tr>
    <tr><td>Esc</td><td>Close this help</td></tr>
   </table>

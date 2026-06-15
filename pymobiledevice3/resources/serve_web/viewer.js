@@ -15,11 +15,18 @@ function fitCanvasToViewport() {
     const dpr = window.devicePixelRatio || 1;
     const naturalW = canvas.width / dpr;
     const naturalH = canvas.height / dpr;
-    // Reserve room for the flanking side buttons + bottom row + util
-    // tray; ~30 px extra when the cosmetic bezel is on (14 px padding
-    // either side of the canvas).
+    // Reserve room for the flanking trays + side buttons + bottom row.
+    // We MEASURE the actual edge widths so collapse/uncollapse of either
+    // tray immediately reclaims space for the canvas. ~30 px extra when
+    // the cosmetic bezel is on (14 px padding either side).
+    const trayW = (id) => {
+        const el = document.getElementById(id);
+        return el ? el.getBoundingClientRect().width : 0;
+    };
+    const sideButtonsW = 80 + 80;  // side-left + side-right rough widths
     const frameSlack = document.body.classList.contains('frame-on') ? 32 : 0;
-    const availW = Math.max(100, window.innerWidth - 160 - frameSlack);
+    const reservedW = trayW('left-tray') + trayW('right-tray') + sideButtonsW + frameSlack + 40;
+    const availW = Math.max(100, window.innerWidth - reservedW);
     const availH = Math.max(100, window.innerHeight - 120 - frameSlack);
     const scale = Math.min(1, availW / naturalW, availH / naturalH);
     canvas.style.width  = (naturalW * scale) + 'px';
@@ -287,6 +294,13 @@ window.addEventListener('keydown', (e) => {
     }
     // While help is open the device shouldn't see any keystrokes.
     if (helpIsOpen()) { e.preventDefault(); return; }
+    // Local hotkeys (handled in the browser, never forwarded to the
+    // device) -- run BEFORE the keyboard-capture gate so they work
+    // regardless of whether forwarding is on.
+    if (e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
+        const k = e.key.toLowerCase();
+        if (k === 'p') { e.preventDefault(); takeScreenshot(); return; }
+    }
     if (!keyboardCaptureOn) return;
     // Ctrl-hotkey path consumes the event; don't also type it.
     if (e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -362,6 +376,65 @@ async function postRotate(direction) {
 }
 document.getElementById('rotate-left').addEventListener('click', () => postRotate('left'));
 document.getElementById('rotate-right').addEventListener('click', () => postRotate('right'));
+
+// ----- Screenshot: save what's drawn into the canvas as a PNG.
+// Reads the existing backing store (including any in-canvas rotation),
+// so the file matches what the user sees -- no extra server round-trip.
+function tsStamp() {
+    const d = new Date();
+    const z = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
+}
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function takeScreenshot() {
+    if (!canvas.width || !canvas.height) { log('screenshot: canvas empty'); return; }
+    canvas.toBlob((blob) => {
+        if (!blob) { log('screenshot: toBlob returned null'); return; }
+        const name = `screenshot-${tsStamp()}.png`;
+        downloadBlob(blob, name);
+        log('saved ' + name);
+    }, 'image/png');
+}
+document.getElementById('screenshot').addEventListener('click', takeScreenshot);
+
+// ----- Reload window: full page reload. Useful when something is stuck
+// and Force Restart (which only restarts the device-side stream) isn't
+// enough.
+document.getElementById('reload-window').addEventListener('click', () => {
+    log('reloading page…');
+    setTimeout(() => location.reload(), 50);
+});
+
+// ----- Collapsible side trays. Persist the open/closed state per tray
+// so the layout survives a reload. Each tray button has data-tray=
+// {"left","right"}.
+function applyTrayState(side) {
+    const el = document.getElementById(side + '-tray');
+    if (!el) return;
+    let collapsed = false;
+    try { collapsed = localStorage.getItem('tray-' + side) === 'collapsed'; } catch (e) {}
+    el.classList.toggle('collapsed', collapsed);
+}
+function toggleTray(side) {
+    const el = document.getElementById(side + '-tray');
+    if (!el) return;
+    const collapsed = !el.classList.contains('collapsed');
+    el.classList.toggle('collapsed', collapsed);
+    try { localStorage.setItem('tray-' + side, collapsed ? 'collapsed' : 'open'); } catch (e) {}
+    fitCanvasToViewport();
+}
+applyTrayState('left'); applyTrayState('right');
+document.querySelectorAll('.tray-toggle').forEach(btn => {
+    btn.addEventListener('click', () => toggleTray(btn.dataset.tray));
+});
 
 // ----- Force Restart: drop the current video stream + reload the page.
 // Wipes all client-side state and pulls a fresh IDR from a new stream.
@@ -630,6 +703,26 @@ function drawPending() {
     }
     lastFrame = f;
 }
+
+// ----- Offline overlay: show a banner over the canvas if frames stop
+// flowing. We sample frameCount once a second; if it hasn't moved for
+// ~3 consecutive seconds AND the stream has actually started (we've
+// drawn at least one frame), reveal the overlay. The moment a new
+// frame lands, hide it again.
+const offlineOverlay = document.getElementById('offline-overlay');
+const OFFLINE_GRACE_SECS = 3;
+let _lastFc = -1, _stableSec = 0;
+setInterval(() => {
+    if (frameCount === 0) { offlineOverlay.classList.add('hidden'); _lastFc = 0; _stableSec = 0; return; }
+    if (frameCount === _lastFc) {
+        _stableSec += 1;
+        if (_stableSec >= OFFLINE_GRACE_SECS) offlineOverlay.classList.remove('hidden');
+    } else {
+        _stableSec = 0;
+        offlineOverlay.classList.add('hidden');
+    }
+    _lastFc = frameCount;
+}, 1000);
 
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));
