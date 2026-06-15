@@ -180,6 +180,17 @@ VIEWER_HTML = r"""<!doctype html>
  #side-right{align-items:flex-start}
  canvas{max-width:calc(100vw - 160px);max-height:calc(100vh - 120px);
         image-rendering:auto;touch-action:none;cursor:crosshair;background:#000}
+ /* Cosmetic iPhone bezel: a padded rounded-rect around the canvas.
+    Pure CSS, no device-model awareness -- the frame just wraps whatever
+    aspect ratio the canvas ends up at. Toggle via `body.frame-on` so
+    the no-frame layout stays pixel-identical to before. */
+ #device-frame{display:inline-block;position:relative;line-height:0;font-size:0}
+ body.frame-on #device-frame{
+   padding:14px;border-radius:46px;
+   background:linear-gradient(145deg,#2a2a2c,#101012);
+   box-shadow:0 0 0 1px #3a3a3c inset, 0 10px 36px rgba(0,0,0,.55)}
+ body.frame-on canvas{border-radius:32px;
+   max-width:calc(100vw - 200px);max-height:calc(100vh - 170px)}
  #bottom-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
              max-width:100vw}
  button.btn{background:#222;color:#ddd;border:1px solid #444;border-radius:6px;
@@ -196,6 +207,7 @@ VIEWER_HTML = r"""<!doctype html>
   #stage{flex-direction:column;align-items:center}
   .side{flex-direction:row;flex-wrap:wrap;justify-content:center;padding-top:0}
   canvas{max-width:100vw;max-height:calc(100vh - 200px)}
+  body.frame-on canvas{max-width:calc(100vw - 30px);max-height:calc(100vh - 230px)}
  }
  /* Status / log overlay: pinned to top-left and capped at 220 px
     so it stays clear of the left-flank Vol / Mute buttons. */
@@ -205,7 +217,7 @@ VIEWER_HTML = r"""<!doctype html>
          -webkit-user-select:text;cursor:text;pointer-events:auto;
          z-index:10}
 </style></head>
-<body>
+<body class="frame-on">
 <div id="stage">
  <!-- Left side of the device: mute switch + volume rocker -->
  <div id="side-left" class="side">
@@ -213,7 +225,9 @@ VIEWER_HTML = r"""<!doctype html>
   <button class="btn" data-btn="volume-up" title="Ctrl+]">Vol +</button>
   <button class="btn" data-btn="volume-down" title="Ctrl+[">Vol -</button>
  </div>
- <canvas id="c"></canvas>
+ <div id="device-frame">
+  <canvas id="c"></canvas>
+ </div>
  <!-- Right side of the device: side button (lock) and Siri -->
  <div id="side-right" class="side">
   <button class="btn" data-btn="lock" title="Ctrl+L">Lock</button>
@@ -228,6 +242,7 @@ VIEWER_HTML = r"""<!doctype html>
 <div id="util-tray">
  <button class="btn" id="sound-toggle" type="button">Enable Sound</button>
  <button class="btn" id="style-toggle" type="button" title="toggle dark/light user-interface style">Style: ?</button>
+ <button class="btn" id="frame-toggle" type="button" title="toggle cosmetic iPhone bezel around the canvas">Frame: ?</button>
  <button class="btn" id="restart" type="button" title="full DisplayService restart">Force Restart</button>
 </div>
 <div id="status">connecting...</div>
@@ -457,6 +472,22 @@ styleBtn.addEventListener('click', async () => {
     } catch (e) { log('style set err: ' + (e.message || e)); }
 });
 refreshStyle();
+
+// ----- Frame toggle: pure-cosmetic CSS bezel around the canvas.
+// Persisted in localStorage so a reload keeps the user's choice.
+const frameBtn = document.getElementById('frame-toggle');
+function setFrameLabel() {
+    frameBtn.textContent = 'Frame: ' + (document.body.classList.contains('frame-on') ? 'on' : 'off');
+}
+try {
+    if (localStorage.getItem('frameOn') === 'false') document.body.classList.remove('frame-on');
+} catch (e) {}
+setFrameLabel();
+frameBtn.addEventListener('click', () => {
+    const on = document.body.classList.toggle('frame-on');
+    setFrameLabel();
+    try { localStorage.setItem('frameOn', on ? 'true' : 'false'); } catch (e) {}
+});
 
 // ----- Sound toggle: connect to /audio.bin which streams PRE-DECODED
 // PCM (s16le, 48 kHz, stereo interleaved). The server uses pyav's
