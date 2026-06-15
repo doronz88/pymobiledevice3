@@ -262,7 +262,7 @@ class VncStreamServer:
         self,
         rsd: RemoteServiceDiscoveryService,
         *,
-        bind: str = "127.0.0.1",
+        bind: str = "0.0.0.0",
         port: int = 5901,
         display_id: int = 1,
         audio: bool = False,

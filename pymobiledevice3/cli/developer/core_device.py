@@ -836,7 +836,19 @@ async def core_device_display_start_audio_stream(
 async def core_device_display_serve_web(
     service_provider: RSDServiceProviderDep,
     display_id: Annotated[int, typer.Option("--display-id")] = 1,
-    bind: Annotated[str, typer.Option("--bind", help="Host to bind the webserver on")] = "127.0.0.1",
+    bind: Annotated[
+        str,
+        typer.Option(
+            "--bind",
+            help=(
+                "Host to bind the webserver on. Defaults to ``0.0.0.0`` so the "
+                "viewer is reachable from any device on the LAN. The /touch / "
+                "/button / /key endpoints have no auth, so anyone reaching this "
+                "port can both watch and control the iPhone -- pass ``127.0.0.1`` "
+                "if that's not what you want."
+            ),
+        ),
+    ] = "0.0.0.0",
     http_port: Annotated[int, typer.Option("--http-port", help="Port for the webserver")] = 8080,
     no_audio: Annotated[
         bool,
@@ -898,7 +910,18 @@ async def core_device_display_serve_web(
 async def core_device_display_serve_vnc(
     service_provider: RSDServiceProviderDep,
     display_id: Annotated[int, typer.Option("--display-id")] = 1,
-    bind: Annotated[str, typer.Option("--bind", help="Host to bind the VNC listener on")] = "127.0.0.1",
+    bind: Annotated[
+        str,
+        typer.Option(
+            "--bind",
+            help=(
+                "Host to bind the VNC listener on. Defaults to ``0.0.0.0`` so "
+                "any device on the LAN can connect. The VNC server has no "
+                "password, so anyone reaching this port can watch AND control "
+                "the iPhone -- pass ``127.0.0.1`` if that's not acceptable."
+            ),
+        ),
+    ] = "0.0.0.0",
     port: Annotated[int, typer.Option("--port", help="TCP port for the VNC listener")] = 5901,
     audio: Annotated[
         bool,

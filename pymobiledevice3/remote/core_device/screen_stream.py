@@ -329,7 +329,7 @@ class ScreenStreamServer:
         self,
         rsd: RemoteServiceDiscoveryService,
         *,
-        bind: str = "127.0.0.1",
+        bind: str = "0.0.0.0",
         http_port: int = 8080,
         display_id: int = 1,
         audio_default_on: bool = True,
