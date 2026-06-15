@@ -33,6 +33,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
     touch_session,
 )
 from pymobiledevice3.remote.core_device.location_service import LocationService
+from pymobiledevice3.remote.core_device.orientation_service import OrientationService
 from pymobiledevice3.remote.core_device.screen_capture_service import ScreenCaptureService
 from pymobiledevice3.remote.core_device.screen_stream import (
     ScreenStreamServer,
@@ -285,6 +286,23 @@ async def core_device_get_lockstate_task(service_provider: RemoteServiceDiscover
 async def core_device_get_lockstate(service_provider: RSDServiceProviderDep) -> None:
     """Get lockstate"""
     await core_device_get_lockstate_task(service_provider)
+
+
+@cli.command("rotate")
+@async_command
+async def core_device_rotate(
+    service_provider: RSDServiceProviderDep,
+    direction: Annotated[
+        str,
+        typer.Argument(
+            click_type=click.Choice(["left", "right"]),
+            help="Rotate 90 degrees: 'left' = CCW, 'right' = CW.",
+        ),
+    ] = "left",
+) -> None:
+    """Rotate the device 90 degrees. Four consecutive 'left' calls cycle a full turn."""
+    async with OrientationService(service_provider) as svc:
+        print_json(await svc.rotate(direction))
 
 
 @cli.command("user-interface-style")
