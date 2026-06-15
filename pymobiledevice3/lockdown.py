@@ -1209,22 +1209,30 @@ class LockdownClient(ABC, LockdownServiceProvider):
         message = {"Label": self.label, "Request": request}
         if options:
             message.update(options)
+
         try:
-            response = await self.service.send_recv_plist(message)
-        except (ConnectionResetError, ConnectionTerminatedError, RuntimeError) as e:
-            # ServiceConnection streams are loop-bound; reconnect if this client was created in another loop.
-            if isinstance(e, RuntimeError) and "different event loop" not in str(e):
-                raise
-            await self.areestablish_connection()
-            response = await self.service.send_recv_plist(message)
-        try:
-            return self._verify_request_response(request, response, verify_request=verify_request)
-        except (InvalidConnectionError, LockdownError) as e:
-            if not (isinstance(e, InvalidConnectionError) or str(e) == "SessionInactive"):
-                raise
-            await self.areestablish_connection()
-            response = await self.service.send_recv_plist(message)
-            return self._verify_request_response(request, response, verify_request=verify_request)
+            try:
+                response = await self.service.send_recv_plist(message)
+            except (ConnectionResetError, ConnectionTerminatedError, RuntimeError) as e:
+                # ServiceConnection streams are loop-bound; reconnect if this client was created in another loop.
+                if isinstance(e, RuntimeError) and "different event loop" not in str(e):
+                    raise
+                await self.areestablish_connection()
+                response = await self.service.send_recv_plist(message)
+            try:
+                return self._verify_request_response(request, response, verify_request=verify_request)
+            except (InvalidConnectionError, LockdownError) as e:
+                if not (isinstance(e, InvalidConnectionError) or str(e) == "SessionInactive"):
+                    raise
+                await self.areestablish_connection()
+                response = await self.service.send_recv_plist(message)
+                return self._verify_request_response(request, response, verify_request=verify_request)
+        except asyncio.CancelledError:
+            # Service connection is now in an inconsistent state.
+            # Instead of calling `areestablish_connection` here, which is likely not desirable in a cancellation
+            # scenario, simply close the connection and reconnect on the next call to `_request`.
+            await self.service.close()
+            raise
 
     def _verify_request_response(self, request: str, response: dict, *, verify_request: bool = True) -> dict:
         """Internal helper for verify request response.
