@@ -56,7 +56,7 @@ class DisplayService(CoreDeviceService):
         *,
         allow_rtcp_fb: bool = False,
         ltrp_enabled: bool = False,
-        fec_enabled: bool = False,
+        fec_enabled: bool = True,
         tiles_per_frame: int = 1,
     ) -> dict:
         """Start an RTP video stream of one of the device's displays.

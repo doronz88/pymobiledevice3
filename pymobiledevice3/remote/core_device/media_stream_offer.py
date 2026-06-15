@@ -221,7 +221,7 @@ def build_media_blob_video(
     allow_rtcp_fb: bool = False,
     tiles_per_frame: int = 1,
     ltrp_enabled: bool = False,
-    fec_enabled: bool = False,
+    fec_enabled: bool = True,
     rtx_enabled: bool = False,
     hevc_payload_type: int = 123,
     avc_payload_type: int = 100,
@@ -403,7 +403,7 @@ def build_negotiator_offer_video(
     *,
     allow_rtcp_fb: bool = False,
     ltrp_enabled: bool = False,
-    fec_enabled: bool = False,
+    fec_enabled: bool = True,
     tiles_per_frame: int = 1,
     hevc_features: str = _DEFAULT_HEVC_FEATURES,
     avc_features: str = _DEFAULT_AVC_FEATURES,
@@ -488,7 +488,7 @@ def _self_check() -> None:
     UDP loss. Pass ``ltrp_enabled=True`` here to keep the byte-equivalence
     regression check meaningful.
     """
-    vid = build_media_blob_video(_CAPTURED_VIDEO_SESSION_ID, ltrp_enabled=True)
+    vid = build_media_blob_video(_CAPTURED_VIDEO_SESSION_ID, ltrp_enabled=True, fec_enabled=False)
     assert vid == _CAPTURED_VIDEO_TEMPLATE, (
         f"video builder drifted from Xcode capture: "
         f"len(built)={len(vid)} vs len(captured)={len(_CAPTURED_VIDEO_TEMPLATE)}"
