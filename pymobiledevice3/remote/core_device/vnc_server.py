@@ -36,12 +36,30 @@ from typing import Optional
 from pymobiledevice3.remote.core_device.aac_eld import AACELDDecoder
 from pymobiledevice3.remote.core_device.audio_player import AudioQueuePlayer
 from pymobiledevice3.remote.core_device.display_service import DisplayService
-from pymobiledevice3.remote.core_device.hevc_phantom import build_phantoms_for_bootstrap
 from pymobiledevice3.remote.core_device.hevc_rps import HevcRpsTracker, is_slice_nal
 from pymobiledevice3.remote.core_device.hid_service import (
+    ASCII_TO_HID,
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     HID_BUTTON_STATE_DOWN,
     HID_BUTTON_STATE_UP,
+    KEY_BACKSPACE,
+    KEY_CAPS_LOCK,
+    KEY_DOWN,
+    KEY_ENTER,
+    KEY_ESC,
+    KEY_F1,
+    KEY_LEFT,
+    KEY_LEFT_ALT,
+    KEY_LEFT_CTRL,
+    KEY_LEFT_GUI,
+    KEY_LEFT_SHIFT,
+    KEY_RIGHT,
+    KEY_RIGHT_ALT,
+    KEY_RIGHT_CTRL,
+    KEY_RIGHT_GUI,
+    KEY_RIGHT_SHIFT,
+    KEY_TAB,
+    KEY_UP,
     TOUCHSCREEN_STATE_CONTACT,
     TOUCHSCREEN_STATE_RELEASE,
     IndigoHIDService,
@@ -130,6 +148,46 @@ _KEYSYM_SHIFT = frozenset({0xFFE1, 0xFFE2})
 _KEYSYM_ALT = frozenset({0xFFE9, 0xFFEA})  # Alt_L (Option) / Alt_R
 _KEYSYM_CMD = frozenset({0xFFE7, 0xFFE8, 0xFFEB, 0xFFEC})  # Meta_L/R or Super_L/R
 
+# X11 modifier-keysym -> HID modifier usage. Both sides of the keyboard
+# are kept so a client distinguishing L/R shift still works (we just
+# treat them as separate bits in the bitmap).
+_KEYSYM_TO_HID_MODIFIER: dict[int, int] = {
+    0xFFE1: KEY_LEFT_SHIFT,
+    0xFFE2: KEY_RIGHT_SHIFT,
+    0xFFE3: KEY_LEFT_CTRL,
+    0xFFE4: KEY_RIGHT_CTRL,
+    0xFFE7: KEY_LEFT_GUI,
+    0xFFE8: KEY_RIGHT_GUI,  # Meta_L / Meta_R
+    0xFFE9: KEY_LEFT_ALT,
+    0xFFEA: KEY_RIGHT_ALT,
+    0xFFEB: KEY_LEFT_GUI,
+    0xFFEC: KEY_RIGHT_GUI,  # Super_L / Super_R
+}
+
+# X11 special keysyms (non-printable) -> HID usage.
+_KEYSYM_TO_HID_SPECIAL: dict[int, int] = {
+    0xFF08: KEY_BACKSPACE,
+    0xFF09: KEY_TAB,
+    0xFF0D: KEY_ENTER,
+    0xFF8D: KEY_ENTER,  # Return / KP_Enter
+    0xFF1B: KEY_ESC,
+    0xFFE5: KEY_CAPS_LOCK,
+    0xFF50: 0x4A,  # Home
+    0xFF51: KEY_LEFT,
+    0xFF52: KEY_UP,
+    0xFF53: KEY_RIGHT,
+    0xFF54: KEY_DOWN,
+    0xFF55: 0x4B,  # Page_Up
+    0xFF56: 0x4E,  # Page_Down
+    0xFF57: 0x4D,  # End
+    0xFF63: 0x49,  # Insert
+    0xFFFF: 0x4C,  # Delete (forward)
+    # F1..F12 are sequential keysyms 0xFFBE..0xFFC9 and sequential HID
+    # usages KEY_F1..KEY_F12.
+    **{0xFFBE + i: KEY_F1 + i for i in range(12)},
+}
+
+
 # Ctrl + keysym -> iOS button. Ctrl is the prefix because:
 # - No Fn required: every Mac keyboard has a real Ctrl key.
 # - Cmd never reaches us: Screen Sharing.app intercepts Cmd+anything
@@ -186,6 +244,14 @@ class _VncClient:
         # matching button-up regardless of whether the user released
         # Ctrl first.
         self.active_combos: dict[int, tuple[int, int]] = {}
+        # Currently-held HID keyboard usage codes. Every key event
+        # rewrites this set and re-emits the full bitmap report.
+        self.pressed_keys: set[int] = set()
+        # keysym -> set of usage codes the key-down emitted. Tracked so
+        # key-up can release the same usages, even if the host's
+        # interpretation of the keysym (e.g. shifted vs unshifted) has
+        # drifted between the down and the up.
+        self.active_typing: dict[int, tuple[int, ...]] = {}
 
 
 class VncStreamServer:
@@ -298,6 +364,11 @@ class VncStreamServer:
         self._uhs: Optional[UniversalHIDServiceService] = None
         self._indigo: Optional[IndigoHIDService] = None
         self._hid_lock = asyncio.Lock()
+        # _ServiceID dtuhidd assigned to our host-registered virtual
+        # keyboard. Lazily filled on first key event; serialized by
+        # ``_hid_lock`` so a burst of keystrokes at startup doesn't race
+        # multiple createService calls.
+        self._kb_service_id: Optional[int] = None
 
     # ----- HEVC -> BGRA callback marshalling --------------------------------
     def _on_frame_from_worker(self, bgra: bytes) -> None:
@@ -356,15 +427,14 @@ class VncStreamServer:
             self._idr_observed = False
             self._fir_attempts = 0
             self._cap_warned = False
-            logger.info("decode recovered (IDR + clean frame)")
+            logger.debug("decode recovered (IDR + clean frame)")
         for c in self._clients:
             c.wants_update.set()
 
-    # ----- RTP recv + phantom-NAL bridge ------------------------------------
+    # ----- RTP recv + transcoder feed ---------------------------------------
     async def _udp_recv_and_pipe(self, sock: socket.socket) -> None:
-        """Same depacketize loop as ScreenStreamServer:
-        gather Annex-B AUs, inject phantom NALs once at bootstrap, feed
-        the VT transcoder."""
+        """Same depacketize loop as ScreenStreamServer: gather Annex-B
+        AUs and feed the VT transcoder."""
         sock.setblocking(False)
         loop = asyncio.get_running_loop()
         fu_buffer = bytearray()
@@ -376,8 +446,6 @@ class VncStreamServer:
         cached_vps: Optional[bytes] = None
         cached_sps: Optional[bytes] = None
         cached_pps: Optional[bytes] = None
-        cached_idr: Optional[bytes] = None
-        phantoms_built = False
         rtp_packets = 0
         feed_count = 0
         frame_count_at_last_log = 0
@@ -421,7 +489,6 @@ class VncStreamServer:
                 elif nt == _HEVC_NAL_PPS:
                     cached_pps = bytes(nal)
                 elif _is_key_nal(nt):
-                    cached_idr = bytes(nal)
                     au_is_key = True
                 current_au.append(nal)
 
@@ -458,7 +525,7 @@ class VncStreamServer:
                         self._idr_observed_at = loop.time()
                         if self._keyframe_required:
                             self._idr_observed = True
-                        logger.info("decoder rebuilt on fresh IDR")
+                        logger.debug("decoder rebuilt on fresh IDR")
                     if (
                         self._transcoder is None
                         and au_is_key
@@ -481,25 +548,6 @@ class VncStreamServer:
                             )
                         except Exception:
                             logger.exception("VT transcoder failed to start")
-                    if (
-                        self._transcoder is not None
-                        and not au_is_key
-                        and not phantoms_built
-                        and cached_vps is not None
-                        and cached_sps is not None
-                        and cached_pps is not None
-                        and cached_idr is not None
-                    ):
-                        try:
-                            phantoms = build_phantoms_for_bootstrap(
-                                cached_vps, cached_sps, cached_pps, cached_idr, current_au[0]
-                            )
-                            logger.info("phantom synthesis: %d NALs", len(phantoms))
-                            for ph in phantoms:
-                                self._transcoder.feed(b"\x00\x00\x00\x01" + ph)
-                        except Exception:
-                            logger.exception("phantom synthesis failed")
-                        phantoms_built = True
                     # While ``_refresh_pending`` is true we have already
                     # PLIed and are waiting for the IDR that will be the
                     # new decoder's first frame. Don't feed the existing
@@ -521,7 +569,7 @@ class VncStreamServer:
                         if slice_nal is not None:
                             missing = self._rps_tracker.check_slice(slice_nal)
                         if missing and not au_is_key:
-                            logger.info(
+                            logger.debug(
                                 "rps: P-slice references missing POCs %s -- pre-decode PLI",
                                 sorted(missing),
                             )
@@ -559,7 +607,7 @@ class VncStreamServer:
             now = loop.time()
             if now - last_stat_t >= 2.0:
                 frames_now = self._frames_emitted
-                logger.info(
+                logger.debug(
                     "ingress stats: rtp=%d feeds=%d frames=%d (Δframes=%d / %.1fs)",
                     rtp_packets,
                     feed_count,
@@ -598,7 +646,7 @@ class VncStreamServer:
         try:
             loop = asyncio.get_running_loop()
             await loop.sock_sendto(sock, self._build_rtcp_pli(), (*self._rtcp_dest, 0, 0))
-            logger.info("sent RTCP PLI (requested fresh keyframe)")
+            logger.debug("sent RTCP PLI (requested fresh keyframe)")
         except OSError as exc:
             logger.debug("PLI send failed (%s)", exc)
 
@@ -613,7 +661,7 @@ class VncStreamServer:
         pli_task.add_done_callback(self._pli_tasks.discard)
         self._last_refresh_t = now
         window_bps = sum(s for _, s in self._au_byte_window)
-        logger.info(
+        logger.debug(
             "decoder-refresh (%s): %d client(s), %d B/s window",
             reason,
             len(self._clients),
@@ -787,7 +835,7 @@ class VncStreamServer:
             now = loop.time()
             if now - last_stat_t >= 5.0:
                 played, dropped, enq_err = player.stats()
-                logger.info(
+                logger.debug(
                     "audio stats: rtp=%d, played=%d, dropped=%d, enq_err=%d",
                     pkt_count,
                     played,
@@ -836,7 +884,7 @@ class VncStreamServer:
                 # session keepalive is firing -- useful when triaging
                 # "audio stopped after a while" reports.
                 if sent % 30 == 0:
-                    logger.info("audio RTCP RR: %d sent (highest_seq=0x%08x)", sent, self._audio_rtp_highest_seq)
+                    logger.debug("audio RTCP RR: %d sent (highest_seq=0x%08x)", sent, self._audio_rtp_highest_seq)
             except OSError as exc:
                 logger.debug("audio RTCP send failed (%s); socket may be torn down", exc)
                 return
@@ -865,6 +913,14 @@ class VncStreamServer:
             with contextlib.suppress(Exception):
                 await self._indigo.close()
             self._indigo = None
+
+    async def _ensure_keyboard(self) -> None:
+        await self._ensure_hid()
+        if self._kb_service_id is None:
+            async with self._hid_lock:
+                if self._kb_service_id is None:
+                    assert self._uhs is not None
+                    self._kb_service_id = await self._uhs.create_keyboard_service()
 
     async def _send_hid_button(self, page: int, code: int, *, down: bool) -> None:
         state = HID_BUTTON_STATE_DOWN if down else HID_BUTTON_STATE_UP
@@ -924,41 +980,79 @@ class VncStreamServer:
         client.last_y = hid_y
 
     async def _handle_key(self, client: _VncClient, down: bool, keysym: int) -> None:
-        """Forward Ctrl+<key> combos to iOS hardware buttons. Tracks
-        modifier state per client because RFB sends each modifier as
-        its own KeyEvent down/up around the letter. See
-        ``_CTRL_COMBO_TO_HID`` for the table. Unmapped keys are dropped
-        -- full keyboard input isn't a goal for this server (yet)."""
-        # Modifier-only events update state and stop here.
+        """Translate an RFB KeyEvent into HID activity.
+
+        Three paths:
+
+        - Ctrl+<key> combos in ``_CTRL_COMBO_TO_HID`` fire an Indigo hardware
+          button (Home / Lock / Vol / Mute / Siri).
+        - Modifier keysyms (Shift/Ctrl/Alt/GUI) toggle the matching HID
+          modifier usages in the virtual-keyboard bitmap, and also update
+          the legacy ``mod_*`` flags that the Ctrl-combo path consults.
+        - Anything else -- printable ASCII via :data:`ASCII_TO_HID`, or
+          named keys via ``_KEYSYM_TO_HID_SPECIAL`` -- toggles its usage in
+          the virtual-keyboard bitmap and re-emits the full report.
+
+        Key-up always releases the same usages the matching key-down
+        emitted, even if the host's interpretation of the keysym drifted
+        in between (e.g. Shift released before the letter).
+        """
+        # Track the legacy modifier-bool state so the Ctrl-combo path
+        # below keeps working alongside the keyboard path.
         if keysym in _KEYSYM_CTRL:
             client.mod_ctrl = down
-            return
-        if keysym in _KEYSYM_SHIFT:
+        elif keysym in _KEYSYM_SHIFT:
             client.mod_shift = down
-            return
-        if keysym in _KEYSYM_ALT:
+        elif keysym in _KEYSYM_ALT:
             client.mod_alt = down
-            return
-        if keysym in _KEYSYM_CMD:
+        elif keysym in _KEYSYM_CMD:
             client.mod_cmd = down
+
+        # Ctrl-prefixed hardware-button hotkeys. Eat the event so the
+        # letter doesn't also get typed on the device.
+        if down and client.mod_ctrl and keysym in _CTRL_COMBO_TO_HID:
+            mapping = _CTRL_COMBO_TO_HID[keysym]
+            client.active_combos[keysym] = mapping
+            await self._send_hid_button(mapping[0], mapping[1], down=True)
+            return
+        if not down and keysym in client.active_combos:
+            active = client.active_combos.pop(keysym)
+            await self._send_hid_button(active[0], active[1], down=False)
+            return
+
+        # Resolve the keysym to one or more HID usages.
+        usages: tuple[int, ...] = ()
+        if keysym in _KEYSYM_TO_HID_MODIFIER:
+            usages = (_KEYSYM_TO_HID_MODIFIER[keysym],)
+        elif keysym in _KEYSYM_TO_HID_SPECIAL:
+            usages = (_KEYSYM_TO_HID_SPECIAL[keysym],)
+        elif 0x20 <= keysym <= 0x7E:
+            mapping = ASCII_TO_HID.get(chr(keysym))
+            if mapping is not None:
+                usage, needs_shift = mapping
+                # Shifted character on key-down: synthesise Shift in the
+                # bitmap if no client-tracked Shift is already held.
+                if needs_shift and not (
+                    KEY_LEFT_SHIFT in client.pressed_keys or KEY_RIGHT_SHIFT in client.pressed_keys
+                ):
+                    usages = (KEY_LEFT_SHIFT, usage)
+                else:
+                    usages = (usage,)
+        if not usages:
             return
 
         if down:
-            # Combo activation requires Ctrl held. No Ctrl -> dropped.
-            if not client.mod_ctrl:
-                return
-            mapping = _CTRL_COMBO_TO_HID.get(keysym)
-            if mapping is None:
-                return
-            client.active_combos[keysym] = mapping
-            await self._send_hid_button(mapping[0], mapping[1], down=True)
+            client.active_typing[keysym] = usages
+            client.pressed_keys.update(usages)
         else:
-            # Release whatever combo this key-down activated, even if
-            # the user released Ctrl first -- otherwise a held HID
-            # button gets stuck down on the device.
-            active = client.active_combos.pop(keysym, None)
-            if active is not None:
-                await self._send_hid_button(active[0], active[1], down=False)
+            for u in client.active_typing.pop(keysym, usages):
+                client.pressed_keys.discard(u)
+        try:
+            await self._ensure_keyboard()
+            assert self._uhs is not None and self._kb_service_id is not None
+            await self._uhs.send_keyboard(self._kb_service_id, client.pressed_keys)
+        except Exception:
+            logger.exception("HID keyboard send failed (keysym=0x%04X down=%s)", keysym, down)
 
     # ----- RFB protocol -----------------------------------------------------
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -1005,10 +1099,10 @@ class VncStreamServer:
         # 1. ProtocolVersion (12 bytes each way).
         w.write(b"RFB 003.008\n")
         await w.drain()
-        logger.info("handshake: sent server version RFB 003.008")
+        logger.debug("handshake: sent server version RFB 003.008")
         client_version_bytes = await r.readexactly(12)
         client_version = client_version_bytes.decode("ascii", errors="replace").rstrip()
-        logger.info("handshake: client version %r", client_version)
+        logger.debug("handshake: client version %r", client_version)
         # Parse minor version. The protocol changes between 3.3 / 3.7 /
         # 3.8 across the security handshake:
         #
@@ -1039,15 +1133,15 @@ class VncStreamServer:
             # RFB 3.3: server unilaterally picks the security type.
             w.write(struct.pack(">I", 2))  # VNC Auth
             await w.drain()
-            logger.info("handshake: 3.3 path -- server picked VNC Auth")
+            logger.debug("handshake: 3.3 path -- server picked VNC Auth")
         else:
             # RFB 3.7 / 3.8: send security list, client picks. Offer
             # only VNC Auth so we always end up in the same code path.
             w.write(b"\x01\x02")
             await w.drain()
-            logger.info("handshake: sent security types [VNC Auth=2]")
+            logger.debug("handshake: sent security types [VNC Auth=2]")
             chosen = (await r.readexactly(1))[0]
-            logger.info("handshake: client picked security=%d", chosen)
+            logger.debug("handshake: client picked security=%d", chosen)
             if chosen != 2:
                 msg = b"unsupported security type"
                 w.write(struct.pack(">I", 1) + struct.pack(">I", len(msg)) + msg)
@@ -1061,15 +1155,15 @@ class VncStreamServer:
         w.write(challenge)
         await w.drain()
         await r.readexactly(16)  # response (ignored)
-        logger.info("handshake: VNC Auth accepted (any password)")
+        logger.debug("handshake: VNC Auth accepted (any password)")
         # 3.x always sends SecurityResult AFTER VNC Auth, regardless of
         # whether None auth would have skipped it.
         w.write(b"\x00\x00\x00\x00")
         await w.drain()
-        logger.info("handshake: sent SecurityResult=OK")
+        logger.debug("handshake: sent SecurityResult=OK")
         # ClientInit (shared flag — we don't care).
         shared = (await r.readexactly(1))[0]
-        logger.info("handshake: client shared=%d", shared)
+        logger.debug("handshake: client shared=%d", shared)
         # 5. ServerInit: width, height, pixel format, name.
         # Pixel format = 32bpp little-endian BGRA. (For Tight-JPEG the
         # client doesn't need this to match the JPEG; for Raw we'd
@@ -1097,7 +1191,7 @@ class VncStreamServer:
         )
         w.write(server_init)
         await w.drain()
-        logger.info("handshake: sent ServerInit (%dx%d, name=%r)", self._fb_width, self._fb_height, _SERVER_NAME)
+        logger.debug("handshake: sent ServerInit (%dx%d, name=%r)", self._fb_width, self._fb_height, _SERVER_NAME)
 
     async def _client_recv_loop(self, client: _VncClient) -> None:
         r = client.reader
@@ -1115,7 +1209,7 @@ class VncStreamServer:
                 bpp, depth, big, true_c, rmax, gmax, bmax, rshift, gshift, bshift = struct.unpack(
                     ">BBBB HHH BBB", pf[:13]
                 )
-                logger.info(
+                logger.debug(
                     "SetPixelFormat ignored: bpp=%d depth=%d big=%d true_c=%d max=(%d,%d,%d) shift=(%d,%d,%d)",
                     bpp,
                     depth,
@@ -1134,7 +1228,7 @@ class VncStreamServer:
                 n = struct.unpack(">H", await r.readexactly(2))[0]
                 raw = await r.readexactly(4 * n)
                 client.encodings = list(struct.unpack(f">{n}i", raw))
-                logger.info(
+                logger.debug(
                     "VNC client encodings: %s",
                     [
                         {
@@ -1151,7 +1245,7 @@ class VncStreamServer:
                 # FramebufferUpdateRequest: incremental(1) + x(2) + y(2) + w(2) + h(2)
                 payload = await r.readexactly(9)
                 inc, fx, fy, fw, fh = struct.unpack(">BHHHH", payload)
-                logger.info(
+                logger.debug(
                     "FramebufferUpdateRequest incremental=%d (%d,%d) %dx%d",
                     inc,
                     fx,
@@ -1381,17 +1475,17 @@ class VncStreamServer:
         finally:
             if not serve_task.done():
                 serve_task.cancel()
-            logger.info("shutdown: closing TCP listener")
+            logger.debug("shutdown: closing TCP listener")
             server.close()
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(server.wait_closed(), timeout=2.0)
-            logger.info("shutdown: stopping HID")
+            logger.debug("shutdown: stopping HID")
             await self._stop_hid()
-            logger.info("shutdown: stopping refresh loop")
+            logger.debug("shutdown: stopping refresh loop")
             refresh_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await refresh_task
-            logger.info("shutdown: stopping VT transcoder")
+            logger.debug("shutdown: stopping VT transcoder")
             feed_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await feed_task
@@ -1405,22 +1499,22 @@ class VncStreamServer:
             with contextlib.suppress(Exception):
                 sock.close()
             if audio_recv_task is not None:
-                logger.info("shutdown: stopping audio recv loop")
+                logger.debug("shutdown: stopping audio recv loop")
                 audio_recv_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await audio_recv_task
             if audio_rtcp_task is not None:
-                logger.info("shutdown: stopping audio RTCP loop")
+                logger.debug("shutdown: stopping audio RTCP loop")
                 audio_rtcp_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await audio_rtcp_task
             if self._audio_player is not None:
-                logger.info("shutdown: stopping AudioQueue player")
+                logger.debug("shutdown: stopping AudioQueue player")
                 with contextlib.suppress(Exception):
                     self._audio_player.close()
                 self._audio_player = None
             if self._audio_svc is not None and self._audio_session_id is not None:
-                logger.info("shutdown: stopping audio stream")
+                logger.debug("shutdown: stopping audio stream")
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(self._audio_svc.stop_media_stream(self._audio_session_id), timeout=3.0)
                 with contextlib.suppress(Exception):
@@ -1428,7 +1522,7 @@ class VncStreamServer:
             if self._audio_sock is not None:
                 with contextlib.suppress(Exception):
                     self._audio_sock.close()
-            logger.info("shutdown: stopping device stream")
+            logger.debug("shutdown: stopping device stream")
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(svc.stop_media_stream(sid), timeout=3.0)
             with contextlib.suppress(Exception):

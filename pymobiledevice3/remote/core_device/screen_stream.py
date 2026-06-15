@@ -25,7 +25,6 @@ from typing import Optional
 from pymobiledevice3.remote.core_device.aac_eld import AAC_ELD_ASC_48K_STEREO_480, AACELDDecoder
 from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
 from pymobiledevice3.remote.core_device.display_service import DisplayService
-from pymobiledevice3.remote.core_device.hevc_phantom import build_phantoms_for_bootstrap
 from pymobiledevice3.remote.core_device.hid_service import (
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     HID_BUTTON_STATE_DOWN,
@@ -37,17 +36,24 @@ from pymobiledevice3.remote.core_device.hid_service import (
 )
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
-# Named iOS hardware buttons → (usage_page, usage_code). Mirrors the table in
-# cli/developer/core_device.py so the browser viewer can offer a friendly UI.
-_NAMED_BUTTONS: dict[str, tuple[int, int]] = {
-    "home": (0x0C, 0x40),
-    "power": (0x0C, 0x30),
-    "lock": (0x0C, 0x30),
-    "sleep": (0x0C, 0x32),
-    "volume-up": (0x0C, 0xE9),
-    "volume-down": (0x0C, 0xEA),
-    "mute": (0x0C, 0xE2),
-    "siri": (0x0C, 0xCF),
+# Named iOS hardware buttons → (usage_page, usage_code, hold_seconds).
+# Mirrors the table in cli/developer/core_device.py so the browser viewer
+# can offer a friendly UI.
+#
+# ``hold_seconds`` is how long to keep the button "pressed" between the
+# DOWN and UP IndigoButtonEvents. Most buttons want a near-instant tap
+# (0.05 s -- long enough that iOS doesn't reject it as a debounce
+# bounce, short enough to feel like a tap). Lock and Siri are explicit
+# press-and-holds: iOS won't sleep / start Siri on a microsecond-long
+# tap, because the same usage on real hardware is "side button held for
+# N ms". Empirically, 0.5 s sleeps the device, 1.0 s starts Siri.
+_NAMED_BUTTONS: dict[str, tuple[int, int, float]] = {
+    "home": (0x0C, 0x40, 0.05),
+    "lock": (0x0C, 0x30, 0.5),
+    "volume-up": (0x0C, 0xE9, 0.05),
+    "volume-down": (0x0C, 0xEA, 0.05),
+    "mute": (0x0C, 0xE2, 0.05),
+    "siri": (0x0C, 0xCF, 1.0),
 }
 
 logger = logging.getLogger(__name__)
@@ -59,9 +65,7 @@ logger = logging.getLogger(__name__)
 _HEVC_NAL_IDR_W_RADL = 19
 _HEVC_NAL_IDR_N_LP = 20
 _HEVC_NAL_CRA = 21
-_HEVC_NAL_VPS = 32
 _HEVC_NAL_SPS = 33
-_HEVC_NAL_PPS = 34
 _HEVC_NAL_AP = 48  # Aggregation Packet
 _HEVC_NAL_FU = 49  # Fragmentation Unit
 
@@ -182,9 +186,9 @@ VIEWER_HTML = r"""<!doctype html>
             padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap}
  button.btn:hover{background:#333}
  button.btn:active{background:#4a4a4a}
- /* Utility tray pinned to top-right: sound-toggle / forced-reset /
-    force-restart -- low-frequency controls, kept out of the main
-    button areas so the bottom row can stay device-only (Home). */
+ /* Utility tray pinned to top-right: sound-toggle / force-restart --
+    low-frequency controls, kept out of the main button areas so the
+    bottom row can stay device-only (Home). */
  #util-tray{position:fixed;top:8px;right:8px;display:flex;gap:6px;z-index:10}
  /* On narrow viewports give up the side-mounted layout and let the
     buttons wrap below the canvas like before. */
@@ -210,11 +214,9 @@ VIEWER_HTML = r"""<!doctype html>
   <button class="btn" data-btn="volume-down" title="Ctrl+[">Vol -</button>
  </div>
  <canvas id="c"></canvas>
- <!-- Right side of the device: side / power button (and Siri lives here too) -->
+ <!-- Right side of the device: side button (lock) and Siri -->
  <div id="side-right" class="side">
-  <button class="btn" data-btn="power">Power</button>
   <button class="btn" data-btn="lock" title="Ctrl+L">Lock</button>
-  <button class="btn" data-btn="sleep">Sleep</button>
   <button class="btn" data-btn="siri" title="Ctrl+S">Siri</button>
  </div>
 </div>
@@ -226,7 +228,6 @@ VIEWER_HTML = r"""<!doctype html>
 <div id="util-tray">
  <button class="btn" id="sound-toggle" type="button">Enable Sound</button>
  <button class="btn" id="style-toggle" type="button" title="toggle dark/light user-interface style">Style: ?</button>
- <button class="btn" id="forced-reset" type="button" title="rebuild decoder + new IDR">Forced Reset</button>
  <button class="btn" id="restart" type="button" title="full DisplayService restart">Force Restart</button>
 </div>
 <div id="status">connecting...</div>
@@ -349,30 +350,78 @@ const CTRL_HOTKEYS = {
     '\\': 'mute',
     's': 'siri',
 };
-window.addEventListener('keydown', (e) => {
-    if (!e.ctrlKey || e.altKey || e.metaKey) return;
-    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-    const name = CTRL_HOTKEYS[key];
-    if (!name) return;
-    e.preventDefault();
-    postJson('/button', {name, state: 'press'}).then(() => log('hotkey: ' + name));
-});
 
-// ----- Forced Reset: tell the server to spin up a fresh video stream
-// (new IDR will reach this still-open /stream.bin connection via the
-// type=2 reset path -- no page reload, audio context preserved).
-// Fire-and-forget: the server's /restart endpoint responds 202 right
-// away and runs the actual restart in the background, so the click
-// feels instant.
-document.getElementById('forced-reset').addEventListener('click', () => {
-    log('forced reset');
-    fetch('/restart', {method: 'POST', cache: 'no-store'})
-        .then(r => log('forced reset: HTTP ' + r.status))
-        .catch(e => log('forced reset err: ' + (e.message || e)));
+// ----- input: physical key -> HID Keyboard usage -> /key -----
+// KeyboardEvent.code is layout-independent (the physical key, not the
+// typed character), which matches the HID usage table exactly. Anything
+// not in this map is ignored.
+const CODE_TO_HID = (() => {
+    const m = {};
+    for (let i = 0; i < 26; i++) m['Key' + String.fromCharCode(65 + i)] = 0x04 + i;
+    // Digits: KeyboardEvent uses Digit1..Digit9, Digit0; HID uses 0x1E..0x26, then 0x27.
+    for (let i = 1; i <= 9; i++) m['Digit' + i] = 0x1D + i;
+    m['Digit0'] = 0x27;
+    Object.assign(m, {
+        Enter: 0x28, Escape: 0x29, Backspace: 0x2A, Tab: 0x2B, Space: 0x2C,
+        Minus: 0x2D, Equal: 0x2E, BracketLeft: 0x2F, BracketRight: 0x30,
+        Backslash: 0x31, Semicolon: 0x33, Quote: 0x34, Backquote: 0x35,
+        Comma: 0x36, Period: 0x37, Slash: 0x38, CapsLock: 0x39,
+        ArrowRight: 0x4F, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
+        ShiftLeft: 0xE1, ShiftRight: 0xE5,
+        ControlLeft: 0xE0, ControlRight: 0xE4,
+        AltLeft: 0xE2, AltRight: 0xE6,
+        MetaLeft: 0xE3, MetaRight: 0xE7,
+    });
+    for (let i = 1; i <= 12; i++) m['F' + i] = 0x39 + i;
+    return m;
+})();
+
+const pressedUsages = new Set();
+let lastKeyPost = Promise.resolve();
+function postKeys() {
+    // Serialize POSTs so the device sees them in order even when the
+    // browser fires keydown bursts faster than the HTTP round-trip.
+    const snapshot = [...pressedUsages];
+    lastKeyPost = lastKeyPost.then(() => postJson('/key', {usages: snapshot}));
+}
+
+window.addEventListener('keydown', (e) => {
+    // Ctrl-hotkey path consumes the event; don't also type it.
+    if (e.ctrlKey && !e.altKey && !e.metaKey) {
+        const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+        const name = CTRL_HOTKEYS[key];
+        if (name) {
+            e.preventDefault();
+            postJson('/button', {name, state: 'press'}).then(() => log('hotkey: ' + name));
+            return;
+        }
+    }
+    const usage = CODE_TO_HID[e.code];
+    if (usage === undefined) return;
+    e.preventDefault();
+    if (e.repeat) return;            // host autorepeat -- the device does its own
+    if (!pressedUsages.has(usage)) {
+        pressedUsages.add(usage);
+        postKeys();
+    }
+});
+window.addEventListener('keyup', (e) => {
+    const usage = CODE_TO_HID[e.code];
+    if (usage === undefined) return;
+    e.preventDefault();
+    if (pressedUsages.delete(usage)) postKeys();
+});
+window.addEventListener('blur', () => {
+    // Window-blur means we won't see keyup; flush the bitmap so no
+    // key ends up stuck-down on the device.
+    if (pressedUsages.size) {
+        pressedUsages.clear();
+        postKeys();
+    }
 });
 
 // ----- Force Restart: drop the current video stream + reload the page.
-// Heavier hammer than Forced Reset -- wipes all client-side state too.
+// Wipes all client-side state and pulls a fresh IDR from a new stream.
 document.getElementById('restart').addEventListener('click', async () => {
     log('forcing restart + reload...');
     try {
@@ -565,6 +614,29 @@ async function fetchCodecWithRetry() {
     throw new Error('codec unreachable after retries: ' + lastErr);
 }
 
+// vsync-aligned draw: the decoder's output callback only stores the
+// latest frame; the actual ctx.drawImage call lives in a
+// requestAnimationFrame loop so the compositor never reads the canvas
+// mid-update. Older queued frames are .close()'d so we don't leak GPU
+// memory — we always show the most recent decoded frame.
+let pendingFrame = null;
+let rafScheduled = false;
+function drawPending() {
+    rafScheduled = false;
+    const f = pendingFrame;
+    pendingFrame = null;
+    if (!f) return;
+    try {
+        if (f.displayWidth !== canvas.width || f.displayHeight !== canvas.height) {
+            canvas.width = f.displayWidth;
+            canvas.height = f.displayHeight;
+        }
+        ctx.drawImage(f, 0, 0);
+    } finally {
+        try { f.close(); } catch (e) {}
+    }
+}
+
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));
     const codec = await fetchCodecWithRetry();
@@ -604,12 +676,22 @@ async function run() {
             // page reload does. Page layout stability comes from the
             // canvas CSS (max-width/max-height + aspect-ratio if you want
             // to lock that explicitly).
-            if (frame.displayWidth !== canvas.width || frame.displayHeight !== canvas.height) {
-                canvas.width = frame.displayWidth;
-                canvas.height = frame.displayHeight;
+            // Don't drawImage straight from this callback — that runs at
+            // the decoder's output cadence (typically irregular: 0..multiple
+            // frames per ms during bursts) and races the compositor's
+            // vsync read, which is what gets seen as visible horizontal
+            // tear bands during quick-swipe motion. Instead, replace the
+            // pending frame slot and let requestAnimationFrame draw the
+            // latest one in lockstep with the display refresh. Released
+            // frames must be .close()'d to free GPU resources.
+            if (pendingFrame) {
+                try { pendingFrame.close(); } catch (e) {}
             }
-            ctx.drawImage(frame, 0, 0);
-            frame.close();
+            pendingFrame = frame;
+            if (!rafScheduled) {
+                rafScheduled = true;
+                requestAnimationFrame(drawPending);
+            }
             frameCount++;
         },
         // Decoder errors propagate asynchronously via this callback. After one,
@@ -620,14 +702,12 @@ async function run() {
             log('decode err #' + decodeErrCount + ': ' + e.message);
             needsResync = true;
             // Bootstrap-failure self-heal: if we error out before we've
-            // shown even a handful of frames, Apple's encoder almost
-            // certainly emitted a POC chain WebCodecs can't follow (the
-            // server-side phantom synthesis didn't bridge it cleanly for
-            // this device's encoder). Asking the server for a fresh
-            // stream often produces a sequential POC chain that decodes
-            // cleanly. Do it at most once -- if it errors again the
-            // problem isn't transient and the user can click "Forced
-            // Reset" manually.
+            // shown even a handful of frames, Apple's encoder may have
+            // emitted a POC chain WebCodecs can't follow. Asking the
+            // server for a fresh stream often produces a sequential POC
+            // chain that decodes cleanly. Do it at most once -- if it
+            // errors again the problem isn't transient and the user can
+            // click Force Restart manually.
             if (!autoRestartUsed && frameCount < 5) {
                 autoRestartUsed = true;
                 log('auto /restart (bootstrap decode err)');
@@ -698,7 +778,7 @@ async function run() {
                 decoder.configure({ codec, optimizeForLatency: true });
                 needsResync = false;
                 gotKey = true;
-                log('forced reset @ key after upstream drop');
+                log('force-restart @ key after upstream drop');
             } else if (type === 0) {
                 gotKey = true;
                 if (needsResync) {
@@ -921,16 +1001,6 @@ class ScreenStreamServer:
         self._codec_string: Optional[str] = None
         self._saw_first_key = False
         self._stream_ready = asyncio.Event()
-        # Raw parameter-set / IDR NALs cached for phantom synthesis. The
-        # phantom NAL block bridges the bootstrap POC gap (Apple's encoder
-        # emits IDR=POC0 then jumps the first delta to POC=~163 with refs
-        # to a sparse set the decoder never received). Synthesising
-        # phantoms at the needed POCs lets WebCodecs decode the chain.
-        self._cached_vps_nal: Optional[bytes] = None
-        self._cached_sps_nal: Optional[bytes] = None
-        self._cached_pps_nal: Optional[bytes] = None
-        self._cached_idr_nal: Optional[bytes] = None
-        self._phantoms_built = False
 
         # Active device-stream session.
         self._active_service: Optional[DisplayService] = None
@@ -1002,8 +1072,11 @@ class ScreenStreamServer:
         self._uhs: Optional[UniversalHIDServiceService] = None
         self._indigo: Optional[IndigoHIDService] = None
         self._hid_lock = asyncio.Lock()
+        # _ServiceID dtuhidd assigned to our host-registered virtual
+        # keyboard. Lazily filled on the first /key POST.
+        self._kb_service_id: Optional[int] = None
 
-        # HID input queue. We accept /touch and /button POSTs into this
+        # HID input queue. We accept /touch /button /key POSTs into this
         # queue and return 200 immediately, then a single worker task
         # dispatches them via the XPC connection. This decouples HTTP
         # handling latency from device-write latency so a touch flood
@@ -1109,7 +1182,7 @@ class ScreenStreamServer:
             now = loop.time()
             if now - stats_last_log > 5.0:
                 if stats_forward_gaps or stats_reorders or stats_corrupt_aus:
-                    logger.info(
+                    logger.debug(
                         "RTP stats (last %.1fs): packets=%d forward_gaps=%d reorders=%d dropped_AUs=%d",
                         now - stats_last_log,
                         stats_packets,
@@ -1135,16 +1208,6 @@ class ScreenStreamServer:
                         logger.info(f"WebCodecs codec string: {self._codec_string}")
                     except Exception as exc:
                         logger.warning(f"failed to parse SPS: {exc}")
-                # Cache the parameter sets + IDR slice as raw NALs so we
-                # can synthesise phantoms later from the captured IDR body.
-                if nt == _HEVC_NAL_VPS:
-                    self._cached_vps_nal = bytes(nal)
-                elif nt == _HEVC_NAL_SPS:
-                    self._cached_sps_nal = bytes(nal)
-                elif nt == _HEVC_NAL_PPS:
-                    self._cached_pps_nal = bytes(nal)
-                elif _is_key_nal(nt):
-                    self._cached_idr_nal = bytes(nal)
                 if _is_key_nal(nt):
                     au_is_key = True
                 current_au.append(nal)
@@ -1160,15 +1223,17 @@ class ScreenStreamServer:
                     pli_task = asyncio.create_task(self._send_rtcp_pli())
                     self._pli_tasks.add(pli_task)
                     pli_task.add_done_callback(self._pli_tasks.discard)
-                    # Also force every connected subscriber to wait for the
-                    # next IDR before feeding the decoder again. VideoToolbox
-                    # often *doesn't* throw on a broken-reference delta -- it
-                    # renders visible tearing without firing the error
-                    # callback -- so we can't rely on the browser to notice
-                    # on its own. Marking needs_key here means: skip frames
-                    # until our PLI-induced IDR arrives, then full reset.
-                    for state in self._subscribers.values():
-                        state.needs_key = True
+                    # Note: we DON'T set ``state.needs_key = True`` on
+                    # subscribers here anymore. With the live broadcast loop
+                    # only dropping the *current* corrupt AU (not subsequent
+                    # ones), the next IDR from the PLI lands as a normal
+                    # type=0 key — the browser's decoder absorbs it as a
+                    # fresh DPB anchor without rebuilding, eliminating the
+                    # visible chop that the rebuild-on-needs_key path was
+                    # producing on every UDP gap during heavy motion.
+                    # If references really were lost the decoder will throw
+                    # a decode err, which the browser-side error handler
+                    # already turns into a /pli call.
                 if current_au and not au_corrupt:
                     annexb = b"".join(b"\x00\x00\x00\x01" + nal for nal in current_au)
                     # Three framing types:
@@ -1190,51 +1255,6 @@ class ScreenStreamServer:
                     # reads this to know when motion settles.
                     self._au_byte_window.append((self._last_good_au_t, len(annexb)))
                     if self._saw_first_key:
-                        # First non-key AU after the IDR is the moment we
-                        # can synthesise phantoms (we need the delta's
-                        # slice header to know which POCs are referenced).
-                        phantom_msgs: list[bytes] = []
-                        if (
-                            not au_is_key
-                            and not self._phantoms_built
-                            and self._cached_vps_nal is not None
-                            and self._cached_sps_nal is not None
-                            and self._cached_pps_nal is not None
-                            and self._cached_idr_nal is not None
-                        ):
-                            try:
-                                first_delta_nal = current_au[0]
-                                phantoms = build_phantoms_for_bootstrap(
-                                    self._cached_vps_nal,
-                                    self._cached_sps_nal,
-                                    self._cached_pps_nal,
-                                    self._cached_idr_nal,
-                                    first_delta_nal,
-                                )
-                                logger.info(
-                                    "Phantom synthesis: first delta NAL %d B (type=%d), produced %d phantoms",
-                                    len(first_delta_nal),
-                                    (first_delta_nal[0] >> 1) & 0x3F,
-                                    len(phantoms),
-                                )
-                            except Exception:
-                                logger.exception("phantom synthesis failed")
-                                phantoms = []
-                            if phantoms:
-                                logger.info(
-                                    "Synthesised %d phantom NALs for bootstrap",
-                                    len(phantoms),
-                                )
-                                for ph in phantoms:
-                                    ph_annexb = b"\x00\x00\x00\x01" + ph
-                                    ph_msg = (len(ph_annexb) + 1).to_bytes(4, "big") + b"\x00" + ph_annexb
-                                    phantom_msgs.append(ph_msg)
-                                # Bake into init_sequence so late-joining
-                                # subscribers also get them.
-                                if self._init_sequence is not None:
-                                    self._init_sequence = self._init_sequence + b"".join(phantom_msgs)
-                            self._phantoms_built = True
-
                         for q, state in list(self._subscribers.items()):
                             if q.full():
                                 while not q.empty():
@@ -1252,8 +1272,6 @@ class ScreenStreamServer:
                                 # holds stale reference frames.
                                 q.put_nowait(msg_reset)
                                 continue
-                            for pm in phantom_msgs:
-                                q.put_nowait(pm)
                             q.put_nowait(msg)
                 current_au = []
                 au_is_key = False
@@ -1295,7 +1313,7 @@ class ScreenStreamServer:
         try:
             loop = asyncio.get_running_loop()
             await loop.sock_sendto(sock, self._build_rtcp_pli(), (*self._rtcp_dest, 0, 0))
-            logger.info("sent RTCP PLI (requested fresh keyframe)")
+            logger.debug("sent RTCP PLI (requested fresh keyframe)")
         except OSError as exc:
             logger.debug("PLI send failed (%s)", exc)
 
@@ -1643,11 +1661,6 @@ class ScreenStreamServer:
             self._codec_string = None
             self._saw_first_key = False
             self._stream_ready.clear()
-            self._cached_vps_nal = None
-            self._cached_sps_nal = None
-            self._cached_pps_nal = None
-            self._cached_idr_nal = None
-            self._phantoms_built = False
             # Preserve any connected subscribers across the restart — flush
             # their queues and flag them needs_key so they'll lock onto the
             # first IDR from the new stream instead of seeing the connection
@@ -1766,7 +1779,12 @@ class ScreenStreamServer:
                 try:
                     if self._uhs is None or self._indigo is None:
                         await self._ensure_hid()
-                    handler = self._handle_touch if path == "/touch" else self._handle_button
+                    if path == "/touch":
+                        handler = self._handle_touch
+                    elif path == "/button":
+                        handler = self._handle_button
+                    else:
+                        handler = self._handle_key
                     code, msg = await handler(body)
                     if code != 200:
                         logger.warning("queued %s -> %d %s", path, code, msg.decode("utf-8", "replace"))
@@ -1816,12 +1834,38 @@ class ScreenStreamServer:
             return 400, f"unknown touch type {op!r}".encode()
         return 200, b"ok"
 
+    async def _ensure_keyboard(self) -> None:
+        await self._ensure_hid()
+        if self._kb_service_id is None:
+            async with self._hid_lock:
+                if self._kb_service_id is None:
+                    assert self._uhs is not None
+                    self._kb_service_id = await self._uhs.create_keyboard_service()
+
+    async def _handle_key(self, body: bytes) -> tuple[int, bytes]:
+        """POST /key — JSON ``{usages: [int, int, ...]}``.
+
+        The browser sends the *full set* of HID Keyboard usages currently
+        held down; we forward verbatim. Empty list = all keys released.
+        Translating browser KeyboardEvents to HID usages happens client-side
+        so the server has no per-connection state to keep in sync.
+        """
+        try:
+            data = json.loads(body)
+            usages = [int(u) for u in data.get("usages", [])]
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            return 400, f"invalid key request: {exc}".encode()
+        await self._ensure_keyboard()
+        assert self._uhs is not None and self._kb_service_id is not None
+        await self._uhs.send_keyboard(self._kb_service_id, usages)
+        return 200, b"ok"
+
     async def _handle_button(self, body: bytes) -> tuple[int, bytes]:
         """POST /button — JSON ``{name, state}``.
 
-        ``name`` is one of the keys in :data:`_NAMED_BUTTONS` (home, power,
-        lock, sleep, volume-up, volume-down, mute, siri). ``state`` is one of
-        ``"press"`` (default — fires down then up), ``"down"``, ``"up"``.
+        ``name`` is one of the keys in :data:`_NAMED_BUTTONS` (home, lock,
+        volume-up, volume-down, mute, siri). ``state`` is one of ``"press"``
+        (default — fires down then up), ``"down"``, ``"up"``.
         """
         try:
             data = json.loads(body)
@@ -1831,11 +1875,16 @@ class ScreenStreamServer:
             return 400, f"invalid button request: {exc}".encode()
         if name not in _NAMED_BUTTONS:
             return 400, f"unknown button {name!r}".encode()
-        usage_page, usage_code = _NAMED_BUTTONS[name]
+        usage_page, usage_code, hold_seconds = _NAMED_BUTTONS[name]
         await self._ensure_hid()
         assert self._indigo is not None
         if state == "press":
             await self._indigo.send_button(usage_page, usage_code, HID_BUTTON_STATE_DOWN)
+            # Hold matters: Home is a tap (fires on any duration), but Lock
+            # wants ~0.5 s for iOS to sleep the device and Siri ~1.0 s for
+            # iOS to start listening. A 70 µs DOWN→UP gap (no sleep) is
+            # treated as bounce-noise for these buttons.
+            await asyncio.sleep(hold_seconds)
             await self._indigo.send_button(usage_page, usage_code, HID_BUTTON_STATE_UP)
         elif state == "down":
             await self._indigo.send_button(usage_page, usage_code, HID_BUTTON_STATE_DOWN)
@@ -1853,12 +1902,12 @@ class ScreenStreamServer:
             length = 0
         if length <= 0:
             return b""
-        # Cap the body to a sane size — touch/button POSTs are tens of bytes.
+        # Cap the body to a sane size — touch/button/key POSTs are tens of bytes.
         return await reader.readexactly(min(length, 65536))
 
     # ----- HTTP request handler ---------------------------------------------
     async def _handle_http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        # POSTs to /touch and /button support keep-alive: one TCP carries
+        # POSTs to /touch /button /key support keep-alive: one TCP carries
         # many requests, which is what the browser uses for pointermove.
         # Everything else (/, /codec, /stream.bin) is one-and-done.
         while True:
@@ -1880,9 +1929,9 @@ class ScreenStreamServer:
             method = parts[0].decode() if parts else "GET"
             path = parts[1].decode() if len(parts) >= 2 else "/"
 
-            if method == "POST" and path in ("/touch", "/button"):
+            if method == "POST" and path in ("/touch", "/button", "/key"):
                 body = await self._read_body(reader, headers)
-                logger.info("enqueue %s body=%r conn=%s", path, body[:80], headers.get("connection", "?"))
+                logger.debug("enqueue %s body=%r conn=%s", path, body[:80], headers.get("connection", "?"))
                 # Fire-and-forget: drop into the queue and answer 200 NOW.
                 # The single HID worker will dispatch in order without
                 # blocking the HTTP-server loop or starving the stream
@@ -1970,7 +2019,7 @@ class ScreenStreamServer:
                 # browser's /audio.bin reconnect leaves the device with
                 # an unpaired lone video session, which iOS treats as a
                 # second-class client and throttles. Symptom was the
-                # browser sticking on "frames: 1" after a Forced Reset
+                # browser sticking on "frames: 1" after a /restart
                 # until the user reloaded and re-attached /audio.bin.
                 with contextlib.suppress(Exception):
                     await self._ensure_fresh_stream(force=True)
@@ -2163,6 +2212,31 @@ class ScreenStreamServer:
         state = _SubState()
         state.needs_key = True
         self._subscribers[queue] = state
+
+        # PLI-retry: the device's encoder occasionally ignores a single
+        # PLI (we've seen the post-connect PLI go unanswered, leaving the
+        # subscriber stuck on init_sequence forever — only a manual page
+        # reload resolved it). Spam another PLI every 700 ms until the
+        # broadcast loop clears this subscriber's needs_key (= an IDR
+        # arrived and was delivered as msg_reset).
+        async def _bootstrap_pli_retry():
+            for _ in range(6):
+                await asyncio.sleep(0.7)
+                if not state.needs_key:
+                    return
+                if self._active_service is None or self._rtcp_dest is None:
+                    return
+                if queue not in self._subscribers:
+                    return
+                logger.debug("/stream.bin: subscriber still needs_key, re-PLI")
+                pt = asyncio.create_task(self._send_rtcp_pli())
+                self._pli_tasks.add(pt)
+                pt.add_done_callback(self._pli_tasks.discard)
+
+        retry_task = asyncio.create_task(_bootstrap_pli_retry())
+        self._pli_tasks.add(retry_task)
+        retry_task.add_done_callback(self._pli_tasks.discard)
+
         try:
             while True:
                 msg = await queue.get()
@@ -2172,52 +2246,56 @@ class ScreenStreamServer:
             pass
         finally:
             self._subscribers.pop(queue, None)
+            retry_task.cancel()
             with contextlib.suppress(Exception):
                 writer.close()
 
     async def _decoder_refresh_loop(self) -> None:
-        """Force connected browsers to rebuild their video decoders
-        WHEN it's likely to help, not on a fixed timer.
+        """IDR refresh: PLI on sustained motion + on settle + slow heartbeat.
 
-        VideoToolbox (and Safari's WebCodecs wrapper around it) silently
-        accumulates stale long-term-reference-picture state under heavy
-        motion -- decode reports success on every frame but the rendered
-        pixels are torn. There's no error callback; the only known
-        recovery is to rebuild the decoder around a fresh IDR (what a
-        manual page reload achieves).
-
-        Each rebuild has a small cost: a ~30 ms frame gap while we wait
-        for the IDR + the new decoder's first output. At high cadences
-        (e.g. 2 refreshes/sec) the gap becomes visible "chop". The
-        smoothest experience is one rebuild per motion event, fired
-        right after motion settles -- the same UX pattern as a manual
-        reload after the user finishes interacting.
-
-        We use the device's RTP byte rate as the motion signal (works
-        for ANY motion source -- browser /touch, finger on the device,
-        a system animation). Idle is ~30-60 KB/s, motion is 150+ KB/s.
+        Each PLI gives the browser's WebCodecs decoder a fresh DPB anchor.
+        Without refresh the decoder accumulates prediction drift across
+        each high-motion burst (quick swipes etc.) and renders torn
+        pixels — Chrome doesn't throw on the bad reference, just shows
+        the artifact.
 
         Triggers:
-        1. Active: motion is currently happening and ``active_interval``
-           has passed since the last refresh. Without this, tears
-           accumulate the entire time the user is interacting; the next
-           refresh wouldn't come until motion ends + settle_delay or
-           the heartbeat fires (up to 10 s later).
-        2. Motion settled: AU byte rate dropped below the threshold
-           AFTER having been above it, and ``settle_delay`` has passed.
-        3. Heartbeat: max ``heartbeat`` seconds between refreshes as a
-           safety net for slow-creeping tears that don't correlate with
-           our motion signal.
+          1. **Active** — byte rate has been above
+             ``motion_threshold_bps`` continuously for at least
+             ``active_interval``. Catches sustained motion (rapid
+             back-to-back swipes) where settle never fires.
+          2. **Settle** — byte rate was above threshold and just
+             dropped for at least ``settle_delay``. One PLI per real
+             motion event ending, when accumulated drift is visible
+             against the now-static screen.
+          3. **Heartbeat** — backstop every ``heartbeat`` seconds.
+             Also handles bootstrap (``_last_refresh_t == 0.0`` at
+             start so the first eligible tick fires a PLI; the
+             broadcast loop needs that fresh IDR to clear
+             ``needs_key`` on a subscriber that connected after the
+             natural startup IDR has already passed).
 
+        ``motion_threshold_bps = 500_000`` (500 KB/s) sits well above
+        the measured iPhone 12 mini idle byte-rate (60-100 KB/s), so
+        the previous always-on settle churn at 100 KB/s doesn't recur.
+        Real motion bursts go several MB/s on this device.
         ``min_interval`` caps back-to-back refreshes regardless of
         trigger.
         """
         loop = asyncio.get_running_loop()
-        motion_threshold_bps = 100_000  # 100 KB/s = motion
-        active_interval = 1.5  # fire this often during sustained motion
-        settle_delay = 0.4  # wait after motion ends before refresh
-        heartbeat = 10.0  # max between refreshes when idle
-        min_interval = 1.0  # don't fire more often than this
+        # Threshold above measured idle (≈60-100 KB/s) but below normal
+        # motion bursts (200-400 KB/s on iPhone 12 mini / iOS 27 under
+        # quick swipes). At this threshold settle fires once per real
+        # motion event ending; with ``_fire_decoder_refresh`` no longer
+        # flushing subscriber queues, each PLI's fresh IDR is delivered
+        # as a transparent DPB refresh (type=0 key), not a decoder
+        # rebuild — so frequent firing here is no longer chop-visible.
+        motion_threshold_bps = 200_000
+        active_interval = 1.0  # fire mid-motion at this cadence
+        settle_delay = 0.3  # wait after motion ends before refresh
+        heartbeat = 10.0  # backstop cadence when nothing else fires
+        min_interval = 0.7  # don't fire more often than this
+        motion_started_t = 0.0
         while True:
             try:
                 await asyncio.sleep(0.1)
@@ -2228,19 +2306,26 @@ class ScreenStreamServer:
             if self._active_service is None or self._rtcp_dest is None:
                 continue
             now = loop.time()
-            # Prune the byte window to the last 1 s.
+            # Prune the byte-rate window to the last 1 s.
             while self._au_byte_window and self._au_byte_window[0][0] < now - 1.0:
                 self._au_byte_window.popleft()
             window_bytes = sum(s for _, s in self._au_byte_window)
             currently_active = window_bytes >= motion_threshold_bps
-            # Detect active->idle transition (motion just ended).
+            # Track motion transitions for settle detection + active duration.
+            if currently_active and not self._motion_active:
+                motion_started_t = now
             if self._motion_active and not currently_active:
                 self._motion_ended_t = now
             self._motion_active = currently_active
             since_refresh = now - self._last_refresh_t
             if since_refresh < min_interval:
                 continue
-            active = currently_active and since_refresh >= active_interval
+            active = (
+                currently_active
+                and motion_started_t > 0
+                and (now - motion_started_t) >= active_interval
+                and since_refresh >= active_interval
+            )
             settled = self._motion_ended_t > self._last_refresh_t and (now - self._motion_ended_t) >= settle_delay
             heartbeat_due = since_refresh >= heartbeat
             if not (active or settled or heartbeat_due):
@@ -2249,20 +2334,20 @@ class ScreenStreamServer:
             self._fire_decoder_refresh(now, reason=reason)
 
     def _fire_decoder_refresh(self, now: float, *, reason: str) -> None:
-        for q, state in self._subscribers.items():
-            while not q.empty():
-                with contextlib.suppress(asyncio.QueueEmpty):
-                    q.get_nowait()
-            state.needs_key = True
+        # Just send the PLI — DON'T flush subscriber queues or set
+        # needs_key. The fresh IDR will be broadcast as a normal type=0
+        # key (msg, not msg_reset), so the browser absorbs it without
+        # rebuilding its decoder — the rebuild is what was producing
+        # visible chop and looked like tearing during sustained motion.
+        # A subscriber whose state really IS stale (after a queue-full
+        # flush or AU corruption) is still handled correctly by the
+        # other code paths that set ``state.needs_key = True``.
         pli_task = asyncio.create_task(self._send_rtcp_pli())
         self._pli_tasks.add(pli_task)
         pli_task.add_done_callback(self._pli_tasks.discard)
         self._last_refresh_t = now
-        # Window-bytes here are just the current 1 s sum; useful when
-        # tuning the motion threshold against real byte-rates from the
-        # device's encoder under various activity levels.
         window_bps = sum(s for _, s in self._au_byte_window)
-        logger.info(
+        logger.debug(
             "decoder-refresh (%s): %d subscriber(s), %d B/s window",
             reason,
             len(self._subscribers),
@@ -2395,24 +2480,24 @@ class ScreenStreamServer:
         finally:
             if not serve_task.done():
                 serve_task.cancel()
-            logger.info("shutdown: cancelling watchdog")
+            logger.debug("shutdown: cancelling watchdog")
             watchdog.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await watchdog
             decoder_refresh.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await decoder_refresh
-            logger.info("shutdown: cancelling eager_start")
+            logger.debug("shutdown: cancelling eager_start")
             eager_start.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await eager_start
             # Close the HTTP listener first so no new connections come in
             # while we tear the device-side streams down.
-            logger.info("shutdown: closing HTTP server")
+            logger.debug("shutdown: closing HTTP server")
             http_server.close()
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(http_server.wait_closed(), timeout=2.0)
-            logger.info("shutdown: stopping HID")
+            logger.debug("shutdown: stopping HID")
             await _bounded(self._stop_hid(), "_stop_hid")
             task = self._hid_worker_task
             self._hid_worker_task = None
@@ -2432,9 +2517,9 @@ class ScreenStreamServer:
                 async with self._audio_lock:
                     await self._stop_audio_stream()
 
-            logger.info("shutdown: stopping video stream")
+            logger.debug("shutdown: stopping video stream")
             await _bounded(_stop_video(), "_stop_active_stream")
-            logger.info("shutdown: stopping audio stream")
+            logger.debug("shutdown: stopping audio stream")
             await _bounded(_stop_audio(), "_stop_audio_stream")
             # Cancel any lingering connection-handler tasks that the
             # HTTP server's wait_closed couldn't drain (e.g. a
@@ -2445,7 +2530,7 @@ class ScreenStreamServer:
             current = asyncio.current_task()
             stragglers = [t for t in asyncio.all_tasks(loop) if t is not current and not t.done()]
             if stragglers:
-                logger.info("shutdown: cancelling %d straggler task(s)", len(stragglers))
+                logger.debug("shutdown: cancelling %d straggler task(s)", len(stragglers))
                 for t in stragglers:
                     t.cancel()
                 with contextlib.suppress(Exception):

@@ -19,11 +19,13 @@ from pymobiledevice3.remote.core_device.diagnostics_service import DiagnosticsSe
 from pymobiledevice3.remote.core_device.display_service import DisplayService
 from pymobiledevice3.remote.core_device.file_service import APPLE_DOMAIN_DICT, FileServiceService
 from pymobiledevice3.remote.core_device.hid_service import (
+    ASCII_TO_HID,
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     DIGITIZER_SURFACE_TOUCHSCREEN_GESTURE,
     HID_BUTTON_STATE_CANCELED,
     HID_BUTTON_STATE_DOWN,
     HID_BUTTON_STATE_UP,
+    KEY_LEFT_SHIFT,
     TOUCHSCREEN_STATE_CONTACT,
     TOUCHSCREEN_STATE_RELEASE,
     IndigoHIDService,
@@ -390,24 +392,31 @@ _BUTTON_STATE_CHOICES = {
     "canceled": HID_BUTTON_STATE_CANCELED,
 }
 
-# Named iOS hardware buttons → (usage_page, usage_code).
-# Most physical iOS buttons live on the Consumer page (0x0C).
-_NAMED_BUTTONS: dict[str, tuple[int, int]] = {
-    "home": (0x0C, 0x40),  # Consumer / Menu
-    "power": (0x0C, 0x30),  # Consumer / Power
-    "lock": (0x0C, 0x30),  # alias for power
-    "sleep": (0x0C, 0x32),  # Consumer / Sleep
-    "volume-up": (0x0C, 0xE9),  # Consumer / Volume Increment
-    "volume-down": (0x0C, 0xEA),  # Consumer / Volume Decrement
-    "mute": (0x0C, 0xE2),  # Consumer / Mute
-    "siri": (0x0C, 0xCF),  # Consumer / Voice Command
+# Named iOS hardware buttons → (usage_page, usage_code, hold_seconds).
+# Most physical iOS buttons live on the Consumer page (0x0C). ``hold_seconds``
+# is how long to keep DOWN before sending UP for the ``press`` shortcut --
+# iOS distinguishes a tap (Home / Vol / Mute) from a hold (Lock = sleep,
+# Siri = start listening) by the time the usage stays asserted. A 0 s hold
+# (which the previous implementation effectively did via back-to-back
+# send_button calls ~70 µs apart) reads to backboardd as bounce noise and
+# only the tap-class buttons fire on it.
+_NAMED_BUTTONS: dict[str, tuple[int, int, float]] = {
+    "home": (0x0C, 0x40, 0.05),  # Consumer / Menu
+    "lock": (0x0C, 0x30, 0.5),  # Consumer / Power, held long enough for iOS to sleep
+    "volume-up": (0x0C, 0xE9, 0.05),  # Consumer / Volume Increment
+    "volume-down": (0x0C, 0xEA, 0.05),  # Consumer / Volume Decrement
+    "mute": (0x0C, 0xE2, 0.05),  # Consumer / Mute
+    "siri": (0x0C, 0xCF, 1.0),  # Consumer / Voice Command, held to start listening
 }
 
 
-async def _send_button_press(service: IndigoHIDService, usage_page: int, usage_code: int, state: str) -> None:
+async def _send_button_press(
+    service: IndigoHIDService, usage_page: int, usage_code: int, state: str, hold: float = 0.05
+) -> None:
     """Dispatch a single button state (down/up/canceled), or down+up for ``press``."""
     if state == "press":
         await service.send_button(usage_page, usage_code, HID_BUTTON_STATE_DOWN)
+        await asyncio.sleep(hold)
         await service.send_button(usage_page, usage_code, HID_BUTTON_STATE_UP)
     else:
         await service.send_button(usage_page, usage_code, _BUTTON_STATE_CHOICES[state])
@@ -437,9 +446,9 @@ async def core_device_hid_button(
     ] = "press",
 ) -> None:
     """Press a named iOS hardware button (home / power / volume-up / etc.)."""
-    usage_page, usage_code = _NAMED_BUTTONS[name]
+    usage_page, usage_code, hold = _NAMED_BUTTONS[name]
     async with IndigoHIDService(service_provider) as service:
-        await _send_button_press(service, usage_page, usage_code, state)
+        await _send_button_press(service, usage_page, usage_code, state, hold)
 
 
 @hid_cli.command("raw-button")
@@ -709,6 +718,44 @@ async def core_device_universal_hid_service_session(
                     raise ValueError(f"unrecognised command or wrong arg count: {line!r}")
             except Exception as e:
                 raise typer.BadParameter(f"line {lineno}: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# Keyboard typing — virtual HID keyboard registered atop universalhidservice
+# ---------------------------------------------------------------------------
+@universal_hid_service_cli.command("type")
+@async_command
+async def core_device_universal_hid_service_type(
+    service_provider: RSDServiceProviderDep,
+    text: Annotated[str, typer.Argument(help="Text to type (printable ASCII)")],
+    char_delay: Annotated[
+        float,
+        typer.Option("--char-delay", help="Seconds between key down and key up"),
+    ] = 0.04,
+    inter_delay: Annotated[
+        float,
+        typer.Option("--inter-delay", help="Seconds between characters"),
+    ] = 0.02,
+) -> None:
+    """Type ``TEXT`` on the device via a host-registered virtual keyboard.
+
+    Auto-opens a media stream (the dtuhidd auth gate) and registers a
+    virtual keyboard surface, then emits one ``down``/``up`` HID Keyboard
+    report pair per character. Capital letters and shifted symbols
+    synthesise the matching Left-Shift bit in the bitmap.
+    """
+    async with touch_session(service_provider) as service:
+        kb_service_id = await service.create_keyboard_service()
+        for ch in text:
+            mapping = ASCII_TO_HID.get(ch)
+            if mapping is None:
+                raise typer.BadParameter(f"unsupported character: {ch!r}")
+            usage, needs_shift = mapping
+            usages = (KEY_LEFT_SHIFT, usage) if needs_shift else (usage,)
+            await service.send_keyboard(kb_service_id, usages)
+            await asyncio.sleep(char_delay)
+            await service.send_keyboard(kb_service_id, ())
+            await asyncio.sleep(inter_delay)
 
 
 # ---------------------------------------------------------------------------
