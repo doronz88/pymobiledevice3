@@ -29,8 +29,8 @@ from pathlib import Path
 from typing import Optional
 
 from cryptography import x509
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 import pymobiledevice3.resources
@@ -185,11 +185,13 @@ VIEWER_JS_TEMPLATE = (_VIEWER_DIR / "viewer.js").read_bytes()
 # ---------------------------------------------------------------------------
 # Browsers refuse to expose WebCodecs on plain http:// from any origin that
 # isn't a loopback address. To make the viewer reachable from another machine
-# on the LAN we need TLS. Generate an ephemeral ed25519 self-signed cert
+# on the LAN we need TLS. Generate an ephemeral RSA-2048 self-signed cert
 # covering the bind address + common SANs; the browser will warn on first
-# visit and remember the override after the user accepts it.
+# visit and remember the override after the user accepts it. (ed25519 was
+# tried first and produced "connection unexpectedly closed" errors in some
+# Chrome/Safari builds -- ed25519 server certs are still spotty in 2026.)
 def _build_self_signed_ssl_context(bind: str) -> ssl.SSLContext:
-    key = ed25519.Ed25519PrivateKey.generate()
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "pymobiledevice3 serve-web")])
     san_entries: list[x509.GeneralName] = [
         x509.DNSName("localhost"),
@@ -234,7 +236,7 @@ def _build_self_signed_ssl_context(bind: str) -> ssl.SSLContext:
         .not_valid_after(now + datetime.timedelta(days=365))
         .add_extension(x509.SubjectAlternativeName(san_entries), critical=False)
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .sign(key, algorithm=None)  # ed25519 doesn't take a hash algorithm
+        .sign(key, algorithm=hashes.SHA256())
     )
     # ssl.SSLContext.load_cert_chain only accepts file paths, not bytes. Drop
     # the PEM into a closed-then-unlinked tempfile and load before deleting.
