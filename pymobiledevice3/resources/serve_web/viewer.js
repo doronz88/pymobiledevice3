@@ -829,6 +829,63 @@ document.getElementById('accessibility-reset').addEventListener('click', async (
 });
 reloadAccessibility();
 
+// ----- Clipboard panel: bidirectional text bridge to the device pasteboard.
+// "→ Send to device" pushes the textarea contents via POST /clipboard.
+// "← Get from device" pulls via GET /clipboard, fills the textarea, and (on a
+// secure context) also pushes to navigator.clipboard so the user can paste
+// directly into a host app. The header toggle ("on"/"off") gates the whole
+// panel -- when off the panel dims and the buttons are inert, matching the
+// pattern the user asked for ("toggle-able").
+const clipboardTextEl = document.getElementById('clipboard-text');
+const clipboardPanel = document.getElementById('clipboard-panel');
+const clipboardSendBtn = document.getElementById('clipboard-send');
+const clipboardGetBtn = document.getElementById('clipboard-get');
+const clipboardToggleBtn = document.getElementById('clipboard-toggle');
+let clipboardEnabled = true;
+function setClipboardEnabled(on) {
+    clipboardEnabled = on;
+    clipboardToggleBtn.textContent = on ? 'on' : 'off';
+    clipboardPanel.classList.toggle('disabled', !on);
+}
+clipboardToggleBtn.addEventListener('click', () => setClipboardEnabled(!clipboardEnabled));
+
+clipboardSendBtn.addEventListener('click', async () => {
+    if (!clipboardEnabled) return;
+    const text = clipboardTextEl.value;
+    try {
+        const r = await fetch('/clipboard', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text}),
+        });
+        if (!r.ok) { log('clipboard send: HTTP ' + r.status); return; }
+        log('clipboard → device (' + text.length + ' chars)');
+    } catch (e) { log('clipboard send err: ' + (e.message || e)); }
+});
+
+clipboardGetBtn.addEventListener('click', async () => {
+    if (!clipboardEnabled) return;
+    try {
+        const r = await fetch('/clipboard', {cache: 'no-store'});
+        if (!r.ok) { log('clipboard get: HTTP ' + r.status); return; }
+        const j = await r.json();
+        const text = j.text == null ? '' : String(j.text);
+        clipboardTextEl.value = text;
+        // Best-effort push to the browser clipboard. navigator.clipboard
+        // requires a secure context (https:// or localhost) AND a user
+        // gesture, which the button click satisfies. Failure is non-fatal
+        // since the user can still copy from the textarea by hand.
+        if (text && navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+                await navigator.clipboard.writeText(text);
+                log('clipboard ← device (' + text.length + ' chars, also in browser clipboard)');
+                return;
+            } catch (e) { /* fall through to plain log */ }
+        }
+        log('clipboard ← device (' + text.length + ' chars)');
+    } catch (e) { log('clipboard get err: ' + (e.message || e)); }
+});
+
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));
     const codec = await fetchCodecWithRetry();

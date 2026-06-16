@@ -67,7 +67,17 @@
  }
  /* Accessibility list rows: label + control side-by-side. */
  #right-tray h3{margin:4px 0 6px;font-size:13px;color:#bbb;font-weight:600;
-                text-transform:uppercase;letter-spacing:.5px}
+                text-transform:uppercase;letter-spacing:.5px;
+                display:flex;align-items:center;gap:6px}
+ #right-tray h3 .btn{font-size:10px;padding:1px 6px;text-transform:none;
+                     letter-spacing:0;font-weight:normal}
+ #clipboard-panel{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+ #clipboard-panel.disabled{opacity:.45;pointer-events:none}
+ #clipboard-text{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;
+                 background:#181818;color:#ddd;border:1px solid #2a2a2a;
+                 border-radius:4px;padding:6px;resize:vertical;min-height:48px}
+ .clipboard-row{display:flex;gap:6px}
+ .clipboard-row .btn{flex:1;font-size:11px;padding:4px 8px}
  #accessibility-list{display:flex;flex-direction:column;gap:4px;font-size:12px;
                      line-height:1.4}
  .axrow{display:flex;align-items:center;gap:8px;padding:4px 2px;

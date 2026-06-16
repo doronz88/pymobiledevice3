@@ -34,6 +34,12 @@ from pymobiledevice3.remote.core_device.hid_service import (
 )
 from pymobiledevice3.remote.core_device.location_service import LocationService
 from pymobiledevice3.remote.core_device.orientation_service import OrientationService
+from pymobiledevice3.remote.core_device.pasteboard_service import (
+    GENERAL_PASTEBOARD,
+    PasteboardService,
+    snapshot_text,
+    text_item,
+)
 from pymobiledevice3.remote.core_device.screen_capture_service import ScreenCaptureService
 from pymobiledevice3.remote.core_device.screen_stream import (
     ScreenStreamServer,
@@ -286,6 +292,39 @@ async def core_device_get_lockstate_task(service_provider: RemoteServiceDiscover
 async def core_device_get_lockstate(service_provider: RSDServiceProviderDep) -> None:
     """Get lockstate"""
     await core_device_get_lockstate_task(service_provider)
+
+
+@cli.command("paste")
+@async_command
+async def core_device_paste(
+    service_provider: RSDServiceProviderDep,
+    raw: Annotated[bool, typer.Option("--raw", help="Print the full snapshot JSON instead of UTF-8 text.")] = False,
+    pasteboard: Annotated[str, typer.Option(help="Named pasteboard to read from.")] = GENERAL_PASTEBOARD,
+) -> None:
+    """Paste device pasteboard contents to stdout (text by default, --raw for the full snapshot)."""
+    async with PasteboardService(service_provider) as pb:
+        snapshot = await pb.get(pasteboard)
+    if raw:
+        print_json(snapshot)
+        return
+    text = snapshot_text(snapshot)
+    if text is None:
+        return
+    sys.stdout.write(text)
+
+
+@cli.command("copy")
+@async_command
+async def core_device_copy(
+    service_provider: RSDServiceProviderDep,
+    text: Annotated[Optional[str], typer.Argument(help="Text to copy. If omitted, read UTF-8 from stdin.")] = None,
+    pasteboard: Annotated[str, typer.Option(help="Named pasteboard to write to.")] = GENERAL_PASTEBOARD,
+) -> None:
+    """Copy text onto the device pasteboard (UTF-8). Reads from stdin if no argument is given."""
+    if text is None:
+        text = sys.stdin.read()
+    async with PasteboardService(service_provider) as pb:
+        await pb.set([text_item(text)], pasteboard)
 
 
 @cli.command("rotate")

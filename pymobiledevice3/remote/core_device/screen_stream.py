@@ -48,6 +48,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
     UniversalHIDServiceService,
 )
 from pymobiledevice3.remote.core_device.orientation_service import OrientationService
+from pymobiledevice3.remote.core_device.pasteboard_service import PasteboardService, snapshot_text
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 from pymobiledevice3.services.power_assertion import PowerAssertionService
@@ -1660,6 +1661,54 @@ class ScreenStreamServer:
             except Exception as exc:
                 logger.exception("style endpoint failed")
                 err = f"style endpoint error: {exc}".encode()
+                writer.write(
+                    b"HTTP/1.1 500 Internal\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Content-Length: " + str(len(err)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + err
+                )
+            await writer.drain()
+            writer.close()
+            return
+        if path == "/clipboard":
+            # GET pulls the device pasteboard ({"text": "..."|null}); POST sets
+            # it from JSON body {"text": "..."}. Bytes-only text path -- non-text
+            # UTIs (images, files) aren't exposed here. The service is opened
+            # per-request: connection is cheap and pasteboard ops are sporadic,
+            # not worth holding a long-lived RemoteXPC channel for.
+            try:
+                if method == "GET":
+                    async with PasteboardService(self._rsd) as pb:
+                        snapshot = await pb.get()
+                    resp_body = json.dumps({"text": snapshot_text(snapshot)}).encode()
+                elif method == "POST":
+                    body = await self._read_body(reader, headers)
+                    try:
+                        text = str(json.loads(body)["text"])
+                    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                        writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        await writer.drain()
+                        writer.close()
+                        logger.debug("clipboard POST: bad body %r (%s)", body, exc)
+                        return
+                    async with PasteboardService(self._rsd) as pb:
+                        await pb.set_text(text)
+                    resp_body = b'{"ok":true}'
+                else:
+                    writer.write(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    await writer.drain()
+                    writer.close()
+                    return
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Cache-Control: no-store\r\n"
+                    b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + resp_body
+                )
+            except Exception as exc:
+                logger.exception("clipboard endpoint failed")
+                err = f"clipboard error: {exc}".encode()
                 writer.write(
                     b"HTTP/1.1 500 Internal\r\n"
                     b"Content-Type: text/plain\r\n"
