@@ -81,6 +81,13 @@
  /* Status / log overlay: pinned to bottom-left so it doesn't intercept
     clicks on the left-tray toggle. Capped width so a long log line
     doesn't push it across the canvas. */
+ /* Live FPS readout, useful for spotting decoder stalls — the underlying
+    counter is the same frameCount the offline-overlay watches, sampled
+    once a second. */
+ #fps{position:fixed;top:8px;left:8px;font-size:12px;opacity:.75;
+      background:#0008;color:#fff;padding:2px 8px;border-radius:4px;
+      font-variant-numeric:tabular-nums;user-select:none;pointer-events:none;
+      z-index:10}
  #status{position:fixed;bottom:8px;left:8px;font-size:11px;opacity:.7;
          background:#0008;padding:4px 8px;border-radius:4px;white-space:pre;
          width:240px;max-width:30vw;max-height:120px;overflow:hidden;
