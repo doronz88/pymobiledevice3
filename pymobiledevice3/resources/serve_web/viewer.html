@@ -48,10 +48,20 @@
   </div>
  </div>
 
- <!-- Right tray: accessibility settings. Same collapse model. -->
+ <!-- Right tray: accessibility settings + clipboard. Same collapse model. -->
  <aside id="right-tray" class="tray">
   <button class="tray-toggle btn" data-tray="right" title="Collapse this panel" aria-label="Collapse right panel">›</button>
   <div class="tray-content">
+   <h3>Clipboard
+    <button class="btn" id="clipboard-toggle" type="button" title="Toggle the clipboard panel. When off, send/get are disabled.">on</button>
+   </h3>
+   <div id="clipboard-panel">
+    <textarea id="clipboard-text" rows="3" placeholder="Text staged for device / device clipboard contents"></textarea>
+    <div class="clipboard-row">
+     <button class="btn" id="clipboard-send" type="button" title="Copy the text above onto the device pasteboard">→ Send to device</button>
+     <button class="btn" id="clipboard-get" type="button" title="Pull the device pasteboard into the text area (and the browser clipboard)">← Get from device</button>
+    </div>
+   </div>
    <h3>Accessibility</h3>
    <div id="accessibility-list">loading…</div>
    <button class="btn" id="accessibility-reset" type="button" title="Reset all accessibility settings to defaults">Reset all</button>

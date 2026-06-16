@@ -746,21 +746,59 @@ function drawPending() {
     lastFrame = f;
 }
 
-// ----- Offline overlay: show a banner over the canvas if frames stop
-// flowing. We sample frameCount once a second; if it hasn't moved for
-// ~3 consecutive seconds AND the stream has actually started (we've
-// drawn at least one frame), reveal the overlay. The moment a new
-// frame lands, hide it again.
+// ----- Offline overlay + auto-recovery: show a banner if frames stop
+// flowing for ~3 s, then nudge the server back to life on a tiered
+// schedule so the viewer resumes "automatically" when the device wakes
+// or its daemon comes back. We sample frameCount once a second; if it
+// hasn't moved for OFFLINE_GRACE_SECS AND the stream has actually
+// started (>=1 drawn frame), reveal the overlay. The moment a new
+// frame lands, hide it again and reset the recovery timers.
+//
+// Recovery ladder, measured in seconds without frames once the
+// overlay is showing:
+//   +PLI_AFTER_SECS -- POST /pli (one RTCP packet, ~100-300 ms IDR)
+//   then every PLI_REPEAT_SECS -- another /pli
+//   +RESTART_AFTER_SECS -- POST /restart (no page reload). The server
+//     preserves the live /stream.bin subscriber across the restart and
+//     emits a type=2 (key-with-reset) IDR onto the existing connection;
+//     the in-page decoder rebuild path picks it up. Crucially we do NOT
+//     location.reload() here -- a reload would resuspend the
+//     AudioContext (browsers require a user gesture to play audio after
+//     navigation) and the user would silently lose sound.
 const offlineOverlay = document.getElementById('offline-overlay');
 const OFFLINE_GRACE_SECS = 3;
-let _lastFc = -1, _stableSec = 0;
+const PLI_AFTER_SECS = 8;        // first PLI nudge once we've been offline this long
+const PLI_REPEAT_SECS = 6;       // keep pinging while still offline
+const RESTART_AFTER_SECS = 25;   // give up on PLI; full session restart (no reload)
+const RESTART_REPEAT_SECS = 30;  // if still offline after this much more, restart again
+let _lastFc = -1, _stableSec = 0, _nextPliSec = 0, _nextRestartSec = 0;
 setInterval(() => {
-    if (frameCount === 0) { offlineOverlay.classList.add('hidden'); _lastFc = 0; _stableSec = 0; return; }
+    if (frameCount === 0) {
+        offlineOverlay.classList.add('hidden');
+        _lastFc = 0; _stableSec = 0; _nextPliSec = 0; _nextRestartSec = 0;
+        return;
+    }
     if (frameCount === _lastFc) {
         _stableSec += 1;
-        if (_stableSec >= OFFLINE_GRACE_SECS) offlineOverlay.classList.remove('hidden');
+        if (_stableSec >= OFFLINE_GRACE_SECS) {
+            offlineOverlay.classList.remove('hidden');
+            if (_stableSec >= RESTART_AFTER_SECS && _stableSec >= _nextRestartSec) {
+                _nextRestartSec = _stableSec + RESTART_REPEAT_SECS;
+                log('auto-recover: /restart (offline ' + _stableSec + 's, no reload — audio stays attached)');
+                fetch('/restart', {method: 'POST', cache: 'no-store'})
+                    .catch(err => log('auto restart err: ' + (err.message || err)));
+            } else if (_stableSec >= PLI_AFTER_SECS && _stableSec >= _nextPliSec) {
+                _nextPliSec = _stableSec + PLI_REPEAT_SECS;
+                log('auto-recover: /pli (offline ' + _stableSec + 's)');
+                fetch('/pli', {method: 'POST', cache: 'no-store'})
+                    .catch(err => log('auto pli err: ' + (err.message || err)));
+            }
+        }
     } else {
+        if (_stableSec >= OFFLINE_GRACE_SECS) log('stream resumed after ' + _stableSec + 's');
         _stableSec = 0;
+        _nextPliSec = 0;
+        _nextRestartSec = 0;
         offlineOverlay.classList.add('hidden');
     }
     _lastFc = frameCount;
@@ -828,6 +866,63 @@ document.getElementById('accessibility-reset').addEventListener('click', async (
     } catch (e) { log('ax reset err: ' + (e.message || e)); }
 });
 reloadAccessibility();
+
+// ----- Clipboard panel: bidirectional text bridge to the device pasteboard.
+// "→ Send to device" pushes the textarea contents via POST /clipboard.
+// "← Get from device" pulls via GET /clipboard, fills the textarea, and (on a
+// secure context) also pushes to navigator.clipboard so the user can paste
+// directly into a host app. The header toggle ("on"/"off") gates the whole
+// panel -- when off the panel dims and the buttons are inert, matching the
+// pattern the user asked for ("toggle-able").
+const clipboardTextEl = document.getElementById('clipboard-text');
+const clipboardPanel = document.getElementById('clipboard-panel');
+const clipboardSendBtn = document.getElementById('clipboard-send');
+const clipboardGetBtn = document.getElementById('clipboard-get');
+const clipboardToggleBtn = document.getElementById('clipboard-toggle');
+let clipboardEnabled = true;
+function setClipboardEnabled(on) {
+    clipboardEnabled = on;
+    clipboardToggleBtn.textContent = on ? 'on' : 'off';
+    clipboardPanel.classList.toggle('disabled', !on);
+}
+clipboardToggleBtn.addEventListener('click', () => setClipboardEnabled(!clipboardEnabled));
+
+clipboardSendBtn.addEventListener('click', async () => {
+    if (!clipboardEnabled) return;
+    const text = clipboardTextEl.value;
+    try {
+        const r = await fetch('/clipboard', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text}),
+        });
+        if (!r.ok) { log('clipboard send: HTTP ' + r.status); return; }
+        log('clipboard → device (' + text.length + ' chars)');
+    } catch (e) { log('clipboard send err: ' + (e.message || e)); }
+});
+
+clipboardGetBtn.addEventListener('click', async () => {
+    if (!clipboardEnabled) return;
+    try {
+        const r = await fetch('/clipboard', {cache: 'no-store'});
+        if (!r.ok) { log('clipboard get: HTTP ' + r.status); return; }
+        const j = await r.json();
+        const text = j.text == null ? '' : String(j.text);
+        clipboardTextEl.value = text;
+        // Best-effort push to the browser clipboard. navigator.clipboard
+        // requires a secure context (https:// or localhost) AND a user
+        // gesture, which the button click satisfies. Failure is non-fatal
+        // since the user can still copy from the textarea by hand.
+        if (text && navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+                await navigator.clipboard.writeText(text);
+                log('clipboard ← device (' + text.length + ' chars, also in browser clipboard)');
+                return;
+            } catch (e) { /* fall through to plain log */ }
+        }
+        log('clipboard ← device (' + text.length + ' chars)');
+    } catch (e) { log('clipboard get err: ' + (e.message || e)); }
+});
 
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));
