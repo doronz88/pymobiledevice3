@@ -50,6 +50,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
 from pymobiledevice3.remote.core_device.orientation_service import OrientationService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
+from pymobiledevice3.services.power_assertion import PowerAssertionService
 
 # Named iOS hardware buttons → (usage_page, usage_code, hold_seconds).
 # Mirrors the table in cli/developer/core_device.py so the browser viewer
@@ -554,6 +555,14 @@ class ScreenStreamServer:
         self._accessibility: Optional[AccessibilityAudit] = None
         self._accessibility_lock = asyncio.Lock()
 
+        # Background task that holds an IOPMAssertion on the device so
+        # iOS auto-lock doesn't kick in mid-session. Without this the
+        # display sleeps after the user's auto-lock timeout (typically
+        # 30 s -- 2 min) and the encoder stops emitting AUs; restarts
+        # also can't recover because a locked device won't start a
+        # fresh DisplayService session cleanly.
+        self._keep_awake_task: Optional[asyncio.Task] = None
+
     # ----- per-session UDP receiver -----------------------------------------
     async def _udp_recv_and_depacketize(self, sock: socket.socket) -> None:
         sock.setblocking(False)
@@ -1002,11 +1011,14 @@ class ScreenStreamServer:
             with contextlib.suppress(Exception):
                 sock.close()
         if svc is not None:
-            with contextlib.suppress(Exception):
-                if sid is not None:
-                    await svc.stop_media_stream(sid)
-            with contextlib.suppress(Exception):
-                await svc.close()
+            # Bound the device-side RPCs. A wedged CoreDevice daemon
+            # can hang the XPC response wait indefinitely, holding
+            # _audio_lock and preventing recovery.
+            if sid is not None:
+                with contextlib.suppress(asyncio.TimeoutError, Exception):
+                    await asyncio.wait_for(svc.stop_media_stream(sid), timeout=2.0)
+            with contextlib.suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(svc.close(), timeout=2.0)
 
     async def _ensure_audio_stream(self) -> None:
         async with self._audio_lock:
@@ -1097,11 +1109,18 @@ class ScreenStreamServer:
             with contextlib.suppress(Exception):
                 sock_to_close.close()
         if svc is not None:
-            with contextlib.suppress(Exception):
-                if sid is not None:
-                    await svc.stop_media_stream(sid)
-            with contextlib.suppress(Exception):
-                await svc.close()
+            # Bound the device-side RPCs. The stall watchdog calls us
+            # precisely when the CoreDevice daemon has stopped feeding
+            # AUs -- i.e. the state in which stop_media_stream / close
+            # are most likely to hang on their XPC response wait. An
+            # unbounded await here holds _stream_lock forever and
+            # leaves /codec and /stream.bin replying 503 with no path
+            # to recovery short of restarting the server.
+            if sid is not None:
+                with contextlib.suppress(asyncio.TimeoutError, Exception):
+                    await asyncio.wait_for(svc.stop_media_stream(sid), timeout=2.0)
+            with contextlib.suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(svc.close(), timeout=2.0)
 
     async def _ensure_fresh_stream(self, force: bool = False) -> None:
         async with self._stream_lock:
@@ -2012,8 +2031,57 @@ class ScreenStreamServer:
                 _MAX_STALL_RESTARTS,
             )
             self._last_restart_t = now
-            with contextlib.suppress(Exception):
-                await self._ensure_fresh_stream(force=True)
+            # Bound the whole restart so a hang on the device side
+            # (cleanup or start) can't hold _stream_lock forever and
+            # silently block subsequent /codec and /stream.bin paths.
+            # The inner _stop_active_stream already bounds its own
+            # XPC calls; this is the outer safety net covering the
+            # start side too (connect / start_video_stream).
+            try:
+                await asyncio.wait_for(self._ensure_fresh_stream(force=True), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning("stall-watchdog restart did not complete within 10s")
+            except Exception:
+                logger.exception("stall-watchdog restart failed")
+
+    async def _keep_awake_loop(self) -> None:
+        """Hold a PreventUserIdleSystemSleep IOPMAssertion on the device
+        so it doesn't auto-lock mid-session.
+
+        Without this iOS sleeps the display after the user's auto-lock
+        timer (often 2 minutes) and the screen-capture pipeline halts:
+        AUs stop arriving, the stall watchdog fires, and the restart
+        also can't complete because a locked device won't start a fresh
+        DisplayService session cleanly. End result is the server going
+        silently unresponsive until the user manually wakes the device.
+
+        Renewal cadence is well under the requested timeout so a single
+        slow renewal cycle can't drop the assertion."""
+        assertion_timeout = 300  # 5 min — long enough that a missed renew is harmless
+        refresh_interval = 120  # 2 min — well under timeout
+        try:
+            if self._lockdown is None:
+                self._lockdown = await _create_lockdown_usbmux(self._rsd.udid)
+            while True:
+                try:
+                    svc = PowerAssertionService(self._lockdown)
+                    async with svc.create_power_assertion(
+                        "PreventUserIdleSystemSleep",
+                        "pymobiledevice3.serve-web",
+                        assertion_timeout,
+                        "serve-web keeping device awake for screen mirroring",
+                    ):
+                        pass
+                except Exception:
+                    logger.debug("keep-awake renew failed; will retry", exc_info=True)
+                try:
+                    await asyncio.sleep(refresh_interval)
+                except asyncio.CancelledError:
+                    return
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            logger.warning("keep-awake loop crashed (device may auto-lock)", exc_info=True)
 
     async def _eager_stream_start(self) -> None:
         """Bring the device-side streams up at server boot.
@@ -2053,6 +2121,7 @@ class ScreenStreamServer:
         )
         watchdog = asyncio.create_task(self._stall_watchdog())
         decoder_refresh = asyncio.create_task(self._decoder_refresh_loop())
+        self._keep_awake_task = asyncio.create_task(self._keep_awake_loop())
         # Eagerly start the HID worker so queued /touch requests are
         # processed even before the device-stream is fully up.
         self._hid_worker_task = asyncio.create_task(self._hid_worker())
@@ -2112,6 +2181,10 @@ class ScreenStreamServer:
             decoder_refresh.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await decoder_refresh
+            if self._keep_awake_task is not None:
+                self._keep_awake_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await self._keep_awake_task
             logger.debug("shutdown: cancelling eager_start")
             eager_start.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):

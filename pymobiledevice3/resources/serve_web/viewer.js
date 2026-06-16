@@ -34,11 +34,32 @@ function fitCanvasToViewport() {
 }
 window.addEventListener('resize', fitCanvasToViewport);
 const statusEl = document.getElementById('status');
+const fpsEl = document.getElementById('fps');
 let frameCount = 0;
 const lines = ['connecting...'];
-function log(msg) { lines.push(msg); if (lines.length > 8) lines.shift(); render(); }
+function log(msg) {
+    // Mirror to devtools so long lines aren't truncated by the
+    // bottom-left status panel (which is intentionally compact).
+    try { console.log('[serve-web]', msg); } catch (_) {}
+    lines.push(msg); if (lines.length > 8) lines.shift(); render();
+}
 function render() { statusEl.textContent = `frames: ${frameCount}\n` + lines.join('\n'); }
 setInterval(render, 250);
+
+// FPS readout. Sample frameCount once per second; the displayed number
+// is the frame delta over the last 1 s. A stall shows up immediately
+// as "0 fps" while the stream is still nominally "connected", which is
+// what the status panel's `frames: N` counter doesn't make obvious.
+let _fpsLastFc = 0;
+let _fpsLastT = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+setInterval(() => {
+    const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+    const dtSec = (now - _fpsLastT) / 1000;
+    const dFrames = frameCount - _fpsLastFc;
+    _fpsLastT = now;
+    _fpsLastFc = frameCount;
+    if (fpsEl) fpsEl.textContent = (dtSec > 0 ? (dFrames / dtSec) : 0).toFixed(1) + ' fps';
+}, 1000);
 
 function hex(u8, n=24) {
     let s = '';
