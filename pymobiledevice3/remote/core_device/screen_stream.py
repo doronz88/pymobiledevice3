@@ -15,6 +15,7 @@ Layering::
 import asyncio
 import contextlib
 import datetime
+import errno
 import importlib.resources
 import ipaddress
 import json
@@ -34,7 +35,6 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 import pymobiledevice3.resources
-from pymobiledevice3.lockdown import create_using_usbmux as _create_lockdown_usbmux
 from pymobiledevice3.remote.core_device.aac_eld import AAC_ELD_ASC_48K_STEREO_480, AACELDDecoder
 from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
 from pymobiledevice3.remote.core_device.display_service import DisplayService
@@ -50,8 +50,41 @@ from pymobiledevice3.remote.core_device.hid_service import (
 from pymobiledevice3.remote.core_device.orientation_service import OrientationService
 from pymobiledevice3.remote.core_device.pasteboard_service import PasteboardService, snapshot_text
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 from pymobiledevice3.services.power_assertion import PowerAssertionService
+from pymobiledevice3.tunneld.api import get_tunneld_device_by_udid
+
+_TUNNEL_DEAD_ERRNOS = {
+    errno.EHOSTUNREACH,
+    errno.EHOSTDOWN,
+    errno.ECONNREFUSED,
+    errno.ECONNRESET,
+    errno.ECONNABORTED,
+    errno.ENETUNREACH,
+    errno.ENETDOWN,
+    errno.ETIMEDOUT,
+    errno.EPIPE,
+}
+
+
+def _is_tunnel_dead_error(exc: BaseException) -> bool:
+    """Return True if *exc* (or any of its causes) is a "tunnel went away"
+    failure — i.e. the device-side QUIC endpoint is unreachable and no
+    amount of stream-level restart can recover. The caller should hand
+    off to the reconnect loop, which waits for tunneld to surface the
+    same UDID again."""
+    seen: set[int] = set()
+    cur: Optional[BaseException] = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+            return True
+        if isinstance(cur, asyncio.IncompleteReadError):
+            return True
+        if isinstance(cur, OSError) and cur.errno in _TUNNEL_DEAD_ERRNOS:
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
+
 
 # Named iOS hardware buttons → (usage_page, usage_code, hold_seconds).
 # Mirrors the table in cli/developer/core_device.py so the browser viewer
@@ -546,14 +579,13 @@ class ScreenStreamServer:
         self._last_restart_t: float = 0.0
         self._consecutive_restarts: int = 0
 
-        # Lazy lockdown handle + AccessibilityAudit cache for the
-        # accessibility sidebar -- opened on the first /accessibility
-        # request so a serve-web run without any accessibility use
-        # never has to touch usbmuxd. The audit's DTX reader tasks are
-        # closed during shutdown; otherwise they trigger a flurry of
-        # CancelledError tracebacks from the connection-cleanup path.
-        self._lockdown = None
-        self._accessibility: Optional[AccessibilityAudit] = None
+        # Last value pushed for write-only knobs (deviceincreasecontrast
+        # has no getter on the device). Lets /accessibility report the
+        # value the user just set instead of going stale on reload.
+        self._increase_contrast_last: bool = False
+        # Serializes /accessibility reads/writes so the CoreDevice service
+        # connections don't trample each other when the panel refreshes
+        # mid-write.
         self._accessibility_lock = asyncio.Lock()
 
         # Background task that holds an IOPMAssertion on the device so
@@ -563,6 +595,18 @@ class ScreenStreamServer:
         # also can't recover because a locked device won't start a
         # fresh DisplayService session cleanly.
         self._keep_awake_task: Optional[asyncio.Task] = None
+
+        # Disconnect-recovery state. The stall watchdog sets
+        # ``_reconnect_signal`` when it detects "tunnel is dead" errors
+        # (e.g. the device left Wi-Fi or the upstream VPN dropped);
+        # _reconnect_loop then tears the existing streams down, polls
+        # tunneld for the same UDID, and rebinds ``self._rsd`` once the
+        # device returns. Existing HTTP connections (viewer, /stream.bin)
+        # keep running through the gap -- the browser's offline overlay
+        # masks the freeze, and AUs resume after rebind.
+        self._reconnect_signal = asyncio.Event()
+        self._reconnect_task: Optional[asyncio.Task] = None
+        self._reconnect_poll_interval = 2.0
 
     # ----- per-session UDP receiver -----------------------------------------
     async def _udp_recv_and_depacketize(self, sock: socket.socket) -> None:
@@ -1219,57 +1263,113 @@ class ScreenStreamServer:
 
     # ----- HID (touch + buttons) -------------------------------------------
     # ----- Accessibility settings (lockdown / DTX) --------------------------
-    async def _ensure_accessibility(self) -> AccessibilityAudit:
-        """Lazy-open the lockdown + AccessibilityAudit handles. Cached
-        for the server's lifetime so we don't churn the DTX channel on
-        every panel interaction; closed in :meth:`serve`'s shutdown."""
-        if self._accessibility is None:
-            if self._lockdown is None:
-                self._lockdown = await _create_lockdown_usbmux(self._rsd.udid)
-            self._accessibility = AccessibilityAudit(self._lockdown)
-        return self._accessibility
+    # The /accessibility panel is backed by ConfigurationService
+    # (com.apple.coredevice.configuration) — every knob is one
+    # ``com.apple.coredevice.action.*`` invocation. This replaces the
+    # earlier AccessibilityAudit-over-DTX path, which only worked when
+    # usbmuxd could reach the device (i.e. not for remote-tunneld use)
+    # AND went silent on iOS 27's RSD shim. CoreDevice actions ride the
+    # same RSD as the rest of serve-web and Just Work.
+    _TEXT_SIZE_OPTIONS = (
+        "extraSmall",
+        "small",
+        "medium",
+        "large",
+        "extraLarge",
+        "extraExtraLarge",
+        "extraExtraExtraLarge",
+        "accessibilityMedium",
+        "accessibilityLarge",
+        "accessibilityExtraLarge",
+        "accessibilityExtraExtraLarge",
+        "accessibilityExtraExtraExtraLarge",
+    )
 
     async def _accessibility_list(self) -> list[dict]:
+        """Read every supported knob and return a viewer-friendly list.
+
+        Each entry is ``{key, value, type, options?}`` where ``type`` is
+        one of ``bool``, ``float``, or ``enum``. The viewer renders bools
+        as checkboxes, floats as 0..1 sliders, and enums as dropdowns.
+        """
         async with self._accessibility_lock:
-            audit = await self._ensure_accessibility()
-            settings = await audit.settings()
-        out: list[dict] = []
-        for s in settings:
-            val = s.value
-            # Whitelist serialisable scalars; everything else is dropped so
-            # bad responses don't break json.dumps for the whole list.
-            if isinstance(val, (bool, int, float, str)):
-                out.append({"key": s.key, "value": val})
-        return out
+            results: list[dict] = []
+
+            async def _read(meth):
+                async with ConfigurationService(self._rsd) as cfg:
+                    return await getattr(cfg, meth)()
+
+            try:
+                results.append({
+                    "key": "ui_style",
+                    "type": "enum",
+                    "value": await _read("get_user_interface_style"),
+                    "options": ["light", "dark"],
+                })
+            except Exception:
+                logger.debug("get_user_interface_style failed", exc_info=True)
+            try:
+                results.append({
+                    "key": "text_size",
+                    "type": "enum",
+                    "value": await _read("get_device_text_size"),
+                    "options": list(self._TEXT_SIZE_OPTIONS),
+                })
+            except Exception:
+                logger.debug("get_device_text_size failed", exc_info=True)
+            try:
+                cf = await _read("get_color_filter")
+                results.append({"key": "color_filter", "type": "bool", "value": bool(cf.get("enabled", False))})
+            except Exception:
+                logger.debug("get_color_filter failed", exc_info=True)
+            for key, meth in (
+                ("reduce_motion", "get_reduce_motion"),
+                ("show_borders", "get_show_borders"),
+                ("reduce_transparency", "get_reduce_transparency"),
+            ):
+                try:
+                    results.append({"key": key, "type": "bool", "value": await _read(meth)})
+                except Exception:
+                    logger.debug("%s failed", meth, exc_info=True)
+            # write-only knobs (no getter on the device)
+            results.append({"key": "increase_contrast", "type": "bool", "value": self._increase_contrast_last})
+            results.append({"key": "liquid_glass_opacity", "type": "float", "value": 1.0})
+            return results
 
     async def _accessibility_set(self, key: str, value) -> None:
-        async with self._accessibility_lock:
-            audit = await self._ensure_accessibility()
-            await audit.set_setting(key, value)
-
-    async def _accessibility_reset(self) -> None:
-        async with self._accessibility_lock:
-            audit = await self._ensure_accessibility()
-            await audit.reset_settings()
+        """Apply one knob change. Raises ValueError for unknown keys so
+        the HTTP layer can return 400 instead of swallowing typos."""
+        async with self._accessibility_lock, ConfigurationService(self._rsd) as cfg:
+            if key == "ui_style":
+                await cfg.set_user_interface_style(str(value))
+            elif key == "text_size":
+                await cfg.set_device_text_size(str(value))
+            elif key == "color_filter":
+                # Boolean toggle: enable forces a sensible default
+                # filter type (Protanopia matches the captured Xcode
+                # default); disable clears.
+                if bool(value):
+                    await cfg.set_color_filter(True, "Protanopia", 1.0)
+                else:
+                    await cfg.set_color_filter(False)
+            elif key == "reduce_motion":
+                await cfg.set_reduce_motion(bool(value))
+            elif key == "show_borders":
+                await cfg.set_show_borders(bool(value))
+            elif key == "reduce_transparency":
+                await cfg.set_reduce_transparency(bool(value))
+            elif key == "increase_contrast":
+                await cfg.set_increase_contrast(bool(value))
+                self._increase_contrast_last = bool(value)
+            elif key == "liquid_glass_opacity":
+                await cfg.set_liquid_glass_opacity(float(value))
+            else:
+                raise ValueError(f"unknown accessibility key: {key!r}")
 
     async def _stop_accessibility(self) -> None:
-        """Tear down the cached AccessibilityAudit (closes its DTX reader
-        task) so shutdown doesn't drag stale channels into the cancel
-        path -- their reader-loop CancelledError would otherwise log a
-        full traceback at ERROR level for each open channel.
-
-        Acquires ``_accessibility_lock`` first so an in-flight panel
-        request can finish before we pull the underlying DTX channel
-        out from under it; closing mid-decode produces a 'coroutine
-        ignored GeneratorExit' warning on Python 3.14 when the
-        in-flight bplist read can't unwind cleanly."""
-        with contextlib.suppress(Exception):
-            async with self._accessibility_lock:
-                audit = self._accessibility
-                self._accessibility = None
-                if audit is not None:
-                    with contextlib.suppress(Exception):
-                        await audit.close()
+        """No-op now that we open a fresh CoreDevice service per call.
+        Kept so :meth:`serve` shutdown can call it unconditionally."""
+        return None
 
     async def _ensure_hid(self) -> None:
         """Lazily open the HID services + worker on first input event."""
@@ -1606,7 +1706,20 @@ class ScreenStreamServer:
                     await self._accessibility_set(key, value)
                     resp_body = b'{"ok":true}'
                 elif path == "/accessibility/reset" and method == "POST":
-                    await self._accessibility_reset()
+                    # CoreDevice has no native "reset all" action; restore
+                    # the toggles we can flip back to a sensible baseline
+                    # individually. The user can still override per-knob.
+                    for key, value in (
+                        ("reduce_motion", False),
+                        ("show_borders", False),
+                        ("reduce_transparency", False),
+                        ("increase_contrast", False),
+                        ("color_filter", False),
+                        ("text_size", "large"),
+                        ("liquid_glass_opacity", 1.0),
+                    ):
+                        with contextlib.suppress(Exception):
+                            await self._accessibility_set(key, value)
                     resp_body = b'{"ok":true}'
                 else:
                     writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
@@ -2090,8 +2203,95 @@ class ScreenStreamServer:
                 await asyncio.wait_for(self._ensure_fresh_stream(force=True), timeout=10.0)
             except asyncio.TimeoutError:
                 logger.warning("stall-watchdog restart did not complete within 10s")
-            except Exception:
-                logger.exception("stall-watchdog restart failed")
+            except Exception as exc:
+                if _is_tunnel_dead_error(exc):
+                    logger.warning("device appears disconnected (%s); handing off to reconnect loop", exc)
+                    self._reconnect_signal.set()
+                else:
+                    logger.exception("stall-watchdog restart failed")
+
+    async def _reconnect_loop(self) -> None:
+        """Wait for a disconnect signal, then poll tunneld until the
+        same UDID reappears, rebind ``self._rsd``, and resume streaming.
+
+        Triggered from the stall watchdog when restart fails with a
+        tunnel-level error (No route to host, Connection reset, etc.).
+        We tear down the active video/audio sessions (whose sockets and
+        XPC channels are pointing at the dead tunnel), mark every
+        subscriber as ``needs_key`` so the post-rebind IDR rebuilds
+        their decoders, then poll tunneld every
+        ``_reconnect_poll_interval`` seconds for the device. When it
+        comes back we swap in the fresh RSD and kick off a new media
+        stream; the browser-side offline overlay clears the moment AUs
+        flow again.
+        """
+        udid = str(self._rsd.udid)
+        while True:
+            try:
+                await self._reconnect_signal.wait()
+            except asyncio.CancelledError:
+                return
+            logger.warning("device %s disconnected; waiting for tunneld to surface it again", udid)
+            # Tear down anything pinned to the dead tunnel. Errors are
+            # expected here (the same disconnect that triggered us will
+            # make stop_media_stream raise) so suppress and move on.
+            with contextlib.suppress(Exception):
+                async with self._stream_lock:
+                    await self._stop_active_stream()
+            with contextlib.suppress(Exception):
+                await self._stop_audio_stream()
+            # Drop HID handles so the next /touch reopens against the
+            # fresh RSD; the worker task itself stays alive.
+            with contextlib.suppress(Exception):
+                await self._stop_hid()
+            # Force subscribers to wait for a fresh keyframe once the
+            # stream comes back -- their decoder state spans the gap
+            # and the post-rebind IDR is the only safe resync point.
+            for state in self._subscribers.values():
+                state.needs_key = True
+            # Poll tunneld until the device returns. ``get_tunneld_device_by_udid``
+            # returns None when it's not listed; any exception (tunneld
+            # itself down, transient HTTP error) is treated the same way.
+            new_rsd: Optional[RemoteServiceDiscoveryService] = None
+            while new_rsd is None:
+                try:
+                    new_rsd = await get_tunneld_device_by_udid(udid)
+                except Exception:
+                    logger.debug("tunneld poll failed", exc_info=True)
+                if new_rsd is not None:
+                    break
+                try:
+                    await asyncio.sleep(self._reconnect_poll_interval)
+                except asyncio.CancelledError:
+                    return
+            old_rsd = self._rsd
+            self._rsd = new_rsd
+            with contextlib.suppress(Exception):
+                await old_rsd.close()
+            # Clear cached codec string so /codec re-derives it from the
+            # new SPS, and reset stall-restart bookkeeping so the
+            # watchdog doesn't refuse to recover.
+            self._codec_string = None
+            self._init_sequence = None
+            self._saw_first_key = False
+            self._stream_ready.clear()
+            self._consecutive_restarts = 0
+            self._last_restart_t = 0.0
+            self._last_good_au_t = asyncio.get_running_loop().time()
+            self._reconnect_signal.clear()
+            logger.info("device %s back online via tunneld; resuming stream", udid)
+            try:
+                await asyncio.wait_for(self._ensure_fresh_stream(force=True), timeout=15.0)
+            except Exception as exc:
+                if _is_tunnel_dead_error(exc):
+                    # Tunnel died again between rebind and stream start
+                    # -- loop back and wait for another reappearance
+                    # instead of giving up. Don't `signal.set()` here
+                    # because we're already past wait(); just continue.
+                    logger.warning("device flapped during resume; re-entering wait")
+                    self._reconnect_signal.set()
+                else:
+                    logger.exception("post-reconnect stream start failed")
 
     async def _keep_awake_loop(self) -> None:
         """Hold a PreventUserIdleSystemSleep IOPMAssertion on the device
@@ -2109,11 +2309,13 @@ class ScreenStreamServer:
         assertion_timeout = 300  # 5 min — long enough that a missed renew is harmless
         refresh_interval = 120  # 2 min — well under timeout
         try:
-            if self._lockdown is None:
-                self._lockdown = await _create_lockdown_usbmux(self._rsd.udid)
             while True:
                 try:
-                    svc = PowerAssertionService(self._lockdown)
+                    # PowerAssertionService picks its RSD shim service name
+                    # (com.apple.mobile.assertion_agent.shim.remote) when
+                    # handed an RSD, so this rides the same tunnel as
+                    # everything else -- no usbmuxd dependency.
+                    svc = PowerAssertionService(self._rsd)
                     async with svc.create_power_assertion(
                         "PreventUserIdleSystemSleep",
                         "pymobiledevice3.serve-web",
@@ -2170,6 +2372,7 @@ class ScreenStreamServer:
         )
         watchdog = asyncio.create_task(self._stall_watchdog())
         decoder_refresh = asyncio.create_task(self._decoder_refresh_loop())
+        self._reconnect_task = asyncio.create_task(self._reconnect_loop())
         self._keep_awake_task = asyncio.create_task(self._keep_awake_loop())
         # Eagerly start the HID worker so queued /touch requests are
         # processed even before the device-stream is fully up.
@@ -2230,6 +2433,10 @@ class ScreenStreamServer:
             decoder_refresh.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await decoder_refresh
+            if self._reconnect_task is not None:
+                self._reconnect_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await self._reconnect_task
             if self._keep_awake_task is not None:
                 self._keep_awake_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):

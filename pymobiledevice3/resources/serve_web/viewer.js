@@ -820,11 +820,23 @@ function renderAxRow(setting) {
     label.textContent = setting.key.replace(/_/g, ' ').toLowerCase();
     label.title = setting.key;
     row.appendChild(label);
-    if (typeof setting.value === 'boolean') {
+    const type = setting.type || (typeof setting.value === 'boolean' ? 'bool' : 'float');
+    if (type === 'bool') {
         const cb = document.createElement('input');
-        cb.type = 'checkbox'; cb.id = id; cb.checked = setting.value;
+        cb.type = 'checkbox'; cb.id = id; cb.checked = !!setting.value;
         cb.addEventListener('change', () => postAxSet(setting.key, cb.checked));
         row.appendChild(cb);
+    } else if (type === 'enum') {
+        const sel = document.createElement('select');
+        sel.id = id;
+        for (const opt of (setting.options || [])) {
+            const o = document.createElement('option');
+            o.value = opt; o.textContent = opt;
+            if (opt === setting.value) o.selected = true;
+            sel.appendChild(o);
+        }
+        sel.addEventListener('change', () => postAxSet(setting.key, sel.value));
+        row.appendChild(sel);
     } else {
         const sl = document.createElement('input');
         sl.type = 'range'; sl.id = id; sl.min = '0'; sl.max = '1'; sl.step = '0.05';
