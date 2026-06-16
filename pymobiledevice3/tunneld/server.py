@@ -11,6 +11,8 @@ from ssl import SSLEOFError
 from typing import Optional, Union
 
 import construct
+import pydantic
+import requests
 
 from pymobiledevice3.bonjour import browse_remoted
 
@@ -72,6 +74,17 @@ USB_MONITOR_RESCAN_INTERVAL = 30
 USBMUX_INTERVAL = 2
 OSUTILS = get_os_utils()
 
+_UPSTREAM_FETCH_TIMEOUT = 2.0
+
+
+def _fetch_upstream(url: str) -> dict:
+    """Fetch a tunneld listing from an upstream URL. Called in a worker thread
+    via asyncio.to_thread; raises on any error so the caller can skip the
+    upstream silently."""
+    resp = requests.get(url, timeout=_UPSTREAM_FETCH_TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
 
 @dataclasses.dataclass
 class TunnelTask:
@@ -98,6 +111,11 @@ class TunneldCore:
         self.usbmux_monitor = usbmux_monitor
         self.usbmux_address = usbmux_address
         self.mobdev2_monitor = mobdev2_monitor
+        # Upstream tunneld URLs registered at runtime via POST /upstream.
+        # Each `GET /` request merges these tunnelds' listings into the local
+        # one, letting an external coordinator (mobiletun, ssh-port-forwards,
+        # etc.) federate remote devices without a second tunneld process.
+        self.upstream_urls: set[str] = set()
 
     def start(self) -> None:
         """Register all tasks"""
@@ -524,8 +542,10 @@ class TunneldRunner:
 
         @self._app.get("/")
         async def list_tunnels() -> dict[str, list[dict]]:
-            """Retrieve the available tunnels and format them as {UUID: TUNNEL_ADDRESS}"""
-            tunnels = {}
+            """Retrieve the available tunnels and format them as {UUID: TUNNEL_ADDRESS}.
+            Listings from any registered upstream tunnelds (see POST /upstream) are
+            fetched in parallel and merged into the response."""
+            tunnels: dict[str, list[dict]] = {}
             for ip, active_tunnel in self._tunneld_core.tunnel_tasks.items():
                 if (active_tunnel.udid is None) or (active_tunnel.tunnel is None):
                     continue
@@ -536,7 +556,44 @@ class TunneldRunner:
                     "tunnel-port": active_tunnel.tunnel.port,
                     "interface": ip,
                 })
+
+            upstream_urls = list(self._tunneld_core.upstream_urls)
+            if upstream_urls:
+                results = await asyncio.gather(
+                    *(asyncio.to_thread(_fetch_upstream, url) for url in upstream_urls),
+                    return_exceptions=True,
+                )
+                for url, result in zip(upstream_urls, results):
+                    if isinstance(result, BaseException):
+                        logger.debug(f"upstream tunneld {url} unreachable: {result!r}")
+                        continue
+                    for udid, entries in (result or {}).items():
+                        tunnels.setdefault(udid, []).extend(entries)
             return tunnels
+
+        class _UpstreamBody(pydantic.BaseModel):
+            url: str
+
+        @self._app.get("/upstream")
+        async def list_upstreams() -> list[str]:
+            return sorted(self._tunneld_core.upstream_urls)
+
+        @self._app.post("/upstream")
+        async def add_upstream(body: _UpstreamBody) -> fastapi.Response:
+            self._tunneld_core.upstream_urls.add(body.url)
+            data = {"operation": "add_upstream", "url": body.url, "data": True, "message": f"upstream {body.url} added"}
+            return generate_http_response(data)
+
+        @self._app.delete("/upstream")
+        async def remove_upstream(body: _UpstreamBody) -> fastapi.Response:
+            self._tunneld_core.upstream_urls.discard(body.url)
+            data = {
+                "operation": "remove_upstream",
+                "url": body.url,
+                "data": True,
+                "message": f"upstream {body.url} removed",
+            }
+            return generate_http_response(data)
 
         @self._app.get("/shutdown")
         async def shutdown() -> fastapi.Response:
