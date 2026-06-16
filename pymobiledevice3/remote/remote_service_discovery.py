@@ -104,6 +104,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     async def connect(self) -> None:
         await self.service.connect()
         try:
+            await self.service.send_device_handshake()
             self.peer_info = await self.service.receive_response()
             self.udid = self.peer_info["Properties"]["UniqueDeviceID"]
             self.product_type = self.peer_info["Properties"]["ProductType"]
