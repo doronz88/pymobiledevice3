@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import uuid
 from asyncio import IncompleteReadError
 from collections.abc import AsyncIterable
 from typing import Optional, Union
@@ -39,6 +40,10 @@ HTTP2_MAGIC = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
 ROOT_CHANNEL = 1
 REPLY_CHANNEL = 3
+
+# Announce ourselves as a modern (non-legacy) RemoteXPC peer.
+REMOTE_XPC_VERSION_FLAGS = 0x0100000000000006
+MESSAGING_PROTOCOL_VERSION = 7
 
 FIRST_REPLY_TIMEOUT = 3
 
@@ -105,6 +110,23 @@ class RemoteXPCConnection:
             await self._writer.wait_closed()
         self._writer = None
         self._reader = None
+
+    async def send_device_handshake(self) -> None:
+        """Announce the client as a modern (non-legacy) RemoteXPC peer.
+
+        Send only on the RSD/remoted control connection, after the HTTP/2
+        handshake and before reading ``peer_info``.
+        """
+        await self.send_request({
+            "MessageType": "Handshake",
+            "MessagingProtocolVersion": XpcUInt64Type(MESSAGING_PROTOCOL_VERSION),
+            "UUID": uuid.uuid4(),
+            "Properties": {
+                "RemoteXPCVersionFlags": XpcUInt64Type(REMOTE_XPC_VERSION_FLAGS),
+                "SensitivePropertiesVisible": True,
+            },
+            "Services": {},
+        })
 
     async def send_request(self, data: dict, wanting_reply: bool = False) -> None:
         xpc_wrapper = create_xpc_wrapper(
