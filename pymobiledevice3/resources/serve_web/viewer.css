@@ -18,7 +18,7 @@
  #side-right{align-items:flex-start}
  canvas{touch-action:none;cursor:crosshair;background:#000;
         image-rendering:-webkit-optimize-contrast;
-        image-rendering:high-quality;display:block}
+        image-rendering:high-quality;display:block;outline:none}
  #device-frame{display:inline-block;position:relative;line-height:0;font-size:0;
               transform-origin:center center;will-change:transform}
  body.frame-on #device-frame{
@@ -112,6 +112,22 @@
                   border-radius:32px;pointer-events:none;
                   text-shadow:0 1px 2px rgba(0,0,0,.6)}
  #offline-overlay.hidden{display:none}
+ /* Keyboard-capture indicator: a small keyboard-graphic badge shown
+    when the canvas owns keyboard focus, so the user can tell at a
+    glance that keystrokes are flowing to the device. Pinned to the
+    top-right of the viewport (mirror of #fps in the top-left) so it
+    never sits on top of the device screen, regardless of canvas
+    size or rotation. */
+ #kb-indicator{position:fixed;top:8px;right:8px;z-index:10;
+               display:flex;align-items:center;
+               background:rgba(40,140,80,.92);color:#fff;
+               padding:4px 6px;border-radius:8px;
+               box-shadow:0 0 0 1px rgba(255,255,255,.18) inset,
+                          0 1px 6px rgba(0,0,0,.55),
+                          0 0 12px rgba(80,220,140,.35);
+               pointer-events:none;user-select:none}
+ #kb-indicator svg{display:block}
+ #kb-indicator.hidden{display:none}
  /* white-space:nowrap so the label stays on one line; in portrait the
     canvas footprint is narrow enough to wrap "Stream offline — waiting for
     frames…" into squashed lines otherwise. */
