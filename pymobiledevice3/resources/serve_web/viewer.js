@@ -133,6 +133,10 @@ function releaseActive() {
 canvas.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;   // primary button only
     e.preventDefault();
+    // preventDefault on pointerdown also suppresses the implicit
+    // focus shift onto our tabindex=0 canvas; focus it explicitly so
+    // a click on the canvas always (re)starts keyboard capture.
+    canvas.focus({preventScroll: true});
     try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
     activePointer = e.pointerId;
     lastCoords = touchCoords(e);
@@ -254,32 +258,30 @@ function postKeys() {
     lastKeyPost = lastKeyPost.then(() => postJson('/key', {usages: snapshot}));
 }
 
-// Toggle for whether host keystrokes get forwarded to the device.
-// When off, all keydown/keyup events bypass our handlers so the
-// browser receives them normally (Cmd-L to focus the URL bar, Cmd-W
-// to close the tab, devtools shortcuts, etc.). Persisted across page
-// loads via localStorage so the user doesn't have to flip it every
-// reload.
-const kbBtn = document.getElementById('keyboard-toggle');
-let keyboardCaptureOn = true;
-try {
-    if (localStorage.getItem('keyboardCapture') === 'false') keyboardCaptureOn = false;
-} catch (e) {}
-function setKbLabel() {
-    kbBtn.textContent = 'Keyboard: ' + (keyboardCaptureOn ? 'on' : 'off');
-}
-setKbLabel();
+// Gate host-keystroke forwarding on canvas focus: keys flow to the
+// device whenever the canvas owns the focus, and stop the moment the
+// user clicks a button, the clipboard textarea, or anything else on
+// the page chrome. No persisted toggle to flip — the focus is the
+// state, and the #kb-indicator badge mirrors it visually.
+const kbIndicator = document.getElementById('kb-indicator');
+function keyboardCaptureOn() { return document.activeElement === canvas; }
 function releaseAllKeys() {
     if (pressedUsages.size) {
         pressedUsages.clear();
         postKeys();
     }
 }
-kbBtn.addEventListener('click', () => {
-    keyboardCaptureOn = !keyboardCaptureOn;
-    setKbLabel();
-    try { localStorage.setItem('keyboardCapture', keyboardCaptureOn ? 'true' : 'false'); } catch (e) {}
+function updateKbIndicator() {
+    kbIndicator.classList.toggle('hidden', !keyboardCaptureOn());
+}
+canvas.addEventListener('focus', updateKbIndicator);
+canvas.addEventListener('blur', () => {
+    // Dropping focus must release any held keys immediately — we
+    // won't see the keyup once events stop being forwarded.
+    releaseAllKeys();
+    updateKbIndicator();
 });
+updateKbIndicator();
 
 // Help modal: opened by '?' (or the '?' button), dismissed by Esc /
 // click outside / close-X. The shortcut works regardless of the
@@ -322,7 +324,7 @@ window.addEventListener('keydown', (e) => {
         const k = e.key.toLowerCase();
         if (k === 'p') { e.preventDefault(); takeScreenshot(); return; }
     }
-    if (!keyboardCaptureOn) return;
+    if (!keyboardCaptureOn()) return;
     // Ctrl-hotkey path consumes the event; don't also type it.
     if (e.ctrlKey && !e.altKey && !e.metaKey) {
         const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
@@ -343,7 +345,7 @@ window.addEventListener('keydown', (e) => {
     }
 });
 window.addEventListener('keyup', (e) => {
-    if (helpIsOpen() || !keyboardCaptureOn) return;
+    if (helpIsOpen() || !keyboardCaptureOn()) return;
     const usage = CODE_TO_HID[e.code];
     if (usage === undefined) return;
     e.preventDefault();

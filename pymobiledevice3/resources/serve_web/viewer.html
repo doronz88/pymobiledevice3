@@ -14,7 +14,6 @@
    <button class="btn" id="rotate-left" type="button" title="Rotate device 90° CCW">Rotate ↺</button>
    <button class="btn" id="rotate-right" type="button" title="Rotate device 90° CW">Rotate ↻</button>
    <button class="btn" id="sound-toggle" type="button">Enable Sound</button>
-   <button class="btn" id="keyboard-toggle" type="button" title="When off, keystrokes stay in the browser instead of being forwarded to the device">Keyboard: on</button>
    <button class="btn" id="style-toggle" type="button" title="toggle dark/light user-interface style">Style: ?</button>
    <button class="btn" id="frame-toggle" type="button" title="toggle cosmetic iPhone bezel around the canvas">Frame: ?</button>
    <button class="btn" id="reload-window" type="button" title="Reload this viewer page">Reload</button>
@@ -32,7 +31,7 @@
     <button class="btn" data-btn="volume-down" title="Ctrl+[">Vol -</button>
    </div>
    <div id="device-frame">
-    <canvas id="c"></canvas>
+    <canvas id="c" tabindex="0"></canvas>
     <div id="offline-overlay" class="hidden"><span>Stream offline — waiting for frames…</span></div>
    </div>
    <!-- Right side of the device: side button (lock) and Siri -->
@@ -70,6 +69,30 @@
 </div>
 
 <div id="fps">— fps</div>
+<div id="kb-indicator" class="hidden" aria-hidden="true" title="Keystrokes are being forwarded to the device">
+ <svg viewBox="0 0 48 28" width="48" height="28" aria-hidden="true">
+  <rect x="1" y="1" width="46" height="26" rx="4" ry="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <!-- top row -->
+  <rect x="4"  y="5" width="4" height="4" rx="1" fill="currentColor"/>
+  <rect x="10" y="5" width="4" height="4" rx="1" fill="currentColor"/>
+  <rect x="16" y="5" width="4" height="4" rx="1" fill="currentColor"/>
+  <rect x="22" y="5" width="4" height="4" rx="1" fill="currentColor"/>
+  <rect x="28" y="5" width="4" height="4" rx="1" fill="currentColor"/>
+  <rect x="34" y="5" width="4" height="4" rx="1" fill="currentColor"/>
+  <rect x="40" y="5" width="4" height="4" rx="1" fill="currentColor"/>
+  <!-- middle row -->
+  <rect x="6"  y="11" width="4" height="4" rx="1" fill="currentColor"/>
+  <rect x="12" y="11" width="4" height="4" rx="1" fill="currentColor"/>
+  <rect x="18" y="11" width="4" height="4" rx="1" fill="currentColor"/>
+  <rect x="24" y="11" width="4" height="4" rx="1" fill="currentColor"/>
+  <rect x="30" y="11" width="4" height="4" rx="1" fill="currentColor"/>
+  <rect x="36" y="11" width="4" height="4" rx="1" fill="currentColor"/>
+  <!-- space bar row -->
+  <rect x="4"  y="17" width="6" height="4" rx="1" fill="currentColor"/>
+  <rect x="12" y="17" width="24" height="4" rx="1" fill="currentColor"/>
+  <rect x="38" y="17" width="6" height="4" rx="1" fill="currentColor"/>
+ </svg>
+</div>
 <div id="status">connecting...</div>
 <div id="help-overlay" class="hidden" aria-hidden="true">
  <div id="help-modal" role="dialog" aria-modal="true" aria-label="Shortcuts and tips">
@@ -87,7 +110,7 @@
    <tr><td>?</td><td>Show this help</td></tr>
    <tr><td>Esc</td><td>Close this help</td></tr>
   </table>
-  <p>Click + drag on the canvas to interact with the touchscreen. Letter / arrow / modifier keys type into the device while <b>Keyboard: on</b> — flip it off when you want Ctrl-L, Cmd-W and other browser shortcuts to work normally. Rotate ↺ / ↻ flip the device 90° (both the device and the canvas). The right-side panel mirrors <code>pymobiledevice3 developer accessibility settings show</code>.</p>
+  <p>Click + drag on the canvas to interact with the touchscreen. Letter / arrow / modifier keys are forwarded to the device whenever the canvas has focus — a green keyboard badge in the top-right of the viewport lights up while that's the case. Click outside the canvas (a tray button, the clipboard textarea, anywhere on the page chrome) to drop capture so Ctrl-L, Cmd-W and other browser shortcuts work normally; clicking back onto the canvas resumes capture. Rotate ↺ / ↻ flip the device 90° (both the device and the canvas). The right-side panel toggles iOS appearance + accessibility knobs (light/dark, dynamic text size, reduce motion, reduce transparency, increase contrast, button borders, color filter, liquid-glass opacity) via the CoreDevice <code>ConfigurationService</code>.</p>
  </div>
 </div>
 <script src="/viewer.js"></script>
