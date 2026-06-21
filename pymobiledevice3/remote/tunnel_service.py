@@ -8,18 +8,19 @@ import logging
 import os
 import platform
 import plistlib
+import secrets
 import ssl
 import struct
 import sys
 from abc import ABC, abstractmethod
 from asyncio import CancelledError, StreamReader, StreamWriter
 from collections import namedtuple
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from socket import create_connection
 from ssl import VerifyMode
-from typing import Optional, TextIO, cast
+from typing import Callable, Optional, TextIO, Union, cast
 
 from construct import Const, Container, GreedyBytes, GreedyRange, Int8ul, Int16ub, Int64ul, Prefixed, Struct
 from construct import Enum as ConstructEnum
@@ -32,6 +33,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from opack2 import dumps
+from opack2 import loads as opack_loads
 from packaging.version import Version
 from pytun_pmd3 import TunTapDevice
 from qh3.asyncio import QuicConnectionProtocol
@@ -41,8 +43,9 @@ from qh3.quic import packet_builder
 from qh3.quic.configuration import QuicConfiguration
 from qh3.quic.connection import QuicConnection
 from qh3.quic.events import ConnectionTerminated, DatagramFrameReceived, QuicEvent, StreamDataReceived
-from srptools import SRPClientSession, SRPContext
+from srptools import SRPClientSession, SRPContext, SRPServerSession
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
+from srptools.utils import hex_from
 
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -52,7 +55,12 @@ try:
 except ImportError:
     SSLPSKContext = None
 
-from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing
+from pymobiledevice3.bonjour import (
+    DEFAULT_BONJOUR_TIMEOUT,
+    REMOTEPAIRING_PAIRABLE_HOST_SERVICE_NAME,
+    MDNSResponder,
+    browse_remotepairing,
+)
 from pymobiledevice3.ca import make_cert
 from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
@@ -73,6 +81,7 @@ from pymobiledevice3.pair_records import (
 from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.siphash import compute_auth_tag
 from pymobiledevice3.remote.utils import get_rsds, resume_remoted_if_required, stop_remoted_if_required
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.service_connection import ServiceConnection
@@ -830,6 +839,12 @@ class RemotePairingProtocol(StartTcpTunnel):
             private_key = Ed25519PrivateKey.from_private_bytes(b"\x00" * 0x20)
         else:
             private_key = Ed25519PrivateKey.from_private_bytes(self.pair_record["private_key"])
+            # A device-initiated pairing record stores the identifier the host registered
+            # itself under; present that same identifier during pair-verify so the device
+            # recognizes us instead of re-prompting.
+            host_identifier = self.pair_record.get("host_identifier")
+            if host_identifier:
+                self.identifier = host_identifier
 
         signbuf = b""
         signbuf += self.x25519_private_key.public_key().public_bytes_raw()
@@ -1280,3 +1295,497 @@ async def get_remote_pairing_tunnel_services(
                         await conn.close()
                     continue
     return result
+
+
+# ---------------- Device-initiated pairing (pairable host / responder) ----------------
+
+# SRP password username used by Apple's Pair-Setup. Both sides hash with it.
+SRP_USERNAME = "Pair-Setup"
+# 3072-bit SRP -> public values are 384 bytes
+SRP_PUBLIC_KEY_SIZE = 384
+# TLV component data is length-prefixed with a single byte
+TLV_MAX_FRAGMENT_SIZE = 0xFF
+
+PinCallback = Callable[[str], Union[None, Awaitable[None]]]
+
+
+@dataclasses.dataclass
+class PairableHostResult:
+    """Outcome of a successful device-initiated pairing accepted by :func:`serve_pairable_host`."""
+
+    peer_device: "PeerDeviceInfo"
+    record_path: Path
+
+
+@dataclasses.dataclass
+class PeerDeviceInfo:
+    """Identity of a device that paired into us, parsed from the M5 identity payload."""
+
+    account_id: str
+    alt_irk: bytes
+    model: str
+    name: str
+    udid: str
+
+    @classmethod
+    def from_info_dict(cls, info: dict) -> "PeerDeviceInfo":
+        alt_irk = info.get("altIRK")
+        if not isinstance(alt_irk, bytes) or len(alt_irk) != 16:
+            raise PairingError(f"invalid altIRK in peer device info: {alt_irk!r}")
+        try:
+            return cls(
+                account_id=info["accountID"],
+                alt_irk=alt_irk,
+                model=info["model"],
+                name=info["name"],
+                udid=info.get("remotepairing_udid", ""),
+            )
+        except KeyError as e:
+            raise PairingError(f"missing field {e} in peer device info") from e
+
+
+@dataclasses.dataclass
+class PairableHostInfo:
+    """
+    Static information a pairable host advertises over mDNS and presents to a
+    connecting device.
+
+    ``name`` and ``model`` are what the device shows to the user. iOS treats the
+    host as a computer, so keep ``model`` a Mac identifier (e.g. ``Mac17,7``).
+    ``alt_irk`` is the 16-byte mDNS identity key; it is sent to the device during
+    pairing (M6) and is used to derive the ``authTag`` advertised over mDNS so an
+    already-paired device can recognize this host. Persist it (alongside the
+    pairing record) so reconnecting devices keep working.
+
+    ``identifier`` defaults to the deterministic :func:`generate_host_id` (this
+    host's stable id, same one the host-initiated flow uses). Note the device keys
+    its known peers by this identifier: a device that has *already* paired with
+    this host recognizes the id and reconnects silently (pair-*verify*) instead of
+    prompting for a new pairing. To deliberately pair as a brand-new host, pass a
+    fresh random ``identifier`` (e.g. ``str(uuid.uuid4()).upper()``).
+    """
+
+    name: str
+    model: str = "Mac17,7"
+    udid: str = ""
+    identifier: str = dataclasses.field(default_factory=generate_host_id)
+    wire_protocol_version: int = 26
+    alt_irk: bytes = dataclasses.field(default_factory=lambda: secrets.token_bytes(16))
+
+    def mdns_txt_records(self) -> dict[str, str]:
+        """Build the TXT records to publish for the pairable-host mDNS service."""
+        auth_tag = base64.b64encode(compute_auth_tag(self.alt_irk, self.identifier)).decode()
+        return {
+            "name": self.name,
+            "identifier": self.identifier,
+            "authTag": auth_tag,
+            "model": self.model,
+            "flags": "1",
+            "ver": str(self.wire_protocol_version),
+            "minVer": "17",
+        }
+
+
+class PairableHost:
+    """
+    The responder side of rppairing: accepts a device-initiated pairing.
+
+    The device plays the rppairing "host" (it initiates the handshake and SRP
+    pair-setup and sends ``originatedBy: "host"``); this class plays the
+    accessory/responder (``originatedBy: "device"``). We generate and display the
+    6-digit setup code; the user types it into the device.
+    """
+
+    def __init__(
+        self,
+        reader: StreamReader,
+        writer: StreamWriter,
+        host_info: PairableHostInfo,
+        ed25519_private_key: Optional[Ed25519PrivateKey] = None,
+    ) -> None:
+        self._reader = reader
+        self._writer = writer
+        self.host_info = host_info
+        self.ed25519_private_key = ed25519_private_key or Ed25519PrivateKey.generate()
+        self._sequence_number = 0
+        self.encryption_key: Optional[bytes] = None
+        self.peer_device: Optional[PeerDeviceInfo] = None
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+    async def accept(self, pin_callback: Optional[PinCallback] = None) -> PeerDeviceInfo:
+        """Perform the handshake and the full SRP pair-setup (M1 - M6)."""
+        await self._handshake()
+        return await self._pair_setup(pin_callback)
+
+    async def _handshake(self) -> None:
+        self.logger.debug("Waiting for device handshake request")
+        request = await self._receive_plain()
+        try:
+            handshake = request["request"]["_0"]["handshake"]["_0"]
+        except (KeyError, TypeError) as e:
+            raise PairingError(f"missing request._0.handshake._0 in device handshake: {request}") from e
+
+        if handshake.get("hostOptions", {}).get("attemptPairVerify"):
+            raise PairingError("device requested pair-verify; only device-initiated pair-setup is supported")
+
+        peer_device_info = {
+            "udid": self.host_info.udid,
+            "deviceKVSIncludesSensitiveInfo": False,
+            "identifier": self.host_info.identifier,
+            "name": self.host_info.name,
+            "model": self.host_info.model,
+        }
+        await self._send_plain({
+            "response": {
+                "forRequestIdentifier": 0,
+                "_1": {
+                    "handshake": {
+                        "_0": {
+                            "wireProtocolVersion": XpcInt64Type(self.host_info.wire_protocol_version),
+                            "minimumSupportedWireProtocolVersion": XpcInt64Type(8),
+                            "deviceOptions": {
+                                "allowsPairSetup": True,
+                                "allowsPinlessPairing": False,
+                                "allowsIncomingTunnelConnections": False,
+                                "allowsUpgradeOfLockdownPairings": False,
+                                "allowsSharingSensitiveInfo": False,
+                            },
+                            "peerDeviceInfo": peer_device_info,
+                        }
+                    }
+                },
+            }
+        })
+
+    async def _pair_setup(self, pin_callback: Optional[PinCallback]) -> PeerDeviceInfo:
+        # M1: device starts pair-setup
+        self.logger.debug("Waiting for pair-setup M1")
+        m1 = self.decode_tlv(PairingDataComponentTLVBuf.parse(await self._receive_pairing_data()))
+        self._expect_state(m1, 1)
+
+        # M2: send salt + server public (B)
+        salt = bytearray(secrets.token_bytes(16))
+        salt[0] |= 0x80  # keep a stable 16-byte / even-hex representation
+        salt = bytes(salt)
+        salt_hex = salt.hex()
+
+        pin = f"{secrets.randbelow(1_000_000):06d}"
+        context = SRPContext(
+            SRP_USERNAME, password=pin, prime=PRIME_3072, generator=PRIME_3072_GEN, hash_func=hashlib.sha512
+        )
+        verifier = hex_from(context.get_common_password_verifier(context.get_common_password_hash(int(salt_hex, 16))))
+
+        # B is computed from a fresh random server private; regenerate on the rare short value
+        while True:
+            srp_server = SRPServerSession(context, verifier)
+            server_public = binascii.unhexlify(srp_server.public)
+            if len(server_public) == SRP_PUBLIC_KEY_SIZE:
+                break
+
+        await self._display_pin(pin, pin_callback)
+
+        tlv = [
+            {"type": PairingDataComponentType.STATE, "data": b"\x02"},
+            {"type": PairingDataComponentType.SALT, "data": salt},
+        ]
+        tlv += self._chunk_component(PairingDataComponentType.PUBLIC_KEY, server_public)
+        self.logger.debug("Sending pair-setup M2 (salt + B)")
+        await self._send_pairing_data(PairingDataComponentTLVBuf.build(tlv))
+
+        # M3: device sends its public (A) and proof (M1)
+        self.logger.debug("Waiting for pair-setup M3")
+        m3 = self.decode_tlv(PairingDataComponentTLVBuf.parse(await self._receive_pairing_data()))
+        self._ensure_no_error(m3)
+        self._expect_state(m3, 3)
+        client_public = m3.get(PairingDataComponentType.PUBLIC_KEY)
+        client_proof = m3.get(PairingDataComponentType.PROOF)
+        if not client_public or not client_proof:
+            raise PairingError("pair-setup M3 missing public key or proof")
+
+        srp_server.process(client_public.hex(), salt_hex)
+        # srptools compares against value_encode() output (a hex *bytes* object), so the proof
+        # must be passed as hexlify() bytes rather than a str.
+        if not srp_server.verify_proof(binascii.hexlify(client_proof)):
+            self.logger.warning("SRP client proof verification failed (wrong PIN?)")
+            await self._send_pairing_data(
+                PairingDataComponentTLVBuf.build([
+                    {"type": PairingDataComponentType.STATE, "data": b"\x04"},
+                    {"type": PairingDataComponentType.ERROR, "data": b"\x02"},  # kTLVError_Authentication
+                ])
+            )
+            raise PairingError("SRP authentication failed (wrong PIN?)")
+
+        session_key = binascii.unhexlify(srp_server.key)
+
+        # M4: send server proof
+        self.logger.debug("Sending pair-setup M4 (server proof)")
+        await self._send_pairing_data(
+            PairingDataComponentTLVBuf.build([
+                {"type": PairingDataComponentType.STATE, "data": b"\x04"},
+                {"type": PairingDataComponentType.PROOF, "data": binascii.unhexlify(srp_server.key_proof_hash)},
+            ])
+        )
+
+        setup_encryption_key = HKDF(
+            algorithm=hashes.SHA512(),
+            length=32,
+            salt=b"Pair-Setup-Encrypt-Salt",
+            info=b"Pair-Setup-Encrypt-Info",
+        ).derive(session_key)
+        cip = ChaCha20Poly1305(setup_encryption_key)
+
+        # M5: device sends its encrypted identity
+        self.logger.debug("Waiting for pair-setup M5 (device identity)")
+        m5 = self.decode_tlv(PairingDataComponentTLVBuf.parse(await self._receive_pairing_data()))
+        self._ensure_no_error(m5)
+        self._expect_state(m5, 5)
+        plaintext = cip.decrypt(b"\x00\x00\x00\x00PS-Msg05", m5[PairingDataComponentType.ENCRYPTED_DATA], b"")
+        device_tlv = self.decode_tlv(PairingDataComponentTLVBuf.parse(plaintext))
+        peer_device = PeerDeviceInfo.from_info_dict(opack_loads(device_tlv[PairingDataComponentType.INFO]))
+
+        # M6: send our (accessory) encrypted identity
+        self.logger.debug("Sending pair-setup M6 (our identity)")
+        m6_plain = self._build_accessory_identity_tlv(session_key)
+        m6_cipher = cip.encrypt(b"\x00\x00\x00\x00PS-Msg06", m6_plain, b"")
+        tlv = self._chunk_component(PairingDataComponentType.ENCRYPTED_DATA, m6_cipher)
+        tlv.append({"type": PairingDataComponentType.STATE, "data": b"\x06"})
+        await self._send_pairing_data(PairingDataComponentTLVBuf.build(tlv))
+
+        self.encryption_key = session_key
+        self.peer_device = peer_device
+        return peer_device
+
+    def _build_accessory_identity_tlv(self, session_key: bytes) -> bytes:
+        # Accessory signature: Ed25519 over (AccessoryX || identifier || LTPK)
+        accessory_x = HKDF(
+            algorithm=hashes.SHA512(),
+            length=32,
+            salt=b"Pair-Setup-Accessory-Sign-Salt",
+            info=b"Pair-Setup-Accessory-Sign-Info",
+        ).derive(session_key)
+        ltpk = self.ed25519_private_key.public_key().public_bytes_raw()
+        signbuf = accessory_x + self.host_info.identifier.encode() + ltpk
+        signature = self.ed25519_private_key.sign(signbuf)
+
+        info = dumps({
+            "altIRK": self.host_info.alt_irk,
+            "btAddr": "11:22:33:44:55:66",
+            "mac": b"\x11\x22\x33\x44\x55\x66",
+            "remotepairing_serial_number": "AAAAAAAAAAAA",
+            "accountID": self.host_info.identifier,
+            "remotepairing_udid": self.host_info.udid,
+            "model": self.host_info.model,
+            "name": self.host_info.name,
+        })
+
+        return PairingDataComponentTLVBuf.build([
+            {"type": PairingDataComponentType.IDENTIFIER, "data": self.host_info.identifier.encode()},
+            {"type": PairingDataComponentType.PUBLIC_KEY, "data": ltpk},
+            {"type": PairingDataComponentType.SIGNATURE, "data": signature},
+            {"type": PairingDataComponentType.INFO, "data": info},
+        ])
+
+    @property
+    def pair_record_path(self) -> Path:
+        pair_records_cache_directory = create_pairing_records_cache_folder()
+        # Key by the device's UDID: that is the identifier the device reports as
+        # `peerDeviceInfo.identifier` over RSD, which the host-initiated tunnel path
+        # (CoreDeviceTunnelService / RemotePairingTunnelService) uses to find the
+        # record for pair-verify. Keying by accountID would hide the record from it.
+        identifier = self.peer_device.udid or self.peer_device.account_id
+        return pair_records_cache_directory / f"{get_remote_pairing_record_filename(identifier)}.{PAIRING_RECORD_EXT}"
+
+    def save_pair_record(self) -> Path:
+        """Persist a remote pairing record compatible with the host-initiated tooling."""
+        if self.peer_device is None:
+            raise PairingError("cannot save pair record before a successful pairing")
+        path = self.pair_record_path
+        path.write_bytes(
+            plistlib.dumps({
+                "public_key": self.ed25519_private_key.public_key().public_bytes_raw(),
+                "private_key": self.ed25519_private_key.private_bytes_raw(),
+                "remote_unlock_host_key": "",
+                "host_identifier": self.host_info.identifier,
+                "host_alt_irk": self.host_info.alt_irk,
+                "peer_alt_irk": self.peer_device.alt_irk,
+                "peer_udid": self.peer_device.udid,
+                "peer_model": self.peer_device.model,
+                "peer_name": self.peer_device.name,
+            })
+        )
+        OSUTIL.chown_to_non_sudo_if_needed(path)
+        return path
+
+    async def _display_pin(self, pin: str, pin_callback: Optional[PinCallback]) -> None:
+        if pin_callback is None:
+            self.logger.info("Enter this code on your device: %s", pin)
+            return
+        result = pin_callback(pin)
+        if asyncio.iscoroutine(result):
+            await result
+
+    @staticmethod
+    def _chunk_component(component_type: int, data: bytes) -> list[dict]:
+        return [
+            {"type": component_type, "data": data[i : i + TLV_MAX_FRAGMENT_SIZE]}
+            for i in range(0, len(data), TLV_MAX_FRAGMENT_SIZE)
+        ]
+
+    @staticmethod
+    def _expect_state(tlv: dict, expected: int) -> None:
+        state = tlv.get(PairingDataComponentType.STATE)
+        if not state or state[0] != expected:
+            raise PairingError(f"unexpected pair-setup state: expected {expected}, got {state!r}")
+
+    @staticmethod
+    def _ensure_no_error(tlv: dict) -> None:
+        if PairingDataComponentType.ERROR in tlv:
+            raise PairingError(f"device returned pairing error: {tlv[PairingDataComponentType.ERROR]!r}")
+
+    @staticmethod
+    def decode_tlv(tlv_list: list[Container]) -> dict:
+        result = {}
+        for tlv in tlv_list:
+            if tlv.type in result:
+                result[tlv.type] += tlv.data
+            else:
+                result[tlv.type] = tlv.data
+        return result
+
+    async def _send_pairing_data(self, data: bytes) -> None:
+        await self._send_plain({
+            "event": {
+                "_0": {
+                    "pairingData": {
+                        "_0": {
+                            "data": base64.b64encode(data).decode(),
+                            "startNewSession": False,
+                            "kind": "setupManualPairing",
+                        }
+                    }
+                }
+            }
+        })
+
+    async def _receive_pairing_data(self) -> bytes:
+        response = await self._receive_plain()
+        event = response.get("event", {}).get("_0", {})
+        if "pairingData" in event:
+            return base64.b64decode(event["pairingData"]["_0"]["data"])
+        if "pairingRejectedWithError" in event:
+            raise UserDeniedPairingError(
+                event["pairingRejectedWithError"]
+                .get("wrappedError", {})
+                .get("userInfo", {})
+                .get("NSLocalizedDescription")
+            )
+        raise PyMobileDevice3Exception(f"Got an unknown state message: {response}")
+
+    async def _send_plain(self, value: dict) -> None:
+        envelope = {
+            "message": {"plain": {"_0": value}},
+            "originatedBy": "device",
+            "sequenceNumber": XpcUInt64Type(self._sequence_number),
+        }
+        self._writer.write(RPPairingPacket.build({"body": json.dumps(envelope, default=self._json_default).encode()}))
+        await self._writer.drain()
+        self._sequence_number += 1
+
+    async def _receive_plain(self) -> dict:
+        await self._reader.readexactly(len(REPAIRING_PACKET_MAGIC))
+        size = struct.unpack(">H", await self._reader.readexactly(2))[0]
+        envelope = json.loads(await self._reader.readexactly(size))
+        return envelope["message"]["plain"]["_0"]
+
+    @staticmethod
+    def _json_default(obj) -> str:
+        if isinstance(obj, bytes):
+            return base64.b64encode(obj).decode()
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+    async def close(self) -> None:
+        self._writer.close()
+        with suppress(ssl.SSLError, ConnectionError):
+            await self._writer.wait_closed()
+
+
+async def serve_pairable_host(
+    host_info: PairableHostInfo,
+    port: int = 0,
+    pin_callback: Optional[PinCallback] = None,
+    ed25519_private_key: Optional[Ed25519PrivateKey] = None,
+    timeout: Optional[float] = None,
+    heartbeat_interval: float = 15.0,
+    waiting_callback: Optional[Callable[[float], Union[None, Awaitable[None]]]] = None,
+) -> PairableHostResult:
+    """
+    Advertise a ``_remotepairing-pairable-host._tcp`` service and accept a single
+    device-initiated pairing.
+
+    Binds a TCP listener (``port=0`` picks a free port), advertises it over mDNS,
+    waits for a device to connect and drive pair-setup, persists the resulting
+    pairing record and returns the paired device's info and the record path.
+
+    While waiting, ``waiting_callback`` (if given) is invoked every
+    ``heartbeat_interval`` seconds with the elapsed wait time so callers can show
+    progress instead of blocking silently. ``timeout`` (seconds) raises
+    :class:`asyncio.TimeoutError` if no pairing completes in time. Note a device
+    that has already paired with this host will *not* connect at all (it
+    recognizes ``host_info.identifier`` and reconnects silently), so a timeout
+    firing usually means either no device tried or the device already knows us.
+    """
+    paired: asyncio.Future = asyncio.get_running_loop().create_future()
+
+    async def handle(reader: StreamReader, writer: StreamWriter) -> None:
+        if paired.done():
+            writer.close()
+            return
+        peer = writer.get_extra_info("peername")
+        logger.info("Device connected from %s", peer)
+        host = PairableHost(reader, writer, host_info, ed25519_private_key=ed25519_private_key)
+        try:
+            peer_device = await host.accept(pin_callback)
+            record_path = host.save_pair_record()
+            if not paired.done():
+                paired.set_result(PairableHostResult(peer_device=peer_device, record_path=record_path))
+        except Exception as e:
+            logger.warning("Pairing attempt from %s failed: %r", peer, e)
+            if not paired.done():
+                paired.set_exception(e)
+        finally:
+            await host.close()
+
+    async def heartbeat() -> None:
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        while True:
+            await asyncio.sleep(heartbeat_interval)
+            elapsed = loop.time() - start
+            if waiting_callback is not None:
+                result = waiting_callback(elapsed)
+                if asyncio.iscoroutine(result):
+                    await result
+            else:
+                logger.info("Still advertising, waiting for a device to start pairing (%ds elapsed)", int(elapsed))
+
+    server = await asyncio.start_server(handle, host="0.0.0.0", port=port)
+    bound_port = server.sockets[0].getsockname()[1]
+    txt = host_info.mdns_txt_records()
+    async with server, MDNSResponder(REMOTEPAIRING_PAIRABLE_HOST_SERVICE_NAME, host_info.identifier, bound_port, txt):
+        logger.info(
+            'Advertising %s as "%s" (%s) identifier=%s port=%d',
+            REMOTEPAIRING_PAIRABLE_HOST_SERVICE_NAME,
+            host_info.name,
+            host_info.model,
+            host_info.identifier,
+            bound_port,
+        )
+        heartbeat_task = asyncio.create_task(heartbeat())
+        try:
+            if timeout is not None:
+                return await asyncio.wait_for(asyncio.shield(paired), timeout)
+            return await paired
+        finally:
+            heartbeat_task.cancel()
+            with suppress(CancelledError):
+                await heartbeat_task
