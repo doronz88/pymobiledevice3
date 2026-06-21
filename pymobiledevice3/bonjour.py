@@ -18,6 +18,7 @@ from pymobiledevice3.osu.os_utils import get_os_utils
 
 REMOTEPAIRING_SERVICE_NAME = "_remotepairing._tcp.local."
 REMOTEPAIRING_MANUAL_PAIRING_SERVICE_NAME = "_remotepairing-manual-pairing._tcp.local."
+REMOTEPAIRING_PAIRABLE_HOST_SERVICE_NAME = "_remotepairing-pairable-host._tcp.local."
 MOBDEV2_SERVICE_NAME = "_apple-mobdev2._tcp.local."
 REMOTED_SERVICE_NAME = "_remoted._tcp.local."
 OSUTILS = get_os_utils()
@@ -378,3 +379,224 @@ async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list
 
 async def browse_remotepairing_manual_pairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[ServiceInstance]:
     return await browse_service(REMOTEPAIRING_MANUAL_PAIRING_SERVICE_NAME, timeout=timeout)
+
+
+# ---------------- mDNS advertising (responder) ----------------
+
+
+def _parse_questions(data: bytes) -> list[tuple[str, int]]:
+    """Parse the question section of an mDNS query into (name, qtype) pairs."""
+    if len(data) < 12:
+        return []
+    _, _, qd, _, _, _ = struct.unpack("!HHHHHH", data[:12])
+    off = 12
+    questions: list[tuple[str, int]] = []
+    for _ in range(qd):
+        try:
+            name, off = decode_name(data, off)
+        except ValueError:
+            break
+        if off + 4 > len(data):
+            break
+        qtype, _qclass = struct.unpack("!HH", data[off : off + 4])
+        off += 4
+        questions.append((name, qtype))
+    return questions
+
+
+def _build_rr(name: str, rtype: int, rdata: bytes, ttl: int, cache_flush: bool) -> bytes:
+    rclass = CLASS_IN | (0x8000 if cache_flush else 0)
+    return encode_name(name) + struct.pack("!HHIH", rtype, rclass, ttl, len(rdata)) + rdata
+
+
+def _encode_txt(properties: dict[str, str]) -> bytes:
+    if not properties:
+        return b"\x00"
+    out = bytearray()
+    for key, value in properties.items():
+        seg = f"{key}={value}".encode()
+        if len(seg) > 255:
+            raise ValueError(f"TXT record entry too long: {key}")
+        out.append(len(seg))
+        out += seg
+    return bytes(out)
+
+
+def _encode_srv(priority: int, weight: int, port: int, target: str) -> bytes:
+    return struct.pack("!HHH", priority, weight, port) + encode_name(target)
+
+
+def _local_addresses() -> list[tuple[int, str]]:
+    """Return (family, ip) tuples for usable, non-loopback local addresses."""
+    result: list[tuple[int, str]] = []
+    if ifaddr is None:
+        return result
+    for adapter in ifaddr.get_adapters():
+        for ip in adapter.ips:
+            if isinstance(ip.ip, str):
+                addr = ip.ip
+                if addr.startswith("127.") or addr == "0.0.0.0":
+                    continue
+                result.append((socket.AF_INET, addr))
+            else:
+                addr = ip.ip[0]
+                lowered = addr.lower()
+                if lowered in ("::1", "::") or lowered.startswith("fe80:"):
+                    # Skip loopback and link-local (the latter needs a scope id to be useful)
+                    continue
+                result.append((socket.AF_INET6, addr))
+    return result
+
+
+class MDNSResponder:
+    """
+    Minimal mDNS service advertiser.
+
+    Answers PTR/SRV/TXT/A/AAAA queries for a single advertised DNS-SD service and
+    sends unsolicited announcements on start and goodbye packets on stop. It is
+    deliberately dependency-light (same philosophy as :func:`browse_service`) and
+    only implements what an iOS device needs to discover and connect to a
+    ``_remotepairing-pairable-host._tcp`` host.
+    """
+
+    TTL = 120
+    HOST_TTL = 120
+
+    def __init__(
+        self,
+        service_type: str,
+        instance_name: str,
+        port: int,
+        properties: dict[str, str],
+        hostname: Optional[str] = None,
+        addresses: Optional[list[tuple[int, str]]] = None,
+    ) -> None:
+        if not service_type.endswith("."):
+            service_type += "."
+        self.service_type = service_type
+        self.instance_name = instance_name
+        self.instance_fqdn = f"{instance_name}.{service_type}"
+        self.port = port
+        self.properties = properties
+        self.hostname = hostname or f"{instance_name.split('.')[0]}.local."
+        if not self.hostname.endswith("."):
+            self.hostname += "."
+        self.addresses = addresses if addresses is not None else _local_addresses()
+        # Every local IPv4 interface to steer multicast egress through (see _send_to_all)
+        self._ipv4_send_addresses = [ip for family, ip in self.addresses if family == socket.AF_INET]
+        self._transports: list[tuple[asyncio.BaseTransport, socket.socket]] = []
+        self._queue: Optional[asyncio.Queue] = None
+        self._serve_task: Optional[asyncio.Task] = None
+
+    def _address_records(self) -> list[bytes]:
+        records = []
+        for family, ip in self.addresses:
+            if family == socket.AF_INET:
+                records.append(
+                    _build_rr(self.hostname, QTYPE_A, socket.inet_pton(family, ip), self.HOST_TTL, cache_flush=True)
+                )
+            else:
+                records.append(
+                    _build_rr(self.hostname, QTYPE_AAAA, socket.inet_pton(family, ip), self.HOST_TTL, cache_flush=True)
+                )
+        return records
+
+    def _all_records(self, ttl: Optional[int] = None) -> tuple[list[bytes], list[bytes]]:
+        ttl = self.TTL if ttl is None else ttl
+        ptr = _build_rr(self.service_type, QTYPE_PTR, encode_name(self.instance_fqdn), ttl, cache_flush=False)
+        srv = _build_rr(
+            self.instance_fqdn,
+            QTYPE_SRV,
+            _encode_srv(0, 0, self.port, self.hostname),
+            ttl,
+            cache_flush=True,
+        )
+        txt = _build_rr(self.instance_fqdn, QTYPE_TXT, _encode_txt(self.properties), ttl, cache_flush=True)
+        answers = [ptr, srv, txt]
+        additionals = self._address_records() if ttl else []
+        return answers, additionals
+
+    @staticmethod
+    def _build_message(answers: list[bytes], additionals: list[bytes]) -> bytes:
+        # flags=0x8400 -> response + authoritative answer
+        header = struct.pack("!HHHHHH", 0, 0x8400, 0, len(answers), 0, len(additionals))
+        return header + b"".join(answers) + b"".join(additionals)
+
+    def _send_to_all(self, packet: bytes) -> None:
+        # Send the response/announcement out every interface. For IPv6 we vary the
+        # destination scope id; for IPv4 we steer egress per interface via
+        # IP_MULTICAST_IF (the local interface address). Without this, the kernel
+        # only multicasts out the default interface, so a device on a different
+        # interface (e.g. Wi-Fi while the default is a VPN/utun) never sees us.
+        for transport, sock in self._transports:
+            try:
+                if sock.family == socket.AF_INET:
+                    sent = False
+                    for ipv4 in self._ipv4_send_addresses:
+                        try:
+                            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(ipv4))
+                            transport.sendto(packet, (MDNS_MCAST_V4, MDNS_PORT))
+                            sent = True
+                        except OSError:
+                            continue
+                    if not sent:
+                        transport.sendto(packet, (MDNS_MCAST_V4, MDNS_PORT))
+                else:
+                    for ifindex, _ in socket.if_nameindex():
+                        with contextlib.suppress(OSError):
+                            transport.sendto(packet, (MDNS_MCAST_V6, MDNS_PORT, 0, ifindex))
+            except OSError:
+                continue
+
+    def _announce(self, ttl: Optional[int] = None) -> None:
+        answers, additionals = self._all_records(ttl=ttl)
+        self._send_to_all(self._build_message(answers, additionals))
+
+    def _matches(self, name: str, qtype: int) -> bool:
+        name = name if name.endswith(".") else name + "."
+        if name == self.service_type and qtype in (QTYPE_PTR, 255):
+            return True
+        if name == self.instance_fqdn and qtype in (QTYPE_SRV, QTYPE_TXT, 255):
+            return True
+        return name == self.hostname and qtype in (QTYPE_A, QTYPE_AAAA, 255)
+
+    async def _serve(self) -> None:
+        assert self._queue is not None
+        while True:
+            data, _pkt_addr = await self._queue.get()
+            # Ignore responses; only react to queries (QR bit clear)
+            if len(data) < 12:
+                continue
+            flags = struct.unpack("!H", data[2:4])[0]
+            if flags & 0x8000:
+                continue
+            try:
+                questions = _parse_questions(data)
+            except Exception:
+                continue
+            if any(self._matches(name, qtype) for name, qtype in questions):
+                answers, additionals = self._all_records()
+                self._send_to_all(self._build_message(answers, additionals))
+
+    async def __aenter__(self) -> "MDNSResponder":
+        self._transports, self._queue = await _open_mdns_sockets()
+        self._serve_task = asyncio.create_task(self._serve())
+        # Send a couple of unsolicited announcements so browsing devices notice us quickly
+        for _ in range(2):
+            self._announce()
+            await asyncio.sleep(0.25)
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        if self._serve_task is not None:
+            self._serve_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._serve_task
+            self._serve_task = None
+        # Goodbye: announce the records with TTL 0
+        with contextlib.suppress(Exception):
+            self._announce(ttl=0)
+        for transport, _ in self._transports:
+            transport.close()
+        self._transports = []
+        self._queue = None

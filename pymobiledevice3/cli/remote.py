@@ -1,5 +1,7 @@
+import asyncio
 import dataclasses
 import logging
+import platform
 import sys
 import tempfile
 from contextlib import nullcontext
@@ -28,9 +30,11 @@ from pymobiledevice3.remote.common import ConnectionType, TunnelProtocol
 from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_tunnel, verify_tunnel_imports
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT
 from pymobiledevice3.remote.tunnel_service import (
+    PairableHostInfo,
     RemotePairingManualPairingService,
     get_core_device_tunnel_services,
     get_remote_pairing_tunnel_services,
+    serve_pairable_host,
 )
 from pymobiledevice3.remote.utils import get_rsds
 from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS
@@ -342,6 +346,81 @@ async def cli_pair(
 ) -> None:
     """start remote pairing for devices which allow"""
     await start_remote_pair_task(name)
+
+
+@cli.command("pair-host")
+@async_command
+async def cli_pair_host(
+    name: Annotated[
+        Optional[str],
+        typer.Option(help="Name shown on the device (defaults to this machine's hostname)"),
+    ] = None,
+    model: Annotated[
+        str,
+        typer.Option(help="Hardware model identifier shown on the device"),
+    ] = "Mac17,7",
+    port: Annotated[
+        int,
+        typer.Option(help="TCP port to listen on (0 = pick a free port)"),
+    ] = 0,
+    timeout: Annotated[
+        Optional[float],
+        typer.Option(help="Give up after this many seconds if no device starts pairing"),
+    ] = None,
+) -> None:
+    """
+    Advertise as a pairable host and accept a device-initiated pairing (iOS 27+).
+
+    The device does not browse for pairable hosts automatically. On the device, enable
+    Developer Mode and open Settings > Developer > Paired Macs; this host then appears
+    under "Other Devices". Tap it and enter the 6-digit code printed here. The resulting
+    pairing record is reused by `remote start-tunnel` afterwards.
+    """
+    host_info = PairableHostInfo(name=name or platform.node(), model=model)
+
+    def pin_callback(pin: str) -> None:
+        typer.echo(typer.style(f"\n  Enter this code on your device: {pin}\n", bold=True, fg="green"))
+
+    def waiting_callback(elapsed: float) -> None:
+        typer.echo(typer.style(f"  …still waiting ({int(elapsed)}s) — no device has started pairing yet", fg="cyan"))
+
+    typer.echo(
+        typer.style("Advertising as ", fg="yellow")
+        + typer.style(f'"{host_info.name}" ({host_info.model})', bold=True, fg="white")
+        + typer.style(f" identifier={host_info.identifier}", fg="yellow")
+    )
+    # The device does NOT browse for pairable hosts on its own — nothing happens until the
+    # user opens the device-side screen that starts the browse. Spell out the steps.
+    typer.echo(
+        typer.style("On the device, to make this host appear and pair:\n", bold=True, fg="yellow")
+        + "  1. Enable Developer Mode: Settings > Privacy & Security > Developer Mode (reboot if asked).\n"
+        + "  2. Make sure the device is on the same Wi-Fi network as this computer.\n"
+        + '  3. Open Settings > Developer > Paired Macs. This host appears under "Other Devices".\n'
+        + "  4. Tap it, choose Pair, and enter the 6-digit code shown below when prompted.\n"
+        + "  (Repeated failed attempts get throttled by the device — wait a bit if pairing stops responding.)"
+    )
+    typer.echo("Waiting for a device to connect and start pairing (Ctrl-C to stop)...")
+
+    try:
+        result = await serve_pairable_host(
+            host_info, port=port, pin_callback=pin_callback, timeout=timeout, waiting_callback=waiting_callback
+        )
+    except asyncio.TimeoutError:
+        typer.echo(
+            typer.style(
+                f"\nTimed out after {timeout:g}s with no device-initiated pairing. "
+                "Make sure you opened Settings > Developer > Paired Macs on the device (Developer Mode "
+                "must be on) — the device only browses for this host while that screen is open.",
+                fg="red",
+            )
+        )
+        raise typer.Exit(code=1) from None
+
+    typer.echo(typer.style("\nPaired with device:", bold=True, fg="green"))
+    typer.echo(f"  name:  {result.peer_device.name}")
+    typer.echo(f"  model: {result.peer_device.model}")
+    typer.echo(f"  udid:  {result.peer_device.udid}")
+    typer.echo(f"\nPairing record written to {result.record_path}")
 
 
 @cli.command("delete-pair")
