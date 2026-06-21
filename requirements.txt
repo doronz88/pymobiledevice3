@@ -44,3 +44,9 @@ typer-injector>=0.2.0
 defusedxml
 pywin32 ; platform_system == "Windows"
 av>=14.0.0 ; platform_system != "Darwin"
+# PyTCP (no-sudo userspace tunnel) requires Python >= 3.14; on older Pythons it is
+# absent and the tunnel transparently falls back to the kernel path (see cli_common).
+# Throughput tuning rides PyTCP's public 'tcp.rcv_wnd_max' / 'tcp.snd_mss_max' sysctls
+# (pytcp_compat.throughput_sysctls); releases that predate those knobs just run untuned, so
+# no upper pin — a newer PyTCP that carries them lets the fast path kick in automatically.
+PyTCP>=3.0.7 ; python_version >= "3.14"
