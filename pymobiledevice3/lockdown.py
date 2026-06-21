@@ -53,6 +53,7 @@ from pymobiledevice3.exceptions import (
 )
 from pymobiledevice3.irecv_devices import IRECV_DEVICES
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.pair_records import (
     create_pairing_records_cache_folder,
     generate_host_id,
@@ -61,6 +62,7 @@ from pymobiledevice3.pair_records import (
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
 
+OSUTIL = get_os_utils()
 SYSTEM_BUID = "30142955-444094379208051516"
 RESTORED_SERVICE_TYPE = "com.apple.mobile.restored"
 
@@ -1334,6 +1336,10 @@ class LockdownClient(ABC, LockdownServiceProvider):
         """
         pair_record_file = self.pairing_records_cache_folder / f"{self.identifier}.plist"
         pair_record_file.write_bytes(plistlib.dumps(self.pair_record))
+        # When pairing under sudo, hand the record back to the invoking user (no-op otherwise),
+        # so a later unprivileged run can still rewrite it. Without this, a sudo run leaves a
+        # root-owned plist that breaks subsequent non-root pairing with EPERM.
+        OSUTIL.chown_to_non_sudo_if_needed(pair_record_file)
 
     def _reestablish_connection(self) -> None:
         """Internal helper for reestablish connection.
