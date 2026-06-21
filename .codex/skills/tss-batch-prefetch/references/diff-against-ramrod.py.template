@@ -1,0 +1,148 @@
+"""Field-by-field diff: our prefetched TSS request shape vs ramrod's actual on-the-wire request.
+
+When the batched POST fails for a new chip with a misleading error like
+"This device isn't eligible for the requested build" or "An internal error occurred",
+this script tells you exactly which field differs.
+
+Methodology:
+    1. We build our prefetch-style request locally using the current code paths and
+       the device's PreflightInfo.DeviceInfo state.
+    2. We extract restored's *actual* request shape from a live restore log
+       (`get_device_generated_firmware_data (<chip>): {...}` lines).
+    3. Field-by-field diff. The mismatching field is almost always the bug.
+
+Real example caught with this script: `Savage,ChipID` was being sent as raw 4-byte
+bytes (b'\\x00\\x00\\x00\\x01') from PreflightInfo, while restored uses the manifest's
+parsed int (1). TSS rejected the typed-wrong field with "not eligible".
+
+Prerequisites:
+    - One real restore log at /tmp/restore.log that includes `get_device_generated_firmware_data (<CHIP>):` lines
+      for the chip you're debugging (run a restore WITHOUT --tss-batch first to capture).
+    - Device connected via USB in normal mode.
+
+Usage:
+    1. Copy to /tmp/diff_requests.py
+    2. Edit IPSW_PATH and CHIP_NAME below.
+    3. Run: uvx --from . python3 /tmp/diff_requests.py
+"""
+import asyncio
+import plistlib
+import re
+import sys
+from ast import literal_eval
+from pathlib import Path
+from zipfile import ZipFile
+
+from ipsw_parser.ipsw import IPSW
+
+from pymobiledevice3.lockdown import create_using_usbmux
+from pymobiledevice3.restore.device import Device
+from pymobiledevice3.restore.restore import Restore, Behavior
+from pymobiledevice3.restore.tss import TSSRequest
+
+
+IPSW_PATH = Path("/path/to/firmware.ipsw")    # EDIT
+RESTORE_LOG = Path("/tmp/restore.log")        # EDIT — a real restore log with reactive POSTs
+CHIP_NAME = "Savage"                          # EDIT — DataRequestMsg updater name (SE / Rose / Savage / T200 / Cryptex1 / ...)
+PREFLIGHT_KEY = CHIP_NAME                     # EDIT if it differs from CHIP_NAME (rare)
+ADD_TAGS_FN = "add_savage_tags"               # EDIT — TSSRequest helper for this chip
+
+
+async def build_our_request() -> dict:
+    ipsw = IPSW(ZipFile(IPSW_PATH))
+    lockdown = await create_using_usbmux()
+    device = Device(lockdown=lockdown)
+    r = Restore(ipsw, device, behavior=Behavior.Update)
+
+    device_info = await device.get_preflight_device_info() or {}
+    info = device_info.get(PREFLIGHT_KEY)
+    if not info:
+        raise SystemExit(f"{PREFLIGHT_KEY} not in PreflightInfo.DeviceInfo")
+
+    parameters: dict = {"ApECID": await device.get_ecid()}
+    parameters["ApProductionMode"] = True
+    if await device.get_is_image4_supported():
+        parameters["ApSecurityMode"] = True
+        parameters["ApSupportsImg4"] = True
+    else:
+        parameters["ApSupportsImg4"] = False
+    r.populate_tss_request_from_manifest(parameters)
+
+    tss = TSSRequest()
+    tss.add_common_tags(parameters)
+    chip_params = r._merge_device_info(parameters, info)
+    getattr(tss, ADD_TAGS_FN)(chip_params, None)
+    return dict(tss._request)
+
+
+def extract_ramrod_request() -> dict:
+    """Pull the chip's DeviceGeneratedRequest from a live restore log."""
+    text = RESTORE_LOG.read_text()
+    m = re.search(
+        rf"get_device_generated_firmware_data \({re.escape(CHIP_NAME)}\): (\{{.*?\}})\s*\n",
+        text, re.DOTALL,
+    )
+    if not m:
+        raise SystemExit(f"no {CHIP_NAME} DataRequestMsg in {RESTORE_LOG}")
+    raw = literal_eval(m.group(1))
+    devgen = raw.get("DeviceGeneratedRequest", {})
+    info = raw.get("MessageArgInfo", {})
+
+    # Mirror what get_device_generated_firmware_data builds before send_receive
+    effective: dict = {}
+    effective["@BBTicket"] = True
+    effective["ApSecurityMode"] = True
+    effective["ApProductionMode"] = True
+    for k, v in info.items():
+        if isinstance(k, str) and k.endswith("ProductionMode"):
+            effective["ApProductionMode"] = bool(v)
+    effective.update(devgen)
+    for k in ("ApECID", "UniqueBuildID", "ApChipID", "ApBoardID", "ApSecurityDomain"):
+        if k in info:
+            effective[k] = info[k]
+    return effective
+
+
+def short(x):
+    if isinstance(x, (bytes, bytearray)):
+        return f"<bytes len={len(x)}> {bytes(x)[:24].hex()}{'...' if len(x)>24 else ''}"
+    if isinstance(x, dict):
+        return f"<dict keys={list(x.keys())[:6]}>"
+    s = repr(x)
+    return s if len(s) < 80 else s[:80] + "..."
+
+
+def diff_dicts(ours: dict, ramrod: dict) -> None:
+    keys = sorted(set(ours.keys()) | set(ramrod.keys()))
+    only_ours = [k for k in keys if k not in ramrod]
+    only_ramrod = [k for k in keys if k not in ours]
+    differ = [k for k in keys if k in ours and k in ramrod and ours[k] != ramrod[k]]
+    same = len(keys) - len(only_ours) - len(only_ramrod) - len(differ)
+
+    print(f"\n=== diff: ours (a) vs ramrod (b) ===")
+    print(f"  identical fields : {same}")
+    print(f"  only in OURS     : {len(only_ours):2d}  {only_ours}")
+    print(f"  only in RAMROD   : {len(only_ramrod):2d}  {only_ramrod}")
+    print(f"  values DIFFER    : {len(differ):2d}  {differ}")
+    for k in differ:
+        print(f"\n    {k}:")
+        print(f"      ours  : {short(ours[k])}")
+        print(f"      ramrod: {short(ramrod[k])}")
+
+
+async def main():
+    print(f"Building OUR {CHIP_NAME} prefetch-shape request from current code paths...")
+    ours = await build_our_request()
+    Path(f"/tmp/our_{CHIP_NAME.lower()}_request.plist").write_bytes(plistlib.dumps(ours))
+    print(f"  saved /tmp/our_{CHIP_NAME.lower()}_request.plist ({len(ours)} top-level keys)")
+
+    print(f"\nExtracting RAMROD's {CHIP_NAME} request from {RESTORE_LOG}...")
+    ramrod = extract_ramrod_request()
+    Path(f"/tmp/ramrod_{CHIP_NAME.lower()}_request.plist").write_bytes(plistlib.dumps(ramrod))
+    print(f"  saved /tmp/ramrod_{CHIP_NAME.lower()}_request.plist ({len(ramrod)} top-level keys)")
+
+    diff_dicts(ours, ramrod)
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))
