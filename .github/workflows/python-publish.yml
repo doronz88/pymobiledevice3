@@ -13,6 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # setuptools_scm needs full history + tags to derive the release version
+          # from the tag; a shallow clone yields a PyPI-rejected local version
+          # like 0.1.dev1+g<hash>.
+          fetch-depth: 0
       - name: Install uv
         uses: astral-sh/setup-uv@v7
       - name: Build distributions
