@@ -1,0 +1,58 @@
+"""Dry-run validation harness for the batched TSS prefetch.
+
+Calls Restore._prefetch_combined_batch() ONLY. Does NOT boot the ramdisk, does
+NOT enter restore mode, does NOT touch any device state. Safe to run repeatedly.
+
+Use when adding a new entry to PREFETCHABLE_UPDATERS to confirm TSS accepts the
+combined POST shape before any live restore.
+
+Usage:
+    1. Copy this file to /tmp/dryrun_batched.py
+    2. Edit IPSW_PATH below to point at the IPSW for the connected device.
+    3. Connect the device via USB, in normal (unlocked) mode.
+    4. Run: uvx --from . python3 /tmp/dryrun_batched.py
+"""
+import asyncio
+import logging
+from pathlib import Path
+from zipfile import ZipFile
+
+from ipsw_parser.ipsw import IPSW
+
+from pymobiledevice3.lockdown import create_using_usbmux
+from pymobiledevice3.restore.device import Device
+from pymobiledevice3.restore.restore import Restore, Behavior
+
+
+IPSW_PATH = Path("/path/to/firmware.ipsw")  # EDIT THIS
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+async def main() -> int:
+    if not IPSW_PATH.exists():
+        print(f"IPSW not found: {IPSW_PATH}")
+        return 1
+
+    ipsw = IPSW(ZipFile(IPSW_PATH))
+    lockdown = await create_using_usbmux()
+    device = Device(lockdown=lockdown)
+
+    # Construct Restore with batch enabled
+    r = Restore(ipsw, device, behavior=Behavior.Update, enable_tss_batch=True)
+    r._preflight_info = await device.get_preflight_info()
+    r._firmware_preflight_info = await device.get_firmware_preflight_info()
+
+    ok = await r._prefetch_combined_batch()
+    print()
+    print(f"batched POST result: {'SUCCESS' if ok else 'FAILED'}")
+    print(f"prefetched: {sorted(r._prefetched_updater_tss.keys())}")
+    for name, entry in r._prefetched_updater_tss.items():
+        ticket = entry["response"][entry["ticket_name"]]
+        print(f"  {name}: {entry['ticket_name']}  ({len(ticket)} bytes)  nonce={entry['nonce'].hex()[:16]}...")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(asyncio.run(main()))

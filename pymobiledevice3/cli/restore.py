@@ -172,13 +172,27 @@ def query_ipswme(identifier: str) -> str:
     return firmwares[idx]["url"]
 
 
-async def restore_update_task(device: Device, ipsw: IPSW, tss: Optional[dict], erase: bool, ignore_fdr: bool) -> None:
+async def restore_update_task(
+    device: Device,
+    ipsw: IPSW,
+    tss: Optional[dict],
+    erase: bool,
+    ignore_fdr: bool,
+    enable_tss_batch: bool = False,
+) -> None:
     behavior = Behavior.Update
     if erase:
         behavior = Behavior.Erase
 
     try:
-        await Restore(ipsw, device, tss=tss, behavior=behavior, ignore_fdr=ignore_fdr).update()
+        await Restore(
+            ipsw,
+            device,
+            tss=tss,
+            behavior=behavior,
+            ignore_fdr=ignore_fdr,
+            enable_tss_batch=enable_tss_batch,
+        ).update()
     except Exception:
         # click may "swallow" several exception types so we try to catch them all here
         traceback.print_exc()
@@ -277,9 +291,29 @@ async def restore_update(
         bool,
         typer.Option(help="Connect to the FDR service only (debug mode; no traffic proxying)."),
     ] = False,
+    tss_batch: Annotated[
+        bool,
+        typer.Option(
+            "--tss-batch",
+            help=(
+                "Opt-in: enable the batched TSS prefetch POST (iOS 18+). Sends a single "
+                "HTTP request to gs.apple.com that signs every prefetchable peripheral "
+                "ticket (SE/SE2, Rose, Savage, T200, Centauri, eUICC, Baseband) at once; "
+                "the reactive POSTs during restore are then served from cache. Off by "
+                "default — pass this flag to reduce gs.apple.com round-trips during restore."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """
     Update or restore the device using an IPSW (local path or URL).
     """
     with ipsw_ctx as ipsw:
-        await restore_update_task(device, ipsw, tss, erase, ignore_fdr)
+        await restore_update_task(
+            device,
+            ipsw,
+            tss,
+            erase,
+            ignore_fdr,
+            enable_tss_batch=tss_batch,
+        )

@@ -28,6 +28,8 @@ class Device:
         self._preflight_info_loaded = False
         self._firmware_preflight_info: Optional[dict] = None
         self._firmware_preflight_info_loaded = False
+        self._preflight_device_info: Optional[dict] = None
+        self._preflight_device_info_loaded = False
         self._product_type: Optional[str] = None
 
     def __repr__(self) -> str:
@@ -128,8 +130,12 @@ class Device:
             return self._preflight_info
 
         if self.lockdown is not None:
+            # Explicit GetValue, not the cached `lockdown.preflight_info` property — the
+            # cached property reads from `all_values` (one bulk GetValue at session start),
+            # which on iOS 18+ omits the rich PreflightInfo.DeviceInfo subdict. Query the
+            # key directly to get per-peripheral state (Rose, SE, Savage, T200, ...).
             with suppress(MissingValueError):
-                self._preflight_info = self.lockdown.preflight_info
+                self._preflight_info = await self.lockdown.get_value("", "PreflightInfo")
                 self._preflight_info_loaded = True
                 return self._preflight_info
         self._preflight_info = None
@@ -148,6 +154,33 @@ class Device:
         self._firmware_preflight_info = None
         self._firmware_preflight_info_loaded = True
         return self._firmware_preflight_info
+
+    async def get_preflight_device_info(self) -> Optional[dict]:
+        """Return PreflightInfo.DeviceInfo (per-peripheral state: nonces, chip IDs, etc.).
+
+        Present on iOS 18+. Contains entries like Rose/SE/Savage/T200, each carrying the
+        live peripheral nonce + identifiers that would otherwise only arrive via restored's
+        DataRequestMsg during restore. Used to prefetch per-component TSS tickets up front.
+        """
+        if self._preflight_device_info_loaded:
+            return self._preflight_device_info
+
+        self._preflight_device_info_loaded = True
+        pinfo = await self.get_preflight_info()
+        if pinfo is None:
+            return None
+        device_info = pinfo.get("DeviceInfo")
+        if not isinstance(device_info, dict):
+            return None
+        # Filter out entries marked disabled or that failed to query.
+        disabled = pinfo.get("DeviceInfoDisabled") or {}
+        failures = pinfo.get("DeviceInfoFailures") or {}
+        self._preflight_device_info = {
+            updater: info
+            for updater, info in device_info.items()
+            if updater not in disabled and updater not in failures
+        }
+        return self._preflight_device_info
 
     async def get_product_type(self) -> str:
         if self._product_type is not None:
