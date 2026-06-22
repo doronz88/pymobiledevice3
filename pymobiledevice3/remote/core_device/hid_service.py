@@ -22,7 +22,6 @@ Two RemoteXPC services are wrapped here:
 
 import asyncio
 import contextlib
-import socket
 import struct
 import time
 import uuid
@@ -568,35 +567,35 @@ async def touch_session(
     The stream's RTP payload is discarded by a background drain task — we just
     need a session to exist for the duration of the gestures.
     """
-    # Local import to avoid a circular dependency with display_service.
+    # Local imports to avoid a circular dependency with display_service / screen_stream.
     from pymobiledevice3.remote.core_device.display_service import DisplayService
+    from pymobiledevice3.remote.core_device.screen_stream import open_media_receiver
 
     sender_ip = rsd.service.address[0]
-    sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-    sock.bind(("::", 0))
-    bound_port = sock.getsockname()[1]
-    sock.setblocking(False)
-
-    async def _drain() -> None:
-        loop = asyncio.get_running_loop()
-        try:
-            while True:
-                await loop.sock_recv(sock, 65535)
-        except (asyncio.CancelledError, OSError):
-            pass
 
     display = DisplayService(rsd)
     await display.__aenter__()
     try:
-        local_ip = display.service.local_address[0]
+        # Bind the (discarded) RTP receiver on the right transport — pytcp stack over the
+        # userspace tunnel, host kernel socket otherwise — and advertise the matching address so
+        # the device can actually reach it (a host kernel socket is unreachable over userspace).
+        transport, receiver_ip = open_media_receiver(display, (1 * 1024 * 1024,))
+
+        async def _drain() -> None:
+            try:
+                while True:
+                    await transport.recv()
+            except (asyncio.CancelledError, OSError):
+                pass
+
         # Fail fast if the device's media-stream daemon is wedged — without
         # the timeout the call hangs indefinitely on a half-open RemoteXPC
         # channel. The user's standing advice is "reboot proactively".
         try:
             answer = await asyncio.wait_for(
                 display.start_video_stream(
-                    receiver_ip=local_ip,
-                    receiver_port=bound_port,
+                    receiver_ip=receiver_ip,
+                    receiver_port=transport.port,
                     sender_ip=sender_ip,
                     display_id=display_id,
                 ),
@@ -629,7 +628,7 @@ async def touch_session(
                 client_session_id = uuid.UUID(client_session_id)
             with contextlib.suppress(Exception):
                 await display.stop_media_stream(client_session_id)
-            sock.close()
+            transport.close()
     finally:
         with contextlib.suppress(BaseException):
             await display.__aexit__(None, None, None)

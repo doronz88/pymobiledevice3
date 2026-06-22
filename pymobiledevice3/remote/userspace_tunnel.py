@@ -17,6 +17,9 @@ wires together:
   device's tunnel address through a localhost socket into a PyTCP socket. This covers the RSD HTTP/2
   handshake and every ``ServiceConnection.create_using_tcp`` while leaving the process-global
   ``asyncio.open_connection`` untouched for any other code sharing the process.
+* :class:`UserspaceUdp` — a UDP socket on the stack for device-initiated inbound streams (the
+  AV media behind ``display serve-web``): the device pushes RTP to the stack address rather
+  than to an unreachable host kernel socket.
 
 pmd-pytcp ships only on Python >= 3.14, so it is an OPTIONAL dependency. This module imports
 pmd-pytcp at module level, so importing it REQUIRES pmd-pytcp; ``cli_common`` imports this
@@ -376,13 +379,91 @@ class UserspaceDialPlane:
 
 #: The userspace tunnel active in this process, or None. PyTCP's stack is a process-global
 #: singleton, so at most one exists; :class:`UserspaceRsdTunnel` sets this on open and clears
-#: it on close.
+#: it on close. Device-initiated stream code (``screen_stream``) reads it through
+#: :func:`userspace_stack_addr` / :data:`USERSPACE_ACTIVE` without holding a handle.
 _active_tunnel: Optional[UserspaceRsdTunnel] = None
 
 #: True while a userspace tunnel is active in this process. Mirrors ``_active_tunnel is not None``
 #: (kept as a plain flag so callers can read it as an attribute). The CLI also uses it to gate the
 #: hard exit in :func:`force_exit`.
 USERSPACE_ACTIVE = False
+
+
+def userspace_stack_addr() -> Optional[str]:
+    """The host-side stack address on the active userspace tunnel (what a device should stream
+    to), or None when no userspace tunnel is active."""
+    if _active_tunnel is not None and _active_tunnel.tun is not None:
+        return _active_tunnel.tun.addr
+    return None
+
+
+class UserspaceUdp:
+    """An async UDP socket on the userspace pytcp stack.
+
+    Device-initiated AV streams (serve-web/serve-vnc RTP) push UDP to a host endpoint. Over the
+    userspace tunnel that endpoint must live on the pytcp stack — a host kernel socket is
+    unreachable from the device. This binds a pytcp UDP socket on the stack address and presents
+    the recv/sendto surface ``screen_stream`` needs. A dedicated reader thread drains the socket
+    into an asyncio queue so the hot receive path is not a per-packet ``asyncio.to_thread`` hop.
+    """
+
+    def __init__(self, recv_queue_max: int = 8192) -> None:
+        addr = userspace_stack_addr()
+        if addr is None:
+            raise PyMobileDevice3Exception("userspace tunnel is not active")
+        self._sock = pytcp_socket(AF_INET6, SOCK_DGRAM)
+        self._sock.bind((addr, 0))
+        bound = self._sock.getsockname()
+        self._local_ip, self._port = bound[0], bound[1]
+        self._loop = asyncio.get_event_loop()
+        self._queue: asyncio.Queue = asyncio.Queue(maxsize=recv_queue_max)
+        self._closed = False
+        self._reader = threading.Thread(target=self._read_loop, name="userspace-udp-recv", daemon=True)
+        self._reader.start()
+
+    @property
+    def local_ip(self) -> str:
+        return self._local_ip
+
+    @property
+    def port(self) -> int:
+        return self._port
+
+    def _read_loop(self) -> None:
+        # Blocking recv off the pytcp stack in its own thread, handing each datagram to the
+        # event loop. The 0.5 s timeout paces the idle loop and lets it observe close(); a
+        # TimeoutError is the idle case (loop again), any other error means the socket is gone
+        # so the thread exits — the consumer task is cancelled on teardown, and a genuinely
+        # dead stream is restarted by screen_stream's stall watchdog.
+        while not self._closed:
+            try:
+                data = self._sock.recv(65535, timeout=0.5)
+            except TimeoutError:
+                continue
+            except Exception:
+                return
+            if not data:
+                continue
+            try:
+                self._loop.call_soon_threadsafe(self._enqueue, data)
+            except RuntimeError:
+                return  # event loop closed
+
+    def _enqueue(self, data: bytes) -> None:
+        with suppress(asyncio.QueueFull):
+            self._queue.put_nowait(data)
+
+    async def recv(self, bufsize: int = 65535) -> bytes:
+        # bufsize is accepted for socket-API parity; UDP datagrams are queued whole.
+        return await self._queue.get()
+
+    async def sendto(self, data: bytes, ip: str, port: int) -> None:
+        await asyncio.to_thread(self._sock.sendto, data, (ip, port))
+
+    def close(self) -> None:
+        self._closed = True
+        with suppress(Exception):
+            self._sock.close()
 
 
 async def _create_no_root_tunnel_provider(serial: Optional[str], autopair: bool):

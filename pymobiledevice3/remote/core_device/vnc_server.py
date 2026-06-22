@@ -26,7 +26,6 @@ import asyncio
 import contextlib
 import logging
 import os
-import socket
 import struct
 import sys
 import uuid
@@ -65,7 +64,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
     IndigoHIDService,
     UniversalHIDServiceService,
 )
-from pymobiledevice3.remote.core_device.screen_stream import depacketize_hevc
+from pymobiledevice3.remote.core_device.screen_stream import UdpMediaTransport, depacketize_hevc, open_media_receiver
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 logger = logging.getLogger(__name__)
@@ -299,7 +298,7 @@ class VncStreamServer:
         # ``streamConfig`` after start_video_stream returns. Without
         # these we can't kick the encoder, and decoder-refresh becomes
         # a no-op.
-        self._active_sock: Optional[socket.socket] = None
+        self._active_transport: Optional[UdpMediaTransport] = None
         self._local_ssrc: int = 0
         self._remote_ssrc: int = 0
         self._rtcp_dest: Optional[tuple[str, int]] = None
@@ -354,7 +353,7 @@ class VncStreamServer:
         # video session on the device by sharing client_session_id.
         self._audio_player: Optional[AudioQueuePlayer] = None
         self._audio_decoder: Optional[AACELDDecoder] = None
-        self._audio_sock: Optional[socket.socket] = None
+        self._audio_transport: Optional[UdpMediaTransport] = None
         self._audio_local_ssrc: int = 0
         self._audio_remote_ssrc: int = 0
         self._audio_rtcp_dest: Optional[tuple[str, int]] = None
@@ -437,10 +436,9 @@ class VncStreamServer:
             c.wants_update.set()
 
     # ----- RTP recv + transcoder feed ---------------------------------------
-    async def _udp_recv_and_pipe(self, sock: socket.socket) -> None:
+    async def _udp_recv_and_pipe(self, transport: UdpMediaTransport) -> None:
         """Same depacketize loop as ScreenStreamServer: gather Annex-B
         AUs and feed the VT transcoder."""
-        sock.setblocking(False)
         loop = asyncio.get_running_loop()
         fu_buffer = bytearray()
         current_au: list[bytes] = []
@@ -457,7 +455,7 @@ class VncStreamServer:
         last_stat_t = loop.time()
         while True:
             try:
-                data = await loop.sock_recv(sock, 65535)
+                data = await transport.recv()
             except (OSError, asyncio.CancelledError):
                 return
             if len(data) < 12:
@@ -643,14 +641,13 @@ class VncStreamServer:
         )
 
     async def _send_rtcp_pli(self) -> None:
-        sock = self._active_sock
-        if sock is None or self._rtcp_dest is None:
+        transport = self._active_transport
+        if transport is None or self._rtcp_dest is None:
             return
         if not (self._local_ssrc and self._remote_ssrc):
             return
         try:
-            loop = asyncio.get_running_loop()
-            await loop.sock_sendto(sock, self._build_rtcp_pli(), (*self._rtcp_dest, 0, 0))
+            await transport.sendto(self._build_rtcp_pli(), *self._rtcp_dest)
             logger.debug("sent RTCP PLI (requested fresh keyframe)")
         except OSError as exc:
             logger.debug("PLI send failed (%s)", exc)
@@ -769,12 +766,11 @@ class VncStreamServer:
             self._fire_decoder_refresh(now, reason=reason)
 
     # ----- Audio: AAC-ELD recv + decode + play ------------------------------
-    async def _audio_udp_recv(self, sock: socket.socket) -> None:
+    async def _audio_udp_recv(self, transport: UdpMediaTransport) -> None:
         """Receive RTP audio packets, strip the RTP header, decode the
         AAC-ELD AU via AudioToolbox, and feed the PCM to the local
         AudioQueue. Mirrors :meth:`screen_stream.ScreenStreamServer._audio_udp_recv`
         but plays locally instead of broadcasting."""
-        sock.setblocking(False)
         loop = asyncio.get_running_loop()
         consecutive_errors = 0
         _ERR_RECREATE_THRESHOLD = 5
@@ -782,7 +778,7 @@ class VncStreamServer:
         last_stat_t = loop.time()
         while True:
             try:
-                data = await loop.sock_recv(sock, 65535)
+                data = await transport.recv()
             except (OSError, asyncio.CancelledError):
                 return
             if len(data) < 12:
@@ -872,8 +868,7 @@ class VncStreamServer:
             0,  # jitter / lsr / dlsr
         )
 
-    async def _audio_rtcp_send_loop(self, sock: socket.socket) -> None:
-        loop = asyncio.get_running_loop()
+    async def _audio_rtcp_send_loop(self, transport: UdpMediaTransport) -> None:
         sent = 0
         while True:
             try:
@@ -883,7 +878,7 @@ class VncStreamServer:
             if self._audio_rtcp_dest is None or self._audio_rtp_packets_received == 0:
                 continue
             try:
-                await loop.sock_sendto(sock, self._build_audio_rtcp_rr(), (*self._audio_rtcp_dest, 0, 0))
+                await transport.sendto(self._build_audio_rtcp_rr(), *self._audio_rtcp_dest)
                 sent += 1
                 # One log line per 30 RRs (every 30 s) confirms the
                 # session keepalive is firing -- useful when triaging
@@ -1325,24 +1320,18 @@ class VncStreamServer:
 
     # ----- top-level orchestration ------------------------------------------
     async def serve(self) -> None:
-        # 1) UDP socket for RTP/HEVC.
-        sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-        sock.bind(("::", 0))
-        with contextlib.suppress(OSError):
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 * 1024 * 1024)
-        port = sock.getsockname()[1]
-
-        # 2) Start device-side video stream. Generate a single
-        # client_session_id up front so the audio stream (started
-        # below) gets paired with the video session on the device --
-        # this is what Xcode's Mirror does.
+        # 1) Start device-side video stream + open the RTP receiver on the right transport:
+        # the pytcp stack over the userspace tunnel (a host kernel socket is unreachable from
+        # the device), a host kernel socket otherwise. Generate a single client_session_id up
+        # front so the audio stream (started below) gets paired with the video session on the
+        # device -- this is what Xcode's Mirror does.
         shared_session_id = uuid.uuid4()
         svc = DisplayService(self._rsd)
         await svc.connect()
-        local_ip = svc.service.local_address[0]
+        transport, receiver_ip = open_media_receiver(svc, (8 * 1024 * 1024, 4 * 1024 * 1024))
         answer = await svc.start_video_stream(
-            receiver_ip=local_ip,
-            receiver_port=port,
+            receiver_ip=receiver_ip,
+            receiver_port=transport.port,
             sender_ip=self._sender_ip,
             display_id=self._display_id,
             client_session_id=shared_session_id,
@@ -1369,7 +1358,7 @@ class VncStreamServer:
         self._local_ssrc = int(cfg.get("RemoteSSRC", 0))
         self._remote_ssrc = int(cfg.get("LocalSSRC", 0))
         self._rtcp_dest = (self._sender_ip, source_port) if source_port else None
-        self._active_sock = sock
+        self._active_transport = transport
         if self._rtcp_dest and self._local_ssrc and self._remote_ssrc:
             logger.info(
                 "RTCP feedback enabled: dest=%s, ours=%d, theirs=%d",
@@ -1396,16 +1385,12 @@ class VncStreamServer:
         audio_rtcp_task: Optional[asyncio.Task] = None
         if self._audio_enabled:
             try:
-                audio_sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-                audio_sock.bind(("::", 0))
-                with contextlib.suppress(OSError):
-                    audio_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
-                audio_port = audio_sock.getsockname()[1]
                 audio_svc = DisplayService(self._rsd)
                 await audio_svc.connect()
+                audio_transport, audio_receiver_ip = open_media_receiver(audio_svc, (4 * 1024 * 1024, 1 * 1024 * 1024))
                 audio_answer = await audio_svc.start_audio_stream(
-                    receiver_ip=local_ip,
-                    receiver_port=audio_port,
+                    receiver_ip=audio_receiver_ip,
+                    receiver_port=audio_transport.port,
                     sender_ip=self._sender_ip,
                     client_session_id=shared_session_id,
                 )
@@ -1416,7 +1401,7 @@ class VncStreamServer:
                 self._audio_local_ssrc = int(audio_cfg.get("RemoteSSRC", 0))
                 self._audio_remote_ssrc = int(audio_cfg.get("LocalSSRC", 0))
                 self._audio_rtcp_dest = (self._sender_ip, a_source_port) if a_source_port else None
-                self._audio_sock = audio_sock
+                self._audio_transport = audio_transport
                 self._audio_svc = audio_svc
                 self._audio_session_id = audio_sid
                 self._audio_decoder = AACELDDecoder()
@@ -1436,19 +1421,19 @@ class VncStreamServer:
                         self._audio_player.close()
                     self._audio_player = None
                 self._audio_decoder = None
-                self._audio_sock = None
+                self._audio_transport = None
                 self._audio_svc = None
                 self._audio_session_id = None
 
         # 4) Background tasks.
         loop = asyncio.get_running_loop()
         self._loop = loop
-        feed_task = asyncio.create_task(self._udp_recv_and_pipe(sock))
+        feed_task = asyncio.create_task(self._udp_recv_and_pipe(transport))
         refresh_task = asyncio.create_task(self._decoder_refresh_loop())
-        if self._audio_enabled and self._audio_sock is not None:
-            audio_recv_task = asyncio.create_task(self._audio_udp_recv(self._audio_sock))
+        if self._audio_enabled and self._audio_transport is not None:
+            audio_recv_task = asyncio.create_task(self._audio_udp_recv(self._audio_transport))
             if self._audio_rtcp_dest and self._audio_local_ssrc and self._audio_remote_ssrc:
-                audio_rtcp_task = asyncio.create_task(self._audio_rtcp_send_loop(self._audio_sock))
+                audio_rtcp_task = asyncio.create_task(self._audio_rtcp_send_loop(self._audio_transport))
             else:
                 logger.warning(
                     "audio RTCP disabled (missing fields in streamConfig) -- session will be reaped after ~20 s"
@@ -1504,7 +1489,7 @@ class VncStreamServer:
                     self._transcoder.close()
                 self._transcoder = None
             with contextlib.suppress(Exception):
-                sock.close()
+                transport.close()
             if audio_recv_task is not None:
                 logger.debug("shutdown: stopping audio recv loop")
                 audio_recv_task.cancel()
@@ -1526,9 +1511,9 @@ class VncStreamServer:
                     await asyncio.wait_for(self._audio_svc.stop_media_stream(self._audio_session_id), timeout=3.0)
                 with contextlib.suppress(Exception):
                     await self._audio_svc.close()
-            if self._audio_sock is not None:
+            if self._audio_transport is not None:
                 with contextlib.suppress(Exception):
-                    self._audio_sock.close()
+                    self._audio_transport.close()
             logger.debug("shutdown: stopping device stream")
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(svc.stop_media_stream(sid), timeout=3.0)
