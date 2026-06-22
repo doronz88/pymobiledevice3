@@ -157,6 +157,29 @@ RPPairingPacket = Struct(
     "body" / Prefixed(Int16ub, GreedyBytes),
 )
 
+#: When True, :func:`create_tun_device` builds the tunnel's interface as a pure-Python
+#: userspace stack (``UserspaceTun``, no root) instead of a kernel ``utun`` (needs root/admin).
+#: The no-root establishment flow flips this on. Kept as a module-level flag so the tunnel
+#: device is selected by an explicit factory call rather than by monkeypatching a class.
+USE_USERSPACE_TUNNEL = False
+
+
+def create_tun_device(interface_name: str = DEFAULT_INTERFACE_NAME):
+    """Create the tunnel's link-layer device, consulting the user's kernel-vs-userspace choice.
+
+    Default: a kernel :class:`pytun_pmd3.TunTapDevice` (requires root/admin). When
+    :data:`USE_USERSPACE_TUNNEL` is set, a no-root userspace PyTCP stack. The userspace import
+    is deferred so the optional PyTCP dependency is pulled in only when actually requested.
+    """
+    if USE_USERSPACE_TUNNEL:
+        from pymobiledevice3.remote.userspace_tunnel import UserspaceTun
+
+        return UserspaceTun(interface_name)
+    if sys.platform == "win32":
+        # Only the win32 TunTapDevice implementation accepts an interface name.
+        return TunTapDevice(interface_name)
+    return TunTapDevice()
+
 
 class RemotePairingTunnel(ABC):
     def __init__(self):
@@ -201,11 +224,7 @@ class RemotePairingTunnel(ABC):
             self._logger.warning(f"got oserror in {asyncio.current_task().get_name()}")
 
     def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
-        if sys.platform == "win32":
-            # Only win32 tunnel implementation supports interface name
-            self.tun = TunTapDevice(interface_name)
-        else:
-            self.tun = TunTapDevice()
+        self.tun = create_tun_device(interface_name)
         self.tun.addr = address
         self.tun.mtu = mtu
         self.tun.up()
