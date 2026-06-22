@@ -1,5 +1,6 @@
 import abc
 import asyncio
+import os
 import plistlib
 import socket
 import struct
@@ -155,6 +156,11 @@ class MuxConnection:
 
     @staticmethod
     def _resolve_usbmux_address(usbmux_address: Optional[str] = None):
+        if usbmux_address is None:
+            # Honor the libusbmuxd-standard env var at the socket layer so every call
+            # site (not just the CLI --usbmux option) reaches a remote/relocated
+            # usbmuxd, e.g. usbmuxd exposed over TCP as HOST:PORT.
+            usbmux_address = os.getenv("USBMUXD_SOCKET_ADDRESS")
         if usbmux_address is not None:
             if ":" in usbmux_address:
                 hostname, port = usbmux_address.split(":")
