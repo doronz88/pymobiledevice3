@@ -467,6 +467,12 @@ class RSDRequiredError(PyMobileDevice3Exception):
         super().__init__()
 
 
+class RoutableTunnelRequiredError(PyMobileDevice3Exception):
+    """The action exposes the device's tunnel address to an external process (e.g. lldb), which
+    needs a kernel-routable tunnel. The active tunnel is an in-process userspace tunnel whose
+    address is only reachable from this process."""
+
+
 class SysdiagnoseTimeoutError(PyMobileDevice3Exception, TimeoutError):
     """Timeout collecting new sysdiagnose archive"""
 

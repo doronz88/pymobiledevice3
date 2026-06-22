@@ -49,6 +49,14 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         self.all_values: Optional[dict] = None
 
     @property
+    def is_in_process_tunnel(self) -> bool:
+        """True when this RSD reaches the device through an in-process dialer (the userspace
+        tunnel) rather than a kernel-routable interface. The device address (``self.service.address``)
+        is then only reachable from THIS process, so it must not be handed to external tools such as
+        lldb as a connect endpoint."""
+        return self.open_connection is not None
+
+    @property
     def product_version(self) -> str:
         return self.peer_info["Properties"]["OSVersion"]
 

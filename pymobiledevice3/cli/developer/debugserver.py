@@ -16,7 +16,7 @@ from plumbum import local
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, ServiceProviderDep, async_command, print_json
-from pymobiledevice3.exceptions import RSDRequiredError
+from pymobiledevice3.exceptions import RoutableTunnelRequiredError, RSDRequiredError
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
@@ -84,6 +84,13 @@ async def debugserver_start_server(
     elif Version(service_provider.product_version) >= Version("17.0"):
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
             raise RSDRequiredError(service_provider.identifier)
+        if service_provider.is_in_process_tunnel:
+            raise RoutableTunnelRequiredError(
+                "Cannot print a remote LLDB connect address over a userspace tunnel: the device "
+                "address is only reachable from this process, not from your external lldb. Re-run "
+                "with --local-port to forward debugserver to a local port (this works over the "
+                "userspace tunnel), or use a kernel-routable tunnel (root `tunneld` / --tunnel)."
+            )
         debugserver_port = service_provider.get_service_port(service_name)
         print(DEBUGSERVER_CONNECTION_STEPS.format(host=service_provider.service.address[0], port=debugserver_port))
     else:
@@ -136,6 +143,15 @@ async def debugserver_lldb(
     if Version(service_provider.product_version) < Version("17.0"):
         logger.error("lldb is only supported on iOS >= 17.0")
         return
+
+    if isinstance(service_provider, RemoteServiceDiscoveryService) and service_provider.is_in_process_tunnel:
+        # The flow spawns an external lldb and feeds it `process connect connect://[<device>]:<port>`;
+        # that address lives only on this process's userspace stack and is unreachable from lldb.
+        raise RoutableTunnelRequiredError(
+            "debugserver lldb cannot run over a userspace tunnel: it drives an external lldb process, "
+            "which cannot reach the in-process tunnel address. Use a kernel-routable tunnel instead "
+            "(run `sudo pymobiledevice3 remote tunneld` and drop --userspace, or use --tunnel)."
+        )
 
     commands = []
     temp_dir = None

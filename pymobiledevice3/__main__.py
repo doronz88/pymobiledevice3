@@ -53,6 +53,7 @@ from pymobiledevice3.exceptions import (
     PairingDialogResponsePendingError,
     PasswordRequiredError,
     QuicProtocolNotSupportedError,
+    RoutableTunnelRequiredError,
     RSDRequiredError,
     SetProhibitedError,
     StartServiceError,
@@ -350,6 +351,8 @@ def invoke_cli_with_error_handling() -> bool:
             "Developer Mode is disabled. You can try to enable it using: "
             "python3 -m pymobiledevice3 amfi enable-developer-mode"
         )
+    except RoutableTunnelRequiredError as e:
+        logger.error(str(e))
     except (InvalidServiceError, RSDRequiredError) as e:
         reason = ""
         if isinstance(e, RSDRequiredError):
