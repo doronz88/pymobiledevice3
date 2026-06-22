@@ -467,6 +467,33 @@ async def main() -> None:
       print(entry)
 ```
 
+All the tunnels above need root/admin, since they create a kernel TUN/TAP interface. On Python 3.14+ there's one
+more option that needs **no root at all**: add `--userspace` to any developer command to establish the iOS 17+ tunnel
+in-process over a pure-python network stack (PyTCP). There's no separate tunnel process - the flag builds the tunnel
+inside the command and tears it down on exit:
+
+```shell
+pymobiledevice3 developer dvt ls / --userspace
+```
+
+See [the dedicated guide](../docs/guides/ios17-tunnels.md) for what it supports and its limitations (most notably:
+the device address is reachable only from that process, so it can't be handed to external tools like `lldb`). This is
+of course also available via a python API, through the `UserspaceRsdTunnel` handle:
+
+```python
+from pymobiledevice3.remote.userspace_tunnel import UserspaceRsdTunnel
+from pymobiledevice3.services.os_trace import OsTraceService
+
+
+async def main() -> None:
+  # serial=None picks the first USB device; pass a UDID to target a specific one
+  # It's an async context manager (or keep the handle and use `await tunnel.aopen()` / `await tunnel.aclose()`)
+  async with UserspaceRsdTunnel(serial=None) as rsd:
+      # `rsd` is a RemoteServiceDiscoveryService - use it like any other LockdownServiceProvider
+      async for entry in OsTraceService(rsd).syslog():
+          print(entry)
+```
+
 Confused by all these "start-tunnel" permutations? Don't blame yourself - it's very confusing especially since there
 isn't only one way to achieve cross-platform for iOS 17.0-17.4.
 
