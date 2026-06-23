@@ -21,9 +21,8 @@ wires together:
   AV media behind ``display serve-web``): the device pushes RTP to the stack address rather
   than to an unreachable host kernel socket.
 
-pmd-pytcp ships only on Python >= 3.14, so it is an OPTIONAL dependency. This module imports
-pmd-pytcp at module level, so importing it REQUIRES pmd-pytcp; ``cli_common`` imports this
-module inside a try/except and falls back to the kernel tunnel when pmd-pytcp is absent. The
+pmd-pytcp supports Python 3.9+ and is a regular pymobiledevice3 dependency, so this module
+imports it at module level and ``cli_common`` establishes the userspace tunnel directly. The
 fork is cross-platform on its own (it guards its Unix-only ``fcntl`` import, starts its worker
 threads as daemons, logs through the ``pmd_pytcp`` logger, and ships the MLD attribute), so no
 host-side compatibility shim is needed — only the throughput sysctls below, which ride the

@@ -46,6 +46,6 @@ pywin32 ; platform_system == "Windows"
 av>=14.0.0 ; platform_system != "Darwin"
 # pmd-pytcp — the no-root userspace tunnel's TCP/IP stack, a minimal PyTCP fork
 # (https://github.com/doronz88/pmd-pytcp). Pulls its pmd-net-addr / pmd-net-proto siblings in
-# transitively. Requires Python >= 3.14; on older interpreters the import fails and the tunnel
-# transparently falls back to the kernel path (see cli_common).
-pmd-pytcp>=0.0.3 ; python_version >= "3.14"
+# transitively. Supported on Python 3.9+ (the whole pymobiledevice3 range); if the import or
+# stack init fails the tunnel transparently falls back to the kernel path (see cli_common).
+pmd-pytcp>=0.0.4 ; python_version >= "3.9"

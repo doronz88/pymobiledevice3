@@ -232,7 +232,7 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
                     root/admin is required. Downloads (device->host, e.g. fetch-symbols) run at roughly the
                     kernel tunnel's throughput; host->device transfers (DDI mounts, file pushes) are slower, as
                     their send segments are kept small for reliable delivery through the pure-Python path. Use
-                    when you cannot run a privileged tunnel. Requires Python >= 3.14.
+                    when you cannot run a privileged tunnel.
                 """),
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),
@@ -256,25 +256,16 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
             return cli_loop.run_until_complete(_tunneld(tunnel))
 
         # Opt-in userspace tunnel (--userspace / PYMOBILEDEVICE3_USERSPACE): establish the
-        # tunnel in-process with the pure-Python stack — no root. Downloads run near the
-        # kernel tunnel's rate; host->device transfers are slower (see the flag's help). If it
-        # can't establish (PyTCP missing on Python < 3.14, or a failing platform), fall back
-        # to the kernel tunnel via tunneld.
+        # tunnel in-process with the pure-Python PyTCP stack — no root. Downloads run near the
+        # kernel tunnel's rate; host->device transfers are slower (see the flag's help). PyTCP
+        # (pmd-pytcp) is a regular dependency on Python 3.9+, so any failure here is a real
+        # establishment error and is surfaced rather than masked by a tunneld fallback.
         if userspace:
             # Target the same device the rest of the CLI would (see _cli_udid).
             serial = _cli_udid()
-            try:
-                # Imported here, not at module top: userspace_tunnel pulls in PyTCP, an optional
-                # dependency present only on Python >= 3.14. A missing PyTCP raises ImportError
-                # here and falls back to tunneld, same as any establishment failure.
-                from pymobiledevice3.remote import userspace_tunnel
+            from pymobiledevice3.remote import userspace_tunnel
 
-                return cli_loop.run_until_complete(userspace_tunnel.establish_userspace_rsd(serial=serial))
-            except Exception as e:
-                logging.getLogger(__name__).warning(
-                    "userspace tunnel unavailable (%s); falling back to tunneld", str(e) or type(e).__name__
-                )
-            return cli_loop.run_until_complete(_tunneld(""))
+            return cli_loop.run_until_complete(userspace_tunnel.establish_userspace_rsd(serial=serial))
 
         # Default: a required RSD uses the kernel tunnel via tunneld (needs a privileged
         # `remote tunneld`). Pass --userspace for a no-root tunnel instead.
