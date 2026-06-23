@@ -8,7 +8,7 @@ import struct
 import time
 import xml
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 from pygments import formatters, highlight, lexers
 
@@ -133,7 +133,11 @@ class ServiceConnection:
 
     @staticmethod
     async def create_using_tcp(
-        hostname: str, port: int, keep_alive: bool = True, create_connection_timeout: int = DEFAULT_TIMEOUT
+        hostname: str,
+        port: int,
+        keep_alive: bool = True,
+        create_connection_timeout: int = DEFAULT_TIMEOUT,
+        open_connection: Optional[Callable] = None,
     ) -> "ServiceConnection":
         """
         Create a ServiceConnection using a TCP connection.
@@ -142,11 +146,13 @@ class ServiceConnection:
         :param port: The port to connect to.
         :param keep_alive: Whether to enable TCP keep-alive.
         :param create_connection_timeout: The timeout for creating the connection.
+        :param open_connection: Optional ``asyncio.open_connection``-compatible dialer. Defaults to
+            ``asyncio.open_connection``; the userspace tunnel injects one that relays device-bound
+            connections through its in-process stack (avoiding a global monkeypatch).
         :return: A ServiceConnection object.
         """
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(hostname, port), timeout=create_connection_timeout
-        )
+        open_connection = open_connection or asyncio.open_connection
+        reader, writer = await asyncio.wait_for(open_connection(hostname, port), timeout=create_connection_timeout)
         sock = writer.get_extra_info("socket")
         if sock is None:
             await close_stream_writer(writer)

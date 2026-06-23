@@ -64,7 +64,10 @@ class FileServiceService(CoreDeviceService):
     async def retrieve_file(self, path: str = ".") -> bytes:
         response = await self.send_receive_request({"Cmd": "RetrieveFile", "Path": path, "SessionID": self.session})
         data_service = self.rsd.get_service_port("com.apple.coredevice.fileservice.data")
-        reader, writer = await asyncio.open_connection(self.service.address[0], data_service)
+        # Route through the RSD's dialer (set by the userspace tunnel to relay through its
+        # in-process stack); falls back to the stdlib default for the kernel-tunnel path.
+        open_connection = self.rsd.open_connection or asyncio.open_connection
+        reader, writer = await open_connection(self.service.address[0], data_service)
         writer.write(b"rwb!FILE" + struct.pack(">QQQQ", response["Response"], 0, response["NewFileID"], 0))
         await writer.drain()
         await reader.readexactly(0x24)

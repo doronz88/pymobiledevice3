@@ -22,7 +22,12 @@ try:
 except ImportError:  # pragma: no cover
     shellingham = None
 
-from pymobiledevice3.cli.cli_common import TUNNEL_ENV_VAR, isatty, set_color_flag, set_verbosity
+from pymobiledevice3.cli.cli_common import (
+    TUNNEL_ENV_VAR,
+    isatty,
+    set_color_flag,
+    set_verbosity,
+)
 from pymobiledevice3.exceptions import (
     AccessDeniedError,
     AfcException,
@@ -48,6 +53,7 @@ from pymobiledevice3.exceptions import (
     PairingDialogResponsePendingError,
     PasswordRequiredError,
     QuicProtocolNotSupportedError,
+    RoutableTunnelRequiredError,
     RSDRequiredError,
     SetProhibitedError,
     StartServiceError,
@@ -345,20 +351,25 @@ def invoke_cli_with_error_handling() -> bool:
             "Developer Mode is disabled. You can try to enable it using: "
             "python3 -m pymobiledevice3 amfi enable-developer-mode"
         )
+    except RoutableTunnelRequiredError as e:
+        logger.error(str(e))
     except (InvalidServiceError, RSDRequiredError) as e:
-        should_retry_over_tunneld = False
+        reason = ""
         if isinstance(e, RSDRequiredError):
-            logger.warning("Trying again over tunneld since RSD is required for this command")
-            should_retry_over_tunneld = True
+            reason = "RSD is required for this command"
         elif (
             (e.identifier is not None)
             and ("developer" in sys.argv)
             and ("--tunnel" not in sys.argv)
+            and ("--userspace" not in sys.argv)
             and device_might_need_tunneld(e.identifier)
         ):
-            logger.warning("Got an InvalidServiceError. Trying again over tunneld since it is a developer command")
-            should_retry_over_tunneld = True
-        if should_retry_over_tunneld:
+            reason = "it is a developer command on an iOS 17+ device"
+        # Retry once over tunneld (its env var doubles as the one-shot guard: already set
+        # means we are the retry failing again — don't loop). For a no-root tunnel instead,
+        # pass --userspace (slower; see its help).
+        if reason and not os.getenv(TUNNEL_ENV_VAR):
+            logger.warning(f"Trying again over tunneld since {reason} (pass --userspace for a no-root tunnel)")
             # use a single space because Typer/Click will ignore envvars of empty strings
             os.environ[TUNNEL_ENV_VAR] = e.identifier or " "
             main()

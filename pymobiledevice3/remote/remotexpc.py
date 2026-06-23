@@ -3,7 +3,7 @@ import contextlib
 import uuid
 from asyncio import IncompleteReadError
 from collections.abc import AsyncIterable
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 from construct import StreamError
 from hyperframe.frame import (
@@ -56,9 +56,13 @@ resp = await client.send_receive_request({"Command": "DoSomething"})
 
 
 class RemoteXPCConnection:
-    def __init__(self, address: tuple[str, int]):
+    def __init__(self, address: tuple[str, int], open_connection: Optional[Callable] = None):
         self._previous_frame_data = b""
         self.address = address
+        # ``asyncio.open_connection``-compatible dialer. Defaults to the stdlib function; the
+        # userspace tunnel injects one that relays device-bound connections through its in-process
+        # stack, so no global ``asyncio.open_connection`` monkeypatch is needed.
+        self._open_connection = open_connection or asyncio.open_connection
         self.next_message_id: dict[int, int] = {ROOT_CHANNEL: 0, REPLY_CHANNEL: 0}
         self.peer_info = None
         self._reader: Optional[asyncio.StreamReader] = None
@@ -75,7 +79,7 @@ class RemoteXPCConnection:
         await self.close()
 
     async def connect(self) -> None:
-        self._reader, self._writer = await asyncio.open_connection(self.address[0], self.address[1])
+        self._reader, self._writer = await self._open_connection(self.address[0], self.address[1])
         try:
             await self._do_handshake()
         except Exception:

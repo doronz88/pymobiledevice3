@@ -92,12 +92,12 @@ class _BitReader:
         return (1 << zeros) - 1 + suffix
 
 
-@dataclass(slots=True)
+@dataclass()
 class _ShortTermRps:
     deltas: list[tuple[int, bool]] = field(default_factory=list)
 
 
-@dataclass(slots=True)
+@dataclass()
 class HevcSpsState:
     log2_max_pic_order_cnt_lsb: int = 8
     num_short_term_ref_pic_sets: int = 0

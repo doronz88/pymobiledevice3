@@ -27,7 +27,7 @@ import tempfile
 import uuid
 from collections import deque
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Protocol
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -313,40 +313,41 @@ async def capture_rtp_to_file(
     number of captured packets.
     """
     sender_ip = rsd.service.address[0]
-    sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-    sock.bind(("::", receiver_port))
-    bound_port = sock.getsockname()[1]
-    logger.info(f"Listening for RTP on [{sender_ip}] → ::{bound_port}")
-
     captured = 0
     async with DisplayService(rsd) as service:
-        local_ip = service.service.local_address[0]
-        answer = await service.start_video_stream(
-            receiver_ip=local_ip,
-            receiver_port=bound_port,
-            sender_ip=sender_ip,
-            display_id=display_id,
+        # Bind the RTP receiver on the right transport (pytcp stack over the userspace tunnel,
+        # host kernel socket otherwise) and advertise the matching address to the device.
+        transport, receiver_ip = open_media_receiver(
+            service, (4 * 1024 * 1024, 1 * 1024 * 1024), bind_port=receiver_port
         )
-        logger.info("Stream started; dumping RTP for %.1fs", duration)
-        sock.setblocking(False)
-        loop = asyncio.get_running_loop()
-        with open(output_path, "wb") as fp:
-            deadline = loop.time() + duration
-            while loop.time() < deadline:
-                remaining = deadline - loop.time()
-                try:
-                    data = await asyncio.wait_for(loop.sock_recv(sock, 65535), timeout=remaining)
-                except asyncio.TimeoutError:
-                    break
-                fp.write(len(data).to_bytes(4, "big") + data)
-                captured += 1
-        logger.info(f"Captured {captured} packets to {output_path}")
-        client_session_id = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
-        if not isinstance(client_session_id, uuid.UUID):
-            client_session_id = uuid.UUID(client_session_id)
-        with contextlib.suppress(Exception):
-            await service.stop_media_stream(client_session_id)
-    sock.close()
+        logger.info(f"Listening for RTP on [{receiver_ip}]:{transport.port}")
+        try:
+            answer = await service.start_video_stream(
+                receiver_ip=receiver_ip,
+                receiver_port=transport.port,
+                sender_ip=sender_ip,
+                display_id=display_id,
+            )
+            logger.info("Stream started; dumping RTP for %.1fs", duration)
+            loop = asyncio.get_running_loop()
+            with open(output_path, "wb") as fp:
+                deadline = loop.time() + duration
+                while loop.time() < deadline:
+                    remaining = deadline - loop.time()
+                    try:
+                        data = await asyncio.wait_for(transport.recv(), timeout=remaining)
+                    except asyncio.TimeoutError:
+                        break
+                    fp.write(len(data).to_bytes(4, "big") + data)
+                    captured += 1
+            logger.info(f"Captured {captured} packets to {output_path}")
+            client_session_id = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
+            if not isinstance(client_session_id, uuid.UUID):
+                client_session_id = uuid.UUID(client_session_id)
+            with contextlib.suppress(Exception):
+                await service.stop_media_stream(client_session_id)
+        finally:
+            transport.close()
     return captured
 
 
@@ -365,46 +366,133 @@ async def capture_audio_rtp_to_file(
     (10 ms). Used by ``pymobiledevice3 ... display start-audio-stream``.
     """
     sender_ip = rsd.service.address[0]
-    sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-    sock.bind(("::", receiver_port))
-    bound_port = sock.getsockname()[1]
-    logger.info(f"Listening for AUDIO RTP on [{sender_ip}] → ::{bound_port}")
-
     captured = 0
     async with DisplayService(rsd) as service:
-        local_ip = service.service.local_address[0]
-        answer = await service.start_audio_stream(
-            receiver_ip=local_ip,
-            receiver_port=bound_port,
-            sender_ip=sender_ip,
+        transport, receiver_ip = open_media_receiver(
+            service, (4 * 1024 * 1024, 1 * 1024 * 1024), bind_port=receiver_port
         )
-        cfg = answer["connection"].get("streamConfig", {})
-        logger.info(
-            "Audio stream started: PT=%s mode=%s sender_port=%s",
-            cfg.get("RxPayloadType"),
-            cfg.get("AudioStreamMode"),
-            cfg.get("SourcePort"),
-        )
-        sock.setblocking(False)
-        loop = asyncio.get_running_loop()
-        with open(output_path, "wb") as fp:
-            deadline = loop.time() + duration
-            while loop.time() < deadline:
-                remaining = deadline - loop.time()
-                try:
-                    data = await asyncio.wait_for(loop.sock_recv(sock, 65535), timeout=remaining)
-                except asyncio.TimeoutError:
-                    break
-                fp.write(len(data).to_bytes(4, "big") + data)
-                captured += 1
-        logger.info(f"Captured {captured} audio packets to {output_path}")
-        client_session_id = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
-        if not isinstance(client_session_id, uuid.UUID):
-            client_session_id = uuid.UUID(client_session_id)
-        with contextlib.suppress(Exception):
-            await service.stop_media_stream(client_session_id)
-    sock.close()
+        logger.info(f"Listening for AUDIO RTP on [{receiver_ip}]:{transport.port}")
+        try:
+            answer = await service.start_audio_stream(
+                receiver_ip=receiver_ip,
+                receiver_port=transport.port,
+                sender_ip=sender_ip,
+            )
+            cfg = answer["connection"].get("streamConfig", {})
+            logger.info(
+                "Audio stream started: PT=%s mode=%s sender_port=%s",
+                cfg.get("RxPayloadType"),
+                cfg.get("AudioStreamMode"),
+                cfg.get("SourcePort"),
+            )
+            loop = asyncio.get_running_loop()
+            with open(output_path, "wb") as fp:
+                deadline = loop.time() + duration
+                while loop.time() < deadline:
+                    remaining = deadline - loop.time()
+                    try:
+                        data = await asyncio.wait_for(transport.recv(), timeout=remaining)
+                    except asyncio.TimeoutError:
+                        break
+                    fp.write(len(data).to_bytes(4, "big") + data)
+                    captured += 1
+            logger.info(f"Captured {captured} audio packets to {output_path}")
+            client_session_id = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
+            if not isinstance(client_session_id, uuid.UUID):
+                client_session_id = uuid.UUID(client_session_id)
+            with contextlib.suppress(Exception):
+                await service.stop_media_stream(client_session_id)
+        finally:
+            transport.close()
     return captured
+
+
+class UdpMediaTransport(Protocol):
+    """The UDP transport the device-initiated AV media streams (RTP) flow over.
+
+    Two implementations: :class:`_KernelUdp` (host kernel socket, the default kernel-tunnel
+    path) and ``userspace_tunnel.UserspaceUdp`` (a socket on the pytcp stack, for the no-root
+    userspace tunnel). The media receive / RTCP loops are written against this interface so
+    they are transport-agnostic.
+    """
+
+    @property
+    def local_ip(self) -> str: ...
+
+    @property
+    def port(self) -> int: ...
+
+    async def recv(self, bufsize: int = 65535) -> bytes: ...
+
+    async def sendto(self, data: bytes, ip: str, port: int) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class _KernelUdp:
+    """:class:`UdpMediaTransport` over a host kernel UDP socket — the default kernel-tunnel path."""
+
+    def __init__(self, sock: socket.socket) -> None:
+        sock.setblocking(False)
+        self._sock = sock
+        self._loop = asyncio.get_event_loop()
+
+    @property
+    def local_ip(self) -> str:
+        return self._sock.getsockname()[0]
+
+    @property
+    def port(self) -> int:
+        return self._sock.getsockname()[1]
+
+    async def recv(self, bufsize: int = 65535) -> bytes:
+        return await self._loop.sock_recv(self._sock, bufsize)
+
+    async def sendto(self, data: bytes, ip: str, port: int) -> None:
+        await self._loop.sock_sendto(self._sock, data, (ip, port, 0, 0))
+
+    def close(self) -> None:
+        with contextlib.suppress(Exception):
+            self._sock.close()
+
+
+def open_media_receiver(
+    svc: DisplayService, rcvbuf_sizes: tuple[int, ...], bind_port: int = 0
+) -> tuple[UdpMediaTransport, str]:
+    """Open the UDP receiver the device streams RTP to, plus the address to advertise to it.
+
+    Over the userspace tunnel the device-initiated RTP must terminate on the pytcp stack — a
+    host kernel socket is unreachable from the device — so bind a socket on the stack and
+    advertise the stack address. Otherwise bind a host kernel socket (sized from
+    ``rcvbuf_sizes``, trying each until one is accepted) and advertise the RSD connection's
+    local address.
+
+    ``bind_port`` requests a specific host port on the kernel path; it is ignored over the
+    userspace tunnel, where the stack socket always picks its own port (read it from
+    ``transport.port``). Shared by every device-initiated media path (screen serve, RTP/audio
+    capture, the HID auth-gate stream, VNC) so they are transport-agnostic and userspace-safe.
+    """
+    try:
+        from pymobiledevice3.remote import userspace_tunnel
+
+        if userspace_tunnel.USERSPACE_ACTIVE:
+            if bind_port:
+                logger.debug("userspace tunnel: ignoring requested receiver port %s (stack picks its own)", bind_port)
+            transport = userspace_tunnel.UserspaceUdp()
+            return transport, transport.local_ip
+    except Exception:
+        logger.debug("userspace UDP receiver unavailable; using a host kernel socket", exc_info=True)
+    sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+    sock.bind(("::", bind_port))
+    # Pump SO_RCVBUF as high as the kernel allows (capped by kern.ipc.maxsockbuf, ~8 MB on
+    # macOS); a larger buffer tolerates longer event-loop stalls without kernel UDP drops.
+    for size in rcvbuf_sizes:
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, size)
+            break
+        except OSError:
+            continue
+    return _KernelUdp(sock), svc.service.local_address[0]
 
 
 # ---------------------------------------------------------------------------
@@ -492,7 +580,7 @@ class ScreenStreamServer:
         # Active device-stream session.
         self._active_service: Optional[DisplayService] = None
         self._active_session_id: Optional[uuid.UUID] = None
-        self._active_sock: Optional[socket.socket] = None
+        self._active_sock: Optional[UdpMediaTransport] = None
         self._active_recv_task: Optional[asyncio.Task] = None
         self._active_rtcp_task: Optional[asyncio.Task] = None
         self._stream_lock = asyncio.Lock()
@@ -503,7 +591,7 @@ class ScreenStreamServer:
         # broadcast as a length-prefixed chunk.
         self._audio_service: Optional[DisplayService] = None
         self._audio_session_id: Optional[uuid.UUID] = None
-        self._audio_sock: Optional[socket.socket] = None
+        self._audio_sock: Optional[UdpMediaTransport] = None
         self._audio_recv_task: Optional[asyncio.Task] = None
         self._audio_subscribers: dict[asyncio.Queue[bytes], None] = {}
         self._audio_lock = asyncio.Lock()
@@ -609,8 +697,7 @@ class ScreenStreamServer:
         self._reconnect_poll_interval = 2.0
 
     # ----- per-session UDP receiver -----------------------------------------
-    async def _udp_recv_and_depacketize(self, sock: socket.socket) -> None:
-        sock.setblocking(False)
+    async def _udp_recv_and_depacketize(self, transport: UdpMediaTransport) -> None:
         loop = asyncio.get_running_loop()
         fu_buffer = bytearray()
         current_au: list[bytes] = []
@@ -642,7 +729,7 @@ class ScreenStreamServer:
         stats_last_log = asyncio.get_running_loop().time()
         while True:
             try:
-                data = await loop.sock_recv(sock, 65535)
+                data = await transport.recv(65535)
             except (OSError, asyncio.CancelledError):
                 return
             except Exception:
@@ -821,14 +908,13 @@ class ScreenStreamServer:
         )
 
     async def _send_rtcp_pli(self) -> None:
-        sock = self._active_sock
-        if sock is None or self._rtcp_dest is None:
+        transport = self._active_sock
+        if transport is None or self._rtcp_dest is None:
             return
         if not (self._local_ssrc and self._remote_ssrc):
             return
         try:
-            loop = asyncio.get_running_loop()
-            await loop.sock_sendto(sock, self._build_rtcp_pli(), (*self._rtcp_dest, 0, 0))
+            await transport.sendto(self._build_rtcp_pli(), *self._rtcp_dest)
             logger.debug("sent RTCP PLI (requested fresh keyframe)")
         except OSError as exc:
             logger.debug("PLI send failed (%s)", exc)
@@ -873,9 +959,8 @@ class ScreenStreamServer:
             0,
         )
 
-    async def _rtcp_send_loop(self, sock: socket.socket) -> None:
+    async def _rtcp_send_loop(self, transport: UdpMediaTransport) -> None:
         """Periodically send RTCP RR to the device so the encoder doesn't time out."""
-        loop = asyncio.get_running_loop()
         while True:
             try:
                 await asyncio.sleep(1.0)
@@ -885,7 +970,7 @@ class ScreenStreamServer:
                 continue
             packet = self._build_rtcp_rr()
             try:
-                await loop.sock_sendto(sock, packet, (*self._rtcp_dest, 0, 0))
+                await transport.sendto(packet, *self._rtcp_dest)
             except OSError as exc:
                 logger.debug("RTCP send failed (%s); the socket may be torn down", exc)
                 return
@@ -913,13 +998,12 @@ class ScreenStreamServer:
             0,
         )
 
-    async def _audio_rtcp_send_loop(self, sock: socket.socket) -> None:
+    async def _audio_rtcp_send_loop(self, transport: UdpMediaTransport) -> None:
         """Periodically send RTCP RR for the audio stream. Without this
         the device reaps the audio session after ~20 s (RTCPTimeoutInterval)
         and the encoder silently stops emitting RTP audio packets --
         mediastreamstatus confirmed the audio session disappears from the
         sessions list when we don't RR."""
-        loop = asyncio.get_running_loop()
         while True:
             try:
                 await asyncio.sleep(1.0)
@@ -929,7 +1013,7 @@ class ScreenStreamServer:
                 continue
             packet = self._build_audio_rtcp_rr()
             try:
-                await loop.sock_sendto(sock, packet, (*self._audio_rtcp_dest, 0, 0))
+                await transport.sendto(packet, *self._audio_rtcp_dest)
             except OSError as exc:
                 logger.debug("audio RTCP send failed (%s); the socket may be torn down", exc)
                 return
@@ -948,7 +1032,7 @@ class ScreenStreamServer:
     # AudioToolbox-via-ctypes plumbing. Output here is s16le 48 kHz
     # stereo interleaved PCM, broadcast in length-prefixed chunks to
     # /audio.bin subscribers (~192 KB/s).
-    async def _audio_udp_recv(self, sock: socket.socket) -> None:
+    async def _audio_udp_recv(self, transport: UdpMediaTransport) -> None:
         """Receive RTP audio packets, strip the RTP header, decode the
         AAC-ELD AU via AudioToolbox, and broadcast the interleaved s16le
         PCM to /audio.bin subscribers."""
@@ -959,8 +1043,6 @@ class ScreenStreamServer:
             return
         logger.info("audio decoder ready: AudioToolbox AAC-ELD -> s16le 48k stereo")
 
-        sock.setblocking(False)
-        loop = asyncio.get_running_loop()
         # Volume changes on the device side can land us with a packet
         # the decoder rejects -- and once AudioConverter has errored, all
         # subsequent FillComplexBuffer calls fail too. Track consecutive
@@ -972,7 +1054,7 @@ class ScreenStreamServer:
 
         while True:
             try:
-                data = await loop.sock_recv(sock, 65535)
+                data = await transport.recv(65535)
             except (OSError, asyncio.CancelledError):
                 return
             except Exception:
@@ -1074,21 +1156,15 @@ class ScreenStreamServer:
             ):
                 return
             await self._stop_audio_stream()
-            sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-            sock.bind(("::", 0))
-            try:
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
-            except OSError:
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 * 1024 * 1024)
-            port = sock.getsockname()[1]
             svc = DisplayService(self._rsd)
             await svc.connect()
-            local_ip = svc.service.local_address[0]
+            transport, receiver_ip = open_media_receiver(svc, (4 * 1024 * 1024, 1 * 1024 * 1024))
+            port = transport.port
             # Same shared client_session_id as the video stream so the
             # device pairs them on its media-session manager (Xcode's
             # Mirror does this -- confirmed in the remotexpc sniff).
             answer = await svc.start_audio_stream(
-                receiver_ip=local_ip,
+                receiver_ip=receiver_ip,
                 receiver_port=port,
                 sender_ip=self._sender_ip,
                 client_session_id=self._shared_session_id,
@@ -1114,14 +1190,14 @@ class ScreenStreamServer:
             self._audio_rtcp_dest = (self._sender_ip, source_port) if source_port else None
             self._audio_service = svc
             self._audio_session_id = sid
-            self._audio_sock = sock
-            self._audio_recv_task = asyncio.create_task(self._audio_udp_recv(sock))
+            self._audio_sock = transport
+            self._audio_recv_task = asyncio.create_task(self._audio_udp_recv(transport))
             # Keep the audio session alive by RR'ing every second.
             # RTCPTimeoutInterval=20 s by default; without this the
             # device reaps the audio session, mediastreamstatus drops it,
             # and the encoder stops emitting (silently).
             if self._audio_rtcp_dest is not None and self._audio_local_ssrc and self._audio_remote_ssrc:
-                self._audio_rtcp_task = asyncio.create_task(self._audio_rtcp_send_loop(sock))
+                self._audio_rtcp_task = asyncio.create_task(self._audio_rtcp_send_loop(transport))
             else:
                 logger.warning(
                     "audio RTCP disabled (missing fields: SourcePort=%s LocalSSRC=%s RemoteSSRC=%s)",
@@ -1198,26 +1274,17 @@ class ScreenStreamServer:
                         q.get_nowait()
                 state.needs_key = True
 
-            # Fresh socket — no buffered packets from a previous session can
-            # corrupt the new session's FU reassembly.
-            sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-            sock.bind(("::", 0))
-            # Pump SO_RCVBUF as high as the kernel will allow (capped by
-            # kern.ipc.maxsockbuf, typically 8 MB on macOS). Larger buffer =
-            # tolerates longer event-loop stalls without kernel-level UDP drops.
-            try:
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 * 1024 * 1024)
-            except OSError:
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
-            port = sock.getsockname()[1]
-
             svc = DisplayService(self._rsd)
             await svc.connect()
-            local_ip = svc.service.local_address[0]
+
+            # Fresh media receiver — no buffered packets from a previous session can corrupt
+            # the new session's FU reassembly.
+            transport, receiver_ip = open_media_receiver(svc, (8 * 1024 * 1024, 4 * 1024 * 1024))
+            port = transport.port
             # Pass the shared client_session_id so the device sees us as
             # one Mirror client across audio + video, matching Xcode.
             answer = await svc.start_video_stream(
-                receiver_ip=local_ip,
+                receiver_ip=receiver_ip,
                 receiver_port=port,
                 sender_ip=self._sender_ip,
                 display_id=self._display_id,
@@ -1244,10 +1311,10 @@ class ScreenStreamServer:
             self._rtcp_dest = (self._sender_ip, source_port) if source_port else None
             self._active_service = svc
             self._active_session_id = sid
-            self._active_sock = sock
-            self._active_recv_task = asyncio.create_task(self._udp_recv_and_depacketize(sock))
+            self._active_sock = transport
+            self._active_recv_task = asyncio.create_task(self._udp_recv_and_depacketize(transport))
             if self._rtcp_dest is not None and self._local_ssrc and self._remote_ssrc:
-                self._active_rtcp_task = asyncio.create_task(self._rtcp_send_loop(sock))
+                self._active_rtcp_task = asyncio.create_task(self._rtcp_send_loop(transport))
             else:
                 logger.warning(
                     "RTCP feedback disabled (missing fields in streamConfig: SourcePort=%s LocalSSRC=%s RemoteSSRC=%s)",

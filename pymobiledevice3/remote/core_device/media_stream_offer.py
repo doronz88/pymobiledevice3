@@ -76,6 +76,8 @@ The byte-for-byte equivalence between this builder (with default args) and
 the prior verbatim hex template is locked in by the doctest at the bottom.
 """
 
+from __future__ import annotations
+
 import plistlib
 import time
 import uuid

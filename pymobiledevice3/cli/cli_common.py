@@ -33,6 +33,7 @@ from pymobiledevice3.utils import get_asyncio_loop
 
 UDID_ENV_VAR = "PYMOBILEDEVICE3_UDID"
 TUNNEL_ENV_VAR = "PYMOBILEDEVICE3_TUNNEL"
+USERSPACE_ENV_VAR = "PYMOBILEDEVICE3_USERSPACE"
 USBMUX_ENV_VAR = "PYMOBILEDEVICE3_USBMUX"
 USBMUXD_SOCKET_ADDRESS_ENV_VAR = "USBMUXD_SOCKET_ADDRESS"
 USBMUX_ENV_VARS = [USBMUX_ENV_VAR, USBMUXD_SOCKET_ADDRESS_ENV_VAR]
@@ -183,6 +184,20 @@ async def _tunneld(udid: Optional[str] = None) -> Optional[RemoteServiceDiscover
     return service_provider
 
 
+def _cli_udid() -> Optional[str]:
+    """The target device UDID for the in-process userspace tunnel. make_rsd_dependency can't
+    declare a --udid option (it would collide with the device dependencies that already define
+    it), and the Click context isn't reliably available during dependency resolution across
+    typer versions — so read --udid from argv, falling back to the env var the option uses.
+    (Mirrors the existing sys.argv inspection in __main__.)"""
+    for i, arg in enumerate(sys.argv):
+        if arg == "--udid" and i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+        if arg.startswith("--udid="):
+            return arg.split("=", 1)[1]
+    return os.getenv(UDID_ENV_VAR)
+
+
 def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteServiceDiscoveryService]]:
     def rsd_dependency(
         rsd: Annotated[
@@ -207,6 +222,21 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),
         ] = None,
+        userspace: Annotated[
+            bool,
+            typer.Option(
+                "--userspace",
+                envvar=USERSPACE_ENV_VAR,
+                help=dedent("""\
+                    Establish the iOS 17+ tunnel in-process with a pure-Python userspace network stack, so NO
+                    root/admin is required. Downloads (device->host, e.g. fetch-symbols) run at roughly the
+                    kernel tunnel's throughput; host->device transfers (DDI mounts, file pushes) are slower, as
+                    their send segments are kept small for reliable delivery through the pure-Python path. Use
+                    when you cannot run a privileged tunnel.
+                """),
+                rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
+            ),
+        ] = False,
     ) -> Optional[RemoteServiceDiscoveryService]:
         if is_invoked_for_completion():
             # prevent lockdown connection establishment when in autocomplete mode
@@ -214,14 +244,33 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
 
         if rsd is not None and tunnel is not None:
             raise UsageError("Illegal usage: --rsd is mutually exclusive with --tunnel.")
+        if userspace and (rsd is not None or tunnel is not None):
+            raise UsageError("Illegal usage: --userspace is mutually exclusive with --rsd/--tunnel.")
 
+        # Explicit tunnel sources take precedence.
         if rsd is not None:
             rsd_service = RemoteServiceDiscoveryService(rsd)
             cli_loop.run_until_complete(rsd_service.connect())
             return rsd_service
+        if tunnel is not None:
+            return cli_loop.run_until_complete(_tunneld(tunnel))
 
-        if tunnel is not None or not allow_none:
-            return cli_loop.run_until_complete(_tunneld(tunnel or ""))
+        # Opt-in userspace tunnel (--userspace / PYMOBILEDEVICE3_USERSPACE): establish the
+        # tunnel in-process with the pure-Python PyTCP stack — no root. Downloads run near the
+        # kernel tunnel's rate; host->device transfers are slower (see the flag's help). PyTCP
+        # (pmd-pytcp) is a regular dependency on Python 3.9+, so any failure here is a real
+        # establishment error and is surfaced rather than masked by a tunneld fallback.
+        if userspace:
+            # Target the same device the rest of the CLI would (see _cli_udid).
+            serial = _cli_udid()
+            from pymobiledevice3.remote import userspace_tunnel
+
+            return cli_loop.run_until_complete(userspace_tunnel.establish_userspace_rsd(serial=serial))
+
+        # Default: a required RSD uses the kernel tunnel via tunneld (needs a privileged
+        # `remote tunneld`). Pass --userspace for a no-root tunnel instead.
+        if not allow_none:
+            return cli_loop.run_until_complete(_tunneld(""))
 
     return rsd_dependency
 

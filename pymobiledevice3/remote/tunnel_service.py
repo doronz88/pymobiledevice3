@@ -9,6 +9,7 @@ import os
 import platform
 import plistlib
 import secrets
+import select
 import ssl
 import struct
 import sys
@@ -157,6 +158,29 @@ RPPairingPacket = Struct(
     "body" / Prefixed(Int16ub, GreedyBytes),
 )
 
+#: When True, :func:`create_tun_device` builds the tunnel's interface as a pure-Python
+#: userspace stack (``UserspaceTun``, no root) instead of a kernel ``utun`` (needs root/admin).
+#: The no-root establishment flow flips this on. Kept as a module-level flag so the tunnel
+#: device is selected by an explicit factory call rather than by monkeypatching a class.
+USE_USERSPACE_TUNNEL = False
+
+
+def create_tun_device(interface_name: str = DEFAULT_INTERFACE_NAME):
+    """Create the tunnel's link-layer device, consulting the user's kernel-vs-userspace choice.
+
+    Default: a kernel :class:`pytun_pmd3.TunTapDevice` (requires root/admin). When
+    :data:`USE_USERSPACE_TUNNEL` is set, a no-root userspace PyTCP stack. The userspace import
+    is deferred so the optional PyTCP dependency is pulled in only when actually requested.
+    """
+    if USE_USERSPACE_TUNNEL:
+        from pymobiledevice3.remote.userspace_tunnel import UserspaceTun
+
+        return UserspaceTun(interface_name)
+    if sys.platform == "win32":
+        # Only the win32 TunTapDevice implementation accepts an interface name.
+        return TunTapDevice(interface_name)
+    return TunTapDevice()
+
 
 class RemotePairingTunnel(ABC):
     def __init__(self):
@@ -181,13 +205,7 @@ class RemotePairingTunnel(ABC):
     async def tun_read_task(self) -> None:
         read_size = self.tun.mtu + len(LOOPBACK_HEADER)
         try:
-            if sys.platform != "win32":
-                while True:
-                    packet = await asyncio.to_thread(self.tun.read, read_size)
-                    assert packet.startswith(LOOPBACK_HEADER)
-                    packet = packet[len(LOOPBACK_HEADER) :]
-                    await self.send_packet_to_device(packet)
-            else:
+            if sys.platform == "win32":
                 while True:
                     packet = await self.tun.async_read()
                     if packet:
@@ -195,17 +213,80 @@ class RemotePairingTunnel(ABC):
                             # Make sure to output only IPv6 packets
                             continue
                         await self.send_packet_to_device(packet)
+            elif hasattr(self.tun, "fileno"):
+                # Kernel tun (pytun): read via the event loop's readable callback rather than
+                # a per-packet ``asyncio.to_thread`` hop. The thread-pool round-trip posts each
+                # read result back through the loop's ready queue, so under a busy loop (e.g.
+                # tunneld, which also runs the usb/wifi/usbmux/mobdev2 monitors and the HTTP
+                # server) every packet's read completion queues behind those callbacks and the
+                # upload collapses to a few MB/s. ``add_reader`` runs the read inline in the
+                # loop with no cross-thread handoff. The fd is left blocking — the callback
+                # only fires when it is readable, so a single ``os.read`` returns one queued
+                # packet without blocking, and the reverse ``self.tun.write`` path (which shares
+                # the fd) keeps its blocking semantics.
+                await self._tun_read_loop_via_reader(read_size)
+            else:
+                # Userspace tun (no pollable fd): blocking read off the loop via a worker thread.
+                while True:
+                    packet = await asyncio.to_thread(self.tun.read, read_size)
+                    assert packet.startswith(LOOPBACK_HEADER)
+                    packet = packet[len(LOOPBACK_HEADER) :]
+                    await self.send_packet_to_device(packet)
         except ConnectionResetError:
             self._logger.warning(f"got connection reset in {asyncio.current_task().get_name()}")
         except OSError:
             self._logger.warning(f"got oserror in {asyncio.current_task().get_name()}")
 
+    async def _tun_read_loop_via_reader(self, read_size: int) -> None:
+        loop = asyncio.get_running_loop()
+        fd = self.tun.fileno()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def on_readable() -> None:
+            # Drain every packet currently buffered on the fd in this one callback rather than
+            # one per loop iteration. Under a busy loop (tunneld) the iteration rate is only a
+            # few hundred/s, which would otherwise cap the relay regardless of link speed. The
+            # fd stays blocking (the reverse self.tun.write path shares it); select(timeout=0)
+            # reports whether another packet is ready so a read never blocks the loop.
+            while True:
+                try:
+                    packet = os.read(fd, read_size)
+                except (BlockingIOError, InterruptedError):
+                    return
+                except OSError:
+                    queue.put_nowait(None)
+                    return
+                if not packet:
+                    return
+                queue.put_nowait(packet)
+                if not select.select((fd,), (), (), 0)[0]:
+                    return
+
+        loop.add_reader(fd, on_readable)
+        try:
+            while True:
+                # Block only when the queue is empty; once a packet arrives, drain the whole
+                # backlog with get_nowait() before yielding again. ``await queue.get()`` yields
+                # to the loop, and under a busy loop (tunneld) a reschedule costs milliseconds —
+                # paying that per packet caps the relay at a few hundred packets/s. The reader
+                # callback keeps filling the queue while we are suspended, so draining it in one
+                # go amortises the reschedule across the whole burst.
+                packet = await queue.get()
+                while True:
+                    if packet is None:
+                        return
+                    if packet.startswith(LOOPBACK_HEADER):
+                        packet = packet[len(LOOPBACK_HEADER) :]
+                    await self.send_packet_to_device(packet)
+                    try:
+                        packet = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+        finally:
+            loop.remove_reader(fd)
+
     def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
-        if sys.platform == "win32":
-            # Only win32 tunnel implementation supports interface name
-            self.tun = TunTapDevice(interface_name)
-        else:
-            self.tun = TunTapDevice()
+        self.tun = create_tun_device(interface_name)
         self.tun.addr = address
         self.tun.mtu = mtu
         self.tun.up()

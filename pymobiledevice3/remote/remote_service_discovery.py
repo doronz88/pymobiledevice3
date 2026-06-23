@@ -3,7 +3,7 @@ import logging
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
 from pymobiledevice3.common import get_home_folder
@@ -33,13 +33,28 @@ RSD_PORT = 58783
 
 
 class RemoteServiceDiscoveryService(LockdownServiceProvider):
-    def __init__(self, address: tuple[str, int], name: Optional[str] = None) -> None:
+    def __init__(
+        self, address: tuple[str, int], name: Optional[str] = None, open_connection: Optional[Callable] = None
+    ) -> None:
         super().__init__()
         self.name = name
-        self.service = RemoteXPCConnection(address)
+        # ``asyncio.open_connection``-compatible dialer used for the RemoteXPC handshake and every
+        # service connection opened through this RSD (read by callers such as FileServiceService).
+        # ``None`` => stdlib ``asyncio.open_connection``; the userspace tunnel injects a relay dialer
+        # so device-bound connections route through its in-process stack without a global monkeypatch.
+        self.open_connection = open_connection
+        self.service = RemoteXPCConnection(address, open_connection=open_connection)
         self.peer_info: Optional[dict] = None
         self.lockdown: Optional[LockdownClient] = None
         self.all_values: Optional[dict] = None
+
+    @property
+    def is_in_process_tunnel(self) -> bool:
+        """True when this RSD reaches the device through an in-process dialer (the userspace
+        tunnel) rather than a kernel-routable interface. The device address (``self.service.address``)
+        is then only reachable from THIS process, so it must not be handed to external tools such as
+        lldb as a connect endpoint."""
+        return self.open_connection is not None
 
     @property
     def product_version(self) -> str:
@@ -148,7 +163,9 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         return {"Port": self.get_service_port(name), "EnableServiceSSL": False}
 
     async def create_service_connection(self, port: int) -> ServiceConnection:
-        return await ServiceConnection.create_using_tcp(self.service.address[0], port)
+        return await ServiceConnection.create_using_tcp(
+            self.service.address[0], port, open_connection=self.open_connection
+        )
 
     async def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
         service = await self.start_lockdown_service_without_checkin(name)
@@ -187,7 +204,9 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             raise
 
     def start_remote_service(self, name: str) -> RemoteXPCConnection:
-        service = RemoteXPCConnection((self.service.address[0], self.get_service_port(name)))
+        service = RemoteXPCConnection(
+            (self.service.address[0], self.get_service_port(name)), open_connection=self.open_connection
+        )
         return service
 
     async def start_service(self, name: str) -> Union[RemoteXPCConnection, ServiceConnection]:
