@@ -277,14 +277,19 @@ class TunneldCore:
                                 name=f"start-tunnel-task-{task_identifier}",
                             ),
                         )
-            except (BlockingIOError, StreamError) as e:
-                # Connection lost - will reconnect on next iteration
-                logger.debug(f"usbmux connection error: {e}, reconnecting...")
-                await asyncio.sleep(USBMUX_INTERVAL)
             except (ConnectionFailedToUsbmuxdError, OSError):
                 # This is exception is expected to occur repeatedly on linux running usbmuxd
-                # as long as there isn't any physical iDevice connected
+                # as long as there isn't any physical iDevice connected.
+                # NOTE: ConnectionFailedToUsbmuxdError subclasses MuxException, so this more
+                # specific handler must stay above the MuxException handler below.
                 logger.debug("failed to connect to usbmux. waiting for it to restart")
+                await asyncio.sleep(USBMUX_INTERVAL)
+            except (BlockingIOError, StreamError, MuxException) as e:
+                # Connection lost - will reconnect on next iteration.
+                # MuxException("socket connection broken") is raised when usbmuxd drops the
+                # listen socket on device replug/reboot (notably on Linux); reconnect instead
+                # of letting the monitor task die (see issue #1742).
+                logger.debug(f"usbmux connection error: {e}, reconnecting...")
                 await asyncio.sleep(USBMUX_INTERVAL)
             except asyncio.CancelledError:
                 break
