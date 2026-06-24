@@ -67,6 +67,7 @@ from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
     InvalidServiceError,
     PairingError,
+    PskCipherNotSupportedError,
     PyMobileDevice3Exception,
     QuicProtocolNotSupportedError,
     RemotePairingCompletedError,
@@ -621,6 +622,20 @@ class RemotePairingProtocol(StartTcpTunnel):
                 "iOS 18.2+ removed QUIC protocol support. Use TCP instead (requires python3.13+)"
             ) from e
 
+    @staticmethod
+    def _set_psk_ciphers(ctx: ssl.SSLContext) -> None:
+        """Restrict the context to PSK ciphers, raising an actionable error if the SSL backend has none.
+
+        Some SSL backends (notably LibreSSL, used by the macOS Command Line Tools python) ship without
+        PSK cipher suites, so this fails with SSLError('No cipher can be selected.'). See issue #1570."""
+        try:
+            ctx.set_ciphers("PSK")
+        except ssl.SSLError as e:
+            raise PskCipherNotSupportedError(
+                f"This python's SSL backend ({ssl.OPENSSL_VERSION}) cannot select the PSK ciphers required "
+                f"for the TCP tunnel. Use an OpenSSL-based python build (e.g. Homebrew python3) instead."
+            ) from e
+
     @asynccontextmanager
     async def start_tcp_tunnel(self) -> AsyncGenerator[TunnelResult, None]:
         parameters = await self.create_tcp_listener()
@@ -634,13 +649,13 @@ class RemotePairingProtocol(StartTcpTunnel):
             ctx.maximum_version = ssl.TLSVersion.TLSv1_2
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
-            ctx.set_ciphers("PSK")
+            self._set_psk_ciphers(ctx)
             ctx.set_psk_client_callback(lambda hint: (None, self.encryption_key))
         else:
             # TODO: remove this when python3.12 becomes deprecated
             ctx = SSLPSKContext(ssl.PROTOCOL_TLSv1_2)
             ctx.psk = self.encryption_key
-            ctx.set_ciphers("PSK")
+            self._set_psk_ciphers(ctx)
         try:
             reader, writer = await asyncio.open_connection(sock=sock, ssl=ctx, server_hostname="")
         except Exception:

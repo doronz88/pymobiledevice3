@@ -55,6 +55,7 @@ __all__ = [
     "PasscodeRequiredError",
     "PasswordRequiredError",
     "ProfileError",
+    "PskCipherNotSupportedError",
     "PyMobileDevice3Exception",
     "QuicProtocolNotSupportedError",
     "RSDRequiredError",
@@ -501,6 +502,10 @@ class FeatureNotSupportedError(SupportError):
 
 class QuicProtocolNotSupportedError(PyMobileDevice3Exception):
     """QUIC tunnel support was removed on iOS 18.2+"""
+
+
+class PskCipherNotSupportedError(PyMobileDevice3Exception):
+    """The active Python's SSL backend cannot select the PSK ciphers required for the TCP tunnel"""
 
     pass
 
