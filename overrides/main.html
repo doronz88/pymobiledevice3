@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{#- Site-wide Open Graph / Twitter card so shared links preview the social card. -#}
+{% block extrahead %}
+  {% set page_title = (page.title ~ " - " ~ config.site_name) if (page and page.title and not page.is_homepage) else config.site_name %}
+  {% set image = config.site_url ~ "assets/social-card.png" %}
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{ page_title }}">
+  <meta property="og:description" content="{{ config.site_description }}">
+  <meta property="og:image" content="{{ image }}">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  {% if page and page.canonical_url %}<meta property="og:url" content="{{ page.canonical_url }}">{% endif %}
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ page_title }}">
+  <meta name="twitter:description" content="{{ config.site_description }}">
+  <meta name="twitter:image" content="{{ image }}">
+{% endblock %}

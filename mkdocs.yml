@@ -8,6 +8,7 @@ copyright: Licensed under GPL-3.0-or-later
 
 theme:
   name: material
+  custom_dir: overrides
   logo: assets/logo.png
   favicon: assets/logo.png
   icon:
