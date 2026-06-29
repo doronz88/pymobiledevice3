@@ -105,13 +105,17 @@ class ActivityTraceTap(Tap):
         self.generation = 0
         self.background = 0
         self.tables = []
+        # trailing bytes of an opcode that was split across two DTX frames
+        self._carry = b""
 
     async def _get_next_message(self):
         message = b""
         while message.startswith(b"bplist") or len(message) == 0:
             # ignore heartbeat messages
             message = await self.channel.receive_message()
-        self._set_current_message(message)
+        # an opcode (and its immediate words) may be split across frames; prepend the leftover
+        self._set_current_message(self._carry + message)
+        self._carry = b""
 
     def _set_current_message(self, message):
         self._message = BytesIO(message)
@@ -258,8 +262,6 @@ class ActivityTraceTap(Tap):
         pass
 
     def _parse(self):
-        word = self._read_word()
-
         operations = {
             CMD_TABLE_RESET: self._handle_table_reset,
             CMD_SENTINEL: self._handle_sentinel,
@@ -273,20 +275,26 @@ class ActivityTraceTap(Tap):
         }
 
         while True:
-            opcode = word >> 8
+            # remember where this opcode begins, in case the frame ends mid-opcode
+            start = self._message.tell()
+            try:
+                word = self._read_word()
+                opcode = word >> 8
 
-            if opcode in operations:
-                result = operations[opcode](word)
-            else:
-                self._handle_push(word)
+                if opcode in operations:
+                    result = operations[opcode](word)
+                else:
+                    self._handle_push(word)
+                    result = None
+            except EOFError:
+                # the frame ended in the middle of an opcode (e.g. a multi-word push);
+                # carry the remaining bytes over to the next frame instead of crashing
+                self._message.seek(start)
+                self._carry = self._message.read()
+                break
 
             if opcode == CMD_END_ROW and result is not None:
                 yield result
-
-            try:
-                word = self._read_word()
-            except EOFError:
-                break
 
     async def __aiter__(self):
         while True:
