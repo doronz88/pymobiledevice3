@@ -3,6 +3,7 @@ import plistlib
 import struct
 import tempfile
 import typing
+import uuid
 from datetime import datetime
 from enum import IntEnum
 from pathlib import Path
@@ -94,6 +95,16 @@ class SyslogEntry:
     filename: str
     message: str
     label: typing.Optional[SyslogLabel] = None
+    # unique process id (the `procid` activity-stream field); equals `pid` in practice on iOS
+    procid: typing.Optional[int] = None
+    # id of the thread that emitted the entry (the `thread` activity-stream field)
+    thread_id: typing.Optional[int] = None
+    # UUID of the sender image (the one named by `image_name`); pair with `image_offset` to symbolicate
+    image_uuid: typing.Optional[uuid.UUID] = None
+    # UUID of the process' main executable (the one named by `filename`)
+    process_image_uuid: typing.Optional[uuid.UUID] = None
+    # raw high-resolution device timestamp in mach ticks (monotonic; clock domain unverified)
+    mach_timestamp: typing.Optional[int] = None
 
 
 def parse_syslog_entry(data: bytes) -> SyslogEntry:
@@ -112,6 +123,10 @@ def parse_syslog_entry(data: bytes) -> SyslogEntry:
     pid = struct.unpack("<I", data[offset : offset + 4])[0]
     offset += 4
 
+    # The next 42 bytes hold: procid at +0 (u64), then the process' main executable UUID at +8
+    procid = struct.unpack("<Q", data[offset : offset + 8])[0]
+    process_image_uuid = uuid.UUID(bytes=data[offset + 8 : offset + 24])
+
     # Skip 42 bytes
     offset += 42
 
@@ -129,6 +144,11 @@ def parse_syslog_entry(data: bytes) -> SyslogEntry:
     # Parse level (1 byte)
     level = data[offset]
     offset += 1
+
+    # The next 38 bytes hold the raw mach timestamp at +4, the thread id at +14, and the sender image UUID at +22
+    mach_timestamp = struct.unpack("<Q", data[offset + 4 : offset + 12])[0]
+    thread_id = struct.unpack("<Q", data[offset + 14 : offset + 22])[0]
+    image_uuid = uuid.UUID(bytes=data[offset + 22 : offset + 38])
 
     # Skip 38 bytes
     offset += 38
@@ -190,6 +210,11 @@ def parse_syslog_entry(data: bytes) -> SyslogEntry:
         filename=filename,
         message=message,
         label=label,
+        procid=procid,
+        thread_id=thread_id,
+        image_uuid=image_uuid,
+        process_image_uuid=process_image_uuid,
+        mach_timestamp=mach_timestamp,
     )
 
 

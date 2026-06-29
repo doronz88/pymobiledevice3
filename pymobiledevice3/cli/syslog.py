@@ -49,11 +49,16 @@ def format_json_line(syslog_entry: SyslogEntry) -> str:
     return json.dumps(
         {
             "pid": syslog_entry.pid,
+            "procid": syslog_entry.procid,
+            "thread_id": syslog_entry.thread_id,
             "timestamp": syslog_entry.timestamp.isoformat(),
             "level": syslog_entry.level.name,
             "image_name": syslog_entry.image_name,
             "image_offset": syslog_entry.image_offset,
+            "image_uuid": str(syslog_entry.image_uuid) if syslog_entry.image_uuid else None,
+            "process_image_uuid": str(syslog_entry.process_image_uuid) if syslog_entry.process_image_uuid else None,
             "filename": syslog_entry.filename,
+            "mach_timestamp": syslog_entry.mach_timestamp,
             "message": syslog_entry.message,
             "label": label,
         },
