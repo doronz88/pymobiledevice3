@@ -2,6 +2,7 @@ import json
 import re
 from datetime import datetime
 from io import StringIO
+from uuid import UUID
 
 import pytest
 
@@ -317,15 +318,25 @@ def test_format_json_line_with_label():
         filename="/p/App",
         message="hello",
         label=SyslogLabel(subsystem="com.foo.bar", category="cat"),
+        procid=42,
+        thread_id=4321,
+        image_uuid=UUID("016e54e1-6f01-3644-941d-5073a6134a7b"),
+        process_image_uuid=UUID("7870bc32-030d-3497-80eb-d80b2de7dfaf"),
+        mach_timestamp=135126255336423432,
     )
     obj = json.loads(syslog_module.format_json_line(entry))
     assert obj == {
         "pid": 42,
+        "procid": 42,
+        "thread_id": 4321,
         "timestamp": "2026-04-18T10:15:32.123456",
         "level": "ERROR",
         "image_name": "/p/App",
         "image_offset": 16,
+        "image_uuid": "016e54e1-6f01-3644-941d-5073a6134a7b",
+        "process_image_uuid": "7870bc32-030d-3497-80eb-d80b2de7dfaf",
         "filename": "/p/App",
+        "mach_timestamp": 135126255336423432,
         "message": "hello",
         "label": {"subsystem": "com.foo.bar", "category": "cat"},
     }
