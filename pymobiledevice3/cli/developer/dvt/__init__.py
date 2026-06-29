@@ -540,7 +540,7 @@ async def dvt_name_for_gid(service_provider: ServiceProviderDep, gid: int) -> No
 
 @cli.command("oslog")
 @async_command
-async def dvt_oslog(service_provider: ServiceProviderDep, pid: int) -> None:
+async def dvt_oslog(service_provider: ServiceProviderDep, pid: Optional[int] = None) -> None:
     """Sniff device oslog (not very stable, but includes more data and normal syslog)"""
     async with DvtProvider(service_provider) as dvt, ActivityTraceTap(dvt) as tap:
         async for message in tap:
