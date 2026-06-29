@@ -12,10 +12,22 @@ class ApplicationListingService(DTXService):
 
 
 class ApplicationListing(DtxService[ApplicationListingService]):
+    """
+    Enumerate the applications installed on the device over the
+    `com.apple.instruments.server.services.device.applictionListing` DTX channel.
+
+    Constructed with a `DvtProvider`, e.g. ``ApplicationListing(DvtProvider(service_provider))``,
+    and used as an async context manager to open the channel.
+    """
+
     async def applist(self) -> list:
         """
-        Get the applications list from the device.
-        :return: List of applications and their attributes.
+        Get the list of installed applications.
+
+        Invokes `installedApplicationsMatching:registerUpdateToken:` with an empty
+        match filter and no update token, so every installed application is returned.
+
+        :returns: One dict of attributes per installed application.
         """
         result = await self.service.installed_applications_matching_register_update_token_({}, "")
         assert isinstance(result, list)

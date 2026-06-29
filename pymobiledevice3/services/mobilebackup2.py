@@ -81,6 +81,8 @@ INCREMENTAL_BACKUP_REQUIRED_FILES = ("Manifest.plist", "Manifest.db", "Status.pl
 
 @dataclass(frozen=True)
 class BackupSelectionRule:
+    """A preset rule selecting backup files by `domain` and `relative_path` (e.g. SMS, contacts)."""
+
     domain: str
     relative_path: str
 
@@ -97,6 +99,8 @@ class BackupSelectionRule:
 
 @dataclass(frozen=True)
 class BackupFile:
+    """Identifies a single backup file passed to a filter callback; fields are populated according to context."""
+
     file_id: Optional[str] = None
     domain: Optional[str] = None
     relative_path: Optional[str] = None
@@ -136,6 +140,20 @@ BACKUP_SELECTIONS = {
 
 
 class Mobilebackup2Service(LockdownService):
+    """
+    Client for the `com.apple.mobilebackup2` service, the iTunes/Finder-style device backup protocol.
+
+    Drives full and incremental backups, restores, and the related operations (info, list,
+    extract, unback, change password, erase device) over a `DeviceLink` channel. Backups can
+    be filtered to a subset of files via a filter callback, and encrypted backups are
+    supported (password required for filtering and restore). The right underlying service is
+    selected automatically: `SERVICE_NAME` over classic lockdown, or `RSD_SERVICE_NAME` over
+    RemoteXPC/RSD.
+
+    Inherits async context manager support from `LockdownService`; use within an
+    ``async with`` block to manage the underlying connection.
+    """
+
     SERVICE_NAME = "com.apple.mobilebackup2"
     RSD_SERVICE_NAME = "com.apple.mobilebackup2.shim.remote"
 
@@ -146,6 +164,12 @@ class Mobilebackup2Service(LockdownService):
             super().__init__(lockdown, self.RSD_SERVICE_NAME, include_escrow_bag=True)
 
     async def get_will_encrypt(self) -> bool:
+        """
+        Report whether the device is configured to encrypt its backups.
+
+        :returns: True if backup encryption is enabled on the device, False otherwise (including
+            when the value cannot be read).
+        """
         try:
             will_encrypt = await self.lockdown.get_value("com.apple.mobile.backup", "WillEncrypt")
             return bool(will_encrypt)
@@ -162,14 +186,21 @@ class Mobilebackup2Service(LockdownService):
         unback: bool = False,
     ) -> None:
         """
-        Backup a device.
-        :param full: Whether to do a full backup. If full is True, any previous backup attempts will be discarded.
-        :param backup_directory: Directory to write backup to.
-        :param progress_callback: Function to be called as the backup progresses.
-        :param filter_callback: Callback deciding whether to keep a backup file.
-        :param password: Password of the backup if it is encrypted.
-        :param unback: Also unpack the completed backup locally using pyiosbackup.
-        The function shall receive the percentage as a parameter.
+        Back up the device into `backup_directory`/<device-udid>.
+
+        :param full: Perform a full backup, discarding any previous incremental state. A full
+            backup is also forced when a filter callback is given or when incremental metadata
+            is missing.
+        :param backup_directory: Directory the backup is written to (a per-device subdirectory
+            is created under it).
+        :param progress_callback: Called as the backup progresses with the completion
+            percentage as its sole argument.
+        :param filter_callback: Optional predicate deciding which backup files to keep; files
+            it rejects are pruned after the backup completes.
+        :param password: Backup password; required when filtering an encrypted backup.
+        :param unback: When True, also unpack the completed backup locally using pyiosbackup.
+        :raises BackupFilterPasswordRequiredError: If a filter callback is given without a
+            password while the device encrypts backups.
         """
         backup_directory = Path(backup_directory)
         device_directory = backup_directory / self.lockdown.udid
@@ -280,18 +311,20 @@ class Mobilebackup2Service(LockdownService):
         skip_apps: bool = False,
     ):
         """
-        Restore a previous backup to the device.
+        Restore a previously created backup to the device.
+
         :param backup_directory: Path of the backup directory.
         :param system: Whether to restore system files.
         :param reboot: Reboot the device when done.
-        :param copy: Create a copy of backup folder before restoring.
+        :param copy: Create a copy of the backup folder before restoring.
         :param settings: Restore device settings.
-        :param remove: Remove items which aren't being restored.
-        :param password: Password of the backup if it is encrypted.
-        :param source: Identifier of device to restore its backup.
-        :param progress_callback: Function to be called as the backup progresses.
-        :param skip_apps: Do not trigger re-installation of apps after restore.
-        The function shall receive the current percentage of the progress as a parameter.
+        :param remove: Remove items on the device that aren't part of the restore.
+        :param password: Password of the backup; required if the backup is encrypted.
+        :param source: Identifier of the device whose backup is restored; defaults to the
+            connected device's UDID.
+        :param progress_callback: Called as the restore progresses with the completion
+            percentage as its sole argument.
+        :param skip_apps: Do not trigger re-installation of apps after the restore.
         """
         backup_directory = Path(backup_directory)
         source = source if source else self.lockdown.udid
@@ -343,9 +376,11 @@ class Mobilebackup2Service(LockdownService):
     async def info(self, backup_directory=".", source: str = "") -> str:
         """
         Get information about a backup.
+
         :param backup_directory: Path of the backup directory.
-        :param source: Identifier of device to get info about its backup.
-        :return: Information about a backup.
+        :param source: Identifier of the device to get info about; defaults to the connected
+            device's UDID.
+        :returns: Information about the backup, as returned by the device.
         """
         backup_dir = Path(backup_directory)
         self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
@@ -360,9 +395,10 @@ class Mobilebackup2Service(LockdownService):
     async def list(self, backup_directory=".", source: str = "") -> str:
         """
         List the files in the last backup.
+
         :param backup_directory: Path of the backup directory.
-        :param source: Identifier of device to list its backup data.
-        :return: List of files and additional data about each file, all in a CSV format.
+        :param source: Identifier of the device to list; defaults to the connected device's UDID.
+        :returns: The files and per-file metadata in CSV format.
         """
         backup_dir = Path(backup_directory)
         source = source if source else self.lockdown.udid
@@ -378,10 +414,12 @@ class Mobilebackup2Service(LockdownService):
 
     async def unback(self, backup_directory=".", password: str = "", source: str = "") -> None:
         """
-        Unpack a complete backup to its device hierarchy.
+        Unpack a complete backup into its original device file hierarchy.
+
         :param backup_directory: Path of the backup directory.
-        :param password: Password of the backup if it is encrypted.
-        :param source: Identifier of device to unpack its backup.
+        :param password: Password of the backup; required if the backup is encrypted.
+        :param source: Identifier of the device whose backup is unpacked; defaults to the
+            connected device's UDID.
         """
         backup_dir = Path(backup_directory)
         self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
@@ -396,6 +434,16 @@ class Mobilebackup2Service(LockdownService):
 
     @staticmethod
     def unback_with_pyiosbackup(device_directory: Path, password: str = "") -> Path:
+        """
+        Unpack a local backup directory using pyiosbackup, on the host without the device.
+
+        The output is written to a sibling directory named ``<device_directory>.unback``,
+        replacing it if it already exists.
+
+        :param device_directory: Path of the per-device backup directory to unpack.
+        :param password: Password of the backup; required if the backup is encrypted.
+        :returns: Path of the directory the backup was unpacked into.
+        """
         output_directory = device_directory.with_name(f"{device_directory.name}.unback")
         if output_directory.exists():
             shutil.rmtree(output_directory)
@@ -407,12 +455,14 @@ class Mobilebackup2Service(LockdownService):
         self, domain_name: str, relative_path: str, backup_directory=".", password: str = "", source: str = ""
     ) -> None:
         """
-        Extract a file from a previous backup.
-        :param domain_name: File's domain name, e.g., SystemPreferencesDomain or HomeDomain.
-        :param relative_path: File path.
+        Extract a single file from a previous backup.
+
+        :param domain_name: The file's domain, e.g. SystemPreferencesDomain or HomeDomain.
+        :param relative_path: Path of the file within the domain.
         :param backup_directory: Path of the backup directory.
-        :param password: Password of the last backup if it is encrypted.
-        :param source: Identifier of device to extract file from its backup.
+        :param password: Password of the backup; required if the backup is encrypted.
+        :param source: Identifier of the device to extract from; defaults to the connected
+            device's UDID.
         """
         backup_dir = Path(backup_directory)
         self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
@@ -432,8 +482,9 @@ class Mobilebackup2Service(LockdownService):
 
     async def change_password(self, backup_directory=".", old: str = "", new: str = "") -> None:
         """
-        Change backup password.
-        :param backup_directory: Backups directory.
+        Change, enable, or disable the device's backup encryption password.
+
+        :param backup_directory: Path of the backup directory.
         :param old: Previous password. Omit when enabling backup encryption.
         :param new: New password. Omit when disabling backup encryption.
         """
@@ -448,7 +499,9 @@ class Mobilebackup2Service(LockdownService):
 
     async def erase_device(self, backup_directory=".") -> None:
         """
-        Erase the device.
+        Erase the device, restoring it to factory state.
+
+        :param backup_directory: Path of the backup directory used for the device link channel.
         """
         with suppress(IncompleteReadError):
             async with self.device_link(Path(backup_directory)) as dl:
@@ -457,9 +510,11 @@ class Mobilebackup2Service(LockdownService):
 
     async def version_exchange(self, dl: DeviceLink, local_versions=None) -> None:
         """
-        Exchange versions with the device and assert that the device supports our version of the protocol.
-        :param dl: Initialized device link.
-        :param local_versions: versions supported by us.
+        Exchange protocol versions with the device and assert it supports one of ours.
+
+        :param dl: An initialized device link channel.
+        :param local_versions: Protocol versions supported by the host; defaults to
+            `SUPPORTED_VERSIONS`.
         """
         if local_versions is None:
             local_versions = SUPPORTED_VERSIONS
@@ -472,6 +527,16 @@ class Mobilebackup2Service(LockdownService):
         assert reply[1]["ProtocolVersion"] in local_versions
 
     async def init_mobile_backup_factory_info(self, afc: AfcService):
+        """
+        Build the Info.plist dictionary describing the device for a new backup.
+
+        Collects device identity values, the list of installed user apps (with their SINF and
+        iTunes metadata where available), and the iTunes control files needed to make the
+        backup restorable.
+
+        :param afc: An open AFC service used to read the device's iTunes control files.
+        :returns: The assembled Info.plist contents as a dictionary.
+        """
         async with InstallationProxyService(self.lockdown) as ip, SpringBoardServicesService(self.lockdown) as sbs:
             root_node = self.lockdown.all_values
             itunes_settings = self.lockdown.all_values.get("com.apple.iTunes", {})
@@ -580,26 +645,14 @@ class Mobilebackup2Service(LockdownService):
     @staticmethod
     def resolve_backup_selection(only: Optional[Sequence[str]]) -> tuple[BackupSelectionRule, ...]:
         """
-        Resolves and maps a list of backup selection names to their corresponding backup selection rules.
+        Map preset selection names (e.g. "sms", "contacts") to their `BackupSelectionRule` sets.
 
-        Given a sequence of selection names, this method retrieves the associated rules from a predefined
-        mapping. If no input is provided, an empty tuple is returned. If one or more invalid selection
-        names are given, an exception is raised specifying the invalid name and listing all available
-        options.
+        Names are matched case-insensitively against the built-in `BACKUP_SELECTIONS` presets.
 
-        :param only: A sequence of backup selection names to resolve. This determines which
-            predefined backup rules will be applied. If None or an empty list is supplied,
-            no backup selections will be resolved.
-        :type only: Optional[Sequence[str]]
-
-        :return: A tuple of backup selection rules derived from the input sequence. Each valid
-            name in the input is resolved into its corresponding set of rules and returned
-            as a tuple.
-        :rtype: tuple[BackupSelectionRule, ...]
-
-        :raises PyMobileDevice3Exception: If an unsupported backup selection name is provided
-            in the input. The error message includes the invalid name and a list of valid
-            selection names.
+        :param only: Selection names to resolve. If None or empty, no selections are resolved.
+        :returns: The combined rules for all resolved names, or an empty tuple if `only` is empty.
+        :raises PyMobileDevice3Exception: If a name is not a known preset; the message lists the
+            invalid name and all available presets.
         """
         if not only:
             return ()
@@ -620,18 +673,16 @@ class Mobilebackup2Service(LockdownService):
         file_name: str, device_name: str, filter_callback: Optional[BackupFilterCallback]
     ) -> bool:
         """
-        Determines whether a backup file should be preserved based on its name, the device it belongs
-        to, and an optional filter callback. This method checks if the file is a metadata file from
-        known backup metadata files, returning True if it matches. If a filter callback is provided,
-        it will use the callback to decide preservation for other files.
+        Decide whether a backup file should be preserved.
 
-        :param file_name: The name (with or without path) of the file to evaluate.
-        :param device_name: The name of the device associated with the backup file.
-        :param filter_callback: An optional callable used to apply custom filtering logic to
-                                decide preservation. It should take a BackupFile instance as an
-                                argument and return a boolean indicating whether the file should
-                                be preserved.
-        :return: A boolean value indicating whether the backup file should be preserved.
+        Known backup metadata files (`BACKUP_METADATA_FILES`) are always preserved. With no
+        filter callback every file is preserved; otherwise the callback decides.
+
+        :param file_name: The file name (with or without path) to evaluate.
+        :param device_name: The device-side name associated with the backup file.
+        :param filter_callback: Optional predicate taking a `BackupFile` and returning whether
+            to preserve it.
+        :returns: True if the file should be preserved, False otherwise.
         """
         if Path(file_name).name in BACKUP_METADATA_FILES:
             return True
@@ -642,20 +693,13 @@ class Mobilebackup2Service(LockdownService):
     @classmethod
     def selection_filter_callback(cls, rules: Sequence[BackupSelectionRule]) -> BackupFilterCallback:
         """
-        Creates a callback function to filter backup files based on provided selection rules.
+        Build a filter callback that keeps files matching any of the given selection rules.
 
-        The generated callback function examines backup files and determines whether they
-        should be included based on the provided `BackupSelectionRule` rules. The rules are
-        evaluated in sequence, and the callback returns a boolean indicating whether a file
-        matches any of the rules.
+        The returned callback matches device-name entries via `BackupSelectionRule.matches_device_name`
+        and manifest entries via `BackupSelectionRule.matches_manifest_entry`.
 
-        :param rules: The sequence of `BackupSelectionRule` objects used to determine which
-            backup files should be included.
-        :type rules: Sequence[BackupSelectionRule]
-
-        :return: A callback function (`BackupFilterCallback`) that returns `True` for files
-            matching any of the provided rules and `False` otherwise.
-        :rtype: BackupFilterCallback
+        :param rules: The `BackupSelectionRule` objects a file must match to be kept.
+        :returns: A `BackupFilterCallback` returning True for files matching any rule.
         """
         selected_rules = tuple(rules)
 
@@ -674,18 +718,13 @@ class Mobilebackup2Service(LockdownService):
     @staticmethod
     def regex_filter_callback(patterns: Sequence[str]) -> BackupFilterCallback:
         """
-        Filters backup files using specified regular expression patterns.
+        Build a filter callback that keeps files whose path matches any of the given regexes.
 
-        This method creates a callback function that applies regular expression
-        filters to backup files. The function determines whether a given backup file
-        matches any of the provided patterns.
+        Patterns are searched (not fully matched) against the file's device name and against
+        its domain/relative-path combinations.
 
-        :param patterns: A sequence of regular expression patterns used to filter
-            backup files.
-        :type patterns: Sequence[str]
-        :return: A callback function that takes a `BackupFile` object and returns a
-            boolean value indicating if the file matches any of the patterns.
-        :rtype: BackupFilterCallback
+        :param patterns: Regular expression patterns used to match backup files.
+        :returns: A `BackupFilterCallback` returning True for files matching any pattern.
         """
         compiled_patterns = tuple(re.compile(pattern) for pattern in patterns)
 
@@ -706,15 +745,12 @@ class Mobilebackup2Service(LockdownService):
     @staticmethod
     def combine_filter_callbacks(*callbacks: Optional[BackupFilterCallback]) -> Optional[BackupFilterCallback]:
         """
-        Combines multiple backup filter callbacks into a single callback. The returned callback will
-        execute each of the given callbacks with the provided `BackupFile` instance. If any of the
-        callbacks return `True`, the combined callback will return `True`. If no callbacks are provided,
-        `None` is returned.
+        Combine several filter callbacks into one that keeps a file if any of them keeps it.
 
-        :param callbacks: Variable number of optional `BackupFilterCallback` functions to combine.
-            A `BackupFilterCallback` is a callable that takes a `BackupFile` instance as input and returns
-            a boolean indicating whether the backup file passes the filter.
-        :return: A combined `BackupFilterCallback` or `None` if no valid callbacks are provided.
+        None entries are ignored.
+
+        :param callbacks: Optional `BackupFilterCallback` functions to combine.
+        :returns: A combined `BackupFilterCallback`, or None if no non-None callbacks are given.
         """
         active_callbacks = tuple(callback for callback in callbacks if callback is not None)
         if not active_callbacks:
@@ -729,6 +765,17 @@ class Mobilebackup2Service(LockdownService):
     def prune_backup_directory(
         cls, device_directory: Path, filter_callback: Optional[BackupFilterCallback], password: str = ""
     ) -> None:
+        """
+        Delete on-disk backup files rejected by the filter, keeping metadata and allowed files.
+
+        First prunes the manifest to the set of allowed file IDs, then removes any stored
+        files (and now-empty hash-prefix directories) not in that set. Backup metadata files
+        are always kept.
+
+        :param device_directory: Path of the per-device backup directory to prune.
+        :param filter_callback: Predicate selecting which files to keep; if None, nothing is pruned.
+        :param password: Backup password; required when the backup is encrypted.
+        """
         if filter_callback is None:
             return
 
@@ -757,6 +804,18 @@ class Mobilebackup2Service(LockdownService):
     def prune_backup_manifest(
         cls, device_directory: Path, filter_callback: Optional[BackupFilterCallback], password: str = ""
     ) -> set[str]:
+        """
+        Prune Manifest.db to the files the filter keeps and return their file IDs.
+
+        For encrypted backups the manifest is transparently decrypted, pruned, and re-encrypted
+        in place using the password-derived key.
+
+        :param device_directory: Path of the per-device backup directory.
+        :param filter_callback: Predicate selecting which files to keep; if None, nothing is kept.
+        :param password: Backup password; required when the backup is encrypted.
+        :returns: The set of file IDs that were kept.
+        :raises BackupFilterPasswordRequiredError: If the backup is encrypted and no password is given.
+        """
         manifest_db_path = device_directory / "Manifest.db"
         if not cls._is_encrypted_backup(device_directory):
             return cls._prune_manifest_db(manifest_db_path, filter_callback)
@@ -842,6 +901,16 @@ class Mobilebackup2Service(LockdownService):
     async def device_link(
         self, backup_directory, filter_callback: Optional[BackupFilterCallback] = None, password: str = ""
     ):
+        """
+        Async context manager yielding a connected `DeviceLink` for backup operations.
+
+        Performs the device-link and mobilebackup2 version exchanges on entry and disconnects
+        on exit. The given filter callback governs which incoming files are written to disk.
+
+        :param backup_directory: Directory the device link reads from and writes to.
+        :param filter_callback: Optional predicate controlling which files are preserved.
+        :param password: Backup password (unused here directly; passed through by callers).
+        """
         dl = DeviceLink(
             self.service,
             backup_directory,

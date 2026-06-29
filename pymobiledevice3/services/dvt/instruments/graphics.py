@@ -32,6 +32,14 @@ class GraphicsService(DTXService):
 
 
 class Graphics(DtxService[GraphicsService]):
+    """
+    Sample GPU/OpenGL graphics performance counters over the Instruments channel.
+
+    Constructed with a `DvtProvider`. Use as an async context manager: entering starts sampling
+    and exiting stops it. The object is async-iterable, yielding graphics sample events as they
+    arrive from the device.
+    """
+
     async def __aenter__(self):
         await self.connect()
         await self.service.start_sampling_at_time_interval_(0.0)
@@ -41,5 +49,10 @@ class Graphics(DtxService[GraphicsService]):
         await self.service.stop_sampling()
 
     async def __aiter__(self) -> AsyncGenerator[Any, None]:
+        """
+        Yield graphics sample events as they arrive from the service.
+
+        :yields: A graphics performance sample emitted by the device.
+        """
         while True:
             yield await self.service.events.get()

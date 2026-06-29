@@ -47,6 +47,8 @@ class AutomationAvailability(Enum):
 
 @dataclass
 class Page:
+    """A single inspectable target (web page, automation target, etc.) reported by an application."""
+
     id_: int
     type_: WirTypes
     web_url: str = ""
@@ -83,6 +85,8 @@ class Page:
 
 @dataclass
 class Application:
+    """An application reported by `webinspectord` as available for web inspection or automation."""
+
     id_: str
     bundle: str
     pid: int
@@ -118,6 +122,17 @@ class ApplicationPage:
 
 
 class WebinspectorService(LockdownService):
+    """Client for the `com.apple.webinspector` service (`webinspectord`).
+
+    Drives Safari/WebKit remote inspection and WebDriver automation: enumerates inspectable
+    applications and their pages, launches applications, and forwards the inspector/automation
+    socket traffic used to build `InspectorSession` and `AutomationSession` objects.
+
+    The service maintains a background receive task that dispatches incoming RPC notifications
+    and keeps the cached application/page state up to date. Call `connect` before issuing any
+    requests and `close` when done.
+    """
+
     SERVICE_NAME = "com.apple.webinspector"
     RSD_SERVICE_NAME = "com.apple.webinspector.shim.remote"
 
@@ -142,6 +157,15 @@ class WebinspectorService(LockdownService):
         self._recv_task: Optional[asyncio.Task] = None
 
     async def connect(self) -> None:
+        """Establish the WebInspector session and start the background receive task.
+
+        Performs the initial handshake (reporting this client's identifier and processing the
+        first reply) while watching for a disabled notification, then spawns the task that keeps
+        consuming incoming messages. Safe to call repeatedly; subsequent calls are a no-op once
+        the receive task is running.
+
+        :raises WebInspectorNotEnabledError: Web Inspector is disabled on the device.
+        """
         if self._recv_task is not None:
             return
 
@@ -149,6 +173,7 @@ class WebinspectorService(LockdownService):
         self._recv_task = asyncio.create_task(self._receiving_task())
 
     async def close(self):
+        """Cancel the background receive task and close the underlying service connection."""
         if self._recv_task is not None:
             self._recv_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, ConnectionTerminatedError):
@@ -204,6 +229,15 @@ class WebinspectorService(LockdownService):
             await self._handle_recv(await self._recv_message())
 
     async def automation_session(self, app: Application) -> AutomationSession:
+        """Start a WebDriver automation session against an application.
+
+        Requests a new automation session, waits for the corresponding automation page to appear,
+        sets up its forwarding socket, and waits until the page reports an automation connection id.
+
+        :param app: The application to automate.
+        :returns: A connected automation session.
+        :raises RemoteAutomationNotEnabledError: Remote automation is not available on the device.
+        """
         if self.state == "WIRAutomationAvailabilityNotAvailable":
             raise RemoteAutomationNotEnabledError()
         session_id = str(uuid.uuid4()).upper()
@@ -217,6 +251,13 @@ class WebinspectorService(LockdownService):
         return AutomationSession(SessionProtocol(self, session_id, app, page))
 
     async def inspector_session(self, app: Application, page: Page) -> InspectorSession:
+        """Open a Web Inspector session against a specific page of an application.
+
+        :param app: The application owning the page.
+        :param page: The page to inspect.
+        :returns: A connected inspector session. For non-JavaScript pages the session waits for the
+            inspection target before returning.
+        """
         session_id = str(uuid.uuid4()).upper()
         return await InspectorSession.create(
             SessionProtocol(self, session_id, app, page, method_prefix=""),
@@ -224,6 +265,11 @@ class WebinspectorService(LockdownService):
         )
 
     async def get_open_pages(self) -> dict:
+        """Request and return the currently open pages of all connected applications.
+
+        :returns: A mapping of application name to the collection of its `Page` objects, including
+            only applications that currently report at least one page.
+        """
         apps = {}
         await asyncio.gather(*[self._forward_get_listing(app) for app in self.connected_application])
         for app in self.connected_application:
@@ -232,6 +278,14 @@ class WebinspectorService(LockdownService):
         return apps
 
     async def get_open_application_pages(self, timeout: float) -> list[ApplicationPage]:
+        """Enumerate all inspectable application/page pairs across connected applications.
+
+        Queries the connected applications and then waits for `webinspectord` to report their
+        listings before collecting the results.
+
+        :param timeout: Seconds to wait for the device to reply with the application listings.
+        :returns: A list of `ApplicationPage` pairs, one per reported page.
+        """
         # Query all connected applications
         await self._get_connected_applications()
 
@@ -246,6 +300,13 @@ class WebinspectorService(LockdownService):
         return result
 
     async def open_app(self, bundle: str, timeout: Union[float, int] = 3) -> Application:
+        """Launch an application by bundle identifier and wait for it to connect.
+
+        :param bundle: The bundle identifier of the application to launch.
+        :param timeout: Seconds to wait for the application to appear as connected.
+        :returns: The connected application.
+        :raises LaunchingApplicationError: The application did not connect within the timeout.
+        """
         await self._request_application_launch(bundle)
         await self.get_open_pages()
         try:
@@ -254,12 +315,31 @@ class WebinspectorService(LockdownService):
             raise LaunchingApplicationError() from e
 
     async def send_socket_data(self, session_id: str, app_id: str, page_id: int, data: dict):
+        """Forward an inspector/automation protocol message to a page's socket.
+
+        :param session_id: The session identifier owning the socket.
+        :param app_id: The target application identifier.
+        :param page_id: The target page identifier.
+        :param data: The protocol message to send; serialized to JSON before forwarding.
+        """
         await self._forward_socket_data(session_id, app_id, page_id, data)
 
     async def setup_inspector_socket(self, session_id: str, app_id: str, page_id: int):
+        """Set up a forwarding socket for an inspector session without auto-pausing the target.
+
+        :param session_id: The session identifier to associate with the socket.
+        :param app_id: The target application identifier.
+        :param page_id: The target page identifier.
+        """
         await self._forward_socket_setup(session_id, app_id, page_id, pause=False)
 
     def find_page_id(self, page_id: str) -> tuple[Application, Page]:
+        """Look up the application and page for a known page identifier.
+
+        :param page_id: The page identifier to search for.
+        :returns: A tuple of the owning application and the matching page.
+        :raises KeyError: No page with the given identifier is currently known.
+        """
         for app_id in self.application_pages:
             for page in self.application_pages[app_id]:
                 if page == page_id:
@@ -267,6 +347,10 @@ class WebinspectorService(LockdownService):
         raise KeyError(f"Page with id {page_id} not found")
 
     async def flush_input(self, duration: Union[float, int] = 0):
+        """Yield control for the given duration to let pending incoming messages be processed.
+
+        :param duration: Seconds to sleep while the background receive task drains input.
+        """
         return await asyncio.sleep(duration)
 
     async def _handle_recv(self, plist):

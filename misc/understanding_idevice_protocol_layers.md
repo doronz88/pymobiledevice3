@@ -467,7 +467,7 @@ async def main() -> None:
       print(entry)
 ```
 
-All the tunnels above need root/admin, since they create a kernel TUN/TAP interface. On Python 3.14+ there's one
+All the tunnels above need root/admin, since they create a kernel TUN/TAP interface. There's one
 more option that needs **no root at all**: add `--userspace` to any developer command to establish the iOS 17+ tunnel
 in-process over a pure-python network stack (PyTCP). There's no separate tunnel process - the flag builds the tunnel
 inside the command and tears it down on exit:

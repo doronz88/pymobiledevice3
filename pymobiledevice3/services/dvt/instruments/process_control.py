@@ -80,34 +80,55 @@ class ProcessControlService(DTXService):
 
 
 class ProcessControl(DtxService[ProcessControlService]):
+    """
+    Launch, terminate and observe processes on the device through the DVT
+    ``processcontrol`` instruments service.
+
+    Backed by `ProcessControlService`, this wraps the remote
+    process-control DTX channel and exposes high-level operations such as
+    launching an app, killing it, sending signals and waiving its memory limit.
+    Iterating over an instance yields `OutputReceivedEvent` objects for
+    stdout/stderr output emitted by observed processes.
+    """
+
     async def connect(self):
         await super().connect()
         self._provider.dtx.ctx["logger"] = self.logger.getChild("dtx")
 
     async def signal(self, pid: int, sig: int):
         """
-        Send signal to process
-        :param pid: PID of process to send signal.
-        :param sig: SIGNAL to send
+        Send a signal to a running process.
+
+        :param pid: PID of the process to signal.
+        :param sig: Signal number to send.
         """
         return await self.service.send_signal_to_pid_(sig, pid)
 
     async def disable_memory_limit_for_pid(self, pid: int) -> None:
         """
-        Waive memory limit for a given pid
-        :param pid: process id.
+        Waive the memory limit (jetsam limit) for a given process.
+
+        :param pid: PID of the process whose memory limit should be lifted.
+        :raises DisableMemoryLimitError: If the device declines the request.
         """
         if not await self.service.request_disable_memory_limits_for_pid_(pid):
             raise DisableMemoryLimitError()
 
     async def kill(self, pid: int):
         """
-        Kill a process.
-        :param pid: PID of process to kill.
+        Kill a process. The request is fire-and-forget (no reply is awaited).
+
+        :param pid: PID of the process to kill.
         """
         await self.service.kill_pid_(pid)
 
     async def process_identifier_for_bundle_identifier(self, app_bundle_identifier: str) -> int:
+        """
+        Resolve the PID of a currently running process by its bundle identifier.
+
+        :param app_bundle_identifier: Bundle identifier of the running app.
+        :returns: PID of the matching process, or 0 if no such process is running.
+        """
         return await self.service.process_identifier_for_bundle_identifier_(app_bundle_identifier)
 
     async def launch(
@@ -120,14 +141,21 @@ class ProcessControl(DtxService[ProcessControlService]):
         extra_options: Optional[dict] = None,
     ) -> int:
         """
-        Launch a process.
-        :param bundle_id: Bundle id of the process.
-        :param list arguments: List of argument to pass to process.
-        :param kill_existing: Whether to kill an existing instance of this process.
-        :param start_suspended: Same as WaitForDebugger.
-        :param environment: Environment variables to pass to process.
-        :param extra_options: Extra options to pass to process.
-        :return: PID of created process.
+        Launch an installed application by its bundle identifier.
+
+        :param bundle_id: Bundle identifier of the app to launch.
+        :param arguments: List of command-line arguments to pass to the process.
+            Defaults to an empty list when ``None``.
+        :param kill_existing: Whether to kill an already-running instance of the app
+            before launching (sent as the ``KillExisting`` launch option).
+        :param start_suspended: Start the process suspended, waiting for a debugger to
+            attach (sent as the ``StartSuspendedKey`` launch option).
+        :param environment: Environment variables to set for the process. Defaults to an
+            empty dict when ``None``.
+        :param extra_options: Additional launch options merged into the options dict sent
+            to the device, overriding the defaults on key collision.
+        :returns: PID of the newly launched process.
+        :raises AssertionError: If the device returns a falsy PID (launch failure).
         """
         arguments = [] if arguments is None else arguments
         environment = {} if environment is None else environment

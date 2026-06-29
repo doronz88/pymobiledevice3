@@ -948,9 +948,13 @@ MobileGestaltKeys = [
 
 class DiagnosticsService(LockdownService):
     """
-    Provides an API to:
-    * Query MobileGestalt & IORegistry keys.
-    * Reboot, shutdown or put the device in sleep mode.
+    Client for the device's ``diagnostics_relay`` lockdown service.
+
+    Exposes the diagnostics relay over a plist request/response channel, allowing callers to:
+
+    * Query MobileGestalt and IORegistry keys.
+    * Read diagnostic information reports (e.g. battery, Wi-Fi, generic diagnostics).
+    * Restart, shut down or put the device to sleep.
     """
 
     RSD_SERVICE_NAME = "com.apple.mobile.diagnostics_relay.shim.remote"
@@ -958,6 +962,11 @@ class DiagnosticsService(LockdownService):
     OLD_SERVICE_NAME = "com.apple.iosdiagnostics.relay"
 
     def __init__(self, lockdown: LockdownServiceProvider):
+        """
+        :param lockdown: Lockdown service provider used to establish the diagnostics relay connection. When it is a
+            `LockdownClient`, the classic lockdown service name is used; otherwise the
+            RemoteXPC (RSD) service name is used.
+        """
         service_name = self.SERVICE_NAME if isinstance(lockdown, LockdownClient) else self.RSD_SERVICE_NAME
         super().__init__(lockdown, service_name, service=None)
 
@@ -965,6 +974,18 @@ class DiagnosticsService(LockdownService):
         return await self.service.send_recv_plist(request)
 
     async def mobilegestalt(self, keys: Optional[list[str]] = None) -> dict:
+        """
+        Query MobileGestalt values from the device.
+
+        Sends a ``MobileGestalt`` request and returns the resolved key/value mapping (with the internal ``Status``
+        entry stripped out).
+
+        :param keys: MobileGestalt keys to query. If ``None`` or empty, the full built-in `MobileGestaltKeys`
+            list is queried.
+        :returns: Mapping of each requested MobileGestalt key to its value.
+        :raises DeprecationError: If MobileGestalt is reported as deprecated (iOS >= 17.4).
+        :raises PyMobileDevice3Exception: If the request or the MobileGestalt query did not complete successfully.
+        """
         if keys is None or len(keys) == 0:
             keys = MobileGestaltKeys
         response = await self._send_recv({"Request": "MobileGestalt", "MobileGestaltKeys": keys})
@@ -981,24 +1002,69 @@ class DiagnosticsService(LockdownService):
         return response["Diagnostics"]["MobileGestalt"]
 
     async def action(self, action: str) -> Optional[dict]:
+        """
+        Send a single diagnostics relay request and return its ``Diagnostics`` payload.
+
+        This is the low-level primitive used by the action/info helpers below. The given string is sent verbatim as
+        the request's ``Request`` field.
+
+        :param action: Request name to send (e.g. ``Restart``, ``Shutdown``, ``Sleep``, ``All``).
+        :returns: The response's ``Diagnostics`` payload, or ``None`` when the response carries no such payload.
+        :raises PyMobileDevice3Exception: If the response status is not ``Success``.
+        """
         response = await self._send_recv({"Request": action})
         if response["Status"] != "Success":
             raise PyMobileDevice3Exception(f"failed to perform action: {action}")
         return response.get("Diagnostics")
 
     async def restart(self):
+        """
+        Restart the device by sending the ``Restart`` request.
+
+        :raises PyMobileDevice3Exception: If the request did not complete successfully.
+        """
         await self.action("Restart")
 
     async def shutdown(self):
+        """
+        Shut the device down by sending the ``Shutdown`` request.
+
+        :raises PyMobileDevice3Exception: If the request did not complete successfully.
+        """
         await self.action("Shutdown")
 
     async def sleep(self):
+        """
+        Put the device to sleep by sending the ``Sleep`` request.
+
+        :raises PyMobileDevice3Exception: If the request did not complete successfully.
+        """
         await self.action("Sleep")
 
     async def info(self, diag_type: str = "All") -> dict:
+        """
+        Fetch a diagnostics information report from the device.
+
+        :param diag_type: Diagnostics report type to request; sent as the ``Request`` field. Defaults to ``All``.
+        :returns: The ``Diagnostics`` payload of the response.
+        :raises PyMobileDevice3Exception: If the request did not complete successfully.
+        """
         return await self.action(diag_type)
 
     async def ioregistry(self, plane: Optional[str] = None, name: Optional[str] = None, ioclass: Optional[str] = None):
+        """
+        Query the device's IORegistry.
+
+        Sends an ``IORegistry`` request, optionally narrowed by plane, entry name and/or entry class.
+
+        :param plane: IORegistry plane to traverse, sent as ``CurrentPlane`` (e.g. ``IODeviceTree``,
+            ``IOService``). Omitted when falsy.
+        :param name: Name of the registry entry to look up, sent as ``EntryName``. Omitted when falsy.
+        :param ioclass: Class of the registry entry to look up, sent as ``EntryClass``. Omitted when falsy.
+        :returns: The ``IORegistry`` portion of the response's ``Diagnostics`` payload, or ``None`` when the response
+            carries no such payload.
+        :raises PyMobileDevice3Exception: If the response status is not ``Success``.
+        """
         d = {}
 
         if plane:
@@ -1022,9 +1088,26 @@ class DiagnosticsService(LockdownService):
         return None
 
     async def get_battery(self) -> dict:
+        """
+        Fetch battery/power-source information from the IORegistry.
+
+        Convenience wrapper that queries the IORegistry entry of class ``IOPMPowerSource``.
+
+        :returns: The IORegistry data for the power-source entry, or ``None`` if it is absent.
+        :raises PyMobileDevice3Exception: If the underlying IORegistry request did not complete successfully.
+        """
         return await self.ioregistry(ioclass="IOPMPowerSource")
 
     async def get_wifi(self) -> dict:
+        """
+        Fetch the Wi-Fi interface information from the IORegistry.
+
+        First attempts the entry named ``AppleBCMWLANSkywalkInterface``; if that yields no result, falls back to the
+        entry of class ``IO80211Interface``.
+
+        :returns: The IORegistry data for the Wi-Fi interface, or ``None`` if neither lookup matches.
+        :raises PyMobileDevice3Exception: If an underlying IORegistry request did not complete successfully.
+        """
         result = await self.ioregistry(name="AppleBCMWLANSkywalkInterface")
         if result:
             return result

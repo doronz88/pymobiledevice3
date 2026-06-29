@@ -332,9 +332,12 @@ class CrossPlatformAddressFamily(enum.IntEnum):
 
 class PcapdService(LockdownService):
     """
-    Starting iOS 5, apple added a remote virtual interface (RVI) facility that allows mirroring networks traffic from
-    an iOS device. On macOS, the virtual interface can be enabled with the rvictl command. This script allows to use
-    this service on other systems.
+    Capture network traffic from an iOS device.
+
+    Starting with iOS 5, Apple added a remote virtual interface (RVI) facility that mirrors the device's
+    network traffic. On macOS the virtual interface is enabled with the ``rvictl`` command; this service
+    exposes the same capability on other platforms. The service name used depends on the lockdown type
+    (legacy ``com.apple.pcapd`` for `LockdownClient`, RSD shim otherwise).
     """
 
     RSD_SERVICE_NAME = "com.apple.pcapd.shim.remote"
@@ -349,6 +352,20 @@ class PcapdService(LockdownService):
     async def watch(
         self, packets_count: int = -1, process: Optional[str] = None, interface_name: Optional[str] = None
     ) -> AsyncGenerator[Container, None]:
+        """
+        Stream captured packets from the device as they arrive.
+
+        Each packet is parsed into its per-packet metadata fields (process pid/name, interface, timing,
+        protocol family, etc.) plus the raw frame data. For interfaces that lack a link-layer header
+        (and for ``pdp_ip`` cellular packets), a synthetic Ethernet header is prepended to ``data`` so
+        the output is valid for standard pcap consumers.
+
+        :param packets_count: Number of packets to yield before stopping; -1 streams indefinitely.
+        :param process: If set, only yield packets whose pid (as a string) or process name matches.
+        :param interface_name: If set, only yield packets captured on this interface.
+        :yields: A parsed packet container; ``interface_type`` is an `INTERFACE_NAMES` value and
+            ``protocol_family`` a `CrossPlatformAddressFamily` value.
+        """
         packet_index = 0
         while packet_index != packets_count:
             d = await self.service.recv_plist()
@@ -377,6 +394,16 @@ class PcapdService(LockdownService):
             packet_index += 1
 
     async def write_to_pcap(self, out, packet_generator) -> None:
+        """
+        Write captured packets to a pcapng stream.
+
+        Consumes an async packet generator (such as `watch`) and writes each packet as an enhanced
+        packet block, annotating it with the originating process metadata. Uses the packet's own
+        ``timestamp`` if present, otherwise the current wall-clock time.
+
+        :param out: A writable binary file-like object to receive the pcapng data.
+        :param packet_generator: Async iterable yielding parsed packet containers.
+        """
         shb = blocks.SectionHeader(
             options={
                 "shb_hardware": "artificial",

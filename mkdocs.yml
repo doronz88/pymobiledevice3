@@ -1,0 +1,135 @@
+site_name: pymobiledevice3
+site_description: Pure Python 3 implementation for working with iOS devices (iPhone, iPad, ...)
+site_url: https://doronz88.github.io/pymobiledevice3/
+repo_url: https://github.com/doronz88/pymobiledevice3
+repo_name: doronz88/pymobiledevice3
+edit_uri: edit/master/docs/
+copyright: Licensed under GPL-3.0-or-later
+
+theme:
+  name: material
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: sphinx
+            show_root_heading: true
+            show_source: true
+            show_signature_annotations: true
+            separate_signature: true
+            members_order: source
+            filters: ["!^_"]
+            heading_level: 2
+  # Emit /llms.txt and /llms-full.txt for LLM agents (llmstxt.org convention)
+  - llmstxt:
+      markdown_description: >-
+        Pure Python 3 implementation for working with iOS devices (iPhone, iPad, ...);
+        ships a CLI and a Python API.
+      full_output: llms-full.txt
+      sections:
+        Getting started:
+          - index.md
+          - installation.md
+        Guides:
+          - guides/cli-recipes.md
+          - guides/ios17-tunnels.md
+          - guides/python-api.md
+          - guides/writing-commands-with-service-provider.md
+        API reference:
+          - api/index.md
+          - api/connection.md
+          - api/services.md
+          - api/system.md
+          - api/apps-files.md
+          - api/capture.md
+          - api/backup-symbols.md
+          - api/dvt.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+
+hooks:
+  - docs/_hooks/inject_external.py
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Guides:
+      - CLI recipes: guides/cli-recipes.md
+      - iOS 17+ tunnels: guides/ios17-tunnels.md
+      - Python API: guides/python-api.md
+      - Writing CLI commands: guides/writing-commands-with-service-provider.md
+      - Codex device operator: guides/codex-device-operator-skill.md
+  - Python API Reference:
+      - Overview: api/index.md
+      - Connecting to a device: api/connection.md
+      - Lockdown services: api/services.md
+      - System & device: api/system.md
+      - Apps, files & profiles: api/apps-files.md
+      - Capture, logging & automation: api/capture.md
+      - Backup, symbols & location: api/backup-symbols.md
+      - Developer / DVT: api/dvt.md
+  - Protocol Internals:
+      - iDevice protocol layers: internals/idevice-protocol-layers.md
+      - RemoteXPC: internals/remotexpc.md
+      - DTX client: internals/dtx.md
+      - DTX internals: internals/dtx-development.md
+  - Project:
+      - Contributing: project/contributing.md
+      - Agent guidance: project/agents.md
+      - Code of conduct: project/code-of-conduct.md

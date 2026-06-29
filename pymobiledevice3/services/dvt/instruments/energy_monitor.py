@@ -19,7 +19,19 @@ class EnergyMonitorService(DTXService):
 
 
 class EnergyMonitor(DtxService[EnergyMonitorService]):
+    """
+    Sample per-process energy usage from the Xcode debug-gauge energy provider.
+
+    Constructed with a `DvtProvider` and the list of PIDs to monitor. Use as an async context
+    manager: entering starts sampling for those PIDs and exiting stops it. The object is
+    async-iterable, yielding one energy-attribute sample for the monitored PIDs per iteration.
+    """
+
     def __init__(self, dvt, pid_list: list[int]) -> None:
+        """
+        :param dvt: The `DvtProvider` used to open the Instruments channel.
+        :param pid_list: The process IDs to sample energy usage for.
+        """
         super().__init__(dvt)
         self._pid_list = pid_list
 
@@ -35,6 +47,11 @@ class EnergyMonitor(DtxService[EnergyMonitorService]):
         await self.service.stop_sampling_for_pids_(self._pid_list)
 
     async def __aiter__(self) -> AsyncGenerator[Any, None]:
+        """
+        Sample energy attributes for the monitored PIDs indefinitely.
+
+        :yields: The device's energy-attributes reply for the monitored PIDs, one per iteration.
+        """
         while True:
             yield await self._sample_once()
 

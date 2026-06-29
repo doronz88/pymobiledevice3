@@ -82,6 +82,20 @@ class DeviceClass(Enum):
 
 
 class LockdownClient(ABC, LockdownServiceProvider):
+    """Client for the device's lockdownd daemon.
+
+    lockdownd is the entry-point daemon on an iOS device: it reports device values, manages host pairing,
+    and starts the other on-device services. This abstract base implements the lockdown protocol (querying
+    and setting values, pairing, session establishment with optional SSL, and starting named services);
+    concrete subclasses supply the transport-specific way to open a connection by overriding
+    `create_service_connection`.
+
+    Do not instantiate directly. Obtain an instance from a ``create_using_*`` factory
+    (`create_using_usbmux`, `create_using_tcp`, `create_using_remote`) or from the
+    `create` classmethod. Instances are async context managers; on exit the underlying connection
+    is closed.
+    """
+
     def __init__(
         self,
         service: ServiceConnection,
@@ -95,25 +109,20 @@ class LockdownClient(ABC, LockdownServiceProvider):
     ):
         """Initialize a new LockdownClient instance.
 
-        :param service: Service.
-        :type service: ServiceConnection
-        :param host_id: Host id.
-        :type host_id: str
-        :param identifier: Identifier. Defaults to None.
-        :type identifier: Optional[str]
-        :param label: Label. Defaults to DEFAULT_LABEL.
-        :type label: str
-        :param system_buid: System buid. Defaults to SYSTEM_BUID.
-        :type system_buid: str
-        :param pair_record: Pair record. Defaults to None.
-        :type pair_record: Optional[dict]
-        :param pairing_records_cache_folder: Pairing records cache folder. Defaults to None.
-        :type pairing_records_cache_folder: Optional[Path]
-        :param port: Port. Defaults to SERVICE_PORT.
-        :type port: int
+        This is an abstract base class. Instances are normally not constructed directly; use one of the
+        ``create_using_*`` factory functions (e.g. `create_using_usbmux`) or the `create`
+        classmethod, which build the underlying service connection, initialize device values and optionally
+        pair before returning a ready-to-use client.
 
-        :return: Result of the operation.
-        :rtype: Any
+        :param service: An already-established lockdownd connection used to send/receive plist requests.
+        :param host_id: The HostID identifying this host to the device during pairing/session establishment.
+        :param identifier: Device identifier (typically its UDID) used to locate the matching pair record on
+            the host. ``None`` if unknown.
+        :param label: User-agent label included in every request sent to lockdownd.
+        :param system_buid: The host's SystemBUID, included when starting a session.
+        :param pair_record: A pre-loaded pair record to use instead of looking one up on the host.
+        :param pairing_records_cache_folder: Directory used to search for and persist pair records.
+        :param port: TCP port of the lockdownd service on the device.
         """
         super().__init__()
         self.logger = logging.getLogger(__name__)
@@ -150,35 +159,28 @@ class LockdownClient(ABC, LockdownServiceProvider):
         private_key: Optional[RSAPrivateKey] = None,
         **cls_specific_args,
     ):
-        """Create.
+        """Build a client around an existing service connection, initialize it and optionally pair.
 
-        :param service: Service.
-        :type service: ServiceConnection
-        :param identifier: Identifier. Defaults to None.
-        :type identifier: Optional[str]
-        :param system_buid: System buid. Defaults to SYSTEM_BUID.
-        :type system_buid: str
-        :param label: Label. Defaults to DEFAULT_LABEL.
-        :type label: str
-        :param autopair: Autopair. Defaults to True.
-        :type autopair: bool
-        :param pair_timeout: Pair timeout. Defaults to None.
-        :type pair_timeout: Optional[float]
-        :param local_hostname: Local hostname. Defaults to None.
-        :type local_hostname: Optional[str]
-        :param pair_record: Pair record. Defaults to None.
-        :type pair_record: Optional[dict]
-        :param pairing_records_cache_folder: Pairing records cache folder. Defaults to None.
-        :type pairing_records_cache_folder: Optional[Path]
-        :param port: Port. Defaults to SERVICE_PORT.
-        :type port: int
-        :param private_key: Private key. Defaults to None.
-        :type private_key: Optional[RSAPrivateKey]
-        :param **cls_specific_args: Additional keyword arguments.
-        :type **cls_specific_args: Any
+        Generates a HostID, resolves the pairing-records cache folder, constructs the client, queries the
+        device's values, and (when ``autopair`` is set) validates an existing pairing or performs a new one.
 
-        :return: Result of the operation.
-        :rtype: Any
+        :param service: An already-established lockdownd connection.
+        :param identifier: Device identifier (typically its UDID) used to locate the matching pair record.
+        :param system_buid: The host's SystemBUID, included when starting a session.
+        :param label: User-agent label included in every request sent to lockdownd.
+        :param autopair: When True, pair with the device (blocking) if it is not already paired.
+        :param pair_timeout: Maximum time in seconds to wait for the user to accept the pairing dialog. A
+            value of 0 fails immediately if the dialog is pending; ``None`` waits indefinitely.
+        :param local_hostname: Seed used to generate the HostID.
+        :param pair_record: A pre-loaded pair record to use instead of looking one up on the host.
+        :param pairing_records_cache_folder: Directory used to search for and persist pair records.
+        :param port: TCP port of the lockdownd service on the device.
+        :param private_key: RSA private key to use when generating the pairing certificate chain; a new key
+            is generated if omitted.
+        :param cls_specific_args: Extra keyword arguments forwarded to the concrete client's constructor.
+        :returns: A connected, initialized client instance.
+        :raises IncorrectModeError: The connected daemon is not lockdownd.
+        :raises FatalPairingError: Pairing succeeded but the subsequent validation failed.
         """
         host_id = generate_host_id(local_hostname)
         pairing_records_cache_folder = create_pairing_records_cache_folder(pairing_records_cache_folder)
@@ -225,7 +227,6 @@ class LockdownClient(ABC, LockdownServiceProvider):
         understanding its current state.
 
         :return: A formatted string containing the class name and specific attribute values
-        :rtype: str
         """
         return (
             f"<{self.__class__.__name__} ID:{self.identifier} VERSION:{self.product_version} "
@@ -236,7 +237,6 @@ class LockdownClient(ABC, LockdownServiceProvider):
         """Enter the async context manager and return this client.
 
         :return: Result of the operation.
-        :rtype: 'LockdownClient'
         """
         return self
 
@@ -244,51 +244,35 @@ class LockdownClient(ABC, LockdownServiceProvider):
         """Exit the async context manager and close open resources.
 
         :param exc_type: Exc type.
-        :type exc_type: Any
         :param exc_val: Exc val.
-        :type exc_val: Any
         :param exc_tb: Exc tb.
-        :type exc_tb: Any
 
         :return: None.
-        :rtype: None
         """
         await self.close()
 
     @property
     def product_version(self) -> str:
-        """
-        Provides access to the product version from a predefined set of values. If no version value
-        is found, it defaults to "1.0".
+        """The device's iOS/OS version (``ProductVersion``), e.g. ``"17.0"``.
 
-        :return: The version of the product as a string.
-        :rtype: str
+        :returns: The product version, or ``"1.0"`` when the device did not report one.
         """
         return self.all_values.get("ProductVersion") or "1.0"
 
     @property
     def product_build_version(self) -> str:
-        """
-        Gets the 'BuildVersion' from the collection of all values.
+        """The device's OS build version (``BuildVersion``), e.g. ``"21A329"``.
 
-        This property provides access to the build version of the product, which is stored
-        within the 'all_values' dictionary under the key "BuildVersion".
-
-        :return: The build version as a string.
-        :rtype: str
+        :returns: The build version, or ``None`` when the device did not report one.
         """
         return self.all_values.get("BuildVersion")
 
     @property
     def device_class(self) -> DeviceClass:
-        """
-        Retrieves the device class associated with the current instance.
+        """The device family (iPhone, iPad, Watch, ...) derived from the reported ``DeviceClass`` value.
 
-        :return: Returns a DeviceClass instance representing the device class
-            retrieved from the `all_values` attribute. If the provided value cannot
-            be resolved into a valid DeviceClass, returns a DeviceClass instance
-            with the value "Unknown".
-        :rtype: DeviceClass
+        :returns: The matching `DeviceClass`, or `UNKNOWN` when the reported value
+            is unrecognized.
         """
         try:
             return DeviceClass(self.all_values.get("DeviceClass"))
@@ -297,28 +281,18 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
     @property
     def wifi_mac_address(self) -> str:
-        """
-        Retrieves the WiFi MAC Address of the device.
+        """The device's Wi-Fi MAC address (``WiFiAddress``).
 
-        :returns: The WiFi MAC Address as a string.
-        :rtype: str
+        :returns: The Wi-Fi MAC address, or ``None`` when the device did not report one.
         """
         return self.all_values.get("WiFiAddress")
 
     @property
     def short_info(self) -> dict:
-        """
-        Provides a dictionary containing concise information about the device,
-        extracted from its full details.
+        """A compact subset of the device's values, suitable for listing devices.
 
-        The returned dictionary includes a subset of key attributes from the
-        device details, such as the identifier and other selected keys (e.g.,
-        DeviceClass, DeviceName, BuildVersion, etc.) if available.
-
-        :return: A dictionary containing the filtered device details. The
-            dictionary includes the `Identifier` key and additional
-            attributes derived from available keys in the device details.
-        :rtype: dict
+        :returns: A dict containing ``Identifier`` plus ``DeviceClass``, ``DeviceName``, ``BuildVersion``,
+            ``ProductVersion``, ``ProductType`` and ``UniqueDeviceID`` (each ``None`` if not reported).
         """
         keys_to_copy = ["DeviceClass", "DeviceName", "BuildVersion", "ProductVersion", "ProductType", "UniqueDeviceID"]
         result = {
@@ -330,51 +304,36 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
     @property
     def ecid(self) -> int:
-        """
-        Provides a property to access the ECID (Exclusive Chip ID) from stored values.
+        """The device's ECID (unique chip identifier), taken from the reported ``UniqueChipID`` value.
 
-        :rtype: int
-        :return: The ECID (Exclusive Chip ID) extracted from ``all_values["UniqueChipID"]``.
+        :returns: The ECID as an integer.
+        :raises KeyError: The device did not report a ``UniqueChipID``.
         """
         return self.all_values["UniqueChipID"]
 
     @property
     def preflight_info(self) -> dict:
-        """
-        Provides access to the preflight information.
+        """The device's ``PreflightInfo`` value.
 
-        This property fetches the preflight information from the internal state.
-        The data is expected to be a dictionary representing preflight details.
-
-        :return: A dictionary containing preflight information
-        :rtype: dict
+        :returns: The preflight info dict, or ``None`` when the device did not report one.
         """
         return self.all_values.get("PreflightInfo")
 
     @property
     def firmware_preflight_info(self) -> dict:
-        """
-        Provides access to the firmware preflight information.
+        """The device's ``FirmwarePreflightInfo`` value.
 
-        This property retrieves data related to firmware preflight checks,
-        such as configurations or metadata relevant before a firmware update. The
-        information is returned in the form of a dictionary and sourced from
-        the attribute `all_values`.
-
-        :return: A dictionary containing firmware preflight information.
-        :rtype: dict
+        :returns: The firmware preflight info dict, or ``None`` when the device did not report one.
         """
         return self.all_values.get("FirmwarePreflightInfo")
 
     @property
     def display_name(self) -> Optional[str]:
-        """
-        Provides a readable name for the device associated with the given product type
-        if a match is found in the predefined list of devices. If no match is found,
-        returns None.
+        """The human-readable marketing name for the device, resolved from its product type.
 
-        :return: The display name of the device if a match is found, otherwise None.
-        :rtype: Optional[str]
+        Looks the device's ``ProductType`` up in the built-in device table.
+
+        :returns: The display name, or ``None`` when the product type is not in the table.
         """
         for irecv_device in IRECV_DEVICES:
             if irecv_device.product_type == self.product_type:
@@ -383,17 +342,11 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
     @property
     def hardware_model(self) -> Optional[str]:
-        """
-        Fetches the hardware model for the current device based on its product type.
+        """The hardware model (e.g. board identifier) for the device, resolved from its product type.
 
-        This method looks up the product type of the current device in a predefined
-        list of devices, `IRECV_DEVICES`. If a matching product type is found, it
-        returns the corresponding hardware model. If no matching product type is
-        found, it returns None.
+        Looks the device's ``ProductType`` up in the built-in device table.
 
-        :return: The hardware model corresponding to the device's product type if a
-            match is found, otherwise None.
-        :rtype: Optional[str]
+        :returns: The hardware model, or ``None`` when the product type is not in the table.
         """
         for irecv_device in IRECV_DEVICES:
             if irecv_device.product_type == self.product_type:
@@ -402,17 +355,11 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
     @property
     def board_id(self) -> Optional[int]:
-        """
-        Retrieves the board ID associated with the device's product type.
+        """The board ID for the device, resolved from its product type.
 
-        This property iterates over the predefined list of `IRECV_DEVICES`.
-        If a matching device is found with a product type that corresponds to
-        the current device's product type, it retrieves and returns the
-        associated board ID. If no match is found, it returns None.
+        Looks the device's ``ProductType`` up in the built-in device table.
 
-        :return: The board ID as an integer if a match is found, or None if
-            no matching device exists in the `IRECV_DEVICES` list.
-        :rtype: Optional[int]
+        :returns: The board ID, or ``None`` when the product type is not in the table.
         """
         for irecv_device in IRECV_DEVICES:
             if irecv_device.product_type == self.product_type:
@@ -421,13 +368,11 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
     @property
     def chip_id(self) -> Optional[int]:
-        """
-        Retrieves the chip ID associated with the current product type of the
-        device. The chip ID is determined by checking the `product_type` attribute
-        against known IRECV devices.
+        """The chip ID for the device, resolved from its product type.
 
-        :return: The chip ID of the device, or None if no matching device is found.
-        :rtype: Optional[int]
+        Looks the device's ``ProductType`` up in the built-in device table.
+
+        :returns: The chip ID, or ``None`` when the product type is not in the table.
         """
         for irecv_device in IRECV_DEVICES:
             if irecv_device.product_type == self.product_type:
@@ -435,274 +380,170 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return None
 
     async def query_type(self) -> str:
-        """Query type.
+        """Query the type of the daemon at the other end of the connection.
 
-        :return: Result of the operation.
-        :rtype: str
+        Sends a ``QueryType`` request; for a real lockdownd connection this returns
+        ``"com.apple.mobile.lockdown"``.
+
+        :returns: The reported daemon type string.
         """
         return (await self._request("QueryType")).get("Type")
 
     async def set_language(self, language: str) -> None:
-        """
-        Sets the system language setting asynchronously.
+        """Set the device's language (``Language`` key in the ``com.apple.international`` domain).
 
-        This method updates the system language setting by invoking
-        an asynchronous operation that modifies the language value in
-        the specified key and domain for system preferences.
-
-        :param language: A string representing the language to set.
-        :return: None
+        :param language: The language code to set (e.g. ``"en"``).
         """
         await self.set_value(language, key="Language", domain="com.apple.international")
 
     async def get_language(self) -> str:
-        """
-        Asynchronously retrieves the system's preferred language setting.
+        """Get the device's language (``Language`` key in the ``com.apple.international`` domain).
 
-        This method fetches the preferred language from a given domain and key. If the value
-        retrieved is not of type `str`, an empty string will be returned instead.
-
-        :return: The system's preferred language.
-        :rtype: str
+        :returns: The language code, or an empty string when the value is missing or not a string.
         """
         value = await self.get_value(domain="com.apple.international", key="Language")
         return value if isinstance(value, str) else ""
 
     async def set_locale(self, locale: str) -> None:
-        """
-        Sets the locale on the system using the specified value.
+        """Set the device's locale (``Locale`` key in the ``com.apple.international`` domain).
 
-        This asynchronous method updates the system's locale setting by assigning
-        the provided locale value. The change is made within the appropriate domain
-        and with the corresponding key.
-
-        :param locale: The desired locale string to be set, conforming to standard
-            locale formats.
-        :return: This method does not return any value.
+        :param locale: The locale string to set (e.g. ``"en_US"``).
         """
         await self.set_value(locale, key="Locale", domain="com.apple.international")
 
     async def get_locale(self) -> str:
-        """
-        Retrieve the locale configuration from the system.
+        """Get the device's locale (``Locale`` key in the ``com.apple.international`` domain).
 
-        This asynchronous method fetches the locale setting associated with the
-        "user's international preferences" from the system. If the retrieved value
-        is not a string, an empty string is returned.
-
-        :return: A `str` representing the locale configuration or an empty string
-                 if the value is not of type `str`.
-        :rtype: str
+        :returns: The locale string, or an empty string when the value is missing or not a string.
         """
         value = await self.get_value(domain="com.apple.international", key="Locale")
         return value if isinstance(value, str) else ""
 
     async def set_timezone(self, timezone: str) -> None:
-        """
-        Sets the timezone value for the system by utilizing the `set_value` method with
-        the provided key "TimeZone". This is an asynchronous method and must be awaited.
+        """Set the device's time zone (``TimeZone`` key, default domain).
 
-        :param timezone: The timezone to be set as a string.
-        :return: None.
+        :param timezone: The time zone identifier to set (e.g. ``"America/New_York"``).
         """
         await self.set_value(timezone, key="TimeZone")
 
     async def set_uses24h_clock(self, value: bool) -> None:
-        """
-        Sets whether the 24-hour clock format is used.
+        """Set whether the device uses the 24-hour clock format (``Uses24HourClock`` key, default domain).
 
-        This asynchronous method updates the clock format preference by setting the
-        value for the key 'Uses24HourClock' accordingly.
-
-        :param value: A boolean indicating whether to use a 24-hour clock format.
-        :return: None
+        :param value: True for 24-hour format, False for 12-hour format.
         """
         await self.set_value(value, key="Uses24HourClock")
 
     async def set_uses24hClock(self, value: bool) -> None:
-        """
-        Sets the clock display mode to 24-hour format or 12-hour format.
+        """Alias of `set_uses24h_clock`.
 
-        This asynchronous method sets the clock display preference for 24-hour
-        mode based on the given boolean value.
-
-        :param value: A boolean indicating whether to enable 24-hour format
-            (True for 24-hour format, False for 12-hour format).
-        :return: None
+        :param value: True for 24-hour format, False for 12-hour format.
         """
         await self.set_uses24h_clock(value)
 
     async def set_assistive_touch(self, value: bool) -> None:
-        """
-        Sets the assistive touch feature on or off for a device.
+        """Enable or disable AssistiveTouch (``AssistiveTouchEnabledByiTunes`` key in the
+        ``com.apple.Accessibility`` domain).
 
-        This method modifies the AssistiveTouchEnabledByiTunes setting under the
-        com.apple.Accessibility domain by setting its value to either enabled or
-        disabled based on the provided input.
-
-        :param value: A boolean indicating whether to enable (True) or disable
-            (False) the assistive touch feature.
-        :return: None
+        :param value: True to enable AssistiveTouch, False to disable it.
         """
         await self.set_value(int(value), "com.apple.Accessibility", "AssistiveTouchEnabledByiTunes")
 
     async def get_assistive_touch(self) -> bool:
-        """
-        Retrieves the status of the AssistiveTouch accessibility feature.
+        """Get whether AssistiveTouch is enabled (``AssistiveTouchEnabledByiTunes`` key in the
+        ``com.apple.Accessibility`` domain).
 
-        This asynchronous method fetches the value of the AssistiveTouch setting
-        from the specified domain and key related to accessibility preferences.
-        The returned value indicates whether the AssistiveTouch feature is enabled
-        or disabled.
-
-        :return: True if AssistiveTouch is enabled, False otherwise
-        :rtype: bool
+        :returns: True if AssistiveTouch is enabled, False otherwise.
         """
         value = await self.get_value(domain="com.apple.Accessibility", key="AssistiveTouchEnabledByiTunes")
         return bool(value)
 
     async def set_voice_over(self, value: bool) -> None:
-        """
-        Sets the VoiceOver feature status on the device.
+        """Enable or disable VoiceOver (``VoiceOverTouchEnabledByiTunes`` key in the
+        ``com.apple.Accessibility`` domain).
 
-        This asynchronous method enables or disables the VoiceOver feature based on
-        the provided boolean value. It interacts with the device by updating the
-        relevant property key under the accessibility domain.
-
-        :param value: A boolean indicating whether to enable (True) or disable (False)
-            the VoiceOver feature.
-        :return: None
+        :param value: True to enable VoiceOver, False to disable it.
         """
         await self.set_value(int(value), "com.apple.Accessibility", "VoiceOverTouchEnabledByiTunes")
 
     async def get_voice_over(self) -> bool:
-        """
-        Gets the status of the VoiceOver feature enabled by iTunes on the device.
+        """Get whether VoiceOver is enabled (``VoiceOverTouchEnabledByiTunes`` key in the
+        ``com.apple.Accessibility`` domain).
 
-        This method asynchronously retrieves the value of the
-        ``VoiceOverTouchEnabledByiTunes`` key from the specified
-        domain and interprets it as a boolean.
-
-        :return: The status of VoiceOverTouchEnabledByiTunes as a boolean
-        :rtype: bool
+        :returns: True if VoiceOver is enabled, False otherwise.
         """
         value = await self.get_value(domain="com.apple.Accessibility", key="VoiceOverTouchEnabledByiTunes")
         return bool(value)
 
     async def set_invert_display(self, value: bool) -> None:
-        """
-        Sets the display inversion setting asynchronously.
+        """Enable or disable display color inversion (``InvertDisplayEnabledByiTunes`` key in the
+        ``com.apple.Accessibility`` domain).
 
-        This method adjusts the display inversion setting on the device using the
-        specified accessibility key and category. The value provided determines
-        whether the display inversion is enabled or disabled.
-
-        :param value: A boolean value indicating whether to enable (True) or
-                      disable (False) the display inversion.
-        :return: None
+        :param value: True to enable display inversion, False to disable it.
         """
         await self.set_value(int(value), "com.apple.Accessibility", "InvertDisplayEnabledByiTunes")
 
     async def get_invert_display(self) -> bool:
-        """
-        Retrieve the current status of the invert display setting.
+        """Get whether display color inversion is enabled (``InvertDisplayEnabledByiTunes`` key in the
+        ``com.apple.Accessibility`` domain).
 
-        This asynchronous method retrieves whether the "Invert Display" option is enabled
-        under the specified domain and key. It queries the associated configuration
-        and casts the resulting value to a boolean for evaluation. The result indicates
-        if the "Invert Display" feature is currently enabled.
-
-        :rtype: bool
-        :return: A boolean value indicating whether the "Invert Display" option is
-            enabled.
+        :returns: True if display inversion is enabled, False otherwise.
         """
         value = await self.get_value(domain="com.apple.Accessibility", key="InvertDisplayEnabledByiTunes")
         return bool(value)
 
     async def set_enable_wifi_connections(self, value: bool) -> None:
-        """
-        Sets the status of Wi-Fi connections on the device.
+        """Enable or disable Wi-Fi (wireless) lockdown connections to the device
+        (``EnableWifiConnections`` key in the ``com.apple.mobile.wireless_lockdown`` domain).
 
-        This method enables or disables Wi-Fi connections by setting an underlying
-        value in the appropriate system configuration. The change is applied asynchronously.
-
-        :param value: A boolean indicating whether Wi-Fi connections should be
-            enabled (True) or disabled (False).
-        :return: None
+        :param value: True to allow connecting to the device over Wi-Fi, False to disallow it.
         """
         await self.set_value(value, "com.apple.mobile.wireless_lockdown", "EnableWifiConnections")
 
     async def get_enable_wifi_connections(self) -> bool:
-        """
-        Retrieves the status of the "Enable Wifi Connections" setting.
+        """Get whether Wi-Fi (wireless) lockdown connections are enabled (``EnableWifiConnections`` key in the
+        ``com.apple.mobile.wireless_lockdown`` domain).
 
-        This method asynchronously fetches the value of the "EnableWifiConnections"
-        key from the "com.apple.mobile.wireless_lockdown" domain, which indicates
-        whether wifi connections are enabled or not, and returns it as a boolean.
-
-        :return: A boolean value indicating whether wifi connections are enabled.
-        :rtype: bool
+        :returns: True if Wi-Fi connections are enabled, False otherwise.
         """
         value = await self.get_value(domain="com.apple.mobile.wireless_lockdown", key="EnableWifiConnections")
         return bool(value)
 
     async def get_developer_mode_status(self) -> bool:
-        """
-        Retrieve the status of Developer Mode as a boolean value.
+        """Get whether Developer Mode is enabled on the device (``DeveloperModeStatus`` key in the
+        ``com.apple.security.mac.amfi`` domain).
 
-        This asynchronous method checks whether the Developer Mode is currently
-        enabled or disabled on the macOS system. The checks are performed by
-        fetching the system's value associated with the provided domain and key
-        specific to macOS security configurations.
-
-        :return: A boolean indicating whether Developer Mode is enabled.
-        :rtype: bool
+        :returns: True if Developer Mode is enabled, False otherwise.
         """
         value = await self.get_value(domain="com.apple.security.mac.amfi", key="DeveloperModeStatus")
         return bool(value)
 
     async def get_date(self) -> datetime.datetime:
-        """
-        Retrieve the current date and time based on a timestamp retrieved from a key-value store.
+        """Get the device's current date and time.
 
-        This asynchronous method fetches a timestamp associated with the key
-        "TimeIntervalSince1970" and converts it into a `datetime.datetime` object.
-        If no timestamp is found, it defaults to `0`, representing the Unix epoch
-        (1970-01-01 00:00:00 UTC).
+        Reads the device's ``TimeIntervalSince1970`` value and converts it to a local
+        `datetime`. Falls back to the Unix epoch when the value is missing.
 
-        :return: The converted date and time.
-        :rtype: datetime.datetime
+        :returns: The device's current date and time.
         """
         timestamp = await self.get_value(key="TimeIntervalSince1970")
         return datetime.datetime.fromtimestamp(timestamp or 0)
 
     async def enter_recovery(self):
-        """
-        Executes the "EnterRecovery" operation.
+        """Request that the device reboot into recovery mode.
 
-        This method sends an asynchronous request to trigger the "EnterRecovery"
-        operation. The exact behavior of this operation depends on the server-side
-        implementation of the "EnterRecovery" command.
+        Sends an ``EnterRecovery`` request to lockdownd.
 
-        :return: Returns the result of the "EnterRecovery" operation as received
-            from the server.
-        :rtype: Any
+        :returns: The lockdownd response to the request.
         """
         return await self._request("EnterRecovery")
 
     async def stop_session(self) -> dict:
-        """
-        Stops the current active session if one exists and interacts with the service
-        to perform the necessary cleanup.
+        """Stop the current lockdownd session.
 
-        If there is no active session or the service fails to stop the session
-        successfully, an exception will be raised.
+        Sends a ``StopSession`` request for the active session and clears the local session id.
 
-        :raises CannotStopSessionError: If there is no active session or if the
-            service fails to stop the session.
-        :return: A dictionary containing the service response for the stop session
-            operation.
-        :rtype: dict
+        :returns: The lockdownd response to the request.
+        :raises CannotStopSessionError: There is no active session, or lockdownd did not report success.
         """
         if self.session_id and self.service:
             response = await self._request("StopSession", {"SessionID": self.session_id})
@@ -713,21 +554,16 @@ class LockdownClient(ABC, LockdownServiceProvider):
         raise CannotStopSessionError("No active session")
 
     async def validate_pairing(self) -> bool:
-        """
-        Validates the pairing process with the device. This includes fetching the pairing record if not already
-        present, initiating a session with the device, and ensuring secure communication if SSL is enabled.
+        """Validate the existing pairing and establish a session with the device.
 
-        This method handles different device and software versions, applying appropriate configurations, including
-        handling specific conditions such as older protocol requirements for legacy devices. If the pairing and
-        session establishment are successful, the method updates relevant session attributes and reloads device data.
+        Loads a pair record if one is not already set, validates it (using the legacy ``ValidatePair``
+        request for devices older than iOS 7), starts a session and, when the device requests it, upgrades
+        the connection to SSL. On success, marks the client paired and reloads the device's values. If the
+        pair record turns out to be missing or rejected on-device, the connection is re-established and the
+        method returns False.
 
-        :raises PairingError: If there are issues validating the pairing record.
-        :raises InvalidHostIDError: When the provided host ID is invalid.
-        :raises InvalidConnectionError: When the connection to the device is invalid.
-        :raises SSLZeroReturnError: When an SSL handshake fails due to missing or invalid SSL setup.
-
-        :return: True if the pairing is validated successfully; False otherwise.
-        :rtype: bool
+        :returns: True if pairing was validated and a session established; False otherwise (e.g. no pair
+            record, an invalid host id, or an on-device pairing that was removed).
         """
         if self.pair_record is None:
             await self.fetch_pair_record()
@@ -777,19 +613,20 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return True
 
     async def pair(self, timeout: Optional[float] = None, private_key: Optional[RSAPrivateKey] = None) -> None:
-        """
-        Initiates the pairing process with the device and generates a pairing certificate chain. This process involves
-        retrieving the device's public key, generating a host key and certificate, creating a pairing record, and sending
-        a pairing request to the device. Upon successful pairing, the pairing record is saved, and the device is marked as paired.
+        """Pair this host with the device.
 
-        :param timeout: The maximum time to wait for the pairing process to complete, in seconds. If not specified, the default
-            timeout will be used.
-        :type timeout: Optional[float]
-        :param private_key: The private RSA key to use during the pairing certificate chain generation. If not provided, a new
-            private key will be generated.
-        :type private_key: Optional[RSAPrivateKey]
-        :return: None
-        :raises PairingError: If the device public key cannot be retrieved or if the pairing process fails.
+        Retrieves the device's public key, generates a host key and certificate chain, builds a pair record
+        and sends a ``Pair`` request. On success the pair record (including any returned escrow bag) is saved
+        to the cache folder and the client is marked paired. Pairing requires the user to accept the on-device
+        trust dialog.
+
+        :param timeout: Maximum time in seconds to wait for the user to accept the pairing dialog. A value of
+            0 fails immediately if the dialog is pending; ``None`` waits indefinitely.
+        :param private_key: RSA private key to use when generating the pairing certificate chain; a new key
+            is generated if omitted.
+        :raises PairingError: The device public key could not be retrieved.
+        :raises PairingDialogResponsePendingError: The user did not accept the pairing dialog in time.
+        :raises UserDeniedPairingError: The user declined the pairing request.
         """
         self.device_public_key = await self.get_value("", "DevicePublicKey")
         if not self.device_public_key:
@@ -834,22 +671,18 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.paired = True
 
     async def pair_supervised(self, keybag_file: Path, timeout: Optional[float] = None) -> None:
-        """
-        Performs a supervised pairing process with a device using the provided
-        keybag file and optionally a timeout. The method manages the creation
-        of certificates and keys, sends pairing requests, handles challenges
-        during the pairing process, and finalizes the pairing record upon
-        success.
+        """Pair this host with a supervised device using a supervision identity.
 
-        :param keybag_file: The path to the file containing the keybag used for the
-            supervised pairing process.
-        :type keybag_file: Path
-        :param timeout: Optional timeout value in seconds for the pairing requests.
-            Default is None.
-        :type timeout: Optional[float]
-        :return: None
-        :raises PairingError: Raised when the device public key cannot be retrieved
-            or in case of a failure during the pairing process.
+        Loads the supervisor private key and certificate from ``keybag_file`` and performs the supervised
+        pairing flow: it sends an initial ``Pair`` request carrying the supervisor certificate and, if the
+        device responds with an ``MCChallengeRequired`` challenge, signs the challenge (PKCS#7) and sends a
+        second request with the challenge response. On success the pair record (including any returned escrow
+        bag) is saved and the client is marked paired. Because supervision authorizes the host, this does not
+        require the user to accept an on-device dialog.
+
+        :param keybag_file: Path to a PEM file containing both the supervisor private key and certificate.
+        :param timeout: Maximum time in seconds to wait for each pairing request; ``None`` waits indefinitely.
+        :raises PairingError: The device public key could not be retrieved.
         """
         with open(keybag_file, "rb") as keybag_file:
             keybag_file = keybag_file.read()
@@ -916,50 +749,35 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.paired = True
 
     async def unpair(self, host_id: Optional[str] = None) -> None:
-        """
-        Unpair a host or the currently paired host.
+        """Remove a pairing from the device.
 
-        This method sends an asynchronous request to unpair a specific host by its
-        identifier or the currently paired host if no host ID is provided. The operation
-        is processed according to the protocol version defined.
+        Sends an ``Unpair`` request. With no ``host_id`` the current pair record is unpaired; otherwise the
+        pairing identified by ``host_id`` is removed.
 
-        :param host_id: Optional; ID of the host to be unpaired. If not provided, the
-            method will attempt to unpair the currently paired host.
-        :return: None
+        :param host_id: HostID of the pairing to remove; defaults to the current pair record.
         """
         pair_record = self.pair_record if host_id is None else {"HostID": host_id}
         await self._request("Unpair", {"PairRecord": pair_record, "ProtocolVersion": "2"}, verify_request=False)
 
     async def reset_pairing(self):
-        """
-        Resets the pairing process by requesting a full reset of the pairing state.
+        """Reset all pairings on the device.
 
-        This asynchronous method triggers a reset request for pairing configurations,
-        ensuring that the pairing state is fully cleared.
+        Sends a ``ResetPairing`` request with ``FullReset`` set, clearing the device's pairing state.
 
-        :return: A coroutine that, when awaited, sends the pairing reset request and
-            completes upon response.
-        :rtype: Coroutine
+        :returns: The lockdownd response to the request.
         """
         return await self._request("ResetPairing", {"FullReset": True})
 
     async def get_value(self, domain: Optional[str] = None, key: Optional[str] = None):
-        """
-        Fetches a value asynchronously from a remote service based on the provided domain and key.
+        """Read a value from the device via a ``GetValue`` request.
 
-        If a domain is provided, it will be included in the request options. Similarly, if a key
-        is provided, it will also be included. The method sends a request to the "GetValue"
-        endpoint with these options. If a response is received, it extracts and returns the
-        value from the response. If the response contains an object with a "data" attribute,
-        it returns the value of that attribute. When both domain and key are not specified,
-        and the response is a dictionary, the response is stored in the `all_values` attribute.
+        With neither ``domain`` nor ``key`` given, returns the full values dict and also refreshes the cached
+        `all_values`. Otherwise narrows the lookup to the given domain and/or key. Binary blobs are
+        returned as their raw bytes.
 
-        :param domain: Specifies the domain for the value lookup, or None to omit this filter.
-        :type domain: Optional[str]
-        :param key: Specifies the key for the value lookup, or None to omit this filter.
-        :type key: Optional[str]
-        :return: The fetched value if found, or None if no value could be fetched.
-        :rtype: Any
+        :param domain: Domain to read from, or ``None`` for the default domain.
+        :param key: Specific key to read, or ``None`` to read the whole domain.
+        :returns: The requested value, or ``None`` if nothing was returned.
         """
         options = {}
         if domain:
@@ -977,19 +795,11 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return r
 
     async def remove_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> dict:
-        """
-        Asynchronously removes a specific value or set of values based on the given domain and key.
-        This function interacts with an external service or system to perform the removal process.
+        """Remove a value on the device via a ``RemoveValue`` request.
 
-        :param domain: The domain to filter values for removal. Optional.
-                       If not specified, no domain filter will be applied.
-        :type domain: Optional[str]
-        :param key: The specific key to identify the value to be removed. Optional.
-                    If not specified, no key filter will be applied.
-        :type key: Optional[str]
-        :return: A dictionary with the result of the remove operation.
-                 The structure and content of the response depend on the external service's implementation.
-        :rtype: dict
+        :param domain: Domain to remove from, or ``None`` for the default domain.
+        :param key: Specific key to remove, or ``None``.
+        :returns: The lockdownd response to the request.
         """
         options = {}
         if domain:
@@ -999,20 +809,12 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return await self._request("RemoveValue", options)
 
     async def set_value(self, value, domain: Optional[str] = None, key: Optional[str] = None) -> dict:
-        """
-        Sets a value with optional domain and key parameters.
+        """Write a value to the device via a ``SetValue`` request.
 
-        This method allows for the setting of a value with an optional domain or key to provide additional
-        context or categorization. The request is sent asynchronously to the corresponding service.
-
-        :param value: The value to be set.
-        :type value: Any
-        :param domain: Optional domain to associate with the value.
-        :type domain: Optional[str]
-        :param key: Optional key to associate with the value.
-        :type key: Optional[str]
-        :return: A dictionary containing the response from the service.
-        :rtype: dict
+        :param value: The value to write.
+        :param domain: Domain to write to, or ``None`` for the default domain.
+        :param key: Specific key to write, or ``None``.
+        :returns: The lockdownd response to the request.
         """
         options = {}
         if domain:
@@ -1023,23 +825,19 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return await self._request("SetValue", options)
 
     async def get_service_connection_attributes(self, name: str, include_escrow_bag: bool = False) -> dict:
-        """
-        Retrieve the attributes of a service connection. This method allows querying the specific
-        connection attributes for a given service on a paired device. It optionally includes
-        the escrow bag in the request, depending on the provided parameters.
+        """Ask lockdownd to start a named service and return its connection attributes.
 
-        This method raises an error if the device is not paired or if the service cannot
-        be started due to various conditions (e.g., password-protected device).
+        Sends a ``StartService`` request for the given service. The returned dict includes the ``Port`` to
+        connect on and whether SSL must be enabled (``EnableServiceSSL``). Use `start_lockdown_service`
+        to also open the connection.
 
-        :param name: The name of the service for which the connection attributes are being retrieved.
-        :type name: str
-        :param include_escrow_bag: Flag indicating whether to include the escrow bag in the request. Defaults to False.
-        :type include_escrow_bag: bool
-        :return: A dictionary containing the service connection attributes.
-        :rtype: dict
-        :raises NotPairedError: The device is not paired.
-        :raises PasswordRequiredError: The device is password-protected, and a password needs to be entered.
-        :raises StartServiceError: The service could not be started due to an error.
+        :param name: The lockdownd service name to start (e.g. ``"com.apple.afc"``).
+        :param include_escrow_bag: When True, include the pair record's escrow bag in the request (required by
+            some services to operate while the device is locked).
+        :returns: The service connection attributes (including ``Port`` and possibly ``EnableServiceSSL``).
+        :raises NotPairedError: The client is not paired with the device.
+        :raises PasswordRequiredError: The device is passcode-protected and must be unlocked first.
+        :raises StartServiceError: lockdownd refused to start the service.
         """
         if not self.paired:
             raise NotPairedError()
@@ -1058,18 +856,18 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return response
 
     async def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
-        """
-        Starts a lockdown service connection using the specified service name and optional escrow bag setting.
+        """Start a named lockdownd service and open a connection to it.
 
-        This asynchronous method retrieves the service connection attributes using the service name and
-        escrow bag flag, creates a new service connection using the specified port, and optionally
-        configures SSL if enabled for the service.
+        Asks lockdownd to start the service (see `get_service_connection_attributes`), opens a new
+        connection to the reported port, and upgrades it to SSL when the service requires it.
 
-        :param name: The name of the service to start the lockdown connection for.
-        :param include_escrow_bag: Determines whether the escrow bag should be included when retrieving
-            service connection attributes. Default is False.
-        :return: An instance of ServiceConnection representing the established connection.
-        :rtype: ServiceConnection
+        :param name: The lockdownd service name to start (e.g. ``"com.apple.afc"``).
+        :param include_escrow_bag: When True, include the pair record's escrow bag in the start request
+            (required by some services to operate while the device is locked).
+        :returns: A connected `ServiceConnection` for the started service.
+        :raises NotPairedError: The client is not paired with the device.
+        :raises PasswordRequiredError: The device is passcode-protected and must be unlocked first.
+        :raises StartServiceError: lockdownd refused to start the service.
         """
         attr = await self.get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
         service_connection = await self.create_service_connection(attr["Port"])
@@ -1080,34 +878,20 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return service_connection
 
     async def close(self) -> None:
-        """
-        Closes the associated service.
+        """Close the underlying lockdownd connection.
 
-        This method is used to close and clean up any resources associated with
-        the service being used. It is intended to be invoked when the service
-        is no longer needed, ensuring that resources are released properly.
-
-        This is an asynchronous operation.
-
-        :return: None
+        Called automatically when the client is used as an async context manager.
         """
         await self.service.close()
 
     @contextmanager
     def ssl_file(self) -> Generator[str, Any, None]:
-        """
-        Context manager that temporarily creates a file containing both the
-        certificate and private key PEM data from the pair_record for SSL usage.
+        """Yield a temporary file holding the host certificate and private key for SSL handshakes.
 
-        The context manager ensures that the file is cleaned up after use,
-        even in the event of an exception. On Windows systems, it avoids
-        issues with in-use files by managing the file deletion manually.
+        Writes the pair record's host certificate and private key (PEM) to a temporary file for the duration
+        of the ``with`` block and deletes it on exit, even if an exception is raised.
 
-        :param Generator[str, Any, None]: A generator that yields the filename
-            of the temporary SSL file.
-
-        :yield: The path to the temporary file containing the concatenated
-            certificate and private key PEM data.
+        :yield: Path to the temporary PEM file containing the host certificate followed by its private key.
         """
         cert_pem = self.pair_record["HostCertificate"]
         private_key_pem = self.pair_record["HostPrivateKey"]
@@ -1129,14 +913,10 @@ class LockdownClient(ABC, LockdownServiceProvider):
         """Internal helper for handle autopair.
 
         :param autopair: Autopair.
-        :type autopair: bool
         :param timeout: Timeout.
-        :type timeout: Optional[float]
         :param private_key: Private key. Defaults to None.
-        :type private_key: Optional[RSAPrivateKey]
 
         :return: None.
-        :rtype: None
         """
         if await self.validate_pairing():
             return
@@ -1152,19 +932,13 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
     @abstractmethod
     async def create_service_connection(self, port: int) -> ServiceConnection:
-        """
-        Abstract method responsible for establishing a service connection to a specified
-        port. This method must be implemented by subclasses and is used to create a
-        connection to a service, enabling communication or data transfer between systems.
-        The implementation is expected to handle the required connection protocols
-        specific to the service.
+        """Open a new connection to the device on the given port.
 
-        :param port: The port number to which the service connection should be established.
-                     Must be a valid integer representing a network/service port.
-        :type port: int
-        :return: An instance of ServiceConnection representing the established
-                 connection to the desired port.
-        :rtype: ServiceConnection
+        Abstract: each concrete client implements this for its transport (usbmux, TCP, ...). Used to open
+        service connections and to re-establish the lockdownd connection after it drops.
+
+        :param port: The device-side port to connect to.
+        :returns: A connected `ServiceConnection`.
         """
         pass
 
@@ -1177,10 +951,8 @@ class LockdownClient(ABC, LockdownServiceProvider):
         method to perform the actual connection process.
 
         :param port: The port number to be used for the service connection.
-        :type port: int
         :return: An instance of ServiceConnection representing the established
             connection.
-        :rtype: ServiceConnection
         """
         return await self.create_service_connection(port)
 
@@ -1191,15 +963,11 @@ class LockdownClient(ABC, LockdownServiceProvider):
         occurs.
 
         :param request: The request string containing the operation or data to be sent.
-        :type request: str
         :param options: Additional options to include in the request message, defaults
             to None.
-        :type options: Optional[dict]
         :param verify_request: Indicates whether to verify the response after receiving
             it, defaults to True.
-        :type verify_request: bool
         :return: The processed response received from the service.
-        :rtype: dict
         :raises ConnectionResetError: If the connection is reset during the operation.
         :raises ConnectionTerminatedError: If the connection is terminated unexpectedly.
         :raises RuntimeError: If a runtime error occurs, that is not related to a
@@ -1240,14 +1008,10 @@ class LockdownClient(ABC, LockdownServiceProvider):
         """Internal helper for verify request response.
 
         :param request: Request.
-        :type request: str
         :param response: Response.
-        :type response: dict
         :param verify_request: Verify request. Defaults to True.
-        :type verify_request: bool
 
         :return: Result of the operation.
-        :rtype: dict
         """
         if verify_request and response.get("Request") != request:
             if response.get("Type") == RESTORED_SERVICE_TYPE:
@@ -1285,13 +1049,10 @@ class LockdownClient(ABC, LockdownServiceProvider):
         If the timeout elapses or certain conditions are met, it raises an error accordingly.
 
         :param pair_options: A dictionary containing the options required for the pairing request.
-        :type pair_options: dict
         :param timeout: An optional timeout value (in seconds) indicating how long
             to wait for user input. If None, waits indefinitely.
             A value of 0 skips waiting and raises an error immediately.
-        :type timeout: Optional[float]
         :return: A dictionary representing the response of the pairing request.
-        :rtype: dict
         :raises PairingDialogResponsePendingError: Raised if the pairing dialog response is
             still pending and the timeout is exceeded.
         """
@@ -1310,29 +1071,20 @@ class LockdownClient(ABC, LockdownServiceProvider):
         raise PairingDialogResponsePendingError()
 
     async def fetch_pair_record(self) -> None:
-        """
-        Fetches the record for the specified pairing identifier and assigns it to the
-        `pair_record` attribute. This method retrieves the preferred pairing record
-        asynchronously and stores it for subsequent use. If the `identifier` attribute
-        is not set, the method will not perform any action.
+        """Load the preferred pair record for this device into `pair_record`.
 
-        :param self: Instance of the class containing the attributes required
-            for this operation.
-
-        :return: This method does not return any value.
+        Looks up the record matching `identifier` in the cache folder (and other known locations). Does
+        nothing if `identifier` is not set.
         """
         if self.identifier is not None:
             self.pair_record = await get_preferred_pair_record(self.identifier, self.pairing_records_cache_folder)
 
     async def save_pair_record(self) -> None:
-        """
-        Saves the pairing record to a specified file in the pairing records cache folder.
+        """Persist the current pair record to the cache folder.
 
-        The method builds the file path using the `pairing_records_cache_folder` and
-        the `identifier`, and then writes the serialized pairing record data to this file
-        in plist format. This helps in persisting the pairing record for future use.
-
-        :return: None
+        Writes `pair_record` as a plist named ``<identifier>.plist`` in the pairing-records cache folder.
+        When running under sudo, the file's ownership is handed back to the invoking user so a later
+        unprivileged run can rewrite it.
         """
         pair_record_file = self.pairing_records_cache_folder / f"{self.identifier}.plist"
         pair_record_file.write_bytes(plistlib.dumps(self.pair_record))
@@ -1345,17 +1097,15 @@ class LockdownClient(ABC, LockdownServiceProvider):
         """Internal helper for reestablish connection.
 
         :return: None.
-        :rtype: None
         """
         raise RuntimeError("Sync reconnection path was removed. Use asyncio APIs.")
 
     async def areestablish_connection(self) -> None:
-        """
-        Reestablishes the connection by closing the current session, resetting the session,
-        and initiating a new service connection. The pairing status is also revalidated if
-        a pair record exists.
+        """Re-establish the lockdownd connection after it has dropped.
 
-        :return: None
+        Closes the current connection, clears the session, opens a fresh connection on `port`, and
+        re-validates pairing if a pair record is present. Called internally to recover from connection
+        errors mid-request.
         """
         await self.close()
         self.session_id = None
@@ -1366,6 +1116,12 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
 
 class UsbmuxLockdownClient(LockdownClient):
+    """Lockdown client that reaches the device through a usbmuxd connection (USB or network).
+
+    Obtain an instance from `create_using_usbmux`. Service connections are opened through usbmuxd via
+    `create_using_usbmux`.
+    """
+
     def __init__(
         self,
         service: ServiceConnection,
@@ -1380,27 +1136,17 @@ class UsbmuxLockdownClient(LockdownClient):
     ):
         """Initialize a new UsbmuxLockdownClient instance.
 
-        :param service: Service.
-        :type service: ServiceConnection
-        :param host_id: Host id.
-        :type host_id: str
-        :param identifier: Identifier. Defaults to None.
-        :type identifier: Optional[str]
-        :param label: Label. Defaults to DEFAULT_LABEL.
-        :type label: str
-        :param system_buid: System buid. Defaults to SYSTEM_BUID.
-        :type system_buid: str
-        :param pair_record: Pair record. Defaults to None.
-        :type pair_record: Optional[dict]
-        :param pairing_records_cache_folder: Pairing records cache folder. Defaults to None.
-        :type pairing_records_cache_folder: Optional[Path]
-        :param port: Port. Defaults to SERVICE_PORT.
-        :type port: int
-        :param usbmux_address: Usbmux address. Defaults to None.
-        :type usbmux_address: Optional[str]
+        Normally constructed by `create_using_usbmux` rather than directly.
 
-        :return: Result of the operation.
-        :rtype: Any
+        :param service: An already-established lockdownd connection (opened over usbmuxd).
+        :param host_id: The HostID identifying this host to the device.
+        :param identifier: Device identifier (typically its UDID) used to locate the matching pair record.
+        :param label: User-agent label included in every request sent to lockdownd.
+        :param system_buid: The host's SystemBUID, included when starting a session.
+        :param pair_record: A pre-loaded pair record to use instead of looking one up.
+        :param pairing_records_cache_folder: Directory used to search for and persist pair records.
+        :param port: TCP port of the lockdownd service on the device.
+        :param usbmux_address: Address of the usbmuxd socket to use, or ``None`` for the default.
         """
         self.usbmux_address = usbmux_address
         super().__init__(
@@ -1409,25 +1155,20 @@ class UsbmuxLockdownClient(LockdownClient):
 
     @property
     def short_info(self) -> dict:
-        """Short info.
+        """A compact subset of the device's values, plus the usbmux connection type.
 
-        :return: Result of the operation.
-        :rtype: dict
+        :returns: The base `short_info` dict with an added ``ConnectionType`` key
+            (e.g. ``"USB"`` or ``"Network"``).
         """
         short_info = super().short_info
         short_info["ConnectionType"] = self.service.mux_device.connection_type
         return short_info
 
     async def fetch_pair_record(self) -> None:
-        """
-        Fetches and sets the preferred pair record for the current identifier.
+        """Load the preferred pair record for this device into `pair_record`.
 
-        This asynchronous method attempts to retrieve the preferred pair record
-        associated with the given identifier. If the identifier is not ``None``, it
-        fetches the pair record using the provided cache folder and usbmux address
-        (if specified) and assigns it to the `pair_record` attribute.
-
-        :return: None
+        Like `fetch_pair_record`, but also consults usbmuxd (at
+        `usbmux_address`) as a source of pair records. Does nothing if `identifier` is not set.
         """
         if self.identifier is not None:
             self.pair_record = await get_preferred_pair_record(
@@ -1435,14 +1176,11 @@ class UsbmuxLockdownClient(LockdownClient):
             )
 
     async def create_service_connection(self, port: int) -> ServiceConnection:
-        """
-        Establishes an asynchronous service connection using USBMux. This method initializes
-        a ServiceConnection instance by leveraging the `create_using_usbmux` factory method.
+        """Open a new connection to the device on the given port through usbmuxd.
 
-        :param port: The port number to establish the service connection on.
-        :type port: int
-        :return: An instance of ServiceConnection established using USBMux.
-        :rtype: ServiceConnection
+        :param port: The device-side port to connect to.
+        :returns: A connected `ServiceConnection` opened over usbmuxd, reusing this client's
+            connection type and usbmux address.
         """
         return await ServiceConnection.create_using_usbmux(
             self.identifier, port, self.service.mux_device.connection_type, usbmux_address=self.usbmux_address
@@ -1450,18 +1188,18 @@ class UsbmuxLockdownClient(LockdownClient):
 
 
 class PlistUsbmuxLockdownClient(UsbmuxLockdownClient):
+    """Usbmux lockdown client used with the plist-protocol usbmuxd.
+
+    Selected automatically by `create_using_usbmux` when the connected usbmuxd speaks the plist
+    protocol. Differs from `UsbmuxLockdownClient` only in that it also stores the pair record with
+    usbmuxd, not just on disk.
+    """
+
     async def save_pair_record(self) -> None:
-        """
-        Saves the current pair record for the device asynchronously.
+        """Persist the current pair record to disk and to usbmuxd.
 
-        This method serializes the pair record using the `plistlib` library and then
-        saves it using the USBMux client. The operation is performed asynchronously
-        to ensure the system remains responsive during the IO process.
-
-        Raises an exception if the pair record cannot be serialized or saved
-        successfully.
-
-        :return: None
+        Saves the pair record to the cache folder (as in the base class) and additionally hands it to usbmuxd
+        keyed by the device's usbmux id, so usbmuxd can use it for its own connections.
         """
         await super().save_pair_record()
         record_data = plistlib.dumps(self.pair_record)
@@ -1470,6 +1208,12 @@ class PlistUsbmuxLockdownClient(UsbmuxLockdownClient):
 
 
 class TcpLockdownClient(LockdownClient):
+    """Lockdown client that reaches the device over a direct TCP connection (Wi-Fi/network).
+
+    Obtain an instance from `create_using_tcp`. The device is addressed by hostname; service
+    connections are opened with `create_using_tcp`.
+    """
+
     def __init__(
         self,
         service: ServiceConnection,
@@ -1485,29 +1229,20 @@ class TcpLockdownClient(LockdownClient):
     ):
         """Initialize a new TcpLockdownClient instance.
 
-        :param service: Service.
-        :type service: ServiceConnection
-        :param host_id: Host id.
-        :type host_id: str
-        :param hostname: Hostname.
-        :type hostname: str
-        :param identifier: Identifier. Defaults to None.
-        :type identifier: Optional[str]
-        :param label: Label. Defaults to DEFAULT_LABEL.
-        :type label: str
-        :param system_buid: System buid. Defaults to SYSTEM_BUID.
-        :type system_buid: str
-        :param pair_record: Pair record. Defaults to None.
-        :type pair_record: Optional[dict]
-        :param pairing_records_cache_folder: Pairing records cache folder. Defaults to None.
-        :type pairing_records_cache_folder: Optional[Path]
-        :param port: Port. Defaults to SERVICE_PORT.
-        :type port: int
-        :param keep_alive: Keep alive. Defaults to True.
-        :type keep_alive: bool
+        Normally constructed by `create_using_tcp` rather than directly. Note that
+        `identifier` is overwritten with ``hostname``.
 
-        :return: Result of the operation.
-        :rtype: Any
+        :param service: An already-established lockdownd connection (opened over TCP).
+        :param host_id: The HostID identifying this host to the device.
+        :param hostname: The device's hostname or IP address; used to open further connections.
+        :param identifier: Device identifier used to locate the matching pair record (overridden by
+            ``hostname``).
+        :param label: User-agent label included in every request sent to lockdownd.
+        :param system_buid: The host's SystemBUID, included when starting a session.
+        :param pair_record: A pre-loaded pair record to use instead of looking one up.
+        :param pairing_records_cache_folder: Directory used to search for and persist pair records.
+        :param port: TCP port of the lockdownd service on the device.
+        :param keep_alive: Enable TCP keep-alive so a lost connection is detected.
         """
         super().__init__(
             service, host_id, identifier, label, system_buid, pair_record, pairing_records_cache_folder, port
@@ -1517,13 +1252,11 @@ class TcpLockdownClient(LockdownClient):
         self.identifier = hostname
 
     async def create_service_connection(self, port: int) -> ServiceConnection:
-        """Create service connection.
+        """Open a new TCP connection to the device on the given port.
 
-        :param port: Port.
-        :type port: int
-
-        :return: Result of the operation.
-        :rtype: ServiceConnection
+        :param port: The device-side port to connect to.
+        :returns: A connected `ServiceConnection` to this client's hostname, honoring its keep-alive
+            setting.
         """
         return await ServiceConnection.create_using_tcp(self.hostname, port, keep_alive=self._keep_alive)
 
@@ -1533,10 +1266,8 @@ class RemoteLockdownClient(LockdownClient):
         """Create service connection.
 
         :param port: Port.
-        :type port: int
 
         :return: Result of the operation.
-        :rtype: ServiceConnection
         """
         raise NotImplementedError(
             "RemoteXPC service connections should only be created using RemoteServiceDiscoveryService"
@@ -1547,12 +1278,9 @@ class RemoteLockdownClient(LockdownClient):
         """Internal helper for handle autopair.
 
         :param *args: Additional positional arguments.
-        :type *args: Any
         :param **kwargs: Additional keyword arguments.
-        :type **kwargs: Any
 
         :return: Result of the operation.
-        :rtype: Any
         """
         return None
 
@@ -1560,12 +1288,9 @@ class RemoteLockdownClient(LockdownClient):
         """Pair.
 
         :param *args: Additional positional arguments.
-        :type *args: Any
         :param **kwargs: Additional keyword arguments.
-        :type **kwargs: Any
 
         :return: None.
-        :rtype: None
         """
         raise NotImplementedError("RemoteXPC lockdown version does not support pairing operations")
 
@@ -1573,10 +1298,8 @@ class RemoteLockdownClient(LockdownClient):
         """Unpair.
 
         :param timeout: Timeout. Defaults to None.
-        :type timeout: Optional[float]
 
         :return: None.
-        :rtype: None
         """
         raise NotImplementedError("RemoteXPC lockdown version does not support pairing operations")
 
@@ -1594,24 +1317,15 @@ class RemoteLockdownClient(LockdownClient):
         """Initialize a new RemoteLockdownClient instance.
 
         :param service: Service.
-        :type service: ServiceConnection
         :param host_id: Host id.
-        :type host_id: str
         :param identifier: Identifier. Defaults to None.
-        :type identifier: Optional[str]
         :param label: Label. Defaults to DEFAULT_LABEL.
-        :type label: str
         :param system_buid: System buid. Defaults to SYSTEM_BUID.
-        :type system_buid: str
         :param pair_record: Pair record. Defaults to None.
-        :type pair_record: Optional[dict]
         :param pairing_records_cache_folder: Pairing records cache folder. Defaults to None.
-        :type pairing_records_cache_folder: Optional[Path]
         :param port: Port. Defaults to SERVICE_PORT.
-        :type port: int
 
         :return: Result of the operation.
-        :rtype: Any
         """
         super().__init__(
             service, host_id, identifier, label, system_buid, pair_record, pairing_records_cache_folder, port
@@ -1631,21 +1345,26 @@ async def create_using_usbmux(
     port: int = SERVICE_PORT,
     usbmux_address: Optional[str] = None,
 ) -> UsbmuxLockdownClient:
-    """
-    Create a UsbmuxLockdownClient instance
+    """Connect to a device over usbmuxd and return a ready-to-use lockdown client.
 
-    :param serial: Usbmux serial identifier
-    :param identifier: Used as an identifier to look for the device pair record
-    :param label: lockdownd user-agent
-    :param autopair: Attempt to pair with device (blocking) if not already paired
-    :param connection_type: Force a specific type of usbmux connection (USB/Network)
-    :param pair_timeout: Timeout for autopair
-    :param local_hostname: Used as a seed to generate the HostID
-    :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
-    :param pairing_records_cache_folder: Use the following location to search and save pair records
-    :param port: lockdownd service port
-    :param usbmux_address: usbmuxd address
-    :return: UsbmuxLockdownClient instance
+    Opens a lockdownd connection through usbmuxd, queries the device's values, and (when ``autopair`` is set)
+    validates an existing pairing or performs a new one. Returns a `PlistUsbmuxLockdownClient` when the
+    connected usbmuxd speaks the plist protocol, otherwise a `UsbmuxLockdownClient`. The connection is
+    closed automatically if setup fails.
+
+    :param serial: usbmux serial of the target device, or ``None`` to use the first available device.
+    :param identifier: Device identifier used to locate the matching pair record; defaults to the device's
+        serial reported by usbmuxd.
+    :param label: User-agent label included in every request sent to lockdownd.
+    :param autopair: When True, pair with the device (blocking) if it is not already paired.
+    :param connection_type: Restrict to a specific usbmux connection type (``"USB"`` or ``"Network"``).
+    :param pair_timeout: Maximum time in seconds to wait for the user to accept the pairing dialog.
+    :param local_hostname: Seed used to generate the HostID.
+    :param pair_record: A pre-loaded pair record to use instead of looking one up.
+    :param pairing_records_cache_folder: Directory used to search for and persist pair records.
+    :param port: TCP port of the lockdownd service on the device.
+    :param usbmux_address: Address of the usbmuxd socket to use, or ``None`` for the default.
+    :returns: A connected usbmux lockdown client.
     """
     service = await ServiceConnection.create_using_usbmux(
         serial, port, connection_type=connection_type, usbmux_address=usbmux_address
@@ -1686,12 +1405,14 @@ async def create_using_usbmux(
 
 
 async def retry_create_using_usbmux(retry_timeout: Optional[float] = None, **kwargs) -> UsbmuxLockdownClient:
-    """
-    Repeatedly retry to create a UsbmuxLockdownClient instance while dismissing different errors that might occur
-    while device is rebooting
+    """Repeatedly call `create_using_usbmux` until it succeeds, tolerating transient errors.
 
-    :param retry_timeout: Retry timeout in seconds or None for no timeout
-    :return: UsbmuxLockdownClient instance
+    Useful while a device is rebooting or reconnecting: connection/device errors are swallowed and the
+    attempt is retried after a short delay. All keyword arguments are forwarded to
+    `create_using_usbmux`.
+
+    :param retry_timeout: Maximum time in seconds to keep retrying, or ``None`` to retry indefinitely.
+    :returns: A connected usbmux lockdown client, or ``None`` if the timeout elapsed without success.
     """
     start = time.time()
     while (retry_timeout is None) or (time.time() - start < retry_timeout):
@@ -1723,20 +1444,23 @@ async def create_using_tcp(
     port: int = SERVICE_PORT,
     keep_alive: bool = False,
 ) -> TcpLockdownClient:
-    """
-    Create a TcpLockdownClient instance
+    """Connect to a device over TCP (Wi-Fi/network) and return a ready-to-use lockdown client.
 
-    :param hostname: The target device hostname
-    :param identifier: Used as an identifier to look for the device pair record
-    :param label: lockdownd user-agent
-    :param autopair: Attempt to pair with device (blocking) if not already paired
-    :param pair_timeout: Timeout for autopair
-    :param local_hostname: Used as a seed to generate the HostID
-    :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
-    :param pairing_records_cache_folder: Use the following location to search and save pair records
-    :param port: lockdownd service port
-    :param keep_alive: use keep-alive to get notified when the connection is lost
-    :return: TcpLockdownClient instance
+    Opens a lockdownd connection to ``hostname``, queries the device's values, and (when ``autopair`` is set)
+    validates an existing pairing or performs a new one. The connection is closed automatically if setup
+    fails.
+
+    :param hostname: The target device's hostname or IP address.
+    :param identifier: Device identifier used to locate the matching pair record.
+    :param label: User-agent label included in every request sent to lockdownd.
+    :param autopair: When True, pair with the device (blocking) if it is not already paired.
+    :param pair_timeout: Maximum time in seconds to wait for the user to accept the pairing dialog.
+    :param local_hostname: Seed used to generate the HostID.
+    :param pair_record: A pre-loaded pair record to use instead of looking one up.
+    :param pairing_records_cache_folder: Directory used to search for and persist pair records.
+    :param port: TCP port of the lockdownd service on the device.
+    :param keep_alive: Enable TCP keep-alive so a lost connection is detected.
+    :returns: A connected TCP lockdown client.
     """
     service = await ServiceConnection.create_using_tcp(hostname, port, keep_alive=keep_alive)
     try:
@@ -1769,19 +1493,23 @@ async def create_using_remote(
     pairing_records_cache_folder: Optional[Path] = None,
     port: int = SERVICE_PORT,
 ) -> RemoteLockdownClient:
-    """
-    Create a TcpLockdownClient instance over RSD
+    """Wrap an existing RemoteXPC (RSD) service connection in a lockdown client.
 
-    :param service: service connection to use
-    :param identifier: Used as an identifier to look for the device pair record
-    :param label: lockdownd user-agent
-    :param autopair: Attempt to pair with device (blocking) if not already paired
-    :param pair_timeout: Timeout for autopair
-    :param local_hostname: Used as a seed to generate the HostID
-    :param pair_record: Use this pair record instead of the default behavior (search in host/create our own)
-    :param pairing_records_cache_folder: Use the following location to search and save pair records
-    :param port: lockdownd service port
-    :return: TcpLockdownClient instance
+    Used with RemoteServiceDiscoveryService over the RemoteXPC tunnel. The supplied ``service`` is wrapped and
+    initialized; note that the RemoteXPC variant does not support pairing operations (``autopair`` and the
+    pairing parameters are accepted for signature compatibility but pairing is a no-op). The connection is
+    closed automatically if setup fails.
+
+    :param service: An already-established RemoteXPC service connection to lockdownd.
+    :param identifier: Device identifier used to locate the matching pair record.
+    :param label: User-agent label included in every request sent to lockdownd.
+    :param autopair: Accepted for compatibility; pairing is not supported over RemoteXPC.
+    :param pair_timeout: Accepted for compatibility; pairing is not supported over RemoteXPC.
+    :param local_hostname: Seed used to generate the HostID.
+    :param pair_record: A pre-loaded pair record to use instead of looking one up.
+    :param pairing_records_cache_folder: Directory used to search for and persist pair records.
+    :param port: TCP port of the lockdownd service on the device.
+    :returns: A connected RemoteXPC lockdown client.
     """
     try:
         return await RemoteLockdownClient.create(

@@ -64,6 +64,15 @@ def classify_zip_file(zip_bytes: bytes) -> ZipFileType:
 
 
 class InstallationProxyService(LockdownService):
+    """
+    Client for the ``com.apple.mobile.installation_proxy`` lockdown service.
+
+    Provides access to the device's application installation database: installing,
+    upgrading, uninstalling, archiving/restoring, browsing and looking up apps, as well
+    as uploading carrier bundles (IPCC). Most operations send a plist command over the
+    service connection and stream back progress and status responses.
+    """
+
     SERVICE_NAME = "com.apple.mobile.installation_proxy"
     RSD_SERVICE_NAME = "com.apple.mobile.installation_proxy.shim.remote"
 
@@ -101,19 +110,20 @@ class InstallationProxyService(LockdownService):
         *args,
     ) -> None:
         """
-        Send a command associated with a specific bundle identifier to the service.
+        Send a command that targets an installed app by its bundle identifier and wait for completion.
 
-        This asynchronous method constructs a dictionary containing the given command
-        and bundle identifier, then sends it to the service. Additional options and
-        a handler routine can also be specified. The completion of the operation can
-        be monitored using the provided completion handler.
+        Sends a plist of the form ``{"Command": cmd, "ApplicationIdentifier": bundle_identifier,
+        "ClientOptions": options}`` to the service, then consumes progress/status responses until
+        the operation completes. Used to back `restore` and `uninstall`.
 
-        :param bundle_identifier: The application identifier associated with the command.
-        :param cmd: The command name to execute. Defaults to "Archive".
-        :param options: A dictionary of optional parameters for the command. Defaults to None.
-        :param handler: Callable to handle the completion of the command. Defaults to None.
-        :param args: Additional arguments to pass to the handler when monitoring completion.
-        :return: None
+        :param bundle_identifier: Bundle identifier of the target app, sent as ``ApplicationIdentifier``.
+        :param cmd: Installation-proxy command name, sent as ``Command``. Defaults to ``"Archive"``.
+        :param options: Command options, sent as ``ClientOptions``. ``None`` is sent as an empty dict.
+        :param handler: Progress callback invoked as ``handler(percent_complete, *args)`` on each
+            progress response. ``None`` disables progress callbacks.
+        :param args: Extra positional arguments forwarded to ``handler``.
+        :returns: None.
+        :raises AppInstallError: If the service reports an error or finishes without a ``Complete`` status.
         """
         cmd: dict = {"Command": cmd, "ApplicationIdentifier": bundle_identifier}
 
@@ -128,22 +138,17 @@ class InstallationProxyService(LockdownService):
         self, ipa_path: str, options: Optional[dict] = None, handler: Optional[Callable] = None, *args
     ) -> None:
         """
-        Performs an asynchronous upgrade operation for the application using the specified installation
-        package path and additional options, if provided. It invokes the internal method to handle
-        the process locally while supporting optional handlers and arguments.
+        Upgrade an installed app from a local package.
 
-        :param ipa_path: The file path to the IPA installation package.
-        :type ipa_path: str
-        :param options: A dictionary containing optional configuration parameters for the
-            upgrade process. This parameter is optional.
-        :type options: Optional[dict]
-        :param handler: A callable object or function that serves as a handler for managing
-            notifications or updates during the upgrade process. This parameter is optional.
-        :type handler: Optional[Callable]
-        :param args: Variadic arguments that can hold additional data or configurations for
-            the upgrade process.
-        :return: This method does not return any value.
-        :rtype: None
+        Delegates to `install_from_local` with the ``"Upgrade"`` command.
+
+        :param ipa_path: Local path to the package (``.ipa``/``.ipcc`` or an app directory).
+        :param options: Command options, sent as ``ClientOptions``. ``None`` is sent as an empty dict.
+        :param handler: Progress callback invoked as ``handler(percent_complete, *args)`` on each
+            progress response. ``None`` disables progress callbacks.
+        :param args: Extra positional arguments forwarded to ``handler``.
+        :returns: None.
+        :raises AppInstallError: If the upgrade fails.
         """
         await self.install_from_local(ipa_path, "Upgrade", options, handler, args)
 
@@ -151,22 +156,17 @@ class InstallationProxyService(LockdownService):
         self, bundle_identifier: str, options: Optional[dict] = None, handler: Optional[Callable] = None, *args
     ) -> None:
         """
-        Restores a specified bundle identified by its bundle identifier.
+        Restore a previously archived app, identified by its bundle identifier.
 
-        This method sends a command to restore the associated bundle using the provided
-        bundle identifier. Additional options, a custom handler, and extra arguments
-        can be provided to customize the behavior during the restoration process.
+        Sends the ``"Restore"`` command via `send_cmd_for_bundle_identifier`.
 
-        :param bundle_identifier: The unique identifier for the bundle to restore.
-        :type bundle_identifier: str
-        :param options: Optional dictionary containing additional options for the restore process.
-        :type options: Optional[dict]
-        :param handler: An optional callable function used to handle specific events or
-            outcomes during the restore process.
-        :type handler: Optional[Callable]
-        :param args: Additional arguments to customize the restore behavior.
-        :return: None
-        :rtype: None
+        :param bundle_identifier: Bundle identifier of the app to restore.
+        :param options: Command options, sent as ``ClientOptions``. ``None`` is sent as an empty dict.
+        :param handler: Progress callback invoked as ``handler(percent_complete, *args)`` on each
+            progress response. ``None`` disables progress callbacks.
+        :param args: Extra positional arguments forwarded to ``handler``.
+        :returns: None.
+        :raises AppInstallError: If the restore fails.
         """
         await self.send_cmd_for_bundle_identifier(bundle_identifier, "Restore", options, handler, args)
 
@@ -174,23 +174,17 @@ class InstallationProxyService(LockdownService):
         self, bundle_identifier: str, options: Optional[dict] = None, handler: Optional[Callable] = None, *args
     ) -> None:
         """
-        Uninstalls an app identified by the given bundle identifier. This method sends a command
-        to perform the uninstall operation and allows optional configuration settings, a custom
-        handler, and additional arguments to modify the behavior of the operation.
+        Uninstall an app, identified by its bundle identifier.
 
-        :param bundle_identifier: The unique string identifying the app to be uninstalled.
-        :type bundle_identifier: str
-        :param options: A dictionary of optional parameters to customize the uninstall operation.
-            Defaults to None.
-        :type options: Optional[dict]
-        :param handler: A callable that can be used to handle events or responses during the
-            uninstall process. Defaults to None.
-        :type handler: Optional[Callable]
-        :param args: Additional arguments that can be passed to extend the uninstall functionality.
-            These arguments are optional.
-        :return: This method does not return a value. It performs the uninstall operation
-            asynchronously.
-        :rtype: None
+        Sends the ``"Uninstall"`` command via `send_cmd_for_bundle_identifier`.
+
+        :param bundle_identifier: Bundle identifier of the app to uninstall.
+        :param options: Command options, sent as ``ClientOptions``. ``None`` is sent as an empty dict.
+        :param handler: Progress callback invoked as ``handler(percent_complete, *args)`` on each
+            progress response. ``None`` disables progress callbacks.
+        :param args: Extra positional arguments forwarded to ``handler``.
+        :returns: None.
+        :raises AppInstallError: If the uninstall fails.
         """
         await self.send_cmd_for_bundle_identifier(bundle_identifier, "Uninstall", options, handler, args)
 
@@ -203,19 +197,24 @@ class InstallationProxyService(LockdownService):
         *args,
     ) -> None:
         """
-        Installs a package from raw byte data. This method handles both standard package
-        types and carrier bundles (IPCC). It processes the package, stores it on the
-        device temporarily, and initiates the installation using the specified command
-        and options.
+        Install an app or carrier bundle from a zipped package held in memory.
 
-        :param package_bytes: The raw byte content of the package to be installed.
-        :param cmd: The command to use for installation. Defaults to "Install".
-        :param options: Configuration options as a dictionary for the installation
-            process. Defaults to None.
-        :param handler: An optional callable handler to manage specific installation
-            callbacks. Defaults to None.
-        :param args: Additional positional arguments passed during package installation.
-        :return: None
+        The package type is detected from the zip contents (see `classify_zip_file`): a
+        ``.app`` payload is treated as an ``.ipa``, a ``.bundle`` payload as an ``.ipcc``. For
+        IPCC packages, ``PackageType`` is forced to ``"CarrierBundle"`` in the options. The bytes
+        are uploaded to a temporary path under ``/PublicStaging/pymobiledevice3`` via AFC, the
+        command is dispatched with `send_package`, and the temporary file is removed
+        afterwards.
+
+        :param package_bytes: Raw bytes of the ``.ipa``/``.ipcc`` zip package.
+        :param cmd: Installation-proxy command name, sent as ``Command``. Defaults to ``"Install"``.
+        :param options: Command options, sent as ``ClientOptions``. ``None`` is sent as an empty dict.
+        :param handler: Progress callback invoked as ``handler(percent_complete, *args)`` on each
+            progress response. ``None`` disables progress callbacks.
+        :param args: Extra positional arguments forwarded to ``handler``.
+        :returns: None.
+        :raises AppInstallError: If the bytes are not a valid package, lack a ``Payload`` directory,
+            or if the installation fails.
         """
         ipcc_mode = classify_zip_file(package_bytes).is_ipcc()
 
@@ -249,21 +248,26 @@ class InstallationProxyService(LockdownService):
         *args,
     ) -> None:
         """
-        Install package from a local path in either `.ipa` or `.ipcc` format.
+        Install an app or carrier bundle from a local path.
 
-        This function handles the installation of an iOS package from a local path specified by
-        `package_path`. It differentiates between `.ipa` (application archive) and `.ipcc`
-        (carrier bundle) packages. If `package_path` is a directory, it assumes it is an app
-        and converts it into a `.ipa` format. The function also accepts optional configuration
-        options and a handler for processing.
+        Dispatches on ``package_path``: a ``.ipcc`` suffix is treated as a carrier bundle
+        (``PackageType`` forced to ``"CarrierBundle"``); a directory is treated as an unpackaged
+        app and zipped into an ``.ipa`` via `create_ipa_contents_from_directory`; any other
+        path is read as ``.ipa`` bytes. When ``developer`` is set, ``PackageType`` is forced to
+        ``"Developer"``. The payload is uploaded to a temporary path under
+        ``/PublicStaging/pymobiledevice3`` via AFC, the command is dispatched with
+        `send_package`, and the temporary file is removed afterwards.
 
-        :param package_path: Path to the local package to be installed.
-        :param cmd: The command to send for installation, default is "Install".
-        :param options: Optional dictionary containing additional options for the installation process.
-        :param handler: An optional callable to handle events during the installation process.
-        :param developer: A boolean specifying if the package should be installed in developer mode.
-        :param args: Additional arguments to be passed during the installation process.
-        :return: None
+        :param package_path: Local path to a ``.ipa`` file, a ``.ipcc`` file, or an app directory.
+            String values are coerced to `Path`.
+        :param cmd: Installation-proxy command name, sent as ``Command``. Defaults to ``"Install"``.
+        :param options: Command options, sent as ``ClientOptions``. ``None`` is sent as an empty dict.
+        :param handler: Progress callback invoked as ``handler(percent_complete, *args)`` on each
+            progress response. ``None`` disables progress callbacks.
+        :param developer: When ``True``, sets ``PackageType`` to ``"Developer"`` in the options.
+        :param args: Extra positional arguments forwarded to ``handler``.
+        :returns: None.
+        :raises AppInstallError: If the installation fails.
         """
         ipcc_mode = package_path.suffix == ".ipcc"
 
@@ -299,24 +303,21 @@ class InstallationProxyService(LockdownService):
 
     async def send_package(self, cmd: str, options: Optional[dict], handler: Callable, package_path: str, *args):
         """
-        Asynchronously sends a package with specified command, options, and handler for monitoring its completion.
+        Send an install/upgrade command for a package already staged on the device, and wait for completion.
 
-        The method prepares a payload containing the command, client options, and package path,
-        then sends it using the `service.send_plist` function. After sending, it waits for the
-        completion of the handler processing, which may involve additional arguments.
+        Sends ``{"Command": cmd, "ClientOptions": options, "PackagePath": package_path}`` to the
+        service, then consumes progress/status responses until the operation completes. Typically
+        invoked by `install_from_local` and `install_from_bytes` after uploading the
+        package via AFC.
 
-        :param cmd: Command to be executed on the service.
-        :type cmd: str
-        :param options: Dictionary containing client options to customize the command behavior.
-        :type options: Optional[dict]
-        :param handler: Callable function to handle the processing of the completion event.
-        :type handler: Callable
-        :param package_path: Path to the package that needs to be sent.
-        :type package_path: str
-        :param args: Additional arguments that are passed to the handler for processing.
-        :type args: tuple
-        :return: None
-        :rtype: None
+        :param cmd: Installation-proxy command name, sent as ``Command``.
+        :param options: Command options, sent as ``ClientOptions``.
+        :param handler: Progress callback invoked as ``handler(percent_complete, *args)`` on each
+            progress response. ``None`` disables progress callbacks.
+        :param package_path: On-device path to the staged package, sent as ``PackagePath``.
+        :param args: Extra positional arguments forwarded to ``handler``.
+        :returns: None.
+        :raises AppInstallError: If the service reports an error or finishes without a ``Complete`` status.
         """
         await self.service.send_plist({
             "Command": cmd,
@@ -328,15 +329,16 @@ class InstallationProxyService(LockdownService):
 
     async def upload_ipcc_from_path(self, file: Path, remote_path: str, afc_client: AfcService) -> None:
         """
-        Uploads an IPCC file from a given local path to a specified remote location using an AFC client.
+        Upload a local IPCC (carrier bundle) zip to the device, unpacking it into the remote path.
 
-        This function opens the specified file in binary read mode, logs the upload initiation process,
-        and uploads the file contents to the remote path using the provided AFC client.
+        Reads the file into memory and forwards it to the unpacking uploader, which recreates the
+        zip's directory tree under ``remote_path`` on the device via the given AFC client.
 
-        :param file: A Path object representing the local file to be uploaded.
-        :param remote_path: The destination path on the remote system where the file will be uploaded.
-        :param afc_client: An instance of AfcService used to handle the upload process.
-        :return: None
+        :param file: Local path to the ``.ipcc`` zip file.
+        :param remote_path: Destination directory on the device where the bundle is unpacked.
+        :param afc_client: Connected `AfcService` used to write
+            the files.
+        :returns: None.
         """
         with file.open("rb") as fb:
             file_name = file.name
@@ -346,20 +348,16 @@ class InstallationProxyService(LockdownService):
 
     async def upload_ipcc_from_bytes(self, file_bytes: bytes, remote_path: str, afc_client: AfcService) -> None:
         """
-        Uploads an IPCC file to the specified remote path using the provided AFC client.
+        Upload an in-memory IPCC (carrier bundle) zip to the device, unpacking it into the remote path.
 
-        This method takes the IPCC file bytes, creates an in-memory stream from them,
-        and uploads the content to the remote path using the provided AFC client. It
-        logs the process for informational purposes.
+        Wraps the bytes in a stream and forwards them to the unpacking uploader, which recreates the
+        zip's directory tree under ``remote_path`` on the device via the given AFC client.
 
-        :param file_bytes: The binary content of the IPCC file to be uploaded.
-        :type file_bytes: bytes
-        :param remote_path: The destination path where the IPCC file will be uploaded.
-        :type remote_path: str
-        :param afc_client: The AFC service client used to perform the upload operation.
-        :type afc_client: AfcService
-        :return: This method does not return a value.
-        :rtype: None
+        :param file_bytes: Raw bytes of the ``.ipcc`` zip.
+        :param remote_path: Destination directory on the device where the bundle is unpacked.
+        :param afc_client: Connected `AfcService` used to write
+            the files.
+        :returns: None.
         """
         file_stream = BytesIO(file_bytes)
         self.logger.info("Uploading IPCC from given bytes..")
@@ -387,19 +385,17 @@ class InstallationProxyService(LockdownService):
         self, capabilities: Optional[dict] = None, options: Optional[dict] = None
     ) -> dict:
         """
-        Verifies if the given capabilities match the specified options by sending a
-        command to a service and receiving a response indicating the result of the match.
-        This is typically used for checking compatibility or suitability of a configuration.
+        Ask the device whether it satisfies a set of app capabilities.
 
-        :param capabilities: Optional dictionary representing the desired capabilities to be
-            checked for a match. If not provided, no specific capabilities will be checked.
-        :type capabilities: Optional[dict]
-        :param options: Optional dictionary specifying additional options for the match
-            process. If not provided, defaults to an empty dictionary.
-        :type options: Optional[dict]
-        :return: Dictionary containing the result of the capabilities lookup, indicating if the
-            match was successful or providing related information.
-        :rtype: dict
+        Sends the ``"CheckCapabilitiesMatch"`` command. When ``capabilities`` is provided it is
+        sent under the ``Capabilities`` key; otherwise no capabilities key is sent. Returns the
+        single ``LookupResult`` value from the response.
+
+        :param capabilities: Capabilities to check, sent as ``Capabilities``. If falsy, the key is
+            omitted.
+        :param options: Command options, sent as ``ClientOptions``. ``None`` is sent as an empty dict.
+        :returns: The ``LookupResult`` value from the response describing the matched capabilities,
+            or ``None`` if absent.
         """
         if options is None:
             options = {}
@@ -413,22 +409,15 @@ class InstallationProxyService(LockdownService):
 
     async def browse(self, options: Optional[dict] = None, attributes: Optional[list[str]] = None) -> list[dict]:
         """
-        Asynchronously sends a browse command to a service, processes responses iteratively,
-        and collects the resulting data into a list of dictionaries.
+        Enumerate installed apps via the ``"Browse"`` command.
 
-        This function allows querying a service with specified options and attributes to retrieve
-        a browsable list of items. It handles communication with the service through command and
-        response exchanges, gathering data until the process is completed.
+        Sends the command and accumulates each response's ``CurrentList`` entries until the service
+        reports a ``Complete`` status (or returns an empty response).
 
-        :param options:
-            Optional dictionary representing client options for the browse command.
-            Defaults to None if not provided.
-        :param attributes:
-            Optional list of strings representing specific attributes to be returned
-            as part of the browse response. Defaults to None.
-        :return:
-            A list of dictionaries containing the collected browsable items retrieved
-            from the service.
+        :param options: Command options, sent as ``ClientOptions``. ``None`` is sent as an empty dict.
+        :param attributes: When provided, set as the ``ReturnAttributes`` option to limit which
+            per-app attributes are returned.
+        :returns: A list of per-app info dictionaries collected from all ``CurrentList`` responses.
         """
         if options is None:
             options = {}
@@ -456,12 +445,15 @@ class InstallationProxyService(LockdownService):
 
     async def lookup(self, options: Optional[dict] = None) -> dict:
         """
-        Perform an asynchronous lookup operation by sending the provided options to the service
-        and retrieving the result.
+        Look up installed apps via the ``"Lookup"`` command.
 
-        :param options: Optional dictionary specifying client options for the lookup process.
-            If not provided, defaults to an empty dictionary.
-        :return: A dictionary containing the 'LookupResult' extracted from the service's response.
+        Sends the command and returns the single ``LookupResult`` value from the response. The
+        options dict (e.g. ``BundleIDs``, ``ApplicationType``, ``ReturnAttributes``) determines
+        which apps and attributes are returned.
+
+        :param options: Command options, sent as ``ClientOptions``. ``None`` is sent as an empty dict.
+        :returns: The ``LookupResult`` mapping bundle identifiers to per-app info dictionaries, or
+            ``None`` if absent.
         """
         if options is None:
             options = {}
@@ -477,24 +469,23 @@ class InstallationProxyService(LockdownService):
         show_placeholders: bool = False,
     ) -> dict[str, dict]:
         """
-        Retrieve application information based on specified criteria.
+        Retrieve installed apps, keyed by bundle identifier.
 
-        This asynchronous method fetches details about applications installed or available
-        on a system, based on provided filter options such as application type, bundle
-        identifiers, and whether placeholders should be included. Additionally, it allows
-        calculation of application sizes if requested.
+        Builds a lookup query from the given filters and calls `lookup`. When
+        ``calculate_sizes`` is set, a second lookup is issued requesting ``CFBundleIdentifier``,
+        ``StaticDiskUsage`` and ``DynamicDiskUsage``, and those size attributes are merged into the
+        per-app entries.
 
-        :param application_type: The type of applications to fetch. Defaults to "Any". Examples
-            include "System" or "User".
-        :param calculate_sizes: A flag indicating whether to calculate and include application
-            size information. Defaults to False.
-        :param bundle_identifiers: A list of specific bundle identifiers to filter the
-            results. If None, all applications matching the other criteria are returned.
-        :param show_placeholders: A flag indicating whether to include placeholder
-            applications in the results. Defaults to False.
-            See: <https://github.com/doronz88/pymobiledevice3/issues/1602> for details.
-        :return: A dictionary where keys are bundle identifiers and values are nested
-            dictionaries containing application details.
+        :param application_type: Value for the ``ApplicationType`` option. Defaults to ``"Any"``;
+            other values include ``"System"`` and ``"User"``.
+        :param calculate_sizes: When ``True``, also fetch and merge static/dynamic disk usage for
+            each app.
+        :param bundle_identifiers: When provided, restrict the query to these bundle identifiers via
+            the ``BundleIDs`` option.
+        :param show_placeholders: When ``True``, set the ``ShowPlaceholders`` option to include
+            placeholder (e.g. installing/downloading) apps.
+            See <https://github.com/doronz88/pymobiledevice3/issues/1602> for details.
+        :returns: A dictionary mapping each bundle identifier to its per-app info dictionary.
         """
         options = {}
         if bundle_identifiers is not None:

@@ -381,16 +381,23 @@ class AfcService(LockdownService):
         """
         Pull (download) a file or directory from the device to the local machine.
 
-        Recursively copies files and directories from the device to the local file system.
-        Preserves modification times and handles large files by reading in chunks.
+        The source is resolved through any symbolic link before transfer. A regular file is
+        written to ``dst``; if ``dst`` is an existing local directory, the file is placed
+        inside it under the source's basename. Files larger than ``MAXIMUM_READ_SIZE`` (4 MB)
+        are streamed in chunks. The local file's modification time is set to match the
+        device's ``st_mtime``. A directory source is copied recursively into a subdirectory
+        of ``dst`` named after the source's basename.
 
-        :param relative_src: Source path relative to src_dir on the device
-        :param dst: Destination path on the local machine
-        :param match: Optional regex pattern to filter files (by basename)
-        :param callback: Optional callback function called for each file copied (src, dst). Async callbacks are awaited.
-        :param src_dir: Base directory for resolving relative_src
-        :param ignore_errors: If True, continue on errors instead of raising exceptions
-        :param progress_bar: If True, show progress bar for large files
+        :param relative_src: Source path on the device, resolved relative to ``src_dir``.
+        :param dst: Destination path on the local machine.
+        :param match: Optional regex; only entries whose basename matches (via ``search``) are
+            copied. Non-matching files are skipped.
+        :param callback: Optional callable invoked as ``callback(src, dst)`` after each regular
+            file is copied. If it returns an awaitable, the awaitable is awaited.
+        :param src_dir: Base directory on the device against which ``relative_src`` is joined.
+        :param ignore_errors: If True, per-entry errors during directory recursion are logged
+            and skipped instead of propagated.
+        :param progress_bar: If True, display a tqdm progress bar while streaming large files.
         """
         src = await self.resolve_path(posixpath.join(src_dir, relative_src))
 
@@ -462,10 +469,13 @@ class AfcService(LockdownService):
     @path_to_str()
     async def exists(self, filename):
         """
-        Check if a file or directory exists on the device.
+        Check whether a path exists on the device.
 
-        :param filename: Path to check
-        :return: True if the path exists, False otherwise
+        Implemented by attempting `stat`; a missing path is reported as False and any
+        other AFC error propagates.
+
+        :param filename: Path to check.
+        :return: True if the path exists, False if it was not found.
         """
         try:
             await self.stat(filename)
@@ -476,12 +486,12 @@ class AfcService(LockdownService):
     @path_to_str()
     async def wait_exists(self, filename):
         """
-        Block until a file or directory exists on the device.
+        Block until a path exists on the device.
 
-        Continuously polls the device until the specified path exists.
-        Warning: This is a busy-wait and may consume significant resources.
+        Polls `exists` every 0.1 seconds until the path appears. Does not return
+        until the path exists.
 
-        :param filename: Path to wait for
+        :param filename: Path to wait for.
         """
         while not await self.exists(filename):
             await asyncio.sleep(0.1)
@@ -534,12 +544,15 @@ class AfcService(LockdownService):
         """
         Push (upload) a file or directory from the local machine to the device.
 
-        Recursively copies files and directories from the local file system to the device.
-        Creates necessary parent directories if they don't exist.
+        A regular file is written to ``remote_path`` (or, if ``remote_path`` is an existing
+        remote directory, into it under the file's basename). A local directory is copied
+        recursively into ``remote_path``/<basename of local_path>, creating remote directories
+        as needed.
 
-        :param local_path: Source path on the local machine
-        :param remote_path: Destination path on the device
-        :param callback: Optional callback function called for each file copied (src, dst)
+        :param local_path: Source path on the local machine.
+        :param remote_path: Destination path on the device.
+        :param callback: Optional callable invoked as ``callback(local_path, remote_path)``
+            before each entry is transferred.
         """
         if os.path.isdir(local_path):
             remote_path = posixpath.join(remote_path, os.path.basename(local_path))
@@ -547,14 +560,16 @@ class AfcService(LockdownService):
 
     @path_to_str()
     async def rm_single(self, filename: str, force: bool = False) -> bool:
-        """remove single file or directory
+        """
+        Remove a single file or empty directory on the device.
 
-         return if succeed or raise exception depending on force parameter.
+        Issues a single ``REMOVE_PATH`` operation; it does not recurse into a non-empty
+        directory.
 
-        :param filename: path to directory or a file
-        :param force: True for ignore exception and return False
-        :return: if succeed
-        :rtype: bool
+        :param filename: Path to the file or directory to remove.
+        :param force: If True, swallow an `AfcException` and return False instead of raising.
+        :return: True on success; False if the removal failed and ``force`` is True.
+        :raises AfcException: if the removal fails and ``force`` is False.
         """
         try:
             await self._do_operation(
@@ -568,15 +583,21 @@ class AfcService(LockdownService):
 
     @path_to_str()
     async def rm(self, filename: str, match: Optional[Pattern] = None, force: bool = False) -> list[str]:
-        """recursive removal of a directory or a file
+        """
+        Recursively remove a file or directory tree on the device.
 
-        if did not succeed, return list of undeleted filenames or raise exception depending on force parameter.
+        For a directory, every entry is removed depth-first and the directory itself is removed
+        last. The ``match`` pattern, when given, filters which top-level entries of ``filename``
+        are considered (matched against their basename via ``match``); nested entries are always
+        removed once their parent is selected.
 
-        :param filename: path to directory or a file
-        :param match: Pattern of directory entries to remove or None to remove all
-        :param force: True for ignore exception and return list of undeleted paths
-        :return: list of undeleted paths
-        :rtype: list[str]
+        :param filename: Path to the file or directory to remove.
+        :param match: Optional regex; only directory entries whose basename matches are removed.
+            None removes all entries.
+        :param force: If True, suppress the final `AfcException` and instead return the
+            list of paths that could not be deleted.
+        :return: List of paths that could not be deleted (empty on full success).
+        :raises AfcException: if any path could not be deleted and ``force`` is False.
         """
         if not await self.exists(filename) and not await self.rm_single(filename, force=force):
             return [filename]
@@ -620,23 +641,24 @@ class AfcService(LockdownService):
 
     async def get_device_info(self):
         """
-        Get device file system information.
+        Query device file-system information.
 
-        Returns information about the device's file system such as total capacity,
-        free space, and block size.
+        Issues a ``GET_DEVINFO`` operation and decodes the null-terminated key/value list into
+        a dictionary (e.g. model, total/free bytes, block size).
 
-        :return: Dictionary containing device file system information
+        :return: Dictionary of device file-system attributes (all values are strings).
         """
         return list_to_dict(await self._do_operation(AfcOpcode.GET_DEVINFO))
 
     @path_to_str()
     async def listdir(self, filename: str):
         """
-        List contents of a directory on the device.
+        List the entries of a directory on the device.
 
-        :param filename: Path to the directory
-        :return: List of filenames in the directory (excluding '.' and '..')
-        :raises: AfcException if the path is not a directory or doesn't exist
+        :param filename: Path to the directory.
+        :return: Entry names in the directory, excluding ``.`` and ``..``.
+        :raises AfcFileNotFoundError: if the path does not exist.
+        :raises AfcException: if the path is not a directory or cannot be listed.
         """
         data = await self._do_operation(
             AfcOpcode.READ_DIR, afc_read_dir_req_t.build(AfcReadDirRequest(filename=filename)), filename
@@ -648,11 +670,11 @@ class AfcService(LockdownService):
         """
         Create a directory on the device.
 
-        Note: This behaves like os.makedirs and will create parent directories as needed.
-        It is idempotent and will not raise an error if the directory already exists.
+        Issues a ``MAKE_DIR`` operation, creating any missing parent directories.
 
-        :param filename: Path of the directory to create
-        :return: Response data from the operation
+        :param filename: Path of the directory to create.
+        :return: Raw response payload from the operation (typically empty).
+        :raises AfcException: if the directory could not be created.
         """
         return await self._do_operation(
             AfcOpcode.MAKE_DIR, afc_mkdir_req_t.build(AfcMkdirRequest(filename=filename)), filename
@@ -661,10 +683,13 @@ class AfcService(LockdownService):
     @path_to_str()
     async def isdir(self, filename: str) -> bool:
         """
-        Check if a path is a directory.
+        Check whether a path is a directory.
 
-        :param filename: Path to check
-        :return: True if the path is a directory, False otherwise
+        Stats the path and tests whether its ``st_ifmt`` is ``S_IFDIR``.
+
+        :param filename: Path to check.
+        :return: True if the path is a directory, False otherwise.
+        :raises AfcFileNotFoundError: if the path does not exist.
         """
         stat = await self.stat(filename)
         return stat.get("st_ifmt") == "S_IFDIR"
@@ -672,11 +697,18 @@ class AfcService(LockdownService):
     @path_to_str()
     async def stat(self, filename: str):
         """
-        Get file or directory statistics.
+        Get file or directory metadata.
 
-        :param filename: Path to the file or directory
-        :return: Dictionary containing file statistics (size, mode, mtime, etc.)
-        :raises: AfcFileNotFoundError if the path doesn't exist
+        Issues a ``GET_FILE_INFO`` operation and returns the decoded attribute dictionary.
+        Numeric fields (``st_size``, ``st_blocks``, ``st_nlink``) are converted to ints;
+        ``st_mtime`` and ``st_birthtime`` are converted from device nanosecond timestamps to
+        `datetime`. A ``st_ifmt`` entry (e.g. ``S_IFREG``, ``S_IFDIR``,
+        ``S_IFLNK``) describes the file type, and symbolic links also carry a ``LinkTarget``.
+
+        :param filename: Path to the file or directory.
+        :return: Dictionary of file attributes.
+        :raises AfcFileNotFoundError: if the path does not exist (AFC ``READ_ERROR``).
+        :raises AfcException: for any other failure status.
         """
         try:
             stat = list_to_dict(
@@ -701,13 +733,16 @@ class AfcService(LockdownService):
     @path_to_str()
     async def os_stat(self, path: str):
         """
-        Get file statistics in os.stat format.
+        Get file statistics as an `stat`-style result.
 
-        Returns a StatResult namedtuple compatible with os.stat results,
-        suitable for use with standard Python file handling code.
+        Wraps `stat`, mapping the AFC ``st_ifmt`` to a numeric mode and packing the
+        attributes into a `StatResult` namedtuple. ``st_ino`` is synthesized from the
+        normalized path, ``st_uid``/``st_gid``/``st_dev`` are reported as 0 and ``st_blksize``
+        as 4096 (AFC does not expose these). ``st_atime`` mirrors ``st_mtime``.
 
-        :param path: Path to the file or directory
-        :return: StatResult namedtuple with file statistics
+        :param path: Path to the file or directory.
+        :return: A `StatResult` namedtuple.
+        :raises AfcFileNotFoundError: if the path does not exist.
         """
         stat = await self.stat(path)
         mode = 0
@@ -735,10 +770,11 @@ class AfcService(LockdownService):
         """
         Create a symbolic or hard link on the device.
 
-        :param target: The target path that the link will point to
-        :param source: The path where the link will be created
-        :param type_: Link type (SYMLINK or HARDLINK)
-        :return: Response data from the operation
+        :param target: Path the link points to.
+        :param source: Path at which the link is created.
+        :param type_: `AfcLinkType` to create (``SYMLINK`` by default, or ``HARDLINK``).
+        :return: Raw response payload from the operation (typically empty).
+        :raises AfcException: if the link could not be created.
         """
         return await self._do_operation(
             AfcOpcode.MAKE_LINK,
@@ -748,12 +784,15 @@ class AfcService(LockdownService):
     @path_to_str()
     async def fopen(self, filename: str, mode: str = "r") -> int:
         """
-        Open a file on the device and return a file handle.
+        Open a file on the device and return its handle.
 
-        :param filename: Path to the file
-        :param mode: Open mode ('r', 'r+', 'w', 'w+', 'a', 'a+')
-        :return: Integer file handle for subsequent operations
-        :raises: ArgumentError if mode is invalid
+        :param filename: Path to the file.
+        :param mode: Textual open mode; one of ``'r'``, ``'r+'``, ``'w'``, ``'w+'``, ``'a'``,
+            ``'a+'`` (mapped to the corresponding AFC fopen mode).
+        :return: Integer handle usable with `fread`, `fwrite`, `lock` and
+            `fclose`.
+        :raises ArgumentError: if ``mode`` is not one of the supported textual modes.
+        :raises AfcException: if the file could not be opened.
         """
         if mode not in AFC_FOPEN_TEXTUAL_MODES:
             raise ArgumentError(f"mode can be only one of: {AFC_FOPEN_TEXTUAL_MODES.keys()}")
@@ -770,8 +809,9 @@ class AfcService(LockdownService):
         """
         Close an open file handle.
 
-        :param handle: File handle returned from fopen
-        :return: Response data from the operation
+        :param handle: Handle returned by `fopen`.
+        :return: Raw response payload from the operation (typically empty).
+        :raises AfcException: if the close operation fails.
         """
         return await self._do_operation(AfcOpcode.FILE_CLOSE, afc_fclose_req_t.build(AfcFcloseRequest(handle=handle)))
 
@@ -780,9 +820,10 @@ class AfcService(LockdownService):
         """
         Rename or move a file or directory on the device.
 
-        :param source: Current path of the file or directory
-        :param target: New path for the file or directory
-        :raises: AfcFileNotFoundError if source doesn't exist
+        :param source: Current path of the file or directory.
+        :param target: New path for the file or directory.
+        :raises AfcFileNotFoundError: if the operation fails and ``source`` no longer exists.
+        :raises AfcException: if the operation fails while ``source`` still exists.
         """
         try:
             await self._do_operation(
@@ -804,10 +845,11 @@ class AfcService(LockdownService):
         Each chunk send+receive is performed atomically via the demux reader so
         concurrent callers on the same AfcService instance are safe.
 
-        :param handle: File handle returned from fopen
-        :param sz: Number of bytes to read
-        :return: Bytes read from the file
-        :raises: AfcException if read operation fails
+        :param handle: Handle returned by `fopen`.
+        :param sz: Number of bytes to read. Reads larger than ``MAXIMUM_READ_SIZE`` (4 MB) are
+            split into successive operations.
+        :return: The bytes read.
+        :raises AfcException: if any read operation returns a non-success status.
         """
         data = b""
         while sz > 0:
@@ -829,10 +871,10 @@ class AfcService(LockdownService):
         Each chunk send+receive is performed atomically via the demux reader so
         concurrent callers on the same AfcService instance are safe.
 
-        :param handle: File handle returned from fopen
-        :param data: Bytes to write
-        :param chunk_size: Size of each write chunk (default: MAXIMUM_WRITE_SIZE)
-        :raises: AfcException if write operation fails
+        :param handle: Handle returned by `fopen`.
+        :param data: Bytes to write.
+        :param chunk_size: Maximum bytes per ``WRITE`` operation (default ``MAXIMUM_WRITE_SIZE``).
+        :raises AfcException: if any write operation returns a non-success status.
         """
         file_handle = struct.pack("<Q", handle)
         chunks_count = len(data) // chunk_size
@@ -851,13 +893,15 @@ class AfcService(LockdownService):
     @path_to_str()
     async def resolve_path(self, filename: str):
         """
-        Resolve symbolic links to their target paths.
+        Resolve a symbolic link to its target path.
 
-        If the path is a symbolic link, returns the target path. Otherwise,
-        returns the path unchanged.
+        Stats the path; if it is a symbolic link, returns its ``LinkTarget`` (joined against
+        the link's parent directory when the target is relative). Non-links are returned
+        unchanged. Only a single level of link is resolved.
 
-        :param filename: Path to resolve
-        :return: Resolved path (or original path if not a symlink)
+        :param filename: Path to resolve.
+        :return: The link target, or ``filename`` unchanged if it is not a symbolic link.
+        :raises AfcFileNotFoundError: if the path does not exist.
         """
         info = await self.stat(filename)
         if info["st_ifmt"] == "S_IFLNK":
@@ -870,11 +914,13 @@ class AfcService(LockdownService):
         """
         Read and return the entire contents of a file.
 
-        Convenience method that opens a file, reads all its contents, and closes it.
+        Resolves any symbolic link, verifies the target is a regular file, then opens it,
+        reads ``st_size`` bytes and closes the handle.
 
-        :param filename: Path to the file
-        :return: Bytes containing the file contents
-        :raises: AfcException if the path is not a regular file
+        :param filename: Path to the file.
+        :return: The file contents as bytes.
+        :raises AfcException: if the path is not a regular file (``S_IFREG``).
+        :raises AfcFileNotFoundError: if the path does not exist.
         """
         filename = await self.resolve_path(filename)
         info = await self.stat(filename)
@@ -892,12 +938,13 @@ class AfcService(LockdownService):
     @path_to_str()
     async def set_file_contents(self, filename: str, data: bytes) -> None:
         """
-        Write data to a file, creating or overwriting it.
+        Write data to a file, creating or truncating it.
 
-        Convenience method that opens a file in write mode, writes data, and closes it.
+        Opens the file in ``'w'`` mode (create/truncate), writes ``data`` and closes the handle.
 
-        :param filename: Path to the file
-        :param data: Bytes to write to the file
+        :param filename: Path to the file.
+        :param data: Bytes to write.
+        :raises AfcException: if the open or write operation fails.
         """
         h = await self.fopen(filename, "w")
         await self.fwrite(h, data)
@@ -906,13 +953,14 @@ class AfcService(LockdownService):
     @path_to_str()
     async def walk(self, dirname: str):
         """
-        Walk a directory tree, similar to os.walk.
+        Recursively walk a directory tree, similar to `walk`.
 
-        Generates tuples of (dirpath, dirnames, filenames) for each directory
-        in the tree, starting from dirname.
+        Yields one ``(dirpath, dirnames, filenames)`` tuple per directory, top-down, starting
+        at ``dirname``. ``dirnames`` lists subdirectory names and ``filenames`` lists all other
+        entries. Symbolic links to directories are classified as files (not descended into).
 
-        :param dirname: Root directory to walk
-        :yields: Tuples of (dirpath, dirnames, filenames)
+        :param dirname: Root directory to walk.
+        :yields: ``(dirpath, dirnames, filenames)`` tuples.
         """
         dirs = []
         files = []
@@ -935,11 +983,15 @@ class AfcService(LockdownService):
     @path_to_str()
     async def dirlist(self, root: str, depth: int = -1):
         """
-        List all files and directories recursively up to a specified depth.
+        Recursively yield paths under a directory up to a maximum depth.
 
-        :param root: Root directory to list
-        :param depth: Maximum depth to traverse (-1 for unlimited)
-        :yields: Full paths of files and directories
+        Yields ``root`` itself first, followed by the full path of every entry found while
+        walking, pruning descent once a directory's depth (in path separators) reaches
+        ``depth``.
+
+        :param root: Root directory to list.
+        :param depth: Maximum traversal depth; ``-1`` for unlimited, ``0`` to yield only ``root``.
+        :yields: Full paths of files and directories.
         """
         async for folder, dirs, files in self.walk(root):
             if folder == root:
@@ -953,11 +1005,13 @@ class AfcService(LockdownService):
 
     async def lock(self, handle, operation):
         """
-        Apply or remove an advisory lock on an open file.
+        Apply or release an advisory ``flock``-style lock on an open file.
 
-        :param handle: File handle returned from fopen
-        :param operation: Lock operation (AFC_LOCK_SH, AFC_LOCK_EX, or AFC_LOCK_UN)
-        :return: Response data from the operation
+        :param handle: Handle returned by `fopen`.
+        :param operation: Lock operation, one of ``AFC_LOCK_SH`` (shared), ``AFC_LOCK_EX``
+            (exclusive) or ``AFC_LOCK_UN`` (unlock).
+        :return: Raw response payload from the operation (typically empty).
+        :raises AfcException: if the lock operation fails.
         """
         return await self._do_operation(
             AfcOpcode.FILE_LOCK, afc_lock_t.build(AfcLockRequest(handle=handle, op=operation))
@@ -991,8 +1045,8 @@ class AfcService(LockdownService):
         Receive an AFC protocol response packet from the device.
 
         .. deprecated::
-            Internal use only. External callers should use :meth:`_do_operation` or
-            :meth:`_send_and_wait` which use the background demux reader.
+            Internal use only. External callers should use `_do_operation` or
+            `_send_and_wait` which use the background demux reader.
 
         :return: Tuple of (status_code, response_data)
         """

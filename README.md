@@ -8,49 +8,20 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/doronz88/pymobiledevice3)
 <!-- markdownlint-enable MD013 -->
 
-## Overview
-
 `pymobiledevice3` is a pure Python 3 implementation for interacting with iOS devices (iPhone, iPad, ...).
-It includes both a CLI and a Python API and is supported on:
+It ships both a **command-line tool** and a **Python API**, and runs on Windows, Linux, and macOS.
 
-- Windows
-- Linux
-- macOS
+Highlights: device discovery, port forwarding, syslog/oslog streaming, app & profile management, AFC
+file access, crash reports, PCAP sniffing, firmware update, recovery/DFU, backup/restore, WebInspector
+automation, and DDI/DVT developer tooling (iOS 17+ over a tunnel).
 
-Main features:
-
-- Device discovery over bonjour
-- TCP port forwarding
-- Syslog and oslog streaming
-- Profile and application management
-- AFC file access
-- Crash report collection
-- Network sniffing (PCAP)
-- Firmware update
-- Recovery/DFU workflows
-- Notification listen/post (`notify_post()`)
-- Querying and setting SpringBoard options
-- WebInspector automation
-- DDI/DVT developer tooling
-- Backup and restore
-
-## Quick Start
-
-Install from PyPI:
+## Install
 
 ```shell
 python3 -m pip install -U pymobiledevice3
 ```
 
-Or install from source:
-
-```shell
-git clone git@github.com:doronz88/pymobiledevice3.git
-cd pymobiledevice3
-python3 -m pip install -U -e .
-```
-
-Verify connectivity and run first commands:
+Then verify connectivity:
 
 ```shell
 pymobiledevice3 usbmux list
@@ -58,85 +29,22 @@ pymobiledevice3 syslog live
 pymobiledevice3 apps list
 ```
 
-## Platform Notes
+## Documentation
 
-- Windows:
-  - Install iTunes from Microsoft Store:
-    <https://apps.microsoft.com/detail/9pb2mz1zmb1s?hl=en-US&gl=US>
-  - For WSL2, enable mirrored networking mode:
-    <https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking>
+📖 **Full documentation: <https://doronz88.github.io/pymobiledevice3/>**
 
-    ```none
-    [wsl2]
-    networkingMode=mirrored
-    ```
+- [Installation & platform notes](https://doronz88.github.io/pymobiledevice3/installation/)
+- [CLI recipes](https://doronz88.github.io/pymobiledevice3/guides/cli-recipes/)
+- [iOS 17+ tunnels & support matrix](https://doronz88.github.io/pymobiledevice3/guides/ios17-tunnels/)
+- [Python API guide](https://doronz88.github.io/pymobiledevice3/guides/python-api/)
+- [Python API reference](https://doronz88.github.io/pymobiledevice3/api/)
+- [Protocol internals (RemoteXPC, DTX, iDevice layers)](https://doronz88.github.io/pymobiledevice3/internals/idevice-protocol-layers/)
 
-- Linux:
-  - Install `usbmuxd`: <https://github.com/libimobiledevice/usbmuxd>
+The docs are built from [`docs/`](docs/) with MkDocs (`mkdocs.yml`).
 
-- OpenSSL:
-  - OpenSSL is explicitly required for older iOS versions (`< 13`).
+## Community
 
-- Recovery/DFU support
-  - Requires `libusb`.
-
-### Support Matrix (Developer Services)
-
-`iOS >= 17` developer services require tunnel-based transport. The tunnel normally needs root/admin;
-on Python 3.14+ you can instead add `--userspace` to a developer command for a no-root, in-process
-tunnel (see the guide for what it supports).
-
-| Host OS | iOS 17.0-17.3.1 | iOS 17.4+ |
-| --- | --- | --- |
-| macOS | Supported | Supported |
-| Windows | Supported (requires additional drivers) | Supported |
-| Linux | Limited | Supported (lockdown tunnel) |
-
-See the detailed guide: [iOS 17+ tunnels](docs/guides/ios17-tunnels.md)
-
-## Common CLI Tasks
-
-See full recipes: [CLI recipes](docs/guides/cli-recipes.md)
-
-```shell
-# List connected devices
-pymobiledevice3 usbmux list
-
-# Watch syslog
-pymobiledevice3 syslog live
-
-# Pull crash reports
-pymobiledevice3 crash pull /path/to/crashes
-
-# Mount DDI
-pymobiledevice3 mounter auto-mount
-
-# DVT screenshot (requires developer setup)
-pymobiledevice3 developer dvt screenshot /path/to/screen.png
-```
-
-Install shell completions:
-
-```shell
-pymobiledevice3 install-completions
-```
-
-## Python API and Protocol Internals
-
-- Protocol overview:
-  [Understanding iDevice protocol layers](misc/understanding_idevice_protocol_layers.md)
-- DTX API quick start:
-  [DTX README](pymobiledevice3/dtx/README.md)
-- DTX internals:
-  [DTX DEVELOPMENT](pymobiledevice3/dtx/DEVELOPMENT.md)
-- RemoteXPC internals:
-  [RemoteXPC](misc/RemoteXPC.md)
-- Building custom CLI commands with `service_provider`:
-  [Guide](docs/guides/writing-commands-with-service-provider.md)
-
-## Documentation Map
-
-See [Documentation index](docs/README.md) for task-focused guides.
+Questions, ideas, or want to help? Join the community on [Discord](https://discord.gg/52mZGC3JXJ).
 
 ## Contributing
 

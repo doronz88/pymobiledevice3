@@ -13,17 +13,36 @@ MAX_CONCURRENT_DOWNLOADS = 4
 
 @dataclasses.dataclass
 class DSCFile:
+    """A dyld shared cache file advertised by the device, with its on-device path and byte size."""
+
     file_path: str
     file_size: int
 
 
 class RemoteFetchSymbolsService(RemoteService):
+    """
+    Client for the `com.apple.dt.remoteFetchSymbols` RemoteXPC service (RSD/CoreDevice).
+
+    Lists the device's dyld shared cache (DSC) files and downloads them to the host,
+    preserving their on-device directory layout. Downloads run concurrently across up to
+    `MAX_CONCURRENT_DOWNLOADS` workers.
+
+    Inherits async context manager support from `RemoteService`; use within an
+    ``async with`` block to manage the underlying connection.
+    """
+
     SERVICE_NAME = "com.apple.dt.remoteFetchSymbols"
 
     def __init__(self, rsd: RemoteServiceDiscoveryService):
         super().__init__(rsd, self.SERVICE_NAME)
 
     async def get_dsc_file_list(self) -> list[DSCFile]:
+        """
+        Query the device for the list of available DSC files.
+
+        :returns: One `DSCFile` per advertised file, each carrying its on-device path and
+            expected byte length.
+        """
         files: list[DSCFile] = []
         response = await self.service.send_receive_request({
             "XPCDictionary_sideChannel": uuid.uuid4(),
@@ -40,6 +59,14 @@ class RemoteFetchSymbolsService(RemoteService):
         return files
 
     async def download(self, out: Path) -> None:
+        """
+        Download all DSC files into a local directory, reproducing their device paths.
+
+        Each file is written under `out` at its device-relative path (the leading "/" is
+        stripped), and progress is shown via a tqdm bar.
+
+        :param out: Destination directory; intermediate parent directories are created as needed.
+        """
         files = await self.get_dsc_file_list()
         file_indexes: asyncio.Queue[int] = asyncio.Queue()
         for i in range(len(files)):

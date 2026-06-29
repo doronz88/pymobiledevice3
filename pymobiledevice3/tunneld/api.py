@@ -11,6 +11,14 @@ TUNNELD_DEFAULT_ADDRESS = ("127.0.0.1", 49151)
 async def get_tunneld_devices(
     tunneld_address: tuple[str, int] = TUNNELD_DEFAULT_ADDRESS,
 ) -> list[RemoteServiceDiscoveryService]:
+    """
+    Query a running ``tunneld`` instance over HTTP for all active tunnels and connect to each.
+
+    :param tunneld_address: ``(host, port)`` of the ``tunneld`` HTTP server.
+    :returns: a connected `RemoteServiceDiscoveryService`
+        for every tunnel that could be reached; tunnels that fail to connect are skipped.
+    :raises TunneldConnectionError: if the ``tunneld`` instance cannot be reached.
+    """
     tunnels = _list_tunnels(tunneld_address)
     return await _create_rsds_from_tunnels(tunnels)
 
@@ -18,6 +26,16 @@ async def get_tunneld_devices(
 async def get_tunneld_device_by_udid(
     udid: str, tunneld_address: tuple[str, int] = TUNNELD_DEFAULT_ADDRESS
 ) -> Optional[RemoteServiceDiscoveryService]:
+    """
+    Query a running ``tunneld`` instance over HTTP for the tunnel matching a given UDID and connect.
+
+    :param udid: UDID of the target device.
+    :param tunneld_address: ``(host, port)`` of the ``tunneld`` HTTP server.
+    :returns: a connected
+        `RemoteServiceDiscoveryService` for
+        the device, or ``None`` if ``tunneld`` reports no tunnel for the UDID.
+    :raises TunneldConnectionError: if the ``tunneld`` instance cannot be reached.
+    """
     tunnels = _list_tunnels(tunneld_address)
     if udid not in tunnels:
         return None

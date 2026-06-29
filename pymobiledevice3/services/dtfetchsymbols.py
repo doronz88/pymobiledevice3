@@ -7,6 +7,14 @@ from pymobiledevice3.lockdown import LockdownClient
 
 
 class DtFetchSymbols:
+    """
+    Client for the `com.apple.dt.fetchsymbols` developer service.
+
+    Lists and downloads the device's shared cache (DSC) symbol files, used by debuggers
+    to symbolicate addresses without a copy of the device's binaries on the host. A fresh
+    lockdown developer service connection is opened for each command.
+    """
+
     SERVICE_NAME = "com.apple.dt.fetchsymbols"
     MAX_CHUNK = 1024 * 1024 * 10  # 10MB
     CMD_LIST_FILES_PLIST = struct.pack(">I", 0x30303030)
@@ -17,12 +25,25 @@ class DtFetchSymbols:
         self.lockdown = lockdown
 
     async def list_files(self) -> list[str]:
+        """
+        List the symbol files available on the device.
+
+        :returns: File names, indexed in the same order the index passed to `get_file` refers to.
+        """
         service = await self._start_command(self.CMD_LIST_FILES_PLIST)
         files = (await service.recv_plist()).get("files")
         await service.close()
         return files
 
     async def get_file(self, fileno: int, stream: typing.IO, max_bytes: typing.Optional[int] = None):
+        """
+        Download a single symbol file and write it into the given stream.
+
+        :param fileno: Index of the file to fetch, as returned by `list_files`.
+        :param stream: Writable binary stream the file contents are written to in chunks.
+        :param max_bytes: Optional cap on the number of bytes to read; when None the whole
+            file is downloaded.
+        """
         service = await self._start_command(self.CMD_GET_FILE)
         await service.sendall(struct.pack(">I", fileno))
 
