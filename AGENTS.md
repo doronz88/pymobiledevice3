@@ -37,6 +37,20 @@ Guidance for AI coding agents and automation contributors working in this reposi
 - DVT-related functionality:
   - Use `DtxServiceProvider`/`DvtProvider` patterns in `pymobiledevice3/services/dvt/`.
 
+## Running Developer Commands Against Devices
+
+- Developer/DVT commands on iOS 17+ devices require an RSD tunnel. Prefer
+  `--userspace` over a `tunneld` tunnel: it establishes the tunnel in-process
+  with a pure-Python userspace network stack and needs **no `sudo`/root**, so
+  agents can run unattended.
+  - Example: `pymobiledevice3 developer dvt oslog --userspace`.
+  - You can also set `PYMOBILEDEVICE3_USERSPACE=1` instead of passing the flag.
+- Only fall back to a privileged `tunneld` (which needs root) when `--userspace`
+  is not viable — e.g. when you need higher host->device throughput, since
+  userspace host->device transfers (DDI mounts, file pushes) are deliberately
+  slower.
+- `--userspace` is mutually exclusive with `--rsd`/`--tunnel`.
+
 ## Testing Expectations
 
 - Add or update tests when behavior changes.
