@@ -32,6 +32,15 @@ IOS17_SYSDIAGNOSE_DELAY = 3
 
 
 class CrashReportsManager:
+    """
+    Manage crash reports stored on a device.
+
+    Wraps the ``com.apple.crashreportcopymobile`` AFC service (for listing, reading, pulling and
+    erasing reports) and the ``com.apple.crashreportmover`` service (for flushing pending reports).
+    Must be used as an async context manager (``async with``); the synchronous context manager
+    protocol is intentionally disabled.
+    """
+
     COPY_MOBILE_NAME = "com.apple.crashreportcopymobile"
     RSD_COPY_MOBILE_NAME = "com.apple.crashreportcopymobile.shim.remote"
 
@@ -67,11 +76,19 @@ class CrashReportsManager:
         await self.aclose()
 
     async def aclose(self) -> None:
+        """Close the underlying AFC connection."""
         await self.afc.aclose()
 
     async def clear(self, path: str = "/") -> None:
         """
-        Clear crash reports under a path.
+        Delete all crash reports under a path.
+
+        Lists the immediate children of ``path`` and removes each recursively. A
+        ``com.apple.appstored`` entry that the device may recreate immediately after deletion is
+        tolerated; any other item that could not be deleted is treated as an error.
+
+        :param path: Path under the crash reports directory to clear. Defaults to '/'.
+        :raises AfcException: If any item other than ``com.apple.appstored`` could not be deleted.
         """
         undeleted_items = []
         for filename in await self.ls(path, depth=1):
@@ -188,17 +205,28 @@ class CrashReportsManager:
         await self.afc.pull(entry, out, match, callback=_callback, progress_bar=progress_bar, ignore_errors=True)
 
     async def flush(self) -> None:
-        """Trigger com.apple.crashreportmover to flush all products into CrashReports directory"""
+        """
+        Flush pending crash products into the CrashReports directory.
+
+        Connects to the ``com.apple.crashreportmover`` service, which moves any pending reports into
+        the CrashReports directory and acknowledges with a ``ping`` once done.
+        """
         ack = b"ping\x00"
         service = await self.lockdown.start_lockdown_service(self.crash_mover_service_name)
         assert ack == await service.recvall(len(ack))
 
     async def watch(self, name: Optional[str] = None, raw: bool = False) -> AsyncGenerator[str, None]:
         """
-        Monitor creation of new crash reports for a given process name.
+        Continuously monitor the syslog and yield each newly created crash report.
 
-        Return value can either be the raw crash string, or parsed result containing a more human-friendly
-        representation for the crash.
+        Watches the device syslog for ``osanalyticshelper`` "Saved type" messages, reads the
+        referenced ``.ips`` or ``.panic`` file (retrying until it becomes readable) and yields it.
+
+        :param name: If provided, only reports whose parsed process name equals this value are
+            yielded; otherwise every new report is yielded.
+        :param raw: When ``True``, yield the raw report text; when ``False``, yield the parsed
+            crash report object.
+        :returns: Async generator yielding either raw report strings or parsed crash report objects.
         """
         async for syslog_entry in OsTraceService(lockdown=self.lockdown).syslog():
             if (

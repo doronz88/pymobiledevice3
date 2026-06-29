@@ -3,10 +3,14 @@
 Starting with iOS 17.0, Apple moved developer service access to CoreDevice/RemoteXPC flows.
 To use many `developer dvt` commands, establish a trusted tunnel first — with root via `tunneld`
 (Option 1) or a manual tunnel (Option 2), or with **no root at all** via the in-process
-`--userspace` tunnel on Python 3.14+ (Option 3).
+`--userspace` tunnel (Option 3).
+
+!!! tip "Working from Python?"
+    See [Choosing a connection](python-api.md#1-connect-to-a-device) in the Python API guide for
+    when to use lockdown vs an RSD tunnel (userspace vs `tunneld`).
 
 Reference protocol details:
-[RemoteXPC](../../misc/RemoteXPC.md)
+[RemoteXPC](../internals/remotexpc.md)
 
 ## Support Notes
 
@@ -73,8 +77,9 @@ tears it down when it exits.
 
 Requirements:
 
-- **Python >= 3.14** (the `pmd-pytcp` dependency ships only on 3.14+). On older interpreters the
-  flag is unavailable and the command falls back to `tunneld`.
+- **Python >= 3.9** — the `pmd-pytcp` dependency that powers the userspace stack is installed on
+  every supported interpreter, so `--userspace` is always available. It does not fall back to
+  `tunneld`; if the in-process tunnel cannot be established, the error is surfaced.
 - **iOS 17.0+** over USB (uses the CoreDeviceProxy lockdown service on 17.4+, or RemotePairing over
   bonjour/Wi-Fi on 17.0–17.3.1).
 
@@ -99,7 +104,7 @@ latency compared with attaching to an already-running `tunneld`.
 ### From Python
 
 To establish this tunnel programmatically, use the `UserspaceRsdTunnel` handle — see the
-[`UserspaceRsdTunnel` example](../../misc/understanding_idevice_protocol_layers.md#remotexpc) in the
+[`UserspaceRsdTunnel` example](../internals/idevice-protocol-layers.md#remotexpc) in the
 protocol-layers guide, listed there alongside the other ways to obtain an RSD. The in-process-only
 limitation above applies equally to the Python API.
 
@@ -112,7 +117,7 @@ python3 -m pymobiledevice3 developer dvt ls / --tunnel ''
 # If tunneld is already running, this may work without --tunnel
 python3 -m pymobiledevice3 developer dvt ls /
 
-# No-root in-process tunnel (Python 3.14+); no tunneld/root required
+# No-root in-process tunnel; no tunneld/root required
 python3 -m pymobiledevice3 developer dvt ls / --userspace
 
 # Use manual RSD connection details
@@ -124,6 +129,7 @@ python3 -m pymobiledevice3 syslog live --tunnel ''
 
 ## Troubleshooting
 
-- If a developer command fails with service availability errors, retry with `--tunnel ''`.
+- If a developer command fails with service availability errors, retry with `--tunnel ''` (uses a
+  running `tunneld`) or `--userspace` (no-root in-process tunnel).
 - Verify the tunnel process is running and the device is trusted/paired.
 - On Windows for iOS 17.0-17.3.1, ensure required additional drivers are installed.

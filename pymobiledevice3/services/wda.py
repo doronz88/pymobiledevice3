@@ -24,7 +24,14 @@ DEFAULT_WDA_URL = "http://127.0.0.1:8100"
 
 @dataclass
 class WdaClient:
-    """Simple HTTP-based WDA client."""
+    """Synchronous HTTP client for a running WebDriverAgent (WDA) server.
+
+    Talks to WDA over plain HTTP (default `http://127.0.0.1:8100`), expecting WDA to already be
+    reachable at `base_url` (e.g. via a local port forward). Provides session management and the
+    common WebDriver actions: element lookup, click, text input, button presses, swipes,
+    screenshots and source dumps. Once `start_session` is called the returned session id is cached
+    on `session_id` and used as the default for subsequent calls.
+    """
 
     base_url: str = DEFAULT_WDA_URL
     timeout: float = 10.0
@@ -53,7 +60,13 @@ class WdaClient:
         return f"WDA error (status={status_code}): {message}"
 
     def start_session(self, bundle_id: Optional[str] = None) -> str:
-        """Start a WDA session (optionally for a bundle id)."""
+        """Start a WDA session, optionally launching a specific application.
+
+        :param bundle_id: Bundle identifier of the app to attach the session to; if omitted no
+            specific app capability is requested.
+        :returns: The created session id, also cached on `session_id`.
+        :raises WdaError: WDA did not return a session id.
+        """
         caps: dict[str, Any] = {}
         if bundle_id:
             caps["bundleId"] = bundle_id
@@ -73,7 +86,14 @@ class WdaClient:
         return session_id
 
     def find_element(self, using: str, value: str, session_id: Optional[str] = None) -> str:
-        """Find an element and return its element id."""
+        """Locate a single UI element and return its element id.
+
+        :param using: The locator strategy (e.g. `accessibility id`, `class name`, `xpath`).
+        :param value: The locator value matched against `using`.
+        :param session_id: Session to use; defaults to the cached `session_id`.
+        :returns: The resolved element id.
+        :raises WdaError: No session id is available, or WDA did not return an element id.
+        """
         session_id = session_id or self.session_id
         if not session_id:
             raise WdaError("session_id is required")
@@ -93,14 +113,28 @@ class WdaClient:
         return element_id
 
     def click(self, element_id: str, session_id: Optional[str] = None) -> None:
-        """Click an element by id."""
+        """Tap an element by its element id.
+
+        :param element_id: The element id to click.
+        :param session_id: Session to use; defaults to the cached `session_id`.
+        :raises WdaError: No session id is available.
+        """
         session_id = session_id or self.session_id
         if not session_id:
             raise WdaError("session_id is required")
         self._request_json("POST", f"/session/{session_id}/element/{element_id}/click", {})
 
     def press_button(self, name: str, session_id: Optional[str] = None) -> None:
-        """Press a device button via WDA."""
+        """Press a hardware/device button by name.
+
+        The name is normalized to a WDA button name. When a session is given the session-scoped
+        `pressButton` endpoint is tried first, falling back to the session keys endpoint; as a last
+        resort, `home` is delivered via the global home-screen endpoint.
+
+        :param name: Button name or alias (e.g. `home`, `volumeUp`, `lock`).
+        :param session_id: Session to use; if omitted only the global `home` fallback applies.
+        :raises WdaError: WDA supports neither the pressButton nor keys endpoints for this button.
+        """
         normalized = normalize_wda_button_name(name)
         payload = {"name": normalized}
         if session_id:
@@ -119,7 +153,11 @@ class WdaClient:
         raise WdaError("WDA does not support pressButton or keys endpoints", status_code=404)
 
     def unlock(self, session_id: Optional[str] = None) -> None:
-        """Unlock the device via WDA."""
+        """Unlock the device, trying the session-scoped endpoint then the global one.
+
+        :param session_id: Session to use; defaults to the cached `session_id`.
+        :raises WdaError: WDA does not support the unlock endpoint.
+        """
         session_id = session_id or self.session_id
         if session_id:
             try:
@@ -137,7 +175,12 @@ class WdaClient:
             raise WdaError("WDA does not support unlock endpoint", status_code=404) from exc
 
     def get_source(self, session_id: Optional[str] = None) -> str:
-        """Return the WDA XML source tree."""
+        """Fetch the current UI hierarchy as an XML source tree.
+
+        :param session_id: Session to query; if omitted the global source endpoint is used.
+        :returns: The XML source string.
+        :raises WdaError: WDA did not return a source string.
+        """
         if session_id:
             data = self._request_json("GET", f"/session/{session_id}/source", None)
         else:
@@ -148,7 +191,12 @@ class WdaClient:
         return value
 
     def get_screenshot(self, session_id: Optional[str] = None) -> bytes:
-        """Return a PNG screenshot as bytes."""
+        """Capture a screenshot and return the decoded PNG bytes.
+
+        :param session_id: Session to query; if omitted the global screenshot endpoint is used.
+        :returns: The raw PNG image bytes (base64-decoded from the WDA response).
+        :raises WdaError: WDA did not return a screenshot.
+        """
         if session_id:
             data = self._request_json("GET", f"/session/{session_id}/screenshot", None)
         else:
@@ -159,11 +207,19 @@ class WdaClient:
         return base64.b64decode(value)
 
     def get_status(self) -> dict[str, Any]:
-        """Return WDA status payload."""
+        """Return the WDA `/status` payload describing the server and device state.
+
+        :returns: The parsed status response.
+        """
         return self._request_json("GET", "/status", None)
 
     def get_window_size(self, session_id: Optional[str] = None) -> dict[str, Any]:
-        """Return the current window size."""
+        """Return the current window size.
+
+        :param session_id: Session to query; required.
+        :returns: A mapping with the window dimensions (e.g. `width`, `height`).
+        :raises WdaError: No session id is available, or WDA did not return a window size.
+        """
         if not session_id:
             raise WdaError("session_id is required")
         data = self._request_json("GET", f"/session/{session_id}/window/size", None)
@@ -173,7 +229,15 @@ class WdaClient:
         return value
 
     def send_keys(self, text: str, session_id: Optional[str] = None) -> None:
-        """Send text input to the focused element."""
+        """Type text into the currently focused element.
+
+        Sends the text as individual characters, trying the `wda/keys` endpoint first and falling
+        back to the plain `keys` endpoint if the former is unavailable.
+
+        :param text: The text to type.
+        :param session_id: Session to use; required.
+        :raises WdaError: No session id is available.
+        """
         if not session_id:
             raise WdaError("session_id is required")
         payload = {"value": list(text)}
@@ -193,7 +257,16 @@ class WdaClient:
         duration: float = 0.2,
         session_id: Optional[str] = None,
     ) -> None:
-        """Swipe from one coordinate to another."""
+        """Drag from a start coordinate to an end coordinate over a duration.
+
+        :param start_x: Starting x coordinate.
+        :param start_y: Starting y coordinate.
+        :param end_x: Ending x coordinate.
+        :param end_y: Ending y coordinate.
+        :param duration: Gesture duration in seconds.
+        :param session_id: Session to use; required.
+        :raises WdaError: No session id is available.
+        """
         if not session_id:
             raise WdaError("session_id is required")
         payload = {
@@ -222,7 +295,14 @@ class WdaClient:
 
 @dataclass
 class WdaServiceClient:
-    """WDA client that uses a LockdownServiceProvider connection."""
+    """Async WDA client that reaches the WDA server through a LockdownServiceProvider connection.
+
+    Instead of relying on a pre-existing local HTTP forwarder, this client opens a service
+    connection to the WDA port on the device for each request (via usbmux for an RSD-backed
+    provider, otherwise through the provider directly), writes a raw HTTP/1.1 request, and parses
+    the response. It exposes the same WebDriver actions as `WdaClient` as coroutines. The session
+    id returned by `start_session` is cached on `session_id` and used as the default for later calls.
+    """
 
     service_provider: LockdownServiceProvider
     port: int = DEFAULT_WDA_PORT
@@ -318,7 +398,13 @@ class WdaServiceClient:
         return header_bytes, body_prefix
 
     async def start_session(self, bundle_id: Optional[str] = None) -> str:
-        """Start a WDA session (optionally for a bundle id)."""
+        """Start a WDA session, optionally launching a specific application.
+
+        :param bundle_id: Bundle identifier of the app to attach the session to; if omitted no
+            specific app capability is requested.
+        :returns: The created session id, also cached on `session_id`.
+        :raises WdaError: WDA did not return a session id.
+        """
         caps: dict[str, Any] = {}
         if bundle_id:
             caps["bundleId"] = bundle_id
@@ -338,7 +424,14 @@ class WdaServiceClient:
         return session_id
 
     async def find_element(self, using: str, value: str, session_id: Optional[str] = None) -> str:
-        """Find an element and return its element id."""
+        """Locate a single UI element and return its element id.
+
+        :param using: The locator strategy (e.g. `accessibility id`, `class name`, `xpath`).
+        :param value: The locator value matched against `using`.
+        :param session_id: Session to use; defaults to the cached `session_id`.
+        :returns: The resolved element id.
+        :raises WdaError: No session id is available, or WDA did not return an element id.
+        """
         session_id = session_id or self.session_id
         if not session_id:
             raise WdaError("session_id is required")
@@ -358,14 +451,28 @@ class WdaServiceClient:
         return element_id
 
     async def click(self, element_id: str, session_id: Optional[str] = None) -> None:
-        """Click an element by id."""
+        """Tap an element by its element id.
+
+        :param element_id: The element id to click.
+        :param session_id: Session to use; defaults to the cached `session_id`.
+        :raises WdaError: No session id is available.
+        """
         session_id = session_id or self.session_id
         if not session_id:
             raise WdaError("session_id is required")
         await self._request_json("POST", f"/session/{session_id}/element/{element_id}/click", {})
 
     async def press_button(self, name: str, session_id: Optional[str] = None) -> None:
-        """Press a device button via WDA."""
+        """Press a hardware/device button by name.
+
+        The name is normalized to a WDA button name. When a session is given the session-scoped
+        `pressButton` endpoint is tried first, falling back to the session keys endpoint; as a last
+        resort, `home` is delivered via the global home-screen endpoint.
+
+        :param name: Button name or alias (e.g. `home`, `volumeUp`, `lock`).
+        :param session_id: Session to use; if omitted only the global `home` fallback applies.
+        :raises WdaError: WDA supports neither the pressButton nor keys endpoints for this button.
+        """
         normalized = normalize_wda_button_name(name)
         payload = {"name": normalized}
         if session_id:
@@ -384,7 +491,11 @@ class WdaServiceClient:
         raise WdaError("WDA does not support pressButton or keys endpoints", status_code=404)
 
     async def unlock(self, session_id: Optional[str] = None) -> None:
-        """Unlock the device via WDA."""
+        """Unlock the device, trying the session-scoped endpoint then the global one.
+
+        :param session_id: Session to use; defaults to the cached `session_id`.
+        :raises WdaError: WDA does not support the unlock endpoint.
+        """
         session_id = session_id or self.session_id
         if session_id:
             try:
@@ -402,7 +513,12 @@ class WdaServiceClient:
             raise WdaError("WDA does not support unlock endpoint", status_code=404) from exc
 
     async def get_source(self, session_id: Optional[str] = None) -> str:
-        """Return the WDA XML source tree."""
+        """Fetch the current UI hierarchy as an XML source tree.
+
+        :param session_id: Session to query; if omitted the global source endpoint is used.
+        :returns: The XML source string.
+        :raises WdaError: WDA did not return a source string.
+        """
         if session_id:
             data = await self._request_json("GET", f"/session/{session_id}/source", None)
         else:
@@ -413,7 +529,12 @@ class WdaServiceClient:
         return value
 
     async def get_screenshot(self, session_id: Optional[str] = None) -> bytes:
-        """Return a PNG screenshot as bytes."""
+        """Capture a screenshot and return the decoded PNG bytes.
+
+        :param session_id: Session to query; if omitted the global screenshot endpoint is used.
+        :returns: The raw PNG image bytes (base64-decoded from the WDA response).
+        :raises WdaError: WDA did not return a screenshot.
+        """
         if session_id:
             data = await self._request_json("GET", f"/session/{session_id}/screenshot", None)
         else:
@@ -424,11 +545,19 @@ class WdaServiceClient:
         return base64.b64decode(value)
 
     async def get_status(self) -> dict[str, Any]:
-        """Return WDA status payload."""
+        """Return the WDA `/status` payload describing the server and device state.
+
+        :returns: The parsed status response.
+        """
         return await self._request_json("GET", "/status", None)
 
     async def get_window_size(self, session_id: Optional[str] = None) -> dict[str, Any]:
-        """Return the current window size."""
+        """Return the current window size.
+
+        :param session_id: Session to query; required.
+        :returns: A mapping with the window dimensions (e.g. `width`, `height`).
+        :raises WdaError: No session id is available, or WDA did not return a window size.
+        """
         if not session_id:
             raise WdaError("session_id is required")
         data = await self._request_json("GET", f"/session/{session_id}/window/size", None)
@@ -438,7 +567,15 @@ class WdaServiceClient:
         return value
 
     async def send_keys(self, text: str, session_id: Optional[str] = None) -> None:
-        """Send text input to the focused element."""
+        """Type text into the currently focused element.
+
+        Sends the text as individual characters, trying the `wda/keys` endpoint first and falling
+        back to the plain `keys` endpoint if the former is unavailable.
+
+        :param text: The text to type.
+        :param session_id: Session to use; required.
+        :raises WdaError: No session id is available.
+        """
         if not session_id:
             raise WdaError("session_id is required")
         payload = {"value": list(text)}
@@ -458,7 +595,16 @@ class WdaServiceClient:
         duration: float = 0.2,
         session_id: Optional[str] = None,
     ) -> None:
-        """Swipe from one coordinate to another."""
+        """Drag from a start coordinate to an end coordinate over a duration.
+
+        :param start_x: Starting x coordinate.
+        :param start_y: Starting y coordinate.
+        :param end_x: Ending x coordinate.
+        :param end_y: Ending y coordinate.
+        :param duration: Gesture duration in seconds.
+        :param session_id: Session to use; required.
+        :raises WdaError: No session id is available.
+        """
         if not session_id:
             raise WdaError("session_id is required")
         payload = {

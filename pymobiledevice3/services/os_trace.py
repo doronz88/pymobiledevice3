@@ -22,7 +22,10 @@ SYSLOG_LINE_SPLITTER = "\n\x00"
 
 class OsActivityStreamFlag(IntEnum):
     """
-    Exact `os_activity_stream_flag_t` values from Apple private headers.
+    Bit flags controlling what an activity stream delivers and how it decodes entries.
+
+    These are the exact ``os_activity_stream_flag_t`` values from Apple's private headers
+    and are OR'd together to form the ``StreamFlags`` value passed to `syslog`.
 
     Based on: https://github.com/limneos/oslog/blob/master/ActivityStreamAPI.h
     """
@@ -40,7 +43,10 @@ class OsActivityStreamFlag(IntEnum):
 
 class OsActivityStreamType(IntEnum):
     """
-    Exact `os_activity_stream_type_t` values from Apple private headers.
+    Categories of events that may appear in an activity stream (log messages, signposts,
+    activity transitions, etc.).
+
+    These are the exact ``os_activity_stream_type_t`` values from Apple's private headers.
 
     Based on: https://github.com/limneos/oslog/blob/master/ActivityStreamAPI.h
     """
@@ -69,6 +75,8 @@ OS_TRACE_RELAY_STREAM_FLAGS_DEFAULT = (
 
 
 class SyslogLogLevel(IntEnum):
+    """Severity level of a syslog entry, as carried in the raw stream's level byte."""
+
     NOTICE = 0x00
     INFO = 0x01
     DEBUG = 0x02
@@ -81,12 +89,22 @@ class SyslogLogLevel(IntEnum):
 
 @dataclasses.dataclass
 class SyslogLabel:
+    """The os_log subsystem/category pair an entry was emitted under, when present."""
+
     category: str
     subsystem: str
 
 
 @dataclasses.dataclass
 class SyslogEntry:
+    """
+    A single decoded log line from the device's activity stream.
+
+    Produced by `parse_syslog_entry` and yielded by `syslog`.
+    Bundles the emitting process and thread, the entry's timestamp and severity, the
+    log message text, and the image/offset metadata needed to symbolicate the call site.
+    """
+
     pid: int
     timestamp: datetime
     level: SyslogLogLevel
@@ -109,10 +127,16 @@ class SyslogEntry:
 
 def parse_syslog_entry(data: bytes) -> SyslogEntry:
     """
-    Parse a syslog entry from binary data.
+    Decode one binary syslog record from the os_trace_relay activity stream into a
+    `SyslogEntry`.
 
-    :param data: Raw binary data
-    :return: SyslogEntry
+    Fixed-offset fields (pid, timestamps, level, UUIDs, thread/proc ids) are unpacked from the
+    record header, followed by the variable-length filename, image name, message, and optional
+    subsystem/category label. The label is only populated when both subsystem and category are
+    present in the record.
+
+    :param data: The raw bytes of a single record (the payload following the stream's length prefix).
+    :returns: The parsed log entry.
     """
     offset = 0
 
@@ -220,11 +244,19 @@ def parse_syslog_entry(data: bytes) -> SyslogEntry:
 
 class OsTraceService(LockdownService):
     """
+    Client for the device's ``com.apple.os_trace_relay`` service.
+
     Provides API for the following operations:
-    * Show process list (process name and pid)
-    * Stream syslog lines in binary form with optional filtering by pid.
-    * Get old stored syslog archive in PAX format (can be extracted using `pax -r < filename`).
-        * Archive contain the contents are the `/var/db/diagnostics` directory
+
+    * List the running processes (pid to process name mapping).
+    * Stream live syslog entries in binary form, optionally filtered by pid.
+    * Retrieve the device's stored log archive (the contents of the ``/var/db/diagnostics``
+      directory), either as a raw PAX-format tar stream or extracted into a ``.logarchive``
+      directory consumable by ``log`` / Console.
+
+    The service is reached over the classic lockdown service on `SERVICE_NAME`, or over the
+    RemoteServiceDiscovery shim (`RSD_SERVICE_NAME`) when a non-`LockdownClient`
+    provider is supplied.
     """
 
     SERVICE_NAME = "com.apple.os_trace_relay"
@@ -237,6 +269,12 @@ class OsTraceService(LockdownService):
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     async def get_pid_list(self):
+        """
+        Request the device's process list.
+
+        :returns: The decoded ``PidList`` response plist. Its ``Payload`` entry maps each pid to a
+            dict of per-process metadata (such as ``ProcessName``).
+        """
         await self.connect()
         assert self.service is not None
         await self.service.send_plist({"Request": "PidList"})
@@ -254,6 +292,19 @@ class OsTraceService(LockdownService):
         age_limit: typing.Optional[int] = None,
         start_time: typing.Optional[int] = None,
     ):
+        """
+        Request a log archive from the device and stream its raw bytes into ``out``.
+
+        The device returns the archive as a PAX-format tar stream (the contents of
+        ``/var/db/diagnostics``), which is written to ``out`` in chunks until the connection is
+        terminated. Use `collect` instead to obtain an extracted ``.logarchive`` directory.
+
+        :param out: A writable binary file-like object to receive the archive bytes.
+        :param size_limit: Optional maximum archive size in bytes.
+        :param age_limit: Optional maximum age, in days, of entries to include.
+        :param start_time: Optional earliest entry time, as a unix timestamp.
+        :raises AssertionError: If the device does not acknowledge the request with a successful status.
+        """
         request = {"Request": "CreateArchive"}
 
         if size_limit is not None:
@@ -288,12 +339,16 @@ class OsTraceService(LockdownService):
         start_time: typing.Optional[int] = None,
     ) -> None:
         """
-        Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
+        Collect the device's system logs into a ``.logarchive`` that can be inspected later with
+        tools such as ``log`` or Console.
 
-        :param out: output file name
-        :param size_limit: maximum size in bytes of logarchive
-        :param age_limit: maximum age in days
-        :param start_time: start time of logarchive in unix timestamp
+        Internally calls `create_archive` to fetch the tar stream into a temporary file, then
+        extracts it into the ``out`` directory.
+
+        :param out: Destination directory path into which the archive is extracted.
+        :param size_limit: Optional maximum archive size in bytes.
+        :param age_limit: Optional maximum age, in days, of entries to include.
+        :param start_time: Optional earliest entry time, as a unix timestamp.
         """
         with tempfile.TemporaryDirectory() as temp_dir:
             file = Path(temp_dir) / "foo.tar"
@@ -307,6 +362,22 @@ class OsTraceService(LockdownService):
         message_filter: int = OS_TRACE_RELAY_MESSAGE_FILTER_ALL,
         stream_flags: int = OS_TRACE_RELAY_STREAM_FLAGS_DEFAULT,
     ) -> typing.AsyncGenerator[SyslogEntry, None]:
+        """
+        Stream live syslog entries from the device.
+
+        Starts an activity stream on the device and yields each incoming record, parsed via
+        `parse_syslog_entry`, indefinitely until the caller stops iterating or the connection
+        drops.
+
+        :param pid: Restrict the stream to a single process by pid; ``-1`` (the default) streams
+            entries from all processes.
+        :param message_filter: Bitmask selecting which message levels to receive; defaults to
+            `OS_TRACE_RELAY_MESSAGE_FILTER_ALL` (all levels).
+        :param stream_flags: Bitmask of `OsActivityStreamFlag` values controlling stream
+            contents and decoding; defaults to `OS_TRACE_RELAY_STREAM_FLAGS_DEFAULT`.
+        :yields: Each decoded log entry as it arrives.
+        :raises PyMobileDevice3Exception: If the device rejects the stream-start request.
+        """
         await self.connect()
         assert self.service is not None
         await self.service.send_plist({

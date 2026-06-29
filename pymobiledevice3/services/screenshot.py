@@ -4,6 +4,13 @@ from pymobiledevice3.services.lockdown_service import LockdownService
 
 
 class ScreenshotService(LockdownService):
+    """
+    Capture a screenshot of the device's screen via the ``com.apple.mobile.screenshotr`` service.
+
+    The service speaks the DeviceLink protocol and requires a developer image (developer mode) to be
+    mounted on the device.
+    """
+
     SERVICE_NAME = "com.apple.mobile.screenshotr"
 
     def __init__(self, lockdown: LockdownServiceProvider) -> None:
@@ -22,6 +29,14 @@ class ScreenshotService(LockdownService):
         self._did_handshake = True
 
     async def take_screenshot(self) -> bytes:
+        """
+        Capture the current screen contents.
+
+        Performs the DeviceLink handshake on first use, then requests a single screenshot.
+
+        :returns: Raw image data as returned by the device (typically PNG or TIFF).
+        :raises PyMobileDevice3Exception: If the service returns an unexpected response.
+        """
         await self._handshake()
         await self.service.send_plist(["DLMessageProcessMessage", {"MessageType": "ScreenShotRequest"}])
         response = await self.service.recv_plist()

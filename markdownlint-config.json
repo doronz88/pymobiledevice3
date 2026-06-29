@@ -1,12 +1,13 @@
 {
     "default": true,
     "MD013": false, // Disable line length rule
-    "MD033": { "allowed_elements": ["details", "summary"] }, // Allow certain HTML elements
+    "MD033": { "allowed_elements": ["details", "summary", "div"] }, // Allow certain HTML elements (div: Material grid cards)
     "MD029": { "style": "ordered" }, // Ordered lists must use incremental numbers
     "MD007": { "indent": 2 }, // Unordered list indentation
     "MD009": { "br_spaces": 2 }, // Number of spaces after line break
     "MD036": false, // Disable emphasis used instead of a header
     "MD040": false,
+    "MD046": false, // Allow indented code: Material content tabs/admonitions indent fenced blocks
     "MD041": false, // First line in file should be a top level header
     "MD042": true, // No empty links
     "no-hard-tabs": false, // Allow hard tabs

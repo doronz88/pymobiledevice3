@@ -32,6 +32,17 @@ class NotificationsService(DTXService):
 
 
 class Notifications(DtxService[NotificationsService]):
+    """
+    Stream application-state and memory notifications from the device over the
+    `com.apple.instruments.server.services.mobilenotifications` DTX channel.
+
+    Constructed with a `DvtProvider`, e.g. ``Notifications(DvtProvider(service_provider))``.
+    Entering the async context manager opens the channel and enables both
+    application-state and memory notifications; exiting disables them. The class
+    is async-iterable: iterating yields each notification payload as the device
+    pushes it.
+    """
+
     async def __aenter__(self):
         await self.connect()
         await self.service.set_application_state_notifications_enabled_(True)

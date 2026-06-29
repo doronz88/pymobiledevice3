@@ -703,6 +703,10 @@ class CoreProfileSessionTap:
     starts or ends an interval).
 
     This tap yields kdebug events.
+
+    Constructed with a `DvtProvider`. Use as an async context manager (``async with``): entering
+    configures and starts the session, exiting stops it. While active it can produce a one-time
+    stackshot and stream raw kdebug buffer chunks.
     """
 
     IDENTIFIER = CoreProfileSessionTapService.IDENTIFIER
@@ -787,7 +791,17 @@ class CoreProfileSessionTap:
 
     async def get_stackshot(self, timeout: typing.Optional[float] = 10.0) -> dict:
         """
-        Get a stackshot from the tap.
+        Wait for and parse the stackshot the device emits once per tap creation.
+
+        Non-stackshot messages are discarded while waiting. The result is parsed and cached, so
+        subsequent calls return the cached value immediately. Loaded images in the parsed
+        stackshot are annotated with their shared-cache paths where resolvable.
+
+        :param timeout: Seconds to wait for stackshot data; `None` waits indefinitely.
+        :returns: The parsed stackshot dictionary.
+        :raises ExtractingStackshotError: If the timeout elapses, or the device sends a raw
+            kdebug (version 2) buffer instead of a stackshot.
+        :raises DvtException: If the device reports that kperf is already owned by another session.
         """
         if self.stack_shot is not None:
             # The stackshot is sent one per TAP creation, so we cache it.
@@ -824,9 +838,12 @@ class CoreProfileSessionTap:
 
     async def dump(self, out: typing.BinaryIO, timeout: typing.Optional[float] = None):
         """
-        Dump data from core profile session to a file.
-        :param out: File object to write data to.
-        :param timeout: Timeout for data dumping, in seconds.
+        Stream raw kdebug trace data from the session to a file.
+
+        Stackshot and bplist messages are skipped; only kernel trace chunks are written.
+
+        :param out: Binary file object to write the trace data to.
+        :param timeout: Seconds to keep dumping; `None` dumps indefinitely.
         """
         start = time.time()
         while timeout is None or time.time() <= start + timeout:
@@ -839,6 +856,15 @@ class CoreProfileSessionTap:
             out.flush()
 
     async def pump_kdbuf_chunks(self, chunk_queue: queue.Queue) -> None:
+        """
+        Continuously forward received messages into a queue for consumption by a `KdBufStream`.
+
+        Runs until cancelled or the connection ends. On termination or error the offending
+        exception is placed on the queue; a `None` sentinel is always enqueued last.
+
+        :param chunk_queue: Queue that receives each raw chunk, then any exception, then a final
+            `None` sentinel.
+        """
         try:
             while True:
                 chunk_queue.put(await self._next_message())
@@ -854,12 +880,22 @@ class CoreProfileSessionTap:
 
     def get_kdbuf_stream(self, chunk_queue: queue.Queue):
         """
-        Get kd_buf stream.
+        Wrap a chunk queue in a file-like `KdBufStream` for reading the kd_buf trace.
+
+        :param chunk_queue: Queue being fed by `pump_kdbuf_chunks`.
+        :returns: A seekable, readable stream over the queued kd_buf chunks.
         """
         return KdBufStream(chunk_queue)
 
     @staticmethod
     def parse_stackshot(data):
+        """
+        Parse raw KCDATA stackshot bytes into a nested dictionary.
+
+        :param data: Raw stackshot buffer beginning with the stackshot KCDATA header.
+        :returns: The stackshot contents as a dictionary, with construct-internal stream fields
+            removed.
+        """
         parsed = kcdata.parse(data)
         # Required for removing streams from construct output.
         stackshot = clean(parsed)
@@ -869,6 +905,16 @@ class CoreProfileSessionTap:
 
     @staticmethod
     async def get_time_config(dvt: DtxServiceProvider):
+        """
+        Build the `time_config` mapping required to construct a `CoreProfileSessionTap`.
+
+        Combines the device's mach timebase and absolute time with the host-visible wall-clock
+        epoch and timezone offset taken from lockdown values.
+
+        :param dvt: The `DvtProvider` used to query device info.
+        :returns: A dict with `numer`, `denom`, `mach_absolute_time`, `usecs_since_epoch` and
+            `timezone`.
+        """
         async with DeviceInfo(dvt) as device_info:
             time_info = await device_info.mach_time_info()
         mach_absolute_time = time_info[0]
@@ -888,5 +934,11 @@ class CoreProfileSessionTap:
 
     @staticmethod
     async def get_trace_codes(dvt: DtxServiceProvider) -> dict[int, str]:
+        """
+        Fetch the device's kdebug trace-code table, mapping numeric debugids to symbol names.
+
+        :param dvt: The `DvtProvider` used to query device info.
+        :returns: A mapping of debugid code to its trace-code name.
+        """
         async with DeviceInfo(dvt) as device_info:
             return await device_info.trace_codes()

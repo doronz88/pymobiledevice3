@@ -100,9 +100,9 @@ The fixture already supports USB, `--rsd`, and `--tunnel` test runs.
 ## Related references
 
 - CLI dependency wiring:
-  [`pymobiledevice3/cli/cli_common.py`](../../pymobiledevice3/cli/cli_common.py)
+  [`pymobiledevice3/cli/cli_common.py`](https://github.com/doronz88/pymobiledevice3/blob/master/pymobiledevice3/cli/cli_common.py)
 - Base service wrapper:
-  [`pymobiledevice3/services/lockdown_service.py`](../../pymobiledevice3/services/lockdown_service.py)
+  [`pymobiledevice3/services/lockdown_service.py`](https://github.com/doronz88/pymobiledevice3/blob/master/pymobiledevice3/services/lockdown_service.py)
 - Example CLI modules:
-  [`pymobiledevice3/cli/apps.py`](../../pymobiledevice3/cli/apps.py),
-  [`pymobiledevice3/cli/developer/dvt/__init__.py`](../../pymobiledevice3/cli/developer/dvt/__init__.py)
+  [`pymobiledevice3/cli/apps.py`](https://github.com/doronz88/pymobiledevice3/blob/master/pymobiledevice3/cli/apps.py),
+  [`pymobiledevice3/cli/developer/dvt/__init__.py`](https://github.com/doronz88/pymobiledevice3/blob/master/pymobiledevice3/cli/developer/dvt/__init__.py)

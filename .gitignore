@@ -11,3 +11,6 @@ pymobiledevice3/_version.py
 .python-version
 __main__.spec
 tests/services/xcuitest.json
+
+# MkDocs build output
+/site/

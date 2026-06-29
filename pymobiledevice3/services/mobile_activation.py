@@ -54,10 +54,16 @@ class ActivationForm:
 
 class MobileActivationService:
     """
-    Perform device activation
+    Drive iOS device activation against Apple's activation servers via ``com.apple.mobileactivationd``.
 
-    There is no point in inheriting from BaseService since we'll need a new lockdown connection
-    for each request.
+    Orchestrates the full activation handshake: it gathers activation information from the device,
+    exchanges it with Apple's activation and DRM-handshake endpoints over HTTP, optionally prompts
+    the user for Apple ID credentials when the server requests them, and writes the resulting
+    activation record back to the device. Both the modern session-based flow and the legacy
+    lockdown flow are supported, with the session flow preferred when available.
+
+    A fresh lockdown service connection is opened for each request rather than reusing one, so this
+    class does not inherit from the shared service base.
     """
 
     SERVICE_NAME = "com.apple.mobileactivationd"
@@ -67,12 +73,27 @@ class MobileActivationService:
         self.logger = logging.getLogger(__name__)
 
     async def state(self):
+        """
+        Return the device's current activation state.
+
+        Queries the activation daemon for the activation state, falling back to the lockdown
+        ``ActivationState`` value if the daemon request fails.
+
+        :returns: the activation state (e.g. ``"Unactivated"`` or ``"Activated"``).
+        """
         try:
             return (await self.send_command("GetActivationStateRequest"))["Value"]
         except Exception:
             return await self.lockdown.get_value(key="ActivationState")
 
     async def wait_for_activation_session(self):
+        """
+        Block until the device produces a fresh activation session handshake.
+
+        Repeatedly requests activation session info until the handshake request message changes,
+        indicating the device is ready with a new session. Returns immediately if the device does
+        not support the session-based flow.
+        """
         try:
             blob = await self.create_activation_session_info()
         except Exception:
@@ -102,6 +123,21 @@ class MobileActivationService:
         return ActivationForm(title=title, description=description, fields=fields, server_info=server_info)
 
     async def activate(self, skip_apple_id_query: bool = False) -> None:
+        """
+        Activate the device end-to-end against Apple's activation servers.
+
+        Does nothing if the device is already activated. Otherwise it collects activation info from
+        the device (preferring the session-based flow, including a DRM handshake with Apple when
+        available), posts it to the activation server, and applies the returned activation record.
+        If the server responds with a BuddyML form requesting Apple ID credentials, the user is
+        prompted interactively and the form is resubmitted. On success, the device's
+        ``ActivationStateAcknowledged`` value is set.
+
+        :param skip_apple_id_query: when True, do not prompt for Apple ID credentials; instead treat
+            a credentials request as an iCloud lock and raise.
+        :raises MobileActivationException: if the device is iCloud locked (with
+            ``skip_apple_id_query`` set) or the activation server response is invalid.
+        """
         if await self.state() != "Unactivated":
             self.logger.error("Device is already activated!")
             return
@@ -188,12 +224,28 @@ class MobileActivationService:
         await self.lockdown.set_value(True, key="ActivationStateAcknowledged")
 
     async def deactivate(self):
+        """
+        Deactivate the device.
+
+        Sends a ``DeactivateRequest`` to the activation daemon, falling back to the lockdown
+        ``Deactivate`` request if that fails.
+
+        :returns: the response from whichever deactivation path succeeds.
+        """
         try:
             return await self.send_command("DeactivateRequest")
         except Exception:
             return await self.lockdown._request_async("Deactivate")
 
     async def create_activation_session_info(self):
+        """
+        Request the device's session-based activation handshake info.
+
+        Sends a ``CreateTunnel1SessionInfoRequest`` to the activation daemon.
+
+        :returns: the session info blob (the ``Value`` entry), including the handshake request message.
+        :raises MobileActivationException: if the daemon returns an error.
+        """
         response = await self.send_command("CreateTunnel1SessionInfoRequest")
         error = response.get("Error")
         if error is not None:
@@ -201,6 +253,16 @@ class MobileActivationService:
         return response["Value"]
 
     async def create_activation_info_with_session(self, handshake_response):
+        """
+        Build the device's activation info from a completed DRM handshake.
+
+        Sends a ``CreateTunnel1ActivationInfoRequest`` to the activation daemon, passing the DRM
+        handshake response received from Apple.
+
+        :param handshake_response: the DRM handshake response content returned by Apple's server.
+        :returns: the activation info blob (the ``Value`` entry) to post to the activation server.
+        :raises MobileActivationException: if the daemon returns an error.
+        """
         response = await self.send_command("CreateTunnel1ActivationInfoRequest", handshake_response)
         error = response.get("Error")
         if error is not None:
@@ -208,6 +270,16 @@ class MobileActivationService:
         return response["Value"]
 
     async def activate_with_lockdown(self, activation_record):
+        """
+        Apply an activation record to the device using the legacy lockdown flow.
+
+        Parses the activation record, extracts the ``iphone-activation`` or ``device-activation``
+        node, and submits its activation record via the lockdown ``Activate`` request.
+
+        :param activation_record: the serialized activation record returned by the activation server.
+        :raises MobileActivationException: if the activation record does not contain a recognized
+            activation node.
+        """
         record = plistlib.loads(activation_record)
         node = record.get("iphone-activation")
         if node is None:
@@ -218,6 +290,17 @@ class MobileActivationService:
         await self.lockdown._request_async("Activate", {"ActivationRecord": node.get("activation-record")})
 
     async def activate_with_session(self, activation_record, headers):
+        """
+        Apply an activation record to the device using the session-based flow.
+
+        Sends a ``HandleActivationInfoWithSessionRequest`` to the activation daemon, including the
+        activation record and, if provided, the HTTP response headers from the activation server.
+
+        :param activation_record: the activation record returned by the activation server.
+        :param headers: HTTP response headers from the activation server, forwarded as
+            ``ActivationResponseHeaders``; may be falsy to omit them.
+        :returns: the daemon's response to the request.
+        """
         data = {
             "Command": "HandleActivationInfoWithSessionRequest",
             "Value": activation_record,
@@ -228,6 +311,16 @@ class MobileActivationService:
             return await service.send_recv_plist(data)
 
     async def send_command(self, command: str, value: str = ""):
+        """
+        Send a single command to the activation daemon over a fresh service connection.
+
+        Opens the ``com.apple.mobileactivationd`` service, sends the command (with an optional
+        ``Value``), and returns the response. The connection is closed afterwards.
+
+        :param command: the activation daemon command name.
+        :param value: optional value sent alongside the command; omitted when empty.
+        :returns: the daemon's response plist.
+        """
         data = {"Command": command}
         if value:
             data["Value"] = value
@@ -237,6 +330,15 @@ class MobileActivationService:
     def post(
         self, url: str, data: dict, headers: Optional[CaseInsensitiveDict[str, str]] = None
     ) -> tuple[bytes, CaseInsensitiveDict[str]]:
+        """
+        Perform an HTTP POST to an activation server endpoint.
+
+        :param url: the activation endpoint to post to.
+        :param data: the form data or request body to send.
+        :param headers: optional request headers; the module's default activation headers are used
+            when omitted.
+        :returns: a tuple of the response body bytes and the response headers.
+        """
         if headers is None:
             headers = DEFAULT_HEADERS
 

@@ -62,7 +62,7 @@ MESSAGE_TYPE_CONNECTION_UPDATE = 2
 
 @dataclass
 class InterfaceDetectionEvent:
-    """Interface detection event emitted by Instruments."""
+    """A network interface discovered by the monitor, identified by its index and name."""
 
     interface_index: int
     name: str
@@ -70,7 +70,7 @@ class InterfaceDetectionEvent:
 
 @dataclass
 class ConnectionDetectionEvent:
-    """Connection detection event emitted by Instruments."""
+    """A newly detected socket connection with its endpoints, owning process and buffer state."""
 
     local_address: SocketAddress
     remote_address: SocketAddress
@@ -84,7 +84,7 @@ class ConnectionDetectionEvent:
 
 @dataclass
 class ConnectionUpdateEvent:
-    """Connection update event emitted by Instruments."""
+    """Periodic traffic statistics for a previously detected connection, keyed by `connection_serial`."""
 
     rx_packets: int
     rx_bytes: int
@@ -129,7 +129,14 @@ class NetworkMonitorService(DTXService):
 
 
 class NetworkMonitor(DtxService[NetworkMonitorService]):
-    """Iterate over network monitoring events from the Instruments service."""
+    """
+    Monitor device network activity over the Instruments networking channel.
+
+    Constructed with a `DvtProvider`. Use as an async context manager: entering starts
+    monitoring and exiting stops it. The object is async-iterable, yielding decoded
+    `InterfaceDetectionEvent`, `ConnectionDetectionEvent` and `ConnectionUpdateEvent`
+    instances as they arrive.
+    """
 
     def __init__(self, dvt):
         super().__init__(dvt)
@@ -144,8 +151,15 @@ class NetworkMonitor(DtxService[NetworkMonitorService]):
         await self.service.stop_monitoring()
 
     async def __aiter__(self) -> AsyncIterator[NetworkMonitorEvent]:
-        """Yield network events as they arrive from the service."""
+        """
+        Decode and yield network events as they arrive from the service.
 
+        Each raw message is dispatched by its leading message-type code. Socket addresses on
+        connection-detection events are parsed into `SocketAddress` structures. Unrecognized
+        or malformed payloads are logged and skipped (no event is yielded for them).
+
+        :yields: The decoded event, or `None` when a known message type carried no payload.
+        """
         while True:
             message = await self._receive_message()
 

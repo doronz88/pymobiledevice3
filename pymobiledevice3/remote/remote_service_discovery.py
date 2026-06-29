@@ -33,9 +33,38 @@ RSD_PORT = 58783
 
 
 class RemoteServiceDiscoveryService(LockdownServiceProvider):
+    """
+    Service provider for the iOS 17+ RemoteServiceDiscovery (RSD) endpoint exposed over a tunnel.
+
+    On modern devices, services are no longer started through lockdownd's StartService RPC.
+    Instead a RemoteXPC handshake against the RSD port yields ``peer_info`` describing every
+    available service and the TCP port it listens on. This class connects to that endpoint,
+    discovers those services, and acts as a
+    `LockdownServiceProvider`, letting callers
+    open both RemoteXPC and lockdown-style service connections.
+
+    The RSD address is only reachable over an active tunnel (a kernel-routable interface or an
+    in-process userspace tunnel; see `is_in_process_tunnel`). Instances may be used as async
+    context managers, which connect on entry and close on exit.
+
+    :ivar service: the underlying RemoteXPC connection to the RSD endpoint.
+    :ivar peer_info: handshake response describing device properties and available services;
+        populated by `connect`.
+    :ivar lockdown: lockdown client created over the remote endpoint, or ``None`` if the device
+        does not offer the remote lockdown service (e.g. a virtual macOS instance).
+    """
+
     def __init__(
         self, address: tuple[str, int], name: Optional[str] = None, open_connection: Optional[Callable] = None
     ) -> None:
+        """
+        :param address: ``(host, port)`` of the RSD endpoint to connect to.
+        :param name: optional human-readable name for this RSD (e.g. the tunnel interface name).
+        :param open_connection: optional ``asyncio.open_connection``-compatible dialer used for the
+            RemoteXPC handshake and every service connection opened through this RSD. ``None`` uses
+            the stdlib dialer; the userspace tunnel injects a relay dialer so device-bound
+            connections route through its in-process stack.
+        """
         super().__init__()
         self.name = name
         # ``asyncio.open_connection``-compatible dialer used for the RemoteXPC handshake and every
@@ -58,14 +87,17 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
 
     @property
     def product_version(self) -> str:
+        """Device OS version, taken from the RSD handshake ``peer_info``."""
         return self.peer_info["Properties"]["OSVersion"]
 
     @property
     def product_build_version(self) -> str:
+        """Device OS build string, taken from the RSD handshake ``peer_info``."""
         return self.peer_info["Properties"]["BuildVersion"]
 
     @property
     def ecid(self) -> int:
+        """Device ECID (unique chip identifier), taken from the RSD handshake ``peer_info``."""
         return self.peer_info["Properties"]["UniqueChipID"]
 
     async def get_developer_mode_status(self) -> bool:
@@ -117,6 +149,16 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         await self.lockdown.set_uses24h_clock(value)
 
     async def connect(self) -> None:
+        """
+        Connect to the RSD endpoint and perform the RemoteXPC handshake.
+
+        Populates ``peer_info``, `udid`, and `product_type` from the handshake, then
+        attempts to open a remote lockdown connection (preferring the trusted variant, falling back
+        to the untrusted one). If neither is available the device is treated as offering no lockdown
+        service and `lockdown` is left ``None``. On any failure the connection is closed.
+
+        :raises Exception: re-raises after closing if the handshake or connection fails.
+        """
         await self.service.connect()
         try:
             await self.service.send_device_handshake()
@@ -155,19 +197,57 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         return await self.lockdown.remove_value(domain=domain, key=key)
 
     async def start_lockdown_service_without_checkin(self, name: str) -> ServiceConnection:
+        """
+        Open a raw connection to a service's port without performing the RSD check-in handshake.
+
+        :param name: name of the service to connect to.
+        :returns: an unstarted connection to the service's port.
+        :raises InvalidServiceError: if the device does not offer a service with this name.
+        """
         return await self.create_service_connection(self.get_service_port(name))
 
     async def get_service_connection_attributes(self, name: str, include_escrow_bag: bool = False) -> dict:
+        """
+        Return the connection attributes for a service.
+
+        Unlike lockdownd, RSD services are discovered from ``peer_info`` and need no StartService
+        RPC, so this resolves the port locally and reports SSL as disabled.
+
+        :param name: name of the service.
+        :param include_escrow_bag: accepted for interface compatibility; ignored.
+        :returns: a dict with the service ``Port`` and ``EnableServiceSSL`` set to ``False``.
+        :raises InvalidServiceError: if the device does not offer a service with this name.
+        """
         # RSD services are discovered from peer_info and do not require a separate StartService RPC.
         _ = include_escrow_bag
         return {"Port": self.get_service_port(name), "EnableServiceSSL": False}
 
     async def create_service_connection(self, port: int) -> ServiceConnection:
+        """
+        Create a TCP service connection to a port on the device through this RSD.
+
+        :param port: device-side TCP port to connect to.
+        :returns: a connection routed through this RSD's dialer.
+        """
         return await ServiceConnection.create_using_tcp(
             self.service.address[0], port, open_connection=self.open_connection
         )
 
     async def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
+        """
+        Open a service connection and complete the RSD check-in handshake.
+
+        Connects to the service port, performs the ``RSDCheckin`` exchange (optionally attaching the
+        host escrow bag for unlock), and returns the started connection.
+
+        :param name: name of the service to start.
+        :param include_escrow_bag: when True, attach the local pairing record's escrow bag to the
+            check-in, allowing the connection to unlock the device.
+        :returns: a started, checked-in service connection.
+        :raises InvalidServiceError: if the device does not offer a service with this name.
+        :raises StartServiceError: if the device reports an error starting the service.
+        :raises PyMobileDevice3Exception: if the check-in handshake returns an unexpected response.
+        """
         service = await self.start_lockdown_service_without_checkin(name)
         await service.start()
         try:
@@ -194,6 +274,15 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         return service
 
     async def start_lockdown_developer_service(self, name, include_escrow_bag: bool = False) -> ServiceConnection:
+        """
+        Open a connection to a developer service (without RSD check-in).
+
+        :param name: name of the developer service.
+        :param include_escrow_bag: accepted for interface compatibility; ignored.
+        :returns: an unstarted connection to the service's port.
+        :raises StartServiceError: if the service cannot be reached; logs a hint that the
+            DeveloperDiskImage may need to be mounted.
+        """
         try:
             return await self.start_lockdown_service_without_checkin(name)
         except StartServiceError:
@@ -204,25 +293,51 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             raise
 
     def start_remote_service(self, name: str) -> RemoteXPCConnection:
+        """
+        Create (but do not connect) a RemoteXPC connection to a service.
+
+        :param name: name of the service.
+        :returns: an unconnected RemoteXPC connection to the service's port.
+        :raises InvalidServiceError: if the device does not offer a service with this name.
+        """
         service = RemoteXPCConnection(
             (self.service.address[0], self.get_service_port(name)), open_connection=self.open_connection
         )
         return service
 
     async def start_service(self, name: str) -> Union[RemoteXPCConnection, ServiceConnection]:
+        """
+        Start a service using the transport it advertises in ``peer_info``.
+
+        Services flagged with ``UsesRemoteXPC`` are opened as RemoteXPC connections via
+        `start_remote_service`; all others are opened as lockdown-style connections via
+        `start_lockdown_service`.
+
+        :param name: name of the service to start.
+        :returns: a RemoteXPC connection or a started lockdown service connection, per the
+            service's advertised transport.
+        :raises InvalidServiceError: if the device does not offer a service with this name.
+        """
         service = self.peer_info["Services"][name]
         service_properties = service.get("Properties", {})
         use_remote_xpc = service_properties.get("UsesRemoteXPC", False)
         return self.start_remote_service(name) if use_remote_xpc else await self.start_lockdown_service(name)
 
     def get_service_port(self, name: str) -> int:
-        """takes a service name and returns the port that service is running on if the service exists"""
+        """
+        Resolve the TCP port a service listens on from the RSD handshake ``peer_info``.
+
+        :param name: name of the service.
+        :returns: the device-side TCP port for the service.
+        :raises InvalidServiceError: if the device does not offer a service with this name.
+        """
         service = self.peer_info["Services"].get(name)
         if service is None:
             raise InvalidServiceError(f"No such service: {name}")
         return int(service["Port"])
 
     async def close(self) -> None:
+        """Close the lockdown client (if any) and the underlying RemoteXPC connection."""
         if self.lockdown is not None:
             await self.lockdown.close()
         await self.service.close()
@@ -245,6 +360,12 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
 
 
 async def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[RSDDevice]:
+    """
+    Discover RSD-capable devices advertised by ``remoted`` over Bonjour.
+
+    :param timeout: Bonjour browse timeout, in seconds.
+    :returns: a list of `RSDDevice` records, one per discovered device address.
+    """
     result = []
     for instance in await browse_remoted(timeout):
         for address in instance.addresses:
@@ -262,6 +383,14 @@ async def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[
 
 
 async def get_remoted_device(udid: str, timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> RSDDevice:
+    """
+    Discover a single RSD-capable device by UDID.
+
+    :param udid: UDID of the device to find.
+    :param timeout: Bonjour browse timeout, in seconds.
+    :returns: the matching `RSDDevice`.
+    :raises NoDeviceConnectedError: if no advertised device matches the UDID.
+    """
     devices = await get_remoted_devices(timeout=timeout)
     for device in devices:
         if device.udid == udid:

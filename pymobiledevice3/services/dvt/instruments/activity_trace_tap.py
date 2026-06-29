@@ -75,9 +75,24 @@ def decode_message_format(message) -> str:
 
 
 class ActivityTraceTap(Tap):
+    """
+    Tap the device's unified-logging / activity-trace stream over the Instruments channel.
+
+    Constructed with a `DvtProvider`. It is an async-iterable `Tap`: iterating yields decoded
+    log entries (signposts and os_log messages) as `message` dataclass instances whose fields
+    follow the table columns advertised by the device. The underlying wire format is a
+    stack-based opcode stream parsed incrementally; opcodes split across DTX frames are carried
+    over and reassembled.
+    """
+
     IDENTIFIER = "com.apple.instruments.server.services.activitytracetap"
 
     def __init__(self, dvt, enable_http_archive_logging=False):
+        """
+        :param dvt: The `DvtProvider` used to open the Instruments channel.
+        :param enable_http_archive_logging: When True, request that the device also include HTTP
+            archive (HAR) logging in the stream.
+        """
         # TODO:
         #   reverse: [DTOSLogLoader _handleRecord:], DTTableRowEncoder::*
         #   to understand each row's structure.
@@ -297,6 +312,12 @@ class ActivityTraceTap(Tap):
                 yield result
 
     async def __aiter__(self):
+        """
+        Continuously receive frames and yield the decoded log entries they contain.
+
+        :yields: A dynamically generated `message` dataclass per completed row, with fields named
+            after the device-advertised table columns.
+        """
         while True:
             await self._get_next_message()
             for message in self._parse():
