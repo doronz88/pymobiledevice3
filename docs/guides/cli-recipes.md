@@ -32,6 +32,25 @@ pymobiledevice3 diagnostics restart
 
 # Pull crash reports
 pymobiledevice3 crash pull /path/to/crashes
+
+# Show the process list (diagnosticsd API; no developer tunnel required)
+pymobiledevice3 processes ps
+
+# Match process pids by name (like pgrep)
+pymobiledevice3 processes pgrep SpringBoard
+```
+
+## Network Sniffing (PCAP)
+
+```shell
+# Sniff all device traffic and write a pcap
+pymobiledevice3 pcap --out capture.pcap
+
+# Sniff only a given process, stopping after 100 packets
+pymobiledevice3 pcap --process backboardd -c 100
+
+# Sniff a single interface
+pymobiledevice3 pcap -i en0
 ```
 
 ## Files, Apps, and Backup
@@ -59,6 +78,32 @@ pymobiledevice3 backup2 backup --only-regex '\\.(plist|db|db-shm|db-wal|sqlite|s
 
 # Restore backup
 pymobiledevice3 backup2 restore DIRECTORY
+```
+
+## Profiles and Configuration
+
+```shell
+# List installed configuration profiles
+pymobiledevice3 profile list
+
+# Install one or more profiles (.mobileconfig)
+pymobiledevice3 profile install my.mobileconfig
+
+# Remove a profile by its identifier/name
+pymobiledevice3 profile remove com.example.profile
+```
+
+## SpringBoard UI
+
+```shell
+# Print current screen orientation
+pymobiledevice3 springboard orientation
+
+# Save an app's icon to a PNG
+pymobiledevice3 springboard icon com.apple.mobilesafari safari-icon.png
+
+# Save the home-screen wallpaper to a PNG
+pymobiledevice3 springboard wallpaper-home-screen wallpaper.png
 ```
 
 ## Firmware Update

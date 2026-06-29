@@ -83,8 +83,8 @@ pymobiledevice3 apps list
 ### Support Matrix (Developer Services)
 
 `iOS >= 17` developer services require tunnel-based transport. The tunnel normally needs root/admin;
-on Python 3.14+ you can instead add `--userspace` to a developer command for a no-root, in-process
-tunnel (see the guide for what it supports).
+you can instead add `--userspace` to a developer command for a no-root, in-process tunnel
+(see the guide for what it supports).
 
 | Host OS | iOS 17.0-17.3.1 | iOS 17.4+ |
 | --- | --- | --- |
