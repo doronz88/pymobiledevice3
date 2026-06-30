@@ -108,6 +108,7 @@ CLI_GROUPS = {
     "amfi": "amfi",
     "apps": "apps",
     "backup2": "backup",
+    "btlogger": "btlogger",
     "bonjour": "bonjour",
     "companion": "companion_proxy",
     "crash": "crash",
