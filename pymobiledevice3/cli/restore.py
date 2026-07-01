@@ -205,7 +205,7 @@ def restore_shell(device: DeviceDep) -> None:
     start_ipython_shell(
         header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")),
         user_ns={
-            "irecv": device,
+            "irecv": device.irecv,
         },
     )
 
