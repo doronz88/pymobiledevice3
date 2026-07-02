@@ -1172,6 +1172,47 @@ class RemotePairingManualPairingService(RemotePairingTunnelService):
         await RemotePairingProtocol.connect(self, autopair=autopair)
 
 
+class RemotePairingLockdownService(RemotePairingTunnelService):
+    """
+    The `remotepairingdeviced` control channel, reached over the USB lockdown transport via the
+    `com.apple.dt.remotepairingdeviced.lockdown` lockdown service.
+
+    This is the RemotePairing *control plane* - it speaks the same `RPPairing`-framed
+    `RemotePairingProtocol` as the WiFi/RSD services (handshake, pair-setup, pair-verify) but over
+    an already-established lockdown `ServiceConnection`. Unlike `CoreDeviceTunnelProxy`, it does not
+    create tunnels: the device reports `allowsIncomingTunnelConnections=False` and rejects listener
+    creation with "Tunnel listener creator not set". Use it to pair/verify and to read the device's
+    control-channel handshake info (peer device info, wire protocol versions, pairing capabilities).
+
+    Because it runs over the already-trusted lockdownd (USB) transport, pair-setup here is promptless
+    (no on-device Trust dialog) and produces the RemotePairing pair record consumed by the RSD tunnel
+    services (`RemotePairingTunnelService` / `CoreDeviceTunnelService`), i.e. `remote start-tunnel`.
+    """
+
+    SERVICE_NAME = "com.apple.dt.remotepairingdeviced.lockdown"
+
+    @classmethod
+    async def create(cls, lockdown: LockdownServiceProvider) -> "RemotePairingLockdownService":
+        return cls(await lockdown.start_lockdown_service(cls.SERVICE_NAME), lockdown.udid)
+
+    def __init__(self, service: ServiceConnection, remote_identifier: str) -> None:
+        super().__init__(remote_identifier, hostname="", port=0)
+        self._service = service
+        self._reader = service.reader
+        self._writer = service.writer
+
+    async def connect(self, autopair: bool = True) -> None:
+        # The lockdown ServiceConnection is already open; go straight to the RemotePairing handshake.
+        await RemotePairingProtocol.connect(self, autopair=autopair)
+
+    async def close(self) -> None:
+        if self._service is not None:
+            await self._service.close()
+            self._service = None
+        self._reader = None
+        self._writer = None
+
+
 class CoreDeviceTunnelProxy(StartTcpTunnel):
     SERVICE_NAME = "com.apple.internal.devicecompute.CoreDeviceProxy"
 

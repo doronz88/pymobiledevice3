@@ -62,6 +62,21 @@ Use the following connection option:
 
 The tunnel creation command must run with elevated privileges because it creates a TUN/TAP interface.
 
+!!! tip "Bootstrap the RemotePairing record over USB (no Trust dialog)"
+
+    `remote start-tunnel` (the RSD/Wi-Fi path) needs a RemotePairing pair record. You can create it
+    over USB, promptlessly, via the `com.apple.dt.remotepairingdeviced.lockdown` control channel:
+
+    ```shell
+    python3 -m pymobiledevice3 lockdown remotepairing --pair
+    ```
+
+    Because this runs over the already-trusted lockdownd (USB) transport, pairing is promptless (no
+    on-device Trust dialog) and writes the same pair record `remote start-tunnel` / `remote pair` use.
+    Without `--pair` the command just performs a handshake and prints the device's control-channel info
+    (add `--raw` to keep the `deviceKVSData` blob base64-encoded). This control channel does not create
+    tunnels itself.
+
 ## Option 3: No-root userspace tunnel (`--userspace`)
 
 Options 1 and 2 need root/admin because they create a kernel TUN/TAP interface. `--userspace`

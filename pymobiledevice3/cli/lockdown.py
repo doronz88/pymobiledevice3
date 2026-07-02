@@ -1,4 +1,5 @@
 import ast
+import base64
 import datetime
 import logging
 import plistlib
@@ -16,9 +17,10 @@ from pymobiledevice3.cli.cli_common import (
     sudo_required,
 )
 from pymobiledevice3.cli.remote import tunnel_task
+from pymobiledevice3.exceptions import RemotePairingCompletedError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.common import TunnelProtocol
-from pymobiledevice3.remote.tunnel_service import CoreDeviceTunnelProxy
+from pymobiledevice3.remote.tunnel_service import CoreDeviceTunnelProxy, RemotePairingLockdownService
 from pymobiledevice3.services.heartbeat import HeartbeatService
 from pymobiledevice3.utils import run_in_loop
 
@@ -210,6 +212,57 @@ async def cli_start_tunnel(
 ) -> None:
     """start tunnel"""
     await async_cli_start_tunnel(service_provider, script_mode)
+
+
+def _decode_device_kvs_data(handshake_info: dict) -> dict:
+    """Decode the base64 binary-plist `deviceKVSData` blob in-place, if present."""
+    peer_device_info = handshake_info.get("peerDeviceInfo", {})
+    kvs = peer_device_info.get("deviceKVSData")
+    if isinstance(kvs, str):
+        try:
+            peer_device_info["deviceKVSData"] = plistlib.loads(base64.b64decode(kvs))
+        except Exception:
+            logger.warning("failed to decode deviceKVSData; leaving it raw")
+    return handshake_info
+
+
+@cli.command("remotepairing")
+@async_command
+async def cli_remotepairing(
+    service_provider: ServiceProviderDep,
+    pair: Annotated[
+        bool,
+        typer.Option(
+            "--pair", help="Perform RemotePairing pair-setup if not already paired (promptless over lockdownd)"
+        ),
+    ] = False,
+    raw: Annotated[bool, typer.Option("--raw", help="Do not decode the base64 deviceKVSData blob")] = False,
+) -> None:
+    """
+    Perform a RemotePairing handshake over the com.apple.dt.remotepairingdeviced.lockdown control
+    channel and print the device's handshake info (peer device info, wire protocol versions,
+    pairing capabilities). This control channel does not create tunnels - use `start-tunnel` for that.
+
+    With --pair, performs RemotePairing pair-setup when the device is not already paired. Because this
+    runs over the already-trusted lockdownd (USB) transport, pairing is promptless - no Trust dialog is
+    shown - and it writes the RemotePairing pair record used by `pymobiledevice3 remote start-tunnel`,
+    letting you bootstrap that record over USB without any on-device interaction.
+    """
+    service = await RemotePairingLockdownService.create(service_provider)
+    try:
+        try:
+            await service.connect(autopair=pair)
+        except RemotePairingCompletedError:
+            # The device closes the connection once pairing completes; re-establish it to read the info.
+            await service.close()
+            service = await RemotePairingLockdownService.create(service_provider)
+            await service.connect(autopair=False)
+        handshake_info = service.handshake_info
+        if not raw:
+            handshake_info = _decode_device_kvs_data(handshake_info)
+        print_json(handshake_info)
+    finally:
+        await service.close()
 
 
 @cli.command("assistive-touch")
