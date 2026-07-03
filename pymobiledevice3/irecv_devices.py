@@ -1006,6 +1006,34 @@ IRECV_DEVICES = (
         chip_id=0x8132,
         display_name="iPad Air 13-inch (M4, Cellular)",
     ),
+    IRecvDevice(
+        product_type="iPad17,1",
+        hardware_model="j817ap",
+        board_id=0x08,
+        chip_id=0x8142,
+        display_name="iPad Pro 11-inch (M5, WiFi)",
+    ),
+    IRecvDevice(
+        product_type="iPad17,2",
+        hardware_model="j818ap",
+        board_id=0x0A,
+        chip_id=0x8142,
+        display_name="iPad Pro 11-inch (M5, Cellular)",
+    ),
+    IRecvDevice(
+        product_type="iPad17,3",
+        hardware_model="j820ap",
+        board_id=0x0C,
+        chip_id=0x8142,
+        display_name="iPad Pro 13-inch (M5, WiFi)",
+    ),
+    IRecvDevice(
+        product_type="iPad17,4",
+        hardware_model="j821ap",
+        board_id=0x0E,
+        chip_id=0x8142,
+        display_name="iPad Pro 13-inch (M5, Cellular)",
+    ),
     # Apple TV
     IRecvDevice(
         product_type="AppleTV2,1", hardware_model="k66ap", board_id=0x10, chip_id=0x8930, display_name="Apple TV 2"
