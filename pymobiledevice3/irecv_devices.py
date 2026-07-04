@@ -710,7 +710,7 @@ IRECV_DEVICES = (
         hardware_model="j218ap",
         board_id=0x1E,
         chip_id=0x8020,
-        display_name="iPad Air (3rd gen, Celluar)",
+        display_name="iPad Air (3rd gen, Cellular)",
     ),
     IRecvDevice(
         product_type="iPad11,6",
@@ -752,7 +752,7 @@ IRECV_DEVICES = (
         hardware_model="j308ap",
         board_id=0x06,
         chip_id=0x8101,
-        display_name="iPad Air (4th gen, Celluar)",
+        display_name="iPad Air (4th gen, Cellular)",
     ),
     IRecvDevice(
         product_type="iPad13,4",
@@ -822,7 +822,7 @@ IRECV_DEVICES = (
         hardware_model="j408ap",
         board_id=0x12,
         chip_id=0x8103,
-        display_name="iPad Air (5th gen, Celluar)",
+        display_name="iPad Air (5th gen, Cellular)",
     ),
     IRecvDevice(
         product_type="iPad14,1",
@@ -878,7 +878,7 @@ IRECV_DEVICES = (
         hardware_model="j508ap",
         board_id=0x12,
         chip_id=0x8112,
-        display_name="iPad Air 11-inch (M2, Celluar)",
+        display_name="iPad Air 11-inch (M2, Cellular)",
     ),
     IRecvDevice(
         product_type="iPad14,10",
@@ -892,7 +892,7 @@ IRECV_DEVICES = (
         hardware_model="j538ap",
         board_id=0x16,
         chip_id=0x8112,
-        display_name="iPad Air 13-inch (M2, Celluar)",
+        display_name="iPad Air 13-inch (M2, Cellular)",
     ),
     IRecvDevice(
         product_type="iPad15,3",
@@ -906,7 +906,7 @@ IRECV_DEVICES = (
         hardware_model="j608ap",
         board_id=0x0A,
         chip_id=0x8122,
-        display_name="iPad Air 11-inch (M3, Celluar)",
+        display_name="iPad Air 11-inch (M3, Cellular)",
     ),
     IRecvDevice(
         product_type="iPad15,5",
@@ -920,7 +920,7 @@ IRECV_DEVICES = (
         hardware_model="j638ap",
         board_id=0x0E,
         chip_id=0x8122,
-        display_name="iPad Air 13-inch (M3, Celluar)",
+        display_name="iPad Air 13-inch (M3, Cellular)",
     ),
     IRecvDevice(
         product_type="iPad15,7",
@@ -934,7 +934,7 @@ IRECV_DEVICES = (
         hardware_model="j482ap",
         board_id=0x12,
         chip_id=0x8120,
-        display_name="iPad (A16, Celluar)",
+        display_name="iPad (A16, Cellular)",
     ),
     IRecvDevice(
         product_type="iPad16,1",
@@ -948,7 +948,7 @@ IRECV_DEVICES = (
         hardware_model="j411ap",
         board_id=0x0A,
         chip_id=0x8130,
-        display_name="iPad mini (A17 Pro, Celluar)",
+        display_name="iPad mini (A17 Pro, Cellular)",
     ),
     IRecvDevice(
         product_type="iPad16,3",
@@ -990,7 +990,7 @@ IRECV_DEVICES = (
         hardware_model="j708ap",
         board_id=0x12,
         chip_id=0x8132,
-        display_name="iPad Air 11-inch (M4, Celluar)",
+        display_name="iPad Air 11-inch (M4, Cellular)",
     ),
     IRecvDevice(
         product_type="iPad16,10",
@@ -1004,7 +1004,35 @@ IRECV_DEVICES = (
         hardware_model="j738ap",
         board_id=0x16,
         chip_id=0x8132,
-        display_name="iPad Air 13-inch (M4, Celluar)",
+        display_name="iPad Air 13-inch (M4, Cellular)",
+    ),
+    IRecvDevice(
+        product_type="iPad17,1",
+        hardware_model="j817ap",
+        board_id=0x08,
+        chip_id=0x8142,
+        display_name="iPad Pro 11-inch (M5, WiFi)",
+    ),
+    IRecvDevice(
+        product_type="iPad17,2",
+        hardware_model="j818ap",
+        board_id=0x0A,
+        chip_id=0x8142,
+        display_name="iPad Pro 11-inch (M5, Cellular)",
+    ),
+    IRecvDevice(
+        product_type="iPad17,3",
+        hardware_model="j820ap",
+        board_id=0x0C,
+        chip_id=0x8142,
+        display_name="iPad Pro 13-inch (M5, WiFi)",
+    ),
+    IRecvDevice(
+        product_type="iPad17,4",
+        hardware_model="j821ap",
+        board_id=0x0E,
+        chip_id=0x8142,
+        display_name="iPad Pro 13-inch (M5, Cellular)",
     ),
     # Apple TV
     IRecvDevice(
