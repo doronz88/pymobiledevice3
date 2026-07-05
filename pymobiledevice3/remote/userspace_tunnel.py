@@ -46,7 +46,7 @@ from pmd_net_addr import Ip6Address, Ip6IfAddr, MacAddress
 from pmd_pytcp import stack
 from pmd_pytcp.lib.interface_layer import InterfaceLayer
 from pmd_pytcp.lib.io_backend import register_interface_fd, unregister_interface_fd
-from pmd_pytcp.socket import AF_INET6, SOCK_DGRAM, SOCK_STREAM
+from pmd_pytcp.socket import AF_INET6, SHUT_RDWR, SHUT_WR, SOCK_DGRAM, SOCK_STREAM
 from pmd_pytcp.socket import socket as pytcp_socket
 from pmd_pytcp.stack import sysctl
 
@@ -281,6 +281,7 @@ class UserspaceDialPlane:
         self._device_addr = str(device_addr)
         self._relays: dict[tuple[str, int], int] = {}
         self._servers: list[asyncio.AbstractServer] = []  # kept referenced so relays stay alive
+        self._relay_tasks: set[asyncio.Task] = set()  # in-flight handlers, cancelled on exit
 
     async def __aenter__(self) -> UserspaceDialPlane:
         return self
@@ -288,6 +289,16 @@ class UserspaceDialPlane:
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         for srv in self._servers:
             srv.close()
+        # Cancel the in-flight relay handlers BEFORE wait_closed(): since Python 3.12.1
+        # Server.wait_closed() also waits for every active connection handler, and a relay
+        # parked on device traffic never finishes on its own — teardown would hang until the
+        # caller's timeout (issue #1756). Cancelling here (instead of leaving orphan tasks for
+        # the loop's shutdown to cancel) also guarantees each handler's psock cleanup runs
+        # while the stack is still up, and that no relay task outlives the dial plane.
+        for task in list(self._relay_tasks):
+            task.cancel()
+        if self._relay_tasks:
+            await asyncio.gather(*self._relay_tasks, return_exceptions=True)
         for srv in self._servers:
             with suppress(Exception):
                 await srv.wait_closed()
@@ -304,21 +315,28 @@ class UserspaceDialPlane:
             return
 
         # device -> client: PyTCP recv() blocks and does NOT unblock on close(), so pump it
-        # in a DAEMON thread bridged to asyncio via a queue. Daemon threads are killed at
-        # process exit without being joined, so shutdown never hangs.
+        # in a DAEMON thread bridged to asyncio via a queue. The recv is polled with a
+        # timeout so the thread re-checks ``closing`` and exits shortly after teardown —
+        # otherwise one parked thread would leak per relayed connection (issue #1756 hit 120
+        # of them). Daemon so process exit never joins on it either way.
         rx_queue: asyncio.Queue = asyncio.Queue(maxsize=256)
+        closing = threading.Event()
 
         def rx_pump() -> None:
             try:
-                while True:
-                    data = psock.recv(_CHUNK)
+                while not closing.is_set():
+                    try:
+                        data = psock.recv(_CHUNK, timeout=1.0)
+                    except TimeoutError:
+                        continue
                     loop.call_soon_threadsafe(rx_queue.put_nowait, data)
                     if not data:
                         break
             except Exception:
-                loop.call_soon_threadsafe(rx_queue.put_nowait, b"")
+                with suppress(RuntimeError):  # event loop may already be closed
+                    loop.call_soon_threadsafe(rx_queue.put_nowait, b"")
 
-        threading.Thread(target=rx_pump, daemon=True).start()
+        threading.Thread(target=rx_pump, name=f"userspace-relay-rx-{port}", daemon=True).start()
 
         async def client_to_device() -> None:
             try:
@@ -329,6 +347,13 @@ class UserspaceDialPlane:
                     await asyncio.to_thread(psock.send, data)
             except Exception:
                 pass
+            finally:
+                # Propagate the client's EOF to the device as a FIN (half-close). The device
+                # then finishes its side and its FIN unblocks rx_pump with b"", letting
+                # device_to_client — and the whole handler — complete. Without this the
+                # handler waits on device traffic forever after the client is gone (#1756).
+                with suppress(Exception):
+                    await asyncio.to_thread(psock.shutdown, SHUT_WR)
 
         async def device_to_client() -> None:
             try:
@@ -340,13 +365,34 @@ class UserspaceDialPlane:
                     await cwriter.drain()
             except Exception:
                 pass
+            finally:
+                # Mirror of the half-close above: the device's EOF must reach the client, or
+                # client_to_device keeps waiting on a client that has no reason to close.
+                with suppress(Exception):
+                    if cwriter.can_write_eof():
+                        cwriter.write_eof()
 
         try:
             await asyncio.gather(client_to_device(), device_to_client())
         finally:
-            for closer in (psock.close, cwriter.close):
+            closing.set()
+            with suppress(Exception):
+                cwriter.close()
+
+            # Tear the PyTCP socket down OFF the event loop: every psock entry point takes
+            # the session's FSM lock, which can be held for a long time while the stack shuts
+            # down — running it inline wedged the loop during teardown (#1756: py-spy showed
+            # the main thread stuck in psock.close -> tcp_fsm). A plain fire-and-forget daemon
+            # thread (not to_thread) so it runs even when this handler is being cancelled and
+            # nothing ever waits on it. shutdown(SHUT_RDWR) also wakes a recv()-parked rx_pump
+            # with EOF before close marks the socket down.
+            def teardown_psock() -> None:
                 with suppress(Exception):
-                    closer()
+                    psock.shutdown(SHUT_RDWR)
+                with suppress(Exception):
+                    psock.close()
+
+            threading.Thread(target=teardown_psock, name=f"userspace-relay-teardown-{port}", daemon=True).start()
 
     async def _ensure_relay(self, port: int) -> int:
         key = (self._device_addr, port)
@@ -354,7 +400,14 @@ class UserspaceDialPlane:
             return self._relays[key]
 
         async def handle(creader: asyncio.StreamReader, cwriter: asyncio.StreamWriter) -> None:
-            await self._relay_handler(port, creader, cwriter)
+            # Track the handler task so __aexit__ can cancel any relay still in flight
+            # (start_server's own task bookkeeping offers no cross-version cancel API).
+            task = asyncio.current_task()
+            self._relay_tasks.add(task)
+            try:
+                await self._relay_handler(port, creader, cwriter)
+            finally:
+                self._relay_tasks.discard(task)
 
         srv = await asyncio.start_server(handle, "127.0.0.1", 0)
         self._servers.append(srv)
