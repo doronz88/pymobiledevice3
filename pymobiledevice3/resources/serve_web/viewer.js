@@ -1,4 +1,12 @@
 window.AUDIO_DEFAULT_ON = __AUDIO_DEFAULT_ON__;
+// Resolution-collapse compensation default (server --compensate flag), with a
+// per-load URL override for research: append ?compensate=0 / ?compensate=1.
+window.COMPENSATE = (function () {
+    const q = new URLSearchParams(location.search).get('compensate');
+    if (q === '0' || q === 'false') return false;
+    if (q === '1' || q === 'true') return true;
+    return __COMPENSATE_DEFAULT__;
+})();
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
@@ -713,6 +721,60 @@ let lastFrame = null;
 // flips — that signals the content is now natively oriented in the
 // buffer, so we drop our in-canvas rotation to avoid double-rotating.
 let lastFrameLandscape = null;
+
+// ----- Resolution-collapse compensation. Under rapid motion the device
+// encoder drops to a smaller capture resolution (observed 720x1280 for a
+// 1264x2752 panel) rendered into the TOP-LEFT of the fixed buffer with the
+// rest flat gray (Y=Cb=Cr=128) padding -- the "screen shrinks to a corner
+// while swiping" tear. It's in the bitstream (device-side, under the ~6 Mbps
+// cap) and can't be prevented from our side. But the shrunk region is the
+// whole screen, just stretched into fewer pixels -- so we detect that content
+// rectangle and stretch it back to fill the canvas. The collapse then reads
+// as a momentary softness dip in a correctly-placed full-frame image instead
+// of a jarring corner shrink.
+//
+// Detection runs on the RAW decoded frame (never the already-compensated
+// canvas -- that would feed back and oscillate), throttled and cached. The
+// content is top-left anchored so the crop origin is always (0,0); we find
+// the right/bottom padding boundary. Validated offline against real collapsed
+// captures: full-size on clean frames, ~720x1280 on collapsed ones.
+const _detCanvas = document.createElement('canvas');
+const _detCtx = _detCanvas.getContext('2d', {willReadFrequently: true});
+let _cropSrcW = 0, _cropSrcH = 0;   // 0 => draw the full frame (not collapsed)
+const DET_H = 344;                  // downsample height for detection
+function detectContentCrop(f) {
+    const fw = f.displayWidth, fh = f.displayHeight;
+    if (!fw || !fh) return;
+    const DW = Math.max(8, Math.round(DET_H * fw / fh));
+    _detCanvas.width = DW; _detCanvas.height = DET_H;
+    try {
+        _detCtx.drawImage(f, 0, 0, DW, DET_H);
+        const d = _detCtx.getImageData(0, 0, DW, DET_H).data;
+        const isGray = (x, y) => { const i = (y * DW + x) * 4;
+            return Math.abs(d[i] - 128) < 6 && Math.abs(d[i + 1] - 128) < 6 && Math.abs(d[i + 2] - 128) < 6; };
+        // Last column / row that still holds content (<60% gray padding).
+        let cr = 0;
+        for (let x = 0; x < DW; x++) { let g = 0, n = 0;
+            for (let y = 0; y < DET_H; y += 4) { n++; if (isGray(x, y)) g++; }
+            if (g / n < 0.6) cr = x; }
+        let cb = 0;
+        for (let y = 0; y < DET_H; y++) { let g = 0, n = 0;
+            for (let x = 0; x < DW; x += 4) { n++; if (isGray(x, y)) g++; }
+            if (g / n < 0.6) cb = y; }
+        // Map back to source px, biasing one cell inward so a boundary cell
+        // that straddles content+padding doesn't leave a gray sliver.
+        const cw = Math.round((cr / DW) * fw);
+        const ch = Math.round((cb / DET_H) * fh);
+        // Compensate only on a clear collapse (both dims well under full and
+        // not degenerate); otherwise draw the full frame untouched.
+        if (cw > fw * 0.2 && cw < fw * 0.92 && ch > fh * 0.2 && ch < fh * 0.92) {
+            _cropSrcW = cw; _cropSrcH = ch;
+        } else {
+            _cropSrcW = 0; _cropSrcH = 0;
+        }
+    } catch (_) { /* transient readback failure -- keep previous crop */ }
+}
+
 function drawFrame(f) {
     const sideways = Math.abs(visualRotation % 180) === 90;
     const targetW = sideways ? f.displayHeight : f.displayWidth;
@@ -722,10 +784,16 @@ function drawFrame(f) {
         canvas.height = targetH;
         fitCanvasToViewport();
     }
+    // Source rect: the detected content region on collapse, else the whole
+    // frame. Stretched to the full frame footprint (un-doing the device's
+    // shrink) inside the rotation transform.
+    const srcW = _cropSrcW || f.displayWidth;
+    const srcH = _cropSrcH || f.displayHeight;
     ctx.save();
     ctx.translate(targetW / 2, targetH / 2);
     if (visualRotation) ctx.rotate(visualRotation * Math.PI / 180);
-    ctx.drawImage(f, -f.displayWidth / 2, -f.displayHeight / 2);
+    ctx.drawImage(f, 0, 0, srcW, srcH,
+                  -f.displayWidth / 2, -f.displayHeight / 2, f.displayWidth, f.displayHeight);
     ctx.restore();
 }
 function redrawWithCurrentRotation() {
@@ -743,6 +811,12 @@ function drawPending() {
         visualRotation = 0;
     }
     lastFrameLandscape = landscape;
+    // Detect the collapse-crop rectangle from THIS raw frame, every frame:
+    // the stream flips between collapsed and full-res frames faster than any
+    // throttle, so a cached crop applied to a mismatched frame zooms a full
+    // frame into its top-left (the "smaller screen over the old full screen"
+    // artifact). Per-frame detection keeps the crop matched to the frame.
+    if (window.COMPENSATE) detectContentCrop(f); else { _cropSrcW = 0; _cropSrcH = 0; }
     try {
         drawFrame(f);
     } catch (e) {
@@ -811,6 +885,14 @@ setInterval(() => {
     }
     _lastFc = frameCount;
 }, 1000);
+
+// ----- Collapse recovery is SERVER-side, not here.
+// Recovery from the collapse (the device re-emitting a full-res IDR) is driven
+// SERVER-side by the motion-triggered decoder-refresh (--motion-idr): it fires
+// preemptively the moment motion starts, so it's structurally faster than any
+// client-side detect-then-POST-/pli loop (which is always a collapse-cycle
+// behind). The viewer's job is just to hide the shrink until that IDR lands,
+// which detectContentCrop above does. No client-side keyframe requests here.
 
 // ----- Accessibility panel: GET /accessibility lists current settings,
 // POST /accessibility/set with {key, value} updates one, POST

@@ -919,12 +919,16 @@ async def core_device_display_serve_web(
         typer.Option(
             "--ltrp",
             help=(
-                "Opt back into LTRP (long-term reference pictures). LTRP is OFF "
-                "by default because on-device probing showed the device honours "
-                "the protobuf-level switch (`IsltrpEnabled: false` in the "
-                "answer) and LTRP-off eliminates the mid-stream tearing pattern "
-                "under UDP loss. Apple's captured Xcode offer used LTRP-on; "
-                "this flag restores that for regression testing."
+                "Opt into LTRP (long-term reference pictures). LEAVE OFF for "
+                "browser viewing. LTRP lowers the encoder's QP under motion "
+                "(sharper bitstream — ffmpeg decodes it cleanly), BUT the "
+                "browsers' real-time VideoToolbox/WebCodecs decoder mishandles "
+                "the long-term references and renders a mosaic of displaced "
+                "blocks during rapid motion. Verified on-device: identical hard "
+                "swipes are clean with LTRP off and tear with it on, while the "
+                "same captured bitstream is clean in ffmpeg either way — i.e. "
+                "the tear is a live-decode artifact, not in the stream. The "
+                "encoder QP win (≈19 vs ≈23-31) is not worth the mosaic."
             ),
         ),
     ] = False,
@@ -958,13 +962,16 @@ async def core_device_display_serve_web(
         typer.Option(
             "--rctl/--no-rctl",
             help=(
-                "Run the AVConference RCTL receiver-feedback loop (RTCP APP), "
-                "reversed from Xcode's mirror protocol -- closed-loop encoder "
-                "rate control matching what Xcode does. On by default; "
-                "--no-rctl reverts to open-loop."
+                "Run the AVConference RCTL receiver-feedback loop (RTCP APP + "
+                "per-frame receipts), reversed byte-exact from Xcode's mirror -- "
+                "the closed-loop rate control Xcode uses. OFF by default: it "
+                "does NOT prevent the motion resolution-collapse (that's a "
+                "device encoder decision at the ~6 Mbps cap), and a wrong OWRD "
+                "or non-per-frame receipt makes the device throttle framerate. "
+                "Kept as the correct closed-loop base for further research."
             ),
         ),
-    ] = True,
+    ] = False,
     max_bitrate: Annotated[
         int,
         typer.Option(
@@ -978,6 +985,40 @@ async def core_device_display_serve_web(
             ),
         ),
     ] = 60000,
+    motion_idr: Annotated[
+        bool,
+        typer.Option(
+            "--motion-idr/--no-motion-idr",
+            help=(
+                "Force a keyframe ~1x/second WHILE the screen is moving (ON by "
+                "default). Under rapid motion the device drops capture resolution "
+                "into a top-left corner of the frame ('screen shrinks while "
+                "swiping'); these keyframes snap it back to full resolution fast, "
+                "and the viewer stretches the shrunk region to fill the canvas so "
+                "the brief window is hidden. Trade-off: the keyframe pressure can "
+                "stall the ~6 Mbps-capped encoder under sustained motion. "
+                "--no-motion-idr drops it for a stall-free but slower-recovering "
+                "stream (relies on the viewer stretch + settle keyframe alone). "
+                "NOTE: combining --motion-idr with --rctl throttles fps hard -- "
+                "the default keeps RCTL off so the IDR stays fast."
+            ),
+        ),
+    ] = True,
+    compensate: Annotated[
+        bool,
+        typer.Option(
+            "--compensate/--no-compensate",
+            help=(
+                "Viewer-side resolution-collapse compensation (ON by default). "
+                "When the device shrinks the captured screen into the top-left "
+                "corner + gray padding under motion, the browser detects that "
+                "content rectangle per frame and stretches it back to fill the "
+                "canvas, turning the hard corner-shrink into a softer momentary "
+                "resolution dip. --no-compensate shows the raw device output "
+                "(useful for seeing the collapse / research)."
+            ),
+        ),
+    ] = True,
 ) -> None:
     """Serve the device's screen via HTTP — view in any modern browser.
 
@@ -1002,6 +1043,8 @@ async def core_device_display_serve_web(
         https=https,
         rctl_enabled=rctl,
         max_bitrate_kbps=max_bitrate,
+        motion_idr=motion_idr,
+        compensate=compensate,
     )
     await server.serve()
 

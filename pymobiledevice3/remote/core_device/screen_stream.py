@@ -13,9 +13,9 @@ Layering::
 """
 
 import asyncio
+import base64
 import contextlib
 import datetime
-import base64
 import errno
 import importlib.resources
 import ipaddress
@@ -25,6 +25,7 @@ import os
 import socket
 import ssl
 import tempfile
+import time
 import uuid
 from collections import deque
 from pathlib import Path
@@ -627,10 +628,26 @@ class ScreenStreamServer:
         allow_rtcp_fb: bool = False,
         ltrp_enabled: bool = False,
         https: bool = False,
-        rctl_enabled: bool = True,
+        rctl_enabled: bool = False,
         max_bitrate_kbps: int = 60000,
+        motion_idr: bool = True,
+        compensate: bool = True,
     ) -> None:
         self._rsd = rsd
+        # Viewer-side resolution-collapse compensation (--compensate, default
+        # on): injected into viewer.js; the browser detects the shrunk content
+        # rectangle and stretches it to fill the canvas. Server-side flag only
+        # selects the viewer default.
+        self._compensate = compensate
+        # Mid-motion IDR refresh (--motion-idr/--no-motion-idr, ON by default).
+        # Fires a keyframe ~1x/s while the screen is moving, so the device's
+        # resolution collapse snaps back to full res fast (preemptive; faster
+        # than any client-side detect-then-request loop). The viewer hides the
+        # brief shrink until the IDR lands (viewer.js detectContentCrop). Trade
+        # off: keyframe pressure can stall the ~6 Mbps-capped encoder under
+        # sustained motion; --no-motion-idr drops it for a stall-free but
+        # slower-recovering stream. See _decoder_refresh_loop.
+        self._motion_idr = motion_idr
         # AVConference RCTL receiver feedback (see _rctl_feedback_loop): the
         # closed-loop rate-control channel Xcode's mirror uses, reversed from a
         # live capture. ``max_bitrate_kbps`` is the cap advertised to the
@@ -720,6 +737,14 @@ class ScreenStreamServer:
         self._rtp_last_ts: int = 0
         self._rtp_frames_received: int = 0
         self._rctl_start_t: float = 0.0
+        # Per-frame packet count (RCTL w3) + RFC 3550 interarrival jitter in
+        # 24 kHz RTP-ts units (RCTL w4-lo), decoded byte-exact from Xcode's
+        # mirror. Feeding the device real values (vs our old 0/constant) is what
+        # keeps its rate controller from throttling framerate / collapsing res.
+        self._rtp_cur_frame_pkts: int = 0
+        self._rtp_last_frame_pkts: int = 0
+        self._rtp_jitter: float = 0.0
+        self._rtp_prev_transit: Optional[float] = None
         self._rctl_task: Optional[asyncio.Task] = None
         # PLI tasks in flight -- keep a reference so the GC doesn't drop
         # them while awaiting the sendto (and ruff is happy with create_task).
@@ -852,8 +877,42 @@ class ScreenStreamServer:
             # count -- echoed back in RCTL feedback so the device's rate
             # controller can track receiver progress. See _build_rctl_packet.
             self._rtp_last_ts = int.from_bytes(data[4:8], "big")
+            # RFC 3550 interarrival jitter in the 24 kHz media clock (RCTL
+            # w4-lo). transit = arrival(in ts units) - packet RTP ts; jitter is
+            # the smoothed |delta transit|. Origin-independent (delta cancels).
+            arrival_ts = time.monotonic() * 24000.0
+            transit = arrival_ts - self._rtp_last_ts
+            if self._rtp_prev_transit is not None:
+                d = abs(transit - self._rtp_prev_transit)
+                self._rtp_jitter += (d - self._rtp_jitter) / 16.0
+            self._rtp_prev_transit = transit
+            # Per-frame packet count (RCTL w3): packets since the last marker.
+            self._rtp_cur_frame_pkts += 1
             if marker:
                 self._rtp_frames_received += 1
+                self._rtp_last_frame_pkts = self._rtp_cur_frame_pkts
+                self._rtp_cur_frame_pkts = 0
+                # Per-frame receipt (RTCP APP name=5): Xcode emits EXACTLY one
+                # per frame (measured: receipt rate == frame rate), and the
+                # device paces its output framerate to these acks. Our old
+                # 40/s timer receipts desync from the real frame cadence, so the
+                # device's congestion control reads it as delay and throttles
+                # framerate under motion. Fire one here, on the frame boundary,
+                # carrying this frame's ts.
+                # Send it INLINE (awaited), NOT via create_task: a deferred send
+                # piles up under motion and reaches the device after it has aged
+                # the frame out of its sent-history window, so the device can't
+                # map the receipt's ts to the frame's packet span -> credits ~1
+                # of ~8 packets -> false ~87% uplink loss -> loss-defensive
+                # encoder (the collapse). Prompt delivery is the whole point.
+                if (
+                    self._rctl_enabled
+                    and self._active_sock is not None
+                    and self._rtcp_dest is not None
+                    and self._local_ssrc
+                ):
+                    with contextlib.suppress(OSError):
+                        await self._active_sock.sendto(self._build_rctl_companion_packet(), *self._rtcp_dest)
             cur_ext = self._rtp_highest_seq
             cycles = (cur_ext >> 16) & 0xFFFF
             last_seq16 = cur_ext & 0xFFFF
@@ -1077,25 +1136,41 @@ class ScreenStreamServer:
     #   name 0x00000005 (16 B, ~35/s): the received video RTP timestamp.
     # Echoing the *received* RTP timestamp is what makes the device act on the
     # feedback (a synthetic clock was ignored). Xcode sends this and no PLIs.
-    def _rctl_wall_1024(self) -> int:
+    def _rctl_wall_ms(self) -> int:
         loop = asyncio.get_running_loop()
         elapsed = max(0.0, loop.time() - self._rctl_start_t) if self._rctl_start_t else 0.0
-        return int(elapsed * 1024) & 0xFFFF
+        return int(elapsed * 1000) & 0xFFFF
 
     def _build_rctl_packet(self) -> bytes:
+        """RTCP APP "RCTL" (PT=204), byte-exact to Xcode's mirror. After the
+        0x85000004 tag, four u32 words (decoded from a live capture):
+          w2 = (RTP ts >> 8) << 16
+          w3 = packet_count of the last frame
+          w4 = (arrival-clock ms << 16) | interarrival jitter (24 kHz units)
+          w5 = (received-packet counter << 16) | 0xEA61 (constant)
+        Our old packet sent w3=0, w4=1024Hz-clock|98, w5=frames|maxk -- garbage
+        the device's rate controller reacted to by throttling framerate."""
         import struct as _struct
 
         ts = self._rtp_last_ts & 0xFFFFFFFF
+        w2 = ((ts >> 8) & 0xFFFF) << 16
+        w3 = self._rtp_last_frame_pkts & 0xFFFFFFFF
+        # OWRD (w4-lo): the real measured interarrival jitter. Do NOT inflate it
+        # to Xcode's ~125 -- on our ~zero-delay local tunnel a large OWRD reads
+        # as congestion and the device throttles framerate (measured: flooring
+        # to 125 dropped rapid-motion fps to <6). Report the true small delay.
+        w4 = ((self._rctl_wall_ms() & 0xFFFF) << 16) | (int(self._rtp_jitter) & 0xFFFF)
+        w5 = ((self._rtp_packets_received & 0xFFFF) << 16) | 0xEA61
         return _struct.pack(
-            "!BBHI4sI HHHHHHHH", 0x80, 0xCC, 7, self._local_ssrc & 0xFFFFFFFF,
-            b"RCTL", 0x85000004,
-            (ts >> 8) & 0xFFFF, 0, 0, 0, self._rctl_wall_1024(), 98,
-            self._rtp_frames_received & 0xFFFF, self._rctl_maxk & 0xFFFF)
+            "!BBHI4sI IIII", 0x80, 0xCC, 7, self._local_ssrc & 0xFFFFFFFF, b"RCTL", 0x85000004, w2, w3, w4, w5
+        )
 
     def _build_rctl_companion_packet(self) -> bytes:
         import struct as _struct
 
-        return _struct.pack("!BBHI I I", 0x80, 0xCC, 3, self._local_ssrc & 0xFFFFFFFF, 5, self._rtp_last_ts & 0xFFFFFFFF)
+        return _struct.pack(
+            "!BBHI I I", 0x80, 0xCC, 3, self._local_ssrc & 0xFFFFFFFF, 5, self._rtp_last_ts & 0xFFFFFFFF
+        )
 
     async def _rctl_feedback_loop(self) -> None:
         """Stream RCTL + companion APP feedback while a video stream is up:
@@ -1118,7 +1193,9 @@ class ScreenStreamServer:
             if self._rctl_start_t == 0.0:
                 self._rctl_start_t = asyncio.get_running_loop().time()
             try:
-                await transport.sendto(self._build_rctl_companion_packet(), *self._rtcp_dest)
+                # Receipts (name=5) are now sent per-frame from the RTP receive
+                # loop (Xcode-exact 1-per-frame). This loop only paces the
+                # periodic RCTL report (~20/s, matching Xcode's 407/20s).
                 if tick % 2 == 0:
                     await transport.sendto(self._build_rctl_packet(), *self._rtcp_dest)
             except OSError:
@@ -1550,6 +1627,10 @@ class ScreenStreamServer:
             self._rtp_last_ts = 0
             self._rtp_frames_received = 0
             self._rctl_start_t = 0.0
+            self._rtp_cur_frame_pkts = 0
+            self._rtp_last_frame_pkts = 0
+            self._rtp_jitter = 0.0
+            self._rtp_prev_transit = None
             self._rtcp_dest = (self._sender_ip, source_port) if source_port else None
             self._active_service = svc
             self._active_session_id = sid
@@ -1932,6 +2013,9 @@ class ScreenStreamServer:
             body = VIEWER_JS_TEMPLATE.replace(
                 b"__AUDIO_DEFAULT_ON__",
                 b"true" if self._audio_default_on else b"false",
+            ).replace(
+                b"__COMPENSATE_DEFAULT__",
+                b"true" if self._compensate else b"false",
             )
             self._send_static(writer, body, b"application/javascript; charset=utf-8")
             await writer.drain()
@@ -1985,6 +2069,33 @@ class ScreenStreamServer:
                 b"Cache-Control: no-store\r\n"
                 b"Content-Length: " + str(len(body)).encode() + b"\r\n"
                 b"Connection: close\r\n\r\n" + body
+            )
+            await writer.drain()
+            writer.close()
+            return
+        if path.startswith("/debug/"):
+            # Research runtime toggles: flip RCTL / motion-IDR live within one
+            # session (same device state, no restart) to A/B their effect on
+            # fps and the resolution collapse -- restarts are slow and can wedge
+            # the device, so live toggling is the only reliable way to compare.
+            # Both flags are read live by their loops. POST (or GET) one of:
+            #   /debug/rctl-on  /debug/rctl-off  /debug/idr-on  /debug/idr-off
+            # (viewer-side --compensate has its own ?compensate=0/1 URL toggle).
+            cmd = path[len("/debug/") :]
+            if cmd == "rctl-on":
+                self._rctl_enabled = True
+            elif cmd == "rctl-off":
+                self._rctl_enabled = False
+            elif cmd == "idr-on":
+                self._motion_idr = True
+            elif cmd == "idr-off":
+                self._motion_idr = False
+            body = f"rctl={self._rctl_enabled} motion_idr={self._motion_idr}".encode()
+            writer.write(
+                b"HTTP/1.1 200 OK\r\nContent-Length: "
+                + str(len(body)).encode()
+                + b"\r\nConnection: close\r\n\r\n"
+                + body
             )
             await writer.drain()
             writer.close()
@@ -2388,42 +2499,44 @@ class ScreenStreamServer:
                 writer.close()
 
     async def _decoder_refresh_loop(self) -> None:
-        """IDR refresh: PLI on sustained motion + on settle + slow heartbeat.
+        """IDR refresh: mid-motion recovery (default) + settle + idle heartbeat.
 
-        Why force IDRs at all: the DisplayService encoder runs its rate
-        control open-loop for us (we implement none of Apple's
-        proprietary AVCRC feedback that Xcode's client provides — the
-        device ignores standard RTCP RRs/REMB). Under sustained rapid
-        motion the encoder's output degrades progressively — smeared,
-        ghosted, mosaic-looking frames baked into the *bitstream*
-        (verified by teeing the Annex-B stream: ffmpeg and WebCodecs
-        decode the same garbage, with zero RTP loss and no forced
-        IDRs in the capture). LTRP on/off makes no difference. A
-        periodic IDR is the only reset knob we have; without it the
-        degradation accumulates for the whole (unbounded) GOP and the
-        viewer looks far worse. True parity with Xcode's artifact-free
-        stream would require implementing Apple's congestion-feedback
-        protocol so the encoder budget works closed-loop.
+        Under rapid motion the DisplayService encoder, capped at ~6 Mbps, drops
+        capture resolution and composites the shrunk screen top-left with gray
+        padding (the "screen shrinks while swiping" tear). Recovering to full
+        resolution needs a fresh full-res IDR, and forcing one *while moving*
+        recovers fastest -- it's preemptive, so it beats any client-side
+        detect-then-request loop (which is always a collapse-cycle behind). So
+        the default (``self._motion_idr`` True, ``--motion-idr``) fires an
+        **active** keyframe ~1x/s while the byte rate says the screen is moving;
+        the viewer stretches the shrunk region to fill the canvas
+        (``detectContentCrop``) so the brief pre-IDR window is hidden. The cost
+        is keyframe pressure that can stall this encoder under very sustained
+        motion; ``--no-motion-idr`` drops the active trigger for a stall-free
+        but slower-recovering stream (viewer stretch + settle IDR only).
 
         Triggers:
-          1. **Active** — byte rate above ``motion_threshold_bps``
-             continuously: fire at ``active_interval`` cadence, capping
-             how long motion degradation can accumulate.
-          2. **Settle** — byte rate just dropped after motion: one PLI
-             so the now-static screen snaps back to full quality.
-          3. **Heartbeat** — backstop every ``heartbeat`` seconds; also
-             clears a subscriber stuck in ``needs_key`` after the
-             natural startup IDR passed it by.
+          - **Active** (``--motion-idr`` only) — screen moving: one PLI every
+            ``active_interval`` so the collapse snaps back fast.
+          - **Settle** — byte rate stayed *continuously* below
+            ``motion_threshold_bps`` for ``settle_quiet`` (a genuine pause, not
+            an inter-swipe micro-dip): one PLI so the static screen is crisp.
+          - **Heartbeat** — idle backstop every ``heartbeat`` s; also clears a
+            subscriber stuck in ``needs_key``.
         """
         loop = asyncio.get_running_loop()
         motion_threshold_bps = 200_000
-        active_interval = 1.0  # fire mid-motion at this cadence
-        settle_delay = 0.3  # wait after motion ends before refresh
-        heartbeat = 10.0  # backstop cadence when nothing else fires
+        # Active mid-motion IDR (default; gated by self._motion_idr). Settle and
+        # heartbeat additionally fire only when NOT under motion load. settle
+        # requires the byte rate to stay CONTINUOUSLY below threshold so an
+        # inter-swipe micro-dip can't retrigger it into a storm.
+        settle_quiet = 1.5  # byte rate must stay quiet CONTINUOUSLY this long
+        heartbeat = 10.0  # backstop cadence when idle
         min_interval = 0.7  # don't fire more often than this
+        active_interval = 1.0  # --motion-idr cadence while moving
+        quiet_since: Optional[float] = None
         motion_active = False
         motion_started_t = 0.0
-        motion_ended_t = 0.0
         while True:
             try:
                 await asyncio.sleep(0.1)
@@ -2439,20 +2552,25 @@ class ScreenStreamServer:
             currently_active = window_bytes >= motion_threshold_bps
             if currently_active and not motion_active:
                 motion_started_t = now
-            if motion_active and not currently_active:
-                motion_ended_t = now
             motion_active = currently_active
+            if currently_active:
+                quiet_since = None  # any motion resets the quiet timer
+            elif quiet_since is None:
+                quiet_since = now
             since_refresh = now - self._last_refresh_t
             if since_refresh < min_interval:
                 continue
+            quiet_for = None if quiet_since is None else (now - quiet_since)
+            # Optional mid-motion IDR storm (off by default; --motion-idr).
             active = (
-                currently_active
+                self._motion_idr
+                and currently_active
                 and motion_started_t > 0
                 and (now - motion_started_t) >= active_interval
                 and since_refresh >= active_interval
             )
-            settled = motion_ended_t > self._last_refresh_t and (now - motion_ended_t) >= settle_delay
-            heartbeat_due = since_refresh >= heartbeat
+            settled = quiet_for is not None and quiet_for >= settle_quiet and self._last_refresh_t < quiet_since
+            heartbeat_due = quiet_for is not None and since_refresh >= heartbeat
             if not (active or settled or heartbeat_due):
                 continue
             reason = "active" if active else ("settled" if settled else "heartbeat")
