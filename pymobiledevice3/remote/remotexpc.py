@@ -70,6 +70,14 @@ class RemoteXPCConnection:
         self._pending_window_updates: dict[int, int] = {}
         self._file_chunk_queues: dict[int, asyncio.Queue[Union[bytes, BaseException]]] = {}
         self._file_chunk_reader_task: Optional[asyncio.Task] = None
+        # Serialise request/response round-trips. ``send_receive_request`` is a
+        # write-then-read against a single shared reader + ``_previous_frame_data``
+        # buffer with no per-request stream demux, so two concurrent callers
+        # interleave their reads and steal each other's frames -- one observes
+        # "0 bytes read" and the connection is corrupted for good. Any caller
+        # that issues requests from multiple tasks (e.g. a periodic keepalive
+        # alongside normal RPCs) needs this.
+        self._request_lock = asyncio.Lock()
 
     async def __aenter__(self) -> "RemoteXPCConnection":
         await self.connect()
@@ -209,8 +217,9 @@ class RemoteXPCConnection:
             return decode_xpc_object(xpc_message.payload.obj)
 
     async def send_receive_request(self, data: dict) -> dict:
-        await self.send_request(data, wanting_reply=True)
-        return await self.receive_response()
+        async with self._request_lock:
+            await self.send_request(data, wanting_reply=True)
+            return await self.receive_response()
 
     def shell(self) -> None:
         start_ipython_shell(

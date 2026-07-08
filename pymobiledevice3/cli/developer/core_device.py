@@ -953,6 +953,31 @@ async def core_device_display_serve_web(
             ),
         ),
     ] = False,
+    rctl: Annotated[
+        bool,
+        typer.Option(
+            "--rctl/--no-rctl",
+            help=(
+                "Run the AVConference RCTL receiver-feedback loop (RTCP APP), "
+                "reversed from Xcode's mirror protocol -- closed-loop encoder "
+                "rate control matching what Xcode does. On by default; "
+                "--no-rctl reverts to open-loop."
+            ),
+        ),
+    ] = True,
+    max_bitrate: Annotated[
+        int,
+        typer.Option(
+            "--max-bitrate",
+            help=(
+                "Encoder bitrate cap in kbps, advertised to the device over the "
+                "RCTL loop (the device honours it). The uncapped encoder can "
+                "ramp past ~5.5 Mbps under sustained motion and stall; lowering "
+                "this (e.g. 5000) keeps the stream steadier at some cost to peak "
+                "quality. Requires --rctl."
+            ),
+        ),
+    ] = 60000,
 ) -> None:
     """Serve the device's screen via HTTP — view in any modern browser.
 
@@ -975,6 +1000,8 @@ async def core_device_display_serve_web(
         allow_rtcp_fb=rtcp_fb,
         ltrp_enabled=ltrp,
         https=https,
+        rctl_enabled=rctl,
+        max_bitrate_kbps=max_bitrate,
     )
     await server.serve()
 

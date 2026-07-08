@@ -681,9 +681,15 @@ async function fetchCodecWithRetry() {
         try {
             const resp = await fetch('/codec', { cache: 'no-store' });
             if (!resp.ok) { lastErr = 'HTTP ' + resp.status; continue; }
-            const codec = (await resp.text()).trim();
-            if (!codec) { lastErr = 'empty body (SPS not yet seen)'; continue; }
-            return codec;
+            // /codec returns JSON: {codec, description} where description is a
+            // base64 hvcC record (HEVCDecoderConfigurationRecord). Passing it
+            // as the decoder `description` selects hvcC-mode decoding (matching
+            // the length-prefixed NALU framing on /stream.bin), which avoids
+            // Chrome's Annex-B path that tears under motion.
+            const info = await resp.json();
+            if (!info.codec || !info.description) { lastErr = 'incomplete codec info (params not yet seen)'; continue; }
+            const description = Uint8Array.from(atob(info.description), c => c.charCodeAt(0));
+            return { codec: info.codec.trim(), description };
         } catch (e) {
             lastErr = e.message || String(e);
         }
@@ -940,12 +946,16 @@ clipboardGetBtn.addEventListener('click', async () => {
 
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));
-    const codec = await fetchCodecWithRetry();
-    log('codec: ' + codec);
+    const { codec, description } = await fetchCodecWithRetry();
+    log('codec: ' + codec + ' (hvcC ' + description.length + 'B)');
+    // Shared hvcC decoder config: the `description` (HEVCDecoderConfigurationRecord)
+    // selects VideoToolbox's native hvcC path; chunks carry 4-byte-length-prefixed
+    // NALUs (the /stream.bin framing) rather than Annex-B start codes.
+    const decoderConfig = { codec, description, optimizeForLatency: true };
 
     let support;
     try {
-        support = await VideoDecoder.isConfigSupported({ codec });
+        support = await VideoDecoder.isConfigSupported({ codec, description });
     } catch (e) {
         log('isConfigSupported threw: ' + e.message); return;
     }
@@ -1026,7 +1036,7 @@ async function run() {
         },
     });
     let decoder = buildDecoder();
-    decoder.configure({ codec, optimizeForLatency: true });
+    decoder.configure(decoderConfig);
     log('state after configure: ' + decoder.state);
 
     // /stream.bin can return 503 if the force-restart on the server failed
@@ -1076,7 +1086,7 @@ async function run() {
             if (type === 2) {
                 try { decoder.close(); } catch (e) {}
                 decoder = buildDecoder();
-                decoder.configure({ codec, optimizeForLatency: true });
+                decoder.configure(decoderConfig);
                 needsResync = false;
                 gotKey = true;
                 log('force-restart @ key after upstream drop');
@@ -1085,7 +1095,7 @@ async function run() {
                 if (needsResync) {
                     try { decoder.close(); } catch (e) {}
                     decoder = buildDecoder();
-                    decoder.configure({ codec, optimizeForLatency: true });
+                    decoder.configure(decoderConfig);
                     needsResync = false;
                     log('resynced @ key after ' + decodeErrCount + ' decode err(s)');
                 }
@@ -1096,7 +1106,7 @@ async function run() {
                 log('decoder ' + decoder.state + ' @' + sentCount + ' - rebuilding');
                 try { decoder.close(); } catch (e) {}
                 decoder = buildDecoder();
-                decoder.configure({ codec, optimizeForLatency: true });
+                decoder.configure(decoderConfig);
                 needsResync = true;
                 continue;
             }
