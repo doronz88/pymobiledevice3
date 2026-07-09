@@ -1969,7 +1969,11 @@ class ScreenStreamServer:
                     pass
             parts = request_line.split()
             method = parts[0].decode() if parts else "GET"
-            path = parts[1].decode() if len(parts) >= 2 else "/"
+            target = parts[1].decode() if len(parts) >= 2 else "/"
+            # Strip the query string for route matching -- viewer.js reads its
+            # flags (e.g. ?compensate=0) client-side from location.search, so
+            # the server must still route "/?compensate=0" to the index page.
+            path = target.split("?", 1)[0]
 
             if method == "POST" and path in ("/touch", "/button", "/key"):
                 body = await self._read_body(reader, headers)
