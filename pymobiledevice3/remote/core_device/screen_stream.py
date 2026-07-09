@@ -2564,6 +2564,13 @@ class ScreenStreamServer:
             since_refresh = now - self._last_refresh_t
             if since_refresh < min_interval:
                 continue
+            # xcode-parity: with --no-motion-idr, force NO refresh IDRs at all
+            # (active/settle/heartbeat). Apple's smooth session shows idr_fps=0 --
+            # any forced keyframe under saturation makes the encoder drop
+            # resolution to fit it (the collapse). New-subscriber bootstrap and
+            # the stall-watchdog still supply keyframes when genuinely needed.
+            if not self._motion_idr:
+                continue
             quiet_for = None if quiet_since is None else (now - quiet_since)
             # Optional mid-motion IDR storm (off by default; --motion-idr).
             active = (
