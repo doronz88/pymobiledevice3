@@ -1155,11 +1155,16 @@ class ScreenStreamServer:
         ts = self._rtp_last_ts & 0xFFFFFFFF
         w2 = ((ts >> 8) & 0xFFFF) << 16
         w3 = self._rtp_last_frame_pkts & 0xFFFFFFFF
-        # OWRD (w4-lo): the real measured interarrival jitter. Do NOT inflate it
-        # to Xcode's ~125 -- on our ~zero-delay local tunnel a large OWRD reads
-        # as congestion and the device throttles framerate (measured: flooring
-        # to 125 dropped rapid-motion fps to <6). Report the true small delay.
-        w4 = ((self._rctl_wall_ms() & 0xFFFF) << 16) | (int(self._rtp_jitter) & 0xFFFF)
+        # w4 = (arrival-clock ms << 16) | interarrival jitter (24 kHz units).
+        # The device derives OWRD from the arrival clock vs the packet's own send
+        # time; our old arrival clock was elapsed-since-start ms, a DIFFERENT epoch
+        # from the RTP media clock, so the device computed a bogus 14-50 ms OWRD
+        # (seen in VCRC) on what is really a ~1 ms kernel tunnel -> read as
+        # congestion -> framerate throttle. Report the arrival time on the SAME
+        # 24 kHz base as the packet (arrival == send -> OWRD ~= 0) and jitter 0.
+        # Truthful for a local tunnel; stops the phantom-congestion throttle.
+        arrival_ms = (ts // 24) & 0xFFFF
+        w4 = (arrival_ms << 16) | 0
         w5 = ((self._rtp_packets_received & 0xFFFF) << 16) | 0xEA61
         return _struct.pack(
             "!BBHI4sI IIII", 0x80, 0xCC, 7, self._local_ssrc & 0xFFFFFFFF, b"RCTL", 0x85000004, w2, w3, w4, w5
