@@ -7,6 +7,20 @@ window.COMPENSATE = (function () {
     if (q === '1' || q === 'true') return true;
     return __COMPENSATE_DEFAULT__;
 })();
+// Lock the canvas buffer to the largest footprint seen and scale every frame
+// to fill it, instead of resizing the canvas per frame. The device encoder
+// oscillates displayHeight (2752<->2736) as the home indicator shows/hides;
+// resizing on each toggle makes the whole <canvas> visibly shrink/expand --
+// the "screen changing size" the user reports. Filling a fixed surface removes
+// that (the <=0.6% scale is imperceptible), and a full-cover drawImage every
+// frame leaves no stale GPU pixels (the old motion "tears" were really
+// userspace-tunnel packet loss, gone on the kernel tunnel). Toggle: ?lockcanvas=0.
+window.LOCKCANVAS = (function () {
+    const q = new URLSearchParams(location.search).get('lockcanvas');
+    if (q === '0' || q === 'false') return false;
+    if (q === '1' || q === 'true') return true;
+    return true;
+})();
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
@@ -741,6 +755,7 @@ let lastFrameLandscape = null;
 const _detCanvas = document.createElement('canvas');
 const _detCtx = _detCanvas.getContext('2d', {willReadFrequently: true});
 let _cropSrcW = 0, _cropSrcH = 0;   // 0 => draw the full frame (not collapsed)
+let _lockW = 0, _lockH = 0;         // locked canvas footprint (max seen); see window.LOCKCANVAS
 const DET_H = 344;                  // downsample height for detection
 function detectContentCrop(f) {
     const fw = f.displayWidth, fh = f.displayHeight;
@@ -777,23 +792,36 @@ function detectContentCrop(f) {
 
 function drawFrame(f) {
     const sideways = Math.abs(visualRotation % 180) === 90;
-    const targetW = sideways ? f.displayHeight : f.displayWidth;
-    const targetH = sideways ? f.displayWidth  : f.displayHeight;
-    if (targetW !== canvas.width || targetH !== canvas.height) {
+    const fw = f.displayWidth, fh = f.displayHeight;
+    const targetW = sideways ? fh : fw;
+    const targetH = sideways ? fw : fh;
+    if (window.LOCKCANVAS) {
+        // Grow-only: keep the canvas at the largest footprint seen so the
+        // encoder's 2752<->2736 oscillation never resizes it (no shrink).
+        if (targetW > _lockW || targetH > _lockH) {
+            _lockW = Math.max(_lockW, targetW);
+            _lockH = Math.max(_lockH, targetH);
+            canvas.width = _lockW;
+            canvas.height = _lockH;
+            fitCanvasToViewport();
+        }
+    } else if (targetW !== canvas.width || targetH !== canvas.height) {
         canvas.width = targetW;
         canvas.height = targetH;
         fitCanvasToViewport();
     }
     // Source rect: the detected content region on collapse, else the whole
-    // frame. Stretched to the full frame footprint (un-doing the device's
-    // shrink) inside the rotation transform.
-    const srcW = _cropSrcW || f.displayWidth;
-    const srcH = _cropSrcH || f.displayHeight;
+    // frame. Stretched to fill the canvas footprint (un-doing any device
+    // shrink AND the 16px height oscillation) inside the rotation transform.
+    const dstW = canvas.width, dstH = canvas.height;
+    const srcW = _cropSrcW || fw;
+    const srcH = _cropSrcH || fh;
+    const fpW = sideways ? dstH : dstW;   // unrotated footprint that fills the
+    const fpH = sideways ? dstW : dstH;   // canvas after the rotation transform
     ctx.save();
-    ctx.translate(targetW / 2, targetH / 2);
+    ctx.translate(dstW / 2, dstH / 2);
     if (visualRotation) ctx.rotate(visualRotation * Math.PI / 180);
-    ctx.drawImage(f, 0, 0, srcW, srcH,
-                  -f.displayWidth / 2, -f.displayHeight / 2, f.displayWidth, f.displayHeight);
+    ctx.drawImage(f, 0, 0, srcW, srcH, -fpW / 2, -fpH / 2, fpW, fpH);
     ctx.restore();
 }
 function redrawWithCurrentRotation() {
