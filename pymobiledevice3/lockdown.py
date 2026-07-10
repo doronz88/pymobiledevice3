@@ -78,6 +78,7 @@ class DeviceClass(Enum):
     IPOD = "iPod"
     WATCH = "Watch"
     APPLE_TV = "AppleTV"
+    VISION_PRO = "RealityDevice"
     UNKNOWN = "Unknown"
 
 
