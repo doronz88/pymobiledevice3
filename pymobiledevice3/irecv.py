@@ -189,6 +189,10 @@ class IRecv:
                 else:
                     self.ctrl_transfer(0x21, 1, wValue=packet_index, wIndex=0, data_or_wLength=chunk)
 
+        if self.mode.is_recovery and len(buf) % 512 == 0:
+            # Terminating zero-length packet.
+            self._device.write(0x04, b"", timeout=USB_TIMEOUT)
+
         if not self.mode.is_recovery:
             logger.debug("waiting for status == 5")
             while self.status != 5:
