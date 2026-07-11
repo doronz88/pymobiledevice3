@@ -61,11 +61,11 @@ async def _device_dependency_async(
         # prevent lockdown connection establishment when in autocomplete mode
         return None
 
-    logger.debug("searching among connected devices via lockdownd")
-    devices = [dev for dev in await usbmux.list_devices() if dev.connection_type == "USB"]
-    if len(devices) > 1:
-        raise click.ClickException("Multiple device detected")
     try:
+        logger.debug("searching among connected devices via lockdownd")
+        devices = [dev for dev in await usbmux.list_devices() if dev.connection_type == "USB"]
+        if len(devices) > 1:
+            raise click.ClickException("Multiple device detected")
         for device in devices:
             try:
                 lockdown = await create_using_usbmux(serial=device.serial, connection_type="USB")
