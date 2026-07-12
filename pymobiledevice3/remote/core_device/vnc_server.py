@@ -303,6 +303,9 @@ class VncStreamServer:
         self._remote_ssrc: int = 0
         self._rtcp_dest: Optional[tuple[str, int]] = None
         self._pli_tasks: set[asyncio.Task] = set()
+        # Extended highest video RTP seq, for the periodic Receiver Report that
+        # keeps the device from reaping the video session (RTCPTimeoutEnabled).
+        self._rtp_highest_seq: int = 0
 
         # Motion-based decoder-rebuild state. Mirrors screen_stream.py's
         # _decoder_refresh_loop: the VT decoder accumulates stale
@@ -472,6 +475,15 @@ class VncStreamServer:
             payload = data[header_len:]
 
             seq = int.from_bytes(data[2:4], "big")
+            # Maintain the extended highest-seq for the RR keepalive.
+            cur_ext = self._rtp_highest_seq
+            cycles = (cur_ext >> 16) & 0xFFFF
+            last_seq16 = cur_ext & 0xFFFF
+            if seq < last_seq16 and (last_seq16 - seq) > 0x8000:
+                cycles = (cycles + 1) & 0xFFFF
+            new_ext = (cycles << 16) | seq
+            if cur_ext == 0 or ((new_ext - cur_ext) & 0xFFFFFFFF) < 0x80000000:
+                self._rtp_highest_seq = new_ext
             if last_seq is not None and seq != ((last_seq + 1) & 0xFFFF):
                 fu_buffer.clear()
                 au_corrupt = True
@@ -651,6 +663,53 @@ class VncStreamServer:
             logger.debug("sent RTCP PLI (requested fresh keyframe)")
         except OSError as exc:
             logger.debug("PLI send failed (%s)", exc)
+
+    def _build_rtcp_rr(self) -> bytes:
+        """RTCP Receiver Report (RFC 3550 §6.4.2) + SDES, byte-compatible with
+        screen_stream.py. The device's video streamConfig has RTCPTimeoutEnabled
+        with a ~25 s interval; PLIs alone don't reset it -- without periodic RRs
+        the device reaps the video session and stops emitting AUs, which froze
+        serve-vnc permanently (it has no stream-restart). One RR/s keeps it alive.
+        """
+        rr = struct.pack(
+            "!BBHII BBBB IIII",
+            0x81,  # V=2, RC=1
+            0xC9,  # PT=201 (RR)
+            7,
+            self._local_ssrc & 0xFFFFFFFF,
+            self._remote_ssrc & 0xFFFFFFFF,
+            0,  # fraction lost
+            0,
+            0,
+            0,  # 3-byte cumulative loss
+            self._rtp_highest_seq & 0xFFFFFFFF,
+            0,  # interarrival jitter
+            0,  # last SR
+            0,  # delay since last SR
+        )
+        return rr + self._build_rtcp_sdes(self._local_ssrc)
+
+    @staticmethod
+    def _build_rtcp_sdes(ssrc: int) -> bytes:
+        """Minimal SDES with an empty CNAME (matches Xcode's compound RR+SDES)."""
+        return struct.pack("!BBHI BBBB", 0x81, 0xCA, 2, ssrc & 0xFFFFFFFF, 0x01, 0x00, 0x00, 0x00)
+
+    async def _rtcp_send_loop(self, transport: UdpMediaTransport) -> None:
+        """Send a video RR every second to keep the device's video session
+        alive (see _build_rtcp_rr). Not gated on packets-received: send from the
+        start so a brief no-frame window at bring-up can't let the session lapse."""
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+            except asyncio.CancelledError:
+                return
+            if self._rtcp_dest is None or not (self._local_ssrc and self._remote_ssrc):
+                continue
+            try:
+                await transport.sendto(self._build_rtcp_rr(), *self._rtcp_dest)
+            except OSError as exc:
+                logger.debug("video RTCP RR send failed (%s); socket may be torn down", exc)
+                return
 
     def _fire_decoder_refresh(self, now: float, *, reason: str) -> None:
         """Arm the decoder-rebuild + PLI sequence. The recv loop will
@@ -1430,6 +1489,9 @@ class VncStreamServer:
         self._loop = loop
         feed_task = asyncio.create_task(self._udp_recv_and_pipe(transport))
         refresh_task = asyncio.create_task(self._decoder_refresh_loop())
+        # Video RR keepalive -- without this the device reaps the video session
+        # after ~25 s (RTCPTimeoutEnabled) and serve-vnc freezes with no recovery.
+        rtcp_task = asyncio.create_task(self._rtcp_send_loop(transport))
         if self._audio_enabled and self._audio_transport is not None:
             audio_recv_task = asyncio.create_task(self._audio_udp_recv(self._audio_transport))
             if self._audio_rtcp_dest and self._audio_local_ssrc and self._audio_remote_ssrc:
@@ -1477,6 +1539,9 @@ class VncStreamServer:
             refresh_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await refresh_task
+            rtcp_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await rtcp_task
             logger.debug("shutdown: stopping VT transcoder")
             feed_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
