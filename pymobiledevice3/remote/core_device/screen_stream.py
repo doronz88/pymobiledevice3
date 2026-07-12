@@ -1325,7 +1325,16 @@ class ScreenStreamServer:
                 await asyncio.sleep(1.0)
             except asyncio.CancelledError:
                 return
-            if self._audio_rtcp_dest is None or self._audio_rtp_packets_received == 0:
+            # Send the keepalive RR as soon as the loop is up -- do NOT wait for
+            # the first audio packet. The screen usually starts SILENT (lock
+            # screen, static UI), so no audio RTP arrives for a while; gating the
+            # RR on packets-received meant we sent nothing, the device reaped the
+            # audio session at ~20 s (RTCPTimeoutInterval), and audio was dead
+            # before the user ever played anything (0 bytes on /audio.bin). The
+            # audio SSRCs are known from negotiation, so a highest-seq=0 RR is a
+            # valid keepalive that holds the session open through the silence.
+            # (Video never hit this: the screen always emits video immediately.)
+            if self._audio_rtcp_dest is None:
                 continue
             packet = self._build_audio_rtcp_rr()
             try:
