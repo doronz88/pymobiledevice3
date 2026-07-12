@@ -22,11 +22,11 @@ wires together:
   than to an unreachable host kernel socket.
 
 pmd-pytcp supports Python 3.9+ and is a regular pymobiledevice3 dependency, so this module
-imports it at module level and ``cli_common`` establishes the userspace tunnel directly. The
-fork is cross-platform on its own (it guards its Unix-only ``fcntl`` import, starts its worker
-threads as daemons, logs through the ``pmd_pytcp`` logger, and ships the MLD attribute), so no
-host-side compatibility shim is needed — only the throughput sysctls below, which ride the
-fork's public knobs.
+imports it at module level and ``cli_common`` establishes the userspace tunnel directly. Since
+pmd-pytcp 0.1.0 the stack is pure asyncio — it runs entirely on this process's event loop (no
+worker threads), its socket calls are awaited directly, and ``stack.start()``/``stack.stop()``
+are coroutines — so this module contains no thread/executor bridging at all: every packet and
+byte moves through plain ``await``.
 """
 
 from __future__ import annotations
@@ -38,7 +38,6 @@ import os
 import socket
 import struct
 import sys
-import threading
 from contextlib import AsyncExitStack, suppress
 from typing import Optional
 
@@ -144,7 +143,10 @@ def _packet_socketpair() -> tuple[socket.socket, socket.socket]:
 
 
 class UserspaceTun:
-    """Drop-in for ``pytun_pmd3.TunTapDevice`` backed by a PyTCP L2 stack.
+    """Tunnel interface backed by a PyTCP L2 stack — the userspace stand-in for
+    ``pytun_pmd3.TunTapDevice`` (same ``mtu``/``addr`` attributes and ``write`` call; ``up`` and
+    ``close`` are coroutines and reads go through ``async_read``, which
+    :meth:`RemotePairingTunnel.start_tunnel` / ``tun_read_task`` handle).
 
     PyTCP's stack is a process-global singleton, so one tunnel per process is supported
     (the normal case)."""
@@ -159,6 +161,9 @@ class UserspaceTun:
         for s in (self._peer, self._pend):
             s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, SOCKET_BUFFER_SIZE)
             s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, SOCKET_BUFFER_SIZE)
+        # Both directions run on the event loop (async_read via loop.sock_recv, write via a
+        # direct non-blocking send), so neither end may block the loop.
+        self._peer.setblocking(False)
 
     # --- TunTapDevice-compatible surface ---
     @property
@@ -177,7 +182,7 @@ class UserspaceTun:
     def addr(self, address: str) -> None:
         self._addr = address
 
-    def up(self) -> None:
+    async def up(self) -> None:
         self._mtu = min(self._mtu, INTERFACE_MTU)
 
         if not getattr(stack, "_pmd3_inited", False):
@@ -198,7 +203,7 @@ class UserspaceTun:
             ip6_gua_autoconfig=False,
             ip4_support=False,
         )
-        stack.start()
+        await stack.start()
         logger.debug("userspace tunnel up: pytcp L2 iface=%s addr=%s/64 mtu=%s", self._ifidx, self._addr, self._mtu)
 
     def set_peer(self, device_addr: str) -> None:
@@ -206,63 +211,45 @@ class UserspaceTun:
         stack.neighbor.interface(self._ifidx).add(ip=Ip6Address(device_addr), mac=MacAddress(_PEER_MAC))
 
     def write(self, data: bytes) -> None:
-        # inbound (device -> stack): strip pmd3 loopback header, add Ethernet, enqueue
+        # inbound (device -> stack): strip pmd3 loopback header, add Ethernet, enqueue. The
+        # socket is non-blocking; a full buffer drops the packet (tunnel loss, TCP recovers).
         ipv6 = data[len(LOOPBACK_HEADER) :] if data[: len(LOOPBACK_HEADER)] == LOOPBACK_HEADER else data
         with suppress(OSError):
             self._peer.send(_eth_header(_STACK_MAC, _PEER_MAC) + ipv6)
 
-    def _recv_ipv6(self) -> bytes:
-        # outbound (stack -> device): block for an Ethernet frame, return its IPv6 payload
+    async def async_read(self) -> bytes:
+        # outbound (stack -> device): await an Ethernet frame off the stack's socketpair and
+        # return its raw IPv6 payload (no loopback header — tun_read_task checks the version
+        # nibble). Raises OSError once the socketpair is closed, which ends tun_read_task.
         while not self._closed:
-            try:
-                frame = self._peer.recv(65535)
-            except OSError:
-                return b""
+            frame = await asyncio.get_running_loop().sock_recv(self._peer, 65535)
             if len(frame) < 14 or struct.unpack("!H", frame[12:14])[0] != _ETH_IPV6:
                 continue
             return frame[14:]
         return b""
 
-    def read(self, size: int) -> bytes:
-        # Unix tun_read_task path: returns loopback-prefixed IPv6 (caller strips the header).
-        ipv6 = self._recv_ipv6()
-        return LOOPBACK_HEADER + ipv6 if ipv6 else b""
-
-    async def async_read(self) -> bytes:
-        # Windows tun_read_task path: wants a RAW IPv6 packet (it checks the version nibble,
-        # no loopback header), delivered asynchronously.
-        return await asyncio.to_thread(self._recv_ipv6)
-
-    def connect_tcp(self, addr: str, port: int):
-        """Open a blocking PyTCP TCP socket to (addr, port) over this stack."""
+    async def connect_tcp(self, addr: str, port: int):
+        """Open a PyTCP TCP socket connected to (addr, port) over this stack."""
         s = pytcp_socket(AF_INET6, SOCK_STREAM)
-        s.connect((addr, port))
+        await s.connect((addr, port))
         return s
 
-    def close(self) -> None:
+    async def close(self) -> None:
         if self._closed:
             return
         self._closed = True
-        # Wake a thread parked in _recv_ipv6: tun_read_task runs the blocking UserspaceTun.read in
-        # the default ThreadPoolExecutor, whose workers are NON-daemon and are joined at interpreter
-        # shutdown. Closing the socket from another thread does NOT reliably interrupt a blocked
-        # recv(), so the read would stay parked and that join would hang forever — which is why a
-        # hard exit (force_exit) was previously required. Push a 1-byte sentinel into the receiving
-        # end instead: _recv_ipv6's frame filter ignores it (len < 14) and the loop re-checks
-        # _closed and returns b"", so the worker finishes and the join completes promptly.
-        with suppress(OSError):
-            self._pend.send(b"\x00")
-        unregister_interface_fd(self._pend)
-        # Close the socketpair so PyTCP's RX/TX ring threads (parked in read/select on the fd)
-        # unblock, then stop the stack — otherwise stop() deadlocks on those threads.
-        for s in (self._peer, self._pend):
-            with suppress(Exception):
-                s.close()
+        # Stop the stack first (clean teardown against live fds: loop readers/writers are
+        # removed, worker tasks cancelled and awaited), then release the socketpair. No
+        # thread-wakeup gymnastics remain — the pure-asyncio stack has nothing parked off-loop.
         try:
-            stack.stop()
+            await stack.stop()
             stack._pmd3_inited = False  # type: ignore[attr-defined]
         except Exception:
             logger.debug("error stopping pytcp stack", exc_info=True)
+        unregister_interface_fd(self._pend)
+        for s in (self._peer, self._pend):
+            with suppress(Exception):
+                s.close()
 
 
 class UserspaceDialPlane:
@@ -306,37 +293,17 @@ class UserspaceDialPlane:
         self._relays.clear()
 
     async def _relay_handler(self, port: int, creader: asyncio.StreamReader, cwriter: asyncio.StreamWriter) -> None:
-        loop = asyncio.get_running_loop()
         try:
-            psock = await asyncio.to_thread(self._tun.connect_tcp, self._device_addr, port)
+            psock = await self._tun.connect_tcp(self._device_addr, port)
         except Exception:
             logger.debug("relay connect_tcp(%s:%s) failed", self._device_addr, port, exc_info=True)
             cwriter.close()
             return
 
-        # device -> client: PyTCP recv() blocks and does NOT unblock on close(), so pump it
-        # in a DAEMON thread bridged to asyncio via a queue. The recv is polled with a
-        # timeout so the thread re-checks ``closing`` and exits shortly after teardown —
-        # otherwise one parked thread would leak per relayed connection (issue #1756 hit 120
-        # of them). Daemon so process exit never joins on it either way.
-        rx_queue: asyncio.Queue = asyncio.Queue(maxsize=256)
-        closing = threading.Event()
-
-        def rx_pump() -> None:
-            try:
-                while not closing.is_set():
-                    try:
-                        data = psock.recv(_CHUNK, timeout=1.0)
-                    except TimeoutError:
-                        continue
-                    loop.call_soon_threadsafe(rx_queue.put_nowait, data)
-                    if not data:
-                        break
-            except Exception:
-                with suppress(RuntimeError):  # event loop may already be closed
-                    loop.call_soon_threadsafe(rx_queue.put_nowait, b"")
-
-        threading.Thread(target=rx_pump, name=f"userspace-relay-rx-{port}", daemon=True).start()
+        # Both pump directions are plain awaits on the same event loop the stack runs on: a
+        # cancelled handler cancels the pumps at their await points, so nothing can stay
+        # parked past teardown (the failure mode that used to require the rx-pump thread,
+        # its 1 s poll and the daemon teardown thread — #1756).
 
         async def client_to_device() -> None:
             try:
@@ -344,21 +311,21 @@ class UserspaceDialPlane:
                     data = await creader.read(_CHUNK)
                     if not data:
                         break
-                    await asyncio.to_thread(psock.send, data)
+                    await psock.send(data)
             except Exception:
                 pass
             finally:
                 # Propagate the client's EOF to the device as a FIN (half-close). The device
-                # then finishes its side and its FIN unblocks rx_pump with b"", letting
-                # device_to_client — and the whole handler — complete. Without this the
-                # handler waits on device traffic forever after the client is gone (#1756).
+                # then finishes its side and its FIN ends device_to_client with b"", letting
+                # the whole handler complete. Without this the handler waits on device
+                # traffic forever after the client is gone (#1756).
                 with suppress(Exception):
-                    await asyncio.to_thread(psock.shutdown, SHUT_WR)
+                    psock.shutdown(SHUT_WR)
 
         async def device_to_client() -> None:
             try:
                 while True:
-                    data = await rx_queue.get()
+                    data = await psock.recv(_CHUNK)
                     if not data:
                         break
                     cwriter.write(data)
@@ -375,24 +342,14 @@ class UserspaceDialPlane:
         try:
             await asyncio.gather(client_to_device(), device_to_client())
         finally:
-            closing.set()
             with suppress(Exception):
                 cwriter.close()
-
-            # Tear the PyTCP socket down OFF the event loop: every psock entry point takes
-            # the session's FSM lock, which can be held for a long time while the stack shuts
-            # down — running it inline wedged the loop during teardown (#1756: py-spy showed
-            # the main thread stuck in psock.close -> tcp_fsm). A plain fire-and-forget daemon
-            # thread (not to_thread) so it runs even when this handler is being cancelled and
-            # nothing ever waits on it. shutdown(SHUT_RDWR) also wakes a recv()-parked rx_pump
-            # with EOF before close marks the socket down.
-            def teardown_psock() -> None:
-                with suppress(Exception):
-                    psock.shutdown(SHUT_RDWR)
-                with suppress(Exception):
-                    psock.close()
-
-            threading.Thread(target=teardown_psock, name=f"userspace-relay-teardown-{port}", daemon=True).start()
+            # Socket teardown is sync and loop-safe now (no FSM lock to wedge on — the whole
+            # stack runs on this loop).
+            with suppress(Exception):
+                psock.shutdown(SHUT_RDWR)
+            with suppress(Exception):
+                psock.close()
 
     async def _ensure_relay(self, port: int) -> int:
         key = (self._device_addr, port)
@@ -455,11 +412,11 @@ class UserspaceUdp:
     Device-initiated AV streams (serve-web/serve-vnc RTP) push UDP to a host endpoint. Over the
     userspace tunnel that endpoint must live on the pytcp stack — a host kernel socket is
     unreachable from the device. This binds a pytcp UDP socket on the stack address and presents
-    the recv/sendto surface ``screen_stream`` needs. A dedicated reader thread drains the socket
-    into an asyncio queue so the hot receive path is not a per-packet ``asyncio.to_thread`` hop.
+    the recv/sendto surface ``screen_stream`` needs. The pure-asyncio stack queues datagrams on
+    the socket itself and ``recv`` is awaited directly — no reader thread, no relay queue.
     """
 
-    def __init__(self, recv_queue_max: int = 8192) -> None:
+    def __init__(self) -> None:
         addr = userspace_stack_addr()
         if addr is None:
             raise PyMobileDevice3Exception("userspace tunnel is not active")
@@ -467,11 +424,6 @@ class UserspaceUdp:
         self._sock.bind((addr, 0))
         bound = self._sock.getsockname()
         self._local_ip, self._port = bound[0], bound[1]
-        self._loop = asyncio.get_event_loop()
-        self._queue: asyncio.Queue = asyncio.Queue(maxsize=recv_queue_max)
-        self._closed = False
-        self._reader = threading.Thread(target=self._read_loop, name="userspace-udp-recv", daemon=True)
-        self._reader.start()
 
     @property
     def local_ip(self) -> str:
@@ -481,39 +433,13 @@ class UserspaceUdp:
     def port(self) -> int:
         return self._port
 
-    def _read_loop(self) -> None:
-        # Blocking recv off the pytcp stack in its own thread, handing each datagram to the
-        # event loop. The 0.5 s timeout paces the idle loop and lets it observe close(); a
-        # TimeoutError is the idle case (loop again), any other error means the socket is gone
-        # so the thread exits — the consumer task is cancelled on teardown, and a genuinely
-        # dead stream is restarted by screen_stream's stall watchdog.
-        while not self._closed:
-            try:
-                data = self._sock.recv(65535, timeout=0.5)
-            except TimeoutError:
-                continue
-            except Exception:
-                return
-            if not data:
-                continue
-            try:
-                self._loop.call_soon_threadsafe(self._enqueue, data)
-            except RuntimeError:
-                return  # event loop closed
-
-    def _enqueue(self, data: bytes) -> None:
-        with suppress(asyncio.QueueFull):
-            self._queue.put_nowait(data)
-
     async def recv(self, bufsize: int = 65535) -> bytes:
-        # bufsize is accepted for socket-API parity; UDP datagrams are queued whole.
-        return await self._queue.get()
+        return await self._sock.recv(bufsize)
 
     async def sendto(self, data: bytes, ip: str, port: int) -> None:
-        await asyncio.to_thread(self._sock.sendto, data, (ip, port))
+        await self._sock.sendto(data, (ip, port))
 
     def close(self) -> None:
-        self._closed = True
         with suppress(Exception):
             self._sock.close()
 
@@ -697,23 +623,13 @@ async def establish_userspace_rsd(serial: Optional[str] = None, autopair: bool =
     tunnel = UserspaceRsdTunnel(serial=serial, autopair=autopair)
     rsd = await tunnel.aopen()
     _cli_tunnel = tunnel
-    await _register_clean_exit()
+    # The pure-asyncio stack has no threads to park, so process exit cannot hang anymore. The
+    # CLI still never closes its tunnel (it lives for the process lifetime), so hard-exit at
+    # atexit to skip the "Task was destroyed but it is pending!" GC noise from the stack's
+    # still-scheduled loop tasks. Embedders who call aclose() never reach this with
+    # USERSPACE_ACTIVE set.
+    atexit.register(force_exit)
     return rsd
-
-
-async def _register_clean_exit() -> None:
-    # pmd3's tun_read_task parks a blocking UserspaceTun.read in the default ThreadPoolExecutor.
-    # At interpreter shutdown, threading._shutdown joins those executor threads BEFORE regular
-    # atexit handlers run, and that join blocks forever on the parked read. Register force_exit
-    # via threading's own shutdown hook so it runs before that join. Handlers run
-    # last-registered-first, so we first touch the default executor (await a no-op in it) to
-    # force concurrent.futures' own join-hook to register before ours — then ours wins.
-    atexit.register(force_exit)  # fallback
-    try:
-        await asyncio.to_thread(lambda: None)  # ensure the executor's shutdown hook registers first
-        threading._register_atexit(force_exit)  # type: ignore[attr-defined]
-    except Exception:
-        logger.debug("could not register threading shutdown hook", exc_info=True)
 
 
 def force_exit(code: int = 0) -> None:

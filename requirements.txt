@@ -48,9 +48,8 @@ av>=14.0.0 ; platform_system != "Darwin"
 # (https://github.com/doronz88/pmd-pytcp). Pulls its pmd-net-addr / pmd-net-proto siblings in
 # transitively. Supported on Python 3.9+ (the whole pymobiledevice3 range); if the import or
 # stack init fails the tunnel transparently falls back to the kernel path (see cli_common).
-# 0.0.6 floor: teardown robustness (rings survive fd-close races, dispatch never parks a
-# producer on the FSM lock, stop() unblocks socket waiters) plus the Windows writev()
-# fallthrough raising OSError instead of crashing the TX ring — the pmd-pytcp side of #1756.
-# <0.1.0 ceiling: pin to the 0.0.x line whose public API pymobiledevice3 integrates against;
-# 0.1.0 is reserved for the next (potentially breaking) API revision.
-pmd-pytcp>=0.0.6,<0.1.0 ; python_version >= "3.9"
+# 0.1.0 floor: the pure-asyncio stack — the socket API is awaited (async
+# connect/accept/recv/send), stack.start()/stop() are coroutines and no worker threads exist;
+# userspace_tunnel.py is written against that API and cannot drive the older threaded stack.
+# (Supersedes the temporary >=0.0.6,<0.1.0 cap that guarded master against the 0.1.0 break.)
+pmd-pytcp>=0.1.0 ; python_version >= "3.9"
