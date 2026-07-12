@@ -1,4 +1,26 @@
 window.AUDIO_DEFAULT_ON = __AUDIO_DEFAULT_ON__;
+// Resolution-collapse compensation default (server --compensate flag), with a
+// per-load URL override for research: append ?compensate=0 / ?compensate=1.
+window.COMPENSATE = (function () {
+    const q = new URLSearchParams(location.search).get('compensate');
+    if (q === '0' || q === 'false') return false;
+    if (q === '1' || q === 'true') return true;
+    return __COMPENSATE_DEFAULT__;
+})();
+// Lock the canvas buffer to the largest footprint seen and scale every frame
+// to fill it, instead of resizing the canvas per frame. The device encoder
+// oscillates displayHeight (2752<->2736) as the home indicator shows/hides;
+// resizing on each toggle makes the whole <canvas> visibly shrink/expand --
+// the "screen changing size" the user reports. Filling a fixed surface removes
+// that (the <=0.6% scale is imperceptible), and a full-cover drawImage every
+// frame leaves no stale GPU pixels (the old motion "tears" were really
+// userspace-tunnel packet loss, gone on the kernel tunnel). Toggle: ?lockcanvas=0.
+window.LOCKCANVAS = (function () {
+    const q = new URLSearchParams(location.search).get('lockcanvas');
+    if (q === '0' || q === 'false') return false;
+    if (q === '1' || q === 'true') return true;
+    return true;
+})();
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
@@ -681,9 +703,15 @@ async function fetchCodecWithRetry() {
         try {
             const resp = await fetch('/codec', { cache: 'no-store' });
             if (!resp.ok) { lastErr = 'HTTP ' + resp.status; continue; }
-            const codec = (await resp.text()).trim();
-            if (!codec) { lastErr = 'empty body (SPS not yet seen)'; continue; }
-            return codec;
+            // /codec returns JSON: {codec, description} where description is a
+            // base64 hvcC record (HEVCDecoderConfigurationRecord). Passing it
+            // as the decoder `description` selects hvcC-mode decoding (matching
+            // the length-prefixed NALU framing on /stream.bin), which avoids
+            // Chrome's Annex-B path that tears under motion.
+            const info = await resp.json();
+            if (!info.codec || !info.description) { lastErr = 'incomplete codec info (params not yet seen)'; continue; }
+            const description = Uint8Array.from(atob(info.description), c => c.charCodeAt(0));
+            return { codec: info.codec.trim(), description };
         } catch (e) {
             lastErr = e.message || String(e);
         }
@@ -707,19 +735,93 @@ let lastFrame = null;
 // flips — that signals the content is now natively oriented in the
 // buffer, so we drop our in-canvas rotation to avoid double-rotating.
 let lastFrameLandscape = null;
+
+// ----- Resolution-collapse compensation. Under rapid motion the device
+// encoder drops to a smaller capture resolution (observed 720x1280 for a
+// 1264x2752 panel) rendered into the TOP-LEFT of the fixed buffer with the
+// rest flat gray (Y=Cb=Cr=128) padding -- the "screen shrinks to a corner
+// while swiping" tear. It's in the bitstream (device-side, under the ~6 Mbps
+// cap) and can't be prevented from our side. But the shrunk region is the
+// whole screen, just stretched into fewer pixels -- so we detect that content
+// rectangle and stretch it back to fill the canvas. The collapse then reads
+// as a momentary softness dip in a correctly-placed full-frame image instead
+// of a jarring corner shrink.
+//
+// Detection runs on the RAW decoded frame (never the already-compensated
+// canvas -- that would feed back and oscillate), throttled and cached. The
+// content is top-left anchored so the crop origin is always (0,0); we find
+// the right/bottom padding boundary. Validated offline against real collapsed
+// captures: full-size on clean frames, ~720x1280 on collapsed ones.
+const _detCanvas = document.createElement('canvas');
+const _detCtx = _detCanvas.getContext('2d', {willReadFrequently: true});
+let _cropSrcW = 0, _cropSrcH = 0;   // 0 => draw the full frame (not collapsed)
+let _lockW = 0, _lockH = 0;         // locked canvas footprint (max seen); see window.LOCKCANVAS
+const DET_H = 344;                  // downsample height for detection
+function detectContentCrop(f) {
+    const fw = f.displayWidth, fh = f.displayHeight;
+    if (!fw || !fh) return;
+    const DW = Math.max(8, Math.round(DET_H * fw / fh));
+    _detCanvas.width = DW; _detCanvas.height = DET_H;
+    try {
+        _detCtx.drawImage(f, 0, 0, DW, DET_H);
+        const d = _detCtx.getImageData(0, 0, DW, DET_H).data;
+        const isGray = (x, y) => { const i = (y * DW + x) * 4;
+            return Math.abs(d[i] - 128) < 6 && Math.abs(d[i + 1] - 128) < 6 && Math.abs(d[i + 2] - 128) < 6; };
+        // Last column / row that still holds content (<60% gray padding).
+        let cr = 0;
+        for (let x = 0; x < DW; x++) { let g = 0, n = 0;
+            for (let y = 0; y < DET_H; y += 4) { n++; if (isGray(x, y)) g++; }
+            if (g / n < 0.6) cr = x; }
+        let cb = 0;
+        for (let y = 0; y < DET_H; y++) { let g = 0, n = 0;
+            for (let x = 0; x < DW; x += 4) { n++; if (isGray(x, y)) g++; }
+            if (g / n < 0.6) cb = y; }
+        // Map back to source px, biasing one cell inward so a boundary cell
+        // that straddles content+padding doesn't leave a gray sliver.
+        const cw = Math.round((cr / DW) * fw);
+        const ch = Math.round((cb / DET_H) * fh);
+        // Compensate only on a clear collapse (both dims well under full and
+        // not degenerate); otherwise draw the full frame untouched.
+        if (cw > fw * 0.2 && cw < fw * 0.92 && ch > fh * 0.2 && ch < fh * 0.92) {
+            _cropSrcW = cw; _cropSrcH = ch;
+        } else {
+            _cropSrcW = 0; _cropSrcH = 0;
+        }
+    } catch (_) { /* transient readback failure -- keep previous crop */ }
+}
+
 function drawFrame(f) {
     const sideways = Math.abs(visualRotation % 180) === 90;
-    const targetW = sideways ? f.displayHeight : f.displayWidth;
-    const targetH = sideways ? f.displayWidth  : f.displayHeight;
-    if (targetW !== canvas.width || targetH !== canvas.height) {
+    const fw = f.displayWidth, fh = f.displayHeight;
+    const targetW = sideways ? fh : fw;
+    const targetH = sideways ? fw : fh;
+    if (window.LOCKCANVAS) {
+        // Grow-only: keep the canvas at the largest footprint seen so the
+        // encoder's 2752<->2736 oscillation never resizes it (no shrink).
+        if (targetW > _lockW || targetH > _lockH) {
+            _lockW = Math.max(_lockW, targetW);
+            _lockH = Math.max(_lockH, targetH);
+            canvas.width = _lockW;
+            canvas.height = _lockH;
+            fitCanvasToViewport();
+        }
+    } else if (targetW !== canvas.width || targetH !== canvas.height) {
         canvas.width = targetW;
         canvas.height = targetH;
         fitCanvasToViewport();
     }
+    // Source rect: the detected content region on collapse, else the whole
+    // frame. Stretched to fill the canvas footprint (un-doing any device
+    // shrink AND the 16px height oscillation) inside the rotation transform.
+    const dstW = canvas.width, dstH = canvas.height;
+    const srcW = _cropSrcW || fw;
+    const srcH = _cropSrcH || fh;
+    const fpW = sideways ? dstH : dstW;   // unrotated footprint that fills the
+    const fpH = sideways ? dstW : dstH;   // canvas after the rotation transform
     ctx.save();
-    ctx.translate(targetW / 2, targetH / 2);
+    ctx.translate(dstW / 2, dstH / 2);
     if (visualRotation) ctx.rotate(visualRotation * Math.PI / 180);
-    ctx.drawImage(f, -f.displayWidth / 2, -f.displayHeight / 2);
+    ctx.drawImage(f, 0, 0, srcW, srcH, -fpW / 2, -fpH / 2, fpW, fpH);
     ctx.restore();
 }
 function redrawWithCurrentRotation() {
@@ -737,6 +839,12 @@ function drawPending() {
         visualRotation = 0;
     }
     lastFrameLandscape = landscape;
+    // Detect the collapse-crop rectangle from THIS raw frame, every frame:
+    // the stream flips between collapsed and full-res frames faster than any
+    // throttle, so a cached crop applied to a mismatched frame zooms a full
+    // frame into its top-left (the "smaller screen over the old full screen"
+    // artifact). Per-frame detection keeps the crop matched to the frame.
+    if (window.COMPENSATE) detectContentCrop(f); else { _cropSrcW = 0; _cropSrcH = 0; }
     try {
         drawFrame(f);
     } catch (e) {
@@ -805,6 +913,14 @@ setInterval(() => {
     }
     _lastFc = frameCount;
 }, 1000);
+
+// ----- Collapse recovery is SERVER-side, not here.
+// Recovery from the collapse (the device re-emitting a full-res IDR) is driven
+// SERVER-side by the motion-triggered decoder-refresh (--motion-idr): it fires
+// preemptively the moment motion starts, so it's structurally faster than any
+// client-side detect-then-POST-/pli loop (which is always a collapse-cycle
+// behind). The viewer's job is just to hide the shrink until that IDR lands,
+// which detectContentCrop above does. No client-side keyframe requests here.
 
 // ----- Accessibility panel: GET /accessibility lists current settings,
 // POST /accessibility/set with {key, value} updates one, POST
@@ -940,12 +1056,16 @@ clipboardGetBtn.addEventListener('click', async () => {
 
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));
-    const codec = await fetchCodecWithRetry();
-    log('codec: ' + codec);
+    const { codec, description } = await fetchCodecWithRetry();
+    log('codec: ' + codec + ' (hvcC ' + description.length + 'B)');
+    // Shared hvcC decoder config: the `description` (HEVCDecoderConfigurationRecord)
+    // selects VideoToolbox's native hvcC path; chunks carry 4-byte-length-prefixed
+    // NALUs (the /stream.bin framing) rather than Annex-B start codes.
+    const decoderConfig = { codec, description, optimizeForLatency: true };
 
     let support;
     try {
-        support = await VideoDecoder.isConfigSupported({ codec });
+        support = await VideoDecoder.isConfigSupported({ codec, description });
     } catch (e) {
         log('isConfigSupported threw: ' + e.message); return;
     }
@@ -1026,7 +1146,7 @@ async function run() {
         },
     });
     let decoder = buildDecoder();
-    decoder.configure({ codec, optimizeForLatency: true });
+    decoder.configure(decoderConfig);
     log('state after configure: ' + decoder.state);
 
     // /stream.bin can return 503 if the force-restart on the server failed
@@ -1076,7 +1196,7 @@ async function run() {
             if (type === 2) {
                 try { decoder.close(); } catch (e) {}
                 decoder = buildDecoder();
-                decoder.configure({ codec, optimizeForLatency: true });
+                decoder.configure(decoderConfig);
                 needsResync = false;
                 gotKey = true;
                 log('force-restart @ key after upstream drop');
@@ -1085,7 +1205,7 @@ async function run() {
                 if (needsResync) {
                     try { decoder.close(); } catch (e) {}
                     decoder = buildDecoder();
-                    decoder.configure({ codec, optimizeForLatency: true });
+                    decoder.configure(decoderConfig);
                     needsResync = false;
                     log('resynced @ key after ' + decodeErrCount + ' decode err(s)');
                 }
@@ -1096,7 +1216,7 @@ async function run() {
                 log('decoder ' + decoder.state + ' @' + sentCount + ' - rebuilding');
                 try { decoder.close(); } catch (e) {}
                 decoder = buildDecoder();
-                decoder.configure({ codec, optimizeForLatency: true });
+                decoder.configure(decoderConfig);
                 needsResync = true;
                 continue;
             }
