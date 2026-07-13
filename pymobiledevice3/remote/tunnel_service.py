@@ -3,6 +3,7 @@ import base64
 import binascii
 import dataclasses
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -227,12 +228,12 @@ class RemotePairingTunnel(ABC):
                 # the fd) keeps its blocking semantics.
                 await self._tun_read_loop_via_reader(read_size)
             else:
-                # Userspace tun (no pollable fd): blocking read off the loop via a worker thread.
+                # Userspace tun (pure-asyncio pmd-pytcp): await raw IPv6 packets directly off
+                # the stack's egress — same surface as the Windows branch above.
                 while True:
-                    packet = await asyncio.to_thread(self.tun.read, read_size)
-                    assert packet.startswith(LOOPBACK_HEADER)
-                    packet = packet[len(LOOPBACK_HEADER) :]
-                    await self.send_packet_to_device(packet)
+                    packet = await self.tun.async_read()
+                    if packet and (packet[0] >> 4) == 6:
+                        await self.send_packet_to_device(packet)
         except ConnectionResetError:
             self._logger.warning(f"got connection reset in {asyncio.current_task().get_name()}")
         except OSError:
@@ -286,11 +287,15 @@ class RemotePairingTunnel(ABC):
         finally:
             loop.remove_reader(fd)
 
-    def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
+    async def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
         self.tun = create_tun_device(interface_name)
         self.tun.addr = address
         self.tun.mtu = mtu
-        self.tun.up()
+        # Kernel tun (pytun) up() is sync; the userspace tun's up() is a coroutine (it awaits
+        # the pure-asyncio pytcp stack's start()).
+        up_result = self.tun.up()
+        if inspect.isawaitable(up_result):
+            await up_result
         self._tun_read_task = asyncio.create_task(self.tun_read_task(), name=f"tun-read-{address}")
 
     async def stop_tunnel(self) -> None:
@@ -301,7 +306,10 @@ class RemotePairingTunnel(ABC):
                 await self._tun_read_task
         self._tun_read_task = None
         if self.tun is not None:
-            self.tun.close()
+            # Userspace tun close() is a coroutine (awaits the stack's teardown); kernel close is sync.
+            close_result = self.tun.close()
+            if inspect.isawaitable(close_result):
+                await close_result
         self.tun = None
 
     @staticmethod
@@ -346,8 +354,8 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
             await self.ping()
             await asyncio.sleep(self._quic.configuration.idle_timeout / 2)
 
-    def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
-        super().start_tunnel(address, mtu, interface_name=interface_name)
+    async def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
+        await super().start_tunnel(address, mtu, interface_name=interface_name)
         self._keep_alive_task = asyncio.create_task(self.keep_alive_task())
 
     async def stop_tunnel(self) -> None:
@@ -440,8 +448,8 @@ class RemotePairingTcpTunnel(RemotePairingTunnel):
         await self._service.sendall(payload)
         return json.loads(CDTunnelPacket.parse(await self._recv_cdtunnel_packet_from_service()).body)
 
-    def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
-        super().start_tunnel(address, mtu, interface_name=interface_name)
+    async def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
+        await super().start_tunnel(address, mtu, interface_name=interface_name)
         self._sock_read_task = asyncio.create_task(self.sock_read_task(), name=f"sock-read-task-{address}")
 
     async def stop_tunnel(self) -> None:
@@ -602,7 +610,7 @@ class RemotePairingProtocol(StartTcpTunnel):
                 client = cast(RemotePairingQuicTunnel, client)
                 await client.wait_connected()
                 handshake_response = await client.request_tunnel_establish()
-                client.start_tunnel(
+                await client.start_tunnel(
                     handshake_response["clientParameters"]["address"],
                     handshake_response["clientParameters"]["mtu"],
                     interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
@@ -664,7 +672,7 @@ class RemotePairingProtocol(StartTcpTunnel):
         tunnel = RemotePairingTcpTunnel(reader, writer)
         try:
             handshake_response = await tunnel.request_tunnel_establish()
-            tunnel.start_tunnel(
+            await tunnel.start_tunnel(
                 handshake_response["clientParameters"]["address"],
                 handshake_response["clientParameters"]["mtu"],
                 interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
@@ -1234,7 +1242,7 @@ class CoreDeviceTunnelProxy(StartTcpTunnel):
         tunnel = RemotePairingTcpTunnel(service=self._service)
         try:
             handshake_response = await tunnel.request_tunnel_establish()
-            tunnel.start_tunnel(
+            await tunnel.start_tunnel(
                 handshake_response["clientParameters"]["address"],
                 handshake_response["clientParameters"]["mtu"],
                 interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",

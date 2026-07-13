@@ -5,19 +5,19 @@ tests pin that :func:`throughput_sysctls` emits values the installed pmd-pytcp a
 (and silently omits any a too-old pmd-pytcp lacks). The cross-platform/portability concerns that
 used to live in a host-side compatibility layer are now handled inside pmd-pytcp itself.
 
-The relay-teardown tests are regressions for issue #1756 (userspace tunnel cleanup hanging the
-event loop / leaking one parked rx_pump thread per relayed connection). They drive
-:class:`UserspaceDialPlane` against a fake PyTCP socket reproducing the semantics that caused
-the hang: a blocking ``recv()`` that does NOT unblock on ``close()``.
+The relay tests drive :class:`UserspaceDialPlane` against a fake of pmd-pytcp's pure-asyncio
+TCP socket (``recv``/``send``/``connect`` are coroutines; ``shutdown``/``close`` are sync).
+They keep the issue #1756 regressions meaningful in the asyncio world: EOF propagation in both
+directions, prompt dial-plane exit with a parked relay, and — since the stack no longer uses
+threads at all — that relaying spawns none.
 """
 
 import asyncio
 import threading
-import time
 
 import pytest
 
-# pmd-pytcp ships only on Python >= 3.14; skip the whole module when it's absent.
+# pmd-pytcp supports Python >= 3.9; skip the whole module when it's absent.
 pytest.importorskip("pmd_pytcp")
 
 from pmd_pytcp.stack import sysctl
@@ -50,45 +50,49 @@ def test_throughput_sysctls_round_trip_through_sysctl_set():
     sysctl.reset_to_defaults()
 
 
-# --- relay teardown regressions (issue #1756) ---------------------------------------------
+# --- relay behavior (regressions for issue #1756, asyncio edition) ------------------------
 
 DEVICE_ADDR = "fd00::1"
 
 
 class FakePyTcpSocket:
-    """The pmd-pytcp TCP socket surface the relay uses, with the semantics that caused #1756:
-    ``recv()`` blocks (optionally with a timeout) and does NOT unblock on ``close()`` — only
-    inbound data/EOF or a ``shutdown(SHUT_RD/SHUT_RDWR)`` wakes it."""
+    """The pmd-pytcp pure-asyncio TCP socket surface the relay uses: ``recv``/``send`` are
+    coroutines; ``shutdown``/``close`` are sync. ``recv()`` waits until inbound data/EOF; a
+    ``shutdown(SHUT_RD/SHUT_RDWR)`` wakes a parked recv with EOF."""
 
     def __init__(self) -> None:
-        self._cond = threading.Condition()
         self._rx: list = []
         self._eof = False
+        self._readable = asyncio.Event()
         self.sent: list = []
         self.shutdown_calls: list = []
-        self.closed = threading.Event()
+        self.closed = asyncio.Event()
 
     # --- device-side test controls ---
     def feed(self, data: bytes) -> None:
-        with self._cond:
-            self._rx.append(data)
-            self._cond.notify_all()
+        self._rx.append(data)
+        self._readable.set()
 
     def feed_eof(self) -> None:
-        with self._cond:
-            self._eof = True
-            self._cond.notify_all()
+        self._eof = True
+        self._readable.set()
 
     # --- relay-facing surface ---
-    def recv(self, bufsize: int, timeout=None) -> bytes:
-        with self._cond:
-            if not self._cond.wait_for(lambda: self._rx or self._eof, timeout=timeout):
-                raise TimeoutError("TCP Socket - Receive operation timed out.")
-            if self._rx:
-                return self._rx.pop(0)
-            return b""
+    async def recv(self, bufsize: int, timeout=None) -> bytes:
+        while not (self._rx or self._eof):
+            self._readable.clear()
+            if timeout is None:
+                await self._readable.wait()
+            else:
+                try:
+                    await asyncio.wait_for(self._readable.wait(), timeout)
+                except asyncio.TimeoutError:
+                    raise TimeoutError("TCP Socket - Receive operation timed out.") from None
+        if self._rx:
+            return self._rx.pop(0)
+        return b""
 
-    def send(self, data: bytes) -> int:
+    async def send(self, data: bytes) -> int:
         self.sent.append(bytes(data))
         return len(data)
 
@@ -107,24 +111,20 @@ class FakeTun:
     def __init__(self) -> None:
         self.socks: list = []
 
-    def connect_tcp(self, addr: str, port: int) -> FakePyTcpSocket:
+    async def connect_tcp(self, addr: str, port: int) -> FakePyTcpSocket:
         sock = FakePyTcpSocket()
         self.socks.append(sock)
         return sock
 
 
 async def _poll_until(predicate, timeout: float = 5.0):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
         value = predicate()
         if value:
             return value
         await asyncio.sleep(0.01)
     raise AssertionError("condition not met within timeout")
-
-
-def _relay_rx_threads() -> list:
-    return [t for t in threading.enumerate() if t.name.startswith("userspace-relay-rx-")]
 
 
 async def test_relay_full_conversation_and_clean_completion():
@@ -147,7 +147,7 @@ async def test_relay_full_conversation_and_clean_completion():
         await _poll_until(lambda: any(how in (1, 2) for how in psock.shutdown_calls))
         psock.feed_eof()  # the device finishes its side
         await _poll_until(lambda: not dial_plane._relay_tasks)  # handler completed unaided
-        assert psock.closed.wait(timeout=5)
+        await asyncio.wait_for(psock.closed.wait(), timeout=5)
 
 
 async def test_device_eof_reaches_client():
@@ -164,11 +164,10 @@ async def test_device_eof_reaches_client():
 
 
 async def test_dial_plane_exit_cancels_parked_relay():
-    # Regression for the #1756 hang: with a relay parked on device traffic (recv blocked, no
+    # Regression for the #1756 hang: with a relay parked on device traffic (recv awaiting, no
     # EOF in sight), __aexit__ used to hang in Server.wait_closed() (which waits for in-flight
-    # handlers since Python 3.12.1) and left the handler task to be cancelled at loop close —
-    # where its inline psock cleanup wedged the loop. Exit must complete promptly, leave no
-    # relay task behind, and still tear the pytcp socket down.
+    # handlers since Python 3.12.1). Exit must complete promptly, leave no relay task behind,
+    # and still tear the pytcp socket down.
     tun = FakeTun()
     dial_plane = UserspaceDialPlane(tun, DEVICE_ADDR)
     await dial_plane.__aenter__()
@@ -178,15 +177,14 @@ async def test_dial_plane_exit_cancels_parked_relay():
     await asyncio.wait_for(dial_plane.__aexit__(None, None, None), timeout=5)
 
     assert not dial_plane._relay_tasks
-    assert tun.socks[0].closed.wait(timeout=5)
+    await asyncio.wait_for(tun.socks[0].closed.wait(), timeout=5)
     writer.close()
 
 
-async def test_rx_pump_threads_exit_after_teardown():
-    # Regression for the #1756 thread pile-up (120 parked rx_pump threads): after the dial
-    # plane exits, every relay rx thread must unwind — the teardown SHUT_RDWR wakes parked
-    # ones and the polling recv() lets the rest observe the closing flag.
-    baseline = _relay_rx_threads()
+async def test_relaying_spawns_no_threads():
+    # The pure-asyncio relay must not create ANY thread — the #1756 pile-up (120 parked
+    # rx_pump threads) is structurally impossible now, and this pins it that way.
+    baseline = set(threading.enumerate())
     tun = FakeTun()
     async with UserspaceDialPlane(tun, DEVICE_ADDR) as dial_plane:
         writers = []
@@ -194,7 +192,6 @@ async def test_rx_pump_threads_exit_after_teardown():
             _reader, writer = await dial_plane.dial(DEVICE_ADDR, 9999)
             writers.append(writer)
         await _poll_until(lambda: len(tun.socks) == 5)
-        assert len(_relay_rx_threads()) >= 5
-    await _poll_until(lambda: _relay_rx_threads() == baseline, timeout=10)
+        assert set(threading.enumerate()) == baseline
     for writer in writers:
         writer.close()
