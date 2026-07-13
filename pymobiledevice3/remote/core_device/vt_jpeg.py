@@ -28,6 +28,8 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import ctypes.util
+import logging
+import os
 import queue
 import sys
 import threading
@@ -52,6 +54,8 @@ from ctypes import (
 # -- all sit behind the platform guard. The classes themselves raise a
 # clear "macOS only" error at construction time on other platforms.
 _IS_DARWIN = sys.platform == "darwin"
+
+logger = logging.getLogger(__name__)
 
 OSStatus = c_int32
 
@@ -191,6 +195,48 @@ if _IS_DARWIN:
     vt.VTDecompressionSessionInvalidate.restype = None
     vt.VTDecompressionSessionInvalidate.argtypes = [c_void_p]
 
+    # ---- VideoProcessing decoder (AVConference / DeviceHub decode path) -----
+    # Apple's screen-mirror clients (Xcode DeviceHub, FaceTime) do NOT decode
+    # through the raw VideoToolbox entry points -- they go through
+    # VideoProcessing.framework's VCPDecompressionSession* API. These wrap VT
+    # but add the jitter/reordering discipline AVConference relies on, and are
+    # the decoder that "never tears" per the maintainer's DeviceHub reference.
+    # The VCP entry points are ABI-identical to their VT counterparts
+    # (same formatDesc / decoderSpec / destImageAttrs / callbackRecord shape),
+    # so we can bind them with the exact VT argtypes and drop them in.
+    #
+    # VideoProcessing is a dyld-shared-cache-only PrivateFramework: it has no
+    # on-disk dylib, so find_library() returns None. dlopen resolves it from
+    # the cache only via its full framework path.
+    _VP_PATH = "/System/Library/PrivateFrameworks/VideoProcessing.framework/VideoProcessing"
+    _USE_VCP = os.environ.get("PMD3_USE_VCP", "0") not in ("", "0", "false", "False")
+    vp = None
+    if _USE_VCP:
+        try:
+            vp = ctypes.CDLL(_VP_PATH)
+            vp.VCPDecompressionSessionCreate.restype = OSStatus
+            vp.VCPDecompressionSessionCreate.argtypes = vt.VTDecompressionSessionCreate.argtypes
+            vp.VCPDecompressionSessionDecodeFrame.restype = OSStatus
+            vp.VCPDecompressionSessionDecodeFrame.argtypes = vt.VTDecompressionSessionDecodeFrame.argtypes
+            vp.VCPDecompressionSessionInvalidate.restype = None
+            vp.VCPDecompressionSessionInvalidate.argtypes = [c_void_p]
+        except (OSError, AttributeError):
+            vp = None
+            _USE_VCP = False
+
+    # Decoder dispatch: default to raw VideoToolbox; swap to VideoProcessing's
+    # VCP* entry points when PMD3_USE_VCP is set and the framework loaded.
+    if _USE_VCP and vp is not None:
+        _DEC_CREATE = vp.VCPDecompressionSessionCreate
+        _DEC_DECODE = vp.VCPDecompressionSessionDecodeFrame
+        _DEC_INVALIDATE = vp.VCPDecompressionSessionInvalidate
+        _DEC_BACKEND = "VCP"
+    else:
+        _DEC_CREATE = vt.VTDecompressionSessionCreate
+        _DEC_DECODE = vt.VTDecompressionSessionDecodeFrame
+        _DEC_INVALIDATE = vt.VTDecompressionSessionInvalidate
+        _DEC_BACKEND = "VT"
+
     # ---- CoreVideo pixel-buffer accessors (for direct BGRA readout) --------
     cv.CVPixelBufferLockBaseAddress.restype = c_int32
     cv.CVPixelBufferLockBaseAddress.argtypes = [c_void_p, c_uint32]
@@ -216,6 +262,23 @@ if _IS_DARWIN:
         values = (c_void_p * 1)(fmt_num)
         d = cf.CFDictionaryCreate(None, keys, values, 1, kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks)
         cf.CFRelease(fmt_num)
+        return c_void_p(d)
+
+    def _build_vcp_decoder_spec() -> c_void_p:
+        """Build the decoderSpecification dict VCPDecompressionSessionCreate
+        requires.
+
+        VTDecompressionSessionCreate tolerates a NULL decoderSpecification;
+        VCPDecompressionSessionCreate does NOT -- it unconditionally calls
+        CFDictionaryGetValue() on the dict (reverse-engineered: crashes with a
+        NULL-deref in CFDictionaryGetValue when a3 is NULL). It reads optional
+        keys (AllowClientProcessDecode, NumberOfTiles, ...) and falls back to
+        defaults when they are absent, so an empty-but-valid CFDictionary is
+        enough to satisfy the lookups without opting into any of VCP's extra
+        behaviours."""
+        d = cf.CFDictionaryCreate(
+            None, None, None, 0, kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks
+        )
         return c_void_p(d)
 
 
@@ -275,11 +338,23 @@ class HEVCDecoder:
         cb_rec = _VTDecompressionOutputCallbackRecord(self._cb, None)
         self._session = c_void_p(0)
         dest_attrs = _build_dest_attrs_bgra() if bgra_output else None
-        st = vt.VTDecompressionSessionCreate(None, self._fmt, None, dest_attrs, byref(cb_rec), byref(self._session))
+        # VT accepts NULL decoderSpecification; VCP requires a non-NULL dict
+        # (it CFDictionaryGetValue()s it unconditionally -> NULL-deref crash).
+        decoder_spec = _build_vcp_decoder_spec() if _DEC_BACKEND == "VCP" else None
+        st = _DEC_CREATE(None, self._fmt, decoder_spec, dest_attrs, byref(cb_rec), byref(self._session))
+        if decoder_spec is not None:
+            cf.CFRelease(decoder_spec)
         if dest_attrs is not None:
             cf.CFRelease(dest_attrs)
         if st != 0:
-            raise RuntimeError(f"VTDecompressionSessionCreate: OSStatus={st}")
+            raise RuntimeError(f"{_DEC_BACKEND}DecompressionSessionCreate: OSStatus={st}")
+        logger.info(
+            "decode backend: %s (%s)",
+            _DEC_BACKEND,
+            "VideoProcessing.framework VCPDecompressionSession -- PMD3_USE_VCP"
+            if _DEC_BACKEND == "VCP"
+            else "VideoToolbox VTDecompressionSession",
+        )
 
         dims = cm.CMVideoFormatDescriptionGetDimensions(self._fmt)
         self.width = int(dims.width)
@@ -314,7 +389,7 @@ class HEVCDecoder:
             raise RuntimeError(f"CMSampleBufferCreateReady: OSStatus={st}")
         info = c_uint32(0)
         flags = kVTDecodeFrame_EnableAsynchronousDecompression | kVTDecodeFrame_1xRealTimePlayback
-        st = vt.VTDecompressionSessionDecodeFrame(self._session, sb, flags, None, byref(info))
+        st = _DEC_DECODE(self._session, sb, flags, None, byref(info))
         cf.CFRelease(sb)
         cf.CFRelease(bb)
         if st != 0:
@@ -329,7 +404,7 @@ class HEVCDecoder:
 
     def close(self) -> None:
         if self._session.value:
-            vt.VTDecompressionSessionInvalidate(self._session)
+            _DEC_INVALIDATE(self._session)
             cf.CFRelease(self._session)
             self._session = c_void_p(0)
         if self._fmt.value:
