@@ -616,8 +616,8 @@ async def establish_userspace_rsd(serial: Optional[str] = None, autopair: bool =
 
     Embedders should use :class:`UserspaceRsdTunnel` directly — it is a closeable handle / async
     context manager. This wrapper exists for the CLI, which has no teardown hook: it stashes the
-    tunnel for the process lifetime and registers :func:`force_exit` so the CLI exits promptly at
-    the end without awaiting teardown (see :func:`_register_clean_exit`).
+    tunnel for the process lifetime and registers :func:`force_exit` at exit so the CLI exits
+    promptly without awaiting teardown.
     """
     global _cli_tunnel
     tunnel = UserspaceRsdTunnel(serial=serial, autopair=autopair)
