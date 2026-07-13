@@ -26,6 +26,8 @@ import asyncio
 import contextlib
 import logging
 import os
+import select
+import socket
 import struct
 import sys
 import uuid
@@ -1334,48 +1336,65 @@ class VncStreamServer:
                 return
 
     async def _client_send_loop(self, client: _VncClient) -> None:
-        w = client.writer
+        loop = asyncio.get_running_loop()
         expected = self._fb_width * self._fb_height * 4
-        while True:
-            await client.wants_update.wait()
-            client.wants_update.clear()
-            frame = self._latest_frame
-            if frame is None or frame is client.last_sent_frame:
-                continue
-            if len(frame) != expected:
-                # SPS-locked dimensions shouldn't change mid-session,
-                # but if VT ever hands us a differently sized buffer we
-                # skip rather than desync the TCP stream.
-                logger.warning(
-                    "frame size mismatch: got %d bytes, fb expects %d (%dx%d * 4) -- dropping",
-                    len(frame),
-                    expected,
-                    self._fb_width,
-                    self._fb_height,
-                )
-                continue
-            client.last_sent_frame = frame
-            # FramebufferUpdate: msg-type(1) + padding(1) + n-rects(2) +
-            # rect-header(12) + pixel bytes. One full-frame Raw rect.
-            rect_header = struct.pack(
-                ">HHHHi",
-                0,
-                0,
-                self._fb_width,
-                self._fb_height,
-                _ENC_RAW,
-            )
-            header = (
-                b"\x00\x00"  # msg-type + padding
-                + struct.pack(">H", 1)  # one rect
-                + rect_header
-            )
-            w.write(header)
-            w.write(frame)
-            try:
-                await w.drain()
-            except (ConnectionResetError, BrokenPipeError):
-                return
+        # Each framebuffer is width*height*4 (~14 MB at 1264x2752). Writing that
+        # through the asyncio StreamWriter runs the copy+flush ON the event loop,
+        # and at motion frame rates it starves ``sock_recv`` of the RTP socket
+        # -> the kernel drops incoming media packets -> broken references
+        # (mosaic) + collapsed fps the moment a client attaches during motion.
+        # Send instead on a BLOCKING-style loop over a dup of the client socket
+        # from a thread-pool executor: ``send``/``select`` release the GIL, so
+        # the event loop keeps draining RTP while the frame goes out. dup()
+        # shares the file description (and O_NONBLOCK) with asyncio's socket, so
+        # we must NOT setblocking() -- we select() on the non-blocking fd. The
+        # asyncio side only reads (the recv loop); nothing else writes here, so
+        # a second send-direction fd is safe (TCP is full-duplex).
+        base_sock = client.writer.get_extra_info("socket")
+        if base_sock is None:
+            return
+        send_sock = socket.socket(fileno=os.dup(base_sock.fileno()))
+
+        def _blocking_send(hdr: bytes, frm: bytes) -> None:
+            for chunk in (hdr, frm):
+                mv = memoryview(chunk)
+                total = 0
+                n = len(chunk)
+                while total < n:
+                    try:
+                        total += send_sock.send(mv[total:])
+                    except BlockingIOError:
+                        select.select([], [send_sock], [], 2.0)
+
+        rect_header = struct.pack(">HHHHi", 0, 0, self._fb_width, self._fb_height, _ENC_RAW)
+        header = b"\x00\x00" + struct.pack(">H", 1) + rect_header
+        try:
+            while True:
+                await client.wants_update.wait()
+                client.wants_update.clear()
+                frame = self._latest_frame
+                if frame is None or frame is client.last_sent_frame:
+                    continue
+                if len(frame) != expected:
+                    # SPS-locked dimensions shouldn't change mid-session, but if
+                    # VT ever hands us a differently sized buffer we skip rather
+                    # than desync the TCP stream.
+                    logger.warning(
+                        "frame size mismatch: got %d bytes, fb expects %d (%dx%d * 4) -- dropping",
+                        len(frame),
+                        expected,
+                        self._fb_width,
+                        self._fb_height,
+                    )
+                    continue
+                client.last_sent_frame = frame
+                try:
+                    await loop.run_in_executor(None, _blocking_send, header, frame)
+                except (ConnectionResetError, BrokenPipeError, OSError):
+                    return
+        finally:
+            with contextlib.suppress(OSError):
+                send_sock.close()
 
     # ----- top-level orchestration ------------------------------------------
     async def serve(self) -> None:
