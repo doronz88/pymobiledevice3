@@ -254,6 +254,100 @@ dropping, won't reproduce the result.
 
 ---
 
+## 8. COMPLETE RECEIVER REVERSE (2026-07-15) — every decision point
+
+Full decompile pass over the AVConference VideoReceiver (build 25F84,
+imagebase `0x1bd636000`). This is the whole receive→display pipeline and the
+four decisions that make it never tear. **The RE is done; §9 is the fix.**
+
+### Data flow / call graph
+```
+RTP in → VideoPacketBuffer (per-frame packet assembly, RS-FEC)
+  → _VideoReceiver_ScheduleFramesForVideoPacketBuffer
+    → _VideoReceiver_AssembleAndEnqueueFrame            (assemble 1 frame)
+        _VideoPacketBuffer_GetNextFrame                 (next in order)
+        _VideoReceiver_CalculateFrameErasures           (missing-data metric)
+        VCVideoJitterBuffer_{GetIsRunning,GetTargetJitterQueueSize,GetReferenceFrame}
+        _VCVideoPlayer_{UpdateJitterBufferState,SetTargetQueueSizeInSeconds}
+        _VCVideoPlayer_QueueAlarmForDecode  ───────────┐  (schedule decode)
+  ── VCVideoPlaybackAlarmThread (fires alarms by clock) ┘
+    → _VideoReceiver_DequeueFromOrderedFrameForDecodeQueue  (a.k.a. DequeueAndDecode)
+        decode in DECODING ORDER  → VCP/VT decompress
+    → _VideoReceiver_DecoderCallback (decode output)
+        _VideoReceiver_CheckAndRequestKeyFrame  (only if frame flagged bad)
+        _VCVideoPlayer_QueueAlarmForDisplay     (schedule display)
+    → _VideoReceiver_ShowFrame  (present CVPixelBuffer to CA/VCImageQueue)
+```
+
+### Frame struct offsets (from ShowFrame + QueueAlarm decompiles)
+`+16` CVPixelBuffer · `+24` rtpTimestamp · `+28` frameSeq · `+44` tileIndex ·
+`+48` streamID · `+64` streamID(16) · `+66` **shouldShowFrame** · `+67`
+**needsKeyFrame** (assemble/decode-failed flag) · `+70` isBaseLayer · `+88`
+CMTime presentationTimestamp.
+
+### The four decisions — verdicts
+
+**A. Assembly** (`_VideoReceiver_AssembleAndEnqueueFrame`): pulls the next frame
+in order from `VideoPacketBuffer`, computes erasures (missing sub-data) as a
+*metric*, updates the `VCVideoJitterBuffer` state / target queue size, and
+enqueues a **decode** alarm (`QueueAlarmForDecode`). Erasure ≠ drop: a frame is
+still enqueued; erasure only feeds reporting and the needs-keyframe flag.
+
+**B. Decode** (`_VideoReceiver_DequeueFromOrderedFrameForDecodeQueue`): dequeues
+in **decoding order** ("Dequeuing decodingOrder=%d") and decompresses. Decode is
+scheduled *ahead* of display (§7 alarm counts), so the decoder always runs early
+— nothing is dropped to keep pace.
+
+**C. Keyframe request** (`_VideoReceiver_CheckAndRequestKeyFrame` @ `0x1bd78cccc`
+→ `_VideoReceiver_DecoderRequestKeyFrame` @ `0x1bd7987e0`):
+- Gate: proceeds **only if `frame+67 (needsKeyFrame) == 1`** — a flag set by the
+  decoder callback on a genuine decode/assemble failure. NOT on packet gaps, NOT
+  on reorder, NOT periodically.
+- Dedup: skips the FIR if "a more recent key frame ... has already been
+  assembled" (compares against `receiver+43376`, last-keyframe timestamp).
+- reason enum `kVCKeyFrameRequestReasonStrings` (`0x1e72ff460`); this path passes
+  reason 18 (decode failure), 27 if temporal-scaled base layer.
+- Net: on a clean stream (wire is 0% loss) the gate never trips → **FIR=0**,
+  matching telemetry.
+
+**D. Display** (`_VideoReceiver_ShowFrame` @ `0x1bd794b20`):
+- Gate: shows only if **`frame+66 (shouldShowFrame) == 1`** — decode-ahead /
+  reference-only frames are decoded but *not* displayed (the `decodeFrame:
+  showFrame:` decoupling).
+- **Starvation → repeat, never blank:** if the next frame's rtpTimestamp equals
+  the last shown (no new frame ready), it logs a **"Microstall"** and re-shows
+  the current CVPixelBuffer. No blanking, no tearing, no drop.
+- Hands the CVPixelBuffer to a display callback (`receiver+1616`) with the CMTime;
+  `videoFrameErasureCount = videoFramesExpected − shown` is reporting only.
+
+### Jitter buffer
+Real class **`VCVideoJitterBuffer`** (`GetIsRunning`,
+`GetTargetJitterQueueSize`, `GetReferenceFrame`), driven from assembly via
+`_VCVideoPlayer_{UpdateJitterBufferState,SetTargetQueueSizeInSeconds,
+SetReferenceRTPTimestamp}`. Telemetry: steady **100 ms** target
+(`JitterBufferMode=1`).
+
+### Invariants that produce "never tears" (all confirmed in code + telemetry)
+1. Frames assembled and decoded **in order**; presentation-time-sorted alarm
+   lists absorb any reorder.
+2. **Every frame is decoded fully** (erasure is a metric, not a skip).
+3. **Decode runs ahead of display**; display is gated by `shouldShowFrame`.
+4. **Starvation repeats the last frame** (microstall) — never blank/drop.
+5. **Keyframe requested only on a real decoder-reported failure**, deduped —
+   never on gaps/reorder/timers.
+6. ~100 ms jitter queue smooths arrival jitter before decode.
+
+---
+
+## 9. Fix plan for pmd3 (unchanged thesis, now fully evidenced)
+See §7 table. Order: (1) stop pmd3's PLI/decoder-refresh churn — gate any
+keyframe request on a real decode failure + dedup, exactly like decision C;
+(2) never drop a decode (drop *display*, not *decode* — decision B/D);
+(3) ~100 ms presentation-ordered jitter queue (decision A) + repeat-last on
+starvation (decision D). The axes are coupled; do them together.
+
+---
+
 ## Code map
 serve-vnc / serve-web live in
 `pymobiledevice3/remote/core_device/{screen_stream,vnc_server,display_service,media_stream_offer,vt_jpeg}.py`.
