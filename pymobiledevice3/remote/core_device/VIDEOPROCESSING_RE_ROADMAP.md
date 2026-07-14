@@ -348,7 +348,67 @@ starvation (decision D). The axes are coupled; do them together.
 
 ---
 
+## 10. ★ ROOT CAUSE FOUND (2026-07-15): the smear is ENCODER-side — missing RCTL
+
+The decode-path thesis (§7–9) is **wrong for the smear**. Proven with a byte-exact
+experiment; §7–9 remain valid as robustness cleanups but do NOT fix the tear.
+
+**Dump experiment.** Added `PMD3_SERVE_VNC_DUMP=/path.hevc` to vnc_server (writes
+the exact Annex-B fed to VT). Captured under hard flicking (`/tmp/vnc_dump.hevc`,
+612 frames, ltrp off). Decoded the SAME bytes two ways:
+- **ffmpeg (software): 0 decode errors — but the frames CONTAIN the smear.**
+- **VideoToolbox (pmd3's decoder): byte-identical smear at the same frames.**
+Two independent decoders reproduce the identical artifact ⇒ **the decoder is not
+the cause; the smear is baked into the received bitstream.** Not loss/reorder
+either: `au_dropped=0 seq_gaps=0` all session (the counters added this session).
+
+**It's the encoder's rate-control regime.** In the dump, IDRs sit at frames 0 and
+222; the smear appears in the heavy-motion big-frame burst (~frame 290+), NOT at
+the IDRs ⇒ not PLI/recovery-induced. The device encoder, under pmd3's session,
+runs hot (telemetry QP32 / drop24) and emits frames whose references desync;
+DeviceHub's session keeps it at QP24 / drop9 and stays clean.
+
+**The smoking gun — feedback.** Decoded DeviceHub's Mac→device RTCP from
+`scratchpad/motion_devicehub/utun5.pcapng`: **1635 RTCP-APP packets in 28 s**
+(~20/s `RCTL` + ~38/s a 16-byte timing-APP ≈ per received frame). **serve-vnc
+sends ZERO RCTL** — only one RR/second (`_build_rtcp_rr`); there is no RCTL
+builder in `vnc_server.py`. With no rate feedback the encoder free-runs.
+DeviceHub RCTL packet (`80 cc 0007 <ssrc> "RCTL" 85000004` + 8×u16):
+`(tsHigh, 0, 0, flag∈{1,2}, running-counter, ~queue/RTT, frameCounter++, 60000)`
+— the `60000` is the 60 Mbps rate target. **pmd3's serve-web
+`_build_rctl_packet` already emits this exact format** (its unit test asserts
+`"RCTL", 0x85000004, …, 60000`); serve-vnc simply never got it, and serve-web
+sends it far below per-frame cadence.
+
+**Confirm-the-root plan:** (1) fully decode the 16-byte companion APP packet
+(incrementing receive-timestamp report, 2/3 of the feedback); (2) port an RCTL
+sender into vnc_server at DeviceHub's ~per-frame cadence, byte-accurate, fed from
+the recv loop's live RTP-ts + frame count; (3) **causal proof** — watch
+`syslog live -pn avconferenced` (VCPEncStatsMonitor / AVCRateController): success
+= encoder shifts QP32/drop24 → ≈QP24/drop9 and the smear vanishes. If the regime
+moves but it still smears, the second factor is negotiation
+(`media_stream_offer.py`: bitrate tiers / rate-control mode=8 / min-bitrate) —
+diff that against DeviceHub's MediaStreamConfig next.
+Caveat: serve-web has RCTL yet still smeared → cadence + byte-accuracy matter;
+the telemetry check is what makes this causal, not hopeful.
+
+## 11. Simplification payoff (why this is a net DELETE, not just a fix)
+
+All the receiver-side machinery in both paths exists ONLY to paper over a torn
+stream. Once the encoder is fed proper RCTL and emits a clean stream, the
+receiver becomes trivial (decode → display) and the following can be **removed**:
+- serve-vnc (`vnc_server.py`): the rebuild-on-trigger path, `_keyframe_pending`/
+  `_rebuild_pending`, `_keyframe_timeout_loop`, most PLI logic. (The
+  motion/heartbeat `_decoder_refresh_loop`, RPS pre-decode PLI, and sticky
+  re-arm storm were already deleted this session — §7–9 commits.)
+- serve-web (`screen_stream.py` + `viewer.js`): its `_decoder_refresh_loop`,
+  motion-idr band-aid, jitter-buffer experiments, and WebCodecs reset churn.
+- Net direction: one small RCTL sender (shared between paths) REPLACES hundreds
+  of lines of reactive recovery in both. The decoder just decodes.
+
 ## Code map
 serve-vnc / serve-web live in
 `pymobiledevice3/remote/core_device/{screen_stream,vnc_server,display_service,media_stream_offer,vt_jpeg}.py`.
 Prior encoder/rate-control investigation: `SERVE_WEB_NOTES.md` (same dir).
+RCTL format reference: serve-web `ScreenStreamServer._build_rctl_packet` +
+`tests/remote/core_device/test_screen_stream.py::test_rctl_feedback_*`.
