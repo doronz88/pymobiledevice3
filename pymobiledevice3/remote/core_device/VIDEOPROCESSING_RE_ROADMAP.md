@@ -164,6 +164,96 @@ The fix is in **receive + playout**, not decode. Priority order:
 
 ---
 
+## 7. RECEIVER ARCHITECTURE — DECODED FROM DEVICEHUB (2026-07-15)
+
+Ground truth from a real DeviceHub "View Screen" session (Mac unified log
+`ref_devicehub/mac_unified.log` + AVConference decompile, build 25F84,
+imagebase `0x1bd636000`). **This is the anti-tear design to port.**
+
+### Where it runs (confirmed)
+DeviceHub (Mac, the RECEIVER) drives AVConference via `AVCVideoStream` →
+`VideoReceiver` (assembly + jitter queue) → `VCVideoPlayer` (paced playout) →
+`VCImageQueue` (CA display). The device (`avconferenced`) is only the SENDER
+(`VCVideoStream` + rate adaptation). So the anti-tear logic is entirely in the
+**Mac-side AVConference receiver** — the same role pmd3 plays.
+
+### DeviceHub receiver telemetry under the user's motion (the recipe)
+`VideoReceiver` Health (`_VideoReceiver_ReportingRegisterPeriodicTask`):
+- `videoJitterQueueSize = 100.0 ms`, steady (`numOfJitterQueueSizeChanges=0`,
+  `averageJitterQueueSize≈100 ms`) — **a 100 ms receiver-side jitter queue.**
+- `frameErasureCount=0`, `videoStallTime=0 ms`, `significantOutOfOrderPacketCount=0`.
+- `decodedFrameCount == decodedFullFrameCount` every window (105==105, 111==111)
+  — **every decoded frame is a FULL frame; zero partial/concealed frames.**
+- effective `videoRxAvgFrameRate ≈ 20–23 fps` (encoder offers 60; it plays what
+  arrives, paced — it does NOT try to hit 60 by dropping).
+
+`VCVideoPlayer` Health (`_VCVideoPlayer_HealthPrint`):
+- `tickInterval=0.005556` (180 Hz display-link tick).
+- `numAlarmsEnqueuedForDecode == …ProcessedForDecode == …ForDisplay ==
+  …ProcessedForDisplay`, `numAlarmsDropped=0`,
+  `alarmsSentForDecodeButNotDisplayedCount=0` — **drops zero frames.**
+- `targetJitterBufferInSeconds=0`, `playbackOffsetInSeconds=0` — the 100 ms lives
+  in the receiver queue, not as extra playout latency.
+
+Stream config (CoreDevice `MediaStreamConfig`): `IsltrpEnabled: true`,
+`JitterBufferMode: 1`, `KeyFrameInterval: 0`, `Framerate: 60`, 832×1792.
+
+RTCP: **`FIR=0` for the entire session** — DeviceHub **never sent a Full Intra
+Request / keyframe request**, even under heavy motion (`Lost=1`, `Jitter=0`).
+
+### The playout scheduler (decompiled)
+`_VideoReceiver_AssembleAndEnqueueFrame` → `_VCVideoPlayer_QueueAlarmForDecode`
+→ `__VCVideoPlayer_QueueAlarm` @ `0x1bd75351c` (shared with `…ForDisplay`).
+Playout thread `_VCVideoPlaybackAlarmThread`; display side
+`__VCVideoPlayer_CheckAndProcessDisplayAlarms` @ `0x1bd754524`.
+
+`_VCVideoPlayer_QueueAlarm(player, alarmType, _, _, rtpTimestamp, frameSeq,
+flags, videoFrameTimeInSeconds)`:
+- Two **sorted singly-linked alarm lists** on the player struct: decode
+  (head @ +368, count @ +704) and display (head @ +376, count @ +712).
+- Each alarm is inserted **in presentation-time order** — the insert loop walks
+  the list comparing `videoFrameTimeInSeconds` then `rtpTimestamp` deltas. This
+  is where **packet/frame reordering is absorbed**: frames go out in order
+  regardless of arrival order.
+- Decode alarms are scheduled **ahead of** display alarms; the gap is bounded by
+  a threshold (`alarmsSentForDecodeButNotDisplayedCount` @ +428 vs limit @ +600)
+  — decode-ahead without runaway.
+- **No drop path** in this function. Late/early is handled by *when* the alarm
+  fires (paced by the display-link clock), not by discarding frames.
+
+### The design in one line
+**100 ms jitter queue → insert every frame in presentation-time order → decode
+every frame fully, ahead of display → present on the 180 Hz display-link clock →
+never drop, never conceal, never request a keyframe.**
+
+### pmd3 does the opposite on every axis (the fix plan)
+| Axis | DeviceHub | pmd3 today | Fix |
+|---|---|---|---|
+| Jitter queue | 100 ms, steady | none (feed AU as assembled) | add a ~100 ms presentation-time-ordered queue before decode |
+| Frame dropping | zero (`numAlarmsDropped=0`) | VT `1xRealTimePlayback` may drop; WebCodecs drops | decode EVERY frame; drop display, never decode |
+| Playout pacing | 180 Hz display-link, sorted alarms | show-as-decoded, synthetic `+=16666` PTS | present on a steady clock from the queue, in RTP-ts order |
+| Keyframe requests | `FIR=0` (never) | aggressive PLI + decoder-refresh | stop PLI/refresh churn on transient gaps (conceal, don't reset) |
+| LTRP | on | on/off toggled | keep on (efficient), but the decoder must handle LTR refs — the VCP freeze (§2) is likely here |
+
+Order to try (cheapest → deepest): (1) kill the PLI/decoder-refresh churn and
+re-test — DeviceHub proves a clean stream needs none; (2) add the 100 ms
+presentation-ordered jitter queue feeding an every-frame decode; (3) add
+display-link-paced playout. The earlier `--jitter-ms 200` test failed likely
+because it lacked (1) and (4) never-drop, and 200 ≠ 100 ms; the axes are
+coupled — a jitter queue alone, with PLI churn still firing and frames still
+dropping, won't reproduce the result.
+
+### Key symbols (AVConference, build 25F84, imagebase 0x1bd636000)
+- `_VideoReceiver_AssembleAndEnqueueFrame` — AU assembly + enqueue (huge; reverse
+  next for the exact reorder-tolerance + whether it EVER requests a keyframe).
+- `__VCVideoPlayer_QueueAlarm` @ `0x1bd75351c`, `_VCVideoPlayer_QueueAlarmForDecode`
+  @ `0x1bd753500`, `__VCVideoPlayer_CheckAndProcessDisplayAlarms` @ `0x1bd754524`,
+  `_VCVideoPlaybackAlarmThread`, `_VCVideoPlayer_HealthPrint`.
+- `_VideoReceiver_ReportingRegisterPeriodicTask` — the Health telemetry emitter.
+- IDA session: `idb_open` on `re/AVConference` (was `b08b0109` this run).
+
+---
+
 ## Code map
 serve-vnc / serve-web live in
 `pymobiledevice3/remote/core_device/{screen_stream,vnc_server,display_service,media_stream_offer,vt_jpeg}.py`.
