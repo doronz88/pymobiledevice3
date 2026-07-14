@@ -421,6 +421,8 @@ class VncStreamServer:
         cached_pps: Optional[bytes] = None
         rtp_packets = 0
         feed_count = 0
+        au_dropped = 0
+        seq_gaps = 0
         frame_count_at_last_log = 0
         last_stat_t = loop.time()
         while True:
@@ -454,6 +456,7 @@ class VncStreamServer:
             if last_seq is not None and seq != ((last_seq + 1) & 0xFFFF):
                 fu_buffer.clear()
                 au_corrupt = True
+                seq_gaps += 1
             if last_seq is None or ((seq - last_seq) & 0xFFFF) < 0x8000:
                 last_seq = seq
 
@@ -529,6 +532,15 @@ class VncStreamServer:
                             # re-trigger a keyframe request.
                             self._idr_observed_at = loop.time()
                             self._keyframe_pending = False
+                elif current_au and au_corrupt:
+                    # Whole AU discarded because a sequence gap (loss OR an
+                    # intra-frame reorder) landed inside it. This orphans the
+                    # references of following P-frames -> VT silently conceals
+                    # -> smear, with no decode error surfaced. Counting these
+                    # tells us whether the smear is drop-driven (needs a
+                    # reorder/jitter buffer, decision A) or a valid stream VT
+                    # mis-decodes.
+                    au_dropped += 1
                 current_au = []
                 au_is_key = False
                 au_corrupt = False
@@ -538,15 +550,19 @@ class VncStreamServer:
             if now - last_stat_t >= 2.0:
                 frames_now = self._frames_emitted
                 logger.debug(
-                    "ingress stats: rtp=%d feeds=%d frames=%d (Δframes=%d / %.1fs)",
+                    "ingress stats: rtp=%d feeds=%d frames=%d au_dropped=%d seq_gaps=%d (Δframes=%d / %.1fs)",
                     rtp_packets,
                     feed_count,
                     frames_now,
+                    au_dropped,
+                    seq_gaps,
                     frames_now - frame_count_at_last_log,
                     now - last_stat_t,
                 )
                 rtp_packets = 0
                 feed_count = 0
+                au_dropped = 0
+                seq_gaps = 0
                 frame_count_at_last_log = frames_now
                 last_stat_t = now
 
