@@ -425,10 +425,20 @@ class VncStreamServer:
         seq_gaps = 0
         frame_count_at_last_log = 0
         last_stat_t = loop.time()
+        # Debug: dump the exact Annex-B we hand VT to a file so the bitstream
+        # can be re-decoded offline (ffmpeg / a second VT pass) and compared
+        # against the live output. Set PMD3_SERVE_VNC_DUMP=/path.hevc.
+        dump_path = os.environ.get("PMD3_SERVE_VNC_DUMP")
+        dump_fh = open(dump_path, "wb") if dump_path else None
+        if dump_fh is not None:
+            logger.info("PMD3_SERVE_VNC_DUMP: writing fed Annex-B to %s", dump_path)
         while True:
             try:
                 data = await transport.recv()
             except (OSError, asyncio.CancelledError):
+                if dump_fh is not None:
+                    with contextlib.suppress(Exception):
+                        dump_fh.close()
                 return
             if len(data) < 12:
                 continue
@@ -523,6 +533,9 @@ class VncStreamServer:
                         # We do NOT pre-predict reference loss and drop the
                         # frame -- that was the old churn that caused the tear.
                         annexb = b"".join(b"\x00\x00\x00\x01" + nal for nal in current_au)
+                        if dump_fh is not None:
+                            dump_fh.write(annexb)
+                            dump_fh.flush()
                         self._transcoder.feed(annexb)
                         feed_count += 1
                         if au_is_key:
