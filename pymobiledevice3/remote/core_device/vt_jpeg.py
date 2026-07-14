@@ -388,14 +388,20 @@ class HEVCDecoder:
             cf.CFRelease(bb)
             raise RuntimeError(f"CMSampleBufferCreateReady: OSStatus={st}")
         info = c_uint32(0)
-        # Decode EVERY frame; never drop to keep pace. Reverse-engineered from
+        # SYNCHRONOUS, decode-every-frame (flags = 0). Reverse-engineered from
         # AVConference's receiver (VIDEOPROCESSING_RE_ROADMAP.md §7-8): DeviceHub
-        # decodes every frame fully (numAlarmsDropped=0, decodedFrameCount==
-        # decodedFullFrameCount) and never tears. kVTDecodeFrame_1xRealTimePlayback
-        # is the opposite -- it lets VT DROP a frame to hold real-time pace, which
-        # orphans the references of the following P-frames -> displaced-block tear.
-        # So we drop that flag and keep only asynchronous decode.
-        flags = kVTDecodeFrame_EnableAsynchronousDecompression
+        # decodes every frame fully, in order, and never drops
+        # (numAlarmsDropped=0, decodedFrameCount==decodedFullFrameCount).
+        #
+        # We must NOT set kVTDecodeFrame_1xRealTimePlayback -- that lets VT DROP a
+        # frame to hold real-time pace, orphaning the following P-frames'
+        # references -> tear. We also drop EnableAsynchronousDecompression: with
+        # async, DecodeFrame returns before the output callback fires, so the
+        # transcoder's feed-then-drain worker only picks up a frame on the NEXT
+        # feed -- the most recent frame stays stuck in VT's pipeline until more
+        # input arrives, which stalls the display. Synchronous decode invokes the
+        # callback before returning, so every frame drains immediately, in order.
+        flags = 0
         st = _DEC_DECODE(self._session, sb, flags, None, byref(info))
         cf.CFRelease(sb)
         cf.CFRelease(bb)

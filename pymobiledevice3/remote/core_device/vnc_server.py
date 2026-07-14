@@ -328,6 +328,15 @@ class VncStreamServer:
         self._keyframe_pending = False
         self._keyframe_sent_t: float = 0.0
         self._idr_observed_at: float = 0.0
+        # Rebuild the VT session from the next IDR. Without a jitter buffer +
+        # FEC (which DeviceHub has), pmd3's decoder can wedge on stale
+        # references and stop emitting -- feeding a later IDR to the same
+        # session does not always un-stick it, so we tear it down and rebuild
+        # from a fresh IDR. This fires ONLY on the two legitimate triggers
+        # (a genuine decode failure, or a new client that needs a clean start),
+        # never on motion/timers/predicted-loss -- that speculative churn was
+        # the tear source we removed.
+        self._rebuild_pending = False
 
         # Audio state -- mirrors screen_stream.py's audio side.
         # Decoded PCM goes straight to the host's speakers via the
@@ -466,11 +475,20 @@ class VncStreamServer:
 
             if marker:
                 if current_au and not au_corrupt:
-                    # Bootstrap the transcoder from the first IDR (it needs
-                    # VPS/SPS/PPS). After that we keep the SINGLE decoder for
-                    # the whole session -- no teardown/rebuild, like DeviceHub.
-                    # An IDR is a clean reset point VT recovers references from
-                    # on its own when one lands.
+                    # Rebuild from a fresh IDR when one was requested (genuine
+                    # decode failure or new client). The wedged session is torn
+                    # down here; the bootstrap branch below builds a clean one
+                    # from this very IDR. This is NOT the old motion/heartbeat
+                    # churn -- it only fires on a real trigger, so a clean stream
+                    # keeps its single decoder for the whole session.
+                    if self._rebuild_pending and au_is_key and self._transcoder is not None:
+                        with contextlib.suppress(Exception):
+                            self._transcoder.close()
+                        self._transcoder = None
+                        self._rebuild_pending = False
+                        self._idr_observed_at = loop.time()
+                        logger.debug("decoder rebuilt on requested IDR")
+                    # Bootstrap the transcoder from an IDR (it needs VPS/SPS/PPS).
                     if (
                         self._transcoder is None
                         and au_is_key
@@ -619,6 +637,9 @@ class VncStreamServer:
         if self._keyframe_pending:
             return  # already asked; wait for the IDR (mirrors "skipping FIR")
         self._keyframe_pending = True
+        # Rebuild the decoder from the IDR we're about to request -- the current
+        # session may be wedged on stale references (see _rebuild_pending).
+        self._rebuild_pending = True
         self._keyframe_sent_t = now
         pli_task = asyncio.create_task(self._send_rtcp_pli())
         self._pli_tasks.add(pli_task)
