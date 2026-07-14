@@ -388,7 +388,14 @@ class HEVCDecoder:
             cf.CFRelease(bb)
             raise RuntimeError(f"CMSampleBufferCreateReady: OSStatus={st}")
         info = c_uint32(0)
-        flags = kVTDecodeFrame_EnableAsynchronousDecompression | kVTDecodeFrame_1xRealTimePlayback
+        # Decode EVERY frame; never drop to keep pace. Reverse-engineered from
+        # AVConference's receiver (VIDEOPROCESSING_RE_ROADMAP.md §7-8): DeviceHub
+        # decodes every frame fully (numAlarmsDropped=0, decodedFrameCount==
+        # decodedFullFrameCount) and never tears. kVTDecodeFrame_1xRealTimePlayback
+        # is the opposite -- it lets VT DROP a frame to hold real-time pace, which
+        # orphans the references of the following P-frames -> displaced-block tear.
+        # So we drop that flag and keep only asynchronous decode.
+        flags = kVTDecodeFrame_EnableAsynchronousDecompression
         st = _DEC_DECODE(self._session, sb, flags, None, byref(info))
         cf.CFRelease(sb)
         cf.CFRelease(bb)

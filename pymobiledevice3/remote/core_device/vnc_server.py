@@ -31,13 +31,11 @@ import socket
 import struct
 import sys
 import uuid
-from collections import deque
 from typing import Optional
 
 from pymobiledevice3.remote.core_device.aac_eld import AACELDDecoder
 from pymobiledevice3.remote.core_device.audio_player import AudioQueuePlayer
 from pymobiledevice3.remote.core_device.display_service import DisplayService
-from pymobiledevice3.remote.core_device.hevc_rps import HevcRpsTracker, is_slice_nal
 from pymobiledevice3.remote.core_device.hid_service import (
     ASCII_TO_HID,
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
@@ -309,47 +307,27 @@ class VncStreamServer:
         # keeps the device from reaping the video session (RTCPTimeoutEnabled).
         self._rtp_highest_seq: int = 0
 
-        # Motion-based decoder-rebuild state. Mirrors screen_stream.py's
-        # _decoder_refresh_loop: the VT decoder accumulates stale
-        # long-term-reference-picture state under motion and renders
-        # torn frames without erroring. Recovery is to send PLI + tear
-        # the decoder down + rebuild from the next IDR -- the exact
-        # thing a manual page reload does for the browser path.
-        self._au_byte_window: deque[tuple[float, int]] = deque()
-        self._motion_active = False
-        self._motion_ended_t: float = 0.0
-        self._last_refresh_t: float = 0.0
-        # When True, the next IDR triggers a transcoder rebuild. We
-        # stop feeding deltas to the existing transcoder so we don't
-        # accumulate MORE stale state while waiting for the IDR.
-        self._refresh_pending = False
-
-        # Decoder-error sticky keyframe-required state (ported from
-        # iSharScreen's FrameQualityGate -- the libwebrtc two-condition
-        # pattern). Motion-based refresh handles the "torn frame, no
-        # error reported" case; this handles the converse "VT reported
-        # a decode failure, recover before the stream silently freezes."
-        # Cleared only when BOTH a fresh IDR was fed AND a clean frame
-        # decoded post-IDR -- guards against the silent-freeze failure
-        # where the IDR response to our PLI is itself lost or arrives
-        # corrupted, leaving the decoder stuck on stale references.
-        self._keyframe_required = False
-        self._idr_observed = False
-        # Pre-decode reference-picture-set tracker. Parses incoming
-        # slice headers and reports when a P-slice references a POC
-        # we never saw -- the decoder will silently conceal that
-        # frame (the visible tear). Firing PLI on this signal is
-        # one full frame ahead of waiting for VT to surface a
-        # decode error, and catches the silent-conceal case where
-        # VT never errors at all.
-        self._rps_tracker = HevcRpsTracker()
-        # Suppress decode errors for this long after we feed an IDR --
-        # the VT queue may still hold pre-IDR P-frames that error
-        # against the freshly reset reference set, which is expected
-        # drain noise, not a real recovery failure.
+        # Keyframe-recovery state. Reverse-engineered from AVConference's
+        # receiver (VIDEOPROCESSING_RE_ROADMAP.md §8, decision C): DeviceHub
+        # requests a keyframe (FIR/PLI) ONLY when its decoder reports a genuine
+        # failure, and dedupes it against an already-requested keyframe. It never
+        # rebuilds the decoder and never fires on packet gaps, predicted
+        # reference loss, motion, or timers -- its telemetry showed FIR=0 for a
+        # whole heavy-motion session while never tearing. So the old
+        # motion/heartbeat decoder-rebuild loop and the pre-decode RPS-prediction
+        # PLI (both of which caused the "smear then fix" churn) are gone. All
+        # that remains: on a real VT decode error, send one PLI and wait for the
+        # IDR; keep the single decoder for the whole session.
+        #
+        # ``_keyframe_pending`` is the dedup gate -- True from when we send a PLI
+        # until the requested IDR is fed (mirrors DeviceHub's "a more recent key
+        # frame has already been assembled, skipping FIR"). ``_keyframe_sent_t``
+        # backstops a lost PLI/IDR with a timed re-send. ``_idr_observed_at``
+        # suppresses the drain noise of pre-IDR P-frames erroring against the
+        # freshly reset reference set.
+        self._keyframe_pending = False
+        self._keyframe_sent_t: float = 0.0
         self._idr_observed_at: float = 0.0
-        self._fir_attempts: int = 0
-        self._cap_warned: bool = False
 
         # Audio state -- mirrors screen_stream.py's audio side.
         # Decoded PCM goes straight to the host's speakers via the
@@ -395,29 +373,18 @@ class VncStreamServer:
         loop.call_soon_threadsafe(self._on_decode_error)
 
     def _on_decode_error(self) -> None:
-        """Loop-thread handler. Promotes a decode error into the sticky
-        keyframe-required state and arms a refresh, subject to the
-        post-IDR grace window and the existing ``_refresh_pending``
-        gate (don't double-arm an in-flight recovery)."""
+        """Loop-thread handler for a genuine VT decode failure / FrameDropped.
+        DeviceHub decision C: request a keyframe once, deduped, and wait for the
+        IDR -- no decoder teardown, no re-arm storm. The post-IDR grace window
+        skips the pre-IDR P-frames still draining VT's queue against the freshly
+        reset reference set (that's expected noise, not a fresh failure)."""
         loop = self._loop
         if loop is None:
             return
         now = loop.time()
-        # Post-IDR grace: errors right after we fed an IDR are almost
-        # always queued pre-IDR P-frames decoding against the freshly
-        # reset reference set. Suppress them so they don't trigger
-        # back-to-back PLI storms. 500 ms covers the typical drain.
         if self._idr_observed_at > 0.0 and (now - self._idr_observed_at) < 0.5:
             return
-        if self._refresh_pending:
-            return  # already armed; let the IDR land first
-        if self._keyframe_required:
-            # Already in recovery -- the periodic re-arm in
-            # _decoder_refresh_loop handles further PLI attempts.
-            return
-        self._keyframe_required = True
-        self._idr_observed = False
-        self._fire_decoder_refresh(now, reason="decode-error")
+        self._request_keyframe(now, reason="decode-error")
 
     def _broadcast_frame(self, bgra: bytes) -> None:
         self._latest_frame = bgra
@@ -426,17 +393,6 @@ class VncStreamServer:
             self._fb_width = self._transcoder.width
             self._fb_height = self._transcoder.height
             self._ready.set()
-        # Sticky-keyframe two-condition clear: a clean decoded frame
-        # only counts as "recovered" if we already saw the IDR fed
-        # for this recovery cycle. Without `_idr_observed` we'd
-        # false-clear on a pre-IDR P-frame that happened to decode
-        # without an API error.
-        if self._keyframe_required and self._idr_observed:
-            self._keyframe_required = False
-            self._idr_observed = False
-            self._fir_attempts = 0
-            self._cap_warned = False
-            logger.debug("decode recovered (IDR + clean frame)")
         for c in self._clients:
             c.wants_update.set()
 
@@ -502,7 +458,6 @@ class VncStreamServer:
                     cached_vps = bytes(nal)
                 elif nt == _HEVC_NAL_SPS:
                     cached_sps = bytes(nal)
-                    self._rps_tracker.feed_sps(cached_sps)
                 elif nt == _HEVC_NAL_PPS:
                     cached_pps = bytes(nal)
                 elif _is_key_nal(nt):
@@ -511,38 +466,11 @@ class VncStreamServer:
 
             if marker:
                 if current_au and not au_corrupt:
-                    # Motion signal: track AU sizes in a 1 s window so
-                    # the refresh loop can detect motion start/end.
-                    au_bytes = sum(len(n) for n in current_au)
-                    self._au_byte_window.append((loop.time(), au_bytes))
-                    # Decoder rebuild on a fresh IDR -- the previous
-                    # transcoder's LTRP table is suspected stale, so we
-                    # close it and let the bootstrap branch below build
-                    # a fresh one from this very IDR.
-                    if self._refresh_pending and au_is_key and self._transcoder is not None:
-                        with contextlib.suppress(Exception):
-                            self._transcoder.close()
-                        self._transcoder = None
-                        self._refresh_pending = False
-                        # Drop the RPS DPB shadow with the decoder. A
-                        # rebuilt VT only has the next IDR's POC in
-                        # its DPB; old POCs are gone. If we kept the
-                        # tracker's seen set, false-negatives would
-                        # silently let a P-slice referencing a
-                        # pre-rebuild POC slip past the pre-decode
-                        # check straight into a guaranteed tear.
-                        self._rps_tracker.reset()
-                        # Sticky-keyframe IDR observation: the new
-                        # transcoder built below will be seeded by
-                        # this very IDR. Stamp the grace window now
-                        # so the new VT's first few frames aren't
-                        # treated as fresh decode errors, and arm
-                        # the IDR-observed half of the two-condition
-                        # clear if recovery was in progress.
-                        self._idr_observed_at = loop.time()
-                        if self._keyframe_required:
-                            self._idr_observed = True
-                        logger.debug("decoder rebuilt on fresh IDR")
+                    # Bootstrap the transcoder from the first IDR (it needs
+                    # VPS/SPS/PPS). After that we keep the SINGLE decoder for
+                    # the whole session -- no teardown/rebuild, like DeviceHub.
+                    # An IDR is a clean reset point VT recovers references from
+                    # on its own when one lands.
                     if (
                         self._transcoder is None
                         and au_is_key
@@ -565,57 +493,24 @@ class VncStreamServer:
                             )
                         except Exception:
                             logger.exception("VT transcoder failed to start")
-                    # While ``_refresh_pending`` is true we have already
-                    # PLIed and are waiting for the IDR that will be the
-                    # new decoder's first frame. Don't feed the existing
-                    # transcoder any more deltas -- they'd just compound
-                    # the LTRP staleness we're trying to escape.
-                    if self._transcoder is not None and not self._refresh_pending:
-                        # Pre-decode RPS check: parse the first slice
-                        # NAL's short-term RPS. If any used-by-curr
-                        # reference points to a POC we never saw, the
-                        # decoder will silently conceal -- fire PLI
-                        # now and skip the guaranteed-tear feed.
-                        # ``check_slice`` also stamps the POC parser
-                        # state regardless of outcome.
-                        slice_nal = next(
-                            (n for n in current_au if is_slice_nal((n[0] >> 1) & 0x3F)),
-                            None,
-                        )
-                        missing: set[int] = set()
-                        if slice_nal is not None:
-                            missing = self._rps_tracker.check_slice(slice_nal)
-                        if missing and not au_is_key:
-                            logger.debug(
-                                "rps: P-slice references missing POCs %s -- pre-decode PLI",
-                                sorted(missing),
-                            )
-                            self._on_decode_error()
-                            if self._refresh_pending:
-                                current_au = []
-                                au_is_key = False
-                                au_corrupt = False
-                                rtp_packets += 1
-                                continue
+                    if self._transcoder is not None:
+                        # Feed EVERY assembled AU -- never skip a decode
+                        # (decision B). A frame that references a lost/late
+                        # reference is decoded-with-concealment by VT; only if
+                        # that concealment is genuinely bad does VT flag
+                        # FrameDropped -> _on_decode_error requests a keyframe.
+                        # We do NOT pre-predict reference loss and drop the
+                        # frame -- that was the old churn that caused the tear.
                         annexb = b"".join(b"\x00\x00\x00\x01" + nal for nal in current_au)
                         self._transcoder.feed(annexb)
                         feed_count += 1
-                        # Add this slice's POC to the DPB shadow so
-                        # later slices can reference it. For IDRs
-                        # this stamps POC=0; for P-slices it stamps
-                        # the derived POC from check_slice above.
-                        self._rps_tracker.commit_decoded()
-                        # Sticky-keyframe IDR observation: half of the
-                        # two-condition clear (the other half is a
-                        # clean decoded frame, handled in
-                        # ``_broadcast_frame``). Also stamps the
-                        # post-IDR grace window so the in-flight
-                        # pre-IDR P-frames in VT's queue don't
-                        # re-trigger ``_on_decode_error``.
                         if au_is_key:
+                            # The requested keyframe arrived: clear the dedup
+                            # gate and open the post-IDR grace window so the
+                            # pre-IDR P-frames draining VT's queue don't
+                            # re-trigger a keyframe request.
                             self._idr_observed_at = loop.time()
-                            if self._keyframe_required:
-                                self._idr_observed = True
+                            self._keyframe_pending = False
                 current_au = []
                 au_is_key = False
                 au_corrupt = False
@@ -713,118 +608,44 @@ class VncStreamServer:
                 logger.debug("video RTCP RR send failed (%s); socket may be torn down", exc)
                 return
 
-    def _fire_decoder_refresh(self, now: float, *, reason: str) -> None:
-        """Arm the decoder-rebuild + PLI sequence. The recv loop will
-        close the transcoder when the IDR arrives."""
-        if self._refresh_pending:
-            return  # already armed; let the IDR land first
-        self._refresh_pending = True
+    def _request_keyframe(self, now: float, *, reason: str) -> None:
+        """Send one RTCP PLI to ask the encoder for a fresh IDR, deduped against
+        an already-outstanding request (DeviceHub decision C, doc §8). No
+        decoder teardown -- we keep decoding and let the IDR reset VT's
+        references when it lands. The dedup gate clears when that IDR is fed
+        (recv loop) or the timeout backstop re-opens it."""
+        if self._rtcp_dest is None or not (self._local_ssrc and self._remote_ssrc):
+            return
+        if self._keyframe_pending:
+            return  # already asked; wait for the IDR (mirrors "skipping FIR")
+        self._keyframe_pending = True
+        self._keyframe_sent_t = now
         pli_task = asyncio.create_task(self._send_rtcp_pli())
         self._pli_tasks.add(pli_task)
         pli_task.add_done_callback(self._pli_tasks.discard)
-        self._last_refresh_t = now
-        window_bps = sum(s for _, s in self._au_byte_window)
-        logger.debug(
-            "decoder-refresh (%s): %d client(s), %d B/s window",
-            reason,
-            len(self._clients),
-            window_bps,
-        )
+        logger.debug("keyframe requested (%s): %d client(s)", reason, len(self._clients))
 
-    async def _decoder_refresh_loop(self) -> None:
-        """Watch the RTP byte rate as a motion signal; rebuild the VT
-        decoder periodically while motion is ongoing, after motion
-        settles, and as an idle heartbeat. This is the VNC analogue of
-        screen_stream's _decoder_refresh_loop -- the same trick a
-        browser page-reload pulls.
+    async def _keyframe_timeout_loop(self) -> None:
+        """Backstop a lost PLI or lost IDR. If a keyframe request has been
+        outstanding too long with no IDR fed, re-open the gate and ask again.
 
-        Triggers (in order of priority):
-          1. ``active`` -- motion is currently happening and it's been
-             ``active_interval`` since the last refresh. Without this,
-             sustained motion shows tears the entire time the user is
-             interacting; the next refresh wouldn't come until either
-             motion ends + settle_delay (the ``settled`` path) or the
-             heartbeat fires, which can be many seconds.
-          2. ``settled`` -- motion just ended and settle_delay has
-             passed. Catches the tail end of an interaction.
-          3. ``heartbeat`` -- nothing's happening, but it's been long
-             enough that we want a safety-net refresh anyway.
-
-        ``min_interval`` caps back-to-back refreshes (each one costs a
-        ~30 ms gap while the new decoder waits for its first IDR).
-        """
+        This is NOT the old motion/heartbeat/settle rebuild churn -- with no
+        request outstanding it does nothing, matching DeviceHub's FIR=0 steady
+        state (it never requests a keyframe absent a real decode failure)."""
         loop = asyncio.get_running_loop()
-        motion_threshold_bps = 100_000  # 100 KB/s = motion
-        active_interval = 1.5  # fire this often during sustained motion
-        settle_delay = 0.4  # wait after motion ends
-        heartbeat = 10.0  # max between refreshes when idle
-        min_interval = 0.8  # cap back-to-back refreshes
-        # Sticky-keyframe re-arm cadence + cap. Ported from
-        # iSharScreen's FrameQualityGate: while we're in
-        # ``_keyframe_required`` and Apple's encoder hasn't responded
-        # to our PLI with a usable IDR, keep re-emitting PLI at
-        # ``re_arm_interval`` (the encoder's typical IDR generate+
-        # transmit window settles in ~100-300 ms; 1.0 s leaves
-        # headroom against overlapping IDR responses). After
-        # ``re_arm_cap`` attempts give up and clear the flag so we
-        # stop flooding -- the motion/heartbeat triggers above will
-        # still catch the next natural refresh window.
-        re_arm_interval = 1.0
-        re_arm_cap = 8
+        resend_after = 2.0
         while True:
             try:
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.5)
             except asyncio.CancelledError:
                 return
-            if not self._clients:
-                continue
-            if self._transcoder is None or self._rtcp_dest is None:
+            if not self._keyframe_pending:
                 continue
             now = loop.time()
-            # Sticky re-arm: highest priority -- if the decoder is
-            # still in keyframe_required after a previous refresh
-            # cleared `_refresh_pending`, keep firing PLI on the
-            # re-arm cadence until either a clean post-IDR frame
-            # arrives (clears keyframe_required in `_broadcast_frame`)
-            # or we hit the cap.
-            if (
-                self._keyframe_required
-                and not self._refresh_pending
-                and (now - self._last_refresh_t) >= re_arm_interval
-            ):
-                self._fir_attempts += 1
-                if self._fir_attempts >= re_arm_cap:
-                    if not self._cap_warned:
-                        logger.warning(
-                            "decoder still tearing after %d PLI attempts; "
-                            "giving up sticky recovery (motion/heartbeat "
-                            "refresh remains armed)",
-                            self._fir_attempts,
-                        )
-                        self._cap_warned = True
-                    self._keyframe_required = False
-                    self._idr_observed = False
-                    self._fir_attempts = 0
-                else:
-                    self._fire_decoder_refresh(now, reason="re-arm")
-                    continue
-            while self._au_byte_window and self._au_byte_window[0][0] < now - 1.0:
-                self._au_byte_window.popleft()
-            window_bytes = sum(s for _, s in self._au_byte_window)
-            currently_active = window_bytes >= motion_threshold_bps
-            if self._motion_active and not currently_active:
-                self._motion_ended_t = now
-            self._motion_active = currently_active
-            since_refresh = now - self._last_refresh_t
-            if since_refresh < min_interval:
-                continue
-            active = currently_active and since_refresh >= active_interval
-            settled = self._motion_ended_t > self._last_refresh_t and (now - self._motion_ended_t) >= settle_delay
-            heartbeat_due = since_refresh >= heartbeat
-            if not (active or settled or heartbeat_due):
-                continue
-            reason = "active" if active else ("settled" if settled else "heartbeat")
-            self._fire_decoder_refresh(now, reason=reason)
+            if (now - self._keyframe_sent_t) >= resend_after:
+                # Previous PLI or its IDR was lost -- re-open the gate and retry.
+                self._keyframe_pending = False
+                self._request_keyframe(now, reason="timeout-resend")
 
     # ----- Audio: AAC-ELD recv + decode + play ------------------------------
     async def _audio_udp_recv(self, transport: UdpMediaTransport) -> None:
@@ -1129,16 +950,14 @@ class VncStreamServer:
                 return
             await self._handshake(client)
             self._clients.add(client)
-            # Force a decoder rebuild for this client. The VT decoder
-            # may have been accumulating stale LTRP state for the
-            # entire time the server has been running before this
-            # client connected; trigger the same refresh path that
-            # motion-settled and heartbeat use so the very first
-            # framebuffer update is decoded from a fresh IDR.
+            # Ask the encoder for a fresh IDR so this client starts from a clean
+            # keyframe (a new receiver legitimately needs one -- like DeviceHub
+            # getting the initial keyframe at stream start). This is a single
+            # deduped PLI, not a decoder rebuild.
             if self._transcoder is not None and self._rtcp_dest is not None:
                 loop = self._loop
                 if loop is not None:
-                    self._fire_decoder_refresh(loop.time(), reason="client-connect")
+                    self._request_keyframe(loop.time(), reason="client-connect")
             await asyncio.gather(
                 self._client_send_loop(client),
                 self._client_recv_loop(client),
@@ -1447,7 +1266,7 @@ class VncStreamServer:
         else:
             logger.warning(
                 "RTCP feedback disabled (missing fields: SourcePort=%s LocalSSRC=%s RemoteSSRC=%s)"
-                " -- decoder-refresh will be a no-op; tears under motion will not be cleaned up",
+                " -- keyframe recovery will be a no-op; a genuine decode failure cannot be recovered",
                 source_port,
                 self._local_ssrc,
                 self._remote_ssrc,
@@ -1507,7 +1326,7 @@ class VncStreamServer:
         loop = asyncio.get_running_loop()
         self._loop = loop
         feed_task = asyncio.create_task(self._udp_recv_and_pipe(transport))
-        refresh_task = asyncio.create_task(self._decoder_refresh_loop())
+        keyframe_task = asyncio.create_task(self._keyframe_timeout_loop())
         # Video RR keepalive -- without this the device reaps the video session
         # after ~25 s (RTCPTimeoutEnabled) and serve-vnc freezes with no recovery.
         rtcp_task = asyncio.create_task(self._rtcp_send_loop(transport))
@@ -1554,10 +1373,10 @@ class VncStreamServer:
                 await asyncio.wait_for(server.wait_closed(), timeout=2.0)
             logger.debug("shutdown: stopping HID")
             await self._stop_hid()
-            logger.debug("shutdown: stopping refresh loop")
-            refresh_task.cancel()
+            logger.debug("shutdown: stopping keyframe-timeout loop")
+            keyframe_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
-                await refresh_task
+                await keyframe_task
             rtcp_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await rtcp_task
