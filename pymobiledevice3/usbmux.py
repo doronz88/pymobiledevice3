@@ -175,7 +175,7 @@ class MuxConnection:
         sock.setblocking(False)
         try:
             await asyncio.get_running_loop().sock_connect(sock, address)
-        except ConnectionRefusedError as e:
+        except (ConnectionRefusedError, FileNotFoundError) as e:
             sock.close()
             raise ConnectionFailedToUsbmuxdError() from e
         except Exception:
