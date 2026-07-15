@@ -97,31 +97,32 @@ def main():
     # ServerInit: [u16 w][u16 h][16 pixfmt][u32 namelen][name]
     hdr=recvn(sk,4); w,h=struct.unpack(">HH",hdr); pf=recvn(sk,16); nlen=struct.unpack(">I",recvn(sk,4))[0]; name=recvn(sk,nlen)
     log(f"ServerInit {w}x{h} name={name[24:]!r}")
-    # SetEncodings (advertise Apple Pro Mode encodings like the real client)
-    encs=[0x3f3,0x3ea,6,0x10,0xffffff11,0x450,0x44c,0xffffff21,0x44d,0x451,0x453,0x455,0x456]
-    se=struct.pack(">BBH",2,0,len(encs))+b"".join(struct.pack(">I",e&0xffffffff) for e in encs)
-    sk.sendall(se); log(f"sent SetEncodings ({len(encs)} encs)")
+    _acc=bytearray()
     def drain(tag, secs=3):
         sk.settimeout(secs); buf=b""
         try:
-            while len(buf)<65536:
+            while len(buf)<131072:
                 c=sk.recv(8192)
                 if not c: break
                 buf+=c
         except socket.timeout: pass
-        log(f"{tag}: {len(buf)}B")
+        _acc.extend(buf)
+        open(OUT,"wb").write(bytes(_acc))   # incremental save survives a kill
+        has44f = b"\x00\x00\x04\x4f" in bytes(_acc)
+        log(f"{tag}: {len(buf)}B (acc {len(_acc)}){'  *** 0x44f SEEN ***' if has44f else ''}")
         return buf
-    cap=drain("after SetEncodings (descriptors)")
-    # Replay the real client's 0x21 display-config + 0x12, then a FramebufferUpdateRequest,
-    # to trigger the server's HEVC media negotiation (0x14 + 0x44f blob).
-    msg21=bytes.fromhex("2100003e0001000000020000000600000001000000000000001a0000000500000002b0000c039000000000004000000000000000000000000000000000000000000012000001")
-    msg12=bytes.fromhex("1200000200010000")
-    sk.sendall(msg21); sk.sendall(msg12); log("sent 0x21 + 0x12")
-    cap2=drain("after 0x21/0x12 (expect media blob)")
-    # FramebufferUpdateRequest (type 3): incremental=0, x,y,w,h
+    # Match the REAL client's exact post-ServerInit order/bytes: 0x21 config FIRST, then SetEncodings.
+    msg21=bytes.fromhex("2100003e0001000000020000000600000001000000000000001a0000000500000002b0000c03900000000000400000000000000000000000000000000000000000001200000100010001000000010a000001")
+    se=bytes.fromhex("0200000d000003f3000003ea0000000600000010ffffff11000004500000044cffffff210000044d00000451000004530000045500000456")
+    assert len(msg21)==82 and len(se)==56
+    sk.sendall(msg21); log("sent 0x21 display-config")
+    sk.sendall(se); log("sent SetEncodings (exact real bytes)")
+    cap=drain("after 0x21+SetEncodings (expect 0x14 + 0x44f)")
+    sk.sendall(bytes.fromhex("1200000200010000")); log("sent 0x12")
+    cap2=drain("after 0x12")
     fbur=struct.pack(">BBHHHH",3,0,0,0,w,h)
     sk.sendall(fbur); log("sent FramebufferUpdateRequest")
-    cap3=drain("after FBUR", 5)
+    cap3=drain("after FBUR",6)
     allcap=cap+cap2+cap3
     open(OUT,"wb").write(allcap)
     open(OUT+".key","wb").write(K); open(OUT+".siv","wb").write(sIV)

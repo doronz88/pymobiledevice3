@@ -198,6 +198,24 @@ STILL TO CAPTURE (needs .237 up): the 0x44f HEVC media blob, triggered by sendin
 client's 0x21 display-config + 0x12 + a FramebufferUpdateRequest (client extended to do
 this; .237 went unreachable mid-run -- rerun promode_client.py when it's back).
 
+### 0x44f HEVC media blob CAPTURED (2026-07-16) — sample saved
+Triggered by the real client's exact 0x21 (82B) + SetEncodings (56B, sent in THAT
+order, 0x21 first) after ServerInit. Server replies 0x14 caps then the 0x44f blob:
+`[FBU hdr][x=y=w=h=0][enc=0x44f][u32 version=1][740B high-entropy]`. The 740B =
+724 ciphertext + 16 poly1305 tag -> it IS a ChaCha20-Poly1305 sealed blob (carries the
+secret SRTP keys, which is why -- unlike the plaintext 0x451/453/455/456 descriptors --
+it's encrypted). Sample + session key + sIV saved: research/promode_0x44f_sample.txt.
+
+BLOCKER to decrypt: the ChaCha layer KEY is NOT K, sha512(K), or pbkdf2(K,sIV) (all
+brute-forced against the real blob -> uniform entropy). It's set into mech+80 by the
+SASL security-layer setup code (the srp.m encode/decode callbacks / oparams->encode),
+which I have NOT located yet -- that's the ONE reverse needed. Nonce = sIV (LayerInit
+passes it to chacha20_poly1305_init_64x64(mech+632, mech+80, sIV)). Once the mech+80
+derivation is pinned, decrypt reveals the AVC offer + SRTP master keys plaintext, and
+pmd3-as-server generates the same with its own keys.
+NEXT REVERSE: find the SRP SASL encode/decode + the mech+80 layer-key derivation
+(search screensharingd for oparams->encode assignment / the fn using mech+376/632).
+
 ### REMAINING BUILD (the media half; needs iterative work + the iPhone for video):
 1. ChaCha20 control channel: pin encrypt/decrypt signature + key(mech+80) + nonces +
    frame format; wrap send/recv.
