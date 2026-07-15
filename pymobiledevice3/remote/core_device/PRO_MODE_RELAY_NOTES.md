@@ -105,6 +105,31 @@ AVCMediaStreamNegotiator/RFB Pro Mode capability format, and the SRTP-5 packet
 format the client expects. Each is a meaty decompile; they cannot all be finished
 in one pass. The queue below is the remaining work in priority order.
 
+## Prior art / external references (checked 2026-07)
+- **NO open-source project implements the Pro Mode / "High Performance" screen-
+  sharing SERVER relay** (what we'd build). Too new (macOS Sonoma/Sequoia, 2024+),
+  fully closed. So this is original RE — not a fork.
+- **Google Project Zero "Street-Party"** (github.com/googleprojectzero/Street-Party,
+  FaceTime/) + blog "Adventures in Video Conferencing Part 2" — the closest reverse.
+  It's a **dylib-injection interposer** (hooks `CCCryptorCreateWithMode` + `sendmsg`
+  in AVConference) that records/replays FaceTime RTP. Gives the **video SRTP scheme**
+  (the piece we were hunting): CommonCrypto **AES**, per-stream **16-byte key +
+  16-byte IV/token** (dumped at CCCryptorCreateWithMode); token exchanged at stream
+  init; **AES-CTR**, per-packet counter = token XOR (SSRC, sequence number; seq
+  XOR'd at token index 0x12). Stream id'd by dispatch-queue name
+  `com.apple.VideoConference.videoTransmit`. CAVEAT: macOS **Mojave** era (2018) —
+  must verify vs the 2026 binary (which showed cipher suite **5** +
+  `CCCryptorCreateWithMode`, consistent). This likely == the
+  `videoEncryptionKey{ViewerToServer,ServerToViewer}` tokens + cipher-5 we saw in
+  ScreensharingAgent → the unpinned video-key piece is now sketched externally.
+- **Legacy ARD auth** (DH-512 + MD5 + AES-128-ECB, credential encryption) is
+  documented and in `libvncclient`/TigerVNC — reference for the RFB layer, but the
+  modern connection uses the SRP stacks reversed above, not this.
+- iOS QuickTime/usbmux screen mirroring (danielpaulus quicktime_video_hack) = the
+  OLD path, not CoreDevice displayservice — n/a.
+- Net: SRP + control-channel crypto reversed here; **video SRTP de-risked by P0**
+  (AES-CTR, 16B key+token, counter from SSRC/seq) pending 2026 verification.
+
 ## Reverse-next queue (priority order)
 1. `sub_100013640` / `sub_1000135D4` — SRP session key → **SRTP media keys**
    (videoEncryptionKeyViewerToServer/ServerToViewer) + RFB security layer. This
