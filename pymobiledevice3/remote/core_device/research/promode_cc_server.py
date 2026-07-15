@@ -20,10 +20,8 @@ ITERS = 19417
 OPTIONS = b"mda=SHA-512,replay_detection,conf+int=ChaCha20-Poly1305,kdf=SALTED-SHA512-PBKDF2"
 NBYTES = 512
 
-# usernames fixed to "" (screensharingd uses "" in compute_session; corecrypto uses
-# one username for both x and M1). Sweep the password preprocessing only.
-PW_KINDS = ["plain", "pbkdf2_64", "pbkdf2_128", "pbkdf2_128_hex", "sha512", "pbkdf2_128_upper"]
-COMBOS = [(b"", k, b"") for k in PW_KINDS]
+# VERIFIED recipe: username "", password = PBKDF2-SHA512(pw, salt, iters, dkLen=128).
+COMBOS = [(b"", "pbkdf2_128", b"")]
 _state = {"i": 0}
 _t0 = None
 def log(m):
@@ -41,6 +39,7 @@ gen_ver     = _s("ccsrp_generate_verifier", c_int, [c_void_p,c_char_p,c_size_t,c
 sv_pub      = _s("ccsrp_server_generate_public_key", c_int, [c_void_p,c_void_p,c_void_p,c_void_p])
 sv_sess     = _s("ccsrp_server_compute_session", c_int, [c_void_p,c_char_p,c_size_t,c_void_p,c_void_p])
 sv_verify   = _s("ccsrp_server_verify_session", c_bool, [c_void_p,c_void_p,c_void_p])
+keylen_fn   = _s("ccsrp_get_session_key_length", c_size_t, [c_void_p])
 _DI, _GP, _RNG = ccsha512_di(), gp4096(), ccrng(None)
 
 _HK = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -123,11 +122,26 @@ async def handle(r,w):
     rc=sv_sess(S,suser,len(salt),salt,A); log(f"compute_session rc={rc}")
     HAMK=create_string_buffer(64)
     ok=sv_verify(S,M1,HAMK)
-    if ok:
-        log(f"*** ccsrp_server_verify_session = TRUE  (combo vuser={vuser!r} pw={pwkind} suser={suser!r}) ***")
-        log(f"    HAMK(M2)={HAMK.raw.hex()[:32]}..")
+    if not ok:
+        log("ccsrp_server_verify_session = FALSE"); w.close(); return
+    log(f"*** SRP verify TRUE; HAMK(M2)={HAMK.raw.hex()[:32]}..")
+    # Send M2: header + %o(HAMK) %o(sIV 16 rand) %s(opts="") %u(session_key_length)
+    klen = keylen_fn(S); sIV = os.urandom(16)
+    fields = struct.pack("B",64)+HAMK.raw + struct.pack("B",16)+sIV + struct.pack(">H",0) + struct.pack(">I",klen)
+    C=len(fields); m2=struct.pack(">I",2)+struct.pack(">H",C+4)+struct.pack(">I",C)+fields
+    m2=struct.pack(">I",len(m2))+m2
+    w.write(m2); await w.drain()
+    log(f"sent M2 ({len(m2)}B, klen={klen}); watching for control-channel bytes")
+    try:
+        nxt = await asyncio.wait_for(r.read(4096), timeout=6)
+    except asyncio.TimeoutError:
+        nxt = b"__timeout__"
+    if nxt == b"__timeout__":
+        log("no bytes for 6s; connection still OPEN (client waiting for server's post-auth msg)")
+    elif nxt == b"":
+        log("client CLOSED the connection after M2 (likely rejected M2)")
     else:
-        log(f"ccsrp_server_verify_session = FALSE for this combo")
+        log(f"*** client sent {len(nxt)}B after M2 — AUTH COMPLETE: {nxt.hex()[:96]}")
     w.close()
 
 async def main():

@@ -130,9 +130,18 @@ produce an M1 that Apple's own `ccsrp_server_verify_session` ACCEPTS. The exact 
   server_compute_session(ctx,"",salt,A) -> server_verify_session(ctx,M1,HAMK) == TRUE ->
   HAMK is M2. Since pmd3 is the server it invents the account_password ("user" here);
   the human types that same password into Screen Sharing.app.
-This retires the interop risk. Remaining: frame M2 (`%o%o%s%u` = HAMK, sIV(16 rand),
-opts, session_key_len) back to the client, then the ChaCha20 control channel keyed
-from the ccsrp session key, then media negotiation + SRTP relay.
+This retires the interop risk. **M2 also verified**: framed as
+header + `%o(HAMK 64) %o(sIV 16-rand) %s(opts="") %u(session_key_length=64)` = 102B
+on the wire (byte-for-byte the same size as the real server's M2). The live client
+ACCEPTS it — the connection stays OPEN (a rejected M2 closes the socket) and the
+client then waits for the server's post-auth message. => the FULL Pro Mode auth
+(RFB 003.889 -> sectype 33 -> RSA1 -> SRP -> M2) now completes against a real
+Screen Sharing.app, driven entirely by pmd3 + Apple corecrypto.
+
+Remaining (post-auth): the server speaks first (capture: S->C 4B, then C->S 1B,
+S->C 68B, ...) over the **ChaCha20-Poly1305 control channel** keyed from the ccsrp
+session key + sIV/cIV via SALTED-SHA512-PBKDF2 (kdf= option; LayerInit sub_100013640).
+Then Pro Mode media negotiation + SRTP relay of the iPhone stream.
 
 ### (historical) the make-or-break risk that is now RESOLVED: ccsrp interop
 Apple computes SRP with corecrypto **ccsrp** (SHA-512, RFC5054-4096, verifier x =
