@@ -193,6 +193,34 @@ evidence(octet), sIV(octet, 16B), options(str), keylen(u32). Read side is the
 inverse (`sub_100012350` UnBuffer). This is the framing for the whole SRP
 handshake carried in the RFB Pro Mode messages.
 
+## Negotiator offer/answer — ALREADY REVERSED in pmd3 (reuse)
+`AVCMediaStreamNegotiator` (rich class in AVConference: settings IVARs `_localSSRC`,
+`preferredAudioCodec`, `audioStreamMode`, `preferredMediaBitRate`,
+`rtcpTimeOutEnabled`, jitterBufferMode, …). Its offer/answer is the AVConference
+**mediaBlob**, and **pmd3 already builds it**: `media_stream_offer.py` reverses
+`-[AVCMediaStreamNegotiator createOffer]` — a bplist with
+`avcMediaStreamNegotiatorMediaBlob` (zlib protobuf: session id, HEVC/AVC CodecBanks,
+feature strings, BitrateTiers, ltrp, allowRTCPFB) + mode(5 video/6 audio) +
+RemoteEndpointInfo + CallID. Pro Mode exchanges this SAME negotiator offer/answer.
+=> **Reuse `media_stream_offer.py` for the Pro Mode negotiation.** Delta for Pro
+Mode: add the media-key fields (sendMediaKey/receiveMediaKey = random 16B key‖14B
+salt) + SRTPCipherSuite=5, and carry it in the RFB Pro Mode envelope (encrypted
+control channel) instead of the CoreDevice `mediastreamstart` bplist.
+
+## STATUS: protocol essentially mapped — remaining = RFB Pro Mode envelope only
+Everything the relay needs is now reversed or reusable:
+- SRP auth → reuse `srptools` (PRIME_4096, PBKDF2 verifier). [reversed]
+- SASL handshake framing → `sub_100012994` TLV. [reversed]
+- Control-channel crypto → AES-128 (SetupAESKeys) / ChaCha20-Poly1305. [reversed]
+- Negotiator offer/answer → reuse `media_stream_offer.py` mediaBlob. [reused]
+- Media SRTP → standard RFC3711 AES-CTR, random exchanged keys, stock lib. [reversed]
+LAST wire piece: the **RFB Pro Mode capability advertisement + the message that
+triggers/carries the AVConference negotiation** (`sub_100036C54`, screensharingd,
+"ProMode also enabled on viewer") — how Pro Mode is signalled in the RFB handshake
+and which envelope wraps the SRP + negotiator + keys. Then it's a BUILD (RFB server
++ SRP + control channel + negotiator + SRTP relay + RTP SSRC/seq rewrite), testable
+against a real Screen Sharing client by IP.
+
 ## Reverse-next queue (priority order)
 1. `sub_100013640` / `sub_1000135D4` — SRP session key → **SRTP media keys**
    (videoEncryptionKeyViewerToServer/ServerToViewer) + RFB security layer. This
