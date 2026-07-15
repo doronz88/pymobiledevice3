@@ -1,7 +1,9 @@
 import ctypes
+import ctypes.util
 import datetime
 import shutil
 import struct
+import sys
 import warnings
 from collections.abc import Iterable, Mapping, Sequence
 from io import BufferedWriter
@@ -33,6 +35,59 @@ ERRNO_TO_DEVICE_ERROR = {
 DLMessage = Sequence[Any]
 ProgressCallback = Callable[[Any], None]
 DLHandler = Callable[[DLMessage], None]
+
+
+def _darwin_important_available_capacity(path: Path) -> Optional[int]:
+    """Return the purgeable-aware free space macOS is willing to hand to writes.
+
+    ``shutil.disk_usage().free`` (statvfs) excludes APFS purgeable space (local
+    Time Machine snapshots, evictable iCloud files) that the OS reclaims on
+    demand, so it under-reports available capacity by tens of GB. This mirrors
+    Finder/iTunes by reading NSURL's
+    ``NSURLVolumeAvailableCapacityForImportantUsageKey`` via the Objective-C
+    runtime. Returns ``None`` on any failure so callers fall back to statvfs.
+    """
+    try:
+        objc = ctypes.CDLL(ctypes.util.find_library("objc"))
+        foundation = ctypes.CDLL(ctypes.util.find_library("Foundation"))
+    except (OSError, TypeError):
+        return None
+
+    objc.objc_getClass.restype = ctypes.c_void_p
+    objc.objc_getClass.argtypes = [ctypes.c_char_p]
+    objc.sel_registerName.restype = ctypes.c_void_p
+    objc.sel_registerName.argtypes = [ctypes.c_char_p]
+
+    def msg(restype: Any, receiver: Any, selector: bytes, argtypes: Sequence = (), args: Sequence = ()) -> Any:
+        send = objc.objc_msgSend
+        send.restype = restype
+        send.argtypes = [ctypes.c_void_p, ctypes.c_void_p, *argtypes]
+        return send(receiver, objc.sel_registerName(selector), *args)
+
+    try:
+        key = ctypes.c_void_p.in_dll(foundation, "NSURLVolumeAvailableCapacityForImportantUsageKey")
+
+        ns_string = objc.objc_getClass(b"NSString")
+        ns_path = msg(ctypes.c_void_p, ns_string, b"stringWithUTF8String:", [ctypes.c_char_p], [str(path).encode()])
+        ns_url = objc.objc_getClass(b"NSURL")
+        url = msg(ctypes.c_void_p, ns_url, b"fileURLWithPath:", [ctypes.c_void_p], [ns_path])
+        if not url:
+            return None
+
+        value = ctypes.c_void_p(0)
+        error = ctypes.c_void_p(0)
+        ok = msg(
+            ctypes.c_bool,
+            url,
+            b"getResourceValue:forKey:error:",
+            [ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)],
+            [ctypes.byref(value), key, ctypes.byref(error)],
+        )
+        if not ok or not value.value:
+            return None
+        return int(msg(ctypes.c_longlong, value, b"longLongValue"))
+    except (ValueError, OSError):
+        return None
 
 
 class DeviceLink:
@@ -212,6 +267,13 @@ class DeviceLink:
 
     async def get_free_disk_space(self, _message: DLMessage) -> None:
         freespace = shutil.disk_usage(self.root_path).free
+        if sys.platform == "darwin":
+            # statvfs excludes APFS purgeable space; report the capacity macOS will
+            # actually satisfy (matches Finder), so the device doesn't refuse a
+            # backup that fits. See https://github.com/doronz88/pymobiledevice3/issues/1769
+            important = _darwin_important_available_capacity(self.root_path)
+            if important is not None:
+                freespace = max(freespace, important)
         await self.status_response(0, status_dict=freespace)
 
     async def move_items(self, message: DLMessage) -> None:
