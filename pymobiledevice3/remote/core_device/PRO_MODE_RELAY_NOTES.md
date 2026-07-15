@@ -108,7 +108,33 @@ mod N, and sends {N,g,salt,B,iters,opts}; the client derives x from OUR salt+ite
 the password the user types. (Serializer = screensharingd sub_100012994.)
 Client reply (C->S, phase 2) carries A + M1; server replies (S->C 102B) with M2.
 
-### THE make-or-break risk: ccsrp <-> srptools interop
+### SRP INTEROP CRACKED — verified against the live client (2026-07-16)
+Proven end-to-end: a corecrypto-backed pmd3 server made the real Screen Sharing.app
+produce an M1 that Apple's own `ccsrp_server_verify_session` ACCEPTS. The exact recipe
+(scratchpad/promode_cc_server.py, and validated self-test scratchpad round-trip):
+- Call Apple corecrypto **ccsrp directly via ctypes** (symbols re-exported through
+  /usr/lib/libSystem.dylib): `ccsha512_di`, `ccsrp_gp_rfc5054_4096`, `ccrng`,
+  `ccsrp_ctx_init`, `ccsrp_generate_verifier`, `ccsrp_server_generate_public_key`,
+  `ccsrp_server_compute_session`, `ccsrp_server_verify_session`. ctx buffer: allocate
+  16 KiB and `ccsrp_ctx_init(ctx, di, gp)` (no exported sizeof needed). exchange size = 512.
+  -> removes ALL M1/M2/K/u/k formula guessing; Apple's code computes them.
+- **x-password = PBKDF2-HMAC-SHA512(account_password, srp_salt, iterations, dkLen=128)**
+  (the 128-byte macOS ShadowHashData entropy) fed as the ccsrp "password".
+  NOT dkLen=64, NOT hex-encoded, NOT plaintext, NOT SHA512-prehash — dkLen=128 raw bytes.
+- **username = "" (empty)** for BOTH `ccsrp_generate_verifier` and
+  `ccsrp_server_compute_session` (screensharingd passes "" to compute_session; the
+  corecrypto client uses one username for x and M1, so it must be "" throughout).
+- salt = 32 random bytes (server-chosen), iterations = we choose + send (19417 works).
+- Server flow per connection: gen_verifier(ctx,"",pw,salt,ver) -> server_generate_public_key
+  (ctx,rng,ver,B) -> send step1(N,g,salt,B,iters,opts) -> recv A(512)+M1(64) ->
+  server_compute_session(ctx,"",salt,A) -> server_verify_session(ctx,M1,HAMK) == TRUE ->
+  HAMK is M2. Since pmd3 is the server it invents the account_password ("user" here);
+  the human types that same password into Screen Sharing.app.
+This retires the interop risk. Remaining: frame M2 (`%o%o%s%u` = HAMK, sIV(16 rand),
+opts, session_key_len) back to the client, then the ChaCha20 control channel keyed
+from the ccsrp session key, then media negotiation + SRTP relay.
+
+### (historical) the make-or-break risk that is now RESOLVED: ccsrp interop
 Apple computes SRP with corecrypto **ccsrp** (SHA-512, RFC5054-4096, verifier x =
 SALTED-SHA512-PBKDF2). Whether `srptools`' standard SRP-6a produces the identical
 k / M1 / M2 (MPI zero-padding to |N|, hash input ordering) is UNVERIFIED and is the

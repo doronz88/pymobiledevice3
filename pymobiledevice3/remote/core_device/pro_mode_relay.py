@@ -45,6 +45,12 @@ SRP_SASL_OPTIONS = "mda=SHA-512,replay_detection,conf+int=ChaCha20-Poly1305,kdf=
 SRP_GENERATOR = 5                   # RFC5054-4096 group generator (confirmed on wire)
 SRP_PBKDF2_DEFAULT_ITERATIONS = 19417   # from screensharingd; confirm vs live server
 SRP_SALT_LEN = 32
+# VERIFIED against the live Screen Sharing client (2026-07-16, promode_cc_server.py):
+# the ccsrp "password" is the 128-byte ShadowHashData entropy, and the SRP username is
+# empty. Implemented by calling Apple corecrypto ccsrp directly via ctypes (below),
+# which guarantees M1/M2/K interop instead of reimplementing SRP-6a.
+SRP_PBKDF2_DKLEN = 128              # PBKDF2-HMAC-SHA512(password, salt, iters, 128)
+SRP_USERNAME = b""                 # ccsrp username for verifier + compute_session
 # SRTP media key layout: [AES key][14-byte salt]; cipher suite 5 = AES-128-CTR.
 SRTP_CIPHER_AES_128_CTR = 5
 SRTP_KEY_LEN = 16
