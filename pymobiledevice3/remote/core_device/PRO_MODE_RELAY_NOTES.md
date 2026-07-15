@@ -95,6 +95,24 @@ the video keys branch off the same session key) is the open thread.
   (server + Screen Sharing viewer) derive the same keys from the shared SRP secret;
   pmd3 must reproduce that KDF to encrypt the relayed RTP the client can decrypt.
 
+## Piece 4 — video SRTP: CONFIRMED standard RFC 3711 AES-CTR (2026 binary)
+`AVConference _SRTPEncryptData` @ `0x1bd89b768` (imagebase 0x1bd636000), called via
+`_SRTPEncrypt` from the RTP send path (`_SendRTP` / `_RTPMediaQueueSecurityCallback`):
+- Cipher = **AES-CTR** via CommonCrypto: per packet `CCCryptorReset(cryptor, iv)` then
+  `CCCryptorUpdate` in place. Cryptor created in `-[VCMediaStreamTransport setupSRTP]`
+  with the media key.
+- IV/counter (16 B, "MakeCounter") = **textbook SRTP (RFC 3711)**: 14-byte **salt**
+  (token, ctx+238) base, XOR **SSRC** (ctx+120), XOR **ROC** (`SRTPGetROC`) + **seq**
+  (`iv[13]^=seq; iv[12]^=seq>>shift`). I.e. `IV = salt ⊕ (SSRC≪64) ⊕ ((ROC∥SEQ)≪16)`.
+- => **cipher suite 5 = standard SRTP AES-128-CTR.** Matches P0's Mojave writeup, so
+  it's stable across versions. **pmd3 can use a standard SRTP lib** (pylibsrtp/libsrtp)
+  to encrypt the relayed RTP — no hand-rolled crypto. Auth: only encryption seen in
+  SRTPEncryptData (likely NULL/short auth tag — confirm the RTCP/RTP auth len).
+- Remaining sub-piece: the KDF **SRP session key → (16-B media key, 14-B salt)** per
+  direction (viewer->server / server->viewer). Master key `SHA-256(session)[:16]` is
+  known for the control channel; the media key+salt derivation is the last KDF to pin
+  (likely a labeled expansion of the SRP session key; both peers derive identically).
+
 ## Scope reality
 This is a large, multi-session reverse of a proprietary multi-binary protocol
 (screensharingd handshake/auth/keying + ScreensharingAgent media + ScreenSharing.
