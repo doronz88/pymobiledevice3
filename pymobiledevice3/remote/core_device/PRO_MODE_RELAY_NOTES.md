@@ -85,15 +85,28 @@ Implication: the whole RSA1 phase is now buildable end-to-end with stdlib crypto
 (generate RSA-2048 host key, PKCS1v15-decrypt to read the username). No entitlement,
 no proprietary bits.
 
-## SRP server message framing (from the capture; server side = what pmd3 emits)
-`[u32 payload_len][u32 step=2][u16 =payload-6][u32 =payload-10][u16 count=2]`
-then field N: `[u8 flag=0x00][N: 512B raw big-endian]` (RFC5054-4096 prime),
-then `[u16 0x0001][u8 g=0x05]`, then **B: 512B** (server public), then
-`[u8 optlen=0x50][options ascii]` where options =
-`mda=SHA-512,replay_detection,conf+int=ChaCha20-Poly1305,kdf=SALTED-SHA512-PBKDF2`.
-(The exact micro-split around g/B and the client's A-reply framing want one clean
-re-capture — the reference dump was head-truncated. The serializer is screensharingd
-sub_100012994 if byte-exactness needs pinning.)
+## SRP server message framing — COMPLETE (clean full capture, 2026-07-16)
+The whole message decodes onto the reversed SASL grammar. Server side = exactly what
+pmd3 must emit:
+```
+[u32 payload_len=1165]          # bytes after this field
+[u32 step=2]                    # SRP phase (RSA1 was phase 1)
+[u16 =payload-6][u32 =payload-10]   # nested length wrappers
+[u16 count=2]
+[u8 flag=0x00]
+N   : 512B raw big-endian       # RFC5054-4096 prime, NO length prefix (fixed group)
+g   : %m  = [u16 len=1][0x05]                       # generator 5
+salt: %o  = [u8 len=0x20][32B]  # ACCOUNT-FIXED (identical across captures)
+B   : %m  = [u16 len=0x200][512B]                   # ephemeral server public (varies)
+iters: %q = [u64] = 142857      # PBKDF2 iteration count for this account
+[u8 0x00]
+opts: %s  = [u8 len=0x50][80B]  # mda=SHA-512,replay_detection,conf+int=ChaCha20-Poly1305,kdf=SALTED-SHA512-PBKDF2
+```
+Because pmd3 is the SERVER it OWNS the salt, verifier, and iteration count — it does
+NOT need Apple's. It generates a fresh salt, computes v = g^PBKDF2-SHA512(pw,salt,iters)
+mod N, and sends {N,g,salt,B,iters,opts}; the client derives x from OUR salt+iters and
+the password the user types. (Serializer = screensharingd sub_100012994.)
+Client reply (C->S, phase 2) carries A + M1; server replies (S->C 102B) with M2.
 
 ### THE make-or-break risk: ccsrp <-> srptools interop
 Apple computes SRP with corecrypto **ccsrp** (SHA-512, RFC5054-4096, verifier x =
