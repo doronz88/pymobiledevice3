@@ -143,16 +143,39 @@ async def handle(r,w):
         "446f726f6e5ae2809973204d6163426f6f6b2050726f")
     w.write(server_init); await w.drain()
     log(f"sent ServerInit {len(server_init)}B")
-    # Now log the client's Pro Mode negotiation for a while.
-    log("--- capturing client's Pro Mode negotiation ---")
-    for _ in range(40):
+    # read the client's SetEncodings / 0x21 config first
+    try:
+        pre = await asyncio.wait_for(r.read(8192), timeout=3)
+        log(f"C->S pre-media {len(pre)}B: {pre.hex()[:120]}")
+    except asyncio.TimeoutError:
+        log("(no pre-media)")
+    # REPLAY the captured server media messages (0x14 + 412B 0x44f FramebufferUpdate).
+    msg14 = bytes.fromhex("140000040001000c")
+    fbu = bytes.fromhex(
+        "0000000100000000000000000000044f00000001593c78855cc9b291ffac6eb1"
+        "62d4413e652aa515342bf323e94d33c81fcd9d3a008045a9d826b36977f56e05"
+        "3b530c4a063a91e943dfec46ac08692549027669fc140dd5d42f84c658b5b73d"
+        "d62b12c70a1ab0c6dad0f41bcb58b8e29f26de099e6afa46cf43356bb12f8a2b"
+        "07027a67779fb2b8372bae96ca6f787fca1474c62f5473c7b6919fae35aee2e2"
+        "36f404c3adc08a9f5219cf8633e5d92d4cf73d9a228300401f9d4a74ce009df6"
+        "eb2ebd0c462eba6a1e46872cd4ebbee04498379ceb467d755d67f1d2d234185d"
+        "91a172c876306984d14b215dea57ccbc19e74ea90f0322bf005027d4808860ec"
+        "7d7fe6d0e46c732b2f8991c56cfbda7b18fe23dd3869b7a4e85af063fa4daa62"
+        "d4778a71c9d695333cc45f34e49e5d3232132a998e0492b2e1f58aa6cccf2c34"
+        "771e861a05c6096210d50050604aa4983f30ce0ee780aea44815ada9bac73191"
+        "51165c5fdc66923ecec8db762a769f78e371c607fe26dcffef02727840ed80f5"
+        "26d733e9ddd1780319465471d6a613f990f3793ac319c9498477782f")
+    w.write(msg14); await w.drain(); log(f"replayed 0x14 ({len(msg14)}B)")
+    w.write(fbu); await w.drain(); log(f"replayed 0x44f media blob ({len(fbu)}B)")
+    log("--- watching client reaction to replayed media negotiation ---")
+    for _ in range(30):
         try:
             m = await asyncio.wait_for(r.read(8192), timeout=4)
         except asyncio.TimeoutError:
             log("(idle 4s)"); continue
         if not m:
             log("client closed"); break
-        log(f"C->S {len(m)}B: {m.hex()[:140]}")
+        log(f"C->S {len(m)}B: {m.hex()[:160]}")
     w.close()
 
 async def main():

@@ -159,9 +159,35 @@ cIV, server dir uses sIV); frames are `[u16 len][ciphertext+16B tag]`. Only used
 media-control messages, not the RFB handshake above.
 
 STATUS: auth + RFB handshake DONE end-to-end vs live client (promode_cc_server.py).
-NEXT: media negotiation (msg 0x14 + 412B AVC blob = reuse media_stream_offer.py + media
-keys + cipher 5), then SRTP relay of the iPhone HEVC + bridge serve-vnc's displayservice
-source. The video test needs the iPhone connected.
+
+### Media negotiation is SESSION-ENCRYPTED (replay proven to fail, 2026-07-16)
+Replaying .237's captured 0x14 + 412B 0x44f blob at the local client -> client sends
+SetEncodings + a 0x12 msg then CLOSES. So the 0x44f media blob is bound to the SRP
+session (ChaCha20-Poly1305 sealed). Size math confirms one AEAD blob:
+412B = 16B FBU header + 4B version(00000001) + 376B plaintext + 16B Poly1305 tag.
+No shortcut: the ChaCha20 control channel must be built for real.
+
+### Crypto primitives — ALL callable from Python via ctypes (verified present):
+- ccsrp_* (libSystem) incl. ccsrp_get_session_key -> extract the 64B SRP session key K.
+- CoreUtils.framework: chacha20_poly1305_init_64x64 / add_aad / encrypt / decrypt /
+  final / verify / encrypt_all_64x64 / decrypt_all_64x64.
+  NOTE: exact incremental-encrypt signature/state-layout still needs pinning (a naive
+  ctypes call returns zero ciphertext + segfaults) -> reverse a CALLER of
+  chacha20_poly1305_encrypt (NOT in screensharingd, which only imports init; the RFB
+  I/O security layer that uses mech+376/mech+632 contexts lives elsewhere -- likely the
+  ARDAgent/AppleVNCServer RFB lib). Also unresolved: the layer-key derivation into
+  mech+80 from K, the cIV/sIV nonce scheme, and the per-frame `[u16 len][ct+tag]` format.
+
+### REMAINING BUILD (the media half; needs iterative work + the iPhone for video):
+1. ChaCha20 control channel: pin encrypt/decrypt signature + key(mech+80) + nonces +
+   frame format; wrap send/recv.
+2. Media negotiation CONTENT: the 376B plaintext offer (AVCMediaStreamNegotiator; reuse
+   media_stream_offer.py) + SRTP master keys. Fastest reverse route: an ACTIVE
+   decrypting MITM of a real Mac<->Mac session (we know password "user" for BOTH ends,
+   so run SRP with each side, hold both session keys, decrypt both directions) OR
+   reverse ScreensharingAgent's offer builder.
+3. SRTP relay (cipher 5, AES-128-CTR -- already in pro_mode_relay.py) + SSRC/seq rewrite.
+4. Bridge pmd3's displayservice HEVC RTP source (serve-vnc already receives it).
 
 ### (historical) the make-or-break risk that is now RESOLVED: ccsrp interop
 Apple computes SRP with corecrypto **ccsrp** (SHA-512, RFC5054-4096, verifier x =
