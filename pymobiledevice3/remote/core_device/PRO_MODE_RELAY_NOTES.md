@@ -221,6 +221,24 @@ and which envelope wraps the SRP + negotiator + keys. Then it's a BUILD (RFB ser
 + SRP + control channel + negotiator + SRTP relay + RTP SSRC/seq rewrite), testable
 against a real Screen Sharing client by IP.
 
+## BUILD phase (RE complete)
+Device-independent pieces (buildable + unit-testable without hardware; each
+validates the RE):
+- [x] SASL framing codec — prototyped + round-trips (scratchpad/sasl_codec.py):
+      `[u32 BE len]` + `%c`1B `%m`u16len+bignum `%o`u8len+octets `%q`u64 `%s`u16len+utf8
+      `%u`u32. step1/step2 shapes verified.
+- [ ] SRP server: `srptools` `SRPServerSession(SRPContext(user, prime=PRIME_4096,
+      generator=PRIME_4096_GEN, hash_func=sha512), verifier)` where
+      `verifier = pow(g, PBKDF2-HMAC-SHA512(pw, salt, 19417), N)`. pmd3 owns the
+      verifier so the server math is standard; interop test needs a PBKDF2-x client.
+- [ ] SRTP: standard RFC3711 AES-128-CTR round-trip (key‖salt=30B, IV=salt⊕SSRC⊕(ROC∥SEQ)).
+Integration pieces (NEED device + a real Screen Sharing.app client to verify):
+- [ ] RFB Pro Mode server loop: capability handshake (last envelope detail, pin
+      during integration) → SRP → control channel → negotiator exchange (reuse
+      `media_stream_offer.py` + add media keys + cipher 5) → SRTP relay (recv device
+      RTP, rewrite SSRC/seq, SRTP-encrypt with the negotiated key, send to client) →
+      relay client RTCP back to the device.
+
 ## Reverse-next queue (priority order)
 1. `sub_100013640` / `sub_1000135D4` — SRP session key → **SRTP media keys**
    (videoEncryptionKeyViewerToServer/ServerToViewer) + RFB security layer. This
