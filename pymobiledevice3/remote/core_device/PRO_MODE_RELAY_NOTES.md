@@ -178,6 +178,21 @@ in one pass. The queue below is the remaining work in priority order.
 - Net: SRP + control-channel crypto reversed here; **video SRTP de-risked by P0**
   (AES-CTR, 16B key+token, counter from SSRC/seq) pending 2026 verification.
 
+## Wire framing — SASL serializer REVERSED (`sub_100012994`, screensharingd)
+Length-prefixed TLV. Message = `[u32 BE payload_len][fields…]` (len excludes the
+4-byte prefix). Format tokens (`type = (char - 99) >> 1`):
+- `%c` char  → 1 byte
+- `%m` MPI   → `u16 BE len` + big-endian bignum bytes (`ccz_write_uint`)
+- `%o` octet → `u8 len` + bytes
+- `%q` u64   → 8 bytes BE
+- `%s` str   → `u16 BE len` + UTF-8
+- `%u` u32   → 4 bytes BE
+SRP step1 out `%c%m%m%o%m%q%s` = marker, MPI, MPI, salt(octet), MPI(B), u64,
+options(str e.g. "SRP-RFC5054-4096-SHA512-PBKDF2"). step2 out `%o%o%s%u` =
+evidence(octet), sIV(octet, 16B), options(str), keylen(u32). Read side is the
+inverse (`sub_100012350` UnBuffer). This is the framing for the whole SRP
+handshake carried in the RFB Pro Mode messages.
+
 ## Reverse-next queue (priority order)
 1. `sub_100013640` / `sub_1000135D4` — SRP session key → **SRTP media keys**
    (videoEncryptionKeyViewerToServer/ServerToViewer) + RFB security layer. This
