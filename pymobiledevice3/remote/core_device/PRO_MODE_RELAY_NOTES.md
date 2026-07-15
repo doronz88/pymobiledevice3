@@ -66,6 +66,31 @@ Scheme string in binary: **`SRP-RFC5054-4096-SHA512-PBKDF2`**.
   (reverse next — this is where the SRP session key becomes the SRTP media keys +
   the encrypted RFB data stream).
 
+## Piece 4 progress — key material derivation (partial)
+- **Control channel** (the encrypted RFB data stream, viewer<->server): **ChaCha20-
+  Poly1305**, KDF **SALTED-SHA512-PBKDF2**, send+recv subkeys derived from the SRP
+  session key. Fn `sub_100013640` ("LayerInit", screensharingd) — requires replay
+  detection; init send=`chacha20_poly1305_init_64x64(+376,+80,sendKey)` recv=`(+632,
+  +80,recvKey)` where +80 is the SRP session-key region.
+- **Video SRTP keys**: `ScreensharingAgent` does NOT derive them (no derive/hkdf/kdf
+  in that binary — only jpeg). They arrive as PARAMETERS
+  (`…video1EncryptionKeyViewerToServer:ServerToViewer:…`) → **screensharingd derives
+  them from the SRP session key and passes them to the agent over XPC.** SRTP suite
+  = **5** (hardcoded in `createAVCVideoStream…`). Exact video-key KDF NOT yet pinned
+  (screensharingd, from SRP session key) — top of the reverse-next queue. Both sides
+  (server + Screen Sharing viewer) derive the same keys from the shared SRP secret;
+  pmd3 must reproduce that KDF to encrypt the relayed RTP the client can decrypt.
+
+## Scope reality
+This is a large, multi-session reverse of a proprietary multi-binary protocol
+(screensharingd handshake/auth/keying + ScreensharingAgent media + ScreenSharing.
+framework viewer). Reversed so far: the entitlement wall + relay architecture, the
+full SRP scheme (+ that pmd3 can reuse srptools), and the control-channel crypto.
+NOT yet reversed: the exact video-key KDF, the SASL wire framing, the
+AVCMediaStreamNegotiator/RFB Pro Mode capability format, and the SRTP-5 packet
+format the client expects. Each is a meaty decompile; they cannot all be finished
+in one pass. The queue below is the remaining work in priority order.
+
 ## Reverse-next queue (priority order)
 1. `sub_100013640` / `sub_1000135D4` — SRP session key → **SRTP media keys**
    (videoEncryptionKeyViewerToServer/ServerToViewer) + RFB security layer. This
