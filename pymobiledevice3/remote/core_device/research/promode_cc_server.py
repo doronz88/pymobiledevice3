@@ -131,17 +131,28 @@ async def handle(r,w):
     C=len(fields); m2=struct.pack(">I",2)+struct.pack(">H",C+4)+struct.pack(">I",C)+fields
     m2=struct.pack(">I",len(m2))+m2
     w.write(m2); await w.drain()
-    log(f"sent M2 ({len(m2)}B, klen={klen}); watching for control-channel bytes")
-    try:
-        nxt = await asyncio.wait_for(r.read(4096), timeout=6)
-    except asyncio.TimeoutError:
-        nxt = b"__timeout__"
-    if nxt == b"__timeout__":
-        log("no bytes for 6s; connection still OPEN (client waiting for server's post-auth msg)")
-    elif nxt == b"":
-        log("client CLOSED the connection after M2 (likely rejected M2)")
-    else:
-        log(f"*** client sent {len(nxt)}B after M2 — AUTH COMPLETE: {nxt.hex()[:96]}")
+    log(f"sent M2 ({len(m2)}B, klen={klen})")
+    # ---- post-auth RFB (PLAINTEXT) ----
+    w.write(b"\x00\x00\x00\x00"); await w.drain()          # SecurityResult = OK
+    ci = await rd(r,1,"ClientInit"); log(f"ClientInit shared-flag = {ci.hex()}")
+    # ServerInit: exact captured Apple ServerInit (68B): 3456x2234, 32bpp pixfmt,
+    # then a 44-byte Apple name struct ending "DoronZ's MacBook Pro".
+    server_init = bytes.fromhex(
+        "0d8008ba2018000100ff00ff00ff100800000000"
+        "0000002c000000000052bff6e72fec0000000000000000000000"
+        "446f726f6e5ae2809973204d6163426f6f6b2050726f")
+    w.write(server_init); await w.drain()
+    log(f"sent ServerInit {len(server_init)}B")
+    # Now log the client's Pro Mode negotiation for a while.
+    log("--- capturing client's Pro Mode negotiation ---")
+    for _ in range(40):
+        try:
+            m = await asyncio.wait_for(r.read(8192), timeout=4)
+        except asyncio.TimeoutError:
+            log("(idle 4s)"); continue
+        if not m:
+            log("client closed"); break
+        log(f"C->S {len(m)}B: {m.hex()[:140]}")
     w.close()
 
 async def main():

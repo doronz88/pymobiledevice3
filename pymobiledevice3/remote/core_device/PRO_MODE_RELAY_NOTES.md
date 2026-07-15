@@ -138,10 +138,30 @@ client then waits for the server's post-auth message. => the FULL Pro Mode auth
 (RFB 003.889 -> sectype 33 -> RSA1 -> SRP -> M2) now completes against a real
 Screen Sharing.app, driven entirely by pmd3 + Apple corecrypto.
 
-Remaining (post-auth): the server speaks first (capture: S->C 4B, then C->S 1B,
-S->C 68B, ...) over the **ChaCha20-Poly1305 control channel** keyed from the ccsrp
-session key + sIV/cIV via SALTED-SHA512-PBKDF2 (kdf= option; LayerInit sub_100013640).
-Then Pro Mode media negotiation + SRTP relay of the iPhone stream.
+### POST-AUTH RFB is PLAINTEXT — handshake reaches Pro Mode negotiation (2026-07-16)
+After M2 the traffic is plain RFB (NOT yet encrypted); verified live — pmd3 drove the
+real client through it:
+- S->C `00000000` = **SecurityResult OK** (4B).
+- C->S `c1` = **ClientInit** (shared flag).
+- S->C 68B = **ServerInit**: `[u16 w=0x0d80][u16 h=0x08ba][16B pixfmt: 32bpp/24depth,
+  truecolour, RGB max 255, shifts 16/8/0][u32 namelen=0x2c=44][44B Apple name struct
+  ending "..MacBook Pro"]`. Must be byte-shaped right or the client disconnects.
+- C->S 82B type **0x21** = Pro Mode display config; C->S 56B type **0x02** = SetEncodings
+  with Apple Pro Mode encodings (0x3f3,0x3ea,6,0x10,0x450,0x44c,0x44d,0x451,0x453,
+  0x455,0x456 + pseudo 0xffffff11/0xffffff21).
+- Server then must answer: S->C 8B `140000040001000c` (type 0x14) then S->C 412B media
+  negotiation blob (`00000001..0000044f..` = AVC negotiator offer + media keys), after
+  which the `[u16 len][ciphertext]` **ChaCha20** control/media frames begin.
+
+The ChaCha20 control channel (LayerInit sub_100013640): CoreUtils
+`chacha20_poly1305_init_64x64(ctx, key=session_key@mech+80, nonce)` x2 (client dir uses
+cIV, server dir uses sIV); frames are `[u16 len][ciphertext+16B tag]`. Only used for the
+media-control messages, not the RFB handshake above.
+
+STATUS: auth + RFB handshake DONE end-to-end vs live client (promode_cc_server.py).
+NEXT: media negotiation (msg 0x14 + 412B AVC blob = reuse media_stream_offer.py + media
+keys + cipher 5), then SRTP relay of the iPhone HEVC + bridge serve-vnc's displayservice
+source. The video test needs the iPhone connected.
 
 ### (historical) the make-or-break risk that is now RESOLVED: ccsrp interop
 Apple computes SRP with corecrypto **ccsrp** (SHA-512, RFC5054-4096, verifier x =
