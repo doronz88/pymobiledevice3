@@ -113,6 +113,36 @@ the video keys branch off the same session key) is the open thread.
   known for the control channel; the media key+salt derivation is the last KDF to pin
   (likely a labeled expansion of the SRP session key; both peers derive identically).
 
+## Piece 4 — media-key structure: SOLVED (no KDF)
+`-[VCMediaStreamTransport getCryptoSet:withMediaKey:]` (0x1bda32e34): the mediaKey
+is a plain **concatenation** `mediaKey = [AES key] ‖ [14-byte salt]`, total length
+= `getSRTPMediaKeyLength(cipherSuite) + 14`. For cipher 5 (AES-128) that's
+**16-byte key ‖ 14-byte salt = 30 bytes**. It's split directly (no KDF) into the
+SRTP key + salt fed to `SRTPUseEncryption`. The mediaKey comes from
+`streamConfig.sendMediaKey` / `receiveMediaKey` — i.e. the negotiated
+`videoEncryptionKey{ViewerToServer,ServerToViewer}` tokens.
+=> **Media keys are random 30-byte values the SERVER generates and exchanges in
+the negotiator over the (SRP-)encrypted control channel — not derived from the SRP
+session key.** So pmd3, as the server, just generates random 16-B key + 14-B salt
+per direction, puts them in the negotiator answer, and SRTP-encrypts the relayed
+RTP with a standard SRTP lib. `getSRTPMediaKeyLength:` maps the cipher-suite id →
+AES key length. `VCDefaults forceDisableMediaEncryption` forces cipher=0 (a real
+no-encryption hook; likely internal-only).
+
+## CRYPTO STACK: fully reversed (summary)
+For the relay, the entire crypto path is now mapped — no proprietary KDF remains:
+1. **SRP auth** = SRP-RFC5054-4096-SHA512-PBKDF2 → reuse `srptools` (PRIME_4096).
+2. **Control channel** = AES-128 (`SetupAESKeys`, key=`SHA-256(SRP session)[:16]`,
+   CBC+ECB) OR ChaCha20-Poly1305 (`LayerInit`, SALTED-SHA512-PBKDF2). One of these
+   secures the RFB stream over which keys/negotiation are exchanged.
+3. **Media (video/audio) SRTP** = standard RFC3711 AES-CTR; per-direction mediaKey
+   = random(16-B key ‖ 14-B salt), server-generated, exchanged in the negotiator;
+   IV = salt ⊕ SSRC ⊕ (ROC∥SEQ). Use a stock SRTP lib.
+Remaining for the relay = pure WIRE FORMAT (no more crypto RE): the SASL message
+framing (`sub_100012994`) and the Pro Mode capability + `AVCMediaStreamNegotiator`
+offer/answer structure (`sub_100036C54`), plus which control-channel stack (AES
+vs ChaCha) the by-IP Pro Mode path selects.
+
 ## Scope reality
 This is a large, multi-session reverse of a proprietary multi-binary protocol
 (screensharingd handshake/auth/keying + ScreensharingAgent media + ScreenSharing.
