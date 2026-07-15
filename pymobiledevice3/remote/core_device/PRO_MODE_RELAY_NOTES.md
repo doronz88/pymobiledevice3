@@ -67,6 +67,49 @@ Corrections/confirmations vs prior notes:
 Reusable harness: scratchpad/promode_mitm.py (transparent logging relay, no root) +
 `open vnc://user:user@localhost:5999`. Re-run any time to capture more/deeper.
 
+## RSA1 step DECODED — validated by building our own server (2026-07-16)
+scratchpad/promode_server.py: a stage-by-stage pmd3-side server driven by a LIVE
+local Screen Sharing.app (`open vnc://user:user@localhost:5988`). It reproduced the
+real server's bytes exactly through RSA1 — the client could not tell it apart:
+- Client selects type 33, sends `[u32 len=10][u16 0x0100]["RSA1"][u32 0]`.
+- Server sends its **own** 2048-bit RSA host key (we generate the keypair, so we
+  hold the private key): `[u32 total][u16 0x0001][u32 derlen][DER SPKI]`.
+- Client replies `[u32 len][u16 0x0100]["RSA1"][u16 step=2][u16 0x0100][256B ct]`
+  zero-padded to 0x290. The 256B ciphertext is **RSA / PKCS#1 v1.5** (NOT OAEP).
+- **DECRYPTED under our host key** → plaintext `00000004 "user" …` = a
+  length-prefixed **username**. So RSA1 privately conveys the username; the server
+  decrypts it to look up that user's SRP verifier. The PASSWORD is proven later via
+  SRP. => pmd3 sets its own verifier for whatever username it advertises; it can
+  accept any username since it owns the RSA key + the verifier.
+Implication: the whole RSA1 phase is now buildable end-to-end with stdlib crypto
+(generate RSA-2048 host key, PKCS1v15-decrypt to read the username). No entitlement,
+no proprietary bits.
+
+## SRP server message framing (from the capture; server side = what pmd3 emits)
+`[u32 payload_len][u32 step=2][u16 =payload-6][u32 =payload-10][u16 count=2]`
+then field N: `[u8 flag=0x00][N: 512B raw big-endian]` (RFC5054-4096 prime),
+then `[u16 0x0001][u8 g=0x05]`, then **B: 512B** (server public), then
+`[u8 optlen=0x50][options ascii]` where options =
+`mda=SHA-512,replay_detection,conf+int=ChaCha20-Poly1305,kdf=SALTED-SHA512-PBKDF2`.
+(The exact micro-split around g/B and the client's A-reply framing want one clean
+re-capture — the reference dump was head-truncated. The serializer is screensharingd
+sub_100012994 if byte-exactness needs pinning.)
+
+### THE make-or-break risk: ccsrp <-> srptools interop
+Apple computes SRP with corecrypto **ccsrp** (SHA-512, RFC5054-4096, verifier x =
+SALTED-SHA512-PBKDF2). Whether `srptools`' standard SRP-6a produces the identical
+k / M1 / M2 (MPI zero-padding to |N|, hash input ordering) is UNVERIFIED and is the
+one thing that can sink the whole approach. Decisive next experiment: extend
+promode_server.py to emit the SRP step (srptools B + framing above), drive the live
+client, and see if it accepts our M2 / we accept its M1. If it mismatches, swap in a
+padding-exact SRP-6a (H(N)^H(g), PAD to 512B) rather than srptools. Best done live.
+
+## Remaining after SRP: control channel + media (still to build)
+ChaCha20-Poly1305 control channel keyed from the SRP session key via
+SALTED-SHA512-PBKDF2 (LayerInit) -> Pro Mode capability advertise -> AVC negotiator
+offer/answer (reuse media_stream_offer.py) -> SRTP (cipher 5) relay of iPhone RTP
+with SSRC/seq rewrite -> relay client RCTL back to device.
+
 ## The 6 pieces to build
 1. RFB server + advertise Pro Mode capability (extends serve-vnc's handshake).
 2. **SRP auth** → session key.  ← REVERSED (below)
