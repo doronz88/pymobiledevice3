@@ -29,8 +29,21 @@ from typing import Optional
 # ---------------------------------------------------------------------------
 # Constants (reversed from screensharingd / ScreensharingAgent / AVConference)
 # ---------------------------------------------------------------------------
+# --- RFB entry (ground truth: real Mac->Mac capture, promode_handshake.txt) ---
+# Apple ARD/Screen Sharing speaks minor 889, and (even so) the server sends a
+# security-type LIST, not the classic RFB 3.3 single-U32. The modern client selects
+# type 33 ("RSA1"): an RSA host-key sub-step, THEN the SRP+SASL exchange below.
+RFB_VERSION = b"RFB 003.889\n"
+SECURITY_TYPES = (30, 33, 36, 35)   # wire: 04 1e 21 24 23 ; 33=RSA1 is what clients pick
+SECURITY_TYPE_RSA1 = 33
+RSA1_METHOD_TAG = b"RSA1"
+RSA1_HOST_KEY_BITS = 2048           # server host identity key (e=65537)
+
 SRP_SCHEME = "SRP-RFC5054-4096-SHA512-PBKDF2"
-SRP_PBKDF2_DEFAULT_ITERATIONS = 19417   # default when the account record omits it
+# SASL options string the server sends inside the SRP step (verified on the wire):
+SRP_SASL_OPTIONS = "mda=SHA-512,replay_detection,conf+int=ChaCha20-Poly1305,kdf=SALTED-SHA512-PBKDF2"
+SRP_GENERATOR = 5                   # RFC5054-4096 group generator (confirmed on wire)
+SRP_PBKDF2_DEFAULT_ITERATIONS = 19417   # from screensharingd; confirm vs live server
 SRP_SALT_LEN = 32
 # SRTP media key layout: [AES key][14-byte salt]; cipher suite 5 = AES-128-CTR.
 SRTP_CIPHER_AES_128_CTR = 5

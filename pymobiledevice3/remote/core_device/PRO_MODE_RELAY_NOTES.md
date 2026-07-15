@@ -21,6 +21,52 @@ Binaries (on disk, thinned arm64e in scratchpad/re3):
 (the AVConference sender side), `ScreenSharing.framework` (client). IDA sessions
 via `idb_open`.
 
+## GROUND TRUTH — real Mac→Mac Pro Mode handshake captured on the wire (2026-07-16)
+Captured via a root-free logging TCP proxy (scratchpad/promode_mitm.py): real
+Screen Sharing.app → proxy(localhost:5999) → real server 192.168.50.237:5900.
+Everything below is pre-encryption plaintext, byte-verified. Full dump saved:
+scratchpad/promode_handshake.txt. **This supersedes earlier guesses about the
+entry sequence — and confirms the SRP-4096/SHA-512/ChaCha20 crypto reverse.**
+
+Wire sequence (S=server, C=client viewer):
+1. **Version**: both send `RFB 003.889\n` (0x379 = Apple's ARD minor, NOT 003.008/3.3).
+2. **Security types (S→C, 5B)**: `04 1e 21 24 23` = count=4, types **[30,33,36,35]**
+   (0x1e=30 legacy DH, 0x21=33 "RSA1", 0x24=36, 0x23=35). Server offers a *list*
+   even under 003.889 (a 1-byte count + bytes, not the classic 3.3 single-U32).
+3. **C→S (15B)**: `21 0000000a 0100 52534131 00000000` → client picks **33**, then a
+   sub-message `[u32 len=10][u16 0x0100]["RSA1"][u32 0]`. Method tag is FourCC `RSA1`.
+4. **RSA1 host-key step**:
+   - S→C (305B): `[u32 len=0x12d][u16 0x0001][u32 derlen=0x126]<DER SPKI>` — server's
+     **2048-bit RSA public key** (e=65537), verified parse. This is the host identity key.
+   - C→S (654B): `[u32 len][u16 0x0100]["RSA1"][u16 step=2][u16 0x0100]<256B RSA-encrypted>`
+     + zero pad — client sends an RSA-OAEP/PKCS1 blob (creds/nonce) under the host key.
+5. **SRP + SASL-options step** (this is the `SRP-RFC5054-4096-SHA512-PBKDF2` exchange):
+   - S→C (1169B): frame carries **N = RFC5054/RFC3526 4096-bit MODP prime** (verified
+     bit-exact, 512B, starts FFFFFFFF…C90FDAA2…, ends …FFFF), **g = 5**, server public
+     **B**, then the SASL options ASCII string:
+     **`mda=SHA-512,replay_detection,conf+int=ChaCha20-Poly1305,kdf=SALTED-SHA512-PBKDF2`**
+     (the leading `0x50`/'P' is a length/framing byte, not part of the string).
+   - C→S (1080B): client public **A** + the same options string, then trailing
+     `01000000<ptr>` runs = leaked uninitialised client stack/heap pointers (harmless).
+   - S→C (102B): `[u32 len][u32 step=2][u16 0x5c][u32 0x58]<88B>` = server SRP proof M2.
+6. After M2: ClientInit/ServerInit, then the video stream floods (the 16MB in the log).
+
+Corrections/confirmations vs prior notes:
+- CONFIRMED: SRP-6a, RFC5054-4096, g=5, SHA-512, ChaCha20-Poly1305 control layer,
+  SALTED-SHA512-PBKDF2 KDF — all exactly as reversed from screensharingd.
+- CORRECTED: entry is **not** RFB 3.3 single-U32 sectype 30. It is **003.889** +
+  a **security-type list [30,33,36,35]**, client selects **33 (RSA1)**, and there is
+  an **RSA host-key sub-step BEFORE** the SRP exchange. Our recon saw the client wait
+  after U32=30 because 30 (legacy DH) wasn't what a modern client wanted to drive.
+- The framing is `RSA1`-tagged (`[u32 len][u16 0x0100]["RSA1"][u16 step]…`), a
+  superset of the `%c%m…` SASL grammar — need to pin exact field layout per message.
+- KDF nuance: options say **SALTED-SHA512-PBKDF2** (the SRP `x`/verifier KDF), matching
+  the `kdf=` token — so `srp_verifier()`'s PBKDF2-SHA512 is right; the 19417 default
+  iteration count still needs confirming against what the server actually uses here.
+
+Reusable harness: scratchpad/promode_mitm.py (transparent logging relay, no root) +
+`open vnc://user:user@localhost:5999`. Re-run any time to capture more/deeper.
+
 ## The 6 pieces to build
 1. RFB server + advertise Pro Mode capability (extends serve-vnc's handshake).
 2. **SRP auth** → session key.  ← REVERSED (below)
