@@ -66,6 +66,20 @@ Scheme string in binary: **`SRP-RFC5054-4096-SHA512-PBKDF2`**.
   (reverse next — this is where the SRP session key becomes the SRTP media keys +
   the encrypted RFB data stream).
 
+## Auth+key stacks found (two distinct SRP flows)
+Master-key derivation for the RFB control stream is now pinned:
+`masterKey = CC_SHA256(srp_session_key)[:16]` (in `SendSRPChallenge` /
+`RFBServer/AuthenticateTheViewer.m`, `sub_100017A2C`; the SRP session key is read
+raw from the ccsrp ctx at `ctx + 32*ccdh_gp_n + 32`).
+- **Stack A — AES (ARD-style):** `sub_100017714` = `SetupAESKeys`. Four AES-128
+  cryptors from that 16-byte masterKey: CBC-enc, CBC-dec (zero IV), ECB-enc,
+  ECB-dec. (`CCCryptorCreate(alg=0=AES, keyLen=16)`.)
+- **Stack B — ChaCha (SASL-SRP layer):** `common/srp.m` `sub_100011280` →
+  `LayerInit sub_100013640` = ChaCha20-Poly1305, KDF `SALTED-SHA512-PBKDF2`,
+  from the SRP session key.
+Both are CONTROL-channel. Which one a Pro Mode by-IP session uses (and whether
+the video keys branch off the same session key) is the open thread.
+
 ## Piece 4 progress — key material derivation (partial)
 - **Control channel** (the encrypted RFB data stream, viewer<->server): **ChaCha20-
   Poly1305**, KDF **SALTED-SHA512-PBKDF2**, send+recv subkeys derived from the SRP
