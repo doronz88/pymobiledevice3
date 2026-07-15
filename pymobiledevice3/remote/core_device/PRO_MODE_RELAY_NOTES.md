@@ -178,6 +178,26 @@ No shortcut: the ChaCha20 control channel must be built for real.
   ARDAgent/AppleVNCServer RFB lib). Also unresolved: the layer-key derivation into
   mech+80 from K, the cIV/sIV nonce scheme, and the per-frame `[u16 len][ct+tag]` format.
 
+### BREAKTHROUGH: pmd3 CLIENT authenticates to real server; media nego is PLAINTEXT (2026-07-16)
+Built a pmd3 Pro Mode CLIENT (research/promode_client.py) using corecrypto ccsrp
+CLIENT funcs. It connected to the real .237 server and completed the FULL handshake:
+`client_verify_session(M2) = True`, extracted the 64B SRP session key, through
+SecurityResult/ServerInit. Client step2 wire format confirmed: SASL `%m%-o%s%-o` =
+A(mpi 512) + M1(octet 64) + opts(string) + cIV(octet 16), wrapped
+`[u32 outer][u16 0x0100]["RSA1"][u16 2][u16 sasltot][u32 fieldslen][fields]`.
+
+**The media negotiation is PLAINTEXT (no ChaCha20 needed for it).** The server's
+Pro Mode descriptors came back as clear RFB FramebufferUpdate rects:
+- enc 0x451 = display layout (3456x2234, scale 1.0 double, pixfmt)
+- enc 0x453 = supported pixel formats (1008fd00..03)
+- enc 0x455 = keyboard layout ("com.apple.keylayout.ABC")
+- enc 0x456 = device model ("Mac15,9")
+=> the earlier 0x44f blob only *looked* encrypted because it carries the random
+30-byte SRTP key(s). This RETIRES the ChaCha20-control-channel work for negotiation.
+STILL TO CAPTURE (needs .237 up): the 0x44f HEVC media blob, triggered by sending the
+client's 0x21 display-config + 0x12 + a FramebufferUpdateRequest (client extended to do
+this; .237 went unreachable mid-run -- rerun promode_client.py when it's back).
+
 ### REMAINING BUILD (the media half; needs iterative work + the iPhone for video):
 1. ChaCha20 control channel: pin encrypt/decrypt signature + key(mech+80) + nonces +
    frame format; wrap send/recv.
