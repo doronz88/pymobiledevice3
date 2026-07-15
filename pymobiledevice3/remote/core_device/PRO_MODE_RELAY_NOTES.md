@@ -213,8 +213,31 @@ which I have NOT located yet -- that's the ONE reverse needed. Nonce = sIV (Laye
 passes it to chacha20_poly1305_init_64x64(mech+632, mech+80, sIV)). Once the mech+80
 derivation is pinned, decrypt reveals the AVC offer + SRTP master keys plaintext, and
 pmd3-as-server generates the same with its own keys.
-NEXT REVERSE: find the SRP SASL encode/decode + the mech+80 layer-key derivation
-(search screensharingd for oparams->encode assignment / the fn using mech+376/632).
+### UPDATE: the auth crypto is AES-128, key = SHA256(SRP session key)[:16] (2026-07-16)
+The ChaCha20 SASL layer (LayerInit) is NOT the path our RSA1+SRP connection uses. The
+RFBServer (AuthenticateTheViewer.m) drives its own crypto:
+- `sub_100019610` SendRSAResponseSRPAuthentication (OUR path): after SRP success,
+  `CC_SHA256(session_key, key_len) -> buf; key = buf[:16]; SetupAESKeys(self, key)`.
+- The SRP session key is at ccsrp ctx offset **32*n + 32** (n = ccdh_gp_n = 64 for
+  4096-bit) == exactly what `ccsrp_get_session_key` returns (VERIFIED locally). So
+  AES key = **SHA256(K)[:16]**.
+- `SetupAESKeys` (sub_100017714) makes 4 AES-128 CCCryptors: CBC-dec(iv=0)@+190,
+  ECB-enc@+191, ECB-dec@+192, CBC-enc(iv=0)@+189. (options 0=CBC noPad, 2=ECB noPad.)
+  These decrypt client credentials in the auth paths (ECB, 0x80-byte blocks).
+
+### 0x44f MEDIA BLOB uses a SEPARATE media cipher (next reverse) — NOT solved
+Tried against the captured blob + real K: ChaCha20 (all key/nonce/counter combos) AND
+AES-128 CBC/ECB with SHA256(K)[:16] (all 16-byte alignments) -> all uniform entropy.
+So the 0x44f payload is encrypted by the Pro Mode negotiation function
+**`sub_100036c54`** (40 KB, "ProMode negotiation") with its OWN cipher/key. It calls
+CCCryptorUpdate at **0x10003a484** and **0x10003e5a8** (+ SecKeyEncrypt/Decrypt via
+Security.framework are imported). NEXT REVERSE TARGET: sub_100036c54 around those
+CCCryptorUpdate sites -> find the media key derivation + cipher + the 0x44f payload
+framing. The blob + session key are saved (research/promode_0x44f_sample.txt) so this
+can be cracked offline once the key derivation is pinned.
+
+Prior open item (SASL ChaCha layer, mech+80) is likely a DIFFERENT (unused-here) code
+path; deprioritized in favor of sub_100036c54.
 
 ### REMAINING BUILD (the media half; needs iterative work + the iPhone for video):
 1. ChaCha20 control channel: pin encrypt/decrypt signature + key(mech+80) + nonces +
