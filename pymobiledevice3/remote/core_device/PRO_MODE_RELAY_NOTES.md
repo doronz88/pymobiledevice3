@@ -239,6 +239,28 @@ Integration pieces (NEED device + a real Screen Sharing.app client to verify):
       RTP, rewrite SSRC/seq, SRTP-encrypt with the negotiated key, send to client) →
       relay client RTCP back to the device.
 
+## Live recon harness + first-contact findings (2026-07-15, self-driven)
+Harness (scratchpad/rfb_recon.py): minimal RFB server that logs exactly what
+Screen Sharing.app sends; driven with `open vnc://localhost:PORT` (no second Mac
+needed) + `log show/stream --predicate 'process=="Screen Sharing"'`. Reusable for
+the interactive integration loop.
+Findings from driving Screen Sharing.app -> recon server:
+- Client forces **RFB 003.003**. In 3.3 the **server sends ONE U32 security type**
+  (not a 3.7+ list). (Our first attempt sent a 3.7 list -> client choked; fixed.)
+- Sending U32 **security type 30 (Apple auth)**: client then sends **0 bytes and
+  waits** -> Apple auth is **SERVER-FIRST**. The server's first message is the
+  Apple-auth hello = the SRP **step1** (`%c%m%m%o%m%q%s` = salt+B+options, reversed).
+- So to advance the live client, pmd3 must emit a field-exact SRP step1. OPEN:
+  (a) the exact %c/%m/%m/%o/%m/%q/%s field mapping (which MPI is N/g/B; the %q; the
+  options string incl. the ChaCha/AES + SALTED-SHA512-PBKDF2 layer tokens) —
+  re-read sub_100011280 step1 arg setup; (b) the SRP/Pro-Mode security-type number
+  (30 looked like server-first Apple auth; SRP may be 30 or another). Best pinned
+  interactively: emit step1, read the client's A/M1, adjust.
+NEXT (interactive, with user): extend rfb_recon.py to send a real SRP step1
+(reuse ProModeSrpServer for B) and observe whether the client returns A+M1 ->
+that both finds the security-type number AND proves ccsrp interop. Cleanup: kill
+leftover recon listeners (scratchpad rfb_recon*.py on :5905/:5906).
+
 ## Reverse-next queue (priority order)
 1. `sub_100013640` / `sub_1000135D4` — SRP session key → **SRTP media keys**
    (videoEncryptionKeyViewerToServer/ServerToViewer) + RFB security layer. This
