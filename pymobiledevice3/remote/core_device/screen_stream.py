@@ -128,6 +128,23 @@ def _is_key_nal(nal_type: int) -> bool:
     return nal_type in (_HEVC_NAL_IDR_W_RADL, _HEVC_NAL_IDR_N_LP, _HEVC_NAL_CRA)
 
 
+# Apple's DisplayService appends a fixed 14-byte proprietary footer after the
+# final fragment of each coded-slice NAL. It is not part of the HEVC bitstream:
+# avconferenced (the receiver DeviceHub/Xcode uses) strips it before decode,
+# whereas a plain RFC-7798 reassembly would feed it to the decoder as trailing
+# slice data. It is a constant value (observed identical across sessions on the
+# test device) and is harmless to decoders (ignored after the slice data), but
+# it is malformed, so we drop it to match Apple's receiver. Matched as an exact
+# suffix, so it is a no-op on devices/streams that do not carry it.
+_DISPLAYSERVICE_NAL_TRAILER = bytes.fromhex("04f00ac0000003000004ec0ab003")
+
+
+def _strip_displayservice_trailer(nal: bytes) -> bytes:
+    if nal.endswith(_DISPLAYSERVICE_NAL_TRAILER):
+        return nal[: -len(_DISPLAYSERVICE_NAL_TRAILER)]
+    return nal
+
+
 def depacketize_hevc(payload: bytes, fu_buffer: bytearray, nal_out: list[bytes]) -> None:
     """Process one RTP/HEVC payload (RFC 7798) — emit complete NAL units."""
     if len(payload) < 2:
@@ -152,10 +169,10 @@ def depacketize_hevc(payload: bytes, fu_buffer: bytearray, nal_out: list[bytes])
         else:
             fu_buffer.extend(payload[3:])
         if end and fu_buffer:
-            nal_out.append(bytes(fu_buffer))
+            nal_out.append(_strip_displayservice_trailer(bytes(fu_buffer)))
             fu_buffer.clear()
     else:
-        nal_out.append(payload)
+        nal_out.append(_strip_displayservice_trailer(payload))
 
 
 def hevc_codec_string_from_sps(sps_nal: bytes) -> str:
@@ -1026,15 +1043,6 @@ class ScreenStreamServer:
                         if self._codec_string is not None:
                             self._stream_ready.set()
                     self._last_good_au_t = loop.time()
-                    # Debug hook: tee the AU stream as Annex-B, so it can be
-                    # decoded offline (e.g. ``ffmpeg -i dump.hevc``) to tell
-                    # device-side encode artifacts apart from browser-side
-                    # decode bugs. Built only when the env var is set.
-                    dump_path = os.environ.get("PMD3_SERVE_WEB_DUMP")
-                    if dump_path:
-                        annexb = b"".join(b"\x00\x00\x00\x01" + nal for nal in current_au)
-                        with open(dump_path, "ab") as _f:
-                            _f.write(annexb)
                     # Feed the byte-rate window used by the decoder-refresh
                     # motion detector. Count DELTA AUs only: a forced IDR is
                     # ~200-300 KB and alone exceeds motion_threshold_bps, so

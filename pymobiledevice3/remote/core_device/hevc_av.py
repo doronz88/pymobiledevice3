@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # macOS, so a Mac user who never forces the libav path doesn't need
 # PyAV installed. The error message is the user-facing install hint
 # when serve-vnc actually needs this path (non-macOS hosts, or
-# ``--decoder av`` / ``PYMD3_HEVC_DECODER=av``).
+# ``--decoder av``).
 try:
     import av  # type: ignore[import]
 except ModuleNotFoundError as e:  # pragma: no cover
