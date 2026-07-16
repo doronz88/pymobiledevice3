@@ -1,17 +1,12 @@
-"""Pre-decode error detection by HEVC slice-header RPS analysis.
+"""Pre-decode detection of missing reference frames by HEVC slice-header RPS analysis.
 
-VT will silently conceal a P-slice when its Reference Picture Set
-references a POC no longer in the DPB -- the visible "tear" symptom.
-Instead of waiting for VT to report a decode error (which sometimes
-just produces a stale frame with no error at all), we parse the slice
-header ourselves before feeding the decoder. If any required RPS
-entry points to a POC we never saw, we know with certainty the
-decoder will conceal and can fire the recovery path proactively.
+Parse the slice header before feeding the decoder: if a P-slice's Reference
+Picture Set references a POC no longer in the DPB, VideoToolbox would silently
+conceal that frame (sometimes with no decode error at all), so we can fire the
+recovery path proactively rather than wait for VT to report it.
 
-Adapted from iSharScreen's ``proxy/media/hevc_rps.py``. The original
-targets Apple's macOS Screen-Sharing HP stream (multi-tile, shared
-codec); this port is for Apple's iOS DisplayService stream
-(``TilesPerFrame=1``), so the tile-specific bits are dropped.
+Targets Apple's iOS DisplayService stream (``TilesPerFrame=1``); tile-specific
+handling is not needed.
 
 References:
 - ITU-T H.265 7.3.2.2 (SPS), 7.3.6 (slice segment header),

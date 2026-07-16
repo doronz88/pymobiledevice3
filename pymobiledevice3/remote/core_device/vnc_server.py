@@ -11,9 +11,8 @@ Pipeline: RTP/HEVC -> VTDecompressionSession (BGRA output) -> Raw VNC.
 No JPEG round-trip on this path. The previous design encoded BGRA ->
 JPEG -> decoded JPEG -> BGRA again before sending; macOS Screen
 Sharing's client doesn't advertise Tight, so the JPEG was always
-thrown away. Skipping it removes the second lossy step (q=0.7 JPEG on
-top of the device's already-tear-y HEVC frame under motion) and the
-encode+decode CPU work.
+thrown away. Skipping it removes the second lossy step (q=0.7 JPEG)
+and the encode+decode CPU work.
 
 Only the Raw encoding is offered. Raw is mandatory per RFC 6143 §7.7.1
 -- every VNC client supports it, including macOS Screen Sharing and
@@ -77,8 +76,7 @@ def _resolve_decoder(choice: str):
 
     ``choice`` is one of ``"auto"`` (VideoToolbox on macOS, libav
     everywhere else), ``"vt"`` (force VideoToolbox), or ``"av"``
-    (force libav / PyAV). ``PYMD3_HEVC_DECODER=av`` overrides
-    ``"auto"`` for parity with the CLI flag.
+    (force libav / PyAV).
 
     Both classes expose the same ``feed`` / ``on_frame`` /
     ``on_decode_error`` / ``width`` / ``height`` / ``close`` surface so
@@ -86,10 +84,7 @@ def _resolve_decoder(choice: str):
     """
     choice = (choice or "auto").lower()
     if choice == "auto":
-        if os.environ.get("PYMD3_HEVC_DECODER", "").lower() == "av":
-            choice = "av"
-        else:
-            choice = "vt" if sys.platform == "darwin" else "av"
+        choice = "vt" if sys.platform == "darwin" else "av"
     if choice == "vt":
         from pymobiledevice3.remote.core_device.vt_jpeg import HevcToBgraTranscoder
 
@@ -309,44 +304,30 @@ class VncStreamServer:
         # keeps the device from reaping the video session (RTCPTimeoutEnabled).
         self._rtp_highest_seq: int = 0
 
-        # Motion-based decoder-rebuild state. Mirrors screen_stream.py's
-        # _decoder_refresh_loop: the VT decoder accumulates stale
-        # long-term-reference-picture state under motion and renders
-        # torn frames without erroring. Recovery is to send PLI + tear
-        # the decoder down + rebuild from the next IDR -- the exact
-        # thing a manual page reload does for the browser path.
+        # Motion / decode-error recovery: on a byte-rate motion spike, request
+        # a keyframe (RTCP PLI, or FIR when --rtcp-fb is set) and rebuild the
+        # transcoder from the next IDR. NOTE: this does not resolve the
+        # heavy-motion smear -- that is a receiver-side decode issue, not
+        # recoverable from here (see VIDEOPROCESSING_TEAR_FINDINGS.md).
         self._au_byte_window: deque[tuple[float, int]] = deque()
         self._motion_active = False
         self._motion_ended_t: float = 0.0
         self._last_refresh_t: float = 0.0
-        # When True, the next IDR triggers a transcoder rebuild. We
-        # stop feeding deltas to the existing transcoder so we don't
-        # accumulate MORE stale state while waiting for the IDR.
+        # While True, stop feeding deltas and rebuild the transcoder on the
+        # next IDR (so no more state accumulates while waiting for it).
         self._refresh_pending = False
 
-        # Decoder-error sticky keyframe-required state (ported from
-        # iSharScreen's FrameQualityGate -- the libwebrtc two-condition
-        # pattern). Motion-based refresh handles the "torn frame, no
-        # error reported" case; this handles the converse "VT reported
-        # a decode failure, recover before the stream silently freezes."
-        # Cleared only when BOTH a fresh IDR was fed AND a clean frame
-        # decoded post-IDR -- guards against the silent-freeze failure
-        # where the IDR response to our PLI is itself lost or arrives
-        # corrupted, leaving the decoder stuck on stale references.
+        # Sticky keyframe-required state: set on a decode error, cleared only
+        # when a fresh IDR has been fed AND a clean frame decoded after it, so
+        # a lost/corrupt IDR response to a keyframe request does not leave the
+        # decoder stuck on stale references.
         self._keyframe_required = False
         self._idr_observed = False
-        # Pre-decode reference-picture-set tracker. Parses incoming
-        # slice headers and reports when a P-slice references a POC
-        # we never saw -- the decoder will silently conceal that
-        # frame (the visible tear). Firing PLI on this signal is
-        # one full frame ahead of waiting for VT to surface a
-        # decode error, and catches the silent-conceal case where
-        # VT never errors at all.
+        # Reference-picture-set tracker: flags a P-slice that references a POC
+        # we never decoded, to fire an early keyframe request on that signal.
         self._rps_tracker = HevcRpsTracker()
-        # Suppress decode errors for this long after we feed an IDR --
-        # the VT queue may still hold pre-IDR P-frames that error
-        # against the freshly reset reference set, which is expected
-        # drain noise, not a real recovery failure.
+        # Grace window after feeding an IDR: pre-IDR P-frames still queued in
+        # VT error against the reset reference set -- expected drain noise.
         self._idr_observed_at: float = 0.0
         self._fir_attempts: int = 0
         self._cap_warned: bool = False
@@ -524,13 +505,10 @@ class VncStreamServer:
                             self._transcoder.close()
                         self._transcoder = None
                         self._refresh_pending = False
-                        # Drop the RPS DPB shadow with the decoder. A
-                        # rebuilt VT only has the next IDR's POC in
-                        # its DPB; old POCs are gone. If we kept the
-                        # tracker's seen set, false-negatives would
-                        # silently let a P-slice referencing a
-                        # pre-rebuild POC slip past the pre-decode
-                        # check straight into a guaranteed tear.
+                        # Drop the RPS DPB shadow with the decoder: a rebuilt
+                        # VT only has the next IDR's POC in its DPB, so keeping
+                        # the old seen-set would let a P-slice referencing a
+                        # pre-rebuild POC slip past the pre-decode check.
                         self._rps_tracker.reset()
                         # Sticky-keyframe IDR observation: the new
                         # transcoder built below will be seeded by
@@ -566,18 +544,15 @@ class VncStreamServer:
                         except Exception:
                             logger.exception("VT transcoder failed to start")
                     # While ``_refresh_pending`` is true we have already
-                    # PLIed and are waiting for the IDR that will be the
-                    # new decoder's first frame. Don't feed the existing
-                    # transcoder any more deltas -- they'd just compound
-                    # the LTRP staleness we're trying to escape.
+                    # requested a keyframe and are waiting for the IDR that
+                    # will seed the rebuilt decoder. Don't feed the existing
+                    # transcoder any more deltas while we wait.
                     if self._transcoder is not None and not self._refresh_pending:
-                        # Pre-decode RPS check: parse the first slice
-                        # NAL's short-term RPS. If any used-by-curr
-                        # reference points to a POC we never saw, the
-                        # decoder will silently conceal -- fire PLI
-                        # now and skip the guaranteed-tear feed.
-                        # ``check_slice`` also stamps the POC parser
-                        # state regardless of outcome.
+                        # Pre-decode RPS check: parse the first slice NAL's
+                        # short-term RPS. If a used-by-curr reference points to
+                        # a POC we never decoded, request a keyframe now and
+                        # skip feeding this AU. ``check_slice`` also stamps the
+                        # POC parser state regardless of outcome.
                         slice_nal = next(
                             (n for n in current_au if is_slice_nal((n[0] >> 1) & 0x3F)),
                             None,
@@ -732,26 +707,19 @@ class VncStreamServer:
         )
 
     async def _decoder_refresh_loop(self) -> None:
-        """Watch the RTP byte rate as a motion signal; rebuild the VT
-        decoder periodically while motion is ongoing, after motion
-        settles, and as an idle heartbeat. This is the VNC analogue of
-        screen_stream's _decoder_refresh_loop -- the same trick a
-        browser page-reload pulls.
+        """Watch the RTP byte rate as a motion signal and periodically request
+        a keyframe + rebuild the transcoder: during sustained motion, once
+        after motion settles, and as an idle heartbeat. Mirrors
+        screen_stream's _decoder_refresh_loop.
 
-        Triggers (in order of priority):
-          1. ``active`` -- motion is currently happening and it's been
-             ``active_interval`` since the last refresh. Without this,
-             sustained motion shows tears the entire time the user is
-             interacting; the next refresh wouldn't come until either
-             motion ends + settle_delay (the ``settled`` path) or the
-             heartbeat fires, which can be many seconds.
-          2. ``settled`` -- motion just ended and settle_delay has
-             passed. Catches the tail end of an interaction.
-          3. ``heartbeat`` -- nothing's happening, but it's been long
-             enough that we want a safety-net refresh anyway.
+        Triggers (in priority order):
+          1. ``active``    -- motion ongoing, and ``active_interval`` elapsed
+                              since the last refresh.
+          2. ``settled``   -- motion just ended and ``settle_delay`` passed.
+          3. ``heartbeat`` -- idle safety-net refresh.
 
-        ``min_interval`` caps back-to-back refreshes (each one costs a
-        ~30 ms gap while the new decoder waits for its first IDR).
+        ``min_interval`` caps back-to-back refreshes (each costs a ~30 ms gap
+        while the new decoder waits for its first IDR).
         """
         loop = asyncio.get_running_loop()
         motion_threshold_bps = 100_000  # 100 KB/s = motion
@@ -759,16 +727,13 @@ class VncStreamServer:
         settle_delay = 0.4  # wait after motion ends
         heartbeat = 10.0  # max between refreshes when idle
         min_interval = 0.8  # cap back-to-back refreshes
-        # Sticky-keyframe re-arm cadence + cap. Ported from
-        # iSharScreen's FrameQualityGate: while we're in
-        # ``_keyframe_required`` and Apple's encoder hasn't responded
-        # to our PLI with a usable IDR, keep re-emitting PLI at
-        # ``re_arm_interval`` (the encoder's typical IDR generate+
-        # transmit window settles in ~100-300 ms; 1.0 s leaves
-        # headroom against overlapping IDR responses). After
-        # ``re_arm_cap`` attempts give up and clear the flag so we
-        # stop flooding -- the motion/heartbeat triggers above will
-        # still catch the next natural refresh window.
+        # Sticky-keyframe re-arm cadence + cap: while ``_keyframe_required``
+        # and the encoder hasn't answered with a usable IDR, re-emit the
+        # keyframe request every ``re_arm_interval`` (encoder IDR generate+
+        # transmit settles in ~100-300 ms; 1.0 s leaves headroom). After
+        # ``re_arm_cap`` attempts, give up and clear the flag so we stop
+        # flooding; the motion/heartbeat triggers still catch the next
+        # natural refresh window.
         re_arm_interval = 1.0
         re_arm_cap = 8
         while True:
@@ -796,7 +761,7 @@ class VncStreamServer:
                 if self._fir_attempts >= re_arm_cap:
                     if not self._cap_warned:
                         logger.warning(
-                            "decoder still tearing after %d PLI attempts; "
+                            "decoder did not recover after %d keyframe requests; "
                             "giving up sticky recovery (motion/heartbeat "
                             "refresh remains armed)",
                             self._fir_attempts,
@@ -1447,7 +1412,7 @@ class VncStreamServer:
         else:
             logger.warning(
                 "RTCP feedback disabled (missing fields: SourcePort=%s LocalSSRC=%s RemoteSSRC=%s)"
-                " -- decoder-refresh will be a no-op; tears under motion will not be cleaned up",
+                " -- keyframe requests / decoder-refresh will be a no-op",
                 source_port,
                 self._local_ssrc,
                 self._remote_ssrc,
