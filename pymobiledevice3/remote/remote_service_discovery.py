@@ -95,8 +95,12 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
 
     @property
     def product_version(self) -> str:
-        """Device OS version, taken from the RSD handshake ``peer_info``."""
-        return self._require_peer_info()["Properties"]["OSVersion"]
+        """Device OS version, taken from the RSD handshake ``peer_info`` (``"1.0"`` if absent).
+
+        Tolerates a missing ``OSVersion`` (mirrors ``LockdownClient.product_version``) so building an
+        ``InvalidServiceError`` never raises ``KeyError`` on the ``suppress(InvalidServiceError)``
+        checkin path (e.g. a device that offers no lockdown service, such as a VirtualMac)."""
+        return self._require_peer_info()["Properties"].get("OSVersion") or "1.0"
 
     @property
     def product_build_version(self) -> str:
@@ -112,7 +116,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def _lockdown(self) -> LockdownClient:
         """Return the remote lockdown client, raising if the device offers no lockdown service."""
         if self.lockdown is None:
-            raise InvalidServiceError("device does not offer a lockdown service")
+            raise InvalidServiceError("device does not offer a lockdown service", self.udid, self.product_version)
         return self.lockdown
 
     async def get_developer_mode_status(self) -> bool:
@@ -187,14 +191,16 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
 
             with suppress(InvalidServiceError):
                 self.lockdown = await create_using_remote(
-                    await self.start_lockdown_service("com.apple.mobile.lockdown.remote.trusted")
+                    await self.start_lockdown_service("com.apple.mobile.lockdown.remote.trusted"),
+                    identifier=self.udid,
                 )
 
             if self.lockdown is None:
                 # Reattempt with the untrusted service variant
                 with suppress(InvalidServiceError):
                     self.lockdown = await create_using_remote(
-                        await self.start_lockdown_service("com.apple.mobile.lockdown.remote.untrusted")
+                        await self.start_lockdown_service("com.apple.mobile.lockdown.remote.untrusted"),
+                        identifier=self.udid,
                     )
 
             self.all_values = self.lockdown.all_values if self.lockdown is not None else {}
@@ -352,7 +358,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         """
         service = self._require_peer_info()["Services"].get(name)
         if service is None:
-            raise InvalidServiceError(f"No such service: {name}")
+            raise InvalidServiceError(f"No such service: {name}", self.udid, self.product_version)
         return int(service["Port"])
 
     async def close(self) -> None:

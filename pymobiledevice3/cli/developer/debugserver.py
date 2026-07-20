@@ -84,7 +84,7 @@ async def debugserver_start_server(
     elif Version(service_provider.product_version) >= Version("17.0"):
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
             assert isinstance(service_provider, LockdownClient)  # non-RSD providers are lockdown clients
-            raise RSDRequiredError(service_provider.identifier or "")
+            raise RSDRequiredError(service_provider.identifier, service_provider.product_version)
         if service_provider.is_in_process_tunnel:
             raise RoutableTunnelRequiredError(
                 "Cannot print a remote LLDB connect address over a userspace tunnel: the device "

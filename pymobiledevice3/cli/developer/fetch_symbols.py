@@ -31,7 +31,7 @@ async def fetch_symbols_list_task(service_provider: LockdownServiceProvider) -> 
     else:
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
             assert isinstance(service_provider, LockdownClient)  # non-RSD providers are lockdown clients
-            raise RSDRequiredError(service_provider.identifier or "")
+            raise RSDRequiredError(service_provider.identifier, service_provider.product_version)
 
         async with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
             print_json([f.file_path for f in await fetch_symbols.get_dsc_file_list()])
@@ -86,7 +86,7 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
     else:
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
             assert isinstance(service_provider, LockdownClient)  # non-RSD providers are lockdown clients
-            raise RSDRequiredError(service_provider.identifier or "")
+            raise RSDRequiredError(service_provider.identifier, service_provider.product_version)
         async with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
             await fetch_symbols.download(symbols_out)
 
