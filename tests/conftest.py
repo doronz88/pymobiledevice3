@@ -5,7 +5,12 @@ from typing import Any, Union
 import pytest
 import pytest_asyncio
 
-from pymobiledevice3.exceptions import DeviceNotFoundError, InvalidServiceError
+from pymobiledevice3.exceptions import (
+    ConnectionFailedToUsbmuxdError,
+    DeviceNotFoundError,
+    InvalidServiceError,
+    NoDeviceConnectedError,
+)
 from pymobiledevice3.lockdown import UsbmuxLockdownClient, create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
@@ -29,6 +34,16 @@ def pytest_addoption(parser):
         metavar="PATH",
         help="Path to xcuitest JSON config file",
     )
+
+
+NO_DEVICE_SKIP_REASON = "No test device is available through usbmuxd"
+
+
+async def _create_usbmux_client() -> UsbmuxLockdownClient:
+    try:
+        return await create_using_usbmux()
+    except (ConnectionFailedToUsbmuxdError, DeviceNotFoundError, NoDeviceConnectedError):
+        pytest.skip(NO_DEVICE_SKIP_REASON)
 
 
 @pytest.fixture(scope="function")
@@ -75,7 +90,7 @@ async def service_provider(
             for rsd in rsds:
                 await rsd.close()
     else:
-        async with await create_using_usbmux() as client:
+        async with await _create_usbmux_client() as client:
             yield client
 
 
@@ -96,7 +111,7 @@ async def lockdown() -> AsyncGenerator[UsbmuxLockdownClient, Any]:
     """
     Creates a new lockdown client for each test.
     """
-    async with await create_using_usbmux() as client:
+    async with await _create_usbmux_client() as client:
         yield client
 
 

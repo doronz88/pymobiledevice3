@@ -11,14 +11,13 @@ pytestmark = [pytest.mark.cli]
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
-@pytest.mark.xfail(reason="Looks like click broke something")
 def test_cli_main_interface():
+    # No-argument behavior is covered by test_cli_from_python_m_without_args, which
+    # exercises the real entry point; invoking the Typer app directly without
+    # arguments behaves inconsistently across click versions
     runner = CliRunner()
-    r1 = runner.invoke(__main__.app, ["--help"])
-    assert r1.exit_code == 0
-
-    r2 = runner.invoke(__main__.app)
-    assert r2.exit_code == 0
+    result = runner.invoke(__main__.app, ["--help"])
+    assert result.exit_code == 0
 
 
 def test_cli_from_python_m_without_args():
