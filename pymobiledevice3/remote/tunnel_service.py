@@ -207,7 +207,17 @@ class RemotePairingTunnel(ABC):
     async def tun_read_task(self) -> None:
         read_size = self.tun.mtu + len(LOOPBACK_HEADER)
         try:
-            if sys.platform == "win32":
+            if hasattr(self.tun, "async_read_batch"):
+                # Userspace tun (pure-asyncio pmd-pytcp), any platform: drain the stack's whole
+                # egress burst per event-loop wakeup instead of paying one loop reschedule per
+                # packet — the userspace counterpart of _tun_read_loop_via_reader's batch-drain
+                # below. The loop this task runs on also runs the whole pytcp stack, so at
+                # MSS-sized packets a per-packet reschedule caps uploads at a few MB/s.
+                while True:
+                    for packet in await self.tun.async_read_batch():
+                        if packet and (packet[0] >> 4) == 6:
+                            await self.send_packet_to_device(packet)
+            elif sys.platform == "win32":
                 while True:
                     packet = await self.tun.async_read()
                     if packet:
@@ -228,8 +238,8 @@ class RemotePairingTunnel(ABC):
                 # the fd) keeps its blocking semantics.
                 await self._tun_read_loop_via_reader(read_size)
             else:
-                # Userspace tun (pure-asyncio pmd-pytcp): await raw IPv6 packets directly off
-                # the stack's egress — same surface as the Windows branch above.
+                # Any other async tun (no batch surface): await raw IPv6 packets one at a time —
+                # same surface as the Windows branch above.
                 while True:
                     packet = await self.tun.async_read()
                     if packet and (packet[0] >> 4) == 6:

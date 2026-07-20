@@ -81,9 +81,9 @@ INTERFACE_MTU = 16000
 MAX_RECV_WINDOW = 4 * 1024 * 1024
 
 #: Cap on the host->device send MSS (PyTCP 'tcp.snd_mss_max'; 0 = uncapped). 1340 (= a 1400-byte
-#: IPv6 packet minus 40+20 headers) is the proven-safe send size; a larger interface MTU keeps
-#: downloads fast (big device->host segments) while uploads avoid RTO stalls on the forwarding
-#: path. The advertised receive MSS is untouched, so downloads stay fast.
+#: IPv6 packet minus 40+20 headers) is the proven-safe send size across devices; a larger
+#: interface MTU keeps downloads fast (big device->host segments) while uploads avoid RTO stalls
+#: on the forwarding path. The advertised receive MSS is untouched, so downloads stay fast.
 MAX_SEND_MSS = 1340
 
 #: Delayed-ACK timer (PyTCP 'tcp.delayed_ack.delay_ms'; RFC default 100). The device Nagle-holds
@@ -142,6 +142,13 @@ def _mac_to_bytes(mac: str) -> bytes:
 
 def _eth_header(dst_mac: str, src_mac: str) -> bytes:
     return _mac_to_bytes(dst_mac) + _mac_to_bytes(src_mac) + struct.pack("!H", _ETH_IPV6)
+
+
+#: Hot-path constants: the (fixed) Ethernet header prepended to every inbound packet, and the
+#: EtherType bytes checked on every outbound frame — precomputed so the per-packet paths do no
+#: string parsing / struct packing.
+_ETH_HDR_TO_STACK = _eth_header(_STACK_MAC, _PEER_MAC)
+_ETH_IPV6_BYTES = struct.pack("!H", _ETH_IPV6)
 
 
 def _packet_socketpair() -> tuple[socket.socket, socket.socket]:
@@ -233,7 +240,7 @@ class UserspaceTun:
         # socket is non-blocking; a full buffer drops the packet (tunnel loss, TCP recovers).
         ipv6 = data[len(LOOPBACK_HEADER) :] if data[: len(LOOPBACK_HEADER)] == LOOPBACK_HEADER else data
         with suppress(OSError):
-            self._peer.send(_eth_header(_STACK_MAC, _PEER_MAC) + ipv6)
+            self._peer.send(_ETH_HDR_TO_STACK + ipv6)
 
     async def async_read(self) -> bytes:
         # outbound (stack -> device): await an Ethernet frame off the stack's socketpair and
@@ -241,10 +248,29 @@ class UserspaceTun:
         # nibble). Raises OSError once the socketpair is closed, which ends tun_read_task.
         while not self._closed:
             frame = await asyncio.get_running_loop().sock_recv(self._peer, 65535)
-            if len(frame) < 14 or struct.unpack("!H", frame[12:14])[0] != _ETH_IPV6:
+            if len(frame) < 14 or frame[12:14] != _ETH_IPV6_BYTES:
                 continue
             return frame[14:]
         return b""
+
+    async def async_read_batch(self) -> list[bytes]:
+        """Await at least one outbound frame, then greedily drain every further frame already
+        queued on the socketpair, returning their raw IPv6 payloads in arrival order.
+
+        One event-loop wakeup services a whole egress burst — the userspace counterpart of the
+        kernel tun's ``_tun_read_loop_via_reader`` batch-drain. Paying a loop reschedule per
+        MSS-sized packet caps uploads at a few thousand packets/s, because the same loop also
+        runs the pytcp stack. Raises OSError once the socketpair is closed, which ends
+        ``tun_read_task``."""
+        frame = await asyncio.get_running_loop().sock_recv(self._peer, 65535)
+        packets = []
+        while True:
+            if len(frame) > 14 and frame[12:14] == _ETH_IPV6_BYTES:
+                packets.append(frame[14:])
+            try:
+                frame = self._peer.recv(65535)
+            except (BlockingIOError, InterruptedError):
+                return packets
 
     async def connect_tcp(self, addr: str, port: int):
         """Open a PyTCP TCP socket connected to (addr, port) over this stack."""
