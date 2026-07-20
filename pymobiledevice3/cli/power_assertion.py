@@ -1,4 +1,4 @@
-import time
+import asyncio
 from typing import Literal, Optional
 
 from typer_injector import InjectingTyper
@@ -24,4 +24,4 @@ async def power_assertion(
     """Create a power assertion"""
     async with PowerAssertionService(service_provider).create_power_assertion(assertion_type, name, timeout, details):
         print("> Hit Ctrl+C to exit")
-        time.sleep(timeout)
+        await asyncio.sleep(timeout)
