@@ -86,18 +86,36 @@ MAX_RECV_WINDOW = 4 * 1024 * 1024
 #: path. The advertised receive MSS is untouched, so downloads stay fast.
 MAX_SEND_MSS = 1340
 
+#: Delayed-ACK timer (PyTCP 'tcp.delayed_ack.delay_ms'; RFC default 100). The device Nagle-holds
+#: the tail segment of every multi-segment response until our ACK arrives, so each DTX/RemoteXPC
+#: round-trip stalls one full timer: measured `dvt ls /` latency is delay + ~7 ms link RTT,
+#: linear across 1..100 ms (110 ms at the default, 8 ms at 1 ms). 1 ms effectively ACKs
+#: immediately; bulk transfers are unaffected either way (streams are governed by the
+#: ACK-every-other-segment rule, not the timer — measured 38-39 MB/s at 1/10/100 ms alike).
+ACK_DELAY_MS = 1
+
 
 def throughput_sysctls() -> dict[str, int]:
-    """The ``stack.init(sysctls=...)`` entries that tune the tunnel for bulk transfer.
+    """The ``stack.init(sysctls=...)`` entries that tune the tunnel for bulk transfer and latency.
 
     These ride pmd-pytcp's public sysctls: ``tcp.rcv_wnd_max`` raises the advertised receive
     window for fast downloads; ``tcp.snd_mss_max`` caps host->device segments so a large
-    interface MTU does not stall uploads. Any knob the installed pmd-pytcp does not register is
-    omitted (with a warning) so the tunnel runs untuned rather than failing.
+    interface MTU does not stall uploads; ``tcp.delayed_ack.delay_ms`` drops the delayed-ACK
+    timer so interactive request/response services are not stalled by it (:data:`ACK_DELAY_MS`).
+    Any knob the installed pmd-pytcp does not register is omitted (with a warning) so the tunnel
+    runs untuned rather than failing.
     """
-    wanted = {"tcp.rcv_wnd_max": MAX_RECV_WINDOW, "tcp.default.snd_mss_max": MAX_SEND_MSS}
+    wanted = {
+        "tcp.rcv_wnd_max": MAX_RECV_WINDOW,
+        "tcp.default.snd_mss_max": MAX_SEND_MSS,
+        "tcp.delayed_ack.delay_ms": ACK_DELAY_MS,
+    }
     # The registry lists base keys, so an interface-scope knob is checked by its base name.
-    base_key = {"tcp.rcv_wnd_max": "tcp.rcv_wnd_max", "tcp.default.snd_mss_max": "tcp.snd_mss_max"}
+    base_key = {
+        "tcp.rcv_wnd_max": "tcp.rcv_wnd_max",
+        "tcp.default.snd_mss_max": "tcp.snd_mss_max",
+        "tcp.delayed_ack.delay_ms": "tcp.delayed_ack.delay_ms",
+    }
     registered = sysctl.list_keys()
     out: dict[str, int] = {}
     for key, value in wanted.items():
