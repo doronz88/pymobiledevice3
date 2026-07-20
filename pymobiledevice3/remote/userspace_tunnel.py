@@ -49,7 +49,7 @@ from pmd_pytcp.socket import AF_INET6, SHUT_RDWR, SHUT_WR, SOCK_DGRAM, SOCK_STRE
 from pmd_pytcp.socket import socket as pytcp_socket
 
 import pymobiledevice3.remote.tunnel_service as tunnel_service
-from pymobiledevice3.exceptions import InvalidServiceError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import InvalidServiceError, PyMobileDevice3Exception, UserspaceTunnelUnavailableError
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -549,7 +549,7 @@ class UserspaceUdp:
             self._sock.close()
 
 
-async def _create_no_root_tunnel_provider(serial: Optional[str], autopair: bool):
+async def _create_no_root_tunnel_provider(serial: Optional[str], autopair: bool, remotepairing_fallback: bool = True):
     """Pick a tunnel provider that needs no root, mirroring ``remote start-tunnel``'s family:
 
     * iOS 17.4+ over USB: :class:`~pymobiledevice3.remote.tunnel_service.CoreDeviceTunnelProxy`
@@ -561,21 +561,32 @@ async def _create_no_root_tunnel_provider(serial: Optional[str], autopair: bool)
     suspends remoted via :func:`stop_remoted`, which needs root on macOS — defeating the no-root
     purpose. Returns ``(provider, lockdown_or_None)``; the lockdown is kept alive for the
     CoreDeviceProxy provider and is ``None`` for the RemotePairing one.
+
+    ``remotepairing_fallback`` controls the pre-17.4 path: when ``True`` (default) a device with no
+    CoreDeviceProxy service falls back to RemotePairing over bonjour; when ``False`` it raises
+    :class:`UserspaceTunnelUnavailableError` immediately (used when the caller prefers to route such
+    devices elsewhere, e.g. a kernel tunnel). Either way, a device that cannot be served no-root
+    raises :class:`UserspaceTunnelUnavailableError`.
     """
     lockdown = await create_using_usbmux(serial=serial, autopair=autopair)
     try:
         return await tunnel_service.CoreDeviceTunnelProxy.create(lockdown), lockdown
     except InvalidServiceError:
-        # iOS < 17.4 has no CoreDeviceProxy lockdown service; fall back to the no-root WiFi path.
-        logger.info("CoreDeviceProxy unavailable (iOS < 17.4); falling back to RemotePairing over bonjour")
+        # iOS < 17.4 has no CoreDeviceProxy lockdown service.
         await lockdown.close()
+        if not remotepairing_fallback:
+            raise UserspaceTunnelUnavailableError(
+                "no-root userspace tunnel unavailable: the device has no CoreDeviceProxy service "
+                "(needs iOS 17.4+) and the RemotePairing fallback was disabled."
+            ) from None
+        logger.info("CoreDeviceProxy unavailable (iOS < 17.4); falling back to RemotePairing over bonjour")
     except BaseException:
         await lockdown.close()
         raise
 
     services = await tunnel_service.get_remote_pairing_tunnel_services(udid=serial)
     if not services:
-        raise PyMobileDevice3Exception(
+        raise UserspaceTunnelUnavailableError(
             "no-root userspace tunnel unavailable: the device exposes no CoreDeviceProxy lockdown "
             "service (needs iOS 17.4+) and no RemotePairing service was found over bonjour. Enable "
             "Wi-Fi for the device and host on the same network, or run a privileged kernel tunnel via "
@@ -627,9 +638,12 @@ class UserspaceRsdTunnel:
     iOS 17.4+, falling back to RemotePairing over bonjour on iOS 17.0-17.3 / Wi-Fi.
     """
 
-    def __init__(self, serial: Optional[str] = None, autopair: bool = True) -> None:
+    def __init__(
+        self, serial: Optional[str] = None, autopair: bool = True, remotepairing_fallback: bool = True
+    ) -> None:
         self.serial = serial
         self.autopair = autopair
+        self.remotepairing_fallback = remotepairing_fallback
         self.rsd: Optional[RemoteServiceDiscoveryService] = None
         self.tun: Optional[UserspaceTun] = None
         self._exit_stack: Optional[AsyncExitStack] = None
@@ -654,7 +668,9 @@ class UserspaceRsdTunnel:
         # order; a failure mid-setup unwinds whatever was already acquired.
         stack = AsyncExitStack()
         try:
-            provider, lockdown = await _create_no_root_tunnel_provider(self.serial, self.autopair)
+            provider, lockdown = await _create_no_root_tunnel_provider(
+                self.serial, self.autopair, self.remotepairing_fallback
+            )
             stack.push_async_callback(provider.close)
             if lockdown is not None:
                 stack.push_async_callback(lockdown.close)
@@ -718,16 +734,22 @@ class UserspaceRsdTunnel:
 _cli_tunnel: Optional[UserspaceRsdTunnel] = None
 
 
-async def establish_userspace_rsd(serial: Optional[str] = None, autopair: bool = True) -> RemoteServiceDiscoveryService:
+async def establish_userspace_rsd(
+    serial: Optional[str] = None, autopair: bool = True, remotepairing_fallback: bool = True
+) -> RemoteServiceDiscoveryService:
     """CLI convenience: establish a userspace tunnel, keep it alive, and return its connected RSD.
 
     Embedders should use :class:`UserspaceRsdTunnel` directly — it is a closeable handle / async
     context manager. This wrapper exists for the CLI, which has no teardown hook: it stashes the
     tunnel for the process lifetime and registers :func:`force_exit` at exit so the CLI exits
     promptly without awaiting teardown.
+
+    ``remotepairing_fallback=False`` makes a pre-17.4 device (no CoreDeviceProxy) raise
+    :class:`UserspaceTunnelUnavailableError` instead of attempting RemotePairing, so the caller can
+    route such devices elsewhere (the CLI uses this to fall back to ``tunneld``).
     """
     global _cli_tunnel
-    tunnel = UserspaceRsdTunnel(serial=serial, autopair=autopair)
+    tunnel = UserspaceRsdTunnel(serial=serial, autopair=autopair, remotepairing_fallback=remotepairing_fallback)
     rsd = await tunnel.aopen()
     _cli_tunnel = tunnel
     # The pure-asyncio stack has no threads to park, so process exit cannot hang anymore. The

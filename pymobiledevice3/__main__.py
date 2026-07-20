@@ -23,8 +23,12 @@ except ImportError:  # pragma: no cover
     shellingham = None
 
 from pymobiledevice3.cli.cli_common import (
+    PREFER_TUNNELD_ENV_VAR,
     TUNNEL_ENV_VAR,
+    UDID_ENV_VAR,
+    USERSPACE_ENV_VAR,
     isatty,
+    requires_kernel_tunnel,
     set_color_flag,
     set_verbosity,
 )
@@ -59,8 +63,9 @@ from pymobiledevice3.exceptions import (
     StartServiceError,
     TunneldConnectionError,
     UserDeniedPairingError,
+    UserspaceTunnelUnavailableError,
 )
-from pymobiledevice3.lockdown import create_using_usbmux, retry_create_using_usbmux
+from pymobiledevice3.lockdown import retry_create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 
 coloredlogs.install(level=logging.INFO)
@@ -290,25 +295,9 @@ def _root(
     set_color_flag(color)
 
 
-def device_might_need_tunneld(identifier: str) -> bool:
-    """
-    Determines if the device might require tunneling based on its product version.
-
-    This function uses the `create_using_usbmux` context manager to establish a lockdown
-    session with the specified identifier. It retrieves the device's product version,
-    and checks if it is greater than or equal to version "17.0". If so, the function
-    returns True, indicating that the device might require tunneling. Otherwise, it
-    returns False.
-
-    :param identifier: A string representing the device identifier.
-    :return: A boolean indicating whether the device might require tunneling.
-    """
-
-    async def _device_might_need_tunneld() -> bool:
-        async with await create_using_usbmux(serial=identifier) as lockdown:
-            return Version(lockdown.product_version) >= Version("17.0")
-
-    return asyncio.run(_device_might_need_tunneld())
+def product_version_needs_tunnel(product_version: str) -> bool:
+    """True when the device's iOS version (>= 17.0) means a developer command needs an RSD tunnel."""
+    return Version(product_version) >= Version("17.0")
 
 
 def invoke_cli_with_error_handling() -> bool:
@@ -356,8 +345,12 @@ def invoke_cli_with_error_handling() -> bool:
         )
     except RoutableTunnelRequiredError as e:
         logger.error(str(e))
+    except UserspaceTunnelUnavailableError as e:
+        logger.error(str(e))
     except (InvalidServiceError, RSDRequiredError) as e:
         reason = ""
+        # Both exceptions carry the device's product version (no extra device round-trip needed).
+        product_version = e.product_version
         if isinstance(e, RSDRequiredError):
             reason = "RSD is required for this command"
         elif (
@@ -365,16 +358,34 @@ def invoke_cli_with_error_handling() -> bool:
             and ("developer" in sys.argv)
             and ("--tunnel" not in sys.argv)
             and ("--userspace" not in sys.argv)
-            and device_might_need_tunneld(e.identifier)
+            and product_version_needs_tunnel(product_version)
         ):
             reason = "it is a developer command on an iOS 17+ device"
-        # Retry once over tunneld (its env var doubles as the one-shot guard: already set
-        # means we are the retry failing again — don't loop). For a no-root tunnel instead,
-        # pass --userspace (slower; see its help).
-        if reason and not os.getenv(TUNNEL_ENV_VAR):
-            logger.warning(f"Trying again over tunneld since {reason} (pass --userspace for a no-root tunnel)")
-            # use a single space because Typer/Click will ignore envvars of empty strings
-            os.environ[TUNNEL_ENV_VAR] = e.identifier or " "
+        # Retry once. Default to the no-root in-process userspace tunnel; iOS 17.0-17.3 falls back
+        # to tunneld — the userspace tunnel can only reach those over the fragile RemotePairing path
+        # (see requires_kernel_tunnel) — as does PYMOBILEDEVICE3_PREFER_TUNNELD (explicit opt-out of
+        # the userspace default). Either env var doubles as the one-shot guard: already set means we
+        # are the retry failing again — don't loop.
+        if reason and not os.getenv(USERSPACE_ENV_VAR) and not os.getenv(TUNNEL_ENV_VAR):
+            if requires_kernel_tunnel(product_version):
+                logger.warning(
+                    f"Trying again over tunneld since {reason} "
+                    "(iOS 17.0-17.3 has no reliable no-root tunnel; needs a privileged `remote tunneld`)"
+                )
+                # use a single space because Typer/Click will ignore envvars of empty strings
+                os.environ[TUNNEL_ENV_VAR] = e.identifier or " "
+            elif os.getenv(PREFER_TUNNELD_ENV_VAR):
+                logger.warning(f"Trying again over tunneld since {reason} ({PREFER_TUNNELD_ENV_VAR} is set)")
+                # use a single space because Typer/Click will ignore envvars of empty strings
+                os.environ[TUNNEL_ENV_VAR] = e.identifier or " "
+            else:
+                logger.warning(
+                    f"Trying again over a no-root userspace tunnel since {reason} (pass --tunnel to use tunneld)"
+                )
+                os.environ[USERSPACE_ENV_VAR] = "1"
+                # Target the same device the userspace tunnel would otherwise resolve by default.
+                if e.identifier and not os.getenv(UDID_ENV_VAR):
+                    os.environ[UDID_ENV_VAR] = e.identifier
             main()
             return False
         logger.error(INVALID_SERVICE_MESSAGE)
