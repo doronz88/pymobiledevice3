@@ -29,7 +29,7 @@ from typing import Any, Callable, Optional, TextIO, Union
 
 import hexdump
 from click.exceptions import Exit
-from construct import Const, CString, GreedyRange, Int64ul, Tell
+from construct import Bytes, Const, CString, GreedyRange, Int64ul, Tell
 from construct_typed import DataclassMixin, EnumBase, TEnum, TStruct, csfield
 from parameter_decorators import path_to_str
 from pygments import formatters, highlight, lexers
@@ -46,6 +46,13 @@ from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.utils import get_asyncio_loop, try_decode
+
+try:
+    # construct-typing >= 0.8.0 rejects csfield(Const(...)) and requires csfield_const() for const
+    # fields. Older versions (0.7.x, the Python 3.9 floor) have no csfield_const.
+    from construct_typed import csfield_const
+except ImportError:  # construct-typing < 0.8.0
+    csfield_const = None
 
 MAXIMUM_READ_SIZE = 4 * 1024**2  # 4 MB
 MODE_MASK = 0o0000777
@@ -170,10 +177,16 @@ MAXIMUM_WRITE_SIZE = 1 << 30
 
 AFCMAGIC = b"CFA6LPAA"
 
+# construct-typing >= 0.8.0 requires csfield_const() for const fields; 0.7.x (the Python 3.9 floor)
+# only has csfield(Const(...)). Pick the form the installed version supports.
+_afc_magic_field = (
+    csfield_const(Bytes(len(AFCMAGIC)), AFCMAGIC) if csfield_const is not None else csfield(Const(AFCMAGIC))
+)
+
 
 @dataclass
 class AfcHeader(DataclassMixin):
-    magic: bytes = csfield(Const(AFCMAGIC))
+    magic: bytes = _afc_magic_field
     entire_length: int = csfield(Int64ul)
     this_length: int = csfield(Int64ul)
     packet_num: int = csfield(Int64ul)

@@ -1,5 +1,8 @@
 construct>=2.9.29
-construct-typing>=0.7.0
+# construct-typing 0.8.0 requires Python >= 3.10 and replaces csfield(Const(...)) with
+# csfield_const() (see afc.py). Keep the 3.9 floor on the last 0.7.x release.
+construct-typing>=0.8.0 ; python_version >= '3.10'
+construct-typing>=0.7.0,<0.8.0 ; python_version < '3.10'
 asn1
 coloredlogs
 IPython
