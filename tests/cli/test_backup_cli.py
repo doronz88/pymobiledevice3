@@ -37,7 +37,9 @@ def test_backup_full_help_describes_conditional_default():
     result = runner.invoke(__main__.app, ["backup2", "backup", "--help"])
 
     assert result.exit_code == 0
-    normalized_output = " ".join(result.output.split())
+    # Rich wraps the help text inside panel borders, so strip the box-drawing
+    # characters before joining lines back into a single string
+    normalized_output = " ".join(result.output.replace("│", " ").split())
     assert "incremental" in normalized_output
     assert "valid local metadata exists" in normalized_output
     assert "full for an" in normalized_output
