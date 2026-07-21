@@ -33,7 +33,7 @@ async def afc_pull(
             "-i",
             help="Continue downloading even if some files error (best-effort pull).",
         ),
-    ],
+    ] = False,
 ) -> None:
     """Download a remote path under /var/mobile/Media to the local filesystem."""
     async with AfcService(lockdown=service_provider) as afc:
