@@ -84,6 +84,8 @@ def print_hex(data, colored=True) -> None:
 
 def set_verbosity(level: int) -> None:
     coloredlogs.set_level(logging.INFO - (level * 10))
+    # DTX message traffic is very chatty -- require -vv to see it
+    logging.getLogger("pymobiledevice3.dtx").setLevel(logging.DEBUG if level >= 2 else logging.INFO)
 
 
 def set_color_flag(value: bool) -> None:
