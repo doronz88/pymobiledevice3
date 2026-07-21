@@ -213,6 +213,12 @@ class RemotePairingTunnel(ABC):
                 # packet — the userspace counterpart of _tun_read_loop_via_reader's batch-drain
                 # below. The loop this task runs on also runs the whole pytcp stack, so at
                 # MSS-sized packets a per-packet reschedule caps uploads at a few MB/s.
+                # NOTE: each packet MUST go out as its own send_packet_to_device call — do NOT
+                # coalesce the burst into one transport write. The CoreDeviceProxy forwarding
+                # path is read-boundary-sensitive: it expects each inner IPv6 packet to arrive
+                # as (roughly) its own read unit, and a concatenated burst destroys the
+                # boundaries — measured on iOS 26.5/USB: upload collapses to ~1 MB/s and the
+                # tunnel connection eventually dies outright.
                 while True:
                     for packet in await self.tun.async_read_batch():
                         if packet and (packet[0] >> 4) == 6:
