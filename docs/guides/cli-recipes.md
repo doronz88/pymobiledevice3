@@ -168,10 +168,10 @@ pymobiledevice3 developer dvt sysmon process single
 pymobiledevice3 developer dvt sysmon process monitor threshold 50
 
 # Stream one process and only show the selected fields
-pymobiledevice3 developer dvt sysmon process monitor pid 123 --key name --key cpuUsage --key physFootprint
+pymobiledevice3 developer dvt sysmon process monitor process --filter pid=123 --key name --key cpuUsage --key physFootprint
 
 # Stream one process with human-readable memory sizes
-pymobiledevice3 developer dvt sysmon process monitor pid 123 --key name --key physFootprint --human
+pymobiledevice3 developer dvt sysmon process monitor process --filter name=SpringBoard --key name --key physFootprint --human
 
 # Stream oslog
 pymobiledevice3 developer dvt oslog

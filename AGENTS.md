@@ -85,7 +85,7 @@ device-operator skill guidance needs updating.
 
 - Update docs for user-facing command/API changes.
 - Keep root `README.md` concise; place deep guides under `docs/guides/`.
-- Add links in `docs/README.md` for new guides.
+- Add new guides to the `nav` section of `mkdocs.yml`.
 
 ## Safety
 

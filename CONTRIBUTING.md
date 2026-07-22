@@ -36,6 +36,6 @@ the editable install above ran inside it.
 ## Recommended Reading
 
 - [Understanding iDevice protocol layers](misc/understanding_idevice_protocol_layers.md)
-- [Documentation index](docs/README.md)
+- [Documentation site](https://doronz88.github.io/pymobiledevice3/)
 - [Writing commands with service_provider](docs/guides/writing-commands-with-service-provider.md)
 - [AGENTS](AGENTS.md)
