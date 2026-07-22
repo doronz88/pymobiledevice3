@@ -42,9 +42,8 @@ class TcpForwarderBase:
             await self.stopped.wait()
         finally:
             self.logger.info("Closing everything")
-            if self.server is not None:
-                self.server.close()
-                await self.server.wait_closed()
+            self.server.close()
+            await self.server.wait_closed()
             tasks = list(self._connection_tasks)
             for task in tasks:
                 task.cancel()

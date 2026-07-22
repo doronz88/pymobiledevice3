@@ -145,7 +145,7 @@ async def debugserver_lldb(
         logger.error("lldb is only supported on iOS >= 17.0")
         return
 
-    if isinstance(service_provider, RemoteServiceDiscoveryService) and service_provider.is_in_process_tunnel:
+    if service_provider.is_in_process_tunnel:
         # The flow spawns an external lldb and feeds it `process connect connect://[<device>]:<port>`;
         # that address lives only on this process's userspace stack and is unreachable from lldb.
         raise RoutableTunnelRequiredError(

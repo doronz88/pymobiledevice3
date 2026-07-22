@@ -2473,8 +2473,7 @@ class ScreenStreamServer:
         # PLI-forced IDR now (no periodic refresh loop to piggyback on),
         # so it should stay rare.
         queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=64)
-        if self._init_sequence is not None:
-            queue.put_nowait(self._init_sequence)
+        queue.put_nowait(self._init_sequence)
         # New subscribers start with needs_key=True so the broadcast
         # loop holds live deltas until the PLI-induced IDR arrives
         # (deltas reference frames this subscriber never saw, otherwise
@@ -2947,21 +2946,18 @@ class ScreenStreamServer:
             watchdog.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await watchdog
-            if self._rctl_task is not None:
-                self._rctl_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await self._rctl_task
+            self._rctl_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._rctl_task
             decoder_refresh.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await decoder_refresh
-            if self._reconnect_task is not None:
-                self._reconnect_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await self._reconnect_task
-            if self._keep_awake_task is not None:
-                self._keep_awake_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await self._keep_awake_task
+            self._reconnect_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._reconnect_task
+            self._keep_awake_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._keep_awake_task
             logger.debug("shutdown: cancelling eager_start")
             eager_start.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -2976,10 +2972,9 @@ class ScreenStreamServer:
             await _bounded(self._stop_hid(), "_stop_hid")
             task = self._hid_worker_task
             self._hid_worker_task = None
-            if task is not None:
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await task
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
 
             # _stop_active_stream / _stop_audio_stream issue
             # stop_media_stream RPCs to the device daemon -- if the

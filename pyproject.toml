@@ -80,6 +80,11 @@ build-backend = "setuptools.build_meta"
 include = ["pymobiledevice3", "tests"]
 pythonVersion = "3.9"
 typeCheckingMode = "standard"
+# Bug-revealing strict-mode rules adopted incrementally on top of standard.
+reportUnnecessaryComparison = "error"
+reportUnnecessaryIsInstance = "error"
+reportUnnecessaryCast = "error"
+reportUntypedNamedTuple = "error"
 venvPath = "."
 venv = ".venv"
 

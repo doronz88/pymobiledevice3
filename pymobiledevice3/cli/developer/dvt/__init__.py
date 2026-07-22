@@ -344,8 +344,6 @@ async def show_dirlist(device_info: DeviceInfo, dirname: str, recursive: bool = 
     except DvtDirListError:
         logging.error(f"Failed to list directory: {dirname}")
         return
-    if not isinstance(filenames, list):
-        return
 
     for filename in filenames:
         child = posixpath.join(dirname, filename)

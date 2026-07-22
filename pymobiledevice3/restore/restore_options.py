@@ -137,9 +137,7 @@ class RestoreOptions:
             self.AllowUntetheredRestore = False
             self.AuthInstallEnableSso = False
 
-            macos_variant = build_identity.macos_variant
-            if macos_variant is not None:
-                self.AuthInstallRecoveryOSVariant = macos_variant
+            self.AuthInstallRecoveryOSVariant = build_identity.macos_variant
 
             self.AuthInstallRestoreBehavior = restore_behavior
             self.AutoBootDelay = 0
