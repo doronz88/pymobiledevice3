@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import ConnectionFailedError, NoDeviceConnectedError
@@ -25,7 +25,7 @@ class RestoredClient:
             await service.start()
 
             query_type = await service.send_recv_plist({"Request": "QueryType"})
-            version = query_type.get("RestoreProtocolVersion")
+            version = cast(str, query_type.get("RestoreProtocolVersion"))
             logger.debug(f"RestoreProtocolVersion: {version}")
 
             if query_type.get("Type") != "com.apple.mobile.restored":

@@ -3,7 +3,7 @@ import logging
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Union, cast
 
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
 from pymobiledevice3.common import get_home_folder
@@ -292,7 +292,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
                 )
             error = response.get("Error")
             if error is not None:
-                raise StartServiceError(name, error)
+                raise StartServiceError(name, cast(str, error))
         except Exception:
             await service.close()
             raise

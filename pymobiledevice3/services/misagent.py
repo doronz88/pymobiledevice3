@@ -1,5 +1,5 @@
 import plistlib
-from typing import IO
+from typing import IO, cast
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
@@ -90,4 +90,4 @@ class MisagentService(LockdownService):
         if response["Status"]:
             raise PyMobileDevice3Exception(f"invalid status: {response}")
 
-        return [ProvisioningProfile(p) for p in response["Payload"]]
+        return [ProvisioningProfile(p) for p in cast(list, response["Payload"])]
