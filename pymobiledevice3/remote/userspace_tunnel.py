@@ -242,6 +242,19 @@ class UserspaceTun:
             ip4_support=False,
         )
         await stack.start()
+        # The interface address is installed by the stack's own tasks shortly AFTER start()
+        # returns; until it lands, source-address selection finds no local host and a stack
+        # connect fails with gaierror. Today the dial plane's localhost-relay hop happens to
+        # add enough event-loop round trips to win that race, but nothing guarantees it — and
+        # an embedder calling connect_tcp() right after aopen() has no such slack. The tun is
+        # not "up" until its address is actually usable, so wait for it (yielding, not
+        # sleeping: the install normally lands within a loop tick or two).
+        target = Ip6Address(self._addr)
+        deadline = asyncio.get_running_loop().time() + 5
+        while not any(host.address == target for host in stack.local_ip6_hosts()):
+            if asyncio.get_running_loop().time() > deadline:
+                raise PyMobileDevice3Exception(f"userspace stack address {self._addr} was not assigned within 5s")
+            await asyncio.sleep(0)
         logger.debug("userspace tunnel up: pytcp L2 iface=%s addr=%s/64 mtu=%s", self._ifidx, self._addr, self._mtu)
 
     def set_peer(self, device_addr: str) -> None:

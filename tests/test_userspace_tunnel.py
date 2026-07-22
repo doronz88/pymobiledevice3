@@ -40,7 +40,8 @@ def test_throughput_sysctls_values_when_supported():
     if "tcp.rcv_wnd_max" not in sysctl.list_keys():
         pytest.skip("installed pmd-pytcp predates the throughput sysctls")
     assert knobs["tcp.rcv_wnd_max"] == userspace_tunnel.MAX_RECV_WINDOW
-    assert knobs["tcp.default.snd_mss_max"] == userspace_tunnel.MAX_SEND_MSS
+    assert knobs["tcp.default.base_mss"] == userspace_tunnel.BASE_MSS_SEED
+    assert knobs["tcp.default.mtu_probing"] == 2
     if "tcp.delayed_ack.delay_ms" in sysctl.list_keys():
         assert knobs["tcp.delayed_ack.delay_ms"] == userspace_tunnel.ACK_DELAY_MS
 
@@ -197,3 +198,26 @@ async def test_relaying_spawns_no_threads():
         assert set(threading.enumerate()) == baseline
     for writer in writers:
         writer.close()
+
+
+async def test_tun_address_usable_when_up_returns():
+    # The stack installs the interface address from its own tasks shortly AFTER stack.start()
+    # returns, so up() must not return before the address is usable: a connect issued right
+    # after tunnel-up would find no local source address and fail with gaierror. The relay
+    # dial path happens to add enough event-loop round trips to win that race today, but an
+    # embedder calling connect_tcp() straight after aopen() has no such slack.
+    from pmd_net_addr import Ip6Address
+    from pmd_pytcp import stack
+
+    from pymobiledevice3.remote.userspace_tunnel import UserspaceTun
+
+    tun = UserspaceTun()
+    tun.addr = "fd57:6e64:6572:7761::1"
+    try:
+        await tun.up()
+        target = Ip6Address(tun.addr)
+        assert any(host.address == target for host in stack.local_ip6_hosts()), (
+            "up() returned before the stack address was usable for source-address selection"
+        )
+    finally:
+        await tun.close()
