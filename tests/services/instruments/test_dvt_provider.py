@@ -82,6 +82,9 @@ async def test_kill(dvt, service_provider) -> None:
     await asyncio.sleep(3)
     async with type(dvt)(service_provider) as second_dvt, DeviceInfo(second_dvt) as device_info:
         aggregated_after_kill = await get_process_data(device_info, "SpringBoard")
+    # the kill must have taken effect: SpringBoard respawns under a fresh pid. Asserting this
+    # unconditionally guards against a silently-dropped kill (the process would keep its pid).
+    assert aggregated["pid"] != aggregated_after_kill["pid"]
     if "startDate" in aggregated:
         assert aggregated["startDate"] < aggregated_after_kill["startDate"]
 

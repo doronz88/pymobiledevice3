@@ -11,6 +11,11 @@ from pymobiledevice3.osu.os_utils import get_os_utils
 
 OSUTIL = get_os_utils()
 
+# SIGKILL on Darwin and every Apple platform pymobiledevice3 targets. Hardcoded rather than
+# signal.SIGKILL because that constant does not exist on Windows hosts, which can still drive a
+# connected device.
+SIGKILL = 9
+
 
 @dataclasses.dataclass
 class OutputReceivedEvent:
@@ -117,11 +122,17 @@ class ProcessControl(DtxService[ProcessControlService]):
 
     async def kill(self, pid: int):
         """
-        Kill a process. The request is fire-and-forget (no reply is awaited).
+        Kill a process by sending it SIGKILL.
+
+        Implemented via ``sendSignal:toPid:`` (which awaits a reply) rather than the
+        fire-and-forget ``killPid:``: the round-trip guarantees the device has acted on the
+        request before the DTX channel — and, on iOS 17+, the tunnel — is torn down. A bare
+        ``killPid:`` is silently dropped when the channel closes immediately after sending it
+        (observed over the default userspace tunnel), leaving the target process alive.
 
         :param pid: PID of the process to kill.
         """
-        await self.service.kill_pid_(pid)
+        await self.signal(pid, SIGKILL)
 
     async def process_identifier_for_bundle_identifier(self, app_bundle_identifier: str) -> int:
         """
