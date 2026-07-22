@@ -1,0 +1,22 @@
+name: Plugin skill sync
+
+on:
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - '.codex/skills/pymobiledevice3-device-operator/**'
+      - 'misc/claude-plugin/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    if: '! github.event.pull_request.draft'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify the vendored plugin skill matches the canonical source
+        run: python3 misc/claude-plugin/sync_skill.py --check

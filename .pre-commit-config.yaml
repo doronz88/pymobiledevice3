@@ -9,6 +9,14 @@ repos:
     - id: ruff-format
 - repo: local
   hooks:
+    # The Claude Code plugin ships real copies of the device-operator skill (symlinks get
+    # flattened by ZIP-based consumers); keep them mirroring the canonical .codex files.
+    - id: sync-claude-plugin-skill
+      name: sync claude plugin skill
+      entry: python3 misc/claude-plugin/sync_skill.py
+      language: system
+      files: ^(\.codex/skills/pymobiledevice3-device-operator/|misc/claude-plugin/)
+      pass_filenames: false
     # Pinned so local hooks and CI agree; bump deliberately together with fixing any new findings.
     # Resolves the project's dependencies from .venv (venvPath/venv in pyproject.toml); CI's test
     # matrix skips this hook (SKIP=pyright) since deps aren't installed there — the dedicated
