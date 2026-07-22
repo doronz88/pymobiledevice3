@@ -118,7 +118,10 @@ def throughput_sysctls() -> dict[str, int]:
 
     These ride pmd-pytcp's public sysctls: ``tcp.rcv_wnd_max`` raises the advertised receive
     window for fast downloads; ``tcp.delayed_ack.delay_ms`` drops the delayed-ACK timer so
-    interactive request/response services are not stalled by it (:data:`ACK_DELAY_MS`).
+    interactive request/response services are not stalled by it (:data:`ACK_DELAY_MS`);
+    ``net.default.rx_cksum_validate`` turns off the software RX checksum pass (the tunnel is
+    AEAD-authenticated, so the RFC 1071 checksum only re-verifies bytes that cannot have been
+    corrupted) — measured ~+35% bulk-download throughput on an iOS 17+ DSC fetch.
 
     Host->device segment sizing is dynamic: RFC 4821/8899 PLPMTUD (``tcp.mtu_probing`` = 2)
     starts every connection at the proven-safe 1340-byte send MSS (``tcp.base_mss`` =
@@ -136,6 +139,10 @@ def throughput_sysctls() -> dict[str, int]:
         "tcp.default.mtu_probing": 2,
         "tcp.default.base_mss": BASE_MSS_SEED,
         "tcp.plpmtud.default.probe_timer_ms": PROBE_TIMER_MS,
+        # Software RX-checksum offload: every packet reaching the stack came through the
+        # AEAD-authenticated tunnel and an in-memory socketpair, so the RFC 1071 checksum
+        # verifies RAM. TX checksums stay on (the device kernel verifies them).
+        "net.default.rx_cksum_validate": False,
     }
 
 
