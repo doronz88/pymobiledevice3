@@ -30,7 +30,7 @@ Prefer existing CLI commands first. Prefer reading local docs and CLI source ove
 4. Use `uvx --from . pymobiledevice3 <group> --help` only as a fallback when code and docs are ambiguous, or as a final verification step before suggesting an exact command to the user.
 5. Execute a reversible or read-only step first, then escalate to state-changing actions only if the user asked for them.
 6. For long-lived streams or interactive shells, keep the process attached instead of replacing it with one-shot polling.
-7. If the CLI is missing a path that clearly exists in services, add a thin command using `ServiceProviderDep`, `@async_command`, and a service class under `pymobiledevice3/services/`. Read `docs/guides/writing-commands-with-service-provider.md`.
+7. If the CLI is missing a path that clearly exists in services, add a thin command using `ServiceProviderDep`, `@async_command`, and a service class under `pymobiledevice3/services/` — commands live on an `InjectingTyper` app (from `typer_injector`). Read `docs/guides/writing-commands-with-service-provider.md`.
 
 ## Safety Rules
 
