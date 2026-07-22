@@ -1,15 +1,15 @@
 {
     "name": "pymobiledevice3",
-    "description": "Agent skills for operating iOS and iPadOS devices with pymobiledevice3.",
+    "description": "Agent skills for operating iPhone and iPad (iOS/iPadOS) devices with pymobiledevice3.",
     "owner": {
         "name": "doronz88",
         "url": "https://github.com/doronz88"
     },
     "plugins": [
         {
-            "name": "pymobiledevice3",
+            "name": "ios-device-operator",
             "source": "./misc/claude-plugin",
-            "description": "Operate iOS and iPadOS devices from Claude Code with pymobiledevice3: screenshots, syslog search, crash reports, file and app operations, developer services (DVT, tunnels, WebInspector, WDA) — works from a fresh workstation via uvx/PyPI or a local checkout."
+            "description": "Operate iPhone and iPad (iOS/iPadOS) devices from Claude Code with pymobiledevice3: screenshots, syslog search, crash reports, file and app operations, developer services (DVT, tunnels, WebInspector, WDA) — works from a fresh workstation via uvx/PyPI or a local checkout."
         }
     ]
 }

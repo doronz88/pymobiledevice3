@@ -1,6 +1,6 @@
 ---
 name: pymobiledevice3-device-operator
-description: Operate iOS and iPadOS devices with pymobiledevice3, from a local checkout or straight from PyPI via uvx on a fresh workstation. Use when an agent needs to inspect a connected device, collect logs or crash data, browse or copy files, manage apps, profiles, or backups, use developer services such as DDI/DVT/tunnels/sysmon/screenshots/simulated location, automate Safari or WebViews through WebInspector or WDA, or add a thin repo-native device command on top of existing services. Prefer existing CLI and service modules, choose USB vs --rsd/--tunnel correctly, and require explicit user intent before state-changing or destructive actions.
+description: Operate iOS and iPadOS devices with pymobiledevice3, from a local checkout or straight from PyPI via uvx on a fresh workstation. Use when an agent needs to inspect a connected device, collect logs or crash data, browse or copy files, manage apps, profiles, or backups, use developer services such as DDI/DVT/tunnels/sysmon/screenshots/simulated location, automate Safari or WebViews through WebInspector or WDA, write Python scripts against the pymobiledevice3 library, or add a thin repo-native device command on top of existing services. Prefer existing CLI and service modules, choose USB vs --rsd/--tunnel correctly, and require explicit user intent before state-changing or destructive actions.
 ---
 
 # PyMobileDevice3 Device Operator
@@ -12,6 +12,17 @@ Use this skill to translate a user goal into the smallest correct `pymobiledevic
 ## Default Operating Pattern
 
 Inside a pymobiledevice3 checkout, run commands from the repository root with `uvx --from . pymobiledevice3 ...` so the local checkout is used. On a workstation **without** a checkout, run `uvx pymobiledevice3 ...` instead — `uvx` fetches the released package from PyPI on first use, so nothing needs to be installed beforehand except `uv` itself (`uv tool install pymobiledevice3` gives a persistent install). Everywhere this skill's references show `uvx --from . pymobiledevice3 ...`, drop the `--from .` when there is no checkout. Fall back to `python3 -m pymobiledevice3 ...` only if `uvx` is unavailable or the user explicitly wants the current interpreter environment.
+
+If `uv` itself is missing, bootstrap one of the two paths first (neither needs root):
+
+- Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux) or
+  `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows), then use `uvx` as above.
+- Or skip uv entirely: `python3 -m pip install -U pymobiledevice3`, then run
+  `python3 -m pymobiledevice3 ...` everywhere the references show `uvx ... pymobiledevice3 ...`.
+  If pip refuses with `externally-managed-environment` (PEP 668 — Debian/Ubuntu, Homebrew
+  Python, Fedora), create a venv instead of forcing it:
+  `python3 -m venv ~/.pmd3-venv && ~/.pmd3-venv/bin/pip install -U pymobiledevice3`, then use
+  `~/.pmd3-venv/bin/pymobiledevice3 ...`. Never use `--break-system-packages`.
 
 Start with the least invasive command that proves connectivity or surfaces missing prerequisites:
 
@@ -30,7 +41,7 @@ Prefer existing CLI commands first. Prefer reading local docs and CLI source ove
 4. Use `uvx --from . pymobiledevice3 <group> --help` only as a fallback when code and docs are ambiguous, or as a final verification step before suggesting an exact command to the user.
 5. Execute a reversible or read-only step first, then escalate to state-changing actions only if the user asked for them.
 6. For long-lived streams or interactive shells, keep the process attached instead of replacing it with one-shot polling.
-7. If the CLI is missing a path that clearly exists in services, add a thin command using `ServiceProviderDep`, `@async_command`, and a service class under `pymobiledevice3/services/`. Read `docs/guides/writing-commands-with-service-provider.md`.
+7. If the CLI is missing a path that clearly exists in services, add a thin command using `ServiceProviderDep`, `@async_command`, and a service class under `pymobiledevice3/services/` — commands live on an `InjectingTyper` app (from `typer_injector`). Read `docs/guides/writing-commands-with-service-provider.md`.
 
 ## Safety Rules
 
@@ -51,6 +62,10 @@ Do not expose or commit pair records, crash artifacts, backups, or other device-
 Read `references/quick-recipes.md` for the exact invocation of the most common tasks
 (screenshot, syslog search, crash pull, file copy, app listing) and for the
 syslog-first troubleshooting technique.
+
+Read `references/python-scripting.md` before writing Python code against the library —
+the API went async incrementally over many releases, so memorized/older API shapes are
+usually stale.
 
 Read `references/task-map.md` when you need to map a user goal to a command group or service module.
 
