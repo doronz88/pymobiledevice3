@@ -40,7 +40,8 @@ def test_throughput_sysctls_values_when_supported():
     if "tcp.rcv_wnd_max" not in sysctl.list_keys():
         pytest.skip("installed pmd-pytcp predates the throughput sysctls")
     assert knobs["tcp.rcv_wnd_max"] == userspace_tunnel.MAX_RECV_WINDOW
-    assert knobs["tcp.default.snd_mss_max"] == userspace_tunnel.MAX_SEND_MSS
+    assert knobs["tcp.default.base_mss"] == userspace_tunnel.BASE_MSS_SEED
+    assert knobs["tcp.default.mtu_probing"] == 2
     if "tcp.delayed_ack.delay_ms" in sysctl.list_keys():
         assert knobs["tcp.delayed_ack.delay_ms"] == userspace_tunnel.ACK_DELAY_MS
 
