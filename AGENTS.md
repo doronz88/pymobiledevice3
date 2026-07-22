@@ -83,8 +83,11 @@ device-operator skill guidance needs updating.
 
 The device-operator skill is also published as a Claude Code plugin: the repo is a
 plugin marketplace (`.claude-plugin/marketplace.json`) whose plugin package at
-`misc/claude-plugin/` mounts the skill via symlink — the canonical files remain the
-single source of truth.
+`misc/claude-plugin/` ships a **vendored real copy** of the skill (symlinks get
+flattened by ZIP-based consumers such as plugin review pipelines). The canonical files
+remain the single source of truth: after editing them, the `sync-claude-plugin-skill`
+pre-commit hook refreshes the copy (`misc/claude-plugin/sync_skill.py`), and CI blocks
+out-of-sync merges.
 
 ## Documentation Expectations
 
