@@ -1,6 +1,6 @@
 ---
 name: pymobiledevice3-device-operator
-description: Operate iOS and iPadOS devices through the local pymobiledevice3 checkout. Use when Codex needs to inspect a connected device, collect logs or crash data, browse or copy files, manage apps, profiles, or backups, use developer services such as DDI/DVT/tunnels/sysmon/screenshots/simulated location, automate Safari or WebViews through WebInspector or WDA, or add a thin repo-native device command on top of existing services. Prefer existing CLI and service modules, choose USB vs --rsd/--tunnel correctly, and require explicit user intent before state-changing or destructive actions.
+description: Operate iOS and iPadOS devices through the local pymobiledevice3 checkout. Use when an agent needs to inspect a connected device, collect logs or crash data, browse or copy files, manage apps, profiles, or backups, use developer services such as DDI/DVT/tunnels/sysmon/screenshots/simulated location, automate Safari or WebViews through WebInspector or WDA, or add a thin repo-native device command on top of existing services. Prefer existing CLI and service modules, choose USB vs --rsd/--tunnel correctly, and require explicit user intent before state-changing or destructive actions.
 ---
 
 # PyMobileDevice3 Device Operator
@@ -47,6 +47,10 @@ Do not invent prerequisites. If a developer service fails, inspect developer-mod
 Do not expose or commit pair records, crash artifacts, backups, or other device-identifying material.
 
 ## Task Routing
+
+Read `references/quick-recipes.md` for the exact invocation of the most common tasks
+(screenshot, syslog search, crash pull, file copy, app listing) and for the
+syslog-first troubleshooting technique.
 
 Read `references/task-map.md` when you need to map a user goal to a command group or service module.
 

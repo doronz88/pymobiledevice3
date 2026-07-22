@@ -3,6 +3,7 @@
 This repository includes a repo-local agent skill for device-facing work:
 
 - Skill file: `.codex/skills/pymobiledevice3-device-operator/SKILL.md`
+- Reference file: `.codex/skills/pymobiledevice3-device-operator/references/quick-recipes.md`
 - Reference file: `.codex/skills/pymobiledevice3-device-operator/references/task-map.md`
 - Reference file:
   `.codex/skills/pymobiledevice3-device-operator/references/transport-and-safety.md`
@@ -18,6 +19,8 @@ If someone is using Codex against the GitHub repository and wants a copy-pasteab
 
 - Skill URL:
   `https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/SKILL.md`
+- Quick recipes URL:
+  `https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/quick-recipes.md`
 - Task map URL:
   `https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/task-map.md`
 - Transport and safety URL:
@@ -29,6 +32,7 @@ Example prompt:
 Use the pymobiledevice3 device-operator skill:
 https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/SKILL.md
 Also use its references:
+https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/quick-recipes.md
 https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/task-map.md
 https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/transport-and-safety.md
 ```
@@ -58,14 +62,18 @@ For iOS 17+ developer services, the skill routes users through the project tunne
 - [iOS 17+ tunnels](ios17-tunnels.md)
 - `.codex/skills/pymobiledevice3-device-operator/references/transport-and-safety.md`
 
-If `lockdown start-tunnel` or `remote start-tunnel` fails because
-tunnel interface creation needs elevated privileges, the skill is expected
-to consider retrying with `sudo`.
+On iOS 17.4+ no tunnel setup is needed at all: commands that require an RSD
+tunnel establish a no-root in-process userspace tunnel automatically, so the
+skill routes agents straight to the target command. Privileged tunnels
+(`tunneld`, `start-tunnel`) remain the fallback for iOS 17.0-17.3 devices or
+when the userspace path is not viable (e.g. sustained host-to-device
+throughput).
 
-For Codex-driven tunnel startup, the skill should prefer
-`lockdown start-tunnel --script-mode` or `remote start-tunnel --script-mode`,
-then read the RSD connection details from stdout and feed those exact values
-into later `--rsd HOST PORT` commands.
+For agent-driven `start-tunnel` startup on those fallback paths, the skill
+prefers `lockdown start-tunnel --script-mode` or
+`remote start-tunnel --script-mode` (with `sudo` if tunnel interface creation
+needs elevated privileges), then reads the RSD connection details from stdout
+and feeds those exact values into later `--rsd HOST PORT` commands.
 
 ## When Updating The Project
 

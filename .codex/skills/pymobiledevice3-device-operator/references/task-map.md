@@ -10,10 +10,11 @@ Read this file when the user asks to do something on-device and you need to map 
 - `bonjour`: discover RemoteXPC and related network-visible services.
 - `lockdown`: inspect values, pair or unpair, start tunnels, toggle Wi-Fi connections, basic device settings.
 - `remote`: remote pairing and tunnel helpers for CoreDevice flows.
+- `companion`: reach services on a paired companion device (e.g. Apple Watch) through the phone.
 
 Start here when the task is blocked on "find the device", "connect to the device", "`--rsd` details", or "start a tunnel".
 
-For `lockdown start-tunnel` and `remote start-tunnel`, use `--script-mode`, parse the RSD host and port from stdout, and be ready to use `sudo` if tunnel interface creation fails for permission reasons.
+Explicit tunnel setup is rarely needed: on iOS 17.4+, commands that require an RSD tunnel establish a no-root in-process userspace tunnel automatically — just run the command. Reach for `tunneld` or `start-tunnel` (see `references/transport-and-safety.md`) only for iOS 17.0-17.3 devices or when the userspace path is not viable.
 
 ## Files, Containers, And App Data
 
@@ -30,6 +31,7 @@ Use these for browsing files, copying artifacts, or handling app containers.
 - `diagnostics`: restart, shutdown, info, battery-related flows under `pymobiledevice3/cli/diagnostics/`.
 - `notification`: observe or post Darwin notifications.
 - `pcap`: capture network traffic.
+- `btlogger`: capture Bluetooth HCI packet logs (pcap/pcapng).
 - `power-assertion`: keep the device awake for a task.
 - `processes`: process inspection helpers outside full DVT flows.
 
@@ -71,7 +73,13 @@ Use WebInspector for Safari/WebView automation and WDA for device UI automation.
 - `developer debugserver`: debugserver launch and LLDB bridging.
 - `developer fetch-symbols`: symbol acquisition.
 - `developer accessibility`: audits, settings, notifications, item listing.
+- `developer simulate-location`: DVT-based location simulation.
+- `developer arbitration`: device arbitration (check-in/check-out for exclusive use).
+- `developer shell`: IPython shell connected to a named developer service (exploration/R&D).
 - Supporting code: `pymobiledevice3/cli/developer/` and `pymobiledevice3/services/dvt/`.
+
+The authoritative list of top-level groups is `CLI_GROUPS` in `pymobiledevice3/__main__.py`;
+if a goal maps to nothing above, scan it and the matching module under `pymobiledevice3/cli/`.
 
 Read `references/transport-and-safety.md` before using these on iOS 17+.
 
