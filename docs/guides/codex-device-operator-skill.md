@@ -1,11 +1,16 @@
-# Codex Device Operator Skill
+# Device Operator Skill
 
-This repository includes a repo-local Codex skill for device-facing work:
+This repository includes a repo-local agent skill for device-facing work:
 
 - Skill file: `.codex/skills/pymobiledevice3-device-operator/SKILL.md`
 - Reference file: `.codex/skills/pymobiledevice3-device-operator/references/task-map.md`
 - Reference file:
   `.codex/skills/pymobiledevice3-device-operator/references/transport-and-safety.md`
+
+The skill is discovered automatically by both Codex (via `.codex/skills/`) and
+Claude Code (via a symlink in `.claude/skills/`). The two skill trees mirror each
+other with relative symlinks; see the Skills section of the repo's `AGENTS.md` for
+the full inventory and the edit-the-canonical-copy convention.
 
 ## Use From GitHub
 
@@ -28,7 +33,7 @@ https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobilede
 https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/transport-and-safety.md
 ```
 
-Use this skill when Codex needs to operate a connected iPhone or iPad through the local `pymobiledevice3` checkout, including:
+Use this skill when an agent needs to operate a connected iPhone or iPad through the local `pymobiledevice3` checkout, including:
 
 - connectivity and transport selection
 - crash/log/file collection
@@ -65,7 +70,7 @@ into later `--rsd HOST PORT` commands.
 ## When Updating The Project
 
 If you add, remove, or substantially change device-facing CLI behavior,
-update the skill guidance when needed so Codex keeps routing requests
+update the skill guidance when needed so agents keep routing requests
 correctly.
 
 In practice, review the skill when changes affect:
