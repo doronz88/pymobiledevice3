@@ -4,6 +4,7 @@ import logging
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
+from pymobiledevice3.exceptions import MissingValueError
 from pymobiledevice3.services.diagnostics import DiagnosticsService
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,8 @@ async def diagnostics_battery_monitor(service_provider: ServiceProviderDep) -> N
     diagnostics = DiagnosticsService(lockdown=service_provider)
     while True:
         raw_info = await diagnostics.get_battery()
+        if raw_info is None:
+            raise MissingValueError("device did not expose an IOPMPowerSource entry")
         info = {
             "InstantAmperage": raw_info.get("InstantAmperage"),
             "Temperature": raw_info.get("Temperature"),

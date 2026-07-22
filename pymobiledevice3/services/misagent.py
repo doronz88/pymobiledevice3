@@ -1,8 +1,9 @@
 import plistlib
-from io import BytesIO
+from typing import IO
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 
@@ -35,13 +36,13 @@ class MisagentService(LockdownService):
     SERVICE_NAME = "com.apple.misagent"
     RSD_SERVICE_NAME = "com.apple.misagent.shim.remote"
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownServiceProvider):
         if isinstance(lockdown, LockdownClient):
             super().__init__(lockdown, self.SERVICE_NAME)
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    async def install(self, plist: BytesIO) -> dict:
+    async def install(self, plist: IO[bytes]) -> dict:
         """
         Install a provisioning profile on the device.
 

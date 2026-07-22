@@ -132,7 +132,7 @@ class UsbmuxTcpForwarder(TcpForwarderBase):
 
     def __init__(
         self,
-        serial: str,
+        serial: Optional[str],
         dst_port: int,
         src_port: int,
         listening_event: Optional[asyncio.Event] = None,
@@ -142,7 +142,7 @@ class UsbmuxTcpForwarder(TcpForwarderBase):
         """
         Initialize a new tcp forwarder
 
-        :param serial: device serial
+        :param serial: device serial, or None to use the sole connected device
         :param dst_port: tcp port to connect to each new connection via the supplied lockdown object
         :param src_port: tcp port to listen on
         :param listening_event: asyncio event to fire when the listener is ready

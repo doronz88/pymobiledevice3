@@ -8,6 +8,7 @@ from bpylist2 import archiver
 from pymobiledevice3.dtx import DTXQueue, DTXService, dtx_method, dtx_on_data, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
+from pymobiledevice3.exceptions import NotConnectedError
 
 
 class TapService(DTXService):
@@ -89,7 +90,17 @@ class Tap:
         self._channel_name = channel_name
         self._config = config
         self._channel: Optional[TapChannel] = None
-        self.channel: Optional[TapMessageChannel] = None
+        self._message_channel: Optional[TapMessageChannel] = None
+
+    @property
+    def channel(self) -> TapMessageChannel:
+        """The tap's message channel.
+
+        :raises NotConnectedError: if accessed before the tap's ``async with`` context is entered.
+        """
+        if self._message_channel is None:
+            raise NotConnectedError(f"{type(self).__name__} context not entered; use `async with`")
+        return self._message_channel
 
     async def _service_ref(self) -> TapService:
         if self._channel is None:
@@ -102,18 +113,17 @@ class Tap:
 
     async def __aenter__(self):
         service = await self._service_ref()
-        self.channel = TapMessageChannel(service)
+        self._message_channel = TapMessageChannel(service)
         await service.set_config_(self._config)
         await service.start()
         # first message is just kind of an ack
-        await self.channel.receive_plist()
+        await self._message_channel.receive_plist()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await (await self._service_ref()).stop()
 
     async def __aiter__(self) -> AsyncGenerator[Any, None]:
-        assert self.channel is not None
         while True:
             for message in await self.channel.receive_plist():
                 yield message

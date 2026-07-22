@@ -18,7 +18,11 @@ Guidance for AI coding agents and automation contributors working in this reposi
 
 ## Project Conventions
 
-- Python: 3.9+.
+- Python: 3.9+. No `X | Y` union syntax in annotations evaluated at runtime (use
+  `Optional`/`Union`); builtin generics (`list[str]`, `dict[str, int]`) are fine.
+- The repository must stay pyright-clean: `pyright --venvpath .` (pinned to 1.1.411 in CI) must
+  report 0 errors after any change. Suppressions must be rule-specific
+  (`# pyright: ignore[ruleName]`) and reserved for inherently dynamic APIs.
 - CLI commands are Typer-based and typically use dependency injection via
   `ServiceProviderDep` from `pymobiledevice3/cli/cli_common.py`.
 - Async CLI handlers should use `@async_command`.

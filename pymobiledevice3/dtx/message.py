@@ -19,7 +19,7 @@ import logging
 import plistlib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Union, cast
 
 from bpylist2 import archiver
 
@@ -58,10 +58,10 @@ class DTXMessage:
     transport_flags: DTXTransportFlags = DTXTransportFlags.NONE
 
     def __post_init__(self) -> None:
-        self._aux_cache: Optional[list] = None
+        self._aux_cache: Optional[Sequence[Any]] = None
         self._aux_decode_exception: Optional[Exception] = None
         self._payload_decoded: bool = False
-        self._payload_decoded_exception: Optional[Exception] = None
+        self._payload_decoded_exception: Optional[BaseException] = None
         self._payload_cache: Any = None
 
     @property
@@ -98,7 +98,8 @@ class DTXMessage:
         if len(self.payload_data) and not self._payload_decoded and self._payload_decoded_exception is None:
             try:
                 try:
-                    self._payload_cache = archiver.unarchive(self.payload_data)
+                    # bpylist2 declares `bytes` but accepts any buffer (delegates to plistlib.loads)
+                    self._payload_cache = archiver.unarchive(cast(bytes, self.payload_data))
                 except Exception as e1:
                     self._payload_cache = plistlib.loads(self.payload_data)
                     logger.warning(
@@ -128,7 +129,7 @@ class DTXMessage:
         self._payload_decoded_exception = None
 
     @staticmethod
-    def parse(first_fragment: DTXFragment, payload_bytes: bytes) -> DTXMessage:
+    def parse(first_fragment: DTXFragment, payload_bytes: Union[bytes, bytearray, memoryview]) -> DTXMessage:
         """Read a complete DTX message from *stream* using metadata from *fragment*."""
         mv = memoryview(payload_bytes)
         assert first_fragment.data_size == len(mv), (
@@ -211,7 +212,7 @@ class DTXMessage:
 
     def __repr__(self) -> str:
         payload = None
-        aux: Optional[list] = None
+        aux: Any = None
 
         try:
             payload = self.payload

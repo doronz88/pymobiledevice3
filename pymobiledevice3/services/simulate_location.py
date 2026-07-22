@@ -34,7 +34,7 @@ class DtSimulateLocation(LockdownService, LocationSimulationBase):
         """
         service = await self.lockdown.start_lockdown_developer_service(self.SERVICE_NAME)
         await service.sendall(struct.pack(">I", 0))
-        latitude = str(latitude).encode()
-        longitude = str(longitude).encode()
-        await service.sendall(struct.pack(">I", len(latitude)) + latitude)
-        await service.sendall(struct.pack(">I", len(longitude)) + longitude)
+        encoded_latitude = str(latitude).encode()
+        encoded_longitude = str(longitude).encode()
+        await service.sendall(struct.pack(">I", len(encoded_latitude)) + encoded_latitude)
+        await service.sendall(struct.pack(">I", len(encoded_longitude)) + encoded_longitude)

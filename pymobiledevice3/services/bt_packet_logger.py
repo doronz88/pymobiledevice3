@@ -84,7 +84,7 @@ async def write_packetlogger_stream(out: BinaryIO, packet_generator: AsyncIterab
 
 
 async def write_pcapng_stream(
-    out: BinaryIO, packet_generator: AsyncIterable[bytes], product_version: str = "", tz_offset_seconds: int = 0
+    out: BinaryIO, packet_generator: AsyncIterable[bytes], product_version: str = "", tz_offset_seconds: float = 0
 ) -> None:
     # The BTPacketLogger service reports record timestamps as device-local wall-clock time, whereas the pcapng
     # EnhancedPacket timestamp (with the default if_tsresol of 1e-6) is interpreted as UTC. Subtract the device's

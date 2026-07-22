@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Any, ClassVar, Generic, Optional, TypeVar
+from types import TracebackType
+from typing import Any, ClassVar, Generic, Optional, TypeVar, cast
 
 from typing_extensions import Self
 
@@ -121,13 +122,16 @@ class DtxService(Generic[_SVC_T]):
         """
         if self.CHANNEL_IDENTIFIER is not None:
             if self._inferred_service_class is not None:
-                return await self._provider.dtx.open_channel(self.CHANNEL_IDENTIFIER, self._inferred_service_class)
-            return await self._provider.dtx.open_channel(self.CHANNEL_IDENTIFIER)
+                return cast(
+                    "_SVC_T",
+                    await self._provider.dtx.open_channel(self.CHANNEL_IDENTIFIER, self._inferred_service_class),
+                )
+            return cast("_SVC_T", await self._provider.dtx.open_channel(self.CHANNEL_IDENTIFIER))
         assert self._inferred_service_class is not None, (
             "Cannot infer service class — specify CHANNEL_IDENTIFIER or provide a concrete "
             "type parameter, e.g. DtxService[MyService]"
         )
-        return await self._provider.dtx.open_channel(self._inferred_service_class)
+        return cast("_SVC_T", await self._provider.dtx.open_channel(self._inferred_service_class))
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -157,5 +161,10 @@ class DtxService(Generic[_SVC_T]):
         await self.connect()
         return self
 
-    async def __aexit__(self, *_: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         await self.close()

@@ -13,15 +13,17 @@ from contextlib import contextmanager, suppress
 from enum import Enum
 from pathlib import Path
 from ssl import SSLZeroReturnError, TLSVersion
-from typing import Any, Optional
+from typing import Any, Optional, overload
 
-import construct
+from construct import StreamError
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7Options, PKCS7SignatureBuilder
 from packaging.version import Version
+from typing_extensions import Self
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_mobdev2
@@ -140,8 +142,8 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         self.all_values = {}
         self.udid = None
-        self.unique_chip_id = None
-        self.device_public_key = None
+        self.unique_chip_id: Optional[int] = None
+        self.device_public_key: Optional[bytes] = None
         self.product_type = None
 
     @classmethod
@@ -234,7 +236,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             f"TYPE:{self.product_type} PAIRED:{self.paired}>"
         )
 
-    async def __aenter__(self) -> "LockdownClient":
+    async def __aenter__(self) -> Self:
         """Enter the async context manager and return this client.
 
         :return: Result of the operation.
@@ -261,7 +263,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return self.all_values.get("ProductVersion") or "1.0"
 
     @property
-    def product_build_version(self) -> str:
+    def product_build_version(self) -> Optional[str]:
         """The device's OS build version (``BuildVersion``), e.g. ``"21A329"``.
 
         :returns: The build version, or ``None`` when the device did not report one.
@@ -281,7 +283,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             return DeviceClass("Unknown")
 
     @property
-    def wifi_mac_address(self) -> str:
+    def wifi_mac_address(self) -> Optional[str]:
         """The device's Wi-Fi MAC address (``WiFiAddress``).
 
         :returns: The Wi-Fi MAC address, or ``None`` when the device did not report one.
@@ -313,7 +315,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return self.all_values["UniqueChipID"]
 
     @property
-    def preflight_info(self) -> dict:
+    def preflight_info(self) -> Optional[dict]:
         """The device's ``PreflightInfo`` value.
 
         :returns: The preflight info dict, or ``None`` when the device did not report one.
@@ -321,7 +323,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         return self.all_values.get("PreflightInfo")
 
     @property
-    def firmware_preflight_info(self) -> dict:
+    def firmware_preflight_info(self) -> Optional[dict]:
         """The device's ``FirmwarePreflightInfo`` value.
 
         :returns: The firmware preflight info dict, or ``None`` when the device did not report one.
@@ -388,7 +390,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         :returns: The reported daemon type string.
         """
-        return (await self._request("QueryType")).get("Type")
+        return (await self._request("QueryType")).get("Type", "")
 
     async def set_language(self, language: str) -> None:
         """Set the device's language (``Language`` key in the ``com.apple.international`` domain).
@@ -685,10 +687,11 @@ class LockdownClient(ABC, LockdownServiceProvider):
         :param timeout: Maximum time in seconds to wait for each pairing request; ``None`` waits indefinitely.
         :raises PairingError: The device public key could not be retrieved.
         """
-        with open(keybag_file, "rb") as keybag_file:
-            keybag_file = keybag_file.read()
-        private_key = serialization.load_pem_private_key(keybag_file, password=None)
-        cer = x509.load_pem_x509_certificate(keybag_file)
+        keybag_data = Path(keybag_file).read_bytes()
+        private_key = serialization.load_pem_private_key(keybag_data, password=None)
+        if not isinstance(private_key, (RSAPrivateKey, EllipticCurvePrivateKey)):
+            raise PairingError(f"unsupported supervisor private key type: {type(private_key).__name__}")
+        cer = x509.load_pem_x509_certificate(keybag_data)
         public_key = cer.public_bytes(Encoding.DER)
 
         self.device_public_key = await self.get_value("", "DevicePublicKey")
@@ -769,7 +772,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         """
         return await self._request("ResetPairing", {"FullReset": True})
 
-    async def get_value(self, domain: Optional[str] = None, key: Optional[str] = None):
+    async def get_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> Any:
         """Read a value from the device via a ``GetValue`` request.
 
         With neither ``domain`` nor ``key`` given, returns the full values dict and also refreshes the cached
@@ -789,6 +792,8 @@ class LockdownClient(ABC, LockdownServiceProvider):
         if not result:
             return None
         r = result.get("Value")
+        if r is None:
+            return None
         if hasattr(r, "data"):
             return r.data
         if domain is None and key is None and isinstance(r, dict):
@@ -845,6 +850,8 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         options = {"Service": name}
         if include_escrow_bag:
+            if self.pair_record is None:
+                raise NotPairedError()
             options["EscrowBag"] = self.pair_record["EscrowBag"]
 
         response = await self._request("StartService", options)
@@ -853,7 +860,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
                 raise PasswordRequiredError(
                     "your device is protected with password, please enter password in device and try again"
                 )
-            raise StartServiceError(name, response.get("Error"))
+            raise StartServiceError(name, response.get("Error", ""))
         return response
 
     async def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
@@ -894,6 +901,8 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         :yield: Path to the temporary PEM file containing the host certificate followed by its private key.
         """
+        if self.pair_record is None:
+            raise NotPairedError()
         cert_pem = self.pair_record["HostCertificate"]
         private_key_pem = self.pair_record["HostPrivateKey"]
 
@@ -1077,7 +1086,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         Looks up the record matching `identifier` in the cache folder (and other known locations). Does
         nothing if `identifier` is not set.
         """
-        if self.identifier is not None:
+        if self.identifier is not None and self.pairing_records_cache_folder is not None:
             self.pair_record = await get_preferred_pair_record(self.identifier, self.pairing_records_cache_folder)
 
     async def save_pair_record(self) -> None:
@@ -1087,6 +1096,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         When running under sudo, the file's ownership is handed back to the invoking user so a later
         unprivileged run can rewrite it.
         """
+        assert self.pairing_records_cache_folder is not None and self.pair_record is not None
         pair_record_file = self.pairing_records_cache_folder / f"{self.identifier}.plist"
         pair_record_file.write_bytes(plistlib.dumps(self.pair_record))
         # When pairing under sudo, hand the record back to the invoking user (no-op otherwise),
@@ -1162,7 +1172,8 @@ class UsbmuxLockdownClient(LockdownClient):
             (e.g. ``"USB"`` or ``"Network"``).
         """
         short_info = super().short_info
-        short_info["ConnectionType"] = self.service.mux_device.connection_type
+        if self.service.mux_device is not None:
+            short_info["ConnectionType"] = self.service.mux_device.connection_type
         return short_info
 
     async def fetch_pair_record(self) -> None:
@@ -1171,7 +1182,7 @@ class UsbmuxLockdownClient(LockdownClient):
         Like `fetch_pair_record`, but also consults usbmuxd (at
         `usbmux_address`) as a source of pair records. Does nothing if `identifier` is not set.
         """
-        if self.identifier is not None:
+        if self.identifier is not None and self.pairing_records_cache_folder is not None:
             self.pair_record = await get_preferred_pair_record(
                 self.identifier, self.pairing_records_cache_folder, usbmux_address=self.usbmux_address
             )
@@ -1183,8 +1194,9 @@ class UsbmuxLockdownClient(LockdownClient):
         :returns: A connected `ServiceConnection` opened over usbmuxd, reusing this client's
             connection type and usbmux address.
         """
+        connection_type = self.service.mux_device.connection_type if self.service.mux_device is not None else None
         return await ServiceConnection.create_using_usbmux(
-            self.identifier, port, self.service.mux_device.connection_type, usbmux_address=self.usbmux_address
+            self.identifier, port, connection_type, usbmux_address=self.usbmux_address
         )
 
 
@@ -1203,9 +1215,11 @@ class PlistUsbmuxLockdownClient(UsbmuxLockdownClient):
         keyed by the device's usbmux id, so usbmuxd can use it for its own connections.
         """
         await super().save_pair_record()
+        assert self.pair_record is not None and self.identifier is not None
         record_data = plistlib.dumps(self.pair_record)
         async with await usbmux.create_mux() as client:
-            await client.save_pair_record(self.identifier, self.service.mux_device.devid, record_data)
+            if isinstance(client, PlistMuxConnection) and self.service.mux_device is not None:
+                await client.save_pair_record(self.identifier, self.service.mux_device.devid, record_data)
 
 
 class TcpLockdownClient(LockdownClient):
@@ -1295,10 +1309,10 @@ class RemoteLockdownClient(LockdownClient):
         """
         raise NotImplementedError("RemoteXPC lockdown version does not support pairing operations")
 
-    async def unpair(self, timeout: Optional[float] = None) -> None:
+    async def unpair(self, host_id: Optional[str] = None) -> None:
         """Unpair.
 
-        :param timeout: Timeout. Defaults to None.
+        :param host_id: Host ID. Defaults to None.
 
         :return: None.
         """
@@ -1379,7 +1393,7 @@ async def create_using_usbmux(
                 system_buid = await client.get_buid()
                 cls = PlistUsbmuxLockdownClient
 
-        if identifier is None:
+        if identifier is None and service.mux_device is not None:
             # attempt get identifier from mux device serial
             identifier = service.mux_device.serial
 
@@ -1405,14 +1419,24 @@ async def create_using_usbmux(
         return lockdown_client
 
 
-async def retry_create_using_usbmux(retry_timeout: Optional[float] = None, **kwargs) -> UsbmuxLockdownClient:
+@overload
+async def retry_create_using_usbmux(retry_timeout: None = ..., **kwargs) -> UsbmuxLockdownClient: ...
+
+
+@overload
+async def retry_create_using_usbmux(retry_timeout: float, **kwargs) -> Optional[UsbmuxLockdownClient]: ...
+
+
+async def retry_create_using_usbmux(retry_timeout: Optional[float] = None, **kwargs) -> Optional[UsbmuxLockdownClient]:
     """Repeatedly call `create_using_usbmux` until it succeeds, tolerating transient errors.
 
     Useful while a device is rebooting or reconnecting: connection/device errors are swallowed and the
     attempt is retried after a short delay. All keyword arguments are forwarded to
     `create_using_usbmux`.
 
-    :param retry_timeout: Maximum time in seconds to keep retrying, or ``None`` to retry indefinitely.
+    :param retry_timeout: Maximum time in seconds to keep retrying, or ``None`` to retry indefinitely. With
+        ``None`` the call cannot fail with a timeout, so it always returns a client (see the overloads);
+        with a timeout it returns ``None`` if the timeout elapsed without success.
     :returns: A connected usbmux lockdown client, or ``None`` if the timeout elapsed without success.
     """
     start = time.time()
@@ -1425,12 +1449,13 @@ async def retry_create_using_usbmux(retry_timeout: Optional[float] = None, **kwa
             BadDevError,
             MuxException,
             OSError,
-            construct.core.StreamError,
+            StreamError,
             DeviceNotFoundError,
             IncompleteReadError,
             ConnectionTerminatedError,
         ):
             await asyncio.sleep(RECONNECT_RETRY_INTERVAL_SECONDS)
+    return None
 
 
 async def create_using_tcp(

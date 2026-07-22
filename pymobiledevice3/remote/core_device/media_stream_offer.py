@@ -82,6 +82,7 @@ import plistlib
 import time
 import uuid
 import zlib
+from typing import Optional
 
 # Decoder name embedded in the mediaBlob. The iOS daemon matches against this
 # string to pick a compatible decoder on its side.
@@ -97,7 +98,7 @@ NEGOTIATOR_MODE_AUDIO = 6
 #   4074    header marker
 # The two orderings differ between video and audio (Apple captured them in
 # different orders); kept verbatim so the byte-equivalence check passes.
-_DEFAULT_VIDEO_BITRATE_TIERS: tuple[tuple[int, int, int | None], ...] = (
+_DEFAULT_VIDEO_BITRATE_TIERS: tuple[tuple[int, int, Optional[int]], ...] = (
     (4074, 0, 16384),
     (0, 75_000_000, 524288),
     (0, 40_000_000, 12288),
@@ -109,7 +110,7 @@ _DEFAULT_VIDEO_BITRATE_TIERS: tuple[tuple[int, int, int | None], ...] = (
     (0, 60_000_000, 262144),
     (1, 299, None),
 )
-_DEFAULT_AUDIO_BITRATE_TIERS: tuple[tuple[int, int, int | None], ...] = (
+_DEFAULT_AUDIO_BITRATE_TIERS: tuple[tuple[int, int, Optional[int]], ...] = (
     (4074, 0, 16384),
     (1, 299, None),
     (0, 60_000_000, 262144),
@@ -231,7 +232,7 @@ def build_media_blob_video(
     avc_features: str = _DEFAULT_AVC_FEATURES,
     decoder_name: str = DEFAULT_DECODER_NAME,
     timestamp: int = _CAPTURED_VIDEO_TIMESTAMP,
-    bitrate_tiers: tuple[tuple[int, int, int | None], ...] = _DEFAULT_VIDEO_BITRATE_TIERS,
+    bitrate_tiers: tuple[tuple[int, int, Optional[int]], ...] = _DEFAULT_VIDEO_BITRATE_TIERS,
 ) -> bytes:
     """Build the video mediaBlob protobuf programmatically.
 
@@ -291,7 +292,7 @@ def build_media_blob_audio(
     *,
     decoder_name: str = DEFAULT_DECODER_NAME,
     timestamp: int = _CAPTURED_AUDIO_TIMESTAMP,
-    bitrate_tiers: tuple[tuple[int, int, int | None], ...] = _DEFAULT_AUDIO_BITRATE_TIERS,
+    bitrate_tiers: tuple[tuple[int, int, Optional[int]], ...] = _DEFAULT_AUDIO_BITRATE_TIERS,
 ) -> bytes:
     """Build the audio mediaBlob protobuf programmatically. Byte-identical to
     Apple's captured audio template by default."""
@@ -319,7 +320,7 @@ def _build_top_level(
     settings_body: bytes,
     decoder_name: str,
     timestamp: int,
-    bitrate_tiers: tuple[tuple[int, int, int | None], ...],
+    bitrate_tiers: tuple[tuple[int, int, Optional[int]], ...],
 ) -> bytes:
     """Wrap a Video/AudioSettings body in the surrounding MediaBlob fields."""
     f9s = b""

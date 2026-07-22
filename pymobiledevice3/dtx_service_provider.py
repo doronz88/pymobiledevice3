@@ -215,11 +215,12 @@ class DtxServiceProvider:
             and (svc.socket is not None and hasattr(svc.socket, "_sslobj"))
         ):
             old_writer = svc.writer
-            raw_socket = getattr(svc.socket, "_sock", None)
+            raw_socket: Optional[_socket.socket] = getattr(svc.socket, "_sock", None)
             if raw_socket is None:
                 raw_socket = _socket.socket(fileno=svc.socket.detach())
             else:
-                svc.socket._sslobj = None
+                # `_sslobj` is a private attribute of ssl-wrapped sockets (guarded by hasattr above)
+                svc.socket._sslobj = None  # pyright: ignore[reportAttributeAccessIssue]
             if old_writer is not None:
                 await close_stream_writer(old_writer)
             svc.socket = raw_socket
@@ -228,4 +229,5 @@ class DtxServiceProvider:
             svc.socket.setblocking(False)
             await svc.start()
 
-        return DTXConnection(svc.reader, svc.writer)
+        reader, writer = await svc._ensure_started()
+        return DTXConnection(reader, writer)

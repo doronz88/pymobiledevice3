@@ -77,9 +77,11 @@ class _TestManagerProxyService(_DTXProxyService):
 
     IDENTIFIER = _PROXY_ID
 
-    # Sub-services are assigned by DTXProxyService at open_channel time.
-    local_service: XCTestManager_IDEInterface
-    remote_service: XCTestManager_DaemonConnectionInterface
+    # Sub-services are assigned by DTXProxyService at open_channel time. The base
+    # class exposes these as DTXService-typed properties; here we deliberately
+    # narrow them to the concrete interfaces this stub is always wired with.
+    local_service: XCTestManager_IDEInterface  # pyright: ignore[reportIncompatibleMethodOverride]
+    remote_service: XCTestManager_DaemonConnectionInterface  # pyright: ignore[reportIncompatibleMethodOverride]
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +175,8 @@ async def test_open_channel_two_classes_raises(service_provider) -> None:
     try:
         async with DvtProvider(service_provider) as provider:
             with pytest.raises(ValueError, match="Cannot specify two types"):
-                await provider.dtx.open_channel(_MinimalDeviceInfoService, _MinimalDeviceInfoService)
+                # Intentionally invalid call shape (two classes) to exercise the runtime guard.
+                await provider.dtx.open_channel(_MinimalDeviceInfoService, _MinimalDeviceInfoService)  # pyright: ignore[reportArgumentType]
     except InvalidServiceError:
         pytest.skip("DVT service not accessible")
 

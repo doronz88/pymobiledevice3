@@ -8,6 +8,7 @@ import json
 import socket
 import struct
 from contextlib import suppress
+from typing import Any, Optional
 
 import pytest
 from cryptography.hazmat.primitives import hashes
@@ -142,7 +143,7 @@ class _DeviceSimulator:
         client.process(m2[T.PUBLIC_KEY].hex(), m2[T.SALT].hex())
         a_pub = binascii.unhexlify(client.public)
 
-        m3 = [{"type": T.STATE, "data": b"\x03"}]
+        m3: list[Optional[dict[str, Any]]] = [{"type": T.STATE, "data": b"\x03"}]
         m3 += [{"type": T.PUBLIC_KEY, "data": a_pub[i : i + 255]} for i in range(0, len(a_pub), 255)]
         m3 += [{"type": T.PROOF, "data": binascii.unhexlify(client.key_proof)}]
         await self._send_pairing(PairingDataComponentTLVBuf.build(m3))
@@ -176,7 +177,9 @@ class _DeviceSimulator:
             {"type": T.INFO, "data": device_info},
         ])
         enc = cip.encrypt(b"\x00\x00\x00\x00PS-Msg05", inner, b"")
-        m5 = [{"type": T.ENCRYPTED_DATA, "data": enc[i : i + 255]} for i in range(0, len(enc), 255)]
+        m5: list[Optional[dict[str, Any]]] = [
+            {"type": T.ENCRYPTED_DATA, "data": enc[i : i + 255]} for i in range(0, len(enc), 255)
+        ]
         m5 += [{"type": T.STATE, "data": b"\x05"}]
         await self._send_pairing(PairingDataComponentTLVBuf.build(m5))
 

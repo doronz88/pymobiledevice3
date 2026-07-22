@@ -30,6 +30,7 @@ class Recovery(BaseRestore):
     async def reconnect_irecv(self, is_recovery=None):
         self.logger.debug("waiting for device to reconnect...")
         self.device.set_irecv(IRecv(ecid=await self.device.get_ecid(), is_recovery=is_recovery))
+        assert self.device.irecv is not None
         self.logger.debug(f"connected mode: {self.device.irecv.mode}")
 
     def get_preboard_manifest(self):
@@ -181,7 +182,7 @@ class Recovery(BaseRestore):
 
         # Add Ap,NextStageIM4MHash
         # Get previous TSS ticket
-        ticket = self.tss.ap_img4_ticket
+        ticket = self.require_tss().ap_img4_ticket
         # Hash it and add it as Ap,NextStageIM4MHash
         parameters["Ap,NextStageIM4MHash"] = hashlib.sha384(ticket).digest()
 
@@ -263,17 +264,21 @@ class Recovery(BaseRestore):
             # If Ap,LocalPolicy => Inject an empty policy
             data = lpol_file
 
+        assert tss is not None, f"TSS response for {name} must be fetched before sending it"
         data = await self.get_personalized_data(name, data=data, tss=tss)
         self.logger.info(f"Sending {name} ({len(data)} bytes)...")
+        assert self.device.irecv is not None
         self.device.irecv.send_buffer(data)
 
     async def send_component_and_command(self, name, command):
         await self.send_component(name)
+        assert self.device.irecv is not None
         self.device.irecv.send_command(command)
 
     async def send_ibec(self):
         component = "iBEC"
         await self.send_component(component)
+        assert self.device.irecv is not None
         self.device.irecv.send_command("go", b_request=1)
         self.device.irecv.ctrl_transfer(0x21, 1)
 
@@ -288,6 +293,7 @@ class Recovery(BaseRestore):
                 raise PyMobileDevice3Exception(f"missing component: {component}")
 
         await self.send_component(component)
+        assert self.device.irecv is not None
         self.device.irecv.send_command("setpicture 4")
         self.device.irecv.send_command("bgcolor 0 0 0")
 
@@ -319,6 +325,7 @@ class Recovery(BaseRestore):
 
     async def send_ramdisk(self):
         component = "RestoreRamDisk"
+        assert self.device.irecv is not None
         ramdisk_size = self.device.irecv.getenv("ramdisk-size")
         self.logger.info(f"ramdisk-size: {ramdisk_size}")
 
@@ -334,6 +341,7 @@ class Recovery(BaseRestore):
         component = "RestoreKernelCache"
 
         await self.send_component(component)
+        assert self.device.irecv is not None
         with contextlib.suppress(USBError):
             self.device.irecv.ctrl_transfer(0x21, 1)
 
@@ -344,6 +352,7 @@ class Recovery(BaseRestore):
             self.device.irecv.send_command("bootx", b_request=1)
 
     def set_autoboot(self, enable: bool):
+        assert self.device.irecv is not None
         self.device.irecv.set_autoboot(enable)
 
     async def enter_restore(self):
@@ -355,6 +364,7 @@ class Recovery(BaseRestore):
         # upload data to make device boot restore mode
 
         # Recovery Mode Environment:
+        assert self.device.irecv is not None
         build_version = None
         while not build_version:
             self.logger.debug("build-version not yet supported. reconnecting...")
@@ -402,6 +412,7 @@ class Recovery(BaseRestore):
         await self.send_component("iBSS")
         await self.reconnect_irecv()
 
+        assert self.device.irecv is not None
         if "SRTG" in self.device.irecv._device_info:
             raise PyMobileDevice3Exception("Device failed to enter recovery")
 
@@ -428,6 +439,7 @@ class Recovery(BaseRestore):
                 await self.send_applelogo(allow_missing=False)
 
             mode = self.device.irecv.mode
+            assert mode is not None
             # send iBEC
             await self.send_component("iBEC")
 
@@ -462,6 +474,7 @@ class Recovery(BaseRestore):
             self.device.set_irecv(IRecv(await self.device.get_ecid()))
             await self.reconnect_irecv()
 
+        assert self.device.irecv is not None and self.device.irecv.mode is not None
         if self.device.irecv.mode == Mode.DFU_MODE:
             # device is currently in DFU mode, place it into recovery mode
             await self.dfu_enter_recovery()

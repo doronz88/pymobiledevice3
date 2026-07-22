@@ -3,10 +3,10 @@ import logging
 import posixpath
 import sys
 import time
+from enum import Enum
 from pathlib import Path
 from typing import IO, Annotated, Optional
 
-import click
 import typer
 from typer_injector import InjectingTyper
 
@@ -17,7 +17,7 @@ from pymobiledevice3.remote.core_device.configuration_service import Configurati
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
 from pymobiledevice3.remote.core_device.diagnostics_service import DiagnosticsServiceService
 from pymobiledevice3.remote.core_device.display_service import DisplayService
-from pymobiledevice3.remote.core_device.file_service import APPLE_DOMAIN_DICT, FileServiceService
+from pymobiledevice3.remote.core_device.file_service import Domain, DomainName, FileServiceService
 from pymobiledevice3.remote.core_device.hid_service import (
     ASCII_TO_HID,
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
@@ -62,9 +62,9 @@ cli = InjectingTyper(
 
 
 async def core_device_list_directory_task(
-    service_provider: RemoteServiceDiscoveryService, domain: str, path: str, identifier: str
+    service_provider: RemoteServiceDiscoveryService, domain: DomainName, path: str, identifier: str
 ) -> None:
-    async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain], identifier) as file_service:
+    async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
         print_json(await file_service.retrieve_directory_list(path))
 
 
@@ -72,10 +72,7 @@ async def core_device_list_directory_task(
 @async_command
 async def core_device_list_directory(
     service_provider: RSDServiceProviderDep,
-    domain: Annotated[
-        str,
-        typer.Argument(click_type=click.Choice(APPLE_DOMAIN_DICT)),
-    ],
+    domain: Annotated[DomainName, typer.Argument()],
     path: str,
     identifier: Annotated[str, typer.Option()] = "",
 ) -> None:
@@ -85,12 +82,12 @@ async def core_device_list_directory(
 
 async def core_device_read_file_task(
     service_provider: RemoteServiceDiscoveryService,
-    domain: str,
+    domain: DomainName,
     path: str,
     identifier: str,
     output: Optional[IO],
 ) -> None:
-    async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain], identifier) as file_service:
+    async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
         buf = await file_service.retrieve_file(path)
         if output is not None:
             output.write(buf)
@@ -102,10 +99,7 @@ async def core_device_read_file_task(
 @async_command
 async def core_device_read_file(
     service_provider: RSDServiceProviderDep,
-    domain: Annotated[
-        str,
-        typer.Argument(click_type=click.Choice(APPLE_DOMAIN_DICT)),
-    ],
+    domain: Annotated[DomainName, typer.Argument()],
     path: str,
     *,
     identifier: Annotated[str, typer.Option()] = "",
@@ -121,7 +115,7 @@ async def core_device_read_file(
 
 async def core_device_propose_empty_file_task(
     service_provider: RemoteServiceDiscoveryService,
-    domain: str,
+    domain: DomainName,
     path: str,
     identifier: str,
     file_permissions: int,
@@ -130,7 +124,7 @@ async def core_device_propose_empty_file_task(
     creation_time: int,
     last_modification_time: int,
 ) -> None:
-    async with FileServiceService(service_provider, APPLE_DOMAIN_DICT[domain], identifier) as file_service:
+    async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
         await file_service.propose_empty_file(path, file_permissions, uid, gid, creation_time, last_modification_time)
 
 
@@ -138,10 +132,7 @@ async def core_device_propose_empty_file_task(
 @async_command
 async def core_device_propose_empty_file(
     service_provider: RSDServiceProviderDep,
-    domain: Annotated[
-        str,
-        typer.Argument(click_type=click.Choice(APPLE_DOMAIN_DICT)),
-    ],
+    domain: Annotated[DomainName, typer.Argument()],
     path: str,
     identifier: Annotated[str, typer.Option()] = "",
     file_permissions: Annotated[int, typer.Option()] = 0o644,
@@ -323,8 +314,19 @@ async def core_device_copy(
     """Copy text onto the device pasteboard (UTF-8). Reads from stdin if no argument is given."""
     if text is None:
         text = sys.stdin.read()
+    assert text is not None  # sys.stdin is typed TextIO | Any, which un-narrows text to Optional[str]
     async with PasteboardService(service_provider) as pb:
         await pb.set([text_item(text)], pasteboard)
+
+
+class RotationDirection(str, Enum):
+    LEFT = "left"
+    RIGHT = "right"
+
+
+class UserInterfaceStyle(str, Enum):
+    DARK = "dark"
+    LIGHT = "light"
 
 
 @cli.command("rotate")
@@ -332,30 +334,27 @@ async def core_device_copy(
 async def core_device_rotate(
     service_provider: RSDServiceProviderDep,
     direction: Annotated[
-        str,
-        typer.Argument(
-            click_type=click.Choice(["left", "right"]),
-            help="Rotate 90 degrees: 'left' = CCW, 'right' = CW.",
-        ),
-    ] = "left",
+        RotationDirection,
+        typer.Argument(help="Rotate 90 degrees: 'left' = CCW, 'right' = CW."),
+    ] = RotationDirection.LEFT,
 ) -> None:
     """Rotate the device 90 degrees. Four consecutive 'left' calls cycle a full turn."""
     async with OrientationService(service_provider) as svc:
-        print_json(await svc.rotate(direction))
+        print_json(await svc.rotate(direction.value))
 
 
 @cli.command("user-interface-style")
 @async_command
 async def core_device_user_interface_style(
     service_provider: RSDServiceProviderDep,
-    style: Annotated[Optional[str], typer.Argument(click_type=click.Choice(["dark", "light"]))] = None,
+    style: Annotated[Optional[UserInterfaceStyle], typer.Argument()] = None,
 ) -> None:
     """Get the active user-interface style; pass dark/light to set it."""
     async with ConfigurationService(service_provider) as config:
         if style is None:
             print_json(await config.get_user_interface_style())
         else:
-            await config.set_user_interface_style(style)
+            await config.set_user_interface_style(style.value)
 
 
 async def core_device_list_apps_task(service_provider: RemoteServiceDiscoveryService) -> None:
@@ -443,11 +442,24 @@ def _parse_int_auto(value: str) -> int:
     return int(value, 0)
 
 
+class ButtonState(str, Enum):
+    """CLI names for a button event; ``PRESS`` expands to down+up, the rest map via ``to_hid_state()``."""
+
+    PRESS = "press"
+    DOWN = "down"
+    UP = "up"
+    CANCELED = "canceled"
+
+    def to_hid_state(self) -> int:
+        return _BUTTON_STATE_CHOICES[self]
+
+
 _BUTTON_STATE_CHOICES = {
-    "down": HID_BUTTON_STATE_DOWN,
-    "up": HID_BUTTON_STATE_UP,
-    "canceled": HID_BUTTON_STATE_CANCELED,
+    ButtonState.DOWN: HID_BUTTON_STATE_DOWN,
+    ButtonState.UP: HID_BUTTON_STATE_UP,
+    ButtonState.CANCELED: HID_BUTTON_STATE_CANCELED,
 }
+
 
 # Named iOS hardware buttons → (usage_page, usage_code, hold_seconds).
 # Most physical iOS buttons live on the Consumer page (0x0C). ``hold_seconds``
@@ -457,26 +469,40 @@ _BUTTON_STATE_CHOICES = {
 # (which the previous implementation effectively did via back-to-back
 # send_button calls ~70 µs apart) reads to backboardd as bounce noise and
 # only the tap-class buttons fire on it.
-_NAMED_BUTTONS: dict[str, tuple[int, int, float]] = {
-    "home": (0x0C, 0x40, 0.05),  # Consumer / Menu
-    "lock": (0x0C, 0x30, 0.5),  # Consumer / Power, held long enough for iOS to sleep
-    "volume-up": (0x0C, 0xE9, 0.05),  # Consumer / Volume Increment
-    "volume-down": (0x0C, 0xEA, 0.05),  # Consumer / Volume Decrement
-    "mute": (0x0C, 0xE2, 0.05),  # Consumer / Mute
-    "siri": (0x0C, 0xCF, 1.0),  # Consumer / Voice Command, held to start listening
+class ButtonName(str, Enum):
+    """Named iOS hardware buttons; ``_NAMED_BUTTONS`` maps each to (usage_page, usage_code, hold_seconds)."""
+
+    HOME = "home"
+    LOCK = "lock"
+    VOLUME_UP = "volume-up"
+    VOLUME_DOWN = "volume-down"
+    MUTE = "mute"
+    SIRI = "siri"
+
+    def usage(self) -> tuple[int, int, float]:
+        return _NAMED_BUTTONS[self]
+
+
+_NAMED_BUTTONS: dict[ButtonName, tuple[int, int, float]] = {
+    ButtonName.HOME: (0x0C, 0x40, 0.05),  # Consumer / Menu
+    ButtonName.LOCK: (0x0C, 0x30, 0.5),  # Consumer / Power, held long enough for iOS to sleep
+    ButtonName.VOLUME_UP: (0x0C, 0xE9, 0.05),  # Consumer / Volume Increment
+    ButtonName.VOLUME_DOWN: (0x0C, 0xEA, 0.05),  # Consumer / Volume Decrement
+    ButtonName.MUTE: (0x0C, 0xE2, 0.05),  # Consumer / Mute
+    ButtonName.SIRI: (0x0C, 0xCF, 1.0),  # Consumer / Voice Command, held to start listening
 }
 
 
 async def _send_button_press(
-    service: IndigoHIDService, usage_page: int, usage_code: int, state: str, hold: float = 0.05
+    service: IndigoHIDService, usage_page: int, usage_code: int, state: ButtonState, hold: float = 0.05
 ) -> None:
     """Dispatch a single button state (down/up/canceled), or down+up for ``press``."""
-    if state == "press":
+    if state is ButtonState.PRESS:
         await service.send_button(usage_page, usage_code, HID_BUTTON_STATE_DOWN)
         await asyncio.sleep(hold)
         await service.send_button(usage_page, usage_code, HID_BUTTON_STATE_UP)
     else:
-        await service.send_button(usage_page, usage_code, _BUTTON_STATE_CHOICES[state])
+        await service.send_button(usage_page, usage_code, state.to_hid_state())
     # dtuhidd dispatches messages async; if we close immediately the FIN can arrive
     # before the last enqueued body gets delivered to the handler and the message is
     # dropped during channel cancel.
@@ -488,22 +514,16 @@ async def _send_button_press(
 async def core_device_hid_button(
     service_provider: RSDServiceProviderDep,
     name: Annotated[
-        str,
-        typer.Argument(
-            click_type=click.Choice(list(_NAMED_BUTTONS)),
-            help="Named hardware button (home, power, volume-up, ...)",
-        ),
+        ButtonName,
+        typer.Argument(help="Named hardware button (home, power, volume-up, ...)"),
     ],
     state: Annotated[
-        str,
-        typer.Argument(
-            click_type=click.Choice(["press", *_BUTTON_STATE_CHOICES]),
-            help="press = send down+up; otherwise send a single state event",
-        ),
-    ] = "press",
+        ButtonState,
+        typer.Argument(help="press = send down+up; otherwise send a single state event"),
+    ] = ButtonState.PRESS,
 ) -> None:
     """Press a named iOS hardware button (home / power / volume-up / etc.)."""
-    usage_page, usage_code, hold = _NAMED_BUTTONS[name]
+    usage_page, usage_code, hold = name.usage()
     async with IndigoHIDService(service_provider) as service:
         await _send_button_press(service, usage_page, usage_code, state, hold)
 
@@ -515,12 +535,9 @@ async def core_device_hid_raw_button(
     usage_page: Annotated[str, typer.Argument(help="HID usage page (decimal or 0xHEX), e.g. 0x0C for Consumer")],
     usage_code: Annotated[str, typer.Argument(help="HID usage code (decimal or 0xHEX)")],
     state: Annotated[
-        str,
-        typer.Argument(
-            click_type=click.Choice(["press", *_BUTTON_STATE_CHOICES]),
-            help="press = send down+up; otherwise send a single state event",
-        ),
-    ] = "press",
+        ButtonState,
+        typer.Argument(help="press = send down+up; otherwise send a single state event"),
+    ] = ButtonState.PRESS,
 ) -> None:
     """Send a HID button event by raw usage page/code (for buttons not in the named list)."""
     async with IndigoHIDService(service_provider) as service:

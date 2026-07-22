@@ -1041,7 +1041,7 @@ class DiagnosticsService(LockdownService):
         """
         await self.action("Sleep")
 
-    async def info(self, diag_type: str = "All") -> dict:
+    async def info(self, diag_type: str = "All") -> Optional[dict]:
         """
         Fetch a diagnostics information report from the device.
 
@@ -1087,7 +1087,7 @@ class DiagnosticsService(LockdownService):
             return dd.get("IORegistry")
         return None
 
-    async def get_battery(self) -> dict:
+    async def get_battery(self) -> Optional[dict]:
         """
         Fetch battery/power-source information from the IORegistry.
 
@@ -1098,7 +1098,7 @@ class DiagnosticsService(LockdownService):
         """
         return await self.ioregistry(ioclass="IOPMPowerSource")
 
-    async def get_wifi(self) -> dict:
+    async def get_wifi(self) -> Optional[dict]:
         """
         Fetch the Wi-Fi interface information from the IORegistry.
 

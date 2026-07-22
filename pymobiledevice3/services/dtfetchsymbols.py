@@ -3,7 +3,7 @@ import struct
 import typing
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 
 
 class DtFetchSymbols:
@@ -20,7 +20,7 @@ class DtFetchSymbols:
     CMD_LIST_FILES_PLIST = struct.pack(">I", 0x30303030)
     CMD_GET_FILE = struct.pack(">I", 1)
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownServiceProvider):
         self.logger = logging.getLogger(__name__)
         self.lockdown = lockdown
 
@@ -33,6 +33,8 @@ class DtFetchSymbols:
         service = await self._start_command(self.CMD_LIST_FILES_PLIST)
         files = (await service.recv_plist()).get("files")
         await service.close()
+        if files is None:
+            raise PyMobileDevice3Exception("list files response is missing the 'files' entry")
         return files
 
     async def get_file(self, fileno: int, stream: typing.IO, max_bytes: typing.Optional[int] = None):

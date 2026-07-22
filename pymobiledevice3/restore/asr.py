@@ -1,4 +1,3 @@
-import asyncio
 import hashlib
 import logging
 import os
@@ -7,8 +6,9 @@ import typing
 
 from tqdm import trange
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.exceptions import NotConnectedError, PyMobileDevice3Exception
 from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.utils import current_task_name
 
 ASR_VERSION = 1
 ASR_STREAM_ID = 1
@@ -29,13 +29,23 @@ class ASRClient:
 
     def __init__(self, udid: str) -> None:
         self._udid: str = udid
-        self.logger = logging.getLogger(f"{asyncio.current_task().get_name()}-{__name__}")
-        self.service: typing.Optional[ServiceConnection] = None
+        self.logger = logging.getLogger(f"{current_task_name()}-{__name__}")
+        self._service: typing.Optional[ServiceConnection] = None
         self.checksum_chunks: bool = False
 
+    @property
+    def service(self) -> ServiceConnection:
+        """The ASR service connection.
+
+        :raises NotConnectedError: if accessed before ``connect()`` has run.
+        """
+        if self._service is None:
+            raise NotConnectedError("ASRClient is not connected; call connect() first")
+        return self._service
+
     async def connect(self, port: int = DEFAULT_ASR_SYNC_PORT) -> None:
-        self.service = await ServiceConnection.create_using_usbmux(self._udid, port, connection_type="USB")
-        await self.service.start()
+        self._service = await ServiceConnection.create_using_usbmux(self._udid, port, connection_type="USB")
+        await self._service.start()
 
         # receive Initiate command message
         data = await self.recv_plist()
@@ -122,4 +132,6 @@ class ASRClient:
             await self.send_buffer(chunk)
 
     async def close(self) -> None:
-        await self.service.close()
+        # Tolerant of never-connected instances.
+        if self._service is not None:
+            await self._service.close()

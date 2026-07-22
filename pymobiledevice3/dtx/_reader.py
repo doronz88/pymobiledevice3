@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import errno
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 
@@ -156,7 +156,7 @@ class _DTXReaderMixin:
     # Message processing
     # ------------------------------------------------------------------
 
-    async def _process_message(self, raw_message: bytearray, fragment: DTXFragment) -> None:
+    async def _process_message(self, raw_message: Union[bytearray, memoryview], fragment: DTXFragment) -> None:
         """Parse *raw_message* and dispatch it to the appropriate channel or reply waiter."""
         # this will riase DTXProtocolError if the message is malformed in any way (including unknown message type)
         message = DTXMessage.parse(fragment, raw_message)

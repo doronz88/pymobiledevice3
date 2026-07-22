@@ -111,7 +111,7 @@ def tempzip_download_ctx(url: str) -> Iterator[IPSW]:
 
 @contextlib.contextmanager
 def ipsw_ctx(path: Union[str, Path]) -> Iterator[IPSW]:
-    yield IPSW.create_from_path(path)
+    yield IPSW.create_from_path(str(path))
 
 
 def ipsw_ctx_dependency(
@@ -215,6 +215,7 @@ def restore_shell(device: DeviceDep) -> None:
 async def restore_enter(device: DeviceDep) -> None:
     """enter Recovery mode"""
     if await device.get_is_lockdown():
+        assert device.lockdown is not None  # get_is_lockdown() guarantees it
         await device.lockdown.enter_recovery()
 
 
@@ -231,9 +232,11 @@ def restore_exit() -> None:
 async def restore_restart(device: DeviceDep) -> None:
     """restarts device"""
     if await device.get_is_lockdown():
+        assert device.lockdown is not None  # get_is_lockdown() guarantees it
         async with DiagnosticsService(device.lockdown) as diagnostics:
             await diagnostics.restart()
     else:
+        assert device.irecv is not None  # a Device is constructed with either lockdown or irecv
         device.irecv.reboot()
 
 

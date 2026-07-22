@@ -1,5 +1,5 @@
 import dataclasses
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterable
 
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -9,7 +9,7 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 class SysDiagnoseResponse:
     preferred_filename: str
     file_size: int
-    generator: AsyncGenerator[bytes, None]
+    generator: AsyncIterable[bytes]
 
 
 class DiagnosticsServiceService(CoreDeviceService):

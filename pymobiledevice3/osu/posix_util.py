@@ -4,6 +4,7 @@ import signal
 import socket
 import struct
 from pathlib import Path
+from typing import Union
 
 from ifaddr import get_adapters
 
@@ -21,7 +22,7 @@ class Posix(OsUtils):
         return os.geteuid() == 0
 
     @property
-    def usbmux_address(self) -> tuple[str, int]:
+    def usbmux_address(self) -> tuple[Union[str, tuple[str, int]], int]:
         return MuxConnection.USBMUXD_PIPE, socket.AF_UNIX
 
     @property
@@ -42,11 +43,14 @@ class Posix(OsUtils):
         ]
 
     def chown_to_non_sudo_if_needed(self, path: Path) -> None:
-        if os.getenv("SUDO_UID") is None:
+        sudo_uid = os.getenv("SUDO_UID")
+        if sudo_uid is None:
             return
-        os.chown(path, int(os.getenv("SUDO_UID")), int(os.getenv("SUDO_GID")))
+        sudo_gid = os.getenv("SUDO_GID")
+        assert sudo_gid is not None
+        os.chown(path, int(sudo_uid), int(sudo_gid))
 
-    def parse_timestamp(self, time_stamp) -> datetime:
+    def parse_timestamp(self, time_stamp) -> datetime.datetime:
         return datetime.datetime.fromtimestamp(time_stamp)
 
     def wait_return(self):
@@ -93,7 +97,9 @@ class Linux(Posix):
         max_fails: int = DEFAULT_MAX_FAILS,
     ) -> None:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, after_idle_sec)
+        # TCP_KEEPIDLE is Linux-only; this class is only instantiated on Linux.
+        tcp_keepidle = socket.TCP_KEEPIDLE  # pyright: ignore[reportAttributeAccessIssue]
+        sock.setsockopt(socket.IPPROTO_TCP, tcp_keepidle, after_idle_sec)
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, interval_sec)
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, max_fails)
 
@@ -103,11 +109,11 @@ class Linux(Posix):
 
 class Cygwin(Posix):
     @property
-    def usbmux_address(self) -> tuple[str, int]:
+    def usbmux_address(self) -> tuple[tuple[str, int], int]:
         return MuxConnection.ITUNES_HOST, socket.AF_INET
 
 
 class Wsl(Linux):
     @property
-    def usbmux_address(self) -> tuple[str, int]:
+    def usbmux_address(self) -> tuple[tuple[str, int], int]:
         return MuxConnection.ITUNES_HOST, socket.AF_INET

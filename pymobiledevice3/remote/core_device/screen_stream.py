@@ -29,7 +29,7 @@ import time
 import uuid
 from collections import deque
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Optional, Protocol, cast
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -323,7 +323,8 @@ def _build_self_signed_ssl_context(bind: str) -> ssl.SSLContext:
     else:
         with contextlib.suppress(OSError):
             for info in socket.getaddrinfo(socket.gethostname(), None):
-                extra.add(info[4][0])
+                # sockaddr[0] is always a str for AF_INET / AF_INET6 results.
+                extra.add(cast(str, info[4][0]))
         # Probe the routable outbound IP via a UDP socket (no packets actually
         # sent -- `connect` on UDP just fills the local address from routing).
         with contextlib.suppress(OSError):
@@ -525,7 +526,8 @@ class _KernelUdp:
         return await self._loop.sock_recv(self._sock, bufsize)
 
     async def sendto(self, data: bytes, ip: str, port: int) -> None:
-        await self._loop.sock_sendto(self._sock, data, (ip, port, 0, 0))
+        # loop.sock_sendto exists since Python 3.11; absent from the 3.9 typeshed baseline.
+        await self._loop.sock_sendto(self._sock, data, (ip, port, 0, 0))  # pyright: ignore[reportAttributeAccessIssue]
 
     def close(self) -> None:
         with contextlib.suppress(Exception):
@@ -568,6 +570,7 @@ def open_media_receiver(
             break
         except OSError:
             continue
+    assert svc.service is not None
     return _KernelUdp(sock), svc.service.local_address[0]
 
 
@@ -2602,7 +2605,12 @@ class ScreenStreamServer:
                 and (now - motion_started_t) >= active_interval
                 and since_refresh >= active_interval
             )
-            settled = quiet_for is not None and quiet_for >= settle_quiet and self._last_refresh_t < quiet_since
+            settled = (
+                quiet_since is not None
+                and quiet_for is not None
+                and quiet_for >= settle_quiet
+                and self._last_refresh_t < quiet_since
+            )
             heartbeat_due = quiet_for is not None and since_refresh >= heartbeat
             if not (active or settled or heartbeat_due):
                 continue

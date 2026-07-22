@@ -53,9 +53,8 @@ class SpringBoardServicesService(LockdownService):
         :param newstate: Icon layout in the same structure returned by `get_icon_state`.
             When ``None``, an empty layout is sent.
         """
-        if newstate is None:
-            newstate = {}
-        await self.service.send_recv_prefixed(build_plist({"command": "setIconState", "iconState": newstate}))
+        state = {} if newstate is None else newstate
+        await self.service.send_recv_prefixed(build_plist({"command": "setIconState", "iconState": state}))
 
     async def get_icon_pngdata(self, bundle_id: str) -> bytes:
         """

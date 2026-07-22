@@ -1,8 +1,11 @@
 import asyncio
 from types import MethodType
+from typing import cast
 
 import pytest
 
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.remotexpc import RemoteXPCConnection
 from pymobiledevice3.services.remote_fetch_symbols import DSCFile, RemoteFetchSymbolsService
 
 
@@ -25,8 +28,8 @@ async def test_download_uses_multiple_streams(tmp_path):
         return files
 
     fetch_symbols = object.__new__(RemoteFetchSymbolsService)
-    fetch_symbols.rsd = object()
-    fetch_symbols.service = FakeConnection()
+    fetch_symbols.rsd = cast(RemoteServiceDiscoveryService, object())
+    fetch_symbols._service = cast(RemoteXPCConnection, FakeConnection())
     fetch_symbols.get_dsc_file_list = MethodType(get_dsc_file_list, fetch_symbols)
 
     await RemoteFetchSymbolsService.download(fetch_symbols, tmp_path)

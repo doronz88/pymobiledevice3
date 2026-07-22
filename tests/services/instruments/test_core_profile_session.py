@@ -1,10 +1,14 @@
+from typing import cast
+
 import pytest
 from bpylist2 import archiver
 
+from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import DvtException, ExtractingStackshotError
 from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import (
     CoreProfileSessionTap,
 )
+from pymobiledevice3.services.dvt.instruments.tap import TapMessageChannel
 
 
 @pytest.mark.asyncio
@@ -32,8 +36,8 @@ async def test_stackshot_raises_on_start_failure_notice() -> None:
                 "notice": "Failed to start the recording: _lockKPerf: could not lock kperf.",
             })
 
-    tap = CoreProfileSessionTap(None, {})
-    tap.channel = FakeChannel()
+    tap = CoreProfileSessionTap(cast(DtxServiceProvider, None), {})
+    tap.channel = cast(TapMessageChannel, FakeChannel())
 
     with pytest.raises(DvtException, match="Failed to start the recording"):
         await tap.get_stackshot(timeout=0.1)
@@ -45,8 +49,8 @@ async def test_stackshot_times_out_without_stackshot_data() -> None:
         async def receive_message(self):
             return archiver.archive({"k": 7, "sm": {}})
 
-    tap = CoreProfileSessionTap(None, {})
-    tap.channel = FakeChannel()
+    tap = CoreProfileSessionTap(cast(DtxServiceProvider, None), {})
+    tap.channel = cast(TapMessageChannel, FakeChannel())
 
     with pytest.raises(ExtractingStackshotError, match="timed out waiting for stackshot data"):
         await tap.get_stackshot(timeout=0.01)

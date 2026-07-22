@@ -39,7 +39,7 @@ import socket
 import struct
 import sys
 from contextlib import AsyncExitStack, suppress
-from typing import Optional
+from typing import Optional, Protocol, cast
 
 from pmd_net_addr import Ip6Address, Ip6IfAddr, MacAddress
 from pmd_pytcp import stack
@@ -156,6 +156,31 @@ _CHUNK = 65536
 LOOPBACK_HEADER = get_os_utils().loopback_header
 
 
+class _AsyncPytcpSocket(Protocol):
+    """The async surface pmd-pytcp stack sockets actually expose at runtime.
+
+    pmd-pytcp's public ``socket`` class types ``connect``/``send``/``recv``/``sendto`` as
+    synchronous placeholders (they raise ``NotImplementedError`` on the base and are overridden as
+    coroutines on the concrete stack sockets), so the awaited calls in this module type-check
+    against this protocol rather than the base class."""
+
+    async def connect(self, address: tuple[str, int]) -> None: ...
+
+    async def send(self, data: bytes) -> int: ...
+
+    async def recv(self, bufsize: int = ...) -> bytes: ...
+
+    async def sendto(self, data: bytes, address: tuple[str, int]) -> None: ...
+
+    def bind(self, address: tuple[str, int]) -> None: ...
+
+    def getsockname(self) -> tuple: ...
+
+    def shutdown(self, how: int) -> None: ...
+
+    def close(self) -> None: ...
+
+
 def _mac_to_bytes(mac: str) -> bytes:
     return bytes(int(x, 16) for x in mac.split(":"))
 
@@ -248,7 +273,7 @@ class UserspaceTun:
             ip6_gua_autoconfig=False,
             ip4_support=False,
         )
-        await stack.start()
+        await stack.start()  # pyright: ignore[reportGeneralTypeIssues]  # pmd-pytcp types start() as sync; it is a coroutine at runtime
         # The interface address is installed by the stack's own tasks shortly AFTER start()
         # returns; until it lands, source-address selection finds no local host and a stack
         # connect fails with gaierror. Today the dial plane's localhost-relay hop happens to
@@ -266,6 +291,7 @@ class UserspaceTun:
 
     def set_peer(self, device_addr: str) -> None:
         """Install a static neighbor for the device (point-to-point; skips ND)."""
+        assert self._ifidx is not None
         stack.neighbor.interface(self._ifidx).add(ip=Ip6Address(device_addr), mac=MacAddress(_PEER_MAC))
 
     def write(self, data: bytes) -> None:
@@ -305,9 +331,9 @@ class UserspaceTun:
             except (BlockingIOError, InterruptedError):
                 return packets
 
-    async def connect_tcp(self, addr: str, port: int):
+    async def connect_tcp(self, addr: str, port: int) -> _AsyncPytcpSocket:
         """Open a PyTCP TCP socket connected to (addr, port) over this stack."""
-        s = pytcp_socket(AF_INET6, SOCK_STREAM)
+        s = cast(_AsyncPytcpSocket, pytcp_socket(AF_INET6, SOCK_STREAM))
         await s.connect((addr, port))
         return s
 
@@ -319,7 +345,7 @@ class UserspaceTun:
         # removed, worker tasks cancelled and awaited), then release the socketpair. No
         # thread-wakeup gymnastics remain — the pure-asyncio stack has nothing parked off-loop.
         try:
-            await stack.stop()
+            await stack.stop()  # pyright: ignore[reportGeneralTypeIssues]  # pmd-pytcp types stop() as sync; it is a coroutine at runtime
             stack._pmd3_inited = False  # type: ignore[attr-defined]
         except Exception:
             logger.debug("error stopping pytcp stack", exc_info=True)
@@ -437,6 +463,7 @@ class UserspaceDialPlane:
             # Track the handler task so __aexit__ can cancel any relay still in flight
             # (start_server's own task bookkeeping offers no cross-version cancel API).
             task = asyncio.current_task()
+            assert task is not None
             self._relay_tasks.add(task)
             try:
                 await self._relay_handler(port, creader, cwriter)
@@ -456,6 +483,7 @@ class UserspaceDialPlane:
         Connections to the device's tunnel address are relayed through the userspace stack;
         everything else falls through to the stdlib ``asyncio.open_connection`` unchanged."""
         if host is not None and str(host) == self._device_addr:
+            assert port is not None
             lport = await self._ensure_relay(port)
             return await asyncio.open_connection("127.0.0.1", lport, **kwargs)
         return await asyncio.open_connection(host, port, **kwargs)
@@ -497,7 +525,7 @@ class UserspaceUdp:
         addr = userspace_stack_addr()
         if addr is None:
             raise PyMobileDevice3Exception("userspace tunnel is not active")
-        self._sock = pytcp_socket(AF_INET6, SOCK_DGRAM)
+        self._sock = cast(_AsyncPytcpSocket, pytcp_socket(AF_INET6, SOCK_DGRAM))
         self._sock.bind((addr, 0))
         bound = self._sock.getsockname()
         self._local_ip, self._port = bound[0], bound[1]
@@ -631,7 +659,9 @@ class UserspaceRsdTunnel:
             if lockdown is not None:
                 stack.push_async_callback(lockdown.close)
             tunnel_result = await stack.enter_async_context(provider.start_tcp_tunnel())
-            self.tun = tunnel_result.client.tun
+            # In the userspace path create_tun_device() always builds a UserspaceTun (the factory
+            # flag is set above), so the loosely-typed client.tun is narrowed here.
+            self.tun = cast(UserspaceTun, tunnel_result.client.tun)
             self.tun.set_peer(tunnel_result.address)
             dial_plane = await stack.enter_async_context(UserspaceDialPlane(self.tun, tunnel_result.address))
             # Inject the relay dialer into THIS rsd only (no global asyncio.open_connection patch),

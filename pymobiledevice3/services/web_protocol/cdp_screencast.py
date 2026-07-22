@@ -65,6 +65,7 @@ class ScreenCast:
     async def stop(self):
         """Stop sending screenshots to the devtools."""
         self._run = False
+        assert self.recording_task is not None
         self.recording_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await self.recording_task
@@ -81,7 +82,7 @@ class ScreenCast:
         :return: Base 64 of resized JPEG data.
         """
         resized_img = Image.open(BytesIO(b64decode(data)))
-        resized_img = resized_img.resize((self.get_scaled_width(), self.get_scaled_height()), Image.ANTIALIAS)
+        resized_img = resized_img.resize((self.get_scaled_width(), self.get_scaled_height()), Image.Resampling.LANCZOS)
         resized_img = resized_img.convert("RGB")
         resized = BytesIO()
         resized_img.save(resized, format="jpeg", quality="maximum")

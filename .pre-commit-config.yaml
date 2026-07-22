@@ -7,3 +7,15 @@ repos:
     - id: ruff-check
     # Run the formatter.
     - id: ruff-format
+- repo: local
+  hooks:
+    # Pinned so local hooks and CI agree; bump deliberately together with fixing any new findings.
+    # Resolves the project's dependencies from .venv (venvPath/venv in pyproject.toml); CI's test
+    # matrix skips this hook (SKIP=pyright) since deps aren't installed there — the dedicated
+    # pyright CI job runs it after creating the venv.
+    - id: pyright
+      name: pyright
+      entry: uvx pyright@1.1.411
+      language: system
+      types: [python]
+      pass_filenames: false

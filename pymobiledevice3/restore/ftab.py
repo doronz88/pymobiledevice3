@@ -1,3 +1,5 @@
+from typing import Optional
+
 from construct import Array, Bytes, Const, Default, Int32ub, Int32ul, Pointer, Struct, this
 
 ftab_entry = Struct(
@@ -33,7 +35,7 @@ class Ftab:
     def tag(self):
         return self.parsed.tag
 
-    def get_entry_data(self, tag: bytes) -> bytes:
+    def get_entry_data(self, tag: bytes) -> Optional[bytes]:
         for entry in self.parsed.entries:
             if entry.tag == tag:
                 return entry.data
@@ -43,7 +45,7 @@ class Ftab:
         new_offset = self.parsed.entries[-1].offset + self.parsed.entries[-1].size
         new_entry = {"tag": tag, "offset": new_offset, "size": len(data), "data": data}
 
-        self.parsed.num_entries += 1
+        self.parsed.num_entries += 1  # pyright: ignore[reportAttributeAccessIssue]
         self.parsed.entries.append(new_entry)
 
     @property

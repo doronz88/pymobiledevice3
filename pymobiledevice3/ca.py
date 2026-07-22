@@ -88,7 +88,8 @@ def build_root_certificate(root_key: RSAPrivateKey, alg: hashes.HashAlgorithm) -
         .not_valid_after(not_after)
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
     )
-    return builder.sign(root_key, alg)
+    # SHA-1 (needed for iOS < 4) is accepted at runtime but excluded from cryptography's type stubs.
+    return builder.sign(root_key, alg)  # pyright: ignore[reportArgumentType]
 
 
 def build_host_certificate(
@@ -138,7 +139,8 @@ def build_host_certificate(
             critical=True,
         )
     )
-    return builder.sign(root_key, alg)
+    # SHA-1 (needed for iOS < 4) is accepted at runtime but excluded from cryptography's type stubs.
+    return builder.sign(root_key, alg)  # pyright: ignore[reportArgumentType]
 
 
 def build_device_certificate(
@@ -190,7 +192,8 @@ def build_device_certificate(
         )
         .add_extension(x509.SubjectKeyIdentifier.from_public_key(device_public_key), critical=False)
     )
-    return builder.sign(root_key, alg)
+    # SHA-1 (needed for iOS < 4) is accepted at runtime but excluded from cryptography's type stubs.
+    return builder.sign(root_key, alg)  # pyright: ignore[reportArgumentType]
 
 
 # ==========================================

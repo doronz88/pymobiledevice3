@@ -3,7 +3,7 @@ import struct
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from enum import IntEnum
+from enum import Enum, IntEnum
 from typing import Optional
 
 from pymobiledevice3.exceptions import CoreDeviceError
@@ -18,13 +18,18 @@ class Domain(IntEnum):
     TEMPORARY = 3
     SYSTEM_CRASH_LOGS = 5
 
+    @classmethod
+    def from_name(cls, name: "DomainName") -> "Domain":
+        return cls[name.name]
 
-APPLE_DOMAIN_DICT = {
-    "appDataContainer": Domain.APP_DATA_CONTAINER,
-    "appGroupDataContainer": Domain.APP_GROUP_DATA_CONTAINER,
-    "temporary": Domain.TEMPORARY,
-    "systemCrashLogs": Domain.SYSTEM_CRASH_LOGS,
-}
+
+class DomainName(str, Enum):
+    """Human-readable names for `Domain` (member names mirror it); resolve with `Domain.from_name()`."""
+
+    APP_DATA_CONTAINER = "appDataContainer"
+    APP_GROUP_DATA_CONTAINER = "appGroupDataContainer"
+    TEMPORARY = "temporary"
+    SYSTEM_CRASH_LOGS = "systemCrashLogs"
 
 
 class FileServiceService(CoreDeviceService):
@@ -79,8 +84,8 @@ class FileServiceService(CoreDeviceService):
         file_permissions: int = 0o644,
         uid: int = 501,
         gid: int = 501,
-        creation_time: int = time.time(),
-        last_modification_time: int = time.time(),
+        creation_time: float = time.time(),
+        last_modification_time: float = time.time(),
     ) -> None:
         """Request to write an empty file at given path."""
         await self.send_receive_request({

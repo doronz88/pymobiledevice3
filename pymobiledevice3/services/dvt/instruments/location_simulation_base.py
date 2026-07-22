@@ -27,7 +27,8 @@ class LocationSimulationBase:
         for track in gpx.tracks:
             for segment in track.segments:
                 for point in segment.points:
-                    if last_time is not None:
+                    # GPX points may individually lack a timestamp; only pace between two timed points.
+                    if last_time is not None and point.time is not None:
                         duration = (point.time - last_time).total_seconds()
                         if duration >= 0 and not disable_sleep:
                             if timing_randomness_range:

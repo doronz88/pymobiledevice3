@@ -105,7 +105,7 @@ class RestoreOptions:
         firmware_preflight_info=None,
         sep=None,
         macos_variant=None,
-        build_identity: BuildIdentity = None,
+        build_identity: Optional[BuildIdentity] = None,
         restore_boot_args=None,
         spp=None,
         restore_behavior: Optional[str] = None,
@@ -131,6 +131,8 @@ class RestoreOptions:
 
         # FIXME: Should be adjusted for update behaviors
         if macos_variant:
+            if build_identity is None:
+                raise ValueError("build_identity is required when macos_variant is set")
             self.AddSystemPartitionPadding = True
             self.AllowUntetheredRestore = False
             self.AuthInstallEnableSso = False

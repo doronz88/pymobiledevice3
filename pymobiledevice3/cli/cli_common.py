@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 import uuid
-from collections.abc import Awaitable
+from collections.abc import Coroutine
 from contextlib import suppress
 from functools import wraps
 from textwrap import dedent
@@ -24,7 +24,7 @@ from typing_extensions import ParamSpec
 
 from pymobiledevice3 import usbmux as usbmuxd
 from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, NoDeviceConnectedError
-from pymobiledevice3.lockdown import TcpLockdownClient, create_using_usbmux, get_mobdev2_lockdowns
+from pymobiledevice3.lockdown import LockdownClient, TcpLockdownClient, create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -76,6 +76,7 @@ def print_json(buf, colored: Optional[bool] = None, default=default_json_encoder
 
 def print_hex(data, colored=True) -> None:
     hex_dump = hexdump.hexdump(data, result="return")
+    assert isinstance(hex_dump, str)  # result='return' always yields a str
     if colored:
         print(highlight(hex_dump, lexers.HexdumpLexer(), formatters.Terminal256Formatter(style="native")))
     else:
@@ -137,7 +138,7 @@ def is_invoked_for_completion() -> bool:
 cli_loop = get_asyncio_loop()
 
 
-def async_command(func: Callable[P, Awaitable[R]]) -> Callable[P, R]:
+def async_command(func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, R]:
     @wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         task = cli_loop.create_task(func(*args, **kwargs))
@@ -363,6 +364,30 @@ def no_autopair_service_provider_dependency(
     return cli_loop.run_until_complete(create_using_usbmux(serial=udid, autopair=False))
 
 
+def _narrow_to_lockdown_client(service_provider: LockdownServiceProvider) -> LockdownClient:
+    if is_invoked_for_completion():
+        # the underlying dependency returned no real provider in autocomplete mode
+        return service_provider  # type: ignore[return-value]
+    if not isinstance(service_provider, LockdownClient):
+        raise UsageError("This command requires a direct lockdown connection (remove --rsd/--tunnel).")
+    return service_provider
+
+
+def lockdown_client_dependency(
+    service_provider: Annotated[LockdownServiceProvider, Depends(any_service_provider_dependency)],
+) -> LockdownClient:
+    """Variant of ``any_service_provider_dependency`` for commands only implemented over a direct
+    lockdownd connection (pairing, recovery, ...); rejects RSD-backed providers with a usage error."""
+    return _narrow_to_lockdown_client(service_provider)
+
+
+def no_autopair_lockdown_client_dependency(
+    service_provider: Annotated[LockdownServiceProvider, Depends(no_autopair_service_provider_dependency)],
+) -> LockdownClient:
+    """Like ``lockdown_client_dependency``, but without triggering autopair on connect."""
+    return _narrow_to_lockdown_client(service_provider)
+
+
 RSDServiceProviderDep = Annotated[
     RemoteServiceDiscoveryService,
     Depends(make_rsd_dependency(allow_none=False)),
@@ -378,15 +403,17 @@ NoAutoPairServiceProviderDep = Annotated[
     Depends(no_autopair_service_provider_dependency),
 ]
 
+LockdownClientDep = Annotated[
+    LockdownClient,
+    Depends(lockdown_client_dependency),
+]
 
-class BasedIntParamType(click.ParamType):
-    name = "based int"
-
-    def convert(self, value, param, ctx):
-        try:
-            return int(value, 0)
-        except ValueError:
-            self.fail(f"{value!r} is not a valid int.", param, ctx)
+NoAutoPairLockdownClientDep = Annotated[
+    LockdownClient,
+    Depends(no_autopair_lockdown_client_dependency),
+]
 
 
-BASED_INT = BasedIntParamType()
+def based_int(value: str) -> int:
+    """``typer.Option(parser=...)`` hook accepting ints in any python-literal base (10, 0x, 0o, 0b)."""
+    return int(value, 0)

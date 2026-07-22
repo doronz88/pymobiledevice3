@@ -1,5 +1,6 @@
 import asyncio
 import socket
+from typing import cast
 
 import pytest
 
@@ -31,7 +32,7 @@ async def test_service_connection_close_aborts_when_wait_closed_hangs(monkeypatc
     sock = socket.socket()
     conn = ServiceConnection(sock)
     writer = _FakeWriter()
-    conn.writer = writer
+    conn.writer = cast(asyncio.StreamWriter, writer)
 
     await conn.close()
 

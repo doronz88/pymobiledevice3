@@ -9,7 +9,7 @@ from typer_injector import Depends, InjectingTyper
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
-from pymobiledevice3.exceptions import ConnectionFailedError
+from pymobiledevice3.exceptions import ConnectionFailedError, DeviceNotFoundError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import TestConfig, XCUITestService
 from pymobiledevice3.services.wda import DEFAULT_WDA_PORT, WdaServiceClient
@@ -63,6 +63,8 @@ async def wait_for_xctest_app(service_provider: LockdownServiceProvider, xctrunn
                 raise TimeoutError(f"WDA did not become reachable on port {DEFAULT_WDA_PORT} within 30.0 seconds")
 
             device = await usbmux.select_device(service_provider.udid)
+            if device is None:
+                raise DeviceNotFoundError(service_provider.udid)
             try:
                 await device.connect(DEFAULT_WDA_PORT)
             except ConnectionFailedError:

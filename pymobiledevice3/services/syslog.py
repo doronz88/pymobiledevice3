@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from typing import Union
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 from pymobiledevice3.lockdown import LockdownClient
@@ -28,14 +29,15 @@ class SyslogService(LockdownService):
         else:
             super().__init__(service_provider, self.RSD_SERVICE_NAME)
 
-    async def watch(self) -> AsyncGenerator[str, None]:
+    async def watch(self) -> AsyncGenerator[Union[str, bytes], None]:
         """
         Stream syslog lines from the device as they are emitted.
 
         Reads the relay in chunks, splits on the syslog line delimiter, buffers any partial trailing
         line until the rest arrives, and decodes each complete line. Empty lines are skipped.
 
-        :yields: A single decoded syslog line (without the trailing delimiter).
+        :yields: A single decoded syslog line (without the trailing delimiter), or the raw bytes
+            when the line is not valid UTF-8.
         :raises ConnectionTerminatedError: If the device closes the connection.
         """
         buf = b""

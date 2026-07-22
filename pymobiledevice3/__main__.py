@@ -9,7 +9,7 @@ import sys
 import textwrap
 import traceback
 import warnings
-from typing import Annotated, Union
+from typing import Annotated, Callable, Optional, Union
 
 import coloredlogs
 import typer
@@ -134,10 +134,11 @@ CLI_GROUPS = {
 
 # Set if used the `--reconnect` option
 RECONNECT = False
-_ORIGINAL_SHELLINGHAM_DETECT = None
+_ORIGINAL_SHELLINGHAM_DETECT: Optional[Callable[[], tuple[str, str]]] = None
 
 
 def _detect_shell_for_completion() -> tuple[str, str]:
+    assert _ORIGINAL_SHELLINGHAM_DETECT is not None  # set by _patch_xonsh_completion_detection before use
     shell, executable = _ORIGINAL_SHELLINGHAM_DETECT()
     if shell == "xonsh":
         return ("fish" if shutil.which("fish") else "bash"), executable
@@ -156,8 +157,9 @@ def _patch_xonsh_completion_detection() -> None:
     if getattr(detect_shell, "_pymobiledevice3_xonsh_patched", False):
         return
 
-    _detect_shell_for_completion._pymobiledevice3_original = _ORIGINAL_SHELLINGHAM_DETECT
-    _detect_shell_for_completion._pymobiledevice3_xonsh_patched = True
+    # Stash the original detector on the replacement function so re-invocations are idempotent.
+    _detect_shell_for_completion._pymobiledevice3_original = _ORIGINAL_SHELLINGHAM_DETECT  # pyright: ignore[reportFunctionMemberAccess]
+    _detect_shell_for_completion._pymobiledevice3_xonsh_patched = True  # pyright: ignore[reportFunctionMemberAccess]
     shellingham.detect_shell = _detect_shell_for_completion
 
 

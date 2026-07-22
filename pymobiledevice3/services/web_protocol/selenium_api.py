@@ -1,16 +1,20 @@
 from abc import ABC, abstractmethod
 from base64 import b64decode
+from typing import TYPE_CHECKING, Optional
 
 from pymobiledevice3.services.web_protocol.automation_session import By
+
+if TYPE_CHECKING:
+    from pymobiledevice3.services.web_protocol.element import WebElement
 
 
 class SeleniumApi(ABC):
     @abstractmethod
-    async def find_element(self, by=By.ID, value=None):
+    async def find_element(self, by=By.ID, value=None) -> "Optional[WebElement]":
         pass
 
     @abstractmethod
-    async def find_elements(self, by=By.ID, value=None):
+    async def find_elements(self, by=By.ID, value=None) -> "list[WebElement]":
         pass
 
     @abstractmethod

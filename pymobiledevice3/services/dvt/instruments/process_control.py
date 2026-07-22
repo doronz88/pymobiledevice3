@@ -1,6 +1,7 @@
 import dataclasses
 import logging
 import typing
+from datetime import datetime
 from typing import Any, Optional
 
 from pymobiledevice3.dtx import DTXQueue, DTXService, PInt32, dtx_method, dtx_on_invoke
@@ -14,7 +15,7 @@ OSUTIL = get_os_utils()
 @dataclasses.dataclass
 class OutputReceivedEvent:
     pid: int
-    date: int
+    date: Optional[datetime]
     message: str
 
     @classmethod
@@ -111,7 +112,7 @@ class ProcessControl(DtxService[ProcessControlService]):
         :param pid: PID of the process whose memory limit should be lifted.
         :raises DisableMemoryLimitError: If the device declines the request.
         """
-        if not await self.service.request_disable_memory_limits_for_pid_(pid):
+        if not await self.service.request_disable_memory_limits_for_pid_(PInt32(pid)):
             raise DisableMemoryLimitError()
 
     async def kill(self, pid: int):

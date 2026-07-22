@@ -37,6 +37,7 @@ from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import ConnectionTerminatedError, DvtException, ExtractingStackshotError
 from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
+from pymobiledevice3.services.dvt.instruments.tap import TapMessageChannel
 
 kcdata_types = {
     "KCDATA_TYPE_INVALID": 0x0,
@@ -584,7 +585,8 @@ def clean(d):
         return d
 
 
-def jsonify_parsed_stackshot(stackshot, root=None, index=0):
+def jsonify_parsed_stackshot(stackshot, root: typing.Optional[dict] = None, index: int = 0) -> typing.Optional[int]:
+    assert root is not None
     current_index = index
     while True:
         item = stackshot[current_index]
@@ -604,6 +606,8 @@ def jsonify_parsed_stackshot(stackshot, root=None, index=0):
             current_index = jsonify_parsed_stackshot(
                 stackshot, root[item["data"]["name"]][item["data"]["unique_id"]], current_index
             )
+            # a container is always terminated by KCDATA_TYPE_CONTAINER_END, which returns an index
+            assert current_index is not None
         elif item["type"] == kcdata_types_enum.KCDATA_TYPE_CONTAINER_END:
             return current_index
         elif item["type"] == kcdata_types_enum.KCDATA_TYPE_BUFFER_END:
@@ -720,7 +724,7 @@ class CoreProfileSessionTap:
         """
         self._provider = dvt
         self._channel: typing.Optional[CoreProfileSessionTapChannel] = None
-        self.channel = None
+        self.channel: typing.Optional[TapMessageChannel] = None
         self.stack_shot = None
         self.uuid = str(uuid.uuid4())
 

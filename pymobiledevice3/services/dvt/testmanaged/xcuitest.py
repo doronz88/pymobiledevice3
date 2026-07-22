@@ -82,6 +82,8 @@ class ProxyIdeToDriverService(DtxProxyService[XCTestManager_IDEInterface, XCTest
         except asyncio.TimeoutError:
             raise RuntimeError("Timed out waiting for XCTestDriverInterface — runner did not connect") from None
         else:
+            # a proxied service is always created with its dtxproxy context set
+            assert remote_svc.dtxproxy is not None
             return remote_svc.dtxproxy
 
 

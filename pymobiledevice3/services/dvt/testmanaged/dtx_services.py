@@ -99,9 +99,7 @@ class XCUITestListener:
 
     # --- case lifecycle ---------------------------------------------------
 
-    async def test_case_did_start(
-        self, test_class: str, method: str, configuration: Optional[XCTestCaseRunConfiguration] = None
-    ) -> None:
+    async def test_case_did_start(self, test_class: str, method: str) -> None:
         """Invoked when a single test case starts."""
 
     async def test_case_did_finish(self, result: XCTestCaseResult) -> None:

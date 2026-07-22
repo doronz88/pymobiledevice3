@@ -76,6 +76,13 @@ version_file = "pymobiledevice3/_version.py"
 requires = ["setuptools>=43.0.0", "setuptools_scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.pyright]
+include = ["pymobiledevice3", "tests"]
+pythonVersion = "3.9"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+
 [tool.ruff]
 target-version = "py39"
 line-length = 120
@@ -124,7 +131,10 @@ ignore = [
     "TRY301",
     # Do not perform function call `csfield` in dataclass defaults
     "RUF009",
-    # Use X | None instead of Optional
+    # Use `X | Y` instead of `Union` (keep Union so annotations stay evaluable on the 3.9 floor,
+    # e.g. under typing.get_type_hints(), not just as strings via `from __future__ import annotations`)
+    "UP007",
+    # Use `X | None` instead of `Optional` (same reason as UP007)
     "UP045",
 ]
 

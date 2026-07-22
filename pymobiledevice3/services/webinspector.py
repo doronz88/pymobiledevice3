@@ -455,8 +455,8 @@ class WebinspectorService(LockdownService):
         )
 
     async def _forward_indicate_web_view(self, app_id: str, page_id: int, enable: bool):
-        (
-            await self._send_message("_rpc_forwardIndicateWebView"),
+        await self._send_message(
+            "_rpc_forwardIndicateWebView",
             {
                 "WIRApplicationIdentifierKey": app_id,
                 "WIRPageIdentifierKey": page_id,

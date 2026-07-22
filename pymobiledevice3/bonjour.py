@@ -10,9 +10,10 @@ import struct
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional, TypeVar
 
 import ifaddr  # pip install ifaddr
+from typing_extensions import dataclass_transform
 
 from pymobiledevice3.osu.os_utils import get_os_utils
 
@@ -41,8 +42,12 @@ CLASS_QU = 0x8000  # unicast-response bit (we use multicast queries)
 # ---------------- Dataclasses ----------------
 
 
+_T = TypeVar("_T")
+
+
 # --- Dataclass decorator shim (adds slots only on 3.10+)
-def dataclass_compat(*d_args, **d_kwargs):
+@dataclass_transform(field_specifiers=(field,))
+def dataclass_compat(*d_args, **d_kwargs) -> Callable[[type[_T]], type[_T]]:
     if sys.version_info < (3, 10):
         d_kwargs.pop("slots", None)  # ignore on 3.9
     return dataclass(*d_args, **d_kwargs)
@@ -64,7 +69,7 @@ class Address:
 class ServiceInstance:
     instance: str  # "<Instance Name>._type._proto.local."
     host: Optional[str]  # "host.local" (without trailing dot), or None if unresolved
-    port: Optional[int]  # SRV port
+    port: int  # SRV port (always present — browse_service skips port-less SRV entries)
     addresses: list[Address] = field(default_factory=list)  # IPs with interface names
     properties: dict[str, str] = field(default_factory=dict)  # TXT key/values
 
@@ -265,7 +270,7 @@ async def _bind_ipv6_all_ifaces(queue: asyncio.Queue):
 
 async def _open_mdns_sockets():
     queue = asyncio.Queue()
-    transports: list[tuple[asyncio.BaseTransport, socket.socket]] = []
+    transports: list[tuple[asyncio.DatagramTransport, socket.socket]] = []
     t4, s4 = await _bind_ipv4(queue)
     transports.append((t4, s4))
     t6, s6 = await _bind_ipv6_all_ifaces(queue)
@@ -350,6 +355,10 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
         srv_entries = srv_map.get(inst, [])
         props = txt_map.get(inst, {})
         for srv in srv_entries:
+            port = srv.get("port")
+            if port is None:
+                # SRV records always carry a port; skip malformed/unresolved entries.
+                continue
             target = srv.get("target")
             host = (target[:-1] if target and target.endswith(".") else target) or None
             addrs = host_addrs.get(target, []) if target else []
@@ -357,7 +366,7 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
                 ServiceInstance(
                     instance=inst,
                     host=host,
-                    port=srv.get("port"),
+                    port=port,
                     addresses=addrs,
                     properties=props,
                 )
@@ -484,7 +493,7 @@ class MDNSResponder:
         self.addresses = addresses if addresses is not None else _local_addresses()
         # Every local IPv4 interface to steer multicast egress through (see _send_to_all)
         self._ipv4_send_addresses = [ip for family, ip in self.addresses if family == socket.AF_INET]
-        self._transports: list[tuple[asyncio.BaseTransport, socket.socket]] = []
+        self._transports: list[tuple[asyncio.DatagramTransport, socket.socket]] = []
         self._queue: Optional[asyncio.Queue] = None
         self._serve_task: Optional[asyncio.Task] = None
 

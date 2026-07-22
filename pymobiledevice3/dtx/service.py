@@ -31,9 +31,9 @@ import inspect
 import logging
 import re
 import sys
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Sequence
 from functools import partial, wraps
-from typing import Any, Callable, ClassVar, Optional, TypeVar, get_type_hints
+from typing import Any, Callable, ClassVar, Optional, Protocol, TypeVar, cast, get_type_hints
 
 from .channel import DTXChannel
 from .context import DTX_GLOBAL_CTX, DTXContext  # noqa: F401 — re-exported for back-compat
@@ -46,7 +46,7 @@ _MISSING = object()  # sentinel for missing attribute values in __init_subclass_
 DTX_SERVICE_T = TypeVar("DTX_SERVICE_T", bound="DTXService")
 QUEUE_ITEM_T = TypeVar("QUEUE_ITEM_T")
 
-if hasattr(asyncio, "QueueShutDown"):
+if sys.version_info >= (3, 13):
     QueueShutDown = asyncio.QueueShutDown
     DTXQueue = asyncio.Queue
 else:
@@ -57,7 +57,7 @@ else:
     class DTXQueue(asyncio.Queue[QUEUE_ITEM_T]):
         """asyncio.Queue with shutdown support on Python versions before 3.13."""
 
-        _SHUTDOWN_SENTINEL = object()
+        _SHUTDOWN_SENTINEL: ClassVar[Any] = object()
 
         def __init__(self, maxsize: int = 0) -> None:
             super().__init__(maxsize=maxsize)
@@ -171,13 +171,27 @@ def _apply_primitive_coercions(args: tuple, coercions: tuple) -> tuple:
         if not (isinstance(coerce_type, type) and issubclass(coerce_type, _PrimitiveBase)):
             continue
         if not isinstance(result[i], _PrimitiveBase):
-            result[i] = coerce_type(result[i])
+            # Concrete primitive classes mix in a builtin (int/str/bytes/…) whose
+            # constructor takes the raw value; _PrimitiveBase itself declares none.
+            result[i] = cast("Callable[[Any], _PrimitiveBase]", coerce_type)(result[i])
     return tuple(result)
 
 
 # ---------------------------------------------------------------------------
 # DTX service decorators
 # ---------------------------------------------------------------------------
+
+
+class _DtxMethodFn(Protocol):
+    """A callable tagged by :func:`dtx_method` with its selector/kwargs pair."""
+
+    _dtx_method: tuple[Optional[str], dict[str, Any]]
+
+
+class _DtxOnInvokeFn(Protocol):
+    """A callable tagged by :func:`dtx_on_invoke` with its selector (or ``None``)."""
+
+    _dtx_on_invoke: Optional[str]
 
 
 def dtx_method(selector_or_fn=None, /, **invoke_kwargs):
@@ -195,7 +209,7 @@ def dtx_method(selector_or_fn=None, /, **invoke_kwargs):
         @dtx_method("setConfig:", expects_reply=False)
     """
     if callable(selector_or_fn):
-        selector_or_fn._dtx_method = (None, {})
+        cast("_DtxMethodFn", selector_or_fn)._dtx_method = (None, {})
         return selector_or_fn
     selector = selector_or_fn
 
@@ -215,7 +229,7 @@ def dtx_on_invoke(selector_or_fn=None, /):
         @dtx_on_invoke("_XCT_logMessage:")      # explicit selector
     """
     if callable(selector_or_fn):
-        selector_or_fn._dtx_on_invoke = None  # None → infer from method name
+        cast("_DtxOnInvokeFn", selector_or_fn)._dtx_on_invoke = None  # None → infer from method name
         return selector_or_fn
     selector = selector_or_fn
 
@@ -281,7 +295,7 @@ class DTXService:
 
             sel = getattr(val, "_dtx_on_invoke", _MISSING)
             if sel is not _MISSING:
-                new_dispatch[sel if sel is not None else _python_name_to_objc_selector(name)] = name
+                new_dispatch[sel if isinstance(sel, str) else _python_name_to_objc_selector(name)] = name
 
             if getattr(val, "_dtx_on_data", False):
                 new_data_handler = name
@@ -392,7 +406,7 @@ class DTXService:
         """If this service is owned by a :class:`DTXProxyService`, return the proxy instance."""
         return self._ctx.get("dtxproxy", None)
 
-    async def __on_dispatch__(self, selector: str, args: list[Any]) -> Any:
+    async def __on_dispatch__(self, selector: str, args: Sequence[Any]) -> Any:
         """Route an incoming DISPATCH to the right @dtx_on_invoke handler,
         falling back to the @dtx_on_dispatch catch-all."""
         method_name = type(self)._dtx_dispatch.get(selector)
@@ -519,7 +533,7 @@ class DTXControlService(DTXService):
         await self._ctx["connection"]._on_capabilities_received(capabilities)
 
     @dtx_on_invoke("_requestChannelWithCode:identifier:")
-    async def _recv_channel_request(self, code: int, identifier: str) -> Optional[str]:
+    async def _recv_channel_request(self, code: int, identifier: str) -> Optional[NSError]:
         return await self._ctx["connection"]._on_channel_request(code, identifier)
 
     @dtx_on_invoke("_channelCanceled:")
