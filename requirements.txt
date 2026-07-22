@@ -51,9 +51,11 @@ av>=14.0.0 ; platform_system != "Darwin"
 # (https://github.com/doronz88/pmd-pytcp). Pulls its pmd-net-addr / pmd-net-proto siblings in
 # transitively. Supported on Python 3.9+ (the whole pymobiledevice3 range); if the import or
 # stack init fails the tunnel transparently falls back to the kernel path (see cli_common).
-# 0.2.0 floor: dynamic send-MSS via working RFC 4821/8899 PLPMTUD (probing sysctls
-# tcp.mtu_probing / tcp.base_mss / tcp.plpmtud.probe_timer_ms, the tcp.rto.min_ms floor, and
-# the runtime 'log.enabled' hot-path gate). userspace_tunnel.py sets these knobs
-# unconditionally — no capability probing — so the floor IS the compatibility contract.
-# (0.1.0 introduced the pure-asyncio stack the module is written against.)
-pmd-pytcp>=0.2.0 ; python_version >= "3.9"
+# 0.3.0 floor: the 'net.rx_cksum_validate' software RX-checksum-offload sysctl (skips the
+# RFC 1071 checksum on the AEAD-authenticated tunnel; ~+35% bulk download). 0.2.0 added
+# dynamic send-MSS via working RFC 4821/8899 PLPMTUD (probing sysctls tcp.mtu_probing /
+# tcp.base_mss / tcp.plpmtud.probe_timer_ms, the tcp.rto.min_ms floor, and the runtime
+# 'log.enabled' hot-path gate). userspace_tunnel.py sets these knobs unconditionally — no
+# capability probing — so the floor IS the compatibility contract. (0.1.0 introduced the
+# pure-asyncio stack the module is written against.)
+pmd-pytcp>=0.3.0 ; python_version >= "3.9"
