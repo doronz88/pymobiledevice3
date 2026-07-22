@@ -24,7 +24,7 @@ marketplace. Inside Claude Code run:
 
 ```text
 /plugin marketplace add doronz88/pymobiledevice3
-/plugin install pymobiledevice3@pymobiledevice3
+/plugin install ios-device-operator@pymobiledevice3
 ```
 
 After installing, Claude can take screenshots, search the device syslog, pull crash
