@@ -19,6 +19,8 @@ the full inventory and the edit-the-canonical-copy convention.
 You do not need to work inside this repository to use the skill. The commands it
 teaches run against the PyPI release via `uvx pymobiledevice3 ...`, so a fresh
 workstation only needs [uv](https://docs.astral.sh/uv/) and a USB-connected device.
+No uv? The skill also knows the plain-pip path
+(`python3 -m pip install -U pymobiledevice3`) and how to bootstrap uv without root.
 
 **As a plugin (recommended).** This repository doubles as a Claude Code plugin
 marketplace. Inside Claude Code run:

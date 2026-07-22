@@ -13,6 +13,13 @@ Use this skill to translate a user goal into the smallest correct `pymobiledevic
 
 Inside a pymobiledevice3 checkout, run commands from the repository root with `uvx --from . pymobiledevice3 ...` so the local checkout is used. On a workstation **without** a checkout, run `uvx pymobiledevice3 ...` instead — `uvx` fetches the released package from PyPI on first use, so nothing needs to be installed beforehand except `uv` itself (`uv tool install pymobiledevice3` gives a persistent install). Everywhere this skill's references show `uvx --from . pymobiledevice3 ...`, drop the `--from .` when there is no checkout. Fall back to `python3 -m pymobiledevice3 ...` only if `uvx` is unavailable or the user explicitly wants the current interpreter environment.
 
+If `uv` itself is missing, bootstrap one of the two paths first (neither needs root):
+
+- Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux) or
+  `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows), then use `uvx` as above.
+- Or skip uv entirely: `python3 -m pip install -U pymobiledevice3`, then run
+  `python3 -m pymobiledevice3 ...` everywhere the references show `uvx ... pymobiledevice3 ...`.
+
 Start with the least invasive command that proves connectivity or surfaces missing prerequisites:
 
 ```shell
