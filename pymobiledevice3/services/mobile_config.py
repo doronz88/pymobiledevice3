@@ -2,7 +2,7 @@ import contextlib
 import plistlib
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from uuid import uuid4
 
 from cryptography import x509
@@ -213,7 +213,7 @@ class MobileConfigService(LockdownService):
         if response.get("Status", None) != "Acknowledged":
             error_chain = response.get("ErrorChain")
             if error_chain is not None:
-                error_code = error_chain[0]["ErrorCode"]
+                error_code = cast("list[dict]", error_chain)[0]["ErrorCode"]
                 if error_code == ERROR_CLOUD_CONFIGURATION_ALREADY_PRESENT:
                     raise CloudConfigurationAlreadyPresentError()
             raise ProfileError(f"invalid response {response}")

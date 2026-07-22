@@ -4,7 +4,7 @@ from enum import Enum
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Callable, Optional
+from typing import Callable, Optional, cast
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from parameter_decorators import str_to_path
@@ -12,6 +12,7 @@ from parameter_decorators import str_to_path
 from pymobiledevice3.exceptions import AppInstallError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.plist_types import PlistSendable
 from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.lockdown_service import LockdownService
 
@@ -322,11 +323,16 @@ class InstallationProxyService(LockdownService):
         :returns: None.
         :raises AppInstallError: If the service reports an error or finishes without a ``Complete`` status.
         """
-        await self.service.send_plist({
-            "Command": cmd,
-            "ClientOptions": options,
-            "PackagePath": package_path,
-        })
+        await self.service.send_plist(
+            cast(
+                PlistSendable,
+                {
+                    "Command": cmd,
+                    "ClientOptions": options,
+                    "PackagePath": package_path,
+                },
+            )
+        )
 
         await self._watch_completion(handler, args)
 
@@ -408,7 +414,7 @@ class InstallationProxyService(LockdownService):
             cmd["Capabilities"] = capabilities
 
         await self.service.send_plist(cmd)
-        return (await self.service.recv_plist()).get("LookupResult")
+        return cast(Optional[dict], (await self.service.recv_plist()).get("LookupResult"))
 
     async def browse(self, options: Optional[dict] = None, attributes: Optional[list[str]] = None) -> list[dict]:
         """
@@ -431,7 +437,7 @@ class InstallationProxyService(LockdownService):
 
         await self.service.send_plist(cmd)
 
-        result = []
+        result: list[dict] = []
         while True:
             response = await self.service.recv_plist()
             if not response:
@@ -439,7 +445,7 @@ class InstallationProxyService(LockdownService):
 
             data = response.get("CurrentList")
             if data is not None:
-                result += data
+                result += cast("list[dict]", data)
 
             if response.get("Status") == "Complete":
                 break
@@ -462,7 +468,7 @@ class InstallationProxyService(LockdownService):
             options = {}
         cmd = {"Command": "Lookup", "ClientOptions": options}
         await self.service.send_plist(cmd)
-        return (await self.service.recv_plist()).get("LookupResult")
+        return cast(Optional[dict], (await self.service.recv_plist()).get("LookupResult"))
 
     async def get_apps(
         self,

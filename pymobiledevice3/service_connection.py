@@ -7,7 +7,7 @@ import ssl
 import struct
 import time
 import xml.parsers.expat
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, cast
 
 from pygments import formatters, highlight, lexers
 
@@ -18,6 +18,7 @@ from pymobiledevice3.exceptions import (
     PyMobileDevice3Exception,
 )
 from pymobiledevice3.osu.os_utils import get_os_utils
+from pymobiledevice3.plist_types import PlistDict, PlistSendable, PlistValue
 from pymobiledevice3.usbmux import MuxDevice, select_device
 from pymobiledevice3.utils import start_ipython_shell
 
@@ -45,7 +46,7 @@ print(await client.recvall(20))
 """
 
 
-def build_plist(d: Union[dict, list], endianity: str = ">", fmt: plistlib.PlistFormat = plistlib.FMT_XML) -> bytes:
+def build_plist(d: PlistSendable, endianity: str = ">", fmt: plistlib.PlistFormat = plistlib.FMT_XML) -> bytes:
     """
     Convert a dictionary to a plist-formatted byte string prefixed with a length field.
 
@@ -54,12 +55,14 @@ def build_plist(d: Union[dict, list], endianity: str = ">", fmt: plistlib.PlistF
     :param fmt: The plist format (e.g., plistlib.FMT_XML).
     :return: The plist-formatted byte string.
     """
-    payload = plistlib.dumps(d, fmt=fmt)
+    # ``d`` is already constrained to plist-serialisable data; plistlib.dumps' stub types its
+    # parameter more narrowly than our covariant PlistSendable, so widen at this boundary only.
+    payload = plistlib.dumps(cast(Any, d), fmt=fmt)
     message = struct.pack(endianity + "L", len(payload))
     return message + payload
 
 
-def parse_plist(payload: bytes) -> dict:
+def parse_plist(payload: bytes) -> PlistValue:
     """
     Parse a plist-formatted byte string into a dictionary.
 
@@ -287,8 +290,8 @@ class ServiceConnection:
             return await self.recv_prefixed(endianity=endianity)
 
     async def send_recv_plist(
-        self, data: dict, endianity: str = ">", fmt: plistlib.PlistFormat = plistlib.FMT_XML
-    ) -> Any:
+        self, data: PlistSendable, endianity: str = ">", fmt: plistlib.PlistFormat = plistlib.FMT_XML
+    ) -> PlistDict:
         """
         Asynchronously send a plist to the socket and receive a plist response.
 
@@ -301,7 +304,8 @@ class ServiceConnection:
         :param fmt: The plist format (e.g., plistlib.FMT_XML).
         :return: The received plist as a dictionary.
         """
-        return parse_plist(await self.send_recv_prefixed(build_plist(data, endianity, fmt), endianity))
+        # Every request/response service behind lockdownd answers with a dictionary-rooted plist.
+        return cast(PlistDict, parse_plist(await self.send_recv_prefixed(build_plist(data, endianity, fmt), endianity)))
 
     def recvall_sync(self, size: int) -> bytes:
         """
@@ -373,23 +377,27 @@ class ServiceConnection:
         msg = b"".join([hdr, data])
         await self.sendall(msg)
 
-    def recv_plist_sync(self, endianity: str = ">") -> Union[dict, list]:
+    def recv_plist_sync(self, endianity: str = ">") -> PlistDict:
         """
         Receive a plist from the socket and parse it into a native type.
 
         :param endianity: The byte order ('>' for big-endian, '<' for little-endian).
         :return: The received plist as a native type.
         """
-        return parse_plist(self.recv_prefixed_sync(endianity=endianity))
+        # Dictionary-rooted for every request/response service; DeviceLink callers that expect a
+        # list-rooted message narrow the result themselves.
+        return cast(PlistDict, parse_plist(self.recv_prefixed_sync(endianity=endianity)))
 
-    async def recv_plist(self, endianity: str = ">") -> dict:
+    async def recv_plist(self, endianity: str = ">") -> PlistDict:
         """
         Asynchronously receive a plist from the socket and parse it into a native type.
 
         :param endianity: The byte order ('>' for big-endian, '<' for little-endian).
         :return: The received plist as a native type.
         """
-        return parse_plist(await self.recv_prefixed(endianity))
+        # Dictionary-rooted for every request/response service; DeviceLink callers that expect a
+        # list-rooted message narrow the result themselves.
+        return cast(PlistDict, parse_plist(await self.recv_prefixed(endianity)))
 
     async def sendall(self, payload: bytes) -> None:
         """
@@ -405,7 +413,7 @@ class ServiceConnection:
             raise ConnectionTerminatedError from e
 
     async def send_plist(
-        self, d: Union[dict, list], endianity: str = ">", fmt: plistlib.PlistFormat = plistlib.FMT_XML
+        self, d: PlistSendable, endianity: str = ">", fmt: plistlib.PlistFormat = plistlib.FMT_XML
     ) -> None:
         """
         Asynchronously send a dictionary as a plist to the socket.

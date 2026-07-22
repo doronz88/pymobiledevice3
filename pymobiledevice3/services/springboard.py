@@ -1,5 +1,5 @@
 from enum import IntEnum
-from typing import Optional
+from typing import Optional, cast
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -44,7 +44,7 @@ class SpringBoardServicesService(LockdownService):
         cmd = {"command": "getIconState"}
         if format_version:
             cmd["formatVersion"] = format_version
-        return await self.service.send_recv_plist(cmd)
+        return cast(list, await self.service.send_recv_plist(cmd))
 
     async def set_icon_state(self, newstate: Optional[list] = None) -> None:
         """
@@ -63,7 +63,10 @@ class SpringBoardServicesService(LockdownService):
         :param bundle_id: Bundle identifier of the application whose icon is requested.
         :returns: PNG-encoded icon image bytes, or ``None`` if no ``pngData`` is returned.
         """
-        return (await self.service.send_recv_plist({"command": "getIconPNGData", "bundleId": bundle_id})).get("pngData")
+        return cast(
+            bytes,
+            (await self.service.send_recv_plist({"command": "getIconPNGData", "bundleId": bundle_id})).get("pngData"),
+        )
 
     async def get_interface_orientation(self) -> InterfaceOrientation:
         """
@@ -80,7 +83,9 @@ class SpringBoardServicesService(LockdownService):
 
         :returns: PNG-encoded wallpaper image bytes, or ``None`` if no ``pngData`` is returned.
         """
-        return (await self.service.send_recv_plist({"command": "getHomeScreenWallpaperPNGData"})).get("pngData")
+        return cast(
+            bytes, (await self.service.send_recv_plist({"command": "getHomeScreenWallpaperPNGData"})).get("pngData")
+        )
 
     async def get_homescreen_icon_metrics(self) -> dict[str, float]:
         """
@@ -88,7 +93,7 @@ class SpringBoardServicesService(LockdownService):
 
         :returns: Mapping of metric names to their numeric values, as reported by SpringBoard.
         """
-        return await self.service.send_recv_plist({"command": "getHomeScreenIconMetrics"})
+        return cast("dict[str, float]", await self.service.send_recv_plist({"command": "getHomeScreenIconMetrics"}))
 
     async def get_wallpaper_info(self, wallpaper_name: str) -> dict:
         """
@@ -115,6 +120,12 @@ class SpringBoardServicesService(LockdownService):
         :param wallpaper_name: Name of the wallpaper whose preview image is requested.
         :returns: PNG-encoded preview image bytes.
         """
-        return (
-            await self.service.send_recv_plist({"command": "getWallpaperPreviewImage", "wallpaperName": wallpaper_name})
-        )["pngData"]
+        return cast(
+            bytes,
+            (
+                await self.service.send_recv_plist({
+                    "command": "getWallpaperPreviewImage",
+                    "wallpaperName": wallpaper_name,
+                })
+            )["pngData"],
+        )

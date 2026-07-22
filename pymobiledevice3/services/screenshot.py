@@ -1,3 +1,5 @@
+from typing import cast
+
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -20,10 +22,12 @@ class ScreenshotService(LockdownService):
     async def _handshake(self) -> None:
         if self._did_handshake:
             return
-        dl_message_version_exchange = await self.service.recv_plist()
+        # DeviceLink messages are list-rooted, unlike the dictionary-rooted request/response
+        # services; narrow the received plist accordingly.
+        dl_message_version_exchange = cast(list, await self.service.recv_plist())
         version_major = dl_message_version_exchange[1]
         await self.service.send_plist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
-        dl_message_device_ready = await self.service.recv_plist()
+        dl_message_device_ready = cast(list, await self.service.recv_plist())
         if dl_message_device_ready[0] != "DLMessageDeviceReady":
             raise PyMobileDevice3Exception("Screenshotr didn't return ready state")
         self._did_handshake = True
@@ -39,7 +43,7 @@ class ScreenshotService(LockdownService):
         """
         await self._handshake()
         await self.service.send_plist(["DLMessageProcessMessage", {"MessageType": "ScreenShotRequest"}])
-        response = await self.service.recv_plist()
+        response = cast(list, await self.service.recv_plist())
 
         assert len(response) == 2
         assert response[0] == "DLMessageProcessMessage"
