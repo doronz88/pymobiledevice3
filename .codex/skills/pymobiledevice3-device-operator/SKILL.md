@@ -19,6 +19,10 @@ If `uv` itself is missing, bootstrap one of the two paths first (neither needs r
   `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows), then use `uvx` as above.
 - Or skip uv entirely: `python3 -m pip install -U pymobiledevice3`, then run
   `python3 -m pymobiledevice3 ...` everywhere the references show `uvx ... pymobiledevice3 ...`.
+  If pip refuses with `externally-managed-environment` (PEP 668 — Debian/Ubuntu, Homebrew
+  Python, Fedora), create a venv instead of forcing it:
+  `python3 -m venv ~/.pmd3-venv && ~/.pmd3-venv/bin/pip install -U pymobiledevice3`, then use
+  `~/.pmd3-venv/bin/pymobiledevice3 ...`. Never use `--break-system-packages`.
 
 Start with the least invasive command that proves connectivity or surfaces missing prerequisites:
 
