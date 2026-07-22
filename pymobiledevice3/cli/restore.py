@@ -7,7 +7,6 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import IO, Annotated, Optional, Union
 
-import click
 import requests
 import typer
 from ipsw_parser.ipsw import IPSW
@@ -69,7 +68,8 @@ async def _device_dependency_async(
         logger.debug("searching among connected devices via lockdownd")
         devices = [dev for dev in await usbmux.list_devices() if dev.connection_type == "USB"]
         if len(devices) > 1:
-            raise click.ClickException("Multiple device detected")
+            typer.echo(typer.style("Multiple device detected", fg="red"))
+            raise typer.Exit(code=1)
         for device in devices:
             try:
                 lockdown = await create_using_usbmux(serial=device.serial, connection_type="USB")
