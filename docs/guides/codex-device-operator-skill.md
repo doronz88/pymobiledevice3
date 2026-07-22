@@ -13,6 +13,32 @@ Claude Code (via a symlink in `.claude/skills/`). The two skill trees mirror eac
 other with relative symlinks; see the Skills section of the repo's `AGENTS.md` for
 the full inventory and the edit-the-canonical-copy convention.
 
+## Install Into Your Own Claude Code
+
+You do not need to work inside this repository to use the skill. The commands it
+teaches run against the PyPI release via `uvx pymobiledevice3 ...`, so a fresh
+workstation only needs [uv](https://docs.astral.sh/uv/) and a USB-connected device.
+
+**As a plugin (recommended).** This repository doubles as a Claude Code plugin
+marketplace. Inside Claude Code run:
+
+```text
+/plugin marketplace add doronz88/pymobiledevice3
+/plugin install pymobiledevice3@pymobiledevice3
+```
+
+After installing, Claude can take screenshots, search the device syslog, pull crash
+reports, manage apps and files, and drive developer services from any directory.
+
+**As a personal skill (manual).** Clone the repository once and symlink the skill into
+your personal skills directory:
+
+```shell
+git clone https://github.com/doronz88/pymobiledevice3.git
+mkdir -p ~/.claude/skills
+ln -s "$(pwd)/pymobiledevice3/.codex/skills/pymobiledevice3-device-operator" ~/.claude/skills/
+```
+
 ## Use From GitHub
 
 If someone is using Codex against the GitHub repository and wants a copy-pasteable reference, point them at these URLs:

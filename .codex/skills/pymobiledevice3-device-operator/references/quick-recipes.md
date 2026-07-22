@@ -2,9 +2,11 @@
 
 ## Use This File
 
-Read this file for the exact invocation of the most common device tasks. All commands run
-from the repository root; on iOS 17.4+ the `developer` commands establish a no-root
-userspace tunnel automatically, so run them as-is — no `sudo`, no tunnel setup.
+Read this file for the exact invocation of the most common device tasks. Commands are
+shown for a repository checkout (`uvx --from . pymobiledevice3`); on a workstation
+without one, drop the `--from .` so `uvx` fetches the PyPI release. On iOS 17.4+ the
+`developer` commands establish a no-root userspace tunnel automatically, so run them
+as-is — no `sudo`, no tunnel setup.
 
 ## Screenshot
 

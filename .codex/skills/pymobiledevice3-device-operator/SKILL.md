@@ -1,17 +1,17 @@
 ---
 name: pymobiledevice3-device-operator
-description: Operate iOS and iPadOS devices through the local pymobiledevice3 checkout. Use when an agent needs to inspect a connected device, collect logs or crash data, browse or copy files, manage apps, profiles, or backups, use developer services such as DDI/DVT/tunnels/sysmon/screenshots/simulated location, automate Safari or WebViews through WebInspector or WDA, or add a thin repo-native device command on top of existing services. Prefer existing CLI and service modules, choose USB vs --rsd/--tunnel correctly, and require explicit user intent before state-changing or destructive actions.
+description: Operate iOS and iPadOS devices with pymobiledevice3, from a local checkout or straight from PyPI via uvx on a fresh workstation. Use when an agent needs to inspect a connected device, collect logs or crash data, browse or copy files, manage apps, profiles, or backups, use developer services such as DDI/DVT/tunnels/sysmon/screenshots/simulated location, automate Safari or WebViews through WebInspector or WDA, or add a thin repo-native device command on top of existing services. Prefer existing CLI and service modules, choose USB vs --rsd/--tunnel correctly, and require explicit user intent before state-changing or destructive actions.
 ---
 
 # PyMobileDevice3 Device Operator
 
 ## Overview
 
-Use this skill to translate a user goal into the smallest correct `pymobiledevice3` action, then execute it from the local repo or extend the repo with a thin CLI wrapper when the capability already exists in services.
+Use this skill to translate a user goal into the smallest correct `pymobiledevice3` action, then execute it — from a local checkout when one is present, or via the PyPI release (`uvx pymobiledevice3`) on a fresh workstation — or extend the repo with a thin CLI wrapper when the capability already exists in services.
 
 ## Default Operating Pattern
 
-Run commands from the repository root with `uvx --from . pymobiledevice3 ...` so the local checkout is used. Fall back to `python3 -m pymobiledevice3 ...` only if `uvx` is unavailable or the user explicitly wants the current interpreter environment.
+Inside a pymobiledevice3 checkout, run commands from the repository root with `uvx --from . pymobiledevice3 ...` so the local checkout is used. On a workstation **without** a checkout, run `uvx pymobiledevice3 ...` instead — `uvx` fetches the released package from PyPI on first use, so nothing needs to be installed beforehand except `uv` itself (`uv tool install pymobiledevice3` gives a persistent install). Everywhere this skill's references show `uvx --from . pymobiledevice3 ...`, drop the `--from .` when there is no checkout. Fall back to `python3 -m pymobiledevice3 ...` only if `uvx` is unavailable or the user explicitly wants the current interpreter environment.
 
 Start with the least invasive command that proves connectivity or surfaces missing prerequisites:
 
@@ -26,7 +26,7 @@ Prefer existing CLI commands first. Prefer reading local docs and CLI source ove
 
 1. Classify the request as one of: inspect, collect, modify, automate, developer-instrument, or extend-the-repo.
 2. Confirm transport before doing anything expensive. USB is the default. For iOS 17+ developer services, read `references/transport-and-safety.md`.
-3. Discover the narrowest command by checking `docs/guides/cli-recipes.md`, `pymobiledevice3/__main__.py`, and the relevant CLI module under `pymobiledevice3/cli/`. Use `rg` to locate command names, options, and transport flags quickly.
+3. Discover the narrowest command by checking `docs/guides/cli-recipes.md`, `pymobiledevice3/__main__.py`, and the relevant CLI module under `pymobiledevice3/cli/`. Use `rg` to locate command names, options, and transport flags quickly. Without a checkout, use `--help` discovery and the published docs (<https://doronz88.github.io/pymobiledevice3/>) instead.
 4. Use `uvx --from . pymobiledevice3 <group> --help` only as a fallback when code and docs are ambiguous, or as a final verification step before suggesting an exact command to the user.
 5. Execute a reversible or read-only step first, then escalate to state-changing actions only if the user asked for them.
 6. For long-lived streams or interactive shells, keep the process attached instead of replacing it with one-shot polling.
@@ -57,6 +57,9 @@ Read `references/task-map.md` when you need to map a user goal to a command grou
 Read `references/transport-and-safety.md` when the task touches iOS 17+ developer services, tunnels, `--rsd`, `--tunnel`, or destructive operations.
 
 ## Source Files To Prefer
+
+These paths are relative to a pymobiledevice3 checkout; without one, use the published
+docs site (<https://doronz88.github.io/pymobiledevice3/>) and `--help` output instead.
 
 - `docs/guides/cli-recipes.md` for common end-user commands
 - `docs/guides/ios17-tunnels.md` for tunnel setup and `--rsd` usage

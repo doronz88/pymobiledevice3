@@ -81,6 +81,11 @@ When adding a skill, create it in one tree and symlink it from the other. When c
 user-facing CLI layout, transports, or safety-relevant behavior, review whether the
 device-operator skill guidance needs updating.
 
+The device-operator skill is also published as a Claude Code plugin: the repo is a
+plugin marketplace (`.claude-plugin/marketplace.json`) whose plugin package at
+`misc/claude-plugin/` mounts the skill via symlink — the canonical files remain the
+single source of truth.
+
 ## Documentation Expectations
 
 - Update docs for user-facing command/API changes.

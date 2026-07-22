@@ -1,2 +1,7 @@
 # Generated MkDocs build output (not source).
 site/
+
+# The Claude Code plugin package mounts agent skill files (canonical under the
+# unscanned dot-directories .codex/ and .claude/) via symlink; skill payloads
+# are not part of the linted documentation set.
+misc/claude-plugin/

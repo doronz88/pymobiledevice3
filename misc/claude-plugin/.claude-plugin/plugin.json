@@ -1,0 +1,20 @@
+{
+    "name": "pymobiledevice3",
+    "description": "Operate iOS and iPadOS devices from Claude Code with pymobiledevice3: screenshots, syslog search, crash reports, file and app operations, developer services (DVT, tunnels, WebInspector, WDA) — works from a fresh workstation via uvx/PyPI or a local checkout.",
+    "version": "1.0.0",
+    "author": {
+        "name": "doronz88",
+        "url": "https://github.com/doronz88"
+    },
+    "homepage": "https://github.com/doronz88/pymobiledevice3",
+    "repository": "https://github.com/doronz88/pymobiledevice3",
+    "license": "GPL-3.0",
+    "keywords": [
+        "ios",
+        "iphone",
+        "ipad",
+        "lockdown",
+        "dvt",
+        "instruments"
+    ]
+}
