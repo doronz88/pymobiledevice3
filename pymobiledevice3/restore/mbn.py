@@ -276,14 +276,8 @@ def mbn_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
     Overwrite the tail of `data` with `blob`. Format-aware size logging/checks.
     Returns new bytes or None.
     """
-    if data is None:
-        logger.error("%s: data is NULL", "mbn_stitch")
-        return None
     if not data:
         logger.error("%s: data size is 0", "mbn_stitch")
-        return None
-    if blob is None:
-        logger.error("%s: blob is NULL", "mbn_stitch")
         return None
     if not blob:
         logger.error("%s: blob size is 0", "mbn_stitch")
@@ -394,14 +388,8 @@ def mbn_mav25_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
     - Writes OEM sig+chain after existing dest qti sig+chain
     Returns new bytes or None.
     """
-    if data is None:
-        logger.error("%s: data is NULL", "mbn_mav25_stitch")
-        return None
     if not data:
         logger.error("%s: data size is 0", "mbn_mav25_stitch")
-        return None
-    if blob is None:
-        logger.error("%s: blob is NULL", "mbn_mav25_stitch")
         return None
     if not blob:
         logger.error("%s: blob size is 0", "mbn_mav25_stitch")

@@ -875,10 +875,6 @@ class Restore(BaseRestore):
 
             # add required tags for Savage TSS request
             comp_name = request.add_savage_tags(parameters, None)
-
-            if comp_name is None:
-                raise PyMobileDevice3Exception("Could not determine Savage firmware component")
-
             self.logger.debug(f"restore_get_savage_firmware_data: using {comp_name}")
 
             self.logger.info("Sending SE Savage request...")
@@ -1379,44 +1375,28 @@ class Restore(BaseRestore):
 
         if device_generated_request is not None:
             fwdict = await self.get_device_generated_firmware_data(updater_name, info, arguments)
-            if fwdict is None:
-                raise PyMobileDevice3Exception(f"Couldn't get {updater_name} firmware data")
 
         elif updater_name == "SE":
             fwdict = await self.get_se_firmware_data(updater_name, info, arguments)
-            if fwdict is None:
-                raise PyMobileDevice3Exception("Couldn't get SE firmware data")
 
         elif updater_name == "Savage":
-            fwtype = "Savage"
             info2 = info.get("YonkersDeviceInfo")
             if info2:
-                fwtype = "Yonkers"
                 fwdict = await self.get_yonkers_firmware_data(info2)
             else:
                 fwdict = await self.get_savage_firmware_data(info)
-            if fwdict is None:
-                raise PyMobileDevice3Exception(f"Couldn't get {fwtype} firmware data")
 
         elif updater_name == "Rose":
             fwdict = await self.get_rose_firmware_data(updater_name, info, arguments)
-            if fwdict is None:
-                raise PyMobileDevice3Exception("Couldn't get Rose firmware data")
 
         elif updater_name == "T200":
             fwdict = await self.get_veridian_firmware_data(updater_name, info, arguments)
-            if fwdict is None:
-                raise PyMobileDevice3Exception("Couldn't get Veridian firmware data")
 
         elif updater_name == "AppleTCON":
             fwdict = await self.get_tcon_firmware_data(info)
-            if fwdict is None:
-                raise PyMobileDevice3Exception("Couldn't get TCON firmware data")
 
         elif updater_name == "AppleTypeCRetimer":
             fwdict = await self.get_timer_firmware_data(info)
-            if fwdict is None:
-                raise PyMobileDevice3Exception("Couldn't get AppleTypeCRetimer firmware data")
 
         else:
             raise PyMobileDevice3Exception(f"Got unknown updater name: {updater_name}")

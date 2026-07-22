@@ -48,9 +48,7 @@ async def get_usbmux_pairing_record(identifier: str, usbmux_address: Optional[st
         mux = await usbmux.create_mux(usbmux_address=usbmux_address)
         try:
             if isinstance(mux, PlistMuxConnection):
-                pair_record = await mux.get_pair_record(identifier)
-                if pair_record is not None:
-                    return pair_record
+                return await mux.get_pair_record(identifier)
         finally:
             await mux.close()
     return None

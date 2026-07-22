@@ -11,7 +11,6 @@ from functools import wraps
 from textwrap import dedent
 from typing import Annotated, Any, Callable, Optional, TypeVar
 
-import click
 import coloredlogs
 import hexdump
 import inquirer3
@@ -131,7 +130,8 @@ def prompt_selection(choices: list[Any], message: str, idx: bool = False) -> Any
     try:
         result = inquirer3.prompt(question, theme=GreenPassion(), raise_keyboard_interrupt=True)
     except KeyboardInterrupt:
-        raise click.ClickException("No selection was made") from None
+        typer.echo(typer.style("No selection was made", fg="red"))
+        raise typer.Exit(code=1) from None
     return result["selection"] if not idx else choices.index(result["selection"])
 
 

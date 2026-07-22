@@ -91,7 +91,10 @@ class DTXFragmenter:
         Returns *True* when all body fragments have arrived and
         :meth:`assemble` can be called.
         """
-        if fragment.payload is None:
+        # Defensive guard against a malformed fragment whose body never arrived. The type says
+        # non-None, but a caller can still construct one with a None payload (see test coverage),
+        # so keep the runtime check and suppress the "always non-None" diagnostic for this line.
+        if fragment.payload is None:  # pyright: ignore[reportUnnecessaryComparison]
             raise DTXProtocolError(
                 f"Non-first fragment {fragment.index} of message {self._first.identifier} has no payload"
             )

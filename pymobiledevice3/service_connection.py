@@ -91,8 +91,7 @@ async def close_stream_writer(
             await asyncio.wait_for(writer.wait_closed(), timeout=timeout)
         except asyncio.TimeoutError:
             with contextlib.suppress(Exception):
-                if writer.transport is not None:
-                    writer.transport.abort()
+                writer.transport.abort()
 
 
 class ServiceConnection:
@@ -315,7 +314,7 @@ class ServiceConnection:
         data = b""
         while len(data) < size:
             chunk = self.recv_sync(size - len(data))
-            if chunk is None or len(chunk) == 0:
+            if len(chunk) == 0:
                 raise ConnectionTerminatedError()
             data += chunk
         return data
@@ -453,8 +452,7 @@ class ServiceConnection:
         except OSError as e:
             raise ConnectionTerminatedError() from e
         finally:
-            if self.socket is not None:
-                self.socket.settimeout(None)
+            self.socket.settimeout(None)
 
     async def ssl_start(self, certfile: str, keyfile: Optional[str] = None) -> None:
         """

@@ -1,6 +1,13 @@
-from collections import namedtuple
+from typing import NamedTuple
 
-IRecvDevice = namedtuple("IRecvDevice", "product_type hardware_model board_id chip_id display_name")
+
+class IRecvDevice(NamedTuple):
+    product_type: str
+    hardware_model: str
+    board_id: int
+    chip_id: int
+    display_name: str
+
 
 IRECV_DEVICES = (
     # iPhone

@@ -35,7 +35,7 @@ class WebElement(SeleniumApi):
 
     async def clear(self):
         """Clears the text if it's a text entry element."""
-        if not self.is_editable():
+        if not await self.is_editable():
             return
         layout = await self._compute_layout()
         if layout is None:

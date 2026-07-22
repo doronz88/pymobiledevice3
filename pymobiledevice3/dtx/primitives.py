@@ -33,7 +33,6 @@ from construct import (
     Construct,
     ConstructError,
     Container,
-    ExplicitError,
     Float64l,
     Int32sl,
     Int32ul,
@@ -257,11 +256,6 @@ class PrimitiveDictionary(_PrimitiveBase, dict[Any, list[Any]]):
         return result
 
     def _write(self, stream, context, path):
-        if any(not isinstance(values, list) for values in self.values()):
-            raise ExplicitError(
-                f"Expected a dict[Any, list[Any]] for PrimitiveDictionary, got dict[Any, {type(next(iter(self.values()))).__name__}]: {self!r}",
-                path,
-            )
 
         start = stream_tell(stream, path)
         stream_seek(stream, self._HEADER_SIZE, io.SEEK_CUR, path)  # reserve space for header

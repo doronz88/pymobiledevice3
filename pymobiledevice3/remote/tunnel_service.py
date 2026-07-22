@@ -16,13 +16,12 @@ import struct
 import sys
 from abc import ABC, abstractmethod
 from asyncio import CancelledError, StreamReader, StreamWriter
-from collections import namedtuple
 from collections.abc import AsyncGenerator, Awaitable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 from pathlib import Path
 from socket import create_connection
 from ssl import VerifyMode
-from typing import Any, Callable, Optional, TextIO, Union, cast
+from typing import Any, Callable, NamedTuple, Optional, TextIO, Union, cast
 
 from construct import Const, Container, GreedyBytes, GreedyRange, Int8ul, Int16ub, Int64ul, Prefixed, Struct
 from construct import Enum as ConstructEnum
@@ -149,7 +148,12 @@ PairingDataComponentTLV8 = Struct(
 
 PairingDataComponentTLVBuf = GreedyRange(PairingDataComponentTLV8)
 
-PairConsentResult = namedtuple("PairConsentResult", "public_key salt pin")
+
+class PairConsentResult(NamedTuple):
+    public_key: bytes
+    salt: bytes
+    pin: Optional[str]
+
 
 CDTunnelPacket = Struct(
     "magic" / Const(b"CDTunnel"),
@@ -1327,8 +1331,7 @@ class CoreDeviceTunnelProxy(StartTcpTunnel):
             await tunnel.stop_tunnel()
 
     async def close(self) -> None:
-        if self._service is not None:
-            await self._service.close()
+        await self._service.close()
 
 
 async def create_core_device_tunnel_service_using_rsd(
@@ -1759,7 +1762,7 @@ class PairableHost:
         m6_cipher = cip.encrypt(b"\x00\x00\x00\x00PS-Msg06", m6_plain, b"")
         tlv = self._chunk_component(int(PairingDataComponentType.ENCRYPTED_DATA), m6_cipher)
         tlv.append({"type": PairingDataComponentType.STATE, "data": b"\x06"})
-        await self._send_pairing_data(PairingDataComponentTLVBuf.build(cast(list, tlv)))
+        await self._send_pairing_data(PairingDataComponentTLVBuf.build(tlv))
 
         self.encryption_key = session_key
         self.peer_device = peer_device

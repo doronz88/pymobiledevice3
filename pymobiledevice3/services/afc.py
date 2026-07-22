@@ -21,12 +21,11 @@ import struct
 import sys
 import threading
 import warnings
-from collections import namedtuple
 from collections.abc import Iterator, MutableMapping, MutableSequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from re import Pattern
-from typing import Any, Callable, Optional, TextIO, Union, cast
+from typing import Any, Callable, NamedTuple, Optional, TextIO, Union, cast
 
 import hexdump
 from click.exceptions import Exit
@@ -58,24 +57,21 @@ except ImportError:  # construct-typing < 0.8.0
 MAXIMUM_READ_SIZE = 4 * 1024**2  # 4 MB
 MODE_MASK = 0o0000777
 
-StatResult = namedtuple(
-    "StatResult",
-    [
-        "st_mode",
-        "st_ino",
-        "st_dev",
-        "st_nlink",
-        "st_uid",
-        "st_gid",
-        "st_size",
-        "st_atime",
-        "st_mtime",
-        "st_ctime",
-        "st_blocks",
-        "st_blksize",
-        "st_birthtime",
-    ],
-)
+
+class StatResult(NamedTuple):
+    st_mode: int
+    st_ino: int
+    st_dev: int
+    st_nlink: int
+    st_uid: int
+    st_gid: int
+    st_size: int
+    st_atime: float
+    st_mtime: float
+    st_ctime: float
+    st_blocks: int
+    st_blksize: int
+    st_birthtime: float
 
 
 class AfcOpcode(EnumBase):
@@ -1194,7 +1190,7 @@ class AfcService(LockdownService):
             if status == AfcError.OBJECT_NOT_FOUND:
                 exception = AfcFileNotFoundError
 
-            opcode_name = opcode.name if isinstance(opcode, AfcOpcode) else opcode
+            opcode_name = opcode.name
             message = f"Opcode: {opcode_name} failed with status: {status}"
             if filename is not None:
                 message += f" for file: {filename}"

@@ -396,9 +396,8 @@ class TunneldCore:
                 logger.info(f"Disconnected from tunnel --rsd {tun.address} {tun.port}")
                 await tun.client.stop_tunnel()
 
-            if protocol_handler is not None:
-                with suppress(OSError):
-                    await protocol_handler.close()
+            with suppress(OSError):
+                await protocol_handler.close()
 
             if task_identifier in self.tunnel_tasks:
                 # in case the tunnel was removed just now

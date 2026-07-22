@@ -116,7 +116,7 @@ class DTXChannel:
         if reply.type not in (DTXMessageType.OK, DTXMessageType.OBJECT, DTXMessageType.ERROR):
             raise DTXProtocolError(f"Unexpected reply type {reply.type!r} for {context} on channel {self.code}")
         if reply.type == DTXMessageType.ERROR:
-            error: NSError = reply.payload
+            error = reply.payload
             if not isinstance(error, NSError):
                 raise DTXProtocolError(
                     f"Expected NSError in ERROR reply for {context} on channel {self.code}, got {error!r}"
@@ -310,9 +310,6 @@ class DTXChannel:
         while not self._closed:
             try:
                 message = await self._queue.get()
-                if message is None:
-                    self.logger.warning("Channel reader loop exiting: None message received")
-                    break
                 if message.type == DTXMessageType.BARRIER and self._pending_tasks:
                     self.logger.debug(
                         "Waiting for %d pending message handler tasks to complete before processing BARRIER message on channel %d",
