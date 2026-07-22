@@ -3,7 +3,7 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from asyncio import CancelledError
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncGenerator, AsyncIterator, Iterable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from functools import update_wrapper
 from string import Template
@@ -154,19 +154,22 @@ def catch_errors(func):
 
     if inspect.iscoroutinefunction(func):
 
-        async def catch_function(*args, **kwargs):
+        async def async_catch_function(*args, **kwargs):
             try:
                 return await func(*args, **kwargs)
             except tuple(errors) as e:
                 handle_error(e)
 
+        catch_function = async_catch_function
     else:
 
-        def catch_function(*args, **kwargs):
+        def sync_catch_function(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
             except tuple(errors) as e:
                 handle_error(e)
+
+        catch_function = sync_catch_function
 
     return update_wrapper(catch_function, func)
 
@@ -440,7 +443,7 @@ class JsShellCompleter(Completer):
         self,
         document: Document,
         complete_event: CompleteEvent,
-    ) -> AsyncIterator[Completion]:
+    ) -> AsyncGenerator[Completion, None]:
         # Build the JS expression we want to inspect
         text = f"globalThis.{document.text_before_cursor}"
 
@@ -578,6 +581,7 @@ class InspectorJsShell(JsShell):
         bundle_identifier: Optional[str] = None,
         *,
         console_enable: bool = True,
+        **kwargs,
     ) -> "AsyncIterator[InspectorJsShell]":
         async with webinspector_service(lockdown) as inspector:
             if open_safari:

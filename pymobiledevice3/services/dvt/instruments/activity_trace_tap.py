@@ -3,6 +3,7 @@ import math
 import os
 import struct
 from io import BytesIO
+from typing import cast
 
 from pymobiledevice3.services.dvt.instruments.tap import Tap
 
@@ -67,7 +68,8 @@ def decode_message_format(message) -> str:
             s += str(uint64)
         elif type_ in ("data", "uuid"):
             if data is not None:
-                s += b"".join(data).hex()
+                # for these types the payload is a list of bytes chunks, not a single bytes object
+                s += b"".join(cast("list[bytes]", data)).hex()
         else:
             # by default, make sure the data can be concatenated
             s += str(data)
@@ -203,7 +205,8 @@ class ActivityTraceTap(Tap):
 
         table_raw = Table(*self.stack[-distance:])
         table = Table(
-            name=table_raw.name.split(b"\x00", 1)[0].decode(),
+            # the raw table fields hold the undecoded bytes off the stack
+            name=cast(bytes, table_raw.name).split(b"\x00", 1)[0].decode(),
             columns=[c.split(b"\x00", 1)[0].decode() for c in table_raw.columns],
             unknown0=table_raw.unknown0,
             unknown2=table_raw.unknown2,

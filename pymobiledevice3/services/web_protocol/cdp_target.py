@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import datetime
 from functools import partial
+from typing import Optional
 
 from pymobiledevice3.services.web_protocol.cdp_screencast import ScreenCast
 
@@ -95,7 +96,7 @@ class CdpTarget:
         self.page_id = protocol.page.id_
         self.output_queue = asyncio.Queue()
         self.input_queue = asyncio.Queue()
-        self.screencast = None
+        self.screencast: Optional[ScreenCast] = None
         self.from_cdp_special_messages_methods = {
             "Audits.enable": self._audits_enable,
             "DOM.getBoxModel": self._dom_get_box_model,
@@ -302,7 +303,7 @@ class CdpTarget:
     async def _dom_get_node_for_location(self, message):
         x, y = message["params"]["x"], message["params"]["y"]
         obj = await self.evaluate_and_result(message["id"], f"document.elementFromPoint({x},{y})")
-        if "objectId" not in obj:
+        if obj is None or "objectId" not in obj:
             await self._simple_response(message, None)
             return
         result = {"nodeId": await self.object_id_to_node_id(obj["objectId"], message["id"])}
@@ -379,7 +380,7 @@ class CdpTarget:
 
     async def _page_stop_screencast(self, message):
         if self.screencast is not None:
-            await self.screencast.clear()
+            await self.screencast.stop()
             self.screencast = None
         await self._simple_response(message, None)
 
@@ -502,6 +503,7 @@ class CdpTarget:
     async def _input_emulate_touch_from_mouse_event(self, message):
         params = message["params"]
         if params["type"] == "mouseWheel":
+            assert self.screencast is not None
             delta_x, delta_y = (
                 params["deltaX"] // self.screencast.get_scale(),
                 params["deltaY"] // self.screencast.get_scale(),
@@ -510,6 +512,7 @@ class CdpTarget:
         elif params["type"] == "mouseReleased":
             pass
         else:
+            assert self.screencast is not None
             modifiers = params["modifiers"]
             x, y = params["x"] // self.screencast.get_scale(), params["y"] // self.screencast.get_scale()
             event_params = {

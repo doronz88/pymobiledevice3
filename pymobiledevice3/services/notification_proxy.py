@@ -5,6 +5,7 @@ from typing import Optional, Union
 from pymobiledevice3.exceptions import NotificationTimeoutError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 
@@ -44,7 +45,10 @@ class NotificationProxyService(LockdownService):
             super().__init__(lockdown, secure_service_name)
 
         if timeout is not None:
-            self.service.socket.settimeout(timeout)
+            service = self.service
+            assert isinstance(service, ServiceConnection)
+            assert service.socket is not None
+            service.socket.settimeout(timeout)
 
     async def notify_post(self, name: str) -> None:
         """

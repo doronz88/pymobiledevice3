@@ -9,6 +9,7 @@ from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
 from pymobiledevice3.exceptions import RSDRequiredError
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
@@ -29,7 +30,8 @@ async def fetch_symbols_list_task(service_provider: LockdownServiceProvider) -> 
         print_json(await DtFetchSymbols(service_provider).list_files())
     else:
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
-            raise RSDRequiredError(service_provider.identifier)
+            assert isinstance(service_provider, LockdownClient)  # non-RSD providers are lockdown clients
+            raise RSDRequiredError(service_provider.identifier or "")
 
         async with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
             print_json([f.file_path for f in await fetch_symbols.get_dsc_file_list()])
@@ -47,7 +49,9 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
     if out is None:
         assert service_provider.product_type is not None  # for type checker
         out = get_device_support_path(
-            service_provider.product_type, service_provider.product_version, service_provider.product_build_version
+            service_provider.product_type,
+            service_provider.product_version,
+            service_provider.product_build_version or "",
         )
         should_create_device_support_layout = True
 
@@ -81,7 +85,8 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
                 await fetch_symbols.get_file(i, f)
     else:
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
-            raise RSDRequiredError(service_provider.identifier)
+            assert isinstance(service_provider, LockdownClient)  # non-RSD providers are lockdown clients
+            raise RSDRequiredError(service_provider.identifier or "")
         async with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
             await fetch_symbols.download(symbols_out)
 
@@ -90,7 +95,7 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
         create_device_support_layout(
             service_provider.product_type,
             service_provider.product_version,
-            service_provider.product_build_version,
+            service_provider.product_build_version or "",
             symbols_out,
         )
 

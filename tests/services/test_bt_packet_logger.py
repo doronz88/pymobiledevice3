@@ -163,6 +163,7 @@ async def test_write_pcapng_stream_accepts_float_tz_offset() -> None:
     async def generate():
         yield record
 
+    # The float is the point of this test: devices send TimeZoneOffsetFromUTC as a float.
     await write_pcapng_stream(out, generate(), tz_offset_seconds=tz_offset_seconds)
 
     out.seek(0)

@@ -10,7 +10,7 @@ from tqdm import tqdm
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
-from pymobiledevice3.services.mobilebackup2 import BACKUP_SELECTIONS, Mobilebackup2Service
+from pymobiledevice3.services.mobilebackup2 import BackupSelection, Mobilebackup2Service
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +62,10 @@ BackupDirectoryOption = Annotated[
     ),
 ]
 BackupSelectionOption = Annotated[
-    Optional[list[str]],
+    Optional[list[BackupSelection]],
     typer.Option(
         "--only",
-        click_type=click.Choice(sorted(BACKUP_SELECTIONS), case_sensitive=False),
+        case_sensitive=False,
         help="Preserve only selected backup payload presets. Repeat to keep multiple presets.",
     ),
 ]
@@ -111,9 +111,7 @@ async def backup(
     All backup data will be written to BACKUP_DIRECTORY, under a directory named with the device's udid.
     """
     backup_directory.mkdir(parents=True, exist_ok=True)
-    preserve_rules = tuple(
-        rule for selection_name in (only or ()) for rule in BACKUP_SELECTIONS[selection_name.lower()]
-    )
+    preserve_rules = tuple(rule for selection in (only or ()) for rule in selection.rules())
     filter_callback = Mobilebackup2Service.combine_filter_callbacks(
         Mobilebackup2Service.selection_filter_callback(preserve_rules) if preserve_rules else None,
         Mobilebackup2Service.regex_filter_callback(only_regex) if only_regex else None,

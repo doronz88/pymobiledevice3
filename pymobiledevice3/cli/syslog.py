@@ -253,6 +253,7 @@ async def syslog_live(
             )
 
             if not started:
+                assert start_after is not None  # started is initialized True when start_after is None
                 if start_after not in line:
                     continue
                 started = True

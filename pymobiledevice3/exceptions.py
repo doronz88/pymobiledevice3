@@ -44,6 +44,7 @@ __all__ = [
     "MuxException",
     "MuxVersionError",
     "NoDeviceConnectedError",
+    "NotConnectedError",
     "NotEnoughDiskSpaceError",
     "NotMountedError",
     "NotPairedError",
@@ -128,6 +129,12 @@ class NoDeviceConnectedError(PyMobileDevice3Exception):
     pass
 
 
+class NotConnectedError(PyMobileDevice3Exception):
+    """Raised when a service is used before its connect() (or async-context enter) has run."""
+
+    pass
+
+
 class InterfaceIndexNotFoundError(PyMobileDevice3Exception):
     def __init__(self, address: str):
         super().__init__()
@@ -135,7 +142,7 @@ class InterfaceIndexNotFoundError(PyMobileDevice3Exception):
 
 
 class DeviceNotFoundError(PyMobileDevice3Exception):
-    def __init__(self, udid: str):
+    def __init__(self, udid: Optional[str]):
         super().__init__()
         self.udid = udid
 
@@ -173,7 +180,8 @@ class ArgumentError(PyMobileDevice3Exception):
 
 
 class AfcException(PyMobileDevice3Exception, OSError):
-    def __init__(self, message: str, status: str, filename: Optional[str] = None) -> None:
+    def __init__(self, message: str, status: Optional[int], filename: Optional[str] = None) -> None:
+        # status carries the AfcError code (an IntEnum in services/afc.py, not importable here without a cycle)
         OSError.__init__(self, status, message)
         self.status = status
         self.filename = filename
@@ -412,7 +420,7 @@ class InspectorEvaluateError(PyMobileDevice3Exception):
         self.stack = stack
 
     def __str__(self) -> str:
-        stack_trace = "\n".join([f"\t - {frame}" for frame in self.stack])
+        stack_trace = "\n".join([f"\t - {frame}" for frame in self.stack or []])
         return f"{self.class_name}: {self.message}.\nLine: {self.line} Column: {self.column}\nStack: {stack_trace}"
 
 

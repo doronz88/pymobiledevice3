@@ -2,7 +2,7 @@ import ipaddress
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 from construct import Adapter, Bytes, Int8ul, Int16ub, Int32ul, Switch, this
 from construct_typed import DataclassMixin, TStruct, csfield
@@ -150,7 +150,7 @@ class NetworkMonitor(DtxService[NetworkMonitorService]):
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self.service.stop_monitoring()
 
-    async def __aiter__(self) -> AsyncIterator[NetworkMonitorEvent]:
+    async def __aiter__(self) -> AsyncIterator[Optional[NetworkMonitorEvent]]:
         """
         Decode and yield network events as they arrive from the service.
 

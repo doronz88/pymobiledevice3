@@ -1,5 +1,6 @@
 import asyncio
 from types import MethodType
+from typing import cast
 
 import pytest
 from hyperframe.frame import DataFrame
@@ -41,25 +42,27 @@ async def test_receive_data_frame_batches_window_updates():
         return frame
 
     connection = RemoteXPCConnection(("localhost", 0))
-    connection._writer = FakeWriter()
+    writer = FakeWriter()
+    connection._writer = cast(asyncio.StreamWriter, writer)
     connection._receive_frame = receive_frame
 
     assert await connection._receive_next_data_frame() is frame
-    assert len(connection._writer.writes) == 2
-    assert connection._writer.drain_calls == 1
+    assert len(writer.writes) == 2
+    assert writer.drain_calls == 1
 
 
 @pytest.mark.asyncio
 async def test_force_replenish_receive_window_flushes_partial_batch():
     connection = RemoteXPCConnection(("localhost", 0))
-    connection._writer = FakeWriter()
+    writer = FakeWriter()
+    connection._writer = cast(asyncio.StreamWriter, writer)
 
     await connection._replenish_receive_window(stream_id=2, increment=1)
-    assert connection._writer.writes == []
+    assert writer.writes == []
 
     await connection._replenish_receive_window(stream_id=2, force=True)
-    assert len(connection._writer.writes) == 2
-    assert connection._writer.drain_calls == 1
+    assert len(writer.writes) == 2
+    assert writer.drain_calls == 1
 
 
 def test_connection_window_matches_stream_window():
@@ -69,7 +72,7 @@ def test_connection_window_matches_stream_window():
 @pytest.mark.asyncio
 async def test_close_ignores_connection_reset():
     connection = RemoteXPCConnection(("localhost", 0))
-    connection._writer = ResettingWriter()
+    connection._writer = cast(asyncio.StreamWriter, ResettingWriter())
 
     await connection.close()
 

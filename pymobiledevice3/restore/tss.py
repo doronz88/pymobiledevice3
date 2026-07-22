@@ -27,7 +27,7 @@ TSS_CLIENT_VERSION_STRING = "libauthinstall-1104.0.9"
 logger = logging.getLogger(__name__)
 
 
-def get_with_or_without_comma(obj: dict, k: str, default=None):
+def get_with_or_without_comma(obj: dict, k: str, default=None) -> typing.Any:
     val = obj.get(k, obj.get(k.replace(",", "")))
     if val is None and default is not None:
         val = default
@@ -35,7 +35,7 @@ def get_with_or_without_comma(obj: dict, k: str, default=None):
 
 
 def is_fw_payload(info: dict[str, typing.Any]) -> bool:
-    return (
+    return bool(
         info.get("IsFirmwarePayload")
         or info.get("IsSecondaryFirmwarePayload")
         or info.get("IsFUDFirmware")
@@ -234,10 +234,10 @@ class TSSRequest:
         )
 
         for key in keys_to_copy_bool:
-            value = parameters.get(key)
+            value = typing.cast(bytes, parameters.get(key))
             self._request[key] = bytes_to_uint(value) == 1
 
-        nonce = parameters.get(parameters, f"Timer,Nonce,{tag}")
+        nonce = parameters.get(f"Timer,Nonce,{tag}")
 
         if nonce is not None:
             self._request[f"Timer,Nonce,{tag}"] = nonce
@@ -319,12 +319,12 @@ class TSSRequest:
                 self._request[k] = parameters[k]
 
         if self._request.get("eUICC,Gold") is None:
-            n = plist_access_path(parameters, ("Manifest", "eUICC,Gold"))
+            n = typing.cast(typing.Optional[dict], plist_access_path(parameters, ("Manifest", "eUICC,Gold")))
             if n:
                 self._request["eUICC,Gold"] = {"Digest": n["Digest"]}
 
         if self._request.get("eUICC,Main") is None:
-            n = plist_access_path(parameters, ("Manifest", "eUICC,Main"))
+            n = typing.cast(typing.Optional[dict], plist_access_path(parameters, ("Manifest", "eUICC,Main")))
             if n:
                 self._request["eUICC,Main"] = {"Digest": n["Digest"]}
 
@@ -652,7 +652,7 @@ class TSSRequest:
                 result_comp_name = comp_name
                 break
 
-        if comp_node is None:
+        if comp_node is None or result_comp_name is None:
             raise PyMobileDevice3Exception(f"No Yonkers node for {isprod}/{fabrevision}")
 
         # add Yonkers,SysTopPatch

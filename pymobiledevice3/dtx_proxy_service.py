@@ -1,5 +1,5 @@
 import sys
-from typing import Any, ClassVar, Generic, Optional, TypeVar
+from typing import Any, ClassVar, Generic, Optional, TypeVar, cast
 
 from pymobiledevice3.dtx.service import DTXDynamicService as _DTXDynamicService
 from pymobiledevice3.dtx.service import DTXProxyService as _DTXProxyService
@@ -94,8 +94,10 @@ class DtxProxyService(DtxService[_DTXProxyService], Generic[LOCAL_SVC_T, REMOTE_
         # uses the just-registered sub-services from the registry.
         self._service = await self._acquire_channel()
         # Unwrap the low-level DTXProxyService's sub-service instances.
-        self._local_service = self._service.local_service
-        self._remote_service = self._service.remote_service
+        # The registry instantiated the inferred sub-service classes, so the
+        # casts reflect the runtime types selected by the type parameters.
+        self._local_service = cast("LOCAL_SVC_T", self._service.local_service)
+        self._remote_service = cast("REMOTE_SVC_T", self._service.remote_service)
 
     @property
     def local_service(self) -> LOCAL_SVC_T:

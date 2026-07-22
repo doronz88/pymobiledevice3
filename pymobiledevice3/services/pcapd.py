@@ -3,7 +3,7 @@
 import enum
 import time
 from collections.abc import AsyncGenerator
-from typing import Optional
+from typing import Optional, cast
 
 import pcapng.blocks as blocks
 from construct import Byte, Bytes, Container, CString, Int16ub, Int32ub, Int32ul, Padded, Seek, Struct, this
@@ -372,7 +372,7 @@ class PcapdService(LockdownService):
             if not d:
                 break
 
-            packet = device_packet_struct.parse(d)
+            packet = device_packet_struct.parse(cast(bytes, d))
 
             if process is not None and process != str(packet.pid) and process != packet.comm:
                 continue
@@ -380,14 +380,14 @@ class PcapdService(LockdownService):
             if interface_name is not None and interface_name != packet.interface_name:
                 continue
 
-            packet.interface_type = INTERFACE_NAMES(packet.interface_type)
-            packet.protocol_family = CrossPlatformAddressFamily(packet.protocol_family)
+            packet["interface_type"] = INTERFACE_NAMES(packet.interface_type)
+            packet["protocol_family"] = CrossPlatformAddressFamily(packet.protocol_family)
 
             if not packet.frame_pre_length:
                 # Add fake ethernet header for pdp packets.
-                packet.data = ETHERNET_HEADER + packet.data
+                packet["data"] = ETHERNET_HEADER + packet.data
             elif packet.interface_name == "pdp_ip":
-                packet.data = ETHERNET_HEADER + packet.data[4:]
+                packet["data"] = ETHERNET_HEADER + packet.data[4:]
 
             yield packet
 

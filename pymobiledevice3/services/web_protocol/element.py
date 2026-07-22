@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pymobiledevice3.exceptions import WirError
 from pymobiledevice3.services.web_protocol.automation_session import (
     MODIFIER_TO_KEY,
@@ -35,15 +37,18 @@ class WebElement(SeleniumApi):
         """Clears the text if it's a text entry element."""
         if not self.is_editable():
             return
-        rect, center, _is_obscured = await self._compute_layout()
-        if rect is None or center is None:
+        layout = await self._compute_layout()
+        if layout is None:
             return
         await self._evaluate_js_function(ELEMENT_CLEAR)
 
     async def click(self):
         """Clicks the element."""
-        rect, center, is_obscured = await self._compute_layout(use_viewport=True)
-        if rect is None or is_obscured or center is None:
+        layout = await self._compute_layout(use_viewport=True)
+        if layout is None:
+            return
+        _rect, center, is_obscured = layout
+        if is_obscured:
             return
         if await self.get_tag_name() == "option":
             await self._select_option_element()
@@ -100,7 +105,10 @@ class WebElement(SeleniumApi):
 
     async def get_rect(self) -> Rect:
         """The size and location of the element."""
-        return (await self._compute_layout(scroll_if_needed=False))[0]
+        layout = await self._compute_layout(scroll_if_needed=False)
+        if layout is None:
+            raise WirError("failed to compute element layout")
+        return layout[0]
 
     async def _get_screenshot_as_base64(self) -> str:
         """Gets the screenshot of the current element as a base64 encoded string."""
@@ -140,6 +148,8 @@ class WebElement(SeleniumApi):
     async def submit(self):
         """Submits a form."""
         form = await self.find_element(By.XPATH, "./ancestor-or-self::form")
+        if form is None:
+            raise WirError("failed to locate enclosing form element")
         submit_code = (
             "var e = arguments[0].ownerDocument.createEvent('Event');"
             "e.initEvent('submit', true, true);"
@@ -159,7 +169,10 @@ class WebElement(SeleniumApi):
 
     async def touch(self) -> None:
         """Simulate touch interaction on the element."""
-        _rect, center, _is_obscured = await self._compute_layout(use_viewport=True)
+        layout = await self._compute_layout(use_viewport=True)
+        if layout is None:
+            return
+        _rect, center, _is_obscured = layout
         await self.session.perform_interaction_sequence(
             [{"sourceId": self.session.get_id(), "sourceType": "Touch"}],
             [{"states": [{"sourceId": self.session.get_id(), "location": {"x": center.x, "y": center.y}}]}],
@@ -177,13 +190,13 @@ class WebElement(SeleniumApi):
         """Returns whether the element is editable."""
         return await self._evaluate_js_function(IS_EDITABLE)
 
-    async def _compute_layout(self, scroll_if_needed=True, use_viewport=False):
+    async def _compute_layout(self, scroll_if_needed=True, use_viewport=False) -> Optional[tuple[Rect, Point, bool]]:
         try:
             result = await self.session.compute_element_layout(
                 self.node_id, scroll_if_needed, "LayoutViewport" if use_viewport else "Page"
             )
         except WirError:
-            return
+            return None
 
         origin = result["rect"]["origin"]
         size = result["rect"]["size"]

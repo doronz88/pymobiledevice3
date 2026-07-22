@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from enum import Enum
 from typing import Optional
@@ -10,6 +9,7 @@ from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.img4 import stitch_component
 from pymobiledevice3.restore.tss import TSSResponse
+from pymobiledevice3.utils import current_task_name
 
 RESTORE_VARIANT_ERASE_INSTALL = "Erase Install (IPSW)"
 RESTORE_VARIANT_UPGRADE_INSTALL = "Upgrade Install (IPSW)"
@@ -27,7 +27,7 @@ class BaseRestore:
     ) -> None:
         self.ipsw = ipsw
         self.device = device
-        self.tss = TSSResponse(tss) if tss is not None else None
+        self.tss: Optional[TSSResponse] = TSSResponse(tss) if tss is not None else None
 
         self.logger.info(f"connected device: {self.device}")
 
@@ -74,13 +74,20 @@ class BaseRestore:
 
     @property
     def logger(self) -> logging.Logger:
-        return logging.getLogger(f"{asyncio.current_task().get_name()}-{self.__class__.__module__}")
+        return logging.getLogger(f"{current_task_name()}-{self.__class__.__module__}")
+
+    def require_tss(self) -> TSSResponse:
+        """Return the fetched TSS response, asserting it was populated (always true by the time
+        components are personalized — see ``Recovery.fetch_tss_record``)."""
+        assert self.tss is not None, "TSS response must be fetched before personalizing components"
+        return self.tss
 
     async def get_personalized_data(
         self,
         component_name: str,
         data: Optional[bytes] = None,
-        tss: Optional[TSSResponse] = None,
+        *,
+        tss: TSSResponse,
         path: Optional[str] = None,
     ) -> bytes:
         return stitch_component(

@@ -3,9 +3,9 @@ import logging
 import posixpath
 import re
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from json import JSONDecodeError
-from typing import Callable, ClassVar, Optional
+from typing import Callable, ClassVar, Optional, Union, cast
 
 from pycrashreport.crash_report import CrashReportBase, get_crash_report_from_buf
 from xonsh.built_ins import XSH
@@ -20,8 +20,13 @@ from pymobiledevice3.exceptions import (
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell, path_completer
+from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.services.notification_proxy import NotificationProxyService
 from pymobiledevice3.services.os_trace import OsTraceService
+
+# xonsh declares Arg(completer=...) as returning Iterator[str], but any iterable works at
+# runtime; adapt the list-returning completer's declared type once here instead of per call site.
+_path_arg_completer = cast(Callable[..., Iterator[str]], path_completer)
 
 SYSDIAGNOSE_PROCESS_NAMES = ("sysdiagnose", "sysdiagnosed")
 SYSDIAGNOSE_DIR = "DiagnosticLogs/sysdiagnose"
@@ -98,8 +103,10 @@ class CrashReportsManager:
             # special case of file that sometimes created automatically right after delete,
             # and then we can't delete the folder because it's not empty
             if item != self.APPSTORED_PATH:
+                # AfcException mis-annotates `status` as str; it accepts AfcError/None at runtime
                 raise AfcException(
-                    f"failed to clear crash reports under {path!r}, undeleted items: {undeleted_items}", None
+                    f"failed to clear crash reports under {path!r}, undeleted items: {undeleted_items}",
+                    None,
                 )
 
     async def ls(self, path: str = "/", depth: int = 1) -> list[str]:
@@ -121,7 +128,8 @@ class CrashReportsManager:
         :param path: Path to a crash report file.
         :return: Parsed crash report object.
         """
-        return get_crash_report_from_buf((await self.afc.get_file_contents(path)).decode(), filename=path)
+        contents = await self.afc.get_file_contents(path)
+        return get_crash_report_from_buf(contents.decode(), filename=path)
 
     async def parse_latest(
         self,
@@ -201,8 +209,10 @@ class CrashReportsManager:
             if erase:
                 await self.afc.rm_single(src, force=True)
 
-        match = None if match is None else re.compile(match)
-        await self.afc.pull(entry, out, match, callback=_callback, progress_bar=progress_bar, ignore_errors=True)
+        match_pattern = None if match is None else re.compile(match)
+        await self.afc.pull(
+            entry, out, match_pattern, callback=_callback, progress_bar=progress_bar, ignore_errors=True
+        )
 
     async def flush(self) -> None:
         """
@@ -215,7 +225,9 @@ class CrashReportsManager:
         service = await self.lockdown.start_lockdown_service(self.crash_mover_service_name)
         assert ack == await service.recvall(len(ack))
 
-    async def watch(self, name: Optional[str] = None, raw: bool = False) -> AsyncGenerator[str, None]:
+    async def watch(
+        self, name: Optional[str] = None, raw: bool = False
+    ) -> AsyncGenerator[Union[str, CrashReportBase], None]:
         """
         Continuously monitor the syslog and yield each newly created crash report.
 
@@ -245,7 +257,8 @@ class CrashReportsManager:
 
             while True:
                 try:
-                    crash_report_raw = (await self.afc.get_file_contents(filename)).decode()
+                    contents = await self.afc.get_file_contents(filename)
+                    crash_report_raw = contents.decode()
                     crash_report = get_crash_report_from_buf(crash_report_raw, filename=filename)
                     break
                 except (AfcFileNotFoundError, JSONDecodeError):
@@ -340,13 +353,22 @@ class CrashReportsManager:
                 raise SysdiagnoseTimeoutError("Timeout finding in-progress sysdiagnose filename")
             await asyncio.sleep(0.1)
 
+        # unreachable in practice (the loop only exits via return/raise); satisfies the declared return type
+        return sysdiagnose_filename
+
     def _check_timeout(self, end_time: Optional[float] = None) -> bool:
         return end_time is not None and time.monotonic() > end_time
 
 
 class CrashReportsShell(AfcShell):
     @classmethod
-    def create(cls, service_provider: LockdownServiceProvider, **kwargs):
+    def create(
+        cls,
+        service_provider: LockdownServiceProvider,
+        service_name: Optional[str] = None,
+        service: Optional[LockdownService] = None,
+        auto_cd: Optional[str] = "/",
+    ):
         manager = CrashReportsManager(service_provider)
         XSH.ctx["_manager"] = manager
         super(CrashReportsShell, CrashReportsShell).create(service_provider, service=manager.afc)
@@ -360,7 +382,7 @@ class CrashReportsShell(AfcShell):
     def _run_manager(self, awaitable):
         return self.afc._runner.run(awaitable)
 
-    def _do_parse(self, filename: Annotated[str, Arg(completer=path_completer)]) -> None:
+    def _do_parse(self, filename: Annotated[str, Arg(completer=_path_arg_completer)]) -> None:
         """
         Parse and print a crash report by filename.
 
@@ -370,7 +392,7 @@ class CrashReportsShell(AfcShell):
 
     def _do_parse_latest(
         self,
-        path: Annotated[str, Arg(nargs="?", completer=path_completer)] = "/",
+        path: Annotated[str, Arg(nargs="?", completer=_path_arg_completer)] = "/",
         match: Annotated[Optional[list[str]], Arg("--match", "-m", action="append")] = None,
         match_insensitive: Annotated[
             Optional[list[str]],
@@ -390,6 +412,6 @@ class CrashReportsShell(AfcShell):
         for report in latest_reports:
             print(report)
 
-    def _do_clear(self, path: Annotated[str, Arg(nargs="?", completer=path_completer)] = "/") -> None:
+    def _do_clear(self, path: Annotated[str, Arg(nargs="?", completer=_path_arg_completer)] = "/") -> None:
         """Clear crash reports from the device under a path."""
         self._run_manager(XSH.ctx["_manager"].clear(path))

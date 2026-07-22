@@ -32,4 +32,5 @@ async def test_logs_watching_time(lockdown: LockdownClient) -> None:
 
     async with SyslogService(lockdown) as syslog_service:
         second_log = await syslog_service.watch().__anext__()
+        assert isinstance(first_log, str) and isinstance(second_log, str)
         assert extract_log_time(first_log) < extract_log_time(second_log)

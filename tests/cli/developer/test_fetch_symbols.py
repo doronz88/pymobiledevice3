@@ -1,8 +1,10 @@
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from pymobiledevice3.cli.developer import fetch_symbols
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 
 
 @pytest.mark.asyncio
@@ -29,10 +31,13 @@ async def test_download_into_xcode_device_support_symbols_directory(monkeypatch,
     monkeypatch.setattr(fetch_symbols, "get_device_support_path", lambda *args: device_support_path)
     monkeypatch.setattr(fetch_symbols, "create_device_support_layout", create_device_support_layout)
 
-    service_provider = SimpleNamespace(
-        product_type="iPhone15,2",
-        product_version="16.0",
-        product_build_version="20A362",
+    service_provider = cast(
+        LockdownServiceProvider,
+        SimpleNamespace(
+            product_type="iPhone15,2",
+            product_version="16.0",
+            product_build_version="20A362",
+        ),
     )
 
     await fetch_symbols.fetch_symbols_download_task(service_provider)

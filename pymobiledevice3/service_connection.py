@@ -6,8 +6,7 @@ import socket
 import ssl
 import struct
 import time
-import xml
-from enum import Enum
+import xml.parsers.expat
 from typing import Any, Callable, Optional, Union
 
 from pygments import formatters, highlight, lexers
@@ -46,7 +45,7 @@ print(await client.recvall(20))
 """
 
 
-def build_plist(d: dict, endianity: str = ">", fmt: Enum = plistlib.FMT_XML) -> bytes:
+def build_plist(d: Union[dict, list], endianity: str = ">", fmt: plistlib.PlistFormat = plistlib.FMT_XML) -> bytes:
     """
     Convert a dictionary to a plist-formatted byte string prefixed with a length field.
 
@@ -107,21 +106,21 @@ class ServiceConnection:
         :param mux_device: The MuxDevice associated with the connection (optional).
         """
         self.logger = logging.getLogger(__name__)
-        self.socket = sock
+        self.socket: Optional[socket.socket] = sock
         self._offset = 0
 
         # usbmux connections contain additional information associated with the current connection
         self.mux_device = mux_device
 
         # Async stream reader and writer used for stream mode.
-        self.reader = None  # type: Optional[asyncio.StreamReader]
-        self.writer = None  # type: Optional[asyncio.StreamWriter]
+        self.reader: Optional[asyncio.StreamReader] = None
+        self.writer: Optional[asyncio.StreamWriter] = None
 
         # SSL/TLS version to be used for connecting to device
         # TLS v1.2 is supported since iOS 5
         self.min_ssl_proto = ssl.TLSVersion.TLSv1_2
         self.max_ssl_proto = ssl.TLSVersion.TLSv1_3
-        self.socket.setblocking(False)
+        sock.setblocking(False)
 
         # Shared Future used by _ensure_started() to avoid duplicate start() calls when
         # multiple coroutines race to use a not-yet-started connection simultaneously.
@@ -193,26 +192,31 @@ class ServiceConnection:
 
         :param blocking: If True, set the socket to blocking mode; otherwise, set it to non-blocking mode.
         """
+        if self.socket is None:
+            raise ConnectionTerminatedError()
         self.socket.setblocking(blocking)
 
-    async def _ensure_started(self) -> None:
-        if self.reader is not None and self.writer is not None:
-            return
-        if self._start_future is not None:
-            return await self._start_future
-        fut = asyncio.get_running_loop().create_future()
-        self._start_future = fut
-        try:
-            await self.start()
-            fut.set_result(None)
-        except BaseException as e:
-            self._start_future = None  # allow retry on next call
-            if isinstance(e, asyncio.CancelledError):
-                fut.cancel()
+    async def _ensure_started(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        if self.reader is None or self.writer is None:
+            if self._start_future is not None:
+                await self._start_future
             else:
-                fut.set_exception(e)
-                fut.exception()  # prevent "Future exception was never retrieved" warning
-            raise
+                fut = asyncio.get_running_loop().create_future()
+                self._start_future = fut
+                try:
+                    await self.start()
+                    fut.set_result(None)
+                except BaseException as e:
+                    self._start_future = None  # allow retry on next call
+                    if isinstance(e, asyncio.CancelledError):
+                        fut.cancel()
+                    else:
+                        fut.set_exception(e)
+                        fut.exception()  # prevent "Future exception was never retrieved" warning
+                    raise
+        if self.reader is None or self.writer is None:
+            raise ConnectionTerminatedError()
+        return self.reader, self.writer
 
     async def aclose(self) -> None:
         """Asynchronously close the connection."""
@@ -239,6 +243,8 @@ class ServiceConnection:
         :param length: The maximum amount of data to receive.
         :return: The received data.
         """
+        if self.socket is None:
+            raise ConnectionTerminatedError()
         try:
             return self.socket.recv(length)
         except (ssl.SSLError, BrokenPipeError) as e:
@@ -248,8 +254,8 @@ class ServiceConnection:
         """
         Asynchronously receive up to ``length`` bytes from the socket/stream.
         """
-        await self._ensure_started()
-        return await self.reader.read(length)
+        reader, _ = await self._ensure_started()
+        return await reader.read(length)
 
     def sendall_sync(self, data: bytes) -> None:
         """
@@ -258,6 +264,8 @@ class ServiceConnection:
         :param data: The data to send.
         :raises ConnectionTerminatedError: If the connection is terminated abruptly.
         """
+        if self.socket is None:
+            raise ConnectionTerminatedError()
         try:
             self.socket.sendall(data)
         except ssl.SSLEOFError as e:
@@ -279,7 +287,9 @@ class ServiceConnection:
             await self.sendall(data)
             return await self.recv_prefixed(endianity=endianity)
 
-    async def send_recv_plist(self, data: dict, endianity: str = ">", fmt: Enum = plistlib.FMT_XML) -> Any:
+    async def send_recv_plist(
+        self, data: dict, endianity: str = ">", fmt: plistlib.PlistFormat = plistlib.FMT_XML
+    ) -> Any:
         """
         Asynchronously send a plist to the socket and receive a plist response.
 
@@ -335,9 +345,9 @@ class ServiceConnection:
         :param size: The amount of data to receive.
         :return: The received data.
         """
-        await self._ensure_started()
+        reader, _ = await self._ensure_started()
         try:
-            return await self.reader.readexactly(size)
+            return await reader.readexactly(size)
         except asyncio.IncompleteReadError as e:
             raise ConnectionTerminatedError() from e
 
@@ -388,14 +398,16 @@ class ServiceConnection:
 
         :param payload: The data to send.
         """
-        await self._ensure_started()
+        _, writer = await self._ensure_started()
         try:
-            self.writer.write(payload)
-            await self.writer.drain()
+            writer.write(payload)
+            await writer.drain()
         except ssl.SSLEOFError as e:
             raise ConnectionTerminatedError from e
 
-    async def send_plist(self, d: Union[dict, list], endianity: str = ">", fmt: Enum = plistlib.FMT_XML) -> None:
+    async def send_plist(
+        self, d: Union[dict, list], endianity: str = ">", fmt: plistlib.PlistFormat = plistlib.FMT_XML
+    ) -> None:
         """
         Asynchronously send a dictionary as a plist to the socket.
 
@@ -433,6 +445,8 @@ class ServiceConnection:
         :param certfile: The path to the certificate file.
         :param keyfile: The path to the key file (optional).
         """
+        if self.socket is None:
+            raise ConnectionTerminatedError()
         try:
             self.socket.settimeout(DEFAULT_SSL_HANDSHAKE_TIMEOUT)
             self.socket = self.create_ssl_context(certfile, keyfile=keyfile).wrap_socket(self.socket)
@@ -463,10 +477,10 @@ class ServiceConnection:
                 # Socket already registered with the event loop — upgrade in-place.
                 # Python 3.11+ provides StreamWriter.start_tls(); older versions
                 # need loop.start_tls() and a new StreamWriter bound to the TLS transport.
-                await self._ensure_started()
-                if hasattr(self.writer, "start_tls"):
+                _, writer = await self._ensure_started()
+                if hasattr(writer, "start_tls"):
                     await asyncio.wait_for(
-                        self.writer.start_tls(
+                        writer.start_tls(  # type: ignore[attr-defined]
                             sslcontext=ssl_context,
                             server_hostname="",
                             ssl_handshake_timeout=DEFAULT_SSL_HANDSHAKE_TIMEOUT,
@@ -475,10 +489,10 @@ class ServiceConnection:
                     )
                 else:
                     loop = asyncio.get_running_loop()
-                    protocol = self.writer._protocol  # type: ignore[attr-defined]
+                    protocol = writer._protocol  # type: ignore[attr-defined]
                     tls_transport = await asyncio.wait_for(
                         loop.start_tls(
-                            self.writer.transport,
+                            writer.transport,
                             protocol,
                             ssl_context,
                             server_side=False,
@@ -487,6 +501,8 @@ class ServiceConnection:
                         ),
                         timeout=DEFAULT_SSL_HANDSHAKE_TIMEOUT,
                     )
+                    if tls_transport is None:
+                        raise ConnectionTerminatedError()
                     self.writer = asyncio.StreamWriter(tls_transport, protocol, self.reader, loop)
         except OSError as e:
             raise ConnectionTerminatedError() from e

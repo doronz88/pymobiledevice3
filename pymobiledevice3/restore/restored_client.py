@@ -77,7 +77,7 @@ class RestoredClient:
         return await self.service.send_recv_plist(req)
 
     async def start_restore(self, opts: Optional[RestoreOptions] = None) -> None:
-        req = {"Request": "StartRestore", "Label": self.label, "RestoreProtocolVersion": self.version}
+        req: dict[str, Any] = {"Request": "StartRestore", "Label": self.label, "RestoreProtocolVersion": self.version}
 
         if opts is not None:
             req["RestoreOptions"] = opts.to_dict()

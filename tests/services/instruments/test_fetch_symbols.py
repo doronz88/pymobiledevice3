@@ -47,6 +47,7 @@ async def test_fetch_symbols_download(service_provider: LockdownServiceProvider,
             assert len(files) > 0
             # Receive just the first chunk of the first file to confirm data transfer works.
             received = 0
+            assert fetch_symbols.service is not None
             async for chunk in fetch_symbols.service.iter_file_chunks(files[0].file_size, file_idx=0):
                 received += len(chunk)
                 break

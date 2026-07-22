@@ -55,6 +55,7 @@ async def usbmux_forward(
     ] = False,
 ) -> None:
     """Forward a local TCP port to the device via usbmuxd."""
+    # UsbmuxTcpForwarder's serial is annotated str, but None is supported (selects the only device)
     forwarder = UsbmuxTcpForwarder(serial, dst_port, src_port, usbmux_address=usbmux_address)
 
     if daemonize:

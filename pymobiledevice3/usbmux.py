@@ -6,7 +6,7 @@ import socket
 import struct
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, NoReturn, Optional, Union
 
 from construct import (
     Const,
@@ -259,7 +259,7 @@ class MuxConnection:
     async def receive_device_state_update(self):
         pass
 
-    def _raise_mux_exception(self, result: int, message: Optional[str] = None) -> None:
+    def _raise_mux_exception(self, result: int, message: Optional[str] = None) -> NoReturn:
         exceptions = {
             int(usbmuxd_result.BADCOMMAND): BadCommandError,
             int(usbmuxd_result.BADDEV): BadDevError,
@@ -308,7 +308,7 @@ class BinaryMuxConnection(MuxConnection):
         if response.header.message != usbmuxd_msgtype.RESULT:
             raise MuxException(f"unexpected message type received: {response}")
         if response.data.result != usbmuxd_result.OK:
-            raise self._raise_mux_exception(
+            self._raise_mux_exception(
                 int(response.data.result),
                 f"failed to connect to device: {device_id} at port: {port}. reason: {response.data.result}",
             )
@@ -318,7 +318,7 @@ class BinaryMuxConnection(MuxConnection):
         await asyncio.get_running_loop().sock_sendall(self._sock, usbmuxd_request.build(data))
         self._tag += 1
 
-    async def _receive(self, expected_tag: Optional[int] = None):
+    async def _receive(self, expected_tag: Optional[int] = None) -> Any:
         self._assert_not_connected()
         response = usbmuxd_response.parse(await self._recv_packet(self._sock))
         if expected_tag and response.header.tag != expected_tag:
@@ -337,14 +337,14 @@ class BinaryMuxConnection(MuxConnection):
         else:
             raise MuxException(f"Invalid packet type received: {response}")
 
-    async def _send_receive(self, message_type: int):
+    async def _send_receive(self, message_type: Union[int, str]):
         await self._send({"header": {"version": self._version, "message": message_type, "tag": self._tag}, "data": b""})
         response = await self._receive(self._tag - 1)
         if response.header.message != usbmuxd_msgtype.RESULT:
             raise MuxException(f"unexpected message type received: {response}")
         result = response.data.result
         if result != usbmuxd_result.OK:
-            raise self._raise_mux_exception(int(result), f"{message_type} failed: error {result}")
+            self._raise_mux_exception(int(result), f"{message_type} failed: error {result}")
 
     def _add_device(self, device: MuxDevice):
         self.devices.append(device)
@@ -429,13 +429,15 @@ class PlistMuxConnection(BinaryMuxConnection):
         response = await self._receive()
         self._process_device_state(response)
 
-    async def _send_receive(self, data: dict):
+    # The plist protocol sends a whole message dict, unlike the binary base which takes an int/str
+    # message type. This is an intentional protocol divergence between the two connection subclasses.
+    async def _send_receive(self, data: dict):  # pyright: ignore[reportIncompatibleMethodOverride]
         await self._send(data)
         response = await self._receive(self._tag - 1)
         if response["MessageType"] != "Result":
             raise MuxException(f"got an invalid message: {response}")
         if response["Number"] != 0:
-            raise self._raise_mux_exception(response["Number"], f"got an error message: {response}")
+            self._raise_mux_exception(response["Number"], f"got an error message: {response}")
 
 
 async def create_mux(usbmux_address: Optional[str] = None) -> MuxConnection:

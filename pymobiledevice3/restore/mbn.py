@@ -213,7 +213,7 @@ def _read_program_headers(data: bytes, kind: str, hdr) -> list:
 
 def _elf_last_segment_end(data: bytes) -> Optional[int]:
     kind, hdr = _read_elf_headers(data)
-    if not hdr:
+    if kind is None or not hdr:
         return None
     phdrs = _read_program_headers(data, kind, hdr)
     if not phdrs:
@@ -410,7 +410,7 @@ def mbn_mav25_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
     data_size, blob_size = len(data), len(blob)
 
     kind, ehdr = _read_elf_headers(data)
-    if not ehdr:
+    if kind is None or not ehdr:
         logger.error("%s: data is not a valid ELF", "mbn_mav25_stitch")
         return None
 

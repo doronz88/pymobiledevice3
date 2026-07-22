@@ -1,7 +1,7 @@
 import plistlib
 import pprint
-import xml
-from typing import IO, Optional, TextIO
+import xml.parsers.expat
+from typing import Optional, TextIO
 
 import click
 from scapy.packet import Packet, Raw
@@ -51,7 +51,7 @@ def cli():
 @cli.command()
 @click.argument("pcap", type=click.Path(exists=True, file_okay=True, dir_okay=False))
 @click.option("-o", "--out", type=click.File("wt"))
-def offline(pcap: str, out: IO):
+def offline(pcap: str, out: Optional[TextIO]):
     """Parse plists traffic from a .pcap file"""
     sniffer = PcapSniffer(out)
     for p in sniff(offline=pcap):
@@ -61,7 +61,7 @@ def offline(pcap: str, out: IO):
 @cli.command()
 @click.argument("iface")
 @click.option("-o", "--out", type=click.File("wt"))
-def live(iface: str, out: IO):
+def live(iface: str, out: Optional[TextIO]):
     """Parse plists live from a given network interface"""
     sniffer = PcapSniffer(out)
     sniff(iface=iface, prn=sniffer.process_packet)

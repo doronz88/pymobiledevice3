@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7SignatureBuilder
 
@@ -67,10 +68,12 @@ class MobileConfigService(LockdownService):
         :param keybag_file: path to a PEM file containing both the supervisor certificate
             and its (unencrypted) private key.
         """
-        with open(keybag_file, "rb") as keybag_file:
-            keybag_file = keybag_file.read()
-        private_key = serialization.load_pem_private_key(keybag_file, password=None)
-        cer = x509.load_pem_x509_certificate(keybag_file)
+        with open(keybag_file, "rb") as f:
+            keybag_data = f.read()
+        private_key = serialization.load_pem_private_key(keybag_data, password=None)
+        if not isinstance(private_key, (rsa.RSAPrivateKey, ec.EllipticCurvePrivateKey)):
+            raise ProfileError(f"unsupported supervision private key type: {type(private_key).__name__}")
+        cer = x509.load_pem_x509_certificate(keybag_data)
         public_key = cer.public_bytes(Encoding.DER)
         escalate_response = await self._send_recv({"RequestType": "Escalate", "SupervisorCertificate": public_key})
         signed_challenge = (
@@ -100,7 +103,7 @@ class MobileConfigService(LockdownService):
         """
         await self._send_recv({"RequestType": "StoreProfile", "ProfileData": profile_data, "Purpose": purpose.value})
 
-    async def get_cloud_configuration(self) -> dict:
+    async def get_cloud_configuration(self) -> Optional[dict]:
         """
         Retrieve the device's cloud (supervision) configuration.
 

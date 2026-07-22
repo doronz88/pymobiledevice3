@@ -111,12 +111,13 @@ async def lockdown() -> AsyncGenerator[UsbmuxLockdownClient, Any]:
     """
     Creates a new lockdown client for each test.
     """
-    async with await _create_usbmux_client() as client:
+    client = await _create_usbmux_client()
+    async with client:
         yield client
 
 
 @pytest_asyncio.fixture(scope="function")
-async def xcuitest_service(service_provider) -> AsyncGenerator[XCUITestService, Any]:
+async def xcuitest_service(service_provider) -> XCUITestService:
     """
     Creates a new XCUITestService client for each test.
     """

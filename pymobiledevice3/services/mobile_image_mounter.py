@@ -2,7 +2,7 @@ import hashlib
 import logging
 import plistlib
 from pathlib import Path
-from typing import Optional
+from typing import ClassVar, Optional
 
 from developer_disk_image.repo import DeveloperDiskImageRepository
 from packaging.version import Version
@@ -46,7 +46,7 @@ class MobileImageMounterService(LockdownService):
     # implemented in /usr/libexec/mobile_storage_proxy
     SERVICE_NAME = "com.apple.mobile.mobile_image_mounter"
     RSD_SERVICE_NAME = "com.apple.mobile.mobile_image_mounter.shim.remote"
-    IMAGE_TYPE: Optional[str] = None
+    IMAGE_TYPE: ClassVar[Optional[str]] = None
 
     def __init__(self, lockdown: LockdownServiceProvider):
         if isinstance(lockdown, LockdownClient):
@@ -64,6 +64,7 @@ class MobileImageMounterService(LockdownService):
         :raises AlreadyMountedError: If an image of this type is already mounted.
         :raises DeveloperModeIsNotEnabledError: On iOS 16 and later when Developer Mode is disabled.
         """
+        assert self.IMAGE_TYPE is not None
         if await self.is_image_mounted(self.IMAGE_TYPE):
             raise AlreadyMountedError()
         if Version(self.lockdown.product_version).major >= 16 and not await self.lockdown.get_developer_mode_status():
@@ -305,7 +306,9 @@ class MobileImageMounterService(LockdownService):
 class DeveloperDiskImageMounter(MobileImageMounterService):
     """Mounter for the classic (pre-iOS 17) ``Developer`` Disk Image."""
 
-    IMAGE_TYPE = "Developer"
+    # Base declares IMAGE_TYPE as an unset Optional[str] sentinel; concrete mounters
+    # fix it to a required non-None value. Safe narrowing that the invariance rule over-flags.
+    IMAGE_TYPE: ClassVar[str] = "Developer"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     async def mount(self, image: Path, signature: Path) -> None:
         """
@@ -318,10 +321,10 @@ class DeveloperDiskImageMounter(MobileImageMounterService):
         """
         await self.raise_if_cannot_mount()
 
-        image = Path(image).read_bytes()
-        signature = Path(signature).read_bytes()
-        await self.upload_image(self.IMAGE_TYPE, image, signature)
-        await self.mount_image(self.IMAGE_TYPE, signature)
+        image_bytes = Path(image).read_bytes()
+        signature_bytes = Path(signature).read_bytes()
+        await self.upload_image(self.IMAGE_TYPE, image_bytes, signature_bytes)
+        await self.mount_image(self.IMAGE_TYPE, signature_bytes)
 
     async def umount(self) -> None:
         """Unmount the Developer Disk Image (mounted at ``/Developer``)."""
@@ -331,7 +334,7 @@ class DeveloperDiskImageMounter(MobileImageMounterService):
 class PersonalizedImageMounter(MobileImageMounterService):
     """Mounter for the ``Personalized`` Developer Disk Image used on iOS 17 and later."""
 
-    IMAGE_TYPE = "Personalized"
+    IMAGE_TYPE: ClassVar[str] = "Personalized"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     async def mount(
         self, image: Path, build_manifest: Path, trust_cache: Path, info_plist: Optional[dict] = None
@@ -351,24 +354,26 @@ class PersonalizedImageMounter(MobileImageMounterService):
         """
         await self.raise_if_cannot_mount()
 
-        image = image.read_bytes()
-        trust_cache = trust_cache.read_bytes()
+        image_bytes = image.read_bytes()
+        trust_cache_bytes = trust_cache.read_bytes()
 
         # try to fetch the personalization manifest if the device already has one
         # in case of failure, the service will close the socket, so we'll have to reestablish the connection
         # and query the manifest from Apple's ticket server instead
         try:
-            manifest = await self.query_personalization_manifest("DeveloperDiskImage", hashlib.sha384(image).digest())
+            manifest = await self.query_personalization_manifest(
+                "DeveloperDiskImage", hashlib.sha384(image_bytes).digest()
+            )
         except MissingManifestError:
             self._service = await self.lockdown.start_lockdown_service(self.service_name)
             manifest = await self.get_manifest_from_tss(plistlib.loads(build_manifest.read_bytes()))
 
-        await self.upload_image(self.IMAGE_TYPE, image, manifest)
+        await self.upload_image(self.IMAGE_TYPE, image_bytes, manifest)
 
         extras = {}
         if info_plist is not None:
             extras["ImageInfoPlist"] = info_plist
-        extras["ImageTrustCache"] = trust_cache
+        extras["ImageTrustCache"] = trust_cache_bytes
         await self.mount_image(self.IMAGE_TYPE, manifest, extras=extras)
 
     async def umount(self) -> None:
@@ -481,18 +486,19 @@ async def auto_mount_developer(
     """
     if xcode is None:
         # avoid "default"-ing this option, because Windows and Linux won't have this path
-        xcode = Path("/Applications/Xcode.app")
-        if not (xcode.exists()):
-            xcode = get_home_folder() / "Xcode.app"
-            xcode.mkdir(parents=True, exist_ok=True)
+        xcode_path = Path("/Applications/Xcode.app")
+        if not (xcode_path.exists()):
+            xcode_path = get_home_folder() / "Xcode.app"
+            xcode_path.mkdir(parents=True, exist_ok=True)
+        xcode = str(xcode_path)
 
     image_mounter = DeveloperDiskImageMounter(lockdown=lockdown)
     if await image_mounter.is_image_mounted("Developer"):
         raise AlreadyMountedError()
 
     if version is None:
-        version = Version(lockdown.product_version)
-        version = f"{version.major}.{version.minor}"
+        product_version = Version(lockdown.product_version)
+        version = f"{product_version.major}.{product_version.minor}"
     image_dir = f"{xcode}/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport/{version}"
     image_path = f"{image_dir}/DeveloperDiskImage.dmg"
     signature = f"{image_path}.signature"

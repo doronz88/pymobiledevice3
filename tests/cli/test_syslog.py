@@ -2,11 +2,13 @@ import json
 import re
 from datetime import datetime
 from io import StringIO
+from typing import cast
 from uuid import UUID
 
 import pytest
 
 from pymobiledevice3.cli import syslog as syslog_module
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.os_trace import (
     OS_TRACE_RELAY_STREAM_FLAGS_DEFAULT,
     OsActivityStreamFlag,
@@ -17,7 +19,7 @@ from pymobiledevice3.services.os_trace import (
 
 pytestmark = [pytest.mark.cli]
 
-_FAKE_SERVICE_PROVIDER = object()
+_FAKE_SERVICE_PROVIDER = cast(LockdownServiceProvider, object())
 
 
 class _FakeOsTraceService:

@@ -2,7 +2,7 @@ import asyncio
 import traceback
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union, overload
 
 import IPython
 import requests
@@ -35,7 +35,30 @@ def bytes_to_uint(b: bytes):
     return Select(u64=Int64ul, u32=Int32ul, u16=Int16ul, u8=Int8ul).parse(b)
 
 
-def try_decode(s: bytes):
+def current_task_name(default: str = "?") -> str:
+    """Name of the running asyncio task, for log messages. ``asyncio.current_task()`` is typed
+    Optional (it is ``None`` outside a running task), so this returns ``default`` in that case."""
+    task = asyncio.current_task()
+    return task.get_name() if task is not None else default
+
+
+@overload
+def try_decode(s: bytes) -> Union[str, bytes]: ...
+
+
+@overload
+def try_decode(s: bytes, *, errors: str) -> str: ...
+
+
+def try_decode(s: bytes, *, errors: Optional[str] = None) -> Union[str, bytes]:
+    """Decode UTF-8 bytes to str, falling back to the raw bytes on failure.
+
+    :param errors: when given (e.g. ``"replace"``), the caller asserts the input is text: decode with
+        that error policy and always return ``str`` (no bytes fallback). Omit it for the default
+        best-effort behaviour that returns the raw bytes when decoding fails.
+    """
+    if errors is not None:
+        return s.decode("utf8", errors=errors)
     try:
         return s.decode("utf8")
     except UnicodeDecodeError:
@@ -75,7 +98,8 @@ def start_ipython_shell(*, user_ns: Optional[dict[str, Any]] = None, header: Opt
     config.InteractiveShell.loop_runner = run_in_loop
     if header is not None:
         print(header)
-    IPython.start_ipython(argv=[], config=config, user_ns=user_ns or {})
+    # IPython exposes start_ipython lazily via module-level __getattr__, which pyright cannot see.
+    IPython.start_ipython(argv=[], config=config, user_ns=user_ns or {})  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def file_download(url: str, outfile: Path, chunk_size=1024) -> None:

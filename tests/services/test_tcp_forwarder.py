@@ -24,6 +24,7 @@ async def attempt_local_connection(port: int) -> None:
 @pytest.mark.asyncio
 async def test_tcp_forwarder_bad_port(lockdown: LockdownClient, dst_port: int) -> None:
     # start forwarder
+    assert lockdown.udid is not None
     forwarder = UsbmuxTcpForwarder(lockdown.udid, dst_port, FREE_PORT)
     task = asyncio.create_task(forwarder.start())
 

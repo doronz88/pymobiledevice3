@@ -15,9 +15,9 @@ from typer_injector import InjectingTyper
 
 import pymobiledevice3.resources
 from pymobiledevice3.cli.cli_common import (
-    BASED_INT,
     ServiceProviderDep,
     async_command,
+    based_int,
     default_json_encoder,
     print_json,
     user_requested_colored_output,
@@ -49,7 +49,7 @@ ClassFilter = Annotated[
     typer.Option(
         "--class-filters",
         "-cf",
-        click_type=BASED_INT,
+        parser=based_int,
         default_factory=list,
         show_default=False,
         help="Events class filter. Omit for all. Can be specified multiple times.",
@@ -60,7 +60,7 @@ SubclassFilter = Annotated[
     typer.Option(
         "--subclass-filters",
         "-sf",
-        click_type=BASED_INT,
+        parser=based_int,
         default_factory=list,
         show_default=False,
         help="Events subclass filter. Omit for all. Can be specified multiple times.",
@@ -173,7 +173,9 @@ async def live_profile_session(
         subclass_filters.append(BSC_SUBCLASS)
     parser.filter_subclass = subclass_filters
     filters = parse_filters(subclass_filters, class_filters)
-    parser.filter_tid = tid
+    # PyKdebugParser initializes its filter attributes to None without annotations,
+    # so pyright infers their type as None
+    parser.filter_tid = tid  # pyright: ignore[reportAttributeAccessIssue]
     parser.show_timestamp = timestamp
     parser.show_name = event_name
     parser.show_func_qual = func_qual
@@ -194,7 +196,10 @@ async def live_profile_session(
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
             def _print_events() -> None:
-                for i, event in enumerate(parser.formatted_kevents(stream, trace_codes_map)):
+                # KdBufStream is a duck-typed stream; pykdebugparser annotates the parameter as io.IOBase
+                for i, event in enumerate(
+                    parser.formatted_kevents(stream, trace_codes_map)  # pyright: ignore[reportArgumentType]
+                ):
                     print(event)
                     if i == count:
                         break
@@ -258,6 +263,10 @@ async def stackshot(
             except ExtractingStackshotError as e:
                 logger.error(f"Extracting stackshot failed: {e}")
                 return
+        else:
+            # All retries were exhausted without capturing a stackshot; the loop
+            # only reaches here if every attempt failed non-fatally.
+            return
 
         if out is not None:
             out.write_text(json.dumps(data, indent=4, default=default_json_encoder))
@@ -303,8 +312,10 @@ async def parse_live_profile_session(
         parser.mach_absolute_time = time_config["mach_absolute_time"]
         parser.usecs_since_epoch = time_config["usecs_since_epoch"]
         parser.timezone = time_config["timezone"]
-        parser.filter_tid = tid
-        parser.filter_process = process
+        # PyKdebugParser initializes its filter attributes to None without annotations,
+        # so pyright infers their type as None
+        parser.filter_tid = tid  # pyright: ignore[reportAttributeAccessIssue]
+        parser.filter_process = process  # pyright: ignore[reportAttributeAccessIssue]
         parser.show_tid = show_tid
         enable_color = user_requested_colored_output()
         parser.color = enable_color and color_mode == TraceColorMode.RICH
@@ -320,7 +331,8 @@ async def parse_live_profile_session(
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
             def _print_traces() -> None:
-                for trace in islice(parser.formatted_traces(stream), count):
+                # KdBufStream is a duck-typed stream; pykdebugparser annotates the parameter as io.IOBase
+                for trace in islice(parser.formatted_traces(stream), count):  # pyright: ignore[reportArgumentType]
                     if enable_color and color_mode == TraceColorMode.FAST:
                         trace = _colorize_parse_live_trace(trace, show_tid=show_tid)
                     print(trace, flush=True)
@@ -374,8 +386,10 @@ async def callstacks_live_profile_session(
         parser.mach_absolute_time = time_config["mach_absolute_time"]
         parser.usecs_since_epoch = time_config["usecs_since_epoch"]
         parser.timezone = time_config["timezone"]
-        parser.filter_tid = tid
-        parser.filter_process = process
+        # PyKdebugParser initializes its filter attributes to None without annotations,
+        # so pyright infers their type as None
+        parser.filter_tid = tid  # pyright: ignore[reportAttributeAccessIssue]
+        parser.filter_process = process  # pyright: ignore[reportAttributeAccessIssue]
         parser.color = user_requested_colored_output()
         parser.show_tid = show_tid
 
@@ -389,7 +403,8 @@ async def callstacks_live_profile_session(
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
             def _print_callstacks() -> None:
-                for callstack in islice(parser.formatted_callstacks(stream), count):
+                # KdBufStream is a duck-typed stream; pykdebugparser annotates the parameter as io.IOBase
+                for callstack in islice(parser.formatted_callstacks(stream), count):  # pyright: ignore[reportArgumentType]
                     print(format_callstack(callstack, dsc_uuid_map, current_dsc_map))
 
             try:

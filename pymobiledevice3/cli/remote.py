@@ -223,6 +223,7 @@ async def start_tunnel_task(
         connection_type.USB: get_core_device_tunnel_services,
         connection_type.WIFI: get_remote_pairing_tunnel_services,
     }
+    tunnel_services = []
     for attempt in range(TUNNEL_SERVICE_DISCOVERY_ATTEMPTS):
         tunnel_services = await get_tunnel_services[connection_type](udid=udid)
         if tunnel_services:

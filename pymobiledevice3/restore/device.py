@@ -56,6 +56,7 @@ class Device:
         if self.lockdown is not None:
             self._ecid = self.lockdown.ecid
         else:
+            assert self.irecv is not None
             self._ecid = self.irecv.ecid
         return self._ecid
 
@@ -68,7 +69,9 @@ class Device:
         if self.lockdown is not None:
             self._hardware_model = self.lockdown.all_values["HardwareModel"].lower()
         else:
+            assert self.irecv is not None
             self._hardware_model = self.irecv.hardware_model
+        assert self._hardware_model is not None
         return self._hardware_model
 
     async def get_is_image4_supported(self) -> bool:
@@ -77,6 +80,7 @@ class Device:
         if self.lockdown is not None:
             self._is_image4_supported = bool(await self.lockdown.get_value("", "Image4Supported"))
         else:
+            assert self.irecv is not None
             self._is_image4_supported = bool(self.irecv.is_image4_supported)
 
         return self._is_image4_supported
@@ -91,6 +95,7 @@ class Device:
             except MissingValueError:
                 pass
             else:
+                assert self._ap_parameters is not None
                 return self._ap_parameters
         self._ap_parameters = {}
         return self._ap_parameters
@@ -106,6 +111,7 @@ class Device:
                 return self._ap_nonce
             self._ap_nonce = await self.lockdown.get_value("", "ApNonce")
         else:
+            assert self.irecv is not None
             self._ap_nonce = self.irecv.ap_nonce
         self._ap_nonce_loaded = True
         return self._ap_nonce
@@ -121,6 +127,7 @@ class Device:
                 return self._sep_nonce
             self._sep_nonce = await self.lockdown.get_value("", "SEPNonce")
         else:
+            assert self.irecv is not None
             self._sep_nonce = self.irecv.sep_nonce
         self._sep_nonce_loaded = True
         return self._sep_nonce
@@ -189,5 +196,7 @@ class Device:
         if self.lockdown is not None:
             self._product_type = self.lockdown.product_type
         else:
+            assert self.irecv is not None
             self._product_type = self.irecv.product_type
+        assert self._product_type is not None
         return self._product_type

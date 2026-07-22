@@ -17,7 +17,7 @@ from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, ServiceProviderDep, async_command, print_json
 from pymobiledevice3.exceptions import RoutableTunnelRequiredError, RSDRequiredError
-from pymobiledevice3.lockdown import create_using_usbmux
+from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
@@ -83,7 +83,8 @@ async def debugserver_start_server(
         await LockdownTcpForwarder(service_provider, local_port, service_name).start(address=host)
     elif Version(service_provider.product_version) >= Version("17.0"):
         if not isinstance(service_provider, RemoteServiceDiscoveryService):
-            raise RSDRequiredError(service_provider.identifier)
+            assert isinstance(service_provider, LockdownClient)  # non-RSD providers are lockdown clients
+            raise RSDRequiredError(service_provider.identifier or "")
         if service_provider.is_in_process_tunnel:
             raise RoutableTunnelRequiredError(
                 "Cannot print a remote LLDB connect address over a userspace tunnel: the device "
@@ -207,6 +208,7 @@ async def debugserver_lldb(
         bundle_identifier = info_plist["CFBundleIdentifier"]
 
     logger.info(f"Bundle identifier: {bundle_identifier}")
+    assert bundle_identifier is not None  # every non-returning branch above assigns it
 
     commands.append("platform select remote-ios")
 

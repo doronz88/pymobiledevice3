@@ -39,4 +39,6 @@ class DvtProvider(DtxServiceProvider):
             of opening a new one (shares a single transport across callers).
         """
         super().__init__(lockdown, strip_ssl, dtx)
+        # the base provider always initializes sent_capabilities to a dict
+        assert self.sent_capabilities is not None
         self.sent_capabilities["com.apple.instruments.client.processcontrol.capability.terminationCallback"] = 1

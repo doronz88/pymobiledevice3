@@ -82,7 +82,8 @@ class AmfiService:
         except (ConnectionTerminatedError, BrokenPipeError, IncompleteReadError):
             self._logger.debug("device disconnected, awaiting reconnect")
 
-        self._lockdown = await retry_create_using_usbmux(None, serial=self._lockdown.udid)
+        lockdown = await retry_create_using_usbmux(None, serial=self._lockdown.udid)
+        self._lockdown = lockdown
         await self.enable_developer_mode_post_restart()
 
     async def enable_developer_mode_post_restart(self):

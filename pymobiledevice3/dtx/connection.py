@@ -23,7 +23,7 @@ import asyncio
 import logging
 import socket as _socket
 from contextlib import suppress
-from typing import Any, Callable, ClassVar, Optional, overload
+from typing import Any, Callable, ClassVar, Optional, Union, cast, overload
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 from pymobiledevice3.service_connection import close_stream_writer
@@ -36,6 +36,7 @@ from .exceptions import DTXProtocolError
 from .fragmenter import DTXFragmenter
 from .message import DTXMessage
 from .ns_types import NSError
+from .primitives import PInt32
 from .service import DTX_SERVICE_T, DTXControlService, DTXDynamicService, DTXProxyService, DTXService
 
 
@@ -241,15 +242,17 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
     # ------------------------------------------------------------------
 
     @overload
-    async def open_channel(self, identifier: str) -> DTXService: ...
+    async def open_channel(self, identifier: str, /) -> DTXService: ...
 
     @overload
-    async def open_channel(self, cls: type[DTX_SERVICE_T]) -> DTX_SERVICE_T: ...
+    async def open_channel(self, cls: type[DTX_SERVICE_T], /) -> DTX_SERVICE_T: ...
 
     @overload
-    async def open_channel(self, identifier: str, cls: type[DTX_SERVICE_T]) -> DTX_SERVICE_T: ...
+    async def open_channel(self, identifier: str, cls: type[DTX_SERVICE_T], /) -> DTX_SERVICE_T: ...
 
-    async def open_channel(self, identifier_or_cls: str, cls: Optional[type[DTXService]] = None) -> DTXService:
+    async def open_channel(
+        self, identifier_or_cls: Union[str, type[DTXService]], cls: Optional[type[DTXService]] = None
+    ) -> DTXService:
         """Open a named service channel and return the bound :class:`DTXService`.
 
         Looks up *identifier* in the per-connection service class registry.
@@ -268,12 +271,13 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
             svc = await conn.open_channel(DeviceInfoService.IDENTIFIER)
             result = await svc.invoke("runningProcesses")
         """
-        identifier: str = identifier_or_cls
         if isinstance(identifier_or_cls, type):
             if cls is not None:
                 raise ValueError(f"Cannot specify two types: {identifier_or_cls} and {cls}")
             cls = identifier_or_cls
-            identifier: str = cls.IDENTIFIER
+            identifier = cls.IDENTIFIER or ""
+        else:
+            identifier = identifier_or_cls
 
         if not identifier:
             raise ValueError("Identifier cannot be empty")
@@ -289,7 +293,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
                 s = self._instantiate_service(identifier, channel, remote=False)
 
         try:
-            await self._control_svc.request_channel(code, identifier)
+            await self._control_svc.request_channel(PInt32(code), identifier)
         except Exception:
             async with self._channel_lock:
                 self._channels.pop(code, None)
@@ -313,7 +317,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
             ch = self._channels.pop(channel.code, None)
             if ch:
                 ch._shutdown("channel cancelled")
-        await self._control_svc.cancel_channel(channel.code)
+        await self._control_svc.cancel_channel(PInt32(channel.code))
 
     def register_service(self, cls: type[DTXService]) -> None:
         """Register a :class:`DTXService` subclass for *cls.IDENTIFIER*.
@@ -345,7 +349,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
 
     async def wait_for_service(
         self,
-        predicate: type[DTX_SERVICE_T] | Callable[[DTXService], bool],
+        predicate: Union[type[DTX_SERVICE_T], Callable[[DTXService], bool]],
         *,
         timeout: Optional[float] = None,
     ) -> DTX_SERVICE_T:
@@ -369,8 +373,11 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         if isinstance(predicate, type):
             _cls = predicate
 
-            def predicate(svc: DTXService) -> bool:
+            def _predicate(svc: DTXService, /) -> bool:
                 return isinstance(svc, _cls)
+
+        else:
+            _predicate = predicate
 
         async def _find() -> DTXService:
             async with self._service_condition:
@@ -378,15 +385,15 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
                     if self._closed:
                         raise ConnectionTerminatedError("Connection closed while waiting for service")
                     for svc in self._services.values():
-                        if predicate(svc):
+                        if _predicate(svc):
                             return svc
                     await self._service_condition.wait()
 
-        return await asyncio.wait_for(_find(), timeout=timeout)
+        return cast(DTX_SERVICE_T, await asyncio.wait_for(_find(), timeout=timeout))
 
     async def wait_for_proxied_service(
         self,
-        predicate: type[DTX_SERVICE_T] | Callable[[DTXService], bool],
+        predicate: Union[type[DTX_SERVICE_T], Callable[[DTXService], bool]],
         *,
         remote: bool,
         timeout: Optional[float] = None,
@@ -409,8 +416,11 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         if isinstance(predicate, type):
             _cls = predicate
 
-            def predicate(svc: DTXService) -> bool:
+            def _predicate(svc: DTXService, /) -> bool:
                 return isinstance(svc, _cls)
+
+        else:
+            _predicate = predicate
 
         async def _find() -> DTXService:
             async with self._service_condition:
@@ -420,11 +430,11 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
                     for svc in self._services.values():
                         if isinstance(svc, DTXProxyService):
                             candidate = svc.remote_service if remote else svc.local_service
-                            if predicate(candidate):
+                            if _predicate(candidate):
                                 return candidate
                     await self._service_condition.wait()
 
-        return await asyncio.wait_for(_find(), timeout=timeout)
+        return cast(DTX_SERVICE_T, await asyncio.wait_for(_find(), timeout=timeout))
 
     # ------------------------------------------------------------------
     # Internal channel callbacks (called by DTXControlService)

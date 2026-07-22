@@ -205,23 +205,23 @@ def parse_syslog_entry(data: bytes) -> SyslogEntry:
 
     # Parse filename (null-terminated)
     filename_end = data.find(b"\x00", offset)
-    filename = try_decode(data[offset:filename_end])
+    filename = try_decode(data[offset:filename_end], errors="replace")
     offset = filename_end + 1
 
     # Parse image_name
-    image_name = try_decode(data[offset : offset + image_name_size - 1])
+    image_name = try_decode(data[offset : offset + image_name_size - 1], errors="replace")
     offset += image_name_size
 
     # Parse message
-    message = try_decode(data[offset : offset + message_size - 1])
+    message = try_decode(data[offset : offset + message_size - 1], errors="replace")
     offset += message_size
 
     # Parse label (optional)
     label = None
     if subsystem_size > 0 and category_size > 0:
-        subsystem = try_decode(data[offset : offset + subsystem_size - 1])
+        subsystem = try_decode(data[offset : offset + subsystem_size - 1], errors="replace")
         offset += subsystem_size
-        category = try_decode(data[offset : offset + category_size - 1])
+        category = try_decode(data[offset : offset + category_size - 1], errors="replace")
         offset += category_size
         label = SyslogLabel(subsystem=subsystem, category=category)
 
@@ -276,7 +276,6 @@ class OsTraceService(LockdownService):
             dict of per-process metadata (such as ``ProcessName``).
         """
         await self.connect()
-        assert self.service is not None
         await self.service.send_plist({"Request": "PidList"})
 
         # ignore first received unknown byte
@@ -305,7 +304,7 @@ class OsTraceService(LockdownService):
         :param start_time: Optional earliest entry time, as a unix timestamp.
         :raises AssertionError: If the device does not acknowledge the request with a successful status.
         """
-        request = {"Request": "CreateArchive"}
+        request: dict[str, typing.Any] = {"Request": "CreateArchive"}
 
         if size_limit is not None:
             request.update({"SizeLimit": size_limit})
@@ -317,7 +316,6 @@ class OsTraceService(LockdownService):
             request.update({"StartTime": start_time})
 
         await self.connect()
-        assert self.service is not None
         await self.service.send_plist(request)
 
         assert (await self.service.recvall(1))[0] == 1
@@ -379,7 +377,6 @@ class OsTraceService(LockdownService):
         :raises PyMobileDevice3Exception: If the device rejects the stream-start request.
         """
         await self.connect()
-        assert self.service is not None
         await self.service.send_plist({
             "Request": "StartActivity",
             "MessageFilter": message_filter,

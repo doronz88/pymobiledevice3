@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+from typing import Union, cast
 
 import pytest
 
@@ -25,7 +26,7 @@ def _first_frag(total_size: int, count: int = 2, identifier: int = 1) -> DTXFrag
     )
 
 
-def _body_frag(index: int, payload: bytes | bytearray, count: int = 2, identifier: int = 1) -> DTXFragment:
+def _body_frag(index: int, payload: Union[bytes, bytearray], count: int = 2, identifier: int = 1) -> DTXFragment:
     """Build a non-first body fragment carrying *payload*."""
     return DTXFragment(
         index=index,
@@ -210,7 +211,7 @@ class TestDTXFragmenterErrors:
     def test_none_payload_raises(self):
         first = _first_frag(total_size=10, count=2)
         f = DTXFragmenter(first, current_buffered=0, max_buffered_size=1024)
-        frag = DTXFragment(index=1, count=2, data_size=10, identifier=1, payload=None)
+        frag = DTXFragment(index=1, count=2, data_size=10, identifier=1, payload=cast(memoryview, None))
         with pytest.raises(DTXProtocolError):
             f.add(frag)
 
@@ -312,6 +313,7 @@ class TestFragmentMultiFragment:
             current_buffered=0,
             max_buffered_size=MAX_MESSAGE_SIZE,
         )
+        done = False
         for frag in body_frags:
             done = assembler.add(frag)
 
@@ -375,6 +377,7 @@ class TestFragmentMultiFragment:
         )
 
         # Feed in reverse order.
+        done = False
         for frag in reversed(body_frags):
             done = assembler.add(frag)
 

@@ -24,7 +24,7 @@ class LockdownServiceProvider:
 
     @property
     @abstractmethod
-    def product_build_version(self) -> str:
+    def product_build_version(self) -> Optional[str]:
         """Return the device OS build string."""
         pass
 

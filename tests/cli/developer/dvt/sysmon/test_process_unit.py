@@ -1,5 +1,6 @@
 import json
 from io import StringIO
+from typing import cast
 
 import pytest
 import typer
@@ -29,6 +30,8 @@ from pymobiledevice3.cli.developer.dvt.sysmon.process import (
     iter_processes,
     sysmon_process_monitor_threshold_task,
 )
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 
 
 class _FakeSysmontap:
@@ -227,7 +230,7 @@ async def test_iter_processes_skips_first_snapshot_when_requested():
         [{"pid": 20, "ppid": 2, "name": "second-snapshot"}],
         [{"pid": 30, "ppid": 3, "name": "third-snapshot"}],
     ]
-    sysmon = _FakeSysmontap(snapshots)
+    sysmon = cast(Sysmontap, _FakeSysmontap(snapshots))
 
     iterated_snapshots = [snapshot async for snapshot in iter_processes(sysmon, skip_first_snapshot=True)]
 
@@ -236,7 +239,7 @@ async def test_iter_processes_skips_first_snapshot_when_requested():
 
 @pytest.mark.asyncio
 async def test_iter_processes_empty_when_only_warmup_snapshot_exists():
-    sysmon = _FakeSysmontap([[{"pid": 10, "ppid": 1, "name": "first-snapshot"}]])
+    sysmon = cast(Sysmontap, _FakeSysmontap([[{"pid": 10, "ppid": 1, "name": "first-snapshot"}]]))
 
     snapshots = [snapshot async for snapshot in iter_processes(sysmon, skip_first_snapshot=True)]
 
@@ -250,7 +253,7 @@ async def test_iter_processes_keeps_first_snapshot_when_cpu_usage_not_required()
         [{"pid": 20, "ppid": 2, "name": "second-snapshot"}],
     ]
 
-    sysmon = _FakeSysmontap(snapshots)
+    sysmon = cast(Sysmontap, _FakeSysmontap(snapshots))
 
     iterated_snapshots = [snapshot async for snapshot in iter_processes(sysmon, skip_first_snapshot=False)]
 
@@ -270,7 +273,9 @@ async def test_sysmon_process_monitor_threshold_task_skips_first_snapshot(monkey
 
     out = StringIO()
 
-    await sysmon_process_monitor_threshold_task(object(), threshold=0.0, keys=["pid"], out=out, duration=1)
+    await sysmon_process_monitor_threshold_task(
+        cast(LockdownServiceProvider, object()), threshold=0.0, keys=["pid"], out=out, duration=1
+    )
 
     lines = [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
     assert len(lines) == 1

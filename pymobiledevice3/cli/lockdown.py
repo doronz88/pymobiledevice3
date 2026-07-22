@@ -10,7 +10,8 @@ import typer
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import (
-    NoAutoPairServiceProviderDep,
+    LockdownClientDep,
+    NoAutoPairLockdownClientDep,
     ServiceProviderDep,
     async_command,
     print_json,
@@ -35,7 +36,7 @@ cli = InjectingTyper(
 
 @cli.command("recovery")
 @async_command
-async def lockdown_recovery(service_provider: ServiceProviderDep) -> None:
+async def lockdown_recovery(service_provider: LockdownClientDep) -> None:
     """enter recovery"""
     print_json(await service_provider.enter_recovery())
 
@@ -96,14 +97,14 @@ async def lockdown_remove(service_provider: ServiceProviderDep, domain: str, key
 
 @cli.command("unpair")
 @async_command
-async def lockdown_unpair(service_provider: NoAutoPairServiceProviderDep, host_id: Optional[str] = None) -> None:
+async def lockdown_unpair(service_provider: NoAutoPairLockdownClientDep, host_id: Optional[str] = None) -> None:
     """unpair from connected device"""
     await service_provider.unpair(host_id=host_id)
 
 
 @cli.command("pair")
 @async_command
-async def lockdown_pair(service_provider: NoAutoPairServiceProviderDep) -> None:
+async def lockdown_pair(service_provider: NoAutoPairLockdownClientDep) -> None:
     """pair device"""
     await service_provider.pair()
 
@@ -111,7 +112,7 @@ async def lockdown_pair(service_provider: NoAutoPairServiceProviderDep) -> None:
 @cli.command("pair-supervised")
 @async_command
 async def lockdown_pair_supervised(
-    service_provider: NoAutoPairServiceProviderDep,
+    service_provider: NoAutoPairLockdownClientDep,
     keybag: Annotated[
         Path,
         typer.Argument(file_okay=True, dir_okay=False, exists=True),
@@ -122,7 +123,7 @@ async def lockdown_pair_supervised(
 
 
 @cli.command("save-pair-record")
-def lockdown_save_pair_record(service_provider: NoAutoPairServiceProviderDep, output: Path) -> None:
+def lockdown_save_pair_record(service_provider: NoAutoPairLockdownClientDep, output: Path) -> None:
     """save pair record to specified location"""
     if service_provider.pair_record is None:
         logger.error("no pairing record was found")
@@ -258,6 +259,7 @@ async def cli_remotepairing(
             service = await RemotePairingLockdownService.create(service_provider)
             await service.connect(autopair=False)
         handshake_info = service.handshake_info
+        assert handshake_info is not None  # populated by connect()
         if not raw:
             handshake_info = _decode_device_kvs_data(handshake_info)
         print_json(handshake_info)

@@ -11,6 +11,7 @@ from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager, closing, suppress
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Optional, Union
 
@@ -25,6 +26,7 @@ from pymobiledevice3.exceptions import (
     AfcFileNotFoundError,
     BackupFilterPasswordRequiredError,
     LockdownError,
+    NotConnectedError,
     PyMobileDevice3Exception,
 )
 from pymobiledevice3.lockdown import LockdownClient
@@ -111,24 +113,37 @@ class BackupFile:
 BackupFilterCallback = Callable[[BackupFile], bool]
 
 
-BACKUP_SELECTIONS = {
-    "bookmarks": (
+class BackupSelection(str, Enum):
+    """Backup payload preset names; ``BACKUP_SELECTIONS`` maps each to its selection rules."""
+
+    BOOKMARKS = "bookmarks"
+    CALL_HISTORY = "call_history"
+    CONTACTS = "contacts"
+    SMS = "sms"
+    WHATSAPP = "whatsapp"
+
+    def rules(self) -> tuple["BackupSelectionRule", ...]:
+        return BACKUP_SELECTIONS[self]
+
+
+BACKUP_SELECTIONS: dict[BackupSelection, tuple[BackupSelectionRule, ...]] = {
+    BackupSelection.BOOKMARKS: (
         BackupSelectionRule("HomeDomain", "Library/Safari/Bookmarks.db"),
         BackupSelectionRule("HomeDomain", "Library/Safari/Bookmarks.db-shm"),
         BackupSelectionRule("HomeDomain", "Library/Safari/Bookmarks.db-wal"),
     ),
-    "call_history": (
+    BackupSelection.CALL_HISTORY: (
         BackupSelectionRule("HomeDomain", "Library/CallHistoryDB/CallHistory.storedata"),
         BackupSelectionRule("HomeDomain", "Library/CallHistoryDB/CallHistory.storedata-shm"),
         BackupSelectionRule("HomeDomain", "Library/CallHistoryDB/CallHistory.storedata-wal"),
     ),
-    "contacts": (
+    BackupSelection.CONTACTS: (
         BackupSelectionRule("HomeDomain", "Library/AddressBook/AddressBook.sqlitedb"),
         BackupSelectionRule("HomeDomain", "Library/AddressBook/AddressBook.sqlitedb-shm"),
         BackupSelectionRule("HomeDomain", "Library/AddressBook/AddressBook.sqlitedb-wal"),
     ),
-    "sms": (BackupSelectionRule("HomeDomain", "Library/SMS/sms.db"),),
-    "whatsapp": (
+    BackupSelection.SMS: (BackupSelectionRule("HomeDomain", "Library/SMS/sms.db"),),
+    BackupSelection.WHATSAPP: (
         BackupSelectionRule("AppDomain-net.whatsapp.WhatsApp", "Documents/ChatStorage.sqlite"),
         BackupSelectionRule("AppDomain-net.whatsapp.WhatsApp", "Documents/ChatStorage.sqlite-shm"),
         BackupSelectionRule("AppDomain-net.whatsapp.WhatsApp", "Documents/ChatStorage.sqlite-wal"),
@@ -162,6 +177,13 @@ class Mobilebackup2Service(LockdownService):
             super().__init__(lockdown, self.SERVICE_NAME, include_escrow_bag=True)
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME, include_escrow_bag=True)
+
+    @property
+    def _udid(self) -> str:
+        udid = self.lockdown.udid
+        if udid is None:
+            raise NotConnectedError("lockdown provider has no udid; connect it first")
+        return udid
 
     async def get_will_encrypt(self) -> bool:
         """
@@ -203,7 +225,7 @@ class Mobilebackup2Service(LockdownService):
             password while the device encrypts backups.
         """
         backup_directory = Path(backup_directory)
-        device_directory = backup_directory / self.lockdown.udid
+        device_directory = backup_directory / self._udid
         device_directory.mkdir(exist_ok=True, mode=0o755, parents=True)
         full = self._should_do_full_backup(full, device_directory, filter_callback)
 
@@ -327,7 +349,7 @@ class Mobilebackup2Service(LockdownService):
         :param skip_apps: Do not trigger re-installation of apps after the restore.
         """
         backup_directory = Path(backup_directory)
-        source = source if source else self.lockdown.udid
+        source = source if source else self._udid
         self._assert_backup_exists(backup_directory, source)
 
         async with (
@@ -340,7 +362,7 @@ class Mobilebackup2Service(LockdownService):
             with open(manifest_plist_path, "rb") as fd:
                 manifest = plistlib.load(fd)
             is_encrypted = manifest.get("IsEncrypted", False)
-            options = {
+            options: dict[str, Union[bool, str]] = {
                 "RestoreShouldReboot": reboot,
                 "RestoreDontCopyBackup": not copy,
                 "RestorePreserveSettings": settings,
@@ -383,7 +405,7 @@ class Mobilebackup2Service(LockdownService):
         :returns: Information about the backup, as returned by the device.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
+        self._assert_backup_exists(backup_dir, source if source else self._udid)
         async with self.device_link(backup_dir) as dl:
             message = {"MessageName": "Info", "TargetIdentifier": self.lockdown.udid}
             if source:
@@ -401,7 +423,7 @@ class Mobilebackup2Service(LockdownService):
         :returns: The files and per-file metadata in CSV format.
         """
         backup_dir = Path(backup_directory)
-        source = source if source else self.lockdown.udid
+        source = source if source else self._udid
         self._assert_backup_exists(backup_dir, source)
         async with self.device_link(backup_dir) as dl:
             await dl.send_process_message({
@@ -422,7 +444,7 @@ class Mobilebackup2Service(LockdownService):
             connected device's UDID.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
+        self._assert_backup_exists(backup_dir, source if source else self._udid)
         async with self.device_link(backup_dir) as dl:
             message = {"MessageName": "Unback", "TargetIdentifier": self.lockdown.udid}
             if source:
@@ -448,7 +470,7 @@ class Mobilebackup2Service(LockdownService):
         if output_directory.exists():
             shutil.rmtree(output_directory)
         output_directory.mkdir(parents=True)
-        Backup.from_path(device_directory, password).unback(output_directory)
+        Backup.from_path(device_directory, password).unback(str(output_directory))
         return output_directory
 
     async def extract(
@@ -465,7 +487,7 @@ class Mobilebackup2Service(LockdownService):
             device's UDID.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, source if source else self.lockdown.udid)
+        self._assert_backup_exists(backup_dir, source if source else self._udid)
         async with self.device_link(backup_dir) as dl:
             message = {
                 "MessageName": "Extract",
@@ -574,7 +596,7 @@ class Mobilebackup2Service(LockdownService):
             ret = {
                 "iTunes Version": min_itunes_version if min_itunes_version else "10.0.1",
                 "iTunes Files": files,
-                "Unique Identifier": self.lockdown.udid.upper(),
+                "Unique Identifier": self._udid.upper(),
                 "Target Type": "Device",
                 "Target Identifier": root_node["UniqueDeviceID"],
                 "Serial Number": root_node["SerialNumber"],
@@ -659,13 +681,14 @@ class Mobilebackup2Service(LockdownService):
 
         rules = []
         for selection_name in only:
-            preset = BACKUP_SELECTIONS.get(selection_name.lower())
-            if preset is None:
+            try:
+                selection = BackupSelection(selection_name.lower())
+            except ValueError:
                 available = ", ".join(sorted(BACKUP_SELECTIONS))
                 raise PyMobileDevice3Exception(
                     f"Unsupported backup selection: {selection_name}. Available: {available}"
-                )
-            rules.extend(preset)
+                ) from None
+            rules.extend(selection.rules())
         return tuple(rules)
 
     @staticmethod
@@ -890,10 +913,11 @@ class Mobilebackup2Service(LockdownService):
     @staticmethod
     def _encrypt_backup_manifest_db(decrypted_manifest_path: Path, manifest_db_path: Path, manifest_key: bytes) -> None:
         plaintext = decrypted_manifest_path.read_bytes()
-        if len(plaintext) % (algorithms.AES.block_size // 8):
+        algorithm = algorithms.AES(manifest_key)
+        if len(plaintext) % (algorithm.block_size // 8):
             raise PyMobileDevice3Exception("Decrypted backup Manifest.db is not AES block aligned")
 
-        cipher = Cipher(algorithms.AES(manifest_key), modes.CBC(b"\x00" * 16))
+        cipher = Cipher(algorithm, modes.CBC(b"\x00" * 16))
         encryptor = cipher.encryptor()
         manifest_db_path.write_bytes(encryptor.update(plaintext) + encryptor.finalize())
 
@@ -911,8 +935,10 @@ class Mobilebackup2Service(LockdownService):
         :param filter_callback: Optional predicate controlling which files are preserved.
         :param password: Backup password (unused here directly; passed through by callers).
         """
+        await self.connect()
+        assert self._service is not None
         dl = DeviceLink(
-            self.service,
+            self._service,
             backup_directory,
             preserve_file=lambda file_name, device_name: self.should_preserve_backup_file(
                 file_name, device_name, filter_callback

@@ -1,4 +1,5 @@
 import logging
+from typing import Any, cast
 
 from pymobiledevice3.dtx import DTXService, dtx_method
 from pymobiledevice3.dtx_service import DtxService
@@ -33,7 +34,7 @@ class ConditionInducer(DtxService[ConditionInducerService]):
         super().__init__(dvt)
         self.logger = logging.getLogger(__name__)
 
-    async def list(self) -> list[dict]:
+    async def list(self) -> list[dict[str, Any]]:
         """
         List the condition groups available on the device.
 
@@ -52,11 +53,11 @@ class ConditionInducer(DtxService[ConditionInducerService]):
         :raises PyMobileDevice3Exception: If no available profile matches `profile_identifier`.
         """
         for group in await self.list():
-            for profile in group.get("profiles"):
+            for profile in cast("list[dict[str, Any]]", group.get("profiles")):
                 if profile_identifier == profile.get("identifier"):
                     self.logger.info(profile.get("description"))
                     await self.service.enable_condition_with_identifier_profile_identifier_(
-                        group.get("identifier"), profile.get("identifier")
+                        cast(str, group.get("identifier")), cast(str, profile.get("identifier"))
                     )
                     return
         raise PyMobileDevice3Exception("Invalid profile identifier")

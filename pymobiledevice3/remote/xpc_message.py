@@ -99,30 +99,28 @@ XpcFileTransfer = Struct(
     "msg_id" / Int64ul,
     "data" / LazyBound(lambda: XpcObject),
 )
+_XPC_OBJECT_CASES = {
+    XpcMessageType.DICTIONARY: XpcDictionary,
+    XpcMessageType.STRING: XpcString,
+    XpcMessageType.INT64: XpcInt64,
+    XpcMessageType.UINT64: XpcUInt64,
+    XpcMessageType.DOUBLE: XpcDouble,
+    XpcMessageType.BOOL: XpcBool,
+    XpcMessageType.NULL: XpcNull,
+    XpcMessageType.UUID: XpcUuid,
+    XpcMessageType.POINTER: XpcPointer,
+    XpcMessageType.DATE: XpcDate,
+    XpcMessageType.DATA: XpcData,
+    XpcMessageType.FD: XpcFd,
+    XpcMessageType.SHMEM: XpcShmem,
+    XpcMessageType.ARRAY: XpcArray,
+    XpcMessageType.FILE_TRANSFER: XpcFileTransfer,
+}
 XpcObject = Struct(
     "type" / XpcMessageType,
-    "data"
-    / Switch(
-        this.type,
-        {
-            XpcMessageType.DICTIONARY: XpcDictionary,
-            XpcMessageType.STRING: XpcString,
-            XpcMessageType.INT64: XpcInt64,
-            XpcMessageType.UINT64: XpcUInt64,
-            XpcMessageType.DOUBLE: XpcDouble,
-            XpcMessageType.BOOL: XpcBool,
-            XpcMessageType.NULL: XpcNull,
-            XpcMessageType.UUID: XpcUuid,
-            XpcMessageType.POINTER: XpcPointer,
-            XpcMessageType.DATE: XpcDate,
-            XpcMessageType.DATA: XpcData,
-            XpcMessageType.FD: XpcFd,
-            XpcMessageType.SHMEM: XpcShmem,
-            XpcMessageType.ARRAY: XpcArray,
-            XpcMessageType.FILE_TRANSFER: XpcFileTransfer,
-        },
-        default=Probe(lookahead=1000),
-    ),
+    # ``XpcPointer`` is ``None`` (the POINTER wire type carries no payload), which the construct
+    # Switch DSL accepts but pyright's ``Switch`` overloads (Dict[Any, Construct]) reject.
+    "data" / Switch(this.type, _XPC_OBJECT_CASES, default=Probe(lookahead=1000)),  # pyright: ignore[reportCallIssue, reportArgumentType]
 )
 XpcPayload = Struct(
     "magic" / Hex(Const(0x42133742, Int32ul)),

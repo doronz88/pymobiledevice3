@@ -14,6 +14,7 @@ threads at all — that relaying spawns none.
 
 import asyncio
 import threading
+from typing import cast
 
 import pytest
 
@@ -23,7 +24,7 @@ pytest.importorskip("pmd_pytcp")
 from pmd_pytcp.stack import sysctl
 
 from pymobiledevice3.remote import userspace_tunnel
-from pymobiledevice3.remote.userspace_tunnel import UserspaceDialPlane
+from pymobiledevice3.remote.userspace_tunnel import UserspaceDialPlane, UserspaceTun
 
 
 def test_throughput_sysctls_only_emits_registered_knobs():
@@ -135,7 +136,7 @@ async def test_relay_full_conversation_and_clean_completion():
     # the device as a half-close (SHUT_WR), and once the device answers with its own EOF the
     # handler must finish on its own — with the pytcp socket closed and no task left behind.
     tun = FakeTun()
-    async with UserspaceDialPlane(tun, DEVICE_ADDR) as dial_plane:
+    async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
         reader, writer = await dial_plane.dial(DEVICE_ADDR, 1234)
         psock = (await _poll_until(lambda: tun.socks))[0]
 
@@ -157,7 +158,7 @@ async def test_device_eof_reaches_client():
     # The device closing its side must propagate to the client as EOF (write_eof), otherwise
     # the client never learns the stream ended and the pair idles forever.
     tun = FakeTun()
-    async with UserspaceDialPlane(tun, DEVICE_ADDR) as dial_plane:
+    async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
         reader, writer = await dial_plane.dial(DEVICE_ADDR, 1111)
         psock = (await _poll_until(lambda: tun.socks))[0]
         psock.feed(b"data")
@@ -172,7 +173,7 @@ async def test_dial_plane_exit_cancels_parked_relay():
     # handlers since Python 3.12.1). Exit must complete promptly, leave no relay task behind,
     # and still tear the pytcp socket down.
     tun = FakeTun()
-    dial_plane = UserspaceDialPlane(tun, DEVICE_ADDR)
+    dial_plane = UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR)
     await dial_plane.__aenter__()
     _reader, writer = await dial_plane.dial(DEVICE_ADDR, 5678)
     await _poll_until(lambda: tun.socks)
@@ -189,7 +190,7 @@ async def test_relaying_spawns_no_threads():
     # rx_pump threads) is structurally impossible now, and this pins it that way.
     baseline = set(threading.enumerate())
     tun = FakeTun()
-    async with UserspaceDialPlane(tun, DEVICE_ADDR) as dial_plane:
+    async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
         writers = []
         for _ in range(5):
             _reader, writer = await dial_plane.dial(DEVICE_ADDR, 9999)

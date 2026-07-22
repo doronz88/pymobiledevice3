@@ -3,11 +3,17 @@ import logging
 import os
 import socket
 from pathlib import Path
+from typing import Any
 
-import win32security
+import win32security  # pyright: ignore[reportMissingModuleSource]
 from ifaddr import get_adapters
 
-from pymobiledevice3.osu.os_utils import DEFAULT_AFTER_IDLE_SEC, DEFAULT_INTERVAL_SEC, OsUtils
+from pymobiledevice3.osu.os_utils import (
+    DEFAULT_AFTER_IDLE_SEC,
+    DEFAULT_INTERVAL_SEC,
+    DEFAULT_MAX_FAILS,
+    OsUtils,
+)
 from pymobiledevice3.usbmux import MuxConnection
 
 
@@ -20,12 +26,13 @@ class Win32(OsUtils):
         """
         try:
             admin_sid = win32security.CreateWellKnownSid(win32security.WinBuiltinAdministratorsSid, None)
-            return win32security.CheckTokenMembership(None, admin_sid)
+            # pywin32 accepts None for TokenHandle (current thread token); the stub only allows int.
+            return win32security.CheckTokenMembership(None, admin_sid)  # pyright: ignore[reportArgumentType]
         except Exception:
             return False
 
     @property
-    def usbmux_address(self) -> tuple[str, int]:
+    def usbmux_address(self) -> tuple[tuple[str, int], int]:
         return MuxConnection.ITUNES_HOST, socket.AF_INET
 
     @property
@@ -54,22 +61,24 @@ class Win32(OsUtils):
         sock: socket.socket,
         after_idle_sec: int = DEFAULT_AFTER_IDLE_SEC,
         interval_sec: int = DEFAULT_INTERVAL_SEC,
-        **kwargs,
+        max_fails: int = DEFAULT_MAX_FAILS,
     ) -> None:
-        ioctl_socket = sock
+        ioctl_socket: Any = sock
         if not hasattr(ioctl_socket, "ioctl"):
             # asyncio may return a wrapper (e.g. TransportSocket) that does not expose ioctl().
             ioctl_socket = getattr(sock, "_sock", sock)
 
         if hasattr(ioctl_socket, "ioctl"):
-            ioctl_socket.ioctl(socket.SIO_KEEPALIVE_VALS, (1, after_idle_sec * 1000, interval_sec * 1000))
+            # SIO_KEEPALIVE_VALS only exists in the socket module on Windows.
+            sio_keepalive_vals = socket.SIO_KEEPALIVE_VALS  # pyright: ignore[reportAttributeAccessIssue]
+            ioctl_socket.ioctl(sio_keepalive_vals, (1, after_idle_sec * 1000, interval_sec * 1000))
             return
 
         # Fallback for wrappers that do not expose ioctl; keepalive timings remain OS defaults.
         logging.getLogger(__name__).debug("Socket does not expose ioctl(); enabling SO_KEEPALIVE fallback")
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
 
-    def parse_timestamp(self, time_stamp) -> datetime:
+    def parse_timestamp(self, time_stamp) -> datetime.datetime:
         return datetime.datetime.fromtimestamp(time_stamp / 1000)
 
     def chown_to_non_sudo_if_needed(self, path: Path) -> None:

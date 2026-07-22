@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from collections import UserDict
-from typing import Optional
+from typing import Optional, cast
 
 from pymobiledevice3.exceptions import InspectorEvaluateError
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
@@ -104,8 +104,9 @@ class InspectorSession:
     async def heap_snapshot(self):
         snapshot = await self.send_command("Heap.snapshot")
         if self.target_id is not None:
-            snapshot = json.loads(snapshot["params"]["message"])
-        snapshot = json.loads(snapshot)["result"]["snapshotData"]
+            # when a target id is present, the response came from Target.dispatchMessageFromTarget (a dict)
+            snapshot = json.loads(cast(dict, snapshot)["params"]["message"])
+        snapshot = json.loads(cast(str, snapshot))["result"]["snapshotData"]
         return snapshot
 
     async def heap_enable(self):
@@ -187,8 +188,11 @@ class InspectorSession:
             await asyncio.sleep(0)
 
     async def get_properties(self, object_id: str) -> JSObjectProperties:
-        message = await self.send_command(
-            "Runtime.getProperties", objectId=object_id, ownProperties=True, generatePreview=True
+        message = cast(
+            dict,
+            await self.send_command(
+                "Runtime.getProperties", objectId=object_id, ownProperties=True, generatePreview=True
+            ),
         )
         if self.target_id is not None:
             message = json.loads(message["params"]["message"])["result"]

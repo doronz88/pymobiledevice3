@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Sequence
 from contextlib import suppress
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Optional
@@ -52,7 +52,7 @@ class DTXChannel:
     """
 
     # Optional callbacks for received messages and channel shutdown.
-    on_invoke: Optional[Callable[[str, list[Any]], Awaitable[Any]]] = None
+    on_invoke: Optional[Callable[[str, Sequence[Any]], Awaitable[Any]]] = None
     on_data: Optional[Callable[[bytes], Awaitable[Any]]] = None
     on_notification: Optional[Callable[[Any], Awaitable[Any]]] = None
     on_closed: Optional[Callable[[str], Any]] = None

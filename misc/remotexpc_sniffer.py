@@ -92,6 +92,7 @@ class TCPStream:
 class H2Stream(TCPStream):
     def pop_frames(self) -> list[Frame]:
         """Pop all available H2Frames"""
+        assert self.seq is not None, "pop_frames() called before any segment was added"
 
         # If self.data starts with the http/2 magic bytes, pop them off
         if self.data.startswith(HTTP2_MAGIC):

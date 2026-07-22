@@ -1,5 +1,5 @@
 from pymobiledevice3.exceptions import ArbitrationError, DeviceAlreadyInUseError
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 
@@ -14,7 +14,7 @@ class DtDeviceArbitration(LockdownService):
 
     SERVICE_NAME = "com.apple.dt.devicearbitration"
 
-    def __init__(self, lockdown: LockdownClient):
+    def __init__(self, lockdown: LockdownServiceProvider):
         super().__init__(lockdown, self.SERVICE_NAME, is_developer_service=True)
 
     async def _send_recv(self, request: dict) -> dict:

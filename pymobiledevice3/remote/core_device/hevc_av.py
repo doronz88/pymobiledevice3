@@ -44,6 +44,8 @@ logger = logging.getLogger(__name__)
 # ``--decoder av``).
 try:
     import av  # type: ignore[import]
+    import av.codec  # pyright: ignore[reportMissingImports]
+    import av.error  # pyright: ignore[reportMissingImports]
 except ModuleNotFoundError as e:  # pragma: no cover
     raise ModuleNotFoundError("PyAV is required for the libav HEVC decoder path. Install with: pip install av") from e
 
@@ -107,7 +109,9 @@ class HevcToBgraTranscoder:
         self._inq.put(None)
         self._thread.join(timeout=2.0)
         with contextlib.suppress(Exception):
-            self._codec.close()
+            # close() was removed in newer PyAV releases (AttributeError is suppressed
+            # there); keep the call for older PyAV versions that still need it.
+            self._codec.close()  # pyright: ignore[reportAttributeAccessIssue]
 
     # -- worker --------------------------------------------------------
     def _emit_frame(self, frame) -> None:

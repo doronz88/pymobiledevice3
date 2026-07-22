@@ -8,6 +8,7 @@ from enum import Enum, IntEnum
 from packaging.version import Version
 
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
+from pymobiledevice3.exceptions import DvtException
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 
 
@@ -21,21 +22,24 @@ class AXAuditInspectorFocus_v1(SerializedObject):
         super().__init__(fields)
 
     @property
-    def caption(self) -> str:
+    def caption(self) -> typing.Optional[str]:
         return self._fields.get("CaptionTextValue_v1")
 
     @property
-    def spoken_description(self) -> str:
+    def spoken_description(self) -> typing.Optional[str]:
         return self._fields.get("SpokenDescriptionValue_v1")
 
     @property
-    def element(self) -> bytes:
+    def element(self) -> typing.Optional["AXAuditElement_v1"]:
         return self._fields.get("ElementValue_v1")
 
     @property
     def platform_identifier(self) -> str:
         """Converts the element bytes to a hexadecimal string."""
-        return self.element.identifier.hex().upper()
+        element = self.element
+        if element is None:
+            raise DvtException("focus event carries no element")
+        return element.identifier.hex().upper()
 
     @property
     def estimated_uid(self) -> str:
@@ -236,7 +240,7 @@ class Event:
     """An accessibility event: the device selector name and its deserialized payload."""
 
     name: str
-    data: SerializedObject
+    data: typing.Any
 
 
 class Direction(Enum):
@@ -248,7 +252,7 @@ class Direction(Enum):
     Last = 6
 
 
-def deserialize_object(d):
+def deserialize_object(d) -> typing.Any:
     if not isinstance(d, dict):
         if isinstance(d, list):
             return [deserialize_object(x) for x in d]
@@ -497,7 +501,7 @@ class AccessibilityAudit:
         :param element: The platform element value identifying the target element.
         """
         await self._ensure_ready()
-        element = {
+        serialized_element = {
             "ObjectType": "AXAuditElement_v1",
             "Value": {
                 "ObjectType": "passthrough",
@@ -545,7 +549,7 @@ class AccessibilityAudit:
             },
         }
 
-        await self._invoke("deviceElement:performAction:withValue:", element, action, 0, expects_reply=False)
+        await self._invoke("deviceElement:performAction:withValue:", serialized_element, action, 0, expects_reply=False)
 
     async def move_focus(self, direction: Direction) -> None:
         """

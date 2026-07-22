@@ -29,6 +29,7 @@ from ctypes import (
     c_uint32,
     c_void_p,
 )
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,9 @@ class AudioQueuePlayer:
             raise RuntimeError(f"AudioQueueNewOutput failed: OSStatus={st}")
 
         self._free: _queue.Queue = _queue.Queue()
-        self._all_buffers: list[_AudioQueueBufferRef] = []
+        # ctypes' POINTER(...) products aren't usable as type expressions,
+        # so the buffer-ref list can't be annotated more precisely.
+        self._all_buffers: list[Any] = []
         for _ in range(num_buffers):
             buf_ref = _AudioQueueBufferRef()
             st = at.AudioQueueAllocateBuffer(self._aq, buffer_byte_size, byref(buf_ref))

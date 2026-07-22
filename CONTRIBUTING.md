@@ -14,11 +14,20 @@ pre-commit install
 
 ```shell
 pytest
+pre-commit run --all-files
 ```
+
+The pre-commit hooks include ruff and pyright (pinned to the same version CI uses), so a clean
+local run means a clean CI run. The pyright hook resolves imports from your `.venv`, so make sure
+the editable install above ran inside it.
 
 ## Style Notes
 
 - Keep changes focused and include tests when behavior changes.
+- The codebase is pyright-clean (`standard` mode, Python 3.9 target) and CI enforces it. Prefer real fixes
+  (honest annotations, explicit narrowing) over suppressions; when a suppression is unavoidable
+  (inherently dynamic APIs), use a rule-specific `# pyright: ignore[ruleName]`, never a blanket
+  `# type: ignore`.
 
 ## Need Help?
 

@@ -3,7 +3,7 @@ import contextlib
 import uuid
 from asyncio import IncompleteReadError
 from collections.abc import AsyncIterable
-from typing import Callable, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 from construct import StreamError
 from hyperframe.frame import (
@@ -17,7 +17,12 @@ from hyperframe.frame import (
 )
 from pygments import formatters, highlight, lexers
 
-from pymobiledevice3.exceptions import ConnectionTerminatedError, ProtocolError, StreamClosedError
+from pymobiledevice3.exceptions import (
+    ConnectionTerminatedError,
+    NotConnectedError,
+    ProtocolError,
+    StreamClosedError,
+)
 from pymobiledevice3.remote.xpc_message import (
     XpcFlags,
     XpcInt64Type,
@@ -95,6 +100,26 @@ class RemoteXPCConnection:
             raise
 
     @property
+    def reader(self) -> asyncio.StreamReader:
+        """The stream reader.
+
+        :raises NotConnectedError: if accessed before ``connect()`` (or after ``close()``).
+        """
+        if self._reader is None:
+            raise NotConnectedError("RemoteXPCConnection is not open")
+        return self._reader
+
+    @property
+    def writer(self) -> asyncio.StreamWriter:
+        """The stream writer.
+
+        :raises NotConnectedError: if accessed before ``connect()`` (or after ``close()``).
+        """
+        if self._writer is None:
+            raise NotConnectedError("RemoteXPCConnection is not open")
+        return self._writer
+
+    @property
     def local_address(self) -> tuple[str, int]:
         """``(host, port)`` of the local end of the connection to the device.
 
@@ -102,9 +127,7 @@ class RemoteXPCConnection:
         host's tunnel interface — e.g. an RTP receiver port in
         ``mediastreamstart``. Only valid while the connection is open.
         """
-        if self._writer is None:
-            raise RuntimeError("connection is not open")
-        sockname = self._writer.get_extra_info("sockname")
+        sockname = self.writer.get_extra_info("sockname")
         return sockname[0], sockname[1]
 
     async def close(self) -> None:
@@ -144,8 +167,9 @@ class RemoteXPCConnection:
         xpc_wrapper = create_xpc_wrapper(
             data, message_id=self.next_message_id[ROOT_CHANNEL], wanting_reply=wanting_reply
         )
-        self._writer.write(DataFrame(stream_id=ROOT_CHANNEL, data=xpc_wrapper).serialize())
-        await self._writer.drain()
+        writer = self.writer
+        writer.write(DataFrame(stream_id=ROOT_CHANNEL, data=xpc_wrapper).serialize())
+        await writer.drain()
         self.next_message_id[ROOT_CHANNEL] += 1
 
     async def iter_file_chunks(self, total_size: int, file_idx: int = 0) -> AsyncIterable[bytes]:
@@ -232,8 +256,9 @@ class RemoteXPCConnection:
         )
 
     async def _do_handshake(self) -> None:
-        self._writer.write(HTTP2_MAGIC)
-        await self._writer.drain()
+        writer = self.writer
+        writer.write(HTTP2_MAGIC)
+        await writer.drain()
 
         # send h2 headers
         await self._send_frame(
@@ -275,7 +300,9 @@ class RemoteXPCConnection:
 
         await self._send_frame(SettingsFrame(flags=["ACK"]))
 
-    async def _open_channel(self, stream_id: int, flags: int) -> None:
+    async def _open_channel(self, stream_id: int, flags: Any) -> None:
+        # flags is a construct FlagsEnum value (BitwisableString), not a plain int: `int()` on it
+        # would try to parse the flag *name* and raise. construct resolves it to bits at build time.
         flags |= XpcFlags.ALWAYS_SET
         await self._send_frame(HeadersFrame(stream_id=stream_id, flags=["END_HEADERS"]))
         await self._send_frame(
@@ -283,8 +310,9 @@ class RemoteXPCConnection:
         )
 
     async def _send_frame(self, frame: Frame) -> None:
-        self._writer.write(frame.serialize())
-        await self._writer.drain()
+        writer = self.writer
+        writer.write(frame.serialize())
+        await writer.drain()
 
     async def _receive_next_data_frame(self) -> DataFrame:
         while True:
@@ -311,21 +339,23 @@ class RemoteXPCConnection:
             return
 
         self._pending_window_updates.pop(stream_id, None)
-        self._writer.write(WindowUpdateFrame(stream_id=0, window_increment=pending_increment).serialize())
-        self._writer.write(WindowUpdateFrame(stream_id=stream_id, window_increment=pending_increment).serialize())
-        await self._writer.drain()
+        writer = self.writer
+        writer.write(WindowUpdateFrame(stream_id=0, window_increment=pending_increment).serialize())
+        writer.write(WindowUpdateFrame(stream_id=stream_id, window_increment=pending_increment).serialize())
+        await writer.drain()
 
     async def _receive_frame(self) -> Frame:
-        buf = await self._reader.readexactly(FRAME_HEADER_SIZE)
+        buf = await self.reader.readexactly(FRAME_HEADER_SIZE)
         frame, additional_size = Frame.parse_frame_header(memoryview(buf))
         frame.parse_body(memoryview(await self._recvall(additional_size)))
         return frame
 
     async def _recvall(self, size: int) -> bytes:
+        reader = self.reader
         data = b""
         while len(data) < size:
             try:
-                chunk = await self._reader.readexactly(size - len(data))
+                chunk = await reader.readexactly(size - len(data))
             except IncompleteReadError as e:
                 raise ConnectionTerminatedError() from e
             data += chunk

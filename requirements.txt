@@ -18,6 +18,7 @@ requests
 xonsh
 parameter_decorators
 packaging
+typing_extensions>=4.1.0
 pygnuutils>=0.0.7
 cryptography>=41.0.1
 pycrashreport>=2.0.0

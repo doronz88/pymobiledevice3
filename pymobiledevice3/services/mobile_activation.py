@@ -5,7 +5,7 @@ import plistlib
 import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import click
 import inquirer3
@@ -13,6 +13,7 @@ import requests
 from requests.structures import CaseInsensitiveDict
 
 from pymobiledevice3.exceptions import MobileActivationException
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 
 ACTIVATION_USER_AGENT_IOS = "iOS Device Activator (MobileActivation-20 built on Jan 15 2012 at 19:07:28)"
@@ -38,16 +39,16 @@ async def _aclosing(resource):
 
 @dataclasses.dataclass
 class Field:
-    id: str
-    label: str
-    placeholder: str
+    id: Optional[str]
+    label: Optional[str]
+    placeholder: Optional[str]
     secure: bool
 
 
 @dataclasses.dataclass
 class ActivationForm:
-    title: str
-    description: str
+    title: Optional[str]
+    description: Optional[str]
     fields: list[Field]
     server_info: dict[str, str]
 
@@ -105,8 +106,13 @@ class MobileActivationService:
     @staticmethod
     def _get_activation_form_from_response(content: str) -> ActivationForm:
         root = ET.fromstring(content)
-        title = root.find("page/navigationBar").get("title")
-        description = root.find("page/tableView/section/footer").text
+        navigation_bar = root.find("page/navigationBar")
+        footer = root.find("page/tableView/section/footer")
+        server_info_node = root.find("serverInfo")
+        if navigation_bar is None or footer is None or server_info_node is None:
+            raise MobileActivationException("Activation server response is invalid")
+        title = navigation_bar.get("title")
+        description = footer.text
         fields = []
         for editable in root.findall("page//editableTextRow"):
             fields.append(
@@ -118,7 +124,7 @@ class MobileActivationService:
                 )
             )
         server_info = {}
-        for k, v in root.find("serverInfo").items():
+        for k, v in server_info_node.items():
             server_info[k] = v
         return ActivationForm(title=title, description=description, fields=fields, server_info=server_info)
 
@@ -142,6 +148,7 @@ class MobileActivationService:
             self.logger.error("Device is already activated!")
             return
 
+        blob = None
         try:
             blob = await self.create_activation_session_info()
             session_mode = True
@@ -151,7 +158,9 @@ class MobileActivationService:
         # create drmHandshake request with blob from device
         headers = {"Content-Type": "application/x-apple-plist"}
         headers.update(DEFAULT_HEADERS)
+        content = None
         if session_mode:
+            assert blob is not None  # session_mode is True only when the session info was created
             content, headers = self.post(
                 ACTIVATION_DRM_HANDSHAKE_DEFAULT_URL, data=plistlib.dumps(blob), headers=headers
             )
@@ -235,7 +244,8 @@ class MobileActivationService:
         try:
             return await self.send_command("DeactivateRequest")
         except Exception:
-            return await self.lockdown._request_async("Deactivate")
+            assert isinstance(self.lockdown, LockdownClient)
+            return await self.lockdown._request("Deactivate")
 
     async def create_activation_session_info(self):
         """
@@ -287,7 +297,8 @@ class MobileActivationService:
         if node is None:
             raise MobileActivationException("Activation record received is invalid")
 
-        await self.lockdown._request_async("Activate", {"ActivationRecord": node.get("activation-record")})
+        assert isinstance(self.lockdown, LockdownClient)
+        await self.lockdown._request("Activate", {"ActivationRecord": node.get("activation-record")})
 
     async def activate_with_session(self, activation_record, headers):
         """
@@ -328,7 +339,7 @@ class MobileActivationService:
             return await service.send_recv_plist(data)
 
     def post(
-        self, url: str, data: dict, headers: Optional[CaseInsensitiveDict[str, str]] = None
+        self, url: str, data: Union[dict, bytes], headers: Optional[dict[str, str]] = None
     ) -> tuple[bytes, CaseInsensitiveDict[str]]:
         """
         Perform an HTTP POST to an activation server endpoint.

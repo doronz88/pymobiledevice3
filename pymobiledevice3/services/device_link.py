@@ -5,7 +5,7 @@ import shutil
 import struct
 import sys
 import warnings
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Iterable, Mapping, Sequence
 from io import BufferedWriter
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
@@ -34,7 +34,7 @@ ERRNO_TO_DEVICE_ERROR = {
 
 DLMessage = Sequence[Any]
 ProgressCallback = Callable[[Any], None]
-DLHandler = Callable[[DLMessage], None]
+DLHandler = Callable[[DLMessage], Awaitable[None]]
 
 
 def _darwin_important_available_capacity(path: Path) -> Optional[int]:
@@ -187,6 +187,8 @@ class DeviceLink:
                 buffer = struct.pack(SIZE_FORMAT, struct.calcsize(CODE_FORMAT)) + struct.pack(CODE_FORMAT, CODE_SUCCESS)
                 await self._sendall(buffer)
             except OSError as e:
+                # file-operation OSErrors always carry errno/strerror
+                assert e.errno is not None and e.strerror is not None
                 status[file] = {
                     "DLFileErrorString": e.strerror,
                     "DLFileErrorCode": ctypes.c_uint64(ERRNO_TO_DEVICE_ERROR[e.errno]).value,

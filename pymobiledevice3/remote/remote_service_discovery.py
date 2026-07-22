@@ -10,6 +10,8 @@ from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import (
     InvalidServiceError,
     NoDeviceConnectedError,
+    NotConnectedError,
+    NotPairedError,
     PyMobileDevice3Exception,
     StartServiceError,
 )
@@ -75,7 +77,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         self.service = RemoteXPCConnection(address, open_connection=open_connection)
         self.peer_info: Optional[dict] = None
         self.lockdown: Optional[LockdownClient] = None
-        self.all_values: Optional[dict] = None
+        self.all_values: dict[str, Any] = {}
 
     @property
     def is_in_process_tunnel(self) -> bool:
@@ -85,68 +87,81 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         lldb as a connect endpoint."""
         return self.open_connection is not None
 
+    def _require_peer_info(self) -> dict:
+        """Return the handshake ``peer_info``, raising if the RSD has not been connected yet."""
+        if self.peer_info is None:
+            raise NotConnectedError("RSD is not connected; call connect() first")
+        return self.peer_info
+
     @property
     def product_version(self) -> str:
         """Device OS version, taken from the RSD handshake ``peer_info``."""
-        return self.peer_info["Properties"]["OSVersion"]
+        return self._require_peer_info()["Properties"]["OSVersion"]
 
     @property
     def product_build_version(self) -> str:
         """Device OS build string, taken from the RSD handshake ``peer_info``."""
-        return self.peer_info["Properties"]["BuildVersion"]
+        return self._require_peer_info()["Properties"]["BuildVersion"]
 
     @property
     def ecid(self) -> int:
         """Device ECID (unique chip identifier), taken from the RSD handshake ``peer_info``."""
-        return self.peer_info["Properties"]["UniqueChipID"]
+        return self._require_peer_info()["Properties"]["UniqueChipID"]
+
+    @property
+    def _lockdown(self) -> LockdownClient:
+        """Return the remote lockdown client, raising if the device offers no lockdown service."""
+        if self.lockdown is None:
+            raise InvalidServiceError("device does not offer a lockdown service")
+        return self.lockdown
 
     async def get_developer_mode_status(self) -> bool:
-        return await self.lockdown.get_developer_mode_status()
+        return await self._lockdown.get_developer_mode_status()
 
     async def get_date(self) -> datetime:
-        return await self.lockdown.get_date()
+        return await self._lockdown.get_date()
 
     async def set_language(self, language: str) -> None:
-        await self.lockdown.set_language(language)
+        await self._lockdown.set_language(language)
 
     async def get_language(self) -> str:
-        return await self.lockdown.get_language()
+        return await self._lockdown.get_language()
 
     async def set_locale(self, locale: str) -> None:
-        await self.lockdown.set_locale(locale)
+        await self._lockdown.set_locale(locale)
 
     async def get_locale(self) -> str:
-        return await self.lockdown.get_locale()
+        return await self._lockdown.get_locale()
 
     async def set_assistive_touch(self, value: bool) -> None:
-        await self.lockdown.set_assistive_touch(value)
+        await self._lockdown.set_assistive_touch(value)
 
     async def get_assistive_touch(self) -> bool:
-        return await self.lockdown.get_assistive_touch()
+        return await self._lockdown.get_assistive_touch()
 
     async def set_voice_over(self, value: bool) -> None:
-        await self.lockdown.set_voice_over(value)
+        await self._lockdown.set_voice_over(value)
 
     async def get_voice_over(self) -> bool:
-        return await self.lockdown.get_voice_over()
+        return await self._lockdown.get_voice_over()
 
     async def set_invert_display(self, value: bool) -> None:
-        await self.lockdown.set_invert_display(value)
+        await self._lockdown.set_invert_display(value)
 
     async def get_invert_display(self) -> bool:
-        return await self.lockdown.get_invert_display()
+        return await self._lockdown.get_invert_display()
 
     async def set_enable_wifi_connections(self, value: bool) -> None:
-        await self.lockdown.set_enable_wifi_connections(value)
+        await self._lockdown.set_enable_wifi_connections(value)
 
     async def get_enable_wifi_connections(self) -> bool:
-        return await self.lockdown.get_enable_wifi_connections()
+        return await self._lockdown.get_enable_wifi_connections()
 
     async def set_timezone(self, timezone: str) -> None:
-        await self.lockdown.set_timezone(timezone)
+        await self._lockdown.set_timezone(timezone)
 
     async def set_uses24h_clock(self, value: bool) -> None:
-        await self.lockdown.set_uses24h_clock(value)
+        await self._lockdown.set_uses24h_clock(value)
 
     async def connect(self) -> None:
         """
@@ -168,7 +183,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
 
             # Attempt to initialize a lockdown connection (May fail if RemoteXPC device does not offer this service,
             # such as VirtualMac (virtual macOS instance)
-            self.lockdown: Optional[LockdownServiceProvider] = None
+            self.lockdown = None
 
             with suppress(InvalidServiceError):
                 self.lockdown = await create_using_remote(
@@ -188,13 +203,13 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             raise
 
     async def get_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> Any:
-        return await self.lockdown.get_value(domain, key)
+        return await self._lockdown.get_value(domain, key)
 
     async def set_value(self, value, domain: Optional[str] = None, key: Optional[str] = None) -> dict:
-        return await self.lockdown.set_value(value, domain=domain, key=key)
+        return await self._lockdown.set_value(value, domain=domain, key=key)
 
     async def remove_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> dict:
-        return await self.lockdown.remove_value(domain=domain, key=key)
+        return await self._lockdown.remove_value(domain=domain, key=key)
 
     async def start_lockdown_service_without_checkin(self, name: str) -> ServiceConnection:
         """
@@ -251,11 +266,15 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         service = await self.start_lockdown_service_without_checkin(name)
         await service.start()
         try:
-            checkin = {"Label": "pymobiledevice3", "ProtocolVersion": "2", "Request": "RSDCheckin"}
+            checkin: dict = {"Label": "pymobiledevice3", "ProtocolVersion": "2", "Request": "RSDCheckin"}
             if include_escrow_bag:
+                if self.udid is None:
+                    raise NotConnectedError("RSD is not connected; call connect() first")
                 pairing_record = get_local_pairing_record(
                     get_remote_pairing_record_filename(self.udid), get_home_folder()
                 )
+                if pairing_record is None:
+                    raise NotPairedError(f"no local pairing record found for {self.udid}")
                 checkin["EscrowBag"] = base64.b64decode(pairing_record["remote_unlock_host_key"])
             response = await service.send_recv_plist(checkin)
             if response["Request"] != "RSDCheckin":
@@ -318,7 +337,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             service's advertised transport.
         :raises InvalidServiceError: if the device does not offer a service with this name.
         """
-        service = self.peer_info["Services"][name]
+        service = self._require_peer_info()["Services"][name]
         service_properties = service.get("Properties", {})
         use_remote_xpc = service_properties.get("UsesRemoteXPC", False)
         return self.start_remote_service(name) if use_remote_xpc else await self.start_lockdown_service(name)
@@ -331,7 +350,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         :returns: the device-side TCP port for the service.
         :raises InvalidServiceError: if the device does not offer a service with this name.
         """
-        service = self.peer_info["Services"].get(name)
+        service = self._require_peer_info()["Services"].get(name)
         if service is None:
             raise InvalidServiceError(f"No such service: {name}")
         return int(service["Port"])
@@ -369,8 +388,8 @@ async def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[
     result = []
     for instance in await browse_remoted(timeout):
         for address in instance.addresses:
-            with RemoteServiceDiscoveryService((address.full_ip, RSD_PORT)) as rsd:
-                properties = rsd.peer_info["Properties"]
+            async with RemoteServiceDiscoveryService((address.full_ip, RSD_PORT)) as rsd:
+                properties = rsd._require_peer_info()["Properties"]
                 result.append(
                     RSDDevice(
                         hostname=address.full_ip,

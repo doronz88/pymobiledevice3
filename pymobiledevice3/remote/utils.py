@@ -41,7 +41,7 @@ async def get_rsds(
     return result
 
 
-def get_remoted_process() -> psutil.Process:
+def get_remoted_process() -> Optional[psutil.Process]:
     for process in psutil.process_iter():
         if process.pid == 0:
             # skip kernel task
@@ -51,6 +51,7 @@ def get_remoted_process() -> psutil.Process:
                 return process
         except (psutil.ZombieProcess, psutil.NoSuchProcess):
             continue
+    return None
 
 
 def stop_remoted_if_required() -> None:
