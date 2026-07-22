@@ -27,7 +27,7 @@ pymobiledevice3 apps list
 Install shell completions:
 
 ```shell
-pymobiledevice3 install-completions
+pymobiledevice3 --install-completion
 ```
 
 ## Platform notes

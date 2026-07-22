@@ -115,7 +115,7 @@ nav:
       - iOS 17+ tunnels: guides/ios17-tunnels.md
       - Python API: guides/python-api.md
       - Writing CLI commands: guides/writing-commands-with-service-provider.md
-      - Codex device operator: guides/codex-device-operator-skill.md
+      - Device operator skill: guides/codex-device-operator-skill.md
   - Python API Reference:
       - Overview: api/index.md
       - Connecting to a device: api/connection.md

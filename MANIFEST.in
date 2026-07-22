@@ -2,3 +2,4 @@ prune docs
 prune site
 exclude mkdocs.yml
 exclude .markdownlintignore
+prune misc/claude-plugin

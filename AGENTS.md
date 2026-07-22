@@ -64,11 +64,33 @@ Guidance for AI coding agents and automation contributors working in this reposi
 - Run at least targeted tests for touched areas; run full `pytest` when practical.
 - Verify relevant linting for touched files when practical.
 
+## Skills
+
+Repo-local agent skills (`SKILL.md` + optional `references/`) are discoverable by both
+Claude Code and Codex: `.claude/skills/` and `.codex/skills/` mirror each other via
+relative symlinks. Each skill has exactly one canonical directory — the other tree holds
+a symlink to it — so edit the canonical files only:
+
+- `.codex/skills/pymobiledevice3-device-operator/` — operate a connected device through
+  the local checkout (task routing, transport selection, safety gates).
+- `.codex/skills/tss-batch-prefetch/` — maintain `PREFETCHABLE_UPDATERS` in
+  `pymobiledevice3/restore/tss.py`.
+- `.claude/skills/release/` — cut a GitHub release (which publishes to PyPI).
+
+When adding a skill, create it in one tree and symlink it from the other. When changing
+user-facing CLI layout, transports, or safety-relevant behavior, review whether the
+device-operator skill guidance needs updating.
+
+The device-operator skill is also published as a Claude Code plugin: the repo is a
+plugin marketplace (`.claude-plugin/marketplace.json`) whose plugin package at
+`misc/claude-plugin/` mounts the skill via symlink — the canonical files remain the
+single source of truth.
+
 ## Documentation Expectations
 
 - Update docs for user-facing command/API changes.
 - Keep root `README.md` concise; place deep guides under `docs/guides/`.
-- Add links in `docs/README.md` for new guides.
+- Add new guides to the `nav` section of `mkdocs.yml`.
 
 ## Safety
 

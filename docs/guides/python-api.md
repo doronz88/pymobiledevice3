@@ -102,8 +102,9 @@ established.
 
 ## 2. The service pattern
 
-Every service subclasses `LockdownService`, takes a service provider, and is an **async context
-manager**. Once you have that pattern, all services work the same way:
+Nearly every service subclasses `LockdownService`, takes a service provider, and is an **async
+context manager** (a few, like `CrashReportsManager` and `DvtProvider`, wrap other services
+instead). Once you have that pattern, the services all work the same way:
 
 ```python
 from pymobiledevice3.lockdown import create_using_usbmux
