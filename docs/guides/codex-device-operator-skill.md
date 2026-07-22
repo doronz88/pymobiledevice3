@@ -4,6 +4,7 @@ This repository includes a repo-local agent skill for device-facing work:
 
 - Skill file: `.codex/skills/pymobiledevice3-device-operator/SKILL.md`
 - Reference file: `.codex/skills/pymobiledevice3-device-operator/references/quick-recipes.md`
+- Reference file: `.codex/skills/pymobiledevice3-device-operator/references/python-scripting.md`
 - Reference file: `.codex/skills/pymobiledevice3-device-operator/references/task-map.md`
 - Reference file:
   `.codex/skills/pymobiledevice3-device-operator/references/transport-and-safety.md`
@@ -47,6 +48,8 @@ If someone is using Codex against the GitHub repository and wants a copy-pasteab
   `https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/SKILL.md`
 - Quick recipes URL:
   `https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/quick-recipes.md`
+- Python scripting URL:
+  `https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/python-scripting.md`
 - Task map URL:
   `https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/task-map.md`
 - Transport and safety URL:
@@ -59,6 +62,7 @@ Use the pymobiledevice3 device-operator skill:
 https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/SKILL.md
 Also use its references:
 https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/quick-recipes.md
+https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/python-scripting.md
 https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/task-map.md
 https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/transport-and-safety.md
 ```
@@ -70,6 +74,7 @@ Use this skill when an agent needs to operate a connected iPhone or iPad through
 - app/container operations
 - DVT and other developer services
 - WebInspector and WDA automation
+- Python scripting against the library
 - thin CLI additions on top of existing services
 
 ## What The Skill Enforces

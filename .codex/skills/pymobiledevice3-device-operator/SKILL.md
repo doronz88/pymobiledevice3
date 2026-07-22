@@ -1,6 +1,6 @@
 ---
 name: pymobiledevice3-device-operator
-description: Operate iOS and iPadOS devices with pymobiledevice3, from a local checkout or straight from PyPI via uvx on a fresh workstation. Use when an agent needs to inspect a connected device, collect logs or crash data, browse or copy files, manage apps, profiles, or backups, use developer services such as DDI/DVT/tunnels/sysmon/screenshots/simulated location, automate Safari or WebViews through WebInspector or WDA, or add a thin repo-native device command on top of existing services. Prefer existing CLI and service modules, choose USB vs --rsd/--tunnel correctly, and require explicit user intent before state-changing or destructive actions.
+description: Operate iOS and iPadOS devices with pymobiledevice3, from a local checkout or straight from PyPI via uvx on a fresh workstation. Use when an agent needs to inspect a connected device, collect logs or crash data, browse or copy files, manage apps, profiles, or backups, use developer services such as DDI/DVT/tunnels/sysmon/screenshots/simulated location, automate Safari or WebViews through WebInspector or WDA, write Python scripts against the pymobiledevice3 library, or add a thin repo-native device command on top of existing services. Prefer existing CLI and service modules, choose USB vs --rsd/--tunnel correctly, and require explicit user intent before state-changing or destructive actions.
 ---
 
 # PyMobileDevice3 Device Operator
@@ -51,6 +51,10 @@ Do not expose or commit pair records, crash artifacts, backups, or other device-
 Read `references/quick-recipes.md` for the exact invocation of the most common tasks
 (screenshot, syslog search, crash pull, file copy, app listing) and for the
 syslog-first troubleshooting technique.
+
+Read `references/python-scripting.md` before writing Python code against the library —
+the API went async incrementally over many releases, so memorized/older API shapes are
+usually stale.
 
 Read `references/task-map.md` when you need to map a user goal to a command group or service module.
 
