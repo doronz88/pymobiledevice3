@@ -1026,7 +1026,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         if verify_request and response.get("Request") != request:
             if response.get("Type") == RESTORED_SERVICE_TYPE:
                 raise IncorrectModeError(f"Incorrect mode returned. Got: {response}")
-            raise LockdownError(f"Incorrect response returned. Got: {response}")
+            raise LockdownError(f"Incorrect response returned. Got: {response}", self.identifier, self.product_version)
 
         error = response.get("Error")
         if error is not None:
@@ -1044,11 +1044,11 @@ class LockdownClient(ABC, LockdownServiceProvider):
                 "InvalidService": InvalidServiceError,
                 "InvalidConnection": InvalidConnectionError,
             }
-            raise exception_errors.get(error, LockdownError)(error, self.identifier)
+            raise exception_errors.get(error, LockdownError)(error, self.identifier, self.product_version)
 
         # iOS < 5: 'Error' is not present, so we need to check the 'Result' instead
         if response.get("Result") == "Failure":
-            raise LockdownError("", self.identifier)
+            raise LockdownError("", self.identifier, self.product_version)
 
         return response
 

@@ -32,7 +32,11 @@ async def diagnostics_battery_monitor(service_provider: ServiceProviderDep) -> N
     while True:
         raw_info = await diagnostics.get_battery()
         if raw_info is None:
-            raise MissingValueError("device did not expose an IOPMPowerSource entry")
+            raise MissingValueError(
+                "device did not expose an IOPMPowerSource entry",
+                service_provider.udid,
+                service_provider.product_version,
+            )
         info = {
             "InstantAmperage": raw_info.get("InstantAmperage"),
             "Temperature": raw_info.get("Temperature"),

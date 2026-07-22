@@ -70,6 +70,7 @@ __all__ = [
     "UnrecognizedSelectorError",
     "UnsupportedCommandError",
     "UserDeniedPairingError",
+    "UserspaceTunnelUnavailableError",
     "WdaError",
     "WebInspectorNotEnabledError",
     "WirError",
@@ -324,9 +325,13 @@ class DeveloperModeError(PyMobileDevice3Exception):
 class LockdownError(PyMobileDevice3Exception):
     """lockdown general error"""
 
-    def __init__(self, message: str, identifier: Optional[str] = None) -> None:
+    def __init__(self, message: str, identifier: Optional[str], product_version: str) -> None:
         super().__init__(message)
+        # identifier is Optional only to match the base LockdownClient contract (its constructor
+        # permits an unknown identifier); every factory-built client (usbmux/TCP/RemoteXPC)
+        # populates it. product_version is always set (the lockdown/RSD property never returns None).
         self.identifier = identifier
+        self.product_version = product_version
 
 
 class GetProhibitedError(LockdownError):
@@ -471,8 +476,9 @@ class DeprecationError(PyMobileDevice3Exception):
 class RSDRequiredError(PyMobileDevice3Exception):
     """The requested action requires an RSD object"""
 
-    def __init__(self, identifier: str) -> None:
+    def __init__(self, identifier: Optional[str], product_version: str) -> None:
         self.identifier = identifier
+        self.product_version = product_version
         super().__init__()
 
 
@@ -480,6 +486,13 @@ class RoutableTunnelRequiredError(PyMobileDevice3Exception):
     """The action exposes the device's tunnel address to an external process (e.g. lldb), which
     needs a kernel-routable tunnel. The active tunnel is an in-process userspace tunnel whose
     address is only reachable from this process."""
+
+
+class UserspaceTunnelUnavailableError(PyMobileDevice3Exception):
+    """The no-root in-process userspace tunnel cannot serve this device — e.g. iOS 17.0-17.3 (no
+    CoreDeviceProxy service) with the RemotePairing fallback disabled or no RemotePairing service
+    reachable. Callers that require an RSD (e.g. the CLI) can catch this and route to a privileged
+    kernel tunnel (``tunneld``) instead."""
 
 
 class SysdiagnoseTimeoutError(PyMobileDevice3Exception, TimeoutError):

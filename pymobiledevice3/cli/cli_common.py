@@ -18,12 +18,18 @@ import inquirer3
 import typer
 from click import UsageError
 from inquirer3.themes import GreenPassion
+from packaging.version import Version
 from pygments import formatters, highlight, lexers
 from typer_injector import Depends
 from typing_extensions import ParamSpec
 
 from pymobiledevice3 import usbmux as usbmuxd
-from pymobiledevice3.exceptions import AccessDeniedError, DeviceNotFoundError, NoDeviceConnectedError
+from pymobiledevice3.exceptions import (
+    AccessDeniedError,
+    DeviceNotFoundError,
+    NoDeviceConnectedError,
+    UserspaceTunnelUnavailableError,
+)
 from pymobiledevice3.lockdown import LockdownClient, TcpLockdownClient, create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -34,6 +40,9 @@ from pymobiledevice3.utils import get_asyncio_loop
 UDID_ENV_VAR = "PYMOBILEDEVICE3_UDID"
 TUNNEL_ENV_VAR = "PYMOBILEDEVICE3_TUNNEL"
 USERSPACE_ENV_VAR = "PYMOBILEDEVICE3_USERSPACE"
+# When set (non-empty), the automatic tunnel fallback uses tunneld instead of the
+# no-root userspace tunnel — restoring the pre-userspace-default behavior.
+PREFER_TUNNELD_ENV_VAR = "PYMOBILEDEVICE3_PREFER_TUNNELD"
 USBMUX_ENV_VAR = "PYMOBILEDEVICE3_USBMUX"
 USBMUXD_SOCKET_ADDRESS_ENV_VAR = "USBMUXD_SOCKET_ADDRESS"
 USBMUX_ENV_VARS = [USBMUX_ENV_VAR, USBMUXD_SOCKET_ADDRESS_ENV_VAR]
@@ -201,7 +210,76 @@ def _cli_udid() -> Optional[str]:
     return os.getenv(UDID_ENV_VAR)
 
 
+def _resolve_target_serial(serial: Optional[str]) -> Optional[str]:
+    """Resolve the device the default (required) RSD tunnel should target.
+
+    When the user passed an explicit UDID (--udid / env) use it. Otherwise, if more than one USB
+    device is attached, prompt for one — mirroring the interactive selection the composing
+    service-provider dependencies do — so the default tunnel does not silently pick the first
+    device. Returns the chosen serial, or ``None`` when a single/zero device leaves the choice to
+    the usbmux layer.
+
+    usbmux exposes neither the device name nor the iOS version, so the chooser connects to each
+    device via lockdown to show ID/VERSION/TYPE, then closes those connections — only the chosen
+    serial is kept. These connections use ``autopair=False``: this is a display-only listing, so
+    browsing must not pair every attached device. Only the chosen device is paired later, when the
+    tunnel is established (``establish_userspace_rsd`` / ``tunneld`` use ``autopair=True``); the cost
+    is that the ``PAIRED`` field reads ``False`` for all here (it is simply unchecked).
+    """
+    if serial is not None:
+        return serial
+    devices = cli_loop.run_until_complete(usbmuxd.select_devices_by_connection_type(connection_type="USB"))
+    if len(devices) <= 1:
+        return None
+    lockdownds = [
+        cli_loop.run_until_complete(create_using_usbmux(serial=device.serial, autopair=False)) for device in devices
+    ]
+    try:
+        return prompt_device_list(lockdownds).identifier
+    finally:
+        for lockdown in lockdownds:
+            cli_loop.run_until_complete(lockdown.close())
+
+
+def requires_kernel_tunnel(product_version: str) -> bool:
+    """True when a device needs the privileged kernel tunnel (``tunneld``) rather than the
+    no-root in-process userspace tunnel.
+
+    iOS 17.0-17.3 always qualifies: those versions predate the CoreDeviceProxy lockdown service
+    (17.4+), so the userspace tunnel can only reach them over the RemotePairing/bonjour path — which
+    is Wi-Fi-only and, on macOS, races ``remoted`` (the no-root path cannot ``stop_remoted()``
+    without root). Rather than make the default depend on that fragile path, 17.0-17.3 routes to
+    ``tunneld`` on every platform. iOS 17.4+ uses CoreDeviceProxy over USB and works root-free, so
+    it stays on the userspace default. (``--userspace`` can still force the RemotePairing path on
+    17.0-17.3 where it applies.)
+
+    Used by the ``__main__`` exception-retry path, which already carries the product version from the
+    raised exception. The required-RSD default path (:func:`make_rsd_dependency`) instead reuses the
+    tunnel's own lockdown connection and routes via ``UserspaceTunnelUnavailableError``, so it needs
+    no separate version query.
+    """
+    return Version("17.0") <= Version(product_version) < Version("17.4")
+
+
 def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteServiceDiscoveryService]]:
+    """Build the Typer dependency that resolves an RSD from --rsd/--tunnel/--userspace.
+
+    ``allow_none`` decides what happens when the user passes none of those options:
+
+    * ``allow_none=True`` — return ``None`` so the composing dependency
+      (:func:`any_service_provider_dependency`, :func:`no_autopair_service_provider_dependency`)
+      can fall back to a plain usbmux lockdown. Used by commands that work over either a
+      lockdown or an RSD tunnel; on iOS 17+ the lockdown attempt raises InvalidServiceError /
+      RSDRequiredError and ``__main__`` re-runs the command forcing a tunnel.
+    * ``allow_none=False`` — the command requires an RSD (no lockdown equivalent, e.g.
+      ``core-device`` / ``remote rsd-info``), so a default tunnel is established here rather than
+      returning ``None``: the no-root userspace tunnel by default; a pre-17.4 device (iOS 17.0-17.3)
+      raises :class:`~pymobiledevice3.exceptions.UserspaceTunnelUnavailableError` during
+      establishment (RemotePairing fallback disabled), which is caught here and routed to tunneld
+      (with the resolved UDID). Setting ``PYMOBILEDEVICE3_PREFER_TUNNELD`` skips the userspace
+      attempt and goes straight to tunneld.
+    """
+
     def rsd_dependency(
         rsd: Annotated[
             Optional[tuple[str, int]],
@@ -264,16 +342,41 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
         # (pmd-pytcp) is a regular dependency on Python 3.9+, so any failure here is a real
         # establishment error and is surfaced rather than masked by a tunneld fallback.
         if userspace:
-            # Target the same device the rest of the CLI would (see _cli_udid).
-            serial = _cli_udid()
+            # Resolve (and, with multiple devices, prompt for) the target, like the other device
+            # dependencies — otherwise --userspace would silently pick the first device.
+            serial = _resolve_target_serial(_cli_udid())
+            # Imported lazily: userspace_tunnel pulls in the pure-Python PyTCP network stack
+            # (pmd-pytcp), whose import is expensive — keep it off the hot path of every CLI
+            # command that never establishes a userspace tunnel.
             from pymobiledevice3.remote import userspace_tunnel
 
             return cli_loop.run_until_complete(userspace_tunnel.establish_userspace_rsd(serial=serial))
 
-        # Default: a required RSD uses the kernel tunnel via tunneld (needs a privileged
-        # `remote tunneld`). Pass --userspace for a no-root tunnel instead.
+        # Default for a required RSD: prefer the no-root in-process userspace tunnel. A pre-17.4
+        # device (no CoreDeviceProxy — i.e. iOS 17.0-17.3, reachable no-root only over the fragile
+        # RemotePairing path) is served by tunneld instead: establishment is asked NOT to attempt
+        # RemotePairing (remotepairing_fallback=False), so it raises UserspaceTunnelUnavailableError,
+        # which we catch and route to tunneld. This reuses the single lockdown connection
+        # establishment already opens — no separate version probe.
         if not allow_none:
-            return cli_loop.run_until_complete(_tunneld(""))
+            # Resolve (and, with multiple devices, prompt for) the target so both the userspace
+            # attempt and the tunneld fallback act on the same user-chosen device.
+            serial = _resolve_target_serial(_cli_udid())
+            # PYMOBILEDEVICE3_PREFER_TUNNELD opts out of the userspace default entirely,
+            # restoring the pre-userspace-default behavior (straight to tunneld).
+            if os.getenv(PREFER_TUNNELD_ENV_VAR):
+                return cli_loop.run_until_complete(_tunneld(serial or ""))
+            # Imported lazily: see the --userspace branch above — the PyTCP stack import is
+            # expensive and must stay off the hot path of commands that never need it.
+            from pymobiledevice3.remote import userspace_tunnel
+
+            try:
+                return cli_loop.run_until_complete(
+                    userspace_tunnel.establish_userspace_rsd(serial=serial, remotepairing_fallback=False)
+                )
+            except UserspaceTunnelUnavailableError:
+                # Propagate the resolved UDID so tunneld targets the same device (empty => auto/prompt).
+                return cli_loop.run_until_complete(_tunneld(serial or ""))
 
     return rsd_dependency
 
