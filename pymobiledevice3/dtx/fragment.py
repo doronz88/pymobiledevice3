@@ -15,10 +15,10 @@ from dataclasses import dataclass
 
 from .exceptions import DTXProtocolError
 from .structs import (
-    DTX_FRAGMENT_MAGIC,
     FRAGMENT_HEADER_MIN_SIZE,
     FRAGMENT_PAYLOAD_HEADER_SIZE,
     MAX_MESSAGE_SIZE,
+    DtxFragmentHeader,
     DTXTransportFlags,
     dtx_fragment_header,
 )
@@ -87,17 +87,18 @@ class DTXFragment:
         """Return a list of memoryview chunks that make up this fragment for sending."""
         return [
             memoryview(
-                dtx_fragment_header.build({
-                    "magic": DTX_FRAGMENT_MAGIC,
-                    "header_size": FRAGMENT_HEADER_MIN_SIZE,
-                    "index": self.index,
-                    "count": self.count,
-                    "data_size": self.data_size,
-                    "identifier": self.identifier,
-                    "conversation_index": self.conversation_index,
-                    "channel_code": self.channel_code,
-                    "flags": int(self.flags),
-                })
+                dtx_fragment_header.build(
+                    DtxFragmentHeader(
+                        header_size=FRAGMENT_HEADER_MIN_SIZE,
+                        index=self.index,
+                        count=self.count,
+                        data_size=self.data_size,
+                        identifier=self.identifier,
+                        conversation_index=self.conversation_index,
+                        channel_code=self.channel_code,
+                        flags=int(self.flags),
+                    )
+                )
             ),
             self.payload,
         ]

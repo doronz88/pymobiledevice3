@@ -27,7 +27,13 @@ from . import ns_types as _ns_types  # noqa: F401 - registers common NSKeyedArch
 from .exceptions import DTXNSCodingError, DTXProtocolError
 from .fragment import DTXFragment, DTXTransportFlags
 from .message_aux import MessageAux
-from .structs import MAX_MESSAGE_SIZE, MESSAGE_PAYLOAD_HEADER_SIZE, DTXMessageType, dtx_fragment_payload_header
+from .structs import (
+    MAX_MESSAGE_SIZE,
+    MESSAGE_PAYLOAD_HEADER_SIZE,
+    DtxFragmentPayloadHeader,
+    DTXMessageType,
+    dtx_fragment_payload_header,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -196,15 +202,17 @@ class DTXMessage:
 
         return [
             memoryview(
-                dtx_fragment_payload_header.build({
-                    "msg_type": int(self.type),
-                    "flags_a": 0,
-                    "flags_b": 0,
-                    "reserved": 0,
-                    "aux_size": len(self.aux_data),
-                    "total_size": len(self.aux_data) + len(self.payload_data),
-                    "flags": int(self.flags),
-                })
+                dtx_fragment_payload_header.build(
+                    DtxFragmentPayloadHeader(
+                        msg_type=int(self.type),
+                        flags_a=0,
+                        flags_b=0,
+                        reserved=0,
+                        aux_size=len(self.aux_data),
+                        total_size=len(self.aux_data) + len(self.payload_data),
+                        flags=int(self.flags),
+                    )
+                )
             ),
             self.aux_data,
             self.payload_data,
