@@ -1,15 +1,10 @@
 from dataclasses import dataclass
 from enum import IntEnum, IntFlag
 
-from construct import Const, Int8ul, Int16ul, Int32sl, Int32ul
+from construct import Int8ul, Int16ul, Int32sl, Int32ul
 from construct_typed import DataclassMixin, DataclassStruct, csfield
 
-try:
-    # construct-typing >= 0.8.0 rejects csfield(Const(...)) and requires csfield_const() for const
-    # fields. Older versions (0.7.x, the Python 3.9 floor) have no csfield_const (see afc.py).
-    from construct_typed import csfield_const  # pyright: ignore[reportAttributeAccessIssue]
-except ImportError:  # construct-typing < 0.8.0
-    csfield_const = None
+from pymobiledevice3.construct_compat import const_field
 
 # ---------------------------------------------------------------------------
 # Protocol constants
@@ -57,26 +52,18 @@ class DTXMessageType(IntEnum):
 # Construct structs
 # ---------------------------------------------------------------------------
 
+
 # Fragment (wire) header - minimum 32 bytes; ``header_size`` may indicate more.
-# construct-typing >= 0.8.0 requires csfield_const() for const fields; 0.7.x (the Python 3.9 floor)
-# only has csfield(Const(...)). Pick the form the installed version supports (see afc.py).
-_dtx_magic_field = (
-    csfield_const(Int32ul, DTX_FRAGMENT_MAGIC)
-    if csfield_const is not None
-    else csfield(Const(DTX_FRAGMENT_MAGIC, Int32ul))
-)
-
-
 @dataclass
 class DtxFragmentHeader(DataclassMixin):
     """Typed DTX fragment (wire) header. ``parse()`` yields typed field access instead of a
     dynamically-typed construct ``Container``.
 
-    csfield_const() returns a ``dataclasses.Field(init=False)`` at runtime, but its 0.8 stub types it
-    as the plain value, so pyright can't see the init=False and flags the non-default fields that
-    follow — hence the per-field ignores. Field order is the DTX wire format."""
+    ``const_field`` makes ``magic`` ``init=False`` at runtime, but pyright can't see that through the
+    construct-typing stubs and flags the non-default fields that follow — hence the per-field ignores.
+    Field order is the DTX wire format."""
 
-    magic: int = _dtx_magic_field
+    magic: int = const_field(Int32ul, DTX_FRAGMENT_MAGIC)
     header_size: int = csfield(Int32ul)  # pyright: ignore[reportGeneralTypeIssues]  # total header size
     index: int = csfield(Int16ul)  # pyright: ignore[reportGeneralTypeIssues]  # 0-based fragment index
     count: int = csfield(Int16ul)  # pyright: ignore[reportGeneralTypeIssues]  # total fragment count
