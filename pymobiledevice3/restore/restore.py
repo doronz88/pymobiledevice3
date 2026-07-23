@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 import asyncio
 import binascii
 import hashlib
@@ -9,7 +10,7 @@ import time
 import typing
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 from zipfile import ZipFile, ZipInfo
 
 import requests
@@ -55,12 +56,12 @@ class TrackedPrefetch:
     updater_name: str
     ticket_name: str
     nonce: bytes
-    add_tags: Callable
-    chip_params: dict
+    add_tags: Callable[..., Any]
+    chip_params: dict[str, Any]
     # how to find this chip's nonce in the restore-time DeviceGeneratedRequest
     # (one of these is set, mirroring PrefetchVariant).
     devgen_nonce: Optional[str] = None
-    devgen_nonce_path: Optional[list] = None
+    devgen_nonce_path: Optional[list[Any]] = None
 
 
 @dataclass
@@ -71,7 +72,7 @@ class PrefetchedTicket:
     response: TSSResponse
     ticket_name: str
     devgen_nonce: Optional[str] = None
-    devgen_nonce_path: Optional[list] = None
+    devgen_nonce_path: Optional[list[Any]] = None
 
 
 class Restore(BaseRestore):
@@ -178,7 +179,7 @@ class Restore(BaseRestore):
             "DeviceTree": self.send_component,
         }
 
-    def handle_async_data_request_msg(self, message: dict) -> typing.Coroutine:
+    def handle_async_data_request_msg(self, message: dict[str, Any]) -> typing.Coroutine[Any, Any, None]:
         self._tasks.append(
             asyncio.create_task(
                 self.handle_data_request_msg(message), name=f"AsyncDataRequestMsg-{message['DataType']}"
@@ -186,7 +187,7 @@ class Restore(BaseRestore):
         )
         return asyncio.sleep(0)
 
-    async def send_filesystem(self, message: dict) -> None:
+    async def send_filesystem(self, message: dict[str, Any]) -> None:
         self.logger.info("about to send filesystem...")
 
         asr_port = message.get("DataPort", DEFAULT_ASR_SYNC_PORT)
@@ -220,7 +221,7 @@ class Restore(BaseRestore):
     async def get_build_identity_from_request(self, msg):
         return await self.get_build_identity(msg["Arguments"].get("IsRecoveryOS", False))
 
-    async def send_buildidentity(self, message: dict) -> None:
+    async def send_buildidentity(self, message: dict[str, Any]) -> None:
         self.logger.info("About to send BuildIdentity Dict...")
         service = await self._get_service_for_data_request(message)
         req = {"BuildIdentityDict": dict(await self.get_build_identity_from_request(message))}
@@ -246,7 +247,7 @@ class Restore(BaseRestore):
         # The path of the global manifest is hardcoded. There's no pointer to in the build manifest.
         return self.ipsw.get_global_manifest(macos_variant, device_class)
 
-    async def send_personalized_boot_object_v3(self, message: dict) -> None:
+    async def send_personalized_boot_object_v3(self, message: dict[str, Any]) -> None:
         self.logger.debug("send_personalized_boot_object_v3")
         service = await self._get_service_for_data_request(message)
         image_name = message["Arguments"]["ImageName"]
@@ -272,7 +273,7 @@ class Restore(BaseRestore):
 
         self.logger.info(f"Done sending {component_name}")
 
-    async def send_source_boot_object_v4(self, message: dict) -> None:
+    async def send_source_boot_object_v4(self, message: dict[str, Any]) -> None:
         self.logger.debug("send_source_boot_object_v4")
         service = await self._get_service_for_data_request(message)
         image_name = message["Arguments"]["ImageName"]
@@ -362,7 +363,7 @@ class Restore(BaseRestore):
 
         return self.ipsw.build_manifest.get_build_identity(await self.device.get_hardware_model(), variant=variant)
 
-    async def send_restore_local_policy(self, message: dict) -> None:
+    async def send_restore_local_policy(self, message: dict[str, Any]) -> None:
         component = "Ap,LocalPolicy"
         service = await self._get_service_for_data_request(message)
 
@@ -376,7 +377,7 @@ class Restore(BaseRestore):
             "Ap,LocalPolicy": await self.get_personalized_data(component, data=lpol_file, tss=tss_localpolicy)
         })
 
-    async def send_recovery_os_root_ticket(self, message: dict) -> None:
+    async def send_recovery_os_root_ticket(self, message: dict[str, Any]) -> None:
         self.logger.info("About to send RecoveryOSRootTicket...")
         service = await self._get_service_for_data_request(message)
 
@@ -398,7 +399,7 @@ class Restore(BaseRestore):
         self.logger.info("Sending RecoveryOSRootTicket now...")
         await service.send_plist(req)
 
-    async def send_root_ticket(self, message: dict) -> None:
+    async def send_root_ticket(self, message: dict[str, Any]) -> None:
         self.logger.info("About to send RootTicket...")
         service = await self._get_service_for_data_request(message)
 
@@ -408,7 +409,7 @@ class Restore(BaseRestore):
         self.logger.info("Sending RootTicket now...")
         await service.send_plist({"RootTicketData": self.recovery.tss.ap_img4_ticket})
 
-    async def send_nor(self, message: dict):
+    async def send_nor(self, message: dict[str, Any]):
         self.logger.info("About to send NORData...")
         service = await self._get_service_for_data_request(message)
 
@@ -623,7 +624,7 @@ class Restore(BaseRestore):
                 os.remove(tmp_zip_read_name)
 
     @asyncio_print_traceback
-    async def send_baseband_data(self, message: dict):
+    async def send_baseband_data(self, message: dict[str, Any]):
         self.logger.info(f"About to send BasebandData: {message}")
         service = await self._get_service_for_data_request(message)
 
@@ -688,7 +689,7 @@ class Restore(BaseRestore):
         self.logger.info("Sending BasebandData now...")
         await service.send_plist({"BasebandData": buffer})
 
-    async def send_fdr_trust_data(self, message: dict) -> None:
+    async def send_fdr_trust_data(self, message: dict[str, Any]) -> None:
         self.logger.info("About to send FDR Trust data...")
         service = await self._get_service_for_data_request(message)
 
@@ -699,7 +700,11 @@ class Restore(BaseRestore):
         await service.send_plist({})
 
     async def send_image_data(
-        self, message: dict, image_list_k: Optional[str], image_type_k: Optional[str], image_data_k: Optional[str]
+        self,
+        message: dict[str, Any],
+        image_list_k: Optional[str],
+        image_type_k: Optional[str],
+        image_data_k: Optional[str],
     ) -> None:
         self.logger.debug(f"send_image_data: {message}")
         arguments = message["Arguments"]
@@ -763,7 +768,7 @@ class Restore(BaseRestore):
         assert self._restored is not None
         await self._restored.send(req)
 
-    async def send_bootability_bundle_data(self, message: dict) -> None:
+    async def send_bootability_bundle_data(self, message: dict[str, Any]) -> None:
         self.logger.debug(f"send_bootability_bundle_data: {message}")
         service = await self._get_service_for_data_request(message)
         await service.sendall(self.ipsw.bootability)
@@ -774,7 +779,9 @@ class Restore(BaseRestore):
         assert self._restored is not None
         await self._restored.send({"ReceiptManifest": self.build_identity.manifest})
 
-    async def get_se_firmware_data(self, updater_name: str, info: dict, arguments: dict) -> dict:
+    async def get_se_firmware_data(
+        self, updater_name: str, info: dict[str, Any], arguments: dict[str, Any]
+    ) -> dict[str, Any]:
         chip_id = info.get("SE,ChipID")
         if chip_id is None:
             chip_id = self.build_identity["Manifest"]["SE,ChipID"]
@@ -801,7 +808,7 @@ class Restore(BaseRestore):
             # Legacy non-DeviceGenerated path (pre-iOS 18). Prefetch cache lookup happens
             # only in get_device_generated_firmware_data — modern iOS never enters this branch.
             request = TSSRequest()
-            parameters: dict = {}
+            parameters: dict[str, Any] = {}
             self.populate_tss_request_from_manifest(parameters)
             parameters.update(info)
             request.add_se_tags(parameters, None)
@@ -814,7 +821,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_yonkers_firmware_data(self, info: dict):
+    async def get_yonkers_firmware_data(self, info: dict[str, Any]):
         # create Yonkers request
         request = TSSRequest()
         parameters = {}
@@ -852,13 +859,13 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_savage_firmware_data(self, info: dict):
+    async def get_savage_firmware_data(self, info: dict[str, Any]):
         cached = self._lookup_prefetched_tss("Savage", info.get("Savage,Nonce"))
         if cached is not None:
             response = cached
             # We still need to know which Savage,B?-*-Patch component to read; mirror
             # the comp-name selection logic from add_savage_tags.
-            parameters: dict = {}
+            parameters: dict[str, Any] = {}
             self.populate_tss_request_from_manifest(parameters)
             parameters.update(info)
             comp_name = TSSRequest().add_savage_tags(parameters, None)
@@ -893,7 +900,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_rose_firmware_data(self, updater_name: str, info: dict, arguments: dict):
+    async def get_rose_firmware_data(self, updater_name: str, info: dict[str, Any], arguments: dict[str, Any]):
         self.logger.info(f"get_rose_firmware_data: {info}")
 
         if "DeviceGeneratedTags" in arguments:
@@ -902,7 +909,7 @@ class Restore(BaseRestore):
 
         # Legacy non-DeviceGenerated path (pre-iOS 18); modern iOS never enters here.
         request = TSSRequest()
-        parameters: dict = {}
+        parameters: dict[str, Any] = {}
         self.populate_tss_request_from_manifest(parameters)
         parameters["ApProductionMode"] = True
         if await self.device.get_is_image4_supported():
@@ -936,7 +943,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_veridian_firmware_data(self, updater_name: str, info: dict, arguments: dict):
+    async def get_veridian_firmware_data(self, updater_name: str, info: dict[str, Any], arguments: dict[str, Any]):
         self.logger.info(f"get_veridian_firmware_data: {info}")
         comp_name = "BMU,FirmwareMap"
 
@@ -945,7 +952,7 @@ class Restore(BaseRestore):
         else:
             # Legacy non-DeviceGenerated path (pre-iOS 18); modern iOS never enters here.
             request = TSSRequest()
-            parameters: dict = {}
+            parameters: dict[str, Any] = {}
             self.populate_tss_request_from_manifest(parameters)
             parameters.update(info)
             request.add_veridian_tags(parameters, None)
@@ -963,7 +970,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_tcon_firmware_data(self, info: dict):
+    async def get_tcon_firmware_data(self, info: dict[str, Any]):
         self.logger.info(f"restore_get_tcon_firmware_data: {info}")
         comp_name = "Baobab,TCON"
 
@@ -991,7 +998,9 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_device_generated_firmware_data(self, updater_name: str, info: dict, arguments: dict) -> dict:
+    async def get_device_generated_firmware_data(
+        self, updater_name: str, info: dict[str, Any], arguments: dict[str, Any]
+    ) -> dict[str, Any]:
         self.logger.info(f"get_device_generated_firmware_data ({updater_name}): {arguments}")
 
         response_ticket = arguments["DeviceGeneratedTags"]["ResponseTags"][0]
@@ -1038,7 +1047,7 @@ class Restore(BaseRestore):
 
         return response
 
-    async def get_timer_firmware_data(self, info: dict):
+    async def get_timer_firmware_data(self, info: dict[str, Any]):
         self.logger.info(f"get_timer_firmware_data: {info}")
 
         ftab = None
@@ -1117,7 +1126,7 @@ class Restore(BaseRestore):
     # ---------- Tethered preflight (iOS 18+) — batched-only ----------
 
     @staticmethod
-    def _merge_device_info(parameters: dict, info: dict) -> dict:
+    def _merge_device_info(parameters: dict[str, Any], info: dict[str, Any]) -> dict[str, Any]:
         """Merge a peripheral's PreflightInfo.DeviceInfo entry into params, without clobbering
         manifest-derived int fields with the device's raw-bytes representation.
 
@@ -1141,7 +1150,7 @@ class Restore(BaseRestore):
         return merged
 
     @staticmethod
-    def _dig(container: dict, path) -> typing.Any:
+    def _dig(container: dict[str, Any], path) -> typing.Any:
         """Navigate a dict by a single key or a list-of-keys path; None if any hop misses."""
         cur = container
         for key in [path] if isinstance(path, str) else path:
@@ -1151,7 +1160,7 @@ class Restore(BaseRestore):
         return cur
 
     @classmethod
-    def _resolve_nonce(cls, container: dict, nonce_key: Optional[str], nonce_path: Optional[list]):
+    def _resolve_nonce(cls, container: dict[Any, Any], nonce_key: Optional[str], nonce_path: Optional[list[Any]]):
         """Resolve a peripheral nonce from a container (PreflightInfo entry or
         DeviceGeneratedRequest). Pass either a single ``nonce_key``, or a ``nonce_path``
         (a list of paths whose bytes are concatenated into one composite nonce, e.g.
@@ -1166,7 +1175,9 @@ class Restore(BaseRestore):
             return None
         return b"".join(bytes(part) for part in parts)
 
-    def _lookup_prefetched_tss_by_ticket(self, response_ticket: str, arguments: dict) -> Optional[TSSResponse]:
+    def _lookup_prefetched_tss_by_ticket(
+        self, response_ticket: str, arguments: dict[str, Any]
+    ) -> Optional[TSSResponse]:
         """Cache lookup for the iOS 18+ DeviceGeneratedTags path.
 
         On modern iOS, restored builds the TSS request itself and the host just forwards.
@@ -1228,7 +1239,7 @@ class Restore(BaseRestore):
         """
         # Common AP context — required by every peripheral signing request even though
         # we're NOT asking TSS to sign the AP ticket itself.
-        parameters: dict = {"ApECID": await self.device.get_ecid()}
+        parameters: dict[str, Any] = {"ApECID": await self.device.get_ecid()}
         parameters["ApProductionMode"] = True
         if await self.device.get_is_image4_supported():
             parameters["ApSecurityMode"] = True
@@ -1320,7 +1331,7 @@ class Restore(BaseRestore):
             self._store_prefetched_ticket(entry, response)
         return True
 
-    def _store_prefetched_ticket(self, entry: TrackedPrefetch, response: dict) -> bool:
+    def _store_prefetched_ticket(self, entry: TrackedPrefetch, response: dict[str, Any]) -> bool:
         """Cache a single peripheral's ticket from a TSS response if present. Returns True
         if the expected ticket was found and stored."""
         ticket_name = entry.ticket_name
@@ -1338,7 +1349,7 @@ class Restore(BaseRestore):
         self.logger.info(f"TSS batch: TSS did NOT return {ticket_name}; reactive path will handle this peripheral")
         return False
 
-    async def _prefetch_per_chip(self, parameters: dict, tracked: list[TrackedPrefetch]) -> bool:
+    async def _prefetch_per_chip(self, parameters: dict[str, Any], tracked: list[TrackedPrefetch]) -> bool:
         """Fallback when the combined POST is rejected: sign each peripheral in its own POST
         so a single rejected chip doesn't deny the others their prefetched tickets. Returns
         True if at least one ticket was cached."""
@@ -1360,7 +1371,7 @@ class Restore(BaseRestore):
 
     # ---------------------------------------------------
 
-    async def send_firmware_updater_data(self, message: dict):
+    async def send_firmware_updater_data(self, message: dict[str, Any]):
         self.logger.debug(f"got FirmwareUpdaterData request: {message}")
         service = await self._get_service_for_data_request(message)
         arguments = message["Arguments"]
@@ -1404,13 +1415,13 @@ class Restore(BaseRestore):
         self.logger.info("Sending FirmwareResponse data now...")
         await service.send_plist({"FirmwareResponseData": fwdict})
 
-    async def send_firmware_updater_preflight(self, message: dict) -> None:
+    async def send_firmware_updater_preflight(self, message: dict[str, Any]) -> None:
         self.logger.warning(f"send_firmware_updater_preflight: {message}")
         service = await self._get_service_for_data_request(message)
         await service.send_plist({})
 
     @asyncio_print_traceback
-    async def send_url_asset(self, message: dict) -> None:
+    async def send_url_asset(self, message: dict[str, Any]) -> None:
         self.logger.info(f"send_url_asset: {message}")
         service = await self._get_service_for_data_request(message)
         arguments = message["Arguments"]
@@ -1441,7 +1452,7 @@ class Restore(BaseRestore):
         )
         await service.close()
 
-    async def send_streamed_image_decryption_key(self, message: dict) -> None:
+    async def send_streamed_image_decryption_key(self, message: dict[str, Any]) -> None:
         self.logger.info(f"send_streamed_image_decryption_key: {message}")
         service = await self._get_service_for_data_request(message)
         arguments = message["Arguments"]
@@ -1468,7 +1479,7 @@ class Restore(BaseRestore):
             f"{component_name}File": await self.get_personalized_data(component, tss=self.recovery.require_tss())
         })
 
-    async def handle_data_request_msg(self, message: dict):
+    async def handle_data_request_msg(self, message: dict[str, Any]):
         self.logger.debug(f"handle_data_request_msg: {message}")
 
         # checks and see what kind of data restored is requests and pass the request to its own handler
@@ -1502,11 +1513,11 @@ class Restore(BaseRestore):
         else:
             self.logger.error(f"unknown data request: {message}")
 
-    async def handle_previous_restore_log_msg(self, message: dict):
+    async def handle_previous_restore_log_msg(self, message: dict[str, Any]):
         restorelog = message["PreviousRestoreLog"]
         self.logger.debug(f"PreviousRestoreLog: {restorelog}")
 
-    async def handle_progress_msg(self, message: dict) -> None:
+    async def handle_progress_msg(self, message: dict[str, Any]) -> None:
         operation = message["Operation"]
         if operation in PROGRESS_BAR_OPERATIONS:
             message["Operation"] = PROGRESS_BAR_OPERATIONS[operation]
@@ -1529,7 +1540,7 @@ class Restore(BaseRestore):
 
         self.logger.debug(f"progress-bar: {message}")
 
-    async def handle_status_msg(self, message: dict):
+    async def handle_status_msg(self, message: dict[str, Any]):
         self.logger.debug(f"status message: {message}")
         status = message["Status"]
         log = message.get("Log")
@@ -1548,15 +1559,15 @@ class Restore(BaseRestore):
             else:
                 self.logger.error("unknown error")
 
-    async def handle_checkpoint_msg(self, message: dict):
+    async def handle_checkpoint_msg(self, message: dict[str, Any]):
         self.logger.debug(f"checkpoint: {message}")
 
-    async def handle_bb_update_status_msg(self, message: dict):
+    async def handle_bb_update_status_msg(self, message: dict[str, Any]):
         self.logger.debug(f"bb_update_status_msg: {message}")
         if not message["Accepted"]:
             raise PyMobileDevice3Exception(str(message))
 
-    async def handle_baseband_updater_output_data(self, message: dict) -> None:
+    async def handle_baseband_updater_output_data(self, message: dict[str, Any]) -> None:
         self.logger.debug(f"restore_handle_baseband_updater_output_data: {message}")
         data_port = message["DataPort"]
 
@@ -1590,18 +1601,18 @@ class Restore(BaseRestore):
         self.logger.debug("Closing connection of BasebandUpdaterOutputData data port")
         await client.close()
 
-    async def handle_host_system_time(self, message: dict) -> None:
+    async def handle_host_system_time(self, message: dict[str, Any]) -> None:
         assert self._restored is not None
         await self._restored.send({"SetHostTimeOnDevice": time.time()})
 
-    async def handle_restored_crash(self, message: dict) -> None:
+    async def handle_restored_crash(self, message: dict[str, Any]) -> None:
         backtrace = "\n".join(message["RestoredBacktrace"])
         self.logger.info(f"restored crashed. backtrace:\n{backtrace}")
 
-    async def handle_async_wait(self, message: dict) -> None:
+    async def handle_async_wait(self, message: dict[str, Any]) -> None:
         self.logger.debug(message)
 
-    async def handle_restore_attestation(self, message: dict) -> None:
+    async def handle_restore_attestation(self, message: dict[str, Any]) -> None:
         self.logger.debug(message)
         assert self._restored is not None
         await self._restored.send({"RestoreShouldAttest": False})
@@ -1719,7 +1730,7 @@ class Restore(BaseRestore):
         self.logger.info(f"  >> gs.apple.com POSTs saved during restore: {len(hits)}")
         self.logger.info("=" * 64)
 
-    async def _get_service_for_data_request(self, message: dict) -> ServiceConnection:
+    async def _get_service_for_data_request(self, message: dict[str, Any]) -> ServiceConnection:
         assert self._restored is not None
         data_port = message.get("DataPort")
         if data_port is None:
