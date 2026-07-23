@@ -23,8 +23,9 @@ from socket import create_connection
 from ssl import VerifyMode
 from typing import Any, Callable, NamedTuple, Optional, TextIO, Union, cast
 
-from construct import Const, Container, GreedyBytes, GreedyRange, Int8ul, Int16ub, Int64ul, Prefixed, Struct
+from construct import Bytes, Container, GreedyBytes, GreedyRange, Int8ul, Int16ub, Int64ul, Prefixed, Struct
 from construct import Enum as ConstructEnum
+from construct_typed import DataclassMixin, DataclassStruct, csfield
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives._serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -47,6 +48,7 @@ from srptools import SRPClientSession, SRPContext, SRPServerSession
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
 from srptools.utils import hex_from
 
+from pymobiledevice3.construct_compat import const_field
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 
@@ -155,17 +157,34 @@ class PairConsentResult(NamedTuple):
     pin: Optional[str]
 
 
-CDTunnelPacket = Struct(
-    "magic" / Const(b"CDTunnel"),
-    "body" / Prefixed(Int16ub, GreedyBytes),
-)
+CDTUNNEL_MAGIC = b"CDTunnel"
+
+
+@dataclasses.dataclass
+class CDTunnelPacketData(DataclassMixin):
+    """Typed CoreDevice tunnel packet: ``CDTunnel`` magic + a length-prefixed body.
+
+    const_field() makes ``magic`` init=False at runtime; pyright can't see that through the
+    construct-typing stubs, hence the ignore on the following field."""
+
+    magic: bytes = const_field(Bytes(len(CDTUNNEL_MAGIC)), CDTUNNEL_MAGIC)
+    body: bytes = csfield(Prefixed(Int16ub, GreedyBytes))  # pyright: ignore[reportGeneralTypeIssues]
+
+
+CDTunnelPacket = DataclassStruct(CDTunnelPacketData)
 
 REPAIRING_PACKET_MAGIC = b"RPPairing"
 
-RPPairingPacket = Struct(
-    "magic" / Const(REPAIRING_PACKET_MAGIC),
-    "body" / Prefixed(Int16ub, GreedyBytes),
-)
+
+@dataclasses.dataclass
+class RPPairingPacketData(DataclassMixin):
+    """Typed remote-pairing packet: ``RPPairing`` magic + a length-prefixed body."""
+
+    magic: bytes = const_field(Bytes(len(REPAIRING_PACKET_MAGIC)), REPAIRING_PACKET_MAGIC)
+    body: bytes = csfield(Prefixed(Int16ub, GreedyBytes))  # pyright: ignore[reportGeneralTypeIssues]
+
+
+RPPairingPacket = DataclassStruct(RPPairingPacketData)
 
 #: When True, :func:`create_tun_device` builds the tunnel's interface as a pure-Python
 #: userspace stack (``UserspaceTun``, no root) instead of a kernel ``utun`` (needs root/admin).
@@ -341,7 +360,7 @@ class RemotePairingTunnel(ABC):
 
     @staticmethod
     def _encode_cdtunnel_packet(data: dict[str, Any]) -> bytes:
-        return CDTunnelPacket.build({"body": json.dumps(data).encode()})
+        return CDTunnelPacket.build(CDTunnelPacketData(body=json.dumps(data).encode()))
 
 
 class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
@@ -402,7 +421,7 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
 
     @staticmethod
     def _encode_cdtunnel_packet(data: dict[str, Any]) -> bytes:
-        return CDTunnelPacket.build({"body": json.dumps(data).encode()})
+        return CDTunnelPacket.build(CDTunnelPacketData(body=json.dumps(data).encode()))
 
 
 class RemotePairingTcpTunnel(RemotePairingTunnel):
@@ -1218,7 +1237,11 @@ class RemotePairingTunnelService(RemotePairingProtocol):
 
     async def send_request(self, data: dict[str, Any]) -> None:
         writer = self.writer
-        writer.write(RPPairingPacket.build({"body": json.dumps(data, default=self._default_json_encoder).encode()}))
+        writer.write(
+            RPPairingPacket.build(
+                RPPairingPacketData(body=json.dumps(data, default=self._default_json_encoder).encode())
+            )
+        )
         await writer.drain()
 
     @staticmethod
@@ -1903,7 +1926,9 @@ class PairableHost:
             "originatedBy": "device",
             "sequenceNumber": XpcUInt64Type(self._sequence_number),
         }
-        self._writer.write(RPPairingPacket.build({"body": json.dumps(envelope, default=self._json_default).encode()}))
+        self._writer.write(
+            RPPairingPacket.build(RPPairingPacketData(body=json.dumps(envelope, default=self._json_default).encode()))
+        )
         await self._writer.drain()
         self._sequence_number += 1
 
