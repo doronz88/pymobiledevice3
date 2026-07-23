@@ -4,10 +4,16 @@ from enum import Enum
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Callable, Optional, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, cast
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
-from parameter_decorators import str_to_path
+if TYPE_CHECKING:
+    _F = TypeVar("_F", bound=Callable[..., Any])
+
+    def str_to_path(*params: str, reannotate: bool = True) -> Callable[[_F], _F]: ...
+
+else:
+    from parameter_decorators import str_to_path
 
 from pymobiledevice3.exceptions import AppInstallError
 from pymobiledevice3.lockdown import LockdownClient
@@ -425,7 +431,7 @@ class InstallationProxyService(LockdownService):
         """
         if options is None:
             options = {}
-        cmd = {"Command": "CheckCapabilitiesMatch", "ClientOptions": options}
+        cmd: dict[str, Any] = {"Command": "CheckCapabilitiesMatch", "ClientOptions": options}
 
         if capabilities:
             cmd["Capabilities"] = capabilities
@@ -452,7 +458,7 @@ class InstallationProxyService(LockdownService):
         if attributes:
             options["ReturnAttributes"] = attributes
 
-        cmd = {"Command": "Browse", "ClientOptions": options}
+        cmd: dict[str, Any] = {"Command": "Browse", "ClientOptions": options}
 
         await self.service.send_plist(cmd)
 
@@ -464,7 +470,7 @@ class InstallationProxyService(LockdownService):
 
             data = response.get("CurrentList")
             if data is not None:
-                result += cast("list[dict[str, Any]]", data)
+                result += cast(list[dict[str, Any]], data)
 
             if response.get("Status") == "Complete":
                 break
@@ -485,7 +491,7 @@ class InstallationProxyService(LockdownService):
         """
         if options is None:
             options = {}
-        cmd = {"Command": "Lookup", "ClientOptions": options}
+        cmd: dict[str, Any] = {"Command": "Lookup", "ClientOptions": options}
         await self.service.send_plist(cmd)
         return cast(Optional[dict[str, Any]], (await self.service.recv_plist()).get("LookupResult"))
 
@@ -515,7 +521,7 @@ class InstallationProxyService(LockdownService):
             See <https://github.com/doronz88/pymobiledevice3/issues/1602> for details.
         :returns: A dictionary mapping each bundle identifier to its per-app info dictionary.
         """
-        options = {}
+        options: dict[str, Any] = {}
         if bundle_identifiers is not None:
             options["BundleIDs"] = bundle_identifiers
 

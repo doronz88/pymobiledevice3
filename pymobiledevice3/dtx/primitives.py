@@ -293,17 +293,15 @@ PStr = PrimitiveString
 PDict = PrimitiveDictionary
 
 
-_PRIMITIVE_REGISTRY.update({
-    cls._type_code: cls
-    for cls in [
-        PrimitiveNull,
-        PrimitiveString,
-        PrimitiveBuffer,
-        PrimitiveInt32,
-        PrimitiveInt64,
-        PrimitiveDouble,
-        PrimitiveDictionary,
-    ]
-})
+_all_primitive_types: list[type[_PrimitiveBase]] = [
+    PrimitiveNull,
+    PrimitiveString,
+    PrimitiveBuffer,
+    PrimitiveInt32,
+    PrimitiveInt64,
+    PrimitiveDouble,
+    PrimitiveDictionary,
+]
+_PRIMITIVE_REGISTRY.update({cls._type_code: cls for cls in _all_primitive_types})
 PNULL = PrimitiveNull()  # singleton instance for convenience
 PRIMITIVE_TYPES = tuple(_PRIMITIVE_REGISTRY.values())

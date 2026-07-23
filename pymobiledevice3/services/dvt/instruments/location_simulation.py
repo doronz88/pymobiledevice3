@@ -24,7 +24,7 @@ class LocationSimulation(DtxService[LocationSimulationService], LocationSimulati
     """
 
     def __init__(self, dvt: DtxServiceProvider):
-        DtxService.__init__(self, dvt)
+        super().__init__(dvt)
         LocationSimulationBase.__init__(self)
 
     async def set(self, latitude: float, longitude: float) -> None:

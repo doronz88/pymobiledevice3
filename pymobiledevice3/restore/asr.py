@@ -91,7 +91,7 @@ class ASRClient:
             "Size": length,
         }
 
-        packet_info = {}
+        packet_info: dict[str, typing.Any] = {}
         if self.checksum_chunks:
             packet_info["Checksum Chunk Size"] = ASR_CHECKSUM_CHUNK_SIZE
 

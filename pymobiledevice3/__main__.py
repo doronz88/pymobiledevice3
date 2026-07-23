@@ -9,7 +9,7 @@ import sys
 import textwrap
 import traceback
 import warnings
-from typing import Annotated, Callable, Optional, Union
+from typing import Annotated, Any, Callable, Optional, Union, cast
 
 import coloredlogs
 import typer
@@ -70,7 +70,7 @@ from pymobiledevice3.exceptions import (
 from pymobiledevice3.lockdown import retry_create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 
-coloredlogs.install(level=logging.INFO)
+cast(Any, coloredlogs).install(level=logging.INFO)
 
 logging.getLogger("quic").setLevel(logging.CRITICAL + 1)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL + 1)
@@ -106,7 +106,7 @@ INVALID_SERVICE_MESSAGE = """Failed to start service. Possible reasons are:
   https://github.com/doronz88/pymobiledevice3/issues/new?assignees=&labels=&projects=&template=bug_report.md&title=
 """
 
-CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 400}
+CONTEXT_SETTINGS: dict[str, Any] = {"help_option_names": ["-h", "--help"], "max_content_width": 400}
 
 # Mapping of index options to import file names
 CLI_GROUPS = {
@@ -159,7 +159,7 @@ def _patch_xonsh_completion_detection() -> None:
     if shellingham is None:
         return
 
-    detect_shell = shellingham.detect_shell
+    detect_shell = cast(Any, shellingham).detect_shell
     _ORIGINAL_SHELLINGHAM_DETECT = getattr(detect_shell, "_pymobiledevice3_original", detect_shell)
     if getattr(detect_shell, "_pymobiledevice3_xonsh_patched", False):
         return
@@ -211,7 +211,7 @@ class Pmd3TyperGroup(TyperGroup):
     @staticmethod
     def collect_commands(command: ClickCommand) -> Union[str, list[str]]:
         if isinstance(command, TyperGroup):  # group
-            cmds = []
+            cmds: list[str] = []
             for v in command.commands.values():
                 child = Pmd3TyperGroup.collect_commands(v)
                 if isinstance(child, list):

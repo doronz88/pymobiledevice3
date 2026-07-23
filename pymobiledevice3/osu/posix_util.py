@@ -4,7 +4,7 @@ import signal
 import socket
 import struct
 from pathlib import Path
-from typing import Union
+from typing import Any, Union, cast
 
 from ifaddr import get_adapters
 
@@ -98,7 +98,7 @@ class Linux(Posix):
     ) -> None:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         # TCP_KEEPIDLE is Linux-only; this class is only instantiated on Linux.
-        tcp_keepidle = socket.TCP_KEEPIDLE  # pyright: ignore[reportAttributeAccessIssue]
+        tcp_keepidle = cast(Any, socket).TCP_KEEPIDLE
         sock.setsockopt(socket.IPPROTO_TCP, tcp_keepidle, after_idle_sec)
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, interval_sec)
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, max_fails)

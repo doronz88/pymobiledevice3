@@ -5,7 +5,7 @@ import plistlib
 import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 
 import click
 import inquirer3
@@ -113,7 +113,7 @@ class MobileActivationService:
             raise MobileActivationException("Activation server response is invalid")
         title = navigation_bar.get("title")
         description = footer.text
-        fields = []
+        fields: list[Field] = []
         for editable in root.findall("page//editableTextRow"):
             fields.append(
                 Field(
@@ -123,7 +123,7 @@ class MobileActivationService:
                     secure=bool(editable.get("secure", False)),
                 )
             )
-        server_info = {}
+        server_info: dict[str, str] = {}
         for k, v in server_info_node.items():
             server_info[k] = v
         return ActivationForm(title=title, description=description, fields=fields, server_info=server_info)
@@ -165,7 +165,7 @@ class MobileActivationService:
                 ACTIVATION_DRM_HANDSHAKE_DEFAULT_URL, data=plistlib.dumps(blob), headers=headers
             )
 
-        activation_request = {}
+        activation_request: dict[str, Any] = {}
         if session_mode:
             activation_info = await self.create_activation_info_with_session(content)
         else:
@@ -212,13 +212,13 @@ class MobileActivationService:
             else:
                 click.secho(activation_form.title, bold=True)
                 click.secho(activation_form.description)
-                fields = []
+                fields: list[Any] = []
                 for field in activation_form.fields:
                     if field.secure:
                         fields.append(inquirer3.Password(name=field.id, message=f"{field.label}"))
                     else:
                         fields.append(inquirer3.Text(name=field.id, message=f"{field.label}"))
-                data = inquirer3.prompt(fields)
+                data: dict[str, Any] = cast(Any, inquirer3).prompt(fields)
                 data.update(activation_form.server_info)
                 content, headers = self.post(ACTIVATION_DEFAULT_URL, data=data)
                 content_type = headers["Content-Type"]
@@ -312,7 +312,7 @@ class MobileActivationService:
             ``ActivationResponseHeaders``; may be falsy to omit them.
         :returns: the daemon's response to the request.
         """
-        data = {
+        data: dict[str, Any] = {
             "Command": "HandleActivationInfoWithSessionRequest",
             "Value": activation_record,
         }

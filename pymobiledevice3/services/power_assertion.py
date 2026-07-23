@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import contextlib
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -40,7 +40,7 @@ class PowerAssertionService(LockdownService):
         :param timeout: assertion timeout in seconds, after which the device may release it.
         :param details: optional descriptive detail string attached to the assertion.
         """
-        msg = {
+        msg: dict[str, Any] = {
             "CommandKey": "CommandCreateAssertion",
             "AssertionTypeKey": type_,
             "AssertionNameKey": name,

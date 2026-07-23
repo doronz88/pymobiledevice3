@@ -86,7 +86,7 @@ class FDRClient:
         if self.ctrlprotoversion != 2:
             raise NotImplementedError("TODO")
 
-        req = {
+        req: dict[str, Any] = {
             "Command": CTRLCMD,
             "CtrlProtoVersion": self.ctrlprotoversion,
         }

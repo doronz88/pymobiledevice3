@@ -58,7 +58,7 @@ class KeyModifier(Enum):
     ALT = "Alt"
 
 
-VIRTUAL_KEYS = {
+VIRTUAL_KEYS: dict[str, tuple[str, Optional[KeyModifier]]] = {
     "\ue001": ("Cancel", None),
     "\ue002": ("Help", None),
     "\ue003": ("Backspace", None),
@@ -235,7 +235,7 @@ class AutomationSession:
         return (await self.protocol.getAllCookies(browsingContextHandle=self.top_level_handle))["cookies"]
 
     async def execute_script(self, script: str, args: Iterable[Any], async_: bool = False):
-        parameters = {
+        parameters: dict[str, Any] = {
             "browsingContextHandle": self.top_level_handle,
             "function": "function(){\n" + script + "\n}",
             "arguments": list(map(json.dumps, args)),
@@ -255,7 +255,7 @@ class AutomationSession:
     async def evaluate_js_function(
         self, function: str, *args: Any, implicit_callback: bool = False, include_frame: bool = True
     ):
-        params = {
+        params: dict[str, Any] = {
             "browsingContextHandle": self.top_level_handle,
             "function": function,
             "arguments": list(map(json.dumps, args)),
@@ -284,7 +284,7 @@ class AutomationSession:
             by = By.CSS_SELECTOR.value
             value = f'[name="{value}"]'
 
-        parameters = {
+        parameters: dict[str, Any] = {
             "browsingContextHandle": self.top_level_handle,
             "function": FIND_NODES,
             "arguments": list(map(json.dumps, [by, root, value, single, self.implicit_wait_timeout])),
@@ -298,7 +298,7 @@ class AutomationSession:
         return result
 
     async def screenshot_as_base64(self, scroll: bool = False, node_id: str = "", clip: bool = True):
-        params = {"handle": self.top_level_handle, "clipToViewport": clip}
+        params: dict[str, Any] = {"handle": self.top_level_handle, "clipToViewport": clip}
         if self.current_handle:
             params["frameHandle"] = self.current_handle
         if scroll:
@@ -379,7 +379,7 @@ class AutomationSession:
         )
 
     async def perform_interaction_sequence(self, sources: list[dict[str, Any]], steps: list[dict[str, Any]]):
-        params = {
+        params: dict[str, Any] = {
             "handle": self.top_level_handle,
             "inputSources": sources,
             "steps": steps,
@@ -389,7 +389,10 @@ class AutomationSession:
         await self.protocol.performInteractionSequence(**params)
 
     async def wait_for_navigation_to_complete(self):
-        params = {"browsingContextHandle": self.top_level_handle, "pageLoadTimeout": self.page_load_timeout}
+        params: dict[str, Any] = {
+            "browsingContextHandle": self.top_level_handle,
+            "pageLoadTimeout": self.page_load_timeout,
+        }
         if self.current_handle:
             params["frameHandle"] = self.current_handle
         await self.protocol.waitForNavigationToComplete(**params)

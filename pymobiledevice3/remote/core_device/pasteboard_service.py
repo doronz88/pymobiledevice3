@@ -24,7 +24,7 @@ frameworks on macOS:
   carries data inline and we don't need to chase promises.
 """
 
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -47,10 +47,10 @@ UTI_TEXT = "public.text"
 UTI_URL = "public.url"
 
 # PasteboardDataInclusionPolicy presets.
-POLICY_ALL_RESOLVED = {"allResolved": {}}
-POLICY_ALL_PROMISED = {"allPromised": {}}
-POLICY_MATCH_SOURCE = {"matchSource": {}}
-POLICY_PROMISE_SECONDARY = {"promiseSecondary": {}}
+POLICY_ALL_RESOLVED: dict[str, Any] = {"allResolved": {}}
+POLICY_ALL_PROMISED: dict[str, Any] = {"allPromised": {}}
+POLICY_MATCH_SOURCE: dict[str, Any] = {"matchSource": {}}
+POLICY_PROMISE_SECONDARY: dict[str, Any] = {"promiseSecondary": {}}
 
 
 def policy_threshold(threshold_bytes: int) -> dict[str, Any]:
@@ -85,14 +85,14 @@ def snapshot_text(snapshot: dict[str, Any]) -> Optional[str]:
     """
     pasteboard = snapshot.get("pasteboard")
     if isinstance(pasteboard, dict):
-        snapshot = pasteboard
-    for item in snapshot.get("items", []) or []:
-        data_map = item.get("data") or {}
+        snapshot = cast(dict[str, Any], pasteboard)
+    for item in cast(list[dict[str, Any]], snapshot.get("items", []) or []):
+        data_map = cast(dict[str, Any], item.get("data") or {})
         for uti in (UTI_UTF8_PLAIN_TEXT, UTI_PLAIN_TEXT, UTI_TEXT):
             datum = data_map.get(uti)
             if not isinstance(datum, dict):
                 continue
-            raw = datum.get("data")
+            raw = cast(dict[str, Any], datum).get("data")
             if not raw:
                 continue
             if isinstance(raw, str):

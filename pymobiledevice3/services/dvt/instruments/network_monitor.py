@@ -1,8 +1,8 @@
 import ipaddress
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from construct import Adapter, Bytes, Int8ul, Int16ub, Int32ul, Switch, this
 from construct_typed import DataclassMixin, TStruct, csfield
@@ -174,12 +174,12 @@ class NetworkMonitor(DtxService[NetworkMonitorService]):
 
             if message is None:
                 continue
-            if not isinstance(message, (list, tuple)) or len(message) < 2:
+            if not isinstance(message, (list, tuple)) or len(cast(Sequence[Any], message)) < 2:
                 self.logger.warning(f"unsupported event payload: {message!r}")
                 continue
 
             if message[0] == MESSAGE_TYPE_INTERFACE_DETECTION:
-                event = InterfaceDetectionEvent(*message[1])
+                event = InterfaceDetectionEvent(*cast(tuple[Any, ...], message[1]))
             elif message[0] == MESSAGE_TYPE_CONNECTION_DETECTION:
                 (
                     local_address,
@@ -190,7 +190,7 @@ class NetworkMonitor(DtxService[NetworkMonitorService]):
                     recv_buffer_used,
                     serial_number,
                     kind,
-                ) = message[1]
+                ) = cast(tuple[Any, ...], message[1])
                 event = ConnectionDetectionEvent(
                     local_address=address_t.parse(local_address),
                     remote_address=address_t.parse(remote_address),
@@ -202,7 +202,7 @@ class NetworkMonitor(DtxService[NetworkMonitorService]):
                     kind=kind,
                 )
             elif message[0] == MESSAGE_TYPE_CONNECTION_UPDATE:
-                event = ConnectionUpdateEvent(*message[1])
+                event = ConnectionUpdateEvent(*cast(tuple[Any, ...], message[1]))
             else:
                 self.logger.warning(f"unsupported event type: {message[0]}")
             yield event

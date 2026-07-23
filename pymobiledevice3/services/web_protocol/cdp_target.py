@@ -2,9 +2,10 @@ import asyncio
 import hashlib
 import json
 import logging
+from collections.abc import Awaitable
 from datetime import datetime
 from functools import partial
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from pymobiledevice3.services.web_protocol.cdp_screencast import ScreenCast
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
@@ -95,10 +96,10 @@ class CdpTarget:
         self.session_id = protocol.id_
         self.app_id = protocol.app.id_
         self.page_id = protocol.page.id_
-        self.output_queue = asyncio.Queue()
-        self.input_queue = asyncio.Queue()
+        self.output_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self.input_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.screencast: Optional[ScreenCast] = None
-        self.from_cdp_special_messages_methods = {
+        self.from_cdp_special_messages_methods: dict[str, Callable[..., Awaitable[Any]]] = {
             "Audits.enable": self._audits_enable,
             "DOM.getBoxModel": self._dom_get_box_model,
             "DOM.enable": partial(self._simple_response, value=None),
@@ -173,7 +174,7 @@ class CdpTarget:
         self._waiting_for_id = 0
         self._input_task = asyncio.create_task(self._input_loop())
         self._receiving_task = asyncio.create_task(self._receive_loop())
-        self._script_source_to_context_id = {}
+        self._script_source_to_context_id: dict[str, Any] = {}
         self._default_execution_id = 0
 
     @classmethod
@@ -199,7 +200,7 @@ class CdpTarget:
         """
         await self.input_queue.put(message)
 
-    async def receive(self):
+    async def receive(self) -> dict[str, Any]:
         """
         Get message from the target to the devtools.
         """
@@ -427,7 +428,7 @@ class CdpTarget:
         if "error" in listeners:
             await self._simple_response(message, None)
             return
-        listeners_out = []
+        listeners_out: list[dict[str, Any]] = []
         for listener in listeners["result"]["listeners"]:
             data = {
                 "type": listener["type"],
@@ -516,7 +517,7 @@ class CdpTarget:
             assert self.screencast is not None
             modifiers = params["modifiers"]
             x, y = params["x"] // self.screencast.get_scale(), params["y"] // self.screencast.get_scale()
-            event_params = {
+            event_params: Any = {
                 "screenX": x,
                 "screenY": y,
                 "clientX": 0,
@@ -676,7 +677,7 @@ class CdpTarget:
         await self.output_queue.put(message)
 
     async def _console_message_added(self, message: dict[str, Any]):
-        log_record = {
+        log_record: dict[str, Any] = {
             "source": LOG_MESSAGE_SOURCES[message["params"]["message"]["source"]],
             "level": LOG_MESSAGE_LEVELS[message["params"]["message"]["level"]],
             "text": message["params"]["message"]["text"],

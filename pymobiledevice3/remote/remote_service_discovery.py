@@ -391,7 +391,7 @@ async def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[
     :param timeout: Bonjour browse timeout, in seconds.
     :returns: a list of `RSDDevice` records, one per discovered device address.
     """
-    result = []
+    result: list[RSDDevice] = []
     for instance in await browse_remoted(timeout):
         for address in instance.addresses:
             async with RemoteServiceDiscoveryService((address.full_ip, RSD_PORT)) as rsd:

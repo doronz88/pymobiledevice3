@@ -7,7 +7,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from functools import update_wrapper
 from string import Template
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Optional, cast
 
 import inquirer3
 import typer
@@ -22,7 +22,7 @@ from prompt_toolkit.lexers import PygmentsLexer
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import style_from_pygments_cls
 from pygments import formatters, highlight, lexers
-from pygments.styles import get_style_by_name
+from pygments import styles as _pygments_styles
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
@@ -143,7 +143,7 @@ cli = InjectingTyper(
 
 
 def catch_errors(func: Callable[..., Any]) -> Callable[..., Any]:
-    errors = {
+    errors: dict[type[Exception], str] = {
         LaunchingApplicationError: "Unable to launch application (try to unlock device)",
         WebInspectorNotEnabledError: "Web inspector is not enabled",
         RemoteAutomationNotEnabledError: "Remote automation is not enabled",
@@ -292,7 +292,9 @@ async def shell_task(service_provider: LockdownServiceProvider, timeout: float) 
         driver = WebDriver(session)
         try:
             start_ipython_shell(
-                header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")),
+                header=highlight(
+                    SHELL_USAGE, cast(Any, lexers).PythonLexer(), formatters.Terminal256Formatter(style="native")
+                ),
                 user_ns={
                     "driver": driver,
                     "Cookie": Cookie,
@@ -477,9 +479,9 @@ class JsShell(ABC):
     def __init__(self) -> None:
         super().__init__()
         self.prompt_session: PromptSession[str] = PromptSession(
-            lexer=PygmentsLexer(lexers.JavascriptLexer),
+            lexer=PygmentsLexer(cast(Any, lexers).JavascriptLexer),
             auto_suggest=AutoSuggestFromHistory(),
-            style=style_from_pygments_cls(get_style_by_name("stata-dark")),
+            style=style_from_pygments_cls(cast(Any, _pygments_styles).get_style_by_name("stata-dark")),
             history=FileHistory(self.webinspector_history_path()),
             completer=JsShellCompleter(self),
         )
@@ -509,8 +511,13 @@ class JsShell(ABC):
             return
 
         result = await self.evaluate_expression(exp)
-        colorful_result = highlight(
-            f"{result}", lexers.JavascriptLexer(), formatters.Terminal256Formatter(style="stata-dark")
+        colorful_result = cast(
+            str,
+            highlight(
+                f"{result}",
+                cast(Any, lexers).JavascriptLexer(),
+                cast(Any, formatters).Terminal256Formatter(style="stata-dark"),
+            ),
         )
         print(colorful_result, end="")
 
@@ -628,7 +635,9 @@ class InspectorJsShell(JsShell):
             return available_pages[0]
 
         page_query = [inquirer3.List("page", message="choose page", choices=available_pages, carousel=True)]
-        page = inquirer3.prompt(page_query, theme=GreenPassion(), raise_keyboard_interrupt=True)["page"]
+        page = cast(
+            dict[str, Any], cast(Any, inquirer3).prompt(page_query, theme=GreenPassion(), raise_keyboard_interrupt=True)
+        )["page"]
         return page
 
 

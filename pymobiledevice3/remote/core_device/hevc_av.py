@@ -50,6 +50,11 @@ try:
 except ModuleNotFoundError as e:  # pragma: no cover
     raise ModuleNotFoundError("PyAV is required for the libav HEVC decoder path. Install with: pip install av") from e
 
+# PyAV ships no type information and its stub coverage varies across platforms/wheels, so route
+# every attribute access through Any to stay type-clean regardless of what the installed build
+# exposes to pyright (fully-unknown on CI, partially-typed on some local envs).
+_av: Any = av
+
 
 class HevcToBgraTranscoder:
     """Annex-B HEVC -> raw BGRA bytes via libavcodec.
@@ -89,13 +94,13 @@ class HevcToBgraTranscoder:
         self._on_frame = on_frame
         self._on_decode_error = on_decode_error
 
-        self._codec = av.codec.CodecContext.create("hevc", "r")
+        self._codec: Any = _av.codec.CodecContext.create("hevc", "r")
         # Seed the decoder with the parameter sets so the first AU
         # doesn't need them in-band. Even if the IDR re-carries VPS/
         # SPS/PPS (Apple's stream does), libav tolerates the dupes.
         ps_annexb = b"".join(b"\x00\x00\x00\x01" + nal for nal in (vps, sps, pps))
         with contextlib.suppress(Exception):
-            list(self._codec.decode(av.Packet(ps_annexb)))
+            list(self._codec.decode(_av.Packet(ps_annexb)))
 
         self._inq: queue.Queue[Optional[bytes]] = queue.Queue()
         self._stop = threading.Event()
@@ -148,8 +153,8 @@ class HevcToBgraTranscoder:
             # else (zero frames, or an exception) is a decode error
             # the sticky-recovery path needs to know about.
             try:
-                frames = list(self._codec.decode(av.Packet(item)))
-            except av.error.InvalidDataError as e:
+                frames = list(self._codec.decode(_av.Packet(item)))
+            except _av.error.InvalidDataError as e:
                 logger.debug("av decode rejected AU: %s", e)
                 self._fire_decode_error()
                 continue

@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, WebSocket
 from fastapi.logger import logger
@@ -22,7 +23,7 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/json{_:path}")
 async def available_targets(_: str):
     app.state.inspector.get_open_pages()
-    targets = []
+    targets: list[dict[str, Any]] = []
     for app_id in app.state.inspector.application_pages:
         for page_id, page in app.state.inspector.application_pages[app_id].items():
             if page.type_ not in (WirTypes.WEB, WirTypes.WEB_PAGE):

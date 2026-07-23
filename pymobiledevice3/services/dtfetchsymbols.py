@@ -35,7 +35,7 @@ class DtFetchSymbols:
         await service.close()
         if files is None:
             raise PyMobileDevice3Exception("list files response is missing the 'files' entry")
-        return typing.cast("list[str]", files)
+        return typing.cast(list[str], files)
 
     async def get_file(self, fileno: int, stream: typing.IO[bytes], max_bytes: typing.Optional[int] = None):
         """

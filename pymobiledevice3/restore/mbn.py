@@ -193,7 +193,7 @@ def _read_elf_headers(data: bytes):
 
 
 def _read_program_headers(data: bytes, kind: str, hdr: Any) -> list[Any]:
-    phdrs = []
+    phdrs: list[Any] = []
     if hdr.e_phnum == 0:
         logger.error("%s: ELF has no program sections", "_read_program_headers")
         return phdrs

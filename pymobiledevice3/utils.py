@@ -3,7 +3,7 @@ import traceback
 from collections.abc import Coroutine
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional, Union, overload
+from typing import Any, Callable, Optional, Union, cast, overload
 
 import IPython
 import requests
@@ -100,7 +100,7 @@ def start_ipython_shell(*, user_ns: Optional[dict[str, Any]] = None, header: Opt
     if header is not None:
         print(header)
     # IPython exposes start_ipython lazily via module-level __getattr__, which pyright cannot see.
-    IPython.start_ipython(argv=[], config=config, user_ns=user_ns or {})  # pyright: ignore[reportAttributeAccessIssue]
+    cast(Any, IPython).start_ipython(argv=[], config=config, user_ns=user_ns or {})
 
 
 def file_download(url: str, outfile: Path, chunk_size: int = 1024) -> None:

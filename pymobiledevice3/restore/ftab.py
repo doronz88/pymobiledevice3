@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 from construct import Array, Bytes, Const, Default, Int32ub, Int32ul, Pointer, Struct, this
 
@@ -43,7 +43,7 @@ class Ftab:
 
     def add_entry(self, tag: bytes, data: bytes):
         new_offset = self.parsed.entries[-1].offset + self.parsed.entries[-1].size
-        new_entry = {"tag": tag, "offset": new_offset, "size": len(data), "data": data}
+        new_entry: dict[str, Any] = {"tag": tag, "offset": new_offset, "size": len(data), "data": data}
 
         self.parsed.num_entries += 1  # pyright: ignore[reportAttributeAccessIssue]
         self.parsed.entries.append(new_entry)

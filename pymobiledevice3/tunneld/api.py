@@ -54,7 +54,7 @@ def _list_tunnels(tunneld_address: tuple[str, int] = TUNNELD_DEFAULT_ADDRESS) ->
 
 
 async def _create_rsds_from_tunnels(tunnels: dict[str, list[dict[str, Any]]]) -> list[RemoteServiceDiscoveryService]:
-    rsds = []
+    rsds: list[RemoteServiceDiscoveryService] = []
     for _udid, details in tunnels.items():
         for tunnel_details in details:
             rsd = RemoteServiceDiscoveryService(

@@ -1,6 +1,6 @@
 import io
 import logging
-from typing import Any, Union
+from typing import Any, Union, cast
 
 from bpylist2 import archiver
 from construct import Bytes, ConstructError, Peek
@@ -16,7 +16,7 @@ class MessageAux(list[Any]):
     """An adapter that parse DISPTACH arguments from/to primitive dictionaries"""
 
     @classmethod
-    def parse(cls, obj: Union[bytes, bytearray, memoryview], context: Any, path: str):
+    def parse(cls, obj: Union[bytes, bytearray, memoryview], context: Any, path: str) -> list[Any]:
         if len(obj) == 0:
             # interpret empty buffers as an empty list
             return []
@@ -26,12 +26,12 @@ class MessageAux(list[Any]):
             raise ConstructError(
                 f"Expected a dictionary for MessageAux, got {type(primitive_dict).__name__}", path=path
             )
-        if len(primitive_dict) != 1 or not isinstance(primitive_dict.get(PNULL), list):
+        if len(cast(Any, primitive_dict)) != 1 or not isinstance(cast(Any, primitive_dict).get(PNULL), list):
             raise ConstructError(
                 f"Expected a dictionary with a single PNULL key mapping to a list, got {primitive_dict}", path=path
             )
-        converted_list = []
-        for arg in primitive_dict[PNULL]:
+        converted_list: list[Any] = []
+        for arg in cast(list[Any], primitive_dict[PNULL]):
             assert isinstance(arg, _PrimitiveBase), (
                 f"Expected all arguments to be primitive types, got {type(arg).__name__}"
             )
@@ -60,7 +60,7 @@ class MessageAux(list[Any]):
         if not obj:
             # nothing is written ¯\_(ツ)_/¯
             return b""
-        converted_list = []
+        converted_list: list[Any] = []
         # translate everything that is not a primitive into a NSKeyedArchiver-encoded blob
         for arg in obj:
             if isinstance(arg, _PrimitiveBase):

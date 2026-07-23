@@ -228,8 +228,8 @@ class MuxConnection:
     def __init__(self, sock: socket.socket):
         self._sock = sock
         self._connected = False
-        self._tag = 1
-        self.devices = []
+        self._tag: int = 1
+        self.devices: list[MuxDevice] = []
 
     @abc.abstractmethod
     async def _connect(self, device_id: int, port: int):
@@ -261,7 +261,7 @@ class MuxConnection:
         pass
 
     def _raise_mux_exception(self, result: int, message: Optional[str] = None) -> NoReturn:
-        exceptions = {
+        exceptions: dict[int, type[MuxException]] = {
             int(usbmuxd_result.BADCOMMAND): BadCommandError,
             int(usbmuxd_result.BADDEV): BadDevError,
             int(usbmuxd_result.CONNREFUSED): ConnectionFailedError,
@@ -418,7 +418,11 @@ class PlistMuxConnection(BinaryMuxConnection):
         await self._send_receive({"MessageType": "Connect", "DeviceID": device_id, "PortNumber": port})
 
     async def _send(self, data: dict[str, Any]):
-        request = {"ClientVersionString": "qt4i-usbmuxd", "ProgName": "pymobiledevice3", "kLibUSBMuxVersion": 3}
+        request: dict[str, Any] = {
+            "ClientVersionString": "qt4i-usbmuxd",
+            "ProgName": "pymobiledevice3",
+            "kLibUSBMuxVersion": 3,
+        }
         request.update(data)
         await super()._send({
             "header": {"version": self._version, "message": usbmuxd_msgtype.PLIST, "tag": self._tag},

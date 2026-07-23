@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from typer_injector import InjectingTyper
 
@@ -63,7 +64,7 @@ async def accessibility_notifications(service_provider: ServiceProviderDep) -> N
 @async_command
 async def accessibility_list_items(service_provider: ServiceProviderDep) -> None:
     """List elements available in the currently shown menu."""
-    elements = []
+    elements: list[dict[str, Any]] = []
     async with AccessibilityAudit(service_provider) as service:
         async for element in service.iter_elements():
             elements.append(element.to_dict())

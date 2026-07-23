@@ -1,6 +1,6 @@
 from pathlib import Path
 from textwrap import dedent
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 import typer
 from pygments import formatters, highlight, lexers
@@ -101,7 +101,9 @@ def developer_shell(
     run_in_loop(provider.connect())
     try:
         start_ipython_shell(
-            header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")),
+            header=highlight(
+                SHELL_USAGE, cast(Any, lexers).PythonLexer(), formatters.Terminal256Formatter(style="native")
+            ),
             user_ns={
                 "provider": provider,
                 "dtx": provider.dtx,

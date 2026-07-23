@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -89,14 +89,14 @@ class _BitReader:
 
 @dataclass()
 class _ShortTermRps:
-    deltas: list[tuple[int, bool]] = field(default_factory=list)
+    deltas: list[tuple[int, bool]] = field(default_factory=list[tuple[int, bool]])
 
 
 @dataclass()
 class HevcSpsState:
     log2_max_pic_order_cnt_lsb: int = 8
     num_short_term_ref_pic_sets: int = 0
-    short_term_rps_sets: list[_ShortTermRps] = field(default_factory=list)
+    short_term_rps_sets: list[_ShortTermRps] = field(default_factory=list[_ShortTermRps])
     num_long_term_ref_pics_sps: int = 0
     long_term_ref_pics_present_flag: bool = False
     separate_colour_plane_flag: bool = False
@@ -111,8 +111,8 @@ def _skip_profile_tier_level(br: _BitReader, max_num_sub_layers: int) -> None:
     br.read(32)  # general_profile_compatibility_flag
     br.read(48)  # constraint flags + reserved + interop hints
     br.read(8)  # general_level_idc
-    sub_layer_profile_present = []
-    sub_layer_level_present = []
+    sub_layer_profile_present: list[int] = []
+    sub_layer_level_present: list[int] = []
     for _ in range(max_num_sub_layers - 1):
         sub_layer_profile_present.append(br.read1())
         sub_layer_level_present.append(br.read1())
@@ -149,8 +149,8 @@ def _parse_st_ref_pic_set(
             return out
         ref = sets[ref_idx]
         n_ref = len(ref.deltas) + 1
-        used_by_curr = []
-        use_delta = []
+        used_by_curr = cast(list[int], [])
+        use_delta: list[int] = []
         for _ in range(n_ref):
             used_by_curr.append(br.read1())
             udf = 1

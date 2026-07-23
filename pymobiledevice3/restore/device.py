@@ -1,5 +1,5 @@
 from contextlib import suppress
-from typing import Any, Optional, overload
+from typing import Any, Optional, cast, overload
 
 from pymobiledevice3.exceptions import MissingValueError
 from pymobiledevice3.irecv import IRecv
@@ -180,11 +180,11 @@ class Device:
         if not isinstance(device_info, dict):
             return None
         # Filter out entries marked disabled or that failed to query.
-        disabled = pinfo.get("DeviceInfoDisabled") or {}
-        failures = pinfo.get("DeviceInfoFailures") or {}
+        disabled: dict[str, Any] = pinfo.get("DeviceInfoDisabled") or {}
+        failures: dict[str, Any] = pinfo.get("DeviceInfoFailures") or {}
         self._preflight_device_info = {
             updater: info
-            for updater, info in device_info.items()
+            for updater, info in cast(dict[str, Any], device_info).items()
             if updater not in disabled and updater not in failures
         }
         return self._preflight_device_info

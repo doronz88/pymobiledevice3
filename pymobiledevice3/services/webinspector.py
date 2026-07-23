@@ -140,11 +140,11 @@ class WebinspectorService(LockdownService):
     def __init__(self, lockdown: LockdownServiceProvider) -> None:
         super().__init__(lockdown, self.SERVICE_NAME if isinstance(lockdown, LockdownClient) else self.RSD_SERVICE_NAME)
         self.connection_id = str(uuid.uuid4()).upper()
-        self.state = None
-        self.connected_application = {}
-        self.application_pages = {}
-        self.wir_message_results = {}
-        self.wir_events = []
+        self.state: Optional[str] = None
+        self.connected_application: dict[str, Application] = {}
+        self.application_pages: dict[str, Any] = {}
+        self.wir_message_results: dict[str, Any] = {}
+        self.wir_events: list[Any] = []
         self.receive_handlers = {
             "_rpc_reportCurrentState:": self._handle_report_current_state,
             "_rpc_reportConnectedApplicationList:": self._handle_report_connected_application_list,
@@ -271,7 +271,7 @@ class WebinspectorService(LockdownService):
         :returns: A mapping of application name to the collection of its `Page` objects, including
             only applications that currently report at least one page.
         """
-        apps = {}
+        apps: dict[str, Any] = {}
         await asyncio.gather(*[self._forward_get_listing(app) for app in self.connected_application])
         for app in self.connected_application:
             if self.application_pages.get(app, False):
@@ -293,7 +293,7 @@ class WebinspectorService(LockdownService):
         # Give some time for `webinspectord` to reply with all inspectable applications
         await asyncio.sleep(timeout)
 
-        result = []
+        result: list[ApplicationPage] = []
         for app in self.connected_application:
             if self.application_pages.get(app, False):
                 for page in self.application_pages[app].values():
@@ -433,7 +433,7 @@ class WebinspectorService(LockdownService):
         )
 
     async def _forward_socket_setup(self, session_id: str, app_id: str, page_id: int, pause: bool = True):
-        message = {
+        message: dict[str, Any] = {
             "WIRApplicationIdentifierKey": app_id,
             "WIRPageIdentifierKey": page_id,
             "WIRSenderKey": session_id,
@@ -478,7 +478,7 @@ class WebinspectorService(LockdownService):
                     return page
         raise KeyError(f"Automation session with id {session_id} not found")
 
-    async def _wait_for_page(self, session_id: str):
+    async def _wait_for_page(self, session_id: str) -> Page:
         while True:
             for app in self.application_pages.values():
                 for page in app.values():

@@ -486,7 +486,7 @@ class UniversalHIDServiceService(RemoteService):
         # Storage block follows the Swift Codable property-list shape:
         # every leaf is {<type-tag>: <value>}, every dict is
         # {"dictionary": {...}}, every list is {"array": [...]}.
-        storage = {
+        storage: dict[str, Any] = {
             "Manufacturer": {"string": manufacturer},
             "Product": {"string": product},
             "ProductID": {"int": prod},

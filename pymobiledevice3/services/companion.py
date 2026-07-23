@@ -96,7 +96,7 @@ class CompanionProxyService(LockdownService):
         """
         service = await self.lockdown.start_lockdown_service(self.service_name)
 
-        request = {
+        request: dict[str, Any] = {
             "Command": "StartForwardingServicePort",
             "GizmoRemotePortNumber": remote_port,
             "IsServiceLowPriority": False,
@@ -122,6 +122,6 @@ class CompanionProxyService(LockdownService):
         """
         service = await self.lockdown.start_lockdown_service(self.service_name)
 
-        request = {"Command": "StopForwardingServicePort", "GizmoRemotePortNumber": remote_port}
+        request: dict[str, Any] = {"Command": "StopForwardingServicePort", "GizmoRemotePortNumber": remote_port}
 
         return await service.send_recv_plist(request)

@@ -322,7 +322,7 @@ class UserspaceTun:
         runs the pytcp stack. Raises OSError once the socketpair is closed, which ends
         ``tun_read_task``."""
         frame = await asyncio.get_running_loop().sock_recv(self._peer, 65535)
-        packets = []
+        packets: list[bytes] = []
         while True:
             if len(frame) > 14 and frame[12:14] == _ETH_IPV6_BYTES:
                 packets.append(frame[14:])

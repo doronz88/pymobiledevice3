@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Optional, cast
 
 import typer
 from construct import Container
@@ -28,7 +28,10 @@ def print_packet_header(packet: Container[Any], color: bool) -> None:
     if not color:
         print(data)
     else:
-        print(highlight(data, lexers.HspecLexer(), formatters.Terminal256Formatter(style="native")), end="")
+        print(
+            highlight(data, cast(Any, lexers).HspecLexer(), cast(Any, formatters).Terminal256Formatter(style="native")),
+            end="",
+        )
 
 
 def print_packet(packet: Container[Any], color: Optional[bool] = None) -> Container[Any]:

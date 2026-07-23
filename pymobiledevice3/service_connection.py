@@ -495,7 +495,7 @@ class ServiceConnection:
                     )
                 else:
                     loop = asyncio.get_running_loop()
-                    protocol = writer._protocol  # type: ignore[attr-defined]
+                    protocol = cast(Any, writer)._protocol
                     tls_transport = await asyncio.wait_for(
                         loop.start_tls(
                             writer.transport,
@@ -531,7 +531,9 @@ class ServiceConnection:
     def shell(self) -> None:
         """Start an interactive shell."""
         start_ipython_shell(
-            header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")),
+            header=highlight(
+                SHELL_USAGE, cast(Any, lexers).PythonLexer(), formatters.Terminal256Formatter(style="native")
+            ),
             user_ns={
                 "client": self,
             },

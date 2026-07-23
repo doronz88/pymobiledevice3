@@ -9,8 +9,9 @@ from types import TracebackType
 from typing import Any, Callable, ClassVar, Optional, Union, cast
 
 from pycrashreport.crash_report import CrashReportBase, get_crash_report_from_buf
+from xonsh import cli_utils as _xonsh_cli_utils
 from xonsh.built_ins import XSH
-from xonsh.cli_utils import Annotated, Arg
+from xonsh.cli_utils import Annotated
 
 from pymobiledevice3.exceptions import (
     AfcException,
@@ -24,6 +25,10 @@ from pymobiledevice3.services.afc import AfcService, AfcShell, path_completer
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.services.notification_proxy import NotificationProxyService
 from pymobiledevice3.services.os_trace import OsTraceService
+
+# xonsh's cli_utils has no py.typed, so Arg's signature is partially unknown; adapt it to a
+# typed callable once here instead of at every Annotated[...] use site.
+Arg = cast(Callable[..., Any], cast(Any, _xonsh_cli_utils).Arg)
 
 # xonsh declares Arg(completer=...) as returning Iterator[str], but any iterable works at
 # runtime; adapt the list-returning completer's declared type once here instead of per call site.
@@ -106,7 +111,7 @@ class CrashReportsManager:
         :param path: Path under the crash reports directory to clear. Defaults to '/'.
         :raises AfcException: If any item other than ``com.apple.appstored`` could not be deleted.
         """
-        undeleted_items = []
+        undeleted_items: list[str] = []
         for filename in await self.ls(path, depth=1):
             undeleted_items.extend(await self.afc.rm(filename, force=True))
 
@@ -127,7 +132,7 @@ class CrashReportsManager:
         :param depth: Listing depth, -1 to list infinite.
         :return: List of files listed.
         """
-        result = []
+        result: list[str] = []
         async for item in self.afc.dirlist(path, depth):
             result.append(item)
         return result[1:]  # skip the root path '/'
@@ -334,7 +339,7 @@ class CrashReportsManager:
 
     async def _get_new_sysdiagnose_filename(self, end_time: Optional[float] = None) -> str:
         sysdiagnose_filename = None
-        excluded_temp_files = []
+        excluded_temp_files: list[str] = []
 
         while sysdiagnose_filename is None:
             try:
@@ -381,7 +386,7 @@ class CrashReportsShell(AfcShell):
         auto_cd: Optional[str] = "/",
     ):
         manager = CrashReportsManager(service_provider)
-        XSH.ctx["_manager"] = manager
+        cast(Any, XSH).ctx["_manager"] = manager
         super(CrashReportsShell, CrashReportsShell).create(service_provider, service=manager.afc)
 
     def _setup_shell_commands(self):
@@ -399,7 +404,7 @@ class CrashReportsShell(AfcShell):
 
         :param filename: Path to the crash report file
         """
-        print(self._run_manager(XSH.ctx["_manager"].parse(filename)))
+        print(self._run_manager(cast(CrashReportsManager, cast(Any, XSH).ctx["_manager"]).parse(filename)))
 
     def _do_parse_latest(
         self,
@@ -413,7 +418,7 @@ class CrashReportsShell(AfcShell):
     ) -> None:
         """Parse latest top-level crash report(s) under a path, ordered by newest first"""
         latest_reports = self._run_manager(
-            XSH.ctx["_manager"].parse_latest(
+            cast(CrashReportsManager, cast(Any, XSH).ctx["_manager"]).parse_latest(
                 path=path,
                 match=match or [],
                 match_insensitive=match_insensitive or [],
@@ -425,4 +430,4 @@ class CrashReportsShell(AfcShell):
 
     def _do_clear(self, path: Annotated[str, Arg(nargs="?", completer=_path_arg_completer)] = "/") -> None:
         """Clear crash reports from the device under a path."""
-        self._run_manager(XSH.ctx["_manager"].clear(path))
+        self._run_manager(cast(CrashReportsManager, cast(Any, XSH).ctx["_manager"]).clear(path))

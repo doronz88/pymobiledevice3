@@ -2,7 +2,7 @@ import hashlib
 import logging
 import plistlib
 from pathlib import Path
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Optional, cast
 
 from developer_disk_image.repo import DeveloperDiskImageRepository
 from packaging.version import Version
@@ -100,7 +100,7 @@ class MobileImageMounterService(LockdownService):
         if isinstance(signature, list):
             if not signature:
                 raise NotMountedError()
-            return signature[0]
+            return cast(bytes, signature[0])
         return signature
 
     async def is_image_mounted(self, image_type: str) -> bool:
@@ -156,7 +156,7 @@ class MobileImageMounterService(LockdownService):
         if await self.is_image_mounted(image_type):
             raise AlreadyMountedError()
 
-        request = {"Command": "MountImage", "ImageType": image_type, "ImageSignature": signature}
+        request: dict[str, Any] = {"Command": "MountImage", "ImageType": image_type, "ImageSignature": signature}
 
         if extras is not None:
             request.update(extras)
@@ -370,7 +370,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
 
         await self.upload_image(self.IMAGE_TYPE, image_bytes, manifest)
 
-        extras = {}
+        extras: dict[str, Any] = {}
         if info_plist is not None:
             extras["ImageInfoPlist"] = info_plist
         extras["ImageTrustCache"] = trust_cache_bytes
@@ -413,7 +413,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
             raise NoSuchBuildIdentityError(f"Could not find the manifest for board {board_id} and chip {chip_id}")
         manifest = build_identity["Manifest"]
 
-        parameters = {
+        parameters: dict[str, Any] = {
             "ApProductionMode": True,
             "ApSecurityDomain": 1,
             "ApSecurityMode": True,

@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 import socket as _socket
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Optional, cast
 
 from packaging.version import Version
 from typing_extensions import Self
@@ -205,9 +205,9 @@ class DtxServiceProvider:
             with lockdown.ssl_file() as f:  # type: ignore[attr-defined]
                 if strip_ssl:
                     svc.setblocking(True)
-                    svc.ssl_start_sync(f)
+                    svc.ssl_start_sync(cast(str, f))
                 else:
-                    await svc.ssl_start(f)
+                    await svc.ssl_start(cast(str, f))
 
         if (
             strip_ssl

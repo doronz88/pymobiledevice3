@@ -54,7 +54,7 @@ class ConditionInducer(DtxService[ConditionInducerService]):
         :raises PyMobileDevice3Exception: If no available profile matches `profile_identifier`.
         """
         for group in await self.list():
-            for profile in cast("list[dict[str, Any]]", group.get("profiles")):
+            for profile in cast(list[dict[str, Any]], group.get("profiles")):
                 if profile_identifier == profile.get("identifier"):
                     self.logger.info(profile.get("description"))
                     await self.service.enable_condition_with_identifier_profile_identifier_(

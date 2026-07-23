@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ipsw_parser.build_identity import BuildIdentity
 from pyimg4 import IM4P, IM4R, IMG4, RestoreProperty
@@ -141,7 +141,7 @@ def stitch_component(
     # check if we have a *-TBM entry for the given component
     tbm_dict = tss.get(f"{name}-TBM")
 
-    info = build_identity["Info"]
+    info = cast(dict[str, Any], build_identity["Info"])
     nonce_slot_required = info.get("RequiresNonceSlot", False) and name in ("SEP", "SepStage1", "LLB")
 
     im4r = None

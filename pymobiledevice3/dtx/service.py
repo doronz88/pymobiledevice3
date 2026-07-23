@@ -176,7 +176,7 @@ def _apply_primitive_coercions(args: tuple[Any, ...], coercions: tuple[Any, ...]
         if not isinstance(result[i], _PrimitiveBase):
             # Concrete primitive classes mix in a builtin (int/str/bytes/…) whose
             # constructor takes the raw value; _PrimitiveBase itself declares none.
-            result[i] = cast("Callable[[Any], _PrimitiveBase]", coerce_type)(result[i])
+            result[i] = cast(Callable[[Any], _PrimitiveBase], coerce_type)(result[i])
     return tuple(result)
 
 
@@ -216,7 +216,7 @@ def dtx_method(selector_or_fn: Any = None, /, **invoke_kwargs: Any) -> Any:
         @dtx_method("setConfig:", expects_reply=False)
     """
     if callable(selector_or_fn):
-        cast("_DtxMethodFn", selector_or_fn)._dtx_method = (None, {})
+        cast(_DtxMethodFn, selector_or_fn)._dtx_method = (None, {})
         return selector_or_fn
     selector = selector_or_fn
 
@@ -240,7 +240,7 @@ def dtx_on_invoke(selector_or_fn: Any = None, /) -> Any:
         @dtx_on_invoke("_XCT_logMessage:")      # explicit selector
     """
     if callable(selector_or_fn):
-        cast("_DtxOnInvokeFn", selector_or_fn)._dtx_on_invoke = None  # None → infer from method name
+        cast(_DtxOnInvokeFn, selector_or_fn)._dtx_on_invoke = None  # None → infer from method name
         return selector_or_fn
     selector = selector_or_fn
 

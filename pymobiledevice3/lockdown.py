@@ -8,13 +8,13 @@ import tempfile
 import time
 from abc import ABC, abstractmethod
 from asyncio import IncompleteReadError
-from collections.abc import AsyncIterable, Generator
+from collections.abc import AsyncIterable, Generator, Iterable
 from contextlib import contextmanager, suppress
 from enum import Enum
 from pathlib import Path
 from ssl import SSLZeroReturnError, TLSVersion
 from types import TracebackType
-from typing import Any, Optional, overload
+from typing import Any, Optional, cast, overload
 
 from construct import StreamError
 from cryptography import x509
@@ -26,7 +26,7 @@ from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7Options, PKC
 from packaging.version import Version
 from typing_extensions import Self
 
-from pymobiledevice3 import usbmux
+from pymobiledevice3 import irecv_devices, usbmux
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_mobdev2
 from pymobiledevice3.ca import generate_pairing_cert_chain
 from pymobiledevice3.common import get_home_folder
@@ -50,11 +50,12 @@ from pymobiledevice3.exceptions import (
     PairingDialogResponsePendingError,
     PairingError,
     PasswordRequiredError,
+    PyMobileDevice3Exception,
     SetProhibitedError,
     StartServiceError,
     UserDeniedPairingError,
 )
-from pymobiledevice3.irecv_devices import IRECV_DEVICES
+from pymobiledevice3.irecv_devices import IRecvDevice
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.pair_records import (
@@ -66,6 +67,9 @@ from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
 
 OSUTIL = get_os_utils()
+# `irecv_devices.IRECV_DEVICES` is a very large tuple literal that pyright infers as `tuple[Unknown, ...]`;
+# route it through an explicit `Any` boundary to recover the element type without touching that module.
+IRECV_DEVICES: tuple[IRecvDevice, ...] = cast(Any, irecv_devices).IRECV_DEVICES
 SYSTEM_BUID = "30142955-444094379208051516"
 RESTORED_SERVICE_TYPE = "com.apple.mobile.restored"
 
@@ -133,9 +137,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.service = service
         self.identifier = identifier
         self.label = label
-        self.host_id = host_id
-        self.system_buid = system_buid
-        self.pair_record = pair_record
+        self.host_id: str = host_id
+        self.system_buid: str = system_buid
+        self.pair_record: Optional[dict[str, Any]] = pair_record
         self.paired = False
         self.session_id = None
         self.pairing_records_cache_folder = pairing_records_cache_folder
@@ -344,7 +348,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         :returns: The display name, or ``None`` when the product type is not in the table.
         """
-        for irecv_device in IRECV_DEVICES:
+        for irecv_device in cast(Iterable[IRecvDevice], IRECV_DEVICES):
             if irecv_device.product_type == self.product_type:
                 return irecv_device.display_name
         return None
@@ -357,7 +361,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         :returns: The hardware model, or ``None`` when the product type is not in the table.
         """
-        for irecv_device in IRECV_DEVICES:
+        for irecv_device in cast(Iterable[IRecvDevice], IRECV_DEVICES):
             if irecv_device.product_type == self.product_type:
                 return irecv_device.hardware_model
         return None
@@ -370,7 +374,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         :returns: The board ID, or ``None`` when the product type is not in the table.
         """
-        for irecv_device in IRECV_DEVICES:
+        for irecv_device in cast(Iterable[IRecvDevice], IRECV_DEVICES):
             if irecv_device.product_type == self.product_type:
                 return irecv_device.board_id
         return None
@@ -383,7 +387,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         :returns: The chip ID, or ``None`` when the product type is not in the table.
         """
-        for irecv_device in IRECV_DEVICES:
+        for irecv_device in cast(Iterable[IRecvDevice], IRECV_DEVICES):
             if irecv_device.product_type == self.product_type:
                 return irecv_device.chip_id
         return None
@@ -650,7 +654,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             # TODO: consider parsing product_version to support iOS < 4
         )
 
-        pair_record = {
+        pair_record: dict[str, Any] = {
             "DeviceCertificate": device_cert_pem,
             "HostCertificate": host_cert_pem,
             "HostID": self.host_id,
@@ -660,7 +664,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             "SystemBUID": self.system_buid,
         }
 
-        pair_options = {
+        pair_options: dict[str, Any] = {
             "HostName": socket.gethostname(),
             "PairRecord": pair_record,
             "ProtocolVersion": "2",
@@ -712,7 +716,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             # TODO: consider parsing product_version to support iOS < 4
         )
 
-        pair_record = {
+        pair_record: dict[str, Any] = {
             "DeviceCertificate": device_cert_pem,
             "HostCertificate": host_cert_pem,
             "HostID": self.host_id,
@@ -722,7 +726,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             "SystemBUID": self.system_buid,
         }
 
-        pair_options = {
+        pair_options: dict[str, Any] = {
             "PairRecord": pair_record,
             "ProtocolVersion": "2",
             "PairingOptions": {"SupervisorCertificate": public_key, "ExtendedPairingErrors": True},
@@ -789,7 +793,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         :param key: Specific key to read, or ``None`` to read the whole domain.
         :returns: The requested value, or ``None`` if nothing was returned.
         """
-        options = {}
+        options: dict[str, Any] = {}
         if domain:
             options["Domain"] = domain
         if key:
@@ -804,7 +808,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             return r.data
         if domain is None and key is None and isinstance(r, dict):
             self.all_values = r
-        return r
+        return cast(Any, r)
 
     async def remove_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> dict[str, Any]:
         """Remove a value on the device via a ``RemoveValue`` request.
@@ -813,7 +817,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         :param key: Specific key to remove, or ``None``.
         :returns: The lockdownd response to the request.
         """
-        options = {}
+        options: dict[str, Any] = {}
         if domain:
             options["Domain"] = domain
         if key:
@@ -828,7 +832,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         :param key: Specific key to write, or ``None``.
         :returns: The lockdownd response to the request.
         """
-        options = {}
+        options: dict[str, Any] = {}
         if domain:
             options["Domain"] = domain
         if key:
@@ -1043,7 +1047,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             # return response if supervisor cert challenge is required, to work with pair_supervisor
             if error == "MCChallengeRequired":
                 return response
-            exception_errors = {
+            exception_errors: dict[str, type[PyMobileDevice3Exception]] = {
                 "PasswordProtected": PasswordRequiredError,
                 "PairingDialogResponsePending": PairingDialogResponsePendingError,
                 "UserDeniedPairing": UserDeniedPairingError,
@@ -1572,7 +1576,7 @@ async def get_mobdev2_lockdowns(
     only_paired: bool = False,
     timeout: float = DEFAULT_BONJOUR_TIMEOUT,
 ) -> AsyncIterable[tuple[str, TcpLockdownClient]]:
-    records = {}
+    records: dict[str, Any] = {}
     if pair_records is None:
         pair_records = get_home_folder()
     for file in pair_records.glob("*.plist"):

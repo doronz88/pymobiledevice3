@@ -48,7 +48,7 @@ cli = InjectingTyper(
 @async_command
 async def mounter_list(service_provider: ServiceProviderDep) -> None:
     """list all mounted images"""
-    output = []
+    output: list[dict[str, Any]] = []
 
     images = await MobileImageMounterService(lockdown=service_provider).copy_devices()
     for image in images:
@@ -233,7 +233,7 @@ async def mounter_query_personalization_identifiers(service_provider: ServicePro
 @async_command
 async def mounter_query_personalization_manifest(service_provider: ServiceProviderDep) -> None:
     """Query personalization manifest"""
-    result = []
+    result: list[bytes] = []
     mounter = MobileImageMounterService(lockdown=service_provider)
     for device in await mounter.copy_devices():
         result.append(

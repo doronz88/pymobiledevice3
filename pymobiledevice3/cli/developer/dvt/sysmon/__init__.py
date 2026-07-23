@@ -1,6 +1,6 @@
 import logging
 from dataclasses import asdict
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional, cast
 
 import typer
 from typer_injector import InjectingTyper
@@ -42,7 +42,7 @@ async def sysmon_system(
         sysmontap = await Sysmontap.create(dvt)
         async with sysmontap as sysmon:
             system = None
-            system_usage = None
+            system_usage: Optional[dict[str, Any]] = None
             system_usage_seen = False  # Tracks if the first occurrence of SystemCPUUsage
 
             async for row in sysmon:
@@ -64,7 +64,7 @@ async def sysmon_system(
 
     assert system is not None and system_usage is not None  # for type checker
 
-    attrs_dict = {**asdict(system), **system_usage}
+    attrs_dict: dict[str, Any] = {**asdict(system), **system_usage}
     for name, value in attrs_dict.items():
-        if (split_fields is None) or (name in fields):
+        if (split_fields is None) or (name in cast(str, fields)):
             print(f"{name}: {value}")

@@ -4,10 +4,11 @@ import logging
 import platform
 import sys
 import tempfile
+from collections.abc import Awaitable
 from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
-from typing import Annotated, Any, Optional, TextIO, Union
+from typing import Annotated, Any, Callable, Optional, TextIO, Union
 
 import typer
 from typer_injector import InjectingTyper
@@ -49,7 +50,7 @@ TUNNEL_SERVICE_DISCOVERY_ATTEMPTS = 3
 
 
 async def browse_rsd(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[dict[str, Any]]:
-    devices = []
+    devices: list[dict[str, Any]] = []
     for rsd in await get_rsds(timeout):
         assert rsd.peer_info is not None
         devices.append({
@@ -63,7 +64,7 @@ async def browse_rsd(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[dict[str,
 
 
 async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[dict[str, Any]]:
-    devices = []
+    devices: list[dict[str, Any]] = []
     for remotepairing in await get_remote_pairing_tunnel_services(timeout):
         devices.append({
             "address": remotepairing.hostname,
@@ -221,11 +222,11 @@ async def start_tunnel_task(
 ) -> None:
     if start_tunnel is None:
         raise NotImplementedError("failed to start the tunnel on your platform")
-    get_tunnel_services = {
+    get_tunnel_services: dict[ConnectionType, Callable[..., Awaitable[list[Any]]]] = {
         connection_type.USB: get_core_device_tunnel_services,
         connection_type.WIFI: get_remote_pairing_tunnel_services,
     }
-    tunnel_services = []
+    tunnel_services: list[Any] = []
     for attempt in range(TUNNEL_SERVICE_DISCOVERY_ATTEMPTS):
         tunnel_services = await get_tunnel_services[connection_type](udid=udid)
         if tunnel_services:

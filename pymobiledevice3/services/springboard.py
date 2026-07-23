@@ -1,5 +1,5 @@
 from enum import IntEnum
-from typing import Any, Optional, cast
+from typing import Any, Optional, Union, cast
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -53,7 +53,7 @@ class SpringBoardServicesService(LockdownService):
         :param newstate: Icon layout in the same structure returned by `get_icon_state`.
             When ``None``, an empty layout is sent.
         """
-        state = {} if newstate is None else newstate
+        state: Union[list[Any], dict[str, Any]] = {} if newstate is None else newstate
         await self.service.send_recv_prefixed(build_plist({"command": "setIconState", "iconState": state}))
 
     async def get_icon_pngdata(self, bundle_id: str) -> bytes:
@@ -93,7 +93,7 @@ class SpringBoardServicesService(LockdownService):
 
         :returns: Mapping of metric names to their numeric values, as reported by SpringBoard.
         """
-        return cast("dict[str, float]", await self.service.send_recv_plist({"command": "getHomeScreenIconMetrics"}))
+        return cast(dict[str, float], await self.service.send_recv_plist({"command": "getHomeScreenIconMetrics"}))
 
     async def get_wallpaper_info(self, wallpaper_name: str) -> dict[str, Any]:
         """
