@@ -27,6 +27,7 @@ from pymobiledevice3.remote.tunnel_service import (
     PairingDataComponentTLVBuf,
     PairingDataComponentType,
     RPPairingPacket,
+    RPPairingPacketData,
 )
 
 T = PairingDataComponentType
@@ -86,7 +87,7 @@ class _DeviceSimulator:
 
     async def _send_plain(self, value: dict[str, Any]) -> None:
         env = {"message": {"plain": {"_0": value}}, "originatedBy": "host", "sequenceNumber": self.seq}
-        self.writer.write(RPPairingPacket.build({"body": json.dumps(env).encode()}))
+        self.writer.write(RPPairingPacket.build(RPPairingPacketData(body=json.dumps(env).encode())))
         await self.writer.drain()
         self.seq += 1
 
