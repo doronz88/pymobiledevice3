@@ -189,7 +189,7 @@ class MobileActivationService:
                         activation_request.update({k: lv})
                         continue
                     else:
-                        self.logger.warn(f"Unable to get {k} from lockdownd")
+                        self.logger.warning(f"Unable to get {k} from lockdownd")
                         if k == "MEID" and has_meid:
                             # Something is wrong if both IMEI & MEID is missing
                             raise MobileActivationException("Unable to obtain both IMEI and MEID")

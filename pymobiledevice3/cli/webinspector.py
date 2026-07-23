@@ -181,7 +181,7 @@ async def reload_pages(inspector: WebinspectorService) -> None:
 
 
 @asynccontextmanager
-async def webinspector_service(lockdown: LockdownServiceProvider) -> AsyncIterator[WebinspectorService]:
+async def webinspector_service(lockdown: LockdownServiceProvider) -> AsyncGenerator[WebinspectorService, None]:
     inspector = WebinspectorService(lockdown=lockdown)
     try:
         await inspector.connect()
@@ -553,7 +553,7 @@ class AutomationJsShell(JsShell):
         open_safari: bool,
         bundle_identifier: Optional[str] = None,
         **kwargs: Any,
-    ) -> "AsyncIterator[AutomationJsShell]":
+    ) -> "AsyncGenerator[AutomationJsShell, None]":
         if bundle_identifier is None:
             bundle_identifier = SAFARI
         async with webinspector_service(lockdown) as inspector:
@@ -589,7 +589,7 @@ class InspectorJsShell(JsShell):
         *,
         console_enable: bool = True,
         **kwargs: Any,
-    ) -> "AsyncIterator[InspectorJsShell]":
+    ) -> "AsyncGenerator[InspectorJsShell, None]":
         async with webinspector_service(lockdown) as inspector:
             if open_safari:
                 _ = await inspector.open_app(SAFARI)

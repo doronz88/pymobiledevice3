@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import pytest
@@ -9,7 +9,7 @@ from pymobiledevice3.services.webinspector import SAFARI, WebinspectorService
 
 
 @asynccontextmanager
-async def webinspector_service(lockdown: LockdownClient) -> AsyncIterator[WebinspectorService]:
+async def webinspector_service(lockdown: LockdownClient) -> AsyncGenerator[WebinspectorService, None]:
     inspector = WebinspectorService(lockdown=lockdown)
     try:
         try:

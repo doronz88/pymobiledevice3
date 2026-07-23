@@ -3,7 +3,7 @@ import logging
 import plistlib
 import tempfile
 import traceback
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 from typing import IO, Annotated, Any, Optional, Union, cast
 
@@ -105,7 +105,7 @@ DeviceDep = Annotated[
 
 
 @contextlib.contextmanager
-def tempzip_download_ctx(url: str) -> Iterator[IPSW]:
+def tempzip_download_ctx(url: str) -> Generator[IPSW, None, None]:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpzip = Path(tmpdir) / url.split("/")[-1]
         file_download(url, tmpzip)
@@ -114,7 +114,7 @@ def tempzip_download_ctx(url: str) -> Iterator[IPSW]:
 
 
 @contextlib.contextmanager
-def ipsw_ctx(path: Union[str, Path]) -> Iterator[IPSW]:
+def ipsw_ctx(path: Union[str, Path]) -> Generator[IPSW, None, None]:
     yield IPSW.create_from_path(str(path))
 
 

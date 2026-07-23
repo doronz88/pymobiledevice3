@@ -25,7 +25,7 @@ import contextlib
 import struct
 import time
 import uuid
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncGenerator, Iterable
 from typing import Any, Optional
 
 from pymobiledevice3.remote.remote_service import RemoteService
@@ -549,7 +549,7 @@ async def touch_session(
     rsd: RemoteServiceDiscoveryService,
     *,
     display_id: int = 1,
-) -> AsyncIterator["UniversalHIDServiceService"]:
+) -> AsyncGenerator["UniversalHIDServiceService", None]:
     """Open a :class:`UniversalHIDServiceService` with an active media stream
     holding backboardd's auth gate open.
 
