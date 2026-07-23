@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 import contextlib
 import plistlib
 from enum import Enum
@@ -85,7 +86,7 @@ class MobileConfigService(LockdownService):
         await self._send_recv({"RequestType": "EscalateResponse", "SignedRequest": signed_challenge})
         await self._send_recv({"RequestType": "ProceedWithKeybagMigration"})
 
-    async def get_stored_profile(self, purpose: Purpose = Purpose.PostSetupInstallation) -> dict:
+    async def get_stored_profile(self, purpose: Purpose = Purpose.PostSetupInstallation) -> dict[str, Any]:
         """
         Retrieve a profile stored on the device for a given purpose.
 
@@ -103,7 +104,7 @@ class MobileConfigService(LockdownService):
         """
         await self._send_recv({"RequestType": "StoreProfile", "ProfileData": profile_data, "Purpose": purpose.value})
 
-    async def get_cloud_configuration(self) -> Optional[dict]:
+    async def get_cloud_configuration(self) -> Optional[dict[str, Any]]:
         """
         Retrieve the device's cloud (supervision) configuration.
 
@@ -111,7 +112,7 @@ class MobileConfigService(LockdownService):
         """
         return (await self._send_recv({"RequestType": "GetCloudConfiguration"})).get("CloudConfiguration")
 
-    async def set_cloud_configuration(self, cloud_configuration: dict) -> None:
+    async def set_cloud_configuration(self, cloud_configuration: dict[str, Any]) -> None:
         """
         Set the device's cloud (supervision) configuration.
 
@@ -152,7 +153,7 @@ class MobileConfigService(LockdownService):
                 "DisallowProximitySetup": disallow_proximity_setup,
             })
 
-    async def get_profile_list(self) -> dict:
+    async def get_profile_list(self) -> dict[str, Any]:
         """
         List the configuration profiles installed on the device.
 
@@ -208,12 +209,12 @@ class MobileConfigService(LockdownService):
         })
         await self._send_recv({"RequestType": "RemoveProfile", "ProfileIdentifier": data})
 
-    async def _send_recv(self, request: dict) -> dict:
+    async def _send_recv(self, request: dict[str, Any]) -> dict[str, Any]:
         response = await self.service.send_recv_plist(request)
         if response.get("Status", None) != "Acknowledged":
             error_chain = response.get("ErrorChain")
             if error_chain is not None:
-                error_code = cast("list[dict]", error_chain)[0]["ErrorCode"]
+                error_code = cast("list[dict[str, Any]]", error_chain)[0]["ErrorCode"]
                 if error_code == ERROR_CLOUD_CONFIGURATION_ALREADY_PRESENT:
                     raise CloudConfigurationAlreadyPresentError()
             raise ProfileError(f"invalid response {response}")

@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 import asyncio
 import queue
 import time
@@ -585,7 +586,9 @@ def clean(d):
         return d
 
 
-def jsonify_parsed_stackshot(stackshot, root: typing.Optional[dict] = None, index: int = 0) -> typing.Optional[int]:
+def jsonify_parsed_stackshot(
+    stackshot, root: typing.Optional[dict[str, typing.Any]] = None, index: int = 0
+) -> typing.Optional[int]:
     assert root is not None
     current_index = index
     while True:
@@ -621,7 +624,7 @@ STACKSHOT_HEADER = Int32ul.build(int(kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACK
 
 
 class KdBufStream:
-    def __init__(self, chunk_queue: queue.Queue):
+    def __init__(self, chunk_queue: queue.Queue[typing.Any]):
         self.chunk_queue = chunk_queue
         self.current_chunk = BytesIO()
 
@@ -660,7 +663,7 @@ class CoreProfileSessionTapService(DTXService):
         super().on_closed(reason)
 
     @dtx_method("setConfig:", expects_reply=False)
-    async def set_config_(self, config: dict) -> None: ...
+    async def set_config_(self, config: dict[str, typing.Any]) -> None: ...
 
     @dtx_method("start", expects_reply=False)
     async def start(self) -> None: ...
@@ -715,7 +718,9 @@ class CoreProfileSessionTap:
 
     IDENTIFIER = CoreProfileSessionTapService.IDENTIFIER
 
-    def __init__(self, dvt: DtxServiceProvider, time_config: dict, filters: typing.Optional[set] = None):
+    def __init__(
+        self, dvt: DtxServiceProvider, time_config: dict[str, typing.Any], filters: typing.Optional[set[int]] = None
+    ):
         """
         :param dvt: Instruments service proxy.
         :param time_config: Timing information - numer, denom, mach_absolute_time and matching usecs_since_epoch,
@@ -793,7 +798,7 @@ class CoreProfileSessionTap:
         if isinstance(status, int) and status != 0:
             raise DvtException(str(notice))
 
-    async def get_stackshot(self, timeout: typing.Optional[float] = 10.0) -> dict:
+    async def get_stackshot(self, timeout: typing.Optional[float] = 10.0) -> dict[str, typing.Any]:
         """
         Wait for and parse the stackshot the device emits once per tap creation.
 
@@ -859,7 +864,7 @@ class CoreProfileSessionTap:
             out.write(data)
             out.flush()
 
-    async def pump_kdbuf_chunks(self, chunk_queue: queue.Queue) -> None:
+    async def pump_kdbuf_chunks(self, chunk_queue: queue.Queue[typing.Any]) -> None:
         """
         Continuously forward received messages into a queue for consumption by a `KdBufStream`.
 
@@ -882,7 +887,7 @@ class CoreProfileSessionTap:
         finally:
             chunk_queue.put(None)
 
-    def get_kdbuf_stream(self, chunk_queue: queue.Queue):
+    def get_kdbuf_stream(self, chunk_queue: queue.Queue[typing.Any]):
         """
         Wrap a chunk queue in a file-like `KdBufStream` for reading the kd_buf trace.
 
