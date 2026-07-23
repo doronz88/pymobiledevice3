@@ -1,6 +1,7 @@
 import json
 import logging
 import os.path
+from typing import Any, Optional
 from uuid import UUID
 
 import click
@@ -16,14 +17,14 @@ UUID_SIZE = 0x10
 logger = logging.getLogger(__name__)
 
 
-def get_dsc_map(dsc_uuid):
+def get_dsc_map(dsc_uuid: str):
     with open(MAP_FILENAME) as f:
         uuid_map = json.load(f)
 
     return uuid_map.get(dsc_uuid)
 
 
-def sanitize_path(path):
+def sanitize_path(path: str) -> Optional[str]:
     for partition in PARTITIONS:
         if path.startswith(partition):
             return path
@@ -37,7 +38,7 @@ def sanitize_path(path):
 @click.argument("dyld_uuid", type=click.UUID)
 @click.argument("dsc", type=click.File("rb"))
 @click.option("-f", "--force", is_flag=True)
-def main(dsc, dyld_uuid, force):
+def main(dsc: Any, dyld_uuid: UUID, force: bool):
     """
     Simple utility to get all UUIDs used for symbolication from given DSC.
     The UUID of `/usr/lib/dyld` still needs manual insertion.

@@ -3,13 +3,13 @@ import contextlib
 from base64 import b64decode, b64encode
 from datetime import datetime
 from io import BytesIO
-from typing import Optional
+from typing import Any, Optional
 
 from PIL import Image
 
 
 class ScreenCast:
-    def __init__(self, target, format_: str, quality: int, max_width: int, max_height: int):
+    def __init__(self, target: Any, format_: str, quality: int, max_width: int, max_height: int):
         """
         :param pymobiledevice3.services.web_protocol.cdp_target.CdpTarget target:
         :param format_: Image compression format. Allowed values: jpeg, png.
@@ -102,7 +102,7 @@ class ScreenCast:
             return 0, 0, 0
         return tuple(map(int, frame_size.split(",")))
 
-    async def recording_loop(self, message_id):
+    async def recording_loop(self, message_id: int):
         """
         Fetch screenshots and send to devtools.
         :param message_id: Message id to use when requesting WIR data concerning the screencast.

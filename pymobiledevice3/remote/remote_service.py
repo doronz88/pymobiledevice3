@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3.exceptions import NotConnectedError
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -31,7 +31,7 @@ class RemoteService:
         await self.connect()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
         await self.close()
 
     async def close(self) -> None:

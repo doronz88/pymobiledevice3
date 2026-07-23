@@ -47,7 +47,7 @@ class AmfiService:
         if not resp.get("success"):
             raise PyMobileDevice3Exception(f"create_AMFIShowOverridePath() failed with: {resp}")
 
-    async def enable_developer_mode(self, enable_post_restart=True):
+    async def enable_developer_mode(self, enable_post_restart: bool = True):
         """
         Request that Developer Mode be enabled on the device.
 

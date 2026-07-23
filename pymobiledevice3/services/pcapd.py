@@ -2,8 +2,8 @@
 
 import enum
 import time
-from collections.abc import AsyncGenerator
-from typing import Any, Optional, cast
+from collections.abc import AsyncGenerator, AsyncIterator
+from typing import Any, BinaryIO, Optional, cast
 
 import pcapng.blocks as blocks
 from construct import Byte, Bytes, Container, CString, Int16ub, Int32ub, Int32ul, Padded, Seek, Struct, this
@@ -393,7 +393,7 @@ class PcapdService(LockdownService):
 
             packet_index += 1
 
-    async def write_to_pcap(self, out, packet_generator) -> None:
+    async def write_to_pcap(self, out: BinaryIO, packet_generator: AsyncIterator[Container[Any]]) -> None:
         """
         Write captured packets to a pcapng stream.
 

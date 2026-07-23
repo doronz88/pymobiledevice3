@@ -39,7 +39,7 @@ import socket
 import struct
 import sys
 from contextlib import AsyncExitStack, suppress
-from typing import Optional, Protocol, cast
+from typing import Any, Optional, Protocol, cast
 
 from pmd_net_addr import Ip6Address, Ip6IfAddr, MacAddress
 from pmd_pytcp import stack
@@ -376,7 +376,7 @@ class UserspaceDialPlane:
     async def __aenter__(self) -> UserspaceDialPlane:
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         for srv in self._servers:
             srv.close()
         # Cancel the in-flight relay handlers BEFORE wait_closed(): since Python 3.12.1
@@ -477,7 +477,7 @@ class UserspaceDialPlane:
         logger.debug("userspace relay %s:%s -> 127.0.0.1:%s", self._device_addr, port, lport)
         return lport
 
-    async def dial(self, host=None, port=None, **kwargs):
+    async def dial(self, host: Optional[str] = None, port: Optional[int] = None, **kwargs: Any):
         """``asyncio.open_connection``-compatible dialer passed to the RSD via ``open_connection=``.
 
         Connections to the device's tunnel address are relayed through the userspace stack;
@@ -725,7 +725,7 @@ class UserspaceRsdTunnel:
     async def __aenter__(self) -> RemoteServiceDiscoveryService:
         return await self.aopen()
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self.aclose()
 
 

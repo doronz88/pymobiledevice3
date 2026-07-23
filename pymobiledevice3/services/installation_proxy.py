@@ -83,7 +83,7 @@ class InstallationProxyService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    async def _watch_completion(self, handler: Optional[Callable[..., Any]] = None, *args) -> None:
+    async def _watch_completion(self, handler: Optional[Callable[..., Any]] = None, *args: Any) -> None:
         while True:
             response = await self.service.recv_plist()
             if not response:
@@ -108,7 +108,7 @@ class InstallationProxyService(LockdownService):
         cmd: str = "Archive",
         options: Optional[dict[str, Any]] = None,
         handler: Optional[Callable[..., Any]] = None,
-        *args,
+        *args: Any,
     ) -> None:
         """
         Send a command that targets an installed app by its bundle identifier and wait for completion.
@@ -140,7 +140,7 @@ class InstallationProxyService(LockdownService):
         ipa_path: str,
         options: Optional[dict[str, Any]] = None,
         handler: Optional[Callable[..., Any]] = None,
-        *args,
+        *args: Any,
     ) -> None:
         """
         Upgrade an installed app from a local package.
@@ -162,7 +162,7 @@ class InstallationProxyService(LockdownService):
         bundle_identifier: str,
         options: Optional[dict[str, Any]] = None,
         handler: Optional[Callable[..., Any]] = None,
-        *args,
+        *args: Any,
     ) -> None:
         """
         Restore a previously archived app, identified by its bundle identifier.
@@ -184,7 +184,7 @@ class InstallationProxyService(LockdownService):
         bundle_identifier: str,
         options: Optional[dict[str, Any]] = None,
         handler: Optional[Callable[..., Any]] = None,
-        *args,
+        *args: Any,
     ) -> None:
         """
         Uninstall an app, identified by its bundle identifier.
@@ -207,7 +207,7 @@ class InstallationProxyService(LockdownService):
         cmd: str = "Install",
         options: Optional[dict[str, Any]] = None,
         handler: Optional[Callable[..., Any]] = None,
-        *args,
+        *args: Any,
     ) -> None:
         """
         Install an app or carrier bundle from a zipped package held in memory.
@@ -258,7 +258,7 @@ class InstallationProxyService(LockdownService):
         options: Optional[dict[str, Any]] = None,
         handler: Optional[Callable[..., Any]] = None,
         developer: bool = False,
-        *args,
+        *args: Any,
     ) -> None:
         """
         Install an app or carrier bundle from a local path.
@@ -321,7 +321,7 @@ class InstallationProxyService(LockdownService):
         options: Optional[dict[str, Any]],
         handler: Optional[Callable[..., Any]],
         package_path: str,
-        *args,
+        *args: Any,
     ):
         """
         Send an install/upgrade command for a package already staged on the device, and wait for completion.

@@ -33,7 +33,7 @@ import re
 import sys
 from collections.abc import Awaitable, Sequence
 from functools import partial, wraps
-from typing import Any, Callable, ClassVar, Optional, Protocol, TypeVar, cast, get_type_hints
+from typing import Any, Callable, ClassVar, Optional, Protocol, TypeVar, cast, get_type_hints, overload
 
 from .channel import DTXChannel
 from .context import DTX_GLOBAL_CTX, DTXContext  # noqa: F401 — re-exported for back-compat
@@ -43,6 +43,9 @@ from .primitives import PInt32, _PrimitiveBase
 logger = logging.getLogger(__name__)
 
 _MISSING = object()  # sentinel for missing attribute values in __init_subclass__
+# Identity TypeVar for the DTX method/handler decorators: keeps the decorated
+# function's own type so `self.service.<method>(...)` stays callable/typed.
+_DtxFnT = TypeVar("_DtxFnT", bound=Callable[..., Any])
 DTX_SERVICE_T = TypeVar("DTX_SERVICE_T", bound="DTXService")
 QUEUE_ITEM_T = TypeVar("QUEUE_ITEM_T")
 
@@ -194,7 +197,11 @@ class _DtxOnInvokeFn(Protocol):
     _dtx_on_invoke: Optional[str]
 
 
-def dtx_method(selector_or_fn=None, /, **invoke_kwargs):
+@overload
+def dtx_method(selector_or_fn: _DtxFnT, /) -> _DtxFnT: ...
+@overload
+def dtx_method(selector_or_fn: Optional[str] = ..., /, **invoke_kwargs: Any) -> Callable[[_DtxFnT], _DtxFnT]: ...
+def dtx_method(selector_or_fn: Any = None, /, **invoke_kwargs: Any) -> Any:
     """Decorator for outgoing DTX calls.
 
     Replaces the decorated method body with a ``self._channel.invoke(...)``
@@ -213,14 +220,18 @@ def dtx_method(selector_or_fn=None, /, **invoke_kwargs):
         return selector_or_fn
     selector = selector_or_fn
 
-    def decorator(fn):
+    def decorator(fn: Any) -> Any:
         fn._dtx_method = (selector, invoke_kwargs)
         return fn
 
     return decorator
 
 
-def dtx_on_invoke(selector_or_fn=None, /):
+@overload
+def dtx_on_invoke(selector_or_fn: _DtxFnT, /) -> _DtxFnT: ...
+@overload
+def dtx_on_invoke(selector_or_fn: Optional[str] = ..., /) -> Callable[[_DtxFnT], _DtxFnT]: ...
+def dtx_on_invoke(selector_or_fn: Any = None, /) -> Any:
     """Register a method as the handler for a specific incoming ObjC selector.
 
     Usage::
@@ -233,29 +244,29 @@ def dtx_on_invoke(selector_or_fn=None, /):
         return selector_or_fn
     selector = selector_or_fn
 
-    def decorator(fn):
+    def decorator(fn: Any) -> Any:
         fn._dtx_on_invoke = selector
         return fn
 
     return decorator
 
 
-def dtx_on_data(fn):
+def dtx_on_data(fn: _DtxFnT) -> _DtxFnT:
     """Register a method as the handler for incoming DATA frames (raw bytes)."""
-    fn._dtx_on_data = True
+    cast(Any, fn)._dtx_on_data = True
     return fn
 
 
-def dtx_on_notification(fn):
+def dtx_on_notification(fn: _DtxFnT) -> _DtxFnT:
     """Register a method as the handler for incoming OBJECT/OK notifications."""
-    fn._dtx_on_notification = True
+    cast(Any, fn)._dtx_on_notification = True
     return fn
 
 
-def dtx_on_dispatch(fn):
+def dtx_on_dispatch(fn: _DtxFnT) -> _DtxFnT:
     """Catch-all handler for incoming DISPATCH messages not matched by
     :func:`dtx_on_invoke`.  The method receives ``(selector: str, *args)``."""
-    fn._dtx_on_dispatch = True
+    cast(Any, fn)._dtx_on_dispatch = True
     return fn
 
 
@@ -326,7 +337,7 @@ class DTXService:
                     pass
 
                 async def _wrapper(
-                    self,
+                    self: Any,
                     *args: Any,
                     __sel: str = _sel,
                     __kw: dict[str, Any] = _kw,

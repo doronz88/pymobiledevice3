@@ -57,7 +57,7 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
-def default_json_encoder(obj):
+def default_json_encoder(obj: Any) -> str:
     if isinstance(obj, bytes):
         return f"<{obj.hex()}>"
     if isinstance(obj, datetime.datetime):
@@ -67,7 +67,7 @@ def default_json_encoder(obj):
     raise TypeError()
 
 
-def print_json(buf, colored: Optional[bool] = None, default=default_json_encoder) -> str:
+def print_json(buf: Any, colored: Optional[bool] = None, default: Callable[[Any], Any] = default_json_encoder) -> str:
     if colored is None:
         colored = user_requested_colored_output()
     formatted_json = json.dumps(buf, sort_keys=True, indent=4, default=default)
@@ -82,7 +82,7 @@ def print_json(buf, colored: Optional[bool] = None, default=default_json_encoder
         return formatted_json
 
 
-def print_hex(data, colored=True) -> None:
+def print_hex(data: bytes, colored: bool = True) -> None:
     hex_dump = hexdump.hexdump(data, result="return")
     assert isinstance(hex_dump, str)  # result='return' always yields a str
     if colored:
@@ -114,9 +114,9 @@ def get_last_used_terminal_formatting(buf: str) -> str:
     return "\x1b" + buf.rsplit("\x1b", 1)[1].split("m")[0] + "m"
 
 
-def sudo_required(func):
+def sudo_required(func: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> None:
         if not OSUTILS.is_admin:
             raise AccessDeniedError()
         else:

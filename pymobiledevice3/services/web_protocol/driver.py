@@ -1,7 +1,7 @@
 from dataclasses import asdict, dataclass
 from typing import Any, Optional, Union
 
-from pymobiledevice3.services.web_protocol.automation_session import RESOURCES, Point, Rect, Size
+from pymobiledevice3.services.web_protocol.automation_session import RESOURCES, AutomationSession, Point, Rect, Size
 from pymobiledevice3.services.web_protocol.element import WebElement
 from pymobiledevice3.services.web_protocol.selenium_api import By, SeleniumApi
 from pymobiledevice3.services.web_protocol.switch_to import SwitchTo
@@ -22,13 +22,13 @@ class Cookie:
     sameSite: str = "None"
 
     @classmethod
-    def from_automation(cls, d):
+    def from_automation(cls, d: dict[str, Any]):
         d.pop("size")
         return cls(**d)
 
 
 class WebDriver(SeleniumApi):
-    def __init__(self, session):
+    def __init__(self, session: AutomationSession):
         """
         :param pymobiledevice3.services.web_protocol.automation_session.AutomationSession session: Automation session.
         """
@@ -68,7 +68,7 @@ class WebDriver(SeleniumApi):
         """Deletes a single cookie with the given name."""
         await self.session.delete_single_cookie(name)
 
-    async def execute_async_script(self, script: str, *args):
+    async def execute_async_script(self, script: str, *args: Any):
         """
         Asynchronously Executes JavaScript in the current window/frame.
         :param script: The JavaScript to execute.
@@ -76,7 +76,7 @@ class WebDriver(SeleniumApi):
         """
         return await self.session.execute_script(script, args, async_=True)
 
-    async def execute_script(self, script: str, *args):
+    async def execute_script(self, script: str, *args: Any):
         """
         Synchronously Executes JavaScript in the current window/frame.
         :param script: The JavaScript to execute.
@@ -84,12 +84,12 @@ class WebDriver(SeleniumApi):
         """
         return await self.session.execute_script(script, args)
 
-    async def find_element(self, by=By.ID, value=None) -> Optional[WebElement]:
+    async def find_element(self, by: By = By.ID, value: Optional[str] = None) -> Optional[WebElement]:
         """Find an element given a By strategy and locator."""
         elem = await self.session.find_elements(by, value)
         return None if elem is None else WebElement(self.session, elem)
 
-    async def find_elements(self, by=By.ID, value=None) -> list[WebElement]:
+    async def find_elements(self, by: By = By.ID, value: Optional[str] = None) -> list[WebElement]:
         """Find elements given a By strategy and locator."""
         elements = await self.session.find_elements(by, value, single=False)
         return [WebElement(self.session, elem) for elem in elements]
@@ -145,7 +145,7 @@ class WebDriver(SeleniumApi):
         rect = await self.get_window_rect()
         return Size(height=rect.height, width=rect.width)
 
-    def implicitly_wait(self, time_to_wait):
+    def implicitly_wait(self, time_to_wait: int):
         """Sets a sticky timeout to implicitly wait for an element to be found, or a command to complete."""
         self.session.implicit_wait_timeout = time_to_wait * 1000
 
@@ -167,15 +167,21 @@ class WebDriver(SeleniumApi):
         await self.session.reload_browsing_context()
         await self.session.switch_to_browsing_context("")
 
-    async def set_window_position(self, x, y):
+    async def set_window_position(self, x: str, y: str):
         """Sets the x,y position of the current window."""
         await self.set_window_rect(x=int(x, 0), y=int(y, 0))
 
-    async def set_window_rect(self, x=None, y=None, width=None, height=None):
+    async def set_window_rect(
+        self,
+        x: Optional[int] = None,
+        y: Optional[int] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+    ):
         """Sets the x, y coordinates of the window as well as height and width of the current window."""
         await self.session.set_window_frame(x, y, width, height)
 
-    async def set_window_size(self, width, height):
+    async def set_window_size(self, width: str, height: str):
         """Sets the width and height of the current window."""
         await self.set_window_rect(width=int(width, 0), height=int(height, 0))
 

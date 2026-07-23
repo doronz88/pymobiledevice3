@@ -44,7 +44,7 @@ from ctypes import (
     c_void_p,
     cast,
 )
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 # Pure-Python type/constant declarations live at module top so importers
 # on non-Darwin platforms (Linux/Windows) can `import vt_jpeg` without
@@ -286,7 +286,9 @@ class HEVCDecoder:
         self.width = int(dims.width)
         self.height = int(dims.height)
 
-    def _on_output(self, refcon, src_ref, status, info_flags, image_buf, pts, dur):
+    def _on_output(
+        self, refcon: Any, src_ref: Any, status: int, info_flags: int, image_buf: Any, pts: Any, dur: Any
+    ) -> None:
         # kVTDecodeInfo_FrameDropped is set when VT concealed a frame --
         # the status may be 0 (no API-level error) yet output is corrupt.
         # Treat as an error so callers can drive a sticky keyframe-required
@@ -367,8 +369,8 @@ class HevcToBgraTranscoder:
         sps: bytes,
         pps: bytes,
         *,
-        on_frame,
-        on_decode_error=None,
+        on_frame: Callable[[bytes], None],
+        on_decode_error: Optional[Callable[[], None]] = None,
     ) -> None:
         self._dec = HEVCDecoder(vps, sps, pps, bgra_output=True)
         self._on_frame = on_frame

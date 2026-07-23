@@ -16,7 +16,7 @@ class MessageAux(list[Any]):
     """An adapter that parse DISPTACH arguments from/to primitive dictionaries"""
 
     @classmethod
-    def parse(cls, obj: Union[bytes, bytearray, memoryview], context, path):
+    def parse(cls, obj: Union[bytes, bytearray, memoryview], context: Any, path: str):
         if len(obj) == 0:
             # interpret empty buffers as an empty list
             return []
@@ -56,7 +56,7 @@ class MessageAux(list[Any]):
         return converted_list
 
     @classmethod
-    def build(cls, obj, context, path) -> bytes:
+    def build(cls, obj: Any, context: Any, path: str) -> bytes:
         if not obj:
             # nothing is written ¯\_(ツ)_/¯
             return b""

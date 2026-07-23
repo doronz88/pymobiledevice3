@@ -31,7 +31,7 @@ from construct import (
 )
 from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES
 
-from pymobiledevice3.dtx import DTXQueue, DTXService, dtx_method, dtx_on_data, dtx_on_notification
+from pymobiledevice3.dtx import DTXContext, DTXQueue, DTXService, dtx_method, dtx_on_data, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import ConnectionTerminatedError, DvtException, ExtractingStackshotError
@@ -576,7 +576,7 @@ kcdata_item = Struct(
 kcdata = GreedyRange(kcdata_item)
 
 
-def clean(d):
+def clean(d: typing.Any) -> typing.Any:
     if isinstance(d, dict):
         return {k: clean(v) for k, v in d.items() if not k.startswith("_")}
     elif isinstance(d, list):
@@ -586,7 +586,7 @@ def clean(d):
 
 
 def jsonify_parsed_stackshot(
-    stackshot, root: typing.Optional[dict[str, typing.Any]] = None, index: int = 0
+    stackshot: typing.Any, root: typing.Optional[dict[str, typing.Any]] = None, index: int = 0
 ) -> typing.Optional[int]:
     assert root is not None
     current_index = index
@@ -630,10 +630,10 @@ class KdBufStream:
     def tell(self):
         return self.current_chunk.tell()
 
-    def seek(self, offset, whence):
+    def seek(self, offset: int, whence: int):
         return self.current_chunk.seek(offset, whence)
 
-    def read(self, size):
+    def read(self, size: int):
         while size > len(self.current_chunk.getbuffer()) - self.current_chunk.tell():
             data = self.chunk_queue.get()
             if isinstance(data, Exception):
@@ -653,7 +653,7 @@ class KdBufStream:
 class CoreProfileSessionTapService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.coreprofilesessiontap"
 
-    def __init__(self, ctx):
+    def __init__(self, ctx: DTXContext):
         super().__init__(ctx)
         self.messages: DTXQueue[bytes] = DTXQueue()
 
@@ -772,7 +772,7 @@ class CoreProfileSessionTap:
         await service.messages.get()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: typing.Any, exc_val: typing.Any, exc_tb: typing.Any):
         await (await self._service_ref()).stop()
 
     @staticmethod
@@ -896,7 +896,7 @@ class CoreProfileSessionTap:
         return KdBufStream(chunk_queue)
 
     @staticmethod
-    def parse_stackshot(data):
+    def parse_stackshot(data: bytes):
         """
         Parse raw KCDATA stackshot bytes into a nested dictionary.
 

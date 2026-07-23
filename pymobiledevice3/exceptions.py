@@ -502,7 +502,7 @@ class SysdiagnoseTimeoutError(PyMobileDevice3Exception, TimeoutError):
 
 
 class SupportError(PyMobileDevice3Exception):
-    def __init__(self, os_name):
+    def __init__(self, os_name: Optional[str]) -> None:
         self.os_name = os_name
         super().__init__()
 
@@ -516,7 +516,7 @@ class OSNotSupportedError(SupportError):
 class FeatureNotSupportedError(SupportError):
     """Feature has not been implemented for OS."""
 
-    def __init__(self, os_name, feature):
+    def __init__(self, os_name: Optional[str], feature: str) -> None:
         super().__init__(os_name)
         self.feature = feature
 

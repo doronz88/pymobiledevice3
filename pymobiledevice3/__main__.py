@@ -14,6 +14,8 @@ from typing import Annotated, Callable, Optional, Union
 import coloredlogs
 import typer
 from packaging.version import Version
+from typer._click.core import Command as ClickCommand
+from typer._click.core import Context as ClickContext
 from typer.core import TyperGroup
 from typer_injector import InjectingTyper
 
@@ -172,16 +174,16 @@ _patch_xonsh_completion_detection()
 
 
 class Pmd3TyperGroup(TyperGroup):
-    def list_commands(self, ctx) -> list[str]:
+    def list_commands(self, ctx: ClickContext) -> list[str]:
         # Order is preserved by dict insertion; adjust if you want alphabetical
         return list(CLI_GROUPS.keys())
 
-    def get_command(self, ctx, cmd_name: str):
+    def get_command(self, ctx: ClickContext, cmd_name: str):
         if cmd_name not in CLI_GROUPS:
             self.handle_invalid_command(ctx, cmd_name)
         return self.import_and_get_command(ctx, cmd_name)
 
-    def handle_invalid_command(self, ctx, name: str) -> None:
+    def handle_invalid_command(self, ctx: ClickContext, name: str) -> None:
         suggested_commands = self.search_commands(name)
         suggestion = self.format_suggestions(suggested_commands)
         # ctx.fail raises a ClickException underneath, which Typer displays nicely
@@ -195,7 +197,7 @@ class Pmd3TyperGroup(TyperGroup):
         return f"\nDid you mean:\n{cmds}"
 
     @staticmethod
-    def import_and_get_command(ctx, name: str):
+    def import_and_get_command(ctx: ClickContext, name: str):
         module_name = f"pymobiledevice3.cli.{CLI_GROUPS[name]}"
         mod = importlib.import_module(module_name)
         # submodules expose a Typer Group named "cli"
@@ -207,7 +209,7 @@ class Pmd3TyperGroup(TyperGroup):
         return re.sub(f"({keyword})", typer.style("\\1", bold=True), text, flags=re.IGNORECASE)
 
     @staticmethod
-    def collect_commands(command) -> Union[str, list[str]]:
+    def collect_commands(command: ClickCommand) -> Union[str, list[str]]:
         if isinstance(command, TyperGroup):  # group
             cmds = []
             for v in command.commands.values():
@@ -245,7 +247,7 @@ class Pmd3TyperGroup(TyperGroup):
                 all_commands.append(cmd)
         return all_commands
 
-    def resolve_command(self, ctx, args: list[str]):
+    def resolve_command(self, ctx: ClickContext, args: list[str]):
         return super().resolve_command(ctx, args)
 
 

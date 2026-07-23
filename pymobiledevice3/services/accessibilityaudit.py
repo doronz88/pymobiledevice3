@@ -4,6 +4,7 @@ import typing
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from enum import Enum, IntEnum
+from types import TracebackType
 
 from packaging.version import Version
 
@@ -18,7 +19,7 @@ class SerializedObject:
 
 
 class AXAuditInspectorFocus_v1(SerializedObject):
-    def __init__(self, fields):
+    def __init__(self, fields: dict[str, typing.Any]):
         super().__init__(fields)
 
     @property
@@ -81,7 +82,7 @@ class AXAuditInspectorFocus_v1(SerializedObject):
 
 
 class AXAuditElement_v1(SerializedObject):
-    def __init__(self, fields):
+    def __init__(self, fields: dict[str, typing.Any]):
         super().__init__(fields)
 
     @property
@@ -93,19 +94,19 @@ class AXAuditElement_v1(SerializedObject):
 
 
 class AXAuditInspectorSection_v1(SerializedObject):
-    def __init__(self, fields):
+    def __init__(self, fields: dict[str, typing.Any]):
         super().__init__(fields)
 
 
 class AXAuditElementAttribute_v1(SerializedObject):
-    def __init__(self, fields):
+    def __init__(self, fields: dict[str, typing.Any]):
         super().__init__(fields)
 
 
 class AXAuditDeviceSetting_v1(SerializedObject):
     FIELDS = ("IdentiifierValue_v1", "CurrentValueNumber_v1")
 
-    def __init__(self, fields):
+    def __init__(self, fields: dict[str, typing.Any]):
         super().__init__(fields)
         for k in self.FIELDS:
             if k not in self._fields:
@@ -159,7 +160,7 @@ class AXAuditIssue_v1(SerializedObject):
         "ForegroundColorValue_v1",
     )
 
-    def __init__(self, fields):
+    def __init__(self, fields: dict[str, typing.Any]):
         super().__init__(fields)
 
         for k in self.FIELDS:
@@ -252,7 +253,7 @@ class Direction(Enum):
     Last = 6
 
 
-def deserialize_object(d) -> typing.Any:
+def deserialize_object(d: typing.Any) -> typing.Any:
     if not isinstance(d, dict):
         if isinstance(d, list):
             return [deserialize_object(x) for x in d]
@@ -316,7 +317,12 @@ class AccessibilityAudit:
         else:
             return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: typing.Optional[type[BaseException]],
+        exc_val: typing.Optional[BaseException],
+        exc_tb: typing.Optional[TracebackType],
+    ):
         await self.close()
 
     async def close(self) -> None:
@@ -464,7 +470,7 @@ class AccessibilityAudit:
         await self._invoke("deviceInspectorShowVisuals:", int(value), expects_reply=False)
 
     async def iter_events(
-        self, app_monitoring_enabled=True, monitored_event_type: typing.Optional[int] = None
+        self, app_monitoring_enabled: bool = True, monitored_event_type: typing.Optional[int] = None
     ) -> AsyncGenerator[Event, None]:
         """
         Stream accessibility events from the device indefinitely.

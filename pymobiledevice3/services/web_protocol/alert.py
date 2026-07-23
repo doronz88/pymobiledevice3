@@ -1,5 +1,11 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pymobiledevice3.services.web_protocol.automation_session import AutomationSession
+
+
 class Alert:
-    def __init__(self, session):
+    def __init__(self, session: "AutomationSession"):
         """
         :param pymobiledevice3.services.web_protocol.automation_session.AutomationSession session: Automation session.
         """

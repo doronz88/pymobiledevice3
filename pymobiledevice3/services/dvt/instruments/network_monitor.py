@@ -7,8 +7,9 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 from construct import Adapter, Bytes, Int8ul, Int16ub, Int32ul, Switch, this
 from construct_typed import DataclassMixin, TStruct, csfield
 
-from pymobiledevice3.dtx import DTXQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
+from pymobiledevice3.dtx import DTXContext, DTXQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
+from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
 if TYPE_CHECKING:
     # ``construct.Adapter`` is generic in its type stubs but not subscriptable at runtime.
@@ -20,7 +21,7 @@ else:
 class IpAddressAdapter(_IpAddressAdapterBase):
     """Decode raw address bytes into ipaddress objects."""
 
-    def _decode(self, obj, context, path):
+    def _decode(self, obj: bytes, context: Any, path: str):
         return ipaddress.ip_address(obj)
 
 
@@ -111,7 +112,7 @@ NetworkMonitorEvent = Union[InterfaceDetectionEvent, ConnectionDetectionEvent, C
 class NetworkMonitorService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.networking"
 
-    def __init__(self, ctx) -> None:
+    def __init__(self, ctx: DTXContext) -> None:
         super().__init__(ctx)
         self.events: DTXQueue[Any] = DTXQueue()
 
@@ -144,7 +145,7 @@ class NetworkMonitor(DtxService[NetworkMonitorService]):
     instances as they arrive.
     """
 
-    def __init__(self, dvt):
+    def __init__(self, dvt: DtxServiceProvider):
         super().__init__(dvt)
         self.logger = logging.getLogger(__name__)
 
@@ -153,7 +154,7 @@ class NetworkMonitor(DtxService[NetworkMonitorService]):
         await self.service.start_monitoring()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self.service.stop_monitoring()
 
     async def __aiter__(self) -> AsyncIterator[Optional[NetworkMonitorEvent]]:

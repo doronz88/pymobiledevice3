@@ -31,7 +31,7 @@ class TcpForwarderBase:
         self.listening_event = listening_event
         self._connection_tasks: set[asyncio.Task[None]] = set()
 
-    async def start(self, address="127.0.0.1"):
+    async def start(self, address: str = "127.0.0.1"):
         """forward each connection from given local machine port to remote device port"""
         self.server = await asyncio.start_server(
             self._handle_server_connection, address, self.src_port, backlog=self.MAX_FORWARDED_CONNECTIONS

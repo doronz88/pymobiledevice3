@@ -29,7 +29,7 @@ import contextlib
 import logging
 import queue
 import threading
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from pymobiledevice3.remote.core_device.hevc_rps import (
     parse_sps,
@@ -67,8 +67,8 @@ class HevcToBgraTranscoder:
         sps: bytes,
         pps: bytes,
         *,
-        on_frame,
-        on_decode_error=None,
+        on_frame: Callable[[bytes], None],
+        on_decode_error: Optional[Callable[[], None]] = None,
     ) -> None:
         # libav reports decoded-frame dimensions rounded up to the
         # codec's coding-block alignment (typically a multiple of 16);
@@ -115,7 +115,7 @@ class HevcToBgraTranscoder:
             self._codec.close()  # pyright: ignore[reportAttributeAccessIssue]
 
     # -- worker --------------------------------------------------------
-    def _emit_frame(self, frame) -> None:
+    def _emit_frame(self, frame: Any) -> None:
         # PyAV's reformat to bgra returns a tightly-packed buffer
         # (linesize = width * 4) at exactly the cropped width/height
         # we requested.

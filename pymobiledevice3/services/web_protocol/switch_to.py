@@ -1,10 +1,10 @@
 from pymobiledevice3.services.web_protocol.alert import Alert
-from pymobiledevice3.services.web_protocol.automation_session import By
+from pymobiledevice3.services.web_protocol.automation_session import AutomationSession, By
 from pymobiledevice3.services.web_protocol.element import WebElement
 
 
 class SwitchTo:
-    def __init__(self, session):
+    def __init__(self, session: AutomationSession):
         """
         :param pymobiledevice3.services.web_protocol.automation_session.AutomationSession session: Automation session.
         """
@@ -26,7 +26,7 @@ class SwitchTo:
         """Switch focus to the default frame."""
         await self.session.switch_to_browsing_context("")
 
-    async def frame(self, frame_reference):
+    async def frame(self, frame_reference: object):
         """
         Switches focus to the specified frame, by index, name, or web element.
         :param frame_reference: The name of the window to switch to, an integer representing the index,
@@ -48,9 +48,9 @@ class SwitchTo:
         else:
             await self.session.switch_to_frame(frame_handle=frame)
 
-    async def new_window(self, type_=""):
+    async def new_window(self, type_: str = ""):
         """Switches to a new top-level browsing context."""
-        await self.session.switch_to_window(self.session.create_window(type_))
+        await self.session.switch_to_window(await self.session.create_window(type_))
 
     async def parent_frame(self):
         """
@@ -63,6 +63,6 @@ class SwitchTo:
         )
         await self.session.switch_to_browsing_context(self.session.current_parent_handle)
 
-    async def window(self, window_name):
+    async def window(self, window_name: str):
         """Switches focus to the specified window."""
         await self.session.switch_to_window(window_name)

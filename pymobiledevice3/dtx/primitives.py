@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import io
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import IO, TYPE_CHECKING, Any, ClassVar, cast
 
 from construct import (
     Bytes,
@@ -78,7 +78,7 @@ class _PrimitiveBase:
     _type_code: ClassVar[int]
 
     @classmethod
-    def _read(cls, stream, context, path) -> Any:
+    def _read(cls, stream: IO[bytes], context: Context, path: str) -> Any:
         """Parse this value's bytes from *stream* and return a new instance.
 
         Return type is ``Any`` rather than ``_PrimitiveBase`` because
@@ -87,7 +87,7 @@ class _PrimitiveBase:
         """
         raise NotImplementedError
 
-    def _write(self, stream, context, path) -> None:
+    def _write(self, stream: IO[bytes], context: Context, path: str) -> None:
         """Write the encoded value bytes to *stream* (type tag NOT included)."""
         raise NotImplementedError
 
@@ -95,7 +95,7 @@ class _PrimitiveBase:
 class PrimitiveValue(_ConstructBase):
     """Construct for a single DTX primitive: u32 type tag followed by value bytes."""
 
-    def _parse(self, stream, context, path) -> Any:
+    def _parse(self, stream: IO[bytes], context: Context, path: str) -> Any:
         context = context or cast("Context", Container())
         raw_type_code = Int32ul._parse(stream, context, path)
         context["type_code_and_flags"] = raw_type_code
@@ -106,14 +106,14 @@ class PrimitiveValue(_ConstructBase):
             raise ConstructError(f"unknown primitive type code {raw_type_code:#x}", path)
         return cls._read(stream, context, path)
 
-    def _build(self, obj, stream, context, path):  # pyright: ignore[reportIncompatibleMethodOverride]  # construct's stub types _build -> int, but our _write returns None; matching int would change behavior
+    def _build(self, obj: Any, stream: IO[bytes], context: Context, path: str):  # pyright: ignore[reportIncompatibleMethodOverride]  # construct's stub types _build -> int, but our _write returns None; matching int would change behavior
         if not isinstance(obj, _PrimitiveBase):
             raise ConstructError(
                 f"Expected a _PrimitiveBase instance for PrimitiveValue, got {type(obj).__name__}", path
             )
         return obj._write(stream, context, path)
 
-    def _sizeof(self, context, path):
+    def _sizeof(self, context: Context, path: str):
         raise SizeofError("variable-length primitive")
 
 
@@ -130,13 +130,13 @@ class PrimitiveNull(_PrimitiveBase):
     _type_code = 10
 
     @classmethod
-    def _read(cls, stream, context, path) -> PrimitiveNull:
+    def _read(cls, stream: IO[bytes], context: Context, path: str) -> PrimitiveNull:
         return PNULL  # return the singleton instance for convenience
 
-    def _write(self, stream, context, path) -> None:
+    def _write(self, stream: IO[bytes], context: Context, path: str) -> None:
         Int32ul._build(self._type_code, stream, context, path)  # type tag only, no value bytes
 
-    def __eq__(self, value):
+    def __eq__(self, value: object):
         return type(self) is type(value)  # all instances are equal, since there is no value data
 
     def __hash__(self):
@@ -153,11 +153,11 @@ class PrimitiveString(_PrimitiveBase, str):
     _type_code = 1
 
     @classmethod
-    def _read(cls, stream, context, path) -> PrimitiveString:
+    def _read(cls, stream: IO[bytes], context: Context, path: str) -> PrimitiveString:
         length = Int32ul._parse(stream, context, path)
         return cls(stream.read(length).decode("utf-8", errors="replace"))
 
-    def _write(self, stream, context, path) -> None:
+    def _write(self, stream: IO[bytes], context: Context, path: str) -> None:
         Int32ul._build(self._type_code, stream, context, path)
         raw = str(self).encode("utf-8")
         length = len(raw)
@@ -176,10 +176,10 @@ class PrimitiveInt32(_PrimitiveBase, int):
     _type_code = 3
 
     @classmethod
-    def _read(cls, stream, context, path) -> PrimitiveInt32:
+    def _read(cls, stream: IO[bytes], context: Context, path: str) -> PrimitiveInt32:
         return cls(Int32sl._parse(stream, context, path))
 
-    def _write(self, stream, context, path) -> None:
+    def _write(self, stream: IO[bytes], context: Context, path: str) -> None:
         Int32ul._build(self._type_code, stream, context, path)
         Int32sl._build(int(self), stream, context, path)
 
@@ -190,10 +190,10 @@ class PrimitiveInt64(_PrimitiveBase, int):
     _type_code = 6
 
     @classmethod
-    def _read(cls, stream, context, path) -> PrimitiveInt64:
+    def _read(cls, stream: IO[bytes], context: Context, path: str) -> PrimitiveInt64:
         return cls(Int64sl._parse(stream, context, path))
 
-    def _write(self, stream, context, path) -> None:
+    def _write(self, stream: IO[bytes], context: Context, path: str) -> None:
         Int32ul._build(self._type_code, stream, context, path)
         Int64sl._build(int(self), stream, context, path)
 
@@ -204,11 +204,11 @@ class PrimitiveBuffer(_PrimitiveBase, bytes):
     _type_code = 2
 
     @classmethod
-    def _read(cls, stream, context, path) -> PrimitiveBuffer:
+    def _read(cls, stream: IO[bytes], context: Context, path: str) -> PrimitiveBuffer:
         length = Int32ul._parse(stream, context, path)
         return cls(stream.read(length))
 
-    def _write(self, stream, context, path) -> None:
+    def _write(self, stream: IO[bytes], context: Context, path: str) -> None:
         Int32ul._build(self._type_code, stream, context, path)
         length = len(self)
         Int32ul._build(length, stream, context, path)
@@ -221,10 +221,10 @@ class PrimitiveDouble(_PrimitiveBase, float):
     _type_code = 9
 
     @classmethod
-    def _read(cls, stream, context, path) -> PrimitiveDouble:
+    def _read(cls, stream: IO[bytes], context: Context, path: str) -> PrimitiveDouble:
         return cls(Float64l._parse(stream, context, path))
 
-    def _write(self, stream, context, path) -> None:
+    def _write(self, stream: IO[bytes], context: Context, path: str) -> None:
         Int32ul._build(self._type_code, stream, context, path)
         Float64l._build(float(self), stream, context, path)
 
@@ -244,7 +244,7 @@ class PrimitiveDictionary(_PrimitiveBase, dict[Any, list[Any]]):
     _DEFAULT_MAGIC: ClassVar[int] = 0x1F0  # 0x100 | 0xF0 — seen most often
 
     @classmethod
-    def _read(cls, stream, context, path) -> dict[Any, list[Any]]:
+    def _read(cls, stream: IO[bytes], context: Context, path: str) -> dict[Any, list[Any]]:
         unknown_flags = Int32ul._parse(stream, context, path)
         body_len = Int64ul._parse(stream, context, path)
         begin = stream_tell(stream, path)
@@ -261,7 +261,7 @@ class PrimitiveDictionary(_PrimitiveBase, dict[Any, list[Any]]):
             logger.warning(f"PrimitiveDictionary: non-zero unknown flags {unknown_flags:#x} at {path}: {result!r}")
         return result
 
-    def _write(self, stream, context, path):
+    def _write(self, stream: IO[bytes], context: Context, path: str):
 
         start = stream_tell(stream, path)
         stream_seek(stream, self._HEADER_SIZE, io.SEEK_CUR, path)  # reserve space for header

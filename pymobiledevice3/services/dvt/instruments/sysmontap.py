@@ -1,5 +1,6 @@
 import dataclasses
 
+from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.tap import Tap
 
@@ -21,7 +22,7 @@ class Sysmontap(Tap):
 
     def __init__(
         self,
-        dvt,
+        dvt: DtxServiceProvider,
         process_attributes: list[str],
         system_attributes: list[str],
         interval_ms: int = DEFAULT_INTERVAL_MS,
@@ -48,7 +49,7 @@ class Sysmontap(Tap):
         super().__init__(dvt, self.IDENTIFIER, config)
 
     @classmethod
-    async def create(cls, dvt, interval: int = DEFAULT_INTERVAL_MS) -> "Sysmontap":
+    async def create(cls, dvt: DtxServiceProvider, interval: int = DEFAULT_INTERVAL_MS) -> "Sysmontap":
         """
         Build a `Sysmontap` with the device's full set of supported attributes.
 

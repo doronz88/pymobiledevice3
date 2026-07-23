@@ -21,7 +21,7 @@ def save_notifications(notifications: list[str]):
 
 @click.command()
 @click.argument("root_fs", type=click.Path(dir_okay=True, file_okay=False, exists=True))
-def main(root_fs):
+def main(root_fs: str):
     """
     Add notifications registered to `com.apple.notifyd.matching` from a given IPSW `root_fs` (extracted filesystem)
     into `notifications.txt`

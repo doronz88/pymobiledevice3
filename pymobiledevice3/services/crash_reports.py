@@ -3,9 +3,10 @@ import logging
 import posixpath
 import re
 import time
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator, Awaitable, Iterator
 from json import JSONDecodeError
-from typing import Callable, ClassVar, Optional, Union, cast
+from types import TracebackType
+from typing import Any, Callable, ClassVar, Optional, Union, cast
 
 from pycrashreport.crash_report import CrashReportBase, get_crash_report_from_buf
 from xonsh.built_ins import XSH
@@ -74,10 +75,20 @@ class CrashReportsManager:
     async def __aenter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ):
         raise RuntimeError("Use async context manager: `async with ...`")
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ):
         await self.aclose()
 
     async def aclose(self) -> None:
@@ -379,7 +390,7 @@ class CrashReportsShell(AfcShell):
         self._register_arg_parse_alias("parse-latest", self._do_parse_latest)
         self._register_arg_parse_alias("clear", self._do_clear)
 
-    def _run_manager(self, awaitable):
+    def _run_manager(self, awaitable: Awaitable[Any]):
         return self.afc._runner.run(awaitable)
 
     def _do_parse(self, filename: Annotated[str, Arg(completer=_path_arg_completer)]) -> None:

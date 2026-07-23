@@ -51,13 +51,13 @@ def version():
     }
 
 
-async def from_cdp(target: CdpTarget, websocket):
+async def from_cdp(target: CdpTarget, websocket: WebSocket):
     async for message in websocket.iter_json():
         logger.debug(f"CDP INPUT:  {message}")
         await target.send(message)
 
 
-async def to_cdp(target: CdpTarget, websocket):
+async def to_cdp(target: CdpTarget, websocket: WebSocket):
     while True:
         message = await target.receive()
         logger.debug(f"CDP OUTPUT:  {message}")

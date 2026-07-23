@@ -28,6 +28,7 @@ import tempfile
 import time
 import uuid
 from collections import deque
+from collections.abc import Awaitable
 from pathlib import Path
 from typing import Any, Optional, Protocol, cast
 
@@ -1710,7 +1711,7 @@ class ScreenStreamServer:
         async with self._accessibility_lock:
             results: list[dict[str, Any]] = []
 
-            async def _read(meth):
+            async def _read(meth: str) -> Any:
                 async with ConfigurationService(self._rsd) as cfg:
                     return await getattr(cfg, meth)()
 
@@ -1751,7 +1752,7 @@ class ScreenStreamServer:
             results.append({"key": "liquid_glass_opacity", "type": "float", "value": 1.0})
             return results
 
-    async def _accessibility_set(self, key: str, value) -> None:
+    async def _accessibility_set(self, key: str, value: Any) -> None:
         """Apply one knob change. Raises ValueError for unknown keys so
         the HTTP layer can return 400 instead of swallowing typos."""
         async with self._accessibility_lock, ConfigurationService(self._rsd) as cfg:
@@ -2917,7 +2918,7 @@ class ScreenStreamServer:
 
                 loop.add_signal_handler(getattr(signal, signame), _request_stop)
 
-        async def _bounded(coro, label, timeout=3.0):
+        async def _bounded(coro: Awaitable[Any], label: str, timeout: float = 3.0) -> None:
             """Run an async cleanup step with a hard timeout so a hung
             RPC can't keep us alive at shutdown."""
             try:

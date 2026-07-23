@@ -202,7 +202,7 @@ class Mobilebackup2Service(LockdownService):
         self,
         full: bool = True,
         backup_directory: Union[str, Path] = ".",
-        progress_callback=lambda x: None,
+        progress_callback: Callable[..., Any] = lambda x: None,
         filter_callback: Optional[BackupFilterCallback] = None,
         password: str = "",
         unback: bool = False,
@@ -321,7 +321,7 @@ class Mobilebackup2Service(LockdownService):
 
     async def restore(
         self,
-        backup_directory=".",
+        backup_directory: Union[str, Path] = ".",
         system: bool = False,
         reboot: bool = True,
         copy: bool = True,
@@ -329,7 +329,7 @@ class Mobilebackup2Service(LockdownService):
         remove: bool = False,
         password: str = "",
         source: str = "",
-        progress_callback=lambda x: None,
+        progress_callback: Callable[..., Any] = lambda x: None,
         skip_apps: bool = False,
     ):
         """
@@ -395,7 +395,7 @@ class Mobilebackup2Service(LockdownService):
 
             await dl.dl_loop(progress_callback)
 
-    async def info(self, backup_directory=".", source: str = "") -> str:
+    async def info(self, backup_directory: Union[str, Path] = ".", source: str = "") -> str:
         """
         Get information about a backup.
 
@@ -414,7 +414,7 @@ class Mobilebackup2Service(LockdownService):
             result = await dl.dl_loop()
         return result
 
-    async def list(self, backup_directory=".", source: str = "") -> str:
+    async def list(self, backup_directory: Union[str, Path] = ".", source: str = "") -> str:
         """
         List the files in the last backup.
 
@@ -434,7 +434,7 @@ class Mobilebackup2Service(LockdownService):
             result = await dl.dl_loop()
         return result
 
-    async def unback(self, backup_directory=".", password: str = "", source: str = "") -> None:
+    async def unback(self, backup_directory: Union[str, Path] = ".", password: str = "", source: str = "") -> None:
         """
         Unpack a complete backup into its original device file hierarchy.
 
@@ -474,7 +474,12 @@ class Mobilebackup2Service(LockdownService):
         return output_directory
 
     async def extract(
-        self, domain_name: str, relative_path: str, backup_directory=".", password: str = "", source: str = ""
+        self,
+        domain_name: str,
+        relative_path: str,
+        backup_directory: Union[str, Path] = ".",
+        password: str = "",
+        source: str = "",
     ) -> None:
         """
         Extract a single file from a previous backup.
@@ -502,7 +507,7 @@ class Mobilebackup2Service(LockdownService):
             await dl.send_process_message(message)
             await dl.dl_loop()
 
-    async def change_password(self, backup_directory=".", old: str = "", new: str = "") -> None:
+    async def change_password(self, backup_directory: Union[str, Path] = ".", old: str = "", new: str = "") -> None:
         """
         Change, enable, or disable the device's backup encryption password.
 
@@ -519,7 +524,7 @@ class Mobilebackup2Service(LockdownService):
             await dl.send_process_message(message)
             await dl.dl_loop()
 
-    async def erase_device(self, backup_directory=".") -> None:
+    async def erase_device(self, backup_directory: Union[str, Path] = ".") -> None:
         """
         Erase the device, restoring it to factory state.
 
@@ -530,7 +535,7 @@ class Mobilebackup2Service(LockdownService):
                 await dl.send_process_message({"MessageName": "EraseDevice", "TargetIdentifier": self.lockdown.udid})
                 await dl.dl_loop()
 
-    async def version_exchange(self, dl: DeviceLink, local_versions=None) -> None:
+    async def version_exchange(self, dl: DeviceLink, local_versions: Optional[Sequence[float]] = None) -> None:
         """
         Exchange protocol versions with the device and assert it supports one of ours.
 
@@ -630,7 +635,7 @@ class Mobilebackup2Service(LockdownService):
             return ret
 
     @asynccontextmanager
-    async def _backup_lock(self, afc, notification_proxy):
+    async def _backup_lock(self, afc: AfcService, notification_proxy: NotificationProxyService):
         await notification_proxy.notify_post(NP_SYNC_WILL_START)
         lockfile = await afc.fopen("/com.apple.itunes.lock_sync", "r+")
         if lockfile:
@@ -923,7 +928,7 @@ class Mobilebackup2Service(LockdownService):
 
     @asynccontextmanager
     async def device_link(
-        self, backup_directory, filter_callback: Optional[BackupFilterCallback] = None, password: str = ""
+        self, backup_directory: Path, filter_callback: Optional[BackupFilterCallback] = None, password: str = ""
     ):
         """
         Async context manager yielding a connected `DeviceLink` for backup operations.

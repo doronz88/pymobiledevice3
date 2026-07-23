@@ -26,7 +26,9 @@ class NotificationProxyService(LockdownService):
     INSECURE_SERVICE_NAME = "com.apple.mobile.insecure_notification_proxy"
     RSD_INSECURE_SERVICE_NAME = "com.apple.mobile.insecure_notification_proxy.shim.remote"
 
-    def __init__(self, lockdown: LockdownServiceProvider, insecure=False, timeout: Optional[Union[float, int]] = None):
+    def __init__(
+        self, lockdown: LockdownServiceProvider, insecure: bool = False, timeout: Optional[Union[float, int]] = None
+    ):
         """
         :param lockdown: service provider used to start the service and reach the device.
         :param insecure: when True, use the insecure notification proxy service instead of the secure one.

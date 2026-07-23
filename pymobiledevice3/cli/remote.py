@@ -7,7 +7,7 @@ import tempfile
 from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
-from typing import Annotated, Any, Optional, TextIO
+from typing import Annotated, Any, Optional, TextIO, Union
 
 import typer
 from typer_injector import InjectingTyper
@@ -30,8 +30,10 @@ from pymobiledevice3.remote.common import ConnectionType, TunnelProtocol
 from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_tunnel, verify_tunnel_imports
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT
 from pymobiledevice3.remote.tunnel_service import (
+    CoreDeviceTunnelProxy,
     PairableHostInfo,
     RemotePairingManualPairingService,
+    RemotePairingProtocol,
     get_core_device_tunnel_services,
     get_remote_pairing_tunnel_services,
     serve_pairable_host,
@@ -152,7 +154,7 @@ def rsd_info(service_provider: RSDServiceProviderDep) -> None:
 
 
 async def tunnel_task(
-    service,
+    service: Union[RemotePairingProtocol, CoreDeviceTunnelProxy],
     secrets: Optional[TextIO] = None,
     script_mode: bool = False,
     max_idle_timeout: float = MAX_IDLE_TIMEOUT,

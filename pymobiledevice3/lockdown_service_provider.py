@@ -135,7 +135,7 @@ class LockdownServiceProvider:
         pass
 
     @abstractmethod
-    async def set_value(self, value, domain: Optional[str] = None, key: Optional[str] = None) -> dict[str, Any]:
+    async def set_value(self, value: Any, domain: Optional[str] = None, key: Optional[str] = None) -> dict[str, Any]:
         """Write a lockdownd value (optionally scoped by domain/key)."""
         pass
 

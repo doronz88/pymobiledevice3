@@ -4,9 +4,10 @@ import json
 import logging
 from datetime import datetime
 from functools import partial
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3.services.web_protocol.cdp_screencast import ScreenCast
+from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ DEBUGGER_PAUSED_REASON = {
 
 
 class CdpTarget:
-    def __init__(self, protocol, target_id: str):
+    def __init__(self, protocol: SessionProtocol, target_id: str):
         """
         :param pymobiledevice3.services.web_protocol.session_protocol.SessionProtocol protocol: Session protocol.
         :param target_id: Target id.
@@ -176,7 +177,7 @@ class CdpTarget:
         self._default_execution_id = 0
 
     @classmethod
-    async def create(cls, protocol):
+    async def create(cls, protocol: SessionProtocol) -> "CdpTarget":
         """
         :param pymobiledevice3.services.web_protocol.session_protocol.SessionProtocol protocol: Session protocol.
         """
@@ -192,7 +193,7 @@ class CdpTarget:
         await target.output_queue.put(created)
         return target
 
-    async def send(self, message):
+    async def send(self, message: dict[str, Any]):
         """
         Send message from devtools to the target.
         """
@@ -221,7 +222,7 @@ class CdpTarget:
                 return message
             await asyncio.sleep(0)
 
-    async def send_message_with_result(self, id_, method, params):
+    async def send_message_with_result(self, id_: int, method: str, params: dict[str, Any]):
         """
         Send a message to the target and wait for response.
         """
@@ -231,7 +232,7 @@ class CdpTarget:
         self._waiting_for_id -= 1
         return result
 
-    async def evaluate_and_result(self, id_, expression):
+    async def evaluate_and_result(self, id_: int, expression: str) -> Any:
         """
         Evaluate Javascript expression.
         """
@@ -266,26 +267,26 @@ class CdpTarget:
             message = self.protocol.inspector.wir_events.pop(0)
             await self._to_output_queue(message)
 
-    async def _to_output_queue(self, message):
+    async def _to_output_queue(self, message: dict[str, Any]):
         if message["method"] in self.to_cdp_special_messages_methods:
             await self.to_cdp_special_messages_methods[message["method"]](message)
         else:
             logger.error("Error!!!!!!!!!!!!", message)
             raise RuntimeError()
 
-    async def _send_message_to_target(self, message):
+    async def _send_message_to_target(self, message: dict[str, Any]):
         await self.protocol.send_command(
             "Target.sendMessageToTarget", targetId=self.target_id, message=json.dumps(message)
         )
 
-    async def _simple_response(self, message, value):
+    async def _simple_response(self, message: dict[str, Any], value: Any):
         await self.output_queue.put({"id": message["id"], "result": {"result": value}})
 
-    async def _audits_enable(self, message):
+    async def _audits_enable(self, message: dict[str, Any]):
         message["method"] = "Audit.setup"
         await self._send_message_to_target(message)
 
-    async def _dom_get_box_model(self, message):
+    async def _dom_get_box_model(self, message: dict[str, Any]):
         message["method"] = "DOM.highlightNode"
         message["params"]["highlightConfig"] = {
             "showInfo": True,
@@ -296,11 +297,11 @@ class CdpTarget:
         }
         await self._send_message_to_target(message)
 
-    async def object_id_to_node_id(self, object_id, id_):
+    async def object_id_to_node_id(self, object_id: str, id_: int):
         node = await self.send_message_with_result(id_, "DOM.requestNode", {"objectId": object_id})
         return node["result"]["nodeId"]
 
-    async def _dom_get_node_for_location(self, message):
+    async def _dom_get_node_for_location(self, message: dict[str, Any]):
         x, y = message["params"]["x"], message["params"]["y"]
         obj = await self.evaluate_and_result(message["id"], f"document.elementFromPoint({x},{y})")
         if obj is None or "objectId" not in obj:
@@ -309,7 +310,7 @@ class CdpTarget:
         result = {"nodeId": await self.object_id_to_node_id(obj["objectId"], message["id"])}
         await self.output_queue.put({"id": message["id"], "result": result})
 
-    async def _dom_get_nodes_for_subtree_by_style(self, message):
+    async def _dom_get_nodes_for_subtree_by_style(self, message: dict[str, Any]):
         object_id = (
             await self.send_message_with_result(
                 message["id"], "DOM.resolveNode", {"nodeId": message["params"]["nodeId"]}
@@ -352,19 +353,19 @@ class CdpTarget:
         nodes = [n for n in nodes if isinstance(n, int)]
         await self.output_queue.put({"id": message["id"], "result": {"nodeIds": nodes}})
 
-    async def _log_clear(self, message):
+    async def _log_clear(self, message: dict[str, Any]):
         message["method"] = "Console.clearMessages"
         await self._send_message_to_target(message)
 
-    async def _log_disable(self, message):
+    async def _log_disable(self, message: dict[str, Any]):
         message["method"] = "Console.disable"
         await self._send_message_to_target(message)
 
-    async def _log_enable(self, message):
+    async def _log_enable(self, message: dict[str, Any]):
         message["method"] = "Console.enable"
         await self._send_message_to_target(message)
 
-    async def _page_get_navigation_history(self, message):
+    async def _page_get_navigation_history(self, message: dict[str, Any]):
         href = await self.evaluate_and_result(message["id"], "window.location.href")
         title = await self.evaluate_and_result(message["id"], "document.title")
         await self.output_queue.put({
@@ -372,33 +373,33 @@ class CdpTarget:
             "result": {"currentIndex": 0, "entries": [{"id": 0, "url": href, "title": title}]},
         })
 
-    async def _page_start_screencast(self, message):
+    async def _page_start_screencast(self, message: dict[str, Any]):
         params = message["params"]
         self.screencast = ScreenCast(self, params["format"], params["quality"], params["maxWidth"], params["maxHeight"])
         await self.screencast.start(message["id"])
         await self._simple_response(message, None)
 
-    async def _page_stop_screencast(self, message):
+    async def _page_stop_screencast(self, message: dict[str, Any]):
         if self.screencast is not None:
             await self.screencast.stop()
             self.screencast = None
         await self._simple_response(message, None)
 
-    async def _page_screencast_frame_ack(self, message):
+    async def _page_screencast_frame_ack(self, message: dict[str, Any]):
         if self.screencast is not None:
             self.screencast.ack(message["params"]["sessionId"])
         await self._simple_response(message, None)
 
-    async def _page_get_resource_tree(self, message):
+    async def _page_get_resource_tree(self, message: dict[str, Any]):
         result = await self.send_message_with_result(message["id"], message["method"], message["params"])
         self.frame = result["result"]["frameTree"]["frame"]
         await self.output_queue.put(result)
 
-    async def _emulation_set_emulated_media(self, message):
+    async def _emulation_set_emulated_media(self, message: dict[str, Any]):
         message["method"] = "Page.setEmulatedMedia"
         await self._send_message_to_target(message)
 
-    async def _emulation_set_auto_dark_mode_override(self, message):
+    async def _emulation_set_auto_dark_mode_override(self, message: dict[str, Any]):
         message["method"] = "Page.setForcedAppearance"
         params = message["params"]
         if not params:
@@ -407,20 +408,20 @@ class CdpTarget:
         message["params"] = {"appearance": "Dark" if params["enabled"] else "Light"}
         await self._send_message_to_target(message)
 
-    async def _debugger_set_blackbox_patterns(self, message):
+    async def _debugger_set_blackbox_patterns(self, message: dict[str, Any]):
         for pattern in message["params"]["patterns"]:
             await self.send_message_with_result(
                 message["id"], "Debugger.setShouldBlackboxURL", {"url": pattern, "shouldBlackbox": True}
             )
         await self._simple_response(message, None)
 
-    async def _debugger_set_breakpoint_by_url(self, message):
+    async def _debugger_set_breakpoint_by_url(self, message: dict[str, Any]):
         condition = message["params"].pop("condition", "")
         if condition:
             message["params"]["options"]["condition"] = condition
         await self._send_message_to_target(message)
 
-    async def _domdebugger_get_event_listeners(self, message):
+    async def _domdebugger_get_event_listeners(self, message: dict[str, Any]):
         node = {"nodeId": await self.object_id_to_node_id(message["params"]["objectId"], message["id"])}
         listeners = await self.send_message_with_result(message["id"], "DOM.getEventListenersForNode", node)
         if "error" in listeners:
@@ -441,23 +442,23 @@ class CdpTarget:
             listeners_out.append(data)
         await self.output_queue.put({"id": message["id"], "result": {"listeners": listeners_out}})
 
-    async def _network_set_cache_disabled(self, message):
+    async def _network_set_cache_disabled(self, message: dict[str, Any]):
         message["method"] = "Network.setResourceCachingDisabled"
         message["params"] = {"disabled": message["params"]["cacheDisabled"]}
         await self._send_message_to_target(message)
 
-    async def _network_load_network_resource(self, message):
+    async def _network_load_network_resource(self, message: dict[str, Any]):
         await self.output_queue.put({"id": message["id"], "result": {"resource": {"success": True}}})
 
-    async def _service_worker_enable(self, message):
+    async def _service_worker_enable(self, message: dict[str, Any]):
         message["method"] = "Worker.enable"
         await self._send_message_to_target(message)
 
-    async def _overlay_highlight_node(self, message):
+    async def _overlay_highlight_node(self, message: dict[str, Any]):
         message["method"] = "DOM.highlightNode"
         await self._send_message_to_target(message)
 
-    async def _runtime_compile_script(self, message):
+    async def _runtime_compile_script(self, message: dict[str, Any]):
         self._script_source_to_context_id[message["params"]["expression"]] = message["params"]["executionContextId"]
         response = await self.send_message_with_result(
             message["id"], "Runtime.parse", {"source": message["params"]["expression"]}
@@ -479,10 +480,10 @@ class CdpTarget:
             },
         })
 
-    async def _runtime_get_isolate_id(self, message):
+    async def _runtime_get_isolate_id(self, message: dict[str, Any]):
         await self.output_queue.put({"id": message["id"], "result": {"id": self._default_execution_id}})
 
-    async def _target_set_auto_attach(self, message):
+    async def _target_set_auto_attach(self, message: dict[str, Any]):
         await self._simple_response(message, None)
         await self.output_queue.put({
             "method": "Target.attachedToTarget",
@@ -493,14 +494,14 @@ class CdpTarget:
             },
         })
 
-    async def _css_take_computed_style_updates(self, message):
+    async def _css_take_computed_style_updates(self, message: dict[str, Any]):
         await self.output_queue.put({"id": message["id"], "result": {"nodeIds": []}})
 
-    async def _css_add_rule(self, message):
+    async def _css_add_rule(self, message: dict[str, Any]):
         message["params"]["selector"] = message["params"]["ruleText"].split("{")[0]
         await self._send_message_to_target(message)
 
-    async def _input_emulate_touch_from_mouse_event(self, message):
+    async def _input_emulate_touch_from_mouse_event(self, message: dict[str, Any]):
         params = message["params"]
         if params["type"] == "mouseWheel":
             assert self.screencast is not None
@@ -544,7 +545,7 @@ class CdpTarget:
 
         await self._simple_response(message, None)
 
-    async def _input_dispatch_key_event(self, message):
+    async def _input_dispatch_key_event(self, message: dict[str, Any]):
         params = message["params"]
         key = params["key"]
         if params["type"] == "keyUp" and key == "Backspace":
@@ -593,7 +594,7 @@ class CdpTarget:
         await self.evaluate_and_result(message["id"], simulate_key_event)
         await self._simple_response(message, None)
 
-    async def _target_created(self, message):
+    async def _target_created(self, message: dict[str, Any]):
         self.target_id = message["params"]["targetInfo"]["targetId"]
         message["method"] = "Target.targetInfoChanged"
         message["params"]["targetInfo"]["url"] = await self.evaluate_and_result(1, "window.location.href")
@@ -601,7 +602,7 @@ class CdpTarget:
         message["params"]["targetInfo"]["attached"] = message["params"]["targetInfo"].pop("isProvisional")
         await self.output_queue.put(message)
 
-    async def _target_destroyed(self, message):
+    async def _target_destroyed(self, message: dict[str, Any]):
         result = await self.send_message_with_result(1, "Page.getResourceTree", {})
         self.frame = result["result"]["frameTree"]["frame"]
         await self.output_queue.put({
@@ -618,7 +619,7 @@ class CdpTarget:
         })
         await self.output_queue.put({"method": "DOM.documentUpdated"})
 
-    async def _target_dispatch_message_from_target(self, message):
+    async def _target_dispatch_message_from_target(self, message: dict[str, Any]):
         message = json.loads(message["params"]["message"])
         if "error" in message:
             logger.error(message)
@@ -629,14 +630,14 @@ class CdpTarget:
                 logger.debug("DISPACHING", message["method"])
             await self.output_queue.put(message)
 
-    async def _target_did_commit_provisional_target(self, message):
+    async def _target_did_commit_provisional_target(self, message: dict[str, Any]):
         pass
 
-    async def _debugger_script_parsed(self, message):
+    async def _debugger_script_parsed(self, message: dict[str, Any]):
         if not self._waiting_for_id:
             await self.output_queue.put(message)
 
-    async def _debugger_script_failed_to_parse(self, message):
+    async def _debugger_script_failed_to_parse(self, message: dict[str, Any]):
         message["params"] = {
             "endColumn": 0,
             "endLine": message["params"]["errorLine"],
@@ -649,19 +650,19 @@ class CdpTarget:
         }
         await self.output_queue.put(message)
 
-    async def _debugger_paused(self, message):
+    async def _debugger_paused(self, message: dict[str, Any]):
         message["params"]["reason"] = DEBUGGER_PAUSED_REASON[message["params"]["reason"]]
         if "breakpointId" in message["params"].get("data", {}):
             message["params"]["hitBreakpoints"] = [message["params"]["data"]["breakpointId"]]
         await self.output_queue.put(message)
 
-    async def _debugger_global_object_cleared(self, message):
+    async def _debugger_global_object_cleared(self, message: dict[str, Any]):
         await self.output_queue.put({"method": "DOM.documentUpdated"})
 
-    async def _page_default_appearance_did_change(self, message):
+    async def _page_default_appearance_did_change(self, message: dict[str, Any]):
         pass
 
-    async def _runtime_execution_context_created(self, message):
+    async def _runtime_execution_context_created(self, message: dict[str, Any]):
         if message["params"]["context"]["type"] == "normal":
             self._default_execution_id = message["params"]["context"]["id"]
         message["params"] = {
@@ -674,7 +675,7 @@ class CdpTarget:
         }
         await self.output_queue.put(message)
 
-    async def _console_message_added(self, message):
+    async def _console_message_added(self, message: dict[str, Any]):
         log_record = {
             "source": LOG_MESSAGE_SOURCES[message["params"]["message"]["source"]],
             "level": LOG_MESSAGE_LEVELS[message["params"]["message"]["level"]],
@@ -690,7 +691,7 @@ class CdpTarget:
 
         await self.output_queue.put({"method": "Log.entryAdded", "params": {"entry": log_record}})
 
-    async def _network_response_received(self, message):
+    async def _network_response_received(self, message: dict[str, Any]):
         params = message["params"]
         message["params"] = {
             "loaderId": params["loaderId"],
@@ -712,7 +713,7 @@ class CdpTarget:
             message["params"]["frameId"] = params["frameId"]
         await self.output_queue.put(message)
 
-    async def _network_loading_finished(self, message):
+    async def _network_loading_finished(self, message: dict[str, Any]):
         params = message["params"]
         header_size = params["metrics"].get("responseHeaderBytesReceived", 0)
         body_size = params["metrics"].get("responseBodyBytesReceived", 0)

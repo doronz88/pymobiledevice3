@@ -175,7 +175,7 @@ class AudioQueuePlayer:
             latency_ms,
         )
 
-    def _on_buffer_consumed(self, user, aq, buf_ref):
+    def _on_buffer_consumed(self, user: Any, aq: Any, buf_ref: Any) -> None:
         # Called on AudioQueue's internal thread when it's done with
         # this buffer. queue.Queue is thread-safe.
         if not self._closed:

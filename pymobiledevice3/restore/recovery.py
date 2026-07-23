@@ -29,7 +29,7 @@ class Recovery(BaseRestore):
         self.tss_recoveryos_root_ticket = None
         self.restore_boot_args = None
 
-    async def reconnect_irecv(self, is_recovery=None):
+    async def reconnect_irecv(self, is_recovery: Optional[bool] = None):
         self.logger.debug("waiting for device to reconnect...")
         self.device.set_irecv(IRecv(ecid=await self.device.get_ecid(), is_recovery=is_recovery))
         assert self.device.irecv is not None
@@ -272,7 +272,7 @@ class Recovery(BaseRestore):
         assert self.device.irecv is not None
         self.device.irecv.send_buffer(data)
 
-    async def send_component_and_command(self, name, command):
+    async def send_component_and_command(self, name: str, command: str):
         await self.send_component(name)
         assert self.device.irecv is not None
         self.device.irecv.send_command(command)
@@ -284,7 +284,7 @@ class Recovery(BaseRestore):
         self.device.irecv.send_command("go", b_request=1)
         self.device.irecv.ctrl_transfer(0x21, 1)
 
-    async def send_applelogo(self, allow_missing=True):
+    async def send_applelogo(self, allow_missing: bool = True):
         component = "RestoreLogo"
 
         if not self.build_identity.has_component(component):

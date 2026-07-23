@@ -1,4 +1,8 @@
+from typing import Optional
+
+from pymobiledevice3.dtx import DTXConnection
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 
 
 class DvtProvider(DtxServiceProvider):
@@ -30,7 +34,12 @@ class DvtProvider(DtxServiceProvider):
     RSD_SERVICE_NAME = "com.apple.instruments.dtservicehub"
     OLD_SERVICE_NAME = "com.apple.instruments.remoteserver"
 
-    def __init__(self, lockdown, strip_ssl=None, dtx=None):
+    def __init__(
+        self,
+        lockdown: LockdownServiceProvider,
+        strip_ssl: Optional[bool] = None,
+        dtx: Optional[DTXConnection] = None,
+    ) -> None:
         """
         :param lockdown: Lockdown or RSD service provider used to reach the DVT service.
         :param strip_ssl: Override the SSL-stripping behaviour. ``None`` (default) lets

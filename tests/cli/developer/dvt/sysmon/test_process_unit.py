@@ -31,6 +31,7 @@ from pymobiledevice3.cli.developer.dvt.sysmon.process import (
     sysmon_process_monitor_threshold_task,
 )
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 
 
@@ -393,7 +394,7 @@ async def test_select_process_from_sysmon_skips_first_snapshot(monkeypatch):
     monkeypatch.setattr(process_module.Sysmontap, "create", fake_create)
 
     selected = await _select_process_from_sysmon(
-        object(), {"name": ["second-snapshot"]}, None, ProcessSelectionMode.FIRST
+        cast(DvtProvider, object()), {"name": ["second-snapshot"]}, None, ProcessSelectionMode.FIRST
     )
 
     assert selected == {"pid": 20, "ppid": 2, "name": "second-snapshot"}
@@ -410,7 +411,7 @@ async def test_select_process_from_sysmon_doesnt_skip_first_snapshot_when_cpu_us
     monkeypatch.setattr(process_module.Sysmontap, "create", fake_create)
 
     selected = await _select_process_from_sysmon(
-        object(), {"name": ["first-snapshot"]}, ["pid", "name"], ProcessSelectionMode.FIRST
+        cast(DvtProvider, object()), {"name": ["first-snapshot"]}, ["pid", "name"], ProcessSelectionMode.FIRST
     )
 
     assert selected == {"pid": 10, "ppid": 1, "name": "first-snapshot"}
@@ -424,4 +425,4 @@ async def test_select_process_from_sysmon_raises_when_no_usable_snapshot(monkeyp
     monkeypatch.setattr(process_module.Sysmontap, "create", fake_create)
 
     with pytest.raises(typer.BadParameter, match="Failed to collect a process snapshot"):
-        await _select_process_from_sysmon(object(), {}, None, ProcessSelectionMode.FIRST)
+        await _select_process_from_sysmon(cast(DvtProvider, object()), {}, None, ProcessSelectionMode.FIRST)

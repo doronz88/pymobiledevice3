@@ -86,8 +86,17 @@ reportUnnecessaryIsInstance = "error"
 reportUnnecessaryCast = "error"
 reportUntypedNamedTuple = "error"
 reportMissingTypeArgument = "error"
+reportMissingParameterType = "error"
 venvPath = "."
 venv = ".venv"
+
+# reportMissingParameterType is enforced across the package, but not on the test suite: test
+# fixtures, monkeypatch callbacks and mock stubs are deliberately loosely-typed and annotating
+# their parameters adds noise without catching real bugs.
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+extraPaths = ["."]
+reportMissingParameterType = "none"
 
 [tool.ruff]
 target-version = "py39"

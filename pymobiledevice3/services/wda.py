@@ -384,7 +384,7 @@ class WdaServiceClient:
 
         return data
 
-    async def _read_until(self, conn, marker: bytes) -> tuple[bytes, bytes]:
+    async def _read_until(self, conn: ServiceConnection, marker: bytes) -> tuple[bytes, bytes]:
         """Read from a connection until a marker is found."""
         buf = b""
         while marker not in buf:
