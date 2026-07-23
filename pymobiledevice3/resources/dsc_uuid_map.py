@@ -1,7 +1,7 @@
 import json
 import logging
 import os.path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from uuid import UUID
 
 import click
@@ -98,5 +98,5 @@ def main(dsc: Any, dyld_uuid: UUID, force: bool):
 
 
 if __name__ == "__main__":
-    coloredlogs.install(level=logging.DEBUG)
+    cast(Any, coloredlogs).install(level=logging.DEBUG)
     main()

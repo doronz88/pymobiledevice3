@@ -23,7 +23,7 @@ from __future__ import annotations
 import copy
 import plistlib
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Optional, cast
 
 from bpylist2 import archiver
 
@@ -37,11 +37,12 @@ class XCTCapabilities:
         self.capabilities = capabilities
 
     def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
-        archive_obj.encode("capabilities-dictionary", self.capabilities)
+        ao = cast(Any, archive_obj)
+        ao.encode("capabilities-dictionary", self.capabilities)
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTCapabilities:
-        return XCTCapabilities(archive_obj.decode("capabilities-dictionary"))
+        return XCTCapabilities(cast(Any, archive_obj.decode("capabilities-dictionary")))
 
     def __repr__(self) -> str:
         return f"XCTCapabilities({self.capabilities})"
@@ -50,7 +51,7 @@ class XCTCapabilities:
 class XCTestConfiguration:
     """Proxy for ``XCTestConfiguration`` — the launch config sent to the test runner."""
 
-    _default: ClassVar = {
+    _default: ClassVar[dict[str, Any]] = {
         "aggregateStatisticsBeforeCrash": {"XCSuiteRecordsKey": {}},
         "automationFrameworkPath": "/Developer/Library/PrivateFrameworks/XCTAutomationSupport.framework",
         "baselineFileRelativePath": None,
@@ -102,12 +103,13 @@ class XCTestConfiguration:
     def __init__(self, kv: dict[str, Any]):
         assert "testBundleURL" in kv
         assert "sessionIdentifier" in kv
-        self._config = copy.deepcopy(self._default)
+        self._config: dict[str, Any] = copy.deepcopy(self._default)
         self._config.update(kv)
 
     def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
+        ao = cast(Any, archive_obj)
         for k, v in self._config.items():
-            archive_obj.encode(k, v)
+            ao.encode(k, v)
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> Any:
@@ -139,7 +141,7 @@ class XCTTestIdentifier:
     - ``3`` — class-level (class only, matches all methods)
     """
 
-    components: list[str] = field(default_factory=list)
+    components: list[str] = field(default_factory=list[str])
     options: int = 2
 
     @classmethod
@@ -174,15 +176,16 @@ class XCTTestIdentifier:
         return self.components == other.components and self.options == other.options
 
     def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
-        archive_obj.encode("c", list(self.components))
-        archive_obj.encode("o", self.options)
+        ao = cast(Any, archive_obj)
+        ao.encode("c", list(self.components))
+        ao.encode("o", self.options)
         patch_class_hierarchy(archive_obj, "XCTTestIdentifier", ["XCTTestIdentifier", "NSObject"])
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTTestIdentifier:
-        raw = archive_obj.decode("c")
+        raw = cast(Any, archive_obj.decode("c"))
         components = list(raw) if raw else []
-        options = archive_obj.decode("o") or 2
+        options = cast(Any, archive_obj.decode("o") or 2)
         return XCTTestIdentifier(components=components, options=int(options))
 
 
@@ -200,7 +203,7 @@ class XCTTestIdentifierSet:
     Xcode 15 and go-ios.
     """
 
-    identifiers: list[XCTTestIdentifier] = field(default_factory=list)
+    identifiers: list[XCTTestIdentifier] = field(default_factory=list[XCTTestIdentifier])
 
     @classmethod
     def from_strings(cls, test_specs: list[str]) -> XCTTestIdentifierSet:
@@ -210,12 +213,13 @@ class XCTTestIdentifierSet:
     def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
         # Must be NSMutableArray — XCTTestIdentifierSet.identifiers is typed as
         # NSMutableArray<XCTTestIdentifier *> in XCTest's private headers.
-        archive_obj.encode("identifiers", NSMutableArray(self.identifiers))
+        ao = cast(Any, archive_obj)
+        ao.encode("identifiers", NSMutableArray(self.identifiers))
         patch_class_hierarchy(archive_obj, "XCTTestIdentifierSet", ["XCTTestIdentifierSet", "NSObject"])
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTTestIdentifierSet:
-        raw = archive_obj.decode("identifiers")
+        raw = cast(Any, archive_obj.decode("identifiers"))
         identifiers = list(raw) if raw else []
         return XCTTestIdentifierSet(identifiers=identifiers)
 
@@ -240,8 +244,8 @@ class XCTSourceCodeLocation:
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTSourceCodeLocation:
-        file_url = archive_obj.decode("file-url")
-        line_number = archive_obj.decode("line-number") or 0
+        file_url = cast(Any, archive_obj.decode("file-url"))
+        line_number = cast(Any, archive_obj.decode("line-number") or 0)
         return XCTSourceCodeLocation(file_url=file_url, line_number=int(line_number))
 
 
@@ -253,7 +257,7 @@ class XCTSourceCodeContext:
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTSourceCodeContext:
-        location = archive_obj.decode("location")
+        location = cast(Any, archive_obj.decode("location"))
         return XCTSourceCodeContext(location=location)
 
 
@@ -278,10 +282,10 @@ class XCTIssue:
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTIssue:
-        compact = archive_obj.decode("compact-description") or ""
-        detailed = archive_obj.decode("detailed-description")
-        ctx = archive_obj.decode("source-code-context")
-        issue_type = archive_obj.decode("type") or 0
+        compact = cast(Any, archive_obj.decode("compact-description") or "")
+        detailed = cast(Any, archive_obj.decode("detailed-description"))
+        ctx = cast(Any, archive_obj.decode("source-code-context"))
+        issue_type = cast(Any, archive_obj.decode("type") or 0)
         return XCTIssue(
             compact_description=str(compact) if compact else "",
             detailed_description=str(detailed) if detailed else None,
@@ -299,19 +303,19 @@ class XCActivityRecord:
     uuid: Any  # NSUUID or None
     start: Any  # NSDate or None
     finish: Any  # NSDate or None
-    attachments: list[Any] = field(default_factory=list)
+    attachments: list[Any] = field(default_factory=list[Any])
 
     def __str__(self) -> str:
         return f"XCActivityRecord({self.title!r}, type={self.activity_type!r})"
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCActivityRecord:
-        title = archive_obj.decode("title") or ""
-        activity_type = archive_obj.decode("activityType") or ""
-        uuid = archive_obj.decode("uuid")
-        start = archive_obj.decode("start")
-        finish = archive_obj.decode("finish")
-        attachments = archive_obj.decode("attachments") or []
+        title = cast(Any, archive_obj.decode("title") or "")
+        activity_type = cast(Any, archive_obj.decode("activityType") or "")
+        uuid = cast(Any, archive_obj.decode("uuid"))
+        start = cast(Any, archive_obj.decode("start"))
+        finish = cast(Any, archive_obj.decode("finish"))
+        attachments = cast(Any, archive_obj.decode("attachments") or [])
         return XCActivityRecord(
             title=str(title) if title else "",
             activity_type=str(activity_type) if activity_type else "",
@@ -330,18 +334,18 @@ class XCTAttachment:
     uniformTypeIdentifier: str
     timestamp: Any  # NSDate or None
     data: Optional[bytes] = None
-    additional_data: dict[str, Any] = field(default_factory=dict)
+    additional_data: dict[str, Any] = field(default_factory=dict[str, Any])
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTAttachment:
-        name = archive_obj.decode("name") or ""
-        uti = archive_obj.decode("uniformTypeIdentifier") or ""
-        timestamp = archive_obj.decode("timestamp")
-        data = archive_obj.decode("data")
+        name = cast(Any, archive_obj.decode("name") or "")
+        uti = cast(Any, archive_obj.decode("uniformTypeIdentifier") or "")
+        timestamp = cast(Any, archive_obj.decode("timestamp"))
+        data = cast(Any, archive_obj.decode("data"))
         # Capture any additional fields that may be present
-        additional_data = {}
+        additional_data: dict[str, Any] = {}
         for key in ("metadata", "file-path", "file-url"):
-            val = archive_obj.decode(key)
+            val = cast(Any, archive_obj.decode(key))
             if val is not None:
                 additional_data[key] = val
         return XCTAttachment(
@@ -358,14 +362,14 @@ class XCTestCaseRunConfiguration:
     """Decoded proxy for ``XCTestCaseRunConfiguration``."""
 
     iteration: int
-    configuration: dict[str, Any] = field(default_factory=dict)
+    configuration: dict[str, Any] = field(default_factory=dict[str, Any])
 
     @staticmethod
     def decode_archive(
         archive_obj: archiver.ArchivedObject,
     ) -> XCTestCaseRunConfiguration:
-        iteration = archive_obj.decode("iteration") or 1
-        configuration = archive_obj.decode("configuration") or {}
+        iteration = cast(Any, archive_obj.decode("iteration") or 1)
+        configuration = cast(Any, archive_obj.decode("configuration") or {})
         return XCTestCaseRunConfiguration(
             iteration=int(iteration),
             configuration=dict(configuration) if configuration else {},

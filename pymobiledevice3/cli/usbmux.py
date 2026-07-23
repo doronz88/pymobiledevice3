@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import tempfile
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional, Union
 
 import typer
 from typer_injector import InjectingTyper
@@ -111,7 +111,7 @@ async def usbmux_list(
     ] = False,
 ) -> None:
     """List devices known to usbmuxd (USB and Wi-Fi)."""
-    connected_devices = []
+    connected_devices: list[Union[str, dict[str, Any]]] = []
     for device in await usbmux.list_devices(usbmux_address=usbmux_address):
         udid = device.serial
 

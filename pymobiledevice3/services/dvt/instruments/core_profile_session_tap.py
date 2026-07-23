@@ -520,7 +520,7 @@ exclave_textlayout_segments = Struct(
     ),
 )
 
-kcdata_types_structures = {
+kcdata_types_structures: dict[typing.Any, typing.Any] = {
     kcdata_types_enum.KCDATA_TYPE_UINT32_DESC: uint32_desc,
     kcdata_types_enum.KCDATA_TYPE_UINT64_DESC: uint64_desc,
     kcdata_types_enum.STACKSHOT_KCTYPE_JETSAM_LEVEL: jetsam_level,
@@ -578,9 +578,11 @@ kcdata = GreedyRange(kcdata_item)
 
 def clean(d: typing.Any) -> typing.Any:
     if isinstance(d, dict):
-        return {k: clean(v) for k, v in d.items() if not k.startswith("_")}
+        typed_dict = typing.cast(dict[typing.Any, typing.Any], d)
+        return {k: clean(v) for k, v in typed_dict.items() if not k.startswith("_")}
     elif isinstance(d, list):
-        return [clean(v) for v in d]
+        typed_list = typing.cast(list[typing.Any], d)
+        return [clean(v) for v in typed_list]
     else:
         return d
 
@@ -729,12 +731,12 @@ class CoreProfileSessionTap:
         self._provider = dvt
         self._channel: typing.Optional[CoreProfileSessionTapChannel] = None
         self.channel: typing.Optional[TapMessageChannel] = None
-        self.stack_shot = None
+        self.stack_shot: typing.Optional[dict[str, typing.Any]] = None
         self.uuid = str(uuid.uuid4())
 
         if filters is None:
             filters = {0xFFFFFFFF}
-        config = {
+        config: dict[str, typing.Any] = {
             "tc": [
                 {
                     "csd": 128,  # Callstack frame depth.
@@ -788,6 +790,7 @@ class CoreProfileSessionTap:
         if not isinstance(decoded, dict):
             return
 
+        decoded = typing.cast(dict[typing.Any, typing.Any], decoded)
         notice = decoded.get("notice")
         status = decoded.get("status")
         if not notice:
@@ -834,8 +837,8 @@ class CoreProfileSessionTap:
 
         dsc_map = get_dsc_map(str(stackshot["shared_cache_dyld_load_info"]["imageUUID"]))
 
-        for _pid, snapshot in stackshot["task_snapshots"].items():
-            for loaded_image in snapshot.get("dyld_load_info", []):
+        for _pid, snapshot in typing.cast(dict[typing.Any, typing.Any], stackshot["task_snapshots"]).items():
+            for loaded_image in typing.cast(list[typing.Any], snapshot.get("dyld_load_info", [])):
                 image_uuid = str(loaded_image["imageUUID"])
                 if isinstance(dsc_map, dict) and image_uuid in dsc_map:
                     loaded_image["imagePath"] = dsc_map[image_uuid]
@@ -896,7 +899,7 @@ class CoreProfileSessionTap:
         return KdBufStream(chunk_queue)
 
     @staticmethod
-    def parse_stackshot(data: bytes):
+    def parse_stackshot(data: bytes) -> dict[str, typing.Any]:
         """
         Parse raw KCDATA stackshot bytes into a nested dictionary.
 
@@ -907,12 +910,12 @@ class CoreProfileSessionTap:
         parsed = kcdata.parse(data)
         # Required for removing streams from construct output.
         stackshot = clean(parsed)
-        parsed_stack_shot = {}
+        parsed_stack_shot: dict[str, typing.Any] = {}
         jsonify_parsed_stackshot(stackshot, parsed_stack_shot)
         return parsed_stack_shot[predefined_names[kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT]]
 
     @staticmethod
-    async def get_time_config(dvt: DtxServiceProvider):
+    async def get_time_config(dvt: DtxServiceProvider) -> dict[str, typing.Any]:
         """
         Build the `time_config` mapping required to construct a `CoreProfileSessionTap`.
 
@@ -924,7 +927,7 @@ class CoreProfileSessionTap:
             `timezone`.
         """
         async with DeviceInfo(dvt) as device_info:
-            time_info = await device_info.mach_time_info()
+            time_info = typing.cast(list[typing.Any], await device_info.mach_time_info())
         mach_absolute_time = time_info[0]
         numer = time_info[1]
         denom = time_info[2]

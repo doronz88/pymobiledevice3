@@ -3,10 +3,11 @@ import contextlib
 import json
 import re
 import sys
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any, Optional, TextIO
+from typing import Annotated, Any, Optional, TextIO, cast
 
 import typer
 from typer_injector import InjectingTyper
@@ -212,9 +213,9 @@ def _should_skip_first_snapshot(keys: Optional[list[str]]) -> bool:
     return (keys is None) or ("cpuUsage" in keys)
 
 
-async def iter_processes(sysmon: Sysmontap, skip_first_snapshot: bool = False):
+async def iter_processes(sysmon: Sysmontap, skip_first_snapshot: bool = False) -> AsyncIterator[list[dict[str, Any]]]:
     should_skip_snapshot = skip_first_snapshot
-    async for process_snapshot in sysmon.iter_processes():
+    async for process_snapshot in cast(AsyncIterator[list[dict[str, Any]]], sysmon.iter_processes()):
         if should_skip_snapshot:
             should_skip_snapshot = False
             continue
@@ -252,10 +253,13 @@ def _select_process_from_candidates(
             f"Matches: {_describe_processes(processes)}"
         )
 
-    selection_index = prompt_selection(
-        [_describe_process(process) for process in sorted_processes],
-        "Choose process to monitor",
-        idx=True,
+    selection_index = cast(
+        int,
+        prompt_selection(
+            [_describe_process(process) for process in sorted_processes],
+            "Choose process to monitor",
+            idx=True,
+        ),
     )
     return sorted_processes[selection_index]
 
@@ -329,7 +333,7 @@ async def sysmon_process_single_task(
     out: Optional[TextIO] = None,
 ) -> None:
     parsed_filters = _parse_process_filters(filter_expressions)
-    result = []
+    result: list[dict[str, Any]] = []
     async with (
         DvtProvider(service_provider) as dvt,
         DeviceInfo(dvt) as device_info,

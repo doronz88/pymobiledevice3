@@ -65,7 +65,7 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
         fetch_symbols = DtFetchSymbols(service_provider)
         files = await fetch_symbols.list_files()
 
-        downloaded_files = set()
+        downloaded_files: set[Path] = set()
 
         for i, file in enumerate(files):
             if file.startswith("/"):

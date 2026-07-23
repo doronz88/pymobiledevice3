@@ -22,7 +22,7 @@ class ScreenCast:
         self.quality = quality
         self.max_width = max_width
         self.max_height = max_height
-        self.frames_acked = []
+        self.frames_acked: list[int] = []
         self.frame_id = 1
         self.frame_interval = 250
         self.device_width = 0
@@ -81,7 +81,9 @@ class ScreenCast:
         :param data: Base64 of JPEG data.
         :return: Base 64 of resized JPEG data.
         """
-        resized_img = Image.open(BytesIO(b64decode(data)))
+        # Pillow's stub coverage for the Image method chain varies across versions/platforms
+        # (partially-unknown resize() signature on CI); pin the local to Any to stay type-clean.
+        resized_img: Any = Image.open(BytesIO(b64decode(data)))
         resized_img = resized_img.resize((self.get_scaled_width(), self.get_scaled_height()), Image.Resampling.LANCZOS)
         resized_img = resized_img.convert("RGB")
         resized = BytesIO()

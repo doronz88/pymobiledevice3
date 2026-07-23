@@ -350,7 +350,7 @@ def _generate_launch_args(
     assert exec_name.endswith("-Runner"), f"Invalid CFBundleExecutable: {exec_name}"
     target_name = exec_name[: -len("-Runner")]
 
-    app_env = {
+    app_env: dict[str, str] = {
         "CA_ASSERT_MAIN_THREAD_TRANSACTIONS": "0",
         "CA_DEBUG_TRANSACTIONS": "0",
         "DYLD_FRAMEWORK_PATH": app_path + "/Frameworks:",

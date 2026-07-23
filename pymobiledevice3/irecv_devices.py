@@ -9,7 +9,7 @@ class IRecvDevice(NamedTuple):
     display_name: str
 
 
-IRECV_DEVICES = (
+IRECV_DEVICES: tuple[IRecvDevice, ...] = (
     # iPhone
     IRecvDevice(
         product_type="iPhone1,1", hardware_model="m68ap", board_id=0x00, chip_id=0x8900, display_name="iPhone 2G"

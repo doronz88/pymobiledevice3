@@ -4,17 +4,32 @@ import logging
 import math
 import struct
 import time
+from array import array
 from collections.abc import Iterable
 from enum import Enum
 from types import TracebackType
-from typing import Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from tqdm import trange
-from usb.core import Device, USBError, find
-from usb.util import dispose_resources, get_string
+from usb.core import Device, USBError
 
 from pymobiledevice3.exceptions import IRecvError, IRecvNoDeviceConnectedError, PyMobileDevice3Exception
-from pymobiledevice3.irecv_devices import IRECV_DEVICES, IRecvDevice
+from pymobiledevice3.irecv_devices import IRecvDevice
+
+if TYPE_CHECKING:
+    # pyusb (usb.core / usb.util) and IRECV_DEVICES ship no type information, so their symbols
+    # resolve as partially-unknown. Declare precise signatures for type checking while importing
+    # the real implementations at runtime.
+    def find(find_all: bool = False, backend: Any = None, custom_match: Any = None, **args: Any) -> Any: ...
+    def get_string(dev: Any, index: int, langid: Optional[int] = None) -> Optional[str]: ...
+    def dispose_resources(device: Any) -> None: ...
+
+    IRECV_DEVICES: tuple[IRecvDevice, ...]
+else:
+    from usb.core import find
+    from usb.util import dispose_resources, get_string
+
+    from pymobiledevice3.irecv_devices import IRECV_DEVICES
 
 USB_TIMEOUT = 10000
 IRECV_TRANSFER_SIZE_RECOVERY = 0x8000
@@ -63,12 +78,12 @@ logger = logging.getLogger(__name__)
 class IRecv:
     def __init__(self, ecid: Optional[int] = None, timeout: int = 0xFFFFFFFF, is_recovery: Optional[bool] = None):
         self._mode: Optional[Mode] = None
-        self._device_info = {}
+        self._device_info: dict[str, str] = {}
         self._device: Optional[Device] = None
         self._reinit(ecid=ecid, timeout=timeout, is_recovery=is_recovery)
 
     @property
-    def device(self) -> Device:
+    def device(self) -> Any:
         """The connected USB device.
 
         :raises IRecvNoDeviceConnectedError: if no device is connected (before/after ``_reinit``).
@@ -104,7 +119,7 @@ class IRecv:
         return int(self._device_info["BDID"], 16)
 
     @property
-    def serial_number(self) -> int:
+    def serial_number(self) -> str:
         return self._device_info["SRNM"]
 
     @property
@@ -147,15 +162,18 @@ class IRecv:
         logger.debug(f"set_configuration: {configuration}")
         device = self.device
         try:
-            if device.get_active_configuration().bConfigurationValue == configuration:  # pyright: ignore[reportAttributeAccessIssue]
+            active_configuration: Any = device.get_active_configuration()
+            if active_configuration.bConfigurationValue == configuration:
                 return
         except USBError:
             pass
 
         device.set_configuration(configuration=configuration)
 
-    def ctrl_transfer(self, bmRequestType: int, bRequest: int, timeout: int = USB_TIMEOUT, **kwargs: Any):
-        return self.device.ctrl_transfer(bmRequestType, bRequest, timeout=timeout, **kwargs)
+    def ctrl_transfer(
+        self, bmRequestType: int, bRequest: int, timeout: int = USB_TIMEOUT, **kwargs: Any
+    ) -> "array[int]":
+        return cast("array[int]", self.device.ctrl_transfer(bmRequestType, bRequest, timeout=timeout, **kwargs))
 
     def send_buffer(self, buf: bytes):
         device = self.device
@@ -189,7 +207,7 @@ class IRecv:
             packet_index = _offset // packet_size
 
             if mode.is_recovery:
-                n = device.write(0x04, chunk, timeout=USB_TIMEOUT)
+                n = cast(int, device.write(0x04, chunk, timeout=USB_TIMEOUT))
                 if n != len(chunk):
                     raise OSError("failed to upload data")
             else:
@@ -301,12 +319,13 @@ class IRecv:
         while (self._device is None) and (time.time() < end):
             for device in cast(Iterable[Device], find(find_all=True)):
                 try:
-                    if device.manufacturer is None:
+                    usb_device: Any = device
+                    if usb_device.manufacturer is None:
                         continue
-                    if not device.manufacturer.startswith("Apple"):
+                    if not usb_device.manufacturer.startswith("Apple"):
                         continue
 
-                    mode = Mode.get_mode_from_value(device.idProduct)  # pyright: ignore[reportAttributeAccessIssue]
+                    mode = Mode.get_mode_from_value(usb_device.idProduct)
                     if mode is None:
                         # not one of Apple's special modes
                         continue
@@ -330,7 +349,7 @@ class IRecv:
                     continue
 
     def _populate_device_info(self):
-        serial_number = self.device.serial_number
+        serial_number = cast(Optional[str], self.device.serial_number)
         if serial_number is None:
             raise IRecvError("device did not report a serial number")
         for component in serial_number.split(" "):

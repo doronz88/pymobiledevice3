@@ -528,7 +528,7 @@ class _KernelUdp:
 
     async def sendto(self, data: bytes, ip: str, port: int) -> None:
         # loop.sock_sendto exists since Python 3.11; absent from the 3.9 typeshed baseline.
-        await self._loop.sock_sendto(self._sock, data, (ip, port, 0, 0))  # pyright: ignore[reportAttributeAccessIssue]
+        await cast(Any, self._loop).sock_sendto(self._sock, data, (ip, port, 0, 0))
 
     def close(self) -> None:
         with contextlib.suppress(Exception):

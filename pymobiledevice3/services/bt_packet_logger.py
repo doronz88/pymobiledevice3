@@ -3,7 +3,7 @@ from collections.abc import AsyncGenerator, AsyncIterable
 from dataclasses import dataclass
 from enum import IntEnum
 from struct import pack, unpack
-from typing import BinaryIO, Optional
+from typing import Any, BinaryIO, Optional
 
 import pcapng.blocks as blocks
 from pcapng import FileWriter
@@ -89,7 +89,7 @@ async def write_pcapng_stream(
     # The BTPacketLogger service reports record timestamps as device-local wall-clock time, whereas the pcapng
     # EnhancedPacket timestamp (with the default if_tsresol of 1e-6) is interpreted as UTC. Subtract the device's
     # UTC offset so Wireshark doesn't apply the timezone shift a second time when rendering the display time.
-    shb = blocks.SectionHeader(
+    shb: Any = blocks.SectionHeader(
         options={
             "shb_hardware": "artificial",
             "shb_os": "iOS",
@@ -101,7 +101,7 @@ async def write_pcapng_stream(
         link_type=PCAPNG_LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR,
         options={"if_description": "Bluetooth HCI", "if_os": f"iOS {product_version}"},
     )
-    writer = FileWriter(out, shb)
+    writer: Any = FileWriter(out, shb)
 
     async for packet in packet_generator:
         try:

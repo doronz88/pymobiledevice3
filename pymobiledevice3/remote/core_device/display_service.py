@@ -97,7 +97,7 @@ class DisplayService(CoreDeviceService):
             fec_enabled=fec_enabled,
             tiles_per_frame=tiles_per_frame,
         )
-        request = {
+        request: dict[str, Any] = {
             "clientSupportedFeatures": XpcUInt64Type(_CLIENT_SUPPORTED_FEATURES),
             "direction": "output",
             "negotiatorOffer": negotiator_offer,
@@ -153,7 +153,7 @@ class DisplayService(CoreDeviceService):
         call_id = new_call_id()
         session_id = random.randint(0, 0xFFFFFFFF)
         negotiator_offer = build_negotiator_offer_audio(call_id=call_id, session_id=session_id)
-        request = {
+        request: dict[str, Any] = {
             "clientSupportedFeatures": XpcUInt64Type(_CLIENT_SUPPORTED_FEATURES),
             "direction": "output",
             "negotiatorOffer": negotiator_offer,

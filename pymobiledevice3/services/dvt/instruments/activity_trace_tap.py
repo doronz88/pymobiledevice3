@@ -2,6 +2,7 @@ import dataclasses
 import math
 import os
 import struct
+from collections.abc import AsyncGenerator, Callable, Generator
 from io import BytesIO
 from typing import Any, cast
 
@@ -70,7 +71,7 @@ def decode_message_format(message: Any) -> str:
         elif type_ in ("data", "uuid"):
             if data is not None:
                 # for these types the payload is a list of bytes chunks, not a single bytes object
-                s += b"".join(cast("list[bytes]", data)).hex()
+                s += b"".join(cast(list[bytes], data)).hex()
         else:
             # by default, make sure the data can be concatenated
             s += str(data)
@@ -100,7 +101,7 @@ class ActivityTraceTap(Tap):
         #   reverse: [DTOSLogLoader _handleRecord:], DTTableRowEncoder::*
         #   to understand each row's structure.
 
-        config = {
+        config: dict[str, Any] = {
             "bm": 0,  # buffer mode
             "combineDataScope": 0,
             "machTimebaseDenom": 3,
@@ -119,10 +120,10 @@ class ActivityTraceTap(Tap):
 
         super().__init__(dvt, self.IDENTIFIER, config)
 
-        self.stack = []
+        self.stack: list[Any] = []
         self.generation = 0
         self.background = 0
-        self.tables = []
+        self.tables: list[Table] = []
         # trailing bytes of an opcode that was split across two DTX frames
         self._carry = b""
 
@@ -280,8 +281,8 @@ class ActivityTraceTap(Tap):
         """push an item and pop it. effectively do nothing"""
         pass
 
-    def _parse(self):
-        operations = {
+    def _parse(self) -> Generator[Any, None, None]:
+        operations: dict[int, Callable[[int], Any]] = {
             CMD_TABLE_RESET: self._handle_table_reset,
             CMD_SENTINEL: self._handle_sentinel,
             CMD_STRUCT: self._handle_struct,
@@ -315,7 +316,7 @@ class ActivityTraceTap(Tap):
             if opcode == CMD_END_ROW and result is not None:
                 yield result
 
-    async def __aiter__(self):
+    async def __aiter__(self) -> AsyncGenerator[Any, None]:
         """
         Continuously receive frames and yield the decoded log entries they contain.
 

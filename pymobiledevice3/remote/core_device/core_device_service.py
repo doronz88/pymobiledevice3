@@ -27,7 +27,7 @@ class CoreDeviceService(RemoteService):
     ) -> Any:
         if input_ is None:
             input_ = {}
-        request = {
+        request: dict[str, Any] = {
             "CoreDevice.CoreDeviceDDIProtocolVersion": XpcInt64Type(2),
             "CoreDevice.coreDeviceVersion": CORE_DEVICE_VERSION,
             "CoreDevice.deviceIdentifier": str(uuid.uuid4()),

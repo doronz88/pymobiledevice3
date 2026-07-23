@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.keywrap import aes_key_unwrap
@@ -32,7 +32,7 @@ from pymobiledevice3.exceptions import (
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AFC_LOCK_EX, AFC_LOCK_UN, AfcError, AfcService
-from pymobiledevice3.services.device_link import DeviceLink
+from pymobiledevice3.services.device_link import DeviceLink, ProgressCallback
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.services.notification_proxy import NotificationProxyService
@@ -202,7 +202,7 @@ class Mobilebackup2Service(LockdownService):
         self,
         full: bool = True,
         backup_directory: Union[str, Path] = ".",
-        progress_callback: Callable[..., Any] = lambda x: None,
+        progress_callback: ProgressCallback = lambda x: None,
         filter_callback: Optional[BackupFilterCallback] = None,
         password: str = "",
         unback: bool = False,
@@ -329,7 +329,7 @@ class Mobilebackup2Service(LockdownService):
         remove: bool = False,
         password: str = "",
         source: str = "",
-        progress_callback: Callable[..., Any] = lambda x: None,
+        progress_callback: ProgressCallback = lambda x: None,
         skip_apps: bool = False,
     ):
         """
@@ -407,7 +407,7 @@ class Mobilebackup2Service(LockdownService):
         backup_dir = Path(backup_directory)
         self._assert_backup_exists(backup_dir, source if source else self._udid)
         async with self.device_link(backup_dir) as dl:
-            message = {"MessageName": "Info", "TargetIdentifier": self.lockdown.udid}
+            message: dict[str, Any] = {"MessageName": "Info", "TargetIdentifier": self.lockdown.udid}
             if source:
                 message["SourceIdentifier"] = source
             await dl.send_process_message(message)
@@ -446,7 +446,7 @@ class Mobilebackup2Service(LockdownService):
         backup_dir = Path(backup_directory)
         self._assert_backup_exists(backup_dir, source if source else self._udid)
         async with self.device_link(backup_dir) as dl:
-            message = {"MessageName": "Unback", "TargetIdentifier": self.lockdown.udid}
+            message: dict[str, Any] = {"MessageName": "Unback", "TargetIdentifier": self.lockdown.udid}
             if source:
                 message["SourceIdentifier"] = source
             if password:
@@ -494,7 +494,7 @@ class Mobilebackup2Service(LockdownService):
         backup_dir = Path(backup_directory)
         self._assert_backup_exists(backup_dir, source if source else self._udid)
         async with self.device_link(backup_dir) as dl:
-            message = {
+            message: dict[str, Any] = {
                 "MessageName": "Extract",
                 "TargetIdentifier": self.lockdown.udid,
                 "DomainName": domain_name,
@@ -516,7 +516,7 @@ class Mobilebackup2Service(LockdownService):
         :param new: New password. Omit when disabling backup encryption.
         """
         async with self.device_link(Path(backup_directory)) as dl:
-            message = {"MessageName": "ChangePassword", "TargetIdentifier": self.lockdown.udid}
+            message: dict[str, Any] = {"MessageName": "ChangePassword", "TargetIdentifier": self.lockdown.udid}
             if old:
                 message["OldPassword"] = old
             if new:
@@ -553,7 +553,7 @@ class Mobilebackup2Service(LockdownService):
         assert reply[0] == "DLMessageProcessMessage" and reply[1]["ErrorCode"] == 0
         assert reply[1]["ProtocolVersion"] in local_versions
 
-    async def init_mobile_backup_factory_info(self, afc: AfcService):
+    async def init_mobile_backup_factory_info(self, afc: AfcService) -> dict[str, Any]:
         """
         Build the Info.plist dictionary describing the device for a new backup.
 
@@ -573,7 +573,7 @@ class Mobilebackup2Service(LockdownService):
                 # https://github.com/doronz88/pymobiledevice3/issues/1332
                 min_itunes_version = "10.0.1"
             app_dict = {}
-            installed_apps = []
+            installed_apps: list[Any] = []
             apps = await ip.browse(
                 options={"ApplicationType": "User"},
                 attributes=["CFBundleIdentifier", "ApplicationSINF", "iTunesMetadata"],
@@ -598,7 +598,7 @@ class Mobilebackup2Service(LockdownService):
                 else:
                     files[file] = data_buf
 
-            ret = {
+            ret: dict[str, Any] = {
                 "iTunes Version": min_itunes_version if min_itunes_version else "10.0.1",
                 "iTunes Files": files,
                 "Unique Identifier": self._udid.upper(),
@@ -684,7 +684,7 @@ class Mobilebackup2Service(LockdownService):
         if not only:
             return ()
 
-        rules = []
+        rules: list[BackupSelectionRule] = []
         for selection_name in only:
             try:
                 selection = BackupSelection(selection_name.lower())
@@ -757,7 +757,7 @@ class Mobilebackup2Service(LockdownService):
         compiled_patterns = tuple(re.compile(pattern) for pattern in patterns)
 
         def _filter(backup_file: BackupFile) -> bool:
-            candidates = []
+            candidates: list[str] = []
             if backup_file.device_name is not None:
                 candidates.append(backup_file.device_name)
             if backup_file.domain is not None and backup_file.relative_path is not None:
@@ -913,7 +913,7 @@ class Mobilebackup2Service(LockdownService):
         decrypted_manifest_path.write_bytes(keybag.decrypt(manifest_db.read_bytes(), manifest.manifest_key))
 
         parsed_key = encryption_key_struct.parse(manifest.manifest_key)
-        return aes_key_unwrap(keybag.get_key(parsed_key.class_), parsed_key.key)
+        return aes_key_unwrap(cast(Any, keybag).get_key(parsed_key.class_), parsed_key.key)
 
     @staticmethod
     def _encrypt_backup_manifest_db(decrypted_manifest_path: Path, manifest_db_path: Path, manifest_key: bytes) -> None:

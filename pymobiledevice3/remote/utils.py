@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 async def get_rsds(
     bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT, udid: Optional[str] = None
 ) -> list[RemoteServiceDiscoveryService]:
-    result = []
+    result: list[RemoteServiceDiscoveryService] = []
     with stop_remoted():
         for answer in await browse_remoted(timeout=bonjour_timeout):
             for address in answer.addresses:

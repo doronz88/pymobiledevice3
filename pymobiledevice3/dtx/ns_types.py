@@ -25,7 +25,7 @@ from __future__ import annotations
 import datetime
 import os
 import uuid
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from bpylist2 import archiver
 
@@ -40,7 +40,7 @@ def patch_class_hierarchy(
     hierarchy: list[str],
 ) -> None:
     """Overwrite the '$classes' list for *class_name* in the live archive."""
-    a = archive_obj._archiver  # type: ignore[attr-defined]
+    a = cast(Any, archive_obj._archiver)  # type: ignore[attr-defined]
     uid = a.class_map.get(class_name)
     if uid is not None:
         a.objects[uid.data]["$classes"] = hierarchy
@@ -52,7 +52,7 @@ class DTTapMessage:
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> Any:
         """Decode an archived DTTapMessage by extracting its embedded plist."""
-        return archive_obj.decode("DTTapMessagePlist")
+        return cast(Any, archive_obj.decode("DTTapMessagePlist"))
 
 
 class NSNull:
@@ -74,22 +74,23 @@ class NSError:
 
     def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
         """Encode this NSError into an NSKeyedArchive object."""
-        archive_obj.encode("NSDomain", self.domain)
-        archive_obj.encode("NSCode", self.code)
-        archive_obj.encode("NSUserInfo", self.user_info)
+        ao = cast(Any, archive_obj)
+        ao.encode("NSDomain", self.domain)
+        ao.encode("NSCode", self.code)
+        ao.encode("NSUserInfo", self.user_info)
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> NSError:
         """Decode an NSKeyedArchive object into an :class:`NSError` instance."""
-        domain = archive_obj.decode("NSDomain")
-        code = archive_obj.decode("NSCode")
-        user_info = archive_obj.decode("NSUserInfo")
+        domain = cast(Any, archive_obj.decode("NSDomain"))
+        code = cast(Any, archive_obj.decode("NSCode"))
+        user_info = cast(Any, archive_obj.decode("NSUserInfo"))
         assert (
             (user_info is None or isinstance(user_info, dict)) and isinstance(domain, str) and isinstance(code, int)
         ), (
             f"Invalid NSError archive: domain={domain!r} code={code!r} user_info={user_info!r}, archive_obj={archive_obj!r}"
         )
-        return NSError(code, domain, user_info)
+        return NSError(code, domain, cast(Any, user_info))
 
     @staticmethod
     def create_doesnt_respond_to_selector(selector: str) -> NSError:
@@ -116,12 +117,13 @@ class NSUUID(uuid.UUID):
 
     def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
         """Encode this NSUUID into an NSKeyedArchive object."""
-        archive_obj.encode("NS.uuidbytes", self.bytes)
+        ao = cast(Any, archive_obj)
+        ao.encode("NS.uuidbytes", self.bytes)
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> NSUUID:
         """Decode an NSKeyedArchive object into an :class:`NSUUID` instance."""
-        return NSUUID(bytes=archive_obj.decode("NS.uuidbytes"))
+        return NSUUID(bytes=cast(Any, archive_obj.decode("NS.uuidbytes")))
 
 
 class NSURL:
@@ -133,8 +135,9 @@ class NSURL:
 
     def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
         """Encode this NSURL into an NSKeyedArchive object."""
-        archive_obj.encode("NS.base", self.base)
-        archive_obj.encode("NS.relative", self.relative)
+        ao = cast(Any, archive_obj)
+        ao.encode("NS.base", self.base)
+        ao.encode("NS.relative", self.relative)
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> NSURL:
@@ -148,7 +151,7 @@ class NSValue:
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> Any:
         """Decode an NSKeyedArchive object into the underlying NSValue data."""
-        return archive_obj.decode("NS.rectval")
+        return cast(Any, archive_obj.decode("NS.rectval"))
 
 
 class NSMutableArray(list[Any]):
@@ -166,7 +169,7 @@ class NSMutableArray(list[Any]):
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> NSMutableArray:
-        raw = archive_obj.decode("NS.objects") or []
+        raw = cast(list[Any], archive_obj.decode("NS.objects") or [])
         return NSMutableArray([archive_obj.decode_index(item) for item in raw])
 
 
@@ -176,7 +179,7 @@ class NSMutableData:
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> Any:
         """Decode an NSKeyedArchive object into the underlying bytes data."""
-        return archive_obj.decode("NS.data")
+        return cast(Any, archive_obj.decode("NS.data"))
 
 
 class NSMutableString:
@@ -185,7 +188,7 @@ class NSMutableString:
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> Any:
         """Decode an NSKeyedArchive object into the underlying string."""
-        return archive_obj.decode("NS.string")
+        return cast(Any, archive_obj.decode("NS.string"))
 
 
 class NSDate:
@@ -211,7 +214,7 @@ class NSDate:
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> NSDate:
         """Decode an NSKeyedArchive NSDate object."""
-        t = archive_obj.decode("NS.time")
+        t = cast(Any, archive_obj.decode("NS.time"))
         return NSDate(float(t) if t is not None else 0.0)
 
 
@@ -238,4 +241,5 @@ archiver.update_class_map({
 })
 
 archiver.ARCHIVE_CLASS_MAP[NSMutableArray] = "NSMutableArray"  # type: ignore[index]
-archiver.Archive.inline_types = list({*archiver.Archive.inline_types, bytes})
+_archive_cls: Any = archiver.Archive
+_archive_cls.inline_types = list({*_archive_cls.inline_types, bytes})

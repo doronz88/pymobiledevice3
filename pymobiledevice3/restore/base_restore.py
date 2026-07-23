@@ -1,6 +1,6 @@
 import logging
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from ipsw_parser.exceptions import NoSuchBuildIdentityError
 from ipsw_parser.ipsw import IPSW
@@ -60,7 +60,7 @@ class BaseRestore:
         except NoSuchBuildIdentityError:
             pass
 
-        build_info = self.build_identity.get("Info")
+        build_info = cast(dict[str, Any], self.build_identity).get("Info")
         if build_info is None:
             raise PyMobileDevice3Exception('build identity does not contain an "Info" element')
 
@@ -92,7 +92,7 @@ class BaseRestore:
     ) -> bytes:
         return stitch_component(
             component_name,
-            self.build_identity.get_component(component_name, tss=tss, data=data, path=path).data,
+            cast(Any, self.build_identity).get_component(component_name, tss=tss, data=data, path=path).data,
             tss,
             self.build_identity,
             await self.device.get_ap_parameters(),
@@ -155,7 +155,7 @@ class BaseRestore:
 
         for k in key_list:
             try:
-                v = self.build_identity[k]
+                v = cast(dict[str, Any], self.build_identity)[k]
                 if isinstance(v, str) and v.startswith("0x"):
                     v = int(v, 16)
                 parameters[k] = v
@@ -164,7 +164,7 @@ class BaseRestore:
 
         if additional_keys is None:
             # special treat for RequiresUIDMode
-            info = self.build_identity.get("Info")
+            info = cast(dict[str, Any], self.build_identity).get("Info")
             if info is None:
                 return
             requires_uid_mode = info.get("RequiresUIDMode")

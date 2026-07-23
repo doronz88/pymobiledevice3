@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 import typer
 from typer_injector import InjectingTyper
@@ -17,7 +17,7 @@ cli = InjectingTyper(
 
 
 async def cli_mobdev2_task(timeout: float, pair_records: Optional[Path]) -> None:
-    output = []
+    output: list[dict[str, Any]] = []
     async for ip, lockdown in get_mobdev2_lockdowns(timeout=timeout, pair_records=pair_records):
         short_info = lockdown.short_info
         short_info["ip"] = ip
@@ -44,7 +44,7 @@ async def cli_mobdev2(
 
 
 async def cli_remotepairing_task(timeout: float) -> None:
-    output = []
+    output: list[dict[str, Any]] = []
     for answer in await browse_remotepairing(timeout=timeout):
         for address in answer.addresses:
             output.append({"hostname": address.full_ip, "port": answer.port})
@@ -59,7 +59,7 @@ async def cli_remotepairing(timeout: Annotated[float, typer.Option()] = DEFAULT_
 
 
 async def cli_remotepairing_manual_pairing_task(timeout: float) -> None:
-    output = []
+    output: list[dict[str, Any]] = []
     for answer in await browse_remotepairing_manual_pairing(timeout=timeout):
         for address in answer.addresses:
             output.append({

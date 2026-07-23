@@ -1065,7 +1065,7 @@ class DiagnosticsService(LockdownService):
             carries no such payload.
         :raises PyMobileDevice3Exception: If the response status is not ``Success``.
         """
-        d = {}
+        d: dict[str, Any] = {}
 
         if plane:
             d["CurrentPlane"] = plane

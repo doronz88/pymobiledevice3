@@ -7,7 +7,7 @@ import queue
 from enum import Enum
 from itertools import islice
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional, cast
 
 import typer
 from pykdebugparser.pykdebugparser import PyKdebugParser
@@ -165,7 +165,7 @@ async def live_profile_session(
     ] = True,
 ) -> None:
     """Print kevents received from the device in real time."""
-    parser = PyKdebugParser()
+    parser: Any = PyKdebugParser()
     class_filters = class_filters
     subclass_filters = subclass_filters
     parser.filter_class = class_filters
@@ -184,14 +184,14 @@ async def live_profile_session(
     parser.show_args = args
     async with DvtProvider(service_provider) as dvt:
         trace_codes_map = await CoreProfileSessionTap.get_trace_codes(dvt)
-        time_config = await CoreProfileSessionTap.get_time_config(dvt)
+        time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
         parser.numer = time_config["numer"]
         parser.denom = time_config["denom"]
         parser.mach_absolute_time = time_config["mach_absolute_time"]
         parser.usecs_since_epoch = time_config["usecs_since_epoch"]
         parser.timezone = time_config["timezone"]
         async with CoreProfileSessionTap(dvt, time_config, filters) as tap:
-            chunk_queue = queue.Queue()
+            chunk_queue: queue.Queue[Any] = queue.Queue()
             stream = tap.get_kdbuf_stream(chunk_queue)
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
@@ -300,8 +300,8 @@ async def parse_live_profile_session(
     """Print traces (syscalls, thread events, etc.) received from the device in real time."""
     async with DvtProvider(service_provider) as dvt:
         print("Receiving time information")
-        time_config = await CoreProfileSessionTap.get_time_config(dvt)
-        parser = PyKdebugParser()
+        time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
+        parser: Any = PyKdebugParser()
         parser.filter_class = list(class_filters)
         if bsc:
             subclass_filters.append(BSC_SUBCLASS)
@@ -326,7 +326,7 @@ async def parse_live_profile_session(
             else:
                 print("{:^32}|{:^33}|   Event".format("Time", "Process"))
 
-            chunk_queue = queue.Queue()
+            chunk_queue: queue.Queue[Any] = queue.Queue()
             stream = tap.get_kdbuf_stream(chunk_queue)
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
@@ -379,8 +379,8 @@ async def callstacks_live_profile_session(
     """Print callstacks received from the device in real time."""
     async with DvtProvider(service_provider) as dvt:
         print("Receiving time information")
-        time_config = await CoreProfileSessionTap.get_time_config(dvt)
-        parser = PyKdebugParser()
+        time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
+        parser: Any = PyKdebugParser()
         parser.numer = time_config["numer"]
         parser.denom = time_config["denom"]
         parser.mach_absolute_time = time_config["mach_absolute_time"]
@@ -396,9 +396,9 @@ async def callstacks_live_profile_session(
         with importlib.resources.open_text(pymobiledevice3.resources, "dsc_uuid_map.json") as fd:
             dsc_uuid_map = json.load(fd)
 
-        current_dsc_map = {}
+        current_dsc_map: dict[str, str] = {}
         async with CoreProfileSessionTap(dvt, time_config) as tap:
-            chunk_queue = queue.Queue()
+            chunk_queue: queue.Queue[Any] = queue.Queue()
             stream = tap.get_kdbuf_stream(chunk_queue)
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 

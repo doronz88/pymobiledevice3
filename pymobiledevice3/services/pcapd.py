@@ -404,7 +404,7 @@ class PcapdService(LockdownService):
         :param out: A writable binary file-like object to receive the pcapng data.
         :param packet_generator: Async iterable yielding parsed packet containers.
         """
-        shb = blocks.SectionHeader(
+        shb: Any = blocks.SectionHeader(
             options={
                 "shb_hardware": "artificial",
                 "shb_os": "iOS",
@@ -416,7 +416,7 @@ class PcapdService(LockdownService):
             link_type=1,
             options={"if_description": "iOS Packet Capture", "if_os": f"iOS {self.lockdown.product_version}"},
         )
-        writer = FileWriter(out, shb)
+        writer: Any = FileWriter(out, shb)
 
         async for packet in packet_generator:
             packet_time = packet.timestamp if hasattr(packet, "timestamp") else time.time()

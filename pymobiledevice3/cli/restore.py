@@ -5,7 +5,7 @@ import tempfile
 import traceback
 from collections.abc import Iterator
 from pathlib import Path
-from typing import IO, Annotated, Any, Optional, Union
+from typing import IO, Annotated, Any, Optional, Union, cast
 
 import requests
 import typer
@@ -207,7 +207,9 @@ async def restore_update_task(
 def restore_shell(device: DeviceDep) -> None:
     """create an IPython shell for interacting with iBoot"""
     start_ipython_shell(
-        header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")),
+        header=highlight(
+            SHELL_USAGE, cast(Any, lexers).PythonLexer(), cast(Any, formatters).Terminal256Formatter(style="native")
+        ),
         user_ns={
             "irecv": device.irecv,
         },

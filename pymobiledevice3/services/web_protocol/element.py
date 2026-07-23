@@ -6,6 +6,7 @@ from pymobiledevice3.services.web_protocol.automation_session import (
     RESOURCES,
     VIRTUAL_KEYS,
     KeyboardInteractionType,
+    KeyModifier,
     MouseButton,
     MouseInteraction,
     Point,
@@ -120,12 +121,12 @@ class WebElement(SeleniumApi):
         :param value: A string for typing, or setting form fields.
         """
         await self._evaluate_js_function(FOCUS)
-        interactions = []
-        sticky_modifier = set()
+        interactions: list[dict[str, Any]] = []
+        sticky_modifier: set[KeyModifier] = set()
         for key in value:
             if key in VIRTUAL_KEYS:
                 virtual_key, modifier = VIRTUAL_KEYS[key]
-                interaction = {"type": KeyboardInteractionType.INSERT_BY_KEY, "key": virtual_key}
+                interaction: dict[str, Any] = {"type": KeyboardInteractionType.INSERT_BY_KEY, "key": virtual_key}
                 if modifier is not None:
                     sticky_modifier ^= {modifier}
                     interaction["type"] = (

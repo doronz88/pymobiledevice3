@@ -155,7 +155,7 @@ async def debugserver_lldb(
             "(run `sudo pymobiledevice3 remote tunneld` and drop --userspace, or use --tunnel)."
         )
 
-    commands = []
+    commands: list[str] = []
     temp_dir = None
     local_app: Optional[Path] = None
     install_source: Optional[Path] = None

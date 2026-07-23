@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from collections import UserDict
-from typing import Any, Optional, cast
+from typing import Any, Callable, Optional, cast
 
 from pymobiledevice3.exceptions import InspectorEvaluateError
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
@@ -59,10 +59,10 @@ class InspectorSession:
         self.protocol = protocol
         self.target_id = target_id
         self.message_id = 1
-        self._last_console_message = {}
-        self._dispatch_message_responses = {}
+        self._last_console_message: dict[str, Any] = {}
+        self._dispatch_message_responses: dict[int, dict[str, Any]] = {}
 
-        self.response_methods = {
+        self.response_methods: dict[str, Callable[[dict[str, Any]], Any]] = {
             "Target.targetCreated": self._target_created,
             "Target.targetDestroyed": self._target_destroyed,
             "Target.dispatchMessageFromTarget": self._target_dispatch_message_from_target,

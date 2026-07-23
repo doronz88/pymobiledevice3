@@ -9,7 +9,7 @@ This module provides:
 import base64
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import requests
 
@@ -56,6 +56,7 @@ class WdaClient:
         """Format WDA error payloads."""
         message = data.get("value")
         if isinstance(message, dict):
+            message = cast(dict[str, Any], message)
             message = message.get("message") or message.get("error") or message
         return f"WDA error (status={status_code}): {message}"
 
@@ -70,7 +71,7 @@ class WdaClient:
         caps: dict[str, Any] = {}
         if bundle_id:
             caps["bundleId"] = bundle_id
-        payload = {
+        payload: dict[str, Any] = {
             "capabilities": {"alwaysMatch": caps},
             "desiredCapabilities": caps,
         }
@@ -79,7 +80,7 @@ class WdaClient:
         if not session_id:
             value = data.get("value")
             if isinstance(value, dict):
-                session_id = value.get("sessionId")
+                session_id = cast(dict[str, Any], value).get("sessionId")
         if not session_id:
             raise WdaError("WDA did not return a session id")
         self.session_id = session_id
@@ -105,6 +106,7 @@ class WdaClient:
         element = data.get("value")
         if not isinstance(element, dict):
             raise WdaError("WDA did not return an element")
+        element = cast(dict[str, Any], element)
         element_id = (
             element.get("ELEMENT") or element.get("element-6066-11e4-a52e-4f735466cecf") or element.get("element")
         )
@@ -226,7 +228,7 @@ class WdaClient:
         value = data.get("value")
         if not isinstance(value, dict):
             raise WdaError("WDA did not return window size")
-        return value
+        return cast(dict[str, Any], value)
 
     def send_keys(self, text: str, session_id: Optional[str] = None) -> None:
         """Type text into the currently focused element.
@@ -269,7 +271,7 @@ class WdaClient:
         """
         if not session_id:
             raise WdaError("session_id is required")
-        payload = {
+        payload: dict[str, Any] = {
             "fromX": start_x,
             "fromY": start_y,
             "toX": end_x,
@@ -371,7 +373,7 @@ class WdaServiceClient:
                 body_bytes = b"".join(chunks)
 
         try:
-            data = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+            data: dict[str, Any] = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
         except ValueError as exc:
             raise WdaError(f"WDA returned non-JSON response (status={status_code})", status_code=status_code) from exc
 
@@ -408,7 +410,7 @@ class WdaServiceClient:
         caps: dict[str, Any] = {}
         if bundle_id:
             caps["bundleId"] = bundle_id
-        payload = {
+        payload: dict[str, Any] = {
             "capabilities": {"alwaysMatch": caps},
             "desiredCapabilities": caps,
         }
@@ -417,7 +419,7 @@ class WdaServiceClient:
         if not session_id:
             value = data.get("value")
             if isinstance(value, dict):
-                session_id = value.get("sessionId")
+                session_id = cast(dict[str, Any], value).get("sessionId")
         if not session_id:
             raise WdaError("WDA did not return a session id")
         self.session_id = session_id
@@ -443,6 +445,7 @@ class WdaServiceClient:
         element = data.get("value")
         if not isinstance(element, dict):
             raise WdaError("WDA did not return an element")
+        element = cast(dict[str, Any], element)
         element_id = (
             element.get("ELEMENT") or element.get("element-6066-11e4-a52e-4f735466cecf") or element.get("element")
         )
@@ -564,7 +567,7 @@ class WdaServiceClient:
         value = data.get("value")
         if not isinstance(value, dict):
             raise WdaError("WDA did not return window size")
-        return value
+        return cast(dict[str, Any], value)
 
     async def send_keys(self, text: str, session_id: Optional[str] = None) -> None:
         """Type text into the currently focused element.
@@ -607,7 +610,7 @@ class WdaServiceClient:
         """
         if not session_id:
             raise WdaError("session_id is required")
-        payload = {
+        payload: dict[str, Any] = {
             "fromX": start_x,
             "fromY": start_y,
             "toX": end_x,

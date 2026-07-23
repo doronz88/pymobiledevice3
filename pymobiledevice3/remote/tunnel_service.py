@@ -16,13 +16,14 @@ import struct
 import sys
 from abc import ABC, abstractmethod
 from asyncio import CancelledError, StreamReader, StreamWriter
-from collections.abc import AsyncGenerator, Awaitable
+from collections.abc import AsyncGenerator, Awaitable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 from pathlib import Path
 from socket import create_connection
 from ssl import VerifyMode
-from typing import Any, Callable, NamedTuple, Optional, TextIO, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional, TextIO, Union, cast
 
+import opack2
 from construct import Bytes, Container, GreedyBytes, GreedyRange, Int8ul, Int16ub, Int64ul, Prefixed, Struct
 from construct import Enum as ConstructEnum
 from construct_typed import DataclassMixin, DataclassStruct, csfield
@@ -34,29 +35,30 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from opack2 import dumps
-from opack2 import loads as opack_loads
 from packaging.version import Version
 from pytun_pmd3 import TunTapDevice
-from qh3.asyncio.client import connect as aioquic_connect
+from qh3.asyncio import client as _aioquic_client
 from qh3.asyncio.protocol import QuicConnectionProtocol, QuicStreamHandler
 from qh3.quic import packet_builder
 from qh3.quic.configuration import QuicConfiguration
 from qh3.quic.connection import QuicConnection
 from qh3.quic.events import ConnectionTerminated, DatagramFrameReceived, QuicEvent, StreamDataReceived
 from srptools import SRPClientSession, SRPContext, SRPServerSession
+from srptools import utils as _srptools_utils
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
-from srptools.utils import hex_from
 
 from pymobiledevice3.construct_compat import const_field
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 
-try:
-    # sslpsk_pmd3 is an optional dependency (python<3.13 TCP tunnel only).
-    from sslpsk_pmd3.sslpsk import SSLPSKContext  # pyright: ignore[reportMissingImports]
-except ImportError:
-    SSLPSKContext = None
+# sslpsk_pmd3 is an optional dependency (python<3.13 TCP tunnel only).
+if TYPE_CHECKING:
+    SSLPSKContext: Any = None
+else:
+    try:
+        from sslpsk_pmd3.sslpsk import SSLPSKContext
+    except ImportError:
+        SSLPSKContext = None
 
 from pymobiledevice3.bonjour import (
     DEFAULT_BONJOUR_TIMEOUT,
@@ -92,6 +94,15 @@ from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.utils import asyncio_print_traceback
 from pymobiledevice3.utils import current_task_name as _current_task_name
+
+# These third-party helpers ship only partial type information (Unknown-typed parameters/returns);
+# re-expose them through casts so downstream call sites stay typed.
+dumps = cast(Callable[[Any], bytes], cast(Any, opack2).dumps)
+opack_loads = cast(Callable[[bytes], Mapping[Any, Any]], cast(Any, opack2).loads)
+aioquic_connect = cast(
+    Callable[..., AbstractAsyncContextManager[QuicConnectionProtocol]], cast(Any, _aioquic_client).connect
+)
+hex_from = cast(Callable[[Any], Union[str, bytes]], cast(Any, _srptools_utils).hex_from)
 
 DEFAULT_INTERFACE_NAME = "pymobiledevice3-tunnel"
 TIMEOUT = 1
@@ -212,7 +223,7 @@ def create_tun_device(interface_name: str = DEFAULT_INTERFACE_NAME):
 
 class RemotePairingTunnel(ABC):
     def __init__(self):
-        self._queue = asyncio.Queue()
+        self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self._tun_read_task: Optional[asyncio.Task[None]] = None
         self._logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         # The tunnel link device is one of two duck-typed backends (kernel ``TunTapDevice`` or the
@@ -593,7 +604,7 @@ class RemotePairingProtocol(StartTcpTunnel):
             raise RemotePairingCompletedError()
 
     async def create_quic_listener(self, private_key: RSAPrivateKey) -> dict[str, Any]:
-        request = {
+        request: dict[str, Any] = {
             "request": {
                 "_0": {
                     "createListener": {
@@ -612,7 +623,7 @@ class RemotePairingProtocol(StartTcpTunnel):
 
     async def create_tcp_listener(self) -> dict[str, Any]:
         assert self.encryption_key is not None
-        request = {
+        request: dict[str, Any] = {
             "request": {
                 "_0": {
                     "createListener": {
@@ -643,7 +654,7 @@ class RemotePairingProtocol(StartTcpTunnel):
             max_datagram_frame_size=RemotePairingQuicTunnel.MAX_QUIC_DATAGRAM,
             idle_timeout=max_idle_timeout,
         )
-        configuration.load_cert_chain(
+        cast(Any, configuration).load_cert_chain(
             cert.public_bytes(Encoding.PEM),
             private_key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode(),
         )
@@ -834,7 +845,7 @@ class RemotePairingProtocol(StartTcpTunnel):
     def _init_srp_context(self, pairing_consent_result: PairConsentResult) -> None:
         # Receive server public and salt and process them.
         pin = pairing_consent_result.pin or "000000"
-        client_session = SRPClientSession(
+        client_session: Any = SRPClientSession(
             SRPContext("Pair-Setup", password=pin, prime=PRIME_3072, generator=PRIME_3072_GEN, hash_func=hashlib.sha512)
         )
         client_session.process(pairing_consent_result.public_key.hex(), pairing_consent_result.salt.hex())
@@ -1113,7 +1124,7 @@ class RemotePairingProtocol(StartTcpTunnel):
 
     @staticmethod
     def decode_tlv(tlv_list: list[Container[Any]]) -> dict[str, Any]:
-        result = {}
+        result: dict[str, Any] = {}
         for tlv in tlv_list:
             if tlv.type in result:
                 result[tlv.type] += tlv.data
@@ -1462,7 +1473,7 @@ async def start_tunnel(
 async def get_core_device_tunnel_services(
     bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT, udid: Optional[str] = None
 ) -> list[CoreDeviceTunnelService]:
-    result = []
+    result: list[CoreDeviceTunnelService] = []
     for rsd in await get_rsds(bonjour_timeout=bonjour_timeout, udid=udid):
         if udid is None and (
             (Version(rsd.product_version) < Version("17.0"))
@@ -1497,7 +1508,7 @@ async def get_core_device_tunnel_services(
 async def get_remote_pairing_tunnel_services(
     bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT, udid: Optional[str] = None
 ) -> list[RemotePairingTunnelService]:
-    result = []
+    result: list[RemotePairingTunnelService] = []
     for answer in await browse_remotepairing(timeout=bonjour_timeout):
         for address in answer.addresses:
             for identifier in iter_remote_paired_identifiers():
@@ -1664,7 +1675,7 @@ class PairableHost:
         if handshake.get("hostOptions", {}).get("attemptPairVerify"):
             raise PairingError("device requested pair-verify; only device-initiated pair-setup is supported")
 
-        peer_device_info = {
+        peer_device_info: dict[str, Any] = {
             "udid": self.host_info.udid,
             "deviceKVSIncludesSensitiveInfo": False,
             "identifier": self.host_info.identifier,
@@ -1706,14 +1717,14 @@ class PairableHost:
         salt_hex = salt.hex()
 
         pin = f"{secrets.randbelow(1_000_000):06d}"
-        context = SRPContext(
+        context: Any = SRPContext(
             SRP_USERNAME, password=pin, prime=PRIME_3072, generator=PRIME_3072_GEN, hash_func=hashlib.sha512
         )
         verifier = hex_from(context.get_common_password_verifier(context.get_common_password_hash(int(salt_hex, 16))))
 
         # B is computed from a fresh random server private; regenerate on the rare short value
         while True:
-            srp_server = SRPServerSession(context, verifier)
+            srp_server: Any = SRPServerSession(context, verifier)
             server_public = binascii.unhexlify(srp_server.public)
             if len(server_public) == SRP_PUBLIC_KEY_SIZE:
                 break
@@ -1883,7 +1894,7 @@ class PairableHost:
 
     @staticmethod
     def decode_tlv(tlv_list: list[Container[Any]]) -> dict[str, Any]:
-        result = {}
+        result: dict[str, Any] = {}
         for tlv in tlv_list:
             if tlv.type in result:
                 result[tlv.type] += tlv.data
@@ -1921,7 +1932,7 @@ class PairableHost:
         raise PyMobileDevice3Exception(f"Got an unknown state message: {response}")
 
     async def _send_plain(self, value: dict[str, Any]) -> None:
-        envelope = {
+        envelope: dict[str, Any] = {
             "message": {"plain": {"_0": value}},
             "originatedBy": "device",
             "sequenceNumber": XpcUInt64Type(self._sequence_number),

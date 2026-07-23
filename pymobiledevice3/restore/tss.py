@@ -311,8 +311,8 @@ class TSSRequest:
         # EUICCGoldNonce / EUICCMainNonce params (the recovery.py AP-batch path sets these).
         for nested, flat in (("eUICC,Gold", "EUICCGoldNonce"), ("eUICC,Main", "EUICCMainNonce")):
             node = parameters.get(nested)
-            if isinstance(node, dict) and node.get("Nonce") is not None:
-                parameters.setdefault(flat, node["Nonce"])
+            if isinstance(node, dict) and typing.cast(dict[str, typing.Any], node).get("Nonce") is not None:
+                parameters.setdefault(flat, typing.cast(dict[str, typing.Any], node)["Nonce"])
         self.add_vinyl_tags(parameters, overrides)
 
     def add_vinyl_tags(

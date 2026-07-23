@@ -3,7 +3,7 @@ import logging
 import os
 import socket
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import win32security  # pyright: ignore[reportMissingModuleSource]
 from ifaddr import get_adapters
@@ -25,9 +25,9 @@ class Win32(OsUtils):
         :return: True if the current user is an 'Administrator', otherwise False.
         """
         try:
-            admin_sid = win32security.CreateWellKnownSid(win32security.WinBuiltinAdministratorsSid, None)
+            admin_sid = cast(Any, win32security).CreateWellKnownSid(win32security.WinBuiltinAdministratorsSid, None)
             # pywin32 accepts None for TokenHandle (current thread token); the stub only allows int.
-            return win32security.CheckTokenMembership(None, admin_sid)  # pyright: ignore[reportArgumentType]
+            return cast(Any, win32security).CheckTokenMembership(None, admin_sid)
         except Exception:
             return False
 
@@ -70,7 +70,7 @@ class Win32(OsUtils):
 
         if hasattr(ioctl_socket, "ioctl"):
             # SIO_KEEPALIVE_VALS only exists in the socket module on Windows.
-            sio_keepalive_vals = socket.SIO_KEEPALIVE_VALS  # pyright: ignore[reportAttributeAccessIssue]
+            sio_keepalive_vals = cast(Any, socket).SIO_KEEPALIVE_VALS
             ioctl_socket.ioctl(sio_keepalive_vals, (1, after_idle_sec * 1000, interval_sec * 1000))
             return
 

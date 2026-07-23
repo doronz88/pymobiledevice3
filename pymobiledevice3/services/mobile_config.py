@@ -213,7 +213,7 @@ class MobileConfigService(LockdownService):
         if response.get("Status", None) != "Acknowledged":
             error_chain = response.get("ErrorChain")
             if error_chain is not None:
-                error_code = cast("list[dict[str, Any]]", error_chain)[0]["ErrorCode"]
+                error_code = cast(list[dict[str, Any]], error_chain)[0]["ErrorCode"]
                 if error_code == ERROR_CLOUD_CONFIGURATION_ALREADY_PRESENT:
                     raise CloudConfigurationAlreadyPresentError()
             raise ProfileError(f"invalid response {response}")

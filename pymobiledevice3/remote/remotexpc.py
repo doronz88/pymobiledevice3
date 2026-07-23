@@ -3,7 +3,7 @@ import contextlib
 import uuid
 from asyncio import IncompleteReadError
 from collections.abc import AsyncIterable
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Union, cast
 
 from construct import StreamError
 from hyperframe.frame import (
@@ -247,7 +247,9 @@ class RemoteXPCConnection:
 
     def shell(self) -> None:
         start_ipython_shell(
-            header=highlight(SHELL_USAGE, lexers.PythonLexer(), formatters.Terminal256Formatter(style="native")),
+            header=highlight(
+                SHELL_USAGE, cast(Any, lexers).PythonLexer(), formatters.Terminal256Formatter(style="native")
+            ),
             user_ns={
                 "client": self,
                 "XpcInt64Type": XpcInt64Type,
