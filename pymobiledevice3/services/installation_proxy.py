@@ -1,10 +1,11 @@
+# pyright: reportMissingTypeArgument=error
 import os
 import uuid
 from enum import Enum
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Callable, Optional, cast
+from typing import Any, Callable, Optional, cast
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from parameter_decorators import str_to_path
@@ -83,7 +84,7 @@ class InstallationProxyService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    async def _watch_completion(self, handler: Optional[Callable] = None, *args) -> None:
+    async def _watch_completion(self, handler: Optional[Callable[..., Any]] = None, *args) -> None:
         while True:
             response = await self.service.recv_plist()
             if not response:
@@ -106,8 +107,8 @@ class InstallationProxyService(LockdownService):
         self,
         bundle_identifier: str,
         cmd: str = "Archive",
-        options: Optional[dict] = None,
-        handler: Optional[Callable] = None,
+        options: Optional[dict[str, Any]] = None,
+        handler: Optional[Callable[..., Any]] = None,
         *args,
     ) -> None:
         """
@@ -126,7 +127,7 @@ class InstallationProxyService(LockdownService):
         :returns: None.
         :raises AppInstallError: If the service reports an error or finishes without a ``Complete`` status.
         """
-        request: dict = {"Command": cmd, "ApplicationIdentifier": bundle_identifier}
+        request: dict[str, Any] = {"Command": cmd, "ApplicationIdentifier": bundle_identifier}
 
         if options is None:
             options = {}
@@ -136,7 +137,11 @@ class InstallationProxyService(LockdownService):
         await self._watch_completion(handler, *args)
 
     async def upgrade(
-        self, ipa_path: str, options: Optional[dict] = None, handler: Optional[Callable] = None, *args
+        self,
+        ipa_path: str,
+        options: Optional[dict[str, Any]] = None,
+        handler: Optional[Callable[..., Any]] = None,
+        *args,
     ) -> None:
         """
         Upgrade an installed app from a local package.
@@ -154,7 +159,11 @@ class InstallationProxyService(LockdownService):
         await self.install_from_local(Path(ipa_path), "Upgrade", options, handler, False, *args)
 
     async def restore(
-        self, bundle_identifier: str, options: Optional[dict] = None, handler: Optional[Callable] = None, *args
+        self,
+        bundle_identifier: str,
+        options: Optional[dict[str, Any]] = None,
+        handler: Optional[Callable[..., Any]] = None,
+        *args,
     ) -> None:
         """
         Restore a previously archived app, identified by its bundle identifier.
@@ -172,7 +181,11 @@ class InstallationProxyService(LockdownService):
         await self.send_cmd_for_bundle_identifier(bundle_identifier, "Restore", options, handler, args)
 
     async def uninstall(
-        self, bundle_identifier: str, options: Optional[dict] = None, handler: Optional[Callable] = None, *args
+        self,
+        bundle_identifier: str,
+        options: Optional[dict[str, Any]] = None,
+        handler: Optional[Callable[..., Any]] = None,
+        *args,
     ) -> None:
         """
         Uninstall an app, identified by its bundle identifier.
@@ -193,8 +206,8 @@ class InstallationProxyService(LockdownService):
         self,
         package_bytes: bytes,
         cmd: str = "Install",
-        options: Optional[dict] = None,
-        handler: Optional[Callable] = None,
+        options: Optional[dict[str, Any]] = None,
+        handler: Optional[Callable[..., Any]] = None,
         *args,
     ) -> None:
         """
@@ -243,8 +256,8 @@ class InstallationProxyService(LockdownService):
         self,
         package_path: Path,
         cmd: str = "Install",
-        options: Optional[dict] = None,
-        handler: Optional[Callable] = None,
+        options: Optional[dict[str, Any]] = None,
+        handler: Optional[Callable[..., Any]] = None,
         developer: bool = False,
         *args,
     ) -> None:
@@ -304,7 +317,12 @@ class InstallationProxyService(LockdownService):
                 await afc.rm_single(fname, force=True)
 
     async def send_package(
-        self, cmd: str, options: Optional[dict], handler: Optional[Callable], package_path: str, *args
+        self,
+        cmd: str,
+        options: Optional[dict[str, Any]],
+        handler: Optional[Callable[..., Any]],
+        package_path: str,
+        *args,
     ):
         """
         Send an install/upgrade command for a package already staged on the device, and wait for completion.
@@ -391,8 +409,8 @@ class InstallationProxyService(LockdownService):
         self.logger.info("Upload complete.")
 
     async def check_capabilities_match(
-        self, capabilities: Optional[dict] = None, options: Optional[dict] = None
-    ) -> Optional[dict]:
+        self, capabilities: Optional[dict[str, Any]] = None, options: Optional[dict[str, Any]] = None
+    ) -> Optional[dict[str, Any]]:
         """
         Ask the device whether it satisfies a set of app capabilities.
 
@@ -414,9 +432,11 @@ class InstallationProxyService(LockdownService):
             cmd["Capabilities"] = capabilities
 
         await self.service.send_plist(cmd)
-        return cast(Optional[dict], (await self.service.recv_plist()).get("LookupResult"))
+        return cast(Optional[dict[str, Any]], (await self.service.recv_plist()).get("LookupResult"))
 
-    async def browse(self, options: Optional[dict] = None, attributes: Optional[list[str]] = None) -> list[dict]:
+    async def browse(
+        self, options: Optional[dict[str, Any]] = None, attributes: Optional[list[str]] = None
+    ) -> list[dict[str, Any]]:
         """
         Enumerate installed apps via the ``"Browse"`` command.
 
@@ -437,7 +457,7 @@ class InstallationProxyService(LockdownService):
 
         await self.service.send_plist(cmd)
 
-        result: list[dict] = []
+        result: list[dict[str, Any]] = []
         while True:
             response = await self.service.recv_plist()
             if not response:
@@ -445,14 +465,14 @@ class InstallationProxyService(LockdownService):
 
             data = response.get("CurrentList")
             if data is not None:
-                result += cast("list[dict]", data)
+                result += cast("list[dict[str, Any]]", data)
 
             if response.get("Status") == "Complete":
                 break
 
         return result
 
-    async def lookup(self, options: Optional[dict] = None) -> Optional[dict]:
+    async def lookup(self, options: Optional[dict[str, Any]] = None) -> Optional[dict[str, Any]]:
         """
         Look up installed apps via the ``"Lookup"`` command.
 
@@ -468,7 +488,7 @@ class InstallationProxyService(LockdownService):
             options = {}
         cmd = {"Command": "Lookup", "ClientOptions": options}
         await self.service.send_plist(cmd)
-        return cast(Optional[dict], (await self.service.recv_plist()).get("LookupResult"))
+        return cast(Optional[dict[str, Any]], (await self.service.recv_plist()).get("LookupResult"))
 
     async def get_apps(
         self,
@@ -476,7 +496,7 @@ class InstallationProxyService(LockdownService):
         calculate_sizes: bool = False,
         bundle_identifiers: Optional[list[str]] = None,
         show_placeholders: bool = False,
-    ) -> dict[str, dict]:
+    ) -> dict[str, dict[str, Any]]:
         """
         Retrieve installed apps, keyed by bundle identifier.
 
