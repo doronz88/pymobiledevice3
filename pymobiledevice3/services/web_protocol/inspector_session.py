@@ -94,7 +94,7 @@ class InspectorSession:
         target = cls(protocol, target_id)
         return target
 
-    def set_target_id(self, target_id):
+    def set_target_id(self, target_id: str):
         self.target_id = target_id
         logger.info(f"Changed to: {target_id}")
 
@@ -118,7 +118,7 @@ class InspectorSession:
     async def runtime_enable(self):
         return await self.send_command("Runtime.enable")
 
-    async def send_command(self, method: str, **kwargs):
+    async def send_command(self, method: str, **kwargs: Any):
         if self.target_id is None:
             return await self.protocol.send_receive(method, **kwargs)
         else:

@@ -1,9 +1,14 @@
 import importlib.resources
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import pymobiledevice3.resources
+
+if TYPE_CHECKING:
+    from pymobiledevice3.services.web_protocol.element import WebElement
 
 RESOURCES = importlib.resources.files(pymobiledevice3.resources) / "webinspector"
 FIND_NODES = (RESOURCES / "find_nodes.js").read_text()
@@ -153,7 +158,7 @@ class Rect:
 
 
 class AutomationSession:
-    def __init__(self, protocol):
+    def __init__(self, protocol: Any):
         """
         :param pymobiledevice3.services.web_protocol.session_protocol.SessionProtocol protocol: Session protocol.
         """
@@ -179,7 +184,7 @@ class AutomationSession:
         for handle in await self.get_window_handles():
             await self.protocol.closeBrowsingContext(handle=handle)
 
-    async def create_window(self, type_):
+    async def create_window(self, type_: str):
         type_ = type_.capitalize()
         params = {"presentationHint": type_} if type_ else {}
         return (await self.protocol.createBrowsingContext(**params))["handle"]
@@ -203,7 +208,13 @@ class AutomationSession:
         contexts = await self.protocol.getBrowsingContexts()
         return [c["handle"] for c in contexts["contexts"]]
 
-    async def set_window_frame(self, x=None, y=None, width=None, height=None):
+    async def set_window_frame(
+        self,
+        x: Optional[int] = None,
+        y: Optional[int] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+    ):
         params = {}
         if x is not None and y is not None:
             params["origin"] = {"x": x, "y": y}
@@ -211,19 +222,19 @@ class AutomationSession:
             params["size"] = {"width": width, "height": height}
         await self.protocol.setWindowFrameOfBrowsingContext(handle=self.top_level_handle, **params)
 
-    async def add_single_cookie(self, cookie):
+    async def add_single_cookie(self, cookie: dict[str, Any]):
         await self.protocol.addSingleCookie(browsingContextHandle=self.top_level_handle, cookie=cookie)
 
     async def delete_all_cookies(self):
         await self.protocol.deleteAllCookies(browsingContextHandle=self.top_level_handle)
 
-    async def delete_single_cookie(self, name):
+    async def delete_single_cookie(self, name: str):
         await self.protocol.deleteSingleCookie(browsingContextHandle=self.top_level_handle, cookieName=name)
 
     async def get_all_cookies(self):
         return (await self.protocol.getAllCookies(browsingContextHandle=self.top_level_handle))["cookies"]
 
-    async def execute_script(self, script, args, async_=False):
+    async def execute_script(self, script: str, args: Iterable[Any], async_: bool = False):
         parameters = {
             "browsingContextHandle": self.top_level_handle,
             "function": "function(){\n" + script + "\n}",
@@ -241,7 +252,9 @@ class AutomationSession:
         else:
             return json.loads(result["result"])
 
-    async def evaluate_js_function(self, function, *args, implicit_callback=False, include_frame=True):
+    async def evaluate_js_function(
+        self, function: str, *args: Any, implicit_callback: bool = False, include_frame: bool = True
+    ):
         params = {
             "browsingContextHandle": self.top_level_handle,
             "function": function,
@@ -254,7 +267,9 @@ class AutomationSession:
         result = await self.protocol.evaluateJavaScriptFunction(**params)
         return json.loads(result["result"])
 
-    async def find_elements(self, by, value, single: bool = True, root=None):
+    async def find_elements(
+        self, by: Union[By, str], value: Optional[str], single: bool = True, root: Optional[str] = None
+    ):
         await self.wait_for_navigation_to_complete()
         by = by.value if isinstance(by, By) else by
         if by == By.ID.value:
@@ -282,7 +297,7 @@ class AutomationSession:
         result = json.loads((await self.protocol.evaluateJavaScriptFunction(**parameters))["result"])
         return result
 
-    async def screenshot_as_base64(self, scroll=False, node_id="", clip=True):
+    async def screenshot_as_base64(self, scroll: bool = False, node_id: str = "", clip: bool = True):
         params = {"handle": self.top_level_handle, "clipToViewport": clip}
         if self.current_handle:
             params["frameHandle"] = self.current_handle
@@ -292,12 +307,12 @@ class AutomationSession:
             params["nodeHandle"] = node_id
         return (await self.protocol.takeScreenshot(**params))["data"]
 
-    async def switch_to_top_level_browsing_context(self, top_level_handle):
+    async def switch_to_top_level_browsing_context(self, top_level_handle: str):
         self.top_level_handle = top_level_handle
         self.current_handle = ""
         self.current_parent_handle = ""
 
-    async def switch_to_browsing_context(self, handle):
+    async def switch_to_browsing_context(self, handle: Optional[str]):
         self.current_handle = handle
         if not self.current_handle:
             self.current_parent_handle = ""
@@ -308,10 +323,10 @@ class AutomationSession:
         )
         self.current_parent_handle = resp["result"]
 
-    async def switch_to_browsing_context_frame(self, context, frame):
+    async def switch_to_browsing_context_frame(self, context: str, frame: str):
         await self.protocol.switchToBrowsingContext(browsingContextHandle=context, frameHandle=frame)
 
-    async def navigate_broswing_context(self, url):
+    async def navigate_broswing_context(self, url: str):
         await self.protocol.navigateBrowsingContext(
             handle=self.top_level_handle, pageLoadTimeout=self.page_load_timeout, url=url
         )
@@ -329,7 +344,7 @@ class AutomationSession:
     async def reload_browsing_context(self):
         await self.protocol.reloadBrowsingContext(handle=self.top_level_handle, pageLoadTimeout=self.page_load_timeout)
 
-    async def switch_to_frame(self, frame_ordinal=None, frame_handle=None):
+    async def switch_to_frame(self, frame_ordinal: Any = None, frame_handle: Optional["WebElement"] = None):
         params = {"browsingContextHandle": self.top_level_handle}
         if self.current_handle:
             params["frameHandle"] = self.current_handle
@@ -341,17 +356,19 @@ class AutomationSession:
         await self.switch_to_browsing_context_frame(self.top_level_handle, resp)
         await self.switch_to_browsing_context(resp)
 
-    async def switch_to_window(self, handle):
+    async def switch_to_window(self, handle: str):
         await self.switch_to_browsing_context_frame(handle, "")
         await self.switch_to_top_level_browsing_context(handle)
 
-    async def perform_keyboard_interactions(self, interactions):
+    async def perform_keyboard_interactions(self, interactions: list[dict[str, Any]]):
         for interaction in interactions:
             type_ = interaction["type"]
             interaction["type"] = type_.value if isinstance(type_, KeyboardInteractionType) else type_
         await self.protocol.performKeyboardInteractions(handle=self.top_level_handle, interactions=interactions)
 
-    async def perform_mouse_interaction(self, x, y, button: MouseButton, interaction: MouseInteraction, modifiers=None):
+    async def perform_mouse_interaction(
+        self, x: int, y: int, button: MouseButton, interaction: MouseInteraction, modifiers: Optional[list[Any]] = None
+    ):
         modifiers = [] if modifiers is None else modifiers
         await self.protocol.performMouseInteraction(
             handle=self.top_level_handle,
@@ -361,7 +378,7 @@ class AutomationSession:
             modifiers=modifiers,
         )
 
-    async def perform_interaction_sequence(self, sources, steps):
+    async def perform_interaction_sequence(self, sources: list[dict[str, Any]], steps: list[dict[str, Any]]):
         params = {
             "handle": self.top_level_handle,
             "inputSources": sources,
@@ -383,7 +400,7 @@ class AutomationSession:
     async def dismiss_current_javascript_dialog(self):
         await self.protocol.dismissCurrentJavaScriptDialog(browsingContextHandle=self.top_level_handle)
 
-    async def set_user_input_for_current_javascript_prompt(self, user_input):
+    async def set_user_input_for_current_javascript_prompt(self, user_input: str):
         await self.protocol.setUserInputForCurrentJavaScriptPrompt(
             browsingContextHandle=self.top_level_handle, userInput=user_input
         )
@@ -393,7 +410,7 @@ class AutomationSession:
             "message"
         ]
 
-    async def compute_element_layout(self, node_id, scroll_if_needed, coordinate_system):
+    async def compute_element_layout(self, node_id: str, scroll_if_needed: bool, coordinate_system: str):
         return await self.protocol.computeElementLayout(
             browsingContextHandle=self.top_level_handle,
             nodeHandle=node_id,
@@ -402,7 +419,7 @@ class AutomationSession:
             frameHandle="" if self.current_handle is None else self.current_handle,
         )
 
-    async def select_option_element(self, node_id):
+    async def select_option_element(self, node_id: str):
         await self.protocol.selectOptionElement(
             browsingContextHandle=self.top_level_handle,
             nodeHandle=node_id,

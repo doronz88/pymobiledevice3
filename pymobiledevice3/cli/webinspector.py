@@ -3,7 +3,7 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from asyncio import CancelledError
-from collections.abc import AsyncGenerator, AsyncIterator, Iterable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from functools import update_wrapper
 from string import Template
@@ -142,19 +142,19 @@ cli = InjectingTyper(
 )
 
 
-def catch_errors(func):
+def catch_errors(func: Callable[..., Any]) -> Callable[..., Any]:
     errors = {
         LaunchingApplicationError: "Unable to launch application (try to unlock device)",
         WebInspectorNotEnabledError: "Web inspector is not enabled",
         RemoteAutomationNotEnabledError: "Remote automation is not enabled",
     }
 
-    def handle_error(e):
+    def handle_error(e: Exception) -> None:
         logger.error(next(msg for exc, msg in errors.items() if isinstance(e, exc)))
 
     if inspect.iscoroutinefunction(func):
 
-        async def async_catch_function(*args, **kwargs):
+        async def async_catch_function(*args: Any, **kwargs: Any):
             try:
                 return await func(*args, **kwargs)
             except tuple(errors) as e:
@@ -163,7 +163,7 @@ def catch_errors(func):
         catch_function = async_catch_function
     else:
 
-        def sync_catch_function(*args, **kwargs):
+        def sync_catch_function(*args: Any, **kwargs: Any):
             try:
                 return func(*args, **kwargs)
             except tuple(errors) as e:
@@ -221,7 +221,7 @@ async def opened_tabs(
 
 
 @catch_errors
-async def launch_task(service_provider: LockdownServiceProvider, url, timeout) -> None:
+async def launch_task(service_provider: LockdownServiceProvider, url: str, timeout: float) -> None:
     async with webinspector_service(service_provider) as inspector:
         safari = await inspector.open_app(SAFARI)
         session = await inspector.automation_session(safari)
@@ -492,11 +492,11 @@ class JsShell(ABC):
         timeout: float,
         open_safari: bool,
         bundle_identifier: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "AbstractAsyncContextManager[JsShell]": ...
 
     @abstractmethod
-    async def evaluate_expression(self, exp, return_by_value: bool = False) -> Any: ...
+    async def evaluate_expression(self, exp: str, return_by_value: bool = False) -> Any: ...
 
     @abstractmethod
     async def navigate(self, url: str) -> None: ...
@@ -545,7 +545,7 @@ class AutomationJsShell(JsShell):
         timeout: float,
         open_safari: bool,
         bundle_identifier: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "AsyncIterator[AutomationJsShell]":
         if bundle_identifier is None:
             bundle_identifier = SAFARI
@@ -581,7 +581,7 @@ class InspectorJsShell(JsShell):
         bundle_identifier: Optional[str] = None,
         *,
         console_enable: bool = True,
-        **kwargs,
+        **kwargs: Any,
     ) -> "AsyncIterator[InspectorJsShell]":
         async with webinspector_service(lockdown) as inspector:
             if open_safari:

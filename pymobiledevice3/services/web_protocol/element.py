@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3.exceptions import WirError
 from pymobiledevice3.services.web_protocol.automation_session import (
@@ -24,7 +24,7 @@ FOCUS = (RESOURCES / "focus.js").read_text()
 
 
 class WebElement(SeleniumApi):
-    def __init__(self, session, id_):
+    def __init__(self, session: Any, id_: dict[str, Any]):
         """
         :param pymobiledevice3.services.web_protocol.automation_session.AutomationSession session: Automation session.
         :param dict id_: Element id.
@@ -57,12 +57,12 @@ class WebElement(SeleniumApi):
                 center.x, center.y, MouseButton.LEFT, MouseInteraction.SINGLE_CLICK
             )
 
-    async def find_element(self, by=By.ID, value=None):
+    async def find_element(self, by: By = By.ID, value: Optional[str] = None):
         """Find an element given a By strategy and locator."""
         elem = await self.session.find_elements(by, value, root=self.id_)
         return None if elem is None else WebElement(self.session, elem)
 
-    async def find_elements(self, by=By.ID, value=None):
+    async def find_elements(self, by: By = By.ID, value: Optional[str] = None):
         """Find elements given a By strategy and locator."""
         elements = await self.session.find_elements(by, value, single=False, root=self.id_)
         return [WebElement(self.session, elem) for elem in elements]
@@ -114,7 +114,7 @@ class WebElement(SeleniumApi):
         """Gets the screenshot of the current element as a base64 encoded string."""
         return await self.session.screenshot_as_base64(scroll=True, node_id=self.node_id)
 
-    async def send_keys(self, value):
+    async def send_keys(self, value: str):
         """
         Simulates typing into the element.
         :param value: A string for typing, or setting form fields.
@@ -178,7 +178,7 @@ class WebElement(SeleniumApi):
             [{"states": [{"sourceId": self.session.get_id(), "location": {"x": center.x, "y": center.y}}]}],
         )
 
-    async def value_of_css_property(self, property_name) -> str:
+    async def value_of_css_property(self, property_name: str) -> str:
         """The value of a CSS property."""
         return await self._evaluate_js_function(
             "function(element) {"
@@ -190,7 +190,9 @@ class WebElement(SeleniumApi):
         """Returns whether the element is editable."""
         return await self._evaluate_js_function(IS_EDITABLE)
 
-    async def _compute_layout(self, scroll_if_needed=True, use_viewport=False) -> Optional[tuple[Rect, Point, bool]]:
+    async def _compute_layout(
+        self, scroll_if_needed: bool = True, use_viewport: bool = False
+    ) -> Optional[tuple[Rect, Point, bool]]:
         try:
             result = await self.session.compute_element_layout(
                 self.node_id, scroll_if_needed, "LayoutViewport" if use_viewport else "Page"
@@ -207,8 +209,8 @@ class WebElement(SeleniumApi):
     async def _select_option_element(self):
         await self.session.select_option_element(self.node_id)
 
-    async def _evaluate_js_function(self, function, *args):
+    async def _evaluate_js_function(self, function: str, *args: Any):
         return await self.session.evaluate_js_function(function, self.id_, *args)
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any):
         return self.id_ == other.id_
