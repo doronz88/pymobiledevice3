@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 """
 Read/write the device pasteboard via the ``com.apple.coredevice.pasteboardservice``
 RemoteXPC service (feature ``com.apple.coredevice.feature.pasteboard``).
@@ -24,7 +25,7 @@ frameworks on macOS:
   carries data inline and we don't need to chase promises.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -53,12 +54,12 @@ POLICY_MATCH_SOURCE = {"matchSource": {}}
 POLICY_PROMISE_SECONDARY = {"promiseSecondary": {}}
 
 
-def policy_threshold(threshold_bytes: int) -> dict:
+def policy_threshold(threshold_bytes: int) -> dict[str, Any]:
     """Inclusion policy: include item data inline if smaller than ``threshold_bytes``, otherwise promise it."""
     return {"thresholdData": {"_0": XpcInt64Type(threshold_bytes)}}
 
 
-def text_item(text: str, utis: Optional[list[str]] = None) -> dict:
+def text_item(text: str, utis: Optional[list[str]] = None) -> dict[str, Any]:
     """Build a single ``PasteboardItem`` carrying ``text`` under the standard text UTIs."""
     if utis is None:
         utis = [UTI_UTF8_PLAIN_TEXT, UTI_PLAIN_TEXT, UTI_TEXT]
@@ -69,7 +70,7 @@ def text_item(text: str, utis: Optional[list[str]] = None) -> dict:
     }
 
 
-def data_item(uti: str, data: bytes) -> dict:
+def data_item(uti: str, data: bytes) -> dict[str, Any]:
     """Build a single ``PasteboardItem`` carrying raw ``data`` under one ``uti``."""
     return {
         "types": [uti],
@@ -77,7 +78,7 @@ def data_item(uti: str, data: bytes) -> dict:
     }
 
 
-def snapshot_text(snapshot: dict) -> Optional[str]:
+def snapshot_text(snapshot: dict[str, Any]) -> Optional[str]:
     """Best-effort extraction of UTF-8 text from a ``PasteboardSnapshot`` dict.
 
     Returns ``None`` if the snapshot has no items or no decodable text. Walks
@@ -115,8 +116,8 @@ class PasteboardService(RemoteService):
     async def get(
         self,
         pasteboard_name: str = GENERAL_PASTEBOARD,
-        data_policy: Optional[dict] = None,
-    ) -> dict:
+        data_policy: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         """Pull the current pasteboard contents from the device.
 
         Returns the raw reply dict (``{command: "PULL_REPLY", pasteboard:
@@ -137,10 +138,10 @@ class PasteboardService(RemoteService):
 
     async def set(
         self,
-        items: list[dict],
+        items: list[dict[str, Any]],
         pasteboard_name: str = GENERAL_PASTEBOARD,
-        source_metadata: Optional[dict] = None,
-    ) -> dict:
+        source_metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         """Replace the device pasteboard contents with ``items``.
 
         Each item is a ``PasteboardItem`` dict (use :func:`text_item` or
@@ -153,6 +154,6 @@ class PasteboardService(RemoteService):
             "sourceMetadata": source_metadata,
         })
 
-    async def set_text(self, text: str, pasteboard_name: str = GENERAL_PASTEBOARD) -> dict:
+    async def set_text(self, text: str, pasteboard_name: str = GENERAL_PASTEBOARD) -> dict[str, Any]:
         """Convenience wrapper: set the pasteboard to a single UTF-8 ``text`` value."""
         return await self.set([text_item(text)], pasteboard_name)
