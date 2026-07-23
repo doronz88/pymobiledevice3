@@ -1,3 +1,4 @@
+# pyright: reportMissingParameterType=error
 import inspect
 import logging
 import re

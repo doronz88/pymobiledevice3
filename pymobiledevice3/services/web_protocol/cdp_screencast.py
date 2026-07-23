@@ -1,3 +1,4 @@
+# pyright: reportMissingParameterType=error
 import asyncio
 import contextlib
 from base64 import b64decode, b64encode

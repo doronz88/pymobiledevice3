@@ -1,3 +1,4 @@
+# pyright: reportMissingParameterType=error
 from typing import Any, Optional
 
 from pymobiledevice3.exceptions import WirError

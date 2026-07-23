@@ -1,3 +1,4 @@
+# pyright: reportMissingParameterType=error
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
