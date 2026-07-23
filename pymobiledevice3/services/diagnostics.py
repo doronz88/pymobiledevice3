@@ -1,4 +1,5 @@
-from typing import Optional
+# pyright: reportMissingTypeArgument=error
+from typing import Any, Optional
 
 from pymobiledevice3.exceptions import DeprecationError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
@@ -970,10 +971,10 @@ class DiagnosticsService(LockdownService):
         service_name = self.SERVICE_NAME if isinstance(lockdown, LockdownClient) else self.RSD_SERVICE_NAME
         super().__init__(lockdown, service_name, service=None)
 
-    async def _send_recv(self, request: dict) -> dict:
+    async def _send_recv(self, request: dict[str, Any]) -> dict[str, Any]:
         return await self.service.send_recv_plist(request)
 
-    async def mobilegestalt(self, keys: Optional[list[str]] = None) -> dict:
+    async def mobilegestalt(self, keys: Optional[list[str]] = None) -> dict[str, Any]:
         """
         Query MobileGestalt values from the device.
 
@@ -1001,7 +1002,7 @@ class DiagnosticsService(LockdownService):
 
         return response["Diagnostics"]["MobileGestalt"]
 
-    async def action(self, action: str) -> Optional[dict]:
+    async def action(self, action: str) -> Optional[dict[str, Any]]:
         """
         Send a single diagnostics relay request and return its ``Diagnostics`` payload.
 
@@ -1041,7 +1042,7 @@ class DiagnosticsService(LockdownService):
         """
         await self.action("Sleep")
 
-    async def info(self, diag_type: str = "All") -> Optional[dict]:
+    async def info(self, diag_type: str = "All") -> Optional[dict[str, Any]]:
         """
         Fetch a diagnostics information report from the device.
 
@@ -1087,7 +1088,7 @@ class DiagnosticsService(LockdownService):
             return dd.get("IORegistry")
         return None
 
-    async def get_battery(self) -> Optional[dict]:
+    async def get_battery(self) -> Optional[dict[str, Any]]:
         """
         Fetch battery/power-source information from the IORegistry.
 
@@ -1098,7 +1099,7 @@ class DiagnosticsService(LockdownService):
         """
         return await self.ioregistry(ioclass="IOPMPowerSource")
 
-    async def get_wifi(self) -> Optional[dict]:
+    async def get_wifi(self) -> Optional[dict[str, Any]]:
         """
         Fetch the Wi-Fi interface information from the IORegistry.
 

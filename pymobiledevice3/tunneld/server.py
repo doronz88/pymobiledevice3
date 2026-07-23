@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 import asyncio
 import dataclasses
 import json
@@ -8,7 +9,7 @@ import traceback
 import warnings
 from contextlib import asynccontextmanager, suppress
 from ssl import SSLEOFError
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import pydantic
 import requests
@@ -77,7 +78,7 @@ OSUTILS = get_os_utils()
 _UPSTREAM_FETCH_TIMEOUT = 2.0
 
 
-def _fetch_upstream(url: str) -> dict:
+def _fetch_upstream(url: str) -> dict[str, Any]:
     """Fetch a tunneld listing from an upstream URL. Called in a worker thread
     via asyncio.to_thread; raises on any error so the caller can skip the
     upstream silently."""
@@ -88,7 +89,7 @@ def _fetch_upstream(url: str) -> dict:
 
 @dataclasses.dataclass
 class TunnelTask:
-    task: asyncio.Task
+    task: asyncio.Task[None]
     udid: Optional[str] = None
     tunnel: Optional[TunnelResult] = None
 
@@ -104,7 +105,7 @@ class TunneldCore:
         mobdev2_monitor: bool = True,
     ) -> None:
         self.protocol = protocol
-        self.tasks: list[asyncio.Task] = []
+        self.tasks: list[asyncio.Task[None]] = []
         self.tunnel_tasks: dict[str, TunnelTask] = {}
         self.usb_monitor = usb_monitor
         self.wifi_monitor = wifi_monitor
@@ -339,7 +340,7 @@ class TunneldCore:
         self,
         task_identifier: str,
         protocol_handler: Union[RemotePairingProtocol, CoreDeviceTunnelProxy],
-        queue: Optional[asyncio.Queue] = None,
+        queue: Optional[asyncio.Queue[Optional[TunnelResult]]] = None,
         protocol: Optional[TunnelProtocol] = None,
     ) -> None:
         if protocol is None:
@@ -468,7 +469,7 @@ class TunneldCore:
             with suppress(asyncio.CancelledError):
                 await task
 
-    def get_tunnels_ips(self) -> dict:
+    def get_tunnels_ips(self) -> dict[str, list[str]]:
         """Retrieve the available tunnel tasks and format them as {UDID: [IP]}"""
         tunnels_ips = {}
         for ip, active_tunnel in self.tunnel_tasks.items():
@@ -552,11 +553,11 @@ class TunneldRunner:
         )
 
         @self._app.get("/")
-        async def list_tunnels() -> dict[str, list[dict]]:
+        async def list_tunnels() -> dict[str, list[dict[str, Any]]]:
             """Retrieve the available tunnels and format them as {UUID: TUNNEL_ADDRESS}.
             Listings from any registered upstream tunnelds (see POST /upstream) are
             fetched in parallel and merged into the response."""
-            tunnels: dict[str, list[dict]] = {}
+            tunnels: dict[str, list[dict[str, Any]]] = {}
             for ip, active_tunnel in self._tunneld_core.tunnel_tasks.items():
                 if (active_tunnel.udid is None) or (active_tunnel.tunnel is None):
                     continue
@@ -631,7 +632,7 @@ class TunneldRunner:
             return generate_http_response(data)
 
         def generate_http_response(
-            data: dict, status_code: int = 200, media_type: str = "application/json"
+            data: dict[str, Any], status_code: int = 200, media_type: str = "application/json"
         ) -> fastapi.Response:
             return fastapi.Response(status_code=status_code, media_type=media_type, content=json.dumps(data))
 

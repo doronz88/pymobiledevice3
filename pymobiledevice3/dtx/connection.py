@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 """DTX protocol connection — lifecycle, channel management and capability handshake.
 
 :class:`DTXConnection` is the top-level object for a DTX session.  It owns:
@@ -58,7 +59,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
     pair (useful when the caller already owns the streams).
     """
 
-    DEFAULT_CAPABILITIES: ClassVar[dict] = {
+    DEFAULT_CAPABILITIES: ClassVar[dict[str, Any]] = {
         "com.apple.private.DTXBlockCompression": 0,
         "com.apple.private.DTXConnection": 1,
     }
@@ -88,7 +89,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         self._next_msg_id: int = 1
         self._send_lock = asyncio.Lock()
         self._pending_replies: dict[int, asyncio.Future[DTXMessage]] = {}
-        self._pending_outgoing_replies: list[asyncio.Future] = []
+        self._pending_outgoing_replies: list[asyncio.Future[Any]] = []
 
         # Channel registry
         self._channels: dict[int, DTXChannel] = {}
@@ -97,7 +98,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         self._services: dict[int, DTXService] = {}
 
         # Background reader task
-        self._reader_task: Optional[asyncio.Task] = None
+        self._reader_task: Optional[asyncio.Task[None]] = None
         self._closed: bool = False
 
         self.ctx: DTXContext = DTXContext(parent=DTX_GLOBAL_CTX, connection=self)
@@ -125,14 +126,14 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         self._service_condition: asyncio.Condition = asyncio.Condition()
 
         # Resolved with the peer's capabilities dict on successful handshake.
-        self._handshake_done: asyncio.Future[Optional[dict]] = asyncio.get_event_loop().create_future()
-        self.sent_capabilities: Optional[dict] = DTXConnection.DEFAULT_CAPABILITIES.copy()
+        self._handshake_done: asyncio.Future[Optional[dict[str, Any]]] = asyncio.get_event_loop().create_future()
+        self.sent_capabilities: Optional[dict[str, Any]] = DTXConnection.DEFAULT_CAPABILITIES.copy()
         """
         Supported service identifiers published by the peer during handshake.
 
         Set to None to skip the handshake exchange.
         """
-        self.supported_identifiers: Optional[dict] = None
+        self.supported_identifiers: Optional[dict[str, Any]] = None
         """
         Capabilities received from the peer during handshake.
 
@@ -181,7 +182,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
         if self._closed:
             return
         self._closed = True
-        current_task: Optional[asyncio.Task] = None
+        current_task: Optional[asyncio.Task[Any]] = None
         with suppress(RuntimeError):
             current_task = asyncio.current_task()
         if self._reader_task is not None and current_task is not self._reader_task:
@@ -479,7 +480,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
                 self.logger.error("Received cancellation for unknown channel %d", channel_code)
                 raise DTXProtocolError(f"Received channel cancellation for unknown channel {channel_code}")
 
-    async def _on_capabilities_received(self, capabilities: dict) -> None:
+    async def _on_capabilities_received(self, capabilities: dict[str, Any]) -> None:
         self.logger.debug("Received capabilities from remote: %r", capabilities)
         self.supported_identifiers = capabilities
         if not self._handshake_done.done():

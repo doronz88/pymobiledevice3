@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 # Async, dependency-light mDNS browser returning dataclasses with per-address interface names.
 # Works for any DNS-SD type, e.g. "_remoted._tcp.local."
 # - Uses ifaddr (optional) to map IPs -> local interfaces; otherwise iface will be None.
@@ -10,7 +11,7 @@ import struct
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Callable, Optional, TypeVar
+from typing import Any, Callable, Optional, TypeVar
 
 import ifaddr  # pip install ifaddr
 from typing_extensions import dataclass_transform
@@ -226,7 +227,7 @@ class _Adapters:
 
 
 class _DatagramProtocol(asyncio.DatagramProtocol):
-    def __init__(self, queue: asyncio.Queue):
+    def __init__(self, queue: asyncio.Queue[tuple[bytes, Any]]):
         self.queue = queue
 
     def datagram_received(self, data, addr):
@@ -234,7 +235,7 @@ class _DatagramProtocol(asyncio.DatagramProtocol):
         self.queue.put_nowait((data, addr))
 
 
-async def _bind_ipv4(queue: asyncio.Queue):
+async def _bind_ipv4(queue: asyncio.Queue[tuple[bytes, Any]]):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     if hasattr(socket, "SO_REUSEPORT"):
@@ -250,7 +251,7 @@ async def _bind_ipv4(queue: asyncio.Queue):
     return transport, s
 
 
-async def _bind_ipv6_all_ifaces(queue: asyncio.Queue):
+async def _bind_ipv6_all_ifaces(queue: asyncio.Queue[tuple[bytes, Any]]):
     s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     if hasattr(socket, "SO_REUSEPORT"):
@@ -306,8 +307,8 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
     adapters = _Adapters()
 
     ptr_targets: set[str] = set()
-    srv_map: dict[str, list[dict]] = defaultdict(list)  # instance_name -> list of {"target", "port"}
-    txt_map: dict[str, dict] = {}
+    srv_map: dict[str, list[dict[str, Any]]] = defaultdict(list)  # instance_name -> list of {"target", "port"}
+    txt_map: dict[str, dict[str, Any]] = {}
     host_addrs: dict[str, list[Address]] = defaultdict(list)  # host -> list[(ip, iface)]
 
     def _record_addr(rr_name: str, ip_str: str, pkt_addr):
@@ -494,8 +495,8 @@ class MDNSResponder:
         # Every local IPv4 interface to steer multicast egress through (see _send_to_all)
         self._ipv4_send_addresses = [ip for family, ip in self.addresses if family == socket.AF_INET]
         self._transports: list[tuple[asyncio.DatagramTransport, socket.socket]] = []
-        self._queue: Optional[asyncio.Queue] = None
-        self._serve_task: Optional[asyncio.Task] = None
+        self._queue: Optional[asyncio.Queue[tuple[bytes, Any]]] = None
+        self._serve_task: Optional[asyncio.Task[None]] = None
 
     def _address_records(self) -> list[bytes]:
         records = []

@@ -1,8 +1,9 @@
+# pyright: reportMissingTypeArgument=error
 import hashlib
 import logging
 import plistlib
 from pathlib import Path
-from typing import ClassVar, Optional
+from typing import Any, ClassVar, Optional
 
 from developer_disk_image.repo import DeveloperDiskImageRepository
 from packaging.version import Version
@@ -54,7 +55,7 @@ class MobileImageMounterService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    async def _send_recv(self, request: dict) -> dict:
+    async def _send_recv(self, request: dict[str, Any]) -> dict[str, Any]:
         return await self.service.send_recv_plist(request)
 
     async def raise_if_cannot_mount(self) -> None:
@@ -70,7 +71,7 @@ class MobileImageMounterService(LockdownService):
         if Version(self.lockdown.product_version).major >= 16 and not await self.lockdown.get_developer_mode_status():
             raise DeveloperModeIsNotEnabledError()
 
-    async def copy_devices(self) -> list[dict]:
+    async def copy_devices(self) -> list[dict[str, Any]]:
         """
         List the images currently mounted on the device.
 
@@ -140,7 +141,7 @@ class MobileImageMounterService(LockdownService):
             else:
                 raise PyMobileDevice3Exception(response)
 
-    async def mount_image(self, image_type: str, signature: bytes, extras: Optional[dict] = None) -> None:
+    async def mount_image(self, image_type: str, signature: bytes, extras: Optional[dict[str, Any]] = None) -> None:
         """
         Mount an image that has already been uploaded to the device.
 
@@ -235,7 +236,7 @@ class MobileImageMounterService(LockdownService):
         except KeyError as e:
             raise MessageNotSupportedError from e
 
-    async def query_personalization_identifiers(self, image_type: Optional[str] = None) -> dict:
+    async def query_personalization_identifiers(self, image_type: Optional[str] = None) -> dict[str, Any]:
         """
         Query the device identifiers required to personalize an image (board ID, chip ID, etc.).
 
@@ -337,7 +338,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
     IMAGE_TYPE: ClassVar[str] = "Personalized"  # pyright: ignore[reportIncompatibleVariableOverride]
 
     async def mount(
-        self, image: Path, build_manifest: Path, trust_cache: Path, info_plist: Optional[dict] = None
+        self, image: Path, build_manifest: Path, trust_cache: Path, info_plist: Optional[dict[str, Any]] = None
     ) -> None:
         """
         Upload and mount a personalized Developer Disk Image.
@@ -380,7 +381,7 @@ class PersonalizedImageMounter(MobileImageMounterService):
         """Unmount the Personalized Developer Disk Image (mounted at ``/System/Developer``)."""
         await self.unmount_image("/System/Developer")
 
-    async def get_manifest_from_tss(self, build_manifest: dict) -> bytes:
+    async def get_manifest_from_tss(self, build_manifest: dict[str, Any]) -> bytes:
         """
         Request an IM4M personalization manifest from Apple's TSS server.
 

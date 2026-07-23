@@ -1,10 +1,11 @@
+# pyright: reportMissingTypeArgument=error
 import asyncio
 import contextlib
 import json
 import uuid
 from dataclasses import dataclass, fields
 from enum import Enum
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
@@ -60,7 +61,7 @@ class Page:
     automation_connection_id: str = ""
 
     @classmethod
-    def from_page_dictionary(cls, page_dict: dict) -> "Page":
+    def from_page_dictionary(cls, page_dict: dict[str, Any]) -> "Page":
         p = cls(page_dict["WIRPageIdentifierKey"], WirTypes(page_dict["WIRTypeKey"]))
         if p.type_ in (WirTypes.WEB, WirTypes.WEB_PAGE):
             p.web_title = page_dict["WIRTitleKey"]
@@ -74,7 +75,7 @@ class Page:
                 p.automation_connection_id = page_dict["WIRConnectionIdentifierKey"]
         return p
 
-    def update(self, page_dict: dict):
+    def update(self, page_dict: dict[str, Any]):
         new_p = self.from_page_dictionary(page_dict)
         for field in fields(self):
             setattr(self, field.name, getattr(new_p, field.name))
@@ -154,7 +155,7 @@ class WebinspectorService(LockdownService):
             "_rpc_applicationSentData:": self._handle_application_sent_data,
             "_rpc_applicationDisconnected:": self._handle_application_disconnected,
         }
-        self._recv_task: Optional[asyncio.Task] = None
+        self._recv_task: Optional[asyncio.Task[None]] = None
 
     async def connect(self) -> None:
         """Establish the WebInspector session and start the background receive task.
@@ -208,7 +209,7 @@ class WebinspectorService(LockdownService):
                 with contextlib.suppress(asyncio.CancelledError):
                     await disabled_task
 
-    async def _await_or_raise_disabled(self, coro, disabled_task: asyncio.Task):
+    async def _await_or_raise_disabled(self, coro, disabled_task: asyncio.Task[None]):
         task = asyncio.create_task(coro)
         done, _ = await asyncio.wait(
             {task, disabled_task},
@@ -264,7 +265,7 @@ class WebinspectorService(LockdownService):
             wait_target=page.type_ != WirTypes.JAVASCRIPT,
         )
 
-    async def get_open_pages(self) -> dict:
+    async def get_open_pages(self) -> dict[str, Any]:
         """Request and return the currently open pages of all connected applications.
 
         :returns: A mapping of application name to the collection of its `Page` objects, including
@@ -314,7 +315,7 @@ class WebinspectorService(LockdownService):
         except TimeoutError as e:
             raise LaunchingApplicationError() from e
 
-    async def send_socket_data(self, session_id: str, app_id: str, page_id: int, data: dict):
+    async def send_socket_data(self, session_id: str, app_id: str, page_id: int, data: dict[str, Any]):
         """Forward an inspector/automation protocol message to a page's socket.
 
         :param session_id: The session identifier owning the socket.
@@ -442,7 +443,7 @@ class WebinspectorService(LockdownService):
             message["WIRAutomaticallyPause"] = False
         await self._send_message("_rpc_forwardSocketSetup:", message)
 
-    async def _forward_socket_data(self, session_id: str, app_id: str, page_id: int, data: dict):
+    async def _forward_socket_data(self, session_id: str, app_id: str, page_id: int, data: dict[str, Any]):
         await self._send_message(
             "_rpc_forwardSocketData:",
             {

@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 """DTX service base classes and decorator machinery.
 
 This module provides the building blocks for implementing DTX-based services:
@@ -151,7 +152,7 @@ def _python_name_to_objc_selector(name: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _apply_primitive_coercions(args: tuple, coercions: tuple) -> tuple:
+def _apply_primitive_coercions(args: tuple[Any, ...], coercions: tuple[Any, ...]) -> tuple[Any, ...]:
     """Coerce *args* to :class:`_PrimitiveBase` types driven by annotation hints.
 
     For each position *i*, if ``coercions[i]`` is a :class:`_PrimitiveBase`
@@ -316,7 +317,7 @@ class DTXService:
                 # Build per-parameter coercion table from type annotations.
                 # With 'from __future__ import annotations' all annotations are
                 # strings; get_type_hints() evaluates them in the module's namespace.
-                _coercions: tuple = ()
+                _coercions: tuple[Any, ...] = ()
                 try:
                     module_globals = vars(sys.modules.get(cls.__module__, None) or {})
                     hints = get_type_hints(val, globalns=module_globals)
@@ -329,8 +330,8 @@ class DTXService:
                     self,
                     *args: Any,
                     __sel: str = _sel,
-                    __kw: dict = _kw,
-                    __coercions: tuple = _coercions,
+                    __kw: dict[str, Any] = _kw,
+                    __coercions: tuple[Any, ...] = _coercions,
                     **extra: Any,
                 ) -> Any:
                     if __coercions:
@@ -513,7 +514,7 @@ class DTXControlService(DTXService):
     # ------------------------------------------------------------------
 
     @dtx_method("_notifyOfPublishedCapabilities:", expects_reply=False)
-    async def notify_capabilities(self, capabilities: dict) -> None:
+    async def notify_capabilities(self, capabilities: dict[str, Any]) -> None:
         """Announce our capability dictionary to the peer."""
 
     @dtx_method("_requestChannelWithCode:identifier:")
@@ -529,7 +530,7 @@ class DTXControlService(DTXService):
     # ------------------------------------------------------------------
 
     @dtx_on_invoke("_notifyOfPublishedCapabilities:")
-    async def _recv_capabilities(self, capabilities: dict) -> None:
+    async def _recv_capabilities(self, capabilities: dict[str, Any]) -> None:
         await self._ctx["connection"]._on_capabilities_received(capabilities)
 
     @dtx_on_invoke("_requestChannelWithCode:identifier:")

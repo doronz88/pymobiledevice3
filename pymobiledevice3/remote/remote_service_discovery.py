@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 import base64
 import logging
 from contextlib import suppress
@@ -57,7 +58,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     """
 
     def __init__(
-        self, address: tuple[str, int], name: Optional[str] = None, open_connection: Optional[Callable] = None
+        self, address: tuple[str, int], name: Optional[str] = None, open_connection: Optional[Callable[..., Any]] = None
     ) -> None:
         """
         :param address: ``(host, port)`` of the RSD endpoint to connect to.
@@ -75,7 +76,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         # so device-bound connections route through its in-process stack without a global monkeypatch.
         self.open_connection = open_connection
         self.service = RemoteXPCConnection(address, open_connection=open_connection)
-        self.peer_info: Optional[dict] = None
+        self.peer_info: Optional[dict[str, Any]] = None
         self.lockdown: Optional[LockdownClient] = None
         self.all_values: dict[str, Any] = {}
 
@@ -87,7 +88,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         lldb as a connect endpoint."""
         return self.open_connection is not None
 
-    def _require_peer_info(self) -> dict:
+    def _require_peer_info(self) -> dict[str, Any]:
         """Return the handshake ``peer_info``, raising if the RSD has not been connected yet."""
         if self.peer_info is None:
             raise NotConnectedError("RSD is not connected; call connect() first")
@@ -211,10 +212,10 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     async def get_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> Any:
         return await self._lockdown.get_value(domain, key)
 
-    async def set_value(self, value, domain: Optional[str] = None, key: Optional[str] = None) -> dict:
+    async def set_value(self, value, domain: Optional[str] = None, key: Optional[str] = None) -> dict[str, Any]:
         return await self._lockdown.set_value(value, domain=domain, key=key)
 
-    async def remove_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> dict:
+    async def remove_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> dict[str, Any]:
         return await self._lockdown.remove_value(domain=domain, key=key)
 
     async def start_lockdown_service_without_checkin(self, name: str) -> ServiceConnection:
@@ -227,7 +228,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         """
         return await self.create_service_connection(self.get_service_port(name))
 
-    async def get_service_connection_attributes(self, name: str, include_escrow_bag: bool = False) -> dict:
+    async def get_service_connection_attributes(self, name: str, include_escrow_bag: bool = False) -> dict[str, Any]:
         """
         Return the connection attributes for a service.
 
@@ -272,7 +273,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         service = await self.start_lockdown_service_without_checkin(name)
         await service.start()
         try:
-            checkin: dict = {"Label": "pymobiledevice3", "ProtocolVersion": "2", "Request": "RSDCheckin"}
+            checkin: dict[str, Any] = {"Label": "pymobiledevice3", "ProtocolVersion": "2", "Request": "RSDCheckin"}
             if include_escrow_bag:
                 if self.udid is None:
                     raise NotConnectedError("RSD is not connected; call connect() first")

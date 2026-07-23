@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 import plistlib
 import typing
 from datetime import datetime
@@ -18,7 +19,7 @@ class DeviceInfoService(DTXService):
     async def execname_for_pid_(self, pid: int) -> str: ...
 
     @dtx_method("runningProcesses")
-    async def running_processes(self) -> list[dict]: ...
+    async def running_processes(self) -> list[dict[str, typing.Any]]: ...
 
     @dtx_method("isRunningPid:")
     async def is_running_pid_(self, pid: int) -> bool: ...
@@ -30,16 +31,16 @@ class DeviceInfoService(DTXService):
     async def name_for_gid_(self, gid: int) -> str: ...
 
     @dtx_method("systemInformation")
-    async def system_information(self) -> dict: ...
+    async def system_information(self) -> dict[str, typing.Any]: ...
 
     @dtx_method("hardwareInformation")
-    async def hardware_information(self) -> dict: ...
+    async def hardware_information(self) -> dict[str, typing.Any]: ...
 
     @dtx_method("networkInformation")
-    async def network_information(self) -> dict: ...
+    async def network_information(self) -> dict[str, typing.Any]: ...
 
     @dtx_method("machTimeInfo")
-    async def mach_time_info(self) -> dict: ...
+    async def mach_time_info(self) -> dict[int, typing.Any]: ...
 
     @dtx_method("machKernelName")
     async def mach_kernel_name(self) -> str: ...
@@ -71,7 +72,7 @@ class DeviceInfo(DtxService[DeviceInfoService]):
     and used as an async context manager to open the channel.
     """
 
-    async def ls(self, path: str) -> list:
+    async def ls(self, path: str) -> list[str]:
         """
         List the contents of a directory on the device.
 
@@ -100,7 +101,7 @@ class DeviceInfo(DtxService[DeviceInfoService]):
         """
         return await self.service.execname_for_pid_(pid)
 
-    async def proclist(self) -> list[dict]:
+    async def proclist(self) -> list[dict[str, typing.Any]]:
         """
         Get the list of running processes from the device.
 
@@ -178,7 +179,7 @@ class DeviceInfo(DtxService[DeviceInfoService]):
         """
         return await self.service.mach_kernel_name()
 
-    async def kpep_database(self) -> typing.Optional[dict]:
+    async def kpep_database(self) -> typing.Optional[dict[str, typing.Any]]:
         """
         Get the KPEP (kernel performance event) database.
 

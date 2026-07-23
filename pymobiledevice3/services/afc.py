@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 #!/usr/bin/env python3
 """
 AFC (Apple File Connection) Service Module
@@ -323,9 +324,9 @@ class AfcService(LockdownService):
         super().__init__(lockdown, service_name)
         self.packet_num = 0
         # Demux state — populated in __aenter__, torn down in __aexit__
-        self._afc_pending: dict[int, asyncio.Future] = {}
+        self._afc_pending: dict[int, asyncio.Future[Any]] = {}
         self._afc_write_lock = asyncio.Lock()
-        self._afc_reader_task: Optional[asyncio.Task] = None
+        self._afc_reader_task: Optional[asyncio.Task[None]] = None
 
     async def __aenter__(self):
         await super().__aenter__()
@@ -385,8 +386,8 @@ class AfcService(LockdownService):
         self,
         relative_src: str,
         dst: str,
-        match: Optional[Pattern] = None,
-        callback: Optional[Callable] = None,
+        match: Optional[Pattern[str]] = None,
+        callback: Optional[Callable[..., Any]] = None,
         src_dir: str = "",
         ignore_errors: bool = False,
         progress_bar: bool = True,
@@ -637,7 +638,7 @@ class AfcService(LockdownService):
         return True
 
     @path_to_str()
-    async def rm(self, filename: str, match: Optional[Pattern] = None, force: bool = False) -> list[str]:
+    async def rm(self, filename: str, match: Optional[Pattern[str]] = None, force: bool = False) -> list[str]:
         """
         Recursively remove a file or directory tree on the device.
 
@@ -1151,7 +1152,7 @@ class AfcService(LockdownService):
             self._afc_reader_task = asyncio.create_task(self._afc_reader_loop(), name="afc-reader")
         loop = asyncio.get_event_loop()
         async with self._afc_write_lock:
-            fut: asyncio.Future = loop.create_future()
+            fut: asyncio.Future[Any] = loop.create_future()
             # Register *before* sending so the reader never misses the response
             pkt_num = self.packet_num
             self._afc_pending[pkt_num] = fut
@@ -1568,7 +1569,7 @@ class AfcShell:
 
         threading.Thread(target=_refresh, daemon=True).start()
 
-    def _register_arg_parse_alias(self, name: str, handler: Union[Callable, str]):
+    def _register_arg_parse_alias(self, name: str, handler: Union[Callable[..., Any], str]):
         """
         Register a command with argument parsing support.
 
@@ -1608,7 +1609,7 @@ class AfcShell:
         env = XSH.env
         assert env is not None
         # Env.__getitem__ is untyped; $PATH is an EnvPath (mutable sequence) at runtime
-        cast(MutableSequence, env["PATH"]).clear()
+        cast(MutableSequence[str], env["PATH"]).clear()
         # adding "file" just to fix xonsh errors
         for cmd in ["wc", "grep", "egrep", "sed", "awk", "print", "yes", "cat"]:
             executable = shutil.which(cmd)
