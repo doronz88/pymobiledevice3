@@ -64,10 +64,10 @@ class DTXChannel:
         self.logger = connection.logger.getChild(f"channel({code})")
 
         self._closed = False
-        self._reader_task: Optional[asyncio.Task] = None
+        self._reader_task: Optional[asyncio.Task[None]] = None
 
         self._queue: asyncio.Queue[DTXMessage] = asyncio.Queue()
-        self._pending_tasks: set[asyncio.Task] = set()
+        self._pending_tasks: set[asyncio.Task[None]] = set()
 
     # ------------------------------------------------------------------
     # Public API
@@ -242,7 +242,7 @@ class DTXChannel:
         else:
             self.logger.exception("Error handling message on channel %d: message=%r", self.code, msg, exc_info=exc)
 
-    def _handle_done(self, fut: asyncio.Future, msg: DTXMessage) -> None:
+    def _handle_done(self, fut: asyncio.Future[None], msg: DTXMessage) -> None:
         self._pending_tasks.discard(fut)
         try:
             fut.result()

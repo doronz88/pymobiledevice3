@@ -4,7 +4,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from enum import Enum, IntEnum
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
@@ -99,7 +99,7 @@ class FileServiceService(CoreDeviceService):
             "SessionID": self.session,
         })
 
-    async def send_receive_request(self, request: dict) -> dict:
+    async def send_receive_request(self, request: dict[str, Any]) -> dict[str, Any]:
         response = await self.service.send_receive_request(request)
         encoded_error = response.get("EncodedError")
         if encoded_error is not None:

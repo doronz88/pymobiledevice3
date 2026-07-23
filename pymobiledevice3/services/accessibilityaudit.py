@@ -13,7 +13,7 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 
 
 class SerializedObject:
-    def __init__(self, fields: dict):
+    def __init__(self, fields: dict[str, typing.Any]):
         self._fields = fields
 
 
@@ -67,7 +67,7 @@ class AXAuditInspectorFocus_v1(SerializedObject):
 
         return uid
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, typing.Any]:
         """Serializes the focus element into a dictionary."""
         return {
             "platform_identifier": self.platform_identifier,
@@ -198,7 +198,7 @@ class AXAuditIssue_v1(SerializedObject):
     def background_color(self) -> typing.Any:
         return self._fields["BackgroundColorValue_v1"]
 
-    def json(self) -> dict:
+    def json(self) -> dict[str, typing.Any]:
         resp = {
             "element_rect_value": self.rect,
             "issue_classification": self.issue_type,
@@ -377,7 +377,7 @@ class AccessibilityAudit:
         await self._ensure_ready()
         return await self._invoke("deviceCapabilities")
 
-    async def run_audit(self, value: list) -> list[AXAuditIssue_v1]:
+    async def run_audit(self, value: list[typing.Any]) -> list[AXAuditIssue_v1]:
         """
         Run accessibility audits on the device and wait for the results.
 
@@ -403,7 +403,7 @@ class AccessibilityAudit:
                 continue
             return deserialize_object(payload)[0]["value"]
 
-    async def supported_audits_types(self) -> list:
+    async def supported_audits_types(self) -> list[typing.Any]:
         """
         Query the audit types (iOS 15+) or audit case IDs (older versions) the device supports.
 

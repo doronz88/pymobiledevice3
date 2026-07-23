@@ -29,7 +29,7 @@ class ScreenCast:
         self.device_height = 0
         self.page_scale_factor = 0
         self._run = True
-        self.recording_task: Optional[asyncio.Task] = None
+        self.recording_task: Optional[asyncio.Task[None]] = None
 
     def get_scale(self) -> float:
         """The amount screen pixels in one devtools pixel."""

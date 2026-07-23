@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 import plistlib
 from typing import Any, Optional
 

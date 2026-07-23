@@ -41,8 +41,8 @@ class _DTXSenderMixin:
     _writer: asyncio.StreamWriter
     _send_lock: asyncio.Lock
     _next_msg_id: int
-    _pending_replies: dict[int, asyncio.Future]
-    _pending_outgoing_replies: list[asyncio.Future]
+    _pending_replies: dict[int, asyncio.Future[DTXMessage]]
+    _pending_outgoing_replies: list[asyncio.Future[None]]
     _closed: bool
     logger: logging.Logger
 
@@ -63,7 +63,7 @@ class _DTXSenderMixin:
             wire_code = message.channel_code if message.conversation_index % 2 == 0 else -message.channel_code
 
             if DTXTransportFlags.EXPECTS_REPLY in message.transport_flags:
-                future: asyncio.Future = asyncio.get_running_loop().create_future()
+                future: asyncio.Future[DTXMessage] = asyncio.get_running_loop().create_future()
                 self._pending_replies[message.identifier] = future
             try:
                 async for fragment in DTXFragmenter.fragment(*message.chunks()):

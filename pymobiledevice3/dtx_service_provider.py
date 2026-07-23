@@ -135,7 +135,7 @@ class DtxServiceProvider:
         self._dtx: Optional[DTXConnection] = dtx
         self._owns_dtx: bool = dtx is None
         self.logger = logging.getLogger(self.__module__)
-        self.sent_capabilities: Optional[dict] = DTXConnection.DEFAULT_CAPABILITIES.copy()
+        self.sent_capabilities: Optional[dict[str, Any]] = DTXConnection.DEFAULT_CAPABILITIES.copy()
         """Capabilities to send during handshake.  Defaults to
         :attr:`DTXConnection.DEFAULT_CAPABILITIES`.  Set to ``None`` to skip the handshake entirely
         """

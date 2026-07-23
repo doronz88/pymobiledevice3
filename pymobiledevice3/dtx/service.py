@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 """DTX service base classes and decorator machinery.
 
 This module provides the building blocks for implementing DTX-based services:

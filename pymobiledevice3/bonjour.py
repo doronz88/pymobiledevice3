@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 # Async, dependency-light mDNS browser returning dataclasses with per-address interface names.
 # Works for any DNS-SD type, e.g. "_remoted._tcp.local."
 # - Uses ifaddr (optional) to map IPs -> local interfaces; otherwise iface will be None.

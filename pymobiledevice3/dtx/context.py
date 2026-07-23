@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from .service import DTXProxyService
 
 
-class DTXContext(dict):
+class DTXContext(dict[str, Any]):
     """Scoped context dictionary threading state through a DTX connection.
 
     Entries in a child context shadow those in the parent; missing keys fall

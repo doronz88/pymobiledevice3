@@ -86,11 +86,11 @@ class RestoredClient:
 
         return await self.service.send_plist(req)
 
-    async def reboot(self) -> dict:
+    async def reboot(self) -> dict[str, Any]:
         return await self.service.send_recv_plist({"Request": "Reboot", "Label": self.label})
 
-    async def send(self, message: dict) -> None:
+    async def send(self, message: dict[str, Any]) -> None:
         await self.service.send_plist(message)
 
-    async def recv(self) -> dict:
+    async def recv(self) -> dict[str, Any]:
         return await self.service.recv_plist()

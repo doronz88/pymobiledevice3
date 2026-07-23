@@ -11,7 +11,7 @@ from tqdm import tqdm
 from traitlets.config import Config
 
 
-def plist_access_path(d, path: tuple, type_=None, required=False):
+def plist_access_path(d, path: tuple[Any, ...], type_=None, required=False):
     for component in path:
         d = d.get(component)
         if d is None:
@@ -65,7 +65,7 @@ def try_decode(s: bytes, *, errors: Optional[str] = None) -> Union[str, bytes]:
         return s
 
 
-def asyncio_print_traceback(f: Callable):
+def asyncio_print_traceback(f: Callable[..., Any]):
     @wraps(f)
     async def wrapper(*args, **kwargs):
         try:

@@ -1,5 +1,6 @@
 import json
 from io import StringIO
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -16,7 +17,7 @@ from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 
 
 @pytest_asyncio.fixture
-async def process_snapshot(dvt) -> list[dict]:
+async def process_snapshot(dvt) -> list[dict[str, Any]]:
     async with await Sysmontap.create(dvt) as sysmon:
         async for process_snapshot in iter_processes(sysmon):
             return process_snapshot

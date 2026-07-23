@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import errno
 import logging
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, Union
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 
@@ -65,9 +65,9 @@ class _DTXReaderMixin:
     _writer: asyncio.StreamWriter
     _fragmenters: dict[int, DTXFragmenter]
     _total_buffered: int
-    _handshake_done: asyncio.Future
+    _handshake_done: asyncio.Future[Any]
     _channels: dict[int, DTXChannel]
-    _pending_replies: dict[int, asyncio.Future]
+    _pending_replies: dict[int, asyncio.Future[DTXMessage]]
     _closed: bool
     logger: logging.Logger
 

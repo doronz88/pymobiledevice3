@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import uuid
 from pathlib import Path
+from typing import Any
 
 from tqdm import tqdm
 
@@ -83,7 +84,7 @@ class RemoteFetchSymbolsService(RemoteService):
             await asyncio.gather(*workers)
 
     async def _download_files(
-        self, files: list[DSCFile], file_indexes: asyncio.Queue[int], out: Path, pb: tqdm
+        self, files: list[DSCFile], file_indexes: asyncio.Queue[int], out: Path, pb: "tqdm[Any]"
     ) -> None:
         while True:
             try:

@@ -5,7 +5,7 @@ import plistlib
 import socket
 import struct
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import (
@@ -41,7 +41,7 @@ class FDRClient:
 
     def __init__(self, service: ServiceConnection) -> None:
         self.service = service
-        self._conn_listener_task: Optional[asyncio.Task] = None
+        self._conn_listener_task: Optional[asyncio.Task[None]] = None
 
     @classmethod
     async def create(cls, type_: fdr_type, udid: Optional[str] = None) -> "FDRClient":
@@ -70,10 +70,10 @@ class FDRClient:
         logger.debug("FDR connected")
         return client
 
-    async def recv_plist(self) -> dict:
+    async def recv_plist(self) -> dict[str, Any]:
         return await self.service.recv_plist(endianity="<")
 
-    async def send_recv_plist(self, plist: dict) -> dict:
+    async def send_recv_plist(self, plist: dict[str, Any]) -> dict[str, Any]:
         await self.service.send_plist(plist, endianity="<", fmt=plistlib.FMT_BINARY)
         return await self.service.recv_plist(endianity="<")
 
@@ -216,5 +216,5 @@ async def run_fdr_listener(type_: fdr_type, udid: Optional[str] = None) -> None:
     logger.debug(f"FDR {client} terminating...")
 
 
-def start_fdr_task(type_: fdr_type, udid: Optional[str] = None) -> asyncio.Task:
+def start_fdr_task(type_: fdr_type, udid: Optional[str] = None) -> asyncio.Task[None]:
     return asyncio.create_task(run_fdr_listener(type_, udid=udid), name=f"FDR-{type_.name}")

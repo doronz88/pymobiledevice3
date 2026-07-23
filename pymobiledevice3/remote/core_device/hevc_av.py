@@ -29,6 +29,7 @@ import contextlib
 import logging
 import queue
 import threading
+from typing import Optional
 
 from pymobiledevice3.remote.core_device.hevc_rps import (
     parse_sps,
@@ -96,7 +97,7 @@ class HevcToBgraTranscoder:
         with contextlib.suppress(Exception):
             list(self._codec.decode(av.Packet(ps_annexb)))
 
-        self._inq: queue.Queue = queue.Queue()
+        self._inq: queue.Queue[Optional[bytes]] = queue.Queue()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="av-hevc-bgra", daemon=True)
         self._thread.start()

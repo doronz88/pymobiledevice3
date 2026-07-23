@@ -2,7 +2,7 @@ import ipaddress
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from construct import Adapter, Bytes, Int8ul, Int16ub, Int32ul, Switch, this
 from construct_typed import DataclassMixin, TStruct, csfield
@@ -10,8 +10,14 @@ from construct_typed import DataclassMixin, TStruct, csfield
 from pymobiledevice3.dtx import DTXQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 
+if TYPE_CHECKING:
+    # ``construct.Adapter`` is generic in its type stubs but not subscriptable at runtime.
+    _IpAddressAdapterBase = Adapter[bytes, bytes, Any, Any]
+else:
+    _IpAddressAdapterBase = Adapter
 
-class IpAddressAdapter(Adapter):
+
+class IpAddressAdapter(_IpAddressAdapterBase):
     """Decode raw address bytes into ipaddress objects."""
 
     def _decode(self, obj, context, path):

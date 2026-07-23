@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 """
 Read/write the device pasteboard via the ``com.apple.coredevice.pasteboardservice``
 RemoteXPC service (feature ``com.apple.coredevice.feature.pasteboard``).

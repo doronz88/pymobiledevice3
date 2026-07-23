@@ -4,7 +4,7 @@ import datetime
 import logging
 import plistlib
 from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
 import typer
 from typer_injector import InjectingTyper
@@ -215,7 +215,7 @@ async def cli_start_tunnel(
     await async_cli_start_tunnel(service_provider, script_mode)
 
 
-def _decode_device_kvs_data(handshake_info: dict) -> dict:
+def _decode_device_kvs_data(handshake_info: dict[str, Any]) -> dict[str, Any]:
     """Decode the base64 binary-plist `deviceKVSData` blob in-place, if present."""
     peer_device_info = handshake_info.get("peerDeviceInfo", {})
     kvs = peer_device_info.get("deviceKVSData")

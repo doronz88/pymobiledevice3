@@ -313,7 +313,7 @@ class BinaryMuxConnection(MuxConnection):
                 f"failed to connect to device: {device_id} at port: {port}. reason: {response.data.result}",
             )
 
-    async def _send(self, data: dict):
+    async def _send(self, data: dict[str, Any]):
         self._assert_not_connected()
         await asyncio.get_running_loop().sock_sendall(self._sock, usbmuxd_request.build(data))
         self._tag += 1
@@ -361,7 +361,7 @@ class PlistMuxConnection(BinaryMuxConnection):
     async def listen(self) -> None:
         await self._send_receive({"MessageType": "Listen"})
 
-    async def get_pair_record(self, serial: str) -> dict:
+    async def get_pair_record(self, serial: str) -> dict[str, Any]:
         await self._send({"MessageType": "ReadPairRecord", "PairRecordID": serial})
         response = await self._receive(self._tag - 1)
         pair_record = response.get("PairRecordData")
@@ -411,7 +411,7 @@ class PlistMuxConnection(BinaryMuxConnection):
     async def _connect(self, device_id: int, port: int):
         await self._send_receive({"MessageType": "Connect", "DeviceID": device_id, "PortNumber": port})
 
-    async def _send(self, data: dict):
+    async def _send(self, data: dict[str, Any]):
         request = {"ClientVersionString": "qt4i-usbmuxd", "ProgName": "pymobiledevice3", "kLibUSBMuxVersion": 3}
         request.update(data)
         await super()._send({
@@ -419,7 +419,7 @@ class PlistMuxConnection(BinaryMuxConnection):
             "data": plistlib.dumps(request),
         })
 
-    async def _receive(self, expected_tag: Optional[int] = None) -> dict:
+    async def _receive(self, expected_tag: Optional[int] = None) -> dict[str, Any]:
         response = await super()._receive(expected_tag=expected_tag)
         if response.header.message != usbmuxd_msgtype.PLIST:
             raise MuxException(f"Received non-plist type {response}")
@@ -431,7 +431,7 @@ class PlistMuxConnection(BinaryMuxConnection):
 
     # The plist protocol sends a whole message dict, unlike the binary base which takes an int/str
     # message type. This is an intentional protocol divergence between the two connection subclasses.
-    async def _send_receive(self, data: dict):  # pyright: ignore[reportIncompatibleMethodOverride]
+    async def _send_receive(self, data: dict[str, Any]):  # pyright: ignore[reportIncompatibleMethodOverride]
         await self._send(data)
         response = await self._receive(self._tag - 1)
         if response["MessageType"] != "Result":

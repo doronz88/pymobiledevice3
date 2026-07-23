@@ -1,5 +1,5 @@
 from enum import IntEnum
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -33,7 +33,7 @@ class SpringBoardServicesService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    async def get_icon_state(self, format_version: str = "2") -> list:
+    async def get_icon_state(self, format_version: str = "2") -> list[Any]:
         """
         Retrieve the current home screen icon layout.
 
@@ -44,9 +44,9 @@ class SpringBoardServicesService(LockdownService):
         cmd = {"command": "getIconState"}
         if format_version:
             cmd["formatVersion"] = format_version
-        return cast(list, await self.service.send_recv_plist(cmd))
+        return cast(list[Any], await self.service.send_recv_plist(cmd))
 
-    async def set_icon_state(self, newstate: Optional[list] = None) -> None:
+    async def set_icon_state(self, newstate: Optional[list[Any]] = None) -> None:
         """
         Apply a new home screen icon layout.
 
@@ -95,7 +95,7 @@ class SpringBoardServicesService(LockdownService):
         """
         return cast("dict[str, float]", await self.service.send_recv_plist({"command": "getHomeScreenIconMetrics"}))
 
-    async def get_wallpaper_info(self, wallpaper_name: str) -> dict:
+    async def get_wallpaper_info(self, wallpaper_name: str) -> dict[str, Any]:
         """
         Retrieve metadata about a named wallpaper.
 

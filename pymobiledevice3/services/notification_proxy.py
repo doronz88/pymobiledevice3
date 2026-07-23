@@ -1,6 +1,6 @@
 import socket
 from collections.abc import AsyncGenerator
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from pymobiledevice3.exceptions import NotificationTimeoutError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -72,7 +72,7 @@ class NotificationProxyService(LockdownService):
         self.logger.info(f"Observing {name}")
         await self.service.send_plist({"Command": "ObserveNotification", "Name": name})
 
-    async def receive_notification(self) -> AsyncGenerator[dict, None]:
+    async def receive_notification(self) -> AsyncGenerator[dict[str, Any], None]:
         """
         Yield notifications relayed from the device for previously observed names.
 

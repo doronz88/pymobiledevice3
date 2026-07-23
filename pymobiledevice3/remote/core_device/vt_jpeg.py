@@ -44,6 +44,7 @@ from ctypes import (
     c_void_p,
     cast,
 )
+from typing import Any, Optional
 
 # Pure-Python type/constant declarations live at module top so importers
 # on non-Darwin platforms (Linux/Windows) can `import vt_jpeg` without
@@ -270,7 +271,7 @@ class HEVCDecoder:
         if st != 0:
             raise RuntimeError(f"CMVideoFormatDescriptionCreateFromHEVCParameterSets: OSStatus={st}")
 
-        self._outputs: queue.Queue = queue.Queue()
+        self._outputs: queue.Queue[tuple[int, Any]] = queue.Queue()
         self._cb = VTDecompressionOutputCallback(self._on_output)
         cb_rec = _VTDecompressionOutputCallbackRecord(self._cb, None)
         self._session = c_void_p(0)
@@ -377,7 +378,7 @@ class HevcToBgraTranscoder:
         self._on_decode_error = on_decode_error
         self.width = self._dec.width
         self.height = self._dec.height
-        self._inq: queue.Queue = queue.Queue()
+        self._inq: queue.Queue[Optional[bytes]] = queue.Queue()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="vt-hevc-bgra", daemon=True)
         self._thread.start()

@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 import asyncio
 import base64
 import binascii

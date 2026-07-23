@@ -1,5 +1,6 @@
 import asyncio
 from io import BytesIO
+from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
@@ -36,12 +37,12 @@ async def test_get_system_apps(lockdown: LockdownClient) -> None:
 @pytest.mark.asyncio
 async def test_parallel_installations_cleanup(lockdown: LockdownClient, monkeypatch: pytest.MonkeyPatch) -> None:
     ipa_bytes = _make_minimal_ipa_bytes()
-    captured_plists: list[dict] = []
+    captured_plists: list[dict[str, Any]] = []
 
-    def wrap_send_plist(service, captured: list[dict]):
+    def wrap_send_plist(service, captured: list[dict[str, Any]]):
         original_send_plist = service.send_plist
 
-        async def wrapped_send_plist(payload: dict) -> None:
+        async def wrapped_send_plist(payload: dict[str, Any]) -> None:
             if payload.get("Command") == "Install":
                 captured.append(payload.copy())
             await original_send_plist(payload)

@@ -1,5 +1,5 @@
 import struct
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -60,7 +60,7 @@ class ConfigurationService(CoreDeviceService):
             action_identifier="com.apple.coredevice.action.setliquidglassconfiguration",
         )
 
-    async def get_color_filter(self) -> dict:
+    async def get_color_filter(self) -> dict[str, Any]:
         """Return the color-filter state.
 
         Shape: ``{"enabled": bool, "filterType": {"name": str}, "intensity": float}``.
@@ -78,7 +78,7 @@ class ConfigurationService(CoreDeviceService):
         :param filter_type: Filter preset name (e.g. ``"Protanopia"``). Required when ``enabled`` is true.
         :param intensity: Filter intensity 0.0..1.0 (optional even when enabled).
         """
-        body: dict = {"enabled": bool(enabled)}
+        body: dict[str, Any] = {"enabled": bool(enabled)}
         if enabled:
             if filter_type is None:
                 raise ValueError("filter_type is required when enabled=True")

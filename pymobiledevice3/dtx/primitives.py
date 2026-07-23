@@ -46,6 +46,12 @@ from construct import (
 if TYPE_CHECKING:
     from construct.core import Context
 
+    # ``construct.Construct`` is generic to type checkers (via construct-stubs)
+    # but is not subscriptable at runtime, so parametrise it only under TYPE_CHECKING.
+    _ConstructBase = Construct[Any, Any]
+else:
+    _ConstructBase = Construct
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -86,7 +92,7 @@ class _PrimitiveBase:
         raise NotImplementedError
 
 
-class PrimitiveValue(Construct):
+class PrimitiveValue(_ConstructBase):
     """Construct for a single DTX primitive: u32 type tag followed by value bytes."""
 
     def _parse(self, stream, context, path) -> Any:

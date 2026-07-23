@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 import hashlib
 import logging
 import plistlib

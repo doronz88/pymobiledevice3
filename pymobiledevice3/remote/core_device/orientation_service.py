@@ -20,6 +20,8 @@ counterpart. ``currentDeviceOrientationLocked`` reflects iOS's own
 orientation-lock toggle; the service still rotates while locked.
 """
 
+from typing import Any
+
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
@@ -37,7 +39,7 @@ class OrientationService(RemoteService):
     def __init__(self, rsd: RemoteServiceDiscoveryService):
         super().__init__(rsd, self.SERVICE_NAME)
 
-    async def rotate(self, direction: str = ROTATE_LEFT) -> dict:
+    async def rotate(self, direction: str = ROTATE_LEFT) -> dict[str, Any]:
         """Rotate the device 90 degrees in ``direction`` (``'left'`` = CCW, ``'right'`` = CW).
 
         Returns the device's resulting orientation, e.g. ``{'currentDeviceOrientation':

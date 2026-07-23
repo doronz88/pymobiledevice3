@@ -35,7 +35,7 @@ T = PairingDataComponentType
 AUTH_TAG_VECTOR = ("Mgp6ZGPzXM2ku9br46vsiw==", "2BE6E510-0325-4365-923E-B14C6F57DB3A", "kXjlTr2l")
 
 
-def _decode_tlv(parsed) -> dict:
+def _decode_tlv(parsed) -> dict[str, Any]:
     result = {}
     for tlv in parsed:
         result[tlv.type] = result.get(tlv.type, b"") + tlv.data
@@ -84,13 +84,13 @@ class _DeviceSimulator:
         self.writer = writer
         self.seq = 0
 
-    async def _send_plain(self, value: dict) -> None:
+    async def _send_plain(self, value: dict[str, Any]) -> None:
         env = {"message": {"plain": {"_0": value}}, "originatedBy": "host", "sequenceNumber": self.seq}
         self.writer.write(RPPairingPacket.build({"body": json.dumps(env).encode()}))
         await self.writer.drain()
         self.seq += 1
 
-    async def _recv_plain(self) -> dict:
+    async def _recv_plain(self) -> dict[str, Any]:
         await self.reader.readexactly(len(REPAIRING_PACKET_MAGIC))
         size = struct.unpack(">H", await self.reader.readexactly(2))[0]
         return json.loads(await self.reader.readexactly(size))["message"]["plain"]["_0"]
@@ -114,7 +114,7 @@ class _DeviceSimulator:
         resp = await self._recv_plain()
         return base64.b64decode(resp["event"]["_0"]["pairingData"]["_0"]["data"])
 
-    async def run(self, pin_holder: dict) -> dict:
+    async def run(self, pin_holder: dict[str, Any]) -> dict[str, Any]:
         await self._send_plain({
             "request": {"_0": {"handshake": {"_0": {"hostOptions": {"attemptPairVerify": False}}}}}
         })
@@ -219,7 +219,7 @@ async def test_pairable_host_full_pair_setup(tmp_path, monkeypatch):
     host_info = PairableHostInfo(name="My Mac", model="Mac17,7", udid="HOST-UDID-1234")
     host = PairableHost(host_reader, host_writer, host_info)
 
-    pin_holder: dict = {}
+    pin_holder: dict[str, Any] = {}
     device = _DeviceSimulator(dev_reader, dev_writer)
 
     try:

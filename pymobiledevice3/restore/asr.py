@@ -58,20 +58,20 @@ class ASRClient:
         self.checksum_chunks = data.get("Checksum Chunks", False)
         self.logger.debug(f"Checksum Chunks: {self.checksum_chunks}")
 
-    async def recv_plist(self) -> dict:
+    async def recv_plist(self) -> dict[str, typing.Any]:
         buf = b""
         while not buf.endswith(b"</plist>\n"):
             buf += await self.service.recvall(1)
         return plistlib.loads(buf)
 
-    async def send_plist(self, plist: dict) -> None:
+    async def send_plist(self, plist: dict[str, typing.Any]) -> None:
         self.logger.debug(plistlib.dumps(plist).decode())
         await self.send_buffer(plistlib.dumps(plist))
 
     async def send_buffer(self, buf: bytes) -> None:
         await self.service.sendall(buf)
 
-    async def handle_oob_data_request(self, packet: dict, filesystem: typing.IO):
+    async def handle_oob_data_request(self, packet: dict[str, typing.Any], filesystem: typing.IO[bytes]):
         oob_length = packet["OOB Length"]
         oob_offset = packet["OOB Offset"]
         filesystem.seek(oob_offset, os.SEEK_SET)
@@ -81,7 +81,7 @@ class ASRClient:
 
         await self.send_buffer(oob_data)
 
-    async def perform_validation(self, filesystem: typing.IO) -> None:
+    async def perform_validation(self, filesystem: typing.IO[bytes]) -> None:
         filesystem.seek(0, os.SEEK_END)
         length = filesystem.tell()
         filesystem.seek(0, os.SEEK_SET)
@@ -118,7 +118,7 @@ class ASRClient:
             else:
                 raise PyMobileDevice3Exception(f"unknown packet: {packet}")
 
-    async def send_payload(self, filesystem: typing.IO) -> None:
+    async def send_payload(self, filesystem: typing.IO[bytes]) -> None:
         filesystem.seek(0, os.SEEK_END)
         length = filesystem.tell()
         filesystem.seek(0, os.SEEK_SET)

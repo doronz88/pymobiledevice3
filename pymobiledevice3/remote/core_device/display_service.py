@@ -1,6 +1,6 @@
 import random
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.core_device.media_stream_offer import (
@@ -29,7 +29,7 @@ class DisplayService(CoreDeviceService):
     def __init__(self, rsd: RemoteServiceDiscoveryService):
         super().__init__(rsd, self.SERVICE_NAME)
 
-    async def get_media_support_info(self) -> dict:
+    async def get_media_support_info(self) -> dict[str, Any]:
         """Return the device's supported media-stream features and AVC framework version."""
         return await self.invoke(
             "com.apple.coredevice.feature.getmediasupportinfo",
@@ -37,7 +37,7 @@ class DisplayService(CoreDeviceService):
             action_identifier="com.apple.coredevice.action.mediastreamgetsupportinfo",
         )
 
-    async def get_media_stream_server_status(self) -> dict:
+    async def get_media_stream_server_status(self) -> dict[str, Any]:
         """Return the media-stream server's running state and active sessions."""
         return await self.invoke(
             "com.apple.coredevice.feature.getmediastreamserverstatus",
@@ -58,7 +58,7 @@ class DisplayService(CoreDeviceService):
         ltrp_enabled: bool = False,
         fec_enabled: bool = True,
         tiles_per_frame: int = 1,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Start an RTP video stream of one of the device's displays.
 
         The caller is responsible for binding a UDP socket at ``receiver_ip:receiver_port``
@@ -129,7 +129,7 @@ class DisplayService(CoreDeviceService):
         sender_ip: str,
         timeout: int = 20,
         client_session_id: Optional[uuid.UUID] = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Start an RTP audio stream of the device's system audio output.
 
         Xcode's Mirror pairs an audio stream with the video stream using the
@@ -176,7 +176,7 @@ class DisplayService(CoreDeviceService):
             action_identifier="com.apple.coredevice.action.mediastreamstart",
         )
 
-    async def stop_media_stream(self, client_session_id: uuid.UUID) -> dict:
+    async def stop_media_stream(self, client_session_id: uuid.UUID) -> dict[str, Any]:
         """Stop an active media stream.
 
         Empirically the device closes the RemoteXPC channel immediately as part

@@ -45,7 +45,7 @@ WdaClientDep = Annotated[
 ]
 
 
-async def wait_for_xctest_app(service_provider: LockdownServiceProvider, xctrunner: str) -> asyncio.Future:
+async def wait_for_xctest_app(service_provider: LockdownServiceProvider, xctrunner: str) -> asyncio.Future[None]:
     cfg = await TestConfig.create_for(service_provider, runner_bundle_id=xctrunner)
 
     ts = XCUITestService(service_provider)
@@ -90,14 +90,14 @@ def wda_xctest_dep(
             help="Bundle id of an XCUITest runner to start (e.g. com.facebook.WebDriverAgentRunner.xctrunner).",
         ),
     ] = None,
-) -> Optional[asyncio.Future]:
+) -> Optional[asyncio.Future[None]]:
     if xctrunner is None:
         return None
     return get_asyncio_loop().run_until_complete(wait_for_xctest_app(service_provider, xctrunner))
 
 
 WdaXcRunnerDep = Annotated[
-    Optional[asyncio.Future],
+    Optional[asyncio.Future[None]],
     Depends(wda_xctest_dep),
 ]
 

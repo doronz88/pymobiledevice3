@@ -85,6 +85,7 @@ reportUnnecessaryComparison = "error"
 reportUnnecessaryIsInstance = "error"
 reportUnnecessaryCast = "error"
 reportUntypedNamedTuple = "error"
+reportMissingTypeArgument = "error"
 venvPath = "."
 venv = ".venv"
 

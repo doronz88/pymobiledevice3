@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from pymobiledevice3.services.web_protocol.automation_session import RESOURCES, Point, Rect, Size
 from pymobiledevice3.services.web_protocol.element import WebElement
@@ -35,7 +35,7 @@ class WebDriver(SeleniumApi):
         self.session = session
         self.switch_to = SwitchTo(session)
 
-    async def add_cookie(self, cookie: Union[Cookie, dict]):
+    async def add_cookie(self, cookie: Union[Cookie, dict[str, Any]]):
         """Adds a cookie to your current session."""
         if isinstance(cookie, Cookie):
             cookie = asdict(cookie)

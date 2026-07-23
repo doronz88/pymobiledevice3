@@ -126,7 +126,7 @@ class ServiceConnection:
 
         # Shared Future used by _ensure_started() to avoid duplicate start() calls when
         # multiple coroutines race to use a not-yet-started connection simultaneously.
-        self._start_future: Optional[asyncio.Future] = None
+        self._start_future: Optional[asyncio.Future[None]] = None
 
         # Held across the full send→recv pair in send_recv_plist() so that concurrent
         # callers (e.g. LockdownClient shared by many tasks) are serialised automatically.
@@ -138,7 +138,7 @@ class ServiceConnection:
         port: int,
         keep_alive: bool = True,
         create_connection_timeout: int = DEFAULT_TIMEOUT,
-        open_connection: Optional[Callable] = None,
+        open_connection: Optional[Callable[..., Any]] = None,
     ) -> "ServiceConnection":
         """
         Create a ServiceConnection using a TCP connection.

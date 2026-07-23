@@ -135,7 +135,7 @@ def prompt_selection(choices: list[Any], message: str, idx: bool = False) -> Any
     return result["selection"] if not idx else choices.index(result["selection"])
 
 
-def prompt_device_list(device_list: list):
+def prompt_device_list(device_list: list[Any]):
     return prompt_selection(device_list, "Choose device")
 
 

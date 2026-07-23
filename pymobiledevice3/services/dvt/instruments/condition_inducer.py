@@ -10,7 +10,7 @@ class ConditionInducerService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.ConditionInducer"
 
     @dtx_method("availableConditionInducers")
-    async def available_condition_inducers(self) -> list: ...
+    async def available_condition_inducers(self) -> list[dict[str, Any]]: ...
 
     @dtx_method("enableConditionWithIdentifier:profileIdentifier:")
     async def enable_condition_with_identifier_profile_identifier_(

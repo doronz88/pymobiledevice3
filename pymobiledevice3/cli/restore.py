@@ -5,7 +5,7 @@ import tempfile
 import traceback
 from collections.abc import Iterator
 from pathlib import Path
-from typing import IO, Annotated, Optional, Union
+from typing import IO, Annotated, Any, Optional, Union
 
 import requests
 import typer
@@ -157,7 +157,7 @@ def tss_dependency(
 
 
 TSSDep = Annotated[
-    Optional[dict],
+    Optional[dict[str, Any]],
     Depends(tss_dependency),
 ]
 
@@ -179,7 +179,7 @@ def query_ipswme(identifier: str) -> str:
 async def restore_update_task(
     device: Device,
     ipsw: IPSW,
-    tss: Optional[dict],
+    tss: Optional[dict[str, Any]],
     erase: bool,
     ignore_fdr: bool,
     enable_tss_batch: bool = False,
@@ -247,7 +247,7 @@ async def restore_restart(device: DeviceDep) -> None:
 async def restore_tss_task(
     device: Device,
     ipsw_ctx: contextlib.AbstractContextManager[IPSW],
-    out: Optional[IO],
+    out: Optional[IO[bytes]],
     behavior: Behavior = Behavior.Update,
 ) -> None:
     with ipsw_ctx as ipsw:

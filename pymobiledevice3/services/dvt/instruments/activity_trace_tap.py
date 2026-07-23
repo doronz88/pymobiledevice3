@@ -3,7 +3,7 @@ import math
 import os
 import struct
 from io import BytesIO
-from typing import cast
+from typing import Any, cast
 
 from pymobiledevice3.services.dvt.instruments.tap import Tap
 
@@ -23,7 +23,7 @@ class Table:
     unknown0: str
     unknown2: str
     name: str
-    columns: list
+    columns: list[Any]
 
 
 def decode_str(s: bytes):

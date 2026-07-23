@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.keywrap import aes_key_unwrap
@@ -308,7 +308,7 @@ class Mobilebackup2Service(LockdownService):
         async for event in notification_proxy.receive_notification():
             self._log_backup_notification(event)
 
-    def _log_backup_notification(self, event: dict) -> None:
+    def _log_backup_notification(self, event: dict[str, Any]) -> None:
         name = event.get("Name")
         if name == NP_LOCAL_AUTH_PRESENTED:
             self.logger.warning("Please enter the device passcode to continue the backup")

@@ -58,7 +58,9 @@ def _darwin_important_available_capacity(path: Path) -> Optional[int]:
     objc.sel_registerName.restype = ctypes.c_void_p
     objc.sel_registerName.argtypes = [ctypes.c_char_p]
 
-    def msg(restype: Any, receiver: Any, selector: bytes, argtypes: Sequence = (), args: Sequence = ()) -> Any:
+    def msg(
+        restype: Any, receiver: Any, selector: bytes, argtypes: Sequence[Any] = (), args: Sequence[Any] = ()
+    ) -> Any:
         send = objc.objc_msgSend
         send.restype = restype
         send.argtypes = [ctypes.c_void_p, ctypes.c_void_p, *argtypes]

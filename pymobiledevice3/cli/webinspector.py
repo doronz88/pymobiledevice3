@@ -476,7 +476,7 @@ class JsShellCompleter(Completer):
 class JsShell(ABC):
     def __init__(self) -> None:
         super().__init__()
-        self.prompt_session: PromptSession = PromptSession(
+        self.prompt_session: PromptSession[str] = PromptSession(
             lexer=PygmentsLexer(lexers.JavascriptLexer),
             auto_suggest=AutoSuggestFromHistory(),
             style=style_from_pygments_cls(get_style_by_name("stata-dark")),

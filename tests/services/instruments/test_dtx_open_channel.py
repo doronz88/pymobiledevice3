@@ -30,6 +30,8 @@ Run with::
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from pymobiledevice3.dtx import (
@@ -64,7 +66,7 @@ class _MinimalDeviceInfoService(DTXService):
     IDENTIFIER = _DEVICEINFO_ID
 
     @dtx_method("runningProcesses")
-    async def running_processes(self) -> list: ...
+    async def running_processes(self) -> list[dict[str, Any]]: ...
 
 
 # ---------------------------------------------------------------------------

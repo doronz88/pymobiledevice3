@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
@@ -79,7 +79,7 @@ class CompanionProxyService(LockdownService):
         raise PyMobileDevice3Exception(error)
 
     async def start_forwarding_service_port(
-        self, remote_port: int, service_name: Optional[str] = None, options: Optional[dict] = None
+        self, remote_port: int, service_name: Optional[str] = None, options: Optional[dict[str, Any]] = None
     ):
         """
         Start forwarding a port on the companion device through the proxy.
