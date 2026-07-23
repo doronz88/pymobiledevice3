@@ -11,7 +11,7 @@ from typing import Any, Optional, cast
 
 from tqdm import trange
 from usb.core import Device, USBError, find
-from usb.util import get_string
+from usb.util import dispose_resources, get_string
 
 from pymobiledevice3.exceptions import IRecvError, IRecvNoDeviceConnectedError, PyMobileDevice3Exception
 from pymobiledevice3.irecv_devices import IRECV_DEVICES, IRecvDevice
@@ -260,6 +260,12 @@ class IRecv:
             self.send_command("reboot")
 
     def _reinit(self, ecid: Optional[int] = None, timeout: int = 0xFFFFFFFF, is_recovery: Optional[bool] = None):
+        if self._device is not None:
+            # Explicitly release the libusb handle instead of relying on garbage collection: callers
+            # such as send_buffer() keep a local reference to the Device across reset()->_reinit(), so
+            # the object is not collected and its handle would stay claimed — blocking the reset
+            # device from re-enumerating cleanly and hanging the subsequent _find().
+            dispose_resources(self._device)
         self._device = None
         self._device_info = {}
         self._mode = None
