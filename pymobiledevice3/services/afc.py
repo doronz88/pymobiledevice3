@@ -1,3 +1,4 @@
+# pyright: reportMissingParameterType=error
 #!/usr/bin/env python3
 """
 AFC (Apple File Connection) Service Module
@@ -25,6 +26,7 @@ from collections.abc import Iterator, MutableMapping, MutableSequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from re import Pattern
+from types import TracebackType
 from typing import Any, Callable, NamedTuple, Optional, TextIO, Union, cast
 
 import hexdump
@@ -332,7 +334,12 @@ class AfcService(LockdownService):
         self._afc_pending.clear()
         await super().close()
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ):
         await self.aclose()
 
     async def _afc_reader_loop(self) -> None:
@@ -478,7 +485,7 @@ class AfcService(LockdownService):
                     self.logger.warning(f"(Ignoring) Error: {afc_exception} occurred during the copy of {src_filename}")
 
     @path_to_str()
-    async def exists(self, filename):
+    async def exists(self, filename: str):
         """
         Check whether a path exists on the device.
 
@@ -495,7 +502,7 @@ class AfcService(LockdownService):
         return True
 
     @path_to_str()
-    async def wait_exists(self, filename):
+    async def wait_exists(self, filename: str):
         """
         Block until a path exists on the device.
 
@@ -508,7 +515,13 @@ class AfcService(LockdownService):
             await asyncio.sleep(0.1)
 
     @path_to_str()
-    async def _push_internal(self, local_path, remote_path, callback=None, progress_bar: bool = True):
+    async def _push_internal(
+        self,
+        local_path: str,
+        remote_path: str,
+        callback: Optional[Callable[[str, str], Any]] = None,
+        progress_bar: bool = True,
+    ):
         """
         Internal method for pushing files to the device.
 
@@ -581,7 +594,13 @@ class AfcService(LockdownService):
                 await self._push_internal(local_filename, remote_filename, callback=callback, progress_bar=progress_bar)
 
     @path_to_str()
-    async def push(self, local_path, remote_path, callback=None, progress_bar: bool = True):
+    async def push(
+        self,
+        local_path: str,
+        remote_path: str,
+        callback: Optional[Callable[[str, str], Any]] = None,
+        progress_bar: bool = True,
+    ):
         """
         Push (upload) a file or directory from the local machine to the device.
 
@@ -813,7 +832,7 @@ class AfcService(LockdownService):
         )
 
     @path_to_str()
-    async def link(self, target: str, source: str, type_=AfcLinkType.SYMLINK):
+    async def link(self, target: str, source: str, type_: AfcLinkType = AfcLinkType.SYMLINK):
         """
         Create a symbolic or hard link on the device.
 
@@ -1050,7 +1069,7 @@ class AfcService(LockdownService):
             for entry in dirs + files:
                 yield posixpath.join(folder, entry)
 
-    async def lock(self, handle, operation):
+    async def lock(self, handle: int, operation: int):
         """
         Apply or release an advisory ``flock``-style lock on an open file.
 
@@ -1196,7 +1215,7 @@ class AfcLsStub(LsStub):
     file system, translating calls to work with remote device paths.
     """
 
-    def __init__(self, afc_shell, stdout: Optional[TextIO] = sys.stdout):
+    def __init__(self, afc_shell: "AfcShell", stdout: Optional[TextIO] = sys.stdout):
         """
         Initialize the ls stub.
 
@@ -1210,49 +1229,49 @@ class AfcLsStub(LsStub):
     def sep(self):
         return posixpath.sep
 
-    def join(self, path, *paths):
+    def join(self, path: str, *paths: str):
         return posixpath.join(path, *paths)
 
-    def abspath(self, path):
+    def abspath(self, path: str):
         return posixpath.normpath(path)
 
-    def stat(self, path, dir_fd=None, follow_symlinks=True):
+    def stat(self, path: str, dir_fd: Optional[int] = None, follow_symlinks: bool = True):
         if follow_symlinks:
             path = self.afc_shell.afc.resolve_path(path)
         return self.afc_shell.afc.os_stat(path)
 
-    def readlink(self, path, dir_fd=None):
+    def readlink(self, path: str, dir_fd: Optional[int] = None):
         return self.afc_shell.afc.resolve_path(path)
 
-    def isabs(self, path):
+    def isabs(self, path: str):
         return posixpath.isabs(path)
 
-    def dirname(self, path):
+    def dirname(self, path: str):
         return posixpath.dirname(path)
 
-    def basename(self, path):
+    def basename(self, path: str):
         return posixpath.basename(path)
 
-    def getgroup(self, st_gid):
+    def getgroup(self, st_gid: int):
         return "-"
 
-    def getuser(self, st_uid):
+    def getuser(self, st_uid: int):
         return "-"
 
     def now(self):
         timestamp = self.afc_shell.lockdown.all_values.get("TimeIntervalSince1970", 0)
         return datetime.fromtimestamp(timestamp)
 
-    def listdir(self, path="."):
+    def listdir(self, path: str = "."):
         return self.afc_shell.afc.listdir(path)
 
     def system(self):
         return "Darwin"
 
-    def getenv(self, key, default=None):
+    def getenv(self, key: str, default: Optional[str] = None):
         return ""
 
-    def print(self, *objects, sep=" ", end="\n", file=sys.stdout, flush=False):
+    def print(self, *objects: Any, sep: str = " ", end: str = "\n", file: TextIO = sys.stdout, flush: bool = False):
         """
         Print ls output to the constructor-provided stream.
 
@@ -1275,7 +1294,7 @@ class _AsyncRunner:
         self._loop = get_asyncio_loop()
         self._lock = threading.Lock()
 
-    def run(self, coro):
+    def run(self, coro: Any):
         with self._lock:
             if self._loop.is_running():
                 loop_thread_id = getattr(self._loop, "_thread_id", None)
@@ -1293,7 +1312,7 @@ class _AsyncRunner:
 class _SyncAsyncGenIterator:
     """Bridge an async generator into a blocking iterator for xonsh handlers."""
 
-    def __init__(self, agen, lock: threading.Lock, runner: _AsyncRunner):
+    def __init__(self, agen: Any, lock: threading.Lock, runner: _AsyncRunner):
         self._agen = agen
         self._lock = lock
         self._runner = runner
@@ -1322,7 +1341,7 @@ class _SyncAfcProxy:
         if not callable(attr):
             return attr
 
-        def sync_call(*args, **kwargs):
+        def sync_call(*args: Any, **kwargs: Any):
             result = attr(*args, **kwargs)
             if inspect.isasyncgen(result):
                 return _SyncAsyncGenIterator(result, self._lock, self._runner)
@@ -1341,7 +1360,7 @@ class _SyncAfcProxy:
         return sync_call
 
 
-def path_completer(xsh, action, completer, alias, command) -> list[str]:
+def path_completer(xsh: Any, action: Any, completer: Any, alias: Any, command: Any) -> list[str]:
     """
     Provide path completion for xonsh shell commands.
 
@@ -1384,7 +1403,7 @@ def path_completer(xsh, action, completer, alias, command) -> list[str]:
     return result
 
 
-def dir_completer(xsh, action, completer, alias, command):
+def dir_completer(xsh: Any, action: Any, completer: Any, alias: Any, command: Any):
     """
     Provide directory-only completion for xonsh shell commands.
 
@@ -1571,7 +1590,7 @@ class AfcShell:
             self._orig_aliases[name] = aliases[name]
         aliases[name] = handler
 
-    def _register_rpc_command(self, name, handler):
+    def _register_rpc_command(self, name: str, handler: Union[Callable[..., Any], str]):
         """
         Register a simple command without argument parsing.
 
@@ -1690,7 +1709,7 @@ class AfcShell:
         else:
             print(f"[ERROR] {directory} does not exist")
 
-    def do_ls(self, args, stdin, stdout, stderr):
+    def do_ls(self, args: list[str], stdin: Optional[TextIO], stdout: Optional[TextIO], stderr: Optional[TextIO]):
         """
         List directory contents with Unix ls-like formatting.
 
@@ -1755,7 +1774,7 @@ class AfcShell:
             Show progress bar for large files (--progress_bar flag)
         """
 
-        def log(src, dst):
+        def log(src: str, dst: str):
             print(f"{src} --> {dst}")
 
         self.afc.pull(
@@ -1775,7 +1794,7 @@ class AfcShell:
         :param remote_path: Destination path on the device
         """
 
-        def log(src, dst):
+        def log(src: str, dst: str):
             print(f"{src} --> {dst}")
 
         self.afc.push(local_path, self.relative_path(remote_path), callback=log)
@@ -1848,7 +1867,7 @@ class AfcShell:
             formatters.Terminal256Formatter(style="solarized-dark"),
         ).strip()
 
-    def _complete(self, text, line, begidx, endidx):
+    def _complete(self, text: str, line: str, begidx: int, endidx: int):
         """
         Provide path completion for commands (internal method).
 
@@ -1867,7 +1886,7 @@ class AfcShell:
             if filename.startswith(prefix)
         ]
 
-    def _complete_first_arg(self, text, line, begidx, endidx):
+    def _complete_first_arg(self, text: str, line: str, begidx: int, endidx: int):
         """
         Complete only the first argument of a command.
 
@@ -1877,7 +1896,7 @@ class AfcShell:
             return []
         return self._complete(text, line, begidx, endidx)
 
-    def _complete_push_arg(self, text, line, begidx, endidx):
+    def _complete_push_arg(self, text: str, line: str, begidx: int, endidx: int):
         """
         Completion for push command (local path, then remote path).
 
@@ -1891,7 +1910,7 @@ class AfcShell:
         else:
             return []
 
-    def _complete_pull_arg(self, text, line, begidx, endidx):
+    def _complete_pull_arg(self, text: str, line: str, begidx: int, endidx: int):
         """
         Completion for pull command (remote path, then local path).
 
@@ -1918,7 +1937,7 @@ class AfcShell:
         return [str(p) for p in path_iter if str(p).startswith(text)]
 
     @staticmethod
-    def _count_completion_parts(line, begidx):
+    def _count_completion_parts(line: str, begidx: int):
         """
         Count the number of space-separated parts in a command line.
 

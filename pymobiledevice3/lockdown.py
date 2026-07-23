@@ -1,3 +1,4 @@
+# pyright: reportMissingParameterType=error
 import asyncio
 import datetime
 import logging
@@ -13,6 +14,7 @@ from contextlib import contextmanager, suppress
 from enum import Enum
 from pathlib import Path
 from ssl import SSLZeroReturnError, TLSVersion
+from types import TracebackType
 from typing import Any, Optional, overload
 
 from construct import StreamError
@@ -160,7 +162,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         pairing_records_cache_folder: Optional[Path] = None,
         port: int = SERVICE_PORT,
         private_key: Optional[RSAPrivateKey] = None,
-        **cls_specific_args,
+        **cls_specific_args: Any,
     ):
         """Build a client around an existing service connection, initialize it and optionally pair.
 
@@ -243,7 +245,12 @@ class LockdownClient(ABC, LockdownServiceProvider):
         """
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         """Exit the async context manager and close open resources.
 
         :param exc_type: Exc type.
@@ -814,7 +821,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             options["Key"] = key
         return await self._request("RemoveValue", options)
 
-    async def set_value(self, value, domain: Optional[str] = None, key: Optional[str] = None) -> dict[str, Any]:
+    async def set_value(self, value: Any, domain: Optional[str] = None, key: Optional[str] = None) -> dict[str, Any]:
         """Write a value to the device via a ``SetValue`` request.
 
         :param value: The value to write.
@@ -1292,7 +1299,7 @@ class RemoteLockdownClient(LockdownClient):
             "RemoteXPC service connections should only be created using RemoteServiceDiscoveryService"
         )
 
-    async def _handle_autopair(self, *args, **kwargs):
+    async def _handle_autopair(self, *args: Any, **kwargs: Any):
         # The RemoteXPC version of lockdown doesn't support pairing operations
         """Internal helper for handle autopair.
 
@@ -1303,7 +1310,7 @@ class RemoteLockdownClient(LockdownClient):
         """
         return None
 
-    async def pair(self, *args, **kwargs) -> None:
+    async def pair(self, *args: Any, **kwargs: Any) -> None:
         """Pair.
 
         :param *args: Additional positional arguments.
@@ -1424,14 +1431,16 @@ async def create_using_usbmux(
 
 
 @overload
-async def retry_create_using_usbmux(retry_timeout: None = ..., **kwargs) -> UsbmuxLockdownClient: ...
+async def retry_create_using_usbmux(retry_timeout: None = ..., **kwargs: Any) -> UsbmuxLockdownClient: ...
 
 
 @overload
-async def retry_create_using_usbmux(retry_timeout: float, **kwargs) -> Optional[UsbmuxLockdownClient]: ...
+async def retry_create_using_usbmux(retry_timeout: float, **kwargs: Any) -> Optional[UsbmuxLockdownClient]: ...
 
 
-async def retry_create_using_usbmux(retry_timeout: Optional[float] = None, **kwargs) -> Optional[UsbmuxLockdownClient]:
+async def retry_create_using_usbmux(
+    retry_timeout: Optional[float] = None, **kwargs: Any
+) -> Optional[UsbmuxLockdownClient]:
     """Repeatedly call `create_using_usbmux` until it succeeds, tolerating transient errors.
 
     Useful while a device is rebooting or reconnecting: connection/device errors are swallowed and the

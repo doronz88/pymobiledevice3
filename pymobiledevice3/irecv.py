@@ -1,3 +1,4 @@
+# pyright: reportMissingParameterType=error
 import binascii
 import contextlib
 import logging
@@ -6,7 +7,8 @@ import struct
 import time
 from collections.abc import Iterable
 from enum import Enum
-from typing import Optional, cast
+from types import TracebackType
+from typing import Any, Optional, cast
 
 from tqdm import trange
 from usb.core import Device, USBError, find
@@ -29,11 +31,11 @@ class Mode(Enum):
     DFU_MODE = 0x1227
 
     @classmethod
-    def has_value(cls, value):
+    def has_value(cls, value: int):
         return any(value == m.value for m in cls)
 
     @classmethod
-    def get_mode_from_value(cls, value):
+    def get_mode_from_value(cls, value: int):
         """
         :rtype: Mode
         """
@@ -60,7 +62,7 @@ logger = logging.getLogger(__name__)
 
 
 class IRecv:
-    def __init__(self, ecid=None, timeout=0xFFFFFFFF, is_recovery=None):
+    def __init__(self, ecid: Optional[int] = None, timeout: int = 0xFFFFFFFF, is_recovery: Optional[bool] = None):
         self._mode: Optional[Mode] = None
         self._device_info = {}
         self._device: Optional[Device] = None
@@ -137,12 +139,12 @@ class IRecv:
     def status(self):
         return self.ctrl_transfer(0xA1, 3, data_or_wLength=b"\x00" * 6)[4]
 
-    def set_interface_altsetting(self, interface=None, alternate_setting=None):
+    def set_interface_altsetting(self, interface: Optional[int] = None, alternate_setting: Optional[int] = None):
         logger.debug(f"set_interface_altsetting: {interface} {alternate_setting}")
         if interface == 1:
             self.device.set_interface_altsetting(interface=interface, alternate_setting=alternate_setting)
 
-    def set_configuration(self, configuration=None):
+    def set_configuration(self, configuration: Optional[int] = None):
         logger.debug(f"set_configuration: {configuration}")
         device = self.device
         try:
@@ -153,7 +155,7 @@ class IRecv:
 
         device.set_configuration(configuration=configuration)
 
-    def ctrl_transfer(self, bmRequestType, bRequest, timeout=USB_TIMEOUT, **kwargs):
+    def ctrl_transfer(self, bmRequestType: int, bRequest: int, timeout: int = USB_TIMEOUT, **kwargs: Any):
         return self.device.ctrl_transfer(bmRequestType, bRequest, timeout=timeout, **kwargs)
 
     def send_buffer(self, buf: bytes):
@@ -240,10 +242,10 @@ class IRecv:
 
         self._reinit(ecid=self.ecid)
 
-    def send_command(self, cmd: str, timeout=USB_TIMEOUT, b_request=0):
+    def send_command(self, cmd: str, timeout: int = USB_TIMEOUT, b_request: int = 0):
         self.device.ctrl_transfer(0x40, b_request, 0, 0, cmd.encode() + b"\0", timeout=timeout)
 
-    def getenv(self, name):
+    def getenv(self, name: str):
         try:
             self.send_command(f"getenv {name}")
         except USBError:
@@ -258,7 +260,7 @@ class IRecv:
         with contextlib.suppress(USBError):
             self.send_command("reboot")
 
-    def _reinit(self, ecid=None, timeout=0xFFFFFFFF, is_recovery=None):
+    def _reinit(self, ecid: Optional[int] = None, timeout: int = 0xFFFFFFFF, is_recovery: Optional[bool] = None):
         self._device = None
         self._device_info = {}
         self._mode = None
@@ -279,7 +281,7 @@ class IRecv:
         else:
             self.set_interface_altsetting(0, 0)
 
-    def _copy_nonce_with_tag(self, tag):
+    def _copy_nonce_with_tag(self, tag: str):
         device_string = get_string(self.device, 1)
         if device_string is None:
             raise IRecvError("failed to read the device string descriptor")
@@ -288,7 +290,7 @@ class IRecv:
         else:
             return None
 
-    def _find(self, ecid=None, timeout=0xFFFFFFFF, is_recovery=None):
+    def _find(self, ecid: Optional[int] = None, timeout: int = 0xFFFFFFFF, is_recovery: Optional[bool] = None):
         start = time.time()
         end = start + timeout
         while (self._device is None) and (time.time() < end):
@@ -339,7 +341,9 @@ class IRecv:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self, exc_type: Optional[type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]
+    ):
         del self._device
 
 

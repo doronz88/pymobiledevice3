@@ -1,3 +1,4 @@
+# pyright: reportMissingParameterType=error
 import asyncio
 import logging
 import plistlib
@@ -27,7 +28,7 @@ TSS_CLIENT_VERSION_STRING = "libauthinstall-1104.0.9"
 logger = logging.getLogger(__name__)
 
 
-def get_with_or_without_comma(obj: dict[str, typing.Any], k: str, default=None) -> typing.Any:
+def get_with_or_without_comma(obj: dict[str, typing.Any], k: str, default: typing.Any = None) -> typing.Any:
     val = obj.get(k, obj.get(k.replace(",", "")))
     if val is None and default is not None:
         val = default
@@ -122,7 +123,9 @@ class TSSRequest:
                 value = int(value, 16)
             self._request[key] = value
 
-    def add_common_tags(self, parameters: dict[str, typing.Any], overrides=None):
+    def add_common_tags(
+        self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None
+    ):
         keys = ("ApECID", "UniqueBuildID", "ApChipID", "ApBoardID", "ApSecurityDomain")
         for k in keys:
             if k in parameters:
@@ -130,7 +133,9 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
-    def add_ap_recovery_tags(self, parameters: dict[str, typing.Any], overrides=None):
+    def add_ap_recovery_tags(
+        self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None
+    ):
         skip_keys = (
             "BasebandFirmware",
             "SE,UpdatePayload",
@@ -204,7 +209,9 @@ class TSSRequest:
         if overrides:
             self._request.update(overrides)
 
-    def add_timer_tags(self, parameters: dict[str, typing.Any], overrides=None):
+    def add_timer_tags(
+        self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None
+    ):
         manifest = parameters["Manifest"]
 
         # add tags indicating we want to get the Timer ticket
@@ -297,7 +304,9 @@ class TSSRequest:
                     v = int(v, 16)
                 self._request[k] = v
 
-    def add_vinyl_prefetch_tags(self, parameters: dict[str, typing.Any], overrides=None):
+    def add_vinyl_prefetch_tags(
+        self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None
+    ):
         # Prefetch shim for Vinyl/eUICC: PreflightInfo nests the Gold/Main nonces under
         # eUICC,Gold / eUICC,Main, but add_vinyl_tags reads them from the flat
         # EUICCGoldNonce / EUICCMainNonce params (the recovery.py AP-batch path sets these).
@@ -307,7 +316,9 @@ class TSSRequest:
                 parameters.setdefault(flat, node["Nonce"])
         self.add_vinyl_tags(parameters, overrides)
 
-    def add_vinyl_tags(self, parameters: dict[str, typing.Any], overrides=None):
+    def add_vinyl_tags(
+        self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None
+    ):
         self._request["@BBTicket"] = True
         self._request["@eUICC,Ticket"] = True
 
@@ -351,7 +362,7 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
-    def add_ap_tags(self, parameters: dict[str, typing.Any], overrides=None):
+    def add_ap_tags(self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None):
         """loop over components from build manifest"""
 
         manifest_node = parameters["Manifest"]
@@ -414,7 +425,7 @@ class TSSRequest:
             self._request["ApNonce"] = parameters["ApNonce"]
         self._request["@APTicket"] = True
 
-    def add_ap_img4_tags(self, parameters):
+    def add_ap_img4_tags(self, parameters: dict[str, typing.Any]):
         keys_to_copy = (
             "ApNonce",
             "ApProductionMode",
@@ -461,7 +472,7 @@ class TSSRequest:
             # Workaround: We have only seen Ap,SikaFuse together with UID_MODE
             self._request["Ap,SikaFuse"] = 0
 
-    def add_se2_tags(self, parameters: dict[str, typing.Any], overrides=None):
+    def add_se2_tags(self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None):
         # Modern Secure Enclave personalization (A19 / iOS 27+). The device generates an
         # @SE2,Ticket request (response key "SE2,Ticket"), NOT the legacy @SE,Ticket of
         # add_se_tags. Confirmed by a ramrod capture on iPhone 18,4: the
@@ -494,7 +505,7 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
-    def add_se_tags(self, parameters: dict[str, typing.Any], overrides=None):
+    def add_se_tags(self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None):
         manifest = parameters["Manifest"]
 
         # add tags indicating we want to get the SE,Ticket
@@ -559,7 +570,12 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
-    def add_savage_tags(self, parameters: dict[str, typing.Any], overrides=None, component_name=None):
+    def add_savage_tags(
+        self,
+        parameters: dict[str, typing.Any],
+        overrides: typing.Optional[dict[str, typing.Any]] = None,
+        component_name: typing.Optional[str] = None,
+    ):
         manifest = parameters["Manifest"]
 
         # add tags indicating we want to get the Savage,Ticket
@@ -611,7 +627,9 @@ class TSSRequest:
 
         return comp_name
 
-    def add_yonkers_tags(self, parameters: dict[str, typing.Any], overrides=None):
+    def add_yonkers_tags(
+        self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None
+    ):
         manifest = parameters["Manifest"]
 
         # add tags indicating we want to get the Yonkers,Ticket
@@ -671,7 +689,9 @@ class TSSRequest:
 
         return result_comp_name
 
-    def add_baseband_tags(self, parameters: dict[str, typing.Any], overrides=None):
+    def add_baseband_tags(
+        self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None
+    ):
         self._request["@BBTicket"] = True
 
         keys_to_copy = (
@@ -1006,7 +1026,7 @@ class TSSRequest:
         if overrides is not None:
             self._request.update(overrides)
 
-    def img4_create_local_manifest(self, build_identity=None):
+    def img4_create_local_manifest(self, build_identity: typing.Optional[typing.Mapping[str, typing.Any]] = None):
         manifest = None
         if build_identity is not None:
             manifest = build_identity["Manifest"]
@@ -1068,7 +1088,7 @@ class TSSRequest:
         if key in self._request:
             self._request.pop(key)
 
-    def update(self, options) -> None:
+    def update(self, options: dict[str, typing.Any]) -> None:
         self._request.update(options)
 
     async def send_receive(self) -> TSSResponse:

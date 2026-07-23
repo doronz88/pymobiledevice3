@@ -1,3 +1,4 @@
+# pyright: reportMissingParameterType=error
 import dataclasses
 import uuid
 from datetime import datetime
@@ -8,6 +9,7 @@ from construct import (
     Array,
     Bytes,
     Const,
+    Container,
     CString,
     Default,
     Enum,
@@ -154,7 +156,7 @@ class FileTransferType:
     transfer_size: int
 
 
-def _decode_xpc_dictionary(xpc_object) -> dict[str, Any]:
+def _decode_xpc_dictionary(xpc_object: Container[Any]) -> dict[str, Any]:
     if xpc_object.data.count == 0:
         return {}
     result = {}
@@ -163,55 +165,55 @@ def _decode_xpc_dictionary(xpc_object) -> dict[str, Any]:
     return result
 
 
-def _decode_xpc_array(xpc_object) -> list[Any]:
+def _decode_xpc_array(xpc_object: Container[Any]) -> list[Any]:
     result = []
     for entry in xpc_object.data.entries:
         result.append(decode_xpc_object(entry))
     return result
 
 
-def _decode_xpc_bool(xpc_object) -> bool:
+def _decode_xpc_bool(xpc_object: Container[Any]) -> bool:
     return bool(xpc_object.data)
 
 
-def _decode_xpc_int64(xpc_object) -> XpcInt64Type:
+def _decode_xpc_int64(xpc_object: Container[Any]) -> XpcInt64Type:
     return XpcInt64Type(xpc_object.data)
 
 
-def _decode_xpc_uint64(xpc_object) -> XpcUInt64Type:
+def _decode_xpc_uint64(xpc_object: Container[Any]) -> XpcUInt64Type:
     return XpcUInt64Type(xpc_object.data)
 
 
-def _decode_xpc_uuid(xpc_object) -> uuid.UUID:
+def _decode_xpc_uuid(xpc_object: Container[Any]) -> uuid.UUID:
     return uuid.UUID(bytes=xpc_object.data)
 
 
-def _decode_xpc_string(xpc_object) -> str:
+def _decode_xpc_string(xpc_object: Container[Any]) -> str:
     return xpc_object.data
 
 
-def _decode_xpc_data(xpc_object) -> bytes:
+def _decode_xpc_data(xpc_object: Container[Any]) -> bytes:
     return xpc_object.data
 
 
-def _decode_xpc_date(xpc_object) -> datetime:
+def _decode_xpc_date(xpc_object: Container[Any]) -> datetime:
     # Convert from nanoseconds to seconds
     return datetime.fromtimestamp(xpc_object.data / 1000000000)
 
 
-def _decode_xpc_file_transfer(xpc_object) -> FileTransferType:
+def _decode_xpc_file_transfer(xpc_object: Container[Any]) -> FileTransferType:
     return FileTransferType(transfer_size=_decode_xpc_dictionary(xpc_object.data.data)["s"])
 
 
-def _decode_xpc_double(xpc_object) -> float:
+def _decode_xpc_double(xpc_object: Container[Any]) -> float:
     return xpc_object.data
 
 
-def _decode_xpc_null(xpc_object) -> None:
+def _decode_xpc_null(xpc_object: Container[Any]) -> None:
     return None
 
 
-def decode_xpc_object(xpc_object) -> Any:
+def decode_xpc_object(xpc_object: Container[Any]) -> Any:
     decoders = {
         XpcMessageType.DICTIONARY: _decode_xpc_dictionary,
         XpcMessageType.ARRAY: _decode_xpc_array,
