@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 import dataclasses
 import uuid
 from datetime import datetime

@@ -145,7 +145,7 @@ class AudioQueuePlayer:
         if st != 0:
             raise RuntimeError(f"AudioQueueNewOutput failed: OSStatus={st}")
 
-        self._free: _queue.Queue = _queue.Queue()
+        self._free: _queue.Queue[Any] = _queue.Queue()
         # ctypes' POINTER(...) products aren't usable as type expressions,
         # so the buffer-ref list can't be annotated more precisely.
         self._all_buffers: list[Any] = []

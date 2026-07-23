@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 """DTX protocol connection — lifecycle, channel management and capability handshake.
 
 :class:`DTXConnection` is the top-level object for a DTX session.  It owns:

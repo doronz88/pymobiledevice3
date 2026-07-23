@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 from typing import Any, Optional
 
 from pymobiledevice3.exceptions import DeprecationError, PyMobileDevice3Exception

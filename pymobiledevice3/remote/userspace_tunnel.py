@@ -174,7 +174,7 @@ class _AsyncPytcpSocket(Protocol):
 
     def bind(self, address: tuple[str, int]) -> None: ...
 
-    def getsockname(self) -> tuple: ...
+    def getsockname(self) -> tuple[str, int]: ...
 
     def shutdown(self, how: int) -> None: ...
 
@@ -371,7 +371,7 @@ class UserspaceDialPlane:
         self._device_addr = str(device_addr)
         self._relays: dict[tuple[str, int], int] = {}
         self._servers: list[asyncio.AbstractServer] = []  # kept referenced so relays stay alive
-        self._relay_tasks: set[asyncio.Task] = set()  # in-flight handlers, cancelled on exit
+        self._relay_tasks: set[asyncio.Task[None]] = set()  # in-flight handlers, cancelled on exit
 
     async def __aenter__(self) -> UserspaceDialPlane:
         return self

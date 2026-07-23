@@ -5,7 +5,7 @@ import plistlib
 import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import click
 import inquirer3
@@ -339,7 +339,7 @@ class MobileActivationService:
             return await service.send_recv_plist(data)
 
     def post(
-        self, url: str, data: Union[dict, bytes], headers: Optional[dict[str, str]] = None
+        self, url: str, data: Union[dict[str, Any], bytes], headers: Optional[dict[str, str]] = None
     ) -> tuple[bytes, CaseInsensitiveDict[str]]:
         """
         Perform an HTTP POST to an activation server endpoint.

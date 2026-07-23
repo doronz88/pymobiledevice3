@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 """
 Live screen-stream server and helpers, sitting on top of :class:`DisplayService`.
 

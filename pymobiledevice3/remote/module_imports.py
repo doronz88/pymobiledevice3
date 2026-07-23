@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -8,7 +8,7 @@ try:
 
     MAX_IDLE_TIMEOUT = RemotePairingQuicTunnel.MAX_IDLE_TIMEOUT
 except ImportError:
-    start_tunnel: Optional[Callable] = None
+    start_tunnel: Optional[Callable[..., Any]] = None
     MAX_IDLE_TIMEOUT = None
 
 GENERAL_IMPORT_ERROR = """Failed to import `start_tunnel`.

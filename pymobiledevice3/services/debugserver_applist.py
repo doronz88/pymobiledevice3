@@ -1,4 +1,5 @@
 import plistlib
+from typing import Any
 
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -17,7 +18,7 @@ class DebugServerAppList(LockdownService):
     def __init__(self, lockdown: LockdownServiceProvider):
         super().__init__(lockdown, self.SERVICE_NAME)
 
-    async def get(self) -> dict:
+    async def get(self) -> dict[str, Any]:
         """
         Fetch the application list.
 

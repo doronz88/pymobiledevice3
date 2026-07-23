@@ -14,7 +14,7 @@ threads at all — that relaying spawns none.
 
 import asyncio
 import threading
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -65,11 +65,11 @@ class FakePyTcpSocket:
     ``shutdown(SHUT_RD/SHUT_RDWR)`` wakes a parked recv with EOF."""
 
     def __init__(self) -> None:
-        self._rx: list = []
+        self._rx: list[Any] = []
         self._eof = False
         self._readable = asyncio.Event()
-        self.sent: list = []
-        self.shutdown_calls: list = []
+        self.sent: list[Any] = []
+        self.shutdown_calls: list[Any] = []
         self.closed = asyncio.Event()
 
     # --- device-side test controls ---
@@ -113,7 +113,7 @@ class FakeTun:
     """Just enough of :class:`UserspaceTun` for :class:`UserspaceDialPlane`."""
 
     def __init__(self) -> None:
-        self.socks: list = []
+        self.socks: list[Any] = []
 
     async def connect_tcp(self, addr: str, port: int) -> FakePyTcpSocket:
         sock = FakePyTcpSocket()

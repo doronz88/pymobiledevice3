@@ -85,7 +85,7 @@ async def core_device_read_file_task(
     domain: DomainName,
     path: str,
     identifier: str,
-    output: Optional[IO],
+    output: Optional[IO[bytes]],
 ) -> None:
     async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
         buf = await file_service.retrieve_file(path)

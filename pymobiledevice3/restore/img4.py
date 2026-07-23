@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ipsw_parser.build_identity import BuildIdentity
 from pyimg4 import IM4P, IM4R, IMG4, RestoreProperty
@@ -127,7 +127,7 @@ COMPONENT_FOURCC = {
 
 
 def stitch_component(
-    name: str, im4p_data: bytes, tss: "TSSResponse", build_identity: BuildIdentity, ap_parameters: dict
+    name: str, im4p_data: bytes, tss: "TSSResponse", build_identity: BuildIdentity, ap_parameters: dict[str, Any]
 ) -> bytes:
     logger.info(f"Personalizing IMG4 component {name}...")
 

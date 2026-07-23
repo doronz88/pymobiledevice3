@@ -6,7 +6,7 @@ from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 
 
-def _generate_core_device_version_dict(version: str) -> dict:
+def _generate_core_device_version_dict(version: str) -> dict[str, Any]:
     version_components = version.split(".")
     return {
         "components": [XpcUInt64Type(component) for component in version_components],
@@ -22,7 +22,7 @@ class CoreDeviceService(RemoteService):
     async def invoke(
         self,
         feature_identifier: Optional[str] = None,
-        input_: Optional[dict] = None,
+        input_: Optional[dict[str, Any]] = None,
         action_identifier: Optional[str] = None,
     ) -> Any:
         if input_ is None:

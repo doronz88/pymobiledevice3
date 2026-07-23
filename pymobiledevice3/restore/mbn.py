@@ -10,7 +10,7 @@
 
 import io
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from construct import Bytes, ChecksumError, Int16ul, Int32ul, Int64ul, Struct
 
@@ -192,7 +192,7 @@ def _read_elf_headers(data: bytes):
     return None, None
 
 
-def _read_program_headers(data: bytes, kind: str, hdr) -> list:
+def _read_program_headers(data: bytes, kind: str, hdr) -> list[Any]:
     phdrs = []
     if hdr.e_phnum == 0:
         logger.error("%s: ELF has no program sections", "_read_program_headers")

@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 from contextlib import suppress
 from typing import Any, Optional, overload
 

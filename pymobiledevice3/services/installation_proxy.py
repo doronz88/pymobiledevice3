@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 import os
 import uuid
 from enum import Enum

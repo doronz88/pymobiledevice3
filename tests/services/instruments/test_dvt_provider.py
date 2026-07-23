@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 
@@ -113,12 +113,12 @@ async def test_observe(dvt, service_provider) -> None:
     process_terminated: asyncio.Future[tuple[int, Optional[int], Optional[int]]] = (
         asyncio.get_event_loop().create_future()
     )
-    signature_received: asyncio.Future[dict] = asyncio.get_event_loop().create_future()
+    signature_received: asyncio.Future[dict[str, Any]] = asyncio.get_event_loop().create_future()
 
     async def on_process_terminated(pid: int, exit_code: Optional[int], crashing_signal: Optional[int]) -> None:
         process_terminated.set_result((pid, exit_code, crashing_signal))
 
-    async def on_tracking_signature(obj: dict) -> None:
+    async def on_tracking_signature(obj: dict[str, Any]) -> None:
         if not signature_received.done():
             signature_received.set_result(obj)
 

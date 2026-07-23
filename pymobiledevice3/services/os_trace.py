@@ -286,7 +286,7 @@ class OsTraceService(LockdownService):
 
     async def create_archive(
         self,
-        out: typing.IO,
+        out: typing.IO[bytes],
         size_limit: typing.Optional[int] = None,
         age_limit: typing.Optional[int] = None,
         start_time: typing.Optional[int] = None,

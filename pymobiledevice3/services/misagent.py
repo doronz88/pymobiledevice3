@@ -1,5 +1,5 @@
 import plistlib
-from typing import IO, cast
+from typing import IO, Any, cast
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
@@ -42,7 +42,7 @@ class MisagentService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    async def install(self, plist: IO[bytes]) -> dict:
+    async def install(self, plist: IO[bytes]) -> dict[str, Any]:
         """
         Install a provisioning profile on the device.
 
@@ -61,7 +61,7 @@ class MisagentService(LockdownService):
 
         return response
 
-    async def remove(self, profile_id: str) -> dict:
+    async def remove(self, profile_id: str) -> dict[str, Any]:
         """
         Remove an installed provisioning profile.
 
@@ -90,4 +90,4 @@ class MisagentService(LockdownService):
         if response["Status"]:
             raise PyMobileDevice3Exception(f"invalid status: {response}")
 
-        return [ProvisioningProfile(p) for p in cast(list, response["Payload"])]
+        return [ProvisioningProfile(p) for p in cast(list[bytes], response["Payload"])]

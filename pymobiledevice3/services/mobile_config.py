@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 import contextlib
 import plistlib
 from enum import Enum

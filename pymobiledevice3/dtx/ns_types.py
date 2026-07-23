@@ -67,10 +67,10 @@ class NSNull:
 class NSError:
     """Wraps an Objective-C NSError object received from the remote DTX peer."""
 
-    def __init__(self, code: int, domain: str, user_info: Optional[dict] = None):
+    def __init__(self, code: int, domain: str, user_info: Optional[dict[str, Any]] = None):
         self.code: int = code
         self.domain: str = domain
-        self.user_info: Optional[dict] = user_info
+        self.user_info: Optional[dict[str, Any]] = user_info
 
     def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
         """Encode this NSError into an NSKeyedArchive object."""
@@ -151,7 +151,7 @@ class NSValue:
         return archive_obj.decode("NS.rectval")
 
 
-class NSMutableArray(list):
+class NSMutableArray(list[Any]):
     """List subclass that preserves NSMutableArray NSKeyedArchive encoding.
 
     bpylist2 normally encodes Python ``list`` as NSArray.  Some private DVT

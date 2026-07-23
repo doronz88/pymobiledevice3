@@ -7,7 +7,7 @@ import tempfile
 from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
-from typing import Annotated, Optional, TextIO
+from typing import Annotated, Any, Optional, TextIO
 
 import typer
 from typer_injector import InjectingTyper
@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 TUNNEL_SERVICE_DISCOVERY_ATTEMPTS = 3
 
 
-async def browse_rsd(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[dict]:
+async def browse_rsd(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[dict[str, Any]]:
     devices = []
     for rsd in await get_rsds(timeout):
         assert rsd.peer_info is not None
@@ -60,7 +60,7 @@ async def browse_rsd(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[dict]:
     return devices
 
 
-async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[dict]:
+async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[dict[str, Any]]:
     devices = []
     for remotepairing in await get_remote_pairing_tunnel_services(timeout):
         devices.append({

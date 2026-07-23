@@ -61,7 +61,7 @@ resp = await client.send_receive_request({"Command": "DoSomething"})
 
 
 class RemoteXPCConnection:
-    def __init__(self, address: tuple[str, int], open_connection: Optional[Callable] = None):
+    def __init__(self, address: tuple[str, int], open_connection: Optional[Callable[..., Any]] = None):
         self._previous_frame_data = b""
         self.address = address
         # ``asyncio.open_connection``-compatible dialer. Defaults to the stdlib function; the
@@ -74,7 +74,7 @@ class RemoteXPCConnection:
         self._writer: Optional[asyncio.StreamWriter] = None
         self._pending_window_updates: dict[int, int] = {}
         self._file_chunk_queues: dict[int, asyncio.Queue[Union[bytes, BaseException]]] = {}
-        self._file_chunk_reader_task: Optional[asyncio.Task] = None
+        self._file_chunk_reader_task: Optional[asyncio.Task[None]] = None
         # Serialise request/response round-trips. ``send_receive_request`` is a
         # write-then-read against a single shared reader + ``_previous_frame_data``
         # buffer with no per-request stream demux, so two concurrent callers
@@ -163,7 +163,7 @@ class RemoteXPCConnection:
             "Services": {},
         })
 
-    async def send_request(self, data: dict, wanting_reply: bool = False) -> None:
+    async def send_request(self, data: dict[str, Any], wanting_reply: bool = False) -> None:
         xpc_wrapper = create_xpc_wrapper(
             data, message_id=self.next_message_id[ROOT_CHANNEL], wanting_reply=wanting_reply
         )
@@ -224,7 +224,7 @@ class RemoteXPCConnection:
             buf += chunk
         return buf
 
-    async def receive_response(self) -> dict:
+    async def receive_response(self) -> dict[str, Any]:
         while True:
             frame = await self._receive_next_data_frame()
             try:
@@ -240,7 +240,7 @@ class RemoteXPCConnection:
             self.next_message_id[frame.stream_id] = xpc_message.message_id + 1
             return decode_xpc_object(xpc_message.payload.obj)
 
-    async def send_receive_request(self, data: dict) -> dict:
+    async def send_receive_request(self, data: dict[str, Any]) -> dict[str, Any]:
         async with self._request_lock:
             await self.send_request(data, wanting_reply=True)
             return await self.receive_response()

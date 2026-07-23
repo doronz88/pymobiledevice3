@@ -5,7 +5,7 @@ import uuid
 from collections.abc import Generator
 from contextlib import suppress
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.common import get_home_folder
@@ -54,7 +54,7 @@ async def get_usbmux_pairing_record(identifier: str, usbmux_address: Optional[st
     return None
 
 
-def get_itunes_pairing_record(identifier: str) -> Optional[dict]:
+def get_itunes_pairing_record(identifier: str) -> Optional[dict[str, Any]]:
     """
     Retrieve the pairing record from iTunes.
 
@@ -72,7 +72,7 @@ def get_itunes_pairing_record(identifier: str) -> Optional[dict]:
     return pair_record
 
 
-def get_local_pairing_record(identifier: str, pairing_records_cache_folder: Path) -> Optional[dict]:
+def get_local_pairing_record(identifier: str, pairing_records_cache_folder: Path) -> Optional[dict[str, Any]]:
     """
     Retrieve the pairing record from local storage.
 
@@ -93,7 +93,7 @@ def get_local_pairing_record(identifier: str, pairing_records_cache_folder: Path
 
 async def get_preferred_pair_record(
     identifier: str, pairing_records_cache_folder: Path, usbmux_address: Optional[str] = None
-) -> Optional[dict]:
+) -> Optional[dict[str, Any]]:
     """
     Look for an existing pair record for the connected device in the following order:
     - usbmuxd

@@ -37,7 +37,7 @@ class DtFetchSymbols:
             raise PyMobileDevice3Exception("list files response is missing the 'files' entry")
         return typing.cast("list[str]", files)
 
-    async def get_file(self, fileno: int, stream: typing.IO, max_bytes: typing.Optional[int] = None):
+    async def get_file(self, fileno: int, stream: typing.IO[bytes], max_bytes: typing.Optional[int] = None):
         """
         Download a single symbol file and write it into the given stream.
 

@@ -1,6 +1,6 @@
 import logging
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from ipsw_parser.exceptions import NoSuchBuildIdentityError
 from ipsw_parser.ipsw import IPSW
@@ -23,7 +23,7 @@ class Behavior(Enum):
 
 class BaseRestore:
     def __init__(
-        self, ipsw: IPSW, device: Device, tss: Optional[dict] = None, behavior: Behavior = Behavior.Update
+        self, ipsw: IPSW, device: Device, tss: Optional[dict[str, Any]] = None, behavior: Behavior = Behavior.Update
     ) -> None:
         self.ipsw = ipsw
         self.device = device
@@ -98,7 +98,9 @@ class BaseRestore:
             await self.device.get_ap_parameters(),
         )
 
-    def populate_tss_request_from_manifest(self, parameters: dict, additional_keys: Optional[list[str]] = None) -> None:
+    def populate_tss_request_from_manifest(
+        self, parameters: dict[str, Any], additional_keys: Optional[list[str]] = None
+    ) -> None:
         """equivalent to idevicerestore:tss_parameters_add_from_manifest"""
         key_list = ["ApBoardID", "ApChipID"]
         if additional_keys is None:

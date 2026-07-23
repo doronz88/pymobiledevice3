@@ -64,7 +64,12 @@ class ProcessControlService(DTXService):
 
     @dtx_method("launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:")
     async def launch_suspended_process_with_device_path_bundle_identifier_environment_arguments_options_(
-        self, device_path: str, bundle_id: str, environment: dict, arguments: list, options: dict
+        self,
+        device_path: str,
+        bundle_id: str,
+        environment: dict[str, Any],
+        arguments: list[str],
+        options: dict[str, Any],
     ) -> int: ...
 
     @dtx_on_invoke("outputReceived:fromProcess:atTime:")
@@ -149,8 +154,8 @@ class ProcessControl(DtxService[ProcessControlService]):
         arguments=None,
         kill_existing: bool = True,
         start_suspended: bool = False,
-        environment: Optional[dict] = None,
-        extra_options: Optional[dict] = None,
+        environment: Optional[dict[str, Any]] = None,
+        extra_options: Optional[dict[str, Any]] = None,
     ) -> int:
         """
         Launch an installed application by its bundle identifier.

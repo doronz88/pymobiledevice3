@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
@@ -43,7 +43,7 @@ async def get_tunneld_device_by_udid(
     return rsds[0]
 
 
-def _list_tunnels(tunneld_address: tuple[str, int] = TUNNELD_DEFAULT_ADDRESS) -> dict[str, list[dict]]:
+def _list_tunnels(tunneld_address: tuple[str, int] = TUNNELD_DEFAULT_ADDRESS) -> dict[str, list[dict[str, Any]]]:
     try:
         # Get the list of tunnels from the specified address
         resp = requests.get(f"http://{tunneld_address[0]}:{tunneld_address[1]}")
@@ -53,7 +53,7 @@ def _list_tunnels(tunneld_address: tuple[str, int] = TUNNELD_DEFAULT_ADDRESS) ->
     return tunnels
 
 
-async def _create_rsds_from_tunnels(tunnels: dict[str, list[dict]]) -> list[RemoteServiceDiscoveryService]:
+async def _create_rsds_from_tunnels(tunnels: dict[str, list[dict[str, Any]]]) -> list[RemoteServiceDiscoveryService]:
     rsds = []
     for _udid, details in tunnels.items():
         for tunnel_details in details:

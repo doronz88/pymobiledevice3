@@ -1,3 +1,5 @@
+from typing import Any
+
 from pymobiledevice3.exceptions import ArbitrationError, DeviceAlreadyInUseError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -17,10 +19,10 @@ class DtDeviceArbitration(LockdownService):
     def __init__(self, lockdown: LockdownServiceProvider):
         super().__init__(lockdown, self.SERVICE_NAME, is_developer_service=True)
 
-    async def _send_recv(self, request: dict) -> dict:
+    async def _send_recv(self, request: dict[str, Any]) -> dict[str, Any]:
         return await self.service.send_recv_plist(request)
 
-    async def version(self) -> dict:
+    async def version(self) -> dict[str, Any]:
         """
         Query the arbitration service version.
 

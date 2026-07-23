@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 """XCUITest execution via the new DTX protocol implementation.
 
 Typical usage::

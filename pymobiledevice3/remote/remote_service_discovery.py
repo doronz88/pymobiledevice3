@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 import base64
 import logging
 from contextlib import suppress

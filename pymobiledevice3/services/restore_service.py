@@ -1,3 +1,5 @@
+from typing import Any
+
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -49,7 +51,7 @@ class RestoreService(RemoteService):
         """
         await self.validate_command("reboot")
 
-    async def get_preflightinfo(self) -> dict:
+    async def get_preflightinfo(self) -> dict[str, Any]:
         """
         Retrieve restore preflight information from the device.
 
@@ -59,7 +61,7 @@ class RestoreService(RemoteService):
         """
         return await self.service.send_receive_request({"command": "getpreflightinfo"})
 
-    async def get_nonces(self) -> dict:
+    async def get_nonces(self) -> dict[str, Any]:
         """
         Retrieve the device's restore nonces.
 
@@ -69,7 +71,7 @@ class RestoreService(RemoteService):
         """
         return await self.service.send_receive_request({"command": "getnonces"})
 
-    async def get_app_parameters(self) -> dict:
+    async def get_app_parameters(self) -> dict[str, Any]:
         """
         Retrieve restore app parameters from the device.
 
@@ -80,7 +82,7 @@ class RestoreService(RemoteService):
         """
         return await self.validate_command("getappparameters")
 
-    async def restore_lang(self, language: str) -> dict:
+    async def restore_lang(self, language: str) -> dict[str, Any]:
         """
         Set the restore language.
 
@@ -91,7 +93,7 @@ class RestoreService(RemoteService):
         """
         return await self.service.send_receive_request({"command": "restorelang", "argument": language})
 
-    async def validate_command(self, command: str) -> dict:
+    async def validate_command(self, command: str) -> dict[str, Any]:
         """
         Send a command and assert that the device reports success.
 

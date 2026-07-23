@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -14,7 +14,9 @@ class ScreenCaptureService(CoreDeviceService):
     def __init__(self, rsd: RemoteServiceDiscoveryService):
         super().__init__(rsd, self.SERVICE_NAME)
 
-    async def capture_screenshot(self, display_unique_id: Optional[str] = None, requested_format: str = "png") -> dict:
+    async def capture_screenshot(
+        self, display_unique_id: Optional[str] = None, requested_format: str = "png"
+    ) -> dict[str, Any]:
         """
         Capture a screenshot from the device.
 

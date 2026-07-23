@@ -120,7 +120,7 @@ class LockdownServiceProvider:
         pass
 
     @abstractmethod
-    async def get_service_connection_attributes(self, name: str, include_escrow_bag: bool = False) -> dict:
+    async def get_service_connection_attributes(self, name: str, include_escrow_bag: bool = False) -> dict[str, Any]:
         """Return the service metadata returned by StartService (port, SSL flags, etc.)."""
         pass
 
@@ -135,12 +135,12 @@ class LockdownServiceProvider:
         pass
 
     @abstractmethod
-    async def set_value(self, value, domain: Optional[str] = None, key: Optional[str] = None) -> dict:
+    async def set_value(self, value, domain: Optional[str] = None, key: Optional[str] = None) -> dict[str, Any]:
         """Write a lockdownd value (optionally scoped by domain/key)."""
         pass
 
     @abstractmethod
-    async def remove_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> dict:
+    async def remove_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> dict[str, Any]:
         """Remove a lockdownd value (optionally scoped by domain/key)."""
         pass
 

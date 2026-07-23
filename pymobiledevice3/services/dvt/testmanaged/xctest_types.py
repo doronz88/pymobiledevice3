@@ -33,7 +33,7 @@ from pymobiledevice3.dtx.ns_types import NSMutableArray, patch_class_hierarchy
 class XCTCapabilities:
     """Proxy for XCTest's ``XCTCapabilities`` dictionary wrapper."""
 
-    def __init__(self, capabilities: dict):
+    def __init__(self, capabilities: dict[str, Any]):
         self.capabilities = capabilities
 
     def encode_archive(self, archive_obj: archiver.ArchivingObject) -> None:
@@ -99,7 +99,7 @@ class XCTestConfiguration:
         }),
     }
 
-    def __init__(self, kv: dict):
+    def __init__(self, kv: dict[str, Any]):
         assert "testBundleURL" in kv
         assert "sessionIdentifier" in kv
         self._config = copy.deepcopy(self._default)
@@ -330,7 +330,7 @@ class XCTAttachment:
     uniformTypeIdentifier: str
     timestamp: Any  # NSDate or None
     data: Optional[bytes] = None
-    additional_data: dict = field(default_factory=dict)
+    additional_data: dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
     def decode_archive(archive_obj: archiver.ArchivedObject) -> XCTAttachment:
@@ -358,7 +358,7 @@ class XCTestCaseRunConfiguration:
     """Decoded proxy for ``XCTestCaseRunConfiguration``."""
 
     iteration: int
-    configuration: dict = field(default_factory=dict)
+    configuration: dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
     def decode_archive(

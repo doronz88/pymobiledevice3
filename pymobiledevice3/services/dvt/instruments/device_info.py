@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 import plistlib
 import typing
 from datetime import datetime

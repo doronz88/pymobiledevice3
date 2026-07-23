@@ -299,7 +299,7 @@ class VncStreamServer:
         self._local_ssrc: int = 0
         self._remote_ssrc: int = 0
         self._rtcp_dest: Optional[tuple[str, int]] = None
-        self._pli_tasks: set[asyncio.Task] = set()
+        self._pli_tasks: set[asyncio.Task[None]] = set()
         # Extended highest video RTP seq, for the periodic Receiver Report that
         # keeps the device from reaping the video session (RTCPTimeoutEnabled).
         self._rtp_highest_seq: int = 0
@@ -1424,8 +1424,8 @@ class VncStreamServer:
         # video session so they're paired on the device-side media
         # manager (same as Xcode's Mirror). Without RR keepalives the
         # device reaps the audio session after ~20 s.
-        audio_recv_task: Optional[asyncio.Task] = None
-        audio_rtcp_task: Optional[asyncio.Task] = None
+        audio_recv_task: Optional[asyncio.Task[None]] = None
+        audio_rtcp_task: Optional[asyncio.Task[None]] = None
         if self._audio_enabled:
             try:
                 audio_svc = DisplayService(self._rsd)

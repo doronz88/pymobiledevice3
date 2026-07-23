@@ -1,4 +1,3 @@
-# pyright: reportMissingTypeArgument=error
 #!/usr/bin/env python3
 """
 AFC (Apple File Connection) Service Module

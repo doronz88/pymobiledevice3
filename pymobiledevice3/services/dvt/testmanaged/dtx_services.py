@@ -617,9 +617,9 @@ class ProcessControlService(DTXService):
         self,
         device_path: str,
         bundle_identifier: str,
-        environment: dict,
-        arguments: list,
-        options: dict,
+        environment: dict[str, Any],
+        arguments: list[Any],
+        options: dict[str, Any],
     ) -> int: ...
 
     @dtx_on_invoke

@@ -77,7 +77,7 @@ class LockdownService:
         self.logger: logging.Logger = logging.getLogger(self.__module__)
         # Shared Future: the first connect() call creates it; concurrent callers join it
         # instead of racing to call start_lockdown_service() multiple times.
-        self._connect_future: Optional[asyncio.Future] = None
+        self._connect_future: Optional[asyncio.Future[None]] = None
 
     @property
     def service(self) -> Union[ServiceConnection, _LazyServiceConnection]:
