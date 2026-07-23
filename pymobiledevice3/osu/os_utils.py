@@ -93,7 +93,7 @@ class OsUtils:
     ) -> None:
         raise FeatureNotSupportedError(self._os_name, _calling_function_name())
 
-    def parse_timestamp(self, time_stamp) -> datetime:
+    def parse_timestamp(self, time_stamp: float) -> datetime:
         raise FeatureNotSupportedError(self._os_name, _calling_function_name())
 
     def chown_to_non_sudo_if_needed(self, path: Path) -> None:

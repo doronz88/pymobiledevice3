@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import FrameType
 from typing import Annotated, Optional
 from zipfile import ZipFile
 
@@ -287,7 +288,7 @@ async def debugserver_lldb(
     resize_pty()
 
     # Set up signal handler for window resize
-    def handle_sigwinch(signum, frame):
+    def handle_sigwinch(signum: int, frame: Optional[FrameType]) -> None:
         resize_pty()
 
     old_sigwinch_handler = signal.signal(signal.SIGWINCH, handle_sigwinch)

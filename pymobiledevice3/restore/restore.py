@@ -13,6 +13,7 @@ from typing import Any, Callable, Optional
 from zipfile import ZipFile, ZipInfo
 
 import requests
+from ipsw_parser.build_identity import BuildIdentity
 from ipsw_parser.ipsw import IPSW
 from tqdm import tqdm, trange
 
@@ -79,9 +80,9 @@ class Restore(BaseRestore):
         self,
         ipsw: IPSW,
         device: Device,
-        tss=None,
+        tss: Optional[dict[str, Any]] = None,
         behavior: Behavior = Behavior.Update,
-        ignore_fdr=False,
+        ignore_fdr: bool = False,
         enable_tss_batch: bool = False,
     ):
         super().__init__(ipsw, device, tss, behavior)
@@ -217,7 +218,7 @@ class Restore(BaseRestore):
 
         await asr.close()
 
-    async def get_build_identity_from_request(self, msg):
+    async def get_build_identity_from_request(self, msg: dict[str, Any]):
         return await self.get_build_identity(msg["Arguments"].get("IsRecoveryOS", False))
 
     async def send_buildidentity(self, message: dict[str, Any]) -> None:
@@ -312,7 +313,9 @@ class Restore(BaseRestore):
 
         self.logger.info(f"Done sending {component_name}")
 
-    async def get_recovery_os_local_policy_tss_response(self, args, build_identity=None):
+    async def get_recovery_os_local_policy_tss_response(
+        self, args: dict[str, Any], build_identity: Optional[BuildIdentity] = None
+    ):
         if build_identity is None:
             build_identity = self.build_identity
 
@@ -522,13 +525,13 @@ class Restore(BaseRestore):
 
         return bbfw_fn_elem_mav25.get(elem) if bb_chip_id == 0x1F30E1 else bbfw_fn_elem.get(elem)
 
-    def fls_parse(self, buffer):
+    def fls_parse(self, buffer: bytes):
         raise NotImplementedError()
 
-    def fls_update_sig_blob(self, buffer, blob):
+    def fls_update_sig_blob(self, buffer: bytes, blob: bytes):
         raise NotImplementedError()
 
-    def fls_insert_ticket(self, fls, bbticket):
+    def fls_insert_ticket(self, fls: bytes, bbticket: bytes):
         raise NotImplementedError()
 
     def sign_bbfw(
@@ -1149,7 +1152,7 @@ class Restore(BaseRestore):
         return merged
 
     @staticmethod
-    def _dig(container: dict[str, Any], path) -> typing.Any:
+    def _dig(container: dict[str, Any], path: typing.Union[str, list[str]]) -> typing.Any:
         """Navigate a dict by a single key or a list-of-keys path; None if any hop misses."""
         cur = container
         for key in [path] if isinstance(path, str) else path:
@@ -1197,7 +1200,7 @@ class Restore(BaseRestore):
         runtime_nonce = self._resolve_nonce(devgen, entry.devgen_nonce, entry.devgen_nonce_path)
         return self._lookup_prefetched_tss(updater_name, runtime_nonce)
 
-    def _lookup_prefetched_tss(self, updater_name: str, runtime_nonce) -> Optional[TSSResponse]:
+    def _lookup_prefetched_tss(self, updater_name: str, runtime_nonce: Optional[bytes]) -> Optional[TSSResponse]:
         """Return the prefetched TSS response if the runtime nonce matches what we prefetched with."""
         entry = self._prefetched_updater_tss.get(updater_name)
         if entry is None or runtime_nonce is None:

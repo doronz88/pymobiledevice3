@@ -30,7 +30,7 @@ NONCE_CYCLE_INTERVAL = 60 * 5
 
 
 @asynccontextmanager
-async def _aclosing(resource):
+async def _aclosing(resource: Any):
     try:
         yield resource
     finally:
@@ -262,7 +262,7 @@ class MobileActivationService:
             raise MobileActivationException(f"Mobile activation can not be done due to: {response}")
         return response["Value"]
 
-    async def create_activation_info_with_session(self, handshake_response):
+    async def create_activation_info_with_session(self, handshake_response: Any):
         """
         Build the device's activation info from a completed DRM handshake.
 
@@ -279,7 +279,7 @@ class MobileActivationService:
             raise MobileActivationException(f"Mobile activation can not be done due to: {response}")
         return response["Value"]
 
-    async def activate_with_lockdown(self, activation_record):
+    async def activate_with_lockdown(self, activation_record: bytes):
         """
         Apply an activation record to the device using the legacy lockdown flow.
 
@@ -300,7 +300,7 @@ class MobileActivationService:
         assert isinstance(self.lockdown, LockdownClient)
         await self.lockdown._request("Activate", {"ActivationRecord": node.get("activation-record")})
 
-    async def activate_with_session(self, activation_record, headers):
+    async def activate_with_session(self, activation_record: Any, headers: CaseInsensitiveDict[str]):
         """
         Apply an activation record to the device using the session-based flow.
 

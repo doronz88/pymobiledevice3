@@ -50,7 +50,7 @@ class Posix(OsUtils):
         assert sudo_gid is not None
         os.chown(path, int(sudo_uid), int(sudo_gid))
 
-    def parse_timestamp(self, time_stamp) -> datetime.datetime:
+    def parse_timestamp(self, time_stamp: float) -> datetime.datetime:
         return datetime.datetime.fromtimestamp(time_stamp)
 
     def wait_return(self):

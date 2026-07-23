@@ -78,7 +78,7 @@ class Win32(OsUtils):
         logging.getLogger(__name__).debug("Socket does not expose ioctl(); enabling SO_KEEPALIVE fallback")
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
 
-    def parse_timestamp(self, time_stamp) -> datetime.datetime:
+    def parse_timestamp(self, time_stamp: float) -> datetime.datetime:
         return datetime.datetime.fromtimestamp(time_stamp / 1000)
 
     def chown_to_non_sudo_if_needed(self, path: Path) -> None:

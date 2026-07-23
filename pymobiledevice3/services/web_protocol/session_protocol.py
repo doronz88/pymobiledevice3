@@ -1,4 +1,3 @@
-# pyright: reportMissingParameterType=error
 import asyncio
 from functools import partial
 from typing import TYPE_CHECKING, Any

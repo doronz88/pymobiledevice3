@@ -1,4 +1,3 @@
-# pyright: reportMissingParameterType=error
 from pymobiledevice3.services.web_protocol.alert import Alert
 from pymobiledevice3.services.web_protocol.automation_session import AutomationSession, By
 from pymobiledevice3.services.web_protocol.element import WebElement

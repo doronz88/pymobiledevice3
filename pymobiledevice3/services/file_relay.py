@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 
@@ -47,7 +49,7 @@ class FileRelayService(LockdownService):
         self.logger.info("Disconecting...")
         await self.service.close()
 
-    async def request_sources(self, sources=None):
+    async def request_sources(self, sources: Optional[list[str]] = None):
         """
         Request one or more data sources and return the combined archive.
 

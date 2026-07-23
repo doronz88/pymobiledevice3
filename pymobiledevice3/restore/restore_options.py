@@ -1,7 +1,7 @@
 # extracted from ac2
 import logging
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from ipsw_parser.build_identity import BuildIdentity
 
@@ -102,14 +102,14 @@ SUPPORTED_MESSAGE_TYPES = {
 class RestoreOptions:
     def __init__(
         self,
-        firmware_preflight_info=None,
-        sep=None,
-        macos_variant=None,
+        firmware_preflight_info: Optional[dict[str, Any]] = None,
+        sep: Optional[dict[str, Any]] = None,
+        macos_variant: Optional[BuildIdentity] = None,
         build_identity: Optional[BuildIdentity] = None,
-        restore_boot_args=None,
-        spp=None,
+        restore_boot_args: Optional[str] = None,
+        spp: Optional[dict[str, Any]] = None,
         restore_behavior: Optional[str] = None,
-        msp=None,
+        msp: Optional[int] = None,
     ):
         self.AutoBootDelay = 0
 

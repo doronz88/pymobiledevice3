@@ -1,4 +1,3 @@
-# pyright: reportMissingParameterType=error
 from abc import ABC, abstractmethod
 from base64 import b64decode
 from typing import TYPE_CHECKING, Optional

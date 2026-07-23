@@ -1,8 +1,9 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 import typer
+from construct import Container
 from pygments import formatters, highlight, lexers
 from typer_injector import InjectingTyper
 
@@ -16,7 +17,7 @@ cli = InjectingTyper(
 )
 
 
-def print_packet_header(packet, color: bool) -> None:
+def print_packet_header(packet: Container[Any], color: bool) -> None:
     date = datetime.fromtimestamp(packet.seconds + (packet.microseconds / 1000000))
     data = (
         f"{date}: "
@@ -30,7 +31,7 @@ def print_packet_header(packet, color: bool) -> None:
         print(highlight(data, lexers.HspecLexer(), formatters.Terminal256Formatter(style="native")), end="")
 
 
-def print_packet(packet, color: Optional[bool] = None):
+def print_packet(packet: Container[Any], color: Optional[bool] = None) -> Container[Any]:
     """Return the packet, so it can be chained in a generator"""
     if color is None:
         color = user_requested_colored_output()

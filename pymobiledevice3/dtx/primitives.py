@@ -1,4 +1,3 @@
-# pyright: reportMissingParameterType=error
 """DTX primitive value types and dictionary codec.
 
 This module provides the low-level wire representation for DTX *auxiliary

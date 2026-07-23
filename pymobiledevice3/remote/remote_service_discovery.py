@@ -211,7 +211,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     async def get_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> Any:
         return await self._lockdown.get_value(domain, key)
 
-    async def set_value(self, value, domain: Optional[str] = None, key: Optional[str] = None) -> dict[str, Any]:
+    async def set_value(self, value: Any, domain: Optional[str] = None, key: Optional[str] = None) -> dict[str, Any]:
         return await self._lockdown.set_value(value, domain=domain, key=key)
 
     async def remove_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> dict[str, Any]:
@@ -298,7 +298,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             raise
         return service
 
-    async def start_lockdown_developer_service(self, name, include_escrow_bag: bool = False) -> ServiceConnection:
+    async def start_lockdown_developer_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
         """
         Open a connection to a developer service (without RSD check-in).
 
@@ -371,7 +371,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         await self.connect()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self.close()
 
     def __repr__(self) -> str:

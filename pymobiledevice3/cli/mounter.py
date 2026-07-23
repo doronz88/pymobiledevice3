@@ -1,7 +1,7 @@
 import logging
 from functools import update_wrapper
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Any, Callable, Optional
 from urllib.error import URLError
 
 import typer
@@ -25,8 +25,8 @@ from pymobiledevice3.services.mobile_image_mounter import (
 logger = logging.getLogger(__name__)
 
 
-def catch_errors(func):
-    def catch_function(*args, **kwargs):
+def catch_errors(func: Callable[..., Any]) -> Callable[..., Any]:
+    def catch_function(*args: Any, **kwargs: Any) -> Any:
         try:
             return func(*args, **kwargs)
         except AlreadyMountedError:

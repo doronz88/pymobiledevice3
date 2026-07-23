@@ -3,6 +3,7 @@ from typing import Any
 
 from pymobiledevice3.dtx import DTXService, dtx_method
 from pymobiledevice3.dtx_service import DtxService
+from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
 
 class EnergyMonitorService(DTXService):
@@ -27,7 +28,7 @@ class EnergyMonitor(DtxService[EnergyMonitorService]):
     async-iterable, yielding one energy-attribute sample for the monitored PIDs per iteration.
     """
 
-    def __init__(self, dvt, pid_list: list[int]) -> None:
+    def __init__(self, dvt: DtxServiceProvider, pid_list: list[int]) -> None:
         """
         :param dvt: The `DvtProvider` used to open the Instruments channel.
         :param pid_list: The process IDs to sample energy usage for.
@@ -43,7 +44,7 @@ class EnergyMonitor(DtxService[EnergyMonitorService]):
         await self.service.start_sampling_for_pids_(self._pid_list)
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
         await self.service.stop_sampling_for_pids_(self._pid_list)
 
     async def __aiter__(self) -> AsyncGenerator[Any, None]:

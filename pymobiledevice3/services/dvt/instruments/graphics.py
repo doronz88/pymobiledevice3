@@ -1,14 +1,14 @@
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from pymobiledevice3.dtx import DTXQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
+from pymobiledevice3.dtx import DTXContext, DTXQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 
 
 class GraphicsService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.graphics.opengl"
 
-    def __init__(self, ctx):
+    def __init__(self, ctx: DTXContext):
         super().__init__(ctx)
         self.events: DTXQueue[Any] = DTXQueue()
 
@@ -45,7 +45,7 @@ class Graphics(DtxService[GraphicsService]):
         await self.service.start_sampling_at_time_interval_(0.0)
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
         await self.service.stop_sampling()
 
     async def __aiter__(self) -> AsyncGenerator[Any, None]:

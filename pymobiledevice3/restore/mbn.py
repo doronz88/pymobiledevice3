@@ -192,7 +192,7 @@ def _read_elf_headers(data: bytes):
     return None, None
 
 
-def _read_program_headers(data: bytes, kind: str, hdr) -> list[Any]:
+def _read_program_headers(data: bytes, kind: str, hdr: Any) -> list[Any]:
     phdrs = []
     if hdr.e_phnum == 0:
         logger.error("%s: ELF has no program sections", "_read_program_headers")
@@ -223,7 +223,7 @@ def _elf_last_segment_end(data: bytes) -> Optional[int]:
     return int(last.p_offset + last.p_filesz)
 
 
-def _mbn_v7_header_sizes_valid(h, sect_size: int) -> bool:
+def _mbn_v7_header_sizes_valid(h: Any, sect_size: int) -> bool:
     total = (
         MBN_V7.sizeof()
         + h.common_metadata_size
@@ -238,7 +238,7 @@ def _mbn_v7_header_sizes_valid(h, sect_size: int) -> bool:
     return total <= sect_size
 
 
-def _mbn_v7_header_sizes_expected(h) -> bool:
+def _mbn_v7_header_sizes_expected(h: Any) -> bool:
     return (
         (h.qti_metadata_size in (0, 0xE0))
         and (h.oem_metadata_size in (0, 0xE0))
@@ -247,7 +247,7 @@ def _mbn_v7_header_sizes_expected(h) -> bool:
     )
 
 
-def _mbn_v7_log(h, func: str, prefix: str) -> None:
+def _mbn_v7_log(h: Any, func: str, prefix: str) -> None:
     logger.debug(
         "%s: %s header {version=0x%x, common_metadata_size=0x%x, qti_metadata_size=0x%x, "
         "oem_metadata_size=0x%x, hash_table_size=0x%x, qti_signature_size=0x%x, "

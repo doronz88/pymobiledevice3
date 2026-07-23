@@ -1,4 +1,3 @@
-# pyright: reportMissingParameterType=error
 import asyncio
 import json
 import logging

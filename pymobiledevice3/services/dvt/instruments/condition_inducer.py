@@ -3,6 +3,7 @@ from typing import Any, cast
 
 from pymobiledevice3.dtx import DTXService, dtx_method
 from pymobiledevice3.dtx_service import DtxService
+from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 
 
@@ -30,7 +31,7 @@ class ConditionInducer(DtxService[ConditionInducerService]):
     replaces any previously active condition.
     """
 
-    def __init__(self, dvt):
+    def __init__(self, dvt: DtxServiceProvider):
         super().__init__(dvt)
         self.logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class ConditionInducer(DtxService[ConditionInducerService]):
         """
         return await self.service.available_condition_inducers()
 
-    async def set(self, profile_identifier):
+    async def set(self, profile_identifier: str):
         """
         Activate the condition profile with the given identifier.
 

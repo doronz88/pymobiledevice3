@@ -177,7 +177,7 @@ def _write_process(out: Optional[TextIO], process: dict[str, Any]) -> None:
     out.flush()
 
 
-def _write_json(out: Optional[TextIO], value) -> None:
+def _write_json(out: Optional[TextIO], value: Any) -> None:
     if out is None:
         print_json(value)
         return
@@ -290,7 +290,10 @@ def _select_process_from_snapshot(
 
 
 async def _select_process_from_sysmon(
-    dvt, parsed_filters: dict[str, list[str]], keys: Optional[list[str]], selection_mode: ProcessSelectionMode
+    dvt: DvtProvider,
+    parsed_filters: dict[str, list[str]],
+    keys: Optional[list[str]],
+    selection_mode: ProcessSelectionMode,
 ) -> dict[str, Any]:
     async with await Sysmontap.create(dvt) as selection_sysmon:
         async for process_snapshot in iter_processes(

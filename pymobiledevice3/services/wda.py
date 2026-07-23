@@ -1,4 +1,3 @@
-# pyright: reportMissingParameterType=error
 """Minimal WebDriverAgent (WDA) client.
 
 This module provides:

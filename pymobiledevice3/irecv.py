@@ -1,4 +1,3 @@
-# pyright: reportMissingParameterType=error
 import binascii
 import contextlib
 import logging

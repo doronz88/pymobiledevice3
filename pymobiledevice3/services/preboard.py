@@ -24,7 +24,7 @@ class PreboardService(LockdownService):
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
-    async def create_stashbag(self, manifest):
+    async def create_stashbag(self, manifest: bytes):
         """
         Create a stashbag on the device.
 
@@ -35,7 +35,7 @@ class PreboardService(LockdownService):
         """
         return await self.service.send_recv_plist({"Command": "CreateStashbag", "Manifest": manifest})
 
-    async def commit(self, manifest):
+    async def commit(self, manifest: bytes):
         """
         Commit a previously created stashbag on the device.
 

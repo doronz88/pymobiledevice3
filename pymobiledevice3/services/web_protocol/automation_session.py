@@ -1,4 +1,3 @@
-# pyright: reportMissingParameterType=error
 import importlib.resources
 import json
 from collections.abc import Iterable

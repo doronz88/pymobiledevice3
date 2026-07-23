@@ -4,7 +4,7 @@ import typing
 from datetime import datetime
 from typing import Any, Optional
 
-from pymobiledevice3.dtx import DTXQueue, DTXService, PInt32, dtx_method, dtx_on_invoke
+from pymobiledevice3.dtx import DTXContext, DTXQueue, DTXService, PInt32, dtx_method, dtx_on_invoke
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.exceptions import DisableMemoryLimitError
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -42,7 +42,7 @@ class OutputReceivedEvent:
 class ProcessControlService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.processcontrol"
 
-    def __init__(self, ctx):
+    def __init__(self, ctx: DTXContext):
         super().__init__(ctx)
         self.output_events: DTXQueue[list[Any]] = DTXQueue()
 
@@ -151,7 +151,7 @@ class ProcessControl(DtxService[ProcessControlService]):
     async def launch(
         self,
         bundle_id: str,
-        arguments=None,
+        arguments: Optional[list[str]] = None,
         kill_existing: bool = True,
         start_suspended: bool = False,
         environment: Optional[dict[str, Any]] = None,

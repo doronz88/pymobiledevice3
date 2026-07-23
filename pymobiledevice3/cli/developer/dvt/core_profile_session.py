@@ -346,7 +346,7 @@ async def parse_live_profile_session(
                 chunk_queue.put(None)
 
 
-def get_image_name(dsc_uuid_map, image_uuid, current_dsc_map):
+def get_image_name(dsc_uuid_map: dict[str, dict[str, str]], image_uuid: str, current_dsc_map: dict[str, str]) -> str:
     if not current_dsc_map:
         for dsc_mapping in dsc_uuid_map.values():
             if image_uuid in dsc_mapping:
@@ -355,7 +355,7 @@ def get_image_name(dsc_uuid_map, image_uuid, current_dsc_map):
     return current_dsc_map.get(image_uuid, image_uuid)
 
 
-def format_callstack(callstack: str, dsc_uuid_map, current_dsc_map) -> str:
+def format_callstack(callstack: str, dsc_uuid_map: dict[str, dict[str, str]], current_dsc_map: dict[str, str]) -> str:
     lines = callstack.splitlines()
     for i, line in enumerate(lines[1:]):
         if ":" in line:

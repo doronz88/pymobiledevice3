@@ -126,7 +126,7 @@ async def backup(
 
         with tqdm(total=100, dynamic_ncols=True) as pbar:
 
-            def update_bar(percentage) -> None:
+            def update_bar(percentage: float) -> None:
                 pbar.n = percentage
                 pbar.refresh()
 
@@ -180,7 +180,7 @@ async def restore(
     async with Mobilebackup2Service(service_provider) as backup_client:
         with tqdm(total=100, dynamic_ncols=True) as pbar:
 
-            def update_bar(percentage) -> None:
+            def update_bar(percentage: float) -> None:
                 pbar.n = percentage
                 pbar.refresh()
 

@@ -333,7 +333,7 @@ class RemotePairingTunnel(ABC):
         finally:
             loop.remove_reader(fd)
 
-    async def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
+    async def start_tunnel(self, address: str, mtu: int, interface_name: str = DEFAULT_INTERFACE_NAME) -> None:
         self.tun = create_tun_device(interface_name)
         self.tun.addr = address
         self.tun.mtu = mtu
@@ -400,7 +400,7 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
             await self.ping()
             await asyncio.sleep(self._quic.configuration.idle_timeout / 2)
 
-    async def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
+    async def start_tunnel(self, address: str, mtu: int, interface_name: str = DEFAULT_INTERFACE_NAME) -> None:
         await super().start_tunnel(address, mtu, interface_name=interface_name)
         self._keep_alive_task = asyncio.create_task(self.keep_alive_task())
 
@@ -501,7 +501,7 @@ class RemotePairingTcpTunnel(RemotePairingTunnel):
         await self._service.sendall(payload)
         return json.loads(CDTunnelPacket.parse(await self._recv_cdtunnel_packet_from_service()).body)
 
-    async def start_tunnel(self, address: str, mtu: int, interface_name=DEFAULT_INTERFACE_NAME) -> None:
+    async def start_tunnel(self, address: str, mtu: int, interface_name: str = DEFAULT_INTERFACE_NAME) -> None:
         await super().start_tunnel(address, mtu, interface_name=interface_name)
         self._sock_read_task = asyncio.create_task(self.sock_read_task(), name=f"sock-read-task-{address}")
 
@@ -1124,7 +1124,7 @@ class RemotePairingProtocol(StartTcpTunnel):
     async def __aenter__(self) -> "RemotePairingProtocol":
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self.close()
 
 
@@ -1245,7 +1245,7 @@ class RemotePairingTunnelService(RemotePairingProtocol):
         await writer.drain()
 
     @staticmethod
-    def _default_json_encoder(obj) -> str:
+    def _default_json_encoder(obj: Any) -> str:
         if isinstance(obj, bytes):
             return base64.b64encode(obj).decode()
         raise TypeError()
@@ -1939,7 +1939,7 @@ class PairableHost:
         return envelope["message"]["plain"]["_0"]
 
     @staticmethod
-    def _json_default(obj) -> str:
+    def _json_default(obj: Any) -> str:
         if isinstance(obj, bytes):
             return base64.b64encode(obj).decode()
         raise TypeError(f"Object of type {type(obj)} is not JSON serializable")

@@ -470,16 +470,16 @@ async def xcuitest(
 
             async def test_suite_did_finish(
                 self,
-                suite,
-                finished_at,
-                run_count,
-                failures,
-                unexpected,
-                test_duration,
-                total_duration,
-                skipped,
-                expected_failures,
-                uncaught_exceptions,
+                suite: str,
+                finished_at: str,
+                run_count: int,
+                failures: int,
+                unexpected: int,
+                test_duration: float,
+                total_duration: float,
+                skipped: int,
+                expected_failures: int,
+                uncaught_exceptions: int,
             ) -> None:
                 _write(
                     f"[suite] finish {suite}  at={finished_at}"

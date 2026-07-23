@@ -1,14 +1,14 @@
 import typing
 from typing import Any
 
-from pymobiledevice3.dtx import DTXQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
+from pymobiledevice3.dtx import DTXContext, DTXQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 
 
 class NotificationsService(DTXService):
     IDENTIFIER = "com.apple.instruments.server.services.mobilenotifications"
 
-    def __init__(self, ctx):
+    def __init__(self, ctx: DTXContext):
         super().__init__(ctx)
         self.events: DTXQueue[Any] = DTXQueue()
 
@@ -49,7 +49,7 @@ class Notifications(DtxService[NotificationsService]):
         await self.service.set_memory_notifications_enabled_(True)
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
         await self.service.set_application_state_notifications_enabled_(False)
         await self.service.set_memory_notifications_enabled_(False)
 

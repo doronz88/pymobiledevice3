@@ -6,6 +6,7 @@ import socket
 import struct
 import time
 from dataclasses import dataclass
+from types import TracebackType
 from typing import Any, NoReturn, Optional, Union
 
 from construct import (
@@ -273,7 +274,12 @@ class MuxConnection:
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         await self.close()
 
 
@@ -369,7 +375,7 @@ class PlistMuxConnection(BinaryMuxConnection):
             raise NotPairedError("device should be paired first")
         return plistlib.loads(pair_record)
 
-    def _process_device_state(self, response):
+    def _process_device_state(self, response: dict[str, Any]) -> None:
         if response["MessageType"] == "Attached":
             super()._add_device(
                 MuxDevice(

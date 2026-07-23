@@ -50,7 +50,7 @@ class DTTapMessage:
     """Proxy for all ``DTTapMessage`` subclasses from the device diagnostics tap."""
 
     @staticmethod
-    def decode_archive(archive_obj) -> Any:
+    def decode_archive(archive_obj: archiver.ArchivedObject) -> Any:
         """Decode an archived DTTapMessage by extracting its embedded plist."""
         return archive_obj.decode("DTTapMessagePlist")
 
@@ -59,7 +59,7 @@ class NSNull:
     """Proxy for Objective-C ``NSNull``."""
 
     @staticmethod
-    def decode_archive(archive_obj) -> None:
+    def decode_archive(archive_obj: archiver.ArchivedObject) -> None:
         """Decode an archived NSNull — always returns ``None``."""
         return None
 
@@ -79,7 +79,7 @@ class NSError:
         archive_obj.encode("NSUserInfo", self.user_info)
 
     @staticmethod
-    def decode_archive(archive_obj) -> NSError:
+    def decode_archive(archive_obj: archiver.ArchivedObject) -> NSError:
         """Decode an NSKeyedArchive object into an :class:`NSError` instance."""
         domain = archive_obj.decode("NSDomain")
         code = archive_obj.decode("NSCode")
@@ -127,7 +127,7 @@ class NSUUID(uuid.UUID):
 class NSURL:
     """Proxy for Objective-C ``NSURL``."""
 
-    def __init__(self, base, relative):
+    def __init__(self, base: Any, relative: Any):
         self.base = base
         self.relative = relative
 

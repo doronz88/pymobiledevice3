@@ -175,7 +175,7 @@ def _highlight_match_filters(styled_line: str, match: list[str], match_insensiti
 
 
 def _highlight_regex_filters(styled_line: str, match_regex: list[re.Pattern[str]]) -> str:
-    def replace(m):
+    def replace(m: re.Match[str]) -> str:
         if len(m.groups()):
             return styled_line.replace(m.group(1), typer.style(m.group(1), bold=True, underline=True))
         return ""

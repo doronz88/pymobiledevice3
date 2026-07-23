@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import ctypes
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 # Standard AudioSpecificConfig for AAC-ELD @ 48 kHz stereo, 480 samples/frame.
 # Used as the decompression magic cookie ("dmgc") when constructing the
@@ -110,7 +110,7 @@ class AACELDDecoder:
         self._pending_buf = None
         self._pending_pd = _APD(0, 0, 0)
 
-        def _input_proc(decoder, ioN, ioData, outPD, _):
+        def _input_proc(decoder: Any, ioN: Any, ioData: Any, outPD: Any, _: Any) -> int:
             au = self._pending
             if au is None:
                 ioN[0] = 0

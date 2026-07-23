@@ -10,6 +10,7 @@ import struct
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
+from types import TracebackType
 from typing import Any, Callable, Optional, TypeVar
 
 import ifaddr  # pip install ifaddr
@@ -47,7 +48,7 @@ _T = TypeVar("_T")
 
 # --- Dataclass decorator shim (adds slots only on 3.10+)
 @dataclass_transform(field_specifiers=(field,))
-def dataclass_compat(*d_args, **d_kwargs) -> Callable[[type[_T]], type[_T]]:
+def dataclass_compat(*d_args: Any, **d_kwargs: Any) -> Callable[[type[_T]], type[_T]]:
     if sys.version_info < (3, 10):
         d_kwargs.pop("slots", None)  # ignore on 3.9
     return dataclass(*d_args, **d_kwargs)
@@ -229,7 +230,7 @@ class _DatagramProtocol(asyncio.DatagramProtocol):
     def __init__(self, queue: asyncio.Queue[tuple[bytes, Any]]):
         self.queue = queue
 
-    def datagram_received(self, data, addr):
+    def datagram_received(self, data: bytes, addr: Any) -> None:
         # addr: IPv4 -> (host, port); IPv6 -> (host, port, flowinfo, scopeid)
         self.queue.put_nowait((data, addr))
 
@@ -280,7 +281,7 @@ async def _open_mdns_sockets():
     return transports, queue
 
 
-async def _send_query_all(transports, pkt: bytes):
+async def _send_query_all(transports: list[tuple[asyncio.DatagramTransport, socket.socket]], pkt: bytes):
     for transport, sock in transports:
         if sock.family == socket.AF_INET:
             transport.sendto(pkt, (MDNS_MCAST_V4, MDNS_PORT))
@@ -310,7 +311,7 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
     txt_map: dict[str, dict[str, Any]] = {}
     host_addrs: dict[str, list[Address]] = defaultdict(list)  # host -> list[(ip, iface)]
 
-    def _record_addr(rr_name: str, ip_str: str, pkt_addr):
+    def _record_addr(rr_name: str, ip_str: str, pkt_addr: Any) -> None:
         # Determine family and possible scopeid from the packet that delivered this RR
         family = socket.AF_INET6 if ":" in ip_str else socket.AF_INET
         scopeid = None
@@ -596,7 +597,12 @@ class MDNSResponder:
             await asyncio.sleep(0.25)
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         if self._serve_task is not None:
             self._serve_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
