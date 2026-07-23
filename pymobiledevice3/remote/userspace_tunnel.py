@@ -129,7 +129,7 @@ def throughput_sysctls() -> dict[str, int]:
     ACKed, so each device/transport converges to its own real forwarding limit with no
     hardcoded per-device size and a worst case equal to the old static 1340 cap.
 
-    Every knob here is guaranteed by the pmd-pytcp version floor in requirements.txt — no
+    Every knob here is guaranteed by the pmd-pytcp version floor in pyproject.toml — no
     capability probing.
     """
     return {

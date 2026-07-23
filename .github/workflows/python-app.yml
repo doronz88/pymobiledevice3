@@ -6,7 +6,6 @@ on:
     paths:
       - '.github/workflows/python-app.yml'
       - 'pymobiledevice3/**'
-      - 'requirements.txt'
       - 'pyproject.toml'
   release:
     types: [ created ]
@@ -37,7 +36,6 @@ jobs:
           enable-cache: true
           cache-dependency-glob: |
             pyproject.toml
-            requirements.txt
       - name: Run pre-commit hooks
         # pyright needs the project's dependencies installed; it runs in the dedicated job below.
         env:
@@ -61,7 +59,6 @@ jobs:
           enable-cache: true
           cache-dependency-glob: |
             pyproject.toml
-            requirements.txt
       - name: Install dependencies
         run: |
           uv venv

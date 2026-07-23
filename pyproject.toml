@@ -32,7 +32,71 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3 :: Only",
 ]
-dynamic = ["dependencies", "version"]
+dynamic = ["version"]
+dependencies = [
+    "construct>=2.9.29",
+    # construct-typing 0.8.0 requires Python >= 3.10 and replaces csfield(Const(...)) with
+    # csfield_const() (see afc.py). Keep the 3.9 floor on the last 0.7.x release.
+    "construct-typing>=0.8.0; python_version >= '3.10'",
+    "construct-typing>=0.7.0,<0.8.0; python_version < '3.10'",
+    "asn1",
+    "coloredlogs",
+    "IPython",
+    "bpylist2>=4.0.1",
+    "pygments",
+    "hexdump",
+    "daemonize",
+    "gpxpy<1.7.0,!=1.6.0",
+    "pykdebugparser>=1.2.7",
+    "pyusb>=1.2.1",
+    "tqdm",
+    "requests",
+    "xonsh",
+    "parameter_decorators",
+    "packaging",
+    "typing_extensions>=4.1.0",
+    "pygnuutils>=0.0.7",
+    "cryptography>=41.0.1",
+    "pycrashreport>=2.0.0",
+    "fastapi>=0.93.0",
+    "uvicorn>=0.15.0",
+    "wsproto",
+    "Pillow",
+    "inquirer3>=0.6.0",
+    "ipsw_parser>=1.6.0",
+    "ifaddr",
+    "hyperframe",
+    "srptools",
+    "qh3>=1.0.0,<2",
+    "developer_disk_image>=0.0.2",
+    "opack2",
+    "psutil",
+    "pytun-pmd3>=3.0.3",
+    "prompt_toolkit",
+    "sslpsk-pmd3>=1.0.3; python_version < '3.13'",
+    "python-pcapng>=2.1.1",
+    "plumbum",
+    "pyimg4>=0.8.8",
+    "pyiosbackup>=0.2.4",
+    "typer>=0.23.2,<0.24.0; python_version < '3.10'",
+    "typer>=0.25; python_version >= '3.10'",
+    "typer-injector>=0.2.0",
+    "defusedxml",
+    "pywin32; platform_system == 'Windows'",
+    "av>=14.0.0; platform_system != 'Darwin'",
+    # pmd-pytcp — the no-root userspace tunnel's TCP/IP stack, a minimal PyTCP fork
+    # (https://github.com/doronz88/pmd-pytcp). Pulls its pmd-net-addr / pmd-net-proto siblings in
+    # transitively. Supported on Python 3.9+ (the whole pymobiledevice3 range); if the import or
+    # stack init fails the tunnel transparently falls back to the kernel path (see cli_common).
+    # 0.3.0 floor: the 'net.rx_cksum_validate' software RX-checksum-offload sysctl (skips the
+    # RFC 1071 checksum on the AEAD-authenticated tunnel; ~+35% bulk download). 0.2.0 added
+    # dynamic send-MSS via working RFC 4821/8899 PLPMTUD (probing sysctls tcp.mtu_probing /
+    # tcp.base_mss / tcp.plpmtud.probe_timer_ms, the tcp.rto.min_ms floor, and the runtime
+    # 'log.enabled' hot-path gate). userspace_tunnel.py sets these knobs unconditionally — no
+    # capability probing — so the floor IS the compatibility contract. (0.1.0 introduced the
+    # pure-asyncio stack the module is written against.)
+    "pmd-pytcp>=0.3.0; python_version >= '3.9'",
+]
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-asyncio"]
@@ -54,6 +118,7 @@ pymobiledevice3 = "pymobiledevice3.__main__:main"
 
 [tool.setuptools]
 package-data = { "pymobiledevice3" = [
+    "py.typed",
     "resources/webinspector/*.js",
     "resources/dsc_uuid_map.json",
     "resources/notifications.txt",
@@ -66,7 +131,6 @@ package-data = { "pymobiledevice3" = [
 exclude = ["docs*", "tests*"]
 
 [tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
 version = { attr = "pymobiledevice3._version.__version__" }
 
 [tool.setuptools_scm]
