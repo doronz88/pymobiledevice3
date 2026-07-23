@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 import asyncio
 import contextlib
 import json
@@ -6,7 +7,7 @@ import sys
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Optional, TextIO
+from typing import Annotated, Any, Optional, TextIO
 
 import typer
 from typer_injector import InjectingTyper
@@ -115,7 +116,7 @@ def _parse_process_filters(filter_expressions: Optional[list[str]]) -> dict[str,
     return parsed_filters
 
 
-def _validate_process_keys(process: dict, keys: list[str]) -> None:
+def _validate_process_keys(process: dict[str, Any], keys: list[str]) -> None:
     unknown_keys = [key for key in keys if key not in process]
     if unknown_keys:
         raise typer.BadParameter(
@@ -123,13 +124,13 @@ def _validate_process_keys(process: dict, keys: list[str]) -> None:
         )
 
 
-def _matches_filters(proc: dict, parsed_filters: dict[str, list[str]]) -> bool:
+def _matches_filters(proc: dict[str, Any], parsed_filters: dict[str, list[str]]) -> bool:
     if len(parsed_filters) == 0:
         return True
     return all(str(proc.get(key)) in values for key, values in parsed_filters.items())
 
 
-def _select_process_output_keys(process: dict, output_keys: Optional[list[str]]) -> dict:
+def _select_process_output_keys(process: dict[str, Any], output_keys: Optional[list[str]]) -> dict[str, Any]:
     if not output_keys:
         return process
 
@@ -149,7 +150,7 @@ def _format_byte_count(value: int) -> str:
     return f"{size:.1f}{suffixes[suffix_index]}" if size < 10 else f"{size:.0f}{suffixes[suffix_index]}"
 
 
-def _humanize_process_values(process: dict) -> dict:
+def _humanize_process_values(process: dict[str, Any]) -> dict[str, Any]:
     humanized = dict(process)
     for key, value in humanized.items():
         if key in _BYTE_FIELDS and isinstance(value, int):
@@ -157,7 +158,9 @@ def _humanize_process_values(process: dict) -> dict:
     return humanized
 
 
-def _serialize_process(process: dict, keys: Optional[list[str]] = None, human: bool = False) -> dict:
+def _serialize_process(
+    process: dict[str, Any], keys: Optional[list[str]] = None, human: bool = False
+) -> dict[str, Any]:
     selected = dict(_select_process_output_keys(process, keys))
     if human:
         selected = _humanize_process_values(selected)
@@ -165,7 +168,7 @@ def _serialize_process(process: dict, keys: Optional[list[str]] = None, human: b
     return selected
 
 
-def _write_process(out: Optional[TextIO], process: dict) -> None:
+def _write_process(out: Optional[TextIO], process: dict[str, Any]) -> None:
     if out is None:
         print_json(process)
         return
@@ -188,14 +191,14 @@ def _write_status(line: str) -> None:
     print(line, flush=True)
 
 
-def _describe_process(process: dict) -> str:
+def _describe_process(process: dict[str, Any]) -> str:
     name = process.get("name") or process.get("comm") or "<unknown>"
     pid = process.get("pid")
     ppid = process.get("ppid")
     return f"pid={pid}, ppid={ppid}, name={name}"
 
 
-def _describe_processes(processes: list[dict]) -> str:
+def _describe_processes(processes: list[dict[str, Any]]) -> str:
     return "; ".join(_describe_process(process) for process in processes)
 
 
@@ -219,7 +222,7 @@ async def iter_processes(sysmon: Sysmontap, skip_first_snapshot: bool = False):
         yield process_snapshot
 
 
-def _process_sort_key(process: dict) -> tuple:
+def _process_sort_key(process: dict[str, Any]) -> tuple[int, int, str]:
     # Sort from oldest to newest process. "first" picks the oldest match and "last" picks the newest match.
     start_abs_time = process.get("startAbsTime")
     if not isinstance(start_abs_time, int):
@@ -231,7 +234,9 @@ def _process_sort_key(process: dict) -> tuple:
     return start_abs_time, pid, str(name)
 
 
-def _select_process_from_candidates(processes: list[dict], selection_mode: ProcessSelectionMode) -> dict:
+def _select_process_from_candidates(
+    processes: list[dict[str, Any]], selection_mode: ProcessSelectionMode
+) -> dict[str, Any]:
     if len(processes) == 1:
         return processes[0]
 
@@ -256,7 +261,7 @@ def _select_process_from_candidates(processes: list[dict], selection_mode: Proce
     return sorted_processes[selection_index]
 
 
-def _get_process_identifier(process: dict) -> tuple[str, object]:
+def _get_process_identifier(process: dict[str, Any]) -> tuple[str, object]:
     if process.get("uniqueID") is not None:
         return "uniqueID", process["uniqueID"]
     if process.get("startAbsTime") is not None:
@@ -264,16 +269,16 @@ def _get_process_identifier(process: dict) -> tuple[str, object]:
     return "pid", process["pid"]
 
 
-def _matches_selected_process(process: dict, selected_process_identifier: tuple[str, object]) -> bool:
+def _matches_selected_process(process: dict[str, Any], selected_process_identifier: tuple[str, object]) -> bool:
     identifier_key, identifier_value = selected_process_identifier
     return process.get(identifier_key) == identifier_value
 
 
 def _select_process_from_snapshot(
-    process_snapshot: list[dict],
+    process_snapshot: list[dict[str, Any]],
     parsed_filters: dict[str, list[str]],
     selection_mode: ProcessSelectionMode,
-) -> dict:
+) -> dict[str, Any]:
     if process_snapshot:
         # All process entries in a sysmon sample share the same schema, so validating one entry is sufficient.
         _validate_process_keys(process_snapshot[0], list(parsed_filters))
@@ -287,7 +292,7 @@ def _select_process_from_snapshot(
 
 async def _select_process_from_sysmon(
     dvt, parsed_filters: dict[str, list[str]], keys: Optional[list[str]], selection_mode: ProcessSelectionMode
-) -> dict:
+) -> dict[str, Any]:
     async with await Sysmontap.create(dvt) as selection_sysmon:
         async for process_snapshot in iter_processes(
             selection_sysmon, skip_first_snapshot=_should_skip_first_snapshot(keys)

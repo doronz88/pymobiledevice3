@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 import dataclasses
 import uuid
 from datetime import datetime
@@ -154,7 +155,7 @@ class FileTransferType:
     transfer_size: int
 
 
-def _decode_xpc_dictionary(xpc_object) -> dict:
+def _decode_xpc_dictionary(xpc_object) -> dict[str, Any]:
     if xpc_object.data.count == 0:
         return {}
     result = {}
@@ -163,7 +164,7 @@ def _decode_xpc_dictionary(xpc_object) -> dict:
     return result
 
 
-def _decode_xpc_array(xpc_object) -> list:
+def _decode_xpc_array(xpc_object) -> list[Any]:
     result = []
     for entry in xpc_object.data.entries:
         result.append(decode_xpc_object(entry))
@@ -232,7 +233,7 @@ def decode_xpc_object(xpc_object) -> Any:
     return decoder(xpc_object)
 
 
-def _build_xpc_array(payload: list) -> dict:
+def _build_xpc_array(payload: list[Any]) -> dict[str, Any]:
     entries = []
     for entry in payload:
         entry = _build_xpc_object(entry)
@@ -240,7 +241,7 @@ def _build_xpc_array(payload: list) -> dict:
     return {"type": XpcMessageType.ARRAY, "data": {"count": len(entries), "entries": entries}}
 
 
-def _build_xpc_dictionary(payload: dict) -> dict:
+def _build_xpc_dictionary(payload: dict[str, Any]) -> dict[str, Any]:
     entries = []
     for key, value in payload.items():
         entry = {"key": key, "value": _build_xpc_object(value)}
@@ -254,63 +255,63 @@ def _build_xpc_dictionary(payload: dict) -> dict:
     }
 
 
-def _build_xpc_bool(payload: bool) -> dict:
+def _build_xpc_bool(payload: bool) -> dict[str, Any]:
     return {
         "type": XpcMessageType.BOOL,
         "data": payload,
     }
 
 
-def _build_xpc_string(payload: str) -> dict:
+def _build_xpc_string(payload: str) -> dict[str, Any]:
     return {
         "type": XpcMessageType.STRING,
         "data": payload,
     }
 
 
-def _build_xpc_data(payload: bool) -> dict:
+def _build_xpc_data(payload: bool) -> dict[str, Any]:
     return {
         "type": XpcMessageType.DATA,
         "data": payload,
     }
 
 
-def _build_xpc_double(payload: float) -> dict:
+def _build_xpc_double(payload: float) -> dict[str, Any]:
     return {
         "type": XpcMessageType.DOUBLE,
         "data": payload,
     }
 
 
-def _build_xpc_uuid(payload: uuid.UUID) -> dict:
+def _build_xpc_uuid(payload: uuid.UUID) -> dict[str, Any]:
     return {
         "type": XpcMessageType.UUID,
         "data": payload.bytes,
     }
 
 
-def _build_xpc_null(payload: None) -> dict:
+def _build_xpc_null(payload: None) -> dict[str, Any]:
     return {
         "type": XpcMessageType.NULL,
         "data": None,
     }
 
 
-def _build_xpc_uint64(payload: XpcUInt64Type) -> dict:
+def _build_xpc_uint64(payload: XpcUInt64Type) -> dict[str, Any]:
     return {
         "type": XpcMessageType.UINT64,
         "data": payload,
     }
 
 
-def _build_xpc_int64(payload: XpcInt64Type) -> dict:
+def _build_xpc_int64(payload: XpcInt64Type) -> dict[str, Any]:
     return {
         "type": XpcMessageType.INT64,
         "data": payload,
     }
 
 
-def _build_xpc_object(payload: Any) -> dict:
+def _build_xpc_object(payload: Any) -> dict[str, Any]:
     if payload is None:
         return _build_xpc_null(payload)
     payload_builders = {
@@ -331,7 +332,7 @@ def _build_xpc_object(payload: Any) -> dict:
     return builder(payload)
 
 
-def create_xpc_wrapper(d: dict, message_id: int = 0, wanting_reply: bool = False) -> bytes:
+def create_xpc_wrapper(d: dict[str, Any], message_id: int = 0, wanting_reply: bool = False) -> bytes:
     flags = XpcFlags.ALWAYS_SET
     if len(d.keys()) > 0:
         flags |= XpcFlags.DATA_PRESENT

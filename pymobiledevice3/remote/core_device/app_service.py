@@ -1,5 +1,6 @@
+# pyright: reportMissingTypeArgument=error
 import plistlib
-from typing import Optional
+from typing import Any, Optional
 
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -23,7 +24,7 @@ class AppServiceService(CoreDeviceService):
         include_hidden_apps: bool = True,
         include_internal_apps: bool = True,
         include_default_apps: bool = True,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """List applications"""
         return await self.invoke(
             "com.apple.coredevice.feature.listapps",
@@ -42,9 +43,9 @@ class AppServiceService(CoreDeviceService):
         arguments: Optional[list[str]] = None,
         kill_existing: bool = True,
         start_suspended: bool = False,
-        environment: Optional[dict] = None,
-        extra_options: Optional[dict] = None,
-    ) -> list[dict]:
+        environment: Optional[dict[str, str]] = None,
+        extra_options: Optional[dict[str, Any]] = None,
+    ) -> list[dict[str, Any]]:
         """launch application"""
         return await self.invoke(
             "com.apple.coredevice.feature.launchapplication",
@@ -65,11 +66,11 @@ class AppServiceService(CoreDeviceService):
             },
         )
 
-    async def list_processes(self) -> list[dict]:
+    async def list_processes(self) -> list[dict[str, Any]]:
         """List processes"""
         return (await self.invoke("com.apple.coredevice.feature.listprocesses"))["processTokens"]
 
-    async def list_roots(self) -> dict:
+    async def list_roots(self) -> dict[str, Any]:
         """
         List roots.
 
@@ -77,7 +78,7 @@ class AppServiceService(CoreDeviceService):
         """
         return await self.invoke("com.apple.coredevice.feature.listroots", {"rootPoint": {"relative": "/"}})
 
-    async def spawn_executable(self, executable: str, arguments: list[str]) -> dict:
+    async def spawn_executable(self, executable: str, arguments: list[str]) -> dict[str, Any]:
         """
         Spawn given executable.
 
@@ -107,7 +108,7 @@ class AppServiceService(CoreDeviceService):
             },
         )
 
-    async def monitor_process_termination(self, pid: int) -> dict:
+    async def monitor_process_termination(self, pid: int) -> dict[str, Any]:
         """
         Monitor process termination.
 
@@ -124,7 +125,7 @@ class AppServiceService(CoreDeviceService):
         """
         await self.invoke("com.apple.coredevice.feature.uninstallapp", {"bundleIdentifier": bundle_identifier})
 
-    async def send_signal_to_process(self, pid: int, signal: int) -> dict:
+    async def send_signal_to_process(self, pid: int, signal: int) -> dict[str, Any]:
         """
         Send signal to given process by its pid
         """
@@ -138,7 +139,7 @@ class AppServiceService(CoreDeviceService):
 
     async def fetch_icons(
         self, bundle_identifier: str, width: float, height: float, scale: float, allow_placeholder: bool
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Fetch given application's icons
         """

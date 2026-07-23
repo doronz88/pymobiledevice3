@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeArgument=error
 """XCUITest execution via the new DTX protocol implementation.
 
 Typical usage::
@@ -13,7 +14,7 @@ import asyncio
 import logging
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 from packaging.version import Version
 
@@ -235,24 +236,25 @@ class XCUITestService:
 
 @dataclass
 class TestConfig:
-    runner_app_info: dict
+    runner_app_info: dict[str, Any]
 
-    runner_app_env: Optional[dict] = None
-    runner_app_args: Optional[list] = None
+    runner_app_env: Optional[dict[str, str]] = None
+    runner_app_args: Optional[list[str]] = None
 
-    target_app_info: Optional[dict] = None
-    target_app_env: Optional[dict] = None
-    target_app_args: Optional[list] = None
-    tests_to_run: Optional[list] = None
-    tests_to_skip: Optional[list] = None
+    target_app_info: Optional[dict[str, Any]] = None
+    target_app_env: Optional[dict[str, str]] = None
+    target_app_args: Optional[list[str]] = None
+    # elements may be plain str specs or XCTTestIdentifier objects; _to_filter_pair str()-s each
+    tests_to_run: Optional[list[Any]] = None
+    tests_to_skip: Optional[list[Any]] = None
 
     @staticmethod
     async def create_for(
         service_provider: LockdownServiceProvider, runner_bundle_id: str, target_bundle_id: Optional[str] = None
     ) -> TestConfig:
         """Helper to create a TestConfig with the required runner_app_info and optional target_app_info."""
-        runner_app_info: dict
-        target_app_info: Optional[dict] = None
+        runner_app_info: dict[str, Any]
+        target_app_info: Optional[dict[str, Any]] = None
 
         async with InstallationProxyService(lockdown=service_provider) as install_service:
             apps = await install_service.get_apps(
@@ -305,8 +307,8 @@ class TestConfig:
         # objects).  The legacy testsToRun / testsToSkip NSSet<NSString> fields
         # are also populated for compatibility with older runners.
         def _to_filter_pair(
-            specs: Optional[list],
-        ) -> tuple[Optional[set], Optional[XCTTestIdentifierSet]]:
+            specs: Optional[list[Any]],
+        ) -> tuple[Optional[set[str]], Optional[XCTTestIdentifierSet]]:
             if not specs:
                 return None, None
             strings = [str(s) for s in specs]
@@ -333,11 +335,11 @@ class TestConfig:
 def _generate_launch_args(
     product_major_version: int,
     test_session_identifier: NSUUID,
-    app_info: dict,
+    app_info: dict[str, Any],
     xctest_path: str,
-    test_runner_env: Optional[dict] = None,
-    test_runner_args: Optional[list] = None,
-) -> tuple[list, dict, dict]:
+    test_runner_env: Optional[dict[str, str]] = None,
+    test_runner_args: Optional[list[str]] = None,
+) -> tuple[list[str], dict[str, str], dict[str, Any]]:
     """Return *(app_args, app_env, app_options)* for launching the test runner.
 
     Extracted from the old ``launch_test_app`` method so that it can be
@@ -384,7 +386,7 @@ def _generate_launch_args(
     ]
     app_args.extend(test_runner_args or [])
 
-    app_options: dict = {"StartSuspendedKey": False}
+    app_options: dict[str, Any] = {"StartSuspendedKey": False}
     if product_major_version >= 12:
         app_options["ActivateSuspended"] = True
 
