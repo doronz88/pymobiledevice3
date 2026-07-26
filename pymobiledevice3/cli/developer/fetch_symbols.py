@@ -25,7 +25,10 @@ cli = InjectingTyper(
 )
 
 
-async def fetch_symbols_list_task(service_provider: LockdownServiceProvider) -> None:
+@cli.command("list")
+@async_command
+async def fetch_symbols_list(service_provider: ServiceProviderDep) -> None:
+    """list of files to be downloaded"""
     if Version(service_provider.product_version) < Version("17.0"):
         print_json(await DtFetchSymbols(service_provider).list_files())
     else:
@@ -35,13 +38,6 @@ async def fetch_symbols_list_task(service_provider: LockdownServiceProvider) -> 
 
         async with RemoteFetchSymbolsService(service_provider) as fetch_symbols:
             print_json([f.file_path for f in await fetch_symbols.get_dsc_file_list()])
-
-
-@cli.command("list")
-@async_command
-async def fetch_symbols_list(service_provider: ServiceProviderDep) -> None:
-    """list of files to be downloaded"""
-    await fetch_symbols_list_task(service_provider)
 
 
 async def fetch_symbols_download_task(service_provider: LockdownServiceProvider, out: Optional[Path] = None) -> None:

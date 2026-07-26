@@ -309,7 +309,15 @@ class RemotePairingManualPairingDevice:
     identifier: str
 
 
-async def start_remote_pair_task(device_name: Optional[str]) -> None:
+@cli.command("pair")
+@async_command
+async def cli_pair(
+    name: Annotated[
+        Optional[str],
+        typer.Option(help="Device name for a specific device to look for"),
+    ] = None,
+) -> None:
+    """start remote pairing for devices which allow"""
     if start_tunnel is None:
         raise NotImplementedError("failed to start the tunnel on your platform")
 
@@ -317,7 +325,7 @@ async def start_remote_pair_task(device_name: Optional[str]) -> None:
     for answer in await browse_remotepairing_manual_pairing():
         current_device_name = answer.properties["name"]
 
-        if device_name is not None and current_device_name != device_name:
+        if name is not None and current_device_name != name:
             continue
 
         for address in answer.addresses:
@@ -338,18 +346,6 @@ async def start_remote_pair_task(device_name: Optional[str]) -> None:
 
     async with RemotePairingManualPairingService(device.identifier, device.ip, device.port) as service:
         await service.connect(autopair=True)
-
-
-@cli.command("pair")
-@async_command
-async def cli_pair(
-    name: Annotated[
-        Optional[str],
-        typer.Option(help="Device name for a specific device to look for"),
-    ] = None,
-) -> None:
-    """start remote pairing for devices which allow"""
-    await start_remote_pair_task(name)
 
 
 @cli.command("pair-host")

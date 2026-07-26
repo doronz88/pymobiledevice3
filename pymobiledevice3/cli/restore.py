@@ -272,18 +272,14 @@ async def restore_tss(
         await restore_tss_task(device, ipsw_ctx, out_file, behavior=behavior)
 
 
-async def restore_ramdisk_task(device: Device, ipsw_ctx: contextlib.AbstractContextManager[IPSW]) -> None:
-    with ipsw_ctx as ipsw:
-        await Recovery(ipsw, device).boot_ramdisk()
-
-
 @cli.command("ramdisk")
 @async_command
 async def restore_ramdisk(device: DeviceDep, ipsw_ctx: IPSWCtxDep) -> None:
     """
     Boot only the update ramdisk without performing a restore (IPSW path or URL accepted).
     """
-    await restore_ramdisk_task(device, ipsw_ctx)
+    with ipsw_ctx as ipsw:
+        await Recovery(ipsw, device).boot_ramdisk()
 
 
 @cli.command("update")

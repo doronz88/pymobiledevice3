@@ -14,7 +14,6 @@ from pymobiledevice3.exceptions import (
     NotMountedError,
     UnsupportedCommandError,
 )
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.mobile_image_mounter import (
     DeveloperDiskImageMounter,
     MobileImageMounterService,
@@ -122,15 +121,6 @@ async def mounter_mount_developer(
     logger.info("Developer image mounted successfully")
 
 
-async def mounter_mount_personalized_task(
-    service_provider: LockdownServiceProvider, image: str, trust_cache: str, build_manifest: str
-) -> None:
-    await PersonalizedImageMounter(lockdown=service_provider).mount(
-        Path(image), Path(build_manifest), Path(trust_cache)
-    )
-    logger.info("Personalized image mounted successfully")
-
-
 @cli.command("mount-personalized")
 @catch_errors
 @async_command
@@ -162,26 +152,10 @@ async def mounter_mount_personalized(
     ],
 ) -> None:
     """mount personalized image"""
-    await mounter_mount_personalized_task(service_provider, str(image), str(trust_cache), str(build_manifest))
-
-
-async def mounter_auto_mount_task(
-    service_provider: LockdownServiceProvider, xcode: Optional[str], version: Optional[str]
-) -> None:
-    try:
-        await auto_mount(service_provider, xcode=xcode, version=version)
-        logger.info("DeveloperDiskImage mounted successfully")
-    except URLError:
-        logger.warning("failed to query DeveloperDiskImage versions")
-    except DeveloperDiskImageNotFoundError:
-        logger.error("Unable to find the correct DeveloperDiskImage")
-    except AlreadyMountedError:
-        logger.error("DeveloperDiskImage already mounted")
-    except PermissionError as e:
-        logger.error(
-            f"DeveloperDiskImage could not be saved to Xcode default path ({e.filename}). "
-            f"Please make sure your user has the necessary permissions"
-        )
+    await PersonalizedImageMounter(lockdown=service_provider).mount(
+        Path(image), Path(build_manifest), Path(trust_cache)
+    )
+    logger.info("Personalized image mounted successfully")
 
 
 @cli.command("auto-mount")
@@ -205,7 +179,20 @@ async def mounter_auto_mount(
     ] = None,
 ) -> None:
     """auto-detect correct DeveloperDiskImage and mount it"""
-    await mounter_auto_mount_task(service_provider, str(xcode) if xcode is not None else None, version)
+    try:
+        await auto_mount(service_provider, xcode=str(xcode) if xcode is not None else None, version=version)
+        logger.info("DeveloperDiskImage mounted successfully")
+    except URLError:
+        logger.warning("failed to query DeveloperDiskImage versions")
+    except DeveloperDiskImageNotFoundError:
+        logger.error("Unable to find the correct DeveloperDiskImage")
+    except AlreadyMountedError:
+        logger.error("DeveloperDiskImage already mounted")
+    except PermissionError as e:
+        logger.error(
+            f"DeveloperDiskImage could not be saved to Xcode default path ({e.filename}). "
+            f"Please make sure your user has the necessary permissions"
+        )
 
 
 @cli.command("query-developer-mode-status")

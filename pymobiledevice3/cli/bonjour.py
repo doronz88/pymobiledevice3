@@ -16,15 +16,6 @@ cli = InjectingTyper(
 )
 
 
-async def cli_mobdev2_task(timeout: float, pair_records: Optional[Path]) -> None:
-    output: list[dict[str, Any]] = []
-    async for ip, lockdown in get_mobdev2_lockdowns(timeout=timeout, pair_records=pair_records):
-        short_info = lockdown.short_info
-        short_info["ip"] = ip
-        output.append(short_info)
-    print_json(output)
-
-
 @cli.command("mobdev2")
 @async_command
 async def cli_mobdev2(
@@ -40,14 +31,11 @@ async def cli_mobdev2(
     ] = None,
 ) -> None:
     """browse for mobdev2 devices over bonjour"""
-    await cli_mobdev2_task(timeout, pair_records)
-
-
-async def cli_remotepairing_task(timeout: float) -> None:
     output: list[dict[str, Any]] = []
-    for answer in await browse_remotepairing(timeout=timeout):
-        for address in answer.addresses:
-            output.append({"hostname": address.full_ip, "port": answer.port})
+    async for ip, lockdown in get_mobdev2_lockdowns(timeout=timeout, pair_records=pair_records):
+        short_info = lockdown.short_info
+        short_info["ip"] = ip
+        output.append(short_info)
     print_json(output)
 
 
@@ -55,18 +43,10 @@ async def cli_remotepairing_task(timeout: float) -> None:
 @async_command
 async def cli_remotepairing(timeout: Annotated[float, typer.Option()] = DEFAULT_BONJOUR_TIMEOUT) -> None:
     """browse for remotepairing devices over bonjour (without attempting pair verification)"""
-    await cli_remotepairing_task(timeout=timeout)
-
-
-async def cli_remotepairing_manual_pairing_task(timeout: float) -> None:
     output: list[dict[str, Any]] = []
-    for answer in await browse_remotepairing_manual_pairing(timeout=timeout):
+    for answer in await browse_remotepairing(timeout=timeout):
         for address in answer.addresses:
-            output.append({
-                "hostname": address.full_ip,
-                "port": answer.port,
-                "name": answer.properties["name"],
-            })
+            output.append({"hostname": address.full_ip, "port": answer.port})
     print_json(output)
 
 
@@ -76,7 +56,15 @@ async def cli_remotepairing_manual_pairing(
     timeout: Annotated[float, typer.Option()] = DEFAULT_BONJOUR_TIMEOUT,
 ) -> None:
     """browse for remotepairing-manual-pairing devices over bonjour"""
-    await cli_remotepairing_manual_pairing_task(timeout=timeout)
+    output: list[dict[str, Any]] = []
+    for answer in await browse_remotepairing_manual_pairing(timeout=timeout):
+        for address in answer.addresses:
+            output.append({
+                "hostname": address.full_ip,
+                "port": answer.port,
+                "name": answer.properties["name"],
+            })
+    print_json(output)
 
 
 async def cli_browse_rsd() -> None:
