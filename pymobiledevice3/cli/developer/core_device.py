@@ -369,6 +369,22 @@ async def core_device_list_apps(service_provider: RSDServiceProviderDep) -> None
     await core_device_list_apps_task(service_provider)
 
 
+@cli.command("stream-apps")
+@async_command
+async def core_device_stream_apps(service_provider: RSDServiceProviderDep) -> None:
+    """Stream the application list via CoreDevice (works on iOS 26 where list-apps does not)."""
+    async with AppServiceService(service_provider) as app_service:
+        print_json([app async for app in app_service.stream_apps()])
+
+
+@cli.command("stream-processes")
+@async_command
+async def core_device_stream_processes(service_provider: RSDServiceProviderDep) -> None:
+    """Stream the running process list via CoreDevice."""
+    async with AppServiceService(service_provider) as app_service:
+        print_json([process async for process in app_service.stream_processes()])
+
+
 async def core_device_sysdiagnose_task(service_provider: RemoteServiceDiscoveryService, output: Path) -> None:
     async with DiagnosticsServiceService(service_provider) as service:
         response = await service.capture_sysdiagnose(False)
