@@ -16,9 +16,37 @@ logger = logging.getLogger(__name__)
 # The wait holds _waiting_for_id, which pauses the receive loop, so it must be bounded.
 WIR_RESULT_TIMEOUT = 5
 
+# Once a target has missed a reply it is flagged unresponsive and further internal requests
+# fast-fail (see send_message_with_result). To notice a target that recovered but is otherwise
+# silent, one request is let through every UNRESPONSIVE_REPROBE_INTERVAL seconds, with a short
+# timeout so a still-dead target only briefly re-pauses the receive loop.
+UNRESPONSIVE_REPROBE_INTERVAL = 2.0
+UNRESPONSIVE_PROBE_TIMEOUT = 1.5
+
 # CDP domains WebKit does not implement at all. Any method in these that isn't specially
 # translated is acknowledged with an empty response instead of being forwarded (and erroring).
 NOOP_ABSENT_DOMAINS = frozenset({"Input", "Overlay"})
+
+# Error synthesized for requests routed to a target that got destroyed before answering
+# (WebKit never answers those). Matches Chrome's own message for the same situation.
+TARGET_CLOSED_ERROR: dict[str, Any] = {"code": -32000, "message": "Inspected target navigated or closed"}
+
+# Per-target state (beyond *.enable) worth re-establishing on the fresh target after a process
+# swap. These keep their latest params only.
+REPLAYED_SETUP_METHODS = frozenset({
+    "Network.setResourceCachingDisabled",
+    "Page.setEmulatedMedia",
+    "Page.setForcedAppearance",
+    "Debugger.setBreakpointsActive",
+    "Debugger.setPauseOnExceptions",
+    "Debugger.setAsyncStackTraceDepth",
+})
+
+# Replayed setup methods that accumulate state entry-by-entry (one replay per distinct params).
+REPLAYED_MULTI_SETUP_METHODS = frozenset({
+    "Debugger.setBreakpointByUrl",
+    "Debugger.setShouldBlackboxURL",
+})
 
 NETWORK_RESOURCE_TYPES = [
     "Document",
@@ -213,6 +241,20 @@ class CdpTarget:
         self._default_execution_id = 0
         self._last_console_api_call: Optional[dict[str, Any]] = None
         self._internal_id = 0
+        # id -> target the request was routed to, for synthesizing errors when that target dies
+        self._pending_requests: dict[int, str] = {}
+        self._destroyed_targets: set[str] = set()
+        # Targets that stopped answering our internal requests (e.g. a page wedged on a native
+        # app-open interstitial that WebKit refuses to navigate). Further internal requests to
+        # them fast-fail instead of each blocking the receive loop for WIR_RESULT_TIMEOUT, which
+        # would otherwise freeze the whole session. Cleared as soon as the target answers again
+        # (an inbound event, or a periodic re-probe) so a merely-slow page is not stuck flagged.
+        self._unresponsive_targets: set[str] = set()
+        # loop time of the last re-probe attempt per unresponsive target, to rate-limit re-probes.
+        self._unresponsive_last_probe: dict[str, float] = {}
+        # setup (domain enables & co.) the frontend established, replayed onto new targets
+        self._setup_messages: dict[Any, dict[str, Any]] = {}
+        self._setup_sent_targets: set[str] = {target_id}
 
     def next_internal_id(self) -> int:
         """
@@ -273,22 +315,37 @@ class CdpTarget:
         """
         return await self.output_queue.get()
 
-    async def wait_for_event_id(self, id_: int) -> Optional[dict[str, Any]]:
+    async def wait_for_event_id(
+        self, id_: int, target_id: Optional[str] = None, timeout: float = WIR_RESULT_TIMEOUT
+    ) -> Optional[dict[str, Any]]:
         """
         Wait for a message with a specific id from the target.
         :param id_: Message id to wait for.
+        :param target_id: Target the request was routed to; the wait is abandoned as soon as that
+            target is destroyed (WebKit never answers requests of a destroyed target, so waiting
+            out the full timeout would only stall the paused receive loop).
+        :param timeout: Seconds to wait before giving up (shorter for re-probes of a target already
+            believed unresponsive, so a still-dead one barely re-pauses the receive loop).
         :returns: The matching target message, or None if it does not arrive within the timeout.
         """
-        deadline = asyncio.get_event_loop().time() + WIR_RESULT_TIMEOUT
+        deadline = asyncio.get_event_loop().time() + timeout
         while asyncio.get_event_loop().time() < deadline:
+            if target_id is not None and target_id in self._destroyed_targets:
+                return None
             for i in range(len(self.protocol.inspector.wir_events)):
                 message = self.protocol.inspector.wir_events[i]
+                if message["method"] == "Target.targetDestroyed":
+                    # Only give up the wait; the event stays queued for the receive loop.
+                    if message["params"]["targetId"] == target_id:
+                        return None
+                    continue
                 if message["method"] != "Target.dispatchMessageFromTarget":
                     continue
                 message = json.loads(message["params"]["message"])
                 if message.get("id", "") != id_:
                     continue
                 del self.protocol.inspector.wir_events[i]
+                self._pending_requests.pop(id_, None)
                 return message
             await asyncio.sleep(0)
         return None
@@ -304,17 +361,44 @@ class CdpTarget:
         answers. The wait is bounded and _waiting_for_id is always released: while it is held the
         receive loop is paused, so a lost response would otherwise starve every later event.
         """
+        target_id = self.target_id
+        timeout = WIR_RESULT_TIMEOUT
+        if target_id in self._unresponsive_targets:
+            # Believed dead: fast-fail without holding the receive loop, except let one request
+            # through every UNRESPONSIVE_REPROBE_INTERVAL to notice a target that came back but is
+            # otherwise silent (a slow page finished loading, an interstitial finally redirected).
+            now = asyncio.get_event_loop().time()
+            if now - self._unresponsive_last_probe.get(target_id, 0.0) < UNRESPONSIVE_REPROBE_INTERVAL:
+                logger.debug(f"skipping {method}: target {target_id} is unresponsive")
+                return {}
+            self._unresponsive_last_probe[target_id] = now
+            timeout = UNRESPONSIVE_PROBE_TIMEOUT
         id_ = self.next_internal_id()
         self._waiting_for_id += 1
         try:
             await self._send_message_to_target({"id": id_, "method": method, "params": params})
-            result = await self.wait_for_event_id(id_)
+            result = await self.wait_for_event_id(id_, target_id, timeout)
             if result is None:
-                logger.warning(f"No target response for {method} (id {id_}) within {WIR_RESULT_TIMEOUT}s")
+                self._pending_requests.pop(id_, None)
+                if target_id not in self._destroyed_targets:
+                    # Mark (or keep) it unresponsive so the next request fast-fails instead of
+                    # blocking another timeout; a destroyed target is handled elsewhere.
+                    if target_id not in self._unresponsive_targets:
+                        logger.warning(f"target {target_id} stopped responding ({method}); backing off")
+                    self._unresponsive_targets.add(target_id)
+                    # Rate-limit the next re-probe from the end of this attempt.
+                    self._unresponsive_last_probe[target_id] = asyncio.get_event_loop().time()
                 return {}
+            # A reply proves the target is alive again; resume normal sending.
+            self._mark_target_responsive(target_id)
             return result
         finally:
             self._waiting_for_id -= 1
+
+    def _mark_target_responsive(self, target_id: str) -> None:
+        """Clear the unresponsive flag once a target answers again."""
+        self._unresponsive_targets.discard(target_id)
+        self._unresponsive_last_probe.pop(target_id, None)
 
     async def evaluate_and_result(self, expression: str) -> Any:
         """
@@ -378,15 +462,50 @@ class CdpTarget:
                 logger.exception(f"Failed handling target event: {message.get('method')}")
 
     async def _to_output_queue(self, message: dict[str, Any]):
+        if message["method"] != "Target.dispatchMessageFromTarget":
+            logger.debug(f"WIR EVENT: {message}")
         if message["method"] in self.to_cdp_special_messages_methods:
             await self.to_cdp_special_messages_methods[message["method"]](message)
         else:
             logger.error(f"Unknown target event: {message}")
 
-    async def _send_message_to_target(self, message: dict[str, Any]):
+    async def _send_message_to_target(
+        self, message: dict[str, Any], target_id: Optional[str] = None, record: bool = True
+    ):
+        resolved_target_id = target_id if target_id is not None else self.target_id
+        if "id" in message:
+            self._pending_requests[message["id"]] = resolved_target_id
+        if record:
+            self._record_setup_message(message)
         await self.protocol.send_command(
-            "Target.sendMessageToTarget", targetId=self.target_id, message=json.dumps(message)
+            "Target.sendMessageToTarget", targetId=resolved_target_id, message=json.dumps(message)
         )
+
+    def _record_setup_message(self, message: dict[str, Any]):
+        """
+        Remember per-target setup so it can be re-established on the fresh target after a process
+        swap. WebKit expects the inspector frontend to re-initialize every new target, but Chrome
+        knows nothing of WebKit's target multiplexing, so the bridge must replay it.
+        """
+        method = message.get("method", "")
+        params = message.get("params", {})
+        if method.endswith(".enable") or method in REPLAYED_SETUP_METHODS:
+            self._setup_messages[method] = params
+        elif method in REPLAYED_MULTI_SETUP_METHODS:
+            self._setup_messages[(method, json.dumps(params, sort_keys=True))] = params
+
+    async def _send_setup_to_target(self, target_id: str):
+        """Replay the frontend's recorded setup onto a new target (once per target)."""
+        if target_id in self._setup_sent_targets:
+            return
+        self._setup_sent_targets.add(target_id)
+        for key, params in list(self._setup_messages.items()):
+            method = key if isinstance(key, str) else key[0]
+            await self._send_message_to_target(
+                {"id": self.next_internal_id(), "method": method, "params": params},
+                target_id=target_id,
+                record=False,
+            )
 
     async def _simple_response(self, message: dict[str, Any], value: Any):
         await self.output_queue.put({"id": message["id"], "result": {"result": value}})
@@ -627,17 +746,23 @@ class CdpTarget:
     async def _runtime_compile_script(self, message: dict[str, Any]):
         self._script_source_to_context_id[message["params"]["expression"]] = message["params"]["executionContextId"]
         response = await self.send_message_with_result("Runtime.parse", {"source": message["params"]["expression"]})
-        if response["result"]["result"] == "none":
-            await self._simple_response(message, None)
+        result = response.get("result")
+        # send_message_with_result returns {} when the device is busy/unresponsive (e.g. mid-flood
+        # on a chatty page). This handler runs on every console keystroke; a missing result must
+        # not raise (it would break compilation and wedge the console's eager evaluation). Treat an
+        # absent or "no error" parse as a clean compile and answer with Chrome's schema (an empty
+        # result object for a non-persisted script), not a bogus {"result": null}.
+        if not result or result.get("result") == "none":
+            await self.output_queue.put({"id": message["id"], "result": {}})
             return
-        lines = message["params"]["expression"][: response["result"]["range"]["endOffset"]].splitlines()
+        lines = message["params"]["expression"][: result["range"]["endOffset"]].splitlines()
         lines = lines if lines else [""]
         await self.output_queue.put({
             "id": message["id"],
             "result": {
                 "exceptionDetails": {
                     "exceptionId": 1,
-                    "text": response["result"]["message"],
+                    "text": result["message"],
                     "lineNumber": len(lines) - 1,
                     "columnNumber": len(lines[-1]) - 1,
                 }
@@ -782,12 +907,21 @@ class CdpTarget:
         # timeout. Rapid link navigation stacks those blocks until the session never catches up.
         # So emit a non-blocking, schema-complete targetInfo (a partial one crashes the frontend
         # SDK); the real url arrives via the device's own Page.frameNavigated.
-        self.target_id = message["params"]["targetInfo"]["targetId"]
+        target_info = message["params"]["targetInfo"]
+        new_target_id = target_info["targetId"]
+        if not target_info.get("isProvisional", False):
+            # A provisional target becomes current only on didCommitProvisionalTarget; routing
+            # commands to it earlier loses them if the load never commits.
+            self.target_id = new_target_id
+        # New targets start with all agents disabled; without replaying the frontend's setup no
+        # Network/Page/Console/Debugger event ever arrives again after a process swap and the
+        # session appears dead after a couple of link clicks.
+        await self._send_setup_to_target(new_target_id)
         await self.output_queue.put({
             "method": "Target.targetInfoChanged",
             "params": {
                 "targetInfo": {
-                    "targetId": self.target_id,
+                    "targetId": new_target_id,
                     "type": "page",
                     "title": "",
                     "url": self.frame.get("url", ""),
@@ -798,6 +932,20 @@ class CdpTarget:
         })
 
     async def _target_destroyed(self, message: dict[str, Any]):
+        destroyed_target_id = message["params"]["targetId"]
+        self._destroyed_targets.add(destroyed_target_id)
+        self._setup_sent_targets.discard(destroyed_target_id)
+        self._mark_target_responsive(destroyed_target_id)
+        # WebKit never answers requests routed to a destroyed target; resolve them with an error
+        # (like Chrome's backend does on navigation) so the frontend's pending promises settle
+        # instead of wedging whole panels. Internal (negative-id) waits abandon themselves via
+        # _destroyed_targets.
+        for id_, target_id in list(self._pending_requests.items()):
+            if target_id != destroyed_target_id:
+                continue
+            del self._pending_requests[id_]
+            if id_ >= 0:
+                await self.output_queue.put({"id": id_, "error": dict(TARGET_CLOSED_ERROR)})
         # The device emits its own Page.frameNavigated for the new page, so no getResourceTree
         # round-trip is needed (and must not be done here - see _target_created). Just nudge the
         # frontend that the load finished and the document changed.
@@ -809,9 +957,20 @@ class CdpTarget:
         await self.output_queue.put({"method": "DOM.documentUpdated"})
 
     async def _target_dispatch_message_from_target(self, message: dict[str, Any]):
+        # Any message from the current target proves it is alive again (a wedged page that finally
+        # navigated, a slow response that eventually arrived); resume sending it internal requests.
+        self._mark_target_responsive(self.target_id)
         message = json.loads(message["params"]["message"])
         if "error" in message:
-            logger.error(message)
+            # Expected protocol-level errors (e.g. element-only DOM queries on text nodes) are
+            # already delivered to the frontend, which copes; don't shout about them here.
+            logger.debug(f"Target error response: {message}")
+        if "id" in message:
+            self._pending_requests.pop(message["id"], None)
+            if message["id"] < 0:
+                # Response to a bridge-internal request (setup replay or an abandoned wait);
+                # forwarding it would hand the frontend an id it never issued.
+                return
         if message.get("method", "") in self.to_cdp_special_dispatched_messages_methods:
             await self.to_cdp_special_dispatched_messages_methods[message["method"]](message)
         else:
@@ -820,7 +979,11 @@ class CdpTarget:
             await self.output_queue.put(message)
 
     async def _target_did_commit_provisional_target(self, message: dict[str, Any]):
-        pass
+        # The provisional target replaces the committed one only now; from here on route the
+        # frontend's commands to it.
+        self.target_id = message["params"]["newTargetId"]
+        # Normally already done at targetCreated; covers a commit whose creation we never saw.
+        await self._send_setup_to_target(self.target_id)
 
     async def _debugger_script_parsed(self, message: dict[str, Any]):
         if not self._waiting_for_id:

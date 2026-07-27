@@ -37,6 +37,7 @@ class CdpWebsocketClient:
         self.ws = WSConnection(ConnectionType.CLIENT)
         self.reader: Optional[asyncio.StreamReader] = None
         self.writer: Optional[asyncio.StreamWriter] = None
+        self.seen_events: set[str] = set()
 
     async def connect(self) -> None:
         self.reader, self.writer = await asyncio.open_connection("127.0.0.1", self.port)
@@ -64,7 +65,22 @@ class CdpWebsocketClient:
             if isinstance(event, TextMessage):
                 text += event.data
                 if event.message_finished:
-                    return json.loads(text)
+                    message = json.loads(text)
+                    if "method" in message:
+                        self.seen_events.add(message["method"])
+                    return message
+
+    async def command(self, id_: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Send a request and wait for its response; a lost response fails the test by timeout."""
+        await self.send({"id": id_, "method": method, "params": params})
+
+        async def wait_for_response() -> dict[str, Any]:
+            while True:
+                message = await self.receive()
+                if message.get("id") == id_:
+                    return message
+
+        return await asyncio.wait_for(wait_for_response(), TIMEOUT)
 
     async def _next_event(self) -> Any:
         assert self.reader is not None
@@ -125,6 +141,76 @@ async def testp_cdp_server_end_to_end(lockdown: LockdownClient) -> None:
         # without which webinspectord never delivers target events to a reconnecting client.
         await evaluate_in_new_session()
         await evaluate_in_new_session()
+    finally:
+        # force_exit skips uvicorn's graceful wait so a wedged debugger session can't hang the test
+        server.should_exit = True
+        server.force_exit = True
+        await asyncio.wait_for(serve_task, TIMEOUT)
+        await inspector.close()
+
+
+async def testp_cdp_server_survives_process_swaps(lockdown: LockdownClient) -> None:
+    """
+    Cross-origin navigation swaps the page's WebContent process: WebKit destroys the inspector
+    target and creates a fresh one with all agents disabled. The bridge must keep answering
+    requests (synthesizing errors for those the dead target swallowed) and re-establish the
+    frontend's domain setup on the new target, or DevTools goes silent after a couple of clicks.
+    """
+    inspector = WebinspectorService(lockdown=lockdown)
+    try:
+        await inspector.connect()
+    except WebInspectorNotEnabledError:
+        pytest.xfail("Web Inspector is disabled on the device")
+    app.state.inspector = inspector
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, ws="wsproto"))
+    serve_task = asyncio.create_task(server.serve())
+    try:
+        while not server.started:
+            assert not serve_task.done()
+            await asyncio.sleep(0.1)
+        port = server.servers[0].sockets[0].getsockname()[1]
+        await inspector.open_app(SAFARI)
+        targets = []
+        for _ in range(TIMEOUT):
+            targets = await http_get_json(port, "/json/list")
+            if targets:
+                break
+            await asyncio.sleep(1)
+        assert targets, "no inspectable Safari page was listed"
+
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        try:
+            id_ = 0
+            for method in ("Page.enable", "Runtime.enable", "Network.enable"):
+                id_ += 1
+                await client.command(id_, method, {})
+            # Two distinct origins guarantee at least one process swap wherever Safari starts.
+            for url, host in (("https://example.com/", "example.com"), ("https://www.apple.com/", "apple.com")):
+                id_ += 1
+                await client.command(id_, "Page.navigate", {"url": url})
+                client.seen_events.clear()
+                reached = False
+                for _ in range(TIMEOUT):
+                    id_ += 1
+                    # Never retried: any response (even an error, for a request the swap
+                    # swallowed) is fine, a lost response times the test out.
+                    response = await client.command(
+                        id_, "Runtime.evaluate", {"expression": "location.href", "returnByValue": True}
+                    )
+                    if host in response.get("result", {}).get("result", {}).get("value", ""):
+                        reached = True
+                    # Network events of the fresh document prove the bridge re-enabled the
+                    # domains on the swapped-in target; without that DevTools shows nothing.
+                    if reached and "Network.requestWillBeSent" in client.seen_events:
+                        break
+                    await asyncio.sleep(1)
+                assert reached, f"never reached {host} over the bridge"
+                assert "Network.requestWillBeSent" in client.seen_events, (
+                    f"no network events for the {host} load - domains were not re-enabled after the swap"
+                )
+        finally:
+            await client.close()
     finally:
         # force_exit skips uvicorn's graceful wait so a wedged debugger session can't hang the test
         server.should_exit = True
