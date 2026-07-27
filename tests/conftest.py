@@ -1,5 +1,5 @@
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from typing import Any, Union
 
 import pytest
@@ -37,6 +37,26 @@ def pytest_addoption(parser):
 
 
 NO_DEVICE_SKIP_REASON = "No test device is available through usbmuxd"
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
+    """
+    Skip tests that fail solely because an RSD-only service was used without a tunnel.
+
+    iOS 17+ exposes many developer/instruments/relay services only through an RSD
+    tunnel. When the suite runs over plain usbmux (no ``--rsd``/``--tunnel``), starting
+    such a service raises ``InvalidServiceError``; treat that as a skip. If we are already
+    connected through a tunnel, re-raise so genuine regressions still surface.
+    """
+    try:
+        return (yield)
+    except InvalidServiceError as e:
+        funcargs = item.funcargs if isinstance(item, pytest.Function) else {}
+        provider = funcargs.get("service_provider") or funcargs.get("lockdown")
+        if isinstance(provider, RemoteServiceDiscoveryService):
+            raise
+        pytest.skip(f"Service requires an RSD tunnel (rerun with --rsd/--tunnel): {e}")
 
 
 async def _create_usbmux_client() -> UsbmuxLockdownClient:
