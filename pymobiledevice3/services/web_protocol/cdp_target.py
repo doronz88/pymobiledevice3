@@ -12,6 +12,14 @@ from pymobiledevice3.services.web_protocol.session_protocol import SessionProtoc
 
 logger = logging.getLogger(__name__)
 
+# Seconds to wait for the device's response to a translated inspector request before giving up.
+# The wait holds _waiting_for_id, which pauses the receive loop, so it must be bounded.
+WIR_RESULT_TIMEOUT = 5
+
+# CDP domains WebKit does not implement at all. Any method in these that isn't specially
+# translated is acknowledged with an empty response instead of being forwarded (and erroring).
+NOOP_ABSENT_DOMAINS = frozenset({"Input", "Overlay"})
+
 NETWORK_RESOURCE_TYPES = [
     "Document",
     "Stylesheet",
@@ -92,7 +100,7 @@ class CdpTarget:
         """
         self.protocol = protocol
         self.target_id = target_id
-        self.frame = {}
+        self.frame: dict[str, Any] = {}
         self.session_id = protocol.id_
         self.app_id = protocol.app.id_
         self.page_id = protocol.page.id_
@@ -131,16 +139,9 @@ class CdpTarget:
             "Network.clearAcceptedEncodingsOverride": partial(self._simple_response, value=None),
             "ServiceWorker.enable": self._service_worker_enable,
             "HeapProfiler.enable": partial(self._simple_response, value=None),
-            "Overlay.setShowGridOverlays": partial(self._simple_response, value=None),
-            "Overlay.setShowFlexOverlays": partial(self._simple_response, value=None),
-            "Overlay.setShowScrollSnapOverlays": partial(self._simple_response, value=None),
-            "Overlay.setShowContainerQueryOverlays": partial(self._simple_response, value=None),
-            "Overlay.setShowIsolatedElements": partial(self._simple_response, value=None),
-            "Overlay.hideHighlight": partial(self._simple_response, value=None),
+            # Overlay is absent in WebKit; only highlightNode is worth translating, the rest are
+            # acknowledged by the NOOP_ABSENT_DOMAINS fallback in _input_loop.
             "Overlay.highlightNode": self._overlay_highlight_node,
-            "Overlay.enable": partial(self._simple_response, value=None),
-            "Overlay.setShowViewportSizeOnResize": partial(self._simple_response, value=None),
-            "Overlay.setPausedInDebuggerMessage": partial(self._simple_response, value=None),
             "Runtime.runIfWaitingForDebugger": partial(self._simple_response, value=None),
             "Runtime.compileScript": self._runtime_compile_script,
             "Runtime.getIsolateId": self._runtime_get_isolate_id,
@@ -153,6 +154,39 @@ class CdpTarget:
             "CSS.addRule": self._css_add_rule,
             "Input.emulateTouchFromMouseEvent": self._input_emulate_touch_from_mouse_event,
             "Input.dispatchKeyEvent": self._input_dispatch_key_event,
+            "Input.dispatchMouseEvent": self._input_dispatch_mouse_event,
+            "Page.navigate": self._page_navigate,
+            "Page.setAdBlockingEnabled": partial(self._simple_response, value=None),
+            "Page.addScriptToEvaluateOnNewDocument": self._page_add_script_to_evaluate_on_new_document,
+            "Accessibility.enable": partial(self._simple_response, value=None),
+            "Autofill.enable": partial(self._simple_response, value=None),
+            "Autofill.setAddresses": partial(self._simple_response, value=None),
+            "Runtime.addBinding": partial(self._simple_response, value=None),
+            "Runtime.globalLexicalScopeNames": self._runtime_global_lexical_scope_names,
+            "Runtime.getProperties": self._runtime_get_properties,
+            "Network.setBlockedURLs": partial(self._simple_response, value=None),
+            # The SDK reads ruleIds.length from this response inside the target-initialization
+            # Promise.all; a field-less response rejects it and silently kills the rest of the
+            # init chain (the console stops rendering results).
+            "Network.emulateNetworkConditionsByRule": partial(self._result_response, result={"ruleIds": []}),
+            "Network.overrideNetworkState": partial(self._simple_response, value=None),
+            # The frontend queries this per frame and reads response.status.coep/.coop; WebKit has
+            # no such method, so report a schema-valid "no isolation policies" status.
+            "Network.getSecurityIsolationStatus": partial(
+                self._result_response,
+                result={
+                    "status": {
+                        "coep": {"value": "None", "reportOnlyValue": "None"},
+                        "coop": {"value": "UnsafeNone", "reportOnlyValue": "UnsafeNone"},
+                    }
+                },
+            ),
+            "Storage.getStorageKey": partial(self._result_response, result={"storageKey": ""}),
+            "CSS.getAnimatedStylesForNode": partial(self._simple_response, value=None),
+            "CSS.getEnvironmentVariables": partial(self._result_response, result={"environmentVariables": {}}),
+            "CSS.trackComputedStyleUpdatesForNode": partial(self._simple_response, value=None),
+            "CSS.getPlatformFontsForNode": self._css_get_platform_fonts,
+            "DOM.pushNodesByBackendIdsToFrontend": self._dom_push_nodes_by_backend_ids,
         }
         self.to_cdp_special_messages_methods = {
             "Target.targetCreated": self._target_created,
@@ -161,6 +195,7 @@ class CdpTarget:
             "Target.didCommitProvisionalTarget": self._target_did_commit_provisional_target,
         }
         self.to_cdp_special_dispatched_messages_methods = {
+            "Console.messageRepeatCountUpdated": self._console_message_repeat_count_updated,
             "Debugger.scriptParsed": self._debugger_script_parsed,
             "Debugger.scriptFailedToParse": self._debugger_script_failed_to_parse,
             "Debugger.paused": self._debugger_paused,
@@ -176,6 +211,20 @@ class CdpTarget:
         self._receiving_task = asyncio.create_task(self._receive_loop())
         self._script_source_to_context_id: dict[str, Any] = {}
         self._default_execution_id = 0
+        self._last_console_api_call: Optional[dict[str, Any]] = None
+        self._internal_id = 0
+
+    def next_internal_id(self) -> int:
+        """
+        Allocate a unique id for a request we originate ourselves (screencast, sub-queries).
+
+        Negative so it can never collide with a frontend message id; unique so concurrent
+        internal requests don't consume each other's responses in wait_for_event_id (a fixed,
+        reused id let a slow evaluate response be mis-matched to a snapshotRect wait, which
+        silently killed the screencast).
+        """
+        self._internal_id -= 1
+        return self._internal_id
 
     @classmethod
     async def create(cls, protocol: SessionProtocol) -> "CdpTarget":
@@ -183,16 +232,34 @@ class CdpTarget:
         :param pymobiledevice3.services.web_protocol.session_protocol.SessionProtocol protocol: Session protocol.
         """
         await protocol.inspector.setup_inspector_socket(protocol.id_, protocol.app.id_, protocol.page.id_)
-        while not protocol.inspector.wir_events:
-            await asyncio.sleep(0)
-        created = protocol.inspector.wir_events.pop(0)
-        while "targetInfo" not in created["params"]:
+        while True:
+            # wir_events is shared; another session's create may pop concurrently, so re-check
+            # emptiness on every iteration instead of assuming a successful pop.
+            if not protocol.inspector.wir_events:
+                await asyncio.sleep(0)
+                continue
             created = protocol.inspector.wir_events.pop(0)
+            if "targetInfo" in created.get("params", {}):
+                break
         target_id = created["params"]["targetInfo"]["targetId"]
         logger.info(f"Created: {target_id}")
-        target = cls(protocol, target_id)
-        await target.output_queue.put(created)
-        return target
+        # The raw WIR Target.targetCreated is NOT forwarded: its targetInfo lacks the fields
+        # Chrome's schema requires (type/title/url/attached) and crashes the frontend's SDK.
+        return cls(protocol, target_id)
+
+    async def close(self) -> None:
+        """
+        Stop the queue-consumer tasks and any running screencast, and tear down the WIR socket.
+        """
+        if self.screencast is not None:
+            await self.screencast.stop()
+            self.screencast = None
+        for task in (self._input_task, self._receiving_task):
+            task.cancel()
+        await asyncio.gather(self._input_task, self._receiving_task, return_exceptions=True)
+        # Without the teardown, webinspectord ignores the next socket setup for this page and
+        # the following debugger connection never receives its Target.targetCreated event.
+        await self.protocol.inspector.teardown_inspector_socket(self.session_id, self.app_id, self.page_id)
 
     async def send(self, message: dict[str, Any]):
         """
@@ -206,12 +273,14 @@ class CdpTarget:
         """
         return await self.output_queue.get()
 
-    async def wait_for_event_id(self, id_: int):
+    async def wait_for_event_id(self, id_: int) -> Optional[dict[str, Any]]:
         """
         Wait for a message with a specific id from the target.
         :param id_: Message id to wait for.
+        :returns: The matching target message, or None if it does not arrive within the timeout.
         """
-        while True:
+        deadline = asyncio.get_event_loop().time() + WIR_RESULT_TIMEOUT
+        while asyncio.get_event_loop().time() < deadline:
             for i in range(len(self.protocol.inspector.wir_events)):
                 message = self.protocol.inspector.wir_events[i]
                 if message["method"] != "Target.dispatchMessageFromTarget":
@@ -222,25 +291,41 @@ class CdpTarget:
                 del self.protocol.inspector.wir_events[i]
                 return message
             await asyncio.sleep(0)
+        return None
 
-    async def send_message_with_result(self, id_: int, method: str, params: dict[str, Any]):
+    async def send_message_with_result(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """
-        Send a message to the target and wait for response.
+        Send a self-originated request to the target and wait for its response.
+
+        A unique internal id is allocated per call so concurrent sub-requests (screen input
+        synthesis, object inspection, script parsing, ...) never consume each other's responses;
+        reusing the frontend's message id let a slow response be matched to the wrong wait, which
+        stalled the receive loop and hung the console. Returns an empty dict if the device never
+        answers. The wait is bounded and _waiting_for_id is always released: while it is held the
+        receive loop is paused, so a lost response would otherwise starve every later event.
         """
+        id_ = self.next_internal_id()
         self._waiting_for_id += 1
-        await self._send_message_to_target({"id": id_, "method": method, "params": params})
-        result = await self.wait_for_event_id(id_)
-        self._waiting_for_id -= 1
-        return result
+        try:
+            await self._send_message_to_target({"id": id_, "method": method, "params": params})
+            result = await self.wait_for_event_id(id_)
+            if result is None:
+                logger.warning(f"No target response for {method} (id {id_}) within {WIR_RESULT_TIMEOUT}s")
+                return {}
+            return result
+        finally:
+            self._waiting_for_id -= 1
 
-    async def evaluate_and_result(self, id_: int, expression: str) -> Any:
+    async def evaluate_and_result(self, expression: str) -> Any:
         """
         Evaluate Javascript expression.
         """
-        logger.debug("Evaluating: ", expression)
+        logger.debug(f"Evaluating: {expression}")
         params = {"expression": expression}
-        data = await self.send_message_with_result(id_, "Runtime.evaluate", params)
-        logger.debug("Evaluated: ", data)
+        data = await self.send_message_with_result("Runtime.evaluate", params)
+        logger.debug(f"Evaluated: {data}")
+        if "result" not in data:
+            return None
         result = data["result"]["result"]
         if result["type"] == "string":
             return result["value"]
@@ -249,16 +334,33 @@ class CdpTarget:
         elif result["type"] == "object":
             return result
         else:
-            logger.debug("Unknown type: ", result)
+            logger.debug(f"Unknown type: {result}")
             return result
 
     async def _input_loop(self):
         while True:
             message = await self.input_queue.get()
-            if message["method"] in self.from_cdp_special_messages_methods:
-                await self.from_cdp_special_messages_methods[message["method"]](message)
-            else:
-                await self._send_message_to_target(message)
+            try:
+                if message["method"] in self.from_cdp_special_messages_methods:
+                    await self.from_cdp_special_messages_methods[message["method"]](message)
+                elif message["method"].split(".", 1)[0] in NOOP_ABSENT_DOMAINS:
+                    # WebKit has no Input/Overlay domains at all; the few methods worth
+                    # translating are in the special table above, so acknowledge the rest
+                    # (mouse moves over the screencast, inspect-mode toggles, ...) instead of
+                    # forwarding them and erroring.
+                    await self._simple_response(message, None)
+                else:
+                    await self._send_message_to_target(message)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # One failing translation must not kill the session's input processing.
+                logger.exception(f"Failed handling DevTools message: {message.get('method')}")
+                if "id" in message:
+                    await self.output_queue.put({
+                        "id": message["id"],
+                        "error": {"code": -32000, "message": f"pymobiledevice3 failed to handle {message['method']}"},
+                    })
 
     async def _receive_loop(self):
         while True:
@@ -266,14 +368,20 @@ class CdpTarget:
                 await asyncio.sleep(0)
                 continue
             message = self.protocol.inspector.wir_events.pop(0)
-            await self._to_output_queue(message)
+            try:
+                await self._to_output_queue(message)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # One failing event translation must not kill the whole receive loop - that
+                # silently starves every later response and the session appears dead.
+                logger.exception(f"Failed handling target event: {message.get('method')}")
 
     async def _to_output_queue(self, message: dict[str, Any]):
         if message["method"] in self.to_cdp_special_messages_methods:
             await self.to_cdp_special_messages_methods[message["method"]](message)
         else:
-            logger.error("Error!!!!!!!!!!!!", message)
-            raise RuntimeError()
+            logger.error(f"Unknown target event: {message}")
 
     async def _send_message_to_target(self, message: dict[str, Any]):
         await self.protocol.send_command(
@@ -283,9 +391,71 @@ class CdpTarget:
     async def _simple_response(self, message: dict[str, Any], value: Any):
         await self.output_queue.put({"id": message["id"], "result": {"result": value}})
 
+    async def _result_response(self, message: dict[str, Any], result: dict[str, Any]):
+        """Respond with an exact result body, for methods whose response fields the frontend reads."""
+        await self.output_queue.put({"id": message["id"], "result": result})
+
     async def _audits_enable(self, message: dict[str, Any]):
+        # A previous inspector session may have left an audit configured; WebKit then rejects
+        # setup with "Must call teardown before calling setup again", so always reset first.
+        await self.send_message_with_result("Audit.teardown", {})
         message["method"] = "Audit.setup"
+        message["params"] = {}
         await self._send_message_to_target(message)
+
+    async def _page_navigate(self, message: dict[str, Any]):
+        """WebKit has no Page.navigate; navigate in-page instead (URL bar / reload in DevTools)."""
+        url = json.dumps(message["params"]["url"])
+        await self.evaluate_and_result(f"location.href = {url}")
+        await self.output_queue.put({"id": message["id"], "result": {"frameId": self.frame.get("id", "")}})
+
+    async def _dom_push_nodes_by_backend_ids(self, message: dict[str, Any]):
+        await self.output_queue.put({"id": message["id"], "result": {"nodeIds": []}})
+
+    async def _runtime_get_properties(self, message: dict[str, Any]):
+        """
+        WebKit answers Runtime.getProperties with a 'properties' array; Chrome's frontend reads
+        'result' and renders "No properties" otherwise. WebKit also lacks the
+        accessorPropertiesOnly/nonIndexedPropertiesOnly filters, so apply them here.
+        """
+        params = message["params"]
+        response = await self.send_message_with_result(
+            "Runtime.getProperties",
+            {
+                "objectId": params["objectId"],
+                "ownProperties": params.get("ownProperties", False),
+                "generatePreview": params.get("generatePreview", False),
+            },
+        )
+        if "result" not in response:
+            await self.output_queue.put({"id": message["id"], "result": {"result": []}})
+            return
+        properties: list[dict[str, Any]] = response["result"].get("properties", [])
+        if params.get("accessorPropertiesOnly", False):
+            properties = [p for p in properties if "get" in p or "set" in p]
+        if params.get("nonIndexedPropertiesOnly", False):
+            properties = [p for p in properties if not p.get("name", "").isdigit()]
+        for prop in properties:
+            prop.setdefault("configurable", False)
+            prop.setdefault("enumerable", False)
+        result: dict[str, Any] = {"result": properties}
+        if "internalProperties" in response["result"]:
+            result["internalProperties"] = response["result"]["internalProperties"]
+        await self.output_queue.put({"id": message["id"], "result": result})
+
+    async def _runtime_global_lexical_scope_names(self, message: dict[str, Any]):
+        """
+        WebKit lacks Runtime.globalLexicalScopeNames (console autocomplete asks for global
+        let/const/class names). Those are not enumerable from page JavaScript, and window
+        properties are already covered by the frontend's regular completion path.
+        """
+        await self.output_queue.put({"id": message["id"], "result": {"names": []}})
+
+    async def _css_get_platform_fonts(self, message: dict[str, Any]):
+        await self.output_queue.put({"id": message["id"], "result": {"fonts": []}})
+
+    async def _page_add_script_to_evaluate_on_new_document(self, message: dict[str, Any]):
+        await self.output_queue.put({"id": message["id"], "result": {"identifier": "1"}})
 
     async def _dom_get_box_model(self, message: dict[str, Any]):
         message["method"] = "DOM.highlightNode"
@@ -298,27 +468,24 @@ class CdpTarget:
         }
         await self._send_message_to_target(message)
 
-    async def object_id_to_node_id(self, object_id: str, id_: int):
-        node = await self.send_message_with_result(id_, "DOM.requestNode", {"objectId": object_id})
+    async def object_id_to_node_id(self, object_id: str):
+        node = await self.send_message_with_result("DOM.requestNode", {"objectId": object_id})
         return node["result"]["nodeId"]
 
     async def _dom_get_node_for_location(self, message: dict[str, Any]):
         x, y = message["params"]["x"], message["params"]["y"]
-        obj = await self.evaluate_and_result(message["id"], f"document.elementFromPoint({x},{y})")
+        obj = await self.evaluate_and_result(f"document.elementFromPoint({x},{y})")
         if obj is None or "objectId" not in obj:
             await self._simple_response(message, None)
             return
-        result = {"nodeId": await self.object_id_to_node_id(obj["objectId"], message["id"])}
+        result = {"nodeId": await self.object_id_to_node_id(obj["objectId"])}
         await self.output_queue.put({"id": message["id"], "result": result})
 
     async def _dom_get_nodes_for_subtree_by_style(self, message: dict[str, Any]):
-        object_id = (
-            await self.send_message_with_result(
-                message["id"], "DOM.resolveNode", {"nodeId": message["params"]["nodeId"]}
-            )
-        )["result"]["object"]["objectId"]
+        object_id = (await self.send_message_with_result("DOM.resolveNode", {"nodeId": message["params"]["nodeId"]}))[
+            "result"
+        ]["object"]["objectId"]
         result = await self.send_message_with_result(
-            message["id"],
             "Runtime.callFunctionOn",
             {
                 "objectId": object_id,
@@ -342,13 +509,10 @@ class CdpTarget:
             },
         )
         result = await self.send_message_with_result(
-            message["id"], "Runtime.getCollectionEntries", {"objectId": result["result"]["result"]["objectId"]}
+            "Runtime.getCollectionEntries", {"objectId": result["result"]["result"]["objectId"]}
         )
         nodes = await asyncio.gather(
-            *[
-                self.object_id_to_node_id(obj["value"]["objectId"], message["id"] - i)
-                for i, obj in enumerate(result["result"]["entries"])
-            ],
+            *[self.object_id_to_node_id(obj["value"]["objectId"]) for obj in result["result"]["entries"]],
             return_exceptions=True,
         )
         nodes = [n for n in nodes if isinstance(n, int)]
@@ -367,8 +531,8 @@ class CdpTarget:
         await self._send_message_to_target(message)
 
     async def _page_get_navigation_history(self, message: dict[str, Any]):
-        href = await self.evaluate_and_result(message["id"], "window.location.href")
-        title = await self.evaluate_and_result(message["id"], "document.title")
+        href = await self.evaluate_and_result("window.location.href")
+        title = await self.evaluate_and_result("document.title")
         await self.output_queue.put({
             "id": message["id"],
             "result": {"currentIndex": 0, "entries": [{"id": 0, "url": href, "title": title}]},
@@ -377,7 +541,7 @@ class CdpTarget:
     async def _page_start_screencast(self, message: dict[str, Any]):
         params = message["params"]
         self.screencast = ScreenCast(self, params["format"], params["quality"], params["maxWidth"], params["maxHeight"])
-        await self.screencast.start(message["id"])
+        await self.screencast.start()
         await self._simple_response(message, None)
 
     async def _page_stop_screencast(self, message: dict[str, Any]):
@@ -392,9 +556,10 @@ class CdpTarget:
         await self._simple_response(message, None)
 
     async def _page_get_resource_tree(self, message: dict[str, Any]):
-        result = await self.send_message_with_result(message["id"], message["method"], message["params"])
+        result = await self.send_message_with_result(message["method"], message["params"])
         self.frame = result["result"]["frameTree"]["frame"]
-        await self.output_queue.put(result)
+        # result carries our internal request id; answer the frontend with its own id.
+        await self.output_queue.put({"id": message["id"], "result": result["result"]})
 
     async def _emulation_set_emulated_media(self, message: dict[str, Any]):
         message["method"] = "Page.setEmulatedMedia"
@@ -412,7 +577,7 @@ class CdpTarget:
     async def _debugger_set_blackbox_patterns(self, message: dict[str, Any]):
         for pattern in message["params"]["patterns"]:
             await self.send_message_with_result(
-                message["id"], "Debugger.setShouldBlackboxURL", {"url": pattern, "shouldBlackbox": True}
+                "Debugger.setShouldBlackboxURL", {"url": pattern, "shouldBlackbox": True}
             )
         await self._simple_response(message, None)
 
@@ -423,8 +588,8 @@ class CdpTarget:
         await self._send_message_to_target(message)
 
     async def _domdebugger_get_event_listeners(self, message: dict[str, Any]):
-        node = {"nodeId": await self.object_id_to_node_id(message["params"]["objectId"], message["id"])}
-        listeners = await self.send_message_with_result(message["id"], "DOM.getEventListenersForNode", node)
+        node = {"nodeId": await self.object_id_to_node_id(message["params"]["objectId"])}
+        listeners = await self.send_message_with_result("DOM.getEventListenersForNode", node)
         if "error" in listeners:
             await self._simple_response(message, None)
             return
@@ -461,9 +626,7 @@ class CdpTarget:
 
     async def _runtime_compile_script(self, message: dict[str, Any]):
         self._script_source_to_context_id[message["params"]["expression"]] = message["params"]["executionContextId"]
-        response = await self.send_message_with_result(
-            message["id"], "Runtime.parse", {"source": message["params"]["expression"]}
-        )
+        response = await self.send_message_with_result("Runtime.parse", {"source": message["params"]["expression"]})
         if response["result"]["result"] == "none":
             await self._simple_response(message, None)
             return
@@ -485,15 +648,9 @@ class CdpTarget:
         await self.output_queue.put({"id": message["id"], "result": {"id": self._default_execution_id}})
 
     async def _target_set_auto_attach(self, message: dict[str, Any]):
+        # Only acknowledge. Emitting a fabricated Target.attachedToTarget (with a sessionId and
+        # a partial targetInfo) crashes the frontend's SDK and progressively breaks the console.
         await self._simple_response(message, None)
-        await self.output_queue.put({
-            "method": "Target.attachedToTarget",
-            "params": {
-                "sessionId": self.protocol.id_,
-                "targetInfo": {"targetId": self.target_id},
-                "waitingForDebugger": True,
-            },
-        })
 
     async def _css_take_computed_style_updates(self, message: dict[str, Any]):
         await self.output_queue.put({"id": message["id"], "result": {"nodeIds": []}})
@@ -502,47 +659,70 @@ class CdpTarget:
         message["params"]["selector"] = message["params"]["ruleText"].split("{")[0]
         await self._send_message_to_target(message)
 
+    def _screencast_scale(self) -> float:
+        return self.screencast.get_scale() if self.screencast is not None else 1.0
+
+    async def _synthesize_mouse_event(self, type_: str, x: int, y: int, modifiers: int, button: int):
+        event_params = json.dumps({
+            "screenX": x,
+            "screenY": y,
+            "clientX": x,
+            "clientY": y,
+            "altKey": bool(modifiers & 1),
+            "ctrlKey": bool(modifiers & 2),
+            "metaKey": bool(modifiers & 4),
+            "shiftKey": bool(modifiers & 8),
+            "button": button,
+            "bubbles": True,
+            "cancelable": True,
+        })
+        simulate_mouse_event = (
+            "function simulateMouseEvent(type){"
+            f"const element = document.elementFromPoint({x}, {y});"
+            "if (element === null) { return null; }"
+            f"const e = new MouseEvent(type, JSON.parse('{event_params}'));"
+            "element.dispatchEvent(e);"
+            "element.focus();"
+            "return e;}"
+        )
+        await self.evaluate_and_result(f'({simulate_mouse_event})("{type_}")')
+        if type_ == "click":
+            await self.evaluate_and_result(f'({simulate_mouse_event})("mouseup")')
+
     async def _input_emulate_touch_from_mouse_event(self, message: dict[str, Any]):
         params = message["params"]
+        scale = self._screencast_scale()
         if params["type"] == "mouseWheel":
-            assert self.screencast is not None
-            delta_x, delta_y = (
-                params["deltaX"] // self.screencast.get_scale(),
-                params["deltaY"] // self.screencast.get_scale(),
-            )
-            await self.evaluate_and_result(message["id"], f"window.scrollBy({-delta_x}, {-delta_y})")
+            delta_x, delta_y = params["deltaX"] // scale, params["deltaY"] // scale
+            await self.evaluate_and_result(f"window.scrollBy({-delta_x}, {-delta_y})")
         elif params["type"] == "mouseReleased":
             pass
         else:
-            assert self.screencast is not None
-            modifiers = params["modifiers"]
-            x, y = params["x"] // self.screencast.get_scale(), params["y"] // self.screencast.get_scale()
-            event_params: Any = {
-                "screenX": x,
-                "screenY": y,
-                "clientX": 0,
-                "clientY": 0,
-                "altKey": bool(modifiers & 1),
-                "ctrlKey": bool(modifiers & 2),
-                "metaKey": bool(modifiers & 4),
-                "shiftKey": bool(modifiers & 8),
-                "button": params["button"],
-                "bubbles": True,
-                "cancelable": False,
-            }
-            type_ = {"mousePressed": "click", "mouseReleased": "click", "mouseMoved": "mousemove"}[params["type"]]
-            event_params = json.dumps(event_params)
-            simulate_mouse_event = (
-                "function simulateMouseEvent(type){"
-                f"const element = document.elementFromPoint({x}, {y});"
-                f"const e = new MouseEvent(type, JSON.parse('{event_params}'));"
-                "element.dispatchEvent(e);"
-                "element.focus();"
-                "return e;}"
+            x, y = int(params["x"] // scale), int(params["y"] // scale)
+            type_ = {"mousePressed": "click", "mouseMoved": "mousemove"}[params["type"]]
+            await self._synthesize_mouse_event(type_, x, y, params["modifiers"], params["button"])
+
+        await self._simple_response(message, None)
+
+    async def _input_dispatch_mouse_event(self, message: dict[str, Any]):
+        """
+        Modern DevTools drives the screencast with Input.dispatchMouseEvent (the legacy
+        Input.emulateTouchFromMouseEvent is no longer sent); WebKit has no Input domain,
+        so synthesize the events in-page like the legacy handler does.
+        """
+        params = message["params"]
+        scale = self._screencast_scale()
+        type_ = params["type"]
+        if type_ == "mouseWheel":
+            delta_x, delta_y = params.get("deltaX", 0) // scale, params.get("deltaY", 0) // scale
+            await self.evaluate_and_result(f"window.scrollBy({-delta_x}, {-delta_y})")
+        elif type_ in ("mousePressed", "mouseMoved"):
+            x, y = int(params["x"] // scale), int(params["y"] // scale)
+            button = {"none": 0, "left": 0, "middle": 1, "right": 2, "back": 3, "forward": 4}.get(
+                params.get("button", "none"), 0
             )
-            await self.evaluate_and_result(message["id"], f'({simulate_mouse_event})("{type_}")')
-            if type_ == "click":
-                await self.evaluate_and_result(message["id"], f'({simulate_mouse_event})("mouseup")')
+            js_type = "click" if type_ == "mousePressed" else "mousemove"
+            await self._synthesize_mouse_event(js_type, x, y, params.get("modifiers", 0), button)
 
         await self._simple_response(message, None)
 
@@ -592,31 +772,39 @@ class CdpTarget:
             f"{manipulation}"
             "}"
         )
-        await self.evaluate_and_result(message["id"], simulate_key_event)
+        await self.evaluate_and_result(simulate_key_event)
         await self._simple_response(message, None)
 
     async def _target_created(self, message: dict[str, Any]):
+        # These handlers run inside the receive loop; a device round-trip here (the old code
+        # evaluated document.title/location.href) blocks delivery of every other event for the
+        # whole session, and while a freshly navigated page is still loading it blocks until the
+        # timeout. Rapid link navigation stacks those blocks until the session never catches up.
+        # So emit a non-blocking, schema-complete targetInfo (a partial one crashes the frontend
+        # SDK); the real url arrives via the device's own Page.frameNavigated.
         self.target_id = message["params"]["targetInfo"]["targetId"]
-        message["method"] = "Target.targetInfoChanged"
-        message["params"]["targetInfo"]["url"] = await self.evaluate_and_result(1, "window.location.href")
-        message["params"]["targetInfo"]["title"] = await self.evaluate_and_result(1, "document.title")
-        message["params"]["targetInfo"]["attached"] = message["params"]["targetInfo"].pop("isProvisional")
-        await self.output_queue.put(message)
-
-    async def _target_destroyed(self, message: dict[str, Any]):
-        result = await self.send_message_with_result(1, "Page.getResourceTree", {})
-        self.frame = result["result"]["frameTree"]["frame"]
         await self.output_queue.put({
-            "method": "Page.frameNavigated",
+            "method": "Target.targetInfoChanged",
             "params": {
-                "frame": self.frame,
+                "targetInfo": {
+                    "targetId": self.target_id,
+                    "type": "page",
+                    "title": "",
+                    "url": self.frame.get("url", ""),
+                    "attached": True,
+                    "canAccessOpener": False,
+                }
             },
         })
+
+    async def _target_destroyed(self, message: dict[str, Any]):
+        # The device emits its own Page.frameNavigated for the new page, so no getResourceTree
+        # round-trip is needed (and must not be done here - see _target_created). Just nudge the
+        # frontend that the load finished and the document changed.
         await self.output_queue.put({
             "method": "Page.loadEventFired",
-            "params": {
-                "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f"),
-            },
+            # MonotonicTime, in seconds - not a formatted string
+            "params": {"timestamp": datetime.now().timestamp()},
         })
         await self.output_queue.put({"method": "DOM.documentUpdated"})
 
@@ -628,7 +816,7 @@ class CdpTarget:
             await self.to_cdp_special_dispatched_messages_methods[message["method"]](message)
         else:
             if "method" in message:
-                logger.debug("DISPACHING", message["method"])
+                logger.debug(f"Dispatching: {message['method']}")
             await self.output_queue.put(message)
 
     async def _target_did_commit_provisional_target(self, message: dict[str, Any]):
@@ -639,15 +827,20 @@ class CdpTarget:
             await self.output_queue.put(message)
 
     async def _debugger_script_failed_to_parse(self, message: dict[str, Any]):
+        # The failing source is only known from Runtime.compileScript; parse failures of other
+        # evaluations (e.g. the console's eager previews) fall back to the default context.
+        context_id = self._script_source_to_context_id.get(
+            message["params"].get("scriptSource", ""), self._default_execution_id
+        )
         message["params"] = {
             "endColumn": 0,
-            "endLine": message["params"]["errorLine"],
-            "executionContextId": self._script_source_to_context_id[message["params"]["scriptSource"]],
+            "endLine": message["params"].get("errorLine", 0),
+            "executionContextId": context_id,
             "startColumn": 0,
-            "startLine": message["params"]["startLine"],
-            "url": message["params"]["url"],
-            "scriptId": self._script_source_to_context_id[message["params"]["scriptSource"]],
-            "hash": hashlib.sha1(message["params"]["scriptSource"]).hexdigest(),
+            "startLine": message["params"].get("startLine", 0),
+            "url": message["params"].get("url", ""),
+            "scriptId": context_id,
+            "hash": hashlib.sha1(message["params"].get("scriptSource", "").encode()).hexdigest(),
         }
         await self.output_queue.put(message)
 
@@ -658,37 +851,80 @@ class CdpTarget:
         await self.output_queue.put(message)
 
     async def _debugger_global_object_cleared(self, message: dict[str, Any]):
+        await self.output_queue.put({"method": "Runtime.executionContextsCleared"})
         await self.output_queue.put({"method": "DOM.documentUpdated"})
 
     async def _page_default_appearance_did_change(self, message: dict[str, Any]):
         pass
 
     async def _runtime_execution_context_created(self, message: dict[str, Any]):
-        if message["params"]["context"]["type"] == "normal":
-            self._default_execution_id = message["params"]["context"]["id"]
+        context = message["params"]["context"]
+        # WebKit announces a context per isolated world (and per inspector evaluation batch);
+        # forwarding them all with a shared uniqueId makes Chrome's RuntimeModel treat each as
+        # a replacement of the selected console context, and pending evaluations lose their
+        # results depending on timing. Only the main-world context is forwarded.
+        if context["type"] != "normal":
+            return
+        self._default_execution_id = context["id"]
         message["params"] = {
             "context": {
-                "id": message["params"]["context"]["id"],
+                "id": context["id"],
                 "origin": "default",
                 "name": "",
-                "uniqueId": message["params"]["context"]["frameId"],
+                # must be unique per context - Chrome keys contexts by it
+                "uniqueId": f"{context['frameId']}.{context['id']}",
             }
         }
         await self.output_queue.put(message)
 
+    async def _console_message_repeat_count_updated(self, message: dict[str, Any]):
+        """
+        WebKit coalesces repeated identical console messages into a repeat-count update; Chrome
+        has no such event, so replay the last console-API message and let the frontend coalesce.
+        """
+        if self._last_console_api_call is not None:
+            params = dict(self._last_console_api_call)
+            params["timestamp"] = datetime.now().timestamp() * 1000
+            await self.output_queue.put({"method": "Runtime.consoleAPICalled", "params": params})
+
     async def _console_message_added(self, message: dict[str, Any]):
+        console_message = message["params"]["message"]
+        # Chrome renders console-API output (console.log & friends) from Runtime.consoleAPICalled,
+        # complete with the argument objects; Log.entryAdded is only for browser-generated logs.
+        if console_message["source"] == "console-api":
+            args: list[dict[str, Any]] = console_message.get("parameters")
+            if not args:
+                args = [{"type": "string", "value": console_message.get("text", "")}]
+            type_ = console_message.get("type", "log")
+            if type_ == "log":
+                # WebKit reports console.error/info/warn as type "log" with a level; Chrome
+                # renders by the consoleAPICalled type.
+                type_ = {"warning": "warning", "error": "error", "info": "info", "debug": "debug"}.get(
+                    console_message.get("level", "log"), "log"
+                )
+            params: dict[str, Any] = {
+                "type": type_,
+                "args": args,
+                "executionContextId": self._default_execution_id,
+                # Runtime.Timestamp is in milliseconds
+                "timestamp": datetime.now().timestamp() * 1000,
+            }
+            self._last_console_api_call = params
+            await self.output_queue.put({"method": "Runtime.consoleAPICalled", "params": params})
+            return
         log_record: dict[str, Any] = {
-            "source": LOG_MESSAGE_SOURCES[message["params"]["message"]["source"]],
-            "level": LOG_MESSAGE_LEVELS[message["params"]["message"]["level"]],
-            "text": message["params"]["message"]["text"],
-            "timestamp": datetime.now().timestamp(),
+            "source": LOG_MESSAGE_SOURCES[console_message["source"]],
+            "level": LOG_MESSAGE_LEVELS[console_message["level"]],
+            "text": console_message["text"],
+            # Log.LogEntry.timestamp is in milliseconds; seconds sort the entry into 1970
+            "timestamp": datetime.now().timestamp() * 1000,
         }
-        if "url" in message["params"]["message"]:
-            log_record["url"] = message["params"]["message"]["url"]
-        if "line" in message["params"]["message"]:
-            log_record["lineNumber"] = message["params"]["message"]["line"]
-        if "networkRequestId" in message["params"]["message"]:
-            log_record["networkRequestId"] = message["params"]["message"]["networkRequestId"]
+        if "url" in console_message:
+            log_record["url"] = console_message["url"]
+        if "line" in console_message:
+            log_record["lineNumber"] = console_message["line"]
+        if "networkRequestId" in console_message:
+            log_record["networkRequestId"] = console_message["networkRequestId"]
 
         await self.output_queue.put({"method": "Log.entryAdded", "params": {"entry": log_record}})
 

@@ -376,16 +376,6 @@ async def js_shell(
     await run_js_shell(js_shell_class, service_provider, timeout, url, open_safari, bundle_identifier, **create_kwargs)
 
 
-cdp_inspector: Optional[WebinspectorService] = None
-
-
-def create_app():
-    if cdp_inspector is None:
-        raise RuntimeError("CDP inspector is not initialized")
-    app.state.inspector = cdp_inspector
-    return app
-
-
 @cli.command()
 @async_command
 async def cdp(service_provider: ServiceProviderDep, host: str = "127.0.0.1", port: int = 9222) -> None:
@@ -396,17 +386,17 @@ async def cdp(service_provider: ServiceProviderDep, host: str = "127.0.0.1", por
     In order to debug the WebView that way, open in Google Chrome:
         chrome://inspect/#devices
     """
-    global cdp_inspector
-    cdp_inspector = WebinspectorService(lockdown=service_provider)
-    uvicorn.run(
-        f"{__name__}:{create_app.__name__}",
-        host=host,
-        port=port,
-        factory=True,
-        ws_ping_timeout=None,
-        ws="wsproto",
-        loop="asyncio",
+    app.state.inspector = WebinspectorService(lockdown=service_provider)
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app,
+            host=host,
+            port=port,
+            ws_ping_timeout=None,
+            ws="wsproto",
+        )
     )
+    await server.serve()
 
 
 async def get_js_completions(jsshell: "JsShell", obj: str, prefix: str) -> AsyncIterator[Completion]:

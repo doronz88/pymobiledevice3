@@ -334,6 +334,18 @@ class WebinspectorService(LockdownService):
         """
         await self._forward_socket_setup(session_id, app_id, page_id, pause=False)
 
+    async def teardown_inspector_socket(self, session_id: str, app_id: str, page_id: int):
+        """Tear down a forwarding socket previously set up for an inspector session.
+
+        Without this, webinspectord considers the session still active and ignores the next
+        socket setup for the same page, so a future session never receives its target events.
+
+        :param session_id: The session identifier the socket was associated with.
+        :param app_id: The target application identifier.
+        :param page_id: The target page identifier.
+        """
+        await self._forward_did_close(session_id, app_id, page_id)
+
     def find_page_id(self, page_id: str) -> tuple[Application, Page]:
         """Look up the application and page for a known page identifier.
 
@@ -452,6 +464,16 @@ class WebinspectorService(LockdownService):
                 "WIRSessionIdentifierKey": session_id,
                 "WIRSenderKey": session_id,
                 "WIRSocketDataKey": json.dumps(data).encode(),
+            },
+        )
+
+    async def _forward_did_close(self, session_id: str, app_id: str, page_id: int):
+        await self._send_message(
+            "_rpc_forwardDidClose:",
+            {
+                "WIRApplicationIdentifierKey": app_id,
+                "WIRPageIdentifierKey": page_id,
+                "WIRSenderKey": session_id,
             },
         )
 
