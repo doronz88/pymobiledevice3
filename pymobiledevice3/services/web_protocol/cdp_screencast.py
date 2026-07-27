@@ -122,7 +122,6 @@ class ScreenCast:
                 logger.exception("screencast frame failed; skipping")
 
     async def _send_frame(self) -> None:
-        self.frame_id += 1
         offset_top, scroll_offset_x, scroll_offset_y = await self.get_offsets()
         event = await self.target.send_message_with_result(
             "Page.snapshotRect",
@@ -136,14 +135,17 @@ class ScreenCast:
         )
         data = event.get("result", {}).get("dataURL")
         if not data:
-            # No usable snapshot this round (device busy / response lost); try again next tick.
+            # No usable snapshot this round (device busy / response lost mid-navigation); try
+            # again next tick. frame_id must not advance here: the loop waits for the last id's
+            # ack, and an id that was never actually sent can never be acked - the screencast
+            # would freeze for the rest of the session.
             return
         data = data[data.find("base64,") + 7 :]
         await self.target.output_queue.put({
             "method": "Page.screencastFrame",
             "params": {
                 "data": self.resize_jpeg(data),
-                "sessionId": self.frame_id - 1,
+                "sessionId": self.frame_id,
                 "metadata": {
                     "pageScaleFactor": self.page_scale_factor,
                     "offsetTop": offset_top,
@@ -156,3 +158,4 @@ class ScreenCast:
                 },
             },
         })
+        self.frame_id += 1

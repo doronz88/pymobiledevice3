@@ -23,9 +23,25 @@ WIR_RESULT_TIMEOUT = 5
 UNRESPONSIVE_REPROBE_INTERVAL = 2.0
 UNRESPONSIVE_PROBE_TIMEOUT = 1.5
 
+# Minimum seconds between synthesized screencast hover (mouseMoved) events. DevTools streams
+# dozens of moves per second as the pointer glides; synthesizing each one as a blocking device
+# round-trip floods webinspectord and pauses the receive loop, which - on a chatty page - starves
+# event delivery until the frontend wedges. Intermediate moves are acked and dropped.
+MOUSEMOVE_MIN_INTERVAL = 0.08
+
 # CDP domains WebKit does not implement at all. Any method in these that isn't specially
 # translated is acknowledged with an empty response instead of being forwarded (and erroring).
 NOOP_ABSENT_DOMAINS = frozenset({"Input", "Overlay"})
+
+# Events WebKit's Web Inspector emits that have no counterpart in Chrome's protocol. Forwarding
+# them is at best noise (Chrome ignores unknown events) and at worst fatal: an unrecognized event
+# can throw in the frontend's message dispatcher and kill its pump, so a chatty page that emits
+# them in bulk (e.g. CSS.nodeLayoutFlagsChanged on every layout) can wedge DevTools. Drop them.
+WEBKIT_ONLY_EVENTS = frozenset({
+    "CSS.nodeLayoutFlagsChanged",
+    "DOM.willDestroyDOMNode",
+    "Page.defaultUserPreferencesDidChange",
+})
 
 # Error synthesized for requests routed to a target that got destroyed before answering
 # (WebKit never answers those). Matches Chrome's own message for the same situation.
@@ -241,6 +257,12 @@ class CdpTarget:
         self._default_execution_id = 0
         self._last_console_api_call: Optional[dict[str, Any]] = None
         self._internal_id = 0
+        # loop time of the last synthesized hover, to throttle high-frequency mouseMoved events.
+        self._last_mousemove_time = 0.0
+        # execution-context uniqueIds already announced to the frontend, to drop duplicate
+        # Runtime.executionContextCreated events (WebKit re-announces contexts) that would
+        # otherwise corrupt Chrome's RuntimeModel.
+        self._emitted_context_unique_ids: set[str] = set()
         # id -> target the request was routed to, for synthesizing errors when that target dies
         self._pending_requests: dict[int, str] = {}
         self._destroyed_targets: set[str] = set()
@@ -787,7 +809,8 @@ class CdpTarget:
     def _screencast_scale(self) -> float:
         return self.screencast.get_scale() if self.screencast is not None else 1.0
 
-    async def _synthesize_mouse_event(self, type_: str, x: int, y: int, modifiers: int, button: int):
+    def _mouse_event_js(self, type_: str, x: int, y: int, modifiers: int, button: int) -> str:
+        """Build the in-page expression that dispatches a synthesized mouse event at (x, y)."""
         event_params = json.dumps({
             "screenX": x,
             "screenY": y,
@@ -810,9 +833,28 @@ class CdpTarget:
             "element.focus();"
             "return e;}"
         )
-        await self.evaluate_and_result(f'({simulate_mouse_event})("{type_}")')
+        return f'({simulate_mouse_event})("{type_}")'
+
+    async def _synthesize_mouse_event(self, type_: str, x: int, y: int, modifiers: int, button: int):
+        await self.evaluate_and_result(self._mouse_event_js(type_, x, y, modifiers, button))
         if type_ == "click":
-            await self.evaluate_and_result(f'({simulate_mouse_event})("mouseup")')
+            await self.evaluate_and_result(self._mouse_event_js("mouseup", x, y, modifiers, button))
+
+    async def _send_evaluate_noreply(self, expression: str) -> None:
+        """
+        Fire-and-forget page evaluate for high-frequency screencast input (hover, scroll).
+
+        Waiting for the device (send_message_with_result) holds _waiting_for_id and pauses the
+        receive loop; doing that per pointer move floods webinspectord and, on a chatty page,
+        starves every incoming event. We don't need the result, so just send and move on; the
+        (negative-id) reply is dropped by _target_dispatch_message_from_target.
+        """
+        if self.target_id in self._unresponsive_targets:
+            return
+        await self._send_message_to_target(
+            {"id": self.next_internal_id(), "method": "Runtime.evaluate", "params": {"expression": expression}},
+            record=False,
+        )
 
     async def _input_emulate_touch_from_mouse_event(self, message: dict[str, Any]):
         params = message["params"]
@@ -839,15 +881,25 @@ class CdpTarget:
         scale = self._screencast_scale()
         type_ = params["type"]
         if type_ == "mouseWheel":
+            # Scrolling is frequent; don't block the receive loop waiting for the device.
             delta_x, delta_y = params.get("deltaX", 0) // scale, params.get("deltaY", 0) // scale
-            await self.evaluate_and_result(f"window.scrollBy({-delta_x}, {-delta_y})")
-        elif type_ in ("mousePressed", "mouseMoved"):
+            await self._send_evaluate_noreply(f"window.scrollBy({-delta_x}, {-delta_y})")
+        elif type_ == "mouseMoved":
+            # Hover: throttle (DevTools streams dozens/sec) and never block on the device.
+            now = asyncio.get_event_loop().time()
+            if now - self._last_mousemove_time >= MOUSEMOVE_MIN_INTERVAL:
+                self._last_mousemove_time = now
+                x, y = int(params["x"] // scale), int(params["y"] // scale)
+                await self._send_evaluate_noreply(
+                    self._mouse_event_js("mousemove", x, y, params.get("modifiers", 0), 0)
+                )
+        elif type_ == "mousePressed":
+            # Clicks are low-frequency and must land in order (focus, submit), so keep them synchronous.
             x, y = int(params["x"] // scale), int(params["y"] // scale)
             button = {"none": 0, "left": 0, "middle": 1, "right": 2, "back": 3, "forward": 4}.get(
                 params.get("button", "none"), 0
             )
-            js_type = "click" if type_ == "mousePressed" else "mousemove"
-            await self._synthesize_mouse_event(js_type, x, y, params.get("modifiers", 0), button)
+            await self._synthesize_mouse_event("click", x, y, params.get("modifiers", 0), button)
 
         await self._simple_response(message, None)
 
@@ -855,23 +907,44 @@ class CdpTarget:
         params = message["params"]
         key = params["key"]
         if params["type"] == "keyUp" and key == "Backspace":
-            manipulation = "document.activeElement.value = document.activeElement.value.slice(0, -1);"
-        elif params["type"] == "char" and key == "Enter":
             manipulation = (
-                "var tagName = document.activeElement.tagName.toLowerCase();"
-                'if (tagName === "textarea" || document.activeElement.isContentEditable) {'
-                '    document.activeElement.value = document.activeElement.value + "\\n";'
-                "} else {"
-                '    const result = document.evaluate("./ancestor-or-self::form", document.activeElement, '
-                "                                     null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);"
-                "    const e = result.singleNodeValue.ownerDocument.createEvent('Event');"
-                '    e.initEvent("submit", true, true);'
-                "    if (result.singleNodeValue.dispatchEvent(e)) { result.singleNodeValue.submit() }"
+                "document.activeElement.value = document.activeElement.value.slice(0, -1);"
+                "document.activeElement.dispatchEvent("
+                "    new InputEvent('input', {bubbles: true, inputType: 'deleteContentBackward'}));"
+            )
+        elif params["type"] == "char" and key == "Enter":
+            # The page's own Enter handling must run first (e.g. google fires its search from a
+            # keydown listener on a <textarea> and prevents the default); only when the page
+            # leaves the events unhandled fall back to what a browser would do by default.
+            manipulation = (
+                "const enterInit = {key: 'Enter', code: 'Enter', bubbles: true, cancelable: true};"
+                "const keydown = new KeyboardEvent('keydown', enterInit);"
+                "const keypress = new KeyboardEvent('keypress', enterInit);"
+                "for (const event of [keydown, keypress]) {"
+                "    Object.defineProperty(event, 'keyCode', {get: () => 13});"
+                "    Object.defineProperty(event, 'which', {get: () => 13});"
+                "}"
+                "const prevented = !document.activeElement.dispatchEvent(keydown)"
+                "    || !document.activeElement.dispatchEvent(keypress);"
+                "document.activeElement.dispatchEvent("
+                "    new KeyboardEvent('keyup', {key: 'Enter', code: 'Enter', bubbles: true}));"
+                "if (!prevented) {"
+                "    var tagName = document.activeElement.tagName.toLowerCase();"
+                '    if (tagName === "textarea" || document.activeElement.isContentEditable) {'
+                '        document.activeElement.value = document.activeElement.value + "\\n";'
+                "    } else if (document.activeElement.form) {"
+                "        const form = document.activeElement.form;"
+                "        if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }"
+                "    }"
                 "}"
             )
         elif params["type"] == "char":
             text = params["text"]
-            manipulation = f'document.activeElement.value = document.activeElement.value + "{text}";'
+            manipulation = (
+                f'document.activeElement.value = document.activeElement.value + "{text}";'
+                "document.activeElement.dispatchEvent("
+                "    new InputEvent('input', {bubbles: true, inputType: 'insertText'}));"
+            )
         else:
             await self._simple_response(message, None)
             return
@@ -971,11 +1044,15 @@ class CdpTarget:
                 # Response to a bridge-internal request (setup replay or an abandoned wait);
                 # forwarding it would hand the frontend an id it never issued.
                 return
-        if message.get("method", "") in self.to_cdp_special_dispatched_messages_methods:
-            await self.to_cdp_special_dispatched_messages_methods[message["method"]](message)
+        method = message.get("method", "")
+        if method in WEBKIT_ONLY_EVENTS:
+            # Not part of Chrome's protocol; forwarding it only risks wedging the frontend.
+            return
+        if method in self.to_cdp_special_dispatched_messages_methods:
+            await self.to_cdp_special_dispatched_messages_methods[method](message)
         else:
-            if "method" in message:
-                logger.debug(f"Dispatching: {message['method']}")
+            if method:
+                logger.debug(f"Dispatching: {method}")
             await self.output_queue.put(message)
 
     async def _target_did_commit_provisional_target(self, message: dict[str, Any]):
@@ -1014,6 +1091,8 @@ class CdpTarget:
         await self.output_queue.put(message)
 
     async def _debugger_global_object_cleared(self, message: dict[str, Any]):
+        # Contexts are gone; allow their uniqueIds to be re-announced after the reload.
+        self._emitted_context_unique_ids.clear()
         await self.output_queue.put({"method": "Runtime.executionContextsCleared"})
         await self.output_queue.put({"method": "DOM.documentUpdated"})
 
@@ -1028,6 +1107,12 @@ class CdpTarget:
         # results depending on timing. Only the main-world context is forwarded.
         if context["type"] != "normal":
             return
+        unique_id = f"{context['frameId']}.{context['id']}"
+        if unique_id in self._emitted_context_unique_ids:
+            # WebKit re-announces the same context; a duplicate executionContextCreated corrupts
+            # Chrome's RuntimeModel (it keys contexts by uniqueId), so emit each at most once.
+            return
+        self._emitted_context_unique_ids.add(unique_id)
         self._default_execution_id = context["id"]
         message["params"] = {
             "context": {
@@ -1035,7 +1120,7 @@ class CdpTarget:
                 "origin": "default",
                 "name": "",
                 # must be unique per context - Chrome keys contexts by it
-                "uniqueId": f"{context['frameId']}.{context['id']}",
+                "uniqueId": unique_id,
             }
         }
         await self.output_queue.put(message)

@@ -1,5 +1,8 @@
 import asyncio
+import itertools
 import json
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 import pytest
@@ -14,6 +17,41 @@ from pymobiledevice3.services.web_protocol.cdp_server import app
 from pymobiledevice3.services.webinspector import SAFARI, WebinspectorService
 
 TIMEOUT = 30
+
+
+@asynccontextmanager
+async def cdp_server_with_safari_page(
+    lockdown: LockdownClient,
+) -> AsyncGenerator[tuple[int, list[dict[str, Any]]], None]:
+    """Run the CDP server against the device and yield (port, listed Safari targets)."""
+    inspector = WebinspectorService(lockdown=lockdown)
+    try:
+        await inspector.connect()
+    except WebInspectorNotEnabledError:
+        pytest.xfail("Web Inspector is disabled on the device")
+    app.state.inspector = inspector
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, ws="wsproto"))
+    serve_task = asyncio.create_task(server.serve())
+    try:
+        while not server.started:
+            assert not serve_task.done()
+            await asyncio.sleep(0.1)
+        port = server.servers[0].sockets[0].getsockname()[1]
+        await inspector.open_app(SAFARI)
+        targets = []
+        for _ in range(TIMEOUT):
+            targets = await http_get_json(port, "/json/list")
+            if targets:
+                break
+            await asyncio.sleep(1)
+        assert targets, "no inspectable Safari page was listed"
+        yield port, targets
+    finally:
+        # force_exit skips uvicorn's graceful wait so a wedged debugger session can't hang the test
+        server.should_exit = True
+        server.force_exit = True
+        await asyncio.wait_for(serve_task, TIMEOUT)
+        await inspector.close()
 
 
 async def http_get_json(port: int, path: str) -> Any:
@@ -91,48 +129,18 @@ class CdpWebsocketClient:
 
 
 async def testp_cdp_server_end_to_end(lockdown: LockdownClient) -> None:
-    inspector = WebinspectorService(lockdown=lockdown)
-    try:
-        await inspector.connect()
-    except WebInspectorNotEnabledError:
-        pytest.xfail("Web Inspector is disabled on the device")
-    app.state.inspector = inspector
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, ws="wsproto"))
-    serve_task = asyncio.create_task(server.serve())
-    try:
-        while not server.started:
-            assert not serve_task.done()
-            await asyncio.sleep(0.1)
-        port = server.servers[0].sockets[0].getsockname()[1]
-
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
         version = await http_get_json(port, "/json/version")
         # /json/version must not be shadowed by the /json targets catch-all
         assert version["Browser"] == "Safari"
         assert f"ws://127.0.0.1:{port}/devtools/browser/" in version["webSocketDebuggerUrl"]
-
-        await inspector.open_app(SAFARI)
-        targets = []
-        for _ in range(TIMEOUT):
-            targets = await http_get_json(port, "/json/list")
-            if targets:
-                break
-            await asyncio.sleep(1)
-        assert targets, "no inspectable Safari page was listed"
         assert targets[0]["webSocketDebuggerUrl"] == f"ws://127.0.0.1:{port}/devtools/page/{targets[0]['id']}"
 
         async def evaluate_in_new_session() -> None:
             client = CdpWebsocketClient(port, targets[0]["id"])
             await asyncio.wait_for(client.connect(), TIMEOUT)
             try:
-                await client.send({"id": 1, "method": "Runtime.evaluate", "params": {"expression": "40+2"}})
-
-                async def wait_for_result() -> dict[str, Any]:
-                    while True:
-                        message = await client.receive()
-                        if message.get("id") == 1:
-                            return message
-
-                result = await asyncio.wait_for(wait_for_result(), TIMEOUT)
+                result = await client.command(1, "Runtime.evaluate", {"expression": "40+2"})
                 assert result["result"]["result"]["value"] == 42
             finally:
                 await client.close()
@@ -141,12 +149,6 @@ async def testp_cdp_server_end_to_end(lockdown: LockdownClient) -> None:
         # without which webinspectord never delivers target events to a reconnecting client.
         await evaluate_in_new_session()
         await evaluate_in_new_session()
-    finally:
-        # force_exit skips uvicorn's graceful wait so a wedged debugger session can't hang the test
-        server.should_exit = True
-        server.force_exit = True
-        await asyncio.wait_for(serve_task, TIMEOUT)
-        await inspector.close()
 
 
 async def testp_cdp_server_survives_process_swaps(lockdown: LockdownClient) -> None:
@@ -156,28 +158,7 @@ async def testp_cdp_server_survives_process_swaps(lockdown: LockdownClient) -> N
     requests (synthesizing errors for those the dead target swallowed) and re-establish the
     frontend's domain setup on the new target, or DevTools goes silent after a couple of clicks.
     """
-    inspector = WebinspectorService(lockdown=lockdown)
-    try:
-        await inspector.connect()
-    except WebInspectorNotEnabledError:
-        pytest.xfail("Web Inspector is disabled on the device")
-    app.state.inspector = inspector
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, ws="wsproto"))
-    serve_task = asyncio.create_task(server.serve())
-    try:
-        while not server.started:
-            assert not serve_task.done()
-            await asyncio.sleep(0.1)
-        port = server.servers[0].sockets[0].getsockname()[1]
-        await inspector.open_app(SAFARI)
-        targets = []
-        for _ in range(TIMEOUT):
-            targets = await http_get_json(port, "/json/list")
-            if targets:
-                break
-            await asyncio.sleep(1)
-        assert targets, "no inspectable Safari page was listed"
-
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
         client = CdpWebsocketClient(port, targets[0]["id"])
         await asyncio.wait_for(client.connect(), TIMEOUT)
         try:
@@ -211,9 +192,136 @@ async def testp_cdp_server_survives_process_swaps(lockdown: LockdownClient) -> N
                 )
         finally:
             await client.close()
-    finally:
-        # force_exit skips uvicorn's graceful wait so a wedged debugger session can't hang the test
-        server.should_exit = True
-        server.force_exit = True
-        await asyncio.wait_for(serve_task, TIMEOUT)
-        await inspector.close()
+
+
+async def testp_cdp_server_screencast_survives_navigation(lockdown: LockdownClient) -> None:
+    """
+    The screencast must keep producing frames across navigations. A snapshot request lost to a
+    process swap used to burn a frame id that was never sent to DevTools; the ack for it never
+    arrived, and the screen stayed frozen for the rest of the session.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        try:
+            message_ids = itertools.count(1)
+
+            async def receive_acking() -> dict[str, Any]:
+                """Receive one message, acking screencast frames like DevTools does."""
+                message = await client.receive()
+                if message.get("method") == "Page.screencastFrame":
+                    await client.send({
+                        "id": next(message_ids),
+                        "method": "Page.screencastFrameAck",
+                        "params": {"sessionId": message["params"]["sessionId"]},
+                    })
+                return message
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                id_ = next(message_ids)
+                await client.send({"id": id_, "method": method, "params": params})
+
+                async def wait_for_response() -> dict[str, Any]:
+                    while True:
+                        message = await receive_acking()
+                        if message.get("id") == id_:
+                            return message
+
+                return await asyncio.wait_for(wait_for_response(), TIMEOUT)
+
+            async def wait_for_frame() -> None:
+                async def next_frame() -> None:
+                    while True:
+                        if (await receive_acking()).get("method") == "Page.screencastFrame":
+                            return
+
+                await asyncio.wait_for(next_frame(), TIMEOUT)
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.startScreencast", {"format": "jpeg", "quality": 60, "maxWidth": 480, "maxHeight": 960})
+            await wait_for_frame()
+            # Alternating origins force process swaps; frames must keep arriving through every
+            # navigation. Several rounds because the frozen-screen regression this guards (a
+            # snapshot lost mid-swap burning an id DevTools can never ack) is timing-dependent.
+            for url in ("https://example.com/", "https://www.apple.com/") * 2:
+                await command("Page.navigate", {"url": url})
+                await wait_for_frame()
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_keyboard_input_submits_forms(lockdown: LockdownClient) -> None:
+    """
+    Screencast typing arrives as Input.dispatchKeyEvent; WebKit has no Input domain, so the
+    bridge synthesizes the effects in-page. Return must both fire real key events (pages like
+    google submit from their own keydown listener on a <textarea>) and fall back to submitting
+    the active element's form, or "type a search and hit return" does nothing.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        try:
+            message_ids = itertools.count(1)
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                return await client.command(next(message_ids), method, params)
+
+            async def evaluate(expression: str) -> Any:
+                response = await command("Runtime.evaluate", {"expression": expression, "returnByValue": True})
+                return response.get("result", {}).get("result", {}).get("value")
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+            for _ in range(TIMEOUT):
+                href = await evaluate("location.href")
+                if (
+                    isinstance(href, str)
+                    and href.rstrip("/").endswith("example.com")
+                    and (await evaluate("document.readyState") in ("interactive", "complete"))
+                ):
+                    break
+                await asyncio.sleep(1)
+
+            async def type_and_submit(text: str, expected_path: str) -> None:
+                for char in text:
+                    await command("Input.dispatchKeyEvent", {"type": "char", "text": char, "key": char})
+                assert await evaluate("document.activeElement.value") == text
+                await command("Input.dispatchKeyEvent", {"type": "char", "text": "\r", "key": "Enter"})
+                href = None
+                for _ in range(TIMEOUT):
+                    href = await evaluate("location.href")
+                    if isinstance(href, str) and f"{expected_path}?q={text}" in href:
+                        return
+                    await asyncio.sleep(1)
+                raise AssertionError(f"return did not reach {expected_path} (still on {href!r})")
+
+            # google-style: a <textarea> whose Enter handling lives in the page's own keydown
+            # listener - the bridge must dispatch real key events for it to fire at all.
+            assert await evaluate(
+                "(() => {"
+                "    document.body.innerHTML = '<textarea id=\"q\"></textarea>';"
+                "    const box = document.getElementById('q');"
+                "    box.addEventListener('keydown', (event) => {"
+                "        if (event.key !== 'Enter') { return; }"
+                "        event.preventDefault();"
+                "        location.assign('/handled?q=' + box.value);"
+                "    });"
+                "    box.focus();"
+                "    return document.activeElement === box;"
+                "})()"
+            ), "could not focus the injected textarea"
+            await type_and_submit("hello", "/handled")
+
+            # default-action fallback: no page handler, Enter submits the ancestor form
+            assert await evaluate(
+                "(() => {"
+                '    document.body.innerHTML = \'<form action="/fallback"><input name="q"></form>\';'
+                "    document.querySelector('input').focus();"
+                "    return document.activeElement === document.querySelector('input');"
+                "})()"
+            ), "could not focus the injected form input"
+            await type_and_submit("world", "/fallback")
+        finally:
+            await client.close()
