@@ -5,7 +5,7 @@ import logging
 from collections.abc import Awaitable
 from datetime import datetime
 from functools import partial
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 from pymobiledevice3.services.web_protocol.cdp_screencast import ScreenCast
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
@@ -22,6 +22,13 @@ WIR_RESULT_TIMEOUT = 5
 # timeout so a still-dead target only briefly re-pauses the receive loop.
 UNRESPONSIVE_REPROBE_INTERVAL = 2.0
 UNRESPONSIVE_PROBE_TIMEOUT = 1.5
+
+# sourceURL stamped onto the bridge's own internal evaluations (screencast offsets, synthesized
+# input, navigation) so their Debugger.scriptParsed events can be recognized and dropped instead
+# of polluting Chrome's script model. WebKit-inspector-internal scripts (its injected script
+# source) carry their own marker.
+INTERNAL_SCRIPT_URL = "__pymobiledevice3_internal__"
+WEBKIT_INTERNAL_SCRIPT_MARKERS = ("__InjectedScript", INTERNAL_SCRIPT_URL)
 
 # Minimum seconds between synthesized screencast hover (mouseMoved) events. DevTools streams
 # dozens of moves per second as the pointer glides; synthesizing each one as a blocking device
@@ -188,6 +195,7 @@ class CdpTarget:
             "Overlay.highlightNode": self._overlay_highlight_node,
             "Runtime.runIfWaitingForDebugger": partial(self._simple_response, value=None),
             "Runtime.compileScript": self._runtime_compile_script,
+            "Runtime.runScript": self._runtime_run_script,
             "Runtime.getIsolateId": self._runtime_get_isolate_id,
             "Profiler.enable": partial(self._simple_response, value=None),
             "Target.setAutoAttach": self._target_set_auto_attach,
@@ -263,6 +271,10 @@ class CdpTarget:
         # Runtime.executionContextCreated events (WebKit re-announces contexts) that would
         # otherwise corrupt Chrome's RuntimeModel.
         self._emitted_context_unique_ids: set[str] = set()
+        # Runtime.compileScript synthesizes a scriptId (WebKit has no compileScript); persisted
+        # scripts are kept here so a later Runtime.runScript can execute their source.
+        self._compiled_script_counter = 0
+        self._persisted_scripts: dict[str, str] = {}
         # id -> target the request was routed to, for synthesizing errors when that target dies
         self._pending_requests: dict[int, str] = {}
         self._destroyed_targets: set[str] = set()
@@ -422,12 +434,17 @@ class CdpTarget:
         self._unresponsive_targets.discard(target_id)
         self._unresponsive_last_probe.pop(target_id, None)
 
+    @staticmethod
+    def _tag_internal(expression: str) -> str:
+        """Stamp a sourceURL on a bridge-originated evaluation so its scriptParsed can be dropped."""
+        return f"{expression}\n//# sourceURL={INTERNAL_SCRIPT_URL}"
+
     async def evaluate_and_result(self, expression: str) -> Any:
         """
         Evaluate Javascript expression.
         """
         logger.debug(f"Evaluating: {expression}")
-        params = {"expression": expression}
+        params = {"expression": self._tag_internal(expression)}
         data = await self.send_message_with_result("Runtime.evaluate", params)
         logger.debug(f"Evaluated: {data}")
         if "result" not in data:
@@ -579,6 +596,9 @@ class CdpTarget:
         for prop in properties:
             prop.setdefault("configurable", False)
             prop.setdefault("enumerable", False)
+        # Expanded objects list function properties whose native descriptions the console
+        # autocomplete inspects; normalize them (see _normalize_native_functions).
+        self._normalize_native_functions(properties)
         result: dict[str, Any] = {"result": properties}
         if "internalProperties" in response["result"]:
             result["internalProperties"] = response["result"]["internalProperties"]
@@ -674,6 +694,15 @@ class CdpTarget:
     async def _page_get_navigation_history(self, message: dict[str, Any]):
         href = await self.evaluate_and_result("window.location.href")
         title = await self.evaluate_and_result("document.title")
+        # evaluate_and_result returns None when the device does not answer in time (common during
+        # the initial setup handshake, when the page is still busy). A null url crashes the whole
+        # screencast panel - ScreencastView.requestNavigationHistory does url.match(HTTP_REGEX) on
+        # each entry - which manifests as a blank "no screen" inspector. Never emit null: fall back
+        # to the page's advertised URL, and coerce a missing title to an empty string.
+        if not isinstance(href, str) or not href:
+            href = self.protocol.page.web_url or "about:blank"
+        if not isinstance(title, str):
+            title = ""
         await self.output_queue.put({
             "id": message["id"],
             "result": {"currentIndex": 0, "entries": [{"id": 0, "url": href, "title": title}]},
@@ -775,7 +804,15 @@ class CdpTarget:
         # absent or "no error" parse as a clean compile and answer with Chrome's schema (an empty
         # result object for a non-persisted script), not a bogus {"result": null}.
         if not result or result.get("result") == "none":
-            await self.output_queue.put({"id": message["id"], "result": {}})
+            # Compiled cleanly. Runtime.compileScript's response REQUIRES a scriptId (per the CDP
+            # spec); omitting it makes Chrome's console treat the compile as unfinished and re-send
+            # compileScript in a tight loop until the frontend wedges. Mint one, and remember the
+            # source so a later Runtime.runScript (persistScript=true) can still execute it.
+            self._compiled_script_counter += 1
+            script_id = f"pmd-compiled-{self._compiled_script_counter}"
+            if message["params"].get("persistScript"):
+                self._persisted_scripts[script_id] = message["params"]["expression"]
+            await self.output_queue.put({"id": message["id"], "result": {"scriptId": script_id}})
             return
         lines = message["params"]["expression"][: result["range"]["endOffset"]].splitlines()
         lines = lines if lines else [""]
@@ -789,6 +826,18 @@ class CdpTarget:
                     "columnNumber": len(lines[-1]) - 1,
                 }
             },
+        })
+
+    async def _runtime_run_script(self, message: dict[str, Any]):
+        # WebKit has no compileScript/runScript; execute the source we stashed at compile time.
+        source = self._persisted_scripts.get(message["params"].get("scriptId", ""))
+        if source is None:
+            await self.output_queue.put({"id": message["id"], "result": {"result": {"type": "undefined"}}})
+            return
+        response = await self.send_message_with_result("Runtime.evaluate", {"expression": source})
+        await self.output_queue.put({
+            "id": message["id"],
+            "result": response.get("result", {"result": {"type": "undefined"}}),
         })
 
     async def _runtime_get_isolate_id(self, message: dict[str, Any]):
@@ -852,7 +901,11 @@ class CdpTarget:
         if self.target_id in self._unresponsive_targets:
             return
         await self._send_message_to_target(
-            {"id": self.next_internal_id(), "method": "Runtime.evaluate", "params": {"expression": expression}},
+            {
+                "id": self.next_internal_id(),
+                "method": "Runtime.evaluate",
+                "params": {"expression": self._tag_internal(expression)},
+            },
             record=False,
         )
 
@@ -1029,11 +1082,41 @@ class CdpTarget:
         })
         await self.output_queue.put({"method": "DOM.documentUpdated"})
 
+    @staticmethod
+    def _normalize_native_functions(obj: Any) -> None:
+        """
+        Collapse WebKit's multi-line native-function descriptions to Chrome's exact single-line
+        form, in place and recursively. WebKit reports native functions as
+        `function name() {\\n    [native code]\\n}`; the console's argument-hint autocomplete only
+        treats a function as native when its description ends with the literal `{ [native code] }`
+        (devtools-frontend front_end/ui/components/text_editor/javascript.ts,
+        getArgumentsForFunctionValue). Otherwise it feeds the description to a JS parser to extract
+        the parameter list, which throws "Failed to parse for arguments list" on `[native code]`;
+        fired on every keystroke while typing a call, that uncaught rejection wedges the console.
+        """
+        if isinstance(obj, dict):
+            node = cast(dict[str, Any], obj)
+            if node.get("type") == "function":
+                desc = node.get("description")
+                if isinstance(desc, str) and "[native code]" in desc and not desc.endswith("{ [native code] }"):
+                    brace = desc.find("{")
+                    if brace != -1:
+                        node["description"] = desc[:brace] + "{ [native code] }"
+            for value in node.values():
+                CdpTarget._normalize_native_functions(value)
+        elif isinstance(obj, list):
+            for value in cast(list[Any], obj):
+                CdpTarget._normalize_native_functions(value)
+
     async def _target_dispatch_message_from_target(self, message: dict[str, Any]):
         # Any message from the current target proves it is alive again (a wedged page that finally
         # navigated, a slow response that eventually arrived); resume sending it internal requests.
         self._mark_target_responsive(self.target_id)
         message = json.loads(message["params"]["message"])
+        if "result" in message:
+            # Function objects in evaluate/callFunctionOn results carry native descriptions the
+            # console autocomplete inspects; normalize them (see _normalize_native_functions).
+            self._normalize_native_functions(message["result"])
         if "error" in message:
             # Expected protocol-level errors (e.g. element-only DOM queries on text nodes) are
             # already delivered to the frontend, which copes; don't shout about them here.
@@ -1063,8 +1146,15 @@ class CdpTarget:
         await self._send_setup_to_target(self.target_id)
 
     async def _debugger_script_parsed(self, message: dict[str, Any]):
-        if not self._waiting_for_id:
-            await self.output_queue.put(message)
+        # Drop scripts that are not the page's own: the bridge's internal evaluations (screencast
+        # offsets, synthesized input - fired several times a second) and WebKit's inspector
+        # injected scripts. Forwarding them floods Chrome's Debugger model with phantom scripts,
+        # which - independent of the page - eventually wedges the console/autocomplete.
+        params = message.get("params", {})
+        source = params.get("sourceURL", "") or params.get("url", "")
+        if any(marker in source for marker in WEBKIT_INTERNAL_SCRIPT_MARKERS):
+            return
+        await self.output_queue.put(message)
 
     async def _debugger_script_failed_to_parse(self, message: dict[str, Any]):
         # The failing source is only known from Runtime.compileScript; parse failures of other
