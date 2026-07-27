@@ -36,7 +36,7 @@ from pymobiledevice3.exceptions import (
 )
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
-from pymobiledevice3.services.web_protocol.cdp_server import app
+from pymobiledevice3.services.web_protocol.cdp_server import app, find_chrome
 from pymobiledevice3.services.web_protocol.driver import By, Cookie, WebDriver
 from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
 from pymobiledevice3.services.webinspector import SAFARI, ApplicationPage, WebinspectorService
@@ -378,7 +378,12 @@ async def js_shell(
 
 @cli.command()
 @async_command
-async def cdp(service_provider: ServiceProviderDep, host: str = "127.0.0.1", port: int = 9222) -> None:
+async def cdp(
+    service_provider: ServiceProviderDep,
+    host: str = "127.0.0.1",
+    port: int = 9222,
+    chrome: Optional[str] = None,
+) -> None:
     """
     Start a CDP server for debugging WebViews.
 
@@ -391,8 +396,14 @@ async def cdp(service_provider: ServiceProviderDep, host: str = "127.0.0.1", por
     Chrome's browser-process relay (network target), which deadlocks under sustained console
     traffic and freezes the console/screen. The URL above serves the DevTools frontend so it
     connects to this bridge directly, bypassing that relay.
+
+    \b
+    The frontend is fetched from the hosted build; when that is unreachable (offline), it is
+    served from a local Chrome instead. Pass --chrome <path> if Chrome is not on PATH or in a
+    default install location.
     """
     app.state.inspector = WebinspectorService(lockdown=service_provider)
+    app.state.chrome_path = find_chrome(chrome)
     print(f"Web Inspector ready. Open in Google Chrome: http://{host}:{port}/")
     server = uvicorn.Server(
         uvicorn.Config(

@@ -1,7 +1,12 @@
 import asyncio
+import shutil
+import subprocess
+import sys
+import tempfile
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any
+from pathlib import Path
+from typing import Any, Optional
 from urllib.request import urlopen
 
 from fastapi import FastAPI, Request, WebSocket
@@ -20,20 +25,142 @@ TARGET_CREATION_TIMEOUT = 30
 # chrome://inspect routes a network target's DevTools through Chrome's browser-process relay,
 # which deadlocks after sustained console traffic (the console/screen freeze). Serving the DevTools
 # frontend here - opened as an ordinary http page - makes it connect straight to the bridge's
-# WebSocket, bypassing that relay entirely. The frontend is proxied (not bundled) from the
-# officially hosted build, pinned to a revision compatible with the WIR<->CDP translation.
+# WebSocket, bypassing that relay entirely. The frontend is proxied (not bundled): from the
+# officially hosted build (pinned to a revision compatible with the WIR<->CDP translation) when it
+# is reachable, otherwise from a locally installed Chrome, which serves its own bundled frontend.
 DEVTOOLS_FRONTEND_REV = "0fcdce5f4fdec8d442d7df760cb541f1ca6e446d"
 DEVTOOLS_FRONTEND_HOST = "chrome-devtools-frontend.appspot.com"
 _frontend_cache: dict[str, tuple[bytes, str]] = {}
 
+# Names/locations for the Chrome/Chromium binary used for the offline frontend fallback.
+_CHROME_BINARY_NAMES = (
+    "google-chrome",
+    "google-chrome-stable",
+    "chromium",
+    "chromium-browser",
+    "chrome",
+    "chrome.exe",
+)
+_CHROME_DEFAULT_PATHS: dict[str, tuple[str, ...]] = {
+    "darwin": (
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ),
+    "win32": (
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ),
+    "linux": (
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/snap/bin/chromium",
+    ),
+}
+
+
+def find_chrome(explicit: Optional[str] = None) -> Optional[str]:
+    """Locate a Chrome/Chromium binary for the offline frontend fallback: an explicit path, then
+    the PATH, then the running platform's known install locations. Returns None if none is found."""
+    if explicit:
+        return explicit if Path(explicit).exists() else None
+    for name in _CHROME_BINARY_NAMES:
+        found = shutil.which(name)
+        if found:
+            return found
+    for candidate in _CHROME_DEFAULT_PATHS.get(sys.platform, ()):
+        if Path(candidate).exists():
+            return candidate
+    return None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.frontend_lock = asyncio.Lock()
     await app.state.inspector.connect()
     yield
+    proc: Optional[subprocess.Popen[bytes]] = getattr(app.state, "local_chrome_proc", None)
+    if proc is not None:
+        proc.terminate()
+    profile: Optional[str] = getattr(app.state, "local_chrome_profile", None)
+    if profile:
+        shutil.rmtree(profile, ignore_errors=True)
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+async def _fetch(url: str) -> Optional[tuple[bytes, str]]:
+    """Fetch a frontend asset off the event loop; None on any failure."""
+
+    def _get() -> tuple[bytes, str]:
+        with urlopen(url, timeout=20) as response:
+            return response.read(), response.headers.get_content_type()
+
+    try:
+        return await asyncio.get_event_loop().run_in_executor(None, _get)
+    except Exception:
+        return None
+
+
+async def _launch_local_frontend() -> Optional[str]:
+    """Start a throwaway headless Chrome that serves its own bundled DevTools frontend over http and
+    return its origin. Used only when the hosted build is unreachable."""
+    chrome = getattr(app.state, "chrome_path", None)
+    if not chrome:
+        logger.error(
+            "DevTools frontend unavailable: the hosted build is unreachable and no Chrome binary "
+            "was found. Install Chrome/Chromium or pass --chrome <path>."
+        )
+        return None
+    profile = tempfile.mkdtemp(prefix="pmd3-devtools-frontend-")
+    app.state.local_chrome_profile = profile
+    app.state.local_chrome_proc = subprocess.Popen(
+        [
+            chrome,
+            "--headless=new",
+            "--remote-debugging-port=0",
+            f"--user-data-dir={profile}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-gpu",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    port_file = Path(profile) / "DevToolsActivePort"
+    for _ in range(80):
+        if port_file.exists():
+            try:
+                return f"http://127.0.0.1:{int(port_file.read_text().splitlines()[0])}"
+            except (ValueError, IndexError):
+                return None
+        await asyncio.sleep(0.1)
+    logger.error("local Chrome did not expose a debugging port in time")
+    return None
+
+
+async def _frontend_base() -> Optional[str]:
+    """Base URL to serve the DevTools frontend from, decided once per run: the hosted build when
+    reachable, otherwise a locally launched Chrome. None if neither is available."""
+    base = getattr(app.state, "frontend_base", None)
+    if base is not None:
+        return base or None
+    async with app.state.frontend_lock:
+        base = getattr(app.state, "frontend_base", None)
+        if base is not None:
+            return base or None
+        rev = getattr(app.state, "frontend_rev", DEVTOOLS_FRONTEND_REV)
+        hosted = f"https://{DEVTOOLS_FRONTEND_HOST}/serve_rev/@{rev}"
+        if await _fetch(f"{hosted}/inspector.html") is not None:
+            app.state.frontend_base = hosted
+        else:
+            local = await _launch_local_frontend()
+            app.state.frontend_base = f"{local}/devtools" if local else ""
+            if local:
+                logger.info("serving the DevTools frontend from a local Chrome (hosted build unreachable)")
+        return app.state.frontend_base or None
 
 
 @app.get("/json/version")
@@ -96,24 +223,18 @@ async def index(request: Request) -> HTMLResponse:
 
 @app.get("/devtools/{path:path}")
 async def devtools_frontend(path: str) -> Response:
-    """Serve the DevTools frontend by proxying the hosted build. Opened over http, the frontend
-    connects to the bridge's WebSocket directly instead of through chrome://inspect's relay."""
-    rev = getattr(app.state, "frontend_rev", DEVTOOLS_FRONTEND_REV)
-    key = f"{rev}/{path}"
-    if key not in _frontend_cache:
-        url = f"https://{DEVTOOLS_FRONTEND_HOST}/serve_rev/@{rev}/{path}"
-
-        def _fetch() -> tuple[bytes, str]:
-            with urlopen(url, timeout=20) as response:
-                return response.read(), response.headers.get_content_type()
-
-        try:
-            data, content_type = await asyncio.get_event_loop().run_in_executor(None, _fetch)
-        except Exception:
-            logger.exception(f"failed to fetch DevTools frontend asset: {path}")
+    """Serve the DevTools frontend so it connects to the bridge's WebSocket directly instead of
+    through chrome://inspect's relay. Assets are proxied - from the hosted build, or from a local
+    Chrome when that is unreachable - and cached per run."""
+    if path not in _frontend_cache:
+        base = await _frontend_base()
+        if base is None:
             return Response(status_code=404)
-        _frontend_cache[key] = (data, content_type)
-    data, content_type = _frontend_cache[key]
+        result = await _fetch(f"{base}/{path}")
+        if result is None:
+            return Response(status_code=404)
+        _frontend_cache[path] = result
+    data, content_type = _frontend_cache[path]
     return Response(content=data, media_type=content_type)
 
 
