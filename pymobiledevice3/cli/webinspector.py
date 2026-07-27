@@ -383,10 +383,17 @@ async def cdp(service_provider: ServiceProviderDep, host: str = "127.0.0.1", por
     Start a CDP server for debugging WebViews.
 
     \b
-    In order to debug the WebView that way, open in Google Chrome:
-        chrome://inspect/#devices
+    Open the following URL in Google Chrome and pick a page to inspect:
+        http://127.0.0.1:9222/
+
+    \b
+    Prefer this over chrome://inspect: chrome://inspect routes the DevTools frontend through
+    Chrome's browser-process relay (network target), which deadlocks under sustained console
+    traffic and freezes the console/screen. The URL above serves the DevTools frontend so it
+    connects to this bridge directly, bypassing that relay.
     """
     app.state.inspector = WebinspectorService(lockdown=service_provider)
+    print(f"Web Inspector ready. Open in Google Chrome: http://{host}:{port}/")
     server = uvicorn.Server(
         uvicorn.Config(
             app,

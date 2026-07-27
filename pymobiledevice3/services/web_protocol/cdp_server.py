@@ -2,9 +2,11 @@ import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.request import urlopen
 
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.logger import logger
+from fastapi.responses import HTMLResponse, Response
 
 from pymobiledevice3.services.web_protocol.cdp_target import CdpTarget
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
@@ -14,6 +16,15 @@ from pymobiledevice3.services.webinspector import WirTypes
 PAGE_LISTING_FLUSH = 0.5
 # Seconds to wait for the device to report the inspection target of a new debugger session
 TARGET_CREATION_TIMEOUT = 30
+
+# chrome://inspect routes a network target's DevTools through Chrome's browser-process relay,
+# which deadlocks after sustained console traffic (the console/screen freeze). Serving the DevTools
+# frontend here - opened as an ordinary http page - makes it connect straight to the bridge's
+# WebSocket, bypassing that relay entirely. The frontend is proxied (not bundled) from the
+# officially hosted build, pinned to a revision compatible with the WIR<->CDP translation.
+DEVTOOLS_FRONTEND_REV = "0fcdce5f4fdec8d442d7df760cb541f1ca6e446d"
+DEVTOOLS_FRONTEND_HOST = "chrome-devtools-frontend.appspot.com"
+_frontend_cache: dict[str, tuple[bytes, str]] = {}
 
 
 @asynccontextmanager
@@ -58,6 +69,52 @@ async def available_targets(request: Request, _: str):
                 "devtoolsFrontendUrl": f"/devtools/inspector.html?ws={host}/devtools/page/{page_id}",
             })
     return targets
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request) -> HTMLResponse:
+    """Landing page: link each inspectable page to the locally-served DevTools frontend, which
+    connects directly to the bridge (bypassing chrome://inspect's relay). Use this instead of
+    chrome://inspect to avoid the console/screen freeze."""
+    await app.state.inspector.get_open_pages()
+    await app.state.inspector.flush_input(PAGE_LISTING_FLUSH)
+    host = request.headers.get("host", "127.0.0.1:9222")
+    items: list[str] = []
+    for app_id in app.state.inspector.application_pages:
+        for page_id, page in app.state.inspector.application_pages[app_id].items():
+            if page.type_ not in (WirTypes.WEB, WirTypes.WEB_PAGE):
+                continue
+            frontend = f"/devtools/inspector.html?ws={host}/devtools/page/{page_id}"
+            title = page.web_title or page.web_url or f"page {page_id}"
+            items.append(f'<li><a href="{frontend}">{title}</a><br><small>{page.web_url}</small></li>')
+    body = "<ul>" + "".join(items) + "</ul>" if items else "<p>No inspectable pages. Open a page in Safari.</p>"
+    return HTMLResponse(
+        f"<!doctype html><meta charset=utf-8><title>pymobiledevice3 Web Inspector</title>"
+        f"<h2>pymobiledevice3 Web Inspector</h2>{body}"
+    )
+
+
+@app.get("/devtools/{path:path}")
+async def devtools_frontend(path: str) -> Response:
+    """Serve the DevTools frontend by proxying the hosted build. Opened over http, the frontend
+    connects to the bridge's WebSocket directly instead of through chrome://inspect's relay."""
+    rev = getattr(app.state, "frontend_rev", DEVTOOLS_FRONTEND_REV)
+    key = f"{rev}/{path}"
+    if key not in _frontend_cache:
+        url = f"https://{DEVTOOLS_FRONTEND_HOST}/serve_rev/@{rev}/{path}"
+
+        def _fetch() -> tuple[bytes, str]:
+            with urlopen(url, timeout=20) as response:
+                return response.read(), response.headers.get_content_type()
+
+        try:
+            data, content_type = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+        except Exception:
+            logger.exception(f"failed to fetch DevTools frontend asset: {path}")
+            return Response(status_code=404)
+        _frontend_cache[key] = (data, content_type)
+    data, content_type = _frontend_cache[key]
+    return Response(content=data, media_type=content_type)
 
 
 async def from_cdp(target: CdpTarget, websocket: WebSocket) -> None:
