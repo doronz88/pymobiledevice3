@@ -457,10 +457,12 @@ class ServiceConnection:
         try:
             self.socket.settimeout(DEFAULT_SSL_HANDSHAKE_TIMEOUT)
             self.socket = self.create_ssl_context(certfile, keyfile=keyfile).wrap_socket(self.socket)
-        except OSError as e:
-            raise ConnectionTerminatedError() from e
-        finally:
             self.socket.settimeout(None)
+        except OSError as e:
+            # No timeout reset here: on handshake failure wrap_socket() has already detached
+            # (and closed) the underlying socket, so touching it raises EBADF/WinError 10038,
+            # masking the original error.
+            raise ConnectionTerminatedError() from e
 
     async def ssl_start(self, certfile: str, keyfile: Optional[str] = None) -> None:
         """
