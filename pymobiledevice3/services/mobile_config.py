@@ -9,7 +9,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.serialization import Encoding
-from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7SignatureBuilder
+from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7Options, PKCS7SignatureBuilder
 
 from pymobiledevice3.exceptions import CloudConfigurationAlreadyPresentError, ConnectionTerminatedError, ProfileError
 from pymobiledevice3.lockdown import LockdownClient
@@ -80,7 +80,7 @@ class MobileConfigService(LockdownService):
             PKCS7SignatureBuilder()
             .set_data(escalate_response["Challenge"])
             .add_signer(cer, private_key, hashes.SHA256())
-            .sign(Encoding.DER, [])
+            .sign(Encoding.DER, [PKCS7Options.Binary])
         )
         await self._send_recv({"RequestType": "EscalateResponse", "SignedRequest": signed_challenge})
         await self._send_recv({"RequestType": "ProceedWithKeybagMigration"})
