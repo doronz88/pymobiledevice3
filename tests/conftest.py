@@ -39,6 +39,23 @@ def pytest_addoption(parser):
 NO_DEVICE_SKIP_REASON = "No test device is available through usbmuxd"
 
 
+def _skip_unless_tunneled(item: pytest.Item, e: InvalidServiceError) -> None:
+    funcargs = item.funcargs if isinstance(item, pytest.Function) else {}
+    provider = funcargs.get("service_provider") or funcargs.get("lockdown")
+    if isinstance(provider, RemoteServiceDiscoveryService):
+        raise e
+    pytest.skip(f"Service requires an RSD tunnel (rerun with --rsd/--tunnel): {e}")
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_setup(item: pytest.Item) -> Generator[None, object, object]:
+    """Extend the same skip to fixture setup (services opened by fixtures error out here)."""
+    try:
+        return (yield)
+    except InvalidServiceError as e:
+        _skip_unless_tunneled(item, e)
+
+
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
     """
@@ -52,11 +69,7 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
     try:
         return (yield)
     except InvalidServiceError as e:
-        funcargs = item.funcargs if isinstance(item, pytest.Function) else {}
-        provider = funcargs.get("service_provider") or funcargs.get("lockdown")
-        if isinstance(provider, RemoteServiceDiscoveryService):
-            raise
-        pytest.skip(f"Service requires an RSD tunnel (rerun with --rsd/--tunnel): {e}")
+        _skip_unless_tunneled(item, e)
 
 
 async def _create_usbmux_client() -> UsbmuxLockdownClient:
