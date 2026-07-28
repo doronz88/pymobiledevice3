@@ -408,7 +408,13 @@ class AccessibilityAudit:
             payload = self._extract_event_payload(args)
             if payload is None:
                 continue
-            return deserialize_object(payload)[0]["value"]
+            raw = deserialize_object(payload)
+            issues = typing.cast(list[typing.Any], raw) if isinstance(raw, list) else [raw]
+            if issues and isinstance(issues[0], dict) and "value" in issues[0]:
+                # older aux-shaped payload: [{"type": ..., "value": [issues]}]
+                return typing.cast(list[AXAuditIssue_v1], issues[0]["value"])
+            # modern shape: the deserialized payload IS the issue list (empty when the audit passes)
+            return typing.cast(list[AXAuditIssue_v1], issues)
 
     async def supported_audits_types(self) -> list[typing.Any]:
         """
