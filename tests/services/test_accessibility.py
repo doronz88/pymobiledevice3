@@ -24,3 +24,11 @@ async def test_invert_colors_in_settings(accessibility_audit: AccessibilityAudit
             found = True
             break
     assert found
+
+
+@pytest.mark.asyncio
+async def test_run_audit_returns_issue_list(accessibility_audit: AccessibilityAudit) -> None:
+    # A screen that passes the audit yields an empty issue list (used to raise IndexError).
+    types = await accessibility_audit.supported_audits_types()
+    issues = await accessibility_audit.run_audit(types[:1])
+    assert isinstance(issues, list)

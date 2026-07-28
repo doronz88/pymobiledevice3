@@ -749,6 +749,15 @@ async def establish_userspace_rsd(
     route such devices elsewhere (the CLI uses this to fall back to ``tunneld``).
     """
     global _cli_tunnel
+    # In-process retry (the CLI re-runs main() with the userspace env var set after an
+    # InvalidServiceError): reuse the live tunnel — PyTCP's stack is a process-global
+    # singleton, so a second establishment can only fail.
+    if (
+        _cli_tunnel is not None
+        and _cli_tunnel.rsd is not None
+        and (serial is None or serial in (_cli_tunnel.serial, _cli_tunnel.rsd.udid))
+    ):
+        return _cli_tunnel.rsd
     tunnel = UserspaceRsdTunnel(serial=serial, autopair=autopair, remotepairing_fallback=remotepairing_fallback)
     rsd = await tunnel.aopen()
     _cli_tunnel = tunnel
