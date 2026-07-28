@@ -125,6 +125,11 @@ LOG_MESSAGE_LEVELS = {
     "debug": "verbose",
 }
 
+# objectGroups DevTools uses for autocomplete's throwOnSideEffect evaluations (completion list and
+# argument hint). These are side-effect-free sub-expression lookups the dropdown needs, so unlike
+# the eager-evaluation preview they must be forwarded rather than refused (see _runtime_evaluate).
+_COMPLETION_OBJECT_GROUPS = frozenset({"completion", "argumentsHint"})
+
 # WebKit's Debugger.Scope.type enum -> Chrome's Scope.type enum. WebKit has scope kinds Chrome
 # lacks ("functionName", "globalLexicalEnvironment", "nestedLexical", ...); an unrecognized value
 # makes Chrome's ScopeChainSidebar throw, so every WebKit type is mapped to a valid Chrome one.
@@ -212,6 +217,7 @@ class CdpTarget:
             # acknowledged by the NOOP_ABSENT_DOMAINS fallback in _input_loop.
             "Overlay.highlightNode": self._overlay_highlight_node,
             "Runtime.runIfWaitingForDebugger": partial(self._simple_response, value=None),
+            "Runtime.evaluate": self._runtime_evaluate,
             "Runtime.compileScript": self._runtime_compile_script,
             "Runtime.runScript": self._runtime_run_script,
             "Runtime.getIsolateId": self._runtime_get_isolate_id,
@@ -283,6 +289,7 @@ class CdpTarget:
         # scriptId -> url, from Debugger.scriptParsed; used to fill the `url` WebKit omits from the
         # callFrames of Debugger.paused (Chrome's CallFrame requires it).
         self._script_id_to_url: dict[str, str] = {}
+        self._eval_side_effect_id = 0
         self._default_execution_id = 0
         self._last_console_api_call: Optional[dict[str, Any]] = None
         self._internal_id = 0
@@ -847,6 +854,45 @@ class CdpTarget:
 
     async def _overlay_highlight_node(self, message: dict[str, Any]):
         message["method"] = "DOM.highlightNode"
+        await self._send_message_to_target(message)
+
+    async def _runtime_evaluate(self, message: dict[str, Any]):
+        # Chrome's console "eager evaluation" previews the current line as you type by evaluating it
+        # with throwOnSideEffect=true, relying on V8 to ABORT the moment the expression would cause a
+        # side effect (so `console.log(4234)` shows no preview and does NOT log until Enter). WebKit's
+        # Runtime.evaluate has no such guard, so forwarding it runs the line for real - the console
+        # logs/mutates while typing. Refuse the preview the way V8 does for a side-effecting
+        # expression: report a side-effect error so DevTools shows no preview and nothing executes.
+        # The real evaluation triggered by Enter carries no throwOnSideEffect and is forwarded.
+        #
+        # Autocomplete shares the same throwOnSideEffect evaluate, but on *sub-expressions* (the base
+        # object for the completion list, the callee for the argument hint) under a dedicated
+        # objectGroup. Those are side-effect-free identifier lookups the dropdown needs, so let them
+        # through - refusing them would kill autocomplete. Only the eager preview (no completion
+        # objectGroup) is refused.
+        params = message["params"]
+        if params.get("throwOnSideEffect") and params.get("objectGroup") not in _COMPLETION_OBJECT_GROUPS:
+            self._eval_side_effect_id += 1
+            error_object = {
+                "type": "object",
+                "subtype": "error",
+                "className": "EvalError",
+                "description": "EvalError: Possible side-effect in debug-evaluate",
+            }
+            await self.output_queue.put({
+                "id": message["id"],
+                "result": {
+                    "result": error_object,
+                    "exceptionDetails": {
+                        "exceptionId": self._eval_side_effect_id,
+                        "text": "Uncaught",
+                        "lineNumber": 0,
+                        "columnNumber": 0,
+                        "exception": error_object,
+                    },
+                },
+            })
+            return
         await self._send_message_to_target(message)
 
     async def _runtime_compile_script(self, message: dict[str, Any]):
