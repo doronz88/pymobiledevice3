@@ -63,6 +63,8 @@ REPLAYED_SETUP_METHODS = frozenset({
     "Debugger.setBreakpointsActive",
     "Debugger.setPauseOnExceptions",
     "Debugger.setAsyncStackTraceDepth",
+    # Synthesized by the bridge (Chrome never sends it); see _debugger_enable.
+    "Debugger.setPauseOnDebuggerStatements",
 })
 
 # Replayed setup methods that accumulate state entry-by-entry (one replay per distinct params).
@@ -123,6 +125,20 @@ LOG_MESSAGE_LEVELS = {
     "debug": "verbose",
 }
 
+# WebKit's Debugger.Scope.type enum -> Chrome's Scope.type enum. WebKit has scope kinds Chrome
+# lacks ("functionName", "globalLexicalEnvironment", "nestedLexical", ...); an unrecognized value
+# makes Chrome's ScopeChainSidebar throw, so every WebKit type is mapped to a valid Chrome one.
+WEBKIT_SCOPE_TYPE_MAP = {
+    "closure": "closure",
+    "functionName": "closure",
+    "global": "global",
+    "globalLexicalEnvironment": "global",
+    "with": "with",
+    "catch": "catch",
+    "nestedLexical": "block",
+    "functionInParameter": "local",
+}
+
 DEBUGGER_PAUSED_REASON = {
     "XHR": "XHR",
     "Fetch": "other",
@@ -180,6 +196,8 @@ class CdpTarget:
             "Emulation.setAutoDarkModeOverride": self._emulation_set_auto_dark_mode_override,
             "Emulation.setEmitTouchEventsForMouse": partial(self._simple_response, value=None),
             "Debugger.setAsyncCallStackDepth": partial(self._simple_response, value=True),
+            "Debugger.enable": self._debugger_enable,
+            "Debugger.setBreakpointsActive": self._debugger_set_breakpoints_active,
             "Debugger.setBlackboxPatterns": self._debugger_set_blackbox_patterns,
             "Debugger.setBreakpointByUrl": self._debugger_set_breakpoint_by_url,
             "DOMDebugger.setBreakOnCSPViolation": partial(self._simple_response, value=None),
@@ -262,6 +280,9 @@ class CdpTarget:
         self._input_task = asyncio.create_task(self._input_loop())
         self._receiving_task = asyncio.create_task(self._receive_loop())
         self._script_source_to_context_id: dict[str, Any] = {}
+        # scriptId -> url, from Debugger.scriptParsed; used to fill the `url` WebKit omits from the
+        # callFrames of Debugger.paused (Chrome's CallFrame requires it).
+        self._script_id_to_url: dict[str, str] = {}
         self._default_execution_id = 0
         self._last_console_api_call: Optional[dict[str, Any]] = None
         self._internal_id = 0
@@ -744,6 +765,40 @@ class CdpTarget:
         message["params"] = {"appearance": "Dark" if params["enabled"] else "Light"}
         await self._send_message_to_target(message)
 
+    async def _debugger_enable(self, message: dict[str, Any]):
+        await self._send_message_to_target(message)
+        # Two WebKit quirks conspire to make the debugger never stop, and Chrome's frontend papers
+        # over neither because its own backend behaves differently:
+        #   1. Chrome assumes breakpoints default to ACTIVE and only sends setBreakpointsActive when
+        #      the user *deactivates* them; WebKit deactivates breakpoints on enable, so nothing -
+        #      breakpoints or `debugger;` - ever pauses until setBreakpointsActive(true) is sent.
+        #   2. Pausing on `debugger;` is separately gated behind setPauseOnDebuggerStatements, which
+        #      defaults OFF and has no Chrome equivalent (Chrome pauses on `debugger;` whenever the
+        #      debugger is attached and breakpoints are active).
+        # Establish both on enable; they are kept in sync with the frontend's toggle below and
+        # replayed onto fresh targets after a process swap.
+        await self._send_message_to_target({
+            "id": self.next_internal_id(),
+            "method": "Debugger.setBreakpointsActive",
+            "params": {"active": True},
+        })
+        await self._send_message_to_target({
+            "id": self.next_internal_id(),
+            "method": "Debugger.setPauseOnDebuggerStatements",
+            "params": {"enabled": True},
+        })
+
+    async def _debugger_set_breakpoints_active(self, message: dict[str, Any]):
+        # Chrome's "Deactivate breakpoints" toggle also suppresses `debugger;` statements; mirror
+        # that by keeping WebKit's separate pause-on-debugger-statements setting in lockstep.
+        active = message["params"].get("active", True)
+        await self._send_message_to_target(message)
+        await self._send_message_to_target({
+            "id": self.next_internal_id(),
+            "method": "Debugger.setPauseOnDebuggerStatements",
+            "params": {"enabled": active},
+        })
+
     async def _debugger_set_blackbox_patterns(self, message: dict[str, Any]):
         for pattern in message["params"]["patterns"]:
             await self.send_message_with_result(
@@ -1154,6 +1209,9 @@ class CdpTarget:
         source = params.get("sourceURL", "") or params.get("url", "")
         if any(marker in source for marker in WEBKIT_INTERNAL_SCRIPT_MARKERS):
             return
+        script_id = params.get("scriptId")
+        if script_id is not None:
+            self._script_id_to_url[script_id] = source
         await self.output_queue.put(message)
 
     async def _debugger_script_failed_to_parse(self, message: dict[str, Any]):
@@ -1175,9 +1233,22 @@ class CdpTarget:
         await self.output_queue.put(message)
 
     async def _debugger_paused(self, message: dict[str, Any]):
-        message["params"]["reason"] = DEBUGGER_PAUSED_REASON[message["params"]["reason"]]
-        if "breakpointId" in message["params"].get("data", {}):
-            message["params"]["hitBreakpoints"] = [message["params"]["data"]["breakpointId"]]
+        params = message["params"]
+        params["reason"] = DEBUGGER_PAUSED_REASON.get(params["reason"], "other")
+        if "breakpointId" in params.get("data", {}):
+            params["hitBreakpoints"] = [params["data"]["breakpointId"]]
+        # WebKit's CallFrame differs from Chrome's: it omits the required `url` and uses scope-type
+        # enum values Chrome rejects. Untranslated, Chrome's SDK throws while building the paused
+        # state and the Sources panel never shows the pause. Reshape each frame in place.
+        for frame in params.get("callFrames", []):
+            if "url" not in frame:
+                script_id = frame.get("location", {}).get("scriptId")
+                frame["url"] = self._script_id_to_url.get(script_id, "")
+            for scope in frame.get("scopeChain", []):
+                scope["type"] = WEBKIT_SCOPE_TYPE_MAP.get(scope["type"], "closure")
+                # WebKit names the defining position `location`; Chrome calls it `startLocation`.
+                if "location" in scope:
+                    scope["startLocation"] = scope.pop("location")
         await self.output_queue.put(message)
 
     async def _debugger_global_object_cleared(self, message: dict[str, Any]):
