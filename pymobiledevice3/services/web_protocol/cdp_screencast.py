@@ -1,11 +1,14 @@
 import asyncio
 import contextlib
+import logging
 from base64 import b64decode, b64encode
 from datetime import datetime
 from io import BytesIO
 from typing import Any, Optional
 
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 
 class ScreenCast:
@@ -45,22 +48,20 @@ class ScreenCast:
         """Height of screenshot after scaling."""
         return int(self.get_scale() * self.device_height)
 
-    async def start(self, message_id: int):
+    async def start(self) -> None:
         """
         Start sending screenshots to the devtools.
-        :param message_id: Message id to use when requesting WIR data concerning the screencast.
         """
         device_size = await self.target.evaluate_and_result(
-            message_id,
-            (
-                '(window.innerWidth > 0 ? window.innerWidth : screen.width) + "," + '
-                '(window.innerHeight > 0 ? window.innerHeight : screen.height) + "," + '
-                "window.devicePixelRatio"
-            ),
+            '(window.innerWidth > 0 ? window.innerWidth : screen.width) + "," + '
+            '(window.innerHeight > 0 ? window.innerHeight : screen.height) + "," + '
+            "window.devicePixelRatio"
         )
+        if not isinstance(device_size, str):
+            raise TypeError("device did not report its screen size for the screencast")
         self.device_width, self.device_height, self.page_scale_factor = list(map(int, device_size.split(",")))
         self._run = True
-        self.recording_task = asyncio.create_task(self.recording_loop(message_id))
+        self.recording_task = asyncio.create_task(self.recording_loop())
 
     async def stop(self):
         """Stop sending screenshots to the devtools."""
@@ -90,57 +91,71 @@ class ScreenCast:
         resized_img.save(resized, format="jpeg", quality="maximum")
         return b64encode(resized.getvalue()).decode()
 
-    async def get_offsets(self, message_id: int):
+    async def get_offsets(self):
         """
         Get the offset of the screenshot from the start of the page.
-        :param message_id: Message id to use when requesting WIR data concerning the screencast.
         :return: Tuple of (offsetTop, pageXOffset, pageYOffset).
         :rtype: tuple
         """
         frame_size = await self.target.evaluate_and_result(
-            message_id, 'window.document.body.offsetTop + "," + window.pageXOffset + "," + window.pageYOffset'
+            'window.document.body.offsetTop + "," + window.pageXOffset + "," + window.pageYOffset'
         )
         if frame_size is None or not isinstance(frame_size, str):
             return 0, 0, 0
         return tuple(map(int, frame_size.split(",")))
 
-    async def recording_loop(self, message_id: int):
+    async def recording_loop(self) -> None:
         """
-        Fetch screenshots and send to devtools.
-        :param message_id: Message id to use when requesting WIR data concerning the screencast.
+        Fetch screenshots and send them to devtools until stopped.
         """
         while self._run:
             await asyncio.sleep(self.frame_interval / 1000)
             if self.frame_id > 1 and (self.frame_id - 1) not in self.frames_acked:
                 continue
-            self.frame_id += 1
-            offset_top, scroll_offset_x, scroll_offset_y = await self.get_offsets(message_id)
-            event = await self.target.send_message_with_result(
-                message_id,
-                "Page.snapshotRect",
-                {
-                    "x": 0,
-                    "y": 0,
-                    "width": self.device_width,
-                    "height": self.device_height,
-                    "coordinateSystem": "Viewport",
+            try:
+                await self._send_frame()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # A single bad frame (e.g. a missed/timed-out device response) must not kill the
+                # stream; without this the device screen silently freezes for the whole session.
+                logger.exception("screencast frame failed; skipping")
+
+    async def _send_frame(self) -> None:
+        offset_top, scroll_offset_x, scroll_offset_y = await self.get_offsets()
+        event = await self.target.send_message_with_result(
+            "Page.snapshotRect",
+            {
+                "x": 0,
+                "y": 0,
+                "width": self.device_width,
+                "height": self.device_height,
+                "coordinateSystem": "Viewport",
+            },
+        )
+        data = event.get("result", {}).get("dataURL")
+        if not data:
+            # No usable snapshot this round (device busy / response lost mid-navigation); try
+            # again next tick. frame_id must not advance here: the loop waits for the last id's
+            # ack, and an id that was never actually sent can never be acked - the screencast
+            # would freeze for the rest of the session.
+            return
+        data = data[data.find("base64,") + 7 :]
+        await self.target.output_queue.put({
+            "method": "Page.screencastFrame",
+            "params": {
+                "data": self.resize_jpeg(data),
+                "sessionId": self.frame_id,
+                "metadata": {
+                    "pageScaleFactor": self.page_scale_factor,
+                    "offsetTop": offset_top,
+                    "deviceWidth": self.get_scaled_width(),
+                    "deviceHeight": self.get_scaled_height(),
+                    "scrollOffsetX": scroll_offset_x,
+                    "scrollOffsetY": scroll_offset_y,
+                    # Page.ScreencastFrameMetadata.timestamp is a number (seconds), not a string
+                    "timestamp": datetime.now().timestamp(),
                 },
-            )
-            data = event["result"]["dataURL"]
-            data = data[data.find("base64,") + 7 :]
-            await self.target.output_queue.put({
-                "method": "Page.screencastFrame",
-                "params": {
-                    "data": self.resize_jpeg(data),
-                    "sessionId": self.frame_id - 1,
-                    "metadata": {
-                        "pageScaleFactor": self.page_scale_factor,
-                        "offsetTop": offset_top,
-                        "deviceWidth": self.get_scaled_width(),
-                        "deviceHeight": self.get_scaled_height(),
-                        "scrollOffsetX": scroll_offset_x,
-                        "scrollOffsetY": scroll_offset_y,
-                        "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f"),
-                    },
-                },
-            })
+            },
+        })
+        self.frame_id += 1

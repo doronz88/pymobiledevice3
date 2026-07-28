@@ -36,7 +36,7 @@ from pymobiledevice3.exceptions import (
 )
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
-from pymobiledevice3.services.web_protocol.cdp_server import app
+from pymobiledevice3.services.web_protocol.cdp_server import app, find_chrome
 from pymobiledevice3.services.web_protocol.driver import By, Cookie, WebDriver
 from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
 from pymobiledevice3.services.webinspector import SAFARI, ApplicationPage, WebinspectorService
@@ -376,37 +376,45 @@ async def js_shell(
     await run_js_shell(js_shell_class, service_provider, timeout, url, open_safari, bundle_identifier, **create_kwargs)
 
 
-cdp_inspector: Optional[WebinspectorService] = None
-
-
-def create_app():
-    if cdp_inspector is None:
-        raise RuntimeError("CDP inspector is not initialized")
-    app.state.inspector = cdp_inspector
-    return app
-
-
 @cli.command()
 @async_command
-async def cdp(service_provider: ServiceProviderDep, host: str = "127.0.0.1", port: int = 9222) -> None:
+async def cdp(
+    service_provider: ServiceProviderDep,
+    host: str = "127.0.0.1",
+    port: int = 9222,
+    chrome: Optional[str] = None,
+) -> None:
     """
     Start a CDP server for debugging WebViews.
 
     \b
-    In order to debug the WebView that way, open in Google Chrome:
-        chrome://inspect/#devices
+    Open the following URL in Google Chrome and pick a page to inspect:
+        http://127.0.0.1:9222/
+
+    \b
+    Prefer this over chrome://inspect: chrome://inspect routes the DevTools frontend through
+    Chrome's browser-process relay (network target), which deadlocks under sustained console
+    traffic and freezes the console/screen. The URL above serves the DevTools frontend so it
+    connects to this bridge directly, bypassing that relay.
+
+    \b
+    The frontend is fetched from the hosted build; when that is unreachable (offline), it is
+    served from a local Chrome instead. Pass --chrome <path> if Chrome is not on PATH or in a
+    default install location.
     """
-    global cdp_inspector
-    cdp_inspector = WebinspectorService(lockdown=service_provider)
-    uvicorn.run(
-        f"{__name__}:{create_app.__name__}",
-        host=host,
-        port=port,
-        factory=True,
-        ws_ping_timeout=None,
-        ws="wsproto",
-        loop="asyncio",
+    app.state.inspector = WebinspectorService(lockdown=service_provider)
+    app.state.chrome_path = find_chrome(chrome)
+    print(f"Web Inspector ready. Open in Google Chrome: http://{host}:{port}/")
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app,
+            host=host,
+            port=port,
+            ws_ping_timeout=None,
+            ws="wsproto",
+        )
     )
+    await server.serve()
 
 
 async def get_js_completions(jsshell: "JsShell", obj: str, prefix: str) -> AsyncIterator[Completion]:
