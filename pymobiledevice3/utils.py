@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import traceback
 from collections.abc import Coroutine
 from functools import wraps
@@ -85,7 +86,15 @@ _ASYNCIO_LOOP: Optional[asyncio.AbstractEventLoop] = None
 def get_asyncio_loop() -> asyncio.AbstractEventLoop:
     global _ASYNCIO_LOOP
     if _ASYNCIO_LOOP is None or _ASYNCIO_LOOP.is_closed():
-        _ASYNCIO_LOOP = asyncio.new_event_loop()
+        if sys.platform == "win32":
+            # The proactor loop breaks blocking-socket operations performed while the socket
+            # is attached to a stream transport (its pre-posted overlapped recv consumes the
+            # bytes), e.g. the strip-ssl handshake in DTX services. The selector policy set in
+            # __main__ cannot cover this loop since it is created at import time, before that
+            # policy is applied. See https://github.com/doronz88/pymobiledevice3/issues/1217.
+            _ASYNCIO_LOOP = asyncio.SelectorEventLoop()
+        else:
+            _ASYNCIO_LOOP = asyncio.new_event_loop()
     return _ASYNCIO_LOOP
 
 

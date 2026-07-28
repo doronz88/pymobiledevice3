@@ -39,7 +39,6 @@ from typing_extensions import Self
 from pymobiledevice3.dtx import DTXConnection, DTXService
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.service_connection import close_stream_writer
 
 
 class DtxServiceProvider:
@@ -199,35 +198,27 @@ class DtxServiceProvider:
         lockdown = self.lockdown
         attr = await lockdown.get_service_connection_attributes(service_name, False)
         svc = await lockdown.create_service_connection(attr["Port"])
-        await svc._ensure_started()
 
-        if attr.get("EnableServiceSSL", False):
+        if attr.get("EnableServiceSSL", False) and strip_ssl:
+            # Handshake before the socket is bound to the event loop: a stream transport would
+            # race the blocking handshake for the incoming bytes (the proactor loop on Windows
+            # pre-posts an overlapped recv that swallows the ServerHello, timing it out).
+            svc.setblocking(True)
             with lockdown.ssl_file() as f:  # type: ignore[attr-defined]
-                if strip_ssl:
-                    svc.setblocking(True)
-                    svc.ssl_start_sync(cast(str, f))
+                svc.ssl_start_sync(cast(str, f))
+            if svc.socket is not None and hasattr(svc.socket, "_sslobj"):
+                raw_socket: Optional[_socket.socket] = getattr(svc.socket, "_sock", None)
+                if raw_socket is None:
+                    raw_socket = _socket.socket(fileno=svc.socket.detach())
                 else:
-                    await svc.ssl_start(cast(str, f))
-
-        if (
-            strip_ssl
-            and attr.get("EnableServiceSSL", False)
-            and (svc.socket is not None and hasattr(svc.socket, "_sslobj"))
-        ):
-            old_writer = svc.writer
-            raw_socket: Optional[_socket.socket] = getattr(svc.socket, "_sock", None)
-            if raw_socket is None:
-                raw_socket = _socket.socket(fileno=svc.socket.detach())
-            else:
-                # `_sslobj` is a private attribute of ssl-wrapped sockets (guarded by hasattr above)
-                svc.socket._sslobj = None  # pyright: ignore[reportAttributeAccessIssue]
-            if old_writer is not None:
-                await close_stream_writer(old_writer)
-            svc.socket = raw_socket
-            svc.reader = None
-            svc.writer = None
-            svc.socket.setblocking(False)
-            await svc.start()
+                    # `_sslobj` is a private attribute of ssl-wrapped sockets (guarded by hasattr above)
+                    svc.socket._sslobj = None  # pyright: ignore[reportAttributeAccessIssue]
+                svc.socket = raw_socket
+            svc.setblocking(False)
+        elif attr.get("EnableServiceSSL", False):
+            await svc._ensure_started()
+            with lockdown.ssl_file() as f:  # type: ignore[attr-defined]
+                await svc.ssl_start(cast(str, f))
 
         reader, writer = await svc._ensure_started()
         return DTXConnection(reader, writer)
