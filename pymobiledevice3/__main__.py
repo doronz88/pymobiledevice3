@@ -335,8 +335,11 @@ def invoke_cli_with_error_handling() -> bool:
     except MessageNotSupportedError:
         logger.error("Message not supported for this iOS version")
         traceback.print_exc()
-    except InternalError:
-        logger.error("Internal Error")
+    except InternalError as e:
+        # surface the device's DetailedError (e.g. "Failed to unload launchd jobs" on unmount)
+        response = cast(dict[str, Any], e.args[0]) if e.args and isinstance(e.args[0], dict) else {}
+        detail = str(response.get("DetailedError", ""))
+        logger.error(f"Internal Error: {detail}" if detail else "Internal Error")
     except DeveloperModeIsNotEnabledError:
         logger.error(
             "Developer Mode is disabled. You can try to enable it using: "
