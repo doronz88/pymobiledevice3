@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Annotated, Any, NamedTuple, Optional, cast
 
 import typer
-from click.exceptions import BadParameter, MissingParameter, UsageError
 from pygments import formatters, highlight, lexers
 from typer_injector import InjectingTyper
 
@@ -187,6 +186,7 @@ class Signals(IntEnum):
 @cli.command("signal")
 @async_command
 async def send_signal(
+    ctx: typer.Context,
     service_provider: ServiceProviderDep,
     pid: int,
     sig: Annotated[
@@ -200,21 +200,21 @@ async def send_signal(
 ) -> None:
     """Send a signal to a PID (choose numeric SIG or --signal-name)."""
     if sig is not None and signal_name is not None:
-        raise UsageError(message="Cannot give SIG and SIGNAL-NAME together")
+        ctx.fail("Cannot give SIG and SIGNAL-NAME together")
 
     if signal_name is not None:
         normalized_signal_name = signal_name.upper().removeprefix("SIG")
         try:
             sig = Signals[normalized_signal_name]
         except KeyError:
-            raise BadParameter(f"{signal_name!r} is not a valid signal") from None
+            raise typer.BadParameter(f"{signal_name!r} is not a valid signal") from None
     elif sig is not None:
         try:
             sig = Signals(sig)
         except ValueError:
-            raise BadParameter(f"{sig} is not a valid signal") from None
+            raise typer.BadParameter(f"{sig} is not a valid signal") from None
     else:
-        raise MissingParameter(param_type="argument|option", param_hint="'SIG|SIGNAL-NAME'")
+        ctx.fail("Missing argument|option 'SIG|SIGNAL-NAME'.")
 
     async with DvtProvider(service_provider) as dvt, ProcessControl(dvt) as process_control:
         await process_control.signal(pid, sig.value)

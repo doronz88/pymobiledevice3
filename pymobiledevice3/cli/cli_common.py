@@ -15,7 +15,6 @@ import coloredlogs
 import hexdump
 import inquirer3
 import typer
-from click import UsageError
 from inquirer3.themes import GreenPassion
 from packaging.version import Version
 from pygments import formatters, highlight, lexers
@@ -292,6 +291,7 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
     """
 
     def rsd_dependency(
+        ctx: typer.Context,
         rsd: Annotated[
             Optional[tuple[str, int]],
             typer.Option(
@@ -335,9 +335,9 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
             return None
 
         if rsd is not None and tunnel is not None:
-            raise UsageError("Illegal usage: --rsd is mutually exclusive with --tunnel.")
+            ctx.fail("Illegal usage: --rsd is mutually exclusive with --tunnel.")
         if userspace and (rsd is not None or tunnel is not None):
-            raise UsageError("Illegal usage: --userspace is mutually exclusive with --rsd/--tunnel.")
+            ctx.fail("Illegal usage: --userspace is mutually exclusive with --rsd/--tunnel.")
 
         # Explicit tunnel sources take precedence.
         if rsd is not None:
@@ -478,28 +478,30 @@ def no_autopair_service_provider_dependency(
     return cli_loop.run_until_complete(create_using_usbmux(serial=udid, autopair=False))
 
 
-def _narrow_to_lockdown_client(service_provider: LockdownServiceProvider) -> LockdownClient:
+def _narrow_to_lockdown_client(ctx: typer.Context, service_provider: LockdownServiceProvider) -> LockdownClient:
     if is_invoked_for_completion():
         # the underlying dependency returned no real provider in autocomplete mode
         return service_provider  # type: ignore[return-value]
     if not isinstance(service_provider, LockdownClient):
-        raise UsageError("This command requires a direct lockdown connection (remove --rsd/--tunnel).")
+        ctx.fail("This command requires a direct lockdown connection (remove --rsd/--tunnel).")
     return service_provider
 
 
 def lockdown_client_dependency(
+    ctx: typer.Context,
     service_provider: Annotated[LockdownServiceProvider, Depends(any_service_provider_dependency)],
 ) -> LockdownClient:
     """Variant of ``any_service_provider_dependency`` for commands only implemented over a direct
     lockdownd connection (pairing, recovery, ...); rejects RSD-backed providers with a usage error."""
-    return _narrow_to_lockdown_client(service_provider)
+    return _narrow_to_lockdown_client(ctx, service_provider)
 
 
 def no_autopair_lockdown_client_dependency(
+    ctx: typer.Context,
     service_provider: Annotated[LockdownServiceProvider, Depends(no_autopair_service_provider_dependency)],
 ) -> LockdownClient:
     """Like ``lockdown_client_dependency``, but without triggering autopair on connect."""
-    return _narrow_to_lockdown_client(service_provider)
+    return _narrow_to_lockdown_client(ctx, service_provider)
 
 
 RSDServiceProviderDep = Annotated[

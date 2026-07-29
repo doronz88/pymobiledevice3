@@ -32,6 +32,20 @@ def test_cli_from_python_m_without_args():
     assert "NoArgsIsHelpError" not in result.stderr
 
 
+def test_mutually_exclusive_rsd_tunnel_renders_usage_error():
+    # Regression: raising real click's UsageError under typer's vendored click (typer >= 0.20)
+    # escaped the CLI as a raw traceback instead of a usage error; ctx.fail() must be used instead
+    runner = CliRunner()
+    result = runner.invoke(
+        __main__.app,
+        ["developer", "dvt", "ls", "/", "--rsd", "1.2.3.4", "1234", "--tunnel", "x"],
+    )
+
+    assert result.exit_code == 2
+    assert "mutually exclusive with --tunnel" in ANSI_ESCAPE.sub("", result.output)
+    assert "Traceback" not in result.output
+
+
 def test_cli_from_python_m_with_invalid_option():
     result = subprocess.run(
         [sys.executable, "-m", "pymobiledevice3", "--definitely-invalid"],
