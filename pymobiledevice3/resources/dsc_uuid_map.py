@@ -1,11 +1,19 @@
+# /// script
+# requires-python = ">=3.9"
+# dependencies = [
+#     "coloredlogs",
+#     "typer",
+# ]
+# ///
 import json
 import logging
 import os.path
-from typing import Any, Optional, cast
+from pathlib import Path
+from typing import Annotated, Any, Optional, cast
 from uuid import UUID
 
-import click
 import coloredlogs
+import typer
 
 MAGIC = b"\x0b\x10\x00\x00"
 DYLD_MAGIC = b"dyld_v1"
@@ -34,11 +42,11 @@ def sanitize_path(path: str) -> Optional[str]:
             return partition + path.split(partition, 1)[1]
 
 
-@click.command()
-@click.argument("dyld_uuid", type=click.UUID)
-@click.argument("dsc", type=click.File("rb"))
-@click.option("-f", "--force", is_flag=True)
-def main(dsc: Any, dyld_uuid: UUID, force: bool):
+def main(
+    dyld_uuid: UUID,
+    dsc_path: Annotated[Path, typer.Argument(metavar="DSC", dir_okay=False, exists=True)],
+    force: Annotated[bool, typer.Option("-f", "--force")] = False,
+) -> None:
     """
     Simple utility to get all UUIDs used for symbolication from given DSC.
     The UUID of `/usr/lib/dyld` still needs manual insertion.
@@ -46,7 +54,7 @@ def main(dsc: Any, dyld_uuid: UUID, force: bool):
     with open(MAP_FILENAME) as f:
         uuid_map = json.load(f)
 
-    dsc = dsc.read()
+    dsc = dsc_path.read_bytes()
 
     if not dsc.startswith(DYLD_MAGIC):
         logging.error("invalid dsc file")
@@ -99,4 +107,4 @@ def main(dsc: Any, dyld_uuid: UUID, force: bool):
 
 if __name__ == "__main__":
     cast(Any, coloredlogs).install(level=logging.DEBUG)
-    main()
+    typer.run(main)
