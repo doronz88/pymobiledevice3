@@ -25,6 +25,14 @@ Guidance for AI coding agents and automation contributors working in this reposi
   (`# pyright: ignore[ruleName]`) and reserved for inherently dynamic APIs.
 - CLI commands are Typer-based and typically use dependency injection via
   `ServiceProviderDep` from `pymobiledevice3/cli/cli_common.py`.
+- Never import `click` or `typer._click` in package code. Typer (>= 0.20) vendors click
+  privately, so real-click classes/exceptions are the wrong types at runtime (e.g. a real
+  `click.UsageError` escapes Typer's handler as a raw traceback). Stay on Typer's public
+  API: `typer.Context` (+ `ctx.fail()` for usage errors), `typer.BadParameter`,
+  `typer.Exit`, `typer.Abort`, `typer.CallbackParam`, `typer.echo`/`secho`. Where a
+  click-typed parameter has no public Typer alias (e.g. `TyperGroup` method overrides),
+  annotate it `Any`. Sole exception: interop with a click-based library goes through that
+  library's namespace (see `_ls_cli_click` in `pymobiledevice3/services/afc.py`).
 - Async CLI handlers should use `@async_command`.
 - Device-facing logic should live in `pymobiledevice3/services/*`, not directly in CLI handlers.
 - Use async context managers (`async with`) for long-lived service connections.

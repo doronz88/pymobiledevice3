@@ -3,9 +3,7 @@ import re
 from pathlib import Path
 from typing import Annotated, Literal, Optional
 
-import click
 import typer
-from click import Context
 from tqdm import tqdm
 from typer_injector import InjectingTyper
 
@@ -22,7 +20,9 @@ cli = InjectingTyper(
 )
 
 
-def validate_regex_patterns(_ctx: Context, _param: click.Parameter, value: Optional[list[str]]) -> Optional[list[str]]:
+def validate_regex_patterns(
+    _ctx: typer.Context, _param: typer.CallbackParam, value: Optional[list[str]]
+) -> Optional[list[str]]:
     if not value:
         return value
 

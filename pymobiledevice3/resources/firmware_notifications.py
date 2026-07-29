@@ -1,10 +1,18 @@
+# /// script
+# requires-python = ">=3.9"
+# dependencies = [
+#     "coloredlogs",
+#     "typer",
+# ]
+# ///
 import logging
 import os
 import plistlib
-from typing import Any, cast
+from pathlib import Path
+from typing import Annotated, Any, cast
 
-import click
 import coloredlogs
+import typer
 
 NOTIFICATIONS_FILENAME = os.path.join(os.path.dirname(__file__), "notifications.txt")
 
@@ -20,9 +28,7 @@ def save_notifications(notifications: list[str]):
         f.write("\n".join(notifications).encode())
 
 
-@click.command()
-@click.argument("root_fs", type=click.Path(dir_okay=True, file_okay=False, exists=True))
-def main(root_fs: str):
+def main(root_fs: Annotated[Path, typer.Argument(dir_okay=True, file_okay=False, exists=True)]) -> None:
     """
     Add notifications registered to `com.apple.notifyd.matching` from a given IPSW `root_fs` (extracted filesystem)
     into `notifications.txt`
@@ -63,4 +69,4 @@ def main(root_fs: str):
 
 if __name__ == "__main__":
     cast(Any, coloredlogs).install(level=logging.DEBUG)
-    main()
+    typer.run(main)

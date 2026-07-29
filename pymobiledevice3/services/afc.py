@@ -33,10 +33,13 @@ import parameter_decorators
 import xonsh.cli_utils
 import xonsh.main
 import xonsh.tools
-from click.exceptions import Exit
 from construct import Bytes, CString, GreedyRange, Int64ul, Tell
 from construct_typed import DataclassMixin, EnumBase, TEnum, TStruct, csfield
 from pygments import formatters, highlight, lexers
+
+# `ls_cli` is a real-click command; the click it raises exceptions from is pygnuutils' own
+# dependency, so resolve it through pygnuutils instead of importing click directly.
+from pygnuutils.cli.ls import click as _ls_cli_click
 from pygnuutils.cli.ls import ls as ls_cli
 from pygnuutils.ls import Ls, LsStub
 from tqdm.auto import tqdm
@@ -1740,7 +1743,7 @@ class AfcShell:
                 files = list(map(self._relative_path, ctx.params.pop("files")))
                 files = files if files else [self.cwd]
                 Ls(AfcLsStub(self, stdout))(*files, **ctx.params)
-        except Exit:
+        except _ls_cli_click.exceptions.Exit:
             pass
 
     def _do_walk(self, directory: Annotated[str, Arg(completer=_dir_arg_completer)]):

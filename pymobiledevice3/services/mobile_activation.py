@@ -7,9 +7,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional, Union, cast
 
-import click
 import inquirer3
 import requests
+import typer
 from requests.structures import CaseInsensitiveDict
 
 from pymobiledevice3.exceptions import MobileActivationException
@@ -210,8 +210,8 @@ class MobileActivationService:
             except Exception as e:
                 raise MobileActivationException("Activation server response is invalid") from e
             else:
-                click.secho(activation_form.title, bold=True)
-                click.secho(activation_form.description)
+                typer.secho(activation_form.title, bold=True)
+                typer.secho(activation_form.description)
                 fields: list[Any] = []
                 for field in activation_form.fields:
                     if field.secure:
