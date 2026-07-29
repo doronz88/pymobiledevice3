@@ -113,8 +113,17 @@ class MobileImageMounterService(LockdownService):
         try:
             await self.lookup_image(image_type)
         except NotMountedError:
+            pass
+        else:
+            return True
+        # LookupImage may return an empty ImageSignature for a Personalized image that IS mounted
+        # (observed on iOS 27.0), in which case MountImage would fail with "already mounted".
+        # CopyDevices does list such an image, so consult it as well.
+        try:
+            devices = await self.copy_devices()
+        except MessageNotSupportedError:
             return False
-        return True
+        return any(device.get("DiskImageType") == image_type for device in devices)
 
     async def unmount_image(self, mount_path: str) -> None:
         """
@@ -168,6 +177,9 @@ class MobileImageMounterService(LockdownService):
         status = response.get("Status")
 
         if status != "Complete":
+            # backstop for when the pre-mount check above missed the mounted image
+            if "is already mounted" in response.get("DetailedError", ""):
+                raise AlreadyMountedError(response)
             raise PyMobileDevice3Exception(f"command MountImage failed with: {response}")
 
     async def upload_image(self, image_type: str, image: bytes, signature: bytes) -> None:
