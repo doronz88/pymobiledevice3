@@ -334,4 +334,8 @@ pymobiledevice3 webinspector launch URL
 
 # Selenium-like interactive shell
 pymobiledevice3 webinspector shell
+
+# CDP bridge: debug pages with Chrome DevTools or VS Code
+# (see the WebView debugging guide)
+pymobiledevice3 webinspector cdp
 ```

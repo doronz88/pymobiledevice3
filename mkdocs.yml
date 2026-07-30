@@ -73,6 +73,7 @@ plugins:
         Guides:
           - guides/cli-recipes.md
           - guides/ios17-tunnels.md
+          - guides/webview-debugging.md
           - guides/python-api.md
           - guides/writing-commands-with-service-provider.md
         API reference:
@@ -113,6 +114,7 @@ nav:
   - Guides:
       - CLI recipes: guides/cli-recipes.md
       - iOS 17+ tunnels: guides/ios17-tunnels.md
+      - WebView debugging: guides/webview-debugging.md
       - Python API: guides/python-api.md
       - Writing CLI commands: guides/writing-commands-with-service-provider.md
       - Device operator skill: guides/codex-device-operator-skill.md
