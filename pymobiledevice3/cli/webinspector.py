@@ -392,6 +392,12 @@ async def cdp(
         http://127.0.0.1:9222/
 
     \b
+    Chrome-compatible debugger clients can attach through the browser-level endpoint
+    advertised by /json/version. For VS Code, use a launch.json configuration such as:
+        {"type": "chrome", "request": "attach", "address": "127.0.0.1", "port": 9222,
+         "urlFilter": "*", "webRoot": "${workspaceFolder}"}
+
+    \b
     Prefer this over chrome://inspect: chrome://inspect routes the DevTools frontend through
     Chrome's browser-process relay (network target), which deadlocks under sustained console
     traffic and freezes the console/screen. The URL above serves the DevTools frontend so it
