@@ -13,14 +13,15 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.logger import logger
 from fastapi.responses import HTMLResponse, Response
 
+from pymobiledevice3.services.web_protocol.cdp_browser import (
+    PAGE_LISTING_FLUSH,
+    PAGE_LOCKS,
+    TARGET_CREATION_TIMEOUT,
+    CdpBrowser,
+)
 from pymobiledevice3.services.web_protocol.cdp_target import CdpTarget
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 from pymobiledevice3.services.webinspector import WirTypes
-
-# Seconds to let webinspectord reply with the updated page listings before answering /json
-PAGE_LISTING_FLUSH = 0.5
-# Seconds to wait for the device to report the inspection target of a new debugger session
-TARGET_CREATION_TIMEOUT = 30
 
 # chrome://inspect routes a network target's DevTools through Chrome's browser-process relay,
 # which deadlocks after sustained console traffic (the console/screen freeze). Serving the DevTools
@@ -251,10 +252,16 @@ async def to_cdp(target: CdpTarget, websocket: WebSocket) -> None:
         await websocket.send_json(message)
 
 
-# WebKit supports a single inspector session per page, so sessions are serialized per page:
-# a new debugger connection waits until the previous session's WIR socket teardown completed
-# (otherwise its socket setup races the teardown and webinspectord ignores it).
-_page_locks: dict[str, asyncio.Lock] = {}
+@app.websocket("/devtools/browser/{connection_id}")
+async def browser_debugger(websocket: WebSocket, connection_id: str):
+    """Browser-level endpoint (the one /json/version advertises): flat-session Target-domain
+    debugging for Chrome-compatible clients such as VS Code's js-debug and Puppeteer."""
+    await websocket.accept()
+    browser = CdpBrowser(app.state.inspector, websocket)
+    try:
+        await browser.run()
+    finally:
+        await browser.close()
 
 
 @app.websocket("/devtools/page/{page_id}")
@@ -265,7 +272,7 @@ async def page_debugger(websocket: WebSocket, page_id: str):
     # Accept before the device-side target setup: DevTools drops the connection if the
     # websocket handshake stalls behind the WIR socket establishment.
     await websocket.accept()
-    async with _page_locks.setdefault(page_id, asyncio.Lock()):
+    async with PAGE_LOCKS.setdefault(page_id, asyncio.Lock()):
         try:
             # Bound the wait: if the device never reports the target (e.g. webinspectord is in a
             # bad state), fail the connection instead of keeping a zombie handler alive forever.
