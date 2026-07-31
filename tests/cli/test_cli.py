@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from pymobiledevice3 import __main__
+from pymobiledevice3.exceptions import ConnectionTerminatedError, NotPairedError
 
 pytestmark = [pytest.mark.cli]
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -153,3 +154,33 @@ def test_cli_groups(group):
 @pytest.mark.parametrize("group", __main__.CLI_GROUPS.keys())
 def test_cli_from_python_m_flag(group):
     subprocess.run([sys.executable, "-m", "pymobiledevice3", group, "--help"], check=True)
+
+
+def test_main_exits_nonzero_on_handled_disconnect_error(monkeypatch):
+    # Regression for #1682: handled errors (e.g. "Connection was terminated abruptly") were
+    # logged as one-liners but the process still exited 0, so scripts could not detect failure
+    def raise_terminated(*args, **kwargs):
+        raise ConnectionTerminatedError()
+
+    monkeypatch.setattr(__main__, "app", raise_terminated)
+    monkeypatch.setattr(__main__, "RECONNECT", False)
+    with pytest.raises(SystemExit) as exc_info:
+        __main__.main()
+    assert exc_info.value.code == 1
+
+
+def test_main_exits_nonzero_on_handled_fallthrough_error(monkeypatch):
+    def raise_not_paired(*args, **kwargs):
+        raise NotPairedError()
+
+    monkeypatch.setattr(__main__, "app", raise_not_paired)
+    monkeypatch.setattr(__main__, "RECONNECT", False)
+    with pytest.raises(SystemExit) as exc_info:
+        __main__.main()
+    assert exc_info.value.code == 1
+
+
+def test_main_exits_cleanly_on_success(monkeypatch):
+    monkeypatch.setattr(__main__, "app", lambda *args, **kwargs: None)
+    monkeypatch.setattr(__main__, "RECONNECT", False)
+    __main__.main()
