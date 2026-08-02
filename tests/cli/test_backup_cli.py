@@ -31,6 +31,15 @@ def test_backup_command_has_unback_option():
     assert "--unback" in result.output
 
 
+def test_backup_command_offers_messages_selection():
+    runner = CliRunner()
+
+    result = runner.invoke(__main__.app, ["backup2", "backup", "--help"])
+
+    assert result.exit_code == 0
+    assert "messages" in result.output
+
+
 def test_backup_full_help_describes_conditional_default():
     runner = CliRunner()
 

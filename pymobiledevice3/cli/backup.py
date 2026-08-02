@@ -118,12 +118,6 @@ async def backup(
     )
 
     async with Mobilebackup2Service(service_provider) as backup_client:
-        if filter_callback is not None and not password and await backup_client.get_will_encrypt():
-            raise typer.BadParameter(
-                "--password is required when using --only or --only-regex with encrypted backups.",
-                param_hint="--password",
-            )
-
         with tqdm(total=100, dynamic_ncols=True) as pbar:
 
             def update_bar(percentage: float) -> None:
