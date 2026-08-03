@@ -411,6 +411,7 @@ class MobileConfigService(LockdownService):
                 "SafetyAndHandling",
                 "Tips",
                 "AgeBasedSafetySettings",
+                "LiquidGlass",
             ],
             "SupervisorHostCertificates": [public_key],
         })
