@@ -177,9 +177,9 @@ class Mobilebackup2Service(LockdownService):
     Drives full and incremental backups, restores, and the related operations (info, list,
     extract, unback, change password, erase device) over a `DeviceLink` channel. Backups can
     be filtered to a subset of files via a filter callback, and encrypted backups are
-    supported (password required for filtering and restore). The right underlying service is
-    selected automatically: `SERVICE_NAME` over classic lockdown, or `RSD_SERVICE_NAME` over
-    RemoteXPC/RSD.
+    supported (a password is required when patching an encrypted manifest or restoring an
+    encrypted backup). The right underlying service is selected automatically: `SERVICE_NAME`
+    over classic lockdown, or `RSD_SERVICE_NAME` over RemoteXPC/RSD.
 
     Inherits async context manager support from `LockdownService`; use within an
     ``async with`` block to manage the underlying connection.
@@ -222,6 +222,7 @@ class Mobilebackup2Service(LockdownService):
         filter_callback: Optional[BackupFilterCallback] = None,
         password: str = "",
         unback: bool = False,
+        patch_manifest: bool = False,
     ) -> None:
         """
         Back up the device into `backup_directory`/<device-udid>.
@@ -233,14 +234,24 @@ class Mobilebackup2Service(LockdownService):
         :param progress_callback: Called as the backup progresses with the completion
             percentage as its sole argument.
         :param filter_callback: Optional predicate deciding which backup payloads to keep. The
-            complete manifest is retained and rejected payload bytes are drained but not stored.
-        :param password: Backup password, used when unpacking an encrypted backup.
+            rejected payload bytes are drained but not stored.
+        :param patch_manifest: Remove entries for rejected payloads from Manifest.db. This forces
+            a full backup and requires the password when backup encryption is enabled.
+        :param password: Backup password, used when patching or unpacking an encrypted backup.
         :param unback: When True, also unpack the completed backup locally using pyiosbackup.
+        :raises BackupFilterPasswordRequiredError: If manifest patching is requested without a
+            password while the device encrypts backups.
         """
         backup_directory = Path(backup_directory)
         device_directory = backup_directory / self._udid
         device_directory.mkdir(exist_ok=True, mode=0o755, parents=True)
-        full = self._should_do_full_backup(full, device_directory)
+        patch_manifest = patch_manifest and filter_callback is not None
+        full = self._should_do_full_backup(full, device_directory, patch_manifest)
+
+        if patch_manifest and not password and await self.get_will_encrypt():
+            raise BackupFilterPasswordRequiredError(
+                "Patching an encrypted backup manifest requires the backup password"
+            )
 
         async with (
             self.device_link(backup_directory, filter_callback=filter_callback, password=password) as dl,
@@ -286,6 +297,8 @@ class Mobilebackup2Service(LockdownService):
                     await dl.dl_loop(progress_callback)
                 finally:
                     dl.cleanup_discarded_files()
+                if patch_manifest:
+                    self.prune_backup_directory(device_directory, filter_callback, password=password)
                 if unback:
                     self.unback_with_pyiosbackup(device_directory, password=password)
             finally:
@@ -298,8 +311,9 @@ class Mobilebackup2Service(LockdownService):
         cls,
         full: bool,
         device_directory: Path,
+        patch_manifest: bool = False,
     ) -> bool:
-        return full or not cls._has_incremental_backup_metadata(device_directory)
+        return full or patch_manifest or not cls._has_incremental_backup_metadata(device_directory)
 
     @staticmethod
     def _has_incremental_backup_metadata(device_directory: Path) -> bool:

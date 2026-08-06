@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
-from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError
+from pymobiledevice3.exceptions import (
+    BackupFilterPasswordRequiredError,
+    ConnectionFailedError,
+    ConnectionTerminatedError,
+)
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.mobilebackup2 import (
@@ -163,6 +167,21 @@ def test_should_do_full_backup_only_when_explicit_if_manifest_exists(tmp_path: P
 
     assert Mobilebackup2Service._should_do_full_backup(True, tmp_path) is True
     assert Mobilebackup2Service._should_do_full_backup(False, tmp_path) is False
+    assert Mobilebackup2Service._should_do_full_backup(False, tmp_path, patch_manifest=True) is True
+
+
+@pytest.mark.asyncio
+async def test_patch_encrypted_manifest_requires_password(tmp_path: Path) -> None:
+    lockdown = Mock(udid="device")
+    service = Mobilebackup2Service(lockdown)
+    service.get_will_encrypt = AsyncMock(return_value=True)
+
+    with pytest.raises(BackupFilterPasswordRequiredError):
+        await service.backup(
+            backup_directory=tmp_path,
+            filter_callback=lambda _file: True,
+            patch_manifest=True,
+        )
 
 
 @pytest.mark.asyncio

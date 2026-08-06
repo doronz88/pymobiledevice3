@@ -96,6 +96,15 @@ async def backup(
     ] = False,
     only: BackupSelectionOption = None,
     only_regex: BackupRegexOption = None,
+    patch_manifest: Annotated[
+        bool,
+        typer.Option(
+            help=(
+                "Remove entries for discarded payloads from Manifest.db. "
+                "Encrypted backups require --password when this option is used."
+            ),
+        ),
+    ] = False,
     password: PasswordOption = "",
     unback: Annotated[
         bool,
@@ -116,8 +125,19 @@ async def backup(
         Mobilebackup2Service.selection_filter_callback(preserve_rules) if preserve_rules else None,
         Mobilebackup2Service.regex_filter_callback(only_regex) if only_regex else None,
     )
+    if patch_manifest and filter_callback is None:
+        raise typer.BadParameter(
+            "--patch-manifest requires --only or --only-regex.",
+            param_hint="--patch-manifest",
+        )
 
     async with Mobilebackup2Service(service_provider) as backup_client:
+        if patch_manifest and not password and await backup_client.get_will_encrypt():
+            raise typer.BadParameter(
+                "--password is required when patching an encrypted backup manifest.",
+                param_hint="--password",
+            )
+
         with tqdm(total=100, dynamic_ncols=True) as pbar:
 
             def update_bar(percentage: float) -> None:
@@ -129,6 +149,7 @@ async def backup(
                 backup_directory=str(backup_directory),
                 progress_callback=update_bar,
                 filter_callback=filter_callback,
+                patch_manifest=patch_manifest,
                 password=password,
                 unback=unback,
             )

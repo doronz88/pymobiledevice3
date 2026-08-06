@@ -81,6 +81,7 @@ pymobiledevice3 backup2 backup --full DIRECTORY
 
 # Preserve only selected backup payloads
 pymobiledevice3 backup2 backup --only messages DIRECTORY
+pymobiledevice3 backup2 backup --only messages --patch-manifest DIRECTORY
 pymobiledevice3 backup2 backup --only sms DIRECTORY
 pymobiledevice3 backup2 backup --only whatsapp DIRECTORY
 pymobiledevice3 backup2 backup --only contacts DIRECTORY
@@ -93,6 +94,9 @@ pymobiledevice3 backup2 backup --only-regex '\\.(plist|db|db-shm|db-wal|sqlite|s
 # device still sends all backup bytes during the first run. The complete
 # Manifest.db is retained so later runs can use incremental backup state.
 # Filtered backups are intended for data access, not full-device restore.
+# Use --patch-manifest when another tool requires Manifest.db to reference
+# only saved payloads. This forces each run to be full, and encrypted backups
+# require --password so the manifest can be decrypted and re-encrypted.
 
 # Restore backup
 pymobiledevice3 backup2 restore DIRECTORY
