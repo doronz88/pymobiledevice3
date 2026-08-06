@@ -46,6 +46,10 @@ async def test_service_connection_close_aborts_when_wait_closed_hangs(monkeypatc
     assert sock.fileno() == -1
 
 
+# CPython <= 3.10 leaves the half-built SSLSocket unclosed when the handshake fails inside
+# wrap_socket(), so it emits a ResourceWarning when collected. Reproducible with plain CPython and
+# no pymobiledevice3 involved, and the socket is never ours to close -- wrap_socket() owns it.
+@pytest.mark.filterwarnings("ignore::ResourceWarning")
 def test_ssl_start_sync_failure_raises_connection_terminated(monkeypatch):
     # A failed handshake leaves the original socket detached by wrap_socket(); the error
     # path must not touch it again (used to raise EBADF/WinError 10038, masking the error).
