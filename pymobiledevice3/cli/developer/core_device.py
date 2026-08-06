@@ -32,6 +32,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
     UniversalHIDServiceService,
     touch_session,
 )
+from pymobiledevice3.remote.core_device.icon_service import IconService
 from pymobiledevice3.remote.core_device.location_service import LocationService
 from pymobiledevice3.remote.core_device.orientation_service import OrientationService
 from pymobiledevice3.remote.core_device.pasteboard_service import (
@@ -305,6 +306,33 @@ async def core_device_stream_apps(service_provider: RSDServiceProviderDep) -> No
     """Stream the application list via CoreDevice (works on iOS 26 where list-apps does not)."""
     async with AppServiceService(service_provider) as app_service:
         print_json([app async for app in app_service.stream_apps()])
+
+
+@cli.command("fetch-app-icon")
+@async_command
+async def core_device_fetch_app_icon(
+    service_provider: RSDServiceProviderDep,
+    bundle_identifier: Annotated[str, typer.Argument()],
+    output: Annotated[Path, typer.Argument()],
+    width: Annotated[float, typer.Option("--width")] = 60.0,
+    height: Annotated[float, typer.Option("--height")] = 60.0,
+    scale: Annotated[float, typer.Option("--scale")] = 2.0,
+    no_placeholder: Annotated[bool, typer.Option("--no-placeholder")] = False,
+) -> None:
+    """Fetch an application's icon as a PNG (com.apple.coredevice.iconservice)."""
+    async with IconService(service_provider) as icon_service:
+        icon = await icon_service.fetch_icon(
+            bundle_identifier=bundle_identifier,
+            width=width,
+            height=height,
+            scale=scale,
+            allow_placeholder=not no_placeholder,
+        )
+    output.write_bytes(icon.png_data)
+    logger.info(
+        f"Icon saved to: {output} ({icon.pixel_size[0]:.0f}x{icon.pixel_size[1]:.0f}px"
+        f"{', placeholder' if icon.is_placeholder else ''})"
+    )
 
 
 @cli.command("stream-processes")

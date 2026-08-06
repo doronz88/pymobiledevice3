@@ -186,20 +186,3 @@ class AppServiceService(CoreDeviceService):
                 "signal": XpcInt64Type(signal),
             },
         )
-
-    async def fetch_icons(
-        self, bundle_identifier: str, width: float, height: float, scale: float, allow_placeholder: bool
-    ) -> dict[str, Any]:
-        """
-        Fetch given application's icons
-        """
-        return await self.invoke(
-            "com.apple.coredevice.feature.fetchappicons",
-            {
-                "width": width,
-                "height": height,
-                "scale": scale,
-                "allowPlaceholder": allow_placeholder,
-                "bundleIdentifier": bundle_identifier,
-            },
-        )

@@ -218,6 +218,13 @@ See [iOS 17+ tunnels](ios17-tunnels.md) for tunnel setup.
 ```shell
 # Take a screenshot (PNG)
 pymobiledevice3 developer core-device screen-capture screenshot /path/to/screen.png
+
+# Fetch an application's icon (PNG). Size is given in points; pixel size is size * scale
+pymobiledevice3 developer core-device fetch-app-icon com.apple.Preferences /path/to/icon.png
+pymobiledevice3 developer core-device fetch-app-icon com.example.app /path/to/icon.png --width 176 --height 176 --scale 2
+
+# Fail instead of returning a generic placeholder when the app has no icon
+pymobiledevice3 developer core-device fetch-app-icon com.example.app /path/to/icon.png --no-placeholder
 ```
 
 ### HID input
