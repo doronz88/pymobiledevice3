@@ -1,7 +1,7 @@
 {
     "default": true,
     "MD013": false, // Disable line length rule
-    "MD033": { "allowed_elements": ["details", "summary", "div"] }, // Allow certain HTML elements (div: Material grid cards)
+    "MD033": { "allowed_elements": ["details", "summary", "div", "a", "picture", "source", "img"] }, // Allow certain HTML elements (div: Material grid cards; a/picture/source/img: theme-aware sponsor logos)
     "MD029": { "style": "ordered" }, // Ordered lists must use incremental numbers
     "MD007": { "indent": 2 }, // Unordered list indentation
     "MD009": { "br_spaces": 2 }, // Number of spaces after line break

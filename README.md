@@ -50,8 +50,14 @@ Questions, ideas, or want to help? Join the community on [Discord](https://disco
 
 A huge thank you to our sponsors for supporting this project! 💖
 
-[![TestMu AI](https://raw.githubusercontent.com/doronz88/pymobiledevice3/master/misc/sponsors/testmu-ai.svg#gh-light-mode-only)](https://www.testmuai.com/?utm_medium=sponsor&utm_source=doron)
-[![TestMu AI](https://raw.githubusercontent.com/doronz88/pymobiledevice3/master/misc/sponsors/testmu-ai-dark.svg#gh-dark-mode-only)](https://www.testmuai.com/?utm_medium=sponsor&utm_source=doron)
+<!-- markdownlint-disable MD013 -->
+<a href="https://www.testmuai.com/?utm_medium=sponsor&utm_source=doron">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/doronz88/pymobiledevice3/18b75e567decdb4d1f0a213ec92ba014fa35d1c0/misc/sponsors/testmu-ai-dark.svg">
+    <img alt="TestMu AI (formerly LambdaTest)" src="https://raw.githubusercontent.com/doronz88/pymobiledevice3/18b75e567decdb4d1f0a213ec92ba014fa35d1c0/misc/sponsors/testmu-ai.svg" width="320">
+  </picture>
+</a>
+<!-- markdownlint-enable MD013 -->
 
 [![SmartDust](https://github.com/smartdust-me.png?size=48)](https://smartdust.me) [**SmartDust**](https://smartdust.me)
 
