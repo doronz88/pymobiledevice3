@@ -61,6 +61,8 @@ A huge thank you to our sponsors for supporting this project! 💖
 
 [![SmartDust](https://github.com/smartdust-me.png?size=48)](https://smartdust.me) [**SmartDust**](https://smartdust.me)
 
+[![AnNEDoMini](https://github.com/AnNEDoMini.png?size=48)](https://github.com/AnNEDoMini) [**AnNEDoMini**](https://github.com/AnNEDoMini)
+
 Want to support the project as well? Sponsor it via [GitHub Sponsors](https://github.com/sponsors/doronz88) or
 [Ko-fi](https://ko-fi.com/doronz).
 
