@@ -46,6 +46,18 @@ The docs are built from [`docs/`](docs/) with MkDocs (`mkdocs.yml`).
 
 Questions, ideas, or want to help? Join the community on [Discord](https://discord.gg/52mZGC3JXJ).
 
+## Sponsors
+
+A huge thank you to our sponsors for supporting this project! 💖
+
+[![TestMu AI](https://raw.githubusercontent.com/doronz88/pymobiledevice3/master/misc/sponsors/testmu-ai.svg#gh-light-mode-only)](https://www.testmuai.com/?utm_medium=sponsor&utm_source=doron)
+[![TestMu AI](https://raw.githubusercontent.com/doronz88/pymobiledevice3/master/misc/sponsors/testmu-ai-dark.svg#gh-dark-mode-only)](https://www.testmuai.com/?utm_medium=sponsor&utm_source=doron)
+
+[![SmartDust](https://github.com/smartdust-me.png?size=48)](https://smartdust.me) [**SmartDust**](https://smartdust.me)
+
+Want to support the project as well? Sponsor it via [GitHub Sponsors](https://github.com/sponsors/doronz88) or
+[Ko-fi](https://ko-fi.com/doronz).
+
 ## Contributing
 
 See [CONTRIBUTING](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
