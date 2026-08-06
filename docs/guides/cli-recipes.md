@@ -104,6 +104,24 @@ pymobiledevice3 profile install my.mobileconfig
 pymobiledevice3 profile remove com.example.profile
 ```
 
+## Darwin Notifications
+
+```shell
+# Post a notification
+pymobiledevice3 notification post com.example.notification
+
+# Subscribe and stream notifications as they fire
+pymobiledevice3 notification observe com.example.notification
+```
+
+On iOS 17+ with an RSD tunnel, `--remotexpc` talks to the notification proxy directly over
+RemoteXPC instead of tunnelling the lockdown service through its `.shim.remote` alias:
+
+```shell
+pymobiledevice3 notification observe --remotexpc com.example.notification --userspace
+pymobiledevice3 notification post --remotexpc com.example.notification --userspace
+```
+
 ## SpringBoard UI
 
 ```shell

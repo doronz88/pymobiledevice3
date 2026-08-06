@@ -4,6 +4,7 @@ from typing import Any, Optional, Union
 
 from pymobiledevice3.exceptions import NotificationTimeoutError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -89,3 +90,58 @@ class NotificationProxyService(LockdownService):
                 yield await self.service.recv_plist()
             except socket.timeout as e:
                 raise NotificationTimeoutError from e
+
+
+class RemoteNotificationProxyService(RemoteService):
+    """
+    Post and observe Darwin notifications over the native RemoteXPC notification proxy.
+
+    This is the RSD-native counterpart of `NotificationProxyService`: instead of tunnelling the
+    classic lockdown service through its ``.shim.remote`` alias, it talks to the notification proxy
+    daemon directly over RemoteXPC. The message vocabulary is identical (``PostNotification`` /
+    ``ObserveNotification`` / ``RelayNotification``), only the transport differs.
+
+    Requires an iOS 17+ RSD tunnel. Use as an async context manager.
+    """
+
+    SERVICE_NAME = "com.apple.mobile.notification_proxy.remote"
+    INSECURE_SERVICE_NAME = "com.apple.mobile.insecure_notification_proxy.remote"
+
+    def __init__(self, rsd: RemoteServiceDiscoveryService, insecure: bool = False):
+        """
+        :param rsd: RSD provider used to open the RemoteXPC service.
+        :param insecure: when True, use the insecure relay meant for untrusted clients.
+        """
+        super().__init__(rsd, self.INSECURE_SERVICE_NAME if insecure else self.SERVICE_NAME)
+
+    async def notify_post(self, name: str) -> None:
+        """
+        Post a notification on the device.
+
+        :param name: notification name to post (e.g. a Darwin notification name).
+        """
+        await self.service.send_request({"Command": "PostNotification", "Name": name})
+
+    async def notify_register_dispatch(self, name: str) -> None:
+        """
+        Register interest in a notification so the device relays it back.
+
+        Once registered, the device sends a ``RelayNotification`` message whenever the named
+        notification fires, which can be read via `receive_notification`.
+
+        :param name: notification name to observe.
+        """
+        self.logger.info(f"Observing {name}")
+        await self.service.send_request({"Command": "ObserveNotification", "Name": name})
+
+    async def receive_notification(self) -> AsyncGenerator[dict[str, Any], None]:
+        """
+        Yield notifications relayed from the device for previously observed names.
+
+        Each yielded message is a dict of the form
+        ``{"Command": "RelayNotification", "Name": <notification name>}``.
+
+        :returns: an async generator of the relayed notification messages.
+        """
+        while True:
+            yield await self.service.receive_response()
