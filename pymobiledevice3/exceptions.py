@@ -33,7 +33,6 @@ __all__ = [
     "IRecvNoDeviceConnectedError",
     "IncorrectModeError",
     "InspectorEvaluateError",
-    "InstallCoordinationError",
     "InternalError",
     "InvalidConnectionError",
     "InvalidHostIDError",
@@ -443,6 +442,12 @@ class AppNotInstalledError(PyMobileDevice3Exception):
 
 
 class CoreDeviceError(PyMobileDevice3Exception):
+    pass
+
+
+class CryptexdError(PyMobileDevice3Exception):
+    """cryptexd rejected a routine, reporting a CFError or a non-zero error code"""
+
     pass
 
 
