@@ -1,11 +1,19 @@
+import dataclasses
 from pathlib import Path
 from typing import Annotated, Literal
 
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, cli_loop, print_json
+from pymobiledevice3.cli.cli_common import (
+    RSDServiceProviderDep,
+    ServiceProviderDep,
+    async_command,
+    cli_loop,
+    print_json,
+)
 from pymobiledevice3.services.house_arrest import HouseArrestService
+from pymobiledevice3.services.install_coordination_proxy import InstallCoordinationProxyService
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 
 cli = InjectingTyper(
@@ -147,3 +155,11 @@ async def rm(
         lockdown=service_provider, bundle_id=bundle_id, documents_only=documents
     ) as service:
         await service.rm(remote_file)
+
+
+@cli.command("install-record")
+@async_command
+async def install_record(service_provider: RSDServiceProviderDep, bundle_id: str) -> None:
+    """Query an app's LaunchServices install record via installcoordination_proxy."""
+    async with InstallCoordinationProxyService(service_provider) as service:
+        print_json(dataclasses.asdict(await service.query(bundle_id)))

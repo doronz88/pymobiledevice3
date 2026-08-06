@@ -46,6 +46,7 @@ from pymobiledevice3.exceptions import (
     DeviceHasPasscodeSetError,
     DeviceNotFoundError,
     FeatureNotSupportedError,
+    InstallCoordinationError,
     InternalError,
     InvalidServiceError,
     MessageNotSupportedError,
@@ -407,6 +408,8 @@ def invoke_cli_with_error_handling() -> bool:
         logger.error("Not enough disk space")
     except DeprecationError:
         logger.error("failed to query MobileGestalt, MobileGestalt deprecated (iOS >= 17.4).")
+    except InstallCoordinationError as e:
+        logger.error(f"install coordination request failed: {e}")
     except OSNotSupportedError as e:
         logger.error(
             f"Unsupported OS - {e.os_name}. To add support, consider contributing at "

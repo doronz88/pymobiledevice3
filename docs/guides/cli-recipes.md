@@ -104,6 +104,13 @@ pymobiledevice3 profile install my.mobileconfig
 pymobiledevice3 profile remove com.example.profile
 ```
 
+## App install records (iOS 17+, RSD tunnel)
+
+```shell
+# LaunchServices install record (DB UUID/sequence, install path, persistent identifier)
+pymobiledevice3 apps install-record com.apple.Preferences --userspace
+```
+
 ## Darwin Notifications
 
 ```shell

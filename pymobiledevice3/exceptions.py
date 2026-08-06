@@ -33,6 +33,7 @@ __all__ = [
     "IRecvNoDeviceConnectedError",
     "IncorrectModeError",
     "InspectorEvaluateError",
+    "InstallCoordinationError",
     "InternalError",
     "InvalidConnectionError",
     "InvalidHostIDError",
@@ -442,6 +443,12 @@ class AppNotInstalledError(PyMobileDevice3Exception):
 
 
 class CoreDeviceError(PyMobileDevice3Exception):
+    pass
+
+
+class InstallCoordinationError(PyMobileDevice3Exception):
+    """installcoordination_proxy reported a failed request"""
+
     pass
 
 
