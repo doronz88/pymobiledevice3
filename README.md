@@ -46,6 +46,26 @@ The docs are built from [`docs/`](docs/) with MkDocs (`mkdocs.yml`).
 
 Questions, ideas, or want to help? Join the community on [Discord](https://discord.gg/52mZGC3JXJ).
 
+## Sponsors
+
+A huge thank you to our sponsors for supporting this project! 💖
+
+<!-- markdownlint-disable MD013 -->
+<a href="https://www.testmuai.com/?utm_medium=sponsor&utm_source=doron">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/doronz88/pymobiledevice3/18b75e567decdb4d1f0a213ec92ba014fa35d1c0/misc/sponsors/testmu-ai-dark.svg">
+    <img alt="TestMu AI (formerly LambdaTest)" src="https://raw.githubusercontent.com/doronz88/pymobiledevice3/18b75e567decdb4d1f0a213ec92ba014fa35d1c0/misc/sponsors/testmu-ai.svg" width="320">
+  </picture>
+</a>
+<!-- markdownlint-enable MD013 -->
+
+[![SmartDust](https://github.com/smartdust-me.png?size=48)](https://smartdust.me) [**SmartDust**](https://smartdust.me)
+
+[![AnNEDoMini](https://github.com/AnNEDoMini.png?size=48)](https://github.com/AnNEDoMini) [**AnNEDoMini**](https://github.com/AnNEDoMini)
+
+Want to support the project as well? Sponsor it via [GitHub Sponsors](https://github.com/sponsors/doronz88) or
+[Ko-fi](https://ko-fi.com/doronz).
+
 ## Contributing
 
 See [CONTRIBUTING](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
