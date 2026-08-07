@@ -6,6 +6,9 @@ from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceSer
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import XpcInt64Type
 
+FEATURE_LISTAPPS = "com.apple.coredevice.feature.listapps"
+FEATURE_STREAMAPPLIST = "com.apple.coredevice.feature.streamapplist"
+
 
 class AppServiceService(CoreDeviceService):
     """
@@ -30,24 +33,26 @@ class AppServiceService(CoreDeviceService):
     ) -> list[dict[str, Any]]:
         """List applications.
 
-        Note: on iOS 26 the non-streaming listapps feature accepts the request but never
-        replies (and the stuck call wedges dtappserviced). Use ``stream_apps`` there instead.
+        The streaming variant is preferred whenever the DDI advertises it: DDIs new enough to
+        offer streamapplist (iOS 26 era) never reply to a well-formed non-streaming listapps
+        request (and the stuck call wedges dtappserviced) — Xcode 26 uses streamapplist there
+        too. Older DDIs advertise only listapps, which they answer fine.
         """
-        return await self.invoke(
-            "com.apple.coredevice.feature.listapps",
-            {
-                "includeAppClips": include_app_clips,
-                "includeRemovableApps": include_removable_apps,
-                "includeHiddenApps": include_hidden_apps,
-                "includeInternalApps": include_internal_apps,
-                "includeDefaultApps": include_default_apps,
-                # Required since iOS 26 (InstalledAppsRequestParams). requireContainerAccess=True
-                # needs the com.apple.private.CoreDevice.obtainContainerAccess entitlement.
-                "requireContainerAccess": require_container_access,
-                "includeAppGroupIdentifiers": include_app_group_identifiers,
-                "includeContainerPaths": include_container_paths,
-            },
-        )
+        arguments = {
+            "includeAppClips": include_app_clips,
+            "includeRemovableApps": include_removable_apps,
+            "includeHiddenApps": include_hidden_apps,
+            "includeInternalApps": include_internal_apps,
+            "includeDefaultApps": include_default_apps,
+            # Required since iOS 26 (InstalledAppsRequestParams). requireContainerAccess=True
+            # needs the com.apple.private.CoreDevice.obtainContainerAccess entitlement.
+            "requireContainerAccess": require_container_access,
+            "includeAppGroupIdentifiers": include_app_group_identifiers,
+            "includeContainerPaths": include_container_paths,
+        }
+        if FEATURE_STREAMAPPLIST in self.rsd.get_service_features(self.service_name):
+            return [app async for app in self.stream_invoke(FEATURE_STREAMAPPLIST, arguments)]
+        return await self.invoke(FEATURE_LISTAPPS, arguments)
 
     async def launch_application(
         self,
@@ -98,7 +103,7 @@ class AppServiceService(CoreDeviceService):
         Streaming counterpart of ``list_apps``; elements share the same shape.
         """
         async for app in self.stream_invoke(
-            "com.apple.coredevice.feature.streamapplist",
+            FEATURE_STREAMAPPLIST,
             {
                 "includeAppClips": include_app_clips,
                 "includeRemovableApps": include_removable_apps,
