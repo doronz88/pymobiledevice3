@@ -123,12 +123,24 @@ async def write_pcapng_stream(
 
 
 class BtPacketLoggerService(LockdownService):
+    """Capture live Bluetooth HCI traffic from the device.
+
+    Wraps ``com.apple.bluetooth.BTPacketLogger``, which streams Apple PacketLogger records.
+    Use `watch` to iterate the raw records, and `write_to_packetlogger` /
+    `write_to_pcapng` to persist them in a format PacketLogger.app or Wireshark can open.
+    """
+
     SERVICE_NAME = "com.apple.bluetooth.BTPacketLogger"
 
     def __init__(self, lockdown: LockdownServiceProvider) -> None:
         super().__init__(lockdown, self.SERVICE_NAME)
 
     async def watch(self, packets_count: int = -1) -> AsyncGenerator[bytes, None]:
+        """Yield raw PacketLogger records as they are captured.
+
+        :param packets_count: Stop after this many records, or -1 to stream forever.
+        :return: Generator of raw PacketLogger records (parse with ``parse_packetlogger_record``).
+        """
         packet_index = 0
         while packet_index != packets_count:
             packet_length = unpack("<H", await self.service.recvall(SERVICE_PACKET_SIZE_HEADER))[0]
@@ -138,8 +150,22 @@ class BtPacketLoggerService(LockdownService):
             packet_index += 1
 
     async def write_to_packetlogger(self, out: BinaryIO, packet_generator: AsyncIterable[bytes]) -> None:
+        """Write raw records (e.g. from `watch`) to ``out`` in Apple PacketLogger (.pklg) format.
+
+        :param out: Destination binary stream, flushed after every record.
+        :param packet_generator: Source of raw PacketLogger records.
+        """
         await write_packetlogger_stream(out, packet_generator)
 
     async def write_to_pcapng(self, out: BinaryIO, packet_generator: AsyncIterable[bytes]) -> None:
+        """Write raw records (e.g. from `watch`) to ``out`` as a pcapng capture Wireshark can open.
+
+        Records are converted to HCI H4 frames (link-type 201, with direction pseudo-header); records
+        that don't map to HCI, or are malformed, are skipped. Timestamps are shifted from the device's
+        local wall-clock to UTC using the device-reported timezone offset.
+
+        :param out: Destination binary stream, flushed after every packet.
+        :param packet_generator: Source of raw PacketLogger records.
+        """
         tz_offset_seconds = self.lockdown.all_values.get("TimeZoneOffsetFromUTC") or 0
         await write_pcapng_stream(out, packet_generator, self.lockdown.product_version, tz_offset_seconds)

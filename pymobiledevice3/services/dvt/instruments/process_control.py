@@ -103,6 +103,7 @@ class ProcessControl(DtxService[ProcessControlService]):
     """
 
     async def connect(self):
+        """Open the instrument's DTX channel and route its message log to this instrument's logger."""
         await super().connect()
         self._provider.dtx.ctx["logger"] = self.logger.getChild("dtx")
 

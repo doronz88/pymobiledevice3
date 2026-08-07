@@ -18,7 +18,3 @@ connect → service pattern with runnable examples. This section is the detailed
 - **[Capture, logging &amp; automation](capture.md)** — screenshots, pcap, syslog, WebInspector, WDA.
 - **[Backup, symbols &amp; location](backup-symbols.md)** — backup/restore, symbol fetching, GPS simulation.
 - **[Developer / DVT](dvt.md)** — the DVT provider and instruments (iOS 17+, over a tunnel).
-
-!!! tip "Docstring coverage is a work in progress"
-    Some methods are not yet documented. The generated pages reflect the current source; missing
-    prose means the docstring hasn't been written yet, not that the method is private.
