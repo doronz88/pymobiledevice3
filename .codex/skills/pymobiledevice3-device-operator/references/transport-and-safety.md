@@ -26,6 +26,9 @@ Many `developer dvt` and related developer commands need all of the following:
    `uvx --from . pymobiledevice3 amfi enable-developer-mode`
 2. Developer image mounted:
    `uvx --from . pymobiledevice3 mounter auto-mount`
+   On iOS 17+ the same image can instead be installed as a cryptex, bypassing the image
+   mounter: `uvx --from . pymobiledevice3 cryptex auto-install` (needs RSD; both cache the
+   download under `~/.pymobiledevice3` and end up mounted at `/System/Developer`).
 3. A CoreDevice transport path. On iOS 17.4+ this needs **no setup**: the no-root
    userspace tunnel is established automatically when the command runs. Only iOS
    17.0-17.3 devices (which predate CoreDeviceProxy) route to `tunneld` and need a

@@ -29,9 +29,23 @@ from pymobiledevice3.utils import bytes_to_uint, plist_access_path
 # defaults write com.apple.CoreDevice.CoreDeviceService ddiSigningServer http://gs.apple.com:80
 # ```
 #
-# Note this is untested: CoreDevice caches the personalization ticket, so repeated DDI installs
-# make no TSS request at all to redirect (verified with tcpdump -- zero packets to gs.apple.com
-# across several installs). Invalidate the cached ticket first, e.g. by rolling the cryptex nonce.
+# That redirect does not help in practice, though: CoreDevice caches the personalization ticket, so
+# repeated DDI installs make no TSS request at all (verified with tcpdump -- zero packets to
+# gs.apple.com while `devicectl` reinstalled the cryptex). No user-readable on-disk ticket cache was
+# found to invalidate, and neither nonce-roll routine actually rolls a domain, so the cache cannot
+# be forced to miss either. MITM is no better: gs.apple.com is pinned, and mitmproxy only gets
+# "Server TLS handshake failed / self-signed certificate in certificate chain".
+#
+# Read the request out of the unified log instead. `CoreDeviceService` logs the whole dictionary it
+# is about to sign, verbatim, under `com.apple.libcryptex:scrivener` -- run a DDI install and then:
+#
+# ```shell
+# log show --last 5m --info --debug --predicate 'process == "CoreDeviceService"' \
+#     | awk '/tss request = \{/,/^\}/'
+# ```
+#
+# This is how `TSSRequest.add_cryptex1_tags` was derived; the device side is equally chatty, so
+# streaming its syslog filtered to the `cryptex` subsystem explains rejections a key at a time.
 TSS_CONTROLLER_ACTION_URL = "http://gs.apple.com/TSS/controller?action=2"
 
 TSS_CLIENT_VERSION_STRING = "libauthinstall-1104.0.9"

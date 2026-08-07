@@ -226,7 +226,15 @@ pymobiledevice3 amfi enable-developer-mode
 
 # Auto-mount DeveloperDiskImage
 pymobiledevice3 mounter auto-mount
+
+# Or install it as a cryptex instead, over cryptexd (iOS 17+, needs RSD)
+pymobiledevice3 cryptex auto-install
 ```
+
+Both download the DDI and cache it under `~/.pymobiledevice3`, and both end with the image mounted
+at `/System/Developer`. `mounter auto-mount` works over plain USB and covers iOS < 17 as well;
+`cryptex auto-install` needs an RSD tunnel but bypasses the image mounter entirely. See
+[Cryptexes](#cryptexes-ios-17-rsd-tunnel) for the differences.
 
 For iOS 17+ tunnel setup, see:
 [iOS 17+ tunnels](ios17-tunnels.md)
