@@ -107,6 +107,7 @@ markdown_extensions:
 
 hooks:
   - docs/_hooks/inject_external.py
+  - docs/_hooks/gen_cli_reference.py
 
 nav:
   - Home: index.md
@@ -118,6 +119,36 @@ nav:
       - Python API: guides/python-api.md
       - Writing CLI commands: guides/writing-commands-with-service-provider.md
       - Device operator skill: guides/codex-device-operator-skill.md
+  - CLI Reference:
+      - Overview: cli/index.md
+      - activation: cli/activation.md
+      - afc: cli/afc.md
+      - amfi: cli/amfi.md
+      - apps: cli/apps.md
+      - backup2: cli/backup2.md
+      - btlogger: cli/btlogger.md
+      - bonjour: cli/bonjour.md
+      - companion: cli/companion.md
+      - crash: cli/crash.md
+      - cryptex: cli/cryptex.md
+      - developer: cli/developer.md
+      - diagnostics: cli/diagnostics.md
+      - lockdown: cli/lockdown.md
+      - mounter: cli/mounter.md
+      - notification: cli/notification.md
+      - pcap: cli/pcap.md
+      - power-assertion: cli/power-assertion.md
+      - processes: cli/processes.md
+      - profile: cli/profile.md
+      - provision: cli/provision.md
+      - remote: cli/remote.md
+      - restore: cli/restore.md
+      - springboard: cli/springboard.md
+      - syslog: cli/syslog.md
+      - usbmux: cli/usbmux.md
+      - webinspector: cli/webinspector.md
+      - idam: cli/idam.md
+      - version: cli/version.md
   - Python API Reference:
       - Overview: api/index.md
       - Connecting to a device: api/connection.md
