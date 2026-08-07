@@ -300,14 +300,6 @@ async def core_device_list_apps(service_provider: RSDServiceProviderDep) -> None
         print_json(await app_service.list_apps())
 
 
-@cli.command("stream-apps")
-@async_command
-async def core_device_stream_apps(service_provider: RSDServiceProviderDep) -> None:
-    """Stream the application list via CoreDevice (works on iOS 26 where list-apps does not)."""
-    async with AppServiceService(service_provider) as app_service:
-        print_json([app async for app in app_service.stream_apps()])
-
-
 @cli.command("fetch-app-icon")
 @async_command
 async def core_device_fetch_app_icon(
