@@ -122,18 +122,35 @@ Talks to `cryptexd` directly. `cryptex list` reports a mounted personalized Deve
 `com.apple.MobileAsset.DDI`.
 
 ```shell
-pymobiledevice3 cryptex list --userspace
-pymobiledevice3 cryptex personalization-identifiers --userspace
-pymobiledevice3 cryptex nonce --userspace
-pymobiledevice3 cryptex nonce --nonce-domain-handle 7 --userspace
+pymobiledevice3 cryptex list
+pymobiledevice3 cryptex personalization-identifiers
+pymobiledevice3 cryptex nonce
+pymobiledevice3 cryptex nonce --nonce-domain-handle 7
 ```
 
 State-changing. Rolling a nonce invalidates anything personalized against it, so a mounted
 personalized DDI must be re-personalized and re-mounted afterwards:
 
 ```shell
-pymobiledevice3 cryptex roll-nonce --userspace
-pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI --userspace
+pymobiledevice3 cryptex roll-nonce
+pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI
+```
+
+`cryptex auto-install` is the cryptex counterpart of `mounter auto-mount` — a cryptex is
+*installed*, not mounted, which is why the verb differs. It personalizes and installs the
+DeveloperDiskImage over `cryptexd` alone, without the image mounter: it has Apple sign a Cryptex1
+ticket for this device and installs the payloads, leaving the DDI's developer services (DVT,
+testmanagerd, …) usable. The end result is indistinguishable from a `mounter auto-mount` —
+`mounter list` reports it as a `Personalized` image at `/System/Developer`.
+
+Also like `mounter auto-mount`, it downloads the DDI it needs and caches it under
+`~/.pymobiledevice3`, so no Xcode installation is required and it works on any host:
+
+```shell
+pymobiledevice3 cryptex auto-install
+
+# Use a local bundle instead of the download, e.g. Xcode's own
+pymobiledevice3 cryptex auto-install --restore-dir /Library/Developer/DeveloperDiskImages/iOS_DDI/Restore
 ```
 
 !!! note "Overlap with `mounter`"

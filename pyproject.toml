@@ -68,7 +68,7 @@ dependencies = [
     "hyperframe",
     "srptools",
     "qh3>=1.0.0,<2",
-    "developer_disk_image>=0.0.2",
+    "developer_disk_image>=0.3.0",
     "opack2",
     "psutil",
     "pytun-pmd3>=3.0.3",
