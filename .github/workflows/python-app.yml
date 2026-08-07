@@ -19,6 +19,13 @@ jobs:
     if: '! github.event.pull_request.draft'
     runs-on: ${{ matrix.os }}
 
+    # Pin uv to the interpreter it provisioned. Without this it prefers an already-installed
+    # system Python, and macOS runners ship 3.9.6 linked against LibreSSL 2.8.3 -- urllib3 v2
+    # then emits NotOpenSSLWarning on import, which pytest's `filterwarnings = error` turns
+    # into a collection failure for the whole 3.9 job.
+    env:
+      UV_PYTHON_PREFERENCE: only-managed
+
     strategy:
       matrix:
         python-version: [ "3.9", "3.10", "3.11", "3.12", "3.13", "3.14" ]
