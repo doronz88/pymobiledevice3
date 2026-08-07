@@ -11,6 +11,13 @@ from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceSer
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 
+# Capability tags the control service advertises in the RSD handshake. These are NOT invoke()
+# feature identifiers: the control service rejects the CoreDevice.featureIdentifier envelope with
+# "The command provided by the client is not valid" (com.apple.dt.remoteservices.error 11014,
+# verified on-device) and only speaks its Cmd-keyed session protocol below.
+FEATURE_LIST_FILES = "com.apple.coredevice.feature.listFiles"
+FEATURE_TRANSFER_FILES = "com.apple.coredevice.feature.transferFiles"
+
 
 class Domain(IntEnum):
     APP_DATA_CONTAINER = 1
@@ -57,6 +64,7 @@ class FileServiceService(CoreDeviceService):
         self.session = response["NewSessionID"]
 
     async def retrieve_directory_list(self, path: str = ".") -> AsyncGenerator[list[str], None]:
+        self.rsd.require_feature(self.CTRL_SERVICE_NAME, FEATURE_LIST_FILES)
         return (
             await self.send_receive_request({
                 "Cmd": "RetrieveDirectoryList",
@@ -67,6 +75,7 @@ class FileServiceService(CoreDeviceService):
         )["FileList"]
 
     async def retrieve_file(self, path: str = ".") -> bytes:
+        self.rsd.require_feature(self.CTRL_SERVICE_NAME, FEATURE_TRANSFER_FILES)
         response = await self.send_receive_request({"Cmd": "RetrieveFile", "Path": path, "SessionID": self.session})
         data_service = self.rsd.get_service_port("com.apple.coredevice.fileservice.data")
         # Route through the RSD's dialer (set by the userspace tunnel to relay through its
@@ -88,6 +97,8 @@ class FileServiceService(CoreDeviceService):
         last_modification_time: float = time.time(),
     ) -> None:
         """Request to write an empty file at given path."""
+        # Proposing a file is the write direction of the file-transfer flow.
+        self.rsd.require_feature(self.CTRL_SERVICE_NAME, FEATURE_TRANSFER_FILES)
         await self.send_receive_request({
             "Cmd": "ProposeEmptyFile",
             "FileCreationTime": XpcInt64Type(creation_time),
