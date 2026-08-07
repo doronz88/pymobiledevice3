@@ -76,6 +76,7 @@ plugins:
           - guides/webview-debugging.md
           - guides/python-api.md
           - guides/writing-commands-with-service-provider.md
+          - guides/troubleshooting.md
         API reference:
           - api/index.md
           - api/connection.md
@@ -119,6 +120,7 @@ nav:
       - Python API: guides/python-api.md
       - Writing CLI commands: guides/writing-commands-with-service-provider.md
       - Device operator skill: guides/codex-device-operator-skill.md
+      - Troubleshooting: guides/troubleshooting.md
   - CLI Reference:
       - Overview: cli/index.md
       - activation: cli/activation.md
