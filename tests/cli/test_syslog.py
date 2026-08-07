@@ -310,6 +310,17 @@ async def test_syslog_live_no_info_suppresses_only_info(monkeypatch, capsys):
     assert _FakeOsTraceService.last_stream_flags == (OS_TRACE_RELAY_STREAM_FLAGS_DEFAULT & ~OsActivityStreamFlag.INFO)
 
 
+@pytest.mark.parametrize("color", [False, True])
+def test_format_line_label_with_braces(color: bool) -> None:
+    # https://github.com/doronz88/pymobiledevice3/issues/1826 - a subsystem/category
+    # containing str.format() metacharacters (e.g. "{34}") must be emitted verbatim
+    # instead of being parsed as a replacement field.
+    entry = _create_syslog_entry("hello")
+    entry.label = SyslogLabel(subsystem="com.foo.{34}", category="{bad} {")
+    line = syslog_module.format_line(entry, include_label=True, image_offset=False, color=color)
+    assert "[com.foo.{34}][{bad} {]" in line
+
+
 def test_format_json_line_with_label():
     entry = SyslogEntry(
         pid=42,
