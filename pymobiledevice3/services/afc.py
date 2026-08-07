@@ -346,6 +346,8 @@ class AfcService(LockdownService):
         return self
 
     async def aclose(self) -> None:
+        """Shut down the service: stop the reader task, fail all in-flight requests with
+        ``ConnectionTerminatedError``, and close the underlying connection."""
         if self._afc_reader_task is not None:
             self._afc_reader_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
