@@ -104,6 +104,7 @@ class DeviceLink:
         self.root_path: Path = root_path
         self.preserve_file = preserve_file
         self.post_file_receive = post_file_receive
+        self._discarded_files: set[Path] = set()
         self._dl_handlers: dict[str, DLHandler] = {
             "DLMessageCreateDirectory": self.create_directory,
             "DLMessageUploadFiles": self.upload_files,
@@ -243,6 +244,7 @@ class DeviceLink:
                 path = self.root_path / file_name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.touch()
+                self._discarded_files.add(Path(file_name))
                 size, code = await self._consume_file_transfer(size, code)
             if code == CODE_ERROR_REMOTE:
                 # iOS 17 beta devices give this error for: backup_manifest.db
@@ -289,6 +291,7 @@ class DeviceLink:
             dest = self.root_path / dst
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(source, dest)
+            self._move_discarded_files(Path(src), Path(dst))
             if self.post_file_receive is not None:
                 self.post_file_receive(dst, src)
         await self.status_response(0)
@@ -304,6 +307,7 @@ class DeviceLink:
             shutil.copytree(src, dest)
         else:
             shutil.copy(src, dest)
+        self._copy_discarded_files(Path(cast(str, message[1])), Path(cast(str, message[2])))
         if self.post_file_receive is not None:
             self.post_file_receive(cast(str, message[2]), cast(str, message[1]))
         await self.status_response(0)
@@ -318,7 +322,39 @@ class DeviceLink:
                 shutil.rmtree(rm_path)
             else:
                 rm_path.unlink(missing_ok=True)
+            self._forget_discarded_files(Path(path))
         await self.status_response(0)
+
+    def _discarded_files_below(self, path: Path) -> set[Path]:
+        return {candidate for candidate in self._discarded_files if candidate == path or path in candidate.parents}
+
+    def _move_discarded_files(self, source: Path, destination: Path) -> None:
+        discarded_files = self._discarded_files_below(source)
+        self._discarded_files.difference_update(discarded_files)
+        self._discarded_files.update(destination / path.relative_to(source) for path in discarded_files)
+
+    def _copy_discarded_files(self, source: Path, destination: Path) -> None:
+        self._discarded_files.update(
+            destination / path.relative_to(source) for path in self._discarded_files_below(source)
+        )
+
+    def _forget_discarded_files(self, path: Path) -> None:
+        self._discarded_files.difference_update(self._discarded_files_below(path))
+
+    def cleanup_discarded_files(self) -> None:
+        """Remove temporary placeholders created for payloads rejected by a backup filter."""
+        for relative_path in sorted(self._discarded_files, key=lambda path: len(path.parts), reverse=True):
+            path = self.root_path / relative_path
+            path.unlink(missing_ok=True)
+
+            parent = path.parent
+            while parent != self.root_path:
+                try:
+                    parent.rmdir()
+                except OSError:
+                    break
+                parent = parent.parent
+        self._discarded_files.clear()
 
     async def create_directory(self, message: DLMessage) -> None:
         path = cast(str, message[1])

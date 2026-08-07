@@ -79,6 +79,19 @@ BackupRegexOption = Annotated[
 ]
 
 
+def validate_backup_filter_options(filtered: bool, patch_manifest: bool, unback: bool) -> None:
+    if patch_manifest and not filtered:
+        raise typer.BadParameter(
+            "--patch-manifest requires --only or --only-regex.",
+            param_hint="--patch-manifest",
+        )
+    if unback and filtered and not patch_manifest:
+        raise typer.BadParameter(
+            "--unback with --only or --only-regex requires --patch-manifest.",
+            param_hint="--patch-manifest",
+        )
+
+
 @cli.command()
 @async_command
 async def backup(
@@ -96,12 +109,24 @@ async def backup(
     ] = False,
     only: BackupSelectionOption = None,
     only_regex: BackupRegexOption = None,
+    patch_manifest: Annotated[
+        bool,
+        typer.Option(
+            help=(
+                "Remove entries for discarded payloads from Manifest.db. "
+                "Encrypted backups require --password when this option is used."
+            ),
+        ),
+    ] = False,
     password: PasswordOption = "",
     unback: Annotated[
         bool,
         typer.Option(
             "--unback",
-            help="Also unpack the completed backup locally using pyiosbackup. Existing unpacked contents are replaced.",
+            help=(
+                "Also unpack the completed backup locally using pyiosbackup. "
+                "Existing unpacked contents are replaced. Filtered backups require --patch-manifest."
+            ),
         ),
     ] = False,
 ) -> None:
@@ -116,11 +141,12 @@ async def backup(
         Mobilebackup2Service.selection_filter_callback(preserve_rules) if preserve_rules else None,
         Mobilebackup2Service.regex_filter_callback(only_regex) if only_regex else None,
     )
+    validate_backup_filter_options(filter_callback is not None, patch_manifest, unback)
 
     async with Mobilebackup2Service(service_provider) as backup_client:
-        if filter_callback is not None and not password and await backup_client.get_will_encrypt():
+        if patch_manifest and not password and await backup_client.get_will_encrypt():
             raise typer.BadParameter(
-                "--password is required when using --only or --only-regex with encrypted backups.",
+                "--password is required when patching an encrypted backup manifest.",
                 param_hint="--password",
             )
 
@@ -135,6 +161,7 @@ async def backup(
                 backup_directory=str(backup_directory),
                 progress_callback=update_bar,
                 filter_callback=filter_callback,
+                patch_manifest=patch_manifest,
                 password=password,
                 unback=unback,
             )

@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
-from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminatedError
+from pymobiledevice3.exceptions import (
+    BackupFilterPasswordRequiredError,
+    ConnectionFailedError,
+    ConnectionTerminatedError,
+)
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.device_link import DeviceLink
 from pymobiledevice3.services.mobilebackup2 import (
@@ -82,7 +86,25 @@ def test_resolve_backup_selection_sms() -> None:
 
 
 def test_backup_selection_presets_include_contacts_call_history_and_bookmarks() -> None:
-    assert {"contacts", "call_history", "bookmarks"} <= set(BACKUP_SELECTIONS)
+    assert {"contacts", "call_history", "bookmarks", "messages"} <= set(BACKUP_SELECTIONS)
+
+
+def test_messages_selection_includes_database_and_attachment_tree() -> None:
+    callback = Mobilebackup2Service.selection_filter_callback(
+        Mobilebackup2Service.resolve_backup_selection(["messages"])
+    )
+
+    assert callback(BackupFile(device_name="/.ba/mobile/Library/SMS/sms.db"))
+    assert callback(BackupFile(device_name="/.ba/mobile/Library/SMS/Attachments/12/02/attachment.mov"))
+    assert callback(BackupFile(domain="HomeDomain", relative_path="Library/SMS/sms.db"))
+    assert callback(
+        BackupFile(
+            domain="MediaDomain",
+            relative_path="Library/SMS/Attachments/12/02/attachment.mov",
+        )
+    )
+    assert callback(BackupFile(domain="MediaDomain", relative_path="Library/SMS/StickerCache/sticker.heic"))
+    assert not callback(BackupFile(domain="HomeDomain", relative_path="Library/Notes/notes.sqlite"))
 
 
 def test_regex_filter_callback_matches_upload_and_manifest_forms() -> None:
@@ -139,12 +161,27 @@ def test_should_do_full_backup_when_incremental_metadata_is_empty(tmp_path: Path
     assert Mobilebackup2Service._should_do_full_backup(False, tmp_path) is True
 
 
-def test_should_do_full_backup_when_explicit_or_filtered(tmp_path: Path) -> None:
+def test_should_do_full_backup_only_when_explicit_if_manifest_exists(tmp_path: Path) -> None:
     for filename in ("Manifest.plist", "Manifest.db", "Status.plist"):
         (tmp_path / filename).write_text("data")
 
     assert Mobilebackup2Service._should_do_full_backup(True, tmp_path) is True
-    assert Mobilebackup2Service._should_do_full_backup(False, tmp_path, filter_callback=lambda _file: True) is True
+    assert Mobilebackup2Service._should_do_full_backup(False, tmp_path) is False
+    assert Mobilebackup2Service._should_do_full_backup(False, tmp_path, patch_manifest=True) is True
+
+
+@pytest.mark.asyncio
+async def test_patch_encrypted_manifest_requires_password(tmp_path: Path) -> None:
+    lockdown = Mock(udid="device")
+    service = Mobilebackup2Service(lockdown)
+    service.get_will_encrypt = AsyncMock(return_value=True)
+
+    with pytest.raises(BackupFilterPasswordRequiredError):
+        await service.backup(
+            backup_directory=tmp_path,
+            filter_callback=lambda _file: True,
+            patch_manifest=True,
+        )
 
 
 @pytest.mark.asyncio
@@ -330,3 +367,52 @@ async def test_device_link_upload_files_creates_empty_placeholder_for_filtered_f
     placeholder = tmp_path / "ab" / "cdef"
     assert placeholder.exists()
     assert placeholder.read_bytes() == b""
+
+    device_link.cleanup_discarded_files()
+
+    assert not placeholder.exists()
+
+
+@pytest.mark.asyncio
+async def test_device_link_tracks_filtered_placeholder_across_move(tmp_path: Path) -> None:
+    service = AsyncMock()
+    device_link = DeviceLink(service, tmp_path, preserve_file=lambda _file_name, _device_name: False)
+    source = Path("device/Snapshot/aa/hash")
+    destination = Path("device/aa/hash")
+    source_path = tmp_path / source
+    source_path.parent.mkdir(parents=True)
+    source_path.touch()
+    device_link._discarded_files.add(source)
+
+    await device_link.move_items(["DLMessageMoveItems", {str(source): str(destination)}])
+    device_link.cleanup_discarded_files()
+
+    assert not (tmp_path / source).exists()
+    assert not (tmp_path / destination).exists()
+
+
+def test_device_link_tracks_filtered_placeholders_when_directory_is_copied_or_removed(tmp_path: Path) -> None:
+    device_link = DeviceLink(AsyncMock(), tmp_path)
+    source = Path("device/Snapshot")
+    discarded_file = source / "aa" / "hash"
+    copied_file = Path("device/Copy") / "aa" / "hash"
+    device_link._discarded_files.add(discarded_file)
+
+    device_link._copy_discarded_files(source, Path("device/Copy"))
+    device_link._forget_discarded_files(source)
+
+    assert device_link._discarded_files == {copied_file}
+
+
+def test_device_link_does_not_remove_directory_tracked_as_discarded_file(tmp_path: Path) -> None:
+    device_link = DeviceLink(AsyncMock(), tmp_path)
+    directory = tmp_path / "kept"
+    directory.mkdir()
+    kept_file = directory / "data"
+    kept_file.write_text("data")
+    device_link._discarded_files.add(Path("kept"))
+
+    with pytest.raises(OSError):
+        device_link.cleanup_discarded_files()
+
+    assert kept_file.read_text() == "data"

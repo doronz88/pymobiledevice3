@@ -87,16 +87,27 @@ class BackupSelectionRule:
 
     domain: str
     relative_path: str
+    recursive: bool = False
+
+    def _matches_path(self, candidate: str, expected: str) -> bool:
+        return candidate == expected or (self.recursive and candidate.startswith(f"{expected}/"))
 
     def matches_device_name(self, device_name: str) -> bool:
-        return device_name in {
-            f"{self.domain}/{self.relative_path}",
-            f"{self.domain}-{self.relative_path}",
-            self.relative_path,
-        } or device_name.endswith(f"/{self.relative_path}")
+        relative_path = self.relative_path.rstrip("/")
+        candidates = {
+            f"{self.domain}/{relative_path}",
+            f"{self.domain}-{relative_path}",
+            relative_path,
+        }
+        if any(self._matches_path(device_name, candidate) for candidate in candidates):
+            return True
+
+        device_suffix = f"/{relative_path}"
+        return device_name.endswith(device_suffix) or (self.recursive and f"{device_suffix}/" in device_name)
 
     def matches_manifest_entry(self, domain: str, relative_path: str) -> bool:
-        return self.domain == domain and self.relative_path == relative_path
+        expected_path = self.relative_path.rstrip("/")
+        return self.domain == domain and self._matches_path(relative_path, expected_path)
 
 
 @dataclass(frozen=True)
@@ -119,6 +130,7 @@ class BackupSelection(str, Enum):
     BOOKMARKS = "bookmarks"
     CALL_HISTORY = "call_history"
     CONTACTS = "contacts"
+    MESSAGES = "messages"
     SMS = "sms"
     WHATSAPP = "whatsapp"
 
@@ -142,6 +154,10 @@ BACKUP_SELECTIONS: dict[BackupSelection, tuple[BackupSelectionRule, ...]] = {
         BackupSelectionRule("HomeDomain", "Library/AddressBook/AddressBook.sqlitedb-shm"),
         BackupSelectionRule("HomeDomain", "Library/AddressBook/AddressBook.sqlitedb-wal"),
     ),
+    BackupSelection.MESSAGES: (
+        BackupSelectionRule("HomeDomain", "Library/SMS", recursive=True),
+        BackupSelectionRule("MediaDomain", "Library/SMS", recursive=True),
+    ),
     BackupSelection.SMS: (BackupSelectionRule("HomeDomain", "Library/SMS/sms.db"),),
     BackupSelection.WHATSAPP: (
         BackupSelectionRule("AppDomain-net.whatsapp.WhatsApp", "Documents/ChatStorage.sqlite"),
@@ -161,9 +177,9 @@ class Mobilebackup2Service(LockdownService):
     Drives full and incremental backups, restores, and the related operations (info, list,
     extract, unback, change password, erase device) over a `DeviceLink` channel. Backups can
     be filtered to a subset of files via a filter callback, and encrypted backups are
-    supported (password required for filtering and restore). The right underlying service is
-    selected automatically: `SERVICE_NAME` over classic lockdown, or `RSD_SERVICE_NAME` over
-    RemoteXPC/RSD.
+    supported (a password is required when patching an encrypted manifest or restoring an
+    encrypted backup). The right underlying service is selected automatically: `SERVICE_NAME`
+    over classic lockdown, or `RSD_SERVICE_NAME` over RemoteXPC/RSD.
 
     Inherits async context manager support from `LockdownService`; use within an
     ``async with`` block to manage the underlying connection.
@@ -206,32 +222,35 @@ class Mobilebackup2Service(LockdownService):
         filter_callback: Optional[BackupFilterCallback] = None,
         password: str = "",
         unback: bool = False,
+        patch_manifest: bool = False,
     ) -> None:
         """
         Back up the device into `backup_directory`/<device-udid>.
 
         :param full: Perform a full backup, discarding any previous incremental state. A full
-            backup is also forced when a filter callback is given or when incremental metadata
-            is missing.
+            backup is also forced when incremental metadata is missing.
         :param backup_directory: Directory the backup is written to (a per-device subdirectory
             is created under it).
         :param progress_callback: Called as the backup progresses with the completion
             percentage as its sole argument.
-        :param filter_callback: Optional predicate deciding which backup files to keep; files
-            it rejects are pruned after the backup completes.
-        :param password: Backup password; required when filtering an encrypted backup.
+        :param filter_callback: Optional predicate deciding which backup payloads to keep. The
+            rejected payload bytes are drained but not stored.
+        :param patch_manifest: Remove entries for rejected payloads from Manifest.db. This forces
+            a full backup and requires the password when backup encryption is enabled.
+        :param password: Backup password, used when patching or unpacking an encrypted backup.
         :param unback: When True, also unpack the completed backup locally using pyiosbackup.
-        :raises BackupFilterPasswordRequiredError: If a filter callback is given without a
+        :raises BackupFilterPasswordRequiredError: If manifest patching is requested without a
             password while the device encrypts backups.
         """
         backup_directory = Path(backup_directory)
         device_directory = backup_directory / self._udid
         device_directory.mkdir(exist_ok=True, mode=0o755, parents=True)
-        full = self._should_do_full_backup(full, device_directory, filter_callback)
+        patch_manifest = patch_manifest and filter_callback is not None
+        full = self._should_do_full_backup(full, device_directory, patch_manifest)
 
-        if filter_callback is not None and not password and await self.get_will_encrypt():
+        if patch_manifest and not password and await self.get_will_encrypt():
             raise BackupFilterPasswordRequiredError(
-                "Backup filtering requires the backup password when encryption is enabled"
+                "Patching an encrypted backup manifest requires the backup password"
             )
 
         async with (
@@ -274,8 +293,11 @@ class Mobilebackup2Service(LockdownService):
                 (device_directory / "Manifest.plist").touch()
 
                 await dl.send_process_message({"MessageName": "Backup", "TargetIdentifier": self.lockdown.udid})
-                await dl.dl_loop(progress_callback)
-                if filter_callback is not None:
+                try:
+                    await dl.dl_loop(progress_callback)
+                finally:
+                    dl.cleanup_discarded_files()
+                if patch_manifest:
                     self.prune_backup_directory(device_directory, filter_callback, password=password)
                 if unback:
                     self.unback_with_pyiosbackup(device_directory, password=password)
@@ -289,9 +311,9 @@ class Mobilebackup2Service(LockdownService):
         cls,
         full: bool,
         device_directory: Path,
-        filter_callback: Optional[BackupFilterCallback] = None,
+        patch_manifest: bool = False,
     ) -> bool:
-        return full or filter_callback is not None or not cls._has_incremental_backup_metadata(device_directory)
+        return full or patch_manifest or not cls._has_incremental_backup_metadata(device_directory)
 
     @staticmethod
     def _has_incremental_backup_metadata(device_directory: Path) -> bool:
