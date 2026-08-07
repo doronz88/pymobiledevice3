@@ -1,14 +1,21 @@
 import dataclasses
+import logging
 import plistlib
 from pathlib import Path
 from typing import Any, Optional
 
+from developer_disk_image.repo import DeveloperDiskImageRepository
+
+from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.darwin_errno import describe_errno
-from pymobiledevice3.exceptions import CryptexdError
+from pymobiledevice3.exceptions import AlreadyMountedError, CryptexdError
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import FileTransferType, XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.restore.tss import TSSRequest
+from pymobiledevice3.services.mobile_image_mounter import LATEST_DDI_BUILD_ID
+
+logger = logging.getLogger(__name__)
 
 #: ``nonce-domain`` index used for the cryptex nonce on current devices. The daemon resolves the
 #: index through its own nonce-domain table, so unsupported indices fail with a ``cferr``.
@@ -24,13 +31,78 @@ DDI_PERSISTENCE = 2
 DDI_NONCE_PERSISTENCE = 1
 
 
-#: Where Xcode unpacks ``CoreDevice/CandidateDDIs/iOS_DDI.dmg``. The Cryptex1 assets live only
-#: here — the DDI repository pymobiledevice3 caches for the image mounter ships the
-#: ``PersonalizedDMG`` variant, which has no ``cryptex_info`` or ``root_hash``.
+#: Where Xcode unpacks ``CoreDevice/CandidateDDIs/iOS_DDI.dmg``, for hosts that have Xcode.
 XCODE_DDI_RESTORE_DIR = Path("/Library/Developer/DeveloperDiskImages/iOS_DDI/Restore")
 
 #: The one build identity that describes a cryptex, out of ~141 in the DDI's BuildManifest.
 CRYPTEX_VARIANT_SUFFIX = "Developer Disk Image Cryptex"
+
+#: Manifest key declaring where a payload lives -> the `CryptexImage` field holding its bytes.
+CRYPTEX1_PAYLOAD_KEYS = {
+    "Cryptex1,GenericDmg": "image",
+    "Cryptex1,GenericTrustCache": "trustcache",
+    "Cryptex1,CryptexInfoPlist": "cryptex_info",
+    "Cryptex1,GenericVolume": "root_hash",
+}
+
+
+def fetch_cryptex_ddi() -> Path:
+    """
+    Return a cached Cryptex1 DDI ``Restore`` directory, downloading it if needed.
+
+    The cryptex assets are downloaded from the DeveloperDiskImage repository and cached under the
+    home folder, exactly as `fetch_personalized_ddi` does for the image mounter, so installing a
+    DDI over ``cryptexd`` needs no Xcode and works on any host. The cache is refreshed when it is
+    missing or when its build id does not match `LATEST_DDI_BUILD_ID`.
+
+    Each payload is written to the relative path the downloaded ``BuildManifest.plist`` declares
+    for it, which makes the cache a `Restore` directory `load_cryptex1_assets` reads directly.
+
+    :returns: path to the cached ``Restore`` directory.
+    """
+    local_path = get_home_folder() / "Xcode_iOS_DDI_Cryptex"
+    local_path.mkdir(parents=True, exist_ok=True)
+    build_manifest = local_path / "BuildManifest.plist"
+
+    if (
+        not build_manifest.exists()
+        or plistlib.loads(build_manifest.read_bytes()).get("ProductBuildVersion") != LATEST_DDI_BUILD_ID
+    ):
+        logger.info("Downloading the Cryptex1 DeveloperDiskImage")
+        cryptex_image = DeveloperDiskImageRepository.create().get_cryptex_disk_image()
+
+        build_manifest.write_bytes(cryptex_image.build_manifest)
+        identity = _cryptex_build_identity(plistlib.loads(cryptex_image.build_manifest), build_manifest)
+        for key, field in CRYPTEX1_PAYLOAD_KEYS.items():
+            payload = local_path / identity["Manifest"][key]["Info"]["Path"]
+            payload.parent.mkdir(parents=True, exist_ok=True)
+            payload.write_bytes(getattr(cryptex_image, field))
+
+        downloaded_build_id = plistlib.loads(cryptex_image.build_manifest).get("ProductBuildVersion")
+        if downloaded_build_id != LATEST_DDI_BUILD_ID:
+            logger.warning(
+                f"Downloaded cryptex image has unexpected ProductBuildVersion {downloaded_build_id}. "
+                "Please update pymobiledevice3!"
+            )
+    return local_path
+
+
+def _cryptex_build_identity(build_manifest: dict[str, Any], source: Path) -> dict[str, Any]:
+    """Return the one build identity in `build_manifest` that describes a cryptex.
+
+    :raises FileNotFoundError: if the manifest has no cryptex identity.
+    """
+    identity = next(
+        (
+            identity
+            for identity in build_manifest["BuildIdentities"]
+            if identity.get("Info", {}).get("Variant", "").endswith(CRYPTEX_VARIANT_SUFFIX)
+        ),
+        None,
+    )
+    if identity is None:
+        raise FileNotFoundError(f"no {CRYPTEX_VARIANT_SUFFIX!r} build identity in {source}")
+    return identity
 
 
 def unwrap_nonce(blob: bytes) -> bytes:
@@ -64,34 +136,40 @@ class Cryptex1Assets:
 
     @property
     def nonce_domain(self) -> int:
+        """Handle (not index) of the nonce domain this cryptex is personalized against."""
         return int(self.build_identity["Cryptex1,NonceDomain"])
 
 
-def load_cryptex1_assets(restore_dir: Path = XCODE_DDI_RESTORE_DIR) -> Cryptex1Assets:
+def load_cryptex1_assets(restore_dir: Optional[Path] = None) -> Cryptex1Assets:
     """
-    Load the Cryptex1 DDI payloads and parameters out of Xcode's DDI bundle.
+    Load the Cryptex1 DDI payloads and parameters out of an unpacked DDI ``Restore`` directory.
 
     Unlike the mounter's ``PersonalizedDMG``, the ``Cryptex1,GenericDmg`` is not personalized —
     it is byte-identical across devices, and only the info plist, trust cache and volume hash are.
 
-    :param restore_dir: Xcode's unpacked DDI ``Restore`` directory.
+    Payload locations are read from the build manifest rather than assumed, so this works both on
+    Xcode's own bundle and on a copy published by the DeveloperDiskImage repository, whose file
+    names are normalized (its manifest is rewritten to match).
+
+    :param restore_dir: an unpacked DDI ``Restore`` directory; defaults to the cached download from
+        the DeveloperDiskImage repository, so no Xcode installation is required.
     :raises FileNotFoundError: if the bundle (or its cryptex build identity) is not present.
     """
+    if restore_dir is None:
+        restore_dir = fetch_cryptex_ddi()
     manifest_path = restore_dir / "BuildManifest.plist"
     if not manifest_path.exists():
         raise FileNotFoundError(f"no DDI BuildManifest at {manifest_path}; is Xcode installed?")
     build_manifest = plistlib.loads(manifest_path.read_bytes())
-    build_identity = next(
-        (
-            identity
-            for identity in build_manifest["BuildIdentities"]
-            if identity.get("Info", {}).get("Variant", "").endswith(CRYPTEX_VARIANT_SUFFIX)
-        ),
-        None,
-    )
-    if build_identity is None:
-        raise FileNotFoundError(f"no {CRYPTEX_VARIANT_SUFFIX!r} build identity in {manifest_path}")
 
+    build_id = build_manifest.get("ProductBuildVersion")
+    if build_id != LATEST_DDI_BUILD_ID:
+        logger.warning(
+            f"DDI bundle at {restore_dir} has build id {build_id}, but this release expects "
+            f"{LATEST_DDI_BUILD_ID}. Update Xcode, or pymobiledevice3, if the install is rejected."
+        )
+
+    build_identity = _cryptex_build_identity(build_manifest, manifest_path)
     manifest = build_identity["Manifest"]
 
     def read(key: str) -> bytes:
@@ -205,11 +283,11 @@ class CryptexdService(RemoteService):
         `cryptex1_properties` must be **uint64**, since int64 is rejected with
         ``Cryptex1,NonceDomain [79: Inappropriate file type or format]``.
 
-        .. note::
-            The request itself is verified: the daemon accepts it, consumes all five payloads and
-            proceeds to image4 trust evaluation. Completing an install additionally needs an `im4m`
-            that is a *Cryptex1* ticket bound to the current cryptex nonce; producing one is not
-            implemented (see `TSSRequest.add_cryptex1_tags`).
+        The `im4m` must be a *Cryptex1* ticket bound to the current nonce of the identity's
+        ``Cryptex1,NonceDomain`` — see `TSSRequest.add_cryptex1_tags`. A ticket personalized
+        against any other nonce is rejected while importing the first asset, which the device
+        reports as ``invalid asset: ginf`` and logs as
+        ``Manifest no longer valid [70: Stale NFS file handle]``.
 
         :param image: the cryptex disk image, i.e. the build manifest's ``Cryptex1,GenericDmg``.
         :param trustcache: ``Cryptex1,GenericTrustCache``.
@@ -267,28 +345,42 @@ class CryptexdService(RemoteService):
         domain = NONCE_DOMAIN_CRYPTEX if nonce_domain is None else nonce_domain
         return {"nonce-domain": XpcUInt64Type(domain)}
 
-    async def cryptex_nonce(self, nonce_domain: int) -> bytes:
+    async def cryptex_nonce(self, nonce_domain_handle: int) -> bytes:
         """Read a nonce domain's nonce, unwrapped from the daemon's nonce structure.
 
-        :param nonce_domain: index into the daemon's nonce-domain table.
-        """
-        return unwrap_nonce(await self.get_nonce(nonce_domain=nonce_domain))
+        .. note::
+            The selector is a **handle**, which is what a build identity's ``Cryptex1,NonceDomain``
+            holds — not an index. The two tables overlap but disagree: on an iPhone 11 the DDI
+            cryptex nonce is handle 4, which is index 10, while index 4 is an unrelated domain.
+            Personalizing against the index-4 nonce produces a ticket the device rejects at import
+            with ``Manifest no longer valid [70: Stale NFS file handle]``.
 
-    async def auto_install_ddi(self, restore_dir: Path = XCODE_DDI_RESTORE_DIR) -> InstalledCryptex:
+        :param nonce_domain_handle: handle of the nonce domain, e.g. a ``Cryptex1,NonceDomain``.
+        """
+        return unwrap_nonce(await self.get_nonce(nonce_domain_handle=nonce_domain_handle))
+
+    async def auto_install_ddi(self, restore_dir: Optional[Path] = None) -> InstalledCryptex:
         """
         Personalize and install the DeveloperDiskImage cryptex entirely through ``cryptexd``.
 
-        Assembles everything from Xcode's DDI bundle, requests a Cryptex1 ticket, and installs.
+        This is the cryptex equivalent of the image mounter's ``auto-mount``: it assembles the
+        payloads, reads the device's personalization identifiers and cryptex nonce, has Apple sign
+        a Cryptex1 ticket for them, and installs the result — all over ``cryptexd``, without the
+        image mounter.
 
-        .. warning::
-            Not working end to end: `TSSRequest.add_cryptex1_tags` does not yet produce a ticket
-            Apple will sign, so this currently fails at image4 trust evaluation. Everything either
-            side of that step is verified against a device.
-
-        :param restore_dir: Xcode's unpacked DDI ``Restore`` directory.
+        :param restore_dir: an unpacked DDI ``Restore`` directory; defaults to the cached download
+            from the DeveloperDiskImage repository, so no Xcode installation is required.
         :returns: the installed cryptex, as reported back by `copy_installed`.
+        :raises AlreadyMountedError: if the DDI cryptex is already installed.
         :raises CryptexdError: if the daemon rejected the image.
+        :raises TSSError: if Apple refused to sign the personalization request.
         """
+        already_installed = await self._installed_ddi()
+        if already_installed is not None:
+            raise AlreadyMountedError(
+                f"{already_installed.identifier} {already_installed.version} is already installed"
+            )
+
         assets = load_cryptex1_assets(restore_dir)
         request = TSSRequest()
         request.add_cryptex1_tags(
@@ -307,11 +399,15 @@ class CryptexdService(RemoteService):
             assets.volumehash,
             assets.cryptex1_properties,
         )
-        installed = await self.copy_installed()
-        ddi = next((cryptex for cryptex in installed if cryptex.identifier == DDI_CRYPTEX_IDENTIFIER), None)
+        ddi = await self._installed_ddi()
         if ddi is None:
             raise CryptexdError(f"install reported success but {DDI_CRYPTEX_IDENTIFIER} is not installed")
         return ddi
+
+    async def _installed_ddi(self) -> Optional[InstalledCryptex]:
+        """Return the installed DeveloperDiskImage cryptex, or ``None`` if there is none."""
+        installed = await self.copy_installed()
+        return next((cryptex for cryptex in installed if cryptex.identifier == DDI_CRYPTEX_IDENTIFIER), None)
 
     async def read_personalization_identifiers(self) -> dict[str, Any]:
         """
