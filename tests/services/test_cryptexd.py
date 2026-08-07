@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import AlreadyMountedError, CryptexdError
+from pymobiledevice3.exceptions import AlreadyMountedError, CryptexdError, DeviceFeatureNotSupportedError
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services import cryptexd
 from pymobiledevice3.services.cryptexd import (
@@ -46,6 +46,9 @@ class FakeRsd:
         self._response = response
         self._sent = sent
         self.connections: list[FakeConnection] = []
+
+    def require_feature(self, service_name: str, feature: str) -> None:
+        pass
 
     def start_remote_service(self, name: str) -> Any:
         assert name == CryptexdService.SERVICE_NAME
@@ -265,6 +268,9 @@ def _install_service(response: dict[str, Any]) -> tuple[CryptexdService, Recordi
     connection = RecordingConnection(response)
 
     class Rsd:
+        def require_feature(self, service_name: str, feature: str) -> None:
+            pass
+
         def start_remote_service(self, name: str) -> Any:
             return connection
 
@@ -494,6 +500,40 @@ def test_fetch_cryptex_ddi_replaces_a_cache_of_the_wrong_build(tmp_path: Path, m
     cryptexd.fetch_cryptex_ddi()
 
     assert len(downloads) == 2
+
+
+def _restricted_service(features: list[str]) -> CryptexdService:
+    """A CryptexdService over a handshake advertising only *features* for cryptexd."""
+    rsd = RemoteServiceDiscoveryService(("127.0.0.1", 0))
+    rsd.peer_info = {
+        "Properties": {"OSVersion": "26.0"},
+        "Services": {CryptexdService.SERVICE_NAME: {"Port": "1024", "Properties": {"Features": features}}},
+    }
+    return CryptexdService(rsd)
+
+
+@pytest.mark.asyncio
+async def test_install_requires_the_advertised_cryptexinstall_capability() -> None:
+    service = _restricted_service(["ReadIdentifiers"])
+
+    with pytest.raises(DeviceFeatureNotSupportedError, match="CryptexInstall"):
+        await service.install(b"i", b"t", b"m", b"info", b"vol", {})
+
+
+@pytest.mark.asyncio
+async def test_uninstall_requires_the_advertised_cryptexinstall_capability() -> None:
+    service = _restricted_service(["ReadIdentifiers"])
+
+    with pytest.raises(DeviceFeatureNotSupportedError, match="CryptexInstall"):
+        await service.uninstall("com.apple.MobileAsset.DDI")
+
+
+@pytest.mark.asyncio
+async def test_read_personalization_identifiers_requires_the_readidentifiers_capability() -> None:
+    service = _restricted_service(["CryptexInstall"])
+
+    with pytest.raises(DeviceFeatureNotSupportedError, match="ReadIdentifiers"):
+        await service.read_personalization_identifiers()
 
 
 def test_unwrap_nonce_extracts_the_nonce_from_the_daemon_structure() -> None:

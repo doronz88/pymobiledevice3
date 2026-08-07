@@ -45,6 +45,8 @@ class CoreDeviceService(RemoteService):
         input_: Optional[dict[str, Any]] = None,
         action_identifier: Optional[str] = None,
     ) -> Any:
+        if feature_identifier is not None:
+            self.rsd.require_feature(self.service_name, feature_identifier)
         if input_ is None:
             input_ = {}
         request: dict[str, Any] = {
@@ -76,6 +78,7 @@ class CoreDeviceService(RemoteService):
         pushes ``SideChannelStatus.pushing`` batches over the side channel and ends with
         ``finishStreaming``. Each element is yielded individually.
         """
+        self.rsd.require_feature(self.service_name, feature_identifier)
         if input_ is None:
             input_ = {}
         request: dict[str, Any] = {

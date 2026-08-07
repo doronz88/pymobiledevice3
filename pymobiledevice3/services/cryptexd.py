@@ -31,6 +31,11 @@ DDI_PERSISTENCE = 2
 DDI_NONCE_PERSISTENCE = 1
 
 
+#: Capability tags cryptexd advertises in the RSD handshake (``peer_info`` ``Features``).
+FEATURE_CRYPTEX_INSTALL = "CryptexInstall"
+FEATURE_READ_IDENTIFIERS = "ReadIdentifiers"
+
+
 #: Where Xcode unpacks ``CoreDevice/CandidateDDIs/iOS_DDI.dmg``, for hosts that have Xcode.
 XCODE_DDI_RESTORE_DIR = Path("/Library/Developer/DeveloperDiskImages/iOS_DDI/Restore")
 
@@ -301,7 +306,10 @@ class CryptexdService(RemoteService):
         :param nonce_persistence: nonce persistence mode.
         :param auth: authentication mode.
         :raises CryptexdError: if the daemon rejected the request or the install failed.
+        :raises DeviceFeatureNotSupportedError: if the device does not advertise the
+            ``CryptexInstall`` capability.
         """
+        self.rsd.require_feature(self.SERVICE_NAME, FEATURE_CRYPTEX_INSTALL)
         transfers = [
             ("image", image),
             ("trustcache", trustcache),
@@ -415,7 +423,11 @@ class CryptexdService(RemoteService):
 
         The returned mapping uses the daemon's ``img4_chip_*`` key names, e.g. ``img4_chip_chip``
         (ChipID), ``img4_chip_bord`` (BoardID) and ``img4_chip_ecid`` (ECID).
+
+        :raises DeviceFeatureNotSupportedError: if the device does not advertise the
+            ``ReadIdentifiers`` capability.
         """
+        self.rsd.require_feature(self.SERVICE_NAME, FEATURE_READ_IDENTIFIERS)
         return await self.invoke("read-personalization-id", {})
 
     async def copy_installed(self) -> list[InstalledCryptex]:
@@ -483,7 +495,10 @@ class CryptexdService(RemoteService):
                            ``com.apple.MobileAsset.DDI``.
         :param version: optional version to scope the removal to.
         :raises CryptexdError: if no such cryptex is installed (``errno 2``) or removal failed.
+        :raises DeviceFeatureNotSupportedError: if the device does not advertise the
+            ``CryptexInstall`` capability.
         """
+        self.rsd.require_feature(self.SERVICE_NAME, FEATURE_CRYPTEX_INSTALL)
         argv: dict[str, Any] = {"remote-cryptex-identifier": identifier}
         if version is not None:
             argv["remote-cryptex-version"] = version

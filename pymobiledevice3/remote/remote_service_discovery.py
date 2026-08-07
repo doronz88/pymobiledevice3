@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional, Union, cast
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import (
+    DeviceFeatureNotSupportedError,
     InvalidServiceError,
     NoDeviceConnectedError,
     NotConnectedError,
@@ -356,10 +357,46 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         :returns: the device-side TCP port for the service.
         :raises InvalidServiceError: if the device does not offer a service with this name.
         """
+        return int(self._get_service_entry(name)["Port"])
+
+    def get_service_features(self, name: str) -> frozenset[str]:
+        """
+        Return the features a service advertises in the RSD handshake ``peer_info``.
+
+        For CoreDevice services these are the ``com.apple.coredevice.feature.*`` identifiers the
+        service accepts in ``CoreDevice.featureIdentifier``; other services advertise plain
+        capability tags (e.g. cryptexd's ``CryptexInstall``).
+
+        :param name: name of the service.
+        :returns: the advertised features, empty if the service advertises none.
+        :raises InvalidServiceError: if the device does not offer a service with this name.
+        """
+        return frozenset(self._get_service_entry(name).get("Properties", {}).get("Features") or ())
+
+    def require_feature(self, service_name: str, feature: str) -> None:
+        """
+        Verify a service advertises a feature in the RSD handshake, raising if it does not.
+
+        A service entry with no ``Features`` list (or an empty one) is never used to deny an
+        operation: absence of capability advertisement is not evidence of a missing capability,
+        so the check is skipped and the device stays the final authority.
+
+        :param service_name: name of the service the feature belongs to.
+        :param feature: the feature identifier to verify.
+        :raises InvalidServiceError: if the device does not offer a service with this name.
+        :raises DeviceFeatureNotSupportedError: if the service advertises a feature list that does
+            not contain ``feature``.
+        """
+        features = self._get_service_entry(service_name).get("Properties", {}).get("Features")
+        if features and feature not in features:
+            raise DeviceFeatureNotSupportedError(service_name, feature, self.udid, self.product_version)
+
+    def _get_service_entry(self, name: str) -> dict[str, Any]:
+        """Return a service's ``peer_info`` entry, raising `InvalidServiceError` if absent."""
         service = self._require_peer_info()["Services"].get(name)
         if service is None:
             raise InvalidServiceError(f"No such service: {name}", self.udid, self.product_version)
-        return int(service["Port"])
+        return service
 
     async def close(self) -> None:
         """Close the lockdown client (if any) and the underlying RemoteXPC connection."""

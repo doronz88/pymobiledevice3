@@ -19,6 +19,7 @@ __all__ = [
     "DeveloperModeError",
     "DeveloperModeIsNotEnabledError",
     "DeviceAlreadyInUseError",
+    "DeviceFeatureNotSupportedError",
     "DeviceHasPasscodeSetError",
     "DeviceNotFoundError",
     "DeviceVersionNotSupportedError",
@@ -406,6 +407,17 @@ class MessageNotSupportedError(PyMobileDevice3Exception):
 
 class InvalidServiceError(LockdownError):
     pass
+
+
+class DeviceFeatureNotSupportedError(LockdownError):
+    """The device's RSD handshake does not advertise a feature required for the operation."""
+
+    def __init__(self, service_name: str, feature: str, identifier: Optional[str], product_version: str) -> None:
+        super().__init__(
+            f"device does not support feature {feature!r} (service {service_name!r})", identifier, product_version
+        )
+        self.service_name = service_name
+        self.feature = feature
 
 
 class InspectorEvaluateError(PyMobileDevice3Exception):
