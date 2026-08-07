@@ -152,7 +152,14 @@ class XpcUInt64Type(int):
 
 @dataclasses.dataclass
 class FileTransferType:
+    """An XPC file-transfer object: the payload itself travels on its own HTTP/2 stream.
+
+    ``transfer_id`` correlates the announcement with that stream. It is unset (0) on objects
+    decoded from the device, whose stream is derived positionally by the receiving code.
+    """
+
     transfer_size: int
+    transfer_id: int = 0
 
 
 def _decode_xpc_dictionary(xpc_object: Container[Any]) -> dict[str, Any]:
@@ -290,6 +297,16 @@ def _build_xpc_uuid(payload: uuid.UUID) -> dict[str, Any]:
     }
 
 
+def _build_xpc_file_transfer(payload: FileTransferType) -> dict[str, Any]:
+    return {
+        "type": XpcMessageType.FILE_TRANSFER,
+        "data": {
+            "msg_id": payload.transfer_id,
+            "data": _build_xpc_dictionary({"s": XpcUInt64Type(payload.transfer_size)}),
+        },
+    }
+
+
 def _build_xpc_null(payload: None) -> dict[str, Any]:
     return {
         "type": XpcMessageType.NULL,
@@ -323,6 +340,7 @@ def _build_xpc_object(payload: Any) -> dict[str, Any]:
         bytearray: _build_xpc_data,
         float: _build_xpc_double,
         uuid.UUID: _build_xpc_uuid,
+        FileTransferType: _build_xpc_file_transfer,
         "XpcUInt64Type": _build_xpc_uint64,
         "XpcInt64Type": _build_xpc_int64,
     }

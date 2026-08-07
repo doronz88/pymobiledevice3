@@ -396,86 +396,112 @@ class PersonalizedImageMounter(MobileImageMounterService):
         """
         Request an IM4M personalization manifest from Apple's TSS server.
 
-        Selects the build identity in ``build_manifest`` matching the device's board and chip IDs,
-        builds a TSS request from the device's personalization identifiers and nonce, and submits it.
-
         :param build_manifest: Parsed ``BuildManifest.plist`` contents.
         :returns: The signed IM4M ticket (``ApImg4Ticket``) returned by the TSS server.
         :raises NoSuchBuildIdentityError: If no build identity matches the device's board and chip IDs.
         """
-        request = TSSRequest()
+        return await request_personalization_manifest(
+            build_manifest,
+            await self.query_personalization_identifiers(),
+            self.lockdown.ecid,
+            await self.query_nonce("DeveloperDiskImage"),
+            logger=self.logger,
+        )
 
-        personalization_identifiers = await self.query_personalization_identifiers()
-        for key, value in personalization_identifiers.items():
-            if key.startswith("Ap,"):
-                request.update({key: value})
 
-        board_id = personalization_identifiers["BoardId"]
-        chip_id = personalization_identifiers["ChipID"]
+async def request_personalization_manifest(
+    build_manifest: dict[str, Any],
+    personalization_identifiers: dict[str, Any],
+    ecid: int,
+    ap_nonce: bytes,
+    logger: logging.Logger = logger,
+) -> bytes:
+    """
+    Request an IM4M personalization manifest from Apple's TSS server.
 
-        build_identity = None
-        for tmp_build_identity in build_manifest["BuildIdentities"]:
-            if (
-                int(tmp_build_identity["ApBoardID"], 0) == board_id
-                and int(tmp_build_identity["ApChipID"], 0) == chip_id
-            ):
-                build_identity = tmp_build_identity
-                break
-        else:
-            raise NoSuchBuildIdentityError(f"Could not find the manifest for board {board_id} and chip {chip_id}")
-        manifest = build_identity["Manifest"]
+    Selects the build identity in ``build_manifest`` matching the device's board and chip IDs,
+    builds a TSS request from the supplied personalization identifiers and nonce, and submits it.
+    Kept independent of any one service so both the image mounter and ``cryptexd`` can personalize
+    the same image.
 
-        parameters: dict[str, Any] = {
-            "ApProductionMode": True,
-            "ApSecurityDomain": 1,
-            "ApSecurityMode": True,
-            "ApSupportsImg4": True,
-        }
+    :param build_manifest: Parsed ``BuildManifest.plist`` contents.
+    :param personalization_identifiers: Device identifiers, as reported by
+        `MobileImageMounterService.query_personalization_identifiers`.
+    :param ecid: The device's ECID.
+    :param ap_nonce: The nonce to personalize against.
+    :param logger: Logger for the per-entry decisions.
+    :returns: The signed IM4M ticket (``ApImg4Ticket``) returned by the TSS server.
+    :raises NoSuchBuildIdentityError: If no build identity matches the device's board and chip IDs.
+    """
+    request = TSSRequest()
 
-        request.update({
-            "@ApImg4Ticket": True,
-            "@BBTicket": True,
-            "ApBoardID": board_id,
-            "ApChipID": chip_id,
-            "ApECID": self.lockdown.ecid,
-            "ApNonce": await self.query_nonce("DeveloperDiskImage"),
-            "ApProductionMode": True,
-            "ApSecurityDomain": 1,
-            "ApSecurityMode": True,
-            "SepNonce": b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-            "UID_MODE": False,
-        })
+    for key, value in personalization_identifiers.items():
+        if key.startswith("Ap,"):
+            request.update({key: value})
 
-        for key, manifest_entry in manifest.items():
-            info_dict = manifest_entry.get("Info")
-            if info_dict is None:
-                continue
+    board_id = personalization_identifiers["BoardId"]
+    chip_id = personalization_identifiers["ChipID"]
 
-            if not manifest_entry.get("Trusted", False):
-                self.logger.debug(f"skipping {key} as it is not trusted")
-                continue
+    build_identity = None
+    for tmp_build_identity in build_manifest["BuildIdentities"]:
+        if int(tmp_build_identity["ApBoardID"], 0) == board_id and int(tmp_build_identity["ApChipID"], 0) == chip_id:
+            build_identity = tmp_build_identity
+            break
+    else:
+        raise NoSuchBuildIdentityError(f"Could not find the manifest for board {board_id} and chip {chip_id}")
+    manifest = build_identity["Manifest"]
 
-            # copy this entry
-            tss_entry = dict(manifest_entry)
+    parameters: dict[str, Any] = {
+        "ApProductionMode": True,
+        "ApSecurityDomain": 1,
+        "ApSecurityMode": True,
+        "ApSupportsImg4": True,
+    }
 
-            # remove obsolete Info node
-            tss_entry.pop("Info")
+    request.update({
+        "@ApImg4Ticket": True,
+        "@BBTicket": True,
+        "ApBoardID": board_id,
+        "ApChipID": chip_id,
+        "ApECID": ecid,
+        "ApNonce": ap_nonce,
+        "ApProductionMode": True,
+        "ApSecurityDomain": 1,
+        "ApSecurityMode": True,
+        "SepNonce": b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+        "UID_MODE": False,
+    })
 
-            # handle RestoreRequestRules
-            if "RestoreRequestRules" in manifest["LoadableTrustCache"]["Info"]:
-                rules = manifest["LoadableTrustCache"]["Info"]["RestoreRequestRules"]
-                if rules:
-                    self.logger.debug(f"Applying restore request rules for entry {key}")
-                    tss_entry = request.apply_restore_request_rules(tss_entry, parameters, rules)
+    for key, manifest_entry in manifest.items():
+        info_dict = manifest_entry.get("Info")
+        if info_dict is None:
+            continue
 
-            # Make sure we have a Digest key for Trusted items even if empty
-            if manifest_entry.get("Digest") is None:
-                tss_entry["Digest"] = b""
+        if not manifest_entry.get("Trusted", False):
+            logger.debug(f"skipping {key} as it is not trusted")
+            continue
 
-            request.update({key: tss_entry})
+        # copy this entry
+        tss_entry = dict(manifest_entry)
 
-        response = await request.send_receive()
-        return response["ApImg4Ticket"]
+        # remove obsolete Info node
+        tss_entry.pop("Info")
+
+        # handle RestoreRequestRules
+        if "RestoreRequestRules" in manifest["LoadableTrustCache"]["Info"]:
+            rules = manifest["LoadableTrustCache"]["Info"]["RestoreRequestRules"]
+            if rules:
+                logger.debug(f"Applying restore request rules for entry {key}")
+                tss_entry = request.apply_restore_request_rules(tss_entry, parameters, rules)
+
+        # Make sure we have a Digest key for Trusted items even if empty
+        if manifest_entry.get("Digest") is None:
+            tss_entry["Digest"] = b""
+
+        request.update({key: tss_entry})
+
+    response = await request.send_receive()
+    return response["ApImg4Ticket"]
 
 
 async def auto_mount_developer(
@@ -535,15 +561,15 @@ async def auto_mount_developer(
     await image_mounter.mount(image_path, signature)
 
 
-async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
+def fetch_personalized_ddi() -> tuple[Path, Path, Path]:
     """
-    Download (if needed) and mount the Personalized Developer Disk Image.
+    Return the cached Personalized DeveloperDiskImage, downloading it if needed.
 
     Caches the image, build manifest and trust cache under the home folder, re-downloading them from
     the bundled repository when missing or when the cached build id does not match
-    `LATEST_DDI_BUILD_ID`, then mounts them via `PersonalizedImageMounter`.
+    `LATEST_DDI_BUILD_ID`.
 
-    :param lockdown: Lockdown service provider for the target device.
+    :returns: paths to the image, its ``BuildManifest.plist`` and its trust cache.
     """
     local_path = get_home_folder() / "Xcode_iOS_DDI_Personalized"
     local_path.mkdir(parents=True, exist_ok=True)
@@ -569,7 +595,16 @@ async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
                 "Downloaded personalized image has unexpected ProductBuildVersion "
                 f"{downloaded_ddi_build_id}. Please update pymobiledevice3!"
             )
+    return image, build_manifest, trustcache
 
+
+async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
+    """
+    Download (if needed) and mount the Personalized Developer Disk Image.
+
+    :param lockdown: Lockdown service provider for the target device.
+    """
+    image, build_manifest, trustcache = fetch_personalized_ddi()
     await PersonalizedImageMounter(lockdown=lockdown).mount(image, build_manifest, trustcache)
 
 

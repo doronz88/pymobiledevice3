@@ -445,6 +445,18 @@ class CoreDeviceError(PyMobileDevice3Exception):
     pass
 
 
+class CryptexdError(PyMobileDevice3Exception):
+    """cryptexd rejected a routine, reporting a CFError or a non-zero error code"""
+
+    pass
+
+
+class InstallCoordinationError(PyMobileDevice3Exception):
+    """installcoordination_proxy reported a failed request"""
+
+    pass
+
+
 class AccessDeniedError(PyMobileDevice3Exception):
     """Need extra permissions to execute this command"""
 

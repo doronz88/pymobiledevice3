@@ -20,6 +20,18 @@ from pymobiledevice3.utils import bytes_to_uint, plist_access_path
 # defaults write com.apple.configurator.xpc.DeviceService AuthInstallSigningServerURL http://gs.apple.com:80
 # defaults write com.apple.AMPDevicesAgent AuthInstallSigningServerURL http://gs.apple.com:80
 # ```
+#
+# CoreDevice (Xcode / `devicectl`) does not use `AuthInstallSigningServerURL`. Its equivalent knob
+# is `ddiSigningServer`, alongside `mountCryptexDDI(... signingServerURL: ...)` in
+# CoreDevice.framework:
+#
+# ```shell
+# defaults write com.apple.CoreDevice.CoreDeviceService ddiSigningServer http://gs.apple.com:80
+# ```
+#
+# Note this is untested: CoreDevice caches the personalization ticket, so repeated DDI installs
+# make no TSS request at all to redirect (verified with tcpdump -- zero packets to gs.apple.com
+# across several installs). Invalidate the cached ticket first, e.g. by rolling the cryptex nonce.
 TSS_CONTROLLER_ACTION_URL = "http://gs.apple.com/TSS/controller?action=2"
 
 TSS_CLIENT_VERSION_STRING = "libauthinstall-1104.0.9"
@@ -360,6 +372,68 @@ class TSSRequest:
 
         if overrides is not None:
             self._request.update(overrides)
+
+    def add_cryptex1_tags(
+        self,
+        build_identity: dict[str, typing.Any],
+        chip_instance: dict[str, typing.Any],
+        nonce: bytes,
+    ) -> None:
+        """Build a Cryptex1 personalization request (``@Cryptex1,Ticket``).
+
+        Cryptex1 tickets are a different shape from the AP tickets `add_ap_tags` produces, which is
+        why that method skips every ``Cryptex1,*`` key. The signed manifest carries the Cryptex1
+        chip parameters (``fchp``/``type``/``styp``/``clas``/``ndom``/``upcl``/``vnum``/``pave``)
+        and digests for only the *personalized* components — the generic DMG is declared
+        ``Personalize: False`` in the build manifest and must be left out.
+
+        :param build_identity: the build identity whose ``Info.Variant`` names a cryptex, i.e. the
+            one carrying ``Cryptex1,*`` manifest entries.
+        :param chip_instance: the device's AppleImage4 chip instance, as returned by
+            `CryptexdService.read_personalization_identifiers`.
+        :param nonce: the cryptex nonce for the identity's ``Cryptex1,NonceDomain``.
+        """
+        self._request.update({
+            "@Cryptex1,Ticket": True,
+            "ApChipID": chip_instance["img4_chip_chip"],
+            "ApBoardID": chip_instance["img4_chip_bord"],
+            "ApECID": chip_instance["img4_chip_ecid"],
+            "ApSecurityDomain": chip_instance["img4_chip_sdom"],
+            "ApProductionMode": bool(chip_instance["img4_chip_cpro"]),
+            "ApSecurityMode": bool(chip_instance["img4_chip_csec"]),
+            "Cryptex1,ChipID": int(str(build_identity["Cryptex1,ChipID"]), 0),
+            "Cryptex1,Type": build_identity["Cryptex1,Type"],
+            "Cryptex1,SubType": build_identity["Cryptex1,SubType"],
+            "Cryptex1,ProductClass": int(str(build_identity["Cryptex1,ProductClass"]), 0),
+            "Cryptex1,UseProductClass": build_identity["Cryptex1,UseProductClass"],
+            "Cryptex1,NonceDomain": build_identity["Cryptex1,NonceDomain"],
+            "Cryptex1,Version": build_identity["Cryptex1,Version"],
+            "Cryptex1,PreauthorizationVersion": build_identity["Cryptex1,PreauthorizationVersion"],
+            "Cryptex1,Nonce": nonce,
+        })
+
+        parameters: dict[str, typing.Any] = {
+            "ApProductionMode": bool(chip_instance["img4_chip_cpro"]),
+            "ApSecurityMode": bool(chip_instance["img4_chip_csec"]),
+            "ApSecurityDomain": chip_instance["img4_chip_sdom"],
+            "ApSupportsImg4": True,
+        }
+        for key, manifest_entry in build_identity["Manifest"].items():
+            if not key.startswith("Cryptex1,"):
+                continue
+            info_dict = manifest_entry.get("Info", {})
+            if not info_dict.get("Personalize", False):
+                logger.debug(f"skipping {key} as it is not personalized")
+                continue
+
+            tss_entry = dict(manifest_entry)
+            tss_entry.pop("Info", None)
+            rules = info_dict.get("RestoreRequestRules")
+            if rules:
+                tss_entry = self.apply_restore_request_rules(tss_entry, parameters, rules)
+            if manifest_entry.get("Digest") is None:
+                tss_entry["Digest"] = b""
+            self._request[key] = tss_entry
 
     def add_ap_tags(self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None):
         """loop over components from build manifest"""

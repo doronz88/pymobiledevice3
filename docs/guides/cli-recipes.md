@@ -104,6 +104,68 @@ pymobiledevice3 profile install my.mobileconfig
 pymobiledevice3 profile remove com.example.profile
 ```
 
+## Cryptexes (iOS 17+, RSD tunnel)
+
+Talks to `cryptexd` directly. `cryptex list` reports a mounted personalized DeveloperDiskImage as
+`com.apple.MobileAsset.DDI`.
+
+```shell
+pymobiledevice3 cryptex list --userspace
+pymobiledevice3 cryptex personalization-identifiers --userspace
+pymobiledevice3 cryptex nonce --userspace
+pymobiledevice3 cryptex nonce --nonce-domain-handle 7 --userspace
+```
+
+State-changing. Rolling a nonce invalidates anything personalized against it, so a mounted
+personalized DDI must be re-personalized and re-mounted afterwards:
+
+```shell
+pymobiledevice3 cryptex roll-nonce --userspace
+pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI --userspace
+```
+
+!!! note "Overlap with `mounter`"
+
+    `cryptexd` and the image mounter are two front-ends onto the same cryptex subsystem, so some
+    queries exist in both places. Where they overlap, `cryptex` is the more precise source:
+
+    - `cryptex personalization-identifiers` returns a strict superset of
+      `mounter query-personalization-identifiers` (19 `img4_chip_*` fields versus 8), including
+      the product class used by the `Cryptex1,UseProductClass` personalization variant.
+    - `cryptex nonce` returns the nonce structure (56 bytes, the 48-byte nonce at offset 2);
+      `mounter query-nonce` returns those 48 bytes alone.
+    - `cryptex nonce` validates the domain and fails loudly on an unknown one, whereas
+      `mounter query-nonce` silently falls back to the default nonce for an unrecognized
+      `--image-type`.
+
+    `mounter` still wins when you have no tunnel: it works over plain USB, while every `cryptex`
+    command needs RSD.
+
+## App install records (iOS 17+, RSD tunnel)
+
+```shell
+# LaunchServices install record (DB UUID/sequence, install path, persistent identifier)
+pymobiledevice3 apps install-record com.apple.Preferences --userspace
+```
+
+## Darwin Notifications
+
+```shell
+# Post a notification
+pymobiledevice3 notification post com.example.notification
+
+# Subscribe and stream notifications as they fire
+pymobiledevice3 notification observe com.example.notification
+```
+
+On iOS 17+ with an RSD tunnel, `--remotexpc` talks to the notification proxy directly over
+RemoteXPC instead of tunnelling the lockdown service through its `.shim.remote` alias:
+
+```shell
+pymobiledevice3 notification observe --remotexpc com.example.notification --userspace
+pymobiledevice3 notification post --remotexpc com.example.notification --userspace
+```
+
 ## SpringBoard UI
 
 ```shell
@@ -218,6 +280,13 @@ See [iOS 17+ tunnels](ios17-tunnels.md) for tunnel setup.
 ```shell
 # Take a screenshot (PNG)
 pymobiledevice3 developer core-device screen-capture screenshot /path/to/screen.png
+
+# Fetch an application's icon (PNG). Size is given in points; pixel size is size * scale
+pymobiledevice3 developer core-device fetch-app-icon com.apple.Preferences /path/to/icon.png
+pymobiledevice3 developer core-device fetch-app-icon com.example.app /path/to/icon.png --width 176 --height 176 --scale 2
+
+# Fail instead of returning a generic placeholder when the app has no icon
+pymobiledevice3 developer core-device fetch-app-icon com.example.app /path/to/icon.png --no-placeholder
 ```
 
 ### HID input

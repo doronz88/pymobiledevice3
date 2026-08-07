@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import uuid
 from asyncio import IncompleteReadError
+from collections import deque
 from collections.abc import AsyncIterable
 from typing import Any, Callable, Optional, Union, cast
 
@@ -43,6 +44,12 @@ WINDOW_UPDATE_THRESHOLD = 1024 * 1024
 FRAME_HEADER_SIZE = 9
 HTTP2_MAGIC = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
+# HTTP/2 defaults for the peer's side of flow control, until its SETTINGS say otherwise.
+DEFAULT_PEER_WINDOW_SIZE = 65535
+MAX_OUTBOUND_FRAME_SIZE = 16384
+# How long to wait for the peer to grant more outbound window before giving up on a transfer.
+FILE_TRANSFER_WINDOW_TIMEOUT = 30
+
 ROOT_CHANNEL = 1
 REPLY_CHANNEL = 3
 
@@ -73,6 +80,19 @@ class RemoteXPCConnection:
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
         self._pending_window_updates: dict[int, int] = {}
+        # Outbound (peer-granted) flow control, needed to push file transfers larger than the
+        # peer's initial window. Both default to the HTTP/2 spec value until the peer's SETTINGS
+        # and WINDOW_UPDATE frames say otherwise.
+        self._peer_initial_window_size = DEFAULT_PEER_WINDOW_SIZE
+        self._outbound_connection_window = DEFAULT_PEER_WINDOW_SIZE
+        self._outbound_stream_windows: dict[int, int] = {}
+        # Client-initiated streams must be odd; ROOT_CHANNEL and REPLY_CHANNEL take 1 and 3.
+        self._next_outbound_stream_id = 5
+        # Data frames read out of turn during a file transfer, replayed by receive_response().
+        self._buffered_data_frames: deque[DataFrame] = deque()
+        # Streams we finished pushing a file transfer on. The device resets them once it has the
+        # payload, which is normal completion rather than an error.
+        self._finished_file_transfer_streams: set[int] = set()
         self._file_chunk_queues: dict[int, asyncio.Queue[Union[bytes, BaseException]]] = {}
         self._file_chunk_reader_task: Optional[asyncio.Task[None]] = None
         # Serialise request/response round-trips. ``send_receive_request`` is a
@@ -297,10 +317,114 @@ class RemoteXPCConnection:
         self.next_message_id[REPLY_CHANNEL] += 1
 
         settings_frame = await asyncio.wait_for(self._receive_frame(), FIRST_REPLY_TIMEOUT)
-        if not isinstance(settings_frame, SettingsFrame):
-            raise ProtocolError(f"Got unexpected frame: {settings_frame} instead of a SettingsFrame")
+        while not isinstance(settings_frame, SettingsFrame):
+            # The peer grants its connection window before ACKing settings; record it rather than
+            # discarding it, otherwise outbound file transfers stall at the 65535 default.
+            if not self._apply_flow_control_frame(settings_frame):
+                raise ProtocolError(f"Got unexpected frame: {settings_frame} instead of a SettingsFrame")
+            settings_frame = await asyncio.wait_for(self._receive_frame(), FIRST_REPLY_TIMEOUT)
+        self._apply_flow_control_frame(settings_frame)
 
         await self._send_frame(SettingsFrame(flags=["ACK"]))
+
+    def _outbound_budget(self, stream_id: int) -> int:
+        stream_window = self._outbound_stream_windows.get(stream_id, self._peer_initial_window_size)
+        return max(0, min(self._outbound_connection_window, stream_window, MAX_OUTBOUND_FRAME_SIZE))
+
+    def _consume_outbound(self, stream_id: int, amount: int) -> None:
+        self._outbound_connection_window -= amount
+        self._outbound_stream_windows[stream_id] = (
+            self._outbound_stream_windows.get(stream_id, self._peer_initial_window_size) - amount
+        )
+
+    def _apply_flow_control_frame(self, frame: Frame) -> bool:
+        """Consume a peer frame that only affects flow control. Returns True if it was handled."""
+        if isinstance(frame, WindowUpdateFrame):
+            if frame.stream_id == 0:
+                self._outbound_connection_window += frame.window_increment
+            else:
+                current = self._outbound_stream_windows.get(frame.stream_id, self._peer_initial_window_size)
+                self._outbound_stream_windows[frame.stream_id] = current + frame.window_increment
+            return True
+        if isinstance(frame, SettingsFrame) and "ACK" not in frame.flags:
+            new_initial = frame.settings.get(SettingsFrame.INITIAL_WINDOW_SIZE)
+            if new_initial is not None:
+                # A new INITIAL_WINDOW_SIZE retroactively shifts every open stream's window.
+                delta = new_initial - self._peer_initial_window_size
+                self._peer_initial_window_size = new_initial
+                for open_stream in self._outbound_stream_windows:
+                    self._outbound_stream_windows[open_stream] += delta
+            return True
+        return False
+
+    async def _send_flow_controlled(self, stream_id: int, data: bytes, offset: int, total: int) -> int:
+        """Send one window-sized DATA chunk from *data* at *offset*, blocking until there is room.
+
+        :returns: how many bytes were sent.
+        """
+        budget = self._outbound_budget(stream_id)
+        while budget == 0:
+            try:
+                await asyncio.wait_for(self._pump_one_frame(), FILE_TRANSFER_WINDOW_TIMEOUT)
+            except asyncio.TimeoutError as e:
+                raise ProtocolError(
+                    f"Timed out waiting for the device to grant flow-control window on stream "
+                    f"{stream_id} after {offset}/{total} bytes"
+                ) from e
+            budget = self._outbound_budget(stream_id)
+        chunk = data[offset : offset + budget]
+        await self._send_frame(DataFrame(stream_id=stream_id, data=chunk))
+        self._consume_outbound(stream_id, len(chunk))
+        return len(chunk)
+
+    async def send_file_transfer(self, transfer_id: int, data: bytes) -> None:
+        """Push the payload of a previously announced `FileTransferType` to the device.
+
+        The announcement (a `FileTransferType` in a request) only declares the size and a
+        ``transfer_id``; the bytes travel on their own HTTP/2 stream. That stream must be
+        client-initiated and therefore **odd** — the device answers HEADERS on an even stream with
+        ``GOAWAY``/``invalid stream_id`` — and its opening frame must carry the ``transfer_id`` as
+        the XPC ``message_id``, which is how the device correlates stream to announcement
+        (``Found pending stream ID for <id>``). The device acknowledges with a
+        ``FILE_TX_STREAM_RESPONSE`` preamble, but that arrives *after* the payload and is not a
+        gate: holding the stream open waiting for it makes the device reset it (``RST_STREAM``
+        error 5), so the bytes follow the preamble immediately.
+
+        :param transfer_id: identifier used in the corresponding `FileTransferType`.
+        :param data: payload bytes; must match the announced ``transfer_size``.
+        """
+        stream_id = self._next_outbound_stream_id
+        self._next_outbound_stream_id += 2
+
+        await self._send_frame(HeadersFrame(stream_id=stream_id, flags=["END_HEADERS"]))
+        # The preamble is a DATA frame, so it is flow controlled too. Sending it unaccounted
+        # overruns the connection window once a previous transfer has drained it, and the device
+        # answers with GOAWAY error 3 (FLOW_CONTROL_ERROR).
+        preamble = XpcWrapper.build({
+            "flags": XpcFlags.FILE_TX_STREAM_REQUEST | XpcFlags.ALWAYS_SET,
+            "message": {"message_id": transfer_id, "payload": None},
+        })
+        await self._send_flow_controlled(stream_id, preamble, 0, len(preamble))
+        offset = 0
+        while offset < len(data):
+            offset += await self._send_flow_controlled(stream_id, data, offset, len(data))
+        await self._send_frame(DataFrame(stream_id=stream_id, data=b"", flags=["END_STREAM"]))
+        self._finished_file_transfer_streams.add(stream_id)
+
+    async def _pump_one_frame(self) -> Frame:
+        """Read one frame, applying flow control and buffering data frames meant for others."""
+        while True:
+            frame = await self._receive_frame()
+            if isinstance(frame, GoAwayFrame):
+                raise StreamClosedError(f"Got {frame}")
+            if isinstance(frame, RstStreamFrame):
+                if frame.stream_id in self._finished_file_transfer_streams:
+                    continue
+                raise StreamClosedError(f"Got {frame}")
+            if self._apply_flow_control_frame(frame):
+                return frame
+            if isinstance(frame, DataFrame):
+                return frame
 
     async def _open_channel(self, stream_id: int, flags: Any) -> None:
         # flags is a construct FlagsEnum value (BitwisableString), not a plain int: `int()` on it
@@ -318,11 +442,16 @@ class RemoteXPCConnection:
 
     async def _receive_next_data_frame(self) -> DataFrame:
         while True:
+            if self._buffered_data_frames:
+                return self._buffered_data_frames.popleft()
             frame = await self._receive_frame()
+            self._apply_flow_control_frame(frame)
 
             if isinstance(frame, GoAwayFrame):
                 raise StreamClosedError(f"Got {frame}")
             if isinstance(frame, RstStreamFrame):
+                if frame.stream_id in self._finished_file_transfer_streams:
+                    continue
                 raise StreamClosedError(f"Got {frame}")
             if not isinstance(frame, DataFrame):
                 continue
