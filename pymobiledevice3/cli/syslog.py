@@ -114,7 +114,7 @@ def format_line(syslog_entry: SyslogEntry, *, include_label: bool, image_offset:
     line_format = "{timestamp} {process_name}{{{image_name}{image_offset_str}}}[{pid}] <{level}>: {message}"
 
     if include_label:
-        line_format += f" {label}"
+        line_format += " {label}"
 
     line = line_format.format(
         timestamp=timestamp,
@@ -124,6 +124,7 @@ def format_line(syslog_entry: SyslogEntry, *, include_label: bool, image_offset:
         level=level,
         message=message,
         image_offset_str=image_offset_str,
+        label=label,
     )
 
     return line
