@@ -11,6 +11,9 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 
 MAX_CONCURRENT_DOWNLOADS = 4
 
+#: Capability the service advertises in the RSD handshake when DSC fetching is available.
+FEATURE_DSC_FILES = "com.apple.dt.remoteFetchSymbols.dyldSharedCacheFiles"
+
 
 @dataclasses.dataclass
 class DSCFile:
@@ -43,7 +46,10 @@ class RemoteFetchSymbolsService(RemoteService):
 
         :returns: One `DSCFile` per advertised file, each carrying its on-device path and
             expected byte length.
+        :raises DeviceFeatureNotSupportedError: if the device does not advertise the DSC
+            fetching capability.
         """
+        self.rsd.require_feature(self.SERVICE_NAME, FEATURE_DSC_FILES)
         files: list[DSCFile] = []
         response = await self.service.send_receive_request({
             "XPCDictionary_sideChannel": uuid.uuid4(),

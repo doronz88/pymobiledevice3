@@ -4,6 +4,7 @@ from typing import cast
 
 import pytest
 
+from pymobiledevice3.exceptions import DeviceFeatureNotSupportedError
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.remotexpc import RemoteXPCConnection
 from pymobiledevice3.services.remote_fetch_symbols import DSCFile, RemoteFetchSymbolsService
@@ -37,3 +38,18 @@ async def test_download_uses_multiple_streams(tmp_path):
     assert max_active_downloads > 1
     for i in range(4):
         assert (tmp_path / f"file{i}").read_bytes() == str(i).encode()
+
+
+@pytest.mark.asyncio
+async def test_get_dsc_file_list_requires_the_advertised_capability():
+    rsd = RemoteServiceDiscoveryService(("127.0.0.1", 0))
+    rsd.peer_info = {
+        "Properties": {"OSVersion": "26.0"},
+        "Services": {
+            RemoteFetchSymbolsService.SERVICE_NAME: {"Port": "1024", "Properties": {"Features": ["something.else"]}}
+        },
+    }
+    fetch_symbols = RemoteFetchSymbolsService(rsd)
+
+    with pytest.raises(DeviceFeatureNotSupportedError, match="dyldSharedCacheFiles"):
+        await fetch_symbols.get_dsc_file_list()
