@@ -345,10 +345,7 @@ class DeviceLink:
         """Remove temporary placeholders created for payloads rejected by a backup filter."""
         for relative_path in sorted(self._discarded_files, key=lambda path: len(path.parts), reverse=True):
             path = self.root_path / relative_path
-            if path.is_dir():
-                shutil.rmtree(path)
-            else:
-                path.unlink(missing_ok=True)
+            path.unlink(missing_ok=True)
 
             parent = path.parent
             while parent != self.root_path:

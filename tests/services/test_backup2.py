@@ -402,3 +402,17 @@ def test_device_link_tracks_filtered_placeholders_when_directory_is_copied_or_re
     device_link._forget_discarded_files(source)
 
     assert device_link._discarded_files == {copied_file}
+
+
+def test_device_link_does_not_remove_directory_tracked_as_discarded_file(tmp_path: Path) -> None:
+    device_link = DeviceLink(AsyncMock(), tmp_path)
+    directory = tmp_path / "kept"
+    directory.mkdir()
+    kept_file = directory / "data"
+    kept_file.write_text("data")
+    device_link._discarded_files.add(Path("kept"))
+
+    with pytest.raises(OSError):
+        device_link.cleanup_discarded_files()
+
+    assert kept_file.read_text() == "data"

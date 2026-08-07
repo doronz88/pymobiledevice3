@@ -97,6 +97,7 @@ pymobiledevice3 backup2 backup --only-regex '\\.(plist|db|db-shm|db-wal|sqlite|s
 # Use --patch-manifest when another tool requires Manifest.db to reference
 # only saved payloads. This forces each run to be full, and encrypted backups
 # require --password so the manifest can be decrypted and re-encrypted.
+# Filtered backups also require --patch-manifest when combined with --unback.
 
 # Restore backup
 pymobiledevice3 backup2 restore DIRECTORY
