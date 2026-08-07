@@ -29,8 +29,17 @@ def _service(response: dict[str, Any]) -> tuple[IconService, list[dict[str, Any]
             sent.append(request)
             return {"CoreDevice.output": response}
 
-    service = object.__new__(IconService)
-    service.rsd = cast(RemoteServiceDiscoveryService, object())
+    rsd = RemoteServiceDiscoveryService(("127.0.0.1", 0))
+    rsd.peer_info = {
+        "Properties": {"OSVersion": "26.0"},
+        "Services": {
+            IconService.SERVICE_NAME: {
+                "Port": "1024",
+                "Properties": {"Features": ["com.apple.coredevice.feature.fetchappicons"]},
+            }
+        },
+    }
+    service = IconService(rsd)
     service._service = cast(RemoteXPCConnection, FakeConnection())
     return service, sent
 
