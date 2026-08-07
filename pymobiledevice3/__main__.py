@@ -44,6 +44,7 @@ from pymobiledevice3.exceptions import (
     DeprecationError,
     DeveloperModeError,
     DeveloperModeIsNotEnabledError,
+    DeviceFeatureNotSupportedError,
     DeviceHasPasscodeSetError,
     DeviceNotFoundError,
     FeatureNotSupportedError,
@@ -352,6 +353,8 @@ def invoke_cli_with_error_handling() -> bool:
         logger.error(str(e))
     except UserspaceTunnelUnavailableError as e:
         logger.error(str(e))
+    except DeviceFeatureNotSupportedError as e:
+        logger.error(f"{e} (iOS {e.product_version})")
     except (InvalidServiceError, RSDRequiredError) as e:
         reason = ""
         # Both exceptions carry the device's product version (no extra device round-trip needed).
