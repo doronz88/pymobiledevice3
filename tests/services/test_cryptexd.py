@@ -1,15 +1,23 @@
+import logging
+import plistlib
+import re
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import CryptexdError
+from pymobiledevice3.exceptions import AlreadyMountedError, CryptexdError
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.services import cryptexd
 from pymobiledevice3.services.cryptexd import (
+    DDI_CRYPTEX_IDENTIFIER,
     NONCE_DOMAIN_CRYPTEX,
     CryptexdService,
     InstalledCryptex,
+    load_cryptex1_assets,
     unwrap_nonce,
 )
+from pymobiledevice3.services.mobile_image_mounter import LATEST_DDI_BUILD_ID
 
 
 class FakeConnection:
@@ -311,6 +319,181 @@ async def test_install_raises_on_a_cferr_reply() -> None:
 
     with pytest.raises(CryptexdError, match="Permission denied"):
         await service.install(b"i", b"t", b"m", b"info", b"vol", {})
+
+
+@pytest.mark.asyncio
+async def test_cryptex_nonce_selects_the_domain_by_handle() -> None:
+    # Cryptex1,NonceDomain is a handle, not an index, and the two tables disagree: on an
+    # iPhone 11 the DDI cryptex is handle 4 == index 10, while index 4 is a different domain.
+    # Personalizing against the index-4 nonce yields a ticket the device rejects at import with
+    # "Manifest no longer valid [70: Stale NFS file handle]".
+    nonce = bytes(range(48))
+    blob = b"\x00\x00" + nonce + b"\x00\x00" + (48).to_bytes(4, "little")
+    service, sent = _service({"error": 0, "argv": {"nonce": blob}})
+
+    assert await service.cryptex_nonce(4) == nonce
+    assert int(sent[0]["argv"]["nonce-domain-handle"]) == 4
+    assert "nonce-domain" not in sent[0]["argv"]
+
+
+@pytest.mark.asyncio
+async def test_auto_install_ddi_refuses_when_already_installed() -> None:
+    # Guard before personalizing: the daemon would otherwise fail the install with EEXIST after
+    # a pointless TSS round-trip.
+    service, sent = _service({
+        "error": 0,
+        "argv": {
+            "remote-cryptex-array": [
+                {"remote-cryptex-identifier": DDI_CRYPTEX_IDENTIFIER, "remote-cryptex-version": "27.1.5228.8"}
+            ]
+        },
+    })
+
+    with pytest.raises(AlreadyMountedError, match=re.escape("27.1.5228.8")):
+        await service.auto_install_ddi()
+
+    assert [request["routine"] for request in sent] == ["copy-installed"]
+
+
+def _write_cryptex_bundle(restore: Path, build_id: str, names: dict[str, str]) -> None:
+    """Write a minimal Cryptex1 DDI bundle, laid out however `names` says."""
+    manifest = {}
+    for key, name in names.items():
+        (restore / name).parent.mkdir(parents=True, exist_ok=True)
+        (restore / name).write_bytes(key.encode())
+        manifest[key] = {"Digest": b"", "Info": {"Path": name, "Personalize": True}}
+    (restore / "BuildManifest.plist").write_bytes(
+        plistlib.dumps({
+            "ProductBuildVersion": build_id,
+            "BuildIdentities": [
+                {
+                    "Info": {"Variant": "iOS Customer Developer Disk Image Cryptex"},
+                    "Cryptex1,UseProductClass": True,
+                    "Cryptex1,SubType": 2,
+                    "Cryptex1,NonceDomain": 4,
+                    "Cryptex1,Version": "39.999.999.0.0,0",
+                    "Cryptex1,PreauthorizationVersion": "39.999.999.0.0,0",
+                    "Manifest": manifest,
+                }
+            ],
+        })
+    )
+
+
+#: Xcode's own layout embeds a build number; the DeveloperDiskImage repository normalizes the
+#: names and rewrites the manifest to match. Both must load.
+BUNDLE_LAYOUTS = {
+    "xcode": {
+        "Cryptex1,GenericDmg": "022-22107-072.dmg",
+        "Cryptex1,GenericTrustCache": "Firmware/022-22107-072.dmg.trustcache",
+        "Cryptex1,CryptexInfoPlist": "Firmware/022-22107-072.dmg.cryptex_info",
+        "Cryptex1,GenericVolume": "Firmware/022-22107-072.dmg.root_hash",
+    },
+    "published": {
+        "Cryptex1,GenericDmg": "Image.dmg",
+        "Cryptex1,GenericTrustCache": "Image.dmg.trustcache",
+        "Cryptex1,CryptexInfoPlist": "Image.dmg.cryptex_info",
+        "Cryptex1,GenericVolume": "Image.dmg.root_hash",
+    },
+}
+
+
+@pytest.mark.parametrize("layout", sorted(BUNDLE_LAYOUTS))
+def test_assets_are_located_through_the_build_manifest(tmp_path: Path, layout: str) -> None:
+    _write_cryptex_bundle(tmp_path, LATEST_DDI_BUILD_ID, BUNDLE_LAYOUTS[layout])
+
+    assets = load_cryptex1_assets(tmp_path)
+
+    assert assets.image == b"Cryptex1,GenericDmg"
+    assert assets.trustcache == b"Cryptex1,GenericTrustCache"
+    assert assets.info == b"Cryptex1,CryptexInfoPlist"
+    assert assets.volumehash == b"Cryptex1,GenericVolume"
+    assert assets.nonce_domain == 4
+
+
+def test_a_mismatched_ddi_build_id_warns(tmp_path: Path, caplog) -> None:
+    _write_cryptex_bundle(tmp_path, "27A0000a", BUNDLE_LAYOUTS["published"])
+
+    with caplog.at_level(logging.WARNING):
+        load_cryptex1_assets(tmp_path)
+
+    assert "27A0000a" in caplog.text
+    assert LATEST_DDI_BUILD_ID in caplog.text
+
+
+def test_a_matching_ddi_build_id_is_quiet(tmp_path: Path, caplog) -> None:
+    _write_cryptex_bundle(tmp_path, LATEST_DDI_BUILD_ID, BUNDLE_LAYOUTS["published"])
+
+    with caplog.at_level(logging.WARNING):
+        load_cryptex1_assets(tmp_path)
+
+    assert not caplog.text
+
+
+class FakeCryptexImage:
+    """Duck-types developer_disk_image's CryptexImage, so the tests do not pin its version."""
+
+    def __init__(self, build_manifest: bytes) -> None:
+        self.build_manifest = build_manifest
+        self.image = b"Cryptex1,GenericDmg"
+        self.trustcache = b"Cryptex1,GenericTrustCache"
+        self.cryptex_info = b"Cryptex1,CryptexInfoPlist"
+        self.root_hash = b"Cryptex1,GenericVolume"
+
+
+def _fake_repository(tmp_path: Path, monkeypatch, build_id: str = LATEST_DDI_BUILD_ID) -> list[int]:
+    """Point the cache at `tmp_path` and serve a canned download; returns a download counter."""
+    bundle = tmp_path / "source"
+    bundle.mkdir()
+    _write_cryptex_bundle(bundle, build_id, BUNDLE_LAYOUTS["published"])
+    downloads: list[int] = []
+
+    class FakeRepository:
+        @classmethod
+        def create(cls) -> "FakeRepository":
+            return cls()
+
+        def get_cryptex_disk_image(self) -> FakeCryptexImage:
+            downloads.append(1)
+            return FakeCryptexImage((bundle / "BuildManifest.plist").read_bytes())
+
+    monkeypatch.setattr(cryptexd, "DeveloperDiskImageRepository", FakeRepository)
+    monkeypatch.setattr(cryptexd, "get_home_folder", lambda: tmp_path / "home")
+    return downloads
+
+
+def test_fetch_cryptex_ddi_downloads_into_a_readable_restore_directory(tmp_path: Path, monkeypatch) -> None:
+    downloads = _fake_repository(tmp_path, monkeypatch)
+
+    restore = cryptexd.fetch_cryptex_ddi()
+
+    assert len(downloads) == 1
+    # Payloads land where the downloaded manifest says they do, so this is a usable Restore dir.
+    assets = load_cryptex1_assets(restore)
+    assert assets.image == b"Cryptex1,GenericDmg"
+    assert assets.info == b"Cryptex1,CryptexInfoPlist"
+    assert assets.volumehash == b"Cryptex1,GenericVolume"
+
+
+def test_fetch_cryptex_ddi_reuses_the_cache(tmp_path: Path, monkeypatch) -> None:
+    downloads = _fake_repository(tmp_path, monkeypatch)
+
+    first = cryptexd.fetch_cryptex_ddi()
+    second = cryptexd.fetch_cryptex_ddi()
+
+    assert first == second
+    assert len(downloads) == 1, "a cached DDI of the expected build must not be downloaded again"
+
+
+def test_fetch_cryptex_ddi_replaces_a_cache_of_the_wrong_build(tmp_path: Path, monkeypatch) -> None:
+    # A cache left by an older pymobiledevice3 must not be served to a release expecting another
+    # build; the mounter's fetch_personalized_ddi refreshes on the same condition.
+    downloads = _fake_repository(tmp_path, monkeypatch, build_id="27A0000a")
+
+    cryptexd.fetch_cryptex_ddi()
+    cryptexd.fetch_cryptex_ddi()
+
+    assert len(downloads) == 2
 
 
 def test_unwrap_nonce_extracts_the_nonce_from_the_daemon_structure() -> None:

@@ -28,7 +28,9 @@ from pymobiledevice3.services.lockdown_service import LockdownService
 
 logger = logging.getLogger(__name__)
 
-LATEST_DDI_BUILD_ID = "27A5194q"
+#: Build id of the DDI this release expects, matching what the DeveloperDiskImage repository
+#: publishes. Both the personalized image and the Cryptex1 bundle are checked against it.
+LATEST_DDI_BUILD_ID = "27A5228h"
 
 
 class MobileImageMounterService(LockdownService):

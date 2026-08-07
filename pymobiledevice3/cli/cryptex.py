@@ -1,12 +1,14 @@
 import dataclasses
 import logging
+from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, async_command, print_json
-from pymobiledevice3.services.cryptexd import CryptexdService
+from pymobiledevice3.exceptions import AlreadyMountedError
+from pymobiledevice3.services.cryptexd import XCODE_DDI_RESTORE_DIR, CryptexdService
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,34 @@ async def cryptex_list(service_provider: RSDServiceProviderDep) -> None:
     """List installed cryptexes (a mounted personalized DDI appears as com.apple.MobileAsset.DDI)."""
     cryptexd = CryptexdService(service_provider)
     print_json([dataclasses.asdict(cryptex) for cryptex in await cryptexd.copy_installed()])
+
+
+@cli.command("auto-install")
+@async_command
+async def cryptex_auto_install(
+    service_provider: RSDServiceProviderDep,
+    restore_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--restore-dir",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            help="Unpacked DDI Restore directory holding the Cryptex1 assets, e.g. Xcode's own "
+            f"({XCODE_DDI_RESTORE_DIR}). Defaults to downloading and caching the DDI.",
+        ),
+    ] = None,
+) -> None:
+    """Personalize and install the DeveloperDiskImage cryptex, using only cryptexd."""
+    cryptexd = CryptexdService(service_provider)
+    try:
+        installed = await cryptexd.auto_install_ddi(restore_dir)
+    except FileNotFoundError as e:
+        raise typer.BadParameter(str(e)) from e
+    except AlreadyMountedError as e:
+        logger.error(f"DeveloperDiskImage cryptex already installed ({e}); uninstall it first")
+        raise typer.Exit(1) from e
+    logger.info(f"Installed {installed.identifier} {installed.version}")
 
 
 @cli.command("personalization-identifiers")

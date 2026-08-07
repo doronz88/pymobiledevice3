@@ -51,16 +51,20 @@ Guidance for AI coding agents and automation contributors working in this reposi
 
 ## Running Developer Commands Against Devices
 
-- Developer/DVT commands on iOS 17+ devices require an RSD tunnel. Prefer
-  `--userspace` over a `tunneld` tunnel: it establishes the tunnel in-process
-  with a pure-Python userspace network stack and needs **no `sudo`/root**, so
-  agents can run unattended.
-  - Example: `pymobiledevice3 developer dvt oslog --userspace`.
-  - You can also set `PYMOBILEDEVICE3_USERSPACE=1` instead of passing the flag.
-- Only fall back to a privileged `tunneld` (which needs root) when `--userspace`
-  is not viable — e.g. when you need higher host->device throughput, since
-  userspace host->device transfers (DDI mounts, file pushes) are deliberately
-  slower.
+- Developer/DVT commands on iOS 17+ devices require an RSD tunnel, and every
+  command that requires one **already establishes it in-process by default**,
+  with a pure-Python userspace network stack and **no `sudo`/root**. Just run
+  the command — do not reach for a flag.
+  - Example: `pymobiledevice3 developer dvt oslog`, `pymobiledevice3 cryptex list`.
+- `--userspace` only *forces* that path; it is redundant on a required-RSD
+  command. It matters on iOS 17.0-17.3, which the default deliberately routes to
+  `tunneld` instead (those versions predate CoreDeviceProxy, so the no-root path
+  is the fragile Wi-Fi-only RemotePairing one). `PYMOBILEDEVICE3_USERSPACE=1` is
+  the env-var equivalent.
+- Use a privileged `tunneld` (needs root) only when the userspace tunnel is not
+  viable — e.g. when you need higher host->device throughput, since userspace
+  host->device transfers (DDI mounts, file pushes) are deliberately slower.
+  `PYMOBILEDEVICE3_PREFER_TUNNELD=1` opts out of the userspace default entirely.
 - `--userspace` is mutually exclusive with `--rsd`/`--tunnel`.
 
 ## Testing Expectations

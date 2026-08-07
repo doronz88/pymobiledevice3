@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from pymobiledevice3.restore.tss import TSSRequest
+from pymobiledevice3.restore.tss import TSSRequest, cryptex1_udid
 
 XCODE_DDI = Path("/Library/Developer/DeveloperDiskImages/iOS_DDI/Restore/BuildManifest.plist")
 
@@ -70,11 +70,23 @@ def test_nonce_is_sent_raw() -> None:
     assert _request()["Cryptex1,Nonce"] == NONCE
 
 
-def test_device_identity_comes_from_the_chip_instance() -> None:
+def test_device_identity_is_carried_solely_by_the_udid() -> None:
+    # Captured from Xcode: a Cryptex1 request names the device only through Cryptex1,UDID —
+    # sending the Ap* tags an AP request uses makes TSS answer "An internal error occurred."
     request = _request()
-    assert request["ApECID"] == CHIP_INSTANCE["img4_chip_ecid"]
-    assert request["ApChipID"] == CHIP_INSTANCE["img4_chip_chip"]
-    assert request["ApProductionMode"] is True
+    assert request["Cryptex1,UDID"] == cryptex1_udid(CHIP_INSTANCE)
+    assert request["Cryptex1,ProductionMode"] is True
+    assert not [key for key in request if key.startswith("Ap")]
+
+
+def test_udid_is_the_chip_id_and_ecid_big_endian() -> None:
+    # Ends up verbatim as the ticket's UDID tag: 0000000000008030000215140a9a802e.
+    assert cryptex1_udid(CHIP_INSTANCE).hex() == "0000000000008030000215140a9a802e"
+
+
+def test_unique_tag_list_is_sent_empty() -> None:
+    # TSS fills the ticket's uniq tag in itself; the request carries an empty placeholder.
+    assert _request()["Cryptex1,UniqueTagList"] == b""
 
 
 def test_only_personalized_components_are_included() -> None:
@@ -83,7 +95,9 @@ def test_only_personalized_components_are_included() -> None:
     assert "Cryptex1,GenericDmg" not in request
     for key in ("Cryptex1,CryptexInfoPlist", "Cryptex1,GenericTrustCache", "Cryptex1,GenericVolume"):
         assert key in request
-        assert "Info" not in request[key]
+        # Xcode sends the digest alone -- no Info, and none of the EPRO/ESEC/Trusted decoration
+        # an AP request picks up from RestoreRequestRules.
+        assert list(request[key]) == ["Digest"]
 
 
 @pytest.mark.skipif(not XCODE_DDI.exists(), reason="Xcode DDI bundle not installed")
