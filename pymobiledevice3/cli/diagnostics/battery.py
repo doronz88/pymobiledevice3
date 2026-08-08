@@ -3,7 +3,7 @@ import logging
 
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json, print_json_line
 from pymobiledevice3.exceptions import MissingValueError
 from pymobiledevice3.services.diagnostics import DiagnosticsService
 
@@ -44,7 +44,7 @@ async def diagnostics_battery_monitor(service_provider: ServiceProviderDep) -> N
             "IsCharging": raw_info.get("IsCharging"),
             "CurrentCapacity": raw_info.get("CurrentCapacity"),
         }
-        logger.info(info)
+        print_json_line(info)
         await asyncio.sleep(1)
 
 
