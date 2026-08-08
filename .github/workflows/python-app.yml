@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/python-app.yml'
       - 'pymobiledevice3/**'
+      - 'tests/**'
+      - 'pytest.ini'
       - 'pyproject.toml'
   release:
     types: [ created ]
@@ -47,8 +49,8 @@ jobs:
         env:
           SKIP: pyright
         run: uvx pre-commit run --all-files
-      - name: Test show usage
-        run: uv run --extra test pytest -m cli
+      - name: Run device-free tests
+        run: uv run --extra test pytest -m "not device"
 
   pyright:
     if: '! github.event.pull_request.draft'
