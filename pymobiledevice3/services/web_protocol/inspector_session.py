@@ -71,6 +71,7 @@ class InspectorSession:
             "Console.messagesCleared": lambda _: _,
             "Console.messageRepeatCountUpdated": self._console_message_repeated_count_updated,
             "Heap.garbageCollected": self._heap_garbage_collected,
+            "Runtime.executionContextCreated": self._runtime_execution_context_created,
         }
 
         self._receive_task = asyncio.create_task(self._receive_loop())
@@ -261,6 +262,11 @@ class InspectorSession:
 
     def _heap_garbage_collected(self, message: dict[str, Any]):
         heap_logger.debug(message["params"])
+
+    def _runtime_execution_context_created(self, message: dict[str, Any]):
+        # pushed by the page after Runtime.enable for every JS execution context; evaluation
+        # pins uniqueContextId '0.1' (see runtime_evaluate), so the event is informational only
+        logger.debug(f"executionContextCreated: {message['params']['context']}")
 
     def _target_created(self, response: dict[str, Any]):
         pass
