@@ -113,7 +113,7 @@ def start_ipython_shell(*, user_ns: Optional[dict[str, Any]] = None, header: Opt
 
 
 def file_download(url: str, outfile: Path, chunk_size: int = 1024) -> None:
-    resp = requests.get(url, stream=True)
+    resp = requests.get(url, stream=True, timeout=30)
     total = int(resp.headers.get("content-length", 0))
     with (
         outfile.open("wb") as file,

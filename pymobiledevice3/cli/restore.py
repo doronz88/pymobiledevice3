@@ -169,7 +169,7 @@ BehaviorOption = Annotated[
 
 
 def query_ipswme(identifier: str) -> str:
-    resp = requests.get(IPSWME_API + identifier, headers={"Accept": "application/json"})
+    resp = requests.get(IPSWME_API + identifier, headers={"Accept": "application/json"}, timeout=30)
     firmwares = resp.json()["firmwares"]
     display_list = [f"{entry['version']}: {entry['buildid']}" for entry in firmwares if entry["signed"]]
     idx = prompt_selection(display_list, "Choose version", idx=True)
