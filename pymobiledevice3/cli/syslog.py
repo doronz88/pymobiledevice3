@@ -241,30 +241,31 @@ async def syslog_live(
             # Console.app behavior
             continue
 
+        # Filters always run against the plain rendered line, so a given set of flags
+        # selects the same entries regardless of output format.
+        line = format_line(
+            syslog_entry,
+            include_label=include_label,
+            image_offset=image_offset,
+            color=False,
+        )
+
+        if not started:
+            assert start_after is not None  # started is initialized True when start_after is None
+            if start_after not in line:
+                continue
+            started = True
+
+        if _should_skip_line(line, invert_match, invert_match_insensitive):
+            continue
+
+        if not _should_keep_line(line, match, match_insensitive, match_regex):
+            continue
+
         if output_format is SyslogFormat.JSON:
-            json_line = format_json_line(syslog_entry)
-            _emit_line(json_line, out)
+            _emit_line(format_json_line(syslog_entry), out)
 
         elif output_format is SyslogFormat.TEXT:
-            line = format_line(
-                syslog_entry,
-                include_label=include_label,
-                image_offset=image_offset,
-                color=False,
-            )
-
-            if not started:
-                assert start_after is not None  # started is initialized True when start_after is None
-                if start_after not in line:
-                    continue
-                started = True
-
-            if _should_skip_line(line, invert_match, invert_match_insensitive):
-                continue
-
-            if not _should_keep_line(line, match, match_insensitive, match_regex):
-                continue
-
             if should_color_output:
                 styled_line = format_line(
                     syslog_entry,
@@ -314,8 +315,7 @@ async def cli_syslog_live(
         typer.Option(
             "--match",
             "-m",
-            help="filter only logs matching this expression "
-            "(repeatable; all must match - conjunction). Text mode only.",
+            help="filter only logs matching this expression (repeatable; all must match - conjunction).",
         ),
     ] = None,
     invert_match: Annotated[
@@ -323,8 +323,7 @@ async def cli_syslog_live(
         typer.Option(
             "--invert-match",
             "-v",
-            help="filter only logs not matching this expression "
-            "(repeatable; any match excludes - disjunction). Text mode only.",
+            help="filter only logs not matching this expression (repeatable; any match excludes - disjunction).",
         ),
     ] = None,
     match_insensitive: Annotated[
@@ -333,7 +332,7 @@ async def cli_syslog_live(
             "--match-insensitive",
             "-mi",
             help="filter only logs matching this expression, case-insensitively "
-            "(repeatable; all must match - conjunction). Text mode only.",
+            "(repeatable; all must match - conjunction).",
         ),
     ] = None,
     invert_match_insensitive: Annotated[
@@ -342,14 +341,14 @@ async def cli_syslog_live(
             "--invert-match-insensitive",
             "-vi",
             help="filter only logs not matching this expression, case-insensitively "
-            "(repeatable; any match excludes - disjunction). Text mode only.",
+            "(repeatable; any match excludes - disjunction).",
         ),
     ] = None,
     include_label: Annotated[
         bool,
         typer.Option(
             "--label",
-            help="should include label (text mode only; JSON always emits the label field).",
+            help="Include the [subsystem][category] label in the rendered line (JSON output always emits the label field).",
         ),
     ] = False,
     regex: Annotated[
@@ -357,8 +356,7 @@ async def cli_syslog_live(
         typer.Option(
             "--regex",
             "-e",
-            help="filter only lines matching given regex "
-            "(repeatable; any match includes - disjunction). Text mode only.",
+            help="filter only lines matching given regex (repeatable; any match includes - disjunction).",
         ),
     ] = None,
     insensitive_regex: Annotated[
@@ -367,7 +365,7 @@ async def cli_syslog_live(
             "--insensitive-regex",
             "-ei",
             help="filter only lines matching given regex, case-insensitively "
-            "(repeatable; any match includes - disjunction). Text mode only.",
+            "(repeatable; any match includes - disjunction).",
         ),
     ] = None,
     image_offset: Annotated[
@@ -396,15 +394,15 @@ async def cli_syslog_live(
         Optional[str],
         typer.Option(
             "--start-after",
-            help="Start printing only after this string is seen. Text mode only.",
+            help="Start printing only after this string is seen.",
         ),
     ] = None,
     output_format: Annotated[
         SyslogFormat,
         typer.Option(
             "--format",
-            help="Output format. 'json' emits one JSON per line (NDJSON); only --pid and --process-name "
-            "apply, other filters are ignored.",
+            help="Output format. 'json' emits one JSON object per line (NDJSON). Filters match against "
+            "the rendered text line in both formats.",
             case_sensitive=False,
         ),
     ] = SyslogFormat.TEXT,
