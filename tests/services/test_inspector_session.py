@@ -130,3 +130,129 @@ async def test_console_enable_completion_switches_to_live_output(
     record = _console_record(session, caplog, event, force_live=False)
     assert record.name == "webinspector.console"
     assert record.getMessage() == "4"
+
+
+async def test_get_properties_raw_returns_descriptors(session: InspectorSession) -> None:
+    async def send_command(method: str, **kwargs: Any) -> dict[str, Any]:
+        assert method == "Runtime.getProperties"
+        assert kwargs == {"objectId": "obj-1", "ownProperties": True, "generatePreview": True}
+        inner = {"result": {"properties": [{"name": "a", "value": {"type": "number", "value": 1}}]}}
+        return {"params": {"message": json.dumps(inner)}}
+
+    session.send_command = send_command  # pyright: ignore[reportAttributeAccessIssue]
+    properties = await session.get_properties_raw("obj-1")
+    assert properties == [{"name": "a", "value": {"type": "number", "value": 1}}]
+
+
+def _object_result(inner_result: dict[str, Any]) -> dict[str, Any]:
+    return {"params": {"message": json.dumps({"result": {"result": inner_result}})}}
+
+
+async def test_object_result_lists_all_top_level_properties(session: InspectorSession) -> None:
+    async def get_displayable_properties_raw(object_id: str) -> list[dict[str, Any]]:
+        assert object_id == "win-1"
+        return [
+            {"name": "window", "value": {"type": "object", "className": "Window", "objectId": "win-1"}},
+            {"name": "count", "value": {"type": "number", "value": 4, "description": "4"}},
+            {"name": "flag", "value": {"type": "boolean", "value": True}},
+            {"name": "nothing", "value": {"type": "object", "subtype": "null", "value": None}},
+            {"name": "missing", "value": {"type": "undefined"}},
+            {
+                "name": "greet",
+                "value": {"type": "function", "className": "Function", "description": "function greet() {\n}"},
+            },
+            {"name": "title", "value": {"type": "string", "value": "x" * 100}},
+            {
+                "name": "computed",
+                "get": {"type": "function", "className": "Function", "description": "function get computed() {}"},
+            },
+            {"name": "skipme"},
+            {"name": "__proto__", "value": {"type": "object", "className": "Object", "objectId": "proto-1"}},
+        ]
+
+    session.get_displayable_properties_raw = get_displayable_properties_raw  # pyright: ignore[reportAttributeAccessIssue]
+    rendered = await session._parse_runtime_evaluate(
+        _object_result({"type": "object", "className": "Window", "objectId": "win-1"})
+    )
+    quoted_title = '"' + "x" * 79 + "…"
+    assert rendered == (
+        "Window {\n"
+        "  window: Window\n"
+        "  count: 4\n"
+        "  flag: true\n"
+        "  nothing: null\n"
+        "  missing: undefined\n"
+        "  greet: ƒ\n"
+        f"  title: {quoted_title}\n"
+        "  computed: ƒ\n"
+        "}"
+    )
+
+
+async def test_object_result_without_properties_renders_class_only(session: InspectorSession) -> None:
+    async def get_properties_raw(object_id: str) -> list[dict[str, Any]]:
+        return []
+
+    session.get_properties_raw = get_properties_raw  # pyright: ignore[reportAttributeAccessIssue]
+    rendered = await session._parse_runtime_evaluate(
+        _object_result({"type": "object", "className": "Blob", "objectId": "blob-1"})
+    )
+    assert rendered == "Blob {}"
+
+
+async def test_object_result_property_fetch_failure_falls_back_to_class_name(session: InspectorSession) -> None:
+    async def get_properties_raw(object_id: str) -> list[dict[str, Any]]:
+        raise RuntimeError("released")
+
+    session.get_properties_raw = get_properties_raw  # pyright: ignore[reportAttributeAccessIssue]
+    rendered = await session._parse_runtime_evaluate(
+        _object_result({"type": "object", "className": "Blob", "objectId": "blob-1"})
+    )
+    assert rendered == "Blob"
+
+
+async def test_object_result_without_object_id_renders_class_only(session: InspectorSession) -> None:
+    rendered = await session._parse_runtime_evaluate(_object_result({"type": "object", "className": "Blob"}))
+    assert rendered == "Blob"
+
+
+async def test_get_displayable_properties_raw_returns_descriptors(session: InspectorSession) -> None:
+    async def send_command(method: str, **kwargs: Any) -> dict[str, Any]:
+        assert method == "Runtime.getDisplayableProperties"
+        assert kwargs == {"objectId": "obj-1", "generatePreview": True}
+        inner = {"result": {"properties": [{"name": "a", "value": {"type": "number", "value": 1}}]}}
+        return {"params": {"message": json.dumps(inner)}}
+
+    session.send_command = send_command  # pyright: ignore[reportAttributeAccessIssue]
+    properties = await session.get_displayable_properties_raw("obj-1")
+    assert properties == [{"name": "a", "value": {"type": "number", "value": 1}}]
+
+
+async def test_object_listing_prefers_displayable_properties(session: InspectorSession) -> None:
+    async def get_displayable_properties_raw(object_id: str) -> list[dict[str, Any]]:
+        return [{"name": "id", "get": {"type": "function", "className": "Function", "description": "function id()"}}]
+
+    async def get_properties_raw(object_id: str) -> list[dict[str, Any]]:
+        raise AssertionError("must not fall back when displayable properties succeed")
+
+    session.get_displayable_properties_raw = get_displayable_properties_raw  # pyright: ignore[reportAttributeAccessIssue]
+    session.get_properties_raw = get_properties_raw  # pyright: ignore[reportAttributeAccessIssue]
+    rendered = await session._parse_runtime_evaluate(
+        _object_result({"type": "object", "className": "HTMLBodyElement", "objectId": "body-1"})
+    )
+    assert rendered == "HTMLBodyElement {\n  id: ƒ\n}"
+
+
+async def test_object_listing_falls_back_to_own_properties(session: InspectorSession) -> None:
+    async def get_displayable_properties_raw(object_id: str) -> list[dict[str, Any]]:
+        raise RuntimeError("method not supported")
+
+    async def get_properties_raw(object_id: str) -> list[dict[str, Any]]:
+        return [{"name": "a", "value": {"type": "number", "value": 1, "description": "1"}}]
+
+    session.get_displayable_properties_raw = get_displayable_properties_raw  # pyright: ignore[reportAttributeAccessIssue]
+    session.get_properties_raw = get_properties_raw  # pyright: ignore[reportAttributeAccessIssue]
+    rendered = await session._parse_runtime_evaluate(
+        _object_result({"type": "object", "className": "Blob", "objectId": "blob-1"})
+    )
+    assert rendered == "Blob {\n  a: 1\n}"
