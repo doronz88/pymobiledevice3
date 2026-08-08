@@ -1,6 +1,7 @@
 import sqlite3
 import struct
 import time
+from collections.abc import Iterable, Iterator
 from contextlib import closing
 from pathlib import Path
 from ssl import SSLEOFError
@@ -398,10 +399,109 @@ def test_device_link_tracks_filtered_placeholders_when_directory_is_copied_or_re
     copied_file = Path("device/Copy") / "aa" / "hash"
     device_link._discarded_files.add(discarded_file)
 
-    device_link._copy_discarded_files(source, Path("device/Copy"))
-    device_link._forget_discarded_files(source)
+    device_link._copy_discarded_files(source, Path("device/Copy"), is_dir=True)
+    device_link._forget_discarded_files(source, is_dir=True)
 
     assert device_link._discarded_files == {copied_file}
+
+
+class _ScanCountingSet(set[Path]):
+    """A path set that counts full iterations, to prove per-file bookkeeping is O(1)."""
+
+    def __init__(self, iterable: Iterable[Path] = ()) -> None:
+        super().__init__(iterable)
+        self.scans = 0
+
+    def __iter__(self) -> Iterator[Path]:
+        self.scans += 1
+        return super().__iter__()
+
+
+def _device_link_with_large_discarded_set(tmp_path: Path, on_disk: Path) -> tuple[DeviceLink, _ScanCountingSet]:
+    device_link = DeviceLink(AsyncMock(), tmp_path, preserve_file=lambda _file_name, _device_name: False)
+    discarded = _ScanCountingSet(Path("tmp") / f"{index:04x}" for index in range(1000))
+    device_link._discarded_files = discarded
+    path = tmp_path / on_disk
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
+    discarded.scans = 0
+    return device_link, discarded
+
+
+@pytest.mark.asyncio
+async def test_device_link_move_items_does_not_scan_discarded_set_for_file_moves(tmp_path: Path) -> None:
+    device_link, discarded = _device_link_with_large_discarded_set(tmp_path, Path("tmp/0000"))
+    preserved = tmp_path / "tmp" / "preserved"
+    preserved.touch()
+
+    await device_link.move_items(["DLMessageMoveItems", {"tmp/0000": "aa/hash", "tmp/preserved": "bb/hash"}])
+
+    assert discarded.scans == 0
+    assert Path("aa/hash") in discarded
+    assert Path("tmp/0000") not in discarded
+
+
+@pytest.mark.asyncio
+async def test_device_link_remove_items_does_not_scan_discarded_set_for_files(tmp_path: Path) -> None:
+    device_link, discarded = _device_link_with_large_discarded_set(tmp_path, Path("tmp/0000"))
+
+    await device_link.remove_items(["DLMessageRemoveItems", ["tmp/0000", "tmp/not-tracked"]])
+
+    assert discarded.scans == 0
+    assert Path("tmp/0000") not in discarded
+
+
+@pytest.mark.asyncio
+async def test_device_link_copy_item_does_not_scan_discarded_set_for_files(tmp_path: Path) -> None:
+    device_link, discarded = _device_link_with_large_discarded_set(tmp_path, Path("tmp/0000"))
+
+    await device_link.copy_item(["DLMessageCopyItem", "tmp/0000", "copy/0000"])
+
+    assert discarded.scans == 0
+    assert Path("copy/0000") in discarded
+    assert Path("tmp/0000") in discarded
+
+
+@pytest.mark.asyncio
+async def test_device_link_move_items_retargets_placeholders_below_moved_directory(tmp_path: Path) -> None:
+    device_link = DeviceLink(AsyncMock(), tmp_path, preserve_file=lambda _file_name, _device_name: False)
+    placeholder = tmp_path / "device/Snapshot/aa/hash"
+    placeholder.parent.mkdir(parents=True)
+    placeholder.touch()
+    device_link._discarded_files.add(Path("device/Snapshot/aa/hash"))
+
+    await device_link.move_items(["DLMessageMoveItems", {"device/Snapshot/aa": "device/aa"}])
+
+    assert device_link._discarded_files == {Path("device/aa/hash")}
+
+
+@pytest.mark.asyncio
+async def test_device_link_remove_items_forgets_placeholders_below_removed_directory(tmp_path: Path) -> None:
+    device_link = DeviceLink(AsyncMock(), tmp_path, preserve_file=lambda _file_name, _device_name: False)
+    placeholder = tmp_path / "device/Snapshot/aa/hash"
+    placeholder.parent.mkdir(parents=True)
+    placeholder.touch()
+    device_link._discarded_files.add(Path("device/Snapshot/aa/hash"))
+
+    await device_link.remove_items(["DLMessageRemoveItems", ["device/Snapshot"]])
+
+    assert device_link._discarded_files == set()
+
+
+@pytest.mark.asyncio
+async def test_device_link_copy_item_duplicates_placeholders_below_copied_directory(tmp_path: Path) -> None:
+    device_link = DeviceLink(AsyncMock(), tmp_path, preserve_file=lambda _file_name, _device_name: False)
+    placeholder = tmp_path / "device/Snapshot/aa/hash"
+    placeholder.parent.mkdir(parents=True)
+    placeholder.touch()
+    device_link._discarded_files.add(Path("device/Snapshot/aa/hash"))
+
+    await device_link.copy_item(["DLMessageCopyItem", "device/Snapshot", "device/Copy"])
+
+    assert device_link._discarded_files == {
+        Path("device/Snapshot/aa/hash"),
+        Path("device/Copy/aa/hash"),
+    }
 
 
 def test_device_link_does_not_remove_directory_tracked_as_discarded_file(tmp_path: Path) -> None:

@@ -291,7 +291,8 @@ class DeviceLink:
             dest = self.root_path / dst
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(source, dest)
-            self._move_discarded_files(Path(src), Path(dst))
+            # the source is gone after the move; the destination mirrors its kind
+            self._move_discarded_files(Path(src), Path(dst), is_dir=dest.is_dir())
             if self.post_file_receive is not None:
                 self.post_file_receive(dst, src)
         await self.status_response(0)
@@ -303,11 +304,12 @@ class DeviceLink:
             return
         dest = self.root_path / cast(str, message[2])
         dest.parent.mkdir(parents=True, exist_ok=True)
-        if src.is_dir():
+        is_dir = src.is_dir()
+        if is_dir:
             shutil.copytree(src, dest)
         else:
             shutil.copy(src, dest)
-        self._copy_discarded_files(Path(cast(str, message[1])), Path(cast(str, message[2])))
+        self._copy_discarded_files(Path(cast(str, message[1])), Path(cast(str, message[2])), is_dir=is_dir)
         if self.post_file_receive is not None:
             self.post_file_receive(cast(str, message[2]), cast(str, message[1]))
         await self.status_response(0)
@@ -318,28 +320,40 @@ class DeviceLink:
     async def remove_items(self, message: DLMessage) -> None:
         for path in cast(Iterable[str], message[1]):
             rm_path = self.root_path / path
-            if rm_path.is_dir():
+            is_dir = rm_path.is_dir()
+            if is_dir:
                 shutil.rmtree(rm_path)
             else:
                 rm_path.unlink(missing_ok=True)
-            self._forget_discarded_files(Path(path))
+            self._forget_discarded_files(Path(path), is_dir=is_dir)
         await self.status_response(0)
 
-    def _discarded_files_below(self, path: Path) -> set[Path]:
+    def _discarded_files_below(self, path: Path, is_dir: bool) -> set[Path]:
+        """Return the discarded-placeholder entries at or below ``path``.
+
+        The set only ever contains file paths (one placeholder per rejected
+        payload), so unless ``path`` is a directory the only possible match is
+        ``path`` itself — an O(1) lookup. Reserving the full scan for directories
+        keeps bulk per-file operations linear instead of quadratic; a filtered
+        whole-device backup issues one move per sent file against a set holding
+        every rejected file (https://github.com/doronz88/pymobiledevice3/issues/1833).
+        """
+        if not is_dir:
+            return {path} if path in self._discarded_files else set()
         return {candidate for candidate in self._discarded_files if candidate == path or path in candidate.parents}
 
-    def _move_discarded_files(self, source: Path, destination: Path) -> None:
-        discarded_files = self._discarded_files_below(source)
+    def _move_discarded_files(self, source: Path, destination: Path, is_dir: bool) -> None:
+        discarded_files = self._discarded_files_below(source, is_dir)
         self._discarded_files.difference_update(discarded_files)
         self._discarded_files.update(destination / path.relative_to(source) for path in discarded_files)
 
-    def _copy_discarded_files(self, source: Path, destination: Path) -> None:
+    def _copy_discarded_files(self, source: Path, destination: Path, is_dir: bool) -> None:
         self._discarded_files.update(
-            destination / path.relative_to(source) for path in self._discarded_files_below(source)
+            destination / path.relative_to(source) for path in self._discarded_files_below(source, is_dir)
         )
 
-    def _forget_discarded_files(self, path: Path) -> None:
-        self._discarded_files.difference_update(self._discarded_files_below(path))
+    def _forget_discarded_files(self, path: Path, is_dir: bool) -> None:
+        self._discarded_files.difference_update(self._discarded_files_below(path, is_dir))
 
     def cleanup_discarded_files(self) -> None:
         """Remove temporary placeholders created for payloads rejected by a backup filter."""
