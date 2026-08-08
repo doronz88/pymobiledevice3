@@ -242,7 +242,11 @@ class Pmd3TyperGroup(TyperGroup):
             module_name = f"pymobiledevice3.cli.{CLI_GROUPS[key]}"
             mod = importlib.import_module(module_name)
             if isinstance(mod.cli, typer.Typer):
-                cmd = Pmd3TyperGroup.collect_commands(typer.main.get_group(mod.cli))
+                # Resolve like import_and_get_command does: a single-command module
+                # with no callback collapses into one command invoked by the group key.
+                cmd = Pmd3TyperGroup.collect_commands(typer.main.get_command(mod.cli))
+                if not isinstance(cmd, list):
+                    cmd = key
             else:
                 cmd = Pmd3TyperGroup.collect_commands(mod.cli.commands[key])
             if isinstance(cmd, list):
