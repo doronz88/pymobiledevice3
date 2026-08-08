@@ -15,9 +15,12 @@ from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import (
     OSUTILS,
+    OutputFormat,
+    OutputFormatOption,
     ServiceProviderDep,
     async_command,
     print_json,
+    print_json_line,
     user_requested_colored_output,
 )
 from pymobiledevice3.cli.developer.dvt import core_profile_session, simulate_location, sysmon
@@ -386,15 +389,28 @@ async def device_information(service_provider: ServiceProviderDep) -> None:
 
 @cli.command("netstat")
 @async_command
-async def netstat(service_provider: ServiceProviderDep) -> None:
+async def netstat(service_provider: ServiceProviderDep, output_format: OutputFormatOption = OutputFormat.TEXT) -> None:
     """Print information about current network activity."""
     async with DvtProvider(service_provider) as dvt, NetworkMonitor(dvt) as monitor:
         async for event in monitor:
             if isinstance(event, ConnectionDetectionEvent):
-                logger.info(
-                    f"Connection detected: {event.local_address.data.address}:{event.local_address.port} -> "
-                    f"{event.remote_address.data.address}:{event.remote_address.port}"
-                )
+                if output_format is OutputFormat.JSON:
+                    print_json_line({
+                        "event": "connection_detected",
+                        "local": {"address": str(event.local_address.data.address), "port": event.local_address.port},
+                        "remote": {
+                            "address": str(event.remote_address.data.address),
+                            "port": event.remote_address.port,
+                        },
+                        "pid": event.pid,
+                        "interface_index": event.interface_index,
+                    })
+                else:
+                    print(
+                        f"Connection detected: {event.local_address.data.address}:{event.local_address.port} -> "
+                        f"{event.remote_address.data.address}:{event.remote_address.port}",
+                        flush=True,
+                    )
 
 
 @cli.command("screenshot")
@@ -539,7 +555,11 @@ async def dvt_name_for_gid(service_provider: ServiceProviderDep, gid: int) -> No
 
 @cli.command("oslog")
 @async_command
-async def dvt_oslog(service_provider: ServiceProviderDep, pid: Optional[int] = None) -> None:
+async def dvt_oslog(
+    service_provider: ServiceProviderDep,
+    pid: Optional[int] = None,
+    output_format: OutputFormatOption = OutputFormat.TEXT,
+) -> None:
     """Sniff device oslog (not very stable, but includes more data and normal syslog)"""
     async with DvtProvider(service_provider) as dvt, ActivityTraceTap(dvt) as tap:
         async for message in cast(AsyncIterator[Any], tap):
@@ -562,6 +582,18 @@ async def dvt_oslog(service_provider: ServiceProviderDep, pid: Optional[int] = N
                 continue
 
             formatted_message = decode_message_format(message.message) if message.message else message.name
+
+            if output_format is OutputFormat.JSON:
+                print_json_line({
+                    "timestamp": timestamp,
+                    "pid": message_pid,
+                    "message_type": message_type,
+                    "subsystem": subsystem,
+                    "category": category,
+                    "image_name": image_name,
+                    "message": formatted_message,
+                })
+                continue
 
             if user_requested_colored_output():
                 timestamp = typer.style(str(timestamp), bold=True)
@@ -593,7 +625,7 @@ async def dvt_energy(service_provider: ServiceProviderDep, pid_list: list[str]) 
         EnergyMonitor(dvt, pid_int_list) as energy_monitor,
     ):
         async for telemetry in energy_monitor:
-            logger.info(telemetry)
+            print_json_line(telemetry)
 
 
 @cli.command("notifications")
@@ -602,7 +634,7 @@ async def dvt_notifications(service_provider: ServiceProviderDep) -> None:
     """Monitor memory and app notifications"""
     async with DvtProvider(service_provider) as dvt, Notifications(dvt) as notifications:
         async for notification in notifications:
-            logger.info(notification)
+            print_json_line(notification)
 
 
 @cli.command("graphics")
@@ -611,7 +643,7 @@ async def dvt_graphics(service_provider: ServiceProviderDep) -> None:
     """Monitor graphics-related information"""
     async with DvtProvider(service_provider) as dvt, Graphics(dvt) as graphics:
         async for stats in graphics:
-            logger.info(stats)
+            print_json_line(stats)
 
 
 @cli.command("har")

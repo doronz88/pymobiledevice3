@@ -5,7 +5,7 @@ from typing import Annotated, Union
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json_line
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.resources.firmware_notifications import get_notifications
@@ -78,7 +78,7 @@ async def observe(
             await service.notify_register_dispatch(name)
 
         async for event in service.receive_notification():
-            logger.info(event)
+            print_json_line(event)
 
 
 @cli.command("observe-all")
@@ -95,4 +95,4 @@ async def observe_all(
             await service.notify_register_dispatch(notification)
 
         async for event in service.receive_notification():
-            logger.info(event)
+            print_json_line(event)

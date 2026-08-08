@@ -43,6 +43,20 @@ Prefer existing CLI commands first. Prefer reading local docs and CLI source ove
 6. For long-lived streams or interactive shells, keep the process attached instead of replacing it with one-shot polling.
 7. If the CLI is missing a path that clearly exists in services, add a thin command using `ServiceProviderDep`, `@async_command`, and a service class under `pymobiledevice3/services/` — commands live on an `InjectingTyper` app (from `typer_injector`). Read `docs/guides/writing-commands-with-service-provider.md`.
 
+## Parsing Command Output
+
+Prefer machine-readable output over scraping human text — the contract is documented in
+`docs/guides/machine-readable-output.md` (published on the docs site):
+
+- Data goes to stdout; logging and diagnostics go to stderr. Parse stdout only.
+- Most query commands print JSON unconditionally. Binary values appear as single-key
+  `{"$hex": "..."}` objects (decode with `bytes.fromhex`); timestamps are ISO 8601.
+- Streaming commands emit NDJSON (one JSON object per line): dict-record streams
+  (`dvt energy`/`notifications`/`graphics`, `diagnostics battery monitor`,
+  `notification observe`/`observe-all`) always; human-rendered streams (`syslog live`,
+  `dvt oslog`, `dvt netstat`, `accessibility notifications`, `crash watch`) with
+  `--format json`.
+
 ## Safety Rules
 
 Require explicit user intent before any command that changes device state, including:

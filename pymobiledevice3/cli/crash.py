@@ -1,10 +1,16 @@
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Optional, cast
 
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
+from pymobiledevice3.cli.cli_common import (
+    OutputFormat,
+    OutputFormatOption,
+    ServiceProviderDep,
+    async_command,
+    print_json_line,
+)
 from pymobiledevice3.services.crash_reports import CrashReportsManager, CrashReportsShell
 
 cli = InjectingTyper(
@@ -155,11 +161,28 @@ async def crash_watch(
         bool,
         typer.Option("--raw", "-r"),
     ] = False,
+    output_format: OutputFormatOption = OutputFormat.TEXT,
 ) -> None:
     """watch for crash report generation"""
     async with CrashReportsManager(service_provider) as crash_manager:
         async for crash_report in crash_manager.watch(name=name, raw=raw):
-            print(crash_report)
+            if output_format is OutputFormat.JSON:
+                if isinstance(crash_report, str):
+                    print_json_line({"content": crash_report})
+                else:
+                    print_json_line({
+                        "name": crash_report.name,
+                        "bug_type": crash_report.bug_type,
+                        "bug_type_str": crash_report.bug_type_str,
+                        # pycrashreport's incident_id property is untyped (metadata lookup)
+                        "incident_id": cast(
+                            Optional[str],
+                            crash_report.incident_id,  # pyright: ignore[reportUnknownMemberType]
+                        ),
+                        "timestamp": crash_report.timestamp,
+                    })
+            else:
+                print(crash_report, flush=True)
 
 
 @cli.command("sysdiagnose")
