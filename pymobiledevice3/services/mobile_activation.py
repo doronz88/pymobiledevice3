@@ -5,9 +5,9 @@ import plistlib
 import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Optional, Union, cast
+from typing import Any, Optional, Union
 
-import inquirer3
+import questionary
 import requests
 import typer
 from requests.structures import CaseInsensitiveDict
@@ -15,6 +15,7 @@ from requests.structures import CaseInsensitiveDict
 from pymobiledevice3.exceptions import MobileActivationException
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.utils import ask_prompt
 
 ACTIVATION_USER_AGENT_IOS = "iOS Device Activator (MobileActivation-20 built on Jan 15 2012 at 19:07:28)"
 ACTIVATION_DEFAULT_URL = "https://albert.apple.com/deviceservices/deviceActivation"
@@ -212,13 +213,13 @@ class MobileActivationService:
             else:
                 typer.secho(activation_form.title, bold=True)
                 typer.secho(activation_form.description)
-                fields: list[Any] = []
+                data: dict[str, Any] = {}
                 for field in activation_form.fields:
-                    if field.secure:
-                        fields.append(inquirer3.Password(name=field.id, message=f"{field.label}"))
-                    else:
-                        fields.append(inquirer3.Text(name=field.id, message=f"{field.label}"))
-                data: dict[str, Any] = cast(Any, inquirer3).prompt(fields)
+                    if field.id is None:
+                        # an id-less field cannot be submitted as form data
+                        continue
+                    prompt = questionary.password if field.secure else questionary.text
+                    data[field.id] = ask_prompt(prompt(f"{field.label}"))
                 data.update(activation_form.server_info)
                 content, headers = self.post(ACTIVATION_DEFAULT_URL, data=data)
                 content_type = headers["Content-Type"]

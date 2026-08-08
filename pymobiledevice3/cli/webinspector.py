@@ -9,10 +9,8 @@ from functools import update_wrapper
 from string import Template
 from typing import Annotated, Any, Optional, cast
 
-import inquirer3
 import typer
 import uvicorn
-from inquirer3.themes import GreenPassion
 from prompt_toolkit import HTML, PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion.base import CompleteEvent, Completer, Completion
@@ -25,7 +23,7 @@ from pygments import formatters, highlight, lexers
 from pygments import styles as _pygments_styles
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
+from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, prompt_selection
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import (
     InspectorEvaluateError,
@@ -634,11 +632,7 @@ class InspectorJsShell(JsShell):
         if len(available_pages) == 1:
             return available_pages[0]
 
-        page_query = [inquirer3.List("page", message="choose page", choices=available_pages, carousel=True)]
-        page = cast(
-            dict[str, Any], cast(Any, inquirer3).prompt(page_query, theme=GreenPassion(), raise_keyboard_interrupt=True)
-        )["page"]
-        return page
+        return prompt_selection(available_pages, "choose page")
 
 
 async def run_js_shell(

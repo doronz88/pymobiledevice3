@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Union, cast, overload
 
 import IPython
+import questionary
 import requests
 from construct import Int8ul, Int16ul, Int32ul, Int64ul, Select
 from tqdm import tqdm
@@ -100,6 +101,23 @@ def get_asyncio_loop() -> asyncio.AbstractEventLoop:
 
 def run_in_loop(coro: Coroutine[Any, Any, Any]):
     return get_asyncio_loop().run_until_complete(coro)
+
+
+def ask_prompt(question: questionary.Question) -> Any:
+    """Ask a questionary prompt from either a sync or an async calling context.
+
+    prompt_toolkit refuses ``Application.run()`` while an asyncio loop is already running in
+    the current thread, and prompts are regularly reached from ``@async_command`` handlers.
+    In that case run the prompt on a worker thread, blocking the loop for the prompt's
+    duration — the same terminal-owning behavior a plain blocking read would have.
+
+    Raises ``KeyboardInterrupt`` on Ctrl-C (questionary's ``unsafe_ask`` contract).
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return question.unsafe_ask()
+    return question.application.run(in_thread=True)
 
 
 def start_ipython_shell(*, user_ns: Optional[dict[str, Any]] = None, header: Optional[str] = None) -> None:
