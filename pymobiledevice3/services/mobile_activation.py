@@ -353,5 +353,5 @@ class MobileActivationService:
         if headers is None:
             headers = DEFAULT_HEADERS
 
-        resp = requests.post(url, data=data, headers=headers)
+        resp = requests.post(url, data=data, headers=headers, timeout=30)
         return resp.content, resp.headers
