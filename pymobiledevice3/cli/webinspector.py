@@ -349,6 +349,13 @@ async def js_shell(
         bool,
         typer.Option(help="Open Safari before selecting a page."),
     ] = False,
+    no_replayed_log: Annotated[
+        bool,
+        typer.Option(
+            "--no-replayed-log",
+            help="Don't print the console history the page replays on attach (webinspector.console.replay).",
+        ),
+    ] = False,
 ) -> None:
     """
     Create a javascript shell. This interpreter runs on your local machine,
@@ -366,6 +373,9 @@ async def js_shell(
 
     if automation and console_enable is not None:
         raise typer.BadParameter("--console-enable/--no-console-enable cannot be combined with --automation.")
+
+    if no_replayed_log:
+        logging.getLogger("webinspector.console.replay").setLevel(logging.CRITICAL + 1)
 
     js_shell_class = AutomationJsShell if automation else InspectorJsShell
     create_kwargs = {}

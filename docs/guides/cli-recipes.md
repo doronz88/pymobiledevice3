@@ -426,6 +426,9 @@ pymobiledevice3 webinspector js-shell --bundle-id com.example.MyApp
 # JavaScript shell without inspector console events
 pymobiledevice3 webinspector js-shell --no-console-enable
 
+# JavaScript shell without the console history the page replays on attach
+pymobiledevice3 webinspector js-shell --no-replayed-log
+
 # List opened tabs
 pymobiledevice3 webinspector opened-tabs
 
