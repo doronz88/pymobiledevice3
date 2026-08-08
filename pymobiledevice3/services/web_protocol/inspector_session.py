@@ -252,10 +252,28 @@ class InspectorSession:
             logger.critical(f"unhandled message: {message}")
 
     def _console_message_added(self, message: dict[str, Any]):
-        log_level = message["params"]["message"]["level"]
-        text = message["params"]["message"]["text"]
+        message_body = message["params"]["message"]
+        log_level = message_body["level"]
+        # console-api messages carry only the first argument in 'text'; all arguments arrive
+        # as RemoteObjects in 'parameters' (e.g. console.log(4,4) -> text '4', parameters [4, 4])
+        parameters = message_body.get("parameters")
+        if parameters:
+            text = " ".join(self._stringify_console_parameter(parameter) for parameter in parameters)
+        else:
+            text = message_body["text"]
         self._last_console_message = message
         webinspector_logger_handlers[log_level](text)
+
+    @staticmethod
+    def _stringify_console_parameter(parameter: dict[str, Any]) -> str:
+        if parameter.get("type") == "string":
+            return cast(str, parameter["value"])
+        if "description" in parameter:
+            return cast(str, parameter["description"])
+        if "value" in parameter:
+            # json.dumps renders JS-style primitives (true/false/null) rather than Python's
+            return json.dumps(parameter["value"])
+        return cast(str, parameter.get("type", ""))
 
     def _console_message_repeated_count_updated(self, message: dict[str, Any]):
         self._console_message_added(self._last_console_message)

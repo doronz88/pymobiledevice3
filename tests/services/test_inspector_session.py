@@ -1,7 +1,7 @@
 import json
 import logging
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Optional
 
 import pytest
 
@@ -38,10 +38,56 @@ async def test_runtime_execution_context_created_is_not_logged_as_unhandled(
     assert not [record for record in caplog.records if record.levelno >= logging.CRITICAL]
 
 
-async def test_truly_unknown_event_still_logged(
-    session: InspectorSession, caplog: pytest.LogCaptureFixture
-) -> None:
+async def test_truly_unknown_event_still_logged(session: InspectorSession, caplog: pytest.LogCaptureFixture) -> None:
     event = {"method": "Bogus.event", "params": {}}
     with caplog.at_level(logging.DEBUG, logger="pymobiledevice3.services.web_protocol.inspector_session"):
         session._target_dispatch_message_from_target(_wrap_target_event(event))
     assert [record for record in caplog.records if record.levelno >= logging.CRITICAL]
+
+
+def _console_message_added(text: str, parameters: Optional[list[dict[str, Any]]]) -> dict[str, Any]:
+    message: dict[str, Any] = {"source": "console-api", "level": "log", "type": "log", "text": text}
+    if parameters is not None:
+        message["parameters"] = parameters
+    return {"method": "Console.messageAdded", "params": {"message": message}}
+
+
+def _console_output(session: InspectorSession, caplog: pytest.LogCaptureFixture, event: dict[str, Any]) -> str:
+    with caplog.at_level(logging.DEBUG, logger="webinspector.console"):
+        session._target_dispatch_message_from_target(_wrap_target_event(event))
+    assert len(caplog.records) == 1
+    return caplog.records[0].getMessage()
+
+
+async def test_console_log_multiple_arguments(session: InspectorSession, caplog: pytest.LogCaptureFixture) -> None:
+    # captured live from console.log(4,4): 'text' carries only the first argument,
+    # 'parameters' carries all of them
+    event = _console_message_added(
+        "4",
+        [
+            {"type": "number", "value": 4, "description": "4"},
+            {"type": "number", "value": 4, "description": "4"},
+        ],
+    )
+    assert _console_output(session, caplog, event) == "4 4"
+
+
+async def test_console_log_mixed_arguments(session: InspectorSession, caplog: pytest.LogCaptureFixture) -> None:
+    event = _console_message_added(
+        "hello",
+        [
+            {"type": "string", "value": "hello"},
+            {"type": "boolean", "value": True},
+            {"type": "undefined"},
+            {"type": "object", "className": "Object", "description": "Object", "objectId": "obj-1"},
+        ],
+    )
+    assert _console_output(session, caplog, event) == "hello true undefined Object"
+
+
+async def test_console_message_without_parameters_uses_text(
+    session: InspectorSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    # page-originated messages (e.g. resource errors) carry no 'parameters'
+    event = _console_message_added("Failed to load resource", None)
+    assert _console_output(session, caplog, event) == "Failed to load resource"
