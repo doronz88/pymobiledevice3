@@ -38,6 +38,23 @@ def pytest_addoption(parser):
 
 NO_DEVICE_SKIP_REASON = "No test device is available through usbmuxd"
 
+# Fixtures that open a connection to a physical device. Tests reaching a device any
+# other way must carry an explicit ``@pytest.mark.device``.
+DEVICE_FIXTURES = frozenset({"lockdown", "service_provider", "dvt", "xcuitest_service"})
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Auto-mark every test whose fixture closure reaches a physical device.
+
+    CI runs ``pytest -m "not device"``, so the device-free portion of the suite is
+    exercised on every merge without test authors having to remember a marker: using
+    one of the device-backed fixtures (directly or through a derived fixture) is what
+    makes a test a device test.
+    """
+    for item in items:
+        if DEVICE_FIXTURES.intersection(getattr(item, "fixturenames", ())):
+            item.add_marker(pytest.mark.device)
+
 
 def _skip_unless_tunneled(item: pytest.Item, e: InvalidServiceError) -> None:
     funcargs = item.funcargs if isinstance(item, pytest.Function) else {}

@@ -1,9 +1,24 @@
+import re
+
 import pytest
 import typer
 from typer.testing import CliRunner
 
 from pymobiledevice3 import __main__
 from pymobiledevice3.cli.backup import validate_backup_filter_options
+
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def plain_cli_output(output: str) -> str:
+    """Return CLI output as plain text suitable for substring assertions.
+
+    On GitHub Actions typer forces rich terminal rendering, which interleaves ANSI
+    style codes even inside option names (``--password`` renders as ``-`` and
+    ``-password`` in separate style spans), and rich wraps text inside panel borders.
+    Strip the styling and borders and collapse whitespace so assertions see the words.
+    """
+    return " ".join(ANSI_ESCAPE.sub("", output).replace("│", " ").split())
 
 
 def test_backup_only_regex_invalid_pattern(tmp_path):
@@ -12,8 +27,9 @@ def test_backup_only_regex_invalid_pattern(tmp_path):
     result = runner.invoke(__main__.app, ["backup2", "backup", "--only-regex", "[", str(tmp_path)])
 
     assert result.exit_code != 0
-    assert "Invalid value for '--only-regex'" in result.output
-    assert "Invalid regex pattern '['" in result.output
+    output = plain_cli_output(result.output)
+    assert "Invalid value for '--only-regex'" in output
+    assert "Invalid regex pattern '['" in output
 
 
 def test_backup_command_has_password_option():
@@ -22,7 +38,7 @@ def test_backup_command_has_password_option():
     result = runner.invoke(__main__.app, ["backup2", "backup", "--help"])
 
     assert result.exit_code == 0
-    assert "--password" in result.output
+    assert "--password" in plain_cli_output(result.output)
 
 
 def test_backup_command_has_unback_option():
@@ -31,7 +47,7 @@ def test_backup_command_has_unback_option():
     result = runner.invoke(__main__.app, ["backup2", "backup", "--help"])
 
     assert result.exit_code == 0
-    assert "--unback" in result.output
+    assert "--unback" in plain_cli_output(result.output)
 
 
 def test_backup_command_has_patch_manifest_option():
@@ -40,7 +56,7 @@ def test_backup_command_has_patch_manifest_option():
     result = runner.invoke(__main__.app, ["backup2", "backup", "--help"])
 
     assert result.exit_code == 0
-    assert "--patch-manifest" in result.output
+    assert "--patch-manifest" in plain_cli_output(result.output)
 
 
 def test_filtered_unback_requires_patched_manifest():
@@ -59,7 +75,7 @@ def test_backup_command_offers_messages_selection():
     result = runner.invoke(__main__.app, ["backup2", "backup", "--help"])
 
     assert result.exit_code == 0
-    assert "messages" in result.output
+    assert "messages" in plain_cli_output(result.output)
 
 
 def test_encryption_mode_without_password_fails_with_usage_error():
@@ -68,7 +84,7 @@ def test_encryption_mode_without_password_fails_with_usage_error():
     result = runner.invoke(__main__.app, ["backup2", "encryption", "on"])
 
     assert result.exit_code != 0
-    assert "PASSWORD is required" in result.output
+    assert "PASSWORD is required" in plain_cli_output(result.output)
 
 
 def test_encryption_help_documents_no_args_state_query():
@@ -77,8 +93,7 @@ def test_encryption_help_documents_no_args_state_query():
     result = runner.invoke(__main__.app, ["backup2", "encryption", "--help"])
 
     assert result.exit_code == 0
-    normalized_output = " ".join(result.output.replace("│", " ").split())
-    assert "current encryption state" in normalized_output
+    assert "current encryption state" in plain_cli_output(result.output)
 
 
 def test_backup_full_help_describes_conditional_default():
@@ -87,9 +102,7 @@ def test_backup_full_help_describes_conditional_default():
     result = runner.invoke(__main__.app, ["backup2", "backup", "--help"])
 
     assert result.exit_code == 0
-    # Rich wraps the help text inside panel borders, so strip the box-drawing
-    # characters before joining lines back into a single string
-    normalized_output = " ".join(result.output.replace("│", " ").split())
+    normalized_output = plain_cli_output(result.output)
     assert "incremental" in normalized_output
     assert "valid local metadata exists" in normalized_output
     assert "full for an" in normalized_output
