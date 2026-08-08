@@ -9,15 +9,23 @@ from pymobiledevice3.services.web_protocol.session_protocol import SessionProtoc
 
 logger = logging.getLogger(__name__)
 console_logger = logging.getLogger("webinspector.console")
+# console history replayed by the page on attach, distinguishable (and silenceable) by logger name
+console_replay_logger = logging.getLogger("webinspector.console.replay")
 heap_logger = logging.getLogger("webinspector.heap")
 
-webinspector_logger_handlers = {
-    "log": console_logger.info,
-    "info": console_logger.info,
-    "error": console_logger.error,
-    "debug": console_logger.debug,
-    "warning": console_logger.warning,
-}
+
+def _console_logger_handlers(console: logging.Logger) -> "dict[str, Callable[[str], None]]":
+    return {
+        "log": console.info,
+        "info": console.info,
+        "error": console.error,
+        "debug": console.debug,
+        "warning": console.warning,
+    }
+
+
+webinspector_logger_handlers = _console_logger_handlers(console_logger)
+webinspector_replay_logger_handlers = _console_logger_handlers(console_replay_logger)
 
 
 class JSObjectPreview(UserDict[str, Any]):
@@ -61,6 +69,9 @@ class InspectorSession:
         self.message_id = 1
         self._last_console_message: dict[str, Any] = {}
         self._dispatch_message_responses: dict[int, dict[str, Any]] = {}
+        # WebKit replays the page's buffered console history to a newly attached frontend
+        # while Console.enable is being processed; mark those messages as replayed
+        self._console_replay = True
 
         self.response_methods: dict[str, Callable[[dict[str, Any]], Any]] = {
             "Target.targetCreated": self._target_created,
@@ -114,7 +125,9 @@ class InspectorSession:
         return await self.send_command("Heap.enable")
 
     async def console_enable(self):
-        return await self.send_command("Console.enable")
+        result = await self.send_command("Console.enable")
+        self._console_replay = False
+        return result
 
     async def runtime_enable(self):
         return await self.send_command("Runtime.enable")
@@ -262,7 +275,8 @@ class InspectorSession:
         else:
             text = message_body["text"]
         self._last_console_message = message
-        webinspector_logger_handlers[log_level](text)
+        handlers = webinspector_replay_logger_handlers if self._console_replay else webinspector_logger_handlers
+        handlers[log_level](text)
 
     @staticmethod
     def _stringify_console_parameter(parameter: dict[str, Any]) -> str:

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from types import SimpleNamespace
@@ -52,11 +53,20 @@ def _console_message_added(text: str, parameters: Optional[list[dict[str, Any]]]
     return {"method": "Console.messageAdded", "params": {"message": message}}
 
 
-def _console_output(session: InspectorSession, caplog: pytest.LogCaptureFixture, event: dict[str, Any]) -> str:
+def _console_record(
+    session: InspectorSession, caplog: pytest.LogCaptureFixture, event: dict[str, Any], force_live: bool = True
+) -> logging.LogRecord:
+    if force_live:
+        # formatting tests represent messages logged after Console.enable completed
+        session._console_replay = False
     with caplog.at_level(logging.DEBUG, logger="webinspector.console"):
         session._target_dispatch_message_from_target(_wrap_target_event(event))
     assert len(caplog.records) == 1
-    return caplog.records[0].getMessage()
+    return caplog.records[0]
+
+
+def _console_output(session: InspectorSession, caplog: pytest.LogCaptureFixture, event: dict[str, Any]) -> str:
+    return _console_record(session, caplog, event).getMessage()
 
 
 async def test_console_log_multiple_arguments(session: InspectorSession, caplog: pytest.LogCaptureFixture) -> None:
@@ -91,3 +101,32 @@ async def test_console_message_without_parameters_uses_text(
     # page-originated messages (e.g. resource errors) carry no 'parameters'
     event = _console_message_added("Failed to load resource", None)
     assert _console_output(session, caplog, event) == "Failed to load resource"
+
+
+async def test_console_history_replayed_before_enable_completes_is_marked(
+    session: InspectorSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    # WebKit replays the page's buffered console history while Console.enable is being
+    # processed; those messages are distinguishable (and silenceable) by logger name
+    event = _console_message_added("4", [{"type": "number", "value": 4, "description": "4"}])
+    record = _console_record(session, caplog, event, force_live=False)
+    assert record.name == "webinspector.console.replay"
+    assert record.getMessage() == "4"
+
+
+async def test_console_enable_completion_switches_to_live_output(
+    session: InspectorSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def send_command(method: str, **kwargs: Any) -> None:
+        pass
+
+    session.protocol.send_command = send_command  # pyright: ignore[reportAttributeAccessIssue]
+    task = asyncio.create_task(session.console_enable())
+    # deliver the Console.enable response (inner id 1) so console_enable completes
+    session.protocol.inspector.wir_events.append(_wrap_target_event({"id": 1, "result": {}}))
+    await asyncio.wait_for(task, timeout=5)
+    event = _console_message_added("4", [{"type": "number", "value": 4, "description": "4"}])
+    # console_enable itself must have switched the session out of replay state
+    record = _console_record(session, caplog, event, force_live=False)
+    assert record.name == "webinspector.console"
+    assert record.getMessage() == "4"
