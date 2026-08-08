@@ -47,8 +47,13 @@ function inspectedPage_evalResult_getCompletions(primitiveType) {
     for (let o = object; o; o = o.__proto__) {
         try {
             let names = Object.getOwnPropertyNames(o);
-            for (let i = 0; i < names.length; ++i)
-                resultSet[names[i]] = true;
+            for (let i = 0; i < names.length; ++i) {
+                if (names[i] in resultSet)
+                    continue;
+                // read the kind from the descriptor - accessing the value could invoke getters
+                let d = Object.getOwnPropertyDescriptor(o, names[i]);
+                resultSet[names[i]] = d && 'value' in d ? typeof d.value : 'accessor';
+            }
         } catch(e) {}
     }
     return resultSet;
@@ -436,10 +441,16 @@ async def get_js_completions(jsshell: "JsShell", obj: str, prefix: str) -> Async
         return
 
     try:
-        for key in await jsshell.evaluate_expression(SCRIPT.substitute(object=obj), return_by_value=True):
+        completions = await jsshell.evaluate_expression(SCRIPT.substitute(object=obj), return_by_value=True)
+        for key in sorted(completions, key=str.lower):
             if not key.startswith(prefix):
                 continue
-            yield Completion(key.removeprefix(prefix), display=key)
+            kind = completions[key]
+            yield Completion(
+                key.removeprefix(prefix),
+                display=key,
+                display_meta="ƒ" if kind == "function" else "",
+            )
     except (Exception, CancelledError):
         # ignore every possible exception
         pass
@@ -457,8 +468,8 @@ class JsShellCompleter(Completer):
         # Build the JS expression we want to inspect
         text = f"globalThis.{document.text_before_cursor}"
 
-        # Extract identifiers / dotted paths
-        matches = re.findall(r"[a-zA-Z_][a-zA-Z_0-9.]+", text)
+        # Extract identifiers / dotted paths ($ is a legal JS identifier character)
+        matches = re.findall(r"[a-zA-Z_$][a-zA-Z_$0-9.]+", text)
         if not matches:
             # async *generator*: just end, don't return a list
             return
