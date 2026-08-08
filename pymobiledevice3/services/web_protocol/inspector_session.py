@@ -201,7 +201,8 @@ class InspectorSession:
                 return self._dispatch_message_responses.pop(message_id)
             await asyncio.sleep(0)
 
-    async def get_properties(self, object_id: str) -> JSObjectProperties:
+    async def get_properties_raw(self, object_id: str) -> list[dict[str, Any]]:
+        """Raw ``Runtime.getProperties`` descriptors, preserving RemoteObject dicts (objectIds)."""
         message = cast(
             dict[str, Any],
             await self.send_command(
@@ -210,7 +211,10 @@ class InspectorSession:
         )
         if self.target_id is not None:
             message = json.loads(message["params"]["message"])["result"]
-        return JSObjectProperties(message["properties"])
+        return message["properties"]
+
+    async def get_properties(self, object_id: str) -> JSObjectProperties:
+        return JSObjectProperties(await self.get_properties_raw(object_id))
 
     async def _parse_runtime_evaluate(self, response: dict[str, Any]):
         message = response if self.target_id is None else json.loads(response["params"]["message"])

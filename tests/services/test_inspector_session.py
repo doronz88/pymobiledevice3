@@ -130,3 +130,15 @@ async def test_console_enable_completion_switches_to_live_output(
     record = _console_record(session, caplog, event, force_live=False)
     assert record.name == "webinspector.console"
     assert record.getMessage() == "4"
+
+
+async def test_get_properties_raw_returns_descriptors(session: InspectorSession) -> None:
+    async def send_command(method: str, **kwargs: Any) -> dict[str, Any]:
+        assert method == "Runtime.getProperties"
+        assert kwargs == {"objectId": "obj-1", "ownProperties": True, "generatePreview": True}
+        inner = {"result": {"properties": [{"name": "a", "value": {"type": "number", "value": 1}}]}}
+        return {"params": {"message": json.dumps(inner)}}
+
+    session.send_command = send_command  # pyright: ignore[reportAttributeAccessIssue]
+    properties = await session.get_properties_raw("obj-1")
+    assert properties == [{"name": "a", "value": {"type": "number", "value": 1}}]
