@@ -68,6 +68,9 @@ Use WebInspector for Safari/WebView automation and WDA for device UI automation.
 ## Developer Services And Instrumentation
 
 - `mounter`: mount developer images.
+- `cryptex`: manage personalized cryptexes via cryptexd (iOS 17+, requires an RSD tunnel) —
+  list, auto-install a DDI from unpacked Restore assets, personalization identifiers,
+  nonce inspection/rolling, uninstall.
 - `developer dvt`: screenshot, sysmon, process control, oslog, device info, netstat, HAR, energy, location simulation, xcuitest, profiling.
 - `developer core-device`: file/process/app/device-info operations through CoreDevice flows.
 - `developer debugserver`: debugserver launch and LLDB bridging.
