@@ -28,6 +28,35 @@ webinspector_logger_handlers = _console_logger_handlers(console_logger)
 webinspector_replay_logger_handlers = _console_logger_handlers(console_replay_logger)
 
 
+_MAX_PROPERTY_VALUE_LENGTH = 80
+
+
+def _shorten(text: str) -> str:
+    first_line, *rest = text.split("\n", 1)
+    shortened = first_line[:_MAX_PROPERTY_VALUE_LENGTH]
+    if rest or len(first_line) > _MAX_PROPERTY_VALUE_LENGTH:
+        shortened += "…"
+    return shortened
+
+
+def _shorten_remote_object(remote_object: dict[str, Any]) -> str:
+    """One-line, JS-style rendering of a RemoteObject property value."""
+    if remote_object.get("type") == "string":
+        return _shorten(json.dumps(remote_object["value"]))
+    if remote_object.get("type") == "function":
+        return "ƒ"
+    if remote_object.get("subtype") == "null":
+        return "null"
+    if remote_object.get("type") == "object":
+        return remote_object.get("className") or remote_object.get("description") or "Object"
+    if "description" in remote_object:
+        return _shorten(remote_object["description"])
+    if "value" in remote_object:
+        # json.dumps renders JS-style primitives (true/false) rather than Python's
+        return json.dumps(remote_object["value"])
+    return remote_object.get("type", "")
+
+
 class JSObjectPreview(UserDict[str, Any]):
     def __init__(self, properties: list[dict[str, Any]]):
         super().__init__()
@@ -236,21 +265,44 @@ class InspectorSession:
             value = result.get("value")
             if value is not None:
                 return value
-
-            # TODO: JSObjectProperties()
-            preview = result["preview"]
-            preview_buf = "{\n"
-            for p in result["preview"]["properties"]:
-                value = p.get("value", "NOT_SUPPORTED_FOR_PREVIEW")
-                preview_buf += f"\t{p['name']}: {value}, // {p['type']}\n"
-            if preview.get("overflow"):
-                preview_buf += "\t// ...\n"
-            preview_buf += "}"
-            return f"[object {result['className']}]\n{preview_buf}"
+            return await self._describe_object(result)
         elif result["type"] == "function":
             return result["description"]
         else:
             return result["value"]
+
+    async def _describe_object(self, result: dict[str, Any]) -> str:
+        """Render an object result with all its top-level properties, one shortened line each,
+        the way a browser console prints an evaluated object:
+
+            Window {
+              window: Window
+              document: Document
+              ...
+            }
+
+        Falls back to the bare class name when the object is not addressable or its
+        properties cannot be fetched (released object, navigated page).
+        """
+        class_name = result.get("className") or result.get("description") or "Object"
+        object_id = result.get("objectId")
+        if object_id is None:
+            return class_name
+        try:
+            descriptors = await self.get_properties_raw(object_id)
+        except Exception:
+            return class_name
+        lines: list[str] = []
+        for descriptor in descriptors:
+            if descriptor["name"] == "__proto__":
+                continue
+            remote_object = descriptor.get("value", descriptor.get("get", descriptor.get("set")))
+            if remote_object is None:
+                continue
+            lines.append(f"  {descriptor['name']}: {_shorten_remote_object(remote_object)}")
+        if not lines:
+            return f"{class_name} {{}}"
+        return "\n".join([f"{class_name} {{", *lines, "}"])
 
     # response methods
     def _target_dispatch_message_from_target(self, response: dict[str, Any]):

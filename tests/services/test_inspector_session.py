@@ -142,3 +142,75 @@ async def test_get_properties_raw_returns_descriptors(session: InspectorSession)
     session.send_command = send_command  # pyright: ignore[reportAttributeAccessIssue]
     properties = await session.get_properties_raw("obj-1")
     assert properties == [{"name": "a", "value": {"type": "number", "value": 1}}]
+
+
+def _object_result(inner_result: dict[str, Any]) -> dict[str, Any]:
+    return {"params": {"message": json.dumps({"result": {"result": inner_result}})}}
+
+
+async def test_object_result_lists_all_top_level_properties(session: InspectorSession) -> None:
+    async def get_properties_raw(object_id: str) -> list[dict[str, Any]]:
+        assert object_id == "win-1"
+        return [
+            {"name": "window", "value": {"type": "object", "className": "Window", "objectId": "win-1"}},
+            {"name": "count", "value": {"type": "number", "value": 4, "description": "4"}},
+            {"name": "flag", "value": {"type": "boolean", "value": True}},
+            {"name": "nothing", "value": {"type": "object", "subtype": "null", "value": None}},
+            {"name": "missing", "value": {"type": "undefined"}},
+            {
+                "name": "greet",
+                "value": {"type": "function", "className": "Function", "description": "function greet() {\n}"},
+            },
+            {"name": "title", "value": {"type": "string", "value": "x" * 100}},
+            {
+                "name": "computed",
+                "get": {"type": "function", "className": "Function", "description": "function get computed() {}"},
+            },
+            {"name": "skipme"},
+            {"name": "__proto__", "value": {"type": "object", "className": "Object", "objectId": "proto-1"}},
+        ]
+
+    session.get_properties_raw = get_properties_raw  # pyright: ignore[reportAttributeAccessIssue]
+    rendered = await session._parse_runtime_evaluate(
+        _object_result({"type": "object", "className": "Window", "objectId": "win-1"})
+    )
+    quoted_title = '"' + "x" * 79 + "…"
+    assert rendered == (
+        "Window {\n"
+        "  window: Window\n"
+        "  count: 4\n"
+        "  flag: true\n"
+        "  nothing: null\n"
+        "  missing: undefined\n"
+        "  greet: ƒ\n"
+        f"  title: {quoted_title}\n"
+        "  computed: ƒ\n"
+        "}"
+    )
+
+
+async def test_object_result_without_properties_renders_class_only(session: InspectorSession) -> None:
+    async def get_properties_raw(object_id: str) -> list[dict[str, Any]]:
+        return []
+
+    session.get_properties_raw = get_properties_raw  # pyright: ignore[reportAttributeAccessIssue]
+    rendered = await session._parse_runtime_evaluate(
+        _object_result({"type": "object", "className": "Blob", "objectId": "blob-1"})
+    )
+    assert rendered == "Blob {}"
+
+
+async def test_object_result_property_fetch_failure_falls_back_to_class_name(session: InspectorSession) -> None:
+    async def get_properties_raw(object_id: str) -> list[dict[str, Any]]:
+        raise RuntimeError("released")
+
+    session.get_properties_raw = get_properties_raw  # pyright: ignore[reportAttributeAccessIssue]
+    rendered = await session._parse_runtime_evaluate(
+        _object_result({"type": "object", "className": "Blob", "objectId": "blob-1"})
+    )
+    assert rendered == "Blob"
+
+
+async def test_object_result_without_object_id_renders_class_only(session: InspectorSession) -> None:
+    rendered = await session._parse_runtime_evaluate(_object_result({"type": "object", "className": "Blob"}))
+    assert rendered == "Blob"
