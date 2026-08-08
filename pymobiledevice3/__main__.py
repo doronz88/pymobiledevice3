@@ -143,6 +143,11 @@ CLI_GROUPS = {
 
 # Set if used the `--reconnect` option
 RECONNECT = False
+
+# Exit code the process should terminate with. Handled exceptions are logged as friendly
+# one-liners instead of tracebacks, but must still fail the process (exit code 1) so callers
+# and scripts can detect the failure (#1682).
+EXIT_CODE = 0
 _ORIGINAL_SHELLINGHAM_DETECT: Optional[Callable[[], tuple[str, str]]] = None
 
 
@@ -317,14 +322,18 @@ def invoke_cli_with_error_handling() -> bool:
     Invoke the command line interface and return `True` if the failure reason of the command was that the device was
     disconnected.
     """
+    global EXIT_CODE
+    EXIT_CODE = 0
     try:
         # Typer apps are callable; this executes the CLI with current sys.argv
         app(args=["--help"] if len(sys.argv) == 1 else None)
     except NoDeviceConnectedError:
         logger.error("Device is not connected")
+        EXIT_CODE = 1
         return True
     except ConnectionTerminatedError:
         logger.error("Connection was terminated abruptly")
+        EXIT_CODE = 1
         return True
     except NotPairedError:
         logger.error("Device is not paired")
@@ -344,6 +353,7 @@ def invoke_cli_with_error_handling() -> bool:
         logger.error("Failed to connect to usbmuxd socket. Make sure it's running.")
     except ConnectionFailedError:
         logger.error("Failed to connect to service port.")
+        EXIT_CODE = 1
         return True
     except MessageNotSupportedError:
         logger.error("Message not supported for this iOS version")
@@ -456,6 +466,9 @@ def invoke_cli_with_error_handling() -> bool:
         logger.error(f"File [{e.filename}] not found during afc operation: {e}")
     except AfcException as e:
         logger.error(f"Failed to perform Afc operation: {e}")
+    else:
+        return False
+    EXIT_CODE = 1
     return False
 
 
@@ -474,6 +487,8 @@ def main() -> None:
         except KeyboardInterrupt:
             print("Aborted.")
             break
+    if EXIT_CODE != 0:
+        sys.exit(EXIT_CODE)
 
 
 if __name__ == "__main__":
