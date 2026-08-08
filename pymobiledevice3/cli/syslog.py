@@ -348,7 +348,8 @@ async def cli_syslog_live(
         bool,
         typer.Option(
             "--label",
-            help="Include the [subsystem][category] label in the rendered line (JSON output always emits the label field).",
+            help="Include the subsystem/category label in the rendered line "
+            "(JSON output always emits the label field).",
         ),
     ] = False,
     regex: Annotated[
