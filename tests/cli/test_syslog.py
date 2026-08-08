@@ -385,27 +385,47 @@ async def test_syslog_live_json_emits_valid_ndjson(monkeypatch, capsys):
 
 
 @pytest.mark.asyncio
-async def test_syslog_live_json_ignores_text_filters(monkeypatch, capsys):
-    # Every text-mode filter flag must be ignored in JSON mode.
+async def test_syslog_live_json_applies_text_filters(monkeypatch, capsys):
+    # The line filters select the same entries in JSON mode as in text mode.
     printed_lines, _ = await _run_syslog_live(
         monkeypatch,
         capsys,
-        _create_syslog_entries(["keep this", "skip this"]),
+        _create_syslog_entries(["keep this", "skip this", "keep but drop"]),
         output_format=syslog_module.SyslogFormat.JSON,
         match=["keep"],
-        invert_match=["skip"],
+        invert_match=["drop"],
         match_insensitive=["KEEP"],
         invert_match_insensitive=["SKIP"],
         regex=["keep"],
-        insensitive_regex=["KEEP"],
-        start_after="never-appears",
-        include_label=True,
-        image_offset=True,
+        insensitive_regex=["THIS"],
     )
-    # All entries emitted; none are filtered out.
-    assert len(printed_lines) == 2
-    messages = [json.loads(line)["message"] for line in printed_lines]
-    assert messages == ["keep this", "skip this"]
+    assert [json.loads(line)["message"] for line in printed_lines] == ["keep this"]
+
+
+@pytest.mark.asyncio
+async def test_syslog_live_json_applies_start_after(monkeypatch, capsys):
+    printed_lines, _ = await _run_syslog_live(
+        monkeypatch,
+        capsys,
+        _create_syslog_entries(["before", "MARKER hit", "after"]),
+        output_format=syslog_module.SyslogFormat.JSON,
+        start_after="MARKER",
+    )
+    assert [json.loads(line)["message"] for line in printed_lines] == ["MARKER hit", "after"]
+
+
+@pytest.mark.asyncio
+async def test_syslog_live_json_filters_see_rendered_line_not_only_message(monkeypatch, capsys):
+    # Filters run against the same rendered text line as text mode, so metadata
+    # (process name, level, ...) is matchable even when absent from the message.
+    printed_lines, _ = await _run_syslog_live(
+        monkeypatch,
+        capsys,
+        _create_syslog_entries(["plain message"]),
+        output_format=syslog_module.SyslogFormat.JSON,
+        match=["test-process"],
+    )
+    assert [json.loads(line)["message"] for line in printed_lines] == ["plain message"]
 
 
 @pytest.mark.asyncio
@@ -482,7 +502,7 @@ async def test_syslog_live_json_suppresses_start_after_banner(monkeypatch, capsy
         capsys,
         _create_syslog_entries(["one"]),
         output_format=syslog_module.SyslogFormat.JSON,
-        start_after="anything",
+        start_after="one",
     )
     assert len(printed_lines) == 1
     # The single line must parse as valid JSON — no banner contamination.
