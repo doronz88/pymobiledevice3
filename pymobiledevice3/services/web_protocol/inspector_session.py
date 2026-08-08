@@ -232,12 +232,20 @@ class InspectorSession:
 
     async def get_properties_raw(self, object_id: str) -> list[dict[str, Any]]:
         """Raw ``Runtime.getProperties`` descriptors, preserving RemoteObject dicts (objectIds)."""
-        message = cast(
-            dict[str, Any],
-            await self.send_command(
-                "Runtime.getProperties", objectId=object_id, ownProperties=True, generatePreview=True
-            ),
+        return await self._fetch_properties(
+            "Runtime.getProperties", objectId=object_id, ownProperties=True, generatePreview=True
         )
+
+    async def get_displayable_properties_raw(self, object_id: str) -> list[dict[str, Any]]:
+        """Raw ``Runtime.getDisplayableProperties`` descriptors - the property set Safari's Web
+        Inspector shows for an object: own properties plus the displayable native accessors
+        (which is where most DOM element attributes live)."""
+        return await self._fetch_properties(
+            "Runtime.getDisplayableProperties", objectId=object_id, generatePreview=True
+        )
+
+    async def _fetch_properties(self, method: str, **kwargs: Any) -> list[dict[str, Any]]:
+        message = cast(dict[str, Any], await self.send_command(method, **kwargs))
         if self.target_id is not None:
             message = json.loads(message["params"]["message"])["result"]
         return message["properties"]
@@ -289,9 +297,13 @@ class InspectorSession:
         if object_id is None:
             return class_name
         try:
-            descriptors = await self.get_properties_raw(object_id)
+            # what Safari's Web Inspector shows: own properties + displayable native accessors
+            descriptors = await self.get_displayable_properties_raw(object_id)
         except Exception:
-            return class_name
+            try:
+                descriptors = await self.get_properties_raw(object_id)
+            except Exception:
+                return class_name
         lines: list[str] = []
         for descriptor in descriptors:
             if descriptor["name"] == "__proto__":
