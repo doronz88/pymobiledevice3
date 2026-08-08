@@ -56,11 +56,17 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
-def default_json_encoder(obj: Any) -> str:
+def default_json_encoder(obj: Any) -> Any:
+    """Encode the non-JSON-native types found in device responses.
+
+    ``bytes`` become a single-key ``{"$hex": "..."}`` object so consumers can detect
+    and decode binary values unambiguously (``bytes.fromhex``); datetimes are ISO 8601.
+    This is the machine-readable output contract — see docs/guides/machine-readable-output.md.
+    """
     if isinstance(obj, bytes):
-        return f"<{obj.hex()}>"
+        return {"$hex": obj.hex()}
     if isinstance(obj, datetime.datetime):
-        return str(obj)
+        return obj.isoformat()
     if isinstance(obj, uuid.UUID):
         return str(obj)
     raise TypeError()
