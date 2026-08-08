@@ -286,6 +286,12 @@ async def extract(
         )
 
 
+def _validate_encryption_password(ctx: typer.Context, _param: typer.CallbackParam, value: str) -> str:
+    if ctx.params.get("mode") is not None and not value:
+        raise typer.BadParameter("PASSWORD is required when setting encryption on or off.")
+    return value
+
+
 @cli.command()
 @async_command
 async def encryption(
@@ -293,20 +299,24 @@ async def encryption(
     *,
     backup_directory: BackupDirectoryOption = Path("."),
     mode: Annotated[
-        Literal["on", "off"],
+        Optional[Literal["on", "off"]],
         typer.Argument(case_sensitive=False),
-    ],
-    password: str,
+    ] = None,
+    password: Annotated[str, typer.Argument(callback=_validate_encryption_password)] = "",
 ) -> None:
     """
-    Set backup encryption on / off.
+    Set backup encryption on / off, or report the current encryption state when run without arguments.
 
     When on, PASSWORD will be the new backup password.
     When off, PASSWORD is the current backup password.
     """
     async with Mobilebackup2Service(service_provider) as backup_client:
+        will_encrypt = await backup_client.get_will_encrypt()
+        if mode is None:
+            typer.echo("on" if will_encrypt else "off")
+            return
         should_encrypt = mode.lower() == "on"
-        if should_encrypt == await backup_client.get_will_encrypt():
+        if should_encrypt == will_encrypt:
             logger.error("Encryption already " + ("on!" if should_encrypt else "off!"))
             return
         if should_encrypt:
