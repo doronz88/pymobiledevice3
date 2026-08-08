@@ -8,10 +8,12 @@ import typer
 from pymobiledevice3.cli.developer.dvt.sysmon import process as process_module
 from pymobiledevice3.cli.developer.dvt.sysmon.process import (
     ProcessSelectionMode,
+    _add_derived_fields,
     _describe_process,
     _describe_processes,
     _duration_elapsed,
     _format_byte_count,
+    _format_duration_ns,
     _get_process_identifier,
     _humanize_process_values,
     _matches_filters,
@@ -109,6 +111,49 @@ def test_select_process_output_keys_filters_selected_keys():
 )
 def test_format_byte_count(value, expected):
     assert _format_byte_count(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (0, "0ms"),
+        (500_000, "0ms"),
+        (74_633_791, "74ms"),
+        (1_000_000_000, "1s"),
+        (61_000_000_000, "1m 1s"),
+        (3_600_000_000_000, "1h"),
+        (227_239_368_467_125, "2d 15h 7m 19s"),
+    ],
+)
+def test_format_duration_ns(value, expected):
+    assert _format_duration_ns(value) == expected
+
+
+def test_humanize_process_values_formats_shared_memory_byte_fields():
+    assert _humanize_process_values({"memRShrd": 2048, "memAnonPeak": 1024, "wiredSize": 512}) == {
+        "memRShrd": "2.0KB",
+        "memAnonPeak": "1.0KB",
+        "wiredSize": "512B",
+    }
+
+
+def test_humanize_process_values_formats_nanosecond_fields():
+    assert _humanize_process_values({"cpuTotalUser": 61_000_000_000, "procAge": 1_000_000_000, "pid": 7}) == {
+        "cpuTotalUser": "1m 1s",
+        "procAge": "1s",
+        "pid": 7,
+    }
+
+
+def test_add_derived_fields_computes_cpu_usage_lifetime():
+    process = {"cpuTotalUser": 150, "cpuTotalSystem": 50, "procAge": 100}
+    assert _add_derived_fields(process)["cpuUsageLifetime"] == 200.0
+    assert "cpuUsageLifetime" not in process
+
+
+def test_add_derived_fields_skips_when_inputs_missing_or_zero():
+    assert "cpuUsageLifetime" not in _add_derived_fields({"pid": 7})
+    assert "cpuUsageLifetime" not in _add_derived_fields({"cpuTotalUser": 1, "cpuTotalSystem": 1, "procAge": 0})
 
 
 def test_humanize_process_values_formats_only_known_byte_fields():
@@ -236,6 +281,16 @@ async def test_iter_processes_skips_first_snapshot_when_requested():
     iterated_snapshots = [snapshot async for snapshot in iter_processes(sysmon, skip_first_snapshot=True)]
 
     assert iterated_snapshots == snapshots[1:]
+
+
+@pytest.mark.asyncio
+async def test_iter_processes_adds_cpu_usage_lifetime():
+    snapshots = [[{"pid": 7, "cpuTotalUser": 150, "cpuTotalSystem": 50, "procAge": 100}]]
+    sysmon = cast(Sysmontap, _FakeSysmontap(snapshots))
+
+    iterated_snapshots = [snapshot async for snapshot in iter_processes(sysmon)]
+
+    assert iterated_snapshots[0][0]["cpuUsageLifetime"] == 200.0
 
 
 @pytest.mark.asyncio

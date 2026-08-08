@@ -41,12 +41,25 @@ _BYTE_FIELDS = {
     "diskBytesRead",
     "diskBytesWritten",
     "memAnon",
+    "memAnonPeak",
     "memCompressed",
+    "memPurgeable",
+    "memRPrvt",
+    "memRShrd",
     "memResidentSize",
     "memVirtualSize",
     "physFootprint",
     "purgeableMemory",
     "wiredMemory",
+    "wiredSize",
+}
+
+_NANOSECOND_FIELDS = {
+    "cpuTotalSystem",
+    "cpuTotalUser",
+    "procAge",
+    "threadsSystem",
+    "threadsUser",
 }
 
 _PROCESS_FILTER_PATTERN = re.compile(r"(?P<key>[^=]+)=(?P<value>.*)")
@@ -89,7 +102,10 @@ HumanReadableProcessValues = Annotated[
     bool,
     typer.Option(
         "--human",
-        help="Format known byte-count fields such as physFootprint using human-readable units.",
+        help=(
+            "Format known byte-count fields such as physFootprint using human-readable units, "
+            "and nanosecond fields such as cpuTotalUser as durations."
+        ),
     ),
 ]
 
@@ -150,12 +166,45 @@ def _format_byte_count(value: int) -> str:
     return f"{size:.1f}{suffixes[suffix_index]}" if size < 10 else f"{size:.0f}{suffixes[suffix_index]}"
 
 
+def _format_duration_ns(value: int) -> str:
+    total_seconds, ns_remainder = divmod(value, 1_000_000_000)
+    if total_seconds == 0:
+        return f"{ns_remainder // 1_000_000}ms"
+    parts: list[str] = []
+    for suffix, unit_seconds in (("d", 86400), ("h", 3600), ("m", 60), ("s", 1)):
+        unit_value, total_seconds = divmod(total_seconds, unit_seconds)
+        if unit_value:
+            parts.append(f"{unit_value}{suffix}")
+    return " ".join(parts)
+
+
 def _humanize_process_values(process: dict[str, Any]) -> dict[str, Any]:
     humanized = dict(process)
     for key, value in humanized.items():
-        if key in _BYTE_FIELDS and isinstance(value, int):
+        if not isinstance(value, int):
+            continue
+        if key in _BYTE_FIELDS:
             humanized[key] = _format_byte_count(value)
+        elif key in _NANOSECOND_FIELDS:
+            humanized[key] = _format_duration_ns(value)
     return humanized
+
+
+def _add_derived_fields(process: dict[str, Any]) -> dict[str, Any]:
+    with_derived = dict(process)
+    cpu_total_user = process.get("cpuTotalUser")
+    cpu_total_system = process.get("cpuTotalSystem")
+    proc_age = process.get("procAge")
+    if (
+        isinstance(cpu_total_user, int)
+        and isinstance(cpu_total_system, int)
+        and isinstance(proc_age, int)
+        and proc_age > 0
+    ):
+        # Lifetime average CPU on the same percent-of-core scale as cpuUsage; comparing the two
+        # tells chronic hogs apart from momentary spikes.
+        with_derived["cpuUsageLifetime"] = (cpu_total_user + cpu_total_system) / proc_age * 100
+    return with_derived
 
 
 def _serialize_process(
@@ -219,7 +268,7 @@ async def iter_processes(sysmon: Sysmontap, skip_first_snapshot: bool = False) -
         if should_skip_snapshot:
             should_skip_snapshot = False
             continue
-        yield process_snapshot
+        yield [_add_derived_fields(process) for process in process_snapshot]
 
 
 def _process_sort_key(process: dict[str, Any]) -> tuple[int, int, str]:
