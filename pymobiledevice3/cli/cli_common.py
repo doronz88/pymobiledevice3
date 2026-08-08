@@ -7,6 +7,7 @@ import sys
 import uuid
 from collections.abc import Coroutine
 from contextlib import suppress
+from enum import Enum
 from functools import wraps
 from textwrap import dedent
 from typing import Annotated, Any, Callable, Optional, TypeVar, cast
@@ -56,6 +57,21 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
+class OutputFormat(str, Enum):
+    TEXT = "text"
+    JSON = "json"
+
+
+OutputFormatOption = Annotated[
+    OutputFormat,
+    typer.Option(
+        "--format",
+        help="Output format. 'json' emits one JSON object per line (NDJSON) on stdout.",
+        case_sensitive=False,
+    ),
+]
+
+
 def default_json_encoder(obj: Any) -> Any:
     """Encode the non-JSON-native types found in device responses.
 
@@ -70,6 +86,11 @@ def default_json_encoder(obj: Any) -> Any:
     if isinstance(obj, uuid.UUID):
         return str(obj)
     raise TypeError()
+
+
+def print_json_line(obj: Any) -> None:
+    """Emit one compact NDJSON record on stdout — the streaming counterpart of :func:`print_json`."""
+    print(json.dumps(obj, default=default_json_encoder, ensure_ascii=False), flush=True)
 
 
 def print_json(buf: Any, colored: Optional[bool] = None, default: Callable[[Any], Any] = default_json_encoder) -> str:
