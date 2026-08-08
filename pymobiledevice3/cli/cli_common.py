@@ -159,7 +159,16 @@ def sudo_required(func: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-def prompt_selection(choices: list[Any], message: str, idx: bool = False) -> Any:
+def prompt_selection(choices: list[Any], message: str, idx: bool = False, hint: Optional[str] = None) -> Any:
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        # Scripts, CI, and agents cannot answer an interactive prompt — fail fast with the
+        # candidates instead of garbling the output stream (or hanging) with escape sequences.
+        typer.secho(f"{message}: interactive selection requires a terminal. Candidates:", err=True, fg="red")
+        for choice in choices:
+            typer.echo(f"  {choice}", err=True)
+        if hint is not None:
+            typer.echo(hint, err=True)
+        raise typer.Exit(code=1)
     question = questionary.select(
         message, choices=[questionary.Choice(title=str(choice), value=i) for i, choice in enumerate(choices)]
     )
@@ -172,7 +181,11 @@ def prompt_selection(choices: list[Any], message: str, idx: bool = False) -> Any
 
 
 def prompt_device_list(device_list: list[Any]) -> Any:
-    return prompt_selection(device_list, "Choose device")
+    return prompt_selection(
+        device_list,
+        "Choose device",
+        hint=f"Pass --udid or set {UDID_ENV_VAR} to choose a device non-interactively.",
+    )
 
 
 def is_invoked_for_completion() -> bool:
