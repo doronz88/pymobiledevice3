@@ -9,15 +9,23 @@ from pymobiledevice3.services.web_protocol.session_protocol import SessionProtoc
 
 logger = logging.getLogger(__name__)
 console_logger = logging.getLogger("webinspector.console")
+# console history replayed by the page on attach, distinguishable (and silenceable) by logger name
+console_replay_logger = logging.getLogger("webinspector.console.replay")
 heap_logger = logging.getLogger("webinspector.heap")
 
-webinspector_logger_handlers = {
-    "log": console_logger.info,
-    "info": console_logger.info,
-    "error": console_logger.error,
-    "debug": console_logger.debug,
-    "warning": console_logger.warning,
-}
+
+def _console_logger_handlers(console: logging.Logger) -> "dict[str, Callable[[str], None]]":
+    return {
+        "log": console.info,
+        "info": console.info,
+        "error": console.error,
+        "debug": console.debug,
+        "warning": console.warning,
+    }
+
+
+webinspector_logger_handlers = _console_logger_handlers(console_logger)
+webinspector_replay_logger_handlers = _console_logger_handlers(console_replay_logger)
 
 
 class JSObjectPreview(UserDict[str, Any]):
@@ -61,6 +69,9 @@ class InspectorSession:
         self.message_id = 1
         self._last_console_message: dict[str, Any] = {}
         self._dispatch_message_responses: dict[int, dict[str, Any]] = {}
+        # WebKit replays the page's buffered console history to a newly attached frontend
+        # while Console.enable is being processed; mark those messages as replayed
+        self._console_replay = True
 
         self.response_methods: dict[str, Callable[[dict[str, Any]], Any]] = {
             "Target.targetCreated": self._target_created,
@@ -71,6 +82,7 @@ class InspectorSession:
             "Console.messagesCleared": lambda _: _,
             "Console.messageRepeatCountUpdated": self._console_message_repeated_count_updated,
             "Heap.garbageCollected": self._heap_garbage_collected,
+            "Runtime.executionContextCreated": self._runtime_execution_context_created,
         }
 
         self._receive_task = asyncio.create_task(self._receive_loop())
@@ -113,7 +125,9 @@ class InspectorSession:
         return await self.send_command("Heap.enable")
 
     async def console_enable(self):
-        return await self.send_command("Console.enable")
+        result = await self.send_command("Console.enable")
+        self._console_replay = False
+        return result
 
     async def runtime_enable(self):
         return await self.send_command("Runtime.enable")
@@ -251,16 +265,40 @@ class InspectorSession:
             logger.critical(f"unhandled message: {message}")
 
     def _console_message_added(self, message: dict[str, Any]):
-        log_level = message["params"]["message"]["level"]
-        text = message["params"]["message"]["text"]
+        message_body = message["params"]["message"]
+        log_level = message_body["level"]
+        # console-api messages carry only the first argument in 'text'; all arguments arrive
+        # as RemoteObjects in 'parameters' (e.g. console.log(4,4) -> text '4', parameters [4, 4])
+        parameters = message_body.get("parameters")
+        if parameters:
+            text = " ".join(self._stringify_console_parameter(parameter) for parameter in parameters)
+        else:
+            text = message_body["text"]
         self._last_console_message = message
-        webinspector_logger_handlers[log_level](text)
+        handlers = webinspector_replay_logger_handlers if self._console_replay else webinspector_logger_handlers
+        handlers[log_level](text)
+
+    @staticmethod
+    def _stringify_console_parameter(parameter: dict[str, Any]) -> str:
+        if parameter.get("type") == "string":
+            return cast(str, parameter["value"])
+        if "description" in parameter:
+            return cast(str, parameter["description"])
+        if "value" in parameter:
+            # json.dumps renders JS-style primitives (true/false/null) rather than Python's
+            return json.dumps(parameter["value"])
+        return cast(str, parameter.get("type", ""))
 
     def _console_message_repeated_count_updated(self, message: dict[str, Any]):
         self._console_message_added(self._last_console_message)
 
     def _heap_garbage_collected(self, message: dict[str, Any]):
         heap_logger.debug(message["params"])
+
+    def _runtime_execution_context_created(self, message: dict[str, Any]):
+        # pushed by the page after Runtime.enable for every JS execution context; evaluation
+        # pins uniqueContextId '0.1' (see runtime_evaluate), so the event is informational only
+        logger.debug(f"executionContextCreated: {message['params']['context']}")
 
     def _target_created(self, response: dict[str, Any]):
         pass
