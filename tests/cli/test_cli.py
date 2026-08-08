@@ -3,6 +3,8 @@ import subprocess
 import sys
 
 import pytest
+import typer
+from typer.core import TyperGroup
 from typer.testing import CliRunner
 
 from pymobiledevice3 import __main__
@@ -141,6 +143,42 @@ def test_cli_suggestions(keyword, suggestions):
     )
     for suggestion in suggestions:
         assert suggestion in output.stderr
+
+
+def test_suggestion_index_matches_runtime_command_tree():
+    """Every "Did you mean" suggestion must be invocable exactly as printed.
+
+    Single-command groups without a callback (btlogger, pcap, power-assertion,
+    version) are collapsed by Typer at runtime, so they must be indexed under
+    their group name alone — not as phantom paths like "btlogger capture".
+    """
+    root = typer.main.get_command(__main__.app)
+    suggestions = __main__.Pmd3TyperGroup.load_all_commands()
+
+    for collapsed in ("btlogger", "pcap", "power-assertion", "version"):
+        assert collapsed in suggestions
+
+    for suggestion in suggestions:
+        tokens = suggestion.split(" ")
+        assert tokens[0] in __main__.CLI_GROUPS, f"{suggestion!r} does not start with a top-level command"
+        command = root
+        for token in tokens:
+            assert isinstance(command, TyperGroup), f"{suggestion!r}: {token!r} is not reachable at runtime"
+            command = command.get_command(None, token)  # pyright: ignore[reportArgumentType]
+            assert command is not None, f"{suggestion!r}: {token!r} is not reachable at runtime"
+
+
+@pytest.mark.parametrize("group", __main__.CLI_GROUPS.keys())
+def test_top_level_command_is_named_after_its_dispatch_key(group):
+    """The rich help panel shows each resolved command's click name, so it must
+    match the CLI_GROUPS key it is dispatched by. A collapsed single-command
+    module would otherwise be listed under its inner command name (e.g.
+    "capture"), which `pymobiledevice3 capture` cannot actually invoke."""
+    root = typer.main.get_command(__main__.app)
+    assert isinstance(root, TyperGroup)
+    command = root.get_command(None, group)  # pyright: ignore[reportArgumentType]
+    assert command is not None
+    assert command.name == group
 
 
 @pytest.mark.parametrize("group", __main__.CLI_GROUPS.keys())

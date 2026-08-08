@@ -206,7 +206,12 @@ class Pmd3TyperGroup(TyperGroup):
         mod = importlib.import_module(module_name)
         # submodules expose a Typer Group named "cli"
         cli: typer.Typer = mod.cli
-        return typer.main.get_command(cli)
+        command = typer.main.get_command(cli)
+        # A collapsed single-command module keeps its inner command's click name
+        # (e.g. btlogger's "capture"), but help and suggestions render that name
+        # while dispatch goes by the CLI_GROUPS key — so align it.
+        command.name = name
+        return command
 
     @staticmethod
     def highlight_keyword(text: str, keyword: str) -> str:
@@ -242,7 +247,11 @@ class Pmd3TyperGroup(TyperGroup):
             module_name = f"pymobiledevice3.cli.{CLI_GROUPS[key]}"
             mod = importlib.import_module(module_name)
             if isinstance(mod.cli, typer.Typer):
-                cmd = Pmd3TyperGroup.collect_commands(typer.main.get_group(mod.cli))
+                # Resolve like import_and_get_command does: a single-command module
+                # with no callback collapses into one command invoked by the group key.
+                cmd = Pmd3TyperGroup.collect_commands(typer.main.get_command(mod.cli))
+                if not isinstance(cmd, list):
+                    cmd = key
             else:
                 cmd = Pmd3TyperGroup.collect_commands(mod.cli.commands[key])
             if isinstance(cmd, list):
