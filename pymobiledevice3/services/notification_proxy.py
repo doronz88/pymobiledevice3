@@ -72,7 +72,7 @@ class NotificationProxyService(LockdownService):
 
         :param name: notification name to observe.
         """
-        self.logger.info(f"Observing {name}")
+        self.logger.debug(f"Observing {name}")
         await self.service.send_plist({"Command": "ObserveNotification", "Name": name})
 
     async def receive_notification(self) -> AsyncGenerator[dict[str, Any], None]:
@@ -131,7 +131,7 @@ class RemoteNotificationProxyService(RemoteService):
 
         :param name: notification name to observe.
         """
-        self.logger.info(f"Observing {name}")
+        self.logger.debug(f"Observing {name}")
         await self.service.send_request({"Command": "ObserveNotification", "Name": name})
 
     async def receive_notification(self) -> AsyncGenerator[dict[str, Any], None]:
