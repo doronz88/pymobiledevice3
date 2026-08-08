@@ -169,6 +169,19 @@ def test_suggestion_index_matches_runtime_command_tree():
 
 
 @pytest.mark.parametrize("group", __main__.CLI_GROUPS.keys())
+def test_top_level_command_is_named_after_its_dispatch_key(group):
+    """The rich help panel shows each resolved command's click name, so it must
+    match the CLI_GROUPS key it is dispatched by. A collapsed single-command
+    module would otherwise be listed under its inner command name (e.g.
+    "capture"), which `pymobiledevice3 capture` cannot actually invoke."""
+    root = typer.main.get_command(__main__.app)
+    assert isinstance(root, TyperGroup)
+    command = root.get_command(None, group)  # pyright: ignore[reportArgumentType]
+    assert command is not None
+    assert command.name == group
+
+
+@pytest.mark.parametrize("group", __main__.CLI_GROUPS.keys())
 def test_cli_groups(group):
     runner = CliRunner()
     group_help_result = runner.invoke(__main__.app, [group, "--help"])

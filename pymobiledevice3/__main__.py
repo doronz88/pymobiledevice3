@@ -206,7 +206,12 @@ class Pmd3TyperGroup(TyperGroup):
         mod = importlib.import_module(module_name)
         # submodules expose a Typer Group named "cli"
         cli: typer.Typer = mod.cli
-        return typer.main.get_command(cli)
+        command = typer.main.get_command(cli)
+        # A collapsed single-command module keeps its inner command's click name
+        # (e.g. btlogger's "capture"), but help and suggestions render that name
+        # while dispatch goes by the CLI_GROUPS key — so align it.
+        command.name = name
+        return command
 
     @staticmethod
     def highlight_keyword(text: str, keyword: str) -> str:
