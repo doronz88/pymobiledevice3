@@ -17,6 +17,7 @@ from pymobiledevice3.exceptions import (
     AfcException,
     AfcFileNotFoundError,
     NotificationTimeoutError,
+    ProtocolError,
     SysdiagnoseTimeoutError,
 )
 from pymobiledevice3.lockdown import LockdownClient
@@ -239,7 +240,9 @@ class CrashReportsManager:
         """
         ack = b"ping\x00"
         service = await self.lockdown.start_lockdown_service(self.crash_mover_service_name)
-        assert ack == await service.recvall(len(ack))
+        response = await service.recvall(len(ack))
+        if response != ack:
+            raise ProtocolError(f"got invalid response: {response!r}")
 
     async def watch(
         self, name: Optional[str] = None, raw: bool = False

@@ -9,7 +9,7 @@ from enum import IntEnum
 from pathlib import Path
 from tarfile import TarFile
 
-from pymobiledevice3.exceptions import ConnectionTerminatedError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import ConnectionTerminatedError, ProtocolError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -302,7 +302,7 @@ class OsTraceService(LockdownService):
         :param size_limit: Optional maximum archive size in bytes.
         :param age_limit: Optional maximum age, in days, of entries to include.
         :param start_time: Optional earliest entry time, as a unix timestamp.
-        :raises AssertionError: If the device does not acknowledge the request with a successful status.
+        :raises ProtocolError: If the device does not acknowledge the request with a successful status.
         """
         request: dict[str, typing.Any] = {"Request": "CreateArchive"}
 
@@ -318,15 +318,21 @@ class OsTraceService(LockdownService):
         await self.connect()
         await self.service.send_plist(request)
 
-        assert (await self.service.recvall(1))[0] == 1
+        response = await self.service.recvall(1)
+        if response[0] != 1:
+            raise ProtocolError(f"got invalid response: {response.hex()}")
 
-        assert plistlib.loads(await self.service.recv_prefixed()).get("Status") == "RequestSuccessful", "Invalid status"
+        status = plistlib.loads(await self.service.recv_prefixed()).get("Status")
+        if status != "RequestSuccessful":
+            raise ProtocolError(f"got invalid status: {status}")
 
         while True:
             try:
-                assert (await self.service.recvall(1))[0] == 3, "invalid magic"
+                magic = await self.service.recvall(1)
             except ConnectionTerminatedError:
                 break
+            if magic[0] != 3:
+                raise ProtocolError(f"got invalid magic: {magic.hex()}")
             out.write(await self.service.recv_prefixed(endianity="<"))
 
     async def collect(
@@ -374,7 +380,7 @@ class OsTraceService(LockdownService):
         :param stream_flags: Bitmask of `OsActivityStreamFlag` values controlling stream
             contents and decoding; defaults to `OS_TRACE_RELAY_STREAM_FLAGS_DEFAULT`.
         :yields: Each decoded log entry as it arrives.
-        :raises PyMobileDevice3Exception: If the device rejects the stream-start request.
+        :raises ProtocolError: If the device rejects the stream-start request.
         """
         await self.connect()
         await self.service.send_plist({
@@ -389,10 +395,12 @@ class OsTraceService(LockdownService):
         response = plistlib.loads(await self.service.recvall(length))
 
         if response.get("Status") != "RequestSuccessful":
-            raise PyMobileDevice3Exception(f"got invalid response: {response}")
+            raise ProtocolError(f"got invalid response: {response}")
 
         while True:
-            assert await self.service.recvall(1) == b"\x02"
+            magic = await self.service.recvall(1)
+            if magic != b"\x02":
+                raise ProtocolError(f"got invalid magic: {magic.hex()}")
             (length,) = struct.unpack("<I", await self.service.recvall(4))
             line = await self.service.recvall(length)
             yield parse_syslog_entry(line)
