@@ -62,6 +62,25 @@ def test_backup_command_offers_messages_selection():
     assert "messages" in result.output
 
 
+def test_encryption_mode_without_password_fails_with_usage_error():
+    runner = CliRunner()
+
+    result = runner.invoke(__main__.app, ["backup2", "encryption", "on"])
+
+    assert result.exit_code != 0
+    assert "PASSWORD is required" in result.output
+
+
+def test_encryption_help_documents_no_args_state_query():
+    runner = CliRunner()
+
+    result = runner.invoke(__main__.app, ["backup2", "encryption", "--help"])
+
+    assert result.exit_code == 0
+    normalized_output = " ".join(result.output.replace("│", " ").split())
+    assert "current encryption state" in normalized_output
+
+
 def test_backup_full_help_describes_conditional_default():
     runner = CliRunner()
 
