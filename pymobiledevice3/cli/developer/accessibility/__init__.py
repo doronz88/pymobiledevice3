@@ -3,7 +3,14 @@ from typing import Any
 
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
+from pymobiledevice3.cli.cli_common import (
+    OutputFormat,
+    OutputFormatOption,
+    ServiceProviderDep,
+    async_command,
+    print_json,
+    print_json_line,
+)
 from pymobiledevice3.cli.developer.accessibility import settings
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
 
@@ -48,7 +55,9 @@ def accessibility_shell(service_provider: ServiceProviderDep) -> None:
 
 @cli.command("notifications")
 @async_command
-async def accessibility_notifications(service_provider: ServiceProviderDep) -> None:
+async def accessibility_notifications(
+    service_provider: ServiceProviderDep, output_format: OutputFormatOption = OutputFormat.TEXT
+) -> None:
     """show notifications"""
     service = AccessibilityAudit(service_provider)
     async for event in service.iter_events():
@@ -57,7 +66,10 @@ async def accessibility_notifications(service_provider: ServiceProviderDep) -> N
             "hostInspectorCurrentElementChanged:",
         ):
             for focus_item in event.data:
-                logger.info(focus_item)
+                if output_format is OutputFormat.JSON:
+                    print_json_line(focus_item.to_dict())
+                else:
+                    print(focus_item, flush=True)
 
 
 @cli.command("list-items")
