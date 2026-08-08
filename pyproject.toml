@@ -62,7 +62,7 @@ dependencies = [
     "uvicorn>=0.15.0",
     "wsproto",
     "Pillow",
-    "inquirer3>=0.6.0",
+    "questionary>=2.0.0",
     "ipsw_parser>=1.6.0",
     "ifaddr",
     "hyperframe",

@@ -15,6 +15,9 @@ Read this file when the request touches transport selection, iOS 17+ developer s
   equivalent); it is mutually exclusive with `--rsd`/`--tunnel`.
 - `--rsd HOST PORT` is for a specific RemoteServiceDiscovery endpoint.
 - `--tunnel ''` or `--tunnel <UDID>` targets a device already exposed by `tunneld`.
+- With multiple devices attached, always pass `--udid <UDID>` (or set
+  `PYMOBILEDEVICE3_UDID`). Without a TTY the interactive device chooser does not prompt —
+  it exits 1 and prints the candidate devices on stderr.
 
 Use `uvx --from . pymobiledevice3 usbmux list` first for direct USB discovery.
 
