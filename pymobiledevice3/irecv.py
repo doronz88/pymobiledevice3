@@ -318,23 +318,26 @@ class IRecv:
         end = start + timeout
         while (self._device is None) and (time.time() < end):
             for device in cast(Iterable[Device], find(find_all=True)):
+                usb_device: Any = device
+
+                # Match on the descriptor fields cached at enumeration. Reading string
+                # descriptors (e.g. manufacturer) requires opening the device, which fails
+                # for unrelated devices lacking a libusb-compatible driver (e.g. on Windows).
+                if usb_device.idVendor != APPLE_VENDOR_ID:
+                    continue
+
+                mode = Mode.get_mode_from_value(usb_device.idProduct)
+                if mode is None:
+                    # not one of Apple's special modes
+                    continue
+
+                if is_recovery is not None and mode.is_recovery != is_recovery:
+                    continue
+
+                if self._device is not None:
+                    raise IRecvError("More then one connected device was found connected in recovery mode")
+
                 try:
-                    usb_device: Any = device
-                    if usb_device.manufacturer is None:
-                        continue
-                    if not usb_device.manufacturer.startswith("Apple"):
-                        continue
-
-                    mode = Mode.get_mode_from_value(usb_device.idProduct)
-                    if mode is None:
-                        # not one of Apple's special modes
-                        continue
-
-                    if is_recovery is not None and mode.is_recovery != is_recovery:
-                        continue
-
-                    if self._device is not None:
-                        raise IRecvError("More then one connected device was found connected in recovery mode")
                     self._device = device
                     self._mode = mode
                     self._populate_device_info()
@@ -345,7 +348,10 @@ class IRecv:
                             # wrong device - move on
                             self._device = None
                             continue
-                except ValueError:
+                except (ValueError, NotImplementedError, USBError):
+                    # unreadable device (e.g. missing driver or permissions) - move on
+                    self._device = None
+                    self._mode = None
                     continue
 
     def _populate_device_info(self):
