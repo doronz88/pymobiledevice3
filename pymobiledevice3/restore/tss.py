@@ -747,15 +747,18 @@ class TSSRequest:
         result_comp_name = None
 
         for comp_name, node in manifest.items():
-            if not comp_name.startswith("Yonkers,"):
+            # Only Yonkers,SysTopPatch* is eligible: other Yonkers,* entries (e.g. the
+            # Yonkers,SepObject added in iOS 27) carry neither EPRO nor FabRevision, so
+            # they'd pass the filters below and shadow the correct component.
+            if not comp_name.startswith("Yonkers,SysTopPatch"):
                 continue
 
             target_node = 1
             sub_node = node.get("EPRO")
-            if sub_node:
+            if sub_node is not None:
                 target_node &= sub_node if isprod else not sub_node
             sub_node = node.get("FabRevision")
-            if sub_node:
+            if sub_node is not None:
                 target_node &= sub_node == fabrevision
 
             if target_node:
