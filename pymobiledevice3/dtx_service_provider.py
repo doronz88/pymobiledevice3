@@ -196,6 +196,17 @@ class DtxServiceProvider:
         ``com.apple.instruments.remoteserver`` and similar pre-iOS 14 services.
         """
         lockdown = self.lockdown
+        if isinstance(lockdown, RemoteServiceDiscoveryService) and service_name.endswith(".shim.remote"):
+            # A ".shim.remote" service is a lockdown service shimmed over RSD, and every
+            # such shim requires the RSDCheckin handshake before it will speak — the
+            # accessibility shim, for example, resets the connection otherwise.
+            # start_lockdown_service() performs the check-in and consumes its two framed
+            # plist responses, leaving the stream at the start of the DTX frame.
+            # (Native RemoteXPC-era services like dtservicehub need no check-in.)
+            svc = await lockdown.start_lockdown_service(service_name)
+            reader, writer = await svc._ensure_started()
+            return DTXConnection(reader, writer)
+
         attr = await lockdown.get_service_connection_attributes(service_name, False)
         svc = await lockdown.create_service_connection(attr["Port"])
 
