@@ -107,6 +107,10 @@ class FakePyTcpSocket:
 
     def close(self) -> None:
         self.closed.set()
+        # pmd-pytcp >= 0.3.4: the session's death (close/RST/reap) wakes a
+        # parked recv(), which then reports EOF or a connection error
+        # instead of sleeping forever.
+        self.feed_eof()
 
 
 class FakeTun:
@@ -132,9 +136,10 @@ async def _poll_until(predicate, timeout: float = 5.0):
 
 
 async def test_relay_full_conversation_and_clean_completion():
-    # ping/pong through the relay, then a client-initiated close: the client EOF must reach
-    # the device as a half-close (SHUT_WR), and once the device answers with its own EOF the
-    # handler must finish on its own — with the pytcp socket closed and no task left behind.
+    # ping/pong through the relay, then a client-initiated close: the client's EOF must fully
+    # close the pytcp socket (the FIN still reaches the device; the session becomes an orphan
+    # the stack's FIN_WAIT_2 reaper owns) and the handler must finish on its own — with no
+    # task left behind and WITHOUT requiring any further device action.
     tun = FakeTun()
     async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
         reader, writer = await dial_plane.dial(DEVICE_ADDR, 1234)
@@ -147,11 +152,26 @@ async def test_relay_full_conversation_and_clean_completion():
         assert await reader.readexactly(4) == b"pong"
 
         writer.close()
-        # client EOF -> device half-close (SHUT_WR=1 or SHUT_RDWR=2)
-        await _poll_until(lambda: any(how in (1, 2) for how in psock.shutdown_calls))
-        psock.feed_eof()  # the device finishes its side
-        await _poll_until(lambda: not dial_plane._relay_tasks)  # handler completed unaided
         await asyncio.wait_for(psock.closed.wait(), timeout=5)
+        await _poll_until(lambda: not dial_plane._relay_tasks)  # handler completed unaided
+
+
+async def test_abandoned_client_with_silent_device_leaks_nothing():
+    # The dominant real-world leak (measured live: 24 of 30 abandoned service connections):
+    # the client vanishes while the device neither sends a byte nor FINs. A half-close kept
+    # the pytcp socket open — a reader existed — so the stack's orphan-only FIN_WAIT_2 reaper
+    # never armed and the handler parked at recv() until tunnel teardown. The relay must fully
+    # close the socket on client EOF so the session is orphaned (reaper territory) and the
+    # handler finishes promptly.
+    tun = FakeTun()
+    async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
+        _reader, writer = await dial_plane.dial(DEVICE_ADDR, 4321)
+        psock = (await _poll_until(lambda: tun.socks))[0]
+
+        writer.close()  # the client is gone; the device stays silent
+
+        await asyncio.wait_for(psock.closed.wait(), timeout=5)
+        await _poll_until(lambda: not dial_plane._relay_tasks)
 
 
 async def test_device_eof_reaches_client():

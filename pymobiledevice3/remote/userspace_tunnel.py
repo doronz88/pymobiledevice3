@@ -45,7 +45,7 @@ from pmd_net_addr import Ip6Address, Ip6IfAddr, MacAddress
 from pmd_pytcp import stack
 from pmd_pytcp.lib.interface_layer import InterfaceLayer
 from pmd_pytcp.lib.io_backend import register_interface_fd, unregister_interface_fd
-from pmd_pytcp.socket import AF_INET6, SHUT_RDWR, SHUT_WR, SOCK_DGRAM, SOCK_STREAM
+from pmd_pytcp.socket import AF_INET6, SHUT_RDWR, SOCK_DGRAM, SOCK_STREAM
 from pmd_pytcp.socket import socket as pytcp_socket
 
 import pymobiledevice3.remote.tunnel_service as tunnel_service
@@ -346,9 +346,12 @@ class UserspaceTun:
         # thread-wakeup gymnastics remain — the pure-asyncio stack has nothing parked off-loop.
         try:
             await stack.stop()  # pyright: ignore[reportGeneralTypeIssues]  # pmd-pytcp types stop() as sync; it is a coroutine at runtime
-            stack._pmd3_inited = False  # type: ignore[attr-defined]
         except Exception:
             logger.debug("error stopping pytcp stack", exc_info=True)
+        finally:
+            # Clear the init marker even when stop() raised: a later open->close->open cycle
+            # must re-run stack.init() rather than reuse a half-stopped stack.
+            stack._pmd3_inited = False  # type: ignore[attr-defined]
         unregister_interface_fd(self._pend)
         for s in (self._peer, self._pend):
             with suppress(Exception):
@@ -418,12 +421,20 @@ class UserspaceDialPlane:
             except Exception:
                 pass
             finally:
-                # Propagate the client's EOF to the device as a FIN (half-close). The device
-                # then finishes its side and its FIN ends device_to_client with b"", letting
-                # the whole handler complete. Without this the handler waits on device
-                # traffic forever after the client is gone (#1756).
+                # The client is gone — nothing in pymobiledevice3 half-closes its side
+                # (every ServiceConnection teardown is a full close), so no device byte can
+                # ever be delivered again. Fully close the pytcp socket: the FIN still goes
+                # out (services that treat EOF as "finish and close" behave exactly as with
+                # the previous SHUT_WR half-close), but the session is now ORPHANED, so a
+                # device that neither answers nor FINs is reaped by pmd-pytcp's FIN_WAIT_2
+                # orphan timer instead of pinning the session — and this handler — forever.
+                # A mere half-close kept the socket open (a reader existed: device_to_client)
+                # and the reaper is deliberately orphan-only, so abandoned relays accumulated
+                # for the tunnel's lifetime (measured: 24 of 30 abandoned service connections
+                # parked at psock.recv() until teardown). pmd-pytcp >= 0.3.4 wakes the pending
+                # recv() on the session's death, letting the whole handler finish promptly.
                 with suppress(Exception):
-                    psock.shutdown(SHUT_WR)
+                    psock.close()
 
         async def device_to_client() -> None:
             try:
