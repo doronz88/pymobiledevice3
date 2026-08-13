@@ -88,19 +88,23 @@ dependencies = [
     # (https://github.com/doronz88/pmd-pytcp). Pulls its pmd-net-addr / pmd-net-proto siblings in
     # transitively. Supported on Python 3.9+ (the whole pymobiledevice3 range); if the import or
     # stack init fails the tunnel transparently falls back to the kernel path (see cli_common).
-    # 0.3.4 floor: session death (RST / FIN / reaper / 2MSL) wakes blocked recv() waiters —
-    # the relay handler in userspace_tunnel.py relies on this to finish promptly once it fully
-    # closes an abandoned connection's pytcp socket (a parked waiter used to leak the handler
-    # task for the tunnel's lifetime); also fixes the NUD FAILED black-hole (a device asleep
-    # ~3 s could kill the tunnel until process restart) and the per-session post-close 1 kHz
-    # timer spin. 0.3.0 added the 'net.rx_cksum_validate' software RX-checksum-offload sysctl
+    # 0.3.7 floor: the complete 2026-08 stability-audit series. The API contract strictly
+    # needs only 0.3.4 — session death (RST / FIN / reaper / 2MSL) wakes blocked recv()
+    # waiters, which the relay handler in userspace_tunnel.py relies on to finish promptly
+    # once it fully closes an abandoned connection's pytcp socket, plus the NUD FAILED
+    # black-hole fix (a device asleep ~3 s could kill the tunnel until process restart) —
+    # but 0.3.5-0.3.7 carry the rest of the audit's liveness/bounds work (datapath loops
+    # survive their first exception instead of dying silently, per-session timer spins
+    # stopped, connect() failures always surface, every queue/table bounded), and the floor
+    # guarantees no pymobiledevice3 install runs a stack with those known wedge modes.
+    # 0.3.0 added the 'net.rx_cksum_validate' software RX-checksum-offload sysctl
     # (skips the RFC 1071 checksum on the AEAD-authenticated tunnel; ~+35% bulk download).
     # 0.2.0 added dynamic send-MSS via working RFC 4821/8899 PLPMTUD (probing sysctls
     # tcp.mtu_probing / tcp.base_mss / tcp.plpmtud.probe_timer_ms, the tcp.rto.min_ms floor,
     # and the runtime 'log.enabled' hot-path gate). userspace_tunnel.py sets these knobs
     # unconditionally — no capability probing — so the floor IS the compatibility contract.
     # (0.1.0 introduced the pure-asyncio stack the module is written against.)
-    "pmd-pytcp>=0.3.4; python_version >= '3.9'",
+    "pmd-pytcp>=0.3.7; python_version >= '3.9'",
 ]
 
 [project.optional-dependencies]
