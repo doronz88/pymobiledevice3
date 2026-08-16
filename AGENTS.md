@@ -23,6 +23,12 @@ Guidance for AI coding agents and automation contributors working in this reposi
 - The repository must stay pyright-clean: `pyright --venvpath .` (pinned to 1.1.411 in CI) must
   report 0 errors after any change. Suppressions must be rule-specific
   (`# pyright: ignore[ruleName]`) and reserved for inherently dynamic APIs.
+- On Python 3.15+ the CLI and the test suite run with PEP 810 lazy imports, scoped so
+  that only imports performed by pymobiledevice3's own modules are deferred
+  (`pymobiledevice3/_lazy_imports.py`; `__main__` and `tests/conftest.py` import it first
+  in their first-party block — isort keeps it there). A module-level import may not
+  execute until first use, so never rely on another module's import-time side effects;
+  anything that must run eagerly belongs in an explicit call. No-op on Python <= 3.14.
 - CLI commands are Typer-based and typically use dependency injection via
   `ServiceProviderDep` from `pymobiledevice3/cli/cli_common.py`.
 - Never import `click` or `typer._click` in package code. Typer (>= 0.20) vendors click

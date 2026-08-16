@@ -180,3 +180,29 @@ There are ~30 services under `pymobiledevice3/services/`. A few common ones:
 For the full surface, see the [API reference](../api/index.md) and the
 [Writing CLI commands](writing-commands-with-service-provider.md) guide, which shows how the CLI
 wires service providers into commands.
+
+## 5. Faster imports on Python 3.15+
+
+On Python 3.15+ the CLI enables [PEP 810 lazy imports](https://peps.python.org/pep-0810/) for
+itself, scoped so that only pymobiledevice3's own imports are deferred — roughly halving its
+startup time. As a library, pymobiledevice3 never changes your process's import semantics:
+importing `pymobiledevice3.*` from your application stays eager.
+
+If you own the process, you can opt in to the same behavior. It saves ~0.2-0.3s on the heaviest
+entry points (e.g. `pymobiledevice3.remote.userspace_tunnel`), and the filter keeps every other
+package eager — process-wide laziness is known to break some import hooks:
+
+```python
+import sys
+
+
+def _lazy_filter(importing: str, imported: str, fromlist: object = None) -> bool:
+    return importing.partition(".")[0] == "pymobiledevice3"
+
+
+if hasattr(sys, "set_lazy_imports"):  # Python 3.15+
+    sys.set_lazy_imports("all")
+    sys.set_lazy_imports_filter(_lazy_filter)
+```
+
+Run this before importing any pymobiledevice3 module. On older Pythons it is a no-op.
