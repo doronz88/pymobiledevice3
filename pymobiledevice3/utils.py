@@ -6,7 +6,6 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Optional, Union, cast, overload
 
-import IPython
 import questionary
 import requests
 from construct import Int8ul, Int16ul, Int32ul, Int64ul, Select
@@ -121,6 +120,12 @@ def ask_prompt(question: questionary.Question) -> Any:
 
 
 def start_ipython_shell(*, user_ns: Optional[dict[str, Any]] = None, header: Optional[str] = None) -> None:
+    # Imported here rather than at module scope. This is IPython's only use
+    # in the package, but `pymobiledevice3.lockdown` imports this module, so
+    # every library consumer that opens a lockdown connection was paying to
+    # import a REPL it never starts.
+    import IPython
+
     # Keep IPython autoawait on the same loop used by CLI async wrappers.
     config = Config()
     config.InteractiveShell.loop_runner = run_in_loop
