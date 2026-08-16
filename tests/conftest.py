@@ -5,6 +5,9 @@ from typing import Any, Union
 import pytest
 import pytest_asyncio
 
+# Must precede the other first-party imports (isort keeps it first): on Python 3.15+ this makes
+# pymobiledevice3-internal imports lazy for the whole test run, exercising the mode the CLI ships.
+import pymobiledevice3._lazy_imports  # noqa: F401
 from pymobiledevice3.exceptions import (
     ConnectionFailedToUsbmuxdError,
     DeviceNotFoundError,

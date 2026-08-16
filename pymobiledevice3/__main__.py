@@ -22,6 +22,9 @@ try:
 except ImportError:  # pragma: no cover
     shellingham = None
 
+# Must precede the other first-party imports (isort keeps it first) so their dependency
+# chains are lazy on Python 3.15+; see the module docstring.
+import pymobiledevice3._lazy_imports  # noqa: F401
 from pymobiledevice3.cli.cli_common import (
     PREFER_TUNNELD_ENV_VAR,
     TUNNEL_ENV_VAR,
