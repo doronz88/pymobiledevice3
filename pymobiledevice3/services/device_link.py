@@ -172,9 +172,20 @@ class DeviceLink:
             try:
                 file_path = self.root_path / file
 
-                # split into chunks, otherwise we may crash BackupAgent2 by OOM
-                # https://github.com/doronz88/pymobiledevice3/issues/1165#issuecomment-2376815692
-                chunk_size = 128 * 1024 * 1024  # 128 MB
+                # Split each file into small protocol frames. BackupAgent2 buffers a whole
+                # frame in memory before flushing it to disk, so large frames drive its RSS
+                # up: on an incremental backup the host sends the previous Manifest.db back
+                # (via DLMessageDownloadFiles) for the device to diff, and a big Manifest.db
+                # (issues #1165, #1857) pushes BackupAgent2 past its jetsam memory limit --
+                # the process is killed mid-transfer and the backup hangs at 0%.
+                #
+                # Apple's own DeviceLink.framework (the host side Finder uses) sends file
+                # data in 32 KiB frames by default (the "BufferSize" preference under
+                # com.apple.DeviceLink; _DLSendFileForBulkOperation reads BufferSize-1 bytes
+                # per frame), so match that. Measured against a 1.55 GB Manifest.db: 128 MiB
+                # frames breach the device memory limit and crawl at ~8.5 MB/s, while 32 KiB
+                # frames stay under it and run ~4.6x faster (same ~40 MB/s as 1 MiB).
+                chunk_size = 32 * 1024  # 32 KiB, matching Apple's DeviceLink BufferSize default
 
                 with file_path.open("rb") as file_handle:
                     while True:
