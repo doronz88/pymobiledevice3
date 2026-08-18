@@ -8,8 +8,14 @@ from pymobiledevice3.cli.cli_common import (
     OutputFormat,
     OutputFormatOption,
     ServiceProviderDep,
+    WebDavBindPortOption,
+    WebDavHostOption,
+    WebDavMountOption,
+    WebDavPathArgument,
+    WebDavReadonlyOption,
     async_command,
     print_json_line,
+    run_afc_webdav_cli,
 )
 from pymobiledevice3.services.crash_reports import CrashReportsManager, CrashReportsShell
 
@@ -126,6 +132,24 @@ async def crash_pull(
 def crash_shell(service_provider: ServiceProviderDep) -> None:
     """start an afc shell"""
     CrashReportsShell.create(service_provider)
+
+
+@cli.command("webdav")
+@async_command
+async def crash_webdav(
+    service_provider: ServiceProviderDep,
+    path: WebDavPathArgument = "/",
+    mount: WebDavMountOption = False,
+    host: WebDavHostOption = "127.0.0.1",
+    bind_port: WebDavBindPortOption = 0,
+    readonly: WebDavReadonlyOption = False,
+) -> None:
+    """Serve the crash reports directory over WebDAV for local mounting."""
+    async with CrashReportsManager(service_provider) as crash_manager:
+        label = f"pmd-{service_provider.udid or 'device'}-crash"
+        await run_afc_webdav_cli(
+            crash_manager.afc, path=path, mount=mount, host=host, bind_port=bind_port, readonly=readonly, label=label
+        )
 
 
 @cli.command("ls")

@@ -213,6 +213,46 @@ def async_command(func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, R]:
     return wrapper
 
 
+def require_webdav_mount_tool(mount: bool) -> None:
+    """Fail early if ``--mount`` was requested but no WebDAV mount tool is available on this host."""
+    from pymobiledevice3.services.webdav_mount import webdav_mount_supported
+
+    if mount and not webdav_mount_supported():
+        typer.secho(
+            "--mount is unavailable: no supported WebDAV mount tool found "
+            "(mount_webdav on macOS, net on Windows, gio on Linux)",
+            fg="red",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+
+async def run_afc_webdav_cli(
+    afc: Any, *, path: str, mount: bool, host: str, bind_port: int, readonly: bool, label: str
+) -> None:
+    """Serve an open AFC service over WebDAV from a CLI command, and block until interrupted.
+
+    The WebDAV dependencies require Python >= 3.10; on older interpreters a clear error is emitted.
+    """
+    require_webdav_mount_tool(mount)
+    try:
+        from pymobiledevice3.services.webdav import run_afc_webdav
+    except ImportError as e:
+        typer.secho("WebDAV support requires Python >= 3.10", fg="red", err=True)
+        raise typer.Exit(1) from e
+    await run_afc_webdav(afc, path=path, mount=mount, host=host, port=bind_port, readonly=readonly, label=label)
+
+
+# Shared options for the `webdav` subcommands across the AFC-backed CLI groups.
+WebDavPathArgument = Annotated[str, typer.Argument(help="AFC path to serve as the volume root (default: /)")]
+WebDavMountOption = Annotated[
+    bool, typer.Option("--mount", help="mount the served path locally and reveal it in your file manager")
+]
+WebDavHostOption = Annotated[str, typer.Option("--host", help="local interface to bind")]
+WebDavBindPortOption = Annotated[int, typer.Option("--bind-port", help="local TCP port (0 picks a free port)")]
+WebDavReadonlyOption = Annotated[bool, typer.Option("--readonly", help="expose the path read-only")]
+
+
 async def get_mobdev2_devices(udid: Optional[str] = None) -> list[TcpLockdownClient]:
     return [lockdown async for _, lockdown in get_mobdev2_lockdowns(udid=udid)]
 

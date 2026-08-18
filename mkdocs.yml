@@ -116,6 +116,7 @@ nav:
   - Installation: installation.md
   - Guides:
       - CLI recipes: guides/cli-recipes.md
+      - Mounting AFC in Finder (WebDAV): guides/webdav-mounting.md
       - iOS 17+ tunnels: guides/ios17-tunnels.md
       - WebView debugging: guides/webview-debugging.md
       - Machine-readable output: guides/machine-readable-output.md
