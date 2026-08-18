@@ -8,9 +8,15 @@ from typer_injector import InjectingTyper
 from pymobiledevice3.cli.cli_common import (
     RSDServiceProviderDep,
     ServiceProviderDep,
+    WebDavBindPortOption,
+    WebDavHostOption,
+    WebDavMountOption,
+    WebDavPathArgument,
+    WebDavReadonlyOption,
     async_command,
     cli_loop,
     print_json,
+    run_afc_webdav_cli,
 )
 from pymobiledevice3.services.house_arrest import HouseArrestService
 from pymobiledevice3.services.install_coordination_proxy import InstallCoordinationProxyService
@@ -108,6 +114,28 @@ def afc(
         service.shell()
     finally:
         cli_loop.run_until_complete(service.close())
+
+
+@cli.command("webdav")
+@async_command
+async def apps_webdav(
+    service_provider: ServiceProviderDep,
+    bundle_id: str,
+    path: WebDavPathArgument = "/",
+    documents: Annotated[bool, typer.Option()] = False,
+    mount: WebDavMountOption = False,
+    host: WebDavHostOption = "127.0.0.1",
+    bind_port: WebDavBindPortOption = 0,
+    readonly: WebDavReadonlyOption = False,
+) -> None:
+    """Serve an app container over WebDAV for local mounting; pass --documents for Documents-only."""
+    async with await HouseArrestService.create(
+        lockdown=service_provider, bundle_id=bundle_id, documents_only=documents
+    ) as service:
+        label = f"pmd-{service_provider.udid or 'device'}-{bundle_id}"
+        await run_afc_webdav_cli(
+            service, path=path, mount=mount, host=host, bind_port=bind_port, readonly=readonly, label=label
+        )
 
 
 @cli.command("pull")

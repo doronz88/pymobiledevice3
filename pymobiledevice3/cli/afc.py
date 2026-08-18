@@ -4,7 +4,16 @@ from typing import Annotated
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
+from pymobiledevice3.cli.cli_common import (
+    ServiceProviderDep,
+    WebDavBindPortOption,
+    WebDavHostOption,
+    WebDavMountOption,
+    WebDavPathArgument,
+    WebDavReadonlyOption,
+    async_command,
+    run_afc_webdav_cli,
+)
 from pymobiledevice3.services.afc import AfcService, AfcShell
 
 cli = InjectingTyper(
@@ -18,6 +27,24 @@ cli = InjectingTyper(
 def afc_shell(service_provider: ServiceProviderDep) -> None:
     """Open an interactive AFC shell rooted at /var/mobile/Media."""
     AfcShell.create(service_provider)
+
+
+@cli.command("webdav")
+@async_command
+async def afc_webdav(
+    service_provider: ServiceProviderDep,
+    path: WebDavPathArgument = "/",
+    mount: WebDavMountOption = False,
+    host: WebDavHostOption = "127.0.0.1",
+    bind_port: WebDavBindPortOption = 0,
+    readonly: WebDavReadonlyOption = False,
+) -> None:
+    """Serve /var/mobile/Media over WebDAV for local mounting (e.g. in Finder)."""
+    async with AfcService(lockdown=service_provider) as afc:
+        label = f"pmd-{service_provider.udid or 'device'}-afc"
+        await run_afc_webdav_cli(
+            afc, path=path, mount=mount, host=host, bind_port=bind_port, readonly=readonly, label=label
+        )
 
 
 @cli.command("pull")
