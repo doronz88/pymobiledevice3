@@ -42,6 +42,17 @@ pymobiledevice3 apps list
 
 The docs are built from [`docs/`](docs/) with MkDocs (`mkdocs.yml`).
 
+## Claude Code plugin
+
+The repository ships its
+[device-operator agent skill](https://doronz88.github.io/pymobiledevice3/guides/codex-device-operator-skill/)
+as a Claude Code plugin, teaching the agent to operate a connected iPhone or iPad through pymobiledevice3:
+
+```
+/plugin marketplace add doronz88/pymobiledevice3
+/plugin install pymobiledevice3-device-operator@pymobiledevice3
+```
+
 ## Community
 
 Questions, ideas, or want to help? Join the community on [Discord](https://discord.gg/52mZGC3JXJ).
