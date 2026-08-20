@@ -1186,7 +1186,7 @@ class TSSRequest:
             "Cache-Control": "no-cache",
             "Content-type": 'text/xml; charset="utf-8"',
             "User-Agent": "InetURL/1.0",
-            "Expect": "",
+            "Expect": "100-continue",
         }
 
         logger.info("Sending TSS request...")
