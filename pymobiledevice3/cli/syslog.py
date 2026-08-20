@@ -1,3 +1,4 @@
+import fnmatch
 import json
 import logging
 import os
@@ -24,6 +25,7 @@ from pymobiledevice3.services.os_trace import (
     OsActivityStreamFlag,
     OsTraceService,
     SyslogEntry,
+    SyslogLabel,
     SyslogLogLevel,
 )
 from pymobiledevice3.services.syslog import SyslogService
@@ -139,6 +141,28 @@ def _should_skip_line(line: str, invert_match: list[str], invert_match_insensiti
     return any(m.lower() in line_lower for m in invert_match_insensitive)
 
 
+def _matches_any_glob(value: str, patterns: list[str]) -> bool:
+    lowered = value.lower()
+    return any(fnmatch.fnmatchcase(lowered, pattern.lower()) for pattern in patterns)
+
+
+def _should_keep_label(label: Optional[SyslogLabel], subsystem: list[str], category: list[str]) -> bool:
+    """Keep an entry based on its os_log subsystem/category label.
+
+    ``subsystem``/``category`` are case-insensitive glob patterns. Within a single option
+    the patterns are OR-ed (match any); the two options are AND-ed (subsystem AND category
+    must each match when both are given). An entry with no label is dropped as soon as any
+    label filter is active, since it has no subsystem/category to match against.
+    """
+    if not subsystem and not category:
+        return True
+    if label is None:
+        return False
+    subsystem_ok = not subsystem or _matches_any_glob(label.subsystem, subsystem)
+    category_ok = not category or _matches_any_glob(label.category, category)
+    return subsystem_ok and category_ok
+
+
 def _should_keep_line(
     line: str, match: list[str], match_insensitive: list[str], match_regex: list[re.Pattern[str]]
 ) -> bool:
@@ -206,6 +230,8 @@ async def syslog_live(
     include_label: bool,
     regex: list[str],
     insensitive_regex: list[str],
+    subsystem: list[str],
+    category: list[str],
     no_debug: bool = False,
     no_info: bool = False,
     image_offset: bool = False,
@@ -239,6 +265,9 @@ async def syslog_live(
         if no_info and syslog_entry.level == SyslogLogLevel.INFO:
             # I don't really understand why INFO is retrieved when not requested, but this is imitating
             # Console.app behavior
+            continue
+
+        if not _should_keep_label(syslog_entry.label, subsystem, category):
             continue
 
         # Filters always run against the plain rendered line, so a given set of flags
@@ -369,6 +398,26 @@ async def cli_syslog_live(
             "(repeatable; any match includes - disjunction).",
         ),
     ] = None,
+    subsystem: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--subsystem",
+            "-s",
+            help="keep only entries whose os_log subsystem matches this case-insensitive glob "
+            "(e.g. 'com.apple.WebKit*'). Repeatable; an entry is kept if it matches any "
+            "(disjunction). Entries with no subsystem/category label are dropped when set.",
+        ),
+    ] = None,
+    category: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--category",
+            "-c",
+            help="keep only entries whose os_log category matches this case-insensitive glob "
+            "(e.g. 'Network'). Repeatable; an entry is kept if it matches any (disjunction). "
+            "Combined with --subsystem as a conjunction (both must match).",
+        ),
+    ] = None,
     image_offset: Annotated[
         bool,
         typer.Option(
@@ -423,6 +472,8 @@ async def cli_syslog_live(
             include_label,
             regex or [],
             insensitive_regex or [],
+            subsystem or [],
+            category or [],
             no_debug,
             no_info,
             image_offset,
