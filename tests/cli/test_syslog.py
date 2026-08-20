@@ -75,6 +75,8 @@ async def _run_syslog_live(
         "include_label": False,
         "regex": [],
         "insensitive_regex": [],
+        "subsystem": [],
+        "category": [],
         "no_debug": False,
         "no_info": False,
     }
@@ -507,3 +509,122 @@ async def test_syslog_live_json_suppresses_start_after_banner(monkeypatch, capsy
     assert len(printed_lines) == 1
     # The single line must parse as valid JSON — no banner contamination.
     assert json.loads(printed_lines[0])["message"] == "one"
+
+
+def _labeled_entry(message: str, subsystem: str, category: str) -> SyslogEntry:
+    entry = _create_syslog_entry(message)
+    entry.label = SyslogLabel(subsystem=subsystem, category=category)
+    return entry
+
+
+@pytest.mark.parametrize(
+    ("subsystem", "category", "label", "expected"),
+    [
+        # no filters -> keep everything, labeled or not
+        ([], [], None, True),
+        ([], [], SyslogLabel(subsystem="com.apple.WebKit", category="session"), True),
+        # a filter is active but the entry has no label -> drop
+        (["com.apple.WebKit"], [], None, False),
+        ([], ["session"], None, False),
+        # exact subsystem
+        (
+            ["com.apple.WebKit.Network"],
+            [],
+            SyslogLabel(subsystem="com.apple.WebKit.Network", category="net"),
+            True,
+        ),
+        (["com.apple.CoreFoundation"], [], SyslogLabel(subsystem="com.apple.WebKit.Network", category="net"), False),
+        # glob subsystem (matches every WebKit sub-subsystem)
+        (
+            ["com.apple.WebKit*"],
+            [],
+            SyslogLabel(subsystem="com.apple.WebKit.Process", category="cache"),
+            True,
+        ),
+        (["com.apple.WebKit*"], [], SyslogLabel(subsystem="com.apple.CoreFoundation", category="io"), False),
+        # case-insensitive
+        (["COM.APPLE.corefoundation"], [], SyslogLabel(subsystem="com.apple.CoreFoundation", category="io"), True),
+        # disjunction within subsystem list
+        (
+            ["com.apple.CoreFoundation", "com.apple.WebKit*"],
+            [],
+            SyslogLabel(subsystem="com.apple.WebKit.Network", category="net"),
+            True,
+        ),
+        # category glob
+        ([], ["net"], SyslogLabel(subsystem="com.apple.WebKit.Network", category="net"), True),
+        ([], ["cach*"], SyslogLabel(subsystem="com.apple.WebKit.Process", category="cache"), True),
+        ([], ["io"], SyslogLabel(subsystem="com.apple.WebKit.Network", category="net"), False),
+        # conjunction across subsystem AND category
+        (
+            ["com.apple.WebKit*"],
+            ["net"],
+            SyslogLabel(subsystem="com.apple.WebKit.Network", category="net"),
+            True,
+        ),
+        (
+            ["com.apple.WebKit*"],
+            ["io"],
+            SyslogLabel(subsystem="com.apple.WebKit.Network", category="net"),
+            False,
+        ),
+    ],
+)
+def test_should_keep_label(subsystem, category, label, expected):
+    assert syslog_module._should_keep_label(label, subsystem, category) == expected
+
+
+@pytest.mark.asyncio
+async def test_syslog_live_subsystem_filter(monkeypatch, capsys):
+    entries = [
+        _labeled_entry("network event", "com.apple.WebKit.Network", "net"),
+        _labeled_entry("cf thing", "com.apple.CoreFoundation", "Loading"),
+        _create_syslog_entry("no label here"),
+    ]
+    printed_lines, _ = await _run_syslog_live(monkeypatch, capsys, entries, subsystem=["com.apple.WebKit*"])
+    assert len(printed_lines) == 1
+    assert printed_lines[0].endswith("network event")
+
+
+@pytest.mark.asyncio
+async def test_syslog_live_category_filter(monkeypatch, capsys):
+    entries = [
+        _labeled_entry("cached", "com.apple.WebKit.Process", "cache"),
+        _labeled_entry("networked", "com.apple.WebKit.Network", "net"),
+    ]
+    printed_lines, _ = await _run_syslog_live(monkeypatch, capsys, entries, category=["cache"])
+    assert len(printed_lines) == 1
+    assert printed_lines[0].endswith("cached")
+
+
+@pytest.mark.asyncio
+async def test_syslog_live_subsystem_and_category_conjunction(monkeypatch, capsys):
+    entries = [
+        _labeled_entry("net on webkit", "com.apple.WebKit.Network", "net"),
+        _labeled_entry("net on other", "com.apple.CoreFoundation", "net"),
+        _labeled_entry("io on webkit", "com.apple.WebKit.Network", "io"),
+    ]
+    printed_lines, _ = await _run_syslog_live(
+        monkeypatch, capsys, entries, subsystem=["com.apple.WebKit*"], category=["net"]
+    )
+    assert len(printed_lines) == 1
+    assert printed_lines[0].endswith("net on webkit")
+
+
+@pytest.mark.asyncio
+async def test_syslog_live_subsystem_filter_json(monkeypatch, capsys):
+    entries = [
+        _labeled_entry("keep", "com.apple.WebKit.Network", "net"),
+        _labeled_entry("drop", "com.apple.CoreFoundation", "Loading"),
+    ]
+    printed_lines, _ = await _run_syslog_live(
+        monkeypatch,
+        capsys,
+        entries,
+        subsystem=["com.apple.WebKit*"],
+        output_format=syslog_module.SyslogFormat.JSON,
+    )
+    assert len(printed_lines) == 1
+    obj = json.loads(printed_lines[0])
+    assert obj["message"] == "keep"
+    assert obj["label"]["subsystem"] == "com.apple.WebKit.Network"
