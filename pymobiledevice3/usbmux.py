@@ -246,7 +246,6 @@ class MuxConnection:
     async def connect(self, device: MuxDevice, port: int) -> socket.socket:
         await self._connect(device.devid, socket.htons(port))
         self._connected = True
-        self._sock.setblocking(True)
         return self._sock
 
     async def close(self):

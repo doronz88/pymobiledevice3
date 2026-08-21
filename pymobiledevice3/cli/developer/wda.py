@@ -66,10 +66,11 @@ async def wait_for_xctest_app(service_provider: LockdownServiceProvider, xctrunn
             if device is None:
                 raise DeviceNotFoundError(service_provider.udid)
             try:
-                await device.connect(DEFAULT_WDA_PORT)
+                probe_sock = await device.connect(DEFAULT_WDA_PORT)
             except ConnectionFailedError:
                 await asyncio.sleep(0.1)
             else:
+                probe_sock.close()
                 break
     except Exception:
         xctrunner_task.cancel()
