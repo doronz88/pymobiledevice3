@@ -23,7 +23,7 @@ from typing import Any, Optional, Union, cast
 
 from bpylist2 import archiver
 
-from . import ns_types as _ns_types  # noqa: F401 - registers common NSKeyedArchive classes
+from . import ns_types as _ns_types
 from .exceptions import DTXNSCodingError, DTXProtocolError
 from .fragment import DTXFragment, DTXTransportFlags
 from .message_aux import MessageAux
@@ -34,6 +34,13 @@ from .structs import (
     DTXMessageType,
     dtx_fragment_payload_header,
 )
+
+# Register the NSKeyedArchive proxy classes eagerly. This must be an explicit call,
+# not a bare import relied upon for its side effect: under PEP 810 lazy imports
+# (Python 3.15+) ns_types' body would not run until one of its names is used,
+# leaving archiver.unarchive() in this module with an empty class map (observed as
+# DTSysmonTapMessage/DTTapHeartbeatMessage decode failures during e.g. `sysmon`).
+_ns_types.register_ns_keyed_classes()
 
 logger = logging.getLogger(__name__)
 

@@ -5,8 +5,13 @@ from typing import Any, Union, cast
 from bpylist2 import archiver
 from construct import Bytes, ConstructError, Peek
 
-from . import ns_types as _ns_types  # noqa: F401 - registers common NSKeyedArchive classes
+from . import ns_types as _ns_types
 from .primitives import PNULL, PBuf, PDict, _primitive_value_con, _PrimitiveBase
+
+# Register the NSKeyedArchive proxy classes eagerly (see the identical call in dtx/message.py):
+# a bare side-effect import is unsafe under PEP 810 lazy imports, and archiver.unarchive() is
+# reached from this module's own aux-arg decoding.
+_ns_types.register_ns_keyed_classes()
 
 logger = logging.getLogger(__name__)
 _test_eof = Peek(Bytes(1))

@@ -2,9 +2,9 @@
 
 This module defines the Python proxy classes that :mod:`bpylist2.archiver`
 uses when deserialising NSKeyedArchive payloads received from a DTX peer.
-All classes are registered with the archiver at import time via
-``archiver.update_class_map(...)`` so no explicit registration call is
-needed by callers.
+The classes are registered with the archiver by :func:`register_ns_keyed_classes`,
+which runs eagerly at import for direct importers but must be called explicitly
+from any lazy-imported decode path (see the call in :mod:`pymobiledevice3.dtx.message`).
 
 Exported classes
 ----------------
@@ -219,27 +219,46 @@ class NSDate:
 
 
 # ---------------------------------------------------------------------------
-# Archiver registration  (runs at import time)
+# Archiver registration
 # ---------------------------------------------------------------------------
 
-archiver.update_class_map({
-    "DTSysmonTapMessage": DTTapMessage,
-    "DTTapHeartbeatMessage": DTTapMessage,
-    "DTTapStatusMessage": DTTapMessage,
-    "DTKTraceTapMessage": DTTapMessage,
-    "DTActivityTraceTapMessage": DTTapMessage,
-    "DTTapMessage": DTTapMessage,
-    "NSNull": NSNull,
-    "NSError": NSError,
-    "NSUUID": NSUUID,
-    "NSURL": NSURL,
-    "NSValue": NSValue,
-    "NSMutableArray": NSMutableArray,
-    "NSMutableData": NSMutableData,
-    "NSMutableString": NSMutableString,
-    "NSDate": NSDate,
-})
 
-archiver.ARCHIVE_CLASS_MAP[NSMutableArray] = "NSMutableArray"  # type: ignore[index]
-_archive_cls: Any = archiver.Archive
-_archive_cls.inline_types = list({*_archive_cls.inline_types, bytes})
+def register_ns_keyed_classes() -> None:
+    """Register this module's NSKeyedArchive proxy classes with bpylist2.
+
+    Callers that decode via ``archiver.unarchive`` MUST invoke this explicitly
+    rather than relying on it running as an import-time side effect. Under PEP
+    810 lazy imports (Python 3.15+, enabled for the CLI and test suite) importing
+    this module does not execute its body until one of its names is first used,
+    so a decode path that only touches ``archiver`` would otherwise see an
+    unpopulated ``UNARCHIVE_CLASS_MAP`` and fail on every ``DT*TapMessage``.
+
+    Idempotent: safe to call more than once.
+    """
+    archiver.update_class_map({
+        "DTSysmonTapMessage": DTTapMessage,
+        "DTTapHeartbeatMessage": DTTapMessage,
+        "DTTapStatusMessage": DTTapMessage,
+        "DTKTraceTapMessage": DTTapMessage,
+        "DTActivityTraceTapMessage": DTTapMessage,
+        "DTTapMessage": DTTapMessage,
+        "NSNull": NSNull,
+        "NSError": NSError,
+        "NSUUID": NSUUID,
+        "NSURL": NSURL,
+        "NSValue": NSValue,
+        "NSMutableArray": NSMutableArray,
+        "NSMutableData": NSMutableData,
+        "NSMutableString": NSMutableString,
+        "NSDate": NSDate,
+    })
+
+    archiver.ARCHIVE_CLASS_MAP[NSMutableArray] = "NSMutableArray"  # type: ignore[index]
+    _archive_cls: Any = archiver.Archive
+    _archive_cls.inline_types = list({*_archive_cls.inline_types, bytes})
+
+
+# Eager registration for direct importers of this module and for Python <= 3.14,
+# where module-level imports are not lazy. The explicit call in dtx/message.py
+# covers the lazy-import (3.15+) decode paths.
+register_ns_keyed_classes()

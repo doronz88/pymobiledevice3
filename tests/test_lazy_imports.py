@@ -30,3 +30,34 @@ def test_cli_entry_enables_scoped_lazy_imports() -> None:
         checks = "assert not hasattr(sys, 'get_lazy_imports')"
     code = f"import sys; import pymobiledevice3.__main__; {checks}"
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_dtx_decode_registers_ns_classes_under_lazy_imports() -> None:
+    """A DTX payload must decode via NSKeyedUnarchiver without a caller pre-touching ns_types.
+
+    Regression: under PEP 810 lazy imports the NSKeyedArchive class registration in
+    pymobiledevice3.dtx.ns_types ran only as an import side effect, which never fired
+    for decode paths (e.g. `sysmon`) that reach archiver.unarchive without using an
+    ns_types name -- every DT*TapMessage then failed to unarchive and fell back to a raw
+    plist dict. Run in a subprocess so process-global lazy state and the class map are
+    pristine, importing only the decode entry point (dtx.message).
+    """
+    code = (
+        "import pymobiledevice3._lazy_imports\n"  # enable filtered lazy imports on 3.15+ (no-op below)
+        "import plistlib\n"
+        "from pymobiledevice3.dtx.message import DTXMessage, DTXMessageType\n"
+        "U = plistlib.UID\n"
+        "archive = {'$version': 100000, '$archiver': 'NSKeyedArchiver', '$top': {'root': U(1)},\n"
+        "    '$objects': ['$null',\n"
+        "        {'DTTapMessagePlist': U(2), '$class': U(8)},\n"
+        "        {'NS.keys': [U(3), U(4)], 'NS.objects': [U(5), U(6)], '$class': U(7)},\n"
+        "        'k', 'tv', 0, 65536,\n"
+        "        {'$classname': 'NSMutableDictionary',\n"
+        "         '$classes': ['NSMutableDictionary', 'NSDictionary', 'NSObject']},\n"
+        "        {'$classname': 'DTSysmonTapMessage',\n"
+        "         '$classes': ['DTSysmonTapMessage', 'DTTapMessage', 'NSObject']}]}\n"
+        "data = plistlib.dumps(archive, fmt=plistlib.FMT_BINARY)\n"
+        "msg = DTXMessage(type=next(iter(DTXMessageType)), payload_data=memoryview(data))\n"
+        "assert msg.payload == {'k': 0, 'tv': 65536}, msg.payload\n"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
