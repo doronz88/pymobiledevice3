@@ -61,3 +61,29 @@ def test_dtx_decode_registers_ns_classes_under_lazy_imports() -> None:
         "assert msg.payload == {'k': 0, 'tv': 65536}, msg.payload\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_xctest_decode_registers_classes_under_lazy_imports() -> None:
+    """XCTest result payloads must decode once the XCTest DTX service module is in use.
+
+    Same regression as the DTX case, one layer up: xctest_types registered its proxy
+    classes (XCTIssue, XCActivityRecord, ...) only as an import side effect, but those
+    types are decoded by the DTX machinery without any xctest_types name being touched,
+    so under lazy imports they fell back to a raw plist dict. Using a name from the
+    decode-entry module (dtx_services) must be enough to register them.
+    """
+    code = (
+        "import pymobiledevice3._lazy_imports\n"
+        "import plistlib\n"
+        "from pymobiledevice3.services.dvt.testmanaged.dtx_services import XCTestManager_IDEInterface\n"
+        "XCTestManager_IDEInterface  # use the name -> resolve dtx_services body -> register\n"
+        "from pymobiledevice3.dtx.message import DTXMessage, DTXMessageType\n"
+        "U = plistlib.UID\n"
+        "archive = {'$version': 100000, '$archiver': 'NSKeyedArchiver', '$top': {'root': U(1)},\n"
+        "    '$objects': ['$null', {'$class': U(2)},\n"
+        "        {'$classname': 'XCTIssue', '$classes': ['XCTIssue', 'NSObject']}]}\n"
+        "data = plistlib.dumps(archive, fmt=plistlib.FMT_BINARY)\n"
+        "msg = DTXMessage(type=next(iter(DTXMessageType)), payload_data=memoryview(data))\n"
+        "assert type(msg.payload).__name__ == 'XCTIssue', msg.payload\n"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)

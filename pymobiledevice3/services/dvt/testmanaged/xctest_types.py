@@ -116,13 +116,6 @@ class XCTestConfiguration:
         return archive_obj.object
 
 
-# Register with bpylist2 archiver so incoming payloads are decoded correctly.
-archiver.update_class_map({
-    "XCTestConfiguration": XCTestConfiguration,
-    "XCTCapabilities": XCTCapabilities,
-})
-
-
 # ---------------------------------------------------------------------------
 # XCTest runtime types — decoded from NSKeyedArchive payloads during test runs
 # ---------------------------------------------------------------------------
@@ -376,19 +369,40 @@ class XCTestCaseRunConfiguration:
         )
 
 
-archiver.update_class_map({
-    "XCTTestIdentifier": XCTTestIdentifier,
-    "XCTTestIdentifierSet": XCTTestIdentifierSet,
-    "XCTSourceCodeLocation": XCTSourceCodeLocation,
-    "XCTSourceCodeContext": XCTSourceCodeContext,
-    "XCTIssue": XCTIssue,
-    "XCTMutableIssue": XCTIssue,
-    "XCActivityRecord": XCActivityRecord,
-    "XCTAttachment": XCTAttachment,
-    "XCTestCaseRunConfiguration": XCTestCaseRunConfiguration,
-})
+def register_xctest_classes() -> None:
+    """Register this module's XCTest NSKeyedArchive proxy classes with bpylist2.
 
-# Register XCTTestIdentifier and XCTTestIdentifierSet in the encoding map so
-# bpylist2 can archive them (used when building XCTestConfiguration).
-archiver.ARCHIVE_CLASS_MAP[XCTTestIdentifier] = "XCTTestIdentifier"  # type: ignore[index]
-archiver.ARCHIVE_CLASS_MAP[XCTTestIdentifierSet] = "XCTTestIdentifierSet"  # type: ignore[index]
+    Callers that decode XCTest payloads via ``archiver.unarchive`` MUST invoke this
+    explicitly rather than relying on it running as an import-time side effect. Under
+    PEP 810 lazy imports (Python 3.15+) importing this module does not execute its
+    body until one of its names is first used, and the XCTest result types
+    (XCTIssue, XCActivityRecord, ...) are decoded by the DTX machinery without any
+    such name being touched -- leaving archiver.unarchive() with an unpopulated class
+    map and every XCTest payload falling back to a raw plist dict.
+
+    Idempotent: safe to call more than once.
+    """
+    archiver.update_class_map({
+        "XCTestConfiguration": XCTestConfiguration,
+        "XCTCapabilities": XCTCapabilities,
+        "XCTTestIdentifier": XCTTestIdentifier,
+        "XCTTestIdentifierSet": XCTTestIdentifierSet,
+        "XCTSourceCodeLocation": XCTSourceCodeLocation,
+        "XCTSourceCodeContext": XCTSourceCodeContext,
+        "XCTIssue": XCTIssue,
+        "XCTMutableIssue": XCTIssue,
+        "XCActivityRecord": XCActivityRecord,
+        "XCTAttachment": XCTAttachment,
+        "XCTestCaseRunConfiguration": XCTestCaseRunConfiguration,
+    })
+
+    # Register XCTTestIdentifier and XCTTestIdentifierSet in the encoding map so
+    # bpylist2 can archive them (used when building XCTestConfiguration).
+    archiver.ARCHIVE_CLASS_MAP[XCTTestIdentifier] = "XCTTestIdentifier"  # type: ignore[index]
+    archiver.ARCHIVE_CLASS_MAP[XCTTestIdentifierSet] = "XCTTestIdentifierSet"  # type: ignore[index]
+
+
+# Eager registration for direct importers of this module and for Python <= 3.14,
+# where module-level imports are not lazy. The explicit call in dtx_services.py
+# covers the lazy-import (3.15+) XCTest decode paths.
+register_xctest_classes()

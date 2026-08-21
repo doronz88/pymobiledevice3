@@ -25,7 +25,15 @@ from pymobiledevice3.services.dvt.testmanaged.xctest_types import (
     XCTestConfiguration,
     XCTIssue,
     XCTTestIdentifier,
+    register_xctest_classes,
 )
+
+# Register the XCTest NSKeyedArchive proxy classes eagerly. This must be an explicit call,
+# not a bare import relied upon for its side effect: under PEP 810 lazy imports (Python 3.15+)
+# xctest_types' body would not run until one of its names is used, but the XCTest result types
+# (XCTIssue, XCActivityRecord, ...) are decoded by the DTX machinery -- which never touches an
+# xctest_types name -- leaving them undecodable (raw plist dict fallback).
+register_xctest_classes()
 
 logger = logging.getLogger(__name__)
 
