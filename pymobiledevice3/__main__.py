@@ -30,8 +30,10 @@ from pymobiledevice3.cli.cli_common import (
     TUNNEL_ENV_VAR,
     UDID_ENV_VAR,
     USERSPACE_ENV_VAR,
+    _cli_udid,
     isatty,
     requires_kernel_tunnel,
+    resolved_udid,
     set_color_flag,
     set_verbosity,
 )
@@ -421,6 +423,9 @@ def invoke_cli_with_error_handling() -> bool:
         )
     except DeviceNotFoundError as e:
         logger.error(f"Device not found: {e.udid}")
+        # Reconnectable: after a disconnect the target device may still be re-enumerating
+        # while other devices are attached, making re-invocation fail with this error.
+        return True
     except NotEnoughDiskSpaceError:
         logger.error("Not enough disk space")
     except DeprecationError:
@@ -471,7 +476,15 @@ def main() -> None:
             break
         try:
             logger.info("Waiting for the device to be available again")
-            lockdown = asyncio.run(retry_create_using_usbmux())
+            # Wait for the device the command targeted, not just any device. The target is the
+            # explicit --udid / env value, or whichever device the command's dependency resolved
+            # to (auto-pick or interactive prompt).
+            serial = _cli_udid() or resolved_udid()
+            lockdown = asyncio.run(retry_create_using_usbmux(serial=serial))
+            if serial is not None and not os.getenv(UDID_ENV_VAR):
+                # Stamp the target so the re-invocation resolves the same device instead of
+                # prompting again (or silently auto-picking another attached device).
+                os.environ[UDID_ENV_VAR] = serial
             logger.info("Device connected")
             asyncio.run(lockdown.close())
         except KeyboardInterrupt:

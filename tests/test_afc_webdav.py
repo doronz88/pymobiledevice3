@@ -4,7 +4,9 @@ The bridge only depends on a small async AFC method surface, so these tests driv
 it against a local-filesystem-backed AFC stub instead of a real device.
 """
 
+import asyncio
 import os
+import re
 import shutil
 from typing import Any
 
@@ -13,8 +15,8 @@ import pytest
 
 pytest.importorskip("asgi_webdav")  # WebDAV support requires Python >= 3.10
 
-from pymobiledevice3.exceptions import AfcFileNotFoundError
-from pymobiledevice3.services.webdav import serve_afc_webdav
+from pymobiledevice3.exceptions import AfcFileNotFoundError, ConnectionTerminatedError
+from pymobiledevice3.services.webdav import run_afc_webdav, serve_afc_webdav
 
 
 class LocalAfc:
@@ -28,6 +30,10 @@ class LocalAfc:
         self._root = str(root)
         self._handles: dict[int, Any] = {}
         self._next_handle = 1
+        self._terminated = asyncio.Event()
+
+    async def wait_terminated(self) -> None:
+        await self._terminated.wait()
 
     def _local(self, path: str) -> str:
         return os.path.join(self._root, path.lstrip("/"))
@@ -202,6 +208,37 @@ async def test_put_ds_store_is_swallowed(tmp_path) -> None:
         await server.stop()
 
     assert not (tmp_path / ".DS_Store").exists()
+
+
+@pytest.mark.asyncio
+async def test_server_closes_when_device_disconnects(tmp_path, capsys) -> None:
+    (tmp_path / "hello.txt").write_bytes(b"hi")
+    afc = LocalAfc(str(tmp_path))
+    task = asyncio.create_task(run_afc_webdav(afc, mount=False))
+
+    output = ""
+    for _ in range(250):
+        output += capsys.readouterr().out
+        if "http://" in output:
+            break
+        assert not task.done(), f"server task exited early: {task.exception()!r}"
+        await asyncio.sleep(0.02)
+    match = re.search(r"http://\S+/", output)
+    assert match is not None, f"server URL not printed; output was: {output!r}"
+    url = match.group(0)
+
+    async with httpx.AsyncClient() as http:
+        response = await http.get(f"{url}hello.txt")
+        assert response.status_code == 200  # serving while the device is connected
+
+        afc._terminated.set()  # simulate the device disconnecting
+        # The disconnect must propagate as ConnectionTerminatedError so the global
+        # `--reconnect` machinery in __main__ can re-invoke the command.
+        with pytest.raises(ConnectionTerminatedError):
+            await asyncio.wait_for(task, timeout=5)
+
+        with pytest.raises(httpx.ConnectError):
+            await http.get(f"{url}hello.txt")
 
 
 def test_mount_requires_mount_tool(monkeypatch) -> None:

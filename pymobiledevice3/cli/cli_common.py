@@ -193,6 +193,25 @@ def is_invoked_for_completion() -> bool:
     return any(env.startswith("_") and env.endswith("_COMPLETE") for env in os.environ)
 
 
+# UDID of the device the running command actually resolved to (explicit --udid, auto-pick, or
+# interactive prompt). The global --reconnect machinery in __main__ reads it to wait for and
+# re-target that same device — the selection would otherwise be lost when it came from a prompt.
+_resolved_udid: Optional[str] = None
+
+
+def resolved_udid() -> Optional[str]:
+    """The UDID the current command's device dependency resolved to, if any."""
+    return _resolved_udid
+
+
+def _record_resolved(provider: LockdownServiceProvider) -> LockdownServiceProvider:
+    """Remember which device a service-provider dependency picked (see ``resolved_udid``)."""
+    global _resolved_udid
+    if provider.udid is not None:
+        _resolved_udid = provider.udid
+    return provider
+
+
 cli_loop = get_asyncio_loop()
 
 
@@ -505,7 +524,7 @@ def any_service_provider_dependency(
         return  # type: ignore[return-value]
 
     if rsd_service_provider is not None:
-        return rsd_service_provider
+        return _record_resolved(rsd_service_provider)
 
     if mobdev2:
         devices = cli_loop.run_until_complete(get_mobdev2_devices(udid=udid))
@@ -513,24 +532,24 @@ def any_service_provider_dependency(
             raise NoDeviceConnectedError()
 
         if len(devices) == 1:
-            return devices[0]
+            return _record_resolved(devices[0])
 
-        return prompt_device_list(devices)
+        return _record_resolved(prompt_device_list(devices))
 
     if udid is not None:
-        return cli_loop.run_until_complete(create_using_usbmux(serial=udid, usbmux_address=usbmux))
+        return _record_resolved(cli_loop.run_until_complete(create_using_usbmux(serial=udid, usbmux_address=usbmux)))
 
     devices = cli_loop.run_until_complete(
         usbmuxd.select_devices_by_connection_type(connection_type="USB", usbmux_address=usbmux)
     )
     if len(devices) <= 1:
-        return cli_loop.run_until_complete(create_using_usbmux(usbmux_address=usbmux))
+        return _record_resolved(cli_loop.run_until_complete(create_using_usbmux(usbmux_address=usbmux)))
 
     lockdownds = [
         cli_loop.run_until_complete(create_using_usbmux(serial=device.serial, usbmux_address=usbmux))
         for device in devices
     ]
-    return prompt_device_list(lockdownds)
+    return _record_resolved(prompt_device_list(lockdownds))
 
 
 def no_autopair_service_provider_dependency(
@@ -552,9 +571,9 @@ def no_autopair_service_provider_dependency(
         return  # type: ignore[return-value]
 
     if rsd_service_provider is not None:
-        return rsd_service_provider
+        return _record_resolved(rsd_service_provider)
 
-    return cli_loop.run_until_complete(create_using_usbmux(serial=udid, autopair=False))
+    return _record_resolved(cli_loop.run_until_complete(create_using_usbmux(serial=udid, autopair=False)))
 
 
 def _narrow_to_lockdown_client(ctx: typer.Context, service_provider: LockdownServiceProvider) -> LockdownClient:
