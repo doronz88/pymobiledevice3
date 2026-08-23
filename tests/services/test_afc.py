@@ -193,6 +193,24 @@ async def test_stat_file(afc: AfcService) -> None:
     assert stat["st_mtime"] >= timestamp
 
 
+async def test_fseek_reads_from_offset(afc: AfcService) -> None:
+    import os
+
+    data = bytes(range(256)) * 8  # 2 KiB with distinct byte values
+    await afc.set_file_contents(TEST_FILENAME, data)
+    try:
+        handle = await afc.fopen(TEST_FILENAME)
+        try:
+            await afc.fseek(handle, 300, os.SEEK_SET)
+            assert await afc.fread(handle, 100) == data[300:400]
+            await afc.fseek(handle, -10, os.SEEK_END)
+            assert await afc.fread(handle, 10) == data[-10:]
+        finally:
+            await afc.fclose(handle)
+    finally:
+        await afc.rm(TEST_FILENAME)
+
+
 async def test_stat_folder(afc: AfcService) -> None:
     timestamp = datetime.fromtimestamp(await afc.lockdown.get_value(key="TimeIntervalSince1970"))
     timestamp = timestamp.replace(microsecond=0)  # stat resolution might not include microseconds
