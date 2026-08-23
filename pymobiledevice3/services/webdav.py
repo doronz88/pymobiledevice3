@@ -34,7 +34,7 @@ from asgi_webdav.request import DAVRequest
 from asgi_webdav.server import DAVApp
 from asgi_webdav.web_dav import PrefixProviderInfo
 
-from pymobiledevice3.exceptions import AfcException
+from pymobiledevice3.exceptions import AfcException, ConnectionTerminatedError
 from pymobiledevice3.services.webdav_mount import (
     mount_webdav_volume,
     reveal_in_file_manager,
@@ -360,6 +360,8 @@ async def run_afc_webdav(
     :param port: local TCP port; 0 picks a free port.
     :param readonly: expose the filesystem read-only.
     :param label: descriptive name for the local mount point, so it is easy to spot in Finder.
+    :raises ConnectionTerminatedError: when the device disconnects (after unmounting and
+        stopping the local server), so CLI-level reconnect logic can re-serve.
     """
     server = await serve_afc_webdav(afc, path=path, host=host, port=port, readonly=readonly)
     print(f"WebDAV server serving {path!r} at {server.url}")
@@ -378,7 +380,11 @@ async def run_afc_webdav(
     print("Press Ctrl-C to stop.")
 
     try:
-        await asyncio.Event().wait()
+        await afc.wait_terminated()
+        print("Device disconnected; stopping.")
+        # Propagate as a connection error (after the finally-cleanup below) so the CLI's
+        # global --reconnect machinery can wait for the device and re-serve.
+        raise ConnectionTerminatedError()
     finally:
         if mounted is not None:
             await unmount_webdav_volume(mounted)

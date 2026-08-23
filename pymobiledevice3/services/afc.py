@@ -339,6 +339,9 @@ class AfcService(LockdownService):
         self._afc_pending: dict[int, asyncio.Future[Any]] = {}
         self._afc_write_lock = asyncio.Lock()
         self._afc_reader_task: Optional[asyncio.Task[None]] = None
+        # Set (and never cleared) once the connection terminates; the reader task handle
+        # itself is not a stable signal because _send_and_wait restarts exited readers.
+        self._afc_terminated = asyncio.Event()
 
     async def __aenter__(self):
         await super().__aenter__()
@@ -366,6 +369,18 @@ class AfcService(LockdownService):
         exc_tb: Optional[TracebackType],
     ):
         await self.aclose()
+
+    async def wait_terminated(self) -> None:
+        """Block until the AFC connection terminates (e.g. the device disconnects).
+
+        Ensures the background reader is running so termination is detected even when no
+        AFC operation is in flight. Returns immediately if the connection already died.
+        """
+        if not self._afc_terminated.is_set():
+            await self.connect()
+            if self._afc_reader_task is None or self._afc_reader_task.done():
+                self._afc_reader_task = asyncio.create_task(self._afc_reader_loop(), name="afc-reader")
+        await self._afc_terminated.wait()
 
     async def _afc_reader_loop(self) -> None:
         """Background task: read AFC response packets and route them to waiting callers."""
@@ -400,6 +415,8 @@ class AfcService(LockdownService):
                 if not fut.done():
                     fut.set_exception(e)
             self._afc_pending.clear()
+        finally:
+            self._afc_terminated.set()
 
     async def pull(
         self,
