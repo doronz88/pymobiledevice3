@@ -191,3 +191,113 @@ def test_cli_groups(group):
 @pytest.mark.parametrize("group", __main__.CLI_GROUPS.keys())
 def test_cli_from_python_m_flag(group):
     subprocess.run([sys.executable, "-m", "pymobiledevice3", group, "--help"], check=True)
+
+
+def _patch_isolated_asyncio_run(monkeypatch):
+    """``main()`` uses ``asyncio.run``, whose cleanup unsets the main-thread event loop and breaks
+    later sync tests on Python 3.9 (``asyncio.Lock()`` there binds ``get_event_loop()`` at creation).
+    Run coroutines on a private loop instead, leaving global loop state untouched."""
+    import asyncio
+
+    def isolated_run(coro):
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    monkeypatch.setattr(asyncio, "run", isolated_run)
+
+
+def test_reconnect_waits_for_the_target_device(monkeypatch):
+    """`--reconnect` must wait for the device the command targeted (--udid), not just any device."""
+    _patch_isolated_asyncio_run(monkeypatch)
+    captured: dict[str, str] = {}
+
+    async def fake_retry_create_using_usbmux(*args, **kwargs):
+        captured.update(kwargs)
+
+        class _FakeLockdown:
+            async def close(self) -> None:
+                pass
+
+        return _FakeLockdown()
+
+    invocations = iter([True, False])
+    monkeypatch.setattr(__main__, "invoke_cli_with_error_handling", lambda: next(invocations))
+    monkeypatch.setattr(__main__, "RECONNECT", True)
+    monkeypatch.setattr(__main__, "retry_create_using_usbmux", fake_retry_create_using_usbmux)
+    monkeypatch.setattr(sys, "argv", ["pymobiledevice3", "--reconnect", "afc", "webdav", "--udid", "TARGET-UDID"])
+
+    __main__.main()
+
+    assert captured.get("serial") == "TARGET-UDID"
+
+
+def test_device_not_found_is_a_reconnectable_failure(monkeypatch):
+    """A device-not-found failure must keep the `--reconnect` retry loop alive: after a disconnect,
+    the target device may still be enumerating while other devices are attached."""
+    from pymobiledevice3.exceptions import DeviceNotFoundError
+
+    def raise_not_found(*args, **kwargs):
+        raise DeviceNotFoundError("TARGET-UDID")
+
+    monkeypatch.setattr(__main__, "app", raise_not_found)
+    assert __main__.invoke_cli_with_error_handling() is True
+
+
+def test_reconnect_reuses_interactively_selected_device(monkeypatch):
+    """When the device was chosen at the interactive prompt (no --udid on argv/env), `--reconnect`
+    must wait for and re-target that same device, not whichever device appears first."""
+    import os
+
+    from pymobiledevice3.cli import cli_common
+
+    _patch_isolated_asyncio_run(monkeypatch)
+
+    captured: dict[str, str] = {}
+
+    async def fake_retry_create_using_usbmux(*args, **kwargs):
+        captured.update(kwargs)
+
+        class _FakeLockdown:
+            async def close(self) -> None:
+                pass
+
+        return _FakeLockdown()
+
+    invocations = iter([True, False])
+    monkeypatch.setattr(__main__, "invoke_cli_with_error_handling", lambda: next(invocations))
+    monkeypatch.setattr(__main__, "RECONNECT", True)
+    monkeypatch.setattr(__main__, "retry_create_using_usbmux", fake_retry_create_using_usbmux)
+    monkeypatch.setattr(sys, "argv", ["pymobiledevice3", "--reconnect", "afc", "webdav"])
+    monkeypatch.setattr(os, "environ", dict(os.environ))  # isolate env mutations done by main()
+    os.environ.pop(cli_common.UDID_ENV_VAR, None)
+    monkeypatch.setattr(cli_common, "_resolved_udid", "PROMPTED-UDID")  # as recorded on dependency resolution
+
+    __main__.main()
+
+    assert captured.get("serial") == "PROMPTED-UDID"
+    # Stamped so the re-invocation resolves the same device instead of prompting/auto-picking.
+    assert os.environ[cli_common.UDID_ENV_VAR] == "PROMPTED-UDID"
+
+
+def test_service_provider_dependency_records_resolved_udid(monkeypatch):
+    """Dependency resolution must record which device it picked, for `--reconnect` to reuse."""
+    from pymobiledevice3.cli import cli_common
+
+    class _FakeProvider:
+        udid = "RESOLVED-UDID"
+
+    async def fake_create_using_usbmux(*args, **kwargs):
+        return _FakeProvider()
+
+    monkeypatch.setattr(cli_common, "create_using_usbmux", fake_create_using_usbmux)
+    monkeypatch.setattr(cli_common, "_resolved_udid", None)
+
+    provider = cli_common.any_service_provider_dependency(
+        rsd_service_provider=None, mobdev2=False, usbmux=None, udid="RESOLVED-UDID"
+    )
+
+    assert provider is not None
+    assert cli_common.resolved_udid() == "RESOLVED-UDID"
