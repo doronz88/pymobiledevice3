@@ -32,7 +32,7 @@ from pymobiledevice3.lockdown import LockdownClient, TcpLockdownClient, create_u
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, get_tunneld_devices
+from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, TunneldAddress, get_tunneld_devices
 from pymobiledevice3.utils import ask_prompt, get_asyncio_loop
 
 UDID_ENV_VAR = "PYMOBILEDEVICE3_UDID"
@@ -276,16 +276,24 @@ async def get_mobdev2_devices(udid: Optional[str] = None) -> list[TcpLockdownCli
     return [lockdown async for _, lockdown in get_mobdev2_lockdowns(udid=udid)]
 
 
+def _parse_tunnel_spec(tunnel: str) -> tuple[str, TunneldAddress]:
+    """Split a --tunnel value (``UDID``, ``UDID:PORT`` or ``UDID:UDS_PATH``) into
+    (udid, tunneld address). A numeric suffix is a TCP port on the default host;
+    anything else after the ``:`` is a unix domain socket path."""
+    udid, sep, address = tunnel.strip().partition(":")
+    if not sep:
+        return udid, TUNNELD_DEFAULT_ADDRESS
+    if address.isdigit():
+        return udid, (TUNNELD_DEFAULT_ADDRESS[0], int(address))
+    return udid, address
+
+
 async def _tunneld(udid: Optional[str] = None) -> Optional[RemoteServiceDiscoveryService]:
     if udid is None:
         return
 
-    udid = udid.strip()
-    port = TUNNELD_DEFAULT_ADDRESS[1]
-    if ":" in udid:
-        udid, port = udid.split(":")
-
-    rsds = await get_tunneld_devices((TUNNELD_DEFAULT_ADDRESS[0], int(port)))
+    udid, tunneld_address = _parse_tunnel_spec(udid)
+    rsds = await get_tunneld_devices(tunneld_address)
     if len(rsds) == 0:
         raise NoDeviceConnectedError()
 
@@ -406,8 +414,9 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
             typer.Option(
                 envvar=TUNNEL_ENV_VAR,
                 help=dedent("""\
-                    Use a device discovered via tunneld. Provide a UDID (optionally with :PORT) or leave empty to pick
-                    interactively. Mutually exclusive with --rsd.
+                    Use a device discovered via tunneld. Provide a UDID (optionally with :PORT or :UDS_PATH for a
+                    tunneld bound to a unix domain socket) or leave empty to pick interactively. Mutually exclusive
+                    with --rsd.
                 """),
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),
