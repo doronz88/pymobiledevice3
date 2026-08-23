@@ -76,6 +76,9 @@ class LocalAfc:
     async def fread(self, handle: int, sz: int) -> bytes:
         return self._handles[handle].read(sz)
 
+    async def fseek(self, handle: int, offset: int, whence: int = os.SEEK_SET) -> None:
+        self._handles[handle].seek(offset, whence)
+
     async def fwrite(self, handle: int, data: bytes, chunk_size: int = 1 << 30) -> None:
         self._handles[handle].write(data)
 
@@ -94,6 +97,41 @@ async def test_get_serves_existing_file(tmp_path) -> None:
             response = await http.get(f"{server.url}hello.txt")
         assert response.status_code == 200
         assert response.content == b"hi from afc"
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_get_honors_range_request(tmp_path) -> None:
+    # macOS Finder / webdavfs reads large files as a series of byte ranges. Answering a Range
+    # request with 200 + the whole file makes the client write the full body at the range's
+    # offset, corrupting the result. The server must reply 206 with exactly the requested bytes.
+    payload = bytes((i * 131 + 7) % 256 for i in range(4096)) * 64  # 256 KiB, spans many blocks
+    (tmp_path / "big.bin").write_bytes(payload)
+    afc = LocalAfc(str(tmp_path))
+
+    server = await serve_afc_webdav(afc, port=0)
+    try:
+        async with httpx.AsyncClient() as http:
+            head = await http.head(f"{server.url}big.bin")
+            assert head.headers.get("accept-ranges") == "bytes"
+
+            start, end = 100_000, 200_000
+            response = await http.get(f"{server.url}big.bin", headers={"Range": f"bytes={start}-{end}"})
+            assert response.status_code == 206
+            assert response.headers["content-range"] == f"bytes {start}-{end}/{len(payload)}"
+            assert response.content == payload[start : end + 1]
+
+            # reassembling sequential ranges must reproduce the file byte-for-byte
+            buf = bytearray()
+            off = 0
+            while off < len(payload):
+                stop = min(off + 40_000 - 1, len(payload) - 1)
+                part = await http.get(f"{server.url}big.bin", headers={"Range": f"bytes={off}-{stop}"})
+                assert part.status_code == 206
+                buf += part.content
+                off = stop + 1
+            assert bytes(buf) == payload
     finally:
         await server.stop()
 

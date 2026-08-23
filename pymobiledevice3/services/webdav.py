@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import posixpath
 from stat import S_ISDIR, S_ISREG
 from typing import Any, Optional
@@ -29,7 +30,7 @@ from asgi_webdav.constants import (
 )
 from asgi_webdav.helpers import generate_etag, guess_type
 from asgi_webdav.property import DAVProperty, DAVPropertyBasicData
-from asgi_webdav.provider.common import DAVProvider, DAVProviderFeature
+from asgi_webdav.provider.common import DAVProvider, DAVProviderFeature, get_response_content_range
 from asgi_webdav.request import DAVRequest
 from asgi_webdav.server import DAVApp
 from asgi_webdav.web_dav import PrefixProviderInfo
@@ -71,7 +72,7 @@ class AfcDavProvider(DAVProvider):
     """A WebDAV provider whose backing store is a device's AFC filesystem."""
 
     type = "afc"
-    feature = DAVProviderFeature(content_range=False, home_dir=False)
+    feature = DAVProviderFeature(content_range=True, home_dir=False)
 
     def __init__(self, afc: Any, root: str, config: Config, prefix: DAVPath, read_only: bool) -> None:
         super().__init__(
@@ -176,7 +177,25 @@ class AfcDavProvider(DAVProvider):
             return 403, None, None, None
 
         dav_property = await self._create_dav_property_obj(request.src_path, stat_result)
-        return 200, dav_property.basic_data, self._body_generator(afc_path), None
+
+        if not request.ranges:
+            return 200, dav_property.basic_data, self._body_generator(afc_path), None
+
+        # a Range request: macOS Finder / webdavfs reads large files as a series of byte ranges.
+        # Answering those with 200 + the whole file makes the client write the full body at the
+        # range's offset, corrupting the result. Serve the requested bytes as 206 Partial Content.
+        content_range = get_response_content_range(
+            request_ranges=request.ranges,
+            file_size=dav_property.basic_data.content_length,
+        )
+        if content_range is None:
+            return 200, dav_property.basic_data, self._body_generator(afc_path), None
+        if request.if_range and not request.if_range.match(
+            etag=dav_property.basic_data.etag,
+            last_modified=dav_property.basic_data.last_modified.http_date,
+        ):
+            return 416, dav_property.basic_data, None, content_range
+        return 206, dav_property.basic_data, self._body_generator(afc_path, content_range), content_range
 
     async def _do_head(self, request: DAVRequest) -> tuple[int, Optional[DAVPropertyBasicData]]:
         if _is_apple_metadata(request.dist_src_path.name):
@@ -190,14 +209,27 @@ class AfcDavProvider(DAVProvider):
         dav_property = await self._create_dav_property_obj(request.src_path, stat_result)
         return 200, dav_property.basic_data
 
-    async def _body_generator(self, afc_path: str) -> DAVResponseBodyGenerator:
+    async def _body_generator(
+        self, afc_path: str, content_range: Optional[DAVResponseContentRange] = None
+    ) -> DAVResponseBodyGenerator:
         handle = await self._afc.fopen(afc_path, "r")
         try:
-            more_body = True
-            while more_body:
-                data = await self._afc.fread(handle, RESPONSE_DATA_BLOCK_SIZE)
-                more_body = len(data) == RESPONSE_DATA_BLOCK_SIZE
-                yield data, more_body
+            if content_range is None:
+                more_body = True
+                while more_body:
+                    data = await self._afc.fread(handle, RESPONSE_DATA_BLOCK_SIZE)
+                    more_body = len(data) == RESPONSE_DATA_BLOCK_SIZE
+                    yield data, more_body
+                return
+
+            await self._afc.fseek(handle, content_range.content_start, os.SEEK_SET)
+            remaining = content_range.content_end - content_range.content_start + 1
+            while remaining > 0:
+                data = await self._afc.fread(handle, min(remaining, RESPONSE_DATA_BLOCK_SIZE))
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data, remaining > 0
         finally:
             await self._afc.fclose(handle)
 

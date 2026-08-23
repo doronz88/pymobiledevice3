@@ -33,7 +33,7 @@ import parameter_decorators
 import xonsh.cli_utils
 import xonsh.main
 import xonsh.tools
-from construct import Bytes, CString, GreedyRange, Int64ul, Tell
+from construct import Bytes, CString, GreedyRange, Int64sl, Int64ul, Tell
 from construct_typed import DataclassMixin, EnumBase, TEnum, TStruct, csfield
 from pygments import formatters, highlight, lexers
 
@@ -273,6 +273,13 @@ class AfcLockRequest(DataclassMixin):
     op: int = csfield(Int64ul)
 
 
+@dataclass
+class AfcFileSeekRequest(DataclassMixin):
+    handle: int = csfield(Int64ul)
+    whence: int = csfield(Int64ul)
+    offset: int = csfield(Int64sl)
+
+
 afc_header_t = TStruct(AfcHeader)
 afc_read_dir_req_t = TStruct(AfcReadDirRequest)
 afc_read_dir_resp_t = TStruct(AfcReadDirResponse)
@@ -286,6 +293,7 @@ afc_rm_req_t = TStruct(AfcRmRequest)
 afc_rename_req_t = TStruct(AfcRenameRequest)
 afc_fread_req_t = TStruct(AfcFreadRequest)
 afc_lock_t = TStruct(AfcLockRequest)
+afc_fseek_req_t = TStruct(AfcFileSeekRequest)
 
 
 def list_to_dict(raw: bytes) -> dict[str, str]:
@@ -970,6 +978,20 @@ class AfcService(LockdownService):
             sz -= to_read
             data += chunk
         return data
+
+    async def fseek(self, handle: int, offset: int, whence: int = os.SEEK_SET) -> None:
+        """
+        Seek within an open file handle.
+
+        :param handle: Handle returned by `fopen`.
+        :param offset: Byte offset relative to ``whence``.
+        :param whence: One of ``os.SEEK_SET`` (0), ``os.SEEK_CUR`` (1), ``os.SEEK_END`` (2).
+        :raises AfcException: if the seek operation fails.
+        """
+        await self._do_operation(
+            AfcOpcode.FILE_SEEK,
+            afc_fseek_req_t.build(AfcFileSeekRequest(handle=handle, whence=whence, offset=offset)),
+        )
 
     async def fwrite(self, handle: int, data: bytes, chunk_size: int = MAXIMUM_WRITE_SIZE) -> None:
         """
