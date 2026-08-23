@@ -510,11 +510,13 @@ class TunneldRunner:
         usbmux_monitor: bool = True,
         usbmux_address: Optional[str] = None,
         mobdev2_monitor: bool = True,
+        uds: Optional[str] = None,
     ) -> None:
         cls(
             host,
             port,
             protocol=protocol,
+            uds=uds,
             usb_monitor=usb_monitor,
             wifi_monitor=wifi_monitor,
             usbmux_monitor=usbmux_monitor,
@@ -532,6 +534,7 @@ class TunneldRunner:
         usbmux_monitor: bool = True,
         usbmux_address: Optional[str] = None,
         mobdev2_monitor: bool = True,
+        uds: Optional[str] = None,
     ):
         @asynccontextmanager
         async def lifespan(app: FastAPI):
@@ -542,6 +545,7 @@ class TunneldRunner:
 
         self.host = host
         self.port = port
+        self.uds = uds
         self.protocol = protocol
         self._app = FastAPI(lifespan=lifespan)
         self._tunneld_core = TunneldCore(
@@ -737,4 +741,7 @@ class TunneldRunner:
                 )
 
     def _run_app(self) -> None:
-        uvicorn.run(self._app, host=self.host, port=self.port, loop="asyncio")
+        if self.uds is not None:
+            uvicorn.run(self._app, uds=self.uds, loop="asyncio")
+        else:
+            uvicorn.run(self._app, host=self.host, port=self.port, loop="asyncio")

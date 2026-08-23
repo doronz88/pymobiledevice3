@@ -93,6 +93,12 @@ cli = InjectingTyper(
 def cli_tunneld(
     host: Annotated[str, typer.Option(help="Address to bind the tunneld server to.")] = TUNNELD_DEFAULT_ADDRESS[0],
     port: Annotated[int, typer.Option(help="Port to bind the tunneld server to.")] = TUNNELD_DEFAULT_ADDRESS[1],
+    uds: Annotated[
+        Optional[str],
+        typer.Option(
+            "--uds", help="Unix domain socket path to bind the tunneld server to (instead of TCP --host/--port)."
+        ),
+    ] = None,
     daemonize: Annotated[bool, typer.Option("--daemonize", "-d", help="Run tunneld in the background.")] = False,
     protocol: Annotated[
         TunnelProtocol,
@@ -120,6 +126,7 @@ def cli_tunneld(
         host,
         port,
         protocol=protocol,
+        uds=uds,
         usb_monitor=usb,
         wifi_monitor=wifi,
         usbmux_monitor=usbmux,
@@ -131,9 +138,10 @@ def cli_tunneld(
             from daemonize import Daemonize
         except ImportError as e:
             raise NotImplementedError("daemonizing is only supported on unix platforms") from e
+        bind = uds if uds is not None else f"{host}:{port}"
         with tempfile.NamedTemporaryFile("wt") as pid_file:
-            daemon = Daemonize(app=f"Tunneld {host}:{port}", pid=pid_file.name, action=tunneld_runner)
-            logger.info(f"starting Tunneld {host}:{port}")
+            daemon = Daemonize(app=f"Tunneld {bind}", pid=pid_file.name, action=tunneld_runner)
+            logger.info(f"starting Tunneld {bind}")
             daemon.start()
     else:
         tunneld_runner()
