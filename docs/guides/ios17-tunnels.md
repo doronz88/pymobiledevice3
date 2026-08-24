@@ -21,6 +21,11 @@ shared/persistent tunnel, or iOS 17.0-17.3.1 — see
 Reference protocol details:
 [RemoteXPC](../internals/remotexpc.md)
 
+!!! tip
+    For diagrams of what each transport path looks like under the hood — usbmux, Wi-Fi
+    lockdown, kernel tunnels, and the userspace tunnel — see
+    [Understanding the network stacks](network-stacks.md).
+
 ## The default: a no-root tunnel, automatically
 
 When a developer command needs an RSD tunnel and you passed none of `--rsd` / `--tunnel` /
