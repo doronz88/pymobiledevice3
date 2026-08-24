@@ -149,17 +149,23 @@ class ServiceConnection:
         :param create_connection_timeout: The timeout for creating the connection.
         :param open_connection: Optional ``asyncio.open_connection``-compatible dialer. Defaults to
             ``asyncio.open_connection``; the userspace tunnel injects one that relays device-bound
-            connections through its in-process stack (avoiding a global monkeypatch).
+            connections through its in-process stack. Keep-alive is skipped for injected dialers —
+            their connection is a process-local relay leg, not the network leg to the device.
         :return: A ServiceConnection object.
         """
-        open_connection = open_connection or asyncio.open_connection
-        reader, writer = await asyncio.wait_for(open_connection(hostname, port), timeout=create_connection_timeout)
-        sock = writer.get_extra_info("socket")
-        if sock is None:
+        dialer = open_connection or asyncio.open_connection
+        reader, writer = await asyncio.wait_for(dialer(hostname, port), timeout=create_connection_timeout)
+        try:
+            sock = writer.get_extra_info("socket")
+            if sock is None:
+                raise ConnectionError(f"failed to get socket from connection to {hostname}:{port}")
+            if keep_alive and open_connection is None:
+                OSUTIL.set_keepalive(sock)
+        except BaseException:
+            # Never leak the established connection: an open writer keeps the userspace
+            # tunnel's relay pumping (and its accepted transport attached) forever.
             await close_stream_writer(writer)
-            raise ConnectionError(f"failed to get socket from connection to {hostname}:{port}")
-        if keep_alive:
-            OSUTIL.set_keepalive(sock)
+            raise
         conn = ServiceConnection(sock)
         conn.reader = reader
         conn.writer = writer

@@ -13,7 +13,10 @@ threads at all — that relaying spawns none.
 """
 
 import asyncio
+import os
+import socket
 import threading
+from contextlib import AsyncExitStack
 from typing import Any, cast
 
 import pytest
@@ -23,8 +26,10 @@ pytest.importorskip("pmd_pytcp")
 
 from pmd_pytcp.stack import sysctl
 
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote import userspace_tunnel
 from pymobiledevice3.remote.userspace_tunnel import UserspaceDialPlane, UserspaceTun
+from pymobiledevice3.service_connection import close_stream_writer
 
 
 def test_throughput_sysctls_only_emits_registered_knobs():
@@ -219,6 +224,106 @@ async def test_relaying_spawns_no_threads():
         assert set(threading.enumerate()) == baseline
     for writer in writers:
         writer.close()
+
+
+async def test_dial_plane_exit_completes_when_dial_races_teardown():
+    # A dial's connect completes in the kernel before the server's accept callback has
+    # spawned the handler. If teardown then begins — e.g. the dialer's caller raised during
+    # connection setup — __aexit__'s cancel loop snapshots _relay_tasks before that handler
+    # registers, so nothing cancelled it: its pumps parked forever on an abandoned client
+    # connection and __aexit__ hung in Server.wait_closed() (which waits for all attached
+    # connections since Python 3.12.1). Reproduced live against a device; exit must complete
+    # promptly with no relay task left behind.
+    class StallingTun:
+        async def connect_tcp(self, addr: str, port: int) -> FakePyTcpSocket:
+            await asyncio.Event().wait()
+            raise AssertionError("unreachable")
+
+    dial_plane = UserspaceDialPlane(cast(UserspaceTun, StallingTun()), DEVICE_ADDR)
+    await dial_plane.__aenter__()
+    _reader, writer = await dial_plane.dial(DEVICE_ADDR, 3333)
+
+    # No yield to the loop between dial and teardown: the handler must not be registered yet.
+    await asyncio.wait_for(dial_plane.__aexit__(None, None, None), timeout=5)
+
+    assert not dial_plane._relay_tasks
+    await close_stream_writer(writer)
+    # Drain the loop so the gate handler for the raced connection finishes closing its
+    # transport; otherwise the accepted socket is finalized by GC and flagged unraisable.
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+
+async def test_dial_after_close_raises():
+    # A dial racing (or following) teardown must fail loudly: letting it through re-created
+    # the socket dir and registered a live relay server after teardown had cleared both —
+    # leaked until process exit — and handed the caller a stream that only ever yields EOF.
+    # The window is real since the transport watcher runs teardown concurrently with dials.
+    tun = FakeTun()
+    dial_plane = UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR)
+    async with dial_plane:
+        pass
+    with pytest.raises(ConnectionError):
+        await dial_plane.dial(DEVICE_ADDR, 5555)
+    assert dial_plane._socket_dir is None
+    assert not dial_plane._servers
+
+
+@pytest.mark.skipif(not get_os_utils().supports_unix_sockets, reason="platform has no AF_UNIX")
+async def test_relay_uses_unix_sockets_and_removes_them_on_exit():
+    # Where AF_UNIX exists the relay must listen on unix sockets, not loopback TCP: the
+    # socket dir's 0700 mode decides who may connect, instead of exposing the device's
+    # services on a port any local process can reach. Also pin the cleanup: asyncio only
+    # unlinks unix server sockets from 3.13, so the dial plane removes its socket directory
+    # itself.
+    tun = FakeTun()
+    async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
+        _reader, writer = await dial_plane.dial(DEVICE_ADDR, 2222)
+        assert writer.get_extra_info("socket").family == socket.AF_UNIX
+        socket_dir = dial_plane._socket_dir
+        assert socket_dir is not None and os.path.isdir(socket_dir)
+
+        await close_stream_writer(writer)
+        await _poll_until(lambda: not dial_plane._relay_tasks)
+    assert not os.path.exists(socket_dir)
+
+
+async def test_tcp_relay_forced_by_env_var(monkeypatch):
+    # PYMOBILEDEVICE3_USERSPACE_TCP_RELAY reproduces the Windows relay path on any platform:
+    # the relay must bind loopback TCP and never create a socket directory. This also gives the
+    # TCP relay path POSIX CI coverage (it is otherwise exercised only on Windows runners).
+    monkeypatch.setenv(userspace_tunnel.TCP_RELAY_ENV_VAR, "1")
+    tun = FakeTun()
+    async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
+        reader, writer = await dial_plane.dial(DEVICE_ADDR, 4444)
+        assert writer.get_extra_info("socket").family == socket.AF_INET
+        assert dial_plane._socket_dir is None
+
+        psock = (await _poll_until(lambda: tun.socks))[0]
+        writer.write(b"ping")
+        await writer.drain()
+        await _poll_until(lambda: psock.sent == [b"ping"])
+        psock.feed(b"pong")
+        assert await reader.readexactly(4) == b"pong"
+        writer.close()
+
+
+async def test_transport_watcher_tears_down_on_transport_death():
+    # Device unplug: usbmuxd closes the outer CoreDeviceProxy connection, the transport read
+    # task ends (wait_closed returns) and nothing else wakes blocked service reads — the pytcp
+    # sessions stay ESTABLISHED and relay pumps park forever (keep-alive can't cover it: a
+    # relay's peer is this very process). The watcher must react by running aclose(), whose
+    # relay teardown surfaces EOF/errors to every blocked caller. Reproduced live: `dvt oslog`
+    # parked forever on USB unplug; with the watcher it exits within a second.
+    tunnel = userspace_tunnel.UserspaceRsdTunnel()
+    tunnel._exit_stack = AsyncExitStack()
+
+    class FakeTunnelClient:
+        async def wait_closed(self) -> None:
+            return  # the transport read task has ended
+
+    await asyncio.wait_for(tunnel._watch_transport_closed(cast(Any, FakeTunnelClient())), timeout=5)
+    assert tunnel._exit_stack is None  # aclose() ran
 
 
 async def test_tun_address_usable_when_up_returns():

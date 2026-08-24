@@ -14,9 +14,10 @@ wires together:
   path is L2; its L3/TUN egress is buggy.)
 * :class:`UserspaceDialPlane` — an ``asyncio.open_connection``-compatible dialer (injected into the
   RSD via ``open_connection=``, NOT monkeypatched onto the global) that relays connections to the
-  device's tunnel address through a localhost socket into a PyTCP socket. This covers the RSD HTTP/2
-  handshake and every ``ServiceConnection.create_using_tcp`` while leaving the process-global
-  ``asyncio.open_connection`` untouched for any other code sharing the process.
+  device's tunnel address through a unix socket (loopback TCP where AF_UNIX is unavailable) into a
+  PyTCP socket. This covers the RSD HTTP/2 handshake and every ``ServiceConnection.create_using_tcp``
+  while leaving the process-global ``asyncio.open_connection`` untouched for any other code sharing
+  the process.
 * :class:`UserspaceUdp` — a UDP socket on the stack for device-initiated inbound streams (the
   AV media behind ``display serve-web``): the device pushes RTP to the stack address rather
   than to an unreachable host kernel socket.
@@ -35,11 +36,15 @@ import asyncio
 import atexit
 import logging
 import os
+import shutil
 import socket
 import struct
 import sys
+import tempfile
+from collections.abc import Coroutine
 from contextlib import AsyncExitStack, suppress
-from typing import Any, Optional, Protocol, cast
+from functools import partial
+from typing import Any, Callable, Optional, Protocol, cast
 
 from pmd_net_addr import Ip6Address, Ip6IfAddr, MacAddress
 from pmd_pytcp import stack
@@ -111,6 +116,10 @@ MIN_RTO_MS = 200
 #: immediately; bulk transfers are unaffected either way (streams are governed by the
 #: ACK-every-other-segment rule, not the timer — measured 38-39 MB/s at 1/10/100 ms alike).
 ACK_DELAY_MS = 1
+
+#: Set (to any non-empty value) to force the dial plane's relays onto loopback TCP even where
+#: AF_UNIX exists — reproduces the Windows relay path on any platform for debugging.
+TCP_RELAY_ENV_VAR = "PYMOBILEDEVICE3_USERSPACE_TCP_RELAY"
 
 
 def throughput_sysctls() -> dict[str, int]:
@@ -358,28 +367,54 @@ class UserspaceTun:
                 s.close()
 
 
+#: Connects to a relay's listener, yielding the stream pair (`asyncio.open_connection`-shaped,
+#: minus the address arguments — those are baked in when the listener is bound).
+_RelayOpener = Callable[..., Coroutine[Any, Any, tuple[asyncio.StreamReader, asyncio.StreamWriter]]]
+
+#: A relay server's client-connected callback.
+_RelayHandler = Callable[[asyncio.StreamReader, asyncio.StreamWriter], Coroutine[Any, Any, None]]
+
+
 class UserspaceDialPlane:
     """Provides an ``asyncio.open_connection``-compatible :meth:`dial` that bridges device-bound
-    connections to PyTCP sockets via localhost relays.
+    connections to PyTCP sockets via local relays.
+
+    The relays listen on unix sockets wherever AF_UNIX exists, falling back to loopback TCP
+    (e.g. on Windows) — see :meth:`_start_relay_server` for why. Nothing outside this process
+    ever legitimately connects to a relay (external-tool flows such as ``debugserver lldb``
+    refuse userspace tunnels), so nothing is lost by keeping the listeners off the network
+    stack.
 
     Pass :meth:`dial` to ``RemoteServiceDiscoveryService(open_connection=...)`` so ONLY connections
     made through that RSD are relayed. This deliberately does NOT monkeypatch the process-global
     ``asyncio.open_connection``: a library consumer who establishes a userspace tunnel keeps the
     stdlib function untouched, so unrelated connections elsewhere in their process are unaffected.
 
-    Use as an async context manager so the localhost relay servers are torn down on exit."""
+    Use as an async context manager so the relay servers are torn down on exit."""
 
     def __init__(self, tun: UserspaceTun, device_addr: str) -> None:
         self._tun = tun
         self._device_addr = str(device_addr)
-        self._relays: dict[tuple[str, int], int] = {}
+        # per-device-port relay opener: connects to that relay's listener; whether that means a
+        # unix socket or the loopback TCP fallback was decided once, at bind time
+        self._relays: dict[tuple[str, int], _RelayOpener] = {}
         self._servers: list[asyncio.AbstractServer] = []  # kept referenced so relays stay alive
         self._relay_tasks: set[asyncio.Task[None]] = set()  # in-flight handlers, cancelled on exit
+        self._socket_dir: Optional[str] = None  # holds the relay unix sockets, removed on exit
+        self._closing = False  # teardown began; late-spawning handlers must bail out
 
     async def __aenter__(self) -> UserspaceDialPlane:
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self._closing = True
+        # A dial's connect completes in the kernel before the server's accept callback runs,
+        # so an accept may already be queued on the loop. Give it one tick to run BEFORE the
+        # servers close: the callback then attaches its transport to a still-open Server and
+        # spawns a gate handler that closes it (during wait_closed below). Without the tick
+        # the callback runs against an already-closed Server, dies on an internal assertion
+        # inside asyncio, and the accepted socket is finalized by GC as a ResourceWarning.
+        await asyncio.sleep(0)
         for srv in self._servers:
             srv.close()
         # Cancel the in-flight relay handlers BEFORE wait_closed(): since Python 3.12.1
@@ -388,15 +423,23 @@ class UserspaceDialPlane:
         # caller's timeout (issue #1756). Cancelling here (instead of leaving orphan tasks for
         # the loop's shutdown to cancel) also guarantees each handler's psock cleanup runs
         # while the stack is still up, and that no relay task outlives the dial plane.
-        for task in list(self._relay_tasks):
-            task.cancel()
+        # One pass suffices: _closing was set before any await in this method and handlers
+        # register in an await-free step after checking it, so nothing can join
+        # _relay_tasks after the snapshot below — late starters see the gate and bail.
         if self._relay_tasks:
-            await asyncio.gather(*self._relay_tasks, return_exceptions=True)
+            for task in list(self._relay_tasks):
+                task.cancel()
+            await asyncio.gather(*list(self._relay_tasks), return_exceptions=True)
         for srv in self._servers:
             with suppress(Exception):
                 await srv.wait_closed()
         self._servers.clear()
         self._relays.clear()
+        if self._socket_dir is not None:
+            # asyncio only unlinks unix server sockets on close from Python 3.13; remove the
+            # whole directory so every version leaves nothing behind.
+            shutil.rmtree(self._socket_dir, ignore_errors=True)
+            self._socket_dir = None
 
     async def _relay_handler(self, port: int, creader: asyncio.StreamReader, cwriter: asyncio.StreamWriter) -> None:
         try:
@@ -405,6 +448,12 @@ class UserspaceDialPlane:
             logger.debug("relay connect_tcp(%s:%s) failed", self._device_addr, port, exc_info=True)
             cwriter.close()
             return
+        except BaseException:
+            # Cancellation (dial-plane teardown) while connecting: the accepted transport must
+            # still be closed, or it stays attached to the relay server and __aexit__ hangs in
+            # Server.wait_closed() (which waits for all attached connections since 3.12.1).
+            cwriter.close()
+            raise
 
         # Both pump directions are plain awaits on the same event loop the stack runs on: a
         # cancelled handler cancels the pumps at their await points, so nothing can stay
@@ -465,12 +514,19 @@ class UserspaceDialPlane:
             with suppress(Exception):
                 psock.close()
 
-    async def _ensure_relay(self, port: int) -> int:
+    async def _ensure_relay(self, port: int) -> _RelayOpener:
+        if self._closing:
+            raise ConnectionError("userspace dial plane is closed")
         key = (self._device_addr, port)
         if key in self._relays:
             return self._relays[key]
 
         async def handle(creader: asyncio.StreamReader, cwriter: asyncio.StreamWriter) -> None:
+            if self._closing:
+                # Accepted just as teardown began (see __aexit__): close the transport so
+                # Server.wait_closed() can complete, and never touch the stack.
+                cwriter.close()
+                return
             # Track the handler task so __aexit__ can cancel any relay still in flight
             # (start_server's own task bookkeeping offers no cross-version cancel API).
             task = asyncio.current_task()
@@ -481,12 +537,37 @@ class UserspaceDialPlane:
             finally:
                 self._relay_tasks.discard(task)
 
+        opener = await self._start_relay_server(port, handle)
+        self._relays[key] = opener
+        return opener
+
+    async def _start_relay_server(self, port: int, handle: _RelayHandler) -> _RelayOpener:
+        """Bind a relay listener and return the opener that connects to it.
+
+        A unix socket is preferred: it lives in a 0700 temp directory, so the filesystem —
+        not the network stack — decides who may connect, whereas a loopback TCP port is
+        connectable by any local process for the tunnel's whole lifetime. TCP remains the
+        fallback where AF_UNIX is unavailable (e.g. Windows), and can be forced anywhere via
+        :data:`TCP_RELAY_ENV_VAR` to debug that path."""
+        if get_os_utils().supports_unix_sockets and not os.getenv(TCP_RELAY_ENV_VAR):
+            if self._socket_dir is None:
+                self._socket_dir = tempfile.mkdtemp(prefix="pmd3-")
+            path = os.path.join(self._socket_dir, f"{port}.sock")
+            try:
+                self._servers.append(await asyncio.start_unix_server(handle, path))
+            except OSError as e:
+                # e.g. sun_path length exceeded by an unusually long TMPDIR. The fallback is a
+                # loopback TCP port any local process can connect to — losing the unix socket's
+                # filesystem access control — so say so visibly.
+                logger.warning("unix-socket relay bind failed (%s); falling back to loopback TCP", e)
+            else:
+                logger.debug("userspace relay %s:%s -> %s", self._device_addr, port, path)
+                return partial(asyncio.open_unix_connection, path)
         srv = await asyncio.start_server(handle, "127.0.0.1", 0)
         self._servers.append(srv)
         lport = srv.sockets[0].getsockname()[1]
-        self._relays[key] = lport
         logger.debug("userspace relay %s:%s -> 127.0.0.1:%s", self._device_addr, port, lport)
-        return lport
+        return partial(asyncio.open_connection, "127.0.0.1", lport)
 
     async def dial(self, host: Optional[str] = None, port: Optional[int] = None, **kwargs: Any):
         """``asyncio.open_connection``-compatible dialer passed to the RSD via ``open_connection=``.
@@ -495,8 +576,12 @@ class UserspaceDialPlane:
         everything else falls through to the stdlib ``asyncio.open_connection`` unchanged."""
         if host is not None and str(host) == self._device_addr:
             assert port is not None
-            lport = await self._ensure_relay(port)
-            return await asyncio.open_connection("127.0.0.1", lport, **kwargs)
+            if self._closing:
+                # A dial racing (or following) teardown must not re-create relay state that
+                # nothing will ever clean up — and its stream would only yield silent EOF.
+                raise ConnectionError("userspace dial plane is closed")
+            opener = await self._ensure_relay(port)
+            return await opener(**kwargs)
         return await asyncio.open_connection(host, port, **kwargs)
 
 
@@ -658,6 +743,7 @@ class UserspaceRsdTunnel:
         self.rsd: Optional[RemoteServiceDiscoveryService] = None
         self.tun: Optional[UserspaceTun] = None
         self._exit_stack: Optional[AsyncExitStack] = None
+        self._transport_watcher: Optional[asyncio.Task[None]] = None
 
     async def aopen(self) -> RemoteServiceDiscoveryService:
         """Establish the tunnel and return the connected RSD. Idempotent on this handle; raises
@@ -708,8 +794,34 @@ class UserspaceRsdTunnel:
         self.rsd = rsd
         _active_tunnel = self
         USERSPACE_ACTIVE = True
+        self._transport_watcher = asyncio.create_task(
+            self._watch_transport_closed(tunnel_result.client),
+            name=f"userspace-tunnel-transport-watcher-{tunnel_result.address}",
+        )
         logger.debug("userspace RSD established (no root): %s rsd_port=%s", tunnel_result.address, tunnel_result.port)
         return rsd
+
+    async def _watch_transport_closed(self, client: tunnel_service.RemotePairingTunnel) -> None:
+        """Tear the tunnel down when its outer transport dies (e.g. the USB cable is pulled:
+        usbmuxd closes the CoreDeviceProxy connection and the transport read task just ends).
+
+        Without this nothing wakes the pytcp sessions or the relay handlers — every in-flight
+        service read parks forever. Keep-alive cannot cover it: a relay's peer is this very
+        process, so loopback probes are always answered no matter what happened to the device.
+        Closing the dial plane cancels the relay handlers, which surfaces EOF/connection errors
+        to all blocked callers."""
+        with suppress(Exception):
+            await client.wait_closed()
+        if self._exit_stack is None:
+            return  # normal aclose() already ran
+        logger.warning("userspace tunnel transport closed (device disconnected?); tearing down")
+        try:
+            await self.aclose()
+        except Exception:
+            # This task is fire-and-forget and it runs exactly when unwinding is most likely
+            # to raise (the transport just died under the RSD); an unhandled exception here
+            # would only surface as "Task exception was never retrieved" at GC.
+            logger.warning("userspace tunnel teardown after transport death failed", exc_info=True)
 
     async def aclose(self) -> None:
         """Tear down the tunnel and its RSD, releasing every resource in LIFO order and restoring
@@ -721,6 +833,9 @@ class UserspaceRsdTunnel:
         if self._exit_stack is None:
             return
         stack, self._exit_stack = self._exit_stack, None
+        watcher, self._transport_watcher = self._transport_watcher, None
+        if watcher is not None and watcher is not asyncio.current_task():
+            watcher.cancel()
         self.rsd = None
         self.tun = None
         if _active_tunnel is self:

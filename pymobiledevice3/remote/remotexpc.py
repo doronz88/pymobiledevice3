@@ -22,6 +22,7 @@ from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
     NotConnectedError,
     ProtocolError,
+    PyMobileDevice3Exception,
     StreamClosedError,
 )
 from pymobiledevice3.remote.xpc_message import (
@@ -148,7 +149,14 @@ class RemoteXPCConnection:
         ``mediastreamstart``. Only valid while the connection is open.
         """
         sockname = self.writer.get_extra_info("sockname")
-        return sockname[0], sockname[1]
+        if not isinstance(sockname, tuple):
+            # e.g. an AF_UNIX sockname ('' or a path) — the userspace tunnel's relay dialer.
+            # This connection has no kernel endpoint the device could ever reach, and the old
+            # loopback-TCP relay's ('127.0.0.1', port) answer was equally unreachable — fail
+            # loudly instead of advertising a dead endpoint.
+            raise PyMobileDevice3Exception("local_address is unavailable over an in-process (userspace) tunnel")
+        address = cast("tuple[str, int]", sockname)
+        return address[0], address[1]
 
     async def close(self) -> None:
         self._pending_window_updates.clear()
