@@ -111,6 +111,11 @@ dependencies = [
     # module ASGIWebDAV imports on 3.10-3.13 (stdlib on 3.14+); uvicorn is already a dependency above.
     "asgiwebdav>=2.0.1; python_version >= '3.10'",
     "backports.zstd; python_version >= '3.10' and python_version < '3.14'",
+    # chardet is pulled in by ASGIWebDAV. Its 7.6.0 cp315 wheel segfaults on import (Cython
+    # module init dies in __Pyx__ExceptionSave against the current 3.15 ABI), which crashed
+    # the CLI on Python 3.15 the moment anything touched the webdav import chain. Earlier
+    # and later releases are fine, so exclude exactly that build on 3.15.
+    "chardet!=7.6.0; python_version >= '3.15'",
 ]
 
 [project.optional-dependencies]

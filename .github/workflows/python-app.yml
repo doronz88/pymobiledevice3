@@ -53,6 +53,12 @@ jobs:
         run: uvx pre-commit run --all-files
       - name: Run device-free tests
         run: uv run --extra test pytest -m "not device"
+      - name: CLI smoke
+        # The test suite never imports every runtime dependency (e.g. chardet via ASGIWebDAV),
+        # so a dependency whose wheel crashes on import can pass CI while breaking the CLI —
+        # exactly what chardet 7.6.0's cp315 wheel did. One bare invocation catches that class.
+        # No output redirect: pwsh on the Windows runners has no /dev/null.
+        run: uv run pymobiledevice3 -h
 
   pyright:
     if: '! github.event.pull_request.draft'
