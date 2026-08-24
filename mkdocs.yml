@@ -102,7 +102,11 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.details
@@ -118,6 +122,7 @@ nav:
       - CLI recipes: guides/cli-recipes.md
       - Mounting AFC in Finder (WebDAV): guides/webdav-mounting.md
       - iOS 17+ tunnels: guides/ios17-tunnels.md
+      - Understanding the network stacks: guides/network-stacks.md
       - WebView debugging: guides/webview-debugging.md
       - Machine-readable output: guides/machine-readable-output.md
       - Python API: guides/python-api.md

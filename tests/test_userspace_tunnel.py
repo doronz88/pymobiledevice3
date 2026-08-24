@@ -266,7 +266,7 @@ async def test_dial_after_close_raises():
     with pytest.raises(ConnectionError):
         await dial_plane.dial(DEVICE_ADDR, 5555)
     assert dial_plane._socket_dir is None
-    assert not dial_plane._servers
+    assert dial_plane._server is None
 
 
 @pytest.mark.skipif(not get_os_utils().supports_unix_sockets, reason="platform has no AF_UNIX")
@@ -324,6 +324,48 @@ async def test_transport_watcher_tears_down_on_transport_death():
 
     await asyncio.wait_for(tunnel._watch_transport_closed(cast(Any, FakeTunnelClient())), timeout=5)
     assert tunnel._exit_stack is None  # aclose() ran
+
+
+async def test_stray_connection_without_header_is_shed(monkeypatch):
+    # Only dial() speaks the 2-byte port-header protocol; a stray local connection that
+    # sends nothing (trivial on the TCP fallback, where any local process can connect) must
+    # be shed by the header timeout instead of pinning a handler and its transport until
+    # tunnel close.
+    monkeypatch.setattr(userspace_tunnel, "RELAY_HEADER_TIMEOUT", 0.2)
+    tun = FakeTun()
+    async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
+        assert dial_plane._opener is not None
+        reader, writer = await dial_plane._opener()  # no header
+        assert await asyncio.wait_for(reader.read(), timeout=5) == b""  # shed with EOF
+        assert not tun.socks  # never touched the stack
+        await _poll_until(lambda: not dial_plane._relay_tasks)
+        await close_stream_writer(writer)
+
+
+async def test_aclose_waits_for_watcher_teardown():
+    # An explicit aclose() while the transport watcher is mid-unwind (device just
+    # disconnected) must wait for that unwind, not return early — aclose() returning is the
+    # signal that the process-global pytcp stack is really stopped and a tunnel may be
+    # reopened.
+    released = []
+
+    async def slow_release() -> None:
+        await asyncio.sleep(0.1)
+        released.append(True)
+
+    tunnel = userspace_tunnel.UserspaceRsdTunnel()
+    tunnel._exit_stack = AsyncExitStack()
+    tunnel._exit_stack.push_async_callback(slow_release)
+
+    class FakeTunnelClient:
+        async def wait_closed(self) -> None:
+            return  # the transport read task has ended
+
+    watcher = asyncio.create_task(tunnel._watch_transport_closed(cast(Any, FakeTunnelClient())))
+    await asyncio.sleep(0.02)  # watcher is now inside slow_release
+    await asyncio.wait_for(tunnel.aclose(), timeout=5)
+    assert released  # aclose returned only after the watcher's unwind completed
+    await watcher
 
 
 async def test_tun_address_usable_when_up_returns():
