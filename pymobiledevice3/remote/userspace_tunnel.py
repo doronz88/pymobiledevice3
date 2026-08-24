@@ -735,6 +735,7 @@ class UserspaceRsdTunnel:
         self.rsd: Optional[RemoteServiceDiscoveryService] = None
         self.tun: Optional[UserspaceTun] = None
         self._exit_stack: Optional[AsyncExitStack] = None
+        self._transport_watcher: Optional[asyncio.Task[None]] = None
 
     async def aopen(self) -> RemoteServiceDiscoveryService:
         """Establish the tunnel and return the connected RSD. Idempotent on this handle; raises
@@ -785,8 +786,28 @@ class UserspaceRsdTunnel:
         self.rsd = rsd
         _active_tunnel = self
         USERSPACE_ACTIVE = True
+        self._transport_watcher = asyncio.create_task(
+            self._watch_transport_closed(tunnel_result.client),
+            name=f"userspace-tunnel-transport-watcher-{tunnel_result.address}",
+        )
         logger.debug("userspace RSD established (no root): %s rsd_port=%s", tunnel_result.address, tunnel_result.port)
         return rsd
+
+    async def _watch_transport_closed(self, client: tunnel_service.RemotePairingTunnel) -> None:
+        """Tear the tunnel down when its outer transport dies (e.g. the USB cable is pulled:
+        usbmuxd closes the CoreDeviceProxy connection and the transport read task just ends).
+
+        Without this nothing wakes the pytcp sessions or the relay handlers — every in-flight
+        service read parks forever. Keep-alive cannot cover it: a relay's peer is this very
+        process, so loopback probes are always answered no matter what happened to the device.
+        Closing the dial plane cancels the relay handlers, which surfaces EOF/connection errors
+        to all blocked callers."""
+        with suppress(Exception):
+            await client.wait_closed()
+        if self._exit_stack is None:
+            return  # normal aclose() already ran
+        logger.warning("userspace tunnel transport closed (device disconnected?); tearing down")
+        await self.aclose()
 
     async def aclose(self) -> None:
         """Tear down the tunnel and its RSD, releasing every resource in LIFO order and restoring
@@ -798,6 +819,9 @@ class UserspaceRsdTunnel:
         if self._exit_stack is None:
             return
         stack, self._exit_stack = self._exit_stack, None
+        watcher, self._transport_watcher = self._transport_watcher, None
+        if watcher is not None and watcher is not asyncio.current_task():
+            watcher.cancel()
         self.rsd = None
         self.tun = None
         if _active_tunnel is self:

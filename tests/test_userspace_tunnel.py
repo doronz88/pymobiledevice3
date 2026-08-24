@@ -16,7 +16,7 @@ import asyncio
 import os
 import socket
 import threading
-from contextlib import suppress
+from contextlib import AsyncExitStack, suppress
 from typing import Any, cast
 
 import pytest
@@ -296,6 +296,24 @@ async def test_tcp_relay_forced_by_env_var(monkeypatch):
         psock.feed(b"pong")
         assert await reader.readexactly(4) == b"pong"
         writer.close()
+
+
+async def test_transport_watcher_tears_down_on_transport_death():
+    # Device unplug: usbmuxd closes the outer CoreDeviceProxy connection, the transport read
+    # task ends (wait_closed returns) and nothing else wakes blocked service reads — the pytcp
+    # sessions stay ESTABLISHED and relay pumps park forever (keep-alive can't cover it: a
+    # relay's peer is this very process). The watcher must react by running aclose(), whose
+    # relay teardown surfaces EOF/errors to every blocked caller. Reproduced live: `dvt oslog`
+    # parked forever on USB unplug; with the watcher it exits within a second.
+    tunnel = userspace_tunnel.UserspaceRsdTunnel()
+    tunnel._exit_stack = AsyncExitStack()
+
+    class FakeTunnelClient:
+        async def wait_closed(self) -> None:
+            return  # the transport read task has ended
+
+    await asyncio.wait_for(tunnel._watch_transport_closed(cast(Any, FakeTunnelClient())), timeout=5)
+    assert tunnel._exit_stack is None  # aclose() ran
 
 
 async def test_tun_address_usable_when_up_returns():
