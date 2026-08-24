@@ -266,7 +266,7 @@ async def test_dial_after_close_raises():
     with pytest.raises(ConnectionError):
         await dial_plane.dial(DEVICE_ADDR, 5555)
     assert dial_plane._socket_dir is None
-    assert not dial_plane._servers
+    assert dial_plane._server is None
 
 
 @pytest.mark.skipif(not get_os_utils().supports_unix_sockets, reason="platform has no AF_UNIX")
