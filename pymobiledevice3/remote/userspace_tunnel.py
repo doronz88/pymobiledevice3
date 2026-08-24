@@ -117,6 +117,10 @@ MIN_RTO_MS = 200
 #: ACK-every-other-segment rule, not the timer — measured 38-39 MB/s at 1/10/100 ms alike).
 ACK_DELAY_MS = 1
 
+#: Set (to any non-empty value) to force the dial plane's relays onto loopback TCP even where
+#: AF_UNIX exists — reproduces the Windows relay path on any platform for debugging.
+TCP_RELAY_ENV_VAR = "PYMOBILEDEVICE3_USERSPACE_TCP_RELAY"
+
 
 def throughput_sysctls() -> dict[str, int]:
     """The ``stack.init(sysctls=...)`` entries that tune the tunnel for bulk transfer and latency.
@@ -541,8 +545,9 @@ class UserspaceDialPlane:
         A unix socket is preferred: it lives in a 0700 temp directory, so the filesystem —
         not the network stack — decides who may connect, whereas a loopback TCP port is
         connectable by any local process for the tunnel's whole lifetime. TCP remains the
-        fallback where AF_UNIX is unavailable (e.g. Windows)."""
-        if get_os_utils().supports_unix_sockets:
+        fallback where AF_UNIX is unavailable (e.g. Windows), and can be forced anywhere via
+        :data:`TCP_RELAY_ENV_VAR` to debug that path."""
+        if get_os_utils().supports_unix_sockets and not os.getenv(TCP_RELAY_ENV_VAR):
             if self._socket_dir is None:
                 self._socket_dir = tempfile.mkdtemp(prefix="pmd3-")
             path = os.path.join(self._socket_dir, f"{port}.sock")

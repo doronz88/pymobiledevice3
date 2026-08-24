@@ -167,6 +167,11 @@ What works over the userspace tunnel: the host-initiated developer services (`dv
 `core-device …`), and the device-initiated AV/HID paths — `display serve-web`, `display serve-vnc`,
 `display start-video-stream` / `start-audio-stream`, and the HID gesture commands.
 
+Service connections are handed off in-process over unix-socket relays; on Windows (no `AF_UNIX`)
+the relays use loopback TCP instead. Set `PYMOBILEDEVICE3_USERSPACE_TCP_RELAY` (any non-empty
+value) to force the loopback-TCP relays on any platform — useful for reproducing Windows-specific
+relay behavior elsewhere.
+
 ### Limitation: in-process only
 
 The device's tunnel address lives only inside the pymobiledevice3 process, so it is **not reachable

@@ -278,6 +278,26 @@ async def test_relay_uses_unix_sockets_and_removes_them_on_exit():
     assert not os.path.exists(socket_dir)
 
 
+async def test_tcp_relay_forced_by_env_var(monkeypatch):
+    # PYMOBILEDEVICE3_USERSPACE_TCP_RELAY reproduces the Windows relay path on any platform:
+    # the relay must bind loopback TCP and never create a socket directory. This also gives the
+    # TCP relay path POSIX CI coverage (it is otherwise exercised only on Windows runners).
+    monkeypatch.setenv(userspace_tunnel.TCP_RELAY_ENV_VAR, "1")
+    tun = FakeTun()
+    async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
+        reader, writer = await dial_plane.dial(DEVICE_ADDR, 4444)
+        assert writer.get_extra_info("socket").family == socket.AF_INET
+        assert dial_plane._socket_dir is None
+
+        psock = (await _poll_until(lambda: tun.socks))[0]
+        writer.write(b"ping")
+        await writer.drain()
+        await _poll_until(lambda: psock.sent == [b"ping"])
+        psock.feed(b"pong")
+        assert await reader.readexactly(4) == b"pong"
+        writer.close()
+
+
 async def test_tun_address_usable_when_up_returns():
     # The stack installs the interface address from its own tasks shortly AFTER stack.start()
     # returns, so up() must not return before the address is usable: a connect issued right
