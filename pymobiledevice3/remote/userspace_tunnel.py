@@ -41,6 +41,7 @@ import socket
 import struct
 import sys
 import tempfile
+import weakref
 from collections.abc import Coroutine
 from contextlib import AsyncExitStack, suppress
 from functools import partial
@@ -116,6 +117,11 @@ MIN_RTO_MS = 200
 #: immediately; bulk transfers are unaffected either way (streams are governed by the
 #: ACK-every-other-segment rule, not the timer — measured 38-39 MB/s at 1/10/100 ms alike).
 ACK_DELAY_MS = 1
+
+#: How long :class:`UserspaceDialPlane` waits for a relay connection's 2-byte port header.
+#: dial() writes it before returning, so legitimate headers arrive within one loop tick;
+#: this only sheds stray local connections that send nothing.
+RELAY_HEADER_TIMEOUT = 10
 
 #: Set (to any non-empty value) to force the dial plane's relays onto loopback TCP even where
 #: AF_UNIX exists — reproduces the Windows relay path on any platform for debugging.
@@ -510,8 +516,14 @@ class UserspaceDialPlane:
         self._relay_tasks.add(task)
         try:
             try:
-                port = int.from_bytes(await creader.readexactly(2), "big")
-            except (asyncio.IncompleteReadError, ConnectionError):
+                # dial() writes the header before returning, so a well-behaved client's header
+                # arrives immediately; the timeout sheds strays that connect and send nothing
+                # (on the TCP fallback any local process can), which would otherwise pin this
+                # handler and its transport until tunnel close.
+                port = int.from_bytes(
+                    await asyncio.wait_for(creader.readexactly(2), timeout=RELAY_HEADER_TIMEOUT), "big"
+                )
+            except (asyncio.IncompleteReadError, ConnectionError, asyncio.TimeoutError):
                 cwriter.close()
                 return
             except BaseException:
@@ -789,6 +801,11 @@ class UserspaceRsdTunnel:
         global _active_tunnel, USERSPACE_ACTIVE
         if self.rsd is not None:
             return self.rsd
+        async with _lifecycle_lock():
+            return await self._aopen_locked()
+
+    async def _aopen_locked(self) -> RemoteServiceDiscoveryService:
+        global _active_tunnel, USERSPACE_ACTIVE
         if _active_tunnel is not None:
             raise PyMobileDevice3Exception(
                 "a userspace tunnel is already active in this process (PyTCP's stack is a "
@@ -866,21 +883,29 @@ class UserspaceRsdTunnel:
         the kernel-tunnel factory default. Idempotent.
 
         After this returns, no background thread remains blocked (closing the tun wakes the parked
-        reader), so the process can exit normally — embedders do NOT need :func:`force_exit`."""
+        reader), so the process can exit normally — embedders do NOT need :func:`force_exit`.
+
+        Serialized with the transport watcher's teardown: an explicit aclose() during the
+        watcher's unwind (device just disconnected) waits for that unwind instead of
+        returning while resources are still being released — so aclose() returning means the
+        process-global pytcp stack is really stopped and a new tunnel may be opened."""
         global _active_tunnel, USERSPACE_ACTIVE
-        if self._exit_stack is None:
-            return
-        stack, self._exit_stack = self._exit_stack, None
-        watcher, self._transport_watcher = self._transport_watcher, None
-        if watcher is not None and watcher is not asyncio.current_task():
-            watcher.cancel()
-        self.rsd = None
-        self.tun = None
-        if _active_tunnel is self:
-            _active_tunnel = None
-            USERSPACE_ACTIVE = False
-            tunnel_service.USE_USERSPACE_TUNNEL = False
-        await stack.aclose()
+        async with _lifecycle_lock():
+            if self._exit_stack is None:
+                return
+            stack, self._exit_stack = self._exit_stack, None
+            watcher, self._transport_watcher = self._transport_watcher, None
+            if watcher is not None and watcher is not asyncio.current_task():
+                # The watcher is parked in wait_closed() (it cannot be mid-aclose: that path
+                # holds this lock) — safe to cancel.
+                watcher.cancel()
+            self.rsd = None
+            self.tun = None
+            if _active_tunnel is self:
+                _active_tunnel = None
+                USERSPACE_ACTIVE = False
+                tunnel_service.USE_USERSPACE_TUNNEL = False
+            await stack.aclose()
 
     #: ``open``/``close`` are aliases for :meth:`aopen`/:meth:`aclose` (still awaitable).
     open = aopen
@@ -891,6 +916,27 @@ class UserspaceRsdTunnel:
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self.aclose()
+
+
+_lifecycle_locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = weakref.WeakKeyDictionary()
+
+
+def _lifecycle_lock() -> asyncio.Lock:
+    """The lock serializing every open/close transition of the process-global pytcp stack.
+
+    aopen() checks the singleton guard and publishes _active_tunnel on opposite sides of the
+    whole establishment, so without serialization two concurrent aopen() calls both pass the
+    guard and drive the one stack at once (measured live: both handshakes die with
+    IncompleteReadError and pmd-pytcp is left asserting "ARP Cache.start() called while a
+    worker is still running"). It also serializes a new aopen() against a previous handle's
+    still-unwinding teardown. One lock per event loop, created inside the loop (Python 3.9's
+    primitives bind their loop at construction time)."""
+    loop = asyncio.get_running_loop()
+    lock = _lifecycle_locks.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _lifecycle_locks[loop] = lock
+    return lock
 
 
 #: Holds the CLI's tunnel for the process lifetime (the CLI has no teardown hook and hard-exits
@@ -923,7 +969,19 @@ async def establish_userspace_rsd(
     ):
         return _cli_tunnel.rsd
     tunnel = UserspaceRsdTunnel(serial=serial, autopair=autopair, remotepairing_fallback=remotepairing_fallback)
-    rsd = await tunnel.aopen()
+    try:
+        rsd = await tunnel.aopen()
+    except PyMobileDevice3Exception:
+        # Lost an establishment race (aopen serializes on the lifecycle lock, so by now the
+        # winner has published): share its tunnel when it serves the requested device.
+        winner = _cli_tunnel or _active_tunnel
+        if (
+            winner is not None
+            and winner.rsd is not None
+            and (serial is None or serial in (winner.serial, winner.rsd.udid))
+        ):
+            return winner.rsd
+        raise
     _cli_tunnel = tunnel
     # The pure-asyncio stack has no threads to park, so process exit cannot hang anymore. The
     # CLI still never closes its tunnel (it lives for the process lifetime), so hard-exit at
