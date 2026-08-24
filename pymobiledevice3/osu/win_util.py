@@ -32,6 +32,11 @@ class Win32(OsUtils):
             return False
 
     @property
+    def supports_unix_sockets(self) -> bool:
+        # CPython on Windows exposes neither socket.AF_UNIX nor asyncio's unix stream APIs.
+        return False
+
+    @property
     def usbmux_address(self) -> tuple[tuple[str, int], int]:
         return MuxConnection.ITUNES_HOST, socket.AF_INET
 

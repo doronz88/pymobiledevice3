@@ -13,7 +13,10 @@ threads at all — that relaying spawns none.
 """
 
 import asyncio
+import os
+import socket
 import threading
+from contextlib import suppress
 from typing import Any, cast
 
 import pytest
@@ -23,6 +26,7 @@ pytest.importorskip("pmd_pytcp")
 
 from pmd_pytcp.stack import sysctl
 
+from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote import userspace_tunnel
 from pymobiledevice3.remote.userspace_tunnel import UserspaceDialPlane, UserspaceTun
 
@@ -219,6 +223,59 @@ async def test_relaying_spawns_no_threads():
         assert set(threading.enumerate()) == baseline
     for writer in writers:
         writer.close()
+
+
+async def test_dial_plane_exit_completes_when_dial_races_teardown():
+    # A dial's connect completes in the kernel before the server's accept callback has
+    # spawned the handler. If teardown then begins — e.g. the dialer's caller raised during
+    # connection setup — __aexit__'s cancel loop snapshots _relay_tasks before that handler
+    # registers, so nothing cancelled it: its pumps parked forever on an abandoned client
+    # connection and __aexit__ hung in Server.wait_closed() (which waits for all attached
+    # connections since Python 3.12.1). Reproduced live against a device; exit must complete
+    # promptly with no relay task left behind.
+    class StallingTun:
+        async def connect_tcp(self, addr: str, port: int) -> FakePyTcpSocket:
+            await asyncio.Event().wait()
+            raise AssertionError("unreachable")
+
+    dial_plane = UserspaceDialPlane(cast(UserspaceTun, StallingTun()), DEVICE_ADDR)
+    await dial_plane.__aenter__()
+    _reader, writer = await dial_plane.dial(DEVICE_ADDR, 3333)
+
+    # No yield to the loop between dial and teardown: the handler must not be registered yet.
+    await asyncio.wait_for(dial_plane.__aexit__(None, None, None), timeout=5)
+
+    assert not dial_plane._relay_tasks
+    writer.close()
+    with suppress(OSError):
+        await writer.wait_closed()
+    # Drain the loop so the gate handler for the raced connection finishes closing its
+    # transport; otherwise the accepted socket is finalized by GC and flagged unraisable.
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+
+@pytest.mark.skipif(not get_os_utils().supports_unix_sockets, reason="platform has no AF_UNIX")
+async def test_relay_uses_unix_sockets_and_removes_them_on_exit():
+    # Where AF_UNIX exists the relay must listen on unix sockets, not loopback TCP: the
+    # socket dir's 0700 mode decides who may connect, instead of exposing the device's
+    # services on a port any local process can reach. Also pin the cleanup: asyncio only
+    # unlinks unix server sockets from 3.13, so the dial plane removes its socket directory
+    # itself.
+    tun = FakeTun()
+    dial_plane = UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR)
+    await dial_plane.__aenter__()
+    _reader, writer = await dial_plane.dial(DEVICE_ADDR, 2222)
+    assert writer.get_extra_info("socket").family == socket.AF_UNIX
+    socket_dir = dial_plane._socket_dir
+    assert socket_dir is not None and os.path.isdir(socket_dir)
+
+    writer.close()
+    with suppress(OSError):
+        await writer.wait_closed()
+    await _poll_until(lambda: not dial_plane._relay_tasks)
+    await dial_plane.__aexit__(None, None, None)
+    assert not os.path.exists(socket_dir)
 
 
 async def test_tun_address_usable_when_up_returns():

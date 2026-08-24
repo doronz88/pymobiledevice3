@@ -74,6 +74,11 @@ class OsUtils:
         raise FeatureNotSupportedError(self._os_name, _calling_function_name())
 
     @property
+    def supports_unix_sockets(self) -> bool:
+        """Whether AF_UNIX stream sockets (and asyncio's unix stream APIs) exist on this platform."""
+        raise FeatureNotSupportedError(self._os_name, _calling_function_name())
+
+    @property
     def access_denied_error(self) -> str:
         raise FeatureNotSupportedError(self._os_name, _calling_function_name())
 

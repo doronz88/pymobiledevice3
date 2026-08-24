@@ -22,6 +22,10 @@ class Posix(OsUtils):
         return os.geteuid() == 0
 
     @property
+    def supports_unix_sockets(self) -> bool:
+        return True
+
+    @property
     def usbmux_address(self) -> tuple[Union[str, tuple[str, int]], int]:
         return MuxConnection.USBMUXD_PIPE, socket.AF_UNIX
 
