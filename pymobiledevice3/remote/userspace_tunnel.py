@@ -147,7 +147,7 @@ def throughput_sysctls() -> dict[str, int]:
 
 
 #: Datagram socketpair buffer, sized to hold a burst of a full receive window of packets.
-SOCKET_BUFFER_SIZE = 8 * 1024 * 1024
+SOCKET_BUFFER_SIZE = 6 * 1024 * 1024
 
 #: Read/relay chunk size for the dial-plane bridge.
 _CHUNK = 65536
