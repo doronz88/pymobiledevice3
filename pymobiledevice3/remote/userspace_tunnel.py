@@ -39,7 +39,6 @@ import os
 import shutil
 import socket
 import struct
-import sys
 import tempfile
 import weakref
 from collections.abc import Coroutine
@@ -59,6 +58,7 @@ from pymobiledevice3.exceptions import InvalidServiceError, PyMobileDevice3Excep
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.utils import get_asyncio_loop
 
 logger = logging.getLogger(__name__)
 
@@ -644,8 +644,7 @@ class UserspaceDialPlane:
 _active_tunnel: Optional[UserspaceRsdTunnel] = None
 
 #: True while a userspace tunnel is active in this process. Mirrors ``_active_tunnel is not None``
-#: (kept as a plain flag so callers can read it as an attribute). The CLI also uses it to gate the
-#: hard exit in :func:`force_exit`.
+#: (kept as a plain flag so callers can read it as an attribute).
 USERSPACE_ACTIVE = False
 
 
@@ -883,7 +882,7 @@ class UserspaceRsdTunnel:
         the kernel-tunnel factory default. Idempotent.
 
         After this returns, no background thread remains blocked (closing the tun wakes the parked
-        reader), so the process can exit normally — embedders do NOT need :func:`force_exit`.
+        reader), so the process can exit normally.
 
         Serialized with the transport watcher's teardown: an explicit aclose() during the
         watcher's unwind (device just disconnected) waits for that unwind instead of
@@ -939,8 +938,8 @@ def _lifecycle_lock() -> asyncio.Lock:
     return lock
 
 
-#: Holds the CLI's tunnel for the process lifetime (the CLI has no teardown hook and hard-exits
-#: via force_exit instead of calling aclose). Embedders hold their own UserspaceRsdTunnel.
+#: Holds the CLI's tunnel for the process lifetime (closed at interpreter exit — the CLI has no
+#: earlier teardown hook). Embedders hold their own UserspaceRsdTunnel.
 _cli_tunnel: Optional[UserspaceRsdTunnel] = None
 
 
@@ -951,8 +950,7 @@ async def establish_userspace_rsd(
 
     Embedders should use :class:`UserspaceRsdTunnel` directly — it is a closeable handle / async
     context manager. This wrapper exists for the CLI, which has no teardown hook: it stashes the
-    tunnel for the process lifetime and registers :func:`force_exit` at exit so the CLI exits
-    promptly without awaiting teardown.
+    tunnel for the process lifetime and closes it at interpreter exit (a few ms).
 
     ``remotepairing_fallback=False`` makes a pre-17.4 device (no CoreDeviceProxy) raise
     :class:`UserspaceTunnelUnavailableError` instead of attempting RemotePairing, so the caller can
@@ -983,25 +981,24 @@ async def establish_userspace_rsd(
             return winner.rsd
         raise
     _cli_tunnel = tunnel
-    # The pure-asyncio stack has no threads to park, so process exit cannot hang anymore. The
-    # CLI still never closes its tunnel (it lives for the process lifetime), so hard-exit at
-    # atexit to skip the "Task was destroyed but it is pending!" GC noise from the stack's
-    # still-scheduled loop tasks. Embedders who call aclose() never reach this with
-    # USERSPACE_ACTIVE set.
-    atexit.register(force_exit)
+    atexit.register(_close_cli_tunnel_at_exit)
     return rsd
 
 
-def force_exit(code: int = 0) -> None:
-    """Flush output and hard-exit, skipping userspace tunnel teardown. No-op unless a userspace
-    tunnel is active. Used by the CLI, which keeps its tunnel for the process lifetime instead of
-    closing it; embedders should prefer :meth:`UserspaceRsdTunnel.aclose`, which tears down
-    cleanly and lets the process exit on its own."""
-    if not USERSPACE_ACTIVE:
+def _close_cli_tunnel_at_exit() -> None:
+    """Close the CLI's process-lifetime tunnel at interpreter exit (bounded; measured ~3 ms on
+    a healthy tunnel — the device gets a clean FIN instead of an abandoned session).
+
+    This replaced a hard ``os._exit`` whose reasons no longer exist: the pure-asyncio stack
+    has no threads that could park exit, and the CLI's persistent loop is abandoned rather
+    than closed, so there is no pending-task GC noise to mute either. Registration is
+    idempotent in effect: aclose() is."""
+    if _cli_tunnel is None or _cli_tunnel.rsd is None:
         return
     try:
-        sys.stdout.flush()
-        sys.stderr.flush()
+        loop = get_asyncio_loop()
+        if loop.is_running():
+            return  # exiting from inside the loop; nothing safe to run here
+        loop.run_until_complete(asyncio.wait_for(_cli_tunnel.aclose(), timeout=3))
     except Exception:
-        pass
-    os._exit(code)
+        logger.debug("closing the CLI tunnel at exit failed", exc_info=True)
