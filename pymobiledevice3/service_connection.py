@@ -149,9 +149,8 @@ class ServiceConnection:
         :param create_connection_timeout: The timeout for creating the connection.
         :param open_connection: Optional ``asyncio.open_connection``-compatible dialer. Defaults to
             ``asyncio.open_connection``; the userspace tunnel injects one that relays device-bound
-            connections through its in-process stack (avoiding a global monkeypatch). Keep-alive is
-            skipped for injected dialers — their connection is a process-local relay leg, not the
-            network leg to the device.
+            connections through its in-process stack. Keep-alive is skipped for injected dialers —
+            their connection is a process-local relay leg, not the network leg to the device.
         :return: A ServiceConnection object.
         """
         dialer = open_connection or asyncio.open_connection

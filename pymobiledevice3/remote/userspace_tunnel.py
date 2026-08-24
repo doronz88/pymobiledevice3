@@ -409,9 +409,11 @@ class UserspaceDialPlane:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self._closing = True
         # A dial's connect completes in the kernel before the server's accept callback runs,
-        # so an accept may already be queued on the loop. Give it one tick to run with
-        # _closing set: it spawns a handler that sees the flag, closes its transport and
-        # bails — otherwise that transport would never be closed by anyone.
+        # so an accept may already be queued on the loop. Give it one tick to run BEFORE the
+        # servers close: the callback then attaches its transport to a still-open Server and
+        # spawns a gate handler that closes it (during wait_closed below). Without the tick
+        # the callback runs against an already-closed Server, dies on an internal assertion
+        # inside asyncio, and the accepted socket is finalized by GC as a ResourceWarning.
         await asyncio.sleep(0)
         for srv in self._servers:
             srv.close()
@@ -421,12 +423,10 @@ class UserspaceDialPlane:
         # caller's timeout (issue #1756). Cancelling here (instead of leaving orphan tasks for
         # the loop's shutdown to cancel) also guarantees each handler's psock cleanup runs
         # while the stack is still up, and that no relay task outlives the dial plane.
-        #
-        # A dial can also race teardown (see the sleep above): a handler spawned during that
-        # tick may register in _relay_tasks only after this loop snapshots it — keep
-        # cancelling until none remain; handlers that start even later see _closing and bail
-        # out on their own.
-        while self._relay_tasks:
+        # One pass suffices: _closing was set before any await in this method and handlers
+        # register in an await-free step after checking it, so nothing can join
+        # _relay_tasks after the snapshot below — late starters see the gate and bail.
+        if self._relay_tasks:
             for task in list(self._relay_tasks):
                 task.cancel()
             await asyncio.gather(*list(self._relay_tasks), return_exceptions=True)
@@ -515,6 +515,8 @@ class UserspaceDialPlane:
                 psock.close()
 
     async def _ensure_relay(self, port: int) -> _RelayOpener:
+        if self._closing:
+            raise ConnectionError("userspace dial plane is closed")
         key = (self._device_addr, port)
         if key in self._relays:
             return self._relays[key]
@@ -553,9 +555,11 @@ class UserspaceDialPlane:
             path = os.path.join(self._socket_dir, f"{port}.sock")
             try:
                 self._servers.append(await asyncio.start_unix_server(handle, path))
-            except OSError:
-                # e.g. sun_path length exceeded by an unusually long TMPDIR
-                logger.debug("unix-socket relay bind failed; falling back to loopback TCP", exc_info=True)
+            except OSError as e:
+                # e.g. sun_path length exceeded by an unusually long TMPDIR. The fallback is a
+                # loopback TCP port any local process can connect to — losing the unix socket's
+                # filesystem access control — so say so visibly.
+                logger.warning("unix-socket relay bind failed (%s); falling back to loopback TCP", e)
             else:
                 logger.debug("userspace relay %s:%s -> %s", self._device_addr, port, path)
                 return partial(asyncio.open_unix_connection, path)
@@ -572,6 +576,10 @@ class UserspaceDialPlane:
         everything else falls through to the stdlib ``asyncio.open_connection`` unchanged."""
         if host is not None and str(host) == self._device_addr:
             assert port is not None
+            if self._closing:
+                # A dial racing (or following) teardown must not re-create relay state that
+                # nothing will ever clean up — and its stream would only yield silent EOF.
+                raise ConnectionError("userspace dial plane is closed")
             opener = await self._ensure_relay(port)
             return await opener(**kwargs)
         return await asyncio.open_connection(host, port, **kwargs)
@@ -807,7 +815,13 @@ class UserspaceRsdTunnel:
         if self._exit_stack is None:
             return  # normal aclose() already ran
         logger.warning("userspace tunnel transport closed (device disconnected?); tearing down")
-        await self.aclose()
+        try:
+            await self.aclose()
+        except Exception:
+            # This task is fire-and-forget and it runs exactly when unwinding is most likely
+            # to raise (the transport just died under the RSD); an unhandled exception here
+            # would only surface as "Task exception was never retrieved" at GC.
+            logger.warning("userspace tunnel teardown after transport death failed", exc_info=True)
 
     async def aclose(self) -> None:
         """Tear down the tunnel and its RSD, releasing every resource in LIFO order and restoring
