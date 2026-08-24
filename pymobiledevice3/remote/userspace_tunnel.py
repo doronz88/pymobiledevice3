@@ -483,10 +483,14 @@ class UserspaceDialPlane:
         # caller's timeout (issue #1756). Cancelling here (instead of leaving orphan tasks for
         # the loop's shutdown to cancel) also guarantees each handler's psock cleanup runs
         # while the stack is still up, and that no relay task outlives the dial plane.
-        # One pass suffices: _closing was set before any await in this method and handlers
-        # register in an await-free step after checking it, so nothing can join
-        # _relay_tasks after the snapshot below — late starters see the gate and bail.
-        if self._relay_tasks:
+        # Nothing can join _relay_tasks after the first snapshot (_closing was set before any
+        # await in this method and handlers register in an await-free step after checking
+        # it), but repeat the cancel a few times anyway: on Python <= 3.11 a cancellation
+        # racing an inner future's completion can be swallowed (the old wait_for behavior),
+        # and a survivor here would park __aexit__ forever.
+        for _ in range(3):
+            if not self._relay_tasks:
+                break
             for task in list(self._relay_tasks):
                 task.cancel()
             await asyncio.gather(*list(self._relay_tasks), return_exceptions=True)
@@ -519,10 +523,15 @@ class UserspaceDialPlane:
                 # dial() writes the header before returning, so a well-behaved client's header
                 # arrives immediately; the timeout sheds strays that connect and send nothing
                 # (on the TCP fallback any local process can), which would otherwise pin this
-                # handler and its transport until tunnel close.
-                port = int.from_bytes(
-                    await asyncio.wait_for(creader.readexactly(2), timeout=RELAY_HEADER_TIMEOUT), "big"
-                )
+                # handler and its transport until tunnel close. Enforced via call_later rather
+                # than wait_for: on Python <= 3.11 wait_for can swallow an external
+                # cancellation that races the header's arrival, leaving teardown's cancel
+                # lost and __aexit__ waiting on this handler forever (observed on slow CI).
+                shed = asyncio.get_running_loop().call_later(RELAY_HEADER_TIMEOUT, cwriter.close)
+                try:
+                    port = int.from_bytes(await creader.readexactly(2), "big")
+                finally:
+                    shed.cancel()
             except (asyncio.IncompleteReadError, ConnectionError, asyncio.TimeoutError):
                 cwriter.close()
                 return
