@@ -1,6 +1,6 @@
 # Understanding the network stacks
 
-Every pymobiledevice3 command reaches the device through one of four transport paths. This
+Every pymobiledevice3 command reaches the device through one of five transport paths. This
 guide shows what each path actually looks like — which sockets exist, what needs root, and
 how a device disconnect is detected. For choosing between them day-to-day, see
 [iOS 17+ tunnels](ios17-tunnels.md).
@@ -208,3 +208,55 @@ Teardown details worth knowing when reading the code:
   forever.
 - The CLI keeps its tunnel for the process lifetime and closes it at interpreter exit
   (~3 ms), so the device always sees clean FINs.
+
+## Native remoted tunnel (macOS only)
+
+`--native` (or `PYMOBILEDEVICE3_NATIVE=1`) reaches the RSD by **piggybacking Apple's own
+`remoted` tunnel** instead of building one. It needs no root, no entitlement and no Xcode, and
+leaves `remoted` running — so it coexists with Xcode/`devicectl` (contrast the kernel/bonjour path,
+which must suspend `remoted`; see the callout above).
+
+```mermaid
+flowchart LR
+    subgraph host["host (no root)"]
+        cli["pymobiledevice3"]
+        rp["remotepairingd<br/>(RemotePairing.framework)"]
+        rd["remoted"]
+    end
+    dev["iOS device<br/>RSD + services at fdxx::1"]
+
+    cli -->|"XPC: browse / CreateAssertion"| rp
+    cli -->|"read net.inet.tcp.pcblist_n<br/>(find remoted's RSD port)"| rd
+    rp -.->|"keeps the tunnel alive"| rd
+    rd -->|"encrypted CoreDevice tunnel"| dev
+    cli -->|"TCP6 to [fdxx::1]:rsd_port<br/>(kernel-routable)"| dev
+```
+
+How it works (all via `ctypes` + libxpc, no pyobjc):
+
+1. Ask `com.apple.CoreDevice.remotepairingd` (provided by the base-OS `RemotePairing.framework`,
+   present on stock macOS — it backs iPhone Mirroring — **not** the Xcode-only `CoreDevice.framework`)
+   to browse for the device and open its per-device XPC endpoint.
+2. `RemotePairing.CreateAssertionCommand` returns the device's in-tunnel `tunnelIPAddress` and an
+   assertion identifier that keeps Apple's tunnel up for as long as the handle is held.
+3. Find the in-tunnel RSD port by reading the `net.inet.tcp.pcblist_n` sysctl (no root) and matching
+   `remoted`'s own connection to that tunnel address.
+4. Connect a normal TCP socket to `[tunnelIPAddress]:rsd_port` — the tunnel address is
+   kernel-routable — and run the standard RSD handshake.
+
+- **Root:** not required. **Xcode:** not required.
+- **Reachability:** the tunnel address is a real kernel route (Apple's tunnel), so unlike the
+  userspace tunnel it *is* reachable by other tools; it lives only while the handle (its assertion)
+  is held.
+- **Default on macOS:** this is the built-in default transport for RSD-required commands (and the
+  CLI's automatic retry) on macOS — chosen ahead of the userspace tunnel, with userspace and then
+  `tunneld` as fallbacks. On other platforms the userspace tunnel remains the default (`remoted` does
+  not exist there).
+- **Overriding the default:** `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native|userspace|tunneld` sets which
+  transport the automatic selection prefers. Set it to `userspace` to opt back out of the macOS
+  native default, or `tunneld` to route to the privileged daemon.
+- **Throughput:** rides the kernel-routable tunnel, so it avoids the userspace stack's per-packet
+  Python overhead. Fair same-device AFC comparison on a physical iPhone 17-class device: device->host
+  is USB-bound and on par with the userspace tunnel (~36 MB/s both), while host->device is ~1.8x
+  faster (~36 vs ~20 MB/s — the userspace stack keeps its send segments deliberately small) and
+  per-request latency is ~1.6x lower (~8 vs ~13 ms). All with no root.

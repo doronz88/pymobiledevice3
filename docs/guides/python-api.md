@@ -20,11 +20,13 @@ based on the iOS version and the service you need:
 | Connection | Python entry point | iOS | Root? | Use when |
 | --- | --- | --- | --- | --- |
 | Lockdown (USB / Wi-Fi) | `create_using_usbmux` | all | no | Classic services: AFC, app install, syslog, diagnostics, backup, profiles |
-| RSD — userspace tunnel | `UserspaceRsdTunnel` | 17+ | no | **Default** for developer/DVT from your own code or CI; the tunnel is in-process only |
+| RSD — best no-root tunnel | `PreferredRsdTunnel` | 17+ | no | **Default** for developer/DVT: auto-picks the native tunnel on macOS, the userspace tunnel elsewhere |
+| RSD — native (macOS) | `NativeRemotedTunnel` | 17+ | no | macOS only: piggybacks Apple's `remoted`; faster host->device, coexists with Xcode |
+| RSD — userspace | `UserspaceRsdTunnel` | 17+ | no | Cross-platform in-process tunnel; the tunnel address is reachable only from this process |
 | RSD — `tunneld` | `get_tunneld_devices` | 17+ | yes (daemon) | You need a shared/persistent tunnel, or an external tool (e.g. `lldb`) must reach the device |
 
-Rule of thumb: **need a developer/DVT service on iOS 17+? use a tunnel (userspace by default);
-everything else goes over lockdown.** Classic lockdown services work over USB on every iOS version
+Rule of thumb: **need a developer/DVT service on iOS 17+? use `PreferredRsdTunnel` (it picks the best
+no-root transport for the host); everything else goes over lockdown.** Classic lockdown services work over USB on every iOS version
 (and developer services did too, before Apple's iOS 17 refactor moved them behind RSD). A lockdown
 connection is a `LockdownClient`; a tunnel connection is a `RemoteServiceDiscoveryService`. The
 sections below show each path.
@@ -50,24 +52,30 @@ asyncio.run(main())
 
 Developer/DVT services on iOS 17+ require an RSD tunnel.
 
-**Preferred: a no-root, in-process tunnel.** `UserspaceRsdTunnel` brings the tunnel up inside your
-own process over a pure-Python network stack — **no `sudo` and no separate `tunneld` daemon**. It is
-a closeable async context manager that yields a connected `RemoteServiceDiscoveryService`:
+**Preferred: `PreferredRsdTunnel`.** It picks the best no-root transport for the host — the native
+tunnel on macOS (piggybacks Apple's `remoted`: faster host->device, lower latency, and it coexists
+with Xcode), the in-process userspace tunnel elsewhere — and falls back automatically if the first
+choice is unavailable. **No `sudo` and no separate `tunneld` daemon.** It is a closeable async
+context manager that yields a connected `RemoteServiceDiscoveryService`:
 
 ```python
-from pymobiledevice3.remote.userspace_tunnel import UserspaceRsdTunnel
+from pymobiledevice3.remote.rsd_tunnel import PreferredRsdTunnel
 
 
 async def main():
-    # serial=None -> first USB device; autopair pairs on the fly if needed
-    async with UserspaceRsdTunnel(serial=None, autopair=True) as rsd:
+    # serial=None -> first device; prefer_native=False forces the userspace tunnel even on macOS
+    async with PreferredRsdTunnel(serial=None) as rsd:
         print(rsd.product_version)
         # `rsd` now drives any developer service / DvtProvider
 ```
 
-It also exposes an explicit `aopen()` / `aclose()` handle if you can't use a context manager.
-Caveats: one tunnel per process, and the device address is reachable only from this process — don't
-hand it to external tools such as `lldb`.
+macOS embedders who want to be explicit can use `NativeRemotedTunnel` (from
+`pymobiledevice3.remote.native_tunnel`) directly; `UserspaceRsdTunnel` (from
+`pymobiledevice3.remote.userspace_tunnel`) is the cross-platform in-process tunnel. All three expose
+the same async-context-manager / `aopen()` + `aclose()` shape. Caveats: one userspace tunnel per
+process, and the userspace tunnel's device address is reachable only from this process (don't hand it
+to external tools such as `lldb`) — the native tunnel's address is kernel-routable, so it does not
+have that limitation.
 
 The CLI's `--userspace` flag uses the same machinery through the convenience wrapper
 `establish_userspace_rsd()`, which opens the tunnel and keeps it alive for the process lifetime

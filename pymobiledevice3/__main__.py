@@ -26,13 +26,14 @@ except ImportError:  # pragma: no cover
 # chains are lazy on Python 3.15+; see the module docstring.
 import pymobiledevice3._lazy_imports  # noqa: F401
 from pymobiledevice3.cli.cli_common import (
-    PREFER_TUNNELD_ENV_VAR,
+    FORCE_TUNNEL_ENV_VAR,
+    NATIVE_ENV_VAR,
     TUNNEL_ENV_VAR,
     UDID_ENV_VAR,
     USERSPACE_ENV_VAR,
     _cli_udid,
+    default_transport_preference,
     isatty,
-    requires_kernel_tunnel,
     resolved_udid,
     set_color_flag,
     set_verbosity,
@@ -380,34 +381,35 @@ def invoke_cli_with_error_handling() -> bool:
             and ("developer" in sys.argv)
             and ("--tunnel" not in sys.argv)
             and ("--userspace" not in sys.argv)
+            and ("--native" not in sys.argv)
             and product_version_needs_tunnel(product_version)
         ):
             reason = "it is a developer command on an iOS 17+ device"
-        # Retry once. Default to the no-root in-process userspace tunnel; iOS 17.0-17.3 falls back
-        # to tunneld — the userspace tunnel can only reach those over the fragile RemotePairing path
-        # (see requires_kernel_tunnel) — as does PYMOBILEDEVICE3_PREFER_TUNNELD (explicit opt-out of
-        # the userspace default). Either env var doubles as the one-shot guard: already set means we
-        # are the retry failing again — don't loop.
-        if reason and not os.getenv(USERSPACE_ENV_VAR) and not os.getenv(TUNNEL_ENV_VAR):
-            if requires_kernel_tunnel(product_version):
-                logger.warning(
-                    f"Trying again over tunneld since {reason} "
-                    "(iOS 17.0-17.3 has no reliable no-root tunnel; needs a privileged `remote tunneld`)"
-                )
-                # use a single space because Typer/Click will ignore envvars of empty strings
-                os.environ[TUNNEL_ENV_VAR] = e.identifier or " "
-            elif os.getenv(PREFER_TUNNELD_ENV_VAR):
-                logger.warning(f"Trying again over tunneld since {reason} ({PREFER_TUNNELD_ENV_VAR} is set)")
-                # use a single space because Typer/Click will ignore envvars of empty strings
-                os.environ[TUNNEL_ENV_VAR] = e.identifier or " "
-            else:
-                logger.warning(
-                    f"Trying again over a no-root userspace tunnel since {reason} (pass --tunnel to use tunneld)"
-                )
-                os.environ[USERSPACE_ENV_VAR] = "1"
-                # Target the same device the userspace tunnel would otherwise resolve by default.
-                if e.identifier and not os.getenv(UDID_ENV_VAR):
-                    os.environ[UDID_ENV_VAR] = e.identifier
+        # Retry once, establishing the default RSD chain in-process (see make_rsd_dependency): the
+        # preferred transport is chosen by default_transport_preference() (native on macOS, else
+        # userspace; PYMOBILEDEVICE3_DEFAULT_FALLBACK overrides) and falls back through the other
+        # no-root path and tunneld as needed. FORCE_TUNNEL_ENV_VAR both requests this and guards
+        # against looping; an explicit transport env means the user already chose one, so don't retry.
+        if (
+            reason
+            and not os.getenv(USERSPACE_ENV_VAR)
+            and not os.getenv(TUNNEL_ENV_VAR)
+            and not os.getenv(NATIVE_ENV_VAR)
+            and not os.getenv(FORCE_TUNNEL_ENV_VAR)
+        ):
+            preferred = {
+                "native": "the native tunnel",
+                "userspace": "a no-root userspace tunnel",
+                "tunneld": "tunneld",
+            }[default_transport_preference()]
+            logger.warning(
+                f"Trying again over {preferred} since {reason} "
+                "(override with PYMOBILEDEVICE3_DEFAULT_FALLBACK, or --tunnel/--userspace/--native)"
+            )
+            os.environ[FORCE_TUNNEL_ENV_VAR] = "1"
+            # Target the same device the tunnel would otherwise resolve by default.
+            if e.identifier and not os.getenv(UDID_ENV_VAR):
+                os.environ[UDID_ENV_VAR] = e.identifier
             main()
             return False
         logger.error(INVALID_SERVICE_MESSAGE)
