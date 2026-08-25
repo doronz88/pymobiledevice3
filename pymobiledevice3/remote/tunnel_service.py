@@ -1430,18 +1430,26 @@ async def start_tunnel_over_core_device(
     max_idle_timeout: float = RemotePairingQuicTunnel.MAX_IDLE_TIMEOUT,
     protocol: TunnelProtocol = TunnelProtocol.QUIC,
 ) -> AsyncGenerator[TunnelResult, None]:
+    # ``remoted`` is suspended only for the establishment window and resumed as soon as the tunnel
+    # is up. The ``finally`` guarantees it is never left suspended if establishment raises: a
+    # SIGSTOP'd ``remoted`` persists past process exit and would break Xcode/devicectl until it is
+    # manually resumed. ``resume_remoted_if_required`` is idempotent, so the early resume on the
+    # success path and the ``finally`` safety net do not conflict.
     stop_remoted_if_required()
-    async with service_provider:
-        if protocol == TunnelProtocol.QUIC:
-            async with service_provider.start_quic_tunnel(
-                secrets_log_file=secrets, max_idle_timeout=max_idle_timeout
-            ) as tunnel_result:
-                resume_remoted_if_required()
-                yield tunnel_result
-        elif protocol == TunnelProtocol.TCP:
-            async with service_provider.start_tcp_tunnel() as tunnel_result:
-                resume_remoted_if_required()
-                yield tunnel_result
+    try:
+        async with service_provider:
+            if protocol == TunnelProtocol.QUIC:
+                async with service_provider.start_quic_tunnel(
+                    secrets_log_file=secrets, max_idle_timeout=max_idle_timeout
+                ) as tunnel_result:
+                    resume_remoted_if_required()
+                    yield tunnel_result
+            elif protocol == TunnelProtocol.TCP:
+                async with service_provider.start_tcp_tunnel() as tunnel_result:
+                    resume_remoted_if_required()
+                    yield tunnel_result
+    finally:
+        resume_remoted_if_required()
 
 
 @asynccontextmanager
