@@ -62,6 +62,37 @@ flowchart LR
   out; service connections also run TCP keep-alive.
 - Highest host→device throughput; the only path external tools can use.
 
+### Why this path suspends `remoted` (and why that needs root)
+
+Root is needed here for **two** independent reasons. The obvious one is creating the `utun`.
+The second is `remoted` contention, and it is worth spelling out because it is easy to
+misdiagnose.
+
+Discovery on this path is bonjour **plus a direct RSD connection**: `get_rsds()` browses
+`_remoted._tcp` and then opens the device's RSD RemoteXPC endpoint (port `58783`) on the USB NCM
+link (`fe80::…%enX`). macOS `remoted` owns that link — it keeps its own RemoteXPC session to the
+device open at all times (`lsof` shows an ESTABLISHED `…->[fe80::…]:58783`). While `remoted` is
+running, the device **resets** a second, independent RSD root channel opened by pymobiledevice3 —
+seen as an HTTP/2 `RST_STREAM` with `error_code=5`, or a plain connection reset, during the
+check-in handshake. So discovery finds the device but yields no usable RSD.
+
+`stop_remoted()` SIGSTOPs `remoted` for the duration of the handshake and resumes it afterwards;
+suspending a root-owned daemon is what needs root. With `remoted` suspended the handshake succeeds
+reliably, and the device will even accept *several* concurrent RSD sessions — which shows the reset
+is caused by `remoted` owning the link, not by any device-side one-session cap.
+
+> **This is not a pairing problem.** A long-standing assumption held that the device *closes the
+> host's RSD fd during pairing*, forcing `remoted` to race us — hence `sudo`. That is not what
+> happens. The contention reproduces against an already-paired device with no pairing in flight,
+> and completing a pairing does **not** tear down existing RSD connections (the device simply adds
+> the new tunnel endpoint; `remotepairingdeviced` logs no control-channel teardown). The trigger is
+> only that `remoted` is an always-on RSD client for the NCM link. Verified empirically on
+> iPhone18,4 / iOS 26.6.1, and against the iOS 17.0, 26.6 and 27 device daemons.
+>
+> The no-root [userspace tunnel](#userspace-tunnel-the-no-root-default) sidesteps all of this: it
+> reaches RSD through the `CoreDeviceProxy` lockdown service over usbmux, never touching the NCM
+> link or `remoted`.
+
 ## Userspace tunnel (the no-root default)
 
 The default for RSD-required commands on iOS 17.4+ over USB. The kernel interface is

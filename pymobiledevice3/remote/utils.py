@@ -92,6 +92,28 @@ def resume_remoted_if_required() -> None:
 
 @contextlib.contextmanager
 def stop_remoted() -> Generator[None, None, None]:
+    """SIGSTOP macOS ``remoted`` for the duration of an RSD discovery/handshake, then resume it.
+
+    The RSD-over-bonjour path (:func:`get_rsds`, used by ``remote start-tunnel`` and ``tunneld``)
+    connects *directly* to the device's RSD RemoteXPC endpoint (``RSD_PORT`` 58783) over the USB
+    NCM link. macOS ``remoted`` is the system-wide owner of that link and keeps its own RemoteXPC
+    session to the device open at all times. While ``remoted`` is running, the device resets a
+    second, independent RSD root channel opened from this process -- observed as an HTTP/2
+    ``RST_STREAM`` (``error_code=5``) or a plain connection reset during the check-in handshake --
+    so :func:`get_rsds` discovers the device over bonjour but cannot complete the handshake and
+    returns nothing usable.
+
+    Suspending ``remoted`` yields the link and the handshake then succeeds reliably (with
+    ``remoted`` suspended the device will even accept several concurrent RSD sessions, which shows
+    the reset comes from ``remoted`` owning the link, not from a device-side one-session cap).
+    Suspending a root-owned daemon needs root -- this is the *second* reason the RSD/kernel-tunnel
+    path requires ``sudo`` (the first being ``utun`` creation). ``remoted`` is resumed on exit.
+
+    This competition is unrelated to pairing: it reproduces against an already-paired device with no
+    pairing in flight, and completing a pairing does not tear down existing RSD connections. The
+    no-root userspace/``CoreDeviceProxy`` path avoids it entirely by reaching RSD over usbmux
+    instead of the NCM link, so it never touches ``remoted``.
+    """
     stop_remoted_if_required()
     try:
         yield
