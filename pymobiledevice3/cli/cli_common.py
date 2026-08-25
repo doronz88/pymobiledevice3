@@ -3,6 +3,7 @@ import datetime
 import json
 import logging
 import os
+import platform
 import sys
 import uuid
 from collections.abc import Coroutine
@@ -16,7 +17,6 @@ import coloredlogs
 import hexdump
 import questionary
 import typer
-from packaging.version import Version
 from pygments import formatters, highlight, lexers
 from typer_injector import Depends
 from typing_extensions import ParamSpec
@@ -38,9 +38,16 @@ from pymobiledevice3.utils import ask_prompt, get_asyncio_loop
 UDID_ENV_VAR = "PYMOBILEDEVICE3_UDID"
 TUNNEL_ENV_VAR = "PYMOBILEDEVICE3_TUNNEL"
 USERSPACE_ENV_VAR = "PYMOBILEDEVICE3_USERSPACE"
-# When set (non-empty), the automatic tunnel fallback uses tunneld instead of the
-# no-root userspace tunnel — restoring the pre-userspace-default behavior.
-PREFER_TUNNELD_ENV_VAR = "PYMOBILEDEVICE3_PREFER_TUNNELD"
+# macOS only: piggyback Apple's remoted tunnel via remotepairingd (no root, no Xcode).
+NATIVE_ENV_VAR = "PYMOBILEDEVICE3_NATIVE"
+# Overrides which transport the automatic fallback prefers — both the required-RSD default and the
+# `__main__` retry. One of "native" (built-in default on macOS), "userspace" (built-in default
+# elsewhere), or "tunneld".
+DEFAULT_FALLBACK_ENV_VAR = "PYMOBILEDEVICE3_DEFAULT_FALLBACK"
+_VALID_DEFAULT_FALLBACKS = ("native", "userspace", "tunneld")
+# Internal one-shot marker set by the `__main__` retry: make a lockdown-or-RSD command establish the
+# default RSD chain (like a required-RSD command) instead of returning None. Not user-facing.
+FORCE_TUNNEL_ENV_VAR = "PYMOBILEDEVICE3_FORCE_TUNNEL"
 USBMUX_ENV_VAR = "PYMOBILEDEVICE3_USBMUX"
 USBMUXD_SOCKET_ADDRESS_ENV_VAR = "USBMUXD_SOCKET_ADDRESS"
 USBMUX_ENV_VARS = [USBMUX_ENV_VAR, USBMUXD_SOCKET_ADDRESS_ENV_VAR]
@@ -357,24 +364,26 @@ def _resolve_target_serial(serial: Optional[str]) -> Optional[str]:
             cli_loop.run_until_complete(lockdown.close())
 
 
-def requires_kernel_tunnel(product_version: str) -> bool:
-    """True when a device needs the privileged kernel tunnel (``tunneld``) rather than the
-    no-root in-process userspace tunnel.
+def default_transport_preference() -> str:
+    """Preferred transport for the automatic fallback (required-RSD default and the ``__main__`` retry).
 
-    iOS 17.0-17.3 always qualifies: those versions predate the CoreDeviceProxy lockdown service
-    (17.4+), so the userspace tunnel can only reach them over the RemotePairing/bonjour path — which
-    is Wi-Fi-only and, on macOS, races ``remoted`` (the no-root path cannot ``stop_remoted()``
-    without root). Rather than make the default depend on that fragile path, 17.0-17.3 routes to
-    ``tunneld`` on every platform. iOS 17.4+ uses CoreDeviceProxy over USB and works root-free, so
-    it stays on the userspace default. (``--userspace`` can still force the RemotePairing path on
-    17.0-17.3 where it applies.)
-
-    Used by the ``__main__`` exception-retry path, which already carries the product version from the
-    raised exception. The required-RSD default path (:func:`make_rsd_dependency`) instead reuses the
-    tunnel's own lockdown connection and routes via ``UserspaceTunnelUnavailableError``, so it needs
-    no separate version query.
+    Returns one of ``"native"``, ``"userspace"`` or ``"tunneld"``. The built-in default is
+    ``"native"`` on macOS (faster, no root, coexists with Xcode) and ``"userspace"`` elsewhere
+    (``remoted`` only exists on macOS). Set via ``PYMOBILEDEVICE3_DEFAULT_FALLBACK`` to override; an
+    unrecognized value is ignored (falls back to the built-in default).
     """
-    return Version("17.0") <= Version(product_version) < Version("17.4")
+    value = os.getenv(DEFAULT_FALLBACK_ENV_VAR)
+    if value:
+        normalized = value.strip().lower()
+        if normalized in _VALID_DEFAULT_FALLBACKS:
+            return normalized
+        logging.getLogger(__name__).warning(
+            "ignoring invalid %s=%r (expected one of: %s)",
+            DEFAULT_FALLBACK_ENV_VAR,
+            value,
+            ", ".join(_VALID_DEFAULT_FALLBACKS),
+        )
+    return "native" if platform.system() == "Darwin" else "userspace"
 
 
 def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteServiceDiscoveryService]]:
@@ -391,9 +400,9 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
       ``core-device`` / ``remote rsd-info``), so a default tunnel is established here rather than
       returning ``None``: the no-root userspace tunnel by default; a pre-17.4 device (iOS 17.0-17.3)
       raises :class:`~pymobiledevice3.exceptions.UserspaceTunnelUnavailableError` during
-      establishment (RemotePairing fallback disabled), which is caught here and routed to tunneld
-      (with the resolved UDID). Setting ``PYMOBILEDEVICE3_PREFER_TUNNELD`` skips the userspace
-      attempt and goes straight to tunneld.
+      establishment (RemotePairing fallback disabled), which is caught here and routed to the native
+      tunnel (macOS) or tunneld (with the resolved UDID). ``PYMOBILEDEVICE3_DEFAULT_FALLBACK``
+      selects the preferred transport (see :func:`default_transport_preference`).
     """
 
     def rsd_dependency(
@@ -436,6 +445,20 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),
         ] = False,
+        native: Annotated[
+            bool,
+            typer.Option(
+                "--native",
+                envvar=NATIVE_ENV_VAR,
+                help=dedent("""\
+                    macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own `remoted` tunnel via the
+                    `remotepairingd` service. NO root, no entitlement, no Xcode, and `remoted` is left running (so
+                    it coexists with Xcode/devicectl). Rides Apple's kernel-routable tunnel, so throughput matches
+                    the kernel tunnel. Mutually exclusive with --rsd/--tunnel/--userspace.
+                """),
+                rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
+            ),
+        ] = False,
     ) -> Optional[RemoteServiceDiscoveryService]:
         if is_invoked_for_completion():
             # prevent lockdown connection establishment when in autocomplete mode
@@ -443,8 +466,15 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
 
         if rsd is not None and tunnel is not None:
             ctx.fail("Illegal usage: --rsd is mutually exclusive with --tunnel.")
-        if userspace and (rsd is not None or tunnel is not None):
-            ctx.fail("Illegal usage: --userspace is mutually exclusive with --rsd/--tunnel.")
+        explicit_tunnel_sources = sum([rsd is not None, tunnel is not None, userspace, native])
+        if explicit_tunnel_sources > 1:
+            ctx.fail("Illegal usage: --rsd, --tunnel, --userspace and --native are mutually exclusive.")
+
+        if native:
+            serial = _resolve_target_serial(_cli_udid())
+            from pymobiledevice3.remote import native_tunnel
+
+            return cli_loop.run_until_complete(native_tunnel.establish_native_rsd(serial=serial))
 
         # Explicit tunnel sources take precedence.
         if rsd is not None:
@@ -470,22 +500,36 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
 
             return cli_loop.run_until_complete(userspace_tunnel.establish_userspace_rsd(serial=serial))
 
-        # Default for a required RSD: prefer the no-root in-process userspace tunnel. A pre-17.4
-        # device (no CoreDeviceProxy — i.e. iOS 17.0-17.3, reachable no-root only over the fragile
-        # RemotePairing path) is served by tunneld instead: establishment is asked NOT to attempt
-        # RemotePairing (remotepairing_fallback=False), so it raises UserspaceTunnelUnavailableError,
-        # which we catch and route to tunneld. This reuses the single lockdown connection
-        # establishment already opens — no separate version probe.
-        if not allow_none:
-            # Resolve (and, with multiple devices, prompt for) the target so both the userspace
-            # attempt and the tunneld fallback act on the same user-chosen device.
+        # Default for a required RSD. The preferred transport is configurable via
+        # PYMOBILEDEVICE3_DEFAULT_FALLBACK (default: the no-root in-process userspace tunnel). A
+        # pre-17.4 device (no CoreDeviceProxy — iOS 17.0-17.3) can't use the userspace path; on macOS
+        # it is served no-root by the native tunnel (piggybacking remoted), elsewhere by tunneld.
+        # Establish the default RSD chain when the command requires an RSD (allow_none=False) or the
+        # `__main__` retry marked this run to force one (FORCE_TUNNEL_ENV_VAR) after a lockdown-only
+        # attempt hit InvalidServiceError/RSDRequiredError.
+        if not allow_none or os.getenv(FORCE_TUNNEL_ENV_VAR):
+            # Resolve (and, with multiple devices, prompt for) the target so every attempt acts on
+            # the same user-chosen device.
             serial = _resolve_target_serial(_cli_udid())
-            # PYMOBILEDEVICE3_PREFER_TUNNELD opts out of the userspace default entirely,
-            # restoring the pre-userspace-default behavior (straight to tunneld).
-            if os.getenv(PREFER_TUNNELD_ENV_VAR):
+            preference = default_transport_preference()
+
+            if preference == "tunneld":
                 return cli_loop.run_until_complete(_tunneld(serial or ""))
-            # Imported lazily: see the --userspace branch above — the PyTCP stack import is
-            # expensive and must stay off the hot path of commands that never need it.
+
+            tried_native = False
+            if preference == "native" and platform.system() == "Darwin":
+                from pymobiledevice3.remote import native_tunnel
+
+                tried_native = True
+                try:
+                    return cli_loop.run_until_complete(native_tunnel.establish_native_rsd(serial=serial))
+                except Exception as e:
+                    # Any native-path failure (unavailable, or an unexpected ctypes/libxpc error)
+                    # degrades to the userspace path rather than aborting the command.
+                    logging.getLogger(__name__).debug("native tunnel unavailable, falling back: %r", e)
+
+            # Imported lazily: the PyTCP stack import is expensive and must stay off the hot path of
+            # commands that never establish a userspace tunnel.
             from pymobiledevice3.remote import userspace_tunnel
 
             try:
@@ -493,6 +537,17 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
                     userspace_tunnel.establish_userspace_rsd(serial=serial, remotepairing_fallback=False)
                 )
             except UserspaceTunnelUnavailableError:
+                # The userspace path can't serve this device (iOS 17.0-17.3 has no CoreDeviceProxy).
+                # On macOS, piggyback remoted's own tunnel (no root) unless we already tried it above;
+                # elsewhere remoted does not exist, so go straight to the privileged tunneld.
+                if platform.system() == "Darwin" and not tried_native:
+                    from pymobiledevice3.remote import native_tunnel
+
+                    try:
+                        return cli_loop.run_until_complete(native_tunnel.establish_native_rsd(serial=serial))
+                    except Exception as e:
+                        # Native path not viable either (or an unexpected error); fall through to tunneld.
+                        logging.getLogger(__name__).debug("native tunnel unavailable, falling back: %r", e)
                 # Propagate the resolved UDID so tunneld targets the same device (empty => auto/prompt).
                 return cli_loop.run_until_complete(_tunneld(serial or ""))
 
