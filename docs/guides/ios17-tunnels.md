@@ -98,12 +98,12 @@ sudo python3 -m pymobiledevice3 remote tunneld --uds /var/run/tunneld.sock
 python3 -m pymobiledevice3 developer dvt ls / --tunnel ':/var/run/tunneld.sock'
 ```
 
-To make `tunneld` the **default** fallback again — so commands route to it automatically without
-passing `--tunnel`, restoring the pre-userspace-default behavior — set the
-`PYMOBILEDEVICE3_PREFER_TUNNELD` environment variable (any non-empty value):
+To make `tunneld` the **default** fallback — so commands route to it automatically without passing
+`--tunnel`, restoring the pre-userspace-default behavior — set
+`PYMOBILEDEVICE3_DEFAULT_FALLBACK=tunneld`:
 
 ```shell
-export PYMOBILEDEVICE3_PREFER_TUNNELD=1
+export PYMOBILEDEVICE3_DEFAULT_FALLBACK=tunneld
 python3 -m pymobiledevice3 developer dvt ls /
 ```
 
