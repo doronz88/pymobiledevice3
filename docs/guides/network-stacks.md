@@ -247,16 +247,25 @@ How it works (all via `ctypes` + libxpc, no pyobjc):
 - **Root:** not required. **Xcode:** not required.
 - **Running as root anyway (CI runners, LaunchDaemons):** `remotepairingd` is an XPCService
   declaring `ServiceType = User`, so launchd registers it **per-uid, in a logged-in user's domain
-  and never in the system/root domain**. A root process therefore gets `Connection invalid` from the
-  plain mach lookup — the service does not exist in its domain, which surfaces as
-  `remotepairingd reported no device`. Rather than relocating the process into the user's domain
-  (`launchctl asuser <uid>`), the connection is retargeted selectively with the libxpc SPI
-  `xpc_connection_set_target_uid`, so the process stays root and reaches only this one service.
-  This happens automatically when `geteuid() == 0`: the target uid is taken from
-  `PYMOBILEDEVICE3_NATIVE_TARGET_UID` when set, otherwise from the console user (the owner of
-  `/dev/console`). Set the variable explicitly on a host with no console user — a headless CI
-  runner — since there is no other way to guess which user holds the pairing. Note the SPI is
-  root-only: calling it as a normal user traps the process, so it is never used off the root path.
+  and never in the system/root domain**. Whether a root process can reach it depends entirely on
+  which bootstrap namespace it inherited, not on its uid: plain `sudo` from a logged-in user's
+  terminal inherits that user's namespace and works unchanged, while a LaunchDaemon or anything
+  under `launchctl asuser 0` lands in a domain where the service is simply not registered and gets
+  `XPC_ERROR_CONNECTION_INVALID` back.
+
+  So the ordinary lookup is always tried first, and only if the daemon reports the service missing
+  is another uid's domain searched, via the libxpc SPI `xpc_connection_set_target_uid`. That keeps
+  the process root — it reaches selectively into one domain rather than relocating itself — and it
+  reacts to what actually happened instead of guessing from the uid. The probe is free: the error
+  arrives about 0.2 ms after `xpc_connection_activate`, not at a timeout. The outcome is memoized
+  per process, so later browses go straight to the domain that answered.
+
+  The retry resolves the uid from the console user (owner of `/dev/console`). On a host with no
+  console user — a headless CI runner — set `PYMOBILEDEVICE3_NATIVE_TARGET_UID` to the uid that
+  holds the pairing; that also seeds the memo, skipping the first attempt entirely. Setting it to
+  `0` pins the ordinary lookup and disables retargeting. The SPI is root-only and **traps the
+  process** when a non-root caller invokes it, so a seeded uid is refused with a warning unless the
+  effective uid is 0.
 - **Reachability:** the tunnel address is a real kernel route (Apple's tunnel), so unlike the
   userspace tunnel it *is* reachable by other tools; it lives only while the handle (its assertion)
   is held. `remote start-tunnel` publishes this address for other processes (no `sudo`; the native
