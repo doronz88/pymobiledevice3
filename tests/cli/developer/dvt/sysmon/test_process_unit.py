@@ -20,6 +20,8 @@ from pymobiledevice3.cli.developer.dvt.sysmon.process import (
     _matches_selected_process,
     _parse_process_filters,
     _process_sort_key,
+    _resolve_matching_process,
+    _resolve_tracked_process,
     _select_process_from_candidates,
     _select_process_from_snapshot,
     _select_process_from_sysmon,
@@ -30,6 +32,7 @@ from pymobiledevice3.cli.developer.dvt.sysmon.process import (
     _write_json,
     _write_process,
     iter_processes,
+    sysmon_process_monitor_process_task,
     sysmon_process_monitor_threshold_task,
 )
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -481,3 +484,120 @@ async def test_select_process_from_sysmon_raises_when_no_usable_snapshot(monkeyp
 
     with pytest.raises(typer.BadParameter, match="Failed to collect a process snapshot"):
         await _select_process_from_sysmon(cast(DvtProvider, object()), {}, None, ProcessSelectionMode.FIRST)
+
+
+def test_resolve_matching_process_reapplies_filters():
+    process_snapshot = [
+        {"pid": 10, "ppid": 1, "name": "alpha"},
+        {"pid": 20, "ppid": 1, "name": "beta"},
+    ]
+
+    assert _resolve_matching_process(process_snapshot, {"name": ["beta"]}, ProcessSelectionMode.FIRST) == {
+        "pid": 20,
+        "ppid": 1,
+        "name": "beta",
+    }
+
+
+def test_resolve_matching_process_returns_none_when_nothing_matches():
+    assert (
+        _resolve_matching_process(
+            [{"pid": 10, "ppid": 1, "name": "alpha"}], {"name": ["beta"]}, ProcessSelectionMode.FIRST
+        )
+        is None
+    )
+
+
+def test_resolve_matching_process_rejects_unknown_filter_keys():
+    with pytest.raises(typer.BadParameter, match="does not have the following keys"):
+        _resolve_matching_process(
+            [{"pid": 10, "ppid": 1, "name": "alpha"}], {"missing": ["value"]}, ProcessSelectionMode.FIRST
+        )
+
+
+def test_resolve_tracked_process_returns_none_when_identity_is_absent():
+    assert _resolve_tracked_process([{"pid": 10, "uniqueID": 11}], ("uniqueID", 99), "pid=1, ppid=0, name=abc") is None
+
+
+def test_resolve_tracked_process_rejects_ambiguous_identity():
+    with pytest.raises(typer.BadParameter, match="Selected process identity is ambiguous"):
+        _resolve_tracked_process(
+            [{"pid": 10, "ppid": 1, "name": "a", "uniqueID": 11}, {"pid": 20, "ppid": 1, "name": "b", "uniqueID": 11}],
+            ("uniqueID", 11),
+            "pid=10, ppid=1, name=a",
+        )
+
+
+def _monitor_snapshots_patch(monkeypatch, snapshots):
+    async def fake_create(_dvt, interval=None):
+        return _FakeSysmontap(snapshots)
+
+    monkeypatch.setattr(process_module, "DvtProvider", _FakeDvtProvider)
+    monkeypatch.setattr(process_module.Sysmontap, "create", fake_create)
+
+
+async def _run_monitor_process_task(snapshots, monkeypatch, **kwargs):
+    _monitor_snapshots_patch(monkeypatch, snapshots)
+    out = StringIO()
+    await sysmon_process_monitor_process_task(
+        cast(LockdownServiceProvider, object()),
+        filter_expressions=["name=App"],
+        keys=["pid"],
+        out=out,
+        **kwargs,
+    )
+    return [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
+
+
+@pytest.mark.asyncio
+async def test_sysmon_process_monitor_process_task_stops_when_selected_process_exits(monkeypatch, capsys):
+    snapshots = [
+        [{"pid": 10, "ppid": 1, "name": "App", "uniqueID": 11}],
+        [{"pid": 99, "ppid": 1, "name": "other", "uniqueID": 99}],
+        [{"pid": 20, "ppid": 1, "name": "App", "uniqueID": 22}],
+    ]
+
+    emitted = await _run_monitor_process_task(snapshots, monkeypatch, choose=ProcessSelectionMode.FIRST)
+
+    assert [record["pid"] for record in emitted] == [10]
+    assert "Selected process exited: pid=10, ppid=1, name=App" in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+async def test_sysmon_process_monitor_process_task_keep_monitoring_skips_unmatched_snapshots(monkeypatch):
+    snapshots = [
+        [{"pid": 10, "ppid": 1, "name": "App", "uniqueID": 11}],
+        [{"pid": 99, "ppid": 1, "name": "other", "uniqueID": 99}],
+        [{"pid": 10, "ppid": 1, "name": "App", "uniqueID": 11}],
+    ]
+
+    emitted = await _run_monitor_process_task(
+        snapshots, monkeypatch, choose=ProcessSelectionMode.FIRST, keep_monitoring=True
+    )
+
+    assert [record["pid"] for record in emitted] == [10, 10]
+
+
+@pytest.mark.asyncio
+async def test_sysmon_process_monitor_process_task_keep_monitoring_reacquires_relaunched_process(monkeypatch, capsys):
+    snapshots = [
+        [{"pid": 10, "ppid": 1, "name": "App", "uniqueID": 11}],
+        [{"pid": 99, "ppid": 1, "name": "other", "uniqueID": 99}],
+        [{"pid": 20, "ppid": 1, "name": "App", "uniqueID": 22}],
+    ]
+
+    emitted = await _run_monitor_process_task(
+        snapshots, monkeypatch, choose=ProcessSelectionMode.LAST, keep_monitoring=True
+    )
+
+    assert [record["pid"] for record in emitted] == [10, 20]
+    status_output = capsys.readouterr().out
+    assert "Monitoring pid=10, ppid=1, name=App" in status_output
+    assert "Monitoring pid=20, ppid=1, name=App" in status_output
+    assert "Selected process exited" not in status_output
+
+
+@pytest.mark.asyncio
+async def test_sysmon_process_monitor_process_task_keep_monitoring_rejects_prompt_selection(monkeypatch):
+    with pytest.raises(typer.BadParameter, match='Re-run with "--choose first" or "--choose last"'):
+        await _run_monitor_process_task([], monkeypatch, keep_monitoring=True)

@@ -272,6 +272,10 @@ pymobiledevice3 developer dvt sysmon process monitor process --filter pid=123 --
 # Stream one process with human-readable memory sizes
 pymobiledevice3 developer dvt sysmon process monitor process --filter name=SpringBoard --key name --key physFootprint --human
 
+# Keep streaming across relaunches: re-apply the filter on every snapshot instead of
+# stopping once the originally selected process is gone
+pymobiledevice3 developer dvt sysmon process monitor process --filter name=MyApp --choose last --keep-monitoring
+
 # Stream oslog
 pymobiledevice3 developer dvt oslog
 
