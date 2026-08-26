@@ -109,6 +109,18 @@ HumanReadableProcessValues = Annotated[
     ),
 ]
 
+KeepMonitoringProcess = Annotated[
+    bool,
+    typer.Option(
+        "--keep-monitoring",
+        help=(
+            "Re-apply the filters on every snapshot instead of locking onto the process selected from the first one. "
+            "Snapshots where nothing matches are skipped instead of ending the command, and a relaunched process is "
+            'picked up again automatically. Requires "--choose first" or "--choose last".'
+        ),
+    ),
+]
+
 ProcessResultsOutputPath = Annotated[
     Optional[Path],
     typer.Option(
@@ -326,20 +338,57 @@ def _matches_selected_process(process: dict[str, Any], selected_process_identifi
     return process.get(identifier_key) == identifier_value
 
 
+def _resolve_matching_process(
+    process_snapshot: list[dict[str, Any]],
+    parsed_filters: dict[str, list[str]],
+    selection_mode: ProcessSelectionMode,
+) -> Optional[dict[str, Any]]:
+    """Re-apply the filters against a single snapshot. Returns None when nothing currently matches."""
+    # All process entries in a sysmon sample share the same schema, so validating one entry is sufficient.
+    _validate_process_keys(process_snapshot[0], list(parsed_filters))
+
+    matching_processes = [process for process in process_snapshot if _matches_filters(process, parsed_filters)]
+    if len(matching_processes) == 0:
+        return None
+
+    return _select_process_from_candidates(matching_processes, selection_mode)
+
+
+def _resolve_tracked_process(
+    process_snapshot: list[dict[str, Any]],
+    tracked_process_identifier: tuple[str, object],
+    tracked_process_description: str,
+) -> Optional[dict[str, Any]]:
+    """Locate the process locked in at selection time. Returns None once it is absent from the snapshot."""
+    tracked_process_matches = [
+        process for process in process_snapshot if _matches_selected_process(process, tracked_process_identifier)
+    ]
+
+    if len(tracked_process_matches) == 0:
+        return None
+
+    if len(tracked_process_matches) > 1:
+        matching_processes_description = [_describe_process(process) for process in tracked_process_matches]
+        raise typer.BadParameter(
+            f"Selected process identity is ambiguous for {tracked_process_description!r}. "
+            f"Matching processes: {matching_processes_description}. Please refine the filters."
+        )
+
+    return tracked_process_matches[0]
+
+
 def _select_process_from_snapshot(
     process_snapshot: list[dict[str, Any]],
     parsed_filters: dict[str, list[str]],
     selection_mode: ProcessSelectionMode,
 ) -> dict[str, Any]:
-    if process_snapshot:
-        # All process entries in a sysmon sample share the same schema, so validating one entry is sufficient.
-        _validate_process_keys(process_snapshot[0], list(parsed_filters))
-
-    matching_processes = [process for process in process_snapshot if _matches_filters(process, parsed_filters)]
-    if len(matching_processes) == 0:
+    selected_process = (
+        _resolve_matching_process(process_snapshot, parsed_filters, selection_mode) if process_snapshot else None
+    )
+    if selected_process is None:
         raise typer.BadParameter("Failed to find a process matching the given filters in the current snapshot")
 
-    return _select_process_from_candidates(matching_processes, selection_mode)
+    return selected_process
 
 
 async def _select_process_from_sysmon(
@@ -445,6 +494,7 @@ async def sysmon_process_monitor_process(
             ),
         ),
     ] = ProcessSelectionMode.PROMPT,
+    keep_monitoring: KeepMonitoringProcess = False,
     interval: Annotated[
         int,
         typer.Option(
@@ -462,7 +512,7 @@ async def sysmon_process_monitor_process(
     with contextlib.ExitStack() as stack:
         out = stack.enter_context(open(output, "w")) if output else None
         await sysmon_process_monitor_process_task(
-            service_provider, filter_expressions, interval, duration, choose, keys, human, out
+            service_provider, filter_expressions, interval, duration, choose, keys, human, out, keep_monitoring
         )
 
 
@@ -510,17 +560,28 @@ async def sysmon_process_monitor_process_task(
     keys: Optional[list[str]] = None,
     human: bool = False,
     out: Optional[TextIO] = None,
+    keep_monitoring: bool = False,
 ) -> None:
     """Continuously monitor one process selected from the current snapshot by key=value filters."""
 
     parsed_filters = _parse_process_filters(filter_expressions)
 
-    async with DvtProvider(service_provider) as dvt:
-        selected_process = await _select_process_from_sysmon(dvt, parsed_filters, keys, choose)
-        selected_process_identifier = _get_process_identifier(selected_process)
-        selected_process_description = _describe_process(selected_process)
+    if keep_monitoring and choose == ProcessSelectionMode.PROMPT:
+        raise typer.BadParameter(
+            '"--keep-monitoring" re-selects the monitored process on every snapshot, so it cannot prompt for one. '
+            'Re-run with "--choose first" or "--choose last".'
+        )
 
-        _write_status(f"Monitoring {selected_process_description}")
+    async with DvtProvider(service_provider) as dvt:
+        selected_process_identifier: Optional[tuple[str, object]] = None
+        selected_process_description = ""
+
+        if not keep_monitoring:
+            selected_process = await _select_process_from_sysmon(dvt, parsed_filters, keys, choose)
+            selected_process_identifier = _get_process_identifier(selected_process)
+            selected_process_description = _describe_process(selected_process)
+
+            _write_status(f"Monitoring {selected_process_description}")
 
         monitoring_start_time = None
         async with await Sysmontap.create(dvt, interval=interval) as monitor_sysmon:
@@ -539,26 +600,26 @@ async def sysmon_process_monitor_process_task(
                 # All process entries in a sysmon sample share the same schema, so validating one entry is sufficient.
                 _validate_process_keys(process_snapshot[0], keys or [])
 
-                selected_process_matches = [
-                    process
-                    for process in process_snapshot
-                    if _matches_selected_process(process, selected_process_identifier)
-                ]
+                if keep_monitoring:
+                    monitored_process = _resolve_matching_process(process_snapshot, parsed_filters, choose)
+                    if monitored_process is None:
+                        # A snapshot may transiently omit the process, and a relaunched one reappears later on.
+                        continue
 
-                if len(selected_process_matches) == 0:
-                    _write_status(f"Selected process exited: {selected_process_description}")
-                    break
-
-                if len(selected_process_matches) > 1:
-                    matching_processes_description = [
-                        _describe_process(process) for process in selected_process_matches
-                    ]
-                    raise typer.BadParameter(
-                        f"Selected process identity is ambiguous for {selected_process_description!r}. "
-                        f"Matching processes: {matching_processes_description}. Please refine the filters."
+                    monitored_process_identifier = _get_process_identifier(monitored_process)
+                    if monitored_process_identifier != selected_process_identifier:
+                        selected_process_identifier = monitored_process_identifier
+                        _write_status(f"Monitoring {_describe_process(monitored_process)}")
+                else:
+                    assert selected_process_identifier is not None  # always resolved when not keep_monitoring
+                    monitored_process = _resolve_tracked_process(
+                        process_snapshot, selected_process_identifier, selected_process_description
                     )
+                    if monitored_process is None:
+                        _write_status(f"Selected process exited: {selected_process_description}")
+                        break
 
-                _write_process(out, _serialize_process(selected_process_matches[0], keys, human))
+                _write_process(out, _serialize_process(monitored_process, keys, human))
 
                 if _duration_elapsed(monitoring_start_time, duration):
                     # Avoid waiting for the next snapshot
