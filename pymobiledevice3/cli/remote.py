@@ -350,17 +350,29 @@ async def cli_start_tunnel(
     ] = None,
 ) -> None:
     """start tunnel (Apple's native tunnel on macOS by default — no root; classic tunnel elsewhere)"""
-    classic_options = (
-        connection_type is not ConnectionType.USB
-        or secrets is not None
-        or protocol is not TunnelProtocol.DEFAULT
-        or max_idle_timeout != MAX_IDLE_TIMEOUT
-    )
+    classic_options = [
+        name
+        for name, is_set in (
+            ("--connection-type", connection_type is not ConnectionType.USB),
+            ("--secrets", secrets is not None),
+            ("--protocol", protocol is not TunnelProtocol.DEFAULT),
+            ("--max-idle-timeout", max_idle_timeout != MAX_IDLE_TIMEOUT),
+        )
+        if is_set
+    ]
     if native is None:
         # Auto: native on macOS (unless PYMOBILEDEVICE3_DEFAULT_FALLBACK opts out of it); an option
         # that shapes a new tunnel implies the classic path -- those options don't apply to Apple's
         # already-existing tunnel.
-        native = default_transport_preference() == "native" and not classic_options
+        prefers_native = default_transport_preference() == "native"
+        native = prefers_native and not classic_options
+        if prefers_native and classic_options:
+            # Make the divert visible: the classic path needs root, and the user did not ask for it.
+            logger.info(
+                "%s only applies to the classic tunnel, so using it instead of the no-root native "
+                "default (this requires root; drop the option, or pass --native, for the no-root tunnel).",
+                ", ".join(classic_options),
+            )
     if native:
         if classic_options:
             # Explicit --native: fail loud rather than silently ignore an inapplicable option.

@@ -14,7 +14,7 @@ Read this file when the user asks to do something on-device and you need to map 
 
 Start here when the task is blocked on "find the device", "connect to the device", "`--rsd` details", or "start a tunnel".
 
-Explicit tunnel setup is rarely needed: on iOS 17.4+, commands that require an RSD tunnel establish a no-root in-process userspace tunnel automatically — just run the command. Reach for `tunneld` or `start-tunnel` (see `references/transport-and-safety.md`) only for iOS 17.0-17.3 devices or when the userspace path is not viable.
+Explicit tunnel setup is rarely needed: on iOS 17.4+, commands that require an RSD tunnel establish a no-root tunnel automatically — the native `remoted` tunnel on macOS, the in-process userspace tunnel elsewhere — so just run the command. Reach for `tunneld` or `start-tunnel` (see `references/transport-and-safety.md`) only for iOS 17.0-17.3 devices or when the no-root path is not viable.
 
 ## Files, Containers, And App Data
 

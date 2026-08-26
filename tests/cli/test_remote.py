@@ -133,6 +133,34 @@ def test_cli_start_tunnel_non_native_preference_uses_classic_path(monkeypatch):
         remote.cli_start_tunnel()
 
 
+def test_cli_start_tunnel_auto_reroute_to_classic_is_logged(monkeypatch, caplog):
+    # When a classic-tunnel option diverts the macOS native default to the root path, say so (and
+    # name the option) instead of dying with a bare "requires root" error.
+    monkeypatch.setattr(remote, "default_transport_preference", lambda: "native")
+    monkeypatch.setattr(type(remote.OSUTILS), "is_admin", property(lambda self: False))
+
+    from pymobiledevice3.exceptions import AccessDeniedError
+
+    with caplog.at_level("INFO", logger=remote.logger.name), pytest.raises(AccessDeniedError):
+        remote.cli_start_tunnel(secrets=Path("secrets.txt"))
+
+    assert any("--secrets" in r.message and "classic tunnel" in r.message for r in caplog.records)
+
+
+def test_cli_start_tunnel_native_default_does_not_log_reroute(monkeypatch, caplog):
+    # No classic option: the native default is taken silently, with no spurious reroute notice.
+    async def fake_native_tunnel_task(udid=None, script_mode=False):
+        pass
+
+    monkeypatch.setattr(remote, "native_tunnel_task", fake_native_tunnel_task)
+    monkeypatch.setattr(remote, "default_transport_preference", lambda: "native")
+
+    with caplog.at_level("INFO", logger=remote.logger.name):
+        remote.cli_start_tunnel()
+
+    assert not any("classic tunnel" in r.message for r in caplog.records)
+
+
 @pytest.mark.asyncio
 async def test_native_tunnel_task_prints_rsd_and_holds(monkeypatch, capsys):
     class FakeService:

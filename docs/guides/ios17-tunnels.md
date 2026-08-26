@@ -28,13 +28,23 @@ Reference protocol details:
 
 ## The default: a no-root tunnel, automatically
 
-When a developer command needs an RSD tunnel and you passed none of `--rsd` / `--tunnel` /
-`--userspace`, pymobiledevice3 brings up an **in-process userspace tunnel** using a pure-Python
-network stack (PyTCP) — no kernel interface, so **no root/admin**. The tunnel is built when the
-command starts and torn down when it exits.
+When a developer command needs an RSD tunnel and you passed no transport flag (`--rsd` /
+`--tunnel` / `--userspace` / `--native`), pymobiledevice3 brings up a **no-root tunnel** for you,
+built when the command starts and torn down when it exits. The kind depends on the host:
 
-This covers iOS 17.4+ over USB on macOS, Linux and Windows with no privileges (it uses the
-CoreDeviceProxy lockdown service). iOS 17.0-17.3.1 is handled differently — see the note below.
+- **macOS** rides Apple's own `remoted` tunnel (the **native** path) by piggybacking
+  `remotepairingd` — no root, no Xcode, and `remoted` is left running so it coexists with
+  Xcode/`devicectl`. Its address is kernel-routable, so it is faster host->device and lower
+  latency than the userspace stack. See
+  [Native remoted tunnel](network-stacks.md#native-remoted-tunnel-macos-only).
+- **Linux/Windows** bring up an **in-process userspace tunnel** using a pure-Python network stack
+  (PyTCP) — no kernel interface, so no root/admin either.
+
+If the native path is unavailable on macOS it falls back automatically (userspace, then `tunneld`).
+Either way you just run the command. This covers iOS 17.4+ over USB with no privileges (it uses the
+CoreDeviceProxy lockdown service); iOS 17.0-17.3.1 is handled differently — see the note below.
+Set `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native|userspace|tunneld` to change which transport the
+automatic selection prefers.
 
 !!! warning "iOS 17.0-17.3.1 uses `tunneld` by default"
     These versions predate the CoreDeviceProxy service, so the userspace tunnel can only reach them

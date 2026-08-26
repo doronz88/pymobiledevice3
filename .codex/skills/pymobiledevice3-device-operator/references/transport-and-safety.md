@@ -36,11 +36,12 @@ Many `developer dvt` and related developer commands need all of the following:
    On iOS 17+ the same image can instead be installed as a cryptex, bypassing the image
    mounter: `uvx --from . pymobiledevice3 cryptex auto-install` (needs RSD; both cache the
    download under `~/.pymobiledevice3` and end up mounted at `/System/Developer`).
-3. A CoreDevice transport path. On iOS 17.4+ this needs **no setup**: the no-root
-   userspace tunnel is established automatically when the command runs. iOS 17.0-17.3
-   devices (which predate CoreDeviceProxy) route automatically to the no-root `--native`
-   tunnel on macOS; on other hosts they route to `tunneld`, which needs a privileged
-   daemon: `sudo uvx --from . pymobiledevice3 remote tunneld` in the background, then pass
+3. A CoreDevice transport path. On iOS 17.4+ this needs **no setup**: a no-root tunnel is
+   established automatically when the command runs — the native `remoted` tunnel on macOS,
+   the in-process userspace tunnel elsewhere. iOS 17.0-17.3 devices (which predate
+   CoreDeviceProxy) route automatically to the no-root `--native` tunnel on macOS; on other
+   hosts they route to `tunneld`, which needs a privileged daemon:
+   `sudo uvx --from . pymobiledevice3 remote tunneld` in the background, then pass
    `--tunnel ''` or `--tunnel <UDID>`.
 
 If a developer command fails with service-availability errors, verify Developer Mode and
