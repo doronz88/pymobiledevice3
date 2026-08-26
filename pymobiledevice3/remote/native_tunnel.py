@@ -23,6 +23,8 @@ import asyncio
 import atexit
 import contextlib
 import ctypes
+import logging
+import os
 import platform
 import socket
 import struct
@@ -34,10 +36,20 @@ from typing import Any, Callable, Optional, cast
 from pymobiledevice3.exceptions import UserspaceTunnelUnavailableError
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService, parse_device_kvs_data
 
+logger = logging.getLogger(__name__)
+
 _IS_DARWIN = platform.system() == "Darwin"
 
 REMOTEPAIRING_MACH_SERVICE = "com.apple.CoreDevice.remotepairingd"
 REMOTED_PATH = "/usr/libexec/remoted"
+
+# ``remotepairingd`` is an XPCService declaring ``ServiceType = User``, so launchd registers it
+# per-uid in a logged-in user's domain and never in the system/root domain: a process running as
+# root (CI runner, LaunchDaemon, ``launchctl asuser 0``) gets "Connection invalid" from the plain
+# lookup, not an empty device list. ``xpc_connection_set_target_uid`` redirects the lookup into
+# another uid's domain, which lets such a process stay root and reach the login user's daemon
+# selectively. Set this to choose that uid explicitly -- required on a host with no console user.
+NATIVE_TARGET_UID_ENV_VAR = "PYMOBILEDEVICE3_NATIVE_TARGET_UID"
 
 # com.apple.dt.RemotePairingError code returned by InitiatePairingCommand when the host is already
 # paired -- a benign no-op, not a failure.
@@ -91,6 +103,11 @@ class _LibXpc:
         )
         self.connection_create_from_endpoint: Callable[..., int] = self._cfg(
             "xpc_connection_create_from_endpoint", vp, [vp]
+        )
+        # SPI, absent from every SDK header, and the surface drifts across releases (the sibling
+        # xpc_connection_set_target_gid is already gone), so bind it defensively.
+        self.connection_set_target_uid: Optional[Callable[..., None]] = self._cfg_optional(
+            "xpc_connection_set_target_uid", None, [vp, ctypes.c_uint32]
         )
         self.connection_set_event_handler: Callable[..., None] = self._cfg(
             "xpc_connection_set_event_handler", None, [vp, vp]
@@ -153,6 +170,13 @@ class _LibXpc:
         fn.restype = restype
         fn.argtypes = argtypes
         return fn
+
+    def _cfg_optional(self, name: str, restype: Any, argtypes: list[Any]) -> Optional[Any]:
+        """Bind a symbol that may not exist on every macOS release; ``None`` when it is absent."""
+        try:
+            return self._cfg(name, restype, argtypes)
+        except AttributeError:
+            return None
 
     def make_block(self, func: Callable[[int], None]) -> ctypes.c_void_p:
         """Wrap ``func(xpc_object_ptr)`` in an Objective-C global block for an xpc handler.
@@ -274,6 +298,59 @@ def xpc_to_python(xpc: _LibXpc, obj: int) -> Any:
     return f"<{type_name}>"
 
 
+def _console_user_uid() -> Optional[int]:
+    """uid of the console (window-server) user, or ``None`` when nobody is logged in.
+
+    ``/dev/console`` is chowned to the console user at login and back to root at logout, so its
+    owner is a dependency-free stand-in for ``SCDynamicStoreCopyConsoleUser``.
+    """
+    try:
+        uid = os.stat("/dev/console").st_uid
+    except OSError:
+        return None
+    return uid or None
+
+
+def native_target_uid() -> Optional[int]:
+    """uid whose launchd domain should be searched for ``remotepairingd``, or ``None`` for our own.
+
+    Only root can retarget, and only root needs to: an unprivileged process is already running in
+    the domain that holds the daemon. ``PYMOBILEDEVICE3_NATIVE_TARGET_UID`` wins when set, otherwise
+    the console user is assumed to be the one holding the pairing.
+    """
+    if os.geteuid() != 0:
+        # xpc_connection_set_target_uid traps (SIGTRAP) when a non-root caller invokes it.
+        return None
+    value = os.getenv(NATIVE_TARGET_UID_ENV_VAR)
+    if value:
+        try:
+            return int(value.strip())
+        except ValueError:
+            logger.warning("ignoring invalid %s=%r (expected a numeric uid)", NATIVE_TARGET_UID_ENV_VAR, value)
+    return _console_user_uid()
+
+
+def _create_remotepairing_connection(xpc: _LibXpc, queue: int) -> int:
+    """Create the ``remotepairingd`` mach-service connection, retargeted when we are running as root.
+
+    Returned inactive: the caller installs its event handler before activating.
+    """
+    conn = xpc.connection_create_mach_service(REMOTEPAIRING_MACH_SERVICE.encode(), queue, 0)
+    uid = native_target_uid()
+    if uid is None or uid == 0:
+        return conn
+    if xpc.connection_set_target_uid is None:
+        logger.warning(
+            "running as root, but xpc_connection_set_target_uid is unavailable on this macOS: "
+            "%s is registered per-user and will not be reachable from the root domain",
+            REMOTEPAIRING_MACH_SERVICE,
+        )
+        return conn
+    xpc.connection_set_target_uid(conn, uid)  # must precede xpc_connection_activate
+    logger.debug("searching uid %d's launchd domain for %s", uid, REMOTEPAIRING_MACH_SERVICE)
+    return conn
+
+
 def _send_browse_request(xpc: _LibXpc, conn: int, queue: int) -> None:
     """Send ``RemotePairing.BrowseRequest``; devices arrive via the connection's event handler.
 
@@ -364,7 +441,7 @@ class _RemotePairingSession:
                 endpoint_holder.append(endpoint)
                 found.set()
 
-        conn = xpc.connection_create_mach_service(REMOTEPAIRING_MACH_SERVICE.encode(), self._queue, 0)
+        conn = _create_remotepairing_connection(xpc, self._queue)
         self._browse_conn = conn
         xpc.connection_set_event_handler(conn, xpc.make_block(on_event))
         xpc.connection_activate(conn)
@@ -372,6 +449,12 @@ class _RemotePairingSession:
 
         if not found.wait(self._REPLY_TIMEOUT):
             hint = f" matching udid {serial}" if serial is not None else ""
+            if os.geteuid() == 0 and native_target_uid() is None:
+                hint += (
+                    f"; running as root with no console user -- {REMOTEPAIRING_MACH_SERVICE} is registered "
+                    f"per-user, so set {NATIVE_TARGET_UID_ENV_VAR} to the uid of the logged-in user "
+                    "that owns the pairing"
+                )
             raise _RemotePairingError(f"remotepairingd reported no device{hint}")
 
         device_conn = xpc.connection_create_from_endpoint(endpoint_holder[0])
@@ -473,7 +556,7 @@ def _browse_native_devices_sync(xpc: _LibXpc, timeout: float) -> list[dict[str, 
                 seen.add(key)
                 devices.append(info_dict)
 
-    conn = xpc.connection_create_mach_service(REMOTEPAIRING_MACH_SERVICE.encode(), queue, 0)
+    conn = _create_remotepairing_connection(xpc, queue)
     xpc.connection_set_event_handler(conn, xpc.make_block(on_event))
     xpc.connection_activate(conn)
     _send_browse_request(xpc, conn, queue)

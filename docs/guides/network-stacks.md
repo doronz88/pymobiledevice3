@@ -245,6 +245,18 @@ How it works (all via `ctypes` + libxpc, no pyobjc):
    kernel-routable — and run the standard RSD handshake.
 
 - **Root:** not required. **Xcode:** not required.
+- **Running as root anyway (CI runners, LaunchDaemons):** `remotepairingd` is an XPCService
+  declaring `ServiceType = User`, so launchd registers it **per-uid, in a logged-in user's domain
+  and never in the system/root domain**. A root process therefore gets `Connection invalid` from the
+  plain mach lookup — the service does not exist in its domain, which surfaces as
+  `remotepairingd reported no device`. Rather than relocating the process into the user's domain
+  (`launchctl asuser <uid>`), the connection is retargeted selectively with the libxpc SPI
+  `xpc_connection_set_target_uid`, so the process stays root and reaches only this one service.
+  This happens automatically when `geteuid() == 0`: the target uid is taken from
+  `PYMOBILEDEVICE3_NATIVE_TARGET_UID` when set, otherwise from the console user (the owner of
+  `/dev/console`). Set the variable explicitly on a host with no console user — a headless CI
+  runner — since there is no other way to guess which user holds the pairing. Note the SPI is
+  root-only: calling it as a normal user traps the process, so it is never used off the root path.
 - **Reachability:** the tunnel address is a real kernel route (Apple's tunnel), so unlike the
   userspace tunnel it *is* reachable by other tools; it lives only while the handle (its assertion)
   is held. `remote start-tunnel` publishes this address for other processes (no `sudo`; the native
