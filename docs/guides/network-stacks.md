@@ -247,7 +247,9 @@ How it works (all via `ctypes` + libxpc, no pyobjc):
 - **Root:** not required. **Xcode:** not required.
 - **Reachability:** the tunnel address is a real kernel route (Apple's tunnel), so unlike the
   userspace tunnel it *is* reachable by other tools; it lives only while the handle (its assertion)
-  is held.
+  is held. `remote start-tunnel` publishes this address for other processes (no `sudo`; the native
+  path is its macOS default) and `remote browse` lists the devices `remotepairingd` reports (also
+  the macOS default; `--no-native` forces the classic tunnel / bonjour browse).
 - **Default on macOS:** this is the built-in default transport for RSD-required commands (and the
   CLI's automatic retry) on macOS — chosen ahead of the userspace tunnel, with userspace and then
   `tunneld` as fallbacks. On other platforms the userspace tunnel remains the default (`remoted` does

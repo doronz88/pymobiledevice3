@@ -36,11 +36,12 @@ Many `developer dvt` and related developer commands need all of the following:
    On iOS 17+ the same image can instead be installed as a cryptex, bypassing the image
    mounter: `uvx --from . pymobiledevice3 cryptex auto-install` (needs RSD; both cache the
    download under `~/.pymobiledevice3` and end up mounted at `/System/Developer`).
-3. A CoreDevice transport path. On iOS 17.4+ this needs **no setup**: the no-root
-   userspace tunnel is established automatically when the command runs. iOS 17.0-17.3
-   devices (which predate CoreDeviceProxy) route automatically to the no-root `--native`
-   tunnel on macOS; on other hosts they route to `tunneld`, which needs a privileged
-   daemon: `sudo uvx --from . pymobiledevice3 remote tunneld` in the background, then pass
+3. A CoreDevice transport path. On iOS 17.4+ this needs **no setup**: a no-root tunnel is
+   established automatically when the command runs — the native `remoted` tunnel on macOS,
+   the in-process userspace tunnel elsewhere. iOS 17.0-17.3 devices (which predate
+   CoreDeviceProxy) route automatically to the no-root `--native` tunnel on macOS; on other
+   hosts they route to `tunneld`, which needs a privileged daemon:
+   `sudo uvx --from . pymobiledevice3 remote tunneld` in the background, then pass
    `--tunnel ''` or `--tunnel <UDID>`.
 
 If a developer command fails with service-availability errors, verify Developer Mode and
@@ -53,6 +54,11 @@ the mounted image before assuming the code is broken.
   latency) and needs no root. Fall back to a privileged `tunneld` only when no no-root path is
   viable: non-macOS iOS 17.0-17.3, `debugserver start-server` without `--local-port`, or a tunnel
   that must be shared across processes.
+- On macOS, `remote start-tunnel` publishes Apple's own kernel-routable tunnel with no sudo (the
+  native path is the macOS default) — prefer it over the privileged options below when another
+  process just needs an `--rsd HOST PORT` address. `remote browse` likewise lists the devices
+  `remotepairingd` sees with no root on macOS. `--no-native` (or any classic-tunnel option, e.g.
+  `-t wifi`) routes `start-tunnel` to the classic root tunnel.
 - Privileged options: an already-running `tunneld`, or a one-off
   `lockdown start-tunnel` (iOS 17.4+) / `remote start-tunnel` (iOS 17.0-17.3.1).
 - Privileged tunnel creation can require `sudo` because it creates a TUN/TAP interface.
