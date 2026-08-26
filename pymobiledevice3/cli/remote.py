@@ -327,18 +327,22 @@ async def cli_start_tunnel(
         typer.Option(help="Print only HOST and port for scripts instead of formatted output."),
     ] = False,
     max_idle_timeout: Annotated[
-        float,
-        typer.Option(help="Maximum idle time before QUIC keepalive pings are sent."),
-    ] = MAX_IDLE_TIMEOUT,
+        Optional[float],
+        typer.Option(
+            show_default=str(MAX_IDLE_TIMEOUT),
+            help="Maximum idle time before QUIC keepalive pings are sent.",
+        ),
+    ] = None,
     protocol: Annotated[
-        TunnelProtocol,
+        Optional[TunnelProtocol],
         typer.Option(
             "--protocol",
             "-p",
             case_sensitive=False,
-            help="Transport protocol for the tunnel (default: TCP on Python >=3.13, otherwise QUIC).",
+            show_default="TCP on Python >=3.13, otherwise QUIC",
+            help="Transport protocol for the tunnel.",
         ),
-    ] = TunnelProtocol.DEFAULT,
+    ] = None,
     native: Annotated[
         Optional[bool],
         typer.Option(
@@ -350,13 +354,16 @@ async def cli_start_tunnel(
     ] = None,
 ) -> None:
     """start tunnel (Apple's native tunnel on macOS by default — no root; classic tunnel elsewhere)"""
+    # Detect explicitly-passed classic-tunnel options via sentinel Nones rather than value-vs-default
+    # (TunnelProtocol.DEFAULT is version-dependent -- QUIC on Python <3.13, TCP otherwise -- so a
+    # value comparison cannot tell an explicit `--protocol quic` on 3.12 from the default).
     classic_options = [
         name
         for name, is_set in (
             ("--connection-type", connection_type is not ConnectionType.USB),
             ("--secrets", secrets is not None),
-            ("--protocol", protocol is not TunnelProtocol.DEFAULT),
-            ("--max-idle-timeout", max_idle_timeout != MAX_IDLE_TIMEOUT),
+            ("--protocol", protocol is not None),
+            ("--max-idle-timeout", max_idle_timeout is not None),
         )
         if is_set
     ]
@@ -380,7 +387,7 @@ async def cli_start_tunnel(
                 raise typer.BadParameter("--connection-type cannot be combined with --native (select with --udid)")
             if secrets is not None:
                 raise typer.BadParameter("--secrets cannot be combined with --native")
-            if protocol is not TunnelProtocol.DEFAULT:
+            if protocol is not None:
                 raise typer.BadParameter("--protocol cannot be combined with --native")
             raise typer.BadParameter("--max-idle-timeout cannot be combined with --native")
         await native_tunnel_task(udid, script_mode=script_mode)
@@ -395,8 +402,8 @@ async def cli_start_tunnel(
             secrets_file,
             udid,
             script_mode,
-            max_idle_timeout=max_idle_timeout,
-            protocol=protocol,
+            max_idle_timeout=MAX_IDLE_TIMEOUT if max_idle_timeout is None else max_idle_timeout,
+            protocol=protocol if protocol is not None else TunnelProtocol.DEFAULT,
         )
 
 
