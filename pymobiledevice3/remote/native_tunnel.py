@@ -29,7 +29,6 @@ import platform
 import socket
 import struct
 import threading
-import time
 import uuid
 from typing import Any, Callable, Optional, cast
 
@@ -50,6 +49,11 @@ REMOTED_PATH = "/usr/libexec/remoted"
 # another uid's domain, which lets such a process stay root and reach the login user's daemon
 # selectively. Set this to choose that uid explicitly -- required on a host with no console user.
 NATIVE_TARGET_UID_ENV_VAR = "PYMOBILEDEVICE3_NATIVE_TARGET_UID"
+
+# Per-process memo of how to reach remotepairingd, resolved from what the daemon actually does
+# rather than guessed from our own uid: ``None`` = not established yet, ``0`` = the ordinary lookup
+# works (never retarget), a positive uid = search that uid's launchd domain.
+_remotepairing_target_uid: Optional[int] = None
 
 # com.apple.dt.RemotePairingError code returned by InitiatePairingCommand when the host is already
 # paired -- a benign no-op, not a failure.
@@ -160,6 +164,15 @@ class _LibXpc:
         self.sysctlbyname: Callable[..., int] = self._cfg(
             "sysctlbyname", ctypes.c_int, [cp, vp, ctypes.POINTER(ctypes.c_size_t), vp, ctypes.c_size_t]
         )
+
+        # XPC_ERROR_CONNECTION_INVALID is `&_xpc_error_connection_invalid`: the symbol *is* the
+        # error object, so the sentinel to compare against is its address, not its value.
+        try:
+            self.error_connection_invalid: int = ctypes.addressof(
+                ctypes.c_void_p.in_dll(lib, "_xpc_error_connection_invalid")
+            )
+        except ValueError:
+            self.error_connection_invalid = 0
 
         # Address of the _NSConcreteGlobalBlock class object -> the block's isa pointer.
         self._global_block_isa = ctypes.addressof(ctypes.c_void_p.in_dll(lib, "_NSConcreteGlobalBlock"))
@@ -321,44 +334,118 @@ def _is_root() -> bool:
     return geteuid is not None and geteuid() == 0
 
 
-def native_target_uid() -> Optional[int]:
-    """uid whose launchd domain should be searched for ``remotepairingd``, or ``None`` for our own.
+def _seeded_target_uid() -> Optional[int]:
+    """Memoized target uid for this process, or ``None`` to use the ordinary lookup.
 
-    Only root can retarget, and only root needs to: an unprivileged process is already running in
-    the domain that holds the daemon. ``PYMOBILEDEVICE3_NATIVE_TARGET_UID`` wins when set, otherwise
-    the console user is assumed to be the one holding the pairing.
+    Seeded once from ``PYMOBILEDEVICE3_NATIVE_TARGET_UID`` when set, which skips the ordinary
+    attempt entirely -- what a daemon on a host with no console user wants, since it already knows
+    which uid holds the pairing. ``=0`` pins the ordinary lookup and disables retargeting.
     """
-    if not _is_root():
-        # xpc_connection_set_target_uid traps (SIGTRAP) when a non-root caller invokes it.
-        return None
+    global _remotepairing_target_uid
+    if _remotepairing_target_uid is not None:
+        return _remotepairing_target_uid or None
     value = os.getenv(NATIVE_TARGET_UID_ENV_VAR)
-    if value:
-        try:
-            return int(value.strip())
-        except ValueError:
-            logger.warning("ignoring invalid %s=%r (expected a numeric uid)", NATIVE_TARGET_UID_ENV_VAR, value)
-    return _console_user_uid()
+    if not value:
+        return None
+    try:
+        _remotepairing_target_uid = int(value.strip())
+    except ValueError:
+        logger.warning("ignoring invalid %s=%r (expected a numeric uid)", NATIVE_TARGET_UID_ENV_VAR, value)
+        return None
+    return _remotepairing_target_uid or None
 
 
-def _create_remotepairing_connection(xpc: _LibXpc, queue: int) -> int:
-    """Create the ``remotepairingd`` mach-service connection, retargeted when we are running as root.
+def _remember_plain_lookup_works() -> None:
+    """Memoize that the ordinary lookup reached the daemon, so later browses skip the retry dance."""
+    global _remotepairing_target_uid
+    if _remotepairing_target_uid is None:
+        _remotepairing_target_uid = 0
+
+
+def _resolve_target_uid_after_invalid(xpc: _LibXpc) -> Optional[int]:
+    """uid to retry in after the ordinary lookup reported the service missing, or ``None``.
+
+    Reached only once ``remotepairingd`` has actually told us it is not registered in our domain, so
+    nothing here is guessed from our own uid. ``None`` means there is no second thing to try -- most
+    importantly when we are not root, where the retarget SPI is both useless and fatal.
+    """
+    global _remotepairing_target_uid
+    if not _is_root():
+        return None
+    if xpc.connection_set_target_uid is None:
+        logger.warning(
+            "%s is not registered in this domain and xpc_connection_set_target_uid is unavailable "
+            "on this macOS, so another user's domain cannot be searched",
+            REMOTEPAIRING_MACH_SERVICE,
+        )
+        return None
+    uid = _console_user_uid()
+    if uid is None:
+        return None
+    _remotepairing_target_uid = uid
+    return uid
+
+
+def _create_remotepairing_connection(xpc: _LibXpc, queue: int, target_uid: Optional[int]) -> int:
+    """Create the ``remotepairingd`` mach-service connection, optionally aimed at another uid's domain.
 
     Returned inactive: the caller installs its event handler before activating.
     """
     conn = xpc.connection_create_mach_service(REMOTEPAIRING_MACH_SERVICE.encode(), queue, 0)
-    uid = native_target_uid()
-    if uid is None or uid == 0:
+    if not target_uid:
+        return conn
+    if not _is_root():
+        # xpc_connection_set_target_uid traps (SIGTRAP) when a non-root caller invokes it, so a
+        # seeded uid must never be honoured unprivileged.
+        logger.warning("ignoring %s: retargeting another uid's domain requires root", NATIVE_TARGET_UID_ENV_VAR)
         return conn
     if xpc.connection_set_target_uid is None:
         logger.warning(
-            "running as root, but xpc_connection_set_target_uid is unavailable on this macOS: "
-            "%s is registered per-user and will not be reachable from the root domain",
-            REMOTEPAIRING_MACH_SERVICE,
+            "ignoring %s: xpc_connection_set_target_uid is unavailable on this macOS", NATIVE_TARGET_UID_ENV_VAR
         )
         return conn
-    xpc.connection_set_target_uid(conn, uid)  # must precede xpc_connection_activate
-    logger.debug("searching uid %d's launchd domain for %s", uid, REMOTEPAIRING_MACH_SERVICE)
+    xpc.connection_set_target_uid(conn, target_uid)  # must precede xpc_connection_activate
+    logger.debug("searching uid %d's launchd domain for %s", target_uid, REMOTEPAIRING_MACH_SERVICE)
     return conn
+
+
+class _BrowseAttempt:
+    """One activated browse connection, tracking whether libxpc reported the service missing.
+
+    ``XPC_ERROR_CONNECTION_INVALID`` on a freshly activated connection means the mach service is not
+    registered in the domain we searched. Since ``remotepairingd`` is per-user, that is the signal
+    -- observed, not guessed -- that we are looking in the wrong domain. It arrives essentially
+    immediately (~0.2 ms), which is what makes trying the ordinary lookup first free. libxpc also
+    delivers the same error after our own ``cancel``, so ``invalid`` is only meaningful before that.
+    """
+
+    def __init__(
+        self,
+        xpc: _LibXpc,
+        queue: int,
+        on_device: Callable[[int], None],
+        target_uid: Optional[int],
+        settled: Optional[threading.Event] = None,
+    ) -> None:
+        self._xpc = xpc
+        self.invalid = threading.Event()
+        self.conn = _create_remotepairing_connection(xpc, queue, target_uid)
+
+        def handler(obj: int) -> None:
+            if obj and obj == xpc.error_connection_invalid:
+                self.invalid.set()
+                if settled is not None:
+                    settled.set()
+                return
+            on_device(obj)
+
+        xpc.connection_set_event_handler(self.conn, xpc.make_block(handler))
+        xpc.connection_activate(self.conn)
+        _send_browse_request(xpc, self.conn, queue)
+
+    def cancel(self) -> None:
+        with contextlib.suppress(Exception):
+            self._xpc.connection_cancel(self.conn)
 
 
 def _send_browse_request(xpc: _LibXpc, conn: int, queue: int) -> None:
@@ -422,44 +509,61 @@ class _RemotePairingSession:
         return holder[0]
 
     def browse(self, serial: Optional[str]) -> None:
-        """Browse for ``serial`` (or the first device) and open its per-device XPC endpoint."""
+        """Browse for ``serial`` (or the first device) and open its per-device XPC endpoint.
+
+        Tries the ordinary lookup first and only retargets another uid's domain if the daemon
+        reports it is not registered here -- see :class:`_BrowseAttempt`.
+        """
         xpc = self._xpc
         want = serial.encode() if serial is not None else None
         endpoint_holder: list[int] = []
-        found = threading.Event()
 
-        def on_event(obj: int) -> None:
-            if not obj:
-                return
-            value = xpc.dictionary_get_value(obj, b"value")
-            if not value:
-                return
-            device_found = xpc.dictionary_get_value(value, b"deviceFound")
-            if not device_found:
-                return
-            zero = xpc.dictionary_get_value(device_found, b"_0")
-            info = xpc.dictionary_get_value(zero, b"deviceInfo") if zero else 0
-            if not info:
-                return
-            udid = xpc.dictionary_get_string(info, b"udid")
-            if want is not None and udid != want:
-                return
-            endpoint = xpc.dictionary_get_value(info, b"endpoint")
-            if endpoint and not found.is_set():
-                self.auxiliary_metadata = parse_device_kvs_data(xpc.get_data_bytes(info, b"deviceKVSData"))
-                xpc.retain(endpoint)
-                endpoint_holder.append(endpoint)
-                found.set()
+        def make_on_device(settled: threading.Event) -> Callable[[int], None]:
+            def on_device(obj: int) -> None:
+                if not obj:
+                    return
+                value = xpc.dictionary_get_value(obj, b"value")
+                if not value:
+                    return
+                device_found = xpc.dictionary_get_value(value, b"deviceFound")
+                if not device_found:
+                    return
+                zero = xpc.dictionary_get_value(device_found, b"_0")
+                info = xpc.dictionary_get_value(zero, b"deviceInfo") if zero else 0
+                if not info:
+                    return
+                udid = xpc.dictionary_get_string(info, b"udid")
+                if want is not None and udid != want:
+                    return
+                endpoint = xpc.dictionary_get_value(info, b"endpoint")
+                if endpoint and not settled.is_set():
+                    self.auxiliary_metadata = parse_device_kvs_data(xpc.get_data_bytes(info, b"deviceKVSData"))
+                    xpc.retain(endpoint)
+                    endpoint_holder.append(endpoint)
+                    settled.set()
 
-        conn = _create_remotepairing_connection(xpc, self._queue)
-        self._browse_conn = conn
-        xpc.connection_set_event_handler(conn, xpc.make_block(on_event))
-        xpc.connection_activate(conn)
-        _send_browse_request(xpc, conn, self._queue)
+            return on_device
 
-        if not found.wait(self._REPLY_TIMEOUT):
+        def attempt(target_uid: Optional[int]) -> _BrowseAttempt:
+            settled = threading.Event()
+            att = _BrowseAttempt(xpc, self._queue, make_on_device(settled), target_uid, settled)
+            self._browse_conn = att.conn
+            settled.wait(self._REPLY_TIMEOUT)
+            return att
+
+        seeded = _seeded_target_uid()
+        att = attempt(seeded)
+        if not endpoint_holder and att.invalid.is_set():
+            retry_uid = _resolve_target_uid_after_invalid(xpc)
+            if retry_uid is not None:
+                att.cancel()
+                attempt(retry_uid)
+        elif endpoint_holder and not seeded:
+            _remember_plain_lookup_works()
+
+        if not endpoint_holder:
             hint = f" matching udid {serial}" if serial is not None else ""
-            if _is_root() and native_target_uid() is None:
+            if _is_root() and _console_user_uid() is None and _seeded_target_uid() is None:
                 hint += (
                     f"; running as root with no console user -- {REMOTEPAIRING_MACH_SERVICE} is registered "
                     f"per-user, so set {NATIVE_TARGET_UID_ENV_VAR} to the uid of the logged-in user "
@@ -566,12 +670,23 @@ def _browse_native_devices_sync(xpc: _LibXpc, timeout: float) -> list[dict[str, 
                 seen.add(key)
                 devices.append(info_dict)
 
-    conn = _create_remotepairing_connection(xpc, queue)
-    xpc.connection_set_event_handler(conn, xpc.make_block(on_event))
-    xpc.connection_activate(conn)
-    _send_browse_request(xpc, conn, queue)
-    time.sleep(timeout)  # deviceFound events stream in asynchronously; collect for the whole window
-    xpc.connection_cancel(conn)
+    def attempt(target_uid: Optional[int]) -> _BrowseAttempt:
+        att = _BrowseAttempt(xpc, queue, on_event, target_uid)
+        # deviceFound events stream in asynchronously, so collect for the whole window -- unless the
+        # domain turns out to be wrong, which libxpc reports at once and ends the wait early.
+        att.invalid.wait(timeout)
+        return att
+
+    seeded = _seeded_target_uid()
+    att = attempt(seeded)
+    if att.invalid.is_set():
+        retry_uid = _resolve_target_uid_after_invalid(xpc)
+        if retry_uid is not None:
+            att.cancel()
+            att = attempt(retry_uid)
+    elif not seeded:
+        _remember_plain_lookup_works()
+    att.cancel()
     with lock:
         return list(devices)
 
