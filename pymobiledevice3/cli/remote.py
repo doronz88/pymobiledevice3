@@ -15,17 +15,19 @@ from typer_injector import InjectingTyper
 
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing_manual_pairing
 from pymobiledevice3.cli.cli_common import (
+    OSUTILS,
     USBMUX_ENV_VARS,
     USBMUX_OPTION_HELP,
     RSDServiceProviderDep,
     async_command,
+    default_transport_preference,
     print_json,
     prompt_device_list,
     sudo_required,
     user_requested_colored_output,
 )
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import NoDeviceConnectedError
+from pymobiledevice3.exceptions import AccessDeniedError, NoDeviceConnectedError
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, get_remote_pairing_record_filename
 from pymobiledevice3.remote.common import ConnectionType, TunnelProtocol
 from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_tunnel, verify_tunnel_imports
@@ -150,9 +152,24 @@ def cli_tunneld(
 @cli.command("browse")
 @async_command
 async def browse(
-    timeout: Annotated[float, typer.Option(help="Bonjour timeout (in seconds)")] = DEFAULT_BONJOUR_TIMEOUT,
+    timeout: Annotated[float, typer.Option(help="Browse timeout (in seconds)")] = DEFAULT_BONJOUR_TIMEOUT,
+    native: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--native/--no-native",
+            help="Browse via Apple's remotepairingd (the remoted tunnel daemon) instead of bonjour; no root, "
+            "macOS only, and the default there. --no-native forces the bonjour browse.",
+        ),
+    ] = None,
 ) -> None:
-    """browse RemoteXPC devices using bonjour"""
+    """browse RemoteXPC devices (remotepairingd on macOS by default, bonjour elsewhere)"""
+    if native is None:
+        native = default_transport_preference() == "native"
+    if native:
+        from pymobiledevice3.remote.native_tunnel import browse_native_devices
+
+        print_json(await browse_native_devices(timeout=timeout))
+        return
     await cli_browse(timeout)
 
 
@@ -256,8 +273,36 @@ async def start_tunnel_task(
     )
 
 
+async def native_tunnel_task(udid: Optional[str] = None, script_mode: bool = False) -> None:
+    # establish_native_rsd holds the tunnel assertion for the process lifetime and releases it at
+    # interpreter exit; the RSD address is kernel-routable (Apple's tunnel), so other processes can
+    # use the printed --rsd directly.
+    from pymobiledevice3.remote.native_tunnel import establish_native_rsd
+
+    rsd = await establish_native_rsd(serial=udid)
+    address, port = rsd.service.address
+    logger.info("native tunnel is up")
+    if script_mode:
+        print(f"{address} {port}", flush=True)
+    else:
+        if user_requested_colored_output():
+            print(typer.style("Identifier: ", bold=True, fg="yellow") + typer.style(rsd.udid, bold=True, fg="white"))
+            print(typer.style("RSD Address: ", bold=True, fg="yellow") + typer.style(address, bold=True, fg="white"))
+            print(typer.style("RSD Port: ", bold=True, fg="yellow") + typer.style(str(port), bold=True, fg="white"))
+            print(
+                typer.style("Use the follow connection option:\n", bold=True, fg="yellow")
+                + typer.style(f"--rsd {address} {port}", bold=True, fg="cyan")
+            )
+        else:
+            print(f"Identifier: {rsd.udid}")
+            print(f"RSD Address: {address}")
+            print(f"RSD Port: {port}")
+            print(f"Use the follow connection option:\n--rsd {address} {port}")
+    sys.stdout.flush()
+    await asyncio.Event().wait()  # hold the assertion until Ctrl-C
+
+
 @cli.command("start-tunnel")
-@sudo_required
 @async_command
 async def cli_start_tunnel(
     connection_type: Annotated[
@@ -294,8 +339,42 @@ async def cli_start_tunnel(
             help="Transport protocol for the tunnel (default: TCP on Python >=3.13, otherwise QUIC).",
         ),
     ] = TunnelProtocol.DEFAULT,
+    native: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--native/--no-native",
+            help="Piggyback Apple's remoted tunnel via remotepairingd and publish its RSD address instead of "
+            "creating a new tunnel; no root, macOS only, and the default there. --no-native forces the "
+            "classic (root) tunnel, as does passing any of the classic-tunnel options.",
+        ),
+    ] = None,
 ) -> None:
-    """start tunnel"""
+    """start tunnel (Apple's native tunnel on macOS by default — no root; classic tunnel elsewhere)"""
+    classic_options = (
+        connection_type is not ConnectionType.USB
+        or secrets is not None
+        or protocol is not TunnelProtocol.DEFAULT
+        or max_idle_timeout != MAX_IDLE_TIMEOUT
+    )
+    if native is None:
+        # Auto: native on macOS (unless PYMOBILEDEVICE3_DEFAULT_FALLBACK opts out of it); an option
+        # that shapes a new tunnel implies the classic path -- those options don't apply to Apple's
+        # already-existing tunnel.
+        native = default_transport_preference() == "native" and not classic_options
+    if native:
+        if classic_options:
+            # Explicit --native: fail loud rather than silently ignore an inapplicable option.
+            if connection_type is not ConnectionType.USB:
+                raise typer.BadParameter("--connection-type cannot be combined with --native (select with --udid)")
+            if secrets is not None:
+                raise typer.BadParameter("--secrets cannot be combined with --native")
+            if protocol is not TunnelProtocol.DEFAULT:
+                raise typer.BadParameter("--protocol cannot be combined with --native")
+            raise typer.BadParameter("--max-idle-timeout cannot be combined with --native")
+        await native_tunnel_task(udid, script_mode=script_mode)
+        return
+    if not OSUTILS.is_admin:
+        raise AccessDeniedError()
     if not verify_tunnel_imports():
         return
     with secrets.open("wt") if secrets is not None else nullcontext() as secrets_file:

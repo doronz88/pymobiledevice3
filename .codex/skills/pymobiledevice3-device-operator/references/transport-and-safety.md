@@ -53,6 +53,11 @@ the mounted image before assuming the code is broken.
   latency) and needs no root. Fall back to a privileged `tunneld` only when no no-root path is
   viable: non-macOS iOS 17.0-17.3, `debugserver start-server` without `--local-port`, or a tunnel
   that must be shared across processes.
+- On macOS, `remote start-tunnel` publishes Apple's own kernel-routable tunnel with no sudo (the
+  native path is the macOS default) — prefer it over the privileged options below when another
+  process just needs an `--rsd HOST PORT` address. `remote browse` likewise lists the devices
+  `remotepairingd` sees with no root on macOS. `--no-native` (or any classic-tunnel option, e.g.
+  `-t wifi`) routes `start-tunnel` to the classic root tunnel.
 - Privileged options: an already-running `tunneld`, or a one-off
   `lockdown start-tunnel` (iOS 17.4+) / `remote start-tunnel` (iOS 17.0-17.3.1).
 - Privileged tunnel creation can require `sudo` because it creates a TUN/TAP interface.

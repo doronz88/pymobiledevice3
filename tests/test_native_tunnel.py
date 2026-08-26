@@ -1,6 +1,8 @@
+import ctypes
+import platform
 import socket
 import struct
-from typing import Optional
+from typing import Any, Optional, cast
 
 import pytest
 
@@ -48,6 +50,116 @@ def test_parse_tcp_pcbs_stops_on_truncated_record() -> None:
     # keep the already-parsed connection and stop rather than read out of bounds.
     truncated = full[:-8] + struct.pack("<II", 4096, native_tunnel._XSO_INPCB)
     assert native_tunnel.parse_tcp_pcbs(truncated) == [(4321, native_tunnel._INP_IPV6, addr, 50881)]
+
+
+@pytest.mark.skipif(platform.system() != "Darwin", reason="libxpc is macOS-only")
+def test_xpc_to_python_converts_nested_objects() -> None:
+    xpc = native_tunnel._libxpc()
+    lib = xpc._lib
+    vp = ctypes.c_void_p
+
+    def bind(name: str, argtypes: list[Any]) -> Any:
+        fn = getattr(lib, name)
+        fn.restype = vp
+        fn.argtypes = argtypes
+        return fn
+
+    string_create = bind("xpc_string_create", [ctypes.c_char_p])
+    data_create = bind("xpc_data_create", [ctypes.c_char_p, ctypes.c_size_t])
+    uuid_create = bind("xpc_uuid_create", [ctypes.c_char_p])
+    fd_create = bind("xpc_fd_create", [ctypes.c_int])
+    array_create = bind("xpc_array_create", [vp, ctypes.c_size_t])
+    array_append = lib.xpc_array_append_value
+    array_append.restype = None
+    array_append.argtypes = [vp, vp]
+
+    root = xpc.dictionary_create(None, None, 0)
+    xpc.dictionary_set_string(root, b"udid", b"00008120-000000000000001E")
+    xpc.dictionary_set_int64(root, b"answer", -42)
+    xpc.dictionary_set_bool(root, b"paired", True)
+    xpc.dictionary_set_value(root, b"blob", data_create(b"\x00\x01\x02", 3))
+    xpc.dictionary_set_value(root, b"identifier", uuid_create(b"\x01" * 16))
+    xpc.dictionary_set_value(root, b"endpoint", fd_create(0))  # no data representation -> placeholder
+
+    array = array_create(None, 0)
+    array_append(array, string_create(b"first"))
+    array_append(array, string_create(b"second"))
+    xpc.dictionary_set_value(root, b"names", array)
+
+    nested = xpc.dictionary_create(None, None, 0)
+    xpc.dictionary_set_string(nested, b"inner", b"value")
+    xpc.dictionary_set_value(root, b"info", nested)
+
+    assert native_tunnel.xpc_to_python(xpc, root) == {
+        "udid": "00008120-000000000000001E",
+        "answer": -42,
+        "paired": True,
+        "blob": b"\x00\x01\x02",
+        "identifier": "01010101-0101-0101-0101-010101010101",
+        "endpoint": "<fd>",
+        "names": ["first", "second"],
+        "info": {"inner": "value"},
+    }
+
+
+def test_xpc_to_python_null_pointer_is_none() -> None:
+    if platform.system() != "Darwin":
+        pytest.skip("libxpc is macOS-only")
+    assert native_tunnel.xpc_to_python(native_tunnel._libxpc(), 0) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scans", [[[51011], [51013]], [[], [51013]]])
+async def test_aopen_retries_handshake_with_fresh_port_scan(
+    monkeypatch: pytest.MonkeyPatch, scans: list[list[int]]
+) -> None:
+    """Right after tunnel establishment the device may reset the initial RSD connection ("Device
+    must renegotiate TLS") and remoted transparently redials — onto a NEW device port. aopen must
+    re-scan and retry instead of failing on the first RST (or on a scan that ran before remoted
+    connected at all)."""
+    scan_iter = iter(scans)
+    scan_count = 0
+
+    class FakeSession:
+        def __init__(self, xpc: object) -> None:
+            pass
+
+        def browse(self, serial: Optional[str]) -> None:
+            pass
+
+        def open_tunnel(self) -> str:
+            return "fdcd:5fb2:b94b::1"
+
+        def close(self) -> None:
+            pass
+
+    class FakeRsd:
+        def __init__(self, address: tuple[str, int]) -> None:
+            self.address = address
+
+        async def connect(self) -> None:
+            if self.address[1] == 51011:
+                raise ConnectionError("RST_STREAM error_code=5")
+
+        async def close(self) -> None:
+            pass
+
+    def fake_find_rsd_port(xpc: object, tunnel_ip: str) -> list[int]:
+        nonlocal scan_count
+        scan_count += 1
+        return next(scan_iter)
+
+    monkeypatch.setattr(native_tunnel, "_libxpc", lambda: object())
+    monkeypatch.setattr(native_tunnel, "_RemotePairingSession", FakeSession)
+    monkeypatch.setattr(native_tunnel, "find_rsd_port", fake_find_rsd_port)
+    monkeypatch.setattr(native_tunnel, "RemoteServiceDiscoveryService", FakeRsd)
+    monkeypatch.setattr(native_tunnel, "_RSD_CONNECT_RETRY_DELAY", 0, raising=False)
+
+    tunnel = native_tunnel.NativeRemotedTunnel()
+    rsd = cast(Any, await tunnel.aopen())
+    assert rsd.address == ("fdcd:5fb2:b94b::1", 51013)
+    assert scan_count == 2
+    await tunnel.aclose()
 
 
 def test_libxpc_requires_darwin(monkeypatch: pytest.MonkeyPatch) -> None:
