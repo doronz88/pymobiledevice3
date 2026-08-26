@@ -262,3 +262,37 @@ How it works (all via `ctypes` + libxpc, no pyobjc):
   is USB-bound and on par with the userspace tunnel (~36 MB/s both), while host->device is ~1.8x
   faster (~36 vs ~20 MB/s — the userspace stack keeps its send segments deliberately small) and
   per-request latency is ~1.6x lower (~8 vs ~13 ms). All with no root.
+
+## Device auxiliary metadata (`RemoteServiceDiscoveryService.auxiliary_metadata`)
+
+Alongside the tunnel, the pairing layer carries the device's **`deviceKVSData`** — a binary-plist
+key-value store keyed by preference domain (e.g. `com.apple.WebInspector`,
+`com.apple.mobile.wireless_lockdown`), plus a `NULL` bucket of loose device properties. It is
+**not** part of the RSD handshake (`peer_info`); it rides the RemotePairing handshake / the host
+`remotepairingd`. When the transport that built the RSD had it, it is decoded onto
+`RemoteServiceDiscoveryService.auxiliary_metadata` (`{domain: {key: value}}`), with
+`get_auxiliary_metadata(domain)` and a typed
+`is_remote_web_inspector_enabled()` (whether Safari/WebKit remote inspection is enabled — no
+service is opened) reading from it.
+
+Availability differs by transport, because only some perform a metadata-carrying pairing handshake:
+
+- **Native (macOS default):** the host `remotepairingd` exposes its *merged, persisted* KVS, which
+  reliably includes `com.apple.WebInspector`. `is_remote_web_inspector_enabled()` returns a real
+  `True`/`False` here.
+- **`tunneld` / RemotePairing-over-bonjour:** the RemotePairing handshake carries the device's
+  **base** KVS. A fresh handshake omits lazily-registered domains like `com.apple.WebInspector`, so
+  `is_remote_web_inspector_enabled()` is typically `None` (unknown).
+- **Userspace no-root default (CoreDeviceProxy, iOS 17.4+):** the tunnel is established without a
+  pair-verify handshake, so no `deviceKVSData` is exchanged — `auxiliary_metadata` is empty and the
+  helper returns `None`.
+
+`None` means *unknown on this transport*, not *disabled*. Use `--native` on macOS when you need a
+definitive Web Inspector answer.
+
+From the CLI, `pymobiledevice3 remote auxiliary-metadata` prints the whole decoded map as JSON (it
+uses the same transport selection as `rsd-info`, so it defaults to `--native` on macOS):
+
+```shell
+pymobiledevice3 remote auxiliary-metadata | jq '.["com.apple.WebInspector"].EnableRemoteInspection'
+```

@@ -87,7 +87,7 @@ from pymobiledevice3.pair_records import (
 )
 from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.remote_service import RemoteService
-from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService, parse_device_kvs_data
 from pymobiledevice3.remote.siphash import compute_auth_tag
 from pymobiledevice3.remote.utils import get_rsds, resume_remoted_if_required, stop_remoted_if_required
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
@@ -533,6 +533,10 @@ class RemotePairingTcpTunnel(RemotePairingTunnel):
                 await self._writer.wait_closed()
 
 
+def _empty_auxiliary_metadata() -> dict[str, dict[str, Any]]:
+    return {}
+
+
 @dataclasses.dataclass
 class TunnelResult:
     interface: str
@@ -540,6 +544,9 @@ class TunnelResult:
     port: int
     protocol: TunnelProtocol
     client: RemotePairingTunnel
+    # Device auxiliary metadata (decoded ``deviceKVSData``) from the pairing handshake, when the
+    # establishing service performed one (empty for the CoreDeviceProxy path, which does not).
+    auxiliary_metadata: dict[str, dict[str, Any]] = dataclasses.field(default_factory=_empty_auxiliary_metadata)
 
 
 class StartTcpTunnel(ABC):
@@ -690,6 +697,7 @@ class RemotePairingProtocol(StartTcpTunnel):
                         handshake_response["serverRSDPort"],
                         TunnelProtocol.QUIC,
                         client,
+                        self.auxiliary_metadata,
                     )
                 finally:
                     await client.stop_tunnel()
@@ -758,6 +766,7 @@ class RemotePairingProtocol(StartTcpTunnel):
                 handshake_response["serverRSDPort"],
                 TunnelProtocol.TCP,
                 tunnel,
+                self.auxiliary_metadata,
             )
         finally:
             await tunnel.stop_tunnel()
@@ -787,6 +796,13 @@ class RemotePairingProtocol(StartTcpTunnel):
     def remote_device_model(self) -> str:
         assert self.handshake_info is not None
         return self.handshake_info["peerDeviceInfo"]["model"]
+
+    @property
+    def auxiliary_metadata(self) -> dict[str, dict[str, Any]]:
+        """Decoded ``deviceKVSData`` from the handshake, or ``{}`` before the handshake completed."""
+        if self.handshake_info is None:
+            return {}
+        return parse_device_kvs_data(self.handshake_info.get("peerDeviceInfo", {}).get("deviceKVSData"))
 
     @property
     def pair_record_path(self) -> Path:

@@ -32,7 +32,7 @@ import uuid
 from typing import Any, Callable, Optional, cast
 
 from pymobiledevice3.exceptions import UserspaceTunnelUnavailableError
-from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService, parse_device_kvs_data
 
 _IS_DARWIN = platform.system() == "Darwin"
 
@@ -114,6 +114,9 @@ class _LibXpc:
         self.dictionary_get_value: Callable[..., int] = self._cfg("xpc_dictionary_get_value", vp, [vp, cp])
         self.dictionary_get_string: Callable[..., bytes] = self._cfg("xpc_dictionary_get_string", cp, [vp, cp])
         self.dictionary_get_int64: Callable[..., int] = self._cfg("xpc_dictionary_get_int64", ctypes.c_int64, [vp, cp])
+        self.dictionary_get_data: Callable[..., Optional[int]] = self._cfg(
+            "xpc_dictionary_get_data", vp, [vp, cp, ctypes.POINTER(ctypes.c_size_t)]
+        )
         self.retain: Callable[..., int] = self._cfg("xpc_retain", vp, [vp])
         self.release: Callable[..., None] = self._cfg("xpc_release", None, [vp])
         self.copy_description: Callable[..., bytes] = self._cfg("xpc_copy_description", cp, [vp])
@@ -194,6 +197,14 @@ class _LibXpc:
         )
         self._block_keepalive.extend([trampoline, descriptor, block])
         return ctypes.cast(ctypes.byref(block), ctypes.c_void_p)
+
+    def get_data_bytes(self, dictionary: int, key: bytes) -> Optional[bytes]:
+        """Copy the raw bytes of an xpc ``data`` value, or ``None`` if the key is absent/empty."""
+        length = ctypes.c_size_t(0)
+        ptr = self.dictionary_get_data(dictionary, key, ctypes.byref(length))
+        if not ptr or length.value == 0:
+            return None
+        return ctypes.string_at(ptr, length.value)
 
 
 _libxpc_singleton: Optional[_LibXpc] = None
@@ -297,6 +308,9 @@ class _RemotePairingSession:
         self._device_conn: Optional[int] = None
         self._assertion_id: Optional[int] = None  # retained xpc uuid object
         self.tunnel_ip: Optional[str] = None
+        # Device auxiliary metadata (decoded ``deviceKVSData``) captured from the browse ``deviceInfo``.
+        # remotepairingd's merged KVS reliably carries domains like ``com.apple.WebInspector`` here.
+        self.auxiliary_metadata: dict[str, dict[str, Any]] = {}
 
     def _request(self, conn: int, mangled_type_name: bytes, body_setup: Callable[[int], None]) -> int:
         """Send ``{mangledTypeName, value}`` and block for the reply. Returns the (retained) reply."""
@@ -345,6 +359,7 @@ class _RemotePairingSession:
                 return
             endpoint = xpc.dictionary_get_value(info, b"endpoint")
             if endpoint and not found.is_set():
+                self.auxiliary_metadata = parse_device_kvs_data(xpc.get_data_bytes(info, b"deviceKVSData"))
                 xpc.retain(endpoint)
                 endpoint_holder.append(endpoint)
                 found.set()
@@ -588,7 +603,7 @@ class NativeRemotedTunnel:
         session = _RemotePairingSession(xpc)
         try:
             tunnel_ip = await asyncio.to_thread(self._establish, session)
-            rsd = await self._connect_rsd(xpc, tunnel_ip)
+            rsd = await self._connect_rsd(xpc, tunnel_ip, session.auxiliary_metadata)
         except BaseException:
             await asyncio.to_thread(session.close)
             raise
@@ -600,7 +615,9 @@ class NativeRemotedTunnel:
         session.browse(self.serial)
         return session.open_tunnel()
 
-    async def _connect_rsd(self, xpc: _LibXpc, tunnel_ip: str) -> RemoteServiceDiscoveryService:
+    async def _connect_rsd(
+        self, xpc: _LibXpc, tunnel_ip: str, auxiliary_metadata: Optional[dict[str, dict[str, Any]]] = None
+    ) -> RemoteServiceDiscoveryService:
         # Right after the tunnel comes up the device may reset the just-established RSD connection
         # ("Device must renegotiate TLS" in remoted's log) and remoted transparently redials -- onto
         # a NEW device port. Apple's own client treats that reset as routine, so retry here too, and
@@ -611,7 +628,7 @@ class NativeRemotedTunnel:
             if attempt:
                 await asyncio.sleep(_RSD_CONNECT_RETRY_DELAY)
             for port in await asyncio.to_thread(find_rsd_port, xpc, tunnel_ip):
-                rsd = RemoteServiceDiscoveryService((tunnel_ip, port))
+                rsd = RemoteServiceDiscoveryService((tunnel_ip, port), auxiliary_metadata=auxiliary_metadata)
                 try:
                     await rsd.connect()
                 except Exception as e:  # try the next candidate port
