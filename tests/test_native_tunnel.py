@@ -365,27 +365,27 @@ class _FakeXpcForTargeting:
 
 def test_native_target_uid_is_none_when_unprivileged(monkeypatch: pytest.MonkeyPatch) -> None:
     # xpc_connection_set_target_uid traps for a non-root caller, so it must never be reached.
-    monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 501)
+    monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 501, raising=False)
     monkeypatch.setenv(native_tunnel.NATIVE_TARGET_UID_ENV_VAR, "501")
     assert native_tunnel.native_target_uid() is None
 
 
 def test_native_target_uid_env_var_wins_over_console_user(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 0, raising=False)
     monkeypatch.setattr(native_tunnel, "_console_user_uid", lambda: 501)
     monkeypatch.setenv(native_tunnel.NATIVE_TARGET_UID_ENV_VAR, " 502 ")
     assert native_tunnel.native_target_uid() == 502
 
 
 def test_native_target_uid_invalid_env_falls_back_to_console_user(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 0, raising=False)
     monkeypatch.setattr(native_tunnel, "_console_user_uid", lambda: 501)
     monkeypatch.setenv(native_tunnel.NATIVE_TARGET_UID_ENV_VAR, "not-a-uid")
     assert native_tunnel.native_target_uid() == 501
 
 
 def test_native_target_uid_none_without_console_user(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 0, raising=False)
     monkeypatch.delenv(native_tunnel.NATIVE_TARGET_UID_ENV_VAR, raising=False)
     monkeypatch.setattr(native_tunnel, "_console_user_uid", lambda: None)
     assert native_tunnel.native_target_uid() is None

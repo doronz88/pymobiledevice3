@@ -311,6 +311,16 @@ def _console_user_uid() -> Optional[int]:
     return uid or None
 
 
+def _is_root() -> bool:
+    """Whether we are running with effective uid 0.
+
+    ``os.geteuid`` is POSIX-only and absent on Windows, where importing this module is still legal
+    even though its tunnel is macOS-only -- so probe for it rather than calling it blind.
+    """
+    geteuid = getattr(os, "geteuid", None)
+    return geteuid is not None and geteuid() == 0
+
+
 def native_target_uid() -> Optional[int]:
     """uid whose launchd domain should be searched for ``remotepairingd``, or ``None`` for our own.
 
@@ -318,7 +328,7 @@ def native_target_uid() -> Optional[int]:
     the domain that holds the daemon. ``PYMOBILEDEVICE3_NATIVE_TARGET_UID`` wins when set, otherwise
     the console user is assumed to be the one holding the pairing.
     """
-    if os.geteuid() != 0:
+    if not _is_root():
         # xpc_connection_set_target_uid traps (SIGTRAP) when a non-root caller invokes it.
         return None
     value = os.getenv(NATIVE_TARGET_UID_ENV_VAR)
@@ -449,7 +459,7 @@ class _RemotePairingSession:
 
         if not found.wait(self._REPLY_TIMEOUT):
             hint = f" matching udid {serial}" if serial is not None else ""
-            if os.geteuid() == 0 and native_target_uid() is None:
+            if _is_root() and native_target_uid() is None:
                 hint += (
                     f"; running as root with no console user -- {REMOTEPAIRING_MACH_SERVICE} is registered "
                     f"per-user, so set {NATIVE_TARGET_UID_ENV_VAR} to the uid of the logged-in user "
