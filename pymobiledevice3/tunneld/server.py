@@ -572,6 +572,7 @@ class TunneldRunner:
                     "tunnel-address": active_tunnel.tunnel.address,
                     "tunnel-port": active_tunnel.tunnel.port,
                     "interface": ip,
+                    "auxiliary-metadata": active_tunnel.tunnel.auxiliary_metadata,
                 })
 
             upstream_urls = list(self._tunneld_core.upstream_urls)
@@ -663,6 +664,7 @@ class TunneldRunner:
                     "interface": udid_tunnels[0].interface,
                     "port": udid_tunnels[0].port,
                     "address": udid_tunnels[0].address,
+                    "auxiliary-metadata": udid_tunnels[0].auxiliary_metadata,
                 }
                 return generate_http_response(data)
 
@@ -733,7 +735,12 @@ class TunneldRunner:
 
             tunnel: Optional[TunnelResult] = await queue.get()
             if tunnel is not None:
-                data: dict[str, Any] = {"interface": tunnel.interface, "port": tunnel.port, "address": tunnel.address}
+                data: dict[str, Any] = {
+                    "interface": tunnel.interface,
+                    "port": tunnel.port,
+                    "address": tunnel.address,
+                    "auxiliary-metadata": tunnel.auxiliary_metadata,
+                }
                 return generate_http_response(data)
             else:
                 return fastapi.Response(

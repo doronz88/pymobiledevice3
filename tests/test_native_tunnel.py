@@ -122,7 +122,7 @@ async def test_aopen_retries_handshake_with_fresh_port_scan(
 
     class FakeSession:
         def __init__(self, xpc: object) -> None:
-            pass
+            self.auxiliary_metadata: dict[str, dict[str, object]] = {}
 
         def browse(self, serial: Optional[str]) -> None:
             pass
@@ -134,8 +134,9 @@ async def test_aopen_retries_handshake_with_fresh_port_scan(
             pass
 
     class FakeRsd:
-        def __init__(self, address: tuple[str, int]) -> None:
+        def __init__(self, address: tuple[str, int], auxiliary_metadata: object = None) -> None:
             self.address = address
+            self.auxiliary_metadata = auxiliary_metadata
 
         async def connect(self) -> None:
             if self.address[1] == 51011:

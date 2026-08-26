@@ -91,7 +91,9 @@ async def _create_rsds_from_tunnels(tunnels: dict[str, list[dict[str, Any]]]) ->
     for _udid, details in tunnels.items():
         for tunnel_details in details:
             rsd = RemoteServiceDiscoveryService(
-                (tunnel_details["tunnel-address"], tunnel_details["tunnel-port"]), name=tunnel_details["interface"]
+                (tunnel_details["tunnel-address"], tunnel_details["tunnel-port"]),
+                name=tunnel_details["interface"],
+                auxiliary_metadata=tunnel_details.get("auxiliary-metadata"),
             )
             try:
                 await rsd.connect()

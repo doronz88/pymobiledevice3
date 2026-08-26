@@ -1,5 +1,6 @@
 import base64
 import logging
+import plistlib
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
@@ -34,6 +35,46 @@ class RSDDevice:
 # from remoted ([RSDRemoteNCMDeviceDevice createPortListener])
 RSD_PORT = 58783
 
+logger = logging.getLogger(__name__)
+
+# Auxiliary metadata domain/key that `webinspectord` registers with the pairing daemon to advertise
+# whether Safari/WebKit remote inspection ("Web Inspector") is enabled (see
+# `-[RWIWebinspectordRelayDelegateIOS relay:remoteInspectionEnablementDidChange:]`).
+WEBINSPECTOR_METADATA_DOMAIN = "com.apple.WebInspector"
+WEBINSPECTOR_ENABLE_REMOTE_INSPECTION_KEY = "EnableRemoteInspection"
+
+
+def parse_device_kvs_data(raw: Optional[Union[bytes, str]]) -> dict[str, dict[str, Any]]:
+    """Decode a device's ``deviceKVSData`` blob into a ``{domain: {key: value}}`` mapping.
+
+    ``deviceKVSData`` is the binary-plist key-value store the device advertises to a paired host: a
+    dictionary keyed by preference domain (e.g. ``com.apple.WebInspector``), plus a ``NULL`` bucket
+    holding loose device properties. It reaches us either as raw bytes (the native ``remotepairingd``
+    XPC ``deviceInfo``) or as a base64 string (the userspace/tunneld RemotePairing handshake
+    ``peerDeviceInfo``); both are accepted.
+
+    Returns an empty mapping for missing/undecodable input rather than raising, since the metadata is
+    advisory and absence is a valid state (a fresh device handshake only reports the domains that
+    have registered so far).
+    """
+    if raw is None:
+        return {}
+    if isinstance(raw, str):
+        try:
+            raw = base64.b64decode(raw)
+        except (ValueError, TypeError):
+            logger.debug("deviceKVSData is not valid base64; ignoring")
+            return {}
+    try:
+        decoded = plistlib.loads(raw)
+    except Exception:
+        logger.debug("deviceKVSData is not a valid plist; ignoring")
+        return {}
+    if not isinstance(decoded, dict):
+        logger.debug("deviceKVSData decoded to %s, expected dict; ignoring", type(decoded).__name__)
+        return {}
+    return cast(dict[str, dict[str, Any]], decoded)
+
 
 class RemoteServiceDiscoveryService(LockdownServiceProvider):
     """
@@ -58,7 +99,11 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     """
 
     def __init__(
-        self, address: tuple[str, int], name: Optional[str] = None, open_connection: Optional[Callable[..., Any]] = None
+        self,
+        address: tuple[str, int],
+        name: Optional[str] = None,
+        open_connection: Optional[Callable[..., Any]] = None,
+        auxiliary_metadata: Optional[dict[str, dict[str, Any]]] = None,
     ) -> None:
         """
         :param address: ``(host, port)`` of the RSD endpoint to connect to.
@@ -67,9 +112,20 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             RemoteXPC handshake and every service connection opened through this RSD. ``None`` uses
             the stdlib dialer; the userspace tunnel injects a relay dialer so device-bound
             connections route through its in-process stack.
+        :param auxiliary_metadata: decoded device ``deviceKVSData`` (``{domain: {key: value}}``), when
+            the transport that built this RSD had it. The pairing handshake carries it, but the RSD
+            handshake does not, so paths without a pairing handshake leave it empty. See
+            `parse_device_kvs_data` and `auxiliary_metadata`.
         """
         super().__init__()
         self.name = name
+        # Device-advertised auxiliary metadata keyed by preference domain, e.g.
+        # ``{"com.apple.WebInspector": {"EnableRemoteInspection": False}}``. Only the pairing
+        # handshake (native ``remotepairingd`` / userspace / tunneld) supplies this; the plain RSD
+        # handshake does not, so it is ``{}`` on those paths. See `is_remote_web_inspector_enabled`.
+        self.auxiliary_metadata: dict[str, dict[str, Any]] = (
+            auxiliary_metadata if auxiliary_metadata is not None else {}
+        )
         # ``asyncio.open_connection``-compatible dialer used for the RemoteXPC handshake and every
         # service connection opened through this RSD (read by callers such as FileServiceService).
         # ``None`` => stdlib ``asyncio.open_connection``; the userspace tunnel injects a relay dialer
@@ -87,6 +143,24 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         is then only reachable from THIS process, so it must not be handed to external tools such as
         lldb as a connect endpoint."""
         return self.open_connection is not None
+
+    def get_auxiliary_metadata(self, domain: str) -> dict[str, Any]:
+        """Return the device-advertised auxiliary metadata for ``domain`` (empty dict if absent).
+
+        See `auxiliary_metadata` for how this is populated and why it may be empty.
+        """
+        return self.auxiliary_metadata.get(domain, {})
+
+    def is_remote_web_inspector_enabled(self) -> Optional[bool]:
+        """Whether Safari/WebKit remote inspection ("Web Inspector") is enabled on the device.
+
+        Read from the device-advertised auxiliary metadata (no service is opened). Returns ``None``
+        when the device did not advertise the ``com.apple.WebInspector`` domain: reliably present on
+        the native (macOS ``remotepairingd``) path, but a fresh userspace/tunneld handshake omits it,
+        in which case the state is unknown here.
+        """
+        value = self.get_auxiliary_metadata(WEBINSPECTOR_METADATA_DOMAIN).get(WEBINSPECTOR_ENABLE_REMOTE_INSPECTION_KEY)
+        return None if value is None else bool(value)
 
     def _require_peer_info(self) -> dict[str, Any]:
         """Return the handshake ``peer_info``, raising if the RSD has not been connected yet."""

@@ -843,7 +843,9 @@ class UserspaceRsdTunnel:
             # Inject the relay dialer into THIS rsd only (no global asyncio.open_connection patch),
             # so a library consumer's other connections in the same process stay on the stdlib default.
             rsd = RemoteServiceDiscoveryService(
-                (tunnel_result.address, tunnel_result.port), open_connection=dial_plane.dial
+                (tunnel_result.address, tunnel_result.port),
+                open_connection=dial_plane.dial,
+                auxiliary_metadata=tunnel_result.auxiliary_metadata,
             )
             stack.push_async_callback(rsd.close)
             await rsd.connect()

@@ -179,6 +179,16 @@ def rsd_info(service_provider: RSDServiceProviderDep) -> None:
     print_json(service_provider.peer_info)
 
 
+@cli.command("auxiliary-metadata")
+def auxiliary_metadata(service_provider: RSDServiceProviderDep) -> None:
+    """show device auxiliary metadata (decoded deviceKVSData), keyed by preference domain
+
+    e.g. ``com.apple.WebInspector.EnableRemoteInspection`` (Web Inspector on/off). Reliably populated
+    on the macOS ``--native`` transport; empty or partial on others (see the network-stacks guide).
+    """
+    print_json(service_provider.auxiliary_metadata)
+
+
 async def tunnel_task(
     service: Union[RemotePairingProtocol, CoreDeviceTunnelProxy],
     secrets: Optional[TextIO] = None,
