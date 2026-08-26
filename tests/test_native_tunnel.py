@@ -347,3 +347,80 @@ def test_default_transport_preference_env(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setenv("PYMOBILEDEVICE3_DEFAULT_FALLBACK", "bogus")  # invalid -> built-in default (Linux here)
     assert cli_common.default_transport_preference() == "userspace"
+
+
+class _FakeXpcForTargeting:
+    """Minimal ``_LibXpc`` stand-in recording the retargeting calls made before activation."""
+
+    def __init__(self, has_spi: bool = True) -> None:
+        self.calls: list[tuple[int, int]] = []
+        self.connection_set_target_uid: Optional[Any] = self._record if has_spi else None
+
+    def _record(self, conn: int, uid: int) -> None:
+        self.calls.append((conn, uid))
+
+    def connection_create_mach_service(self, name: bytes, queue: Optional[int], flags: int) -> int:
+        return 0xC0FFEE
+
+
+def test_native_target_uid_is_none_when_unprivileged(monkeypatch: pytest.MonkeyPatch) -> None:
+    # xpc_connection_set_target_uid traps for a non-root caller, so it must never be reached.
+    monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 501)
+    monkeypatch.setenv(native_tunnel.NATIVE_TARGET_UID_ENV_VAR, "501")
+    assert native_tunnel.native_target_uid() is None
+
+
+def test_native_target_uid_env_var_wins_over_console_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(native_tunnel, "_console_user_uid", lambda: 501)
+    monkeypatch.setenv(native_tunnel.NATIVE_TARGET_UID_ENV_VAR, " 502 ")
+    assert native_tunnel.native_target_uid() == 502
+
+
+def test_native_target_uid_invalid_env_falls_back_to_console_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(native_tunnel, "_console_user_uid", lambda: 501)
+    monkeypatch.setenv(native_tunnel.NATIVE_TARGET_UID_ENV_VAR, "not-a-uid")
+    assert native_tunnel.native_target_uid() == 501
+
+
+def test_native_target_uid_none_without_console_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 0)
+    monkeypatch.delenv(native_tunnel.NATIVE_TARGET_UID_ENV_VAR, raising=False)
+    monkeypatch.setattr(native_tunnel, "_console_user_uid", lambda: None)
+    assert native_tunnel.native_target_uid() is None
+
+
+def test_console_user_uid_reads_dev_console_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_stat = native_tunnel.os.stat
+
+    def fake_stat(path: Any, *args: Any, **kwargs: Any) -> Any:
+        if path == "/dev/console":
+            return real_stat("/dev/console" if platform.system() == "Darwin" else ".")
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(native_tunnel.os, "stat", fake_stat)
+    uid = native_tunnel._console_user_uid()
+    assert uid is None or uid > 0  # root-owned (logged out) reports None rather than uid 0
+
+
+def test_create_remotepairing_connection_retargets_when_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native_tunnel, "native_target_uid", lambda: 501)
+    xpc = _FakeXpcForTargeting()
+    conn = native_tunnel._create_remotepairing_connection(cast(Any, xpc), 0)
+    assert conn == 0xC0FFEE
+    assert xpc.calls == [(0xC0FFEE, 501)]
+
+
+def test_create_remotepairing_connection_leaves_plain_lookup_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native_tunnel, "native_target_uid", lambda: None)
+    xpc = _FakeXpcForTargeting()
+    native_tunnel._create_remotepairing_connection(cast(Any, xpc), 0)
+    assert xpc.calls == []
+
+
+def test_create_remotepairing_connection_survives_missing_spi(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A future macOS could drop the SPI the way xpc_connection_set_target_gid was dropped.
+    monkeypatch.setattr(native_tunnel, "native_target_uid", lambda: 501)
+    xpc = _FakeXpcForTargeting(has_spi=False)
+    assert native_tunnel._create_remotepairing_connection(cast(Any, xpc), 0) == 0xC0FFEE
