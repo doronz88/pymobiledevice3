@@ -366,6 +366,12 @@ def invoke_cli_with_error_handling() -> bool:
         )
     except RoutableTunnelRequiredError as e:
         logger.error(str(e))
+    except DeviceNotFoundError as e:
+        # The message names the lookup that failed (usbmux/tunneld/remotepairingd/...).
+        logger.error(str(e))
+        # Reconnectable: after a disconnect the target device may still be re-enumerating
+        # while other devices are attached, making re-invocation fail with this error.
+        return True
     except UserspaceTunnelUnavailableError as e:
         logger.error(str(e))
     except DeviceFeatureNotSupportedError as e:
@@ -423,11 +429,6 @@ def invoke_cli_with_error_handling() -> bool:
         logger.error(
             "Unable to connect to Tunneld. You can start one using:\nsudo python3 -m pymobiledevice3 remote tunneld"
         )
-    except DeviceNotFoundError as e:
-        logger.error(f"Device not found: {e.udid}")
-        # Reconnectable: after a disconnect the target device may still be re-enumerating
-        # while other devices are attached, making re-invocation fail with this error.
-        return True
     except NotEnoughDiskSpaceError:
         logger.error("Not enough disk space")
     except DeprecationError:

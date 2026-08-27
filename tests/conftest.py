@@ -132,11 +132,13 @@ async def service_provider(
                 try:
                     selected_rsd = rsds[0]
                 except IndexError as e:
-                    raise DeviceNotFoundError(tunnel_option) from e
+                    raise DeviceNotFoundError(tunnel_option, "Device not found: tunneld serves no tunnel") from e
             else:
                 selected_rsd = next((rsd for rsd in rsds if rsd.udid == tunnel_option), None)
                 if selected_rsd is None:
-                    raise DeviceNotFoundError(tunnel_option)
+                    raise DeviceNotFoundError(
+                        tunnel_option, f"Device not found: tunneld serves no tunnel for udid {tunnel_option}"
+                    )
 
             yield selected_rsd
         finally:

@@ -144,8 +144,15 @@ class InterfaceIndexNotFoundError(PyMobileDevice3Exception):
 
 
 class DeviceNotFoundError(PyMobileDevice3Exception):
-    def __init__(self, udid: Optional[str]):
-        super().__init__()
+    """A device with the requested UDID was not found by the transport that was asked for it.
+
+    Every raise site passes a message naming the lookup that failed (usbmux, tunneld,
+    remotepairingd, ...) — ``str(exc)`` is therefore self-explanatory — while ``udid`` remains a
+    dedicated member so callers can act on the target itself.
+    """
+
+    def __init__(self, udid: Optional[str], message: Optional[str] = None) -> None:
+        super().__init__(message or f"Device not found: {udid}")
         self.udid = udid
 
 

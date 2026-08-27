@@ -44,7 +44,8 @@ If the native path is unavailable on macOS it falls back automatically (userspac
 Either way you just run the command. This covers iOS 17.4+ over USB with no privileges (it uses the
 CoreDeviceProxy lockdown service); iOS 17.0-17.3.1 is handled differently — see the note below.
 Set `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native|userspace|tunneld` to change which transport the
-automatic selection prefers.
+automatic selection prefers (see [Environment variables](environment-variables.md) for every
+variable the CLI honors).
 
 !!! warning "iOS 17.0-17.3.1 uses `tunneld` by default"
     These versions predate the CoreDeviceProxy service, so the userspace tunnel can only reach them

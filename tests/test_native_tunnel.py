@@ -6,7 +6,7 @@ from typing import Any, Optional, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import UserspaceTunnelUnavailableError
+from pymobiledevice3.exceptions import DeviceNotFoundError, UserspaceTunnelUnavailableError
 from pymobiledevice3.remote import native_tunnel
 
 
@@ -161,6 +161,36 @@ async def test_aopen_retries_handshake_with_fresh_port_scan(
     assert rsd.address == ("fdcd:5fb2:b94b::1", 51013)
     assert scan_count == 2
     await tunnel.aclose()
+
+
+def test_browse_missing_device_raises_device_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A device remotepairingd does not report must surface as DeviceNotFoundError -- the same type
+    the usbmux/tunneld paths raise -- while staying a native-path (UserspaceTunnelUnavailable)
+    failure so the CLI's transport routing keeps falling back."""
+    import threading
+
+    class FakeAttempt:
+        def __init__(self, xpc: object, queue: object, on_device: object, target_uid: object, settled: Any) -> None:
+            self.conn = 0
+            self.invalid = threading.Event()
+            settled.set()  # nothing matched; settle instead of blocking on the reply timeout
+
+        def cancel(self) -> None:
+            pass
+
+    monkeypatch.setattr(native_tunnel, "_BrowseAttempt", FakeAttempt)
+    monkeypatch.setattr(native_tunnel, "_seeded_target_uid", lambda: None)
+    monkeypatch.setattr(native_tunnel, "_is_root", lambda: False)
+
+    session = cast(Any, native_tunnel._RemotePairingSession.__new__(native_tunnel._RemotePairingSession))
+    session._xpc = object()
+    session._queue = 0
+
+    with pytest.raises(DeviceNotFoundError) as exc_info:
+        session.browse("BOGUS-UDID")
+    assert exc_info.value.udid == "BOGUS-UDID"
+    assert isinstance(exc_info.value, UserspaceTunnelUnavailableError)
+    assert "BOGUS-UDID" in str(exc_info.value) and "remotepairingd" in str(exc_info.value)
 
 
 def test_libxpc_requires_darwin(monkeypatch: pytest.MonkeyPatch) -> None:

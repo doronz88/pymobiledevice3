@@ -32,7 +32,7 @@ import threading
 import uuid
 from typing import Any, Callable, Optional, cast
 
-from pymobiledevice3.exceptions import UserspaceTunnelUnavailableError
+from pymobiledevice3.exceptions import DeviceNotFoundError, UserspaceTunnelUnavailableError
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService, parse_device_kvs_data
 
 logger = logging.getLogger(__name__)
@@ -465,6 +465,18 @@ class _RemotePairingError(UserspaceTunnelUnavailableError):
     pass
 
 
+class _RemotePairingDeviceNotFoundError(_RemotePairingError, DeviceNotFoundError):
+    """``remotepairingd`` reported no matching device.
+
+    Inherits :class:`~pymobiledevice3.exceptions.DeviceNotFoundError` so callers get the same
+    exception type the usbmux/tunneld paths raise for a missing device, and ``_RemotePairingError``
+    so the CLI's native -> userspace/tunneld routing keeps treating it as a native-path failure.
+    """
+
+    def __init__(self, udid: Optional[str], message: Optional[str] = None) -> None:
+        DeviceNotFoundError.__init__(self, udid, message)
+
+
 class _RemotePairingSession:
     """Synchronous libxpc conversation with ``remotepairingd`` that owns the tunnel assertion.
 
@@ -569,7 +581,9 @@ class _RemotePairingSession:
                     f"per-user, so set {NATIVE_TARGET_UID_ENV_VAR} to the uid of the logged-in user "
                     "that owns the pairing"
                 )
-            raise _RemotePairingError(f"remotepairingd reported no device{hint}")
+            raise _RemotePairingDeviceNotFoundError(
+                serial, f"Device not found: remotepairingd reported no device{hint}"
+            )
 
         device_conn = xpc.connection_create_from_endpoint(endpoint_holder[0])
         self._device_conn = device_conn
