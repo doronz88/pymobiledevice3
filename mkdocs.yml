@@ -73,6 +73,7 @@ plugins:
         Guides:
           - guides/cli-recipes.md
           - guides/ios17-tunnels.md
+          - guides/environment-variables.md
           - guides/webview-debugging.md
           - guides/machine-readable-output.md
           - guides/python-api.md
@@ -123,6 +124,7 @@ nav:
       - Mounting AFC in Finder (WebDAV): guides/webdav-mounting.md
       - iOS 17+ tunnels: guides/ios17-tunnels.md
       - Understanding the network stacks: guides/network-stacks.md
+      - Environment variables: guides/environment-variables.md
       - WebView debugging: guides/webview-debugging.md
       - Machine-readable output: guides/machine-readable-output.md
       - Python API: guides/python-api.md
