@@ -181,7 +181,8 @@ async def lockdown_device_name(service_provider: ServiceProviderDep, new_name: O
 @cli.command("wifi-connections")
 @async_command
 async def lockdown_wifi_connections(
-    service_provider: ServiceProviderDep, state: Optional[Literal["on", "off"]] = None
+    service_provider: ServiceProviderDep,
+    state: Annotated[Optional[Literal["on", "off"]], typer.Argument()] = None,
 ) -> None:
     """get/set wifi connections state"""
     if not state:
@@ -270,7 +271,8 @@ async def cli_remotepairing(
 @cli.command("assistive-touch")
 @async_command
 async def lockdown_assistive_touch(
-    service_provider: ServiceProviderDep, state: Optional[Literal["on", "off"]] = None
+    service_provider: ServiceProviderDep,
+    state: Annotated[Optional[Literal["on", "off"]], typer.Argument()] = None,
 ) -> None:
     """get/set assistive touch icon state (visibility)"""
     if not state:
