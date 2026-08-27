@@ -346,3 +346,16 @@ def test_service_provider_dependency_records_resolved_udid(monkeypatch):
 
     assert provider is not None
     assert cli_common.resolved_udid() == "RESOLVED-UDID"
+
+
+@pytest.mark.parametrize("command", ["wifi-connections", "assistive-touch"])
+def test_lockdown_on_off_state_is_a_positional_argument(command):
+    """Regression: the Typer migration turned these `on`/`off` arguments into a `--state` option."""
+    runner = CliRunner()
+    result = runner.invoke(__main__.app, ["lockdown", command, "--help"])
+
+    assert result.exit_code == 0
+    # Rich interleaves ANSI codes inside option names and wraps text in panel borders
+    output = " ".join(ANSI_ESCAPE.sub("", result.output).replace("│", " ").split())
+    assert "Arguments" in output
+    assert "--state" not in output
