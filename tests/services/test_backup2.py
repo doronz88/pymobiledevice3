@@ -1,3 +1,4 @@
+import ctypes
 import sqlite3
 import struct
 import time
@@ -15,7 +16,11 @@ from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
 )
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.device_link import DeviceLink
+from pymobiledevice3.services.device_link import (
+    PURGE_DISK_SPACE_ERROR,
+    PURGE_DISK_SPACE_ERROR_STRING,
+    DeviceLink,
+)
 from pymobiledevice3.services.mobilebackup2 import (
     BACKUP_OBSERVED_NOTIFICATIONS,
     BACKUP_SELECTIONS,
@@ -316,6 +321,37 @@ def test_prune_backup_directory_keeps_hashed_backup_file_layout(tmp_path: Path) 
 
     assert keep_path.exists()
     assert not drop_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_device_link_purge_disk_space_answers_instead_of_aborting(tmp_path: Path) -> None:
+    """A purge request is answered like Apple's host does, not turned into a fatal error."""
+    service = AsyncMock()
+    device_link = DeviceLink(service, tmp_path)
+
+    await device_link.purge_disk_space(["DLMessagePurgeDiskSpace", 42 * 1024, 1])
+
+    service.send_plist.assert_awaited_once_with([
+        "DLMessageStatusResponse",
+        ctypes.c_uint64(PURGE_DISK_SPACE_ERROR).value,
+        PURGE_DISK_SPACE_ERROR_STRING,
+        0,
+    ])
+
+
+@pytest.mark.asyncio
+async def test_device_link_dl_loop_survives_purge_disk_space(tmp_path: Path) -> None:
+    """The device gets to report its own outcome after a purge request."""
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(
+        side_effect=[
+            ["DLMessagePurgeDiskSpace", 42 * 1024, 1],
+            ["DLMessageProcessMessage", {"ErrorCode": 0, "Content": "done"}],
+        ]
+    )
+    device_link = DeviceLink(service, tmp_path)
+
+    assert await device_link.dl_loop() == "done"
 
 
 @pytest.mark.asyncio
