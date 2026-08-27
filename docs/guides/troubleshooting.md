@@ -161,11 +161,20 @@ password: pass `--password` to `backup2` subcommands. A
 `--patch-manifest` on an encrypted backup — that also requires `--password`, so the manifest
 can be decrypted and re-encrypted.
 
-### "Not enough disk space" (`NotEnoughDiskSpaceError`)
+### "device asked the host to free N bytes"
 
-The host doesn't have room for the backup. Note that the first filtered backup still transfers
-*all* backup bytes from the device (filtering saves disk, not transfer) — budget space
-accordingly or free some up.
+The device decided the backup destination is too small and asked the host to make room
+(`DLMessagePurgeDiskSpace`). pymobiledevice3 has no way to reclaim space on your behalf, so it
+answers "failed to purge" — exactly like Apple's own host does when its purge fails — and lets
+the device report what it wants to do next.
+
+Free up at least the requested number of bytes and retry. Note that the first filtered backup
+still transfers *all* backup bytes from the device (filtering saves disk, not transfer) — budget
+space accordingly.
+
+Run with `-vv` to also see the figure the host reported for `DLMessageGetFreeDiskSpace`; that is
+the number the device compared against, and it comes from `statvfs` on the backup directory (on
+macOS, raised to the purgeable-aware capacity Finder uses).
 
 ## Still stuck?
 

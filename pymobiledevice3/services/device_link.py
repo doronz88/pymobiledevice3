@@ -1,6 +1,7 @@
 import ctypes
 import ctypes.util
 import datetime
+import logging
 import shutil
 import struct
 import sys
@@ -10,7 +11,7 @@ from io import BufferedWriter
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
 
-from pymobiledevice3.exceptions import NotEnoughDiskSpaceError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.service_connection import ServiceConnection
 
 SIZE_FORMAT = ">I"
@@ -21,6 +22,8 @@ CODE_ERROR_LOCAL = 0x6
 CODE_SUCCESS = 0
 FILE_TRANSFER_TERMINATOR = b"\x00\x00\x00\x00"
 BULK_OPERATION_ERROR = -13
+PURGE_DISK_SPACE_ERROR = -1
+PURGE_DISK_SPACE_ERROR_STRING = "DLPurgeDiskSpace failed to purge"
 APPLE_EPOCH = 978307200
 ERRNO_TO_DEVICE_ERROR = {
     2: -6,
@@ -35,6 +38,8 @@ ERRNO_TO_DEVICE_ERROR = {
 DLMessage = Sequence[Any]
 ProgressCallback = Callable[[Any], None]
 DLHandler = Callable[[DLMessage], Awaitable[None]]
+
+logger = logging.getLogger(__name__)
 
 
 def _darwin_important_available_capacity(path: Path) -> Optional[int]:
@@ -291,6 +296,7 @@ class DeviceLink:
             important = _darwin_important_available_capacity(self.root_path)
             if important is not None:
                 freespace = max(freespace, important)
+        logger.debug("reporting %d bytes free at %s", freespace, self.root_path)
         await self.status_response(0, status_dict=freespace)
 
     async def move_items(self, message: DLMessage) -> None:
@@ -325,8 +331,30 @@ class DeviceLink:
             self.post_file_receive(cast(str, message[2]), cast(str, message[1]))
         await self.status_response(0)
 
-    async def purge_disk_space(self, _message: DLMessage) -> None:
-        raise NotEnoughDiskSpaceError()
+    async def purge_disk_space(self, message: DLMessage) -> None:
+        """Answer the device's request that the host free up disk space.
+
+        ``DLMessagePurgeDiskSpace`` is a request, not a fatal error. Apple's own host
+        (``_DLPurgeDiskSpaceOnComputer`` in ``DeviceLink.framework``) builds a dictionary of
+        ``CACHE_DELETE_VOLUME`` (the backup root), ``CACHE_DELETE_AMOUNT`` (``message[1]``, the
+        bytes the device wants freed) and ``CACHE_DELETE_URGENCY_LIMIT`` (``message[2]``), hands
+        it to ``CacheDeletePurgeSpaceWithInfo()``, then replies with a ``DLMessageStatusResponse``
+        and keeps serving the connection either way.
+
+        There is no portable CacheDelete equivalent, so mirror Apple's purge-failed path
+        (status -1, "DLPurgeDiskSpace failed to purge", zero bytes reclaimed) and let the device
+        decide how to continue. Tearing the link down here instead hid the device's own diagnosis
+        behind a guessed "not enough disk space" (issue #1879).
+        """
+        amount = message[1] if len(message) > 1 else None
+        urgency = message[2] if len(message) > 2 else None
+        logger.warning(
+            "device asked the host to free %s bytes under %s at %s; no purge backend available",
+            amount,
+            urgency,
+            self.root_path,
+        )
+        await self.status_response(PURGE_DISK_SPACE_ERROR, PURGE_DISK_SPACE_ERROR_STRING, status_dict=0)
 
     async def remove_items(self, message: DLMessage) -> None:
         for path in cast(Iterable[str], message[1]):

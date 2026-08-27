@@ -60,7 +60,6 @@ from pymobiledevice3.exceptions import (
     MessageNotSupportedError,
     MissingValueError,
     NoDeviceConnectedError,
-    NotEnoughDiskSpaceError,
     NotPairedError,
     OSNotSupportedError,
     PairingDialogResponsePendingError,
@@ -429,8 +428,6 @@ def invoke_cli_with_error_handling() -> bool:
         logger.error(
             "Unable to connect to Tunneld. You can start one using:\nsudo python3 -m pymobiledevice3 remote tunneld"
         )
-    except NotEnoughDiskSpaceError:
-        logger.error("Not enough disk space")
     except DeprecationError:
         logger.error("failed to query MobileGestalt, MobileGestalt deprecated (iOS >= 17.4).")
     except CryptexdError as e:
