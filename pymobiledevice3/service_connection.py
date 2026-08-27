@@ -189,7 +189,8 @@ class ServiceConnection:
         target_device = await select_device(udid, connection_type=connection_type, usbmux_address=usbmux_address)
         if target_device is None:
             if udid:
-                raise DeviceNotFoundError(udid)
+                over = f" over {connection_type}" if connection_type else ""
+                raise DeviceNotFoundError(udid, f"Device not found: usbmux has no device matching udid {udid}{over}")
             raise NoDeviceConnectedError()
         sock = await target_device.connect(port, usbmux_address=usbmux_address)
         return ServiceConnection(sock, mux_device=target_device)

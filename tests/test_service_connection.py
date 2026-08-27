@@ -5,7 +5,7 @@ from typing import cast
 
 import pytest
 
-from pymobiledevice3.exceptions import ConnectionTerminatedError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, DeviceNotFoundError
 from pymobiledevice3.service_connection import ServiceConnection
 
 
@@ -27,6 +27,30 @@ class _FakeWriter:
 
     async def wait_closed(self) -> None:
         await asyncio.Future()
+
+
+@pytest.mark.asyncio
+async def test_create_using_usbmux_missing_device_explains_the_failed_lookup(monkeypatch):
+    """DeviceNotFoundError must carry a message naming the lookup that failed, on top of the
+    machine-readable `udid` member."""
+
+    async def no_device(udid, connection_type=None, usbmux_address=None):
+        return None
+
+    monkeypatch.setattr("pymobiledevice3.service_connection.select_device", no_device)
+
+    with pytest.raises(DeviceNotFoundError) as exc_info:
+        await ServiceConnection.create_using_usbmux("TARGET-UDID", 62078, connection_type="USB")
+
+    assert exc_info.value.udid == "TARGET-UDID"
+    assert str(exc_info.value) == "Device not found: usbmux has no device matching udid TARGET-UDID over USB"
+
+
+def test_device_not_found_error_defaults_to_a_message() -> None:
+    """A raise site that passes only the udid still yields a self-explanatory `str(exc)`."""
+    error = DeviceNotFoundError("TARGET-UDID")
+    assert str(error) == "Device not found: TARGET-UDID"
+    assert error.udid == "TARGET-UDID"
 
 
 @pytest.mark.asyncio

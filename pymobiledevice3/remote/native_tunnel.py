@@ -473,11 +473,8 @@ class _RemotePairingDeviceNotFoundError(_RemotePairingError, DeviceNotFoundError
     so the CLI's native -> userspace/tunneld routing keeps treating it as a native-path failure.
     """
 
-    def __init__(self, message: str, udid: Optional[str] = None) -> None:
-        # Explicit, since DeviceNotFoundError.__init__ takes the udid as its only argument and
-        # would swallow the message.
-        Exception.__init__(self, message)
-        self.udid = udid
+    def __init__(self, udid: Optional[str], message: Optional[str] = None) -> None:
+        DeviceNotFoundError.__init__(self, udid, message)
 
 
 class _RemotePairingSession:
@@ -584,7 +581,9 @@ class _RemotePairingSession:
                     f"per-user, so set {NATIVE_TARGET_UID_ENV_VAR} to the uid of the logged-in user "
                     "that owns the pairing"
                 )
-            raise _RemotePairingDeviceNotFoundError(f"remotepairingd reported no device{hint}", serial)
+            raise _RemotePairingDeviceNotFoundError(
+                serial, f"Device not found: remotepairingd reported no device{hint}"
+            )
 
         device_conn = xpc.connection_create_from_endpoint(endpoint_holder[0])
         self._device_conn = device_conn

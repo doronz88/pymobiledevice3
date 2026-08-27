@@ -190,7 +190,7 @@ def test_browse_missing_device_raises_device_not_found(monkeypatch: pytest.Monke
         session.browse("BOGUS-UDID")
     assert exc_info.value.udid == "BOGUS-UDID"
     assert isinstance(exc_info.value, UserspaceTunnelUnavailableError)
-    assert "BOGUS-UDID" in str(exc_info.value)
+    assert "BOGUS-UDID" in str(exc_info.value) and "remotepairingd" in str(exc_info.value)
 
 
 def test_libxpc_requires_darwin(monkeypatch: pytest.MonkeyPatch) -> None:

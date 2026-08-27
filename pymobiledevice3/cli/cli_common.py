@@ -307,7 +307,12 @@ async def _tunneld(udid: Optional[str] = None) -> Optional[RemoteServiceDiscover
     if udid != "":
         service_provider = next((rsd for rsd in rsds if rsd.udid == udid), None)
         if service_provider is None:
-            raise DeviceNotFoundError(udid) from None
+            where = (
+                tunneld_address if isinstance(tunneld_address, str) else f"{tunneld_address[0]}:{tunneld_address[1]}"
+            )
+            raise DeviceNotFoundError(
+                udid, f"Device not found: tunneld ({where}) serves no tunnel for udid {udid}"
+            ) from None
     else:
         service_provider = rsds[0] if len(rsds) == 1 else prompt_device_list(rsds)
 

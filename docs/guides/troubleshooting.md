@@ -41,8 +41,9 @@ The usbmuxd daemon itself is not reachable.
 
 ### "Device not found: ..." (`DeviceNotFoundError`)
 
-The UDID you passed (via `--udid` or `PYMOBILEDEVICE3_UDID`) doesn't match any connected
-device. List what's actually connected:
+The UDID you passed (via `--udid` or `PYMOBILEDEVICE3_UDID`) doesn't match any device known to
+the transport that was asked for it — the message names that transport (`usbmux`, `tunneld`,
+`remotepairingd` for the native tunnel). List what's actually connected:
 
 ```shell
 pymobiledevice3 usbmux list

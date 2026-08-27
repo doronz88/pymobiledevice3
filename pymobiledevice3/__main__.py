@@ -367,9 +367,8 @@ def invoke_cli_with_error_handling() -> bool:
     except RoutableTunnelRequiredError as e:
         logger.error(str(e))
     except DeviceNotFoundError as e:
-        # A transport that explains why (e.g. the native tunnel) carries its own message; the
-        # usbmux/tunneld paths carry only the udid.
-        logger.error(str(e) if e.args else f"Device not found: {e.udid}")
+        # The message names the lookup that failed (usbmux/tunneld/remotepairingd/...).
+        logger.error(str(e))
         # Reconnectable: after a disconnect the target device may still be re-enumerating
         # while other devices are attached, making re-invocation fail with this error.
         return True
