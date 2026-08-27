@@ -246,6 +246,18 @@ def test_device_not_found_is_a_reconnectable_failure(monkeypatch):
     assert __main__.invoke_cli_with_error_handling() is True
 
 
+def test_native_tunnel_device_not_found_is_reconnectable(monkeypatch):
+    """The native tunnel's "no such device" error is both a DeviceNotFoundError and a native-path
+    failure; it must be handled as the former (reconnectable, keeps its explanatory message)."""
+    from pymobiledevice3.remote.native_tunnel import _RemotePairingDeviceNotFoundError
+
+    def raise_not_found(*args, **kwargs):
+        raise _RemotePairingDeviceNotFoundError("remotepairingd reported no device matching udid X", "X")
+
+    monkeypatch.setattr(__main__, "app", raise_not_found)
+    assert __main__.invoke_cli_with_error_handling() is True
+
+
 def test_reconnect_reuses_interactively_selected_device(monkeypatch):
     """When the device was chosen at the interactive prompt (no --udid on argv/env), `--reconnect`
     must wait for and re-target that same device, not whichever device appears first."""
