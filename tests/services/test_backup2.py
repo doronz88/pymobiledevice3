@@ -14,11 +14,13 @@ from pymobiledevice3.exceptions import (
     BackupFilterPasswordRequiredError,
     ConnectionFailedError,
     ConnectionTerminatedError,
+    NotEnoughDiskSpaceError,
 )
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.device_link import (
     PURGE_DISK_SPACE_ERROR,
     PURGE_DISK_SPACE_ERROR_STRING,
+    PURGE_REQUEST_OVERSHOOT,
     DeviceLink,
 )
 from pymobiledevice3.services.mobilebackup2 import (
@@ -352,6 +354,89 @@ async def test_device_link_dl_loop_survives_purge_disk_space(tmp_path: Path) -> 
     device_link = DeviceLink(service, tmp_path)
 
     assert await device_link.dl_loop() == "done"
+
+
+@pytest.mark.asyncio
+async def test_device_link_purge_disk_space_derives_requirement(tmp_path: Path) -> None:
+    """CACHE_DELETE_AMOUNT is turned back into the free space the device actually demands.
+
+    Real figures from an iPhone18,4 on iOS 26.6.1: reporting 1,000,000 bytes drew a request for
+    2,335,105,975, and the device's own log put the threshold at 54,404,599 + 128 MiB.
+    """
+    service = AsyncMock()
+    device_link = DeviceLink(service, tmp_path)
+    device_link._reported_free_space = 1_000_000
+
+    await device_link.purge_disk_space(["DLMessagePurgeDiskSpace", 2_335_105_975, 4])
+
+    assert device_link._required_free_space == 54_404_599 + 0x8000000
+
+
+@pytest.mark.asyncio
+async def test_device_link_purge_disk_space_ignores_implausible_amount(tmp_path: Path) -> None:
+    """An amount below the 2 GiB overshoot means the model no longer holds, so derive nothing."""
+    service = AsyncMock()
+    device_link = DeviceLink(service, tmp_path)
+    device_link._reported_free_space = 1_000_000
+
+    await device_link.purge_disk_space(["DLMessagePurgeDiskSpace", PURGE_REQUEST_OVERSHOOT - 1, 4])
+
+    assert device_link._required_free_space is None
+
+
+@pytest.mark.asyncio
+async def test_device_link_purge_disk_space_without_preceding_free_space_query(tmp_path: Path) -> None:
+    """Nothing to derive from until the host has answered DLMessageGetFreeDiskSpace."""
+    service = AsyncMock()
+    device_link = DeviceLink(service, tmp_path)
+
+    await device_link.purge_disk_space(["DLMessagePurgeDiskSpace", 2_335_105_975, 4])
+
+    assert device_link._required_free_space is None
+
+
+@pytest.mark.asyncio
+async def test_device_link_dl_loop_reports_insufficient_disk_space(tmp_path: Path) -> None:
+    """MBErrorDomain/105 names the byte figures instead of dumping the raw response."""
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(
+        side_effect=[
+            ["DLMessagePurgeDiskSpace", 2_335_105_975, 4],
+            [
+                "DLMessageProcessMessage",
+                {
+                    "ErrorCode": 105,
+                    "ErrorDescription": "Insufficient free disk space on drive to back up (MBErrorDomain/105)",
+                },
+            ],
+        ]
+    )
+    device_link = DeviceLink(service, tmp_path)
+    device_link._reported_free_space = 1_000_000
+
+    with pytest.raises(NotEnoughDiskSpaceError) as excinfo:
+        await device_link.dl_loop()
+
+    required = 54_404_599 + 0x8000000
+    assert f"needs more than {required} bytes free" in str(excinfo.value)
+    assert f"host reported {1_000_000}" in str(excinfo.value)
+    assert f"({required + 1 - 1_000_000} more needed)" in str(excinfo.value)
+    assert "counts every hardlink and clone at full size" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_device_link_dl_loop_insufficient_disk_space_without_derivation(tmp_path: Path) -> None:
+    """A 105 with nothing to derive from still raises, using the device's own wording."""
+    service = AsyncMock()
+    response = {"ErrorCode": 105, "ErrorDescription": "Insufficient free disk space on drive to back up"}
+    service.recv_plist = AsyncMock(side_effect=[["DLMessageProcessMessage", response]])
+    device_link = DeviceLink(service, tmp_path)
+
+    with pytest.raises(NotEnoughDiskSpaceError) as excinfo:
+        await device_link.dl_loop()
+
+    assert str(response) in str(excinfo.value)
+    assert "counts every hardlink and clone at full size" in str(excinfo.value)
 
 
 @pytest.mark.asyncio
