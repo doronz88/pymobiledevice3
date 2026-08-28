@@ -175,14 +175,41 @@ class DeviceLink:
         :meth:`purge_disk_space` has normally already recovered the threshold the device is
         comparing against. Without it - an unrecognised amount, or a 105 that arrived with no
         preceding purge - fall back to the device's own wording.
+
+        The requirement can dwarf the device's used space, which reads as a bug until you see how
+        it is accumulated. ``-[MBDriveBackupEngine _addFileToUploadAndMove:flags:]`` tags each
+        upload operation with a two-bit flag - bit 0 when the file hardlinks an inode already seen
+        in this backup, bit 1 when it clones an already-seen ``cloneID``::
+
+            v9 = 0;
+            if ([file isHardLink])
+                if ([_inodeCache containsObject:file.inodeNumber])  v9 = 1;
+                else [_inodeCache addObject:file.inodeNumber];
+            if ([file isFullClone])
+                if ([_cloneIDCache containsObject:file.cloneID])    v9 |= 2;
+                else [_cloneIDCache addObject:file.cloneID];
+            op = [MBBackupOperation backupOperationWithType:2 ... size:file.size flags:v9];
+
+        ``-[MBBackupOperationJournal addOperation:]`` then adds ``op.size`` to ``_sizeByType``
+        unconditionally, and to ``_sizeExcludingHardlinksAndClonesForType`` only when both bits are
+        clear. ``_prepareFreeSpace`` gates on the former, so every repeat reference counts at full
+        size. That is not an over-estimate: :meth:`upload_files` writes each file to its own path
+        under the backup root, so a device-side clone family really does land as N full copies.
+
+        The device logs both totals as ``uploadSize:<inclusive>(<excluding>)`` before the
+        free-space check, which is the cheapest way to see how far the two diverge.
         """
+        detail = (
+            " The device counts every hardlink and clone at full size, because each is stored as a "
+            "separate file in the backup, so this can far exceed the data stored on the device."
+        )
         if self._required_free_space is None or self._reported_free_space is None:
-            return f"Device refused the backup: {response}"
+            return f"Device refused the backup: {response}.{detail}"
         return (
             f"Device refused the backup: it needs more than {self._required_free_space} bytes free "
             f"at {self.root_path}, host reported {self._reported_free_space} "
             f"({self._required_free_space + 1 - self._reported_free_space} more needed) "
-            f"(MBErrorDomain/{MB_ERROR_INSUFFICIENT_DISK_SPACE})"
+            f"(MBErrorDomain/{MB_ERROR_INSUFFICIENT_DISK_SPACE}).{detail}"
         )
 
     async def version_exchange(self) -> None:

@@ -421,6 +421,7 @@ async def test_device_link_dl_loop_reports_insufficient_disk_space(tmp_path: Pat
     assert f"needs more than {required} bytes free" in str(excinfo.value)
     assert f"host reported {1_000_000}" in str(excinfo.value)
     assert f"({required + 1 - 1_000_000} more needed)" in str(excinfo.value)
+    assert "counts every hardlink and clone at full size" in str(excinfo.value)
 
 
 @pytest.mark.asyncio
@@ -435,6 +436,7 @@ async def test_device_link_dl_loop_insufficient_disk_space_without_derivation(tm
         await device_link.dl_loop()
 
     assert str(response) in str(excinfo.value)
+    assert "counts every hardlink and clone at full size" in str(excinfo.value)
 
 
 @pytest.mark.asyncio
