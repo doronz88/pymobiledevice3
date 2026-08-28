@@ -14,9 +14,9 @@ from wsproto.events import Request as WsRequest
 
 from pymobiledevice3.exceptions import WebInspectorNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.web_protocol.cdp_server import app
+from pymobiledevice3.services.web_protocol.cdp_server import app, targets_html
 from pymobiledevice3.services.web_protocol.cdp_target import JS_CONTEXT_EXECUTION_ID
-from pymobiledevice3.services.webinspector import SAFARI, WebinspectorService
+from pymobiledevice3.services.webinspector import SAFARI, Application, AutomationAvailability, Page, WebinspectorService
 
 TIMEOUT = 30
 
@@ -406,3 +406,74 @@ async def testp_cdp_server_keyboard_input_submits_forms(lockdown: LockdownClient
             await type_and_submit("world", "/fallback")
         finally:
             await client.close()
+
+
+def _inspector_with(pages: dict[str, dict[str, Page]], names: dict[str, str]) -> WebinspectorService:
+    inspector = WebinspectorService.__new__(WebinspectorService)
+    inspector.application_pages = pages
+    inspector.connected_application = {
+        app_id: Application(
+            app_id,
+            "com.example.app",
+            int(app_id.split(":")[1]),
+            name,
+            AutomationAvailability.NOT_AVAILABLE,
+            1,
+            False,
+            True,
+        )
+        for app_id, name in names.items()
+    }
+    return inspector
+
+
+def test_landing_page_links_each_kind_to_its_own_frontend() -> None:
+    """A JSContext gets Chrome's JavaScript-only frontend; a web page gets the full one."""
+    inspector = _inspector_with(
+        {
+            "PID:1": {
+                "1": Page.from_page_dictionary({
+                    "WIRPageIdentifierKey": 1,
+                    "WIRTypeKey": "WIRTypeWeb",
+                    "WIRTitleKey": "Example",
+                    "WIRURLKey": "https://example.com/",
+                })
+            },
+            "PID:2": {
+                "1": Page.from_page_dictionary({
+                    "WIRPageIdentifierKey": 1,
+                    "WIRTypeKey": "WIRTypeJavaScript",
+                    "WIRTitleKey": "JSContext",
+                })
+            },
+        },
+        {"PID:1": "MobileSafari", "PID:2": "myapp"},
+    )
+
+    html = targets_html(inspector, "127.0.0.1:9222")
+
+    assert '<a href="/devtools/inspector.html?ws=127.0.0.1:9222/devtools/page/PID:1:1">Example</a>' in html
+    assert '<a href="/devtools/js_app.html?ws=127.0.0.1:9222/devtools/page/PID:2:1">myapp (2): JSContext</a>' in html
+
+
+def test_landing_page_escapes_titles_from_the_device() -> None:
+    """Titles and URLs are whatever the inspected page says they are."""
+    inspector = _inspector_with(
+        {
+            "PID:1": {
+                "1": Page.from_page_dictionary({
+                    "WIRPageIdentifierKey": 1,
+                    "WIRTypeKey": "WIRTypeWeb",
+                    "WIRTitleKey": "</a><script>alert(1)</script>",
+                    "WIRURLKey": "https://example.com/?a=1&b=2",
+                })
+            }
+        },
+        {"PID:1": "MobileSafari"},
+    )
+
+    html = targets_html(inspector, "127.0.0.1:9222")
+
+    assert "<script>" not in html
+    assert "&lt;/a&gt;&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "https://example.com/?a=1&amp;b=2" in html

@@ -33,6 +33,10 @@ the duration of the debugging session.
 Open <http://127.0.0.1:9222/> in Google Chrome and pick a page. Prefer this landing
 page over `chrome://inspect` — see the command's `--help` for why.
 
+The listing keeps itself current: a tab opened, closed or navigated on the device
+appears there within a couple of seconds, with no reload. Leave it open in a
+background tab and it stops polling until you come back to it.
+
 ## JavaScript contexts
 
 A process that made a bare `JSContext` inspectable is listed alongside the web pages,

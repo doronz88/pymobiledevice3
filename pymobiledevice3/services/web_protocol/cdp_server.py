@@ -1,11 +1,14 @@
 import asyncio
+import json
 import shutil
 import subprocess
 import sys
 import tempfile
 import uuid
 from contextlib import asynccontextmanager
+from html import escape
 from pathlib import Path
+from string import Template
 from typing import Any, Optional
 from urllib.request import urlopen
 
@@ -17,6 +20,7 @@ from pymobiledevice3.services.web_protocol.cdp_browser import (
     PAGE_LISTING_FLUSH,
     PAGE_LOCKS,
     TARGET_CREATION_TIMEOUT,
+    TARGET_POLL_INTERVAL,
     CdpBrowser,
     iter_inspectable,
     target_title,
@@ -24,7 +28,7 @@ from pymobiledevice3.services.web_protocol.cdp_browser import (
 )
 from pymobiledevice3.services.web_protocol.cdp_target import CdpTarget
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
-from pymobiledevice3.services.webinspector import Page, WirTypes
+from pymobiledevice3.services.webinspector import Page, WebinspectorService, WirTypes
 
 # chrome://inspect routes a network target's DevTools through Chrome's browser-process relay,
 # which deadlocks after sustained console traffic (the console/screen freeze). Serving the DevTools
@@ -62,6 +66,60 @@ _CHROME_DEFAULT_PATHS: dict[str, tuple[str, ...]] = {
         "/snap/bin/chromium",
     ),
 }
+
+
+NO_TARGETS_MESSAGE = "No inspectable pages. Open a page in Safari."
+NO_TARGETS_MESSAGE_HTML = f"<p>{NO_TARGETS_MESSAGE}</p>"
+
+# How often the landing page re-reads the target list. Matches the browser endpoint's discovery
+# poll, so a tab opened - or a JSContext made inspectable - on the device shows up within a couple
+# of seconds either way. Each poll costs one listing round-trip to the device, so the page stops
+# polling while it is not the visible tab.
+INDEX_POLL_INTERVAL_MS = int(TARGET_POLL_INTERVAL * 1000)
+
+INDEX_SCRIPT = Template("""
+(function () {
+  const container = document.getElementById('targets');
+  let rendered = null;
+  function render(targets) {
+    container.textContent = '';
+    if (!targets.length) {
+      const empty = document.createElement('p');
+      empty.textContent = $empty;
+      container.appendChild(empty);
+      return;
+    }
+    const list = document.createElement('ul');
+    for (const target of targets) {
+      const link = document.createElement('a');
+      link.href = target.devtoolsFrontendUrl;
+      link.textContent = target.title || target.url || ('page ' + target.id);
+      const url = document.createElement('small');
+      url.textContent = target.url;
+      const item = document.createElement('li');
+      item.append(link, document.createElement('br'), url);
+      list.appendChild(item);
+    }
+    container.appendChild(list);
+  }
+  async function poll() {
+    if (!document.hidden) {
+      try {
+        const targets = await (await fetch('/json/list', {cache: 'no-store'})).json();
+        const serialized = JSON.stringify(targets);
+        if (serialized !== rendered) {
+          rendered = serialized;
+          render(targets);
+        }
+      } catch (error) {
+        // The bridge is momentarily busy or gone; leave the list as it is and try again.
+      }
+    }
+    setTimeout(poll, $interval);
+  }
+  setTimeout(poll, $interval);
+})();
+""").substitute(empty=json.dumps(NO_TARGETS_MESSAGE), interval=INDEX_POLL_INTERVAL_MS)
 
 
 def find_chrome(explicit: Optional[str] = None) -> Optional[str]:
@@ -210,20 +268,35 @@ def _frontend_url(page: Page) -> str:
 async def index(request: Request) -> HTMLResponse:
     """Landing page: link each inspectable page to the locally-served DevTools frontend, which
     connects directly to the bridge (bypassing chrome://inspect's relay). Use this instead of
-    chrome://inspect to avoid the console/screen freeze."""
+    chrome://inspect to avoid the console/screen freeze.
+
+    The listing keeps itself current, so a tab opened - or a JSContext made inspectable - after
+    the page was loaded appears without reloading it by hand."""
     await app.state.inspector.get_open_pages()
     await app.state.inspector.flush_input(PAGE_LISTING_FLUSH)
     host = request.headers.get("host", "127.0.0.1:9222")
-    items: list[str] = []
-    for target_id, application, page in iter_inspectable(app.state.inspector):
-        frontend = f"{_frontend_url(page)}?ws={host}/devtools/page/{target_id}"
-        title = target_title(application, page) or page.web_url or f"page {target_id}"
-        items.append(f'<li><a href="{frontend}">{title}</a><br><small>{page.web_url}</small></li>')
-    body = "<ul>" + "".join(items) + "</ul>" if items else "<p>No inspectable pages. Open a page in Safari.</p>"
     return HTMLResponse(
         f"<!doctype html><meta charset=utf-8><title>pymobiledevice3 Web Inspector</title>"
-        f"<h2>pymobiledevice3 Web Inspector</h2>{body}"
+        f"<h2>pymobiledevice3 Web Inspector</h2>"
+        # Rendered server-side once so the list is there before any script runs, then kept up to
+        # date in place by INDEX_SCRIPT.
+        f'<div id="targets">{targets_html(app.state.inspector, host)}</div>'
+        f"<script>{INDEX_SCRIPT}</script>"
     )
+
+
+def targets_html(inspector: WebinspectorService, host: str) -> str:
+    """The landing page's target list. Titles and URLs come from the device, so they are escaped."""
+    items: list[str] = []
+    for target_id, application, page in iter_inspectable(inspector):
+        frontend = f"{_frontend_url(page)}?ws={host}/devtools/page/{target_id}"
+        title = target_title(application, page) or page.web_url or f"page {target_id}"
+        items.append(
+            f'<li><a href="{escape(frontend)}">{escape(title)}</a><br><small>{escape(page.web_url)}</small></li>'
+        )
+    if not items:
+        return NO_TARGETS_MESSAGE_HTML
+    return "<ul>" + "".join(items) + "</ul>"
 
 
 @app.get("/devtools/{path:path}")
