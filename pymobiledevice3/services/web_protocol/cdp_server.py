@@ -17,10 +17,8 @@ from fastapi.logger import logger
 from fastapi.responses import HTMLResponse, Response
 
 from pymobiledevice3.services.web_protocol.cdp_browser import (
-    PAGE_LISTING_FLUSH,
     PAGE_LOCKS,
     TARGET_CREATION_TIMEOUT,
-    TARGET_POLL_INTERVAL,
     CdpBrowser,
     iter_inspectable,
     target_title,
@@ -71,11 +69,11 @@ _CHROME_DEFAULT_PATHS: dict[str, tuple[str, ...]] = {
 NO_TARGETS_MESSAGE = "No inspectable pages. Open a page in Safari."
 NO_TARGETS_MESSAGE_HTML = f"<p>{NO_TARGETS_MESSAGE}</p>"
 
-# How often the landing page re-reads the target list. Matches the browser endpoint's discovery
-# poll, so a tab opened - or a JSContext made inspectable - on the device shows up within a couple
-# of seconds either way. Each poll costs one listing round-trip to the device, so the page stops
+# How often the landing page re-reads the target list. Serving one is a read of already-pushed
+# state (see refresh_listings), so this can be short enough that a tab opened or closed on the
+# device shows up about as fast as it does in Safari's own Develop menu. The page still stops
 # polling while it is not the visible tab.
-INDEX_POLL_INTERVAL_MS = int(TARGET_POLL_INTERVAL * 1000)
+INDEX_POLL_INTERVAL_MS = 750
 
 INDEX_SCRIPT = Template("""
 (function () {
@@ -238,10 +236,20 @@ def version(request: Request):
     }
 
 
+async def refresh_listings() -> None:
+    """Ask every connected application to re-report its pages, without waiting for the replies.
+
+    `webinspectord` pushes a fresh listing on its own whenever a page opens, closes or navigates,
+    so the cached state is already live and the answer can be built from it straight away; the
+    request is only a nudge for anything that does not announce itself. Blocking on the replies
+    instead put a fixed half-second on every listing request - the whole cost of serving one.
+    """
+    await app.state.inspector.get_open_pages()
+
+
 @app.get("/json{_:path}")
 async def available_targets(request: Request, _: str):
-    await app.state.inspector.get_open_pages()
-    await app.state.inspector.flush_input(PAGE_LISTING_FLUSH)
+    await refresh_listings()
     host = request.headers.get("host", "localhost:9222")
     targets: list[dict[str, Any]] = []
     for target_id, application, page in iter_inspectable(app.state.inspector):
@@ -272,8 +280,7 @@ async def index(request: Request) -> HTMLResponse:
 
     The listing keeps itself current, so a tab opened - or a JSContext made inspectable - after
     the page was loaded appears without reloading it by hand."""
-    await app.state.inspector.get_open_pages()
-    await app.state.inspector.flush_input(PAGE_LISTING_FLUSH)
+    await refresh_listings()
     host = request.headers.get("host", "127.0.0.1:9222")
     return HTMLResponse(
         f"<!doctype html><meta charset=utf-8><title>pymobiledevice3 Web Inspector</title>"
