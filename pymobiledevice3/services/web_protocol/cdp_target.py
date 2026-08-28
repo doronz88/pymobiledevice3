@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import itertools
 import json
 import logging
 from collections.abc import Awaitable
@@ -9,6 +10,7 @@ from typing import Any, Callable, Optional, cast
 
 from pymobiledevice3.services.web_protocol.cdp_screencast import ScreenCast
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
+from pymobiledevice3.services.webinspector import WirTypes
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,16 @@ WEBKIT_ONLY_EVENTS = frozenset({
     "DOM.willDestroyDOMNode",
     "Page.defaultUserPreferencesDidChange",
 })
+
+# Message ids for the un-multiplexed (JSContext) path. Those replies come back on the inspector's
+# shared, id-keyed wir_message_results, where the frontend's own ids - small integers, restarting
+# at 1 in every session - would consume each other's responses and SessionProtocol's. Allocating
+# from a process-wide counter in a range neither of them reaches keeps them apart.
+_FLAT_WIRE_IDS = itertools.count(0x40000000)
+
+# The single execution context synthesized for a JSContext debuggable (see _runtime_enable).
+JS_CONTEXT_EXECUTION_ID = 1
+JS_CONTEXT_UNIQUE_ID = "jscontext.1"
 
 # Error synthesized for requests routed to a target that got destroyed before answering
 # (WebKit never answers those). Matches Chrome's own message for the same situation.
@@ -217,6 +229,7 @@ class CdpTarget:
             # acknowledged by the NOOP_ABSENT_DOMAINS fallback in _input_loop.
             "Overlay.highlightNode": self._overlay_highlight_node,
             "Runtime.runIfWaitingForDebugger": partial(self._simple_response, value=None),
+            "Runtime.enable": self._runtime_enable,
             "Runtime.evaluate": self._runtime_evaluate,
             "Runtime.compileScript": self._runtime_compile_script,
             "Runtime.runScript": self._runtime_run_script,
@@ -282,6 +295,14 @@ class CdpTarget:
             "Network.responseReceived": self._network_response_received,
             "Network.loadingFinished": self._network_loading_finished,
         }
+        # JavaScriptCore's JSContext inspector implements no Target domain at all: nothing is
+        # announced on attach, messages are exchanged as-is instead of through
+        # Target.sendMessageToTarget/Target.dispatchMessageFromTarget, and its replies - carrying a
+        # top-level id - are filed by the inspector into wir_message_results rather than
+        # wir_events. Talk to it directly and translate everything else the same way.
+        self._flat = protocol.page.type_ == WirTypes.JAVASCRIPT
+        # wire id -> the id the message was sent with, for the un-multiplexed path
+        self._flat_pending: dict[int, int] = {}
         self._waiting_for_id = 0
         self._input_task = asyncio.create_task(self._input_loop())
         self._receiving_task = asyncio.create_task(self._receive_loop())
@@ -336,13 +357,16 @@ class CdpTarget:
         :param pymobiledevice3.services.web_protocol.session_protocol.SessionProtocol protocol: Session protocol.
         """
         await protocol.inspector.setup_inspector_socket(protocol.id_, protocol.app.id_, protocol.page.id_)
+        if protocol.page.type_ == WirTypes.JAVASCRIPT:
+            # A JSContext debuggable has no Target domain, so it announces nothing on attach and
+            # there is only ever the one target - synthesize its id instead of waiting forever.
+            return cls(protocol, f"jscontext:{protocol.app.id_}:{protocol.page.id_}")
+        events = protocol.inspector.session_events(protocol.id_)
         while True:
-            # wir_events is shared; another session's create may pop concurrently, so re-check
-            # emptiness on every iteration instead of assuming a successful pop.
-            if not protocol.inspector.wir_events:
+            if not events:
                 await asyncio.sleep(0)
                 continue
-            created = protocol.inspector.wir_events.pop(0)
+            created = events.pop(0)
             if "targetInfo" in created.get("params", {}):
                 break
         target_id = created["params"]["targetInfo"]["targetId"]
@@ -390,12 +414,15 @@ class CdpTarget:
             believed unresponsive, so a still-dead one barely re-pauses the receive loop).
         :returns: The matching target message, or None if it does not arrive within the timeout.
         """
+        if self._flat:
+            return await self._wait_for_flat_result(id_, timeout)
         deadline = asyncio.get_event_loop().time() + timeout
         while asyncio.get_event_loop().time() < deadline:
             if target_id is not None and target_id in self._destroyed_targets:
                 return None
-            for i in range(len(self.protocol.inspector.wir_events)):
-                message = self.protocol.inspector.wir_events[i]
+            events = self.protocol.inspector.session_events(self.session_id)
+            for i in range(len(events)):
+                message = events[i]
                 if message["method"] == "Target.targetDestroyed":
                     # Only give up the wait; the event stays queued for the receive loop.
                     if message["params"]["targetId"] == target_id:
@@ -406,7 +433,7 @@ class CdpTarget:
                 message = json.loads(message["params"]["message"])
                 if message.get("id", "") != id_:
                     continue
-                del self.protocol.inspector.wir_events[i]
+                del events[i]
                 self._pending_requests.pop(id_, None)
                 return message
             await asyncio.sleep(0)
@@ -515,18 +542,37 @@ class CdpTarget:
 
     async def _receive_loop(self):
         while True:
-            if self._waiting_for_id or not self.protocol.inspector.wir_events:
+            if self._waiting_for_id:
                 await asyncio.sleep(0)
                 continue
-            message = self.protocol.inspector.wir_events.pop(0)
+            message = self._next_message()
+            if message is None:
+                await asyncio.sleep(0)
+                continue
             try:
-                await self._to_output_queue(message)
+                if self._flat:
+                    # No Target wrapper to unwrap: these already are the debuggable's own
+                    # protocol messages.
+                    await self._dispatch_target_message(message)
+                else:
+                    await self._to_output_queue(message)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 # One failing event translation must not kill the whole receive loop - that
                 # silently starves every later response and the session appears dead.
                 logger.exception(f"Failed handling target event: {message.get('method')}")
+
+    def _next_message(self) -> Optional[dict[str, Any]]:
+        """Next message to translate, or None while there is nothing pending."""
+        if self._flat:
+            result = self._next_flat_result()
+            if result is not None:
+                return result
+        events = self.protocol.inspector.session_events(self.session_id)
+        if not events:
+            return None
+        return cast(dict[str, Any], events.pop(0))
 
     async def _to_output_queue(self, message: dict[str, Any]):
         if message["method"] != "Target.dispatchMessageFromTarget":
@@ -544,9 +590,51 @@ class CdpTarget:
             self._pending_requests[message["id"]] = resolved_target_id
         if record:
             self._record_setup_message(message)
+        if self._flat:
+            await self._send_message_flat(message)
+            return
         await self.protocol.send_command(
             "Target.sendMessageToTarget", targetId=resolved_target_id, message=json.dumps(message)
         )
+
+    async def _send_message_flat(self, message: dict[str, Any]) -> None:
+        """Send straight to an un-multiplexed debuggable, under a wire id of our own (see
+        _FLAT_WIRE_IDS) that the reply is mapped back from."""
+        wire = dict(message)
+        if "id" in message:
+            wire_id = next(_FLAT_WIRE_IDS)
+            self._flat_pending[wire_id] = message["id"]
+            wire["id"] = wire_id
+        await self.protocol.inspector.send_socket_data(self.session_id, self.app_id, self.page_id, wire)
+
+    def _next_flat_result(self, id_: Optional[int] = None) -> Optional[dict[str, Any]]:
+        """Take one reply this target is still waiting for off the inspector's result table, with
+        its wire id mapped back to the id it was sent with. `id_` restricts the search to the reply
+        of that request; without it, the first available one is taken.
+
+        :returns: The reply, or None if none of the awaited ones arrived yet.
+        """
+        results = self.protocol.inspector.wir_message_results
+        for wire_id, original_id in list(self._flat_pending.items()):
+            if (id_ is not None and original_id != id_) or wire_id not in results:
+                continue
+            del self._flat_pending[wire_id]
+            message = cast(dict[str, Any], results.pop(wire_id))
+            message["id"] = original_id
+            return message
+        return None
+
+    async def _wait_for_flat_result(self, id_: int, timeout: float) -> Optional[dict[str, Any]]:
+        """wait_for_event_id for the un-multiplexed path: replies arrive on the inspector's result
+        table rather than as Target.dispatchMessageFromTarget events."""
+        deadline = asyncio.get_event_loop().time() + timeout
+        while asyncio.get_event_loop().time() < deadline:
+            message = self._next_flat_result(id_)
+            if message is not None:
+                self._pending_requests.pop(id_, None)
+                return message
+            await asyncio.sleep(0)
+        return None
 
     def _record_setup_message(self, message: dict[str, Any]):
         """
@@ -856,6 +944,42 @@ class CdpTarget:
         message["method"] = "DOM.highlightNode"
         await self._send_message_to_target(message)
 
+    async def _runtime_enable(self, message: dict[str, Any]):
+        await self._send_message_to_target(message)
+        if not self._flat:
+            return
+        # Chrome's frontend expects console output to follow from Runtime.enable alone (V8 emits
+        # Runtime.consoleAPICalled once the Runtime domain is on) and never enables a console
+        # domain on a JavaScript-only target - it sends Log.enable only for frame targets. WebKit
+        # gates Console.messageAdded behind Console.enable, so without this every console.log on
+        # the debuggable is silently dropped.
+        await self._send_message_to_target({
+            "id": self.next_internal_id(),
+            "method": "Console.enable",
+            "params": {},
+        })
+        if JS_CONTEXT_UNIQUE_ID in self._emitted_context_unique_ids:
+            return
+        # A JSContext debuggable announces no execution context - JavaScriptCore's inspector has no
+        # Page/frame model to hang one on - and Chrome's frontend will not evaluate anything before
+        # it knows one: the console prompt silently swallows every line while its context picker
+        # reads "Not selected". Announce the single context such a debuggable has, the way V8 does
+        # for a Node.js target.
+        self._emitted_context_unique_ids.add(JS_CONTEXT_UNIQUE_ID)
+        self._default_execution_id = JS_CONTEXT_EXECUTION_ID
+        await self.output_queue.put({
+            "method": "Runtime.executionContextCreated",
+            "params": {
+                "context": {
+                    "id": JS_CONTEXT_EXECUTION_ID,
+                    "origin": "",
+                    "name": "",
+                    "uniqueId": JS_CONTEXT_UNIQUE_ID,
+                    "auxData": {"isDefault": True},
+                }
+            },
+        })
+
     async def _runtime_evaluate(self, message: dict[str, Any]):
         # Chrome's console "eager evaluation" previews the current line as you type by evaluating it
         # with throwOnSideEffect=true, relying on V8 to ABORT the moment the expression would cause a
@@ -871,6 +995,12 @@ class CdpTarget:
         # through - refusing them would kill autocomplete. Only the eager preview (no completion
         # objectGroup) is refused.
         params = message["params"]
+        if self._flat:
+            # The context the frontend targets is the one synthesized in _runtime_enable, which the
+            # debuggable knows nothing about; addressing it explicitly would fail the lookup. It has
+            # exactly one context anyway - let it use its default.
+            params.pop("contextId", None)
+            params.pop("uniqueContextId", None)
         if params.get("throwOnSideEffect") and params.get("objectGroup") not in _COMPLETION_OBJECT_GROUPS:
             self._eval_side_effect_id += 1
             error_object = {
@@ -1210,10 +1340,13 @@ class CdpTarget:
                 CdpTarget._normalize_native_functions(value)
 
     async def _target_dispatch_message_from_target(self, message: dict[str, Any]):
+        await self._dispatch_target_message(json.loads(message["params"]["message"]))
+
+    async def _dispatch_target_message(self, message: dict[str, Any]):
+        """Translate one protocol message coming from the target and hand it to the frontend."""
         # Any message from the current target proves it is alive again (a wedged page that finally
         # navigated, a slow response that eventually arrived); resume sending it internal requests.
         self._mark_target_responsive(self.target_id)
-        message = json.loads(message["params"]["message"])
         if "result" in message:
             # Function objects in evaluate/callFunctionOn results carry native descriptions the
             # console autocomplete inspects; normalize them (see _normalize_native_functions).

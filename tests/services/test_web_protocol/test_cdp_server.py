@@ -1,6 +1,7 @@
 import asyncio
 import itertools
 import json
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any, Optional
@@ -13,17 +14,16 @@ from wsproto.events import Request as WsRequest
 
 from pymobiledevice3.exceptions import WebInspectorNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.web_protocol.cdp_server import app
-from pymobiledevice3.services.webinspector import SAFARI, WebinspectorService
+from pymobiledevice3.services.web_protocol.cdp_server import app, targets_html
+from pymobiledevice3.services.web_protocol.cdp_target import JS_CONTEXT_EXECUTION_ID
+from pymobiledevice3.services.webinspector import SAFARI, Application, AutomationAvailability, Page, WebinspectorService
 
 TIMEOUT = 30
 
 
 @asynccontextmanager
-async def cdp_server_with_safari_page(
-    lockdown: LockdownClient,
-) -> AsyncGenerator[tuple[int, list[dict[str, Any]]], None]:
-    """Run the CDP server against the device and yield (port, listed Safari targets)."""
+async def cdp_server(lockdown: LockdownClient) -> AsyncGenerator[tuple[int, WebinspectorService], None]:
+    """Run the CDP server against the device and yield (port, inspector)."""
     inspector = WebinspectorService(lockdown=lockdown)
     try:
         await inspector.connect()
@@ -36,22 +36,30 @@ async def cdp_server_with_safari_page(
         while not server.started:
             assert not serve_task.done()
             await asyncio.sleep(0.1)
-        port = server.servers[0].sockets[0].getsockname()[1]
-        await inspector.open_app(SAFARI)
-        targets = []
-        for _ in range(TIMEOUT):
-            targets = await http_get_json(port, "/json/list")
-            if targets:
-                break
-            await asyncio.sleep(1)
-        assert targets, "no inspectable Safari page was listed"
-        yield port, targets
+        yield server.servers[0].sockets[0].getsockname()[1], inspector
     finally:
         # force_exit skips uvicorn's graceful wait so a wedged debugger session can't hang the test
         server.should_exit = True
         server.force_exit = True
         await asyncio.wait_for(serve_task, TIMEOUT)
         await inspector.close()
+
+
+@asynccontextmanager
+async def cdp_server_with_safari_page(
+    lockdown: LockdownClient,
+) -> AsyncGenerator[tuple[int, list[dict[str, Any]]], None]:
+    """Run the CDP server against the device and yield (port, listed Safari targets)."""
+    async with cdp_server(lockdown) as (port, inspector):
+        await inspector.open_app(SAFARI)
+        targets = []
+        for _ in range(TIMEOUT):
+            targets = [target for target in await http_get_json(port, "/json/list") if target["type"] == "page"]
+            if targets:
+                break
+            await asyncio.sleep(1)
+        assert targets, "no inspectable Safari page was listed"
+        yield port, targets
 
 
 async def http_get_json(port: int, path: str) -> Any:
@@ -149,6 +157,79 @@ async def testp_cdp_server_end_to_end(lockdown: LockdownClient) -> None:
         # without which webinspectord never delivers target events to a reconnecting client.
         await evaluate_in_new_session()
         await evaluate_in_new_session()
+
+
+async def testp_cdp_server_drives_a_javascript_context(lockdown: LockdownClient) -> None:
+    """
+    A JSContext debuggable (any process that called -[JSContext setInspectable:YES]) implements
+    only JavaScriptCore's side of the protocol: no Target domain, so no target is announced on
+    attach, messages are exchanged un-multiplexed, and its console output needs Console.enable -
+    which Chrome's JavaScript-only frontend never sends. The bridge must cover all of it.
+    """
+    async with cdp_server(lockdown) as (port, _):
+        targets = [target for target in await http_get_json(port, "/json/list") if target["type"] == "node"]
+        if not targets:
+            pytest.skip("no inspectable JSContext on the device")
+        assert targets[0]["devtoolsFrontendUrl"].startswith("/devtools/js_app.html?"), (
+            "a JSContext must be handed Chrome's JavaScript-only frontend"
+        )
+        # A JSContext only answers the inspector while its host thread services its run loop, so
+        # some of the listed ones may be dormant; any one that answers proves the path.
+        for target in targets:
+            if await evaluate_and_log_in_javascript_context(port, target["id"]):
+                return
+        pytest.skip("no listed JSContext answered the inspector")
+
+
+async def evaluate_and_log_in_javascript_context(port: int, target_id: str) -> bool:
+    """Evaluate an expression that also logs on a JSContext target, asserting both come back.
+
+    :returns: False if the debuggable never answered (a dormant JSContext), True once it did.
+    """
+    # The debuggable replays its buffered console history on attach, so the log this test asserts
+    # on must be distinguishable from whatever ran in the context before.
+    marker = f"pmd3-cdp-{uuid.uuid4()}"
+    client = CdpWebsocketClient(port, target_id)
+    await asyncio.wait_for(client.connect(), TIMEOUT)
+    marked_calls: list[dict[str, Any]] = []
+
+    def collect(message: dict[str, Any]) -> None:
+        if message.get("method") != "Runtime.consoleAPICalled":
+            return
+        if message["params"]["args"][0].get("value") == marker:
+            marked_calls.append(message)
+
+    async def command(id_: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """client.command, keeping the console events it would otherwise discard."""
+        await client.send({"id": id_, "method": method, "params": params})
+        while True:
+            message = await client.receive()
+            collect(message)
+            if message.get("id") == id_:
+                return message
+
+    async def next_marked_call() -> dict[str, Any]:
+        while not marked_calls:
+            collect(await client.receive())
+        return marked_calls[0]
+
+    try:
+        try:
+            await asyncio.wait_for(command(1, "Runtime.enable", {}), TIMEOUT)
+        except asyncio.TimeoutError:
+            return False
+        result = await asyncio.wait_for(
+            command(2, "Runtime.evaluate", {"expression": f"console.log({marker!r}); 40+2"}), TIMEOUT
+        )
+        assert result["result"]["result"]["value"] == 42
+        # The console event may trail the evaluate response. It is attributed to the execution
+        # context synthesized on Runtime.enable; without one the frontend refuses to evaluate
+        # anything at all, and WebKit sends no console event before Console.enable.
+        call = await asyncio.wait_for(next_marked_call(), TIMEOUT)
+        assert call["params"]["executionContextId"] == JS_CONTEXT_EXECUTION_ID
+        return True
+    finally:
+        await client.close()
 
 
 async def testp_cdp_server_survives_process_swaps(lockdown: LockdownClient) -> None:
@@ -325,3 +406,74 @@ async def testp_cdp_server_keyboard_input_submits_forms(lockdown: LockdownClient
             await type_and_submit("world", "/fallback")
         finally:
             await client.close()
+
+
+def _inspector_with(pages: dict[str, dict[str, Page]], names: dict[str, str]) -> WebinspectorService:
+    inspector = WebinspectorService.__new__(WebinspectorService)
+    inspector.application_pages = pages
+    inspector.connected_application = {
+        app_id: Application(
+            app_id,
+            "com.example.app",
+            int(app_id.split(":")[1]),
+            name,
+            AutomationAvailability.NOT_AVAILABLE,
+            1,
+            False,
+            True,
+        )
+        for app_id, name in names.items()
+    }
+    return inspector
+
+
+def test_landing_page_links_each_kind_to_its_own_frontend() -> None:
+    """A JSContext gets Chrome's JavaScript-only frontend; a web page gets the full one."""
+    inspector = _inspector_with(
+        {
+            "PID:1": {
+                "1": Page.from_page_dictionary({
+                    "WIRPageIdentifierKey": 1,
+                    "WIRTypeKey": "WIRTypeWeb",
+                    "WIRTitleKey": "Example",
+                    "WIRURLKey": "https://example.com/",
+                })
+            },
+            "PID:2": {
+                "1": Page.from_page_dictionary({
+                    "WIRPageIdentifierKey": 1,
+                    "WIRTypeKey": "WIRTypeJavaScript",
+                    "WIRTitleKey": "JSContext",
+                })
+            },
+        },
+        {"PID:1": "MobileSafari", "PID:2": "myapp"},
+    )
+
+    html = targets_html(inspector, "127.0.0.1:9222")
+
+    assert '<a href="/devtools/inspector.html?ws=127.0.0.1:9222/devtools/page/PID:1:1">Example</a>' in html
+    assert '<a href="/devtools/js_app.html?ws=127.0.0.1:9222/devtools/page/PID:2:1">myapp (2): JSContext</a>' in html
+
+
+def test_landing_page_escapes_titles_from_the_device() -> None:
+    """Titles and URLs are whatever the inspected page says they are."""
+    inspector = _inspector_with(
+        {
+            "PID:1": {
+                "1": Page.from_page_dictionary({
+                    "WIRPageIdentifierKey": 1,
+                    "WIRTypeKey": "WIRTypeWeb",
+                    "WIRTitleKey": "</a><script>alert(1)</script>",
+                    "WIRURLKey": "https://example.com/?a=1&b=2",
+                })
+            }
+        },
+        {"PID:1": "MobileSafari"},
+    )
+
+    html = targets_html(inspector, "127.0.0.1:9222")
+
+    assert "<script>" not in html
+    assert "&lt;/a&gt;&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "https://example.com/?a=1&amp;b=2" in html

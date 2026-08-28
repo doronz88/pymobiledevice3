@@ -398,7 +398,7 @@ async def cdp(
     chrome: Optional[str] = None,
 ) -> None:
     """
-    Start a CDP server for debugging WebViews.
+    Start a CDP server for debugging WebViews and inspectable JSContexts.
 
     \b
     Open the following URL in Google Chrome and pick a page to inspect:

@@ -29,6 +29,21 @@ def key_to_pid(key: str) -> int:
     return int(key.split(":")[1])
 
 
+def make_target_id(app_id: str, page_id: str) -> str:
+    """Build an identifier addressing one page of one application.
+
+    `webinspectord` numbers pages per application, so a page identifier alone is ambiguous as soon
+    as more than one application is inspectable - and it always is with JSContext debuggables,
+    which are page 1 of every process hosting one. Qualifying it with the application identifier
+    keeps the identifiers the CDP bridge hands out unique. Resolve one with
+    `WebinspectorService.find_page_id`.
+
+    :param app_id: The owning application's identifier (`WIRApplicationIdentifierKey`).
+    :param page_id: The page's identifier within that application.
+    """
+    return f"{app_id}:{page_id}"
+
+
 class WirTypes(Enum):
     AUTOMATION = "WIRTypeAutomation"
     ITML = "WIRTypeITML"
@@ -66,6 +81,10 @@ class Page:
         if p.type_ in (WirTypes.WEB, WirTypes.WEB_PAGE):
             p.web_title = page_dict["WIRTitleKey"]
             p.web_url = page_dict["WIRURLKey"]
+        if p.type_ == WirTypes.JAVASCRIPT:
+            # A JSContext debuggable is listed with a title (its name, "JSContext" by default) but
+            # no URL - there is no document behind it.
+            p.web_title = page_dict.get("WIRTitleKey", "")
         if p.type_ == WirTypes.AUTOMATION:
             p.automation_is_paired_key = page_dict["WIRAutomationTargetIsPairedKey"]
             p.automation_name = page_dict["WIRAutomationTargetNameKey"]
@@ -144,7 +163,7 @@ class WebinspectorService(LockdownService):
         self.connected_application: dict[str, Application] = {}
         self.application_pages: dict[str, Any] = {}
         self.wir_message_results: dict[str, Any] = {}
-        self.wir_events: list[Any] = []
+        self.wir_events: dict[str, list[Any]] = {}
         self.receive_handlers = {
             "_rpc_reportCurrentState:": self._handle_report_current_state,
             "_rpc_reportConnectedApplicationList:": self._handle_report_connected_application_list,
@@ -345,14 +364,35 @@ class WebinspectorService(LockdownService):
         :param page_id: The target page identifier.
         """
         await self._forward_did_close(session_id, app_id, page_id)
+        self.wir_events.pop(session_id, None)
+
+    def session_events(self, session_id: str) -> list[Any]:
+        """The queue of events `webinspectord` forwarded to one session's socket.
+
+        Events carry no id, so a consumer cannot tell its own from another's by content, and
+        WebKit allows one inspector session per page but several across pages. `webinspectord`
+        tags every forwarded message with the session it belongs to, so they are queued per
+        session: concurrent sessions - two DevTools tabs, two JSContexts - would otherwise
+        consume each other's events.
+
+        :param session_id: The session identifier the socket was set up with.
+        :returns: The session's queue; consumers pop from it in place.
+        """
+        return self.wir_events.setdefault(session_id, [])
 
     def find_page_id(self, page_id: str) -> tuple[Application, Page]:
         """Look up the application and page for a known page identifier.
 
-        :param page_id: The page identifier to search for.
+        :param page_id: An identifier as built by `make_target_id`. A bare page identifier is also
+            accepted, resolving to the first application reporting it - note that page identifiers
+            are only unique per application (every JSContext debuggable is page 1 of its own
+            process), so it cannot address them all.
         :returns: A tuple of the owning application and the matching page.
         :raises KeyError: No page with the given identifier is currently known.
         """
+        app_id, _, page_key = page_id.rpartition(":")
+        if page_key in self.application_pages.get(app_id, {}):
+            return self.connected_application[app_id], self.application_pages[app_id][page_key]
         for app_id in self.application_pages:
             for page in self.application_pages[app_id]:
                 if page == page_id:
@@ -384,19 +424,20 @@ class WebinspectorService(LockdownService):
         pass
 
     async def _handle_application_sent_listing(self, arg: dict[str, Any]):
-        if arg["WIRApplicationIdentifierKey"] in self.application_pages:
-            # Update existing application pages
-            for id_, page in arg["WIRListingKey"].items():
-                if id_ in self.application_pages[arg["WIRApplicationIdentifierKey"]]:
-                    self.application_pages[arg["WIRApplicationIdentifierKey"]][id_].update(page)
-                else:
-                    self.application_pages[arg["WIRApplicationIdentifierKey"]][id_] = Page.from_page_dictionary(page)
-        else:
-            # Add new application pages
-            pages = {}
-            for id_, page in arg["WIRListingKey"].items():
+        app_id = arg["WIRApplicationIdentifierKey"]
+        known: dict[str, Page] = self.application_pages.get(app_id, {})
+        # A listing is the application's complete set of pages, not a delta: a page missing from it
+        # has been closed. Merging one in without dropping those kept every tab ever opened in the
+        # listing for the rest of the session. Pages that survive are updated in place - sessions
+        # hold references to them.
+        pages: dict[str, Page] = {}
+        for id_, page in arg["WIRListingKey"].items():
+            if id_ in known:
+                known[id_].update(page)
+                pages[id_] = known[id_]
+            else:
                 pages[id_] = Page.from_page_dictionary(page)
-            self.application_pages[arg["WIRApplicationIdentifierKey"]] = pages
+        self.application_pages[app_id] = pages
 
     async def _handle_application_updated(self, arg: dict[str, Any]):
         app = Application.from_application_dictionary(arg)
@@ -412,7 +453,7 @@ class WebinspectorService(LockdownService):
         if "id" in response:
             self.wir_message_results[response["id"]] = response
         else:
-            self.wir_events.append(response)
+            self.session_events(arg.get("WIRDestinationKey", "")).append(response)
 
     async def _handle_application_disconnected(self, arg: dict[str, Any]):
         self.connected_application.pop(arg["WIRApplicationIdentifierKey"], None)

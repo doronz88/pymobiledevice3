@@ -1,15 +1,27 @@
 import asyncio
 import logging
 import uuid
+from collections.abc import Iterator
 from typing import Any, Optional
 
 from fastapi import WebSocket
 
 from pymobiledevice3.services.web_protocol.cdp_target import CdpTarget
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
-from pymobiledevice3.services.webinspector import WebinspectorService, WirTypes
+from pymobiledevice3.services.webinspector import Application, Page, WebinspectorService, WirTypes, make_target_id
 
 logger = logging.getLogger(__name__)
+
+# Debuggable types the bridge can drive: WebKit's web pages, and JavaScriptCore's JSContexts
+# (an app or daemon that called -[JSContext setInspectable:YES], and every WKWebView's own
+# JSContext). The latter implement only the JS-side domains, so they are advertised to the
+# frontend as Chrome does for a bare V8 target - see JS_TARGET_TYPE.
+INSPECTABLE_TYPES = (WirTypes.WEB, WirTypes.WEB_PAGE, WirTypes.JAVASCRIPT)
+
+# Chrome's target type for a JavaScript-only debuggable (its Node.js targets). It is what makes
+# the frontend leave out the Elements/Network/Application panels and the Page/DOM/CSS domains a
+# JSContext does not implement.
+JS_TARGET_TYPE = "node"
 
 # Seconds to let webinspectord reply with the updated page listings before answering /json
 PAGE_LISTING_FLUSH = 0.5
@@ -25,6 +37,34 @@ PAGE_LOCK_TIMEOUT = 5
 # (otherwise its socket setup races the teardown and webinspectord ignores it). Shared between
 # the page endpoint and browser-endpoint attachments.
 PAGE_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def iter_inspectable(inspector: WebinspectorService) -> "Iterator[tuple[str, Application, Page]]":
+    """Walk every debuggable the bridge can attach to, as (target id, application, page).
+
+    The target id qualifies the page with its application (see `make_target_id`); the bare page
+    identifier would collide, most visibly across JSContexts.
+    """
+    for app_id, pages in inspector.application_pages.items():
+        application = inspector.connected_application.get(app_id)
+        if application is None:
+            continue
+        for page_id, page in pages.items():
+            if page.type_ in INSPECTABLE_TYPES:
+                yield make_target_id(app_id, page_id), application, page
+
+
+def target_type(page: Page) -> str:
+    """Chrome target type to advertise a debuggable as."""
+    return JS_TARGET_TYPE if page.type_ == WirTypes.JAVASCRIPT else "page"
+
+
+def target_title(application: Application, page: Page) -> str:
+    """Title to advertise a debuggable under. JSContexts are all named "JSContext" and have no URL
+    to tell them apart, so name their process instead."""
+    if page.type_ == WirTypes.JAVASCRIPT:
+        return f"{application.name} ({application.pid}): {page.web_title or 'JSContext'}"
+    return page.web_title or ""
 
 
 class _PageSession:
@@ -221,13 +261,8 @@ class CdpBrowser:
             except Exception:
                 logger.exception("target refresh failed")
 
-    def _list_pages(self) -> dict[str, Any]:
-        pages: dict[str, Any] = {}
-        for app_id in self.inspector.application_pages:
-            for page_id, page in self.inspector.application_pages[app_id].items():
-                if page.type_ in (WirTypes.WEB, WirTypes.WEB_PAGE):
-                    pages[page_id] = page
-        return pages
+    def _list_pages(self) -> dict[str, tuple[Application, Page]]:
+        return {target_id: (application, page) for target_id, application, page in iter_inspectable(self.inspector)}
 
     async def _refresh_targets(self) -> None:
         async with self._refresh_lock:
@@ -236,12 +271,12 @@ class CdpBrowser:
             pages = self._list_pages()
             for page_id in [known for known in self._known_targets if known not in pages]:
                 await self._destroy_target(page_id)
-            for page_id, page in pages.items():
+            for page_id, (application, page) in pages.items():
                 is_new = page_id not in self._known_targets
                 self._known_targets[page_id] = {
                     "targetId": page_id,
-                    "type": "page",
-                    "title": page.web_title or "",
+                    "type": target_type(page),
+                    "title": target_title(application, page),
                     "url": page.web_url or "",
                     "attached": page_id in self._attached_pages,
                     "canAccessOpener": False,
