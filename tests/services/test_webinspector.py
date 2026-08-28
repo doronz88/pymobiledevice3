@@ -1,3 +1,4 @@
+import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any, cast
@@ -46,6 +47,24 @@ def test_javascript_page_listing_keeps_its_title() -> None:
     assert page.type_ == WirTypes.JAVASCRIPT
     assert page.web_title == "JSContext"
     assert page.web_url == ""
+
+
+async def test_forwarded_events_are_queued_per_session() -> None:
+    """Events carry no id, so a consumer cannot recognize its own by content. `webinspectord` tags
+    each with the session it was forwarded to, and they are queued per session - otherwise two
+    concurrent debugger sessions consume each other's events."""
+    inspector = WebinspectorService.__new__(WebinspectorService)
+    inspector.wir_events = {}
+    inspector.wir_message_results = {}
+    for session_id in ("A", "B"):
+        await inspector._handle_application_sent_data({
+            "WIRApplicationIdentifierKey": "PID:1",
+            "WIRDestinationKey": session_id,
+            "WIRMessageDataKey": json.dumps({"method": "Console.messageAdded", "params": {"of": session_id}}).encode(),
+        })
+
+    for session_id in ("A", "B"):
+        assert [event["params"]["of"] for event in inspector.session_events(session_id)] == [session_id]
 
 
 def test_find_page_id_distinguishes_same_page_of_different_applications() -> None:

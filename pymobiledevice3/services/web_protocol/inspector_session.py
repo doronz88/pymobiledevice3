@@ -125,11 +125,12 @@ class InspectorSession:
         await protocol.inspector.setup_inspector_socket(protocol.id_, protocol.app.id_, protocol.page.id_)
         target_id = None
         if wait_target:
-            while not protocol.inspector.wir_events:
+            events = protocol.inspector.session_events(protocol.id_)
+            while not events:
                 await asyncio.sleep(0)
-            created = protocol.inspector.wir_events.pop(0)
+            created = events.pop(0)
             while "targetInfo" not in created["params"]:
-                created = protocol.inspector.wir_events.pop(0)
+                created = events.pop(0)
             target_id = created["params"]["targetInfo"]["targetId"]
             logger.info(f"Created: {target_id}")
         target = cls(protocol, target_id)
@@ -214,10 +215,11 @@ class InspectorSession:
 
     async def _receive_loop(self):
         while True:
-            while not self.protocol.inspector.wir_events:
+            events = self.protocol.inspector.session_events(self.protocol.id_)
+            while not events:
                 await asyncio.sleep(0)
 
-            response = self.protocol.inspector.wir_events.pop(0)
+            response = events.pop(0)
             response_method = response["method"]
             if response_method in self.response_methods:
                 self.response_methods[response_method](response)

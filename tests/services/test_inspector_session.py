@@ -11,7 +11,11 @@ from pymobiledevice3.services.web_protocol.inspector_session import InspectorSes
 
 @pytest.fixture()
 async def session():
-    protocol = SimpleNamespace(inspector=SimpleNamespace(wir_events=[]))
+    events: dict[str, list[dict[str, Any]]] = {}
+    protocol = SimpleNamespace(
+        id_="session-1",
+        inspector=SimpleNamespace(session_events=lambda session_id: events.setdefault(session_id, [])),
+    )
     session = InspectorSession(protocol, target_id="page-1")  # pyright: ignore[reportArgumentType]
     yield session
     session._receive_task.cancel()
@@ -123,7 +127,7 @@ async def test_console_enable_completion_switches_to_live_output(
     session.protocol.send_command = send_command  # pyright: ignore[reportAttributeAccessIssue]
     task = asyncio.create_task(session.console_enable())
     # deliver the Console.enable response (inner id 1) so console_enable completes
-    session.protocol.inspector.wir_events.append(_wrap_target_event({"id": 1, "result": {}}))
+    session.protocol.inspector.session_events(session.protocol.id_).append(_wrap_target_event({"id": 1, "result": {}}))
     await asyncio.wait_for(task, timeout=5)
     event = _console_message_added("4", [{"type": "number", "value": 4, "description": "4"}])
     # console_enable itself must have switched the session out of replay state

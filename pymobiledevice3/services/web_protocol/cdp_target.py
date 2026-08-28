@@ -361,13 +361,12 @@ class CdpTarget:
             # A JSContext debuggable has no Target domain, so it announces nothing on attach and
             # there is only ever the one target - synthesize its id instead of waiting forever.
             return cls(protocol, f"jscontext:{protocol.app.id_}:{protocol.page.id_}")
+        events = protocol.inspector.session_events(protocol.id_)
         while True:
-            # wir_events is shared; another session's create may pop concurrently, so re-check
-            # emptiness on every iteration instead of assuming a successful pop.
-            if not protocol.inspector.wir_events:
+            if not events:
                 await asyncio.sleep(0)
                 continue
-            created = protocol.inspector.wir_events.pop(0)
+            created = events.pop(0)
             if "targetInfo" in created.get("params", {}):
                 break
         target_id = created["params"]["targetInfo"]["targetId"]
@@ -421,8 +420,9 @@ class CdpTarget:
         while asyncio.get_event_loop().time() < deadline:
             if target_id is not None and target_id in self._destroyed_targets:
                 return None
-            for i in range(len(self.protocol.inspector.wir_events)):
-                message = self.protocol.inspector.wir_events[i]
+            events = self.protocol.inspector.session_events(self.session_id)
+            for i in range(len(events)):
+                message = events[i]
                 if message["method"] == "Target.targetDestroyed":
                     # Only give up the wait; the event stays queued for the receive loop.
                     if message["params"]["targetId"] == target_id:
@@ -433,7 +433,7 @@ class CdpTarget:
                 message = json.loads(message["params"]["message"])
                 if message.get("id", "") != id_:
                     continue
-                del self.protocol.inspector.wir_events[i]
+                del events[i]
                 self._pending_requests.pop(id_, None)
                 return message
             await asyncio.sleep(0)
@@ -569,9 +569,10 @@ class CdpTarget:
             result = self._next_flat_result()
             if result is not None:
                 return result
-        if not self.protocol.inspector.wir_events:
+        events = self.protocol.inspector.session_events(self.session_id)
+        if not events:
             return None
-        return cast(dict[str, Any], self.protocol.inspector.wir_events.pop(0))
+        return cast(dict[str, Any], events.pop(0))
 
     async def _to_output_queue(self, message: dict[str, Any]):
         if message["method"] != "Target.dispatchMessageFromTarget":

@@ -163,7 +163,7 @@ class WebinspectorService(LockdownService):
         self.connected_application: dict[str, Application] = {}
         self.application_pages: dict[str, Any] = {}
         self.wir_message_results: dict[str, Any] = {}
-        self.wir_events: list[Any] = []
+        self.wir_events: dict[str, list[Any]] = {}
         self.receive_handlers = {
             "_rpc_reportCurrentState:": self._handle_report_current_state,
             "_rpc_reportConnectedApplicationList:": self._handle_report_connected_application_list,
@@ -364,6 +364,21 @@ class WebinspectorService(LockdownService):
         :param page_id: The target page identifier.
         """
         await self._forward_did_close(session_id, app_id, page_id)
+        self.wir_events.pop(session_id, None)
+
+    def session_events(self, session_id: str) -> list[Any]:
+        """The queue of events `webinspectord` forwarded to one session's socket.
+
+        Events carry no id, so a consumer cannot tell its own from another's by content, and
+        WebKit allows one inspector session per page but several across pages. `webinspectord`
+        tags every forwarded message with the session it belongs to, so they are queued per
+        session: concurrent sessions - two DevTools tabs, two JSContexts - would otherwise
+        consume each other's events.
+
+        :param session_id: The session identifier the socket was set up with.
+        :returns: The session's queue; consumers pop from it in place.
+        """
+        return self.wir_events.setdefault(session_id, [])
 
     def find_page_id(self, page_id: str) -> tuple[Application, Page]:
         """Look up the application and page for a known page identifier.
@@ -437,7 +452,7 @@ class WebinspectorService(LockdownService):
         if "id" in response:
             self.wir_message_results[response["id"]] = response
         else:
-            self.wir_events.append(response)
+            self.session_events(arg.get("WIRDestinationKey", "")).append(response)
 
     async def _handle_application_disconnected(self, arg: dict[str, Any]):
         self.connected_application.pop(arg["WIRApplicationIdentifierKey"], None)
