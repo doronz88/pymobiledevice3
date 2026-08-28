@@ -1,11 +1,12 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 import pytest
 
 from pymobiledevice3.exceptions import WebInspectorNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.webinspector import SAFARI, WebinspectorService
+from pymobiledevice3.services.webinspector import SAFARI, Page, WebinspectorService, WirTypes, make_target_id
 
 
 @asynccontextmanager
@@ -32,3 +33,33 @@ async def testp_opening_app(lockdown: LockdownClient) -> None:
         pages = await inspector.get_open_pages()
         assert safari.name in pages
         assert pages[safari.name]
+
+
+def test_javascript_page_listing_keeps_its_title() -> None:
+    """A JSContext debuggable is listed with a title but no URL - there is no document behind it."""
+    page = Page.from_page_dictionary({
+        "WIRTitleKey": "JSContext",
+        "WIRTypeKey": "WIRTypeJavaScript",
+        "WIRPageIdentifierKey": 1,
+        "WIROverrideNameKey": "",
+    })
+    assert page.type_ == WirTypes.JAVASCRIPT
+    assert page.web_title == "JSContext"
+    assert page.web_url == ""
+
+
+def test_find_page_id_distinguishes_same_page_of_different_applications() -> None:
+    """Page identifiers are per application - every JSContext debuggable is page 1 of its own
+    process - so the identifier the CDP bridge hands out qualifies them with the application."""
+    inspector = WebinspectorService.__new__(WebinspectorService)
+    listing = {"WIRTitleKey": "JSContext", "WIRTypeKey": "WIRTypeJavaScript", "WIRPageIdentifierKey": 1}
+    inspector.application_pages = {app_id: {"1": Page.from_page_dictionary(listing)} for app_id in ("PID:1", "PID:2")}
+    inspector.connected_application = cast(Any, {app_id: app_id for app_id in ("PID:1", "PID:2")})
+
+    for app_id in ("PID:1", "PID:2"):
+        application, page = inspector.find_page_id(make_target_id(app_id, "1"))
+        assert application == app_id
+        assert page.id_ == 1
+
+    with pytest.raises(KeyError):
+        inspector.find_page_id(make_target_id("PID:3", "1"))

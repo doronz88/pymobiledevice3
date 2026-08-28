@@ -29,6 +29,21 @@ def key_to_pid(key: str) -> int:
     return int(key.split(":")[1])
 
 
+def make_target_id(app_id: str, page_id: str) -> str:
+    """Build an identifier addressing one page of one application.
+
+    `webinspectord` numbers pages per application, so a page identifier alone is ambiguous as soon
+    as more than one application is inspectable - and it always is with JSContext debuggables,
+    which are page 1 of every process hosting one. Qualifying it with the application identifier
+    keeps the identifiers the CDP bridge hands out unique. Resolve one with
+    `WebinspectorService.find_page_id`.
+
+    :param app_id: The owning application's identifier (`WIRApplicationIdentifierKey`).
+    :param page_id: The page's identifier within that application.
+    """
+    return f"{app_id}:{page_id}"
+
+
 class WirTypes(Enum):
     AUTOMATION = "WIRTypeAutomation"
     ITML = "WIRTypeITML"
@@ -66,6 +81,10 @@ class Page:
         if p.type_ in (WirTypes.WEB, WirTypes.WEB_PAGE):
             p.web_title = page_dict["WIRTitleKey"]
             p.web_url = page_dict["WIRURLKey"]
+        if p.type_ == WirTypes.JAVASCRIPT:
+            # A JSContext debuggable is listed with a title (its name, "JSContext" by default) but
+            # no URL - there is no document behind it.
+            p.web_title = page_dict.get("WIRTitleKey", "")
         if p.type_ == WirTypes.AUTOMATION:
             p.automation_is_paired_key = page_dict["WIRAutomationTargetIsPairedKey"]
             p.automation_name = page_dict["WIRAutomationTargetNameKey"]
@@ -349,10 +368,16 @@ class WebinspectorService(LockdownService):
     def find_page_id(self, page_id: str) -> tuple[Application, Page]:
         """Look up the application and page for a known page identifier.
 
-        :param page_id: The page identifier to search for.
+        :param page_id: An identifier as built by `make_target_id`. A bare page identifier is also
+            accepted, resolving to the first application reporting it - note that page identifiers
+            are only unique per application (every JSContext debuggable is page 1 of its own
+            process), so it cannot address them all.
         :returns: A tuple of the owning application and the matching page.
         :raises KeyError: No page with the given identifier is currently known.
         """
+        app_id, _, page_key = page_id.rpartition(":")
+        if page_key in self.application_pages.get(app_id, {}):
+            return self.connected_application[app_id], self.application_pages[app_id][page_key]
         for app_id in self.application_pages:
             for page in self.application_pages[app_id]:
                 if page == page_id:

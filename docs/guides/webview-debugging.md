@@ -16,6 +16,8 @@ JavaScript debugger.
   iOS >= 16.4 the app must set `webView.isInspectable = true`, or be a
   development/debug-signed build. Production apps that don't opt in cannot be
   inspected.
+- Bare `JSContext`s opt in the same way (`jsContext.isInspectable = true`); see
+  [JavaScript contexts](#javascript-contexts).
 
 ## Start the bridge
 
@@ -30,6 +32,22 @@ the duration of the debugging session.
 
 Open <http://127.0.0.1:9222/> in Google Chrome and pick a page. Prefer this landing
 page over `chrome://inspect` — see the command's `--help` for why.
+
+## JavaScript contexts
+
+A process that made a bare `JSContext` inspectable is listed alongside the web pages,
+named after the process hosting it (`myapp (1234): JSContext`). Such a debuggable is
+JavaScriptCore's own inspector: it implements the JavaScript half of the protocol -
+`Runtime`, `Debugger`, `Console`, `Heap` - and nothing else. There is no document behind
+it, so it has no URL and no DOM, page, or network domains.
+
+The landing page therefore opens them with Chrome's JavaScript-only DevTools frontend -
+the one Chrome uses for Node.js - which offers Console, Sources, and Memory. They are
+advertised as `"type": "node"` in `/json`.
+
+A `JSContext` only answers the inspector while the thread hosting it services its run
+loop. One whose host is blocked elsewhere is still listed (its process registered it) but
+never replies; the bridge gives up on it after a while rather than hanging.
 
 ## VS Code
 

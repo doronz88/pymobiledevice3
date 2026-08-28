@@ -18,10 +18,13 @@ from pymobiledevice3.services.web_protocol.cdp_browser import (
     PAGE_LOCKS,
     TARGET_CREATION_TIMEOUT,
     CdpBrowser,
+    iter_inspectable,
+    target_title,
+    target_type,
 )
 from pymobiledevice3.services.web_protocol.cdp_target import CdpTarget
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
-from pymobiledevice3.services.webinspector import WirTypes
+from pymobiledevice3.services.webinspector import Page, WirTypes
 
 # chrome://inspect routes a network target's DevTools through Chrome's browser-process relay,
 # which deadlocks after sustained console traffic (the console/screen freeze). Serving the DevTools
@@ -183,20 +186,24 @@ async def available_targets(request: Request, _: str):
     await app.state.inspector.flush_input(PAGE_LISTING_FLUSH)
     host = request.headers.get("host", "localhost:9222")
     targets: list[dict[str, Any]] = []
-    for app_id in app.state.inspector.application_pages:
-        for page_id, page in app.state.inspector.application_pages[app_id].items():
-            if page.type_ not in (WirTypes.WEB, WirTypes.WEB_PAGE):
-                continue
-            targets.append({
-                "description": "",
-                "id": page_id,
-                "title": page.web_title,
-                "type": "page",
-                "url": page.web_url,
-                "webSocketDebuggerUrl": f"ws://{host}/devtools/page/{page_id}",
-                "devtoolsFrontendUrl": f"/devtools/inspector.html?ws={host}/devtools/page/{page_id}",
-            })
+    for target_id, application, page in iter_inspectable(app.state.inspector):
+        targets.append({
+            "description": "",
+            "id": target_id,
+            "title": target_title(application, page),
+            "type": target_type(page),
+            "url": page.web_url,
+            "webSocketDebuggerUrl": f"ws://{host}/devtools/page/{target_id}",
+            "devtoolsFrontendUrl": f"{_frontend_url(page)}?ws={host}/devtools/page/{target_id}",
+        })
     return targets
+
+
+def _frontend_url(page: Page) -> str:
+    """DevTools frontend entry point for a debuggable. A JSContext gets Chrome's JavaScript-only
+    entry point (the one it uses for Node.js); inspector.html would come up expecting the Page/DOM
+    domains that JavaScriptCore's inspector does not implement."""
+    return "/devtools/js_app.html" if page.type_ == WirTypes.JAVASCRIPT else "/devtools/inspector.html"
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -208,13 +215,10 @@ async def index(request: Request) -> HTMLResponse:
     await app.state.inspector.flush_input(PAGE_LISTING_FLUSH)
     host = request.headers.get("host", "127.0.0.1:9222")
     items: list[str] = []
-    for app_id in app.state.inspector.application_pages:
-        for page_id, page in app.state.inspector.application_pages[app_id].items():
-            if page.type_ not in (WirTypes.WEB, WirTypes.WEB_PAGE):
-                continue
-            frontend = f"/devtools/inspector.html?ws={host}/devtools/page/{page_id}"
-            title = page.web_title or page.web_url or f"page {page_id}"
-            items.append(f'<li><a href="{frontend}">{title}</a><br><small>{page.web_url}</small></li>')
+    for target_id, application, page in iter_inspectable(app.state.inspector):
+        frontend = f"{_frontend_url(page)}?ws={host}/devtools/page/{target_id}"
+        title = target_title(application, page) or page.web_url or f"page {target_id}"
+        items.append(f'<li><a href="{frontend}">{title}</a><br><small>{page.web_url}</small></li>')
     body = "<ul>" + "".join(items) + "</ul>" if items else "<p>No inspectable pages. Open a page in Safari.</p>"
     return HTMLResponse(
         f"<!doctype html><meta charset=utf-8><title>pymobiledevice3 Web Inspector</title>"
