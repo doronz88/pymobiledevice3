@@ -31,12 +31,24 @@ TARGET_CREATION_TIMEOUT = 30
 TARGET_POLL_INTERVAL = 2.0
 # Seconds to wait for another debugger session on the same page to tear down before skipping it
 PAGE_LOCK_TIMEOUT = 5
+# Seconds a page-endpoint connection waits for the page after asking the session holding it to hand
+# it over. Far longer than PAGE_LOCK_TIMEOUT: the handover itself is quick, but several connections
+# to one page are served one after another, and dropping a client that is merely queued behind the
+# others would trade one silent failure for another. Only a session wedged mid-teardown reaches it.
+PAGE_HANDOVER_TIMEOUT = 30
 
 # WebKit supports a single inspector session per page, so sessions are serialized per page:
 # a new debugger connection waits until the previous session's WIR socket teardown completed
 # (otherwise its socket setup races the teardown and webinspectord ignores it). Shared between
 # the page endpoint and browser-endpoint attachments.
 PAGE_LOCKS: dict[str, asyncio.Lock] = {}
+
+# Page-endpoint sessions that can be superseded, by page id. A DevTools tab left attached holds
+# its page for as long as it stays open, so without this every later connection to that page waits
+# behind it - its websocket already accepted, which is what a blank, unresponsive frontend is. A
+# new connection sets the event to hand the page over, then waits for PAGE_LOCKS as usual so the
+# old session's WIR teardown still completes before the new one's socket setup.
+PAGE_TAKEOVERS: dict[str, asyncio.Event] = {}
 
 
 def iter_inspectable(inspector: WebinspectorService) -> "Iterator[tuple[str, Application, Page]]":
