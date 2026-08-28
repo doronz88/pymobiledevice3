@@ -424,19 +424,20 @@ class WebinspectorService(LockdownService):
         pass
 
     async def _handle_application_sent_listing(self, arg: dict[str, Any]):
-        if arg["WIRApplicationIdentifierKey"] in self.application_pages:
-            # Update existing application pages
-            for id_, page in arg["WIRListingKey"].items():
-                if id_ in self.application_pages[arg["WIRApplicationIdentifierKey"]]:
-                    self.application_pages[arg["WIRApplicationIdentifierKey"]][id_].update(page)
-                else:
-                    self.application_pages[arg["WIRApplicationIdentifierKey"]][id_] = Page.from_page_dictionary(page)
-        else:
-            # Add new application pages
-            pages = {}
-            for id_, page in arg["WIRListingKey"].items():
+        app_id = arg["WIRApplicationIdentifierKey"]
+        known: dict[str, Page] = self.application_pages.get(app_id, {})
+        # A listing is the application's complete set of pages, not a delta: a page missing from it
+        # has been closed. Merging one in without dropping those kept every tab ever opened in the
+        # listing for the rest of the session. Pages that survive are updated in place - sessions
+        # hold references to them.
+        pages: dict[str, Page] = {}
+        for id_, page in arg["WIRListingKey"].items():
+            if id_ in known:
+                known[id_].update(page)
+                pages[id_] = known[id_]
+            else:
                 pages[id_] = Page.from_page_dictionary(page)
-            self.application_pages[arg["WIRApplicationIdentifierKey"]] = pages
+        self.application_pages[app_id] = pages
 
     async def _handle_application_updated(self, arg: dict[str, Any]):
         app = Application.from_application_dictionary(arg)

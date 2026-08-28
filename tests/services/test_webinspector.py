@@ -49,6 +49,37 @@ def test_javascript_page_listing_keeps_its_title() -> None:
     assert page.web_url == ""
 
 
+def _web_page_listing(app_id: str, pages: dict[str, str]) -> dict[str, Any]:
+    return {
+        "WIRApplicationIdentifierKey": app_id,
+        "WIRListingKey": {
+            page_id: {
+                "WIRPageIdentifierKey": int(page_id),
+                "WIRTypeKey": "WIRTypeWeb",
+                "WIRTitleKey": title,
+                "WIRURLKey": f"https://example.com/{title}",
+            }
+            for page_id, title in pages.items()
+        },
+    }
+
+
+async def test_listing_drops_pages_that_closed() -> None:
+    """A listing is the application's complete set of pages: one missing from it has closed.
+    Merging without dropping those kept every tab ever opened in the listing forever."""
+    inspector = WebinspectorService.__new__(WebinspectorService)
+    inspector.application_pages = {}
+    await inspector._handle_application_sent_listing(_web_page_listing("PID:1", {"1": "kept", "2": "closed"}))
+    kept = inspector.application_pages["PID:1"]["1"]
+
+    await inspector._handle_application_sent_listing(_web_page_listing("PID:1", {"1": "renamed", "3": "opened"}))
+
+    assert set(inspector.application_pages["PID:1"]) == {"1", "3"}
+    # A page that survives is updated in place - sessions hold references to it
+    assert inspector.application_pages["PID:1"]["1"] is kept
+    assert kept.web_title == "renamed"
+
+
 async def test_forwarded_events_are_queued_per_session() -> None:
     """Events carry no id, so a consumer cannot recognize its own by content. `webinspectord` tags
     each with the session it was forwarded to, and they are queued per session - otherwise two

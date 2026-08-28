@@ -343,7 +343,14 @@ async def browser_debugger(websocket: WebSocket, connection_id: str):
 
 @app.websocket("/devtools/page/{page_id}")
 async def page_debugger(websocket: WebSocket, page_id: str):
-    application, page = app.state.inspector.find_page_id(page_id)
+    try:
+        application, page = app.state.inspector.find_page_id(page_id)
+    except KeyError:
+        # The page closed on the device between being listed and being opened here - a link the
+        # user had on screen a moment too long. Refuse the connection instead of erroring out.
+        logger.warning(f"page {page_id} is no longer inspectable")
+        await websocket.close()
+        return
     session_id = str(uuid.uuid4()).upper()
     protocol = SessionProtocol(app.state.inspector, session_id, application, page, method_prefix="")
     # Accept before the device-side target setup: DevTools drops the connection if the
