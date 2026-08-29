@@ -69,6 +69,10 @@ class Page:
     type_: WirTypes
     web_url: str = ""
     web_title: str = ""
+    # The Web Inspector connection currently debugging this page, when there is one. WebKit serves
+    # a single inspector session per debuggable, so a page listed with somebody else's connection
+    # identifier cannot be attached to until they let go.
+    web_connection_id: str = ""
     automation_is_paired_key: bool = False
     automation_name: str = ""
     automation_version: str = ""
@@ -81,6 +85,7 @@ class Page:
         if p.type_ in (WirTypes.WEB, WirTypes.WEB_PAGE):
             p.web_title = page_dict["WIRTitleKey"]
             p.web_url = page_dict["WIRURLKey"]
+            p.web_connection_id = page_dict.get("WIRConnectionIdentifierKey", "")
         if p.type_ == WirTypes.JAVASCRIPT:
             # A JSContext debuggable is listed with a title (its name, "JSContext" by default) but
             # no URL - there is no document behind it.

@@ -49,6 +49,28 @@ def test_javascript_page_listing_keeps_its_title() -> None:
     assert page.web_url == ""
 
 
+def test_web_page_listing_reports_the_debugger_holding_it() -> None:
+    """WebKit serves one inspector session per page, and the listing names the connection that has
+    it. Without that, a page held by another debugger looked exactly like a device not answering."""
+    held = Page.from_page_dictionary({
+        "WIRPageIdentifierKey": 1,
+        "WIRTypeKey": "WIRTypeWebPage",
+        "WIRTitleKey": "Example Domain",
+        "WIRURLKey": "https://example.com/",
+        "WIRConnectionIdentifierKey": "98FC0F20-4680-4E8D-A3C9-AB19296BCE96",
+    })
+    assert held.web_connection_id == "98FC0F20-4680-4E8D-A3C9-AB19296BCE96"
+
+    # The key is absent altogether while nobody is debugging the page.
+    free = Page.from_page_dictionary({
+        "WIRPageIdentifierKey": 1,
+        "WIRTypeKey": "WIRTypeWebPage",
+        "WIRTitleKey": "Example Domain",
+        "WIRURLKey": "https://example.com/",
+    })
+    assert free.web_connection_id == ""
+
+
 def _web_page_listing(app_id: str, pages: dict[str, str]) -> dict[str, Any]:
     return {
         "WIRApplicationIdentifierKey": app_id,
