@@ -113,3 +113,20 @@ def test_find_page_id_distinguishes_same_page_of_different_applications() -> Non
 
     with pytest.raises(KeyError):
         inspector.find_page_id(make_target_id("PID:3", "1"))
+
+
+async def testp_reattaching_immediately_after_a_session_succeeds(lockdown: LockdownClient) -> None:
+    """webinspectord admits a new session only about ten seconds after the previous one started,
+    and until then never completes the TLS handshake - a hair past our handshake timeout. Every
+    reattach that came too soon (a restarted CDP bridge, an automation session opened once
+    inspection was done) therefore failed, and was reported as Web Inspector being disabled."""
+    async with webinspector_service(lockdown):
+        pass
+
+    # No delay: this is the reattach that used to abort.
+    reattached = WebinspectorService(lockdown=lockdown)
+    await reattached.connect()
+    try:
+        assert reattached.connection_id
+    finally:
+        await reattached.close()

@@ -213,6 +213,25 @@ class WebinspectorService(LockdownService):
             if event.get("Name") == WEBINSPECTORD_DISABLED_NOTIFICATION:
                 raise WebInspectorNotEnabledError
 
+    async def _connect_service(self) -> None:
+        """Connect to webinspectord, waiting out the gate it puts on consecutive sessions.
+
+        A new session is admitted only about ten seconds after the previous one started: until
+        then webinspectord accepts the connection but never completes the TLS handshake. That is a
+        hair longer than DEFAULT_SSL_HANDSHAKE_TIMEOUT, so reattaching right after a session ended
+        - restarting the CDP bridge, or opening an automation session once inspection is done -
+        aborted the handshake and, since a disabled device also terminates the connection, was
+        reported as "Web Inspector is disabled". The attempt that timed out has already waited the
+        gate out, so a second one goes through.
+        """
+        try:
+            await super().connect()
+        except ConnectionTerminatedError as e:
+            if not isinstance(e.__cause__, ConnectionAbortedError):
+                # Terminated by the device rather than by our own handshake timeout.
+                raise
+            await super().connect()
+
     async def _connect_or_raise_disabled(self) -> None:
         async with NotificationProxyService(self.lockdown) as notification_proxy:
             await notification_proxy.notify_register_dispatch(WEBINSPECTORD_DISABLED_NOTIFICATION)
@@ -220,7 +239,7 @@ class WebinspectorService(LockdownService):
             try:
                 # Keep the disabled notification watcher active for the full WebInspector handshake. A disabled
                 # device may report either the explicit notification or an abrupt service termination.
-                await self._await_or_raise_disabled(super().connect(), disabled_task)
+                await self._await_or_raise_disabled(self._connect_service(), disabled_task)
                 await self._await_or_raise_disabled(self._report_identifier(), disabled_task)
                 await self._handle_recv(await self._await_or_raise_disabled(self._recv_message(), disabled_task))
             finally:
