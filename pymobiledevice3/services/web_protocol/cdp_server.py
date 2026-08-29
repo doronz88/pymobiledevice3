@@ -161,6 +161,14 @@ def _reap_local_frontend() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.frontend_lock = asyncio.Lock()
+    # Per-page state belongs to one run of the bridge. An asyncio primitive binds to the event loop
+    # that created it, and a page handler killed without unwinding - a forced shutdown, a loop torn
+    # down under it - leaves its lock held. Either one carried into a later run in the same process
+    # (a second asyncio.run, a test) wedges every connection to that page: it waits out
+    # PAGE_HANDOVER_TIMEOUT for a lock nobody is left to release, then fails outright because the
+    # lock belongs to a loop that is gone.
+    PAGE_LOCKS.clear()
+    PAGE_TAKEOVERS.clear()
     await app.state.inspector.connect()
     yield
     _reap_local_frontend()
