@@ -20,7 +20,14 @@ from wsproto.events import Request as WsRequest
 from pymobiledevice3.exceptions import WebInspectorNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_browser import PAGE_LOCKS, PAGE_TAKEOVERS
-from pymobiledevice3.services.web_protocol.cdp_server import _fetch, app, targets_html
+from pymobiledevice3.services.web_protocol.cdp_server import (
+    DEVTOOLS_FRONTEND_HOST,
+    DEVTOOLS_FRONTEND_REV,
+    _fetch,
+    _frontend_base,
+    app,
+    targets_html,
+)
 from pymobiledevice3.services.web_protocol.cdp_target import JS_CONTEXT_EXECUTION_ID
 from pymobiledevice3.services.webinspector import SAFARI, Application, AutomationAvailability, Page, WebinspectorService
 
@@ -569,3 +576,25 @@ async def test_frontend_assets_are_fetched_without_a_proxy(monkeypatch: pytest.M
     with _local_asset_server(b"<html>frontend</html>") as url:
         assert urlsplit(url).hostname == "127.0.0.1"
         assert await _fetch(url) == (b"<html>frontend</html>", "text/html")
+
+
+async def test_a_frontend_that_could_not_be_resolved_is_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remembering a failed lookup served 404s - a blank DevTools window - for the rest of the
+    session, even after the cause (an unreachable network, a Chrome that lost the race to publish
+    its port) had passed."""
+    app.state.frontend_lock = asyncio.Lock()
+    monkeypatch.delattr(app.state, "frontend_base", raising=False)
+    # No Chrome to fall back to, so the first attempt cannot resolve a frontend at all.
+    monkeypatch.setattr(app.state, "chrome_path", None, raising=False)
+    probes: list[str] = []
+
+    async def probe(url: str) -> Optional[tuple[bytes, str]]:
+        probes.append(url)
+        # The hosted build is unreachable at first, then comes back.
+        return (b"<html>", "text/html") if len(probes) > 1 else None
+
+    monkeypatch.setattr("pymobiledevice3.services.web_protocol.cdp_server._fetch", probe)
+
+    assert await _frontend_base() is None
+    assert await _frontend_base() == f"https://{DEVTOOLS_FRONTEND_HOST}/serve_rev/@{DEVTOOLS_FRONTEND_REV}"
+    assert len(probes) == 2

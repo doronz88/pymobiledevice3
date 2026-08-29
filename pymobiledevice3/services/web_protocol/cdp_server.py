@@ -146,17 +146,24 @@ def find_chrome(explicit: Optional[str] = None) -> Optional[str]:
     return None
 
 
+def _reap_local_frontend() -> None:
+    """Tear down the fallback Chrome and its throwaway profile, if one is running."""
+    proc: Optional[subprocess.Popen[bytes]] = getattr(app.state, "local_chrome_proc", None)
+    if proc is not None:
+        proc.terminate()
+        app.state.local_chrome_proc = None
+    profile: Optional[str] = getattr(app.state, "local_chrome_profile", None)
+    if profile:
+        shutil.rmtree(profile, ignore_errors=True)
+        app.state.local_chrome_profile = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.frontend_lock = asyncio.Lock()
     await app.state.inspector.connect()
     yield
-    proc: Optional[subprocess.Popen[bytes]] = getattr(app.state, "local_chrome_proc", None)
-    if proc is not None:
-        proc.terminate()
-    profile: Optional[str] = getattr(app.state, "local_chrome_profile", None)
-    if profile:
-        shutil.rmtree(profile, ignore_errors=True)
+    _reap_local_frontend()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -196,6 +203,7 @@ async def _launch_local_frontend() -> Optional[str]:
             "was found. Install Chrome/Chromium or pass --chrome <path>."
         )
         return None
+    _reap_local_frontend()
     profile = tempfile.mkdtemp(prefix="pmd3-devtools-frontend-")
     app.state.local_chrome_profile = profile
     app.state.local_chrome_proc = subprocess.Popen(
@@ -224,25 +232,28 @@ async def _launch_local_frontend() -> Optional[str]:
 
 
 async def _frontend_base() -> Optional[str]:
-    """Base URL to serve the DevTools frontend from, decided once per run: the hosted build when
-    reachable, otherwise a locally launched Chrome. None if neither is available."""
+    """Base URL to serve the DevTools frontend from: the hosted build when reachable, otherwise a
+    locally launched Chrome. Resolved once per run and kept, but a failure is deliberately not
+    remembered - the causes are transient (a network that comes back, a Chrome that lost the race
+    to publish its port), and remembering one served 404s, and so a blank DevTools window, for the
+    rest of the session."""
     base = getattr(app.state, "frontend_base", None)
-    if base is not None:
-        return base or None
+    if base:
+        return base
     async with app.state.frontend_lock:
         base = getattr(app.state, "frontend_base", None)
-        if base is not None:
-            return base or None
+        if base:
+            return base
         rev = getattr(app.state, "frontend_rev", DEVTOOLS_FRONTEND_REV)
         hosted = f"https://{DEVTOOLS_FRONTEND_HOST}/serve_rev/@{rev}"
         if await _fetch(f"{hosted}/inspector.html") is not None:
             app.state.frontend_base = hosted
         else:
             local = await _launch_local_frontend()
-            app.state.frontend_base = f"{local}/devtools" if local else ""
+            app.state.frontend_base = f"{local}/devtools" if local else None
             if local:
                 logger.info("serving the DevTools frontend from a local Chrome (hosted build unreachable)")
-        return app.state.frontend_base or None
+        return app.state.frontend_base
 
 
 @app.get("/json/version")
