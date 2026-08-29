@@ -17,7 +17,9 @@ from fastapi.logger import logger
 from fastapi.responses import HTMLResponse, Response
 
 from pymobiledevice3.services.web_protocol.cdp_browser import (
+    PAGE_HANDOVER_TIMEOUT,
     PAGE_LOCKS,
+    PAGE_TAKEOVERS,
     TARGET_CREATION_TIMEOUT,
     CdpBrowser,
     iter_inspectable,
@@ -363,7 +365,30 @@ async def page_debugger(websocket: WebSocket, page_id: str):
     # Accept before the device-side target setup: DevTools drops the connection if the
     # websocket handshake stalls behind the WIR socket establishment.
     await websocket.accept()
-    async with PAGE_LOCKS.setdefault(page_id, asyncio.Lock()):
+    # WebKit serves one inspector session per debuggable, so sessions are serialized per page.
+    # Ask whoever holds this one to hand it over: a DevTools tab left attached (in a background
+    # tab, another window, a frontend the user never closed) holds the page for as long as it
+    # lives, and waiting it out behind PAGE_LOCKS is invisible to the newcomer - its websocket is
+    # already accepted, so the frontend just comes up blank and swallows everything typed into it.
+    # Most visible on JSContexts, whose debuggable outlives every page that ever inspected it.
+    superseded = PAGE_TAKEOVERS.get(page_id)
+    if superseded is not None:
+        logger.info(f"page {page_id}: taking the page over from the session holding it")
+        superseded.set()
+    # The lock is still taken, so the old session's WIR teardown completes before this one's
+    # socket setup (webinspectord ignores a setup that races a teardown). Only the session holding
+    # the page when this one arrived is asked to step aside - connections that are merely queued
+    # here alongside it are left to run in turn, so a burst of them still all get served.
+    lock = PAGE_LOCKS.setdefault(page_id, asyncio.Lock())
+    try:
+        await asyncio.wait_for(lock.acquire(), PAGE_HANDOVER_TIMEOUT)
+    except (asyncio.TimeoutError, TimeoutError):
+        logger.error(f"page {page_id}: the session holding it did not release it in time")
+        await websocket.close()
+        return
+    taken_over = asyncio.Event()
+    PAGE_TAKEOVERS[page_id] = taken_over
+    try:
         try:
             # Bound the wait: if the device never reports the target (e.g. webinspectord is in a
             # bad state), fail the connection instead of keeping a zombie handler alive forever.
@@ -373,16 +398,26 @@ async def page_debugger(websocket: WebSocket, page_id: str):
             await app.state.inspector.teardown_inspector_socket(session_id, application.id_, page.id_)
             await websocket.close()
             return
-        tasks: list[asyncio.Task[None]] = [
+        tasks: list[asyncio.Task[Any]] = [
             asyncio.create_task(from_cdp(target, websocket)),
             asyncio.create_task(to_cdp(target, websocket)),
+            asyncio.create_task(taken_over.wait()),
         ]
         try:
-            # from_cdp ends when the client disconnects; tear everything down so the target's
-            # queue-consumer tasks don't keep draining wir_events of future sessions.
+            # from_cdp ends when the client disconnects, taken_over when a newer connection claims
+            # the page; tear everything down so the target's queue-consumer tasks don't keep
+            # draining wir_events of future sessions.
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         finally:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             await target.close()
+            if taken_over.is_set():
+                # Close rather than leave it hanging: the superseded frontend shows a disconnect
+                # instead of silently going dead.
+                await websocket.close()
+    finally:
+        if PAGE_TAKEOVERS.get(page_id) is taken_over:
+            del PAGE_TAKEOVERS[page_id]
+        lock.release()

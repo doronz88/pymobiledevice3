@@ -14,6 +14,7 @@ from wsproto.events import Request as WsRequest
 
 from pymobiledevice3.exceptions import WebInspectorNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services.web_protocol.cdp_browser import PAGE_LOCKS, PAGE_TAKEOVERS
 from pymobiledevice3.services.web_protocol.cdp_server import app, targets_html
 from pymobiledevice3.services.web_protocol.cdp_target import JS_CONTEXT_EXECUTION_ID
 from pymobiledevice3.services.webinspector import SAFARI, Application, AutomationAvailability, Page, WebinspectorService
@@ -230,6 +231,43 @@ async def evaluate_and_log_in_javascript_context(port: int, target_id: str) -> b
         return True
     finally:
         await client.close()
+
+
+async def testp_cdp_server_takes_a_held_page_over(lockdown: LockdownClient) -> None:
+    """
+    A DevTools tab left attached to a page must not brick every later connection to it.
+
+    WebKit serves a single inspector session per debuggable, so sessions are serialized per page.
+    A second connection used to wait out the first one - with its websocket already accepted, so
+    the frontend rendered an empty window and swallowed everything typed into it, indefinitely.
+    The newcomer takes the page over instead, the way Safari's own Web Inspector does.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        page_id = targets[0]["id"]
+        held = CdpWebsocketClient(port, page_id)
+        await asyncio.wait_for(held.connect(), TIMEOUT)
+        try:
+            first = await held.command(1, "Runtime.evaluate", {"expression": "40+2"})
+            assert first["result"]["result"]["value"] == 42
+            # The first session is still attached and is never closed by the test.
+            taking_over = CdpWebsocketClient(port, page_id)
+            await asyncio.wait_for(taking_over.connect(), TIMEOUT)
+            try:
+                second = await taking_over.command(1, "Runtime.evaluate", {"expression": "40+2"})
+                assert second["result"]["result"]["value"] == 42
+            finally:
+                await taking_over.close()
+        finally:
+            await held.close()
+        # Both sessions are gone: the page must be left claimable, not pinned by a registration
+        # that outlived them (which would make the next connection wait out the whole handover
+        # budget before being refused).
+        for _ in range(TIMEOUT):
+            if page_id not in PAGE_TAKEOVERS and not PAGE_LOCKS[page_id].locked():
+                break
+            await asyncio.sleep(1)
+        assert page_id not in PAGE_TAKEOVERS, "the page stayed registered after both sessions ended"
+        assert not PAGE_LOCKS[page_id].locked(), "the page lock was not released"
 
 
 async def testp_cdp_server_survives_process_swaps(lockdown: LockdownClient) -> None:
