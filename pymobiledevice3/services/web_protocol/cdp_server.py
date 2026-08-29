@@ -7,10 +7,12 @@ import tempfile
 import uuid
 from contextlib import asynccontextmanager
 from html import escape
+from ipaddress import ip_address
 from pathlib import Path
 from string import Template
 from typing import Any, Optional
-from urllib.request import urlopen
+from urllib.parse import urlsplit
+from urllib.request import ProxyHandler, build_opener, urlopen
 
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.logger import logger
@@ -39,6 +41,13 @@ from pymobiledevice3.services.webinspector import Page, WebinspectorService, Wir
 DEVTOOLS_FRONTEND_REV = "0fcdce5f4fdec8d442d7df760cb541f1ca6e446d"
 DEVTOOLS_FRONTEND_HOST = "chrome-devtools-frontend.appspot.com"
 _frontend_cache: dict[str, tuple[bytes, str]] = {}
+
+# The local Chrome's assets must be fetched without a proxy. urllib applies proxy configuration
+# to loopback addresses as well - neither the no_proxy/ExceptionsList defaults nor macOS'
+# "exclude simple hostnames" cover 127.0.0.1 - so on a proxied network every asset request for
+# the fallback frontend would be sent to the proxy and come back empty, leaving a blank DevTools
+# window. Browsers bypass loopback implicitly; this opener does the same.
+_DIRECT_OPENER = build_opener(ProxyHandler({}))
 
 # Names/locations for the Chrome/Chromium binary used for the offline frontend fallback.
 _CHROME_BINARY_NAMES = (
@@ -153,11 +162,22 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
+def _is_loopback(url: str) -> bool:
+    """Whether url addresses this machine, and so must be fetched without going through a proxy."""
+    host = urlsplit(url).hostname or ""
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return host == "localhost" or host.endswith(".localhost")
+
+
 async def _fetch(url: str) -> Optional[tuple[bytes, str]]:
     """Fetch a frontend asset off the event loop; None on any failure."""
 
     def _get() -> tuple[bytes, str]:
-        with urlopen(url, timeout=20) as response:
+        # Anything on this machine - the fallback Chrome - is fetched directly; see _DIRECT_OPENER.
+        opener = _DIRECT_OPENER.open if _is_loopback(url) else urlopen
+        with opener(url, timeout=20) as response:
             return response.read(), response.headers.get_content_type()
 
     try:

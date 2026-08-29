@@ -1,10 +1,15 @@
 import asyncio
 import itertools
 import json
+import socket
+import threading
+import urllib.request
 import uuid
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager, contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 import pytest
 import uvicorn
@@ -15,7 +20,7 @@ from wsproto.events import Request as WsRequest
 from pymobiledevice3.exceptions import WebInspectorNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.web_protocol.cdp_browser import PAGE_LOCKS, PAGE_TAKEOVERS
-from pymobiledevice3.services.web_protocol.cdp_server import app, targets_html
+from pymobiledevice3.services.web_protocol.cdp_server import _fetch, app, targets_html
 from pymobiledevice3.services.web_protocol.cdp_target import JS_CONTEXT_EXECUTION_ID
 from pymobiledevice3.services.webinspector import SAFARI, Application, AutomationAvailability, Page, WebinspectorService
 
@@ -515,3 +520,52 @@ def test_landing_page_escapes_titles_from_the_device() -> None:
     assert "<script>" not in html
     assert "&lt;/a&gt;&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert "https://example.com/?a=1&amp;b=2" in html
+
+
+@contextmanager
+def _local_asset_server(payload: bytes) -> Generator[str, None, None]:
+    """Serve payload from loopback, standing in for the fallback Chrome's bundled frontend."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        # Named to match BaseHTTPRequestHandler's keyword parameter; silences the request log.
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}/devtools/inspector.html"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(TIMEOUT)
+
+
+def _refused_address() -> str:
+    """An address nothing listens on, so routing to it fails immediately instead of hanging."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return f"http://127.0.0.1:{probe.getsockname()[1]}"
+
+
+async def test_frontend_assets_are_fetched_without_a_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """urllib routes loopback through a configured proxy as readily as anything else, and the
+    fallback frontend lives on loopback: without a bypass, a proxied network serves a blank
+    DevTools window because every asset request goes to the proxy instead of the local Chrome."""
+    monkeypatch.setenv("http_proxy", _refused_address())
+    monkeypatch.delenv("no_proxy", raising=False)
+    # urlopen builds its default opener once and caches the proxies it read; drop it so the
+    # environment set above is the one in effect.
+    monkeypatch.setattr(urllib.request, "_opener", None, raising=False)
+
+    with _local_asset_server(b"<html>frontend</html>") as url:
+        assert urlsplit(url).hostname == "127.0.0.1"
+        assert await _fetch(url) == (b"<html>frontend</html>", "text/html")
