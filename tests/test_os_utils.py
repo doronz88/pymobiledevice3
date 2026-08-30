@@ -37,24 +37,17 @@ def test_linux_home_folder_ignores_relative_xdg_data_home(home, monkeypatch):
     assert Linux().get_home_folder_path() == home / ".local" / "share" / "pymobiledevice3"
 
 
-def test_linux_home_folder_ignores_foreign_xdg_data_home_under_sudo(home, tmp_path_factory, monkeypatch):
-    # Under sudo the environment may carry root's XDG_DATA_HOME while get_homedir()
-    # resolves the invoking user's home
-    root_data = tmp_path_factory.mktemp("root-data")
+def test_linux_home_folder_honors_absolute_xdg_data_home_under_sudo(home, tmp_path_factory, monkeypatch):
+    # sudo -E carries the invoking user's own XDG_DATA_HOME; it is honored as-is so
+    # sudo and non-sudo runs agree on where pair records live
+    data = tmp_path_factory.mktemp("xdg-data")
     monkeypatch.setattr(Linux, "get_homedir", lambda self: home)
     monkeypatch.setenv("SUDO_USER", "invoking-user")
-    monkeypatch.setenv("XDG_DATA_HOME", str(root_data))
-    assert Linux().get_home_folder_path() == home / ".local" / "share" / "pymobiledevice3"
+    monkeypatch.setenv("XDG_DATA_HOME", str(data))
+    assert Linux().get_home_folder_path() == data / "pymobiledevice3"
 
 
-def test_linux_home_folder_honors_own_xdg_data_home_under_sudo(home, monkeypatch):
-    monkeypatch.setattr(Linux, "get_homedir", lambda self: home)
-    monkeypatch.setenv("SUDO_USER", "invoking-user")
-    monkeypatch.setenv("XDG_DATA_HOME", str(home / "xdg-data"))
-    assert Linux().get_home_folder_path() == home / "xdg-data" / "pymobiledevice3"
-
-
-def test_get_home_folder_chowns_created_parents(home, monkeypatch):
+def test_get_home_folder_chowns_created_parents_within_home(home, monkeypatch):
     from pymobiledevice3 import common
 
     target = home / ".local" / "share" / "pymobiledevice3"
@@ -68,13 +61,28 @@ def test_get_home_folder_chowns_created_parents(home, monkeypatch):
     assert set(chowned) == {target, target.parent, target.parent.parent}
 
 
-def test_get_home_folder_chowns_only_leaf_when_parents_exist(home, monkeypatch):
+def test_get_home_folder_does_not_chown_parents_outside_home(home, tmp_path_factory, monkeypatch):
     from pymobiledevice3 import common
 
-    target = home / ".pymobiledevice3"
+    outside = tmp_path_factory.mktemp("xdg-data")
+    target = outside / "nested" / "pymobiledevice3"
     chowned = []
     monkeypatch.setattr(common, "_HOMEFOLDER", target)
     monkeypatch.setattr(common._OS_UTILS, "chown_to_non_sudo_if_needed", chowned.append)
 
     assert common.get_home_folder() == target
+    # only the leaf is chowned; ancestors outside the invoking user's home are left alone
     assert chowned == [target]
+
+
+def test_get_home_folder_skips_chown_when_folder_exists(home, monkeypatch):
+    from pymobiledevice3 import common
+
+    target = home / ".pymobiledevice3"
+    target.mkdir()
+    chowned = []
+    monkeypatch.setattr(common, "_HOMEFOLDER", target)
+    monkeypatch.setattr(common._OS_UTILS, "chown_to_non_sudo_if_needed", chowned.append)
+
+    assert common.get_home_folder() == target
+    assert chowned == []
