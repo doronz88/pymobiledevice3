@@ -109,6 +109,26 @@ sudo python3 -m pymobiledevice3 remote tunneld --uds /var/run/tunneld.sock
 python3 -m pymobiledevice3 developer dvt ls / --tunnel ':/var/run/tunneld.sock'
 ```
 
+When the client cannot reach the tunnel interface `tunneld` created — for example, `tunneld` runs
+in a different docker network stack, or on a different host altogether — the RSD addresses reported
+over `GET /` are unreachable. The `/connect` websocket endpoint bridges into the tunnel through the
+HTTP API instead: binary websocket messages are forwarded as-is over a TCP connection opened on the
+device's tunnel address (to `?port=`, defaulting to the RSD port), and vice versa:
+
+```python
+import websockets  # any websocket client works
+
+async with websockets.connect(f'ws://127.0.0.1:49151/connect?udid={udid}') as websocket:
+    # speak RSD (RemoteXPC) over the websocket, or pass ?port=<service-port>
+    # to reach any other service published over the tunnel
+    ...
+```
+
+!!! warning
+    Like the rest of the `tunneld` HTTP API, `/connect` is unauthenticated — anyone able to reach
+    the listener gains access to the services exposed over the tunnel, so only bind non-loopback
+    addresses on trusted networks.
+
 To make `tunneld` the **default** fallback — so commands route to it automatically without passing
 `--tunnel`, restoring the pre-userspace-default behavior — set
 `PYMOBILEDEVICE3_DEFAULT_FALLBACK=tunneld`:

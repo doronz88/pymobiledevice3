@@ -75,6 +75,13 @@ USB_MONITOR_RESCAN_INTERVAL = 30
 USBMUX_INTERVAL = 2
 OSUTILS = get_os_utils()
 
+# Read chunk size used when proxying tunnel traffic over the /connect websocket endpoint
+CONNECT_CHUNK_SIZE = 65536
+
+# Application-specific websocket close codes (4000-4999) used by the /connect endpoint
+WS_CLOSE_NO_TUNNEL = 4404
+WS_CLOSE_CONNECT_FAILED = 4502
+
 _UPSTREAM_FETCH_TIMEOUT = 2.0
 
 
@@ -747,8 +754,71 @@ class TunneldRunner:
                     status_code=404, content=json.dumps({"error": "something went wrong during tunnel creation"})
                 )
 
+        @self._app.websocket("/connect")
+        async def connect(websocket: fastapi.WebSocket, udid: str, port: Optional[int] = None) -> None:
+            """Bridge a websocket client into the tunnel interface of a given device.
+
+            Binary websocket messages are forwarded as-is into a TCP connection opened over the
+            device's tunnel — to the requested ``port``, defaulting to the RSD port — and vice
+            versa, allowing clients without direct access to the tunnel interface (e.g. a
+            different docker network stack, or a different host altogether) to reach the tunnel
+            services through the tunneld HTTP API.
+            """
+            await websocket.accept()
+            udid_tunnels = [
+                t.tunnel for t in self._tunneld_core.tunnel_tasks.values() if t.udid == udid and t.tunnel is not None
+            ]
+            if len(udid_tunnels) == 0:
+                await websocket.close(code=WS_CLOSE_NO_TUNNEL, reason=f"no tunnel exists for udid: {udid}")
+                return
+            tunnel = udid_tunnels[0]
+            if port is None:
+                port = tunnel.port
+            try:
+                reader, writer = await asyncio.open_connection(tunnel.address, port)
+            except OSError as e:
+                await websocket.close(
+                    code=WS_CLOSE_CONNECT_FAILED, reason=f"failed to connect to [{tunnel.address}]:{port}: {e}"
+                )
+                return
+
+            async def forward_websocket_to_tcp() -> None:
+                while True:
+                    data = await websocket.receive_bytes()
+                    writer.write(data)
+                    await writer.drain()
+
+            async def forward_tcp_to_websocket() -> None:
+                while True:
+                    data = await reader.read(CONNECT_CHUNK_SIZE)
+                    if not data:
+                        break
+                    await websocket.send_bytes(data)
+
+            forwarders = [
+                asyncio.create_task(forward_websocket_to_tcp(), name=f"connect-websocket-to-tcp-{udid}-{port}"),
+                asyncio.create_task(forward_tcp_to_websocket(), name=f"connect-tcp-to-websocket-{udid}-{port}"),
+            ]
+            try:
+                done, pending = await asyncio.wait(forwarders, return_when=asyncio.FIRST_COMPLETED)
+                for forwarder in pending:
+                    forwarder.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await forwarder
+                for forwarder in done:
+                    # surface unexpected errors; disconnections from either side are expected
+                    with suppress(fastapi.WebSocketDisconnect, OSError):
+                        forwarder.result()
+            finally:
+                writer.close()
+                with suppress(OSError):
+                    await writer.wait_closed()
+                with suppress(RuntimeError):
+                    # closing after the client already disconnected raises RuntimeError
+                    await websocket.close()
+
     def _run_app(self) -> None:
         if self.uds is not None:
-            uvicorn.run(self._app, uds=self.uds, loop="asyncio")
+            uvicorn.run(self._app, uds=self.uds, loop="asyncio", ws="wsproto")
         else:
-            uvicorn.run(self._app, host=self.host, port=self.port, loop="asyncio")
+            uvicorn.run(self._app, host=self.host, port=self.port, loop="asyncio", ws="wsproto")
