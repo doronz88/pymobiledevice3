@@ -23,7 +23,7 @@ description: Cut a new pymobiledevice3 release — create the GitHub release (wh
 2. **Review what's shipping** so you can write accurate highlights:
    ```shell
    PREV=$(git tag --sort=-creatordate | head -1)
-   git log $PREV..HEAD --oneline
+   git log --no-merges $PREV..HEAD --oneline
    git show <sha>   # inspect each meaningful change to describe it correctly
    ```
 
@@ -43,9 +43,11 @@ description: Cut a new pymobiledevice3 release — create the GitHub release (wh
 
 5. **Rewrite `## What's Changed` as a commit history**, not the PR-link list `--generate-notes`
    produces. One line per commit since the previous tag, formatted
-   `* <shortsha8> <subject> (#<pr>) (@<committer>)`:
+   `* <shortsha8> <subject> (#<pr>) (@<committer>)`. `--no-merges` is required: a merge commit
+   carries no change of its own, and its subject ("Merge pull request #N from <branch>") names the
+   branch rather than what shipped, which is exactly what these notes exist to spell out.
    ```shell
-   for sha in $(git log $PREV..HEAD --format='%H'); do
+   for sha in $(git log --no-merges $PREV..HEAD --format='%H'); do
      short=$(git rev-parse --short=8 $sha)
      subj=$(git show -s --format='%s' $sha)
      login=$(gh api repos/doronz88/pymobiledevice3/commits/$sha --jq '.author.login')

@@ -1,27 +1,26 @@
 from pymobiledevice3.services.web_protocol.driver import By
-from tests.services.test_web_protocol.common import LINK_HTML
+from tests.services.test_web_protocol.common import LINK_HTML, PAGE_ONE, PAGE_TWO
 
 
 async def test_back(webdriver):
-    await webdriver.get("https://www.google.com")
-    await webdriver.get("https://github.com")
+    await webdriver.get(PAGE_ONE)
+    await webdriver.get(PAGE_TWO)
     await webdriver.back()
-    assert (await webdriver.get_current_url()).rstrip("/") == "https://www.google.com"
+    assert await webdriver.get_current_url() == PAGE_ONE
 
 
 async def test_current_url(webdriver):
     assert not await webdriver.get_current_url()
-    url = "https://www.google.com"
-    await webdriver.get(url)
-    assert (await webdriver.get_current_url()).rstrip("/") == url
+    await webdriver.get(PAGE_ONE)
+    assert await webdriver.get_current_url() == PAGE_ONE
 
 
 async def test_forward(webdriver):
-    await webdriver.get("https://www.google.com")
-    await webdriver.get("https://github.com")
+    await webdriver.get(PAGE_ONE)
+    await webdriver.get(PAGE_TWO)
     await webdriver.back()
     await webdriver.forward()
-    assert (await webdriver.get_current_url()).rstrip("/") == "https://github.com"
+    assert await webdriver.get_current_url() == PAGE_TWO
 
 
 async def test_find_element(webdriver):
