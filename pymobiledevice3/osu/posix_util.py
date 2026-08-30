@@ -114,7 +114,7 @@ class Linux(Posix):
         # Existing installations keep ~/.pymobiledevice3; fresh ones follow the XDG Base Directory
         # Specification: $XDG_DATA_HOME/pymobiledevice3 (~/.local/share/pymobiledevice3 by default).
         legacy = super().get_home_folder_path()
-        if legacy.exists():
+        if legacy.is_dir():
             return legacy
         xdg_data_home = Path(os.environ.get("XDG_DATA_HOME", ""))
         if not xdg_data_home.is_absolute():
