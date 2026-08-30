@@ -8,6 +8,8 @@ from typing import Any, Optional
 
 from PIL import Image
 
+from pymobiledevice3.exceptions import ScreencastUnavailableError
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,7 +60,10 @@ class ScreenCast:
             "window.devicePixelRatio"
         )
         if not isinstance(device_size, str):
-            raise TypeError("device did not report its screen size for the screencast")
+            # A JSContext debuggable has no page to capture: its global object carries no window
+            # or screen, so the evaluation comes back as a thrown ReferenceError rather than the
+            # size. A page that stopped answering lands here too.
+            raise ScreencastUnavailableError("the debuggable did not report a screen size to capture")
         self.device_width, self.device_height, self.page_scale_factor = list(map(int, device_size.split(",")))
         self._run = True
         self.recording_task = asyncio.create_task(self.recording_loop())
@@ -66,7 +71,8 @@ class ScreenCast:
     async def stop(self):
         """Stop sending screenshots to the devtools."""
         self._run = False
-        assert self.recording_task is not None
+        if self.recording_task is None:
+            return
         self.recording_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await self.recording_task
