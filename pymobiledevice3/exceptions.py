@@ -63,6 +63,7 @@ __all__ = [
     "RSDRequiredError",
     "RemoteAutomationNotEnabledError",
     "RemotePairingCompletedError",
+    "ScreencastUnavailableError",
     "SetProhibitedError",
     "StartServiceError",
     "SysdiagnoseTimeoutError",
@@ -268,6 +269,12 @@ class StreamClosedError(ConnectionTerminatedError):
 
 class WebInspectorNotEnabledError(PyMobileDevice3Exception):
     """Raise when Web Inspector is not enabled."""
+
+    pass
+
+
+class ScreencastUnavailableError(PyMobileDevice3Exception):
+    """Raise when a debuggable cannot be screencast (it has no page to capture)."""
 
     pass
 
