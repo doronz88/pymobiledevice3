@@ -72,6 +72,10 @@ _FLAT_WIRE_IDS = itertools.count(0x40000000)
 JS_CONTEXT_EXECUTION_ID = 1
 JS_CONTEXT_UNIQUE_ID = "jscontext.1"
 
+# Target.TargetInfo.type of the targets this bridge debugs. WebKit announces "frame", "worker"
+# and "service-worker" ones too - see _target_created.
+PAGE_TARGET_TYPE = "page"
+
 # Error synthesized for requests routed to a target that got destroyed before answering
 # (WebKit never answers those). Matches Chrome's own message for the same situation.
 TARGET_CLOSED_ERROR: dict[str, Any] = {"code": -32000, "message": "Inspected target navigated or closed"}
@@ -348,6 +352,8 @@ class CdpTarget:
         # setup (domain enables & co.) the frontend established, replayed onto new targets
         self._setup_messages: dict[Any, dict[str, Any]] = {}
         self._setup_sent_targets: set[str] = {target_id}
+        # Targets announced as pages - the only kind this session talks to (see _target_created).
+        self._page_targets: set[str] = {target_id}
 
     def next_internal_id(self) -> int:
         """
@@ -377,7 +383,9 @@ class CdpTarget:
                 await asyncio.sleep(0)
                 continue
             created = events.pop(0)
-            if "targetInfo" in created.get("params", {}):
+            target_info = created.get("params", {}).get("targetInfo")
+            # Only a page target can serve this session (see _target_created).
+            if target_info is not None and target_info.get("type", PAGE_TARGET_TYPE) == PAGE_TARGET_TYPE:
                 break
         target_id = created["params"]["targetInfo"]["targetId"]
         logger.info(f"Created: {target_id}")
@@ -1348,6 +1356,17 @@ class CdpTarget:
         # SDK); the real url arrives via the device's own Page.frameNavigated.
         target_info = message["params"]["targetInfo"]
         new_target_id = target_info["targetId"]
+        if target_info.get("type", PAGE_TARGET_TYPE) != PAGE_TARGET_TYPE:
+            # Not every announced target is a page: iOS 26 announces one "frame" target per
+            # subframe (and workers as "worker"/"service-worker"). Their backends implement a
+            # much smaller domain set - a site-isolated frame has no Page/Network/Audit, and with
+            # site isolation off it registers no agents at all - so a session that routed its
+            # commands to one answered everything with "'<domain>' domain was not found" and
+            # never recovered: no commit or destroy follows to move it back off. Chrome has no
+            # counterpart for them either.
+            logger.debug(f"ignoring {target_info.get('type')} target {new_target_id}")
+            return
+        self._page_targets.add(new_target_id)
         if not target_info.get("isProvisional", False):
             # A provisional target becomes current only on didCommitProvisionalTarget; routing
             # commands to it earlier loses them if the load never commits.
@@ -1372,6 +1391,12 @@ class CdpTarget:
 
     async def _target_destroyed(self, message: dict[str, Any]):
         destroyed_target_id = message["params"]["targetId"]
+        if destroyed_target_id not in self._page_targets:
+            # A target the session deliberately never adopted (see _target_created). Telling the
+            # frontend the document changed because a subframe or a worker went away would reset
+            # its panels for something it never knew about.
+            return
+        self._page_targets.discard(destroyed_target_id)
         self._destroyed_targets.add(destroyed_target_id)
         self._setup_sent_targets.discard(destroyed_target_id)
         self._mark_target_responsive(destroyed_target_id)
@@ -1459,6 +1484,9 @@ class CdpTarget:
         # frontend's commands to it.
         self.target_id = message["params"]["newTargetId"]
         # Normally already done at targetCreated; covers a commit whose creation we never saw.
+        # Only page targets are ever committed, so recording it here keeps _target_destroyed
+        # recognizing it as one.
+        self._page_targets.add(self.target_id)
         await self._send_setup_to_target(self.target_id)
 
     async def _debugger_script_parsed(self, message: dict[str, Any]):
