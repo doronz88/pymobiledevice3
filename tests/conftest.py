@@ -16,6 +16,7 @@ from pymobiledevice3.exceptions import (
 )
 from pymobiledevice3.lockdown import UsbmuxLockdownClient, create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.rsd_tunnel import PreferredRsdTunnel
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestService
 from pymobiledevice3.tunneld.api import get_tunneld_devices
@@ -64,7 +65,9 @@ def _skip_unless_tunneled(item: pytest.Item, e: InvalidServiceError) -> None:
     provider = funcargs.get("service_provider") or funcargs.get("lockdown")
     if isinstance(provider, RemoteServiceDiscoveryService):
         raise e
-    pytest.skip(f"Service requires an RSD tunnel (rerun with --rsd/--tunnel): {e}")
+    # service_provider brings a tunnel up on its own, so reaching here means none was available
+    # for this device at all - not that the run forgot to ask for one.
+    pytest.skip(f"Service requires an RSD tunnel, and none could be established: {e}")
 
 
 @pytest.hookimpl(wrapper=True)
@@ -145,8 +148,25 @@ async def service_provider(
             for rsd in rsds:
                 await rsd.close()
     else:
-        async with await _create_usbmux_client() as client:
-            yield client
+        # No transport asked for: establish one. Every RSD-requiring service is reachable
+        # in-process without root - the native tunnel on macOS, the userspace tunnel elsewhere -
+        # so those tests run by default instead of skipping until someone supplies tunneld.
+        # Per test rather than per session on purpose: the tunnel's asyncio objects belong to the
+        # loop that opened them, and the suite runs each test on a loop of its own.
+        tunnel = PreferredRsdTunnel()
+        try:
+            rsd = await tunnel.aopen()
+        except Exception:
+            # No tunnel for this device (pre-iOS 17, unpaired, no usable transport). Lockdown
+            # services still work over usbmux; the RSD-only ones skip as they did before.
+            await tunnel.aclose()
+            async with await _create_usbmux_client() as client:
+                yield client
+        else:
+            try:
+                yield rsd
+            finally:
+                await tunnel.aclose()
 
 
 @pytest_asyncio.fixture(scope="function")
