@@ -110,6 +110,9 @@ class OsUtils:
     def get_homedir(self) -> Path:
         return Path.home()
 
+    def get_home_folder_path(self) -> Path:
+        return self.get_homedir() / ".pymobiledevice3"
+
 
 def get_os_utils() -> OsUtils:
     return OsUtils.create()
