@@ -49,6 +49,28 @@ def test_javascript_page_listing_keeps_its_title() -> None:
     assert page.web_url == ""
 
 
+def test_web_page_listing_reports_the_debugger_holding_it() -> None:
+    """WebKit serves one inspector session per page, and the listing names the connection that has
+    it. Without that, a page held by another debugger looked exactly like a device not answering."""
+    held = Page.from_page_dictionary({
+        "WIRPageIdentifierKey": 1,
+        "WIRTypeKey": "WIRTypeWebPage",
+        "WIRTitleKey": "Example Domain",
+        "WIRURLKey": "https://example.com/",
+        "WIRConnectionIdentifierKey": "98FC0F20-4680-4E8D-A3C9-AB19296BCE96",
+    })
+    assert held.web_connection_id == "98FC0F20-4680-4E8D-A3C9-AB19296BCE96"
+
+    # The key is absent altogether while nobody is debugging the page.
+    free = Page.from_page_dictionary({
+        "WIRPageIdentifierKey": 1,
+        "WIRTypeKey": "WIRTypeWebPage",
+        "WIRTitleKey": "Example Domain",
+        "WIRURLKey": "https://example.com/",
+    })
+    assert free.web_connection_id == ""
+
+
 def _web_page_listing(app_id: str, pages: dict[str, str]) -> dict[str, Any]:
     return {
         "WIRApplicationIdentifierKey": app_id,
@@ -113,3 +135,20 @@ def test_find_page_id_distinguishes_same_page_of_different_applications() -> Non
 
     with pytest.raises(KeyError):
         inspector.find_page_id(make_target_id("PID:3", "1"))
+
+
+async def testp_reattaching_immediately_after_a_session_succeeds(lockdown: LockdownClient) -> None:
+    """webinspectord admits a new session only about ten seconds after the previous one started,
+    and until then never completes the TLS handshake - a hair past our handshake timeout. Every
+    reattach that came too soon (a restarted CDP bridge, an automation session opened once
+    inspection was done) therefore failed, and was reported as Web Inspector being disabled."""
+    async with webinspector_service(lockdown):
+        pass
+
+    # No delay: this is the reattach that used to abort.
+    reattached = WebinspectorService(lockdown=lockdown)
+    await reattached.connect()
+    try:
+        assert reattached.connection_id
+    finally:
+        await reattached.close()

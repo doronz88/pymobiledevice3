@@ -347,7 +347,18 @@ class CdpBrowser:
         try:
             target = await asyncio.wait_for(CdpTarget.create(protocol), TARGET_CREATION_TIMEOUT)
         except (asyncio.TimeoutError, TimeoutError):
-            logger.error(f"page {page_id}: device did not report an inspection target in time")
+            # A page already being debugged over another Web Inspector connection - a second
+            # pymobiledevice3, Safari's own Web Inspector, or a client that exited without
+            # detaching - never reports a target, and the listing says who holds it. Naming them
+            # beats "the device did not answer", which sends people looking at the device.
+            holder = page.web_connection_id
+            if holder and holder != self.inspector.connection_id:
+                logger.error(
+                    f"page {page_id}: already being debugged over Web Inspector connection {holder}; "
+                    "close that debugger, or the process that left it attached, and reconnect"
+                )
+            else:
+                logger.error(f"page {page_id}: device did not report an inspection target in time")
             await self.inspector.teardown_inspector_socket(wir_session_id, application.id_, page.id_)
             lock.release()
             return None

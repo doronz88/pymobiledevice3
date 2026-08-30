@@ -7,10 +7,12 @@ import tempfile
 import uuid
 from contextlib import asynccontextmanager
 from html import escape
+from ipaddress import ip_address
 from pathlib import Path
 from string import Template
 from typing import Any, Optional
-from urllib.request import urlopen
+from urllib.parse import urlsplit
+from urllib.request import ProxyHandler, build_opener, urlopen
 
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.logger import logger
@@ -39,6 +41,13 @@ from pymobiledevice3.services.webinspector import Page, WebinspectorService, Wir
 DEVTOOLS_FRONTEND_REV = "0fcdce5f4fdec8d442d7df760cb541f1ca6e446d"
 DEVTOOLS_FRONTEND_HOST = "chrome-devtools-frontend.appspot.com"
 _frontend_cache: dict[str, tuple[bytes, str]] = {}
+
+# The local Chrome's assets must be fetched without a proxy. urllib applies proxy configuration
+# to loopback addresses as well - neither the no_proxy/ExceptionsList defaults nor macOS'
+# "exclude simple hostnames" cover 127.0.0.1 - so on a proxied network every asset request for
+# the fallback frontend would be sent to the proxy and come back empty, leaving a blank DevTools
+# window. Browsers bypass loopback implicitly; this opener does the same.
+_DIRECT_OPENER = build_opener(ProxyHandler({}))
 
 # Names/locations for the Chrome/Chromium binary used for the offline frontend fallback.
 _CHROME_BINARY_NAMES = (
@@ -137,27 +146,53 @@ def find_chrome(explicit: Optional[str] = None) -> Optional[str]:
     return None
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    app.state.frontend_lock = asyncio.Lock()
-    await app.state.inspector.connect()
-    yield
+def _reap_local_frontend() -> None:
+    """Tear down the fallback Chrome and its throwaway profile, if one is running."""
     proc: Optional[subprocess.Popen[bytes]] = getattr(app.state, "local_chrome_proc", None)
     if proc is not None:
         proc.terminate()
+        app.state.local_chrome_proc = None
     profile: Optional[str] = getattr(app.state, "local_chrome_profile", None)
     if profile:
         shutil.rmtree(profile, ignore_errors=True)
+        app.state.local_chrome_profile = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.frontend_lock = asyncio.Lock()
+    # Per-page state belongs to one run of the bridge. An asyncio primitive binds to the event loop
+    # that created it, and a page handler killed without unwinding - a forced shutdown, a loop torn
+    # down under it - leaves its lock held. Either one carried into a later run in the same process
+    # (a second asyncio.run, a test) wedges every connection to that page: it waits out
+    # PAGE_HANDOVER_TIMEOUT for a lock nobody is left to release, then fails outright because the
+    # lock belongs to a loop that is gone.
+    PAGE_LOCKS.clear()
+    PAGE_TAKEOVERS.clear()
+    await app.state.inspector.connect()
+    yield
+    _reap_local_frontend()
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+def _is_loopback(url: str) -> bool:
+    """Whether url addresses this machine, and so must be fetched without going through a proxy."""
+    host = urlsplit(url).hostname or ""
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return host == "localhost" or host.endswith(".localhost")
 
 
 async def _fetch(url: str) -> Optional[tuple[bytes, str]]:
     """Fetch a frontend asset off the event loop; None on any failure."""
 
     def _get() -> tuple[bytes, str]:
-        with urlopen(url, timeout=20) as response:
+        # Anything on this machine - the fallback Chrome - is fetched directly; see _DIRECT_OPENER.
+        opener = _DIRECT_OPENER.open if _is_loopback(url) else urlopen
+        with opener(url, timeout=20) as response:
             return response.read(), response.headers.get_content_type()
 
     try:
@@ -176,6 +211,7 @@ async def _launch_local_frontend() -> Optional[str]:
             "was found. Install Chrome/Chromium or pass --chrome <path>."
         )
         return None
+    _reap_local_frontend()
     profile = tempfile.mkdtemp(prefix="pmd3-devtools-frontend-")
     app.state.local_chrome_profile = profile
     app.state.local_chrome_proc = subprocess.Popen(
@@ -204,25 +240,28 @@ async def _launch_local_frontend() -> Optional[str]:
 
 
 async def _frontend_base() -> Optional[str]:
-    """Base URL to serve the DevTools frontend from, decided once per run: the hosted build when
-    reachable, otherwise a locally launched Chrome. None if neither is available."""
+    """Base URL to serve the DevTools frontend from: the hosted build when reachable, otherwise a
+    locally launched Chrome. Resolved once per run and kept, but a failure is deliberately not
+    remembered - the causes are transient (a network that comes back, a Chrome that lost the race
+    to publish its port), and remembering one served 404s, and so a blank DevTools window, for the
+    rest of the session."""
     base = getattr(app.state, "frontend_base", None)
-    if base is not None:
-        return base or None
+    if base:
+        return base
     async with app.state.frontend_lock:
         base = getattr(app.state, "frontend_base", None)
-        if base is not None:
-            return base or None
+        if base:
+            return base
         rev = getattr(app.state, "frontend_rev", DEVTOOLS_FRONTEND_REV)
         hosted = f"https://{DEVTOOLS_FRONTEND_HOST}/serve_rev/@{rev}"
         if await _fetch(f"{hosted}/inspector.html") is not None:
             app.state.frontend_base = hosted
         else:
             local = await _launch_local_frontend()
-            app.state.frontend_base = f"{local}/devtools" if local else ""
+            app.state.frontend_base = f"{local}/devtools" if local else None
             if local:
                 logger.info("serving the DevTools frontend from a local Chrome (hosted build unreachable)")
-        return app.state.frontend_base or None
+        return app.state.frontend_base
 
 
 @app.get("/json/version")
@@ -394,7 +433,18 @@ async def page_debugger(websocket: WebSocket, page_id: str):
             # bad state), fail the connection instead of keeping a zombie handler alive forever.
             target = await asyncio.wait_for(CdpTarget.create(protocol), TARGET_CREATION_TIMEOUT)
         except (asyncio.TimeoutError, TimeoutError):
-            logger.error(f"page {page_id}: device did not report an inspection target in time")
+            # A page already being debugged over another Web Inspector connection - a second
+            # pymobiledevice3, Safari's own Web Inspector, or a client that exited without
+            # detaching - never reports a target, and the listing says who holds it. Naming them
+            # beats "the device did not answer", which sends people looking at the device.
+            holder = page.web_connection_id
+            if holder and holder != app.state.inspector.connection_id:
+                logger.error(
+                    f"page {page_id}: already being debugged over Web Inspector connection {holder}; "
+                    "close that debugger, or the process that left it attached, and reconnect"
+                )
+            else:
+                logger.error(f"page {page_id}: device did not report an inspection target in time")
             await app.state.inspector.teardown_inspector_socket(session_id, application.id_, page.id_)
             await websocket.close()
             return
