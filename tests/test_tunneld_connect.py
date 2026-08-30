@@ -165,8 +165,13 @@ def test_connect_no_tunnel_for_udid(tunneld_port: int) -> None:
 
 
 def test_connect_tcp_connection_refused(tunneld_port: int) -> None:
-    with _connect(tunneld_port, port=_unused_port()) as websocket:
-        assert websocket.recv_close().code == WS_CLOSE_CONNECT_FAILED
+    # holding the port bound (but not listening) guarantees an RST and prevents another
+    # process from grabbing it mid-test
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as holder:
+        holder.bind(("127.0.0.1", 0))
+        refused_port = holder.getsockname()[1]
+        with _connect(tunneld_port, port=refused_port) as websocket:
+            assert websocket.recv_close().code == WS_CLOSE_CONNECT_FAILED
 
 
 def test_connect_forwards_traffic_to_default_rsd_port(tunneld_port: int) -> None:
@@ -190,6 +195,13 @@ def test_connect_parallel_connections(tunneld_port: int) -> None:
         assert first.recv_bytes(5) == b"first"
 
 
+def test_connect_accepts_dashless_udid(tunneld_port: int) -> None:
+    # Linux usbmuxd may report the UDID without the dash; the lookup tolerates it
+    with _connect(tunneld_port, udid=UDID.replace("-", "")) as websocket:
+        websocket.send_bytes(b"ping")
+        assert websocket.recv_bytes(4) == b"ping"
+
+
 def test_connect_rejects_text_frames(tunneld_port: int) -> None:
     with _connect(tunneld_port) as websocket:
         websocket.send_text("not binary")
@@ -204,4 +216,21 @@ def test_connect_rejects_out_of_range_port(tunneld_port: int) -> None:
 
 def test_no_asgi_exceptions_logged(tunneld_port: int, tunneld_stderr: Path) -> None:
     """Must run last: every scenario above must leave the server log free of tracebacks."""
-    assert "Exception in ASGI application" not in tunneld_stderr.read_text()
+
+    def read_log() -> str:
+        # utf-8 explicitly: the locale encoding on the Windows matrix would turn a stray
+        # traceback byte into a UnicodeDecodeError instead of the real assertion
+        return tunneld_stderr.read_text(encoding="utf-8", errors="replace")
+
+    # let the log settle so a traceback provoked by the previous test's teardown
+    # can't land just after a single read
+    content = read_log()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        time.sleep(0.5)
+        latest = read_log()
+        if latest == content:
+            break
+        content = latest
+
+    assert "Exception in ASGI application" not in content
