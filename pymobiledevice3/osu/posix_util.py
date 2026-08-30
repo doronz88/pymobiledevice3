@@ -116,10 +116,16 @@ class Linux(Posix):
         legacy = super().get_home_folder_path()
         if legacy.exists():
             return legacy
+        homedir = self.get_homedir()
         xdg_data_home = Path(os.environ.get("XDG_DATA_HOME", ""))
         if not xdg_data_home.is_absolute():
             # The spec requires ignoring relative (or unset) paths
-            xdg_data_home = self.get_homedir() / ".local" / "share"
+            xdg_data_home = homedir / ".local" / "share"
+        elif "SUDO_USER" in os.environ and not xdg_data_home.is_relative_to(homedir):
+            # Under sudo the environment may carry root's XDG_DATA_HOME while get_homedir()
+            # resolves the invoking user; ignore values outside that user's home so pair
+            # records stay reachable for later non-root runs
+            xdg_data_home = homedir / ".local" / "share"
         return xdg_data_home / "pymobiledevice3"
 
 

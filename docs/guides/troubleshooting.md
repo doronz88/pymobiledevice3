@@ -103,7 +103,8 @@ it yet. In order:
     ```
 
     This downloads the correct image for your iOS version and caches it under
-    `~/.pymobiledevice3` — no Xcode required. On iOS 17+ you can alternatively use
+    `~/.pymobiledevice3` (`$XDG_DATA_HOME/pymobiledevice3` on new Linux installs) — no Xcode
+    required. On iOS 17+ you can alternatively use
     `pymobiledevice3 cryptex auto-install` (see the
     [CLI recipes](cli-recipes.md#cryptexes-ios-17-rsd-tunnel)).
 

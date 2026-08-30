@@ -144,7 +144,8 @@ testmanagerd, …) usable. The end result is indistinguishable from a `mounter a
 `mounter list` reports it as a `Personalized` image at `/System/Developer`.
 
 Also like `mounter auto-mount`, it downloads the DDI it needs and caches it under
-`~/.pymobiledevice3`, so no Xcode installation is required and it works on any host:
+`~/.pymobiledevice3` (`$XDG_DATA_HOME/pymobiledevice3` on new Linux installs), so no Xcode
+installation is required and it works on any host:
 
 ```shell
 pymobiledevice3 cryptex auto-install
@@ -231,7 +232,8 @@ pymobiledevice3 mounter auto-mount
 pymobiledevice3 cryptex auto-install
 ```
 
-Both download the DDI and cache it under `~/.pymobiledevice3`, and both end with the image mounted
+Both download the DDI and cache it under `~/.pymobiledevice3` (`$XDG_DATA_HOME/pymobiledevice3`
+on new Linux installs), and both end with the image mounted
 at `/System/Developer`. `mounter auto-mount` works over plain USB and covers iOS < 17 as well;
 `cryptex auto-install` needs an RSD tunnel but bypasses the image mounter entirely. See
 [Cryptexes](#cryptexes-ios-17-rsd-tunnel) for the differences.
