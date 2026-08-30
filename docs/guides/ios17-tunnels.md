@@ -129,6 +129,11 @@ async with websockets.connect(f'ws://127.0.0.1:49151/connect?udid={udid}') as we
     the listener gains access to the services exposed over the tunnel, so only bind non-loopback
     addresses on trusted networks.
 
+!!! note
+    `/connect` only bridges into tunnels established by this `tunneld` instance. A device that
+    appears in `GET /` through a registered upstream `tunneld` is not reachable through this
+    instance's `/connect` — connect to the upstream's own `/connect` endpoint instead.
+
 To make `tunneld` the **default** fallback — so commands route to it automatically without passing
 `--tunnel`, restoring the pre-userspace-default behavior — set
 `PYMOBILEDEVICE3_DEFAULT_FALLBACK=tunneld`:

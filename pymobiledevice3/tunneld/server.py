@@ -75,12 +75,22 @@ USB_MONITOR_RESCAN_INTERVAL = 30
 USBMUX_INTERVAL = 2
 OSUTILS = get_os_utils()
 
+# Timeout for opening the TCP connection over the tunnel from the /connect websocket endpoint
+CONNECT_TCP_TIMEOUT = 10
+
+# Maximum concurrent /connect bridges (mirrors TcpForwarderBase.MAX_FORWARDED_CONNECTIONS)
+CONNECT_MAX_BRIDGES = 200
+
 # Read chunk size used when proxying tunnel traffic over the /connect websocket endpoint
 CONNECT_CHUNK_SIZE = 65536
 
 # Application-specific websocket close codes (4000-4999) used by the /connect endpoint
 WS_CLOSE_NO_TUNNEL = 4404
 WS_CLOSE_CONNECT_FAILED = 4502
+
+# Standard websocket close codes used by the /connect endpoint
+WS_CLOSE_UNSUPPORTED_DATA = 1003
+WS_CLOSE_TRY_AGAIN_LATER = 1013
 
 _UPSTREAM_FETCH_TIMEOUT = 2.0
 
@@ -554,6 +564,7 @@ class TunneldRunner:
         self.port = port
         self.uds = uds
         self.protocol = protocol
+        self._connect_bridge_count = 0
         self._app = FastAPI(lifespan=lifespan)
         self._tunneld_core = TunneldCore(
             protocol=protocol,
@@ -755,7 +766,11 @@ class TunneldRunner:
                 )
 
         @self._app.websocket("/connect")
-        async def connect(websocket: fastapi.WebSocket, udid: str, port: Optional[int] = None) -> None:
+        async def connect(
+            websocket: fastapi.WebSocket,
+            udid: str,
+            port: Optional[int] = fastapi.Query(default=None, ge=1, le=65535),
+        ) -> None:
             """Bridge a websocket client into the tunnel interface of a given device.
 
             Binary websocket messages are forwarded as-is into a TCP connection opened over the
@@ -765,57 +780,84 @@ class TunneldRunner:
             services through the tunneld HTTP API.
             """
             await websocket.accept()
-            udid_tunnels = [
-                t.tunnel for t in self._tunneld_core.tunnel_tasks.values() if t.udid == udid and t.tunnel is not None
-            ]
-            if len(udid_tunnels) == 0:
-                await websocket.close(code=WS_CLOSE_NO_TUNNEL, reason=f"no tunnel exists for udid: {udid}")
+            if self._connect_bridge_count >= CONNECT_MAX_BRIDGES:
+                await websocket.close(code=WS_CLOSE_TRY_AGAIN_LATER, reason="too many concurrent /connect bridges")
                 return
-            tunnel = udid_tunnels[0]
-            if port is None:
-                port = tunnel.port
+            self._connect_bridge_count += 1
             try:
-                reader, writer = await asyncio.open_connection(tunnel.address, port)
-            except OSError as e:
-                await websocket.close(
-                    code=WS_CLOSE_CONNECT_FAILED, reason=f"failed to connect to [{tunnel.address}]:{port}: {e}"
-                )
-                return
-
-            async def forward_websocket_to_tcp() -> None:
-                while True:
-                    data = await websocket.receive_bytes()
-                    writer.write(data)
-                    await writer.drain()
-
-            async def forward_tcp_to_websocket() -> None:
-                while True:
-                    data = await reader.read(CONNECT_CHUNK_SIZE)
-                    if not data:
-                        break
-                    await websocket.send_bytes(data)
-
-            forwarders = [
-                asyncio.create_task(forward_websocket_to_tcp(), name=f"connect-websocket-to-tcp-{udid}-{port}"),
-                asyncio.create_task(forward_tcp_to_websocket(), name=f"connect-tcp-to-websocket-{udid}-{port}"),
-            ]
-            try:
-                done, pending = await asyncio.wait(forwarders, return_when=asyncio.FIRST_COMPLETED)
-                for forwarder in pending:
-                    forwarder.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await forwarder
-                for forwarder in done:
-                    # surface unexpected errors; disconnections from either side are expected
-                    with suppress(fastapi.WebSocketDisconnect, OSError):
-                        forwarder.result()
+                await self._bridge_websocket(websocket, udid, port)
             finally:
-                writer.close()
-                with suppress(OSError):
-                    await writer.wait_closed()
-                with suppress(RuntimeError):
-                    # closing after the client already disconnected raises RuntimeError
-                    await websocket.close()
+                self._connect_bridge_count -= 1
+
+    async def _bridge_websocket(self, websocket: fastapi.WebSocket, udid: str, port: Optional[int]) -> None:
+        udid_tunnels = [
+            t.tunnel for t in self._tunneld_core.tunnel_tasks.values() if t.udid == udid and t.tunnel is not None
+        ]
+        if len(udid_tunnels) == 0:
+            await websocket.close(code=WS_CLOSE_NO_TUNNEL, reason=f"no tunnel exists for udid: {udid}")
+            return
+        tunnel = udid_tunnels[0]
+        if port is None:
+            port = tunnel.port
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(tunnel.address, port), timeout=CONNECT_TCP_TIMEOUT
+            )
+        except (OSError, asyncio.TimeoutError) as e:
+            await websocket.close(
+                code=WS_CLOSE_CONNECT_FAILED,
+                reason=f"failed to connect to [{tunnel.address}]:{port}: {e or 'timed out'}",
+            )
+            return
+
+        async def forward_websocket_to_tcp() -> None:
+            while True:
+                message = await websocket.receive()
+                if message["type"] == "websocket.disconnect":
+                    raise fastapi.WebSocketDisconnect(int(message.get("code") or 1000), message.get("reason"))
+                data = message.get("bytes")
+                if data is None:
+                    # a text frame on what is strictly a binary bridge
+                    await websocket.close(
+                        code=WS_CLOSE_UNSUPPORTED_DATA, reason="only binary websocket messages are supported"
+                    )
+                    return
+                writer.write(data)
+                await writer.drain()
+
+        async def forward_tcp_to_websocket() -> None:
+            while True:
+                data = await reader.read(CONNECT_CHUNK_SIZE)
+                if not data:
+                    break
+                await websocket.send_bytes(data)
+
+        forwarders = [
+            asyncio.create_task(forward_websocket_to_tcp(), name=f"connect-websocket-to-tcp-{udid}-{port}"),
+            asyncio.create_task(forward_tcp_to_websocket(), name=f"connect-tcp-to-websocket-{udid}-{port}"),
+        ]
+        try:
+            _done, pending = await asyncio.wait(forwarders, return_when=asyncio.FIRST_COMPLETED)
+            for forwarder in pending:
+                forwarder.cancel()
+            if pending:
+                await asyncio.wait(pending)
+            for forwarder in forwarders:
+                if forwarder.cancelled():
+                    continue
+                # disconnections from either side are expected; log anything else at debug
+                exception = forwarder.exception()
+                if exception is not None and not isinstance(exception, (fastapi.WebSocketDisconnect, OSError)):
+                    logger.debug(f"unexpected error in {forwarder.get_name()}", exc_info=exception)
+        finally:
+            writer.close()
+            with suppress(OSError):
+                await writer.wait_closed()
+            with suppress(RuntimeError, fastapi.WebSocketDisconnect):
+                # closing after the client already disconnected raises WebSocketDisconnect
+                # (starlette re-raises it from OSError); RuntimeError covers a close that
+                # was already sent
+                await websocket.close()
 
     def _run_app(self) -> None:
         if self.uds is not None:

@@ -6,13 +6,14 @@ import threading
 import time
 from collections import deque
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Optional, Union
 
 import pytest
 from wsproto import ConnectionType, WSConnection
-from wsproto.events import AcceptConnection, BytesMessage, CloseConnection, Event, Ping, Pong, Request
+from wsproto.events import AcceptConnection, BytesMessage, CloseConnection, Event, Ping, Pong, Request, TextMessage
 
-from pymobiledevice3.tunneld.server import WS_CLOSE_CONNECT_FAILED, WS_CLOSE_NO_TUNNEL
+from pymobiledevice3.tunneld.server import WS_CLOSE_CONNECT_FAILED, WS_CLOSE_NO_TUNNEL, WS_CLOSE_UNSUPPORTED_DATA
 
 UDID = "00008120-0000000000000000"
 
@@ -63,29 +64,36 @@ def echo_port() -> Iterator[int]:
 
 
 @pytest.fixture(scope="module")
-def tunneld_port(echo_port: int) -> Iterator[int]:
+def tunneld_stderr(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Path collecting the tunneld server's stderr, so tests can assert it stayed clean."""
+    return tmp_path_factory.mktemp("tunneld") / "stderr.log"
+
+
+@pytest.fixture(scope="module")
+def tunneld_port(echo_port: int, tunneld_stderr: Path) -> Iterator[int]:
     """A real tunneld server (uvicorn) whose fake tunnel RSD port is the echo server's port."""
     port = _unused_port()
-    proc = subprocess.Popen(
-        [sys.executable, "-c", TUNNELD_SCRIPT, str(port), str(echo_port), UDID],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    try:
-        deadline = time.monotonic() + 30
-        while True:
-            try:
-                with socket.create_connection(("127.0.0.1", port), timeout=1):
-                    break
-            except OSError:
-                assert proc.poll() is None, "tunneld server exited prematurely"
-                assert time.monotonic() < deadline, "tunneld server did not come up"
-                time.sleep(0.1)
-        yield port
-    finally:
-        # the injected fake TunnelTask has no real asyncio task, so skip graceful shutdown
-        proc.kill()
-        proc.wait(timeout=10)
+    with open(tunneld_stderr, "wb") as stderr:
+        proc = subprocess.Popen(
+            [sys.executable, "-c", TUNNELD_SCRIPT, str(port), str(echo_port), UDID],
+            stdout=subprocess.DEVNULL,
+            stderr=stderr,
+        )
+        try:
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    with socket.create_connection(("127.0.0.1", port), timeout=1):
+                        break
+                except OSError:
+                    assert proc.poll() is None, "tunneld server exited prematurely"
+                    assert time.monotonic() < deadline, "tunneld server did not come up"
+                    time.sleep(0.1)
+            yield port
+        finally:
+            # the injected fake TunnelTask has no real asyncio task, so skip graceful shutdown
+            proc.kill()
+            proc.wait(timeout=10)
 
 
 class _WebsocketClient:
@@ -95,9 +103,13 @@ class _WebsocketClient:
         self._sock = socket.create_connection(("127.0.0.1", port), timeout=10)
         self._ws = WSConnection(ConnectionType.CLIENT)
         self._events: deque[Event] = deque()
-        self._send(Request(host=f"127.0.0.1:{port}", target=target))
-        event = self.next_event()
-        assert isinstance(event, AcceptConnection), f"websocket handshake failed: {event}"
+        try:
+            self._send(Request(host=f"127.0.0.1:{port}", target=target))
+            event = self.next_event()
+            assert isinstance(event, AcceptConnection), f"websocket handshake failed: {event}"
+        except BaseException:
+            self._sock.close()
+            raise
 
     def __enter__(self) -> "_WebsocketClient":
         return self
@@ -121,6 +133,9 @@ class _WebsocketClient:
 
     def send_bytes(self, data: bytes) -> None:
         self._send(BytesMessage(data=data))
+
+    def send_text(self, data: str) -> None:
+        self._send(TextMessage(data=data))
 
     def recv_bytes(self, count: int) -> bytes:
         """Receive exactly ``count`` payload bytes, reassembling message fragments."""
@@ -173,3 +188,20 @@ def test_connect_parallel_connections(tunneld_port: int) -> None:
         second.send_bytes(b"second")
         assert second.recv_bytes(6) == b"second"
         assert first.recv_bytes(5) == b"first"
+
+
+def test_connect_rejects_text_frames(tunneld_port: int) -> None:
+    with _connect(tunneld_port) as websocket:
+        websocket.send_text("not binary")
+        assert websocket.recv_close().code == WS_CLOSE_UNSUPPORTED_DATA
+
+
+def test_connect_rejects_out_of_range_port(tunneld_port: int) -> None:
+    # request validation rejects the handshake before the bridge handler ever runs
+    with pytest.raises(AssertionError, match="websocket handshake failed"):
+        _connect(tunneld_port, port=70000)
+
+
+def test_no_asgi_exceptions_logged(tunneld_port: int, tunneld_stderr: Path) -> None:
+    """Must run last: every scenario above must leave the server log free of tracebacks."""
+    assert "Exception in ASGI application" not in tunneld_stderr.read_text()
