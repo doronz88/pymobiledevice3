@@ -28,7 +28,8 @@ from pymobiledevice3.services.web_protocol.cdp_server import (
     app,
     targets_html,
 )
-from pymobiledevice3.services.web_protocol.cdp_target import JS_CONTEXT_EXECUTION_ID
+from pymobiledevice3.services.web_protocol.cdp_target import JS_CONTEXT_EXECUTION_ID, CdpTarget
+from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 from pymobiledevice3.services.webinspector import SAFARI, Application, AutomationAvailability, Page, WebinspectorService
 
 TIMEOUT = 30
@@ -724,3 +725,77 @@ async def test_a_frontend_that_could_not_be_resolved_is_retried(monkeypatch: pyt
     assert await _frontend_base() is None
     assert await _frontend_base() == f"https://{DEVTOOLS_FRONTEND_HOST}/serve_rev/@{DEVTOOLS_FRONTEND_REV}"
     assert len(probes) == 2
+
+
+@contextmanager
+def offline_cdp_target(
+    monkeypatch: pytest.MonkeyPatch, target_id: str = "page-1"
+) -> Generator[tuple[CdpTarget, list[dict[str, Any]]], None, None]:
+    """A CdpTarget wired to a stub inspector, for message translation that needs no device.
+
+    Yields the target and the list of messages it sent towards the device.
+    """
+    sent: list[dict[str, Any]] = []
+    inspector = WebinspectorService.__new__(WebinspectorService)
+    inspector.wir_events = {}
+    inspector.wir_message_results = {}
+
+    async def send_socket_data(session_id: str, app_id: str, page_id: int, data: dict[str, Any]) -> None:
+        sent.append(data)
+
+    monkeypatch.setattr(inspector, "send_socket_data", send_socket_data)
+    page = Page.from_page_dictionary({
+        "WIRPageIdentifierKey": 1,
+        "WIRTypeKey": "WIRTypeWeb",
+        "WIRTitleKey": "Example",
+        "WIRURLKey": "https://example.com/",
+    })
+    application = Application(
+        "PID:1", "com.apple.mobilesafari", 1, "MobileSafari", AutomationAvailability.NOT_AVAILABLE, 1, False, True
+    )
+    target = CdpTarget(SessionProtocol(inspector, "SESSION", application, page, method_prefix=""), target_id)
+    # The frontend had enabled a domain; a target that takes over gets it replayed.
+    target._setup_messages["Runtime.enable"] = {}
+    try:
+        yield target, sent
+    finally:
+        for task in (target._input_task, target._receiving_task):
+            task.cancel()
+
+
+def _target_created(target_id: str, type_: str, **extra: Any) -> dict[str, Any]:
+    return {"method": "Target.targetCreated", "params": {"targetInfo": {"targetId": target_id, "type": type_, **extra}}}
+
+
+async def test_a_page_target_takes_over_the_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The committed page target a process swap creates is what commands must be routed to."""
+    with offline_cdp_target(monkeypatch) as (target, sent):
+        await target._target_created(_target_created("page-2", "page"))
+
+        assert target.target_id == "page-2"
+        assert [json.loads(m["params"]["message"])["method"] for m in sent] == ["Runtime.enable"]
+        assert target.output_queue.get_nowait()["method"] == "Target.targetInfoChanged"
+
+
+async def test_a_frame_target_does_not_take_over_the_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WebKit announces site-isolated subframes as "frame" targets. Their backend implements a
+    far smaller domain set than a page's - with site isolation off, no domains at all - so a
+    session that adopted one answered every request with "'<domain>' domain was not found", and
+    never recovered: no didCommitProvisionalTarget or targetDestroyed follows to move it back."""
+    with offline_cdp_target(monkeypatch) as (target, sent):
+        await target._target_created(_target_created("frame-2", "frame"))
+
+        assert target.target_id == "page-1"
+        assert sent == []
+        assert target.output_queue.empty()
+
+
+async def test_a_frame_target_going_away_does_not_reset_the_frontend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A subframe target is not the inspected document; announcing a load and a document update
+    for it would clear panels the frontend filled from the page."""
+    with offline_cdp_target(monkeypatch) as (target, _):
+        await target._target_created(_target_created("frame-2", "frame"))
+        await target._target_destroyed({"method": "Target.targetDestroyed", "params": {"targetId": "frame-2"}})
+
+        assert target.output_queue.empty()
+        assert "frame-2" not in target._destroyed_targets
