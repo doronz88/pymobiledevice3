@@ -245,6 +245,74 @@ async def evaluate_and_log_in_javascript_context(port: int, target_id: str) -> b
         await client.close()
 
 
+async def testp_cdp_server_rejects_the_page_domain_on_a_javascript_context(lockdown: LockdownClient) -> None:
+    """
+    A JSContext debuggable implements no Page domain and its global object has no window, but
+    Chrome's frontends still ask for a resource tree and a screencast. Both must come back as
+    protocol errors the frontend can absorb. Raising out of their translation instead loses the
+    response, and a screencast kept on the target although it never started took the session's
+    teardown down with it - leaking the queue-consumer tasks that then drained the next
+    session's events.
+    """
+    async with cdp_server(lockdown) as (port, _):
+        targets = await list_targets_of_type(port, "node")
+        if not targets:
+            pytest.skip("no inspectable JSContext on the device")
+        for target in targets:
+            if await page_domain_is_rejected_in_javascript_context(port, target["id"]):
+                return
+        pytest.skip("no listed JSContext answered the inspector")
+
+
+async def list_targets_of_type(port: int, type_: str) -> list[dict[str, Any]]:
+    """Listed targets of one kind. The device reports its debuggables asynchronously after the
+    inspector connects, so an immediate listing is empty even when there are some."""
+    for _ in range(TIMEOUT):
+        targets = [target for target in await http_get_json(port, "/json/list") if target["type"] == type_]
+        if targets:
+            return targets
+        await asyncio.sleep(1)
+    return []
+
+
+async def page_domain_is_rejected_in_javascript_context(port: int, target_id: str) -> bool:
+    """Ask a JSContext target for page-only functionality and assert it is refused cleanly.
+
+    :returns: False if the debuggable never answered (a dormant JSContext), True once it did.
+    """
+    client = CdpWebsocketClient(port, target_id)
+    await asyncio.wait_for(client.connect(), TIMEOUT)
+    try:
+        try:
+            await asyncio.wait_for(client.command(1, "Runtime.enable", {}), TIMEOUT)
+        except asyncio.TimeoutError:
+            return False
+        for id_, method, params in (
+            (2, "Page.getResourceTree", {}),
+            (3, "Page.startScreencast", {"format": "jpeg", "quality": 60, "maxWidth": 480, "maxHeight": 960}),
+        ):
+            response = await client.command(id_, method, params)
+            assert "result" not in response, f"{method} cannot succeed on a JSContext"
+            assert "failed to handle" not in response["error"]["message"], (
+                f"{method} must be refused, not raise out of its translation: {response['error']}"
+            )
+        # Refusing must leave the session usable rather than wedge it.
+        result = await client.command(4, "Runtime.evaluate", {"expression": "40+2"})
+        assert result["result"]["result"]["value"] == 42
+    finally:
+        await client.close()
+    # The teardown of a session that asked for a screencast must complete, or its receive loop
+    # keeps consuming the messages of every later session on the same debuggable.
+    client = CdpWebsocketClient(port, target_id)
+    await asyncio.wait_for(client.connect(), TIMEOUT)
+    try:
+        result = await client.command(1, "Runtime.evaluate", {"expression": "40+2"})
+        assert result["result"]["result"]["value"] == 42
+    finally:
+        await client.close()
+    return True
+
+
 async def testp_cdp_server_takes_a_held_page_over(lockdown: LockdownClient) -> None:
     """
     A DevTools tab left attached to a page must not brick every later connection to it.
@@ -378,6 +446,64 @@ async def testp_cdp_server_screencast_survives_navigation(lockdown: LockdownClie
             for url in ("https://example.com/", "https://www.apple.com/") * 2:
                 await command("Page.navigate", {"url": url})
                 await wait_for_frame()
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_answers_page_requests_across_a_process_swap(lockdown: LockdownClient) -> None:
+    """
+    A navigation that commits in a new process destroys the target the bridge is talking to, and
+    WebKit never answers what was in flight to it - which is exactly when Chrome's frontend asks
+    for the resource tree and starts a screencast. Both used to blow up on the answer that never
+    came (a KeyError on the missing result, and "did not report its screen size"), and the
+    screencast is the damaging one: the frontend never asks again, so the screen stays black for
+    the rest of the session. Both must be re-asked of the target that took over.
+
+    A live screencast runs throughout: its snapshot round-trips pause the receive loop, which is
+    what keeps the targetDestroyed event queued long enough for the requests below to be routed
+    to a target that is already gone.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                """client.command, acking the screencast frames it would otherwise leave unacked
+                (the encoder stops after one unacked frame)."""
+                id_ = next(message_ids)
+                await client.send({"id": id_, "method": method, "params": params})
+
+                async def wait_for_response() -> dict[str, Any]:
+                    while True:
+                        message = await client.receive()
+                        if message.get("method") == "Page.screencastFrame":
+                            await client.send({
+                                "id": next(message_ids),
+                                "method": "Page.screencastFrameAck",
+                                "params": {"sessionId": message["params"]["sessionId"]},
+                            })
+                        if message.get("id") == id_:
+                            return message
+
+                return await asyncio.wait_for(wait_for_response(), TIMEOUT)
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            screencast_params = {"format": "jpeg", "quality": 60, "maxWidth": 480, "maxHeight": 960}
+            assert "result" in await command("Page.startScreencast", screencast_params)
+            # Alternating origins force the swaps. The target is destroyed somewhere in the
+            # couple of seconds after the navigate is issued, so keep asking across that window
+            # rather than once - a single well-timed request slips through on its own.
+            for url in ("https://example.com/", "https://www.apple.com/") * 3:
+                await command("Page.navigate", {"url": url})
+                for _ in range(6):
+                    tree = await command("Page.getResourceTree", {})
+                    assert "result" in tree, f"resource tree lost to the swap into {url}: {tree.get('error')}"
+                    restarted = await command("Page.startScreencast", screencast_params)
+                    assert "result" in restarted, f"screencast lost to the swap into {url}: {restarted.get('error')}"
+                    await asyncio.sleep(0.3)
         finally:
             await client.close()
 
