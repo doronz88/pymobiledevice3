@@ -118,6 +118,23 @@ async with websockets.connect(f'ws://127.0.0.1:49151/connect?udid={udid}') as we
     ...
 ```
 
+`pymobiledevice3` itself consumes this bridge through the `--tunnel UDID@HOST[:PORT]` form (IPv6
+in brackets), so every command works against a remote `tunneld` without any extra tooling:
+
+```shell
+# on the machine with the device attached
+sudo python3 -m pymobiledevice3 remote tunneld --host 0.0.0.0
+
+# anywhere that can reach it
+python3 -m pymobiledevice3 developer dvt ls / --tunnel 'UDID@lab-mac:49151'
+```
+
+Library consumers get the same via `get_tunneld_devices(('lab-mac', 49151))` /
+`get_tunneld_device_by_udid(...)` — connections are bridged automatically whenever the `tunneld`
+host is non-loopback, and the `bridge=True` parameter forces it for addresses that only look local
+(e.g. an SSH port-forward such as `ssh -L 49151:127.0.0.1:49151 lab-mac`, where the `@` form does
+the same on the CLI: `--tunnel UDID@127.0.0.1`).
+
 !!! warning
     Like the rest of the `tunneld` HTTP API, `/connect` is unauthenticated — anyone able to reach
     the listener gains access to the services exposed over the tunnel, so only bind non-loopback
