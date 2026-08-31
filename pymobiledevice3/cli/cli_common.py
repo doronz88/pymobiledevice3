@@ -283,24 +283,47 @@ async def get_mobdev2_devices(udid: Optional[str] = None) -> list[TcpLockdownCli
     return [lockdown async for _, lockdown in get_mobdev2_lockdowns(udid=udid)]
 
 
-def _parse_tunnel_spec(tunnel: str) -> tuple[str, TunneldAddress]:
-    """Split a --tunnel value (``UDID``, ``UDID:PORT`` or ``UDID:UDS_PATH``) into
-    (udid, tunneld address). A numeric suffix is a TCP port on the default host;
-    anything else after the ``:`` is a unix domain socket path."""
-    udid, sep, address = tunnel.strip().partition(":")
+def _parse_tunnel_spec(tunnel: str) -> tuple[str, TunneldAddress, Optional[bool]]:
+    """Split a --tunnel value into (udid, tunneld address, bridge).
+
+    ``UDID`` and ``UDID:PORT`` address a local tunneld (a numeric suffix is a TCP port on the
+    default host), with ``bridge=None`` (automatic). ``UDID@HOST[:PORT]`` (IPv6 in brackets)
+    addresses a remote tunneld, forcing (``bridge=True``) every device connection through its
+    ``WS /connect`` endpoint — required whenever the tunnel interface tunneld created is
+    unreachable from this process, including a tunneld reached through an SSH port-forward (where
+    HOST looks local but the tunnel interface isn't)."""
+    spec = tunnel.strip()
+    at_index = spec.find("@")
+    colon_index = spec.find(":")
+    # the remote form's @ always precedes any : (the optional port); a later @ (e.g. inside a
+    # removed ':UDS_PATH' spec) falls through to the clear error below
+    if at_index != -1 and (colon_index == -1 or at_index < colon_index):
+        udid, address = spec[:at_index], spec[at_index + 1 :]
+        if address.count(":") > 1 and not address.startswith("["):
+            # bare IPv6 host without a port
+            host, port = address, str(TUNNELD_DEFAULT_ADDRESS[1])
+        else:
+            host, _, port = address.rpartition(":")
+            if not host or not port.isdigit():
+                host, port = address, str(TUNNELD_DEFAULT_ADDRESS[1])
+        return udid, (host.strip("[]"), int(port)), True
+    udid, sep, address = spec.partition(":")
     if not sep:
-        return udid, TUNNELD_DEFAULT_ADDRESS
-    if address.isdigit():
-        return udid, (TUNNELD_DEFAULT_ADDRESS[0], int(address))
-    return udid, address
+        return udid, TUNNELD_DEFAULT_ADDRESS, None
+    if not address.isdigit():
+        raise typer.BadParameter(
+            f"invalid --tunnel port: {address!r} (unix-socket tunneld support was removed; "
+            f"use UDID[:PORT] or UDID@HOST[:PORT])"
+        )
+    return udid, (TUNNELD_DEFAULT_ADDRESS[0], int(address)), None
 
 
 async def _tunneld(udid: Optional[str] = None) -> Optional[RemoteServiceDiscoveryService]:
     if udid is None:
         return
 
-    udid, tunneld_address = _parse_tunnel_spec(udid)
-    rsds = await get_tunneld_devices(tunneld_address)
+    udid, tunneld_address, bridge = _parse_tunnel_spec(udid)
+    rsds = await get_tunneld_devices(tunneld_address, bridge=bridge)
     if len(rsds) == 0:
         raise NoDeviceConnectedError()
 
@@ -428,9 +451,11 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
             typer.Option(
                 envvar=TUNNEL_ENV_VAR,
                 help=dedent("""\
-                    Use a device discovered via tunneld. Provide a UDID (optionally with :PORT or :UDS_PATH for a
-                    tunneld bound to a unix domain socket) or leave empty to pick interactively. Mutually exclusive
-                    with --rsd.
+                    Use a device discovered via tunneld. Provide a UDID (optionally with :PORT) or leave empty to
+                    pick interactively. UDID@HOST[:PORT] reaches a remote tunneld, bridging device connections
+                    through its WS /connect endpoint (use it whenever the tunnel interface is unreachable from
+                    this process, e.g. tunneld in docker, on another host, or behind an SSH port-forward).
+                    Mutually exclusive with --rsd.
                 """),
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),

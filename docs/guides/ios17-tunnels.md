@@ -100,14 +100,8 @@ pass a UDID):
 python3 -m pymobiledevice3 developer dvt ls / --tunnel ''
 ```
 
-`tunneld` binds `127.0.0.1:49151` by default. To relocate it, pass `--host`/`--port`, or `--uds` to
-bind a unix domain socket instead of TCP. The `--tunnel` value accepts the matching suffix —
-`UDID:PORT` or `UDID:UDS_PATH` (the UDID part may be empty):
-
-```shell
-sudo python3 -m pymobiledevice3 remote tunneld --uds /var/run/tunneld.sock
-python3 -m pymobiledevice3 developer dvt ls / --tunnel ':/var/run/tunneld.sock'
-```
+`tunneld` binds `127.0.0.1:49151` by default. To relocate it, pass `--host`/`--port`; the
+`--tunnel` value accepts the matching `UDID:PORT` suffix (the UDID part may be empty).
 
 When the client cannot reach the tunnel interface `tunneld` created — for example, `tunneld` runs
 in a different docker network stack, or on a different host altogether — the RSD addresses reported
@@ -124,15 +118,63 @@ async with websockets.connect(f'ws://127.0.0.1:49151/connect?udid={udid}') as we
     ...
 ```
 
+`pymobiledevice3` itself consumes this bridge through the `--tunnel UDID@HOST[:PORT]` form (IPv6
+in brackets), so every command works against a remote `tunneld` without any extra tooling:
+
+```shell
+# on the machine with the device attached
+sudo python3 -m pymobiledevice3 remote tunneld --host 0.0.0.0
+
+# anywhere that can reach it
+python3 -m pymobiledevice3 developer dvt ls / --tunnel 'UDID@lab-mac:49151'
+```
+
+Library consumers get the same via `get_tunneld_devices(('lab-mac', 49151))` /
+`get_tunneld_device_by_udid(...)` — connections are bridged automatically whenever the `tunneld`
+host is non-loopback, and the `bridge=True` parameter forces it for addresses that only look local
+(e.g. an SSH port-forward such as `ssh -L 49151:127.0.0.1:49151 lab-mac`, where the `@` form does
+the same on the CLI: `--tunnel UDID@127.0.0.1`).
+
 !!! warning
     Like the rest of the `tunneld` HTTP API, `/connect` is unauthenticated — anyone able to reach
     the listener gains access to the services exposed over the tunnel, so only bind non-loopback
     addresses on trusted networks.
 
+### Fronting several hosts with one tunneld
+
+A `tunneld` can federate others with `--upstream` (repeatable, also `POST /upstream` at runtime).
+Their devices appear in its `GET /` listing, and a `/connect` for a device it does not serve itself
+is relayed to the upstream that owns it — so a client needs a route to the front `tunneld` alone,
+with no VPN and no route to each host's tunnel interface:
+
+```shell
+# on every host with devices attached
+sudo python3 -m pymobiledevice3 remote tunneld --host 0.0.0.0
+
+# on the one host clients can reach. Disable the monitors if devices are attached here too,
+# unless you want this instance to serve them itself: otherwise it builds its own tunnels
+# alongside the ones it federates, and each such device is then listed twice
+sudo python3 -m pymobiledevice3 remote tunneld --host 0.0.0.0 \
+    --no-usb --no-wifi --no-usbmux --no-mobdev2 \
+    --upstream http://lab-1:49151 --upstream http://lab-2:49151
+
+# from anywhere: any device in the lab, addressed through the front tunneld
+python3 -m pymobiledevice3 developer dvt ls / --tunnel 'UDID@front:49151'
+```
+
+Upstreams are addressed as `HOST`, `HOST:PORT` or `http://HOST[:PORT]` (IPv6 in brackets), all
+stored canonically as `http://HOST:PORT` with tunneld's default port filled in. `https://` is
+rejected: the relay speaks plaintext, so carry federation over a trusted network or an SSH forward.
+
+Each listing entry carries an `origin`: `null` for devices the queried instance serves directly,
+otherwise the URL of the upstream it came from. A client that *can* reach that upstream may skip
+the relay and address it directly, which saves a hop.
+
 !!! note
-    `/connect` only bridges into tunnels established by this `tunneld` instance. A device that
-    appears in `GET /` through a registered upstream `tunneld` is not reachable through this
-    instance's `/connect` — connect to the upstream's own `/connect` endpoint instead.
+    Federated requests carry a hop budget (`x-tunneld-hops-remaining`, 4 by default), so tunnelds
+    registering each other terminate instead of recursing, and a device reachable through several
+    paths is listed once. Relaying costs an extra hop through the front instance's event loop —
+    negligible for control traffic, measurable on bulk transfers such as DDI mounts.
 
 To make `tunneld` the **default** fallback — so commands route to it automatically without passing
 `--tunnel`, restoring the pre-userspace-default behavior — set

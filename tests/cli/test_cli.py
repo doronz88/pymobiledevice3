@@ -259,7 +259,7 @@ def test_tunneld_device_not_found_names_the_tunneld_instance(monkeypatch):
         async def close(self):
             pass
 
-    async def fake_get_tunneld_devices(address):
+    async def fake_get_tunneld_devices(address, bridge=None):
         return [_FakeRsd()]
 
     monkeypatch.setattr(cli_common, "get_tunneld_devices", fake_get_tunneld_devices)

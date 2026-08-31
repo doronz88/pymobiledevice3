@@ -43,7 +43,7 @@ from pymobiledevice3.remote.tunnel_service import (
 )
 from pymobiledevice3.remote.utils import get_rsds
 from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS
-from pymobiledevice3.tunneld.server import TunneldRunner
+from pymobiledevice3.tunneld.server import TunneldRunner, normalize_upstream_url
 from pymobiledevice3.utils import run_in_loop
 
 logger = logging.getLogger(__name__)
@@ -95,10 +95,13 @@ cli = InjectingTyper(
 def cli_tunneld(
     host: Annotated[str, typer.Option(help="Address to bind the tunneld server to.")] = TUNNELD_DEFAULT_ADDRESS[0],
     port: Annotated[int, typer.Option(help="Port to bind the tunneld server to.")] = TUNNELD_DEFAULT_ADDRESS[1],
-    uds: Annotated[
-        Optional[str],
+    upstream: Annotated[
+        Optional[list[str]],
         typer.Option(
-            "--uds", help="Unix domain socket path to bind the tunneld server to (instead of TCP --host/--port)."
+            "--upstream",
+            help="URL of another tunneld to federate (repeatable). Its devices appear in this "
+            "instance's listing, and connections to them are relayed through it, so clients need "
+            "a route to this tunneld only.",
         ),
     ] = None,
     daemonize: Annotated[bool, typer.Option("--daemonize", "-d", help="Run tunneld in the background.")] = False,
@@ -123,12 +126,17 @@ def cli_tunneld(
     """Start Tunneld service for remote tunneling"""
     if not verify_tunnel_imports():
         return
+    for url in upstream or []:
+        try:
+            normalize_upstream_url(url)
+        except ValueError as e:
+            raise typer.BadParameter(str(e), param_hint="--upstream") from e
     tunneld_runner = partial(
         TunneldRunner.create,
         host,
         port,
         protocol=protocol,
-        uds=uds,
+        upstreams=upstream,
         usb_monitor=usb,
         wifi_monitor=wifi,
         usbmux_monitor=usbmux,
@@ -140,7 +148,7 @@ def cli_tunneld(
             from daemonize import Daemonize
         except ImportError as e:
             raise NotImplementedError("daemonizing is only supported on unix platforms") from e
-        bind = uds if uds is not None else f"{host}:{port}"
+        bind = f"{host}:{port}"
         with tempfile.NamedTemporaryFile("wt") as pid_file:
             daemon = Daemonize(app=f"Tunneld {bind}", pid=pid_file.name, action=tunneld_runner)
             logger.info(f"starting Tunneld {bind}")
