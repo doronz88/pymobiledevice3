@@ -284,15 +284,15 @@ async def get_mobdev2_devices(udid: Optional[str] = None) -> list[TcpLockdownCli
 
 
 def _parse_tunnel_spec(tunnel: str) -> tuple[str, TunneldAddress]:
-    """Split a --tunnel value (``UDID``, ``UDID:PORT`` or ``UDID:UDS_PATH``) into
-    (udid, tunneld address). A numeric suffix is a TCP port on the default host;
-    anything else after the ``:`` is a unix domain socket path."""
+    """Split a --tunnel value (``UDID`` or ``UDID:PORT``) into (udid, tunneld address)."""
     udid, sep, address = tunnel.strip().partition(":")
     if not sep:
         return udid, TUNNELD_DEFAULT_ADDRESS
-    if address.isdigit():
-        return udid, (TUNNELD_DEFAULT_ADDRESS[0], int(address))
-    return udid, address
+    if not address.isdigit():
+        raise typer.BadParameter(
+            f"invalid --tunnel port: {address!r} (unix-socket tunneld support was removed; use UDID[:PORT])"
+        )
+    return udid, (TUNNELD_DEFAULT_ADDRESS[0], int(address))
 
 
 async def _tunneld(udid: Optional[str] = None) -> Optional[RemoteServiceDiscoveryService]:
@@ -428,9 +428,8 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
             typer.Option(
                 envvar=TUNNEL_ENV_VAR,
                 help=dedent("""\
-                    Use a device discovered via tunneld. Provide a UDID (optionally with :PORT or :UDS_PATH for a
-                    tunneld bound to a unix domain socket) or leave empty to pick interactively. Mutually exclusive
-                    with --rsd.
+                    Use a device discovered via tunneld. Provide a UDID (optionally with :PORT) or leave empty to
+                    pick interactively. Mutually exclusive with --rsd.
                 """),
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),

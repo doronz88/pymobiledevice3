@@ -100,14 +100,8 @@ pass a UDID):
 python3 -m pymobiledevice3 developer dvt ls / --tunnel ''
 ```
 
-`tunneld` binds `127.0.0.1:49151` by default. To relocate it, pass `--host`/`--port`, or `--uds` to
-bind a unix domain socket instead of TCP. The `--tunnel` value accepts the matching suffix —
-`UDID:PORT` or `UDID:UDS_PATH` (the UDID part may be empty):
-
-```shell
-sudo python3 -m pymobiledevice3 remote tunneld --uds /var/run/tunneld.sock
-python3 -m pymobiledevice3 developer dvt ls / --tunnel ':/var/run/tunneld.sock'
-```
+`tunneld` binds `127.0.0.1:49151` by default. To relocate it, pass `--host`/`--port`; the
+`--tunnel` value accepts the matching `UDID:PORT` suffix (the UDID part may be empty).
 
 When the client cannot reach the tunnel interface `tunneld` created — for example, `tunneld` runs
 in a different docker network stack, or on a different host altogether — the RSD addresses reported

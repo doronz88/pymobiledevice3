@@ -56,8 +56,7 @@ flowchart LR
 ```
 
 - **Root:** required (creating `utun` needs it); `tunneld` is the daemon form that shares
-  tunnels across processes, queryable over HTTP (`--tunnel`), optionally on a unix socket
-  (`--uds`).
+  tunnels across processes, queryable over HTTP (`--tunnel`).
 - **Disconnect:** the `utun` interface disappears with the tunnel, erroring connections
   out; service connections also run TCP keep-alive.
 - Highest host→device throughput; the only path external tools can use.

@@ -540,13 +540,11 @@ class TunneldRunner:
         usbmux_monitor: bool = True,
         usbmux_address: Optional[str] = None,
         mobdev2_monitor: bool = True,
-        uds: Optional[str] = None,
     ) -> None:
         cls(
             host,
             port,
             protocol=protocol,
-            uds=uds,
             usb_monitor=usb_monitor,
             wifi_monitor=wifi_monitor,
             usbmux_monitor=usbmux_monitor,
@@ -564,7 +562,6 @@ class TunneldRunner:
         usbmux_monitor: bool = True,
         usbmux_address: Optional[str] = None,
         mobdev2_monitor: bool = True,
-        uds: Optional[str] = None,
     ):
         @asynccontextmanager
         async def lifespan(app: FastAPI):
@@ -575,7 +572,6 @@ class TunneldRunner:
 
         self.host = host
         self.port = port
-        self.uds = uds
         self.protocol = protocol
         self._connect_bridge_count = 0
         self._app = FastAPI(lifespan=lifespan)
@@ -869,9 +865,6 @@ class TunneldRunner:
     def _run_app(self) -> None:
         # per-message deflate would burn CPU compressing the mostly-encrypted tunnel
         # traffic bridged over /connect
-        if self.uds is not None:
-            uvicorn.run(self._app, uds=self.uds, loop="asyncio", ws="wsproto", ws_per_message_deflate=False)
-        else:
-            uvicorn.run(
-                self._app, host=self.host, port=self.port, loop="asyncio", ws="wsproto", ws_per_message_deflate=False
-            )
+        uvicorn.run(
+            self._app, host=self.host, port=self.port, loop="asyncio", ws="wsproto", ws_per_message_deflate=False
+        )
