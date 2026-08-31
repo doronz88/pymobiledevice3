@@ -48,8 +48,9 @@ effect is not a surprise.
 
 | Variable | Effect |
 | --- | --- |
-| `SUDO_USER` | Under `sudo`, pymobiledevice3 resolves `~` (and therefore `~/.pymobiledevice3`, where pair records live) to the **invoking** user's home, not root's. |
+| `SUDO_USER` | Under `sudo`, pymobiledevice3 resolves `~` (and therefore `~/.pymobiledevice3` — or `$XDG_DATA_HOME/pymobiledevice3` on new Linux installs — where pair records live) to the **invoking** user's home, not root's. |
 | `SUDO_UID`, `SUDO_GID` | Files pymobiledevice3 creates under `sudo` are chowned back to the invoking user, so a later non-root run can still read them. |
+| `XDG_DATA_HOME` | Linux only: fresh installations keep pymobiledevice3's files under `$XDG_DATA_HOME/pymobiledevice3` (`~/.local/share/pymobiledevice3` when unset), per the XDG Base Directory Specification. An existing `~/.pymobiledevice3` keeps being used. Note that plain `sudo` (`env_reset`) strips this variable, so a sudo run falls back to `~/.local/share` of the invoking user — use `sudo -E` (or `env_keep`) if your `XDG_DATA_HOME` points elsewhere and the sudo run should match. |
 | `ALLUSERSPROFILE` | Windows only: where Apple's `Lockdown` pair records are looked up (`%ALLUSERSPROFILE%\Apple\Lockdown`). |
 | `TERM` | Passed through to the shell `developer debugserver` spawns; defaults to `xterm-256color`. |
 | `_PYMOBILEDEVICE3_COMPLETE` | Set by the shell-completion scripts (`--install-completion`). Its presence makes commands skip connecting to the device. |

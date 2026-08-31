@@ -110,6 +110,18 @@ class Linux(Posix):
     def get_homedir(self) -> Path:
         return Path("~" + os.environ.get("SUDO_USER", "")).expanduser()
 
+    def get_home_folder_path(self) -> Path:
+        # Existing installations keep ~/.pymobiledevice3; fresh ones follow the XDG Base Directory
+        # Specification: $XDG_DATA_HOME/pymobiledevice3 (~/.local/share/pymobiledevice3 by default).
+        legacy = super().get_home_folder_path()
+        if legacy.is_dir():
+            return legacy
+        xdg_data_home = Path(os.environ.get("XDG_DATA_HOME", ""))
+        if not xdg_data_home.is_absolute():
+            # The spec requires ignoring relative (or unset) paths
+            xdg_data_home = self.get_homedir() / ".local" / "share"
+        return xdg_data_home / "pymobiledevice3"
+
 
 class Cygwin(Posix):
     @property
