@@ -11,7 +11,7 @@ import pytest
 import requests
 
 from pymobiledevice3.tunneld.api import TunneldConnectDialer
-from pymobiledevice3.tunneld.server import WS_CLOSE_CONNECT_FAILED, WS_CLOSE_NO_TUNNEL
+from pymobiledevice3.tunneld.server import WS_CLOSE_CONNECT_FAILED, WS_CLOSE_NO_TUNNEL, normalize_upstream_url
 from pymobiledevice3.tunneld.ws_bridge import connect as ws_connect
 
 UDID_A = "00008120-000000000000000A"
@@ -213,3 +213,78 @@ async def test_relayed_close_code_is_preserved(aggregator: tuple[int, int]) -> N
         assert upstream.close_code == WS_CLOSE_CONNECT_FAILED
     finally:
         upstream.close()
+
+
+@pytest.mark.parametrize(
+    "spec,expected",
+    [
+        ("lab-1", "http://lab-1:49151"),
+        ("lab-1:8080", "http://lab-1:8080"),
+        ("http://lab-1", "http://lab-1:49151"),
+        ("http://lab-1:8080", "http://lab-1:8080"),
+        ("http://lab-1:8080/", "http://lab-1:8080"),
+        ("  http://lab-1:8080  ", "http://lab-1:8080"),
+        ("[fd00::1]:49151", "http://[fd00::1]:49151"),
+        ("http://[fd00::1]", "http://[fd00::1]:49151"),
+        ("192.168.0.7:49151", "http://192.168.0.7:49151"),
+    ],
+)
+def test_normalize_upstream_url(spec: str, expected: str) -> None:
+    assert normalize_upstream_url(spec) == expected
+
+
+@pytest.mark.parametrize(
+    "spec,message",
+    [
+        # the relay dials plaintext, so a TLS upstream would be silently mis-dialed
+        ("https://lab-1", "only http:// upstreams"),
+        ("http://lab-1/tunneld", "bare host"),
+        ("http://lab-1?x=1", "bare host"),
+        ("http://", "names no host"),
+        ("http://lab-1:portly", "invalid port"),
+    ],
+)
+def test_normalize_upstream_url_rejects(spec: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        normalize_upstream_url(spec)
+
+
+def test_add_upstream_stores_the_canonical_form(federated_pair: tuple[int, int]) -> None:
+    """A schemeless registration is accepted and canonicalized, so both federation paths agree."""
+    port_a, _ = federated_pair
+    resp = requests.post(f"http://127.0.0.1:{port_a}/upstream", json={"url": "lab-9:1234"}, timeout=10)
+    assert resp.status_code == 200
+    assert "http://lab-9:1234" in requests.get(f"http://127.0.0.1:{port_a}/upstream", timeout=10).json()
+    # and it can be removed by the spelling it was added with
+    requests.delete(f"http://127.0.0.1:{port_a}/upstream", json={"url": "lab-9:1234"}, timeout=10)
+    assert "http://lab-9:1234" not in requests.get(f"http://127.0.0.1:{port_a}/upstream", timeout=10).json()
+
+
+def test_add_upstream_rejects_unusable_url(federated_pair: tuple[int, int]) -> None:
+    """An upstream neither federation path could act on fails loudly at registration."""
+    port_a, _ = federated_pair
+    resp = requests.post(f"http://127.0.0.1:{port_a}/upstream", json={"url": "https://lab-9"}, timeout=10)
+    assert resp.status_code == 400
+    assert "only http:// upstreams" in resp.json()["error"]
+
+
+async def test_schemeless_upstream_relays(echo_port: int) -> None:
+    """The friendly 'HOST:PORT' spelling works through the whole stack, not just the parser."""
+    procs = []
+    try:
+        proc_b, port_b = _spawn_tunneld(UDID_B, tunnel_port=echo_port)
+        procs.append(proc_b)
+        proc_a, port_a = _spawn_tunneld(upstreams=[f"127.0.0.1:{port_b}"])
+        procs.append(proc_a)
+        dialer = TunneldConnectDialer(("127.0.0.1", port_a), UDID_B, TUNNEL_ADDRESS)
+        reader, writer = await dialer.dial(TUNNEL_ADDRESS, echo_port)
+        try:
+            writer.write(b"schemeless")
+            await writer.drain()
+            assert await reader.readexactly(10) == b"schemeless"
+        finally:
+            writer.close()
+    finally:
+        for proc in procs:
+            proc.kill()
+            proc.wait(timeout=10)

@@ -57,6 +57,7 @@ from pymobiledevice3.remote.tunnel_service import (
     get_remote_pairing_tunnel_services,
 )
 from pymobiledevice3.remote.utils import get_rsds, stop_remoted
+from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS
 from pymobiledevice3.utils import asyncio_print_traceback
 from pymobiledevice3.utils import current_task_name as _current_task_name
 
@@ -108,6 +109,40 @@ UPSTREAM_MAX_HOPS = 4
 # How long a resolved "which upstream serves this UDID" answer is reused. A device session opens
 # many service connections; re-listing every upstream for each one would add a round trip apiece.
 _UPSTREAM_OWNER_TTL = 5.0
+
+
+def normalize_upstream_url(url: str) -> str:
+    """Canonicalize an upstream tunneld address to ``http://HOST:PORT``.
+
+    Accepts ``HOST``, ``HOST:PORT`` and ``http://HOST[:PORT]`` (IPv6 in brackets), filling in
+    tunneld's default port. Federation reads the address twice — ``requests`` fetches the listing
+    from the URL, while the ``/connect`` relay dials the parsed host and port — so both are given
+    one canonical form to agree on, and anything neither could act on is rejected here instead of
+    failing silently later.
+
+    :raises ValueError: if the address cannot be used as an upstream.
+    """
+    candidate = url.strip()
+    if "//" not in candidate:
+        # a bare 'lab-1:49151' parses as scheme 'lab-1', so spell the scheme out
+        candidate = f"http://{candidate}"
+    parsed = urllib.parse.urlparse(candidate)
+    if parsed.scheme != "http":
+        raise ValueError(
+            f"unsupported upstream scheme {parsed.scheme!r} in {url!r}: the /connect relay speaks "
+            f"plaintext HTTP, so only http:// upstreams are supported"
+        )
+    if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+        raise ValueError(f"upstream {url!r} must be a bare host[:port], carrying no path or query")
+    try:
+        port = parsed.port or TUNNELD_DEFAULT_ADDRESS[1]
+    except ValueError as e:
+        raise ValueError(f"upstream {url!r} has an invalid port") from e
+    if not parsed.hostname:
+        raise ValueError(f"upstream {url!r} names no host")
+    # urlparse strips the brackets IPv6 literals need in a URL
+    host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+    return f"http://{host}:{port}"
 
 
 def _tunnel_entry_key(entry: dict[str, Any]) -> tuple[Any, Any, Any]:
@@ -165,7 +200,7 @@ class TunneldCore:
         # one, and a `/connect` for a device none of our own tunnels serve is relayed to the
         # upstream that owns it - so one reachable tunneld fronts devices attached to hosts the
         # client has no route to.
-        self.upstream_urls: set[str] = set(upstreams or [])
+        self.upstream_urls: set[str] = {normalize_upstream_url(url) for url in (upstreams or [])}
 
     def start(self) -> None:
         """Register all tasks"""
@@ -670,17 +705,24 @@ class TunneldRunner:
 
         @self._app.post("/upstream")
         async def add_upstream(body: _UpstreamBody) -> fastapi.Response:
-            self._tunneld_core.upstream_urls.add(body.url)
+            try:
+                url = normalize_upstream_url(body.url)
+            except ValueError as e:
+                return fastapi.Response(status_code=400, content=json.dumps({"error": str(e)}))
+            self._tunneld_core.upstream_urls.add(url)
             data: dict[str, Any] = {
                 "operation": "add_upstream",
-                "url": body.url,
+                "url": url,
                 "data": True,
-                "message": f"upstream {body.url} added",
+                "message": f"upstream {url} added",
             }
             return generate_http_response(data)
 
         @self._app.delete("/upstream")
         async def remove_upstream(body: _UpstreamBody) -> fastapi.Response:
+            # normalized on the way in, so the caller may spell it either way
+            with suppress(ValueError):
+                self._tunneld_core.upstream_urls.discard(normalize_upstream_url(body.url))
             self._tunneld_core.upstream_urls.discard(body.url)
             data: dict[str, Any] = {
                 "operation": "remove_upstream",

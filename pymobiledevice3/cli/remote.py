@@ -43,7 +43,7 @@ from pymobiledevice3.remote.tunnel_service import (
 )
 from pymobiledevice3.remote.utils import get_rsds
 from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS
-from pymobiledevice3.tunneld.server import TunneldRunner
+from pymobiledevice3.tunneld.server import TunneldRunner, normalize_upstream_url
 from pymobiledevice3.utils import run_in_loop
 
 logger = logging.getLogger(__name__)
@@ -126,6 +126,11 @@ def cli_tunneld(
     """Start Tunneld service for remote tunneling"""
     if not verify_tunnel_imports():
         return
+    for url in upstream or []:
+        try:
+            normalize_upstream_url(url)
+        except ValueError as e:
+            raise typer.BadParameter(str(e), param_hint="--upstream") from e
     tunneld_runner = partial(
         TunneldRunner.create,
         host,
