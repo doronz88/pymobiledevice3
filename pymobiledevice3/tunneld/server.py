@@ -94,12 +94,25 @@ WS_CLOSE_TRY_AGAIN_LATER = 1013
 
 _UPSTREAM_FETCH_TIMEOUT = 2.0
 
+# Every federated listing request carries the number of upstream hops it may still traverse.
+# Without it, tunnelds that register each other (A -> B -> A) recurse until the fetch timeouts
+# unwind: the nesting spawns a growing tree of in-flight requests against the bounded
+# to_thread executor, and the innermost fetches lose the race against their parents' timeouts,
+# so a cycle drops the very listings it was meant to merge.
+UPSTREAM_HOPS_HEADER = "x-tunneld-hops-remaining"
+UPSTREAM_MAX_HOPS = 4
 
-def _fetch_upstream(url: str) -> dict[str, Any]:
+
+def _tunnel_entry_key(entry: dict[str, Any]) -> tuple[Any, Any, Any]:
+    """Identity of a listing entry, for de-duplicating tunnels reported through several paths."""
+    return entry.get("tunnel-address"), entry.get("tunnel-port"), entry.get("interface")
+
+
+def _fetch_upstream(url: str, hops_remaining: int) -> dict[str, Any]:
     """Fetch a tunneld listing from an upstream URL. Called in a worker thread
     via asyncio.to_thread; raises on any error so the caller can skip the
     upstream silently."""
-    resp = requests.get(url, timeout=_UPSTREAM_FETCH_TIMEOUT)
+    resp = requests.get(url, timeout=_UPSTREAM_FETCH_TIMEOUT, headers={UPSTREAM_HOPS_HEADER: str(hops_remaining)})
     resp.raise_for_status()
     return resp.json()
 
@@ -585,10 +598,13 @@ class TunneldRunner:
         )
 
         @self._app.get("/")
-        async def list_tunnels() -> dict[str, list[dict[str, Any]]]:
+        async def list_tunnels(
+            hops_remaining: int = fastapi.Header(default=UPSTREAM_MAX_HOPS, alias=UPSTREAM_HOPS_HEADER),
+        ) -> dict[str, list[dict[str, Any]]]:
             """Retrieve the available tunnels and format them as {UUID: TUNNEL_ADDRESS}.
             Listings from any registered upstream tunnelds (see POST /upstream) are
-            fetched in parallel and merged into the response."""
+            fetched in parallel and merged into the response, up to ``hops_remaining``
+            levels of federation (see UPSTREAM_HOPS_HEADER)."""
             tunnels: dict[str, list[dict[str, Any]]] = {}
             for ip, active_tunnel in self._tunneld_core.tunnel_tasks.items():
                 if (active_tunnel.udid is None) or (active_tunnel.tunnel is None):
@@ -603,9 +619,9 @@ class TunneldRunner:
                 })
 
             upstream_urls = list(self._tunneld_core.upstream_urls)
-            if upstream_urls:
+            if upstream_urls and hops_remaining > 0:
                 results = await asyncio.gather(
-                    *(asyncio.to_thread(_fetch_upstream, url) for url in upstream_urls),
+                    *(asyncio.to_thread(_fetch_upstream, url, hops_remaining - 1) for url in upstream_urls),
                     return_exceptions=True,
                 )
                 for url, result in zip(upstream_urls, results):
@@ -613,7 +629,16 @@ class TunneldRunner:
                         logger.debug(f"upstream tunneld {url} unreachable: {result!r}")
                         continue
                     for udid, entries in (result or {}).items():
-                        tunnels.setdefault(udid, []).extend(entries)
+                        merged = tunnels.setdefault(udid, [])
+                        # a cycle (or two upstreams federating a third) reports the same tunnel
+                        # through more than one path; list every tunnel once
+                        known = {_tunnel_entry_key(entry) for entry in merged}
+                        for entry in entries:
+                            key = _tunnel_entry_key(entry)
+                            if key in known:
+                                continue
+                            known.add(key)
+                            merged.append(entry)
             return tunnels
 
         class _UpstreamBody(pydantic.BaseModel):
