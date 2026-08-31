@@ -151,13 +151,20 @@ with no VPN and no route to each host's tunnel interface:
 # on every host with devices attached
 sudo python3 -m pymobiledevice3 remote tunneld --host 0.0.0.0
 
-# on the one host clients can reach
+# on the one host clients can reach. Disable the monitors if devices are attached here too,
+# unless you want this instance to serve them itself: otherwise it builds its own tunnels
+# alongside the ones it federates, and each such device is then listed twice
 sudo python3 -m pymobiledevice3 remote tunneld --host 0.0.0.0 \
+    --no-usb --no-wifi --no-usbmux --no-mobdev2 \
     --upstream http://lab-1:49151 --upstream http://lab-2:49151
 
 # from anywhere: any device in the lab, addressed through the front tunneld
 python3 -m pymobiledevice3 developer dvt ls / --tunnel 'UDID@front:49151'
 ```
+
+Upstreams are addressed as `HOST`, `HOST:PORT` or `http://HOST[:PORT]` (IPv6 in brackets), all
+stored canonically as `http://HOST:PORT` with tunneld's default port filled in. `https://` is
+rejected: the relay speaks plaintext, so carry federation over a trusted network or an SSH forward.
 
 Each listing entry carries an `origin`: `null` for devices the queried instance serves directly,
 otherwise the URL of the upstream it came from. A client that *can* reach that upstream may skip

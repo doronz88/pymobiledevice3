@@ -26,12 +26,13 @@ TUNNELD_SCRIPT = (
     "from pymobiledevice3.remote.tunnel_service import TunnelResult\n"
     "from pymobiledevice3.tunneld.server import TunneldRunner, TunnelTask\n"
     "port, udid, tunnel_port, upstreams = int(sys.argv[1]), sys.argv[2], int(sys.argv[3]), sys.argv[4]\n"
+    "tunnel_address = sys.argv[5]\n"
     "runner = TunneldRunner('127.0.0.1', port, usb_monitor=False, wifi_monitor=False, "
     "usbmux_monitor=False, mobdev2_monitor=False, upstreams=[u for u in upstreams.split(',') if u])\n"
     "if udid:\n"
     "    runner._tunneld_core.tunnel_tasks[f'fake-{udid}'] = TunnelTask(\n"
     "        task=cast(Any, None), udid=udid,\n"
-    "        tunnel=TunnelResult(interface=f'fake-{udid}', address='127.0.0.1', port=tunnel_port,\n"
+    "        tunnel=TunnelResult(interface=f'fake-{udid}', address=tunnel_address, port=tunnel_port,\n"
     "                            protocol=TunnelProtocol.TCP, client=cast(Any, None)))\n"
     "runner._run_app()\n"
 )
@@ -69,7 +70,10 @@ def _unused_port() -> int:
 
 
 def _spawn_tunneld(
-    udid: str = "", tunnel_port: Optional[int] = None, upstreams: Sequence[str] = ()
+    udid: str = "",
+    tunnel_port: Optional[int] = None,
+    upstreams: Sequence[str] = (),
+    tunnel_address: str = TUNNEL_ADDRESS,
 ) -> tuple[subprocess.Popen[bytes], int]:
     port = _unused_port()
     proc = subprocess.Popen(
@@ -81,6 +85,7 @@ def _spawn_tunneld(
             udid,
             str(tunnel_port if tunnel_port is not None else _unused_port()),
             ",".join(upstreams),
+            tunnel_address,
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -282,6 +287,61 @@ async def test_schemeless_upstream_relays(echo_port: int) -> None:
             writer.write(b"schemeless")
             await writer.drain()
             assert await reader.readexactly(10) == b"schemeless"
+        finally:
+            writer.close()
+    finally:
+        for proc in procs:
+            proc.kill()
+            proc.wait(timeout=10)
+
+
+# TEST-NET-1: routable nowhere, so a bridge that picks this tunnel cannot succeed by accident
+UNREACHABLE_TUNNEL_ADDRESS = "192.0.2.1"
+
+
+async def test_connect_picks_the_tunnel_the_client_named(echo_port: int) -> None:
+    """A device can have two tunnels — one held here, one on an upstream — when both tunnelds
+    monitor the same host. Keying only on the UDID paired this instance's tunnel address with the
+    caller's port, dialing an endpoint that exists nowhere; the address names which tunnel to use.
+    """
+    procs = []
+    try:
+        proc_b, port_b = _spawn_tunneld(UDID_B, tunnel_port=echo_port, tunnel_address=TUNNEL_ADDRESS)
+        procs.append(proc_b)
+        proc_a, port_a = _spawn_tunneld(
+            UDID_B,  # same device, its own tunnel, as a monitoring aggregator would have
+            tunnel_port=echo_port,
+            tunnel_address=UNREACHABLE_TUNNEL_ADDRESS,
+            upstreams=[f"http://127.0.0.1:{port_b}"],
+        )
+        procs.append(proc_a)
+        # the client asks the aggregator for the upstream's tunnel, by address
+        dialer = TunneldConnectDialer(("127.0.0.1", port_a), UDID_B, TUNNEL_ADDRESS)
+        reader, writer = await dialer.dial(TUNNEL_ADDRESS, echo_port)
+        try:
+            writer.write(b"named tunnel")
+            await writer.drain()
+            assert await reader.readexactly(12) == b"named tunnel"
+        finally:
+            writer.close()
+    finally:
+        for proc in procs:
+            proc.kill()
+            proc.wait(timeout=10)
+
+
+async def test_connect_still_serves_its_own_tunnel_by_address(echo_port: int) -> None:
+    """The instance's own tunnel is still served directly when the client names that one."""
+    procs = []
+    try:
+        proc, port = _spawn_tunneld(UDID_B, tunnel_port=echo_port, tunnel_address=TUNNEL_ADDRESS)
+        procs.append(proc)
+        dialer = TunneldConnectDialer(("127.0.0.1", port), UDID_B, TUNNEL_ADDRESS)
+        reader, writer = await dialer.dial(TUNNEL_ADDRESS, echo_port)
+        try:
+            writer.write(b"own tunnel")
+            await writer.drain()
+            assert await reader.readexactly(10) == b"own tunnel"
         finally:
             writer.close()
     finally:

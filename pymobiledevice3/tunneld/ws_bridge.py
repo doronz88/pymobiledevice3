@@ -93,6 +93,7 @@ async def connect(
     port: int,
     udid: str,
     device_port: Optional[int] = None,
+    address: Optional[str] = None,
     extra_headers: Optional[list[tuple[bytes, bytes]]] = None,
 ) -> ConnectWebsocket:
     """Open a ``/connect`` websocket on the tunneld at ``host``:``port``.
@@ -100,6 +101,8 @@ async def connect(
     :param udid: UDID of the target device.
     :param device_port: port to reach over the device's tunnel; ``None`` lets the serving tunneld
         apply its own default (the tunnel's RSD port).
+    :param address: the device's tunnel address, naming which of its tunnels to use when it has
+        more than one. Ignored by tunnelds predating the parameter, which key on the UDID alone.
     :param extra_headers: additional handshake headers (tunneld passes its federation hop budget).
     :raises ConnectionError: if the handshake fails, including a tunneld too old to serve
         ``/connect``.
@@ -111,6 +114,8 @@ async def connect(
         target = f"/connect?udid={urllib.parse.quote(udid)}"
         if device_port is not None:
             target += f"&port={device_port}"
+        if address is not None:
+            target += f"&address={urllib.parse.quote(address)}"
         writer.write(ws.send(Request(host=f"{host}:{port}", target=target, extra_headers=extra_headers or [])))
         await writer.drain()
         while True:

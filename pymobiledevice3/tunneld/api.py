@@ -58,7 +58,9 @@ class TunneldConnectDialer:
         if host is None or str(host) != self._tunnel_address:
             return await asyncio.open_connection(host, port, **kwargs)
         assert port is not None
-        upstream = await ws_bridge.connect(self._tunneld_address[0], self._tunneld_address[1], self._udid, port)
+        upstream = await ws_bridge.connect(
+            self._tunneld_address[0], self._tunneld_address[1], self._udid, port, address=self._tunnel_address
+        )
         caller_sock, bridge_sock = socket.socketpair()
         try:
             bridge_reader, bridge_writer = await asyncio.open_connection(sock=bridge_sock)

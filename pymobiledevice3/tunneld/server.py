@@ -214,13 +214,21 @@ class TunneldCore:
         if self.mobdev2_monitor:
             self.tasks.append(asyncio.create_task(self.monitor_mobdev2_task(), name="monitor-mobdev2-task"))
 
-    def get_tunnel(self, udid: str) -> Optional[TunnelResult]:
+    def get_tunnel(self, udid: str, address: Optional[str] = None) -> Optional[TunnelResult]:
+        """The tunnel this instance holds for ``udid``, or ``None``.
+
+        ``address`` selects a specific tunnel: a device can have more than one (another tunneld
+        federated through this one may hold its own tunnel to the same device), and pairing one
+        tunnel's address with another's port yields an endpoint that does not exist.
+        """
         for task in self.tunnel_tasks.values():
             # Linux implementations of `usbmuxd` may report an incorrect value of UDID, dismissing the `-` character.
             # For such cases, we also check for a UDID without it.
             # See: <https://github.com/doronz88/pymobiledevice3/issues/1388#issuecomment-2782249770>
             task_udid = task.udid or ""
             if ((task_udid == udid) or (task_udid.replace("-", "") == udid)) and (task.tunnel is not None):
+                if address is not None and task.tunnel.address != address:
+                    continue
                 return task.tunnel
 
         return None
@@ -866,6 +874,7 @@ class TunneldRunner:
             websocket: fastapi.WebSocket,
             udid: str,
             port: Optional[int] = fastapi.Query(default=None, ge=1, le=65535),
+            address: Optional[str] = fastapi.Query(default=None),
             hops_remaining: int = fastapi.Header(default=UPSTREAM_MAX_HOPS, alias=UPSTREAM_HOPS_HEADER),
         ) -> None:
             """Bridge a websocket client into the tunnel interface of a given device.
@@ -884,19 +893,25 @@ class TunneldRunner:
                 return
             self._connect_bridge_count += 1
             try:
-                await self._bridge_websocket(websocket, udid, port, hops_remaining)
+                await self._bridge_websocket(websocket, udid, port, hops_remaining, address)
             finally:
                 self._connect_bridge_count -= 1
 
     async def _bridge_websocket(
-        self, websocket: fastapi.WebSocket, udid: str, port: Optional[int], hops_remaining: int = UPSTREAM_MAX_HOPS
+        self,
+        websocket: fastapi.WebSocket,
+        udid: str,
+        port: Optional[int],
+        hops_remaining: int = UPSTREAM_MAX_HOPS,
+        address: Optional[str] = None,
     ) -> None:
-        tunnel = self._tunneld_core.get_tunnel(udid)
+        tunnel = self._tunneld_core.get_tunnel(udid, address)
         if tunnel is None:
-            # not ours — the device may belong to a registered upstream, whose tunnel interface
-            # is no more reachable from the client than it is from here, so relay rather than
-            # redirect
-            if await self._bridge_to_upstream(websocket, udid, port, hops_remaining):
+            # Not a tunnel of ours — the device may belong to a registered upstream, whose tunnel
+            # interface is no more reachable from the client than it is from here, so relay rather
+            # than redirect. This is also the path when we DO hold a tunnel for this device but the
+            # caller asked for a different one of its tunnels.
+            if await self._bridge_to_upstream(websocket, udid, port, hops_remaining, address):
                 return
             await _close_quietly(websocket, code=WS_CLOSE_NO_TUNNEL, reason=f"no tunnel exists for udid: {udid}")
             return
@@ -957,8 +972,11 @@ class TunneldRunner:
                 await writer.wait_closed()
             await _close_quietly(websocket)
 
-    async def _find_upstream_owner(self, udid: str, hops_remaining: int) -> Optional[str]:
-        """URL of the registered upstream serving ``udid``, or ``None``.
+    async def _find_upstream_owner(
+        self, udid: str, hops_remaining: int, address: Optional[str] = None
+    ) -> Optional[str]:
+        """URL of the registered upstream serving ``udid`` (and, when given, that exact tunnel
+        ``address``), or ``None``.
 
         Resolved from the upstreams' own listings — the same fetch `GET /` performs — and cached
         briefly, because a single device session opens many service connections."""
@@ -968,7 +986,8 @@ class TunneldRunner:
         if not urls:
             return None
         now = time.monotonic()
-        cached = self._upstream_owners.get(udid)
+        cache_key = f"{udid}@{address}" if address is not None else udid
+        cached = self._upstream_owners.get(cache_key)
         if cached is not None and cached[0] > now:
             return cached[1]
         results = await asyncio.gather(
@@ -981,19 +1000,28 @@ class TunneldRunner:
             if isinstance(result, BaseException):
                 logger.debug(f"upstream tunneld {url} unreachable: {result!r}")
                 continue
-            if any(served.replace("-", "") == wanted for served in (result or {})):
-                self._upstream_owners[udid] = (now + _UPSTREAM_OWNER_TTL, url)
+            for served, entries in (result or {}).items():
+                if served.replace("-", "") != wanted:
+                    continue
+                if address is not None and not any(entry.get("tunnel-address") == address for entry in entries):
+                    continue
+                self._upstream_owners[cache_key] = (now + _UPSTREAM_OWNER_TTL, url)
                 return url
         return None
 
     async def _bridge_to_upstream(
-        self, websocket: fastapi.WebSocket, udid: str, port: Optional[int], hops_remaining: int
+        self,
+        websocket: fastapi.WebSocket,
+        udid: str,
+        port: Optional[int],
+        hops_remaining: int,
+        address: Optional[str] = None,
     ) -> bool:
         """Relay this ``/connect`` to the upstream tunneld that owns ``udid``.
 
         Returns ``False`` when no upstream serves the device, leaving the websocket untouched for
         the caller to close."""
-        url = await self._find_upstream_owner(udid, hops_remaining)
+        url = await self._find_upstream_owner(udid, hops_remaining, address)
         if url is None:
             return False
         parsed = urllib.parse.urlparse(url)
@@ -1007,6 +1035,7 @@ class TunneldRunner:
                     parsed.port or 80,
                     udid,
                     port,
+                    address=address,
                     extra_headers=[(UPSTREAM_HOPS_HEADER.encode(), str(hops_remaining - 1).encode())],
                 ),
                 timeout=CONNECT_TCP_TIMEOUT,
