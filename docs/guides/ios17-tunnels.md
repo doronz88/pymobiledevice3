@@ -140,10 +140,34 @@ the same on the CLI: `--tunnel UDID@127.0.0.1`).
     the listener gains access to the services exposed over the tunnel, so only bind non-loopback
     addresses on trusted networks.
 
+### Fronting several hosts with one tunneld
+
+A `tunneld` can federate others with `--upstream` (repeatable, also `POST /upstream` at runtime).
+Their devices appear in its `GET /` listing, and a `/connect` for a device it does not serve itself
+is relayed to the upstream that owns it — so a client needs a route to the front `tunneld` alone,
+with no VPN and no route to each host's tunnel interface:
+
+```shell
+# on every host with devices attached
+sudo python3 -m pymobiledevice3 remote tunneld --host 0.0.0.0
+
+# on the one host clients can reach
+sudo python3 -m pymobiledevice3 remote tunneld --host 0.0.0.0 \
+    --upstream http://lab-1:49151 --upstream http://lab-2:49151
+
+# from anywhere: any device in the lab, addressed through the front tunneld
+python3 -m pymobiledevice3 developer dvt ls / --tunnel 'UDID@front:49151'
+```
+
+Each listing entry carries an `origin`: `null` for devices the queried instance serves directly,
+otherwise the URL of the upstream it came from. A client that *can* reach that upstream may skip
+the relay and address it directly, which saves a hop.
+
 !!! note
-    `/connect` only bridges into tunnels established by this `tunneld` instance. A device that
-    appears in `GET /` through a registered upstream `tunneld` is not reachable through this
-    instance's `/connect` — connect to the upstream's own `/connect` endpoint instead.
+    Federated requests carry a hop budget (`x-tunneld-hops-remaining`, 4 by default), so tunnelds
+    registering each other terminate instead of recursing, and a device reachable through several
+    paths is listed once. Relaying costs an extra hop through the front instance's event loop —
+    negligible for control traffic, measurable on bulk transfers such as DDI mounts.
 
 To make `tunneld` the **default** fallback — so commands route to it automatically without passing
 `--tunnel`, restoring the pre-userspace-default behavior — set

@@ -95,6 +95,15 @@ cli = InjectingTyper(
 def cli_tunneld(
     host: Annotated[str, typer.Option(help="Address to bind the tunneld server to.")] = TUNNELD_DEFAULT_ADDRESS[0],
     port: Annotated[int, typer.Option(help="Port to bind the tunneld server to.")] = TUNNELD_DEFAULT_ADDRESS[1],
+    upstream: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--upstream",
+            help="URL of another tunneld to federate (repeatable). Its devices appear in this "
+            "instance's listing, and connections to them are relayed through it, so clients need "
+            "a route to this tunneld only.",
+        ),
+    ] = None,
     daemonize: Annotated[bool, typer.Option("--daemonize", "-d", help="Run tunneld in the background.")] = False,
     protocol: Annotated[
         TunnelProtocol,
@@ -122,6 +131,7 @@ def cli_tunneld(
         host,
         port,
         protocol=protocol,
+        upstreams=upstream,
         usb_monitor=usb,
         wifi_monitor=wifi,
         usbmux_monitor=usbmux,

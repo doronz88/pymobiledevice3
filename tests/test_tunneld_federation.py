@@ -1,12 +1,18 @@
 import socket
+import socketserver
 import subprocess
 import sys
+import threading
 import time
-from collections.abc import Iterator
-from typing import Any
+from collections.abc import Iterator, Sequence
+from typing import Any, Optional
 
 import pytest
 import requests
+
+from pymobiledevice3.tunneld.api import TunneldConnectDialer
+from pymobiledevice3.tunneld.server import WS_CLOSE_CONNECT_FAILED, WS_CLOSE_NO_TUNNEL
+from pymobiledevice3.tunneld.ws_bridge import connect as ws_connect
 
 UDID_A = "00008120-000000000000000A"
 UDID_B = "00008120-000000000000000B"
@@ -19,15 +25,41 @@ TUNNELD_SCRIPT = (
     "from pymobiledevice3.remote.common import TunnelProtocol\n"
     "from pymobiledevice3.remote.tunnel_service import TunnelResult\n"
     "from pymobiledevice3.tunneld.server import TunneldRunner, TunnelTask\n"
-    "port, udid, tunnel_port = int(sys.argv[1]), sys.argv[2], int(sys.argv[3])\n"
+    "port, udid, tunnel_port, upstreams = int(sys.argv[1]), sys.argv[2], int(sys.argv[3]), sys.argv[4]\n"
     "runner = TunneldRunner('127.0.0.1', port, usb_monitor=False, wifi_monitor=False, "
-    "usbmux_monitor=False, mobdev2_monitor=False)\n"
-    "runner._tunneld_core.tunnel_tasks[f'fake-{udid}'] = TunnelTask(\n"
-    "    task=cast(Any, None), udid=udid,\n"
-    "    tunnel=TunnelResult(interface=f'fake-{udid}', address='127.0.0.1', port=tunnel_port,\n"
-    "                        protocol=TunnelProtocol.TCP, client=cast(Any, None)))\n"
+    "usbmux_monitor=False, mobdev2_monitor=False, upstreams=[u for u in upstreams.split(',') if u])\n"
+    "if udid:\n"
+    "    runner._tunneld_core.tunnel_tasks[f'fake-{udid}'] = TunnelTask(\n"
+    "        task=cast(Any, None), udid=udid,\n"
+    "        tunnel=TunnelResult(interface=f'fake-{udid}', address='127.0.0.1', port=tunnel_port,\n"
+    "                            protocol=TunnelProtocol.TCP, client=cast(Any, None)))\n"
     "runner._run_app()\n"
 )
+
+# The fake tunnel's address: what an RSD would dial, and what tunneld connects to
+TUNNEL_ADDRESS = "127.0.0.1"
+
+
+class _EchoHandler(socketserver.BaseRequestHandler):
+    def handle(self) -> None:
+        while True:
+            data = self.request.recv(65536)
+            if not data:
+                break
+            self.request.sendall(data)
+
+
+@pytest.fixture(scope="module")
+def echo_port() -> Iterator[int]:
+    """A TCP echo server standing in for a service on a device's tunnel address."""
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), _EchoHandler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield server.server_address[1]
+        finally:
+            server.shutdown()
+            thread.join(timeout=10)
 
 
 def _unused_port() -> int:
@@ -36,10 +68,20 @@ def _unused_port() -> int:
         return sock.getsockname()[1]
 
 
-def _spawn_tunneld(udid: str) -> tuple[subprocess.Popen[bytes], int]:
+def _spawn_tunneld(
+    udid: str = "", tunnel_port: Optional[int] = None, upstreams: Sequence[str] = ()
+) -> tuple[subprocess.Popen[bytes], int]:
     port = _unused_port()
     proc = subprocess.Popen(
-        [sys.executable, "-c", TUNNELD_SCRIPT, str(port), udid, str(_unused_port())],
+        [
+            sys.executable,
+            "-c",
+            TUNNELD_SCRIPT,
+            str(port),
+            udid,
+            str(tunnel_port if tunnel_port is not None else _unused_port()),
+            ",".join(upstreams),
+        ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -100,3 +142,74 @@ def test_federation_terminates_promptly(federated_pair: tuple[int, int]) -> None
     started = time.monotonic()
     _list_tunnels(federated_pair[0])
     assert time.monotonic() - started < 10
+
+
+@pytest.fixture
+def aggregator(echo_port: int) -> Iterator[tuple[int, int]]:
+    """An aggregator holding no devices, fronting a downstream tunneld whose fake tunnel points at
+    the echo server — the lab topology: only the aggregator is reachable from the client."""
+    procs = []
+    try:
+        proc_b, port_b = _spawn_tunneld(UDID_B, tunnel_port=echo_port)
+        procs.append(proc_b)
+        proc_a, port_a = _spawn_tunneld(upstreams=[f"http://127.0.0.1:{port_b}"])
+        procs.append(proc_a)
+        yield port_a, port_b
+    finally:
+        for proc in procs:
+            proc.kill()
+            proc.wait(timeout=10)
+
+
+def test_aggregator_lists_upstream_device_with_origin(aggregator: tuple[int, int]) -> None:
+    """A federated entry names the hop that reported it, so a client can act on the listing."""
+    port_a, port_b = aggregator
+    tunnels = _list_tunnels(port_a)
+    assert set(tunnels) == {UDID_B}
+    assert tunnels[UDID_B][0]["origin"] == f"http://127.0.0.1:{port_b}"
+
+
+def test_local_entries_report_no_origin(federated_pair: tuple[int, int]) -> None:
+    """An instance's own tunnels carry a null origin: its /connect reaches them directly."""
+    port_a, _ = federated_pair
+    assert _list_tunnels(port_a)[UDID_A][0]["origin"] is None
+
+
+async def test_connect_relays_through_aggregator(aggregator: tuple[int, int], echo_port: int) -> None:
+    """The headline capability: a client with a route only to the aggregator reaches a device
+    attached to the downstream host, with no VPN and no route to that host's tunnel interface."""
+    port_a, _ = aggregator
+    dialer = TunneldConnectDialer(("127.0.0.1", port_a), UDID_B, TUNNEL_ADDRESS)
+    reader, writer = await dialer.dial(TUNNEL_ADDRESS, echo_port)
+    try:
+        for payload in (b"through two hops", b"\x00\xff" * 40000):
+            writer.write(payload)
+            await writer.drain()
+            assert await reader.readexactly(len(payload)) == payload
+    finally:
+        writer.close()
+
+
+async def test_connect_reports_no_tunnel_when_no_upstream_owns_it(aggregator: tuple[int, int]) -> None:
+    """A UDID served by neither the aggregator nor its upstreams still closes with 4404."""
+    port_a, _ = aggregator
+    upstream = await ws_connect("127.0.0.1", port_a, "non-existing-udid")
+    try:
+        assert await upstream.recv_bytes() is None
+        assert upstream.close_code == WS_CLOSE_NO_TUNNEL
+    finally:
+        upstream.close()
+
+
+async def test_relayed_close_code_is_preserved(aggregator: tuple[int, int]) -> None:
+    """A failure at the far end keeps its own close code, so a two-hop topology stays debuggable."""
+    port_a, _ = aggregator
+    # a released port, not one held bound-but-unlistening: macOS answers the latter with silence
+    # rather than an RST, so the far end would burn its full connect timeout before refusing.
+    # A port stolen in the gap makes this assert fail loudly rather than pass silently.
+    upstream = await ws_connect("127.0.0.1", port_a, UDID_B, _unused_port())
+    try:
+        assert await upstream.recv_bytes() is None
+        assert upstream.close_code == WS_CLOSE_CONNECT_FAILED
+    finally:
+        upstream.close()
