@@ -165,13 +165,12 @@ def test_connect_no_tunnel_for_udid(tunneld_port: int) -> None:
 
 
 def test_connect_tcp_connection_refused(tunneld_port: int) -> None:
-    # holding the port bound (but not listening) guarantees an RST and prevents another
-    # process from grabbing it mid-test
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as holder:
-        holder.bind(("127.0.0.1", 0))
-        refused_port = holder.getsockname()[1]
-        with _connect(tunneld_port, port=refused_port) as websocket:
-            assert websocket.recv_close().code == WS_CLOSE_CONNECT_FAILED
+    # A released port, not one held bound-but-unlistening: macOS answers the latter with silence
+    # rather than an RST, so the server burns its whole CONNECT_TCP_TIMEOUT before refusing and
+    # this client's own recv timeout fires first. A port stolen in the gap makes the assert below
+    # fail loudly rather than pass silently.
+    with _connect(tunneld_port, port=_unused_port()) as websocket:
+        assert websocket.recv_close().code == WS_CLOSE_CONNECT_FAILED
 
 
 def test_connect_forwards_traffic_to_default_rsd_port(tunneld_port: int) -> None:
