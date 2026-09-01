@@ -55,6 +55,7 @@ class MobileImageMounterService(LockdownService):
             super().__init__(lockdown, self.SERVICE_NAME)
         else:
             super().__init__(lockdown, self.RSD_SERVICE_NAME)
+        self._copy_devices_unsupported = False
 
     async def _send_recv(self, request: dict[str, Any]) -> dict[str, Any]:
         return await self.service.send_recv_plist(request)
@@ -121,9 +122,16 @@ class MobileImageMounterService(LockdownService):
         # LookupImage may return an empty ImageSignature for a Personalized image that IS mounted
         # (observed on iOS 27.0), in which case MountImage would fail with "already mounted".
         # CopyDevices does list such an image, so consult it as well.
+        if self._copy_devices_unsupported:
+            return False
         try:
             devices = await self.copy_devices()
         except MessageNotSupportedError:
+            # Legacy mobile_storage_proxy (observed on iOS 12.5.7) hangs up the connection after
+            # answering an unknown command, so drop it for the next command to reconnect, and
+            # don't provoke the hangup again.
+            self._copy_devices_unsupported = True
+            await self.close()
             return False
         return any(device.get("DiskImageType") == image_type for device in devices)
 
