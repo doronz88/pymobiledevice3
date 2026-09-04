@@ -264,7 +264,12 @@ async def _frontend_base() -> Optional[str]:
         return app.state.frontend_base
 
 
+# Both spellings: Chrome's DevTools HTTP endpoint answers /json/version and /json/version/
+# identically, and Playwright's connectOverCDP fetches the trailing-slash form. Without the second
+# route it falls through to the /json catch-all below and gets the target list (no
+# webSocketDebuggerUrl), so connectOverCDP fails with "Invalid URL: undefined".
 @app.get("/json/version")
+@app.get("/json/version/")
 def version(request: Request):
     host = request.headers.get("host", "localhost:9222")
     return {

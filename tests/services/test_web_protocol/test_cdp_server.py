@@ -173,6 +173,181 @@ async def testp_cdp_server_end_to_end(lockdown: LockdownClient) -> None:
         await evaluate_in_new_session()
 
 
+class CdpBrowserWebsocketClient(CdpWebsocketClient):
+    """CDP client for the browser endpoint (flat session mode), the way Puppeteer/Playwright's
+    connectOverCDP attaches: it talks to /devtools/browser/<id>, discovers page targets through
+    the Target domain, and tags every per-page message with the attachment's sessionId."""
+
+    async def connect(self) -> None:
+        self.reader, self.writer = await asyncio.open_connection("127.0.0.1", self.port)
+        self.writer.write(
+            self.ws.send(WsRequest(host=f"127.0.0.1:{self.port}", target=f"/devtools/browser/{self.page_id}"))
+        )
+        await self.writer.drain()
+        assert isinstance(await self._next_event(), AcceptConnection)
+
+    async def wait_for_event(self, method: str) -> dict[str, Any]:
+        """Wait for the next event with the given method (ignoring responses and other events)."""
+
+        async def wait() -> dict[str, Any]:
+            while True:
+                message = await self.receive()
+                if "id" not in message and message.get("method") == method:
+                    return message
+
+        return await asyncio.wait_for(wait(), TIMEOUT)
+
+    async def session_command(self, session_id: str, id_: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Send a request under a page attachment's sessionId and wait for its response."""
+        await self.send({"id": id_, "sessionId": session_id, "method": method, "params": params})
+
+        async def wait_for_response() -> dict[str, Any]:
+            while True:
+                message = await self.receive()
+                if message.get("id") == id_:
+                    return message
+
+        return await asyncio.wait_for(wait_for_response(), TIMEOUT)
+
+
+async def testp_cdp_browser_endpoint_attaches_playwright_style(lockdown: LockdownClient) -> None:
+    """
+    A Chrome-protocol client attaching over the browser endpoint (Puppeteer/Playwright's
+    connectOverCDP) to a page that was already loaded when it attached must be able to read and
+    evaluate against it - exactly as if it had attached right after a fresh navigation.
+
+    This exercises the whole flat-session handshake Playwright performs, and guards four separate
+    regressions that each silently broke it:
+      * the auto-attached target's targetInfo must carry a browserContextId (CRBrowser asserts on
+        it before adopting the page);
+      * Page.getFrameTree must be answered (Playwright gates page-readiness on its frame tree;
+        WebKit only implements Page.getResourceTree);
+      * Page.setLifecycleEventsEnabled must be accepted (WebKit has no such method, and a raw
+        forward errors and rejects Playwright's initialization);
+      * Runtime.enable must yield an executionContextCreated whose auxData ties the context to its
+        frame and marks it the main world - without it Playwright never registers the context and
+        every evaluate hangs.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        # Playwright's connectOverCDP fetches /json/version with a trailing slash; it must return
+        # the version dict (with webSocketDebuggerUrl), not fall through to the target listing.
+        version = await http_get_json(port, "/json/version/")
+        assert version.get("webSocketDebuggerUrl"), f"/json/version/ must carry a browser ws url: {version}"
+        browser_id = urlsplit(version["webSocketDebuggerUrl"]).path.rsplit("/", 1)[1]
+        page_id = targets[0]["id"]
+        client = CdpBrowserWebsocketClient(port, browser_id)
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        try:
+            # Playwright's connectOverCDP enables auto-attach on the root connection and waits for
+            # the page to be announced as an attached target. The Target.attachedToTarget event is
+            # emitted before the setAutoAttach reply, so watch for it directly rather than through
+            # command() (which would consume and discard it).
+            await client.send({
+                "id": 1,
+                "method": "Target.setAutoAttach",
+                "params": {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True},
+            })
+
+            async def wait_for_page_attached() -> dict[str, Any]:
+                while True:
+                    message = await client.receive()
+                    if (
+                        message.get("method") == "Target.attachedToTarget"
+                        and message["params"]["targetInfo"]["targetId"] == page_id
+                    ):
+                        return message
+
+            attached = await asyncio.wait_for(wait_for_page_attached(), TIMEOUT)
+            target_info = attached["params"]["targetInfo"]
+            assert target_info.get("browserContextId"), (
+                f"attached targetInfo must carry a browserContextId; Playwright asserts on it: {target_info}"
+            )
+            session_id = attached["params"]["sessionId"]
+
+            ids = itertools.count(2)
+            await client.session_command(session_id, next(ids), "Page.enable", {})
+
+            # Playwright sends Page.getFrameTree with no params key at all; the handler must not
+            # assume one is present.
+            frame_tree_id = next(ids)
+            await client.send({"id": frame_tree_id, "sessionId": session_id, "method": "Page.getFrameTree"})
+
+            async def wait_for_frame_tree() -> dict[str, Any]:
+                while True:
+                    message = await client.receive()
+                    if message.get("id") == frame_tree_id:
+                        return message
+
+            frame_tree = await asyncio.wait_for(wait_for_frame_tree(), TIMEOUT)
+            assert "result" in frame_tree, f"Page.getFrameTree must be answered, not error: {frame_tree.get('error')}"
+            frame_id = frame_tree["result"]["frameTree"]["frame"]["id"]
+
+            lifecycle = await client.session_command(
+                session_id, next(ids), "Page.setLifecycleEventsEnabled", {"enabled": True}
+            )
+            assert "result" in lifecycle, (
+                f"Page.setLifecycleEventsEnabled must be accepted, not error: {lifecycle.get('error')}"
+            )
+
+            # Playwright sends Page.enable before Runtime.enable; WebKit then retroactively
+            # announces the already-existing context. Capture that event and the enable response.
+            await client.send({"id": next(ids), "sessionId": session_id, "method": "Runtime.enable", "params": {}})
+            context = await client.wait_for_event("Runtime.executionContextCreated")
+            payload = context["params"]["context"]
+            aux = payload.get("auxData", {})
+            assert aux.get("isDefault") is True, f"the main-world context must be marked isDefault: {payload}"
+            assert aux.get("frameId") == frame_id, (
+                f"the context's auxData.frameId must match the frame tree ({frame_id}): {payload}"
+            )
+            # Chrome ties the top frame's id to the page's targetId; Playwright looks the page's
+            # session up by the frame id and throws "Frame has been detached" if they differ.
+            assert frame_id == page_id, f"the top frame id must equal the targetId {page_id}: {frame_id}"
+
+            # The announced context must actually be usable: evaluating in it (as Playwright does,
+            # addressing it by contextId) returns a value rather than hanging or erroring.
+            result = await client.session_command(
+                session_id,
+                next(ids),
+                "Runtime.evaluate",
+                {"expression": "6*7", "contextId": payload["id"], "returnByValue": True},
+            )
+            assert result["result"]["result"]["value"] == 42, result
+
+            # WebKit has no isolated worlds, but Playwright creates one and evaluates page.title()
+            # and locator text in it, blocking until its context is announced. The bridge must
+            # synthesize that world's context and let evaluations against it run (in the page's
+            # real world), or those read APIs hang forever.
+            world_id = next(ids)
+            await client.send({
+                "id": world_id,
+                "sessionId": session_id,
+                "method": "Page.createIsolatedWorld",
+                "params": {"frameId": frame_id, "worldName": "__pmd3_test_world__", "grantUniveralAccess": True},
+            })
+
+            async def wait_for_utility_context() -> dict[str, Any]:
+                while True:
+                    message = await client.receive()
+                    if (
+                        message.get("method") == "Runtime.executionContextCreated"
+                        and message["params"]["context"].get("name") == "__pmd3_test_world__"
+                    ):
+                        return message
+
+            utility = await asyncio.wait_for(wait_for_utility_context(), TIMEOUT)
+            utility_id = utility["params"]["context"]["id"]
+            assert utility["params"]["context"]["auxData"]["frameId"] == page_id, utility
+            in_world = await client.session_command(
+                session_id,
+                next(ids),
+                "Runtime.evaluate",
+                {"expression": "1+2", "contextId": utility_id, "returnByValue": True},
+            )
+            assert in_world["result"]["result"]["value"] == 3, in_world
+        finally:
+            await client.close()
+
+
 async def testp_cdp_server_drives_a_javascript_context(lockdown: LockdownClient) -> None:
     """
     A JSContext debuggable (any process that called -[JSContext setInspectable:YES]) implements
