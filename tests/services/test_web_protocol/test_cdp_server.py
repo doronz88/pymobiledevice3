@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import itertools
 import json
 import socket
@@ -416,6 +417,50 @@ async def testp_cdp_server_reports_the_navigation_lifecycle(lockdown: LockdownCl
             assert {event["name"] for event in lifecycle} >= {"init", "load"}, (
                 f"a committed navigation must open and finish a lifecycle: {lifecycle}"
             )
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_implements_the_screenshot_methods(lockdown: LockdownClient) -> None:
+    """
+    Chrome's screenshot path is Page.getLayoutMetrics (for the clip and the device pixel ratio)
+    followed by Page.captureScreenshot, and WebKit implements neither - so page.screenshot() died
+    on the first of them before any capture was ever attempted. Both are synthesized: the metrics
+    by measuring the page, the capture from WebKit's own Page.snapshotRect.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                return await client.command(next(message_ids), method, params)
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+
+            metrics = await command("Page.getLayoutMetrics", {})
+            assert "result" in metrics, f"Page.getLayoutMetrics must be answered: {metrics.get('error')}"
+            content_size = metrics["result"]["contentSize"]
+            assert content_size["width"] > 0 and content_size["height"] > 0, metrics
+            # Chrome's client divides contentSize by cssContentSize to recover the pixel ratio, so
+            # the two must be consistent rather than merely present.
+            assert metrics["result"]["cssContentSize"]["width"] == content_size["width"], metrics
+            assert metrics["result"]["visualViewport"]["scale"], metrics
+
+            shot = await command(
+                "Page.captureScreenshot",
+                {"format": "png", "clip": {"x": 0, "y": 0, "width": 64, "height": 64, "scale": 1}},
+            )
+            assert "result" in shot, f"Page.captureScreenshot must be answered: {shot.get('error')}"
+            # The client feeds this straight to a base64 decoder, so it must be bare payload
+            # rather than the data: URL WebKit answers with.
+            data = shot["result"]["data"]
+            assert not data.startswith("data:"), "captureScreenshot must strip the data URL prefix"
+            assert base64.b64decode(data)[:8] == b"\x89PNG\r\n\x1a\n", "captureScreenshot must return a PNG"
+
         finally:
             await client.close()
 

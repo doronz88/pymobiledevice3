@@ -301,6 +301,9 @@ class CdpTarget:
             "Page.setAdBlockingEnabled": partial(self._simple_response, value=None),
             "Page.addScriptToEvaluateOnNewDocument": self._page_add_script_to_evaluate_on_new_document,
             "Page.createIsolatedWorld": self._page_create_isolated_world,
+            # WebKit implements neither, and Chrome's screenshot path is built on both.
+            "Page.getLayoutMetrics": self._page_get_layout_metrics,
+            "Page.captureScreenshot": self._page_capture_screenshot,
             "Accessibility.enable": partial(self._simple_response, value=None),
             "Autofill.enable": partial(self._simple_response, value=None),
             "Autofill.setAddresses": partial(self._simple_response, value=None),
@@ -975,6 +978,138 @@ class CdpTarget:
     async def _page_load_event_fired(self, message: dict[str, Any]):
         await self.output_queue.put(message)
         await self._emit_lifecycle_event("load", message.get("params", {}).get("timestamp"))
+
+    async def _evaluate_json(self, expression: str) -> Optional[Any]:
+        """Evaluate an expression that returns JSON-serializable data and give back the value.
+
+        WebKit's Runtime.evaluate honours returnByValue, so the result comes back inline rather
+        than as a remote object handle.
+        """
+        response = await self.send_message_with_result(
+            "Runtime.evaluate", {"expression": self._tag_internal(expression), "returnByValue": True}
+        )
+        result = response.get("result", {}).get("result", {})
+        if response.get("result", {}).get("wasThrown") or "value" not in result:
+            return None
+        return result["value"]
+
+    async def _page_get_layout_metrics(self, message: dict[str, Any]):
+        """
+        WebKit has no Page.getLayoutMetrics. It is the first call of Chrome's screenshot path
+        (the clip rectangle and the device-pixel scale are computed from it), so page.screenshot()
+        died on it before any capture was attempted. Measure the page itself instead.
+        """
+        metrics = await self._evaluate_json(
+            "(() => {"
+            "  const d = document.documentElement, b = document.body || d;"
+            "  const vv = window.visualViewport;"
+            "  const width = Math.max(d.scrollWidth, b.scrollWidth, d.clientWidth);"
+            "  const height = Math.max(d.scrollHeight, b.scrollHeight, d.clientHeight);"
+            "  return {"
+            "    x: window.scrollX, y: window.scrollY,"
+            "    clientWidth: d.clientWidth || window.innerWidth,"
+            "    clientHeight: d.clientHeight || window.innerHeight,"
+            "    width: width, height: height,"
+            "    scale: vv ? vv.scale : 1,"
+            "    offsetX: vv ? vv.offsetLeft : 0, offsetY: vv ? vv.offsetTop : 0,"
+            "    pageX: vv ? vv.pageLeft : window.scrollX, pageY: vv ? vv.pageTop : window.scrollY,"
+            "    vw: vv ? vv.width : window.innerWidth, vh: vv ? vv.height : window.innerHeight,"
+            "    dpr: window.devicePixelRatio || 1"
+            "  };"
+            "})()"
+        )
+        if not isinstance(metrics, dict):
+            await self._error_response(
+                message, {"code": -32000, "message": "the device did not report its layout metrics"}
+            )
+            return
+        m = cast(dict[str, Any], metrics)
+        layout_viewport = {
+            "pageX": int(m["x"]),
+            "pageY": int(m["y"]),
+            "clientWidth": int(m["clientWidth"]),
+            "clientHeight": int(m["clientHeight"]),
+        }
+        visual_viewport: dict[str, Any] = {
+            "offsetX": m["offsetX"],
+            "offsetY": m["offsetY"],
+            "pageX": m["pageX"],
+            "pageY": m["pageY"],
+            "clientWidth": m["vw"],
+            "clientHeight": m["vh"],
+            "scale": m["scale"],
+            "zoom": 1,
+        }
+        content_size: dict[str, Any] = {"x": 0, "y": 0, "width": m["width"], "height": m["height"]}
+        # Everything above is measured in CSS pixels, so the css* variants are the same values.
+        # Chrome's client divides contentSize by cssContentSize to recover the device pixel ratio;
+        # reporting equal sizes keeps that ratio at 1, which is what the snapshots below are in.
+        await self.output_queue.put({
+            "id": message["id"],
+            "result": {
+                "layoutViewport": layout_viewport,
+                "visualViewport": visual_viewport,
+                "contentSize": content_size,
+                "cssLayoutViewport": layout_viewport,
+                "cssVisualViewport": visual_viewport,
+                "cssContentSize": content_size,
+            },
+        })
+
+    async def _page_capture_screenshot(self, message: dict[str, Any]):
+        """
+        WebKit has no Page.captureScreenshot, but it does have Page.snapshotRect - the same call
+        the screencast is built on. Translate between them: Chrome asks for a clip in page
+        coordinates and wants raw base64 image bytes, WebKit answers a rect with a data URL.
+        """
+        params = message.get("params", {})
+        clip = params.get("clip")
+        rect: dict[str, Any]
+        if clip:
+            rect = {
+                "x": int(clip.get("x", 0)),
+                "y": int(clip.get("y", 0)),
+                "width": int(clip.get("width", 0)),
+                "height": int(clip.get("height", 0)),
+                # A clip is expressed in document coordinates, which is WebKit's "Page" system.
+                "coordinateSystem": "Page",
+            }
+        else:
+            # No clip: capture the visible viewport.
+            metrics = await self._evaluate_json(
+                "({w: window.innerWidth, h: window.innerHeight, x: window.scrollX, y: window.scrollY})"
+            )
+            if not isinstance(metrics, dict):
+                await self._error_response(
+                    message, {"code": -32000, "message": "the device did not report its viewport"}
+                )
+                return
+            m = cast(dict[str, Any], metrics)
+            rect = {
+                "x": int(m["x"]),
+                "y": int(m["y"]),
+                "width": int(m["w"]),
+                "height": int(m["h"]),
+                "coordinateSystem": "Page",
+            }
+        if rect["width"] <= 0 or rect["height"] <= 0:
+            await self._error_response(message, {"code": -32000, "message": "cannot capture an empty rectangle"})
+            return
+        response = await self.send_message_with_result_across_swaps("Page.snapshotRect", rect)
+        data_url = response.get("result", {}).get("dataURL")
+        if not data_url:
+            await self._error_response(
+                message,
+                response.get("error") or {"code": -32000, "message": "the device did not answer Page.snapshotRect"},
+            )
+            return
+        # WebKit answers a data: URL; Chrome's captureScreenshot answers the bare base64 payload.
+        marker = "base64,"
+        index = data_url.find(marker)
+        await self.output_queue.put({
+            "id": message["id"],
+            "result": {"data": data_url[index + len(marker) :] if index != -1 else data_url},
+        })
 
     async def _page_create_isolated_world(self, message: dict[str, Any]):
         """
