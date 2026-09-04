@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 import pytest
 import uvicorn
 from wsproto import ConnectionType, WSConnection
-from wsproto.events import AcceptConnection, CloseConnection, TextMessage
+from wsproto.events import AcceptConnection, CloseConnection, Ping, TextMessage
 from wsproto.events import Request as WsRequest
 
 from pymobiledevice3.exceptions import WebInspectorNotEnabledError
@@ -146,6 +146,14 @@ class CdpWebsocketClient:
         assert self.reader is not None
         while True:
             for event in self.ws.events():
+                if isinstance(event, Ping):
+                    # uvicorn pings an idle connection and closes it when nothing pongs back
+                    # ("keepalive ping timeout"), which killed any session that ran longer than
+                    # its ping timeout - the device tests are exactly that long.
+                    assert self.writer is not None
+                    self.writer.write(self.ws.send(event.response()))
+                    await self.writer.drain()
+                    continue
                 return event
             self.ws.receive_data(await self.reader.read(4096))
 
