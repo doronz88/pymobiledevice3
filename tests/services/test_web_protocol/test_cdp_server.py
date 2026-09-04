@@ -356,6 +356,70 @@ async def testp_cdp_browser_endpoint_attaches_playwright_style(lockdown: Lockdow
             await client.close()
 
 
+async def testp_cdp_server_reports_the_navigation_lifecycle(lockdown: LockdownClient) -> None:
+    """
+    WebKit reports a load with the pre-lifecycle events Chrome replaced years ago, so a modern CDP
+    client saw a navigation happen and never learned it finished: Playwright's page.goto(),
+    page.reload() and waitForNavigation() all block on Page.lifecycleEvent, and page.goto() also
+    needs the new document's loaderId back from Page.navigate - without it the client waits for a
+    *same-document* navigation, which a real page load never reports. Both hung until timeout.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        page_id = targets[0]["id"]
+        client = CdpWebsocketClient(port, page_id)
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        try:
+            lifecycle: list[dict[str, Any]] = []
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                """client.command, keeping the lifecycle events it would otherwise discard."""
+                id_ = next(message_ids)
+                await client.send({"id": id_, "method": method, "params": params})
+
+                async def wait_for_response() -> dict[str, Any]:
+                    while True:
+                        message = await client.receive()
+                        if message.get("method") == "Page.lifecycleEvent":
+                            lifecycle.append(message["params"])
+                        if message.get("id") == id_:
+                            return message
+
+                return await asyncio.wait_for(wait_for_response(), TIMEOUT)
+
+            async def wait_for_lifecycle(name: str) -> dict[str, Any]:
+                async def wait() -> dict[str, Any]:
+                    while True:
+                        for event in lifecycle:
+                            if event["name"] == name:
+                                return event
+                        message = await client.receive()
+                        if message.get("method") == "Page.lifecycleEvent":
+                            lifecycle.append(message["params"])
+
+                return await asyncio.wait_for(wait(), TIMEOUT)
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.setLifecycleEventsEnabled", {"enabled": True})
+            lifecycle.clear()
+            # Navigating must report the document it committed, or a client cannot tell this from
+            # an in-page navigation.
+            navigate = await command("Page.navigate", {"url": "https://example.com/"})
+            assert navigate["result"].get("loaderId"), (
+                f"Page.navigate must report the committed document's loaderId: {navigate}"
+            )
+            assert navigate["result"]["frameId"] == page_id, navigate
+            # ... and the load must be announced through the modern lifecycle events.
+            load = await wait_for_lifecycle("load")
+            assert load["frameId"] == page_id, f"a lifecycle event must name the client's frame: {load}"
+            assert {event["name"] for event in lifecycle} >= {"init", "load"}, (
+                f"a committed navigation must open and finish a lifecycle: {lifecycle}"
+            )
+        finally:
+            await client.close()
+
+
 async def testp_cdp_server_drives_a_javascript_context(lockdown: LockdownClient) -> None:
     """
     A JSContext debuggable (any process that called -[JSContext setInspectable:YES]) implements
@@ -552,8 +616,11 @@ async def testp_cdp_server_survives_process_swaps(lockdown: LockdownClient) -> N
             # Two distinct origins guarantee at least one process swap wherever Safari starts.
             for url, host in (("https://example.com/", "example.com"), ("https://www.apple.com/", "apple.com")):
                 id_ += 1
-                await client.command(id_, "Page.navigate", {"url": url})
+                # Cleared before navigating, not after: Page.navigate answers once the document
+                # it started has committed (that is when WebKit reveals the loaderId it must
+                # report), so the new load's events are already delivered by the time it returns.
                 client.seen_events.clear()
+                await client.command(id_, "Page.navigate", {"url": url})
                 reached = False
                 for _ in range(TIMEOUT):
                     id_ += 1

@@ -35,6 +35,10 @@ UNRESPONSIVE_PROBE_TIMEOUT = 1.5
 SWAP_COMMIT_TIMEOUT = 5.0
 SWAP_COMMIT_POLL_INTERVAL = 0.05
 
+# Seconds Page.navigate waits for the navigation it started to commit before answering without a
+# loaderId (which is how an in-page navigation is reported - see _page_navigate).
+NAVIGATE_COMMIT_TIMEOUT = 10.0
+
 # sourceURL stamped onto the bridge's own internal evaluations (screencast offsets, synthesized
 # input, navigation) so their Debugger.scriptParsed events can be recognized and dropped instead
 # of polluting Chrome's script model. WebKit-inspector-internal scripts (its injected script
@@ -220,6 +224,17 @@ class CdpTarget:
         # into the page's real (main) world - the ids handed out for those synthetic contexts are
         # collected here so their contextId can be rewritten back on the way to the device.
         self._isolated_world_context_ids: set[int] = set()
+        # Whether the client asked for Page.lifecycleEvent (Chrome only reports those once
+        # Page.setLifecycleEventsEnabled turned them on, and DevTools never asks).
+        self._lifecycle_events_enabled = False
+        # loaderId of the document currently committed in the top frame, tracked from the frame
+        # tree and Page.frameNavigated so the synthesized lifecycle events can carry it.
+        self._loader_id = ""
+        # Number of documents committed in the top frame, so Page.navigate can tell whether the
+        # navigation it started committed a new document.
+        self._top_frame_commits = 0
+        # Detached tasks (a navigation waiting for its commit); cancelled when the session closes.
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self.output_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.input_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.screencast: Optional[ScreenCast] = None
@@ -241,9 +256,9 @@ class CdpTarget:
             # WebKit implements no Page.getFrameTree (Playwright's connectOverCDP calls it to
             # learn the frame tree); answer it from the resource tree, whose frameTree carries the
             # same frame. Nor Page.setLifecycleEventsEnabled - raw-forwarding it errors and rejects
-            # Playwright's page initialization, so acknowledge it.
+            # Playwright's page initialization, so translate it (see the handler).
             "Page.getFrameTree": self._page_get_resource_tree,
-            "Page.setLifecycleEventsEnabled": partial(self._simple_response, value=None),
+            "Page.setLifecycleEventsEnabled": self._page_set_lifecycle_events_enabled,
             "Emulation.setEmulatedMedia": self._emulation_set_emulated_media,
             "Emulation.setTouchEmulationEnabled": partial(self._simple_response, value=None),
             "Emulation.setFocusEmulationEnabled": partial(self._simple_response, value=None),
@@ -333,6 +348,11 @@ class CdpTarget:
             "Console.messageAdded": self._console_message_added,
             "Network.responseReceived": self._network_response_received,
             "Network.loadingFinished": self._network_loading_finished,
+            # WebKit reports a load's progress with the pre-lifecycle events Chrome has long since
+            # replaced; each is also turned into the Page.lifecycleEvent modern clients wait on.
+            "Page.frameNavigated": self._page_frame_navigated,
+            "Page.domContentEventFired": self._page_dom_content_event_fired,
+            "Page.loadEventFired": self._page_load_event_fired,
         }
         # JavaScriptCore's JSContext inspector implements no Target domain at all: nothing is
         # announced on attach, messages are exchanged as-is instead of through
@@ -458,9 +478,9 @@ class CdpTarget:
         if self.screencast is not None:
             await self.screencast.stop()
             self.screencast = None
-        for task in (self._input_task, self._receiving_task):
+        for task in (self._input_task, self._receiving_task, *self._background_tasks):
             task.cancel()
-        await asyncio.gather(self._input_task, self._receiving_task, return_exceptions=True)
+        await asyncio.gather(self._input_task, self._receiving_task, *self._background_tasks, return_exceptions=True)
         # Without the teardown, webinspectord ignores the next socket setup for this page and
         # the following debugger connection never receives its Target.targetCreated event.
         await self.protocol.inspector.teardown_inspector_socket(self.session_id, self.app_id, self.page_id)
@@ -800,10 +820,52 @@ class CdpTarget:
         await self._send_message_to_target(message)
 
     async def _page_navigate(self, message: dict[str, Any]):
-        """WebKit has no Page.navigate; navigate in-page instead (URL bar / reload in DevTools)."""
+        """
+        WebKit has no Page.navigate; navigate in-page instead (URL bar / reload in DevTools).
+
+        The response must say which document the navigation started, because that is how a client
+        tells a new-document navigation from an in-page one: Chrome's Page.navigate answers with
+        the new loaderId, and Playwright waits for a *same-document* navigation when it is absent -
+        an event a real page load never sends, so page.goto() hung until its timeout. WebKit only
+        reveals the loaderId once the document commits, so start the navigation and report the
+        commit that follows. Nothing commits for an in-page navigation (a fragment change), and
+        answering without a loaderId is then exactly right.
+        """
         url = json.dumps(message["params"]["url"])
-        await self.evaluate_and_result(f"location.href = {url}")
-        await self.output_queue.put({"id": message["id"], "result": {"frameId": self.frame_id}})
+        commits_before = self._top_frame_commits
+        # Fire-and-forget: a committed navigation destroys the target and WebKit never answers the
+        # evaluation, and waiting for that would pause the receive loop past the commit below.
+        await self._send_message_to_target(
+            {
+                "id": self.next_internal_id(),
+                "method": "Runtime.evaluate",
+                "params": {"expression": self._tag_internal(f"location.href = {url}")},
+            },
+            record=False,
+        )
+        # The wait runs off the input loop: everything else the client sends - screencast acks
+        # above all - has to keep being served while a navigation is in flight, and a load that
+        # never commits must not freeze the session for the whole timeout.
+        self._spawn(self._answer_navigate_on_commit(message["id"], commits_before))
+
+    async def _answer_navigate_on_commit(self, id_: int, commits_before: int) -> None:
+        """Answer a Page.navigate once the navigation it started commits (see _page_navigate)."""
+        deadline = asyncio.get_event_loop().time() + NAVIGATE_COMMIT_TIMEOUT
+        while self._top_frame_commits == commits_before and asyncio.get_event_loop().time() < deadline:
+            # The receive loop is what applies the commit (see _page_frame_navigated). The client
+            # collects the commit it forwards meanwhile and matches it against the loaderId below.
+            await asyncio.sleep(SWAP_COMMIT_POLL_INTERVAL)
+        result: dict[str, Any] = {"frameId": self.frame_id}
+        if self._top_frame_commits != commits_before:
+            result["loaderId"] = self._loader_id
+        await self.output_queue.put({"id": id_, "result": result})
+
+    def _spawn(self, coroutine: "Awaitable[None]") -> None:
+        """Run a coroutine detached from the loop that started it, keeping a reference so it is
+        neither garbage collected mid-flight nor left running after the session closes."""
+        task = asyncio.ensure_future(coroutine)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def _dom_push_nodes_by_backend_ids(self, message: dict[str, Any]):
         await self.output_queue.put({"id": message["id"], "result": {"nodeIds": []}})
@@ -855,6 +917,64 @@ class CdpTarget:
 
     async def _page_add_script_to_evaluate_on_new_document(self, message: dict[str, Any]):
         await self.output_queue.put({"id": message["id"], "result": {"identifier": "1"}})
+
+    async def _page_set_lifecycle_events_enabled(self, message: dict[str, Any]):
+        """
+        WebKit has no Page.setLifecycleEventsEnabled, but the events it gates are not optional:
+        Playwright's navigation waits (page.goto, page.reload, waitForNavigation) block on
+        Page.lifecycleEvent and ignore the older Page.loadEventFired/domContentEventFired that
+        WebKit does emit, so every navigating call hung until its timeout. Record the request and
+        synthesize the lifecycle events off those real signals (see _emit_lifecycle_event).
+        """
+        self._lifecycle_events_enabled = bool(message.get("params", {}).get("enabled", True))
+        await self._simple_response(message, None)
+
+    async def _emit_lifecycle_event(
+        self, name: str, timestamp: Any, frame_id: Optional[str] = None, loader_id: Optional[str] = None
+    ) -> None:
+        """Emit one Chrome Page.lifecycleEvent, if the client asked for them."""
+        if not self._lifecycle_events_enabled:
+            return
+        await self.output_queue.put({
+            "method": "Page.lifecycleEvent",
+            "params": {
+                "frameId": frame_id if frame_id is not None else self.frame_id,
+                "loaderId": loader_id if loader_id is not None else self._loader_id,
+                "name": name,
+                # Page.lifecycleEvent.timestamp is a MonotonicTime, like WebKit's own.
+                "timestamp": timestamp if isinstance(timestamp, (int, float)) else datetime.now().timestamp(),
+            },
+        })
+
+    async def _page_frame_navigated(self, message: dict[str, Any]):
+        """Forward the navigation and open a new lifecycle for the document it commits."""
+        frame = message.get("params", {}).get("frame", {})
+        webkit_frame_id = frame.get("id")
+        is_top_frame = "parentId" not in frame
+        if is_top_frame:
+            # A top-frame navigation commits a new document; remember its loader for the
+            # lifecycle events that follow.
+            self._learn_webkit_frame_id(webkit_frame_id)
+            self._loader_id = frame.get("loaderId", "") or ""
+            self._top_frame_commits += 1
+        # This handler bypasses the pass-through path, so map the frame ids here.
+        self._map_frame_ids_outbound(message)
+        await self.output_queue.put(message)
+        # Chrome opens every document's lifecycle with "init" at commit time.
+        await self._emit_lifecycle_event(
+            "init",
+            message.get("params", {}).get("timestamp"),
+            frame_id=self._to_client_frame_id(webkit_frame_id),
+            loader_id=frame.get("loaderId", ""),
+        )
+
+    async def _page_dom_content_event_fired(self, message: dict[str, Any]):
+        await self.output_queue.put(message)
+        await self._emit_lifecycle_event("DOMContentLoaded", message.get("params", {}).get("timestamp"))
+
+    async def _page_load_event_fired(self, message: dict[str, Any]):
+        await self.output_queue.put(message)
+        await self._emit_lifecycle_event("load", message.get("params", {}).get("timestamp"))
 
     async def _page_create_isolated_world(self, message: dict[str, Any]):
         """
@@ -1037,6 +1157,7 @@ class CdpTarget:
         # WebKit's own id for it and rewrite it in the response the client reads.
         self._learn_webkit_frame_id(self.frame.get("id"))
         self.frame["id"] = self._to_client_frame_id(self.frame.get("id"))
+        self._loader_id = self.frame.get("loaderId", "") or self._loader_id
         # result carries our internal request id; answer the frontend with its own id.
         await self.output_queue.put({"id": message["id"], "result": result["result"]})
 
@@ -1523,11 +1644,15 @@ class CdpTarget:
         # The device emits its own Page.frameNavigated for the new page, so no getResourceTree
         # round-trip is needed (and must not be done here - see _target_created). Just nudge the
         # frontend that the load finished and the document changed.
+        timestamp = datetime.now().timestamp()
         await self.output_queue.put({
             "method": "Page.loadEventFired",
             # MonotonicTime, in seconds - not a formatted string
-            "params": {"timestamp": datetime.now().timestamp()},
+            "params": {"timestamp": timestamp},
         })
+        # A client waiting on the modern lifecycle events must not be left hanging by a load that
+        # only ever produced the legacy one (see _page_set_lifecycle_events_enabled).
+        await self._emit_lifecycle_event("load", timestamp)
         await self.output_queue.put({"method": "DOM.documentUpdated"})
 
     @staticmethod
