@@ -37,6 +37,12 @@ PAGE_LOCK_TIMEOUT = 5
 # others would trade one silent failure for another. Only a session wedged mid-teardown reaches it.
 PAGE_HANDOVER_TIMEOUT = 30
 
+# Playwright's CRBrowser asserts every attached page's targetInfo carries a browserContextId
+# before it will adopt the page. It only uses the value to look the browser context up, falling
+# back to its default context when the id is unrecognized, so a single stable id is enough - the
+# bridge exposes no browser-context concept of its own. Chrome's own DevTools frontend ignores it.
+DEFAULT_BROWSER_CONTEXT_ID = "pymobiledevice3-default-context"
+
 # WebKit supports a single inspector session per page, so sessions are serialized per page:
 # a new debugger connection waits until the previous session's WIR socket teardown completed
 # (otherwise its socket setup races the teardown and webinspectord ignores it). Shared between
@@ -292,6 +298,7 @@ class CdpBrowser:
                     "url": page.web_url or "",
                     "attached": page_id in self._attached_pages,
                     "canAccessOpener": False,
+                    "browserContextId": DEFAULT_BROWSER_CONTEXT_ID,
                 }
                 if is_new and self._discover:
                     await self._send_event("Target.targetCreated", {"targetInfo": self._known_targets[page_id]})

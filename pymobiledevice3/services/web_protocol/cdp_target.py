@@ -11,7 +11,7 @@ from typing import Any, Callable, Optional, cast
 from pymobiledevice3.exceptions import ScreencastUnavailableError
 from pymobiledevice3.services.web_protocol.cdp_screencast import ScreenCast
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
-from pymobiledevice3.services.webinspector import WirTypes
+from pymobiledevice3.services.webinspector import WirTypes, make_target_id
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,10 @@ WEBKIT_ONLY_EVENTS = frozenset({
 # at 1 in every session - would consume each other's responses and SessionProtocol's. Allocating
 # from a process-wide counter in a range neither of them reaches keeps them apart.
 _FLAT_WIRE_IDS = itertools.count(0x40000000)
+
+# execution-context ids minted for the synthesized isolated worlds (see _page_create_isolated_world).
+# Based well above WebKit's own small per-session context ids so the two never collide.
+_ISOLATED_WORLD_IDS = itertools.count(0x50000000)
 
 # The single execution context synthesized for a JSContext debuggable (see _runtime_enable).
 JS_CONTEXT_EXECUTION_ID = 1
@@ -202,6 +206,20 @@ class CdpTarget:
         self.session_id = protocol.id_
         self.app_id = protocol.app.id_
         self.page_id = protocol.page.id_
+        # Chrome guarantees the top frame's id equals the page's targetId; a Chrome-protocol client
+        # (Playwright's crPage keys its per-page session by targetId, then looks the session up by
+        # the frame's id) relies on it and throws "Frame has been detached" otherwise. WebKit names
+        # the top frame independently ("0.1"), so the bridge maps that id to the id the client
+        # attached with, in both directions, everywhere a frameId crosses the wire.
+        self.frame_id = make_target_id(self.app_id, str(self.page_id))
+        # WebKit's own id for the top frame, learned from the first frame tree / main-world context.
+        self._webkit_frame_id: Optional[str] = None
+        # WebKit's Web Inspector cannot create isolated worlds (Page.createIsolatedWorld). Chrome
+        # clients (Playwright) run their own helpers in one and block until its context is
+        # announced. The bridge synthesizes that context and routes evaluations addressed to it
+        # into the page's real (main) world - the ids handed out for those synthetic contexts are
+        # collected here so their contextId can be rewritten back on the way to the device.
+        self._isolated_world_context_ids: set[int] = set()
         self.output_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.input_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.screencast: Optional[ScreenCast] = None
@@ -220,6 +238,12 @@ class CdpTarget:
             "Page.stopScreencast": self._page_stop_screencast,
             "Page.screencastFrameAck": self._page_screencast_frame_ack,
             "Page.getResourceTree": self._page_get_resource_tree,
+            # WebKit implements no Page.getFrameTree (Playwright's connectOverCDP calls it to
+            # learn the frame tree); answer it from the resource tree, whose frameTree carries the
+            # same frame. Nor Page.setLifecycleEventsEnabled - raw-forwarding it errors and rejects
+            # Playwright's page initialization, so acknowledge it.
+            "Page.getFrameTree": self._page_get_resource_tree,
+            "Page.setLifecycleEventsEnabled": partial(self._simple_response, value=None),
             "Emulation.setEmulatedMedia": self._emulation_set_emulated_media,
             "Emulation.setTouchEmulationEnabled": partial(self._simple_response, value=None),
             "Emulation.setFocusEmulationEnabled": partial(self._simple_response, value=None),
@@ -261,6 +285,7 @@ class CdpTarget:
             "Page.navigate": self._page_navigate,
             "Page.setAdBlockingEnabled": partial(self._simple_response, value=None),
             "Page.addScriptToEvaluateOnNewDocument": self._page_add_script_to_evaluate_on_new_document,
+            "Page.createIsolatedWorld": self._page_create_isolated_world,
             "Accessibility.enable": partial(self._simple_response, value=None),
             "Autofill.enable": partial(self._simple_response, value=None),
             "Autofill.setAddresses": partial(self._simple_response, value=None),
@@ -366,6 +391,39 @@ class CdpTarget:
         """
         self._internal_id -= 1
         return self._internal_id
+
+    def _to_client_frame_id(self, frame_id: Any) -> Any:
+        """WebKit's top-frame id -> the id the client attached with (see self.frame_id)."""
+        return self.frame_id if frame_id == self._webkit_frame_id else frame_id
+
+    def _to_device_frame_id(self, frame_id: Any) -> Any:
+        """The client's frame id -> WebKit's, the reverse of _to_client_frame_id."""
+        if frame_id == self.frame_id and self._webkit_frame_id is not None:
+            return self._webkit_frame_id
+        return frame_id
+
+    def _learn_webkit_frame_id(self, frame_id: Any) -> None:
+        """Record WebKit's own id for the top frame the first time it is seen (the frame tree's
+        top frame, or the main-world execution context's frame)."""
+        if self._webkit_frame_id is None and isinstance(frame_id, str):
+            self._webkit_frame_id = frame_id
+
+    def _map_frame_ids_outbound(self, message: dict[str, Any]) -> None:
+        """Rewrite WebKit's top-frame id to the client's in the frameId-bearing fields of an event
+        (Page.frame*, Network.*), so every frame reference the client sees matches its targetId."""
+        params = message.get("params")
+        if not isinstance(params, dict):
+            return
+        params_d = cast(dict[str, Any], params)
+        for key in ("frameId", "parentFrameId"):
+            if key in params_d:
+                params_d[key] = self._to_client_frame_id(params_d[key])
+        frame = params_d.get("frame")
+        if isinstance(frame, dict):
+            frame_d = cast(dict[str, Any], frame)
+            for key in ("id", "parentId"):
+                if key in frame_d:
+                    frame_d[key] = self._to_client_frame_id(frame_d[key])
 
     @classmethod
     async def create(cls, protocol: SessionProtocol) -> "CdpTarget":
@@ -572,6 +630,12 @@ class CdpTarget:
         while True:
             message = await self.input_queue.get()
             try:
+                # The client refers to the top frame by the id it attached with; translate it back
+                # to WebKit's before the request reaches the device.
+                params = message.get("params")
+                if isinstance(params, dict) and "frameId" in params:
+                    params_d = cast(dict[str, Any], params)
+                    params_d["frameId"] = self._to_device_frame_id(params_d["frameId"])
                 if message["method"] in self.from_cdp_special_messages_methods:
                     await self.from_cdp_special_messages_methods[message["method"]](message)
                 elif message["method"].split(".", 1)[0] in NOOP_ABSENT_DOMAINS:
@@ -739,7 +803,7 @@ class CdpTarget:
         """WebKit has no Page.navigate; navigate in-page instead (URL bar / reload in DevTools)."""
         url = json.dumps(message["params"]["url"])
         await self.evaluate_and_result(f"location.href = {url}")
-        await self.output_queue.put({"id": message["id"], "result": {"frameId": self.frame.get("id", "")}})
+        await self.output_queue.put({"id": message["id"], "result": {"frameId": self.frame_id}})
 
     async def _dom_push_nodes_by_backend_ids(self, message: dict[str, Any]):
         await self.output_queue.put({"id": message["id"], "result": {"nodeIds": []}})
@@ -791,6 +855,39 @@ class CdpTarget:
 
     async def _page_add_script_to_evaluate_on_new_document(self, message: dict[str, Any]):
         await self.output_queue.put({"id": message["id"], "result": {"identifier": "1"}})
+
+    async def _page_create_isolated_world(self, message: dict[str, Any]):
+        """
+        WebKit's Web Inspector has no Page.createIsolatedWorld. Chrome clients (Playwright) create
+        an isolated world to run their own helpers off the page's globals and block every evaluate
+        until its execution context is announced - so read APIs (page.title(), locator text) hang
+        forever otherwise.
+
+        Synthesize the world: mint a context id, announce a Runtime.executionContextCreated for it
+        named as requested (so the client binds it to its "utility" world), and answer with that
+        id. WebKit cannot actually isolate it, so evaluations addressed to it are rerouted to the
+        page's real main-world context in _runtime_evaluate. The isolation is only advisory here;
+        reads return correct results, which is what these APIs need.
+        """
+        params = message.get("params", {})
+        # _input_loop already mapped params.frameId back to WebKit's id; report the client's.
+        frame_id = self._to_client_frame_id(params.get("frameId"))
+        world_name = params.get("worldName", "")
+        context_id = next(_ISOLATED_WORLD_IDS)
+        self._isolated_world_context_ids.add(context_id)
+        await self.output_queue.put({
+            "method": "Runtime.executionContextCreated",
+            "params": {
+                "context": {
+                    "id": context_id,
+                    "origin": "",
+                    "name": world_name,
+                    "uniqueId": f"{frame_id}.{context_id}",
+                    "auxData": {"isDefault": False, "type": "isolated", "frameId": frame_id},
+                }
+            },
+        })
+        await self.output_queue.put({"id": message["id"], "result": {"executionContextId": context_id}})
 
     async def _dom_get_box_model(self, message: dict[str, Any]):
         message["method"] = "DOM.highlightNode"
@@ -918,7 +1015,9 @@ class CdpTarget:
         await self._simple_response(message, None)
 
     async def _page_get_resource_tree(self, message: dict[str, Any]):
-        result = await self.send_message_with_result_across_swaps(message["method"], message["params"])
+        # WebKit only has Page.getResourceTree; ask it for that even when the frontend called the
+        # (WebKit-absent) Page.getFrameTree, whose response Chrome reads out of the same frameTree.
+        result = await self.send_message_with_result_across_swaps("Page.getResourceTree", message.get("params", {}))
         if "result" not in result:
             # No frame tree to report: a JSContext debuggable implements no Page domain and says
             # so, and a target that stopped answering yields nothing at all. Relay that - a real
@@ -934,6 +1033,10 @@ class CdpTarget:
             )
             return
         self.frame = result["result"]["frameTree"]["frame"]
+        # The top frame's id must be the id the client attached with (see self.frame_id); learn
+        # WebKit's own id for it and rewrite it in the response the client reads.
+        self._learn_webkit_frame_id(self.frame.get("id"))
+        self.frame["id"] = self._to_client_frame_id(self.frame.get("id"))
         # result carries our internal request id; answer the frontend with its own id.
         await self.output_queue.put({"id": message["id"], "result": result["result"]})
 
@@ -1091,6 +1194,13 @@ class CdpTarget:
             # exactly one context anyway - let it use its default.
             params.pop("contextId", None)
             params.pop("uniqueContextId", None)
+        elif params.get("contextId") in self._isolated_world_context_ids:
+            # A synthesized isolated world (see _page_create_isolated_world) has no real context on
+            # the device; run in the page's main world instead, which WebKit does know.
+            if self._default_execution_id:
+                params["contextId"] = self._default_execution_id
+            else:
+                params.pop("contextId", None)
         if params.get("throwOnSideEffect") and params.get("objectGroup") not in _COMPLETION_OBJECT_GROUPS:
             self._eval_side_effect_id += 1
             error_object = {
@@ -1477,6 +1587,9 @@ class CdpTarget:
         else:
             if method:
                 logger.debug(f"Dispatching: {method}")
+            # Forwarded-as-is events (Page.frame*, ...) still reference the top frame by WebKit's
+            # id; rewrite it to the client's so every frame reference is consistent.
+            self._map_frame_ids_outbound(message)
             await self.output_queue.put(message)
 
     async def _target_did_commit_provisional_target(self, message: dict[str, Any]):
@@ -1557,7 +1670,11 @@ class CdpTarget:
         # results depending on timing. Only the main-world context is forwarded.
         if context["type"] != "normal":
             return
-        unique_id = f"{context['frameId']}.{context['id']}"
+        # The main-world context is the top frame's; learn WebKit's id for it and report the id the
+        # client attached with (see self.frame_id).
+        self._learn_webkit_frame_id(context["frameId"])
+        frame_id = self._to_client_frame_id(context["frameId"])
+        unique_id = f"{frame_id}.{context['id']}"
         if unique_id in self._emitted_context_unique_ids:
             # WebKit re-announces the same context; a duplicate executionContextCreated corrupts
             # Chrome's RuntimeModel (it keys contexts by uniqueId), so emit each at most once.
@@ -1571,6 +1688,12 @@ class CdpTarget:
                 "name": "",
                 # must be unique per context - Chrome keys contexts by it
                 "uniqueId": unique_id,
+                # Chrome carries the frame association in auxData; WebKit reports the frame id at
+                # the top level and omits auxData entirely. A CDP client (Playwright's crPage, and
+                # DevTools' RuntimeModel) finds the context's frame through auxData.frameId and
+                # recognizes the page's main world through auxData.isDefault, so without this the
+                # context is never registered and every evaluate against the page hangs.
+                "auxData": {"isDefault": True, "type": "default", "frameId": frame_id},
             }
         }
         await self.output_queue.put(message)
@@ -1645,7 +1768,7 @@ class CdpTarget:
             },
         }
         if "frameId" in params:
-            message["params"]["frameId"] = params["frameId"]
+            message["params"]["frameId"] = self._to_client_frame_id(params["frameId"])
         await self.output_queue.put(message)
 
     async def _network_loading_finished(self, message: dict[str, Any]):
