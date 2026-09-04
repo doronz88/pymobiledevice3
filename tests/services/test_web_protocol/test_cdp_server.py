@@ -465,6 +465,51 @@ async def testp_cdp_server_implements_the_screenshot_methods(lockdown: LockdownC
             await client.close()
 
 
+async def testp_cdp_server_implements_the_interaction_methods(lockdown: LockdownClient) -> None:
+    """
+    Before every click, fill or hover, a Chrome client brings the target into view with
+    DOM.scrollIntoViewIfNeeded and then picks the point to act on out of DOM.getContentQuads.
+    WebKit implements neither, and Playwright treats the resulting "was not found" as a retryable
+    condition - so every interaction spun until its timeout with nothing explaining why. Both are
+    synthesized by measuring and scrolling the element in-page.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                return await client.command(next(message_ids), method, params)
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+
+            body = await command("Runtime.evaluate", {"expression": "document.body"})
+            object_id = body["result"]["result"]["objectId"]
+            scrolled = await command("DOM.scrollIntoViewIfNeeded", {"objectId": object_id})
+            assert "result" in scrolled, f"DOM.scrollIntoViewIfNeeded must be answered: {scrolled.get('error')}"
+            quads = await command("DOM.getContentQuads", {"objectId": object_id})
+            assert "result" in quads, f"DOM.getContentQuads must be answered: {quads.get('error')}"
+            # A quad is the element's four corners, flattened - the client picks its click point
+            # out of these, so a malformed one silently misses the element.
+            assert quads["result"]["quads"], f"a rendered <body> must have at least one quad: {quads}"
+            assert all(len(quad) == 8 for quad in quads["result"]["quads"]), quads
+
+            # A node that is gone must be refused with the message the client special-cases,
+            # rather than looking like an unimplemented method.
+            detached = await command("Runtime.evaluate", {"expression": "document.createElement('div')"})
+            detached_error = await command(
+                "DOM.scrollIntoViewIfNeeded", {"objectId": detached["result"]["result"]["objectId"]}
+            )
+            assert "Node is detached from document" in detached_error.get("error", {}).get("message", ""), (
+                f"a detached node must be reported as such: {detached_error}"
+            )
+        finally:
+            await client.close()
+
+
 async def testp_cdp_server_drives_a_javascript_context(lockdown: LockdownClient) -> None:
     """
     A JSContext debuggable (any process that called -[JSContext setInspectable:YES]) implements

@@ -304,6 +304,9 @@ class CdpTarget:
             # WebKit implements neither, and Chrome's screenshot path is built on both.
             "Page.getLayoutMetrics": self._page_get_layout_metrics,
             "Page.captureScreenshot": self._page_capture_screenshot,
+            # WebKit implements neither, and a Chrome client's click/fill path is built on both.
+            "DOM.scrollIntoViewIfNeeded": self._dom_scroll_into_view_if_needed,
+            "DOM.getContentQuads": self._dom_get_content_quads,
             "Accessibility.enable": partial(self._simple_response, value=None),
             "Autofill.enable": partial(self._simple_response, value=None),
             "Autofill.setAddresses": partial(self._simple_response, value=None),
@@ -1110,6 +1113,81 @@ class CdpTarget:
             "id": message["id"],
             "result": {"data": data_url[index + len(marker) :] if index != -1 else data_url},
         })
+
+    async def _call_on_object(self, object_id: str, function_declaration: str) -> dict[str, Any]:
+        """Runtime.callFunctionOn against a remote object, returning the value by value."""
+        return await self.send_message_with_result(
+            "Runtime.callFunctionOn",
+            {"objectId": object_id, "functionDeclaration": function_declaration, "returnByValue": True},
+        )
+
+    async def _dom_scroll_into_view_if_needed(self, message: dict[str, Any]):
+        """
+        WebKit has no DOM.scrollIntoViewIfNeeded. Chrome clients call it before every click, fill
+        or hover to bring the target into view, and Playwright treats the resulting "not found"
+        as a retryable condition - so every interaction spun until its timeout with no error
+        surfaced. Scroll the element in-page instead, reporting the two failures the caller
+        distinguishes (a detached node, and one with no layout box).
+        """
+        object_id = message.get("params", {}).get("objectId")
+        if not object_id:
+            # Only the objectId form is used by CDP clients; a nodeId would need a DOM.getDocument
+            # round-trip that the callers do not perform.
+            await self._error_response(message, {"code": -32000, "message": "objectId is required"})
+            return
+        response = await self._call_on_object(
+            object_id,
+            "function() {"
+            "  const node = this.nodeType === Node.ELEMENT_NODE ? this : this.parentElement;"
+            "  if (!node || !node.isConnected) { return 'detached'; }"
+            "  if (!node.getClientRects().length) { return 'nolayout'; }"
+            "  node.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});"
+            "  return 'done';"
+            "}",
+        )
+        outcome = response.get("result", {}).get("result", {}).get("value")
+        if outcome == "detached":
+            await self._error_response(message, {"code": -32000, "message": "Node is detached from document"})
+            return
+        if outcome == "nolayout":
+            await self._error_response(message, {"code": -32000, "message": "Node does not have a layout object"})
+            return
+        if outcome != "done":
+            await self._error_response(
+                message,
+                response.get("error") or {"code": -32000, "message": "the device did not scroll the node into view"},
+            )
+            return
+        await self._simple_response(message, None)
+
+    async def _dom_get_content_quads(self, message: dict[str, Any]):
+        """
+        WebKit has no DOM.getContentQuads. Chrome clients use the quads it returns to pick the
+        point to click, so without it an interaction never gets past its actionability check.
+        Measure the element's border boxes in-page; each rect becomes a quad of its corners, in
+        the viewport coordinates Chrome reports them in.
+        """
+        object_id = message.get("params", {}).get("objectId")
+        if not object_id:
+            await self._error_response(message, {"code": -32000, "message": "objectId is required"})
+            return
+        response = await self._call_on_object(
+            object_id,
+            "function() {"
+            "  const node = this.nodeType === Node.ELEMENT_NODE ? this : this.parentElement;"
+            "  if (!node || !node.isConnected) { return null; }"
+            "  return Array.from(node.getClientRects()).map("
+            "    r => [r.left, r.top, r.right, r.top, r.right, r.bottom, r.left, r.bottom]);"
+            "}",
+        )
+        quads = response.get("result", {}).get("result", {}).get("value")
+        if quads is None:
+            await self._error_response(
+                message,
+                response.get("error") or {"code": -32000, "message": "Node is detached from document"},
+            )
+            return
+        await self.output_queue.put({"id": message["id"], "result": {"quads": quads}})
 
     async def _page_create_isolated_world(self, message: dict[str, Any]):
         """
