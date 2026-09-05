@@ -1,8 +1,9 @@
 import asyncio
+import itertools
 import logging
 import uuid
 from collections.abc import Iterator
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from fastapi import WebSocket
 
@@ -85,17 +86,31 @@ def target_title(application: Application, page: Page) -> str:
     return page.web_title or ""
 
 
-class _PageSession:
-    """A flat-mode CDP session attached to one device page."""
+class _PageAttachment:
+    """One device page, and every flat-mode CDP session attached to it.
 
-    def __init__(
-        self, session_id: str, page_id: str, target: CdpTarget, pump: "asyncio.Task[None]", lock: asyncio.Lock
-    ) -> None:
-        self.session_id = session_id
+    A client may attach to the same page more than once - Playwright drives a page through the
+    session it was auto-attached with and opens a second one for raw protocol access - and each
+    attachment is a session of its own. WebKit allows a single inspector session per page, so the
+    one underlying target is shared, and the ids of requests are rewritten on the way through so
+    each answer can be returned to the session that asked (their ids are numbered independently
+    and would otherwise collide).
+    """
+
+    def __init__(self, page_id: str, target: CdpTarget, lock: asyncio.Lock) -> None:
         self.page_id = page_id
         self.target = target
-        self.pump = pump
         self.lock = lock
+        self.pump: Optional[asyncio.Task[None]] = None
+        self.session_ids: list[str] = []
+        # wire id handed to the target -> (session that asked, the id it used)
+        self.pending: dict[int, tuple[str, Any]] = {}
+        self._next_wire_id = itertools.count(1)
+
+    def claim_wire_id(self, session_id: str, original_id: Any) -> int:
+        wire_id = next(self._next_wire_id)
+        self.pending[wire_id] = (session_id, original_id)
+        return wire_id
 
 
 class CdpBrowser:
@@ -116,8 +131,8 @@ class CdpBrowser:
         # sessionIds handed out by Target.attachToBrowserTarget; commands arriving under them are
         # browser-level commands, not page messages
         self._browser_sessions: set[str] = set()
-        self._page_sessions: dict[str, _PageSession] = {}
-        self._attached_pages: dict[str, str] = {}  # page_id -> sessionId
+        self._attachments: dict[str, _PageAttachment] = {}  # page_id -> attachment
+        self._sessions: dict[str, _PageAttachment] = {}  # sessionId -> the page it is attached to
         self._known_targets: dict[str, dict[str, Any]] = {}  # page_id -> targetInfo
         self._discover = False
         self._auto_attach = False
@@ -153,8 +168,8 @@ class CdpBrowser:
             self._poll_task.cancel()
             await asyncio.gather(self._poll_task, return_exceptions=True)
             self._poll_task = None
-        for session in list(self._page_sessions.values()):
-            await self._close_session(session, notify=False)
+        for attachment in list(self._attachments.values()):
+            await self._close_attachment(attachment, notify=False)
 
     async def _send(self, message: dict[str, Any]) -> None:
         logger.debug(f"BROWSER CDP OUTPUT: {message}")
@@ -170,8 +185,8 @@ class CdpBrowser:
     async def _handle(self, message: dict[str, Any]) -> None:
         session_id = message.get("sessionId")
         if session_id is not None and session_id not in self._browser_sessions:
-            page_session = self._page_sessions.get(session_id)
-            if page_session is None:
+            attachment = self._sessions.get(session_id)
+            if attachment is None:
                 if "id" in message:
                     await self._send({
                         "id": message["id"],
@@ -179,7 +194,11 @@ class CdpBrowser:
                         "error": {"code": -32001, "message": f"Session with given id not found: {session_id}"},
                     })
                 return
-            await page_session.target.send({k: v for k, v in message.items() if k != "sessionId"})
+            forwarded = {k: v for k, v in message.items() if k != "sessionId"}
+            if "id" in forwarded:
+                # Renumber, so two sessions using the same id do not consume each other's answers.
+                forwarded["id"] = attachment.claim_wire_id(session_id, forwarded["id"])
+            await attachment.target.send(forwarded)
             return
         handler = self._handlers.get(message.get("method", ""))
         if handler is not None:
@@ -260,9 +279,9 @@ class CdpBrowser:
 
     async def _target_detach_from_target(self, message: dict[str, Any]) -> None:
         session_id = message.get("params", {}).get("sessionId")
-        session = self._page_sessions.get(session_id)
-        if session is not None:
-            await self._close_session(session, notify=False)
+        attachment = self._sessions.get(session_id) if session_id else None
+        if attachment is not None:
+            await self._detach_session(attachment, cast(str, session_id))
         await self._reply(message, {})
 
     def _ensure_poll(self) -> None:
@@ -296,20 +315,20 @@ class CdpBrowser:
                     "type": target_type(page),
                     "title": target_title(application, page),
                     "url": page.web_url or "",
-                    "attached": page_id in self._attached_pages,
+                    "attached": page_id in self._attachments,
                     "canAccessOpener": False,
                     "browserContextId": DEFAULT_BROWSER_CONTEXT_ID,
                 }
                 if is_new and self._discover:
                     await self._send_event("Target.targetCreated", {"targetInfo": self._known_targets[page_id]})
-                if self._auto_attach and page_id not in self._attached_pages:
+                if self._auto_attach and page_id not in self._attachments:
                     await self._auto_attach_page(page_id)
 
     async def _destroy_target(self, page_id: str) -> None:
         self._known_targets.pop(page_id, None)
-        session_id = self._attached_pages.get(page_id)
-        if session_id is not None:
-            await self._close_session(self._page_sessions[session_id], notify=True)
+        attachment = self._attachments.get(page_id)
+        if attachment is not None:
+            await self._close_attachment(attachment, notify=True)
         if self._discover:
             await self._send_event("Target.targetDestroyed", {"targetId": page_id})
 
@@ -333,11 +352,16 @@ class CdpBrowser:
         )
 
     async def _attach_page(self, page_id: str) -> Optional[str]:
-        """Open a WIR debugger session on the page and return its CDP sessionId (an existing
-        attachment's id when already attached), or None when the page cannot be attached."""
-        existing = self._attached_pages.get(page_id)
-        if existing is not None:
-            return existing
+        """Attach to a page and return the CDP sessionId of this attachment.
+
+        Attaching to a page that is already attached opens an additional session onto the same
+        target rather than handing back the existing one: a client keeps its own request ids per
+        session, and giving two of them the same session id makes each receive the other's
+        answers - which trips an assertion in the client and takes the whole connection down.
+        """
+        attachment = self._attachments.get(page_id)
+        if attachment is not None:
+            return self._open_session(attachment)
         try:
             application, page = self.inspector.find_page_id(page_id)
         except Exception:
@@ -369,33 +393,73 @@ class CdpBrowser:
             await self.inspector.teardown_inspector_socket(wir_session_id, application.id_, page.id_)
             lock.release()
             return None
-        session_id = str(uuid.uuid4()).upper()
-        pump = asyncio.create_task(self._pump(session_id, target))
-        self._page_sessions[session_id] = _PageSession(session_id, page_id, target, pump, lock)
-        self._attached_pages[page_id] = session_id
+        attachment = _PageAttachment(page_id, target, lock)
+        attachment.pump = asyncio.create_task(self._pump(attachment))
+        self._attachments[page_id] = attachment
         if page_id in self._known_targets:
             self._known_targets[page_id]["attached"] = True
+        return self._open_session(attachment)
+
+    def _open_session(self, attachment: _PageAttachment) -> str:
+        """Register one more CDP session onto an attached page."""
+        session_id = str(uuid.uuid4()).upper()
+        attachment.session_ids.append(session_id)
+        self._sessions[session_id] = attachment
         return session_id
 
-    async def _pump(self, session_id: str, target: CdpTarget) -> None:
-        """Forward everything the page target emits to the client, tagged with its sessionId."""
-        while True:
-            message = await target.receive()
-            message["sessionId"] = session_id
-            await self._send(message)
+    async def _pump(self, attachment: _PageAttachment) -> None:
+        """Forward what the page target emits to the session it belongs to.
 
-    async def _close_session(self, session: _PageSession, notify: bool) -> None:
-        self._page_sessions.pop(session.session_id, None)
-        self._attached_pages.pop(session.page_id, None)
-        if session.page_id in self._known_targets:
-            self._known_targets[session.page_id]["attached"] = False
-        session.pump.cancel()
-        await asyncio.gather(session.pump, return_exceptions=True)
+        An answer goes back to the session that asked, under the id it used; an event is not tied
+        to a request, so - as a real backend does - it is reported to every session attached to
+        the page.
+        """
+        while True:
+            message = await attachment.target.receive()
+            claimed = attachment.pending.pop(message["id"], None) if "id" in message else None
+            if claimed is not None:
+                session_id, original_id = claimed
+                message["id"] = original_id
+                message["sessionId"] = session_id
+                await self._send(message)
+                continue
+            if "id" in message:
+                # An answer to something this bridge asked on its own behalf, or to a request of a
+                # session that has since gone away; there is nobody to hand it to.
+                continue
+            for session_id in list(attachment.session_ids):
+                await self._send({**message, "sessionId": session_id})
+
+    async def _detach_session(self, attachment: _PageAttachment, session_id: str) -> None:
+        """Drop one session; the page stays attached while any other session still holds it."""
+        self._sessions.pop(session_id, None)
+        if session_id in attachment.session_ids:
+            attachment.session_ids.remove(session_id)
+        for wire_id, (owner, _) in list(attachment.pending.items()):
+            if owner == session_id:
+                del attachment.pending[wire_id]
+        if not attachment.session_ids:
+            await self._close_attachment(attachment, notify=False)
+
+    async def _close_attachment(self, attachment: _PageAttachment, notify: bool) -> None:
+        """Tear the page's target down and end every session attached to it."""
+        self._attachments.pop(attachment.page_id, None)
+        sessions = list(attachment.session_ids)
+        attachment.session_ids.clear()
+        for session_id in sessions:
+            self._sessions.pop(session_id, None)
+        if attachment.page_id in self._known_targets:
+            self._known_targets[attachment.page_id]["attached"] = False
+        if attachment.pump is not None:
+            attachment.pump.cancel()
+            await asyncio.gather(attachment.pump, return_exceptions=True)
         try:
-            await session.target.close()
+            await attachment.target.close()
         finally:
-            session.lock.release()
+            attachment.lock.release()
         if notify:
-            await self._send_event(
-                "Target.detachedFromTarget", {"sessionId": session.session_id, "targetId": session.page_id}
-            )
+            for session_id in sessions:
+                await self._send_event(
+                    "Target.detachedFromTarget",
+                    {"sessionId": session_id, "targetId": attachment.page_id},
+                )

@@ -35,6 +35,18 @@ UNRESPONSIVE_PROBE_TIMEOUT = 1.5
 SWAP_COMMIT_TIMEOUT = 5.0
 SWAP_COMMIT_POLL_INTERVAL = 0.05
 
+# Seconds Page.navigate waits for the navigation it started to commit before answering without a
+# loaderId (which is how an in-page navigation is reported - see _page_navigate).
+NAVIGATE_COMMIT_TIMEOUT = 10.0
+
+# How far synthesized input follows a point or the focus down into nested frames before giving up.
+MAX_FRAME_DESCENT = 5
+
+# backendNodeIds minted for the <iframe> elements that own a frame (see _dom_get_frame_owner).
+# WebKit has no node identity space of its own that survives without DOM.getDocument, so these are
+# allocated here, well clear of anything the device would produce.
+_FRAME_OWNER_NODE_IDS = itertools.count(0x60000000)
+
 # sourceURL stamped onto the bridge's own internal evaluations (screencast offsets, synthesized
 # input, navigation) so their Debugger.scriptParsed events can be recognized and dropped instead
 # of polluting Chrome's script model. WebKit-inspector-internal scripts (its injected script
@@ -174,6 +186,44 @@ WEBKIT_SCOPE_TYPE_MAP = {
     "functionInParameter": "local",
 }
 
+# Chrome sets RemoteObject.subtype for the built-in object kinds a client dispatches on; WebKit
+# reports only className for most of them. A missing "promise" in particular strands a client that
+# uses it to decide the value still has to be awaited, so it reads a result that is not there yet.
+# Only unambiguous JavaScript built-ins are mapped - a page's own class named "Map" would be a
+# plain object, but so would Chrome report it, since it keys off the internal type, not the name.
+REMOTE_OBJECT_SUBTYPES = {
+    "Promise": "promise",
+    "Array": "array",
+    "Date": "date",
+    "RegExp": "regexp",
+    "Map": "map",
+    "Set": "set",
+    "WeakMap": "weakmap",
+    "WeakSet": "weakset",
+    "Proxy": "proxy",
+    "ArrayBuffer": "arraybuffer",
+    "DataView": "dataview",
+    "Error": "error",
+    "EvalError": "error",
+    "RangeError": "error",
+    "ReferenceError": "error",
+    "SyntaxError": "error",
+    "TypeError": "error",
+    "URIError": "error",
+    "AggregateError": "error",
+    "Int8Array": "typedarray",
+    "Uint8Array": "typedarray",
+    "Uint8ClampedArray": "typedarray",
+    "Int16Array": "typedarray",
+    "Uint16Array": "typedarray",
+    "Int32Array": "typedarray",
+    "Uint32Array": "typedarray",
+    "Float32Array": "typedarray",
+    "Float64Array": "typedarray",
+    "BigInt64Array": "typedarray",
+    "BigUint64Array": "typedarray",
+}
+
 DEBUGGER_PAUSED_REASON = {
     "XHR": "XHR",
     "Fetch": "other",
@@ -220,6 +270,34 @@ class CdpTarget:
         # into the page's real (main) world - the ids handed out for those synthetic contexts are
         # collected here so their contextId can be rewritten back on the way to the device.
         self._isolated_world_context_ids: set[int] = set()
+        # Synthetic isolated world -> the frame it was created for, so its evaluations reach that
+        # frame's real context rather than whichever one happened to be announced last.
+        self._isolated_world_frames: dict[int, str] = {}
+        # Frame -> the id of the main-world execution context WebKit announced for it. A page with
+        # subframes announces one per frame, and they are not interchangeable.
+        self._frame_execution_ids: dict[str, int] = {}
+        # Child frames the client has been told about, so each is announced once (see
+        # _page_frame_navigated).
+        self._announced_frames: set[str] = set()
+        # Minted backendNodeId -> the (frame, index) of the <iframe> element it stands for.
+        self._frame_owner_nodes: dict[int, tuple[str, int]] = {}
+        # World names the client registered through Page.addScriptToEvaluateOnNewDocument. Chrome
+        # creates a world of that name in every document that loads; the bridge does the same, so
+        # a frame that appears later still gets the world its client expects to evaluate in.
+        self._auto_world_names: list[str] = []
+        # (frame, world name) pairs already announced, so each world is minted once per document.
+        self._announced_worlds: set[tuple[str, str]] = set()
+        # Whether the client asked for Page.lifecycleEvent (Chrome only reports those once
+        # Page.setLifecycleEventsEnabled turned them on, and DevTools never asks).
+        self._lifecycle_events_enabled = False
+        # loaderId of the document currently committed in the top frame, tracked from the frame
+        # tree and Page.frameNavigated so the synthesized lifecycle events can carry it.
+        self._loader_id = ""
+        # Number of documents committed in the top frame, so Page.navigate can tell whether the
+        # navigation it started committed a new document.
+        self._top_frame_commits = 0
+        # Detached tasks (a navigation waiting for its commit); cancelled when the session closes.
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self.output_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.input_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.screencast: Optional[ScreenCast] = None
@@ -241,9 +319,9 @@ class CdpTarget:
             # WebKit implements no Page.getFrameTree (Playwright's connectOverCDP calls it to
             # learn the frame tree); answer it from the resource tree, whose frameTree carries the
             # same frame. Nor Page.setLifecycleEventsEnabled - raw-forwarding it errors and rejects
-            # Playwright's page initialization, so acknowledge it.
+            # Playwright's page initialization, so translate it (see the handler).
             "Page.getFrameTree": self._page_get_resource_tree,
-            "Page.setLifecycleEventsEnabled": partial(self._simple_response, value=None),
+            "Page.setLifecycleEventsEnabled": self._page_set_lifecycle_events_enabled,
             "Emulation.setEmulatedMedia": self._emulation_set_emulated_media,
             "Emulation.setTouchEmulationEnabled": partial(self._simple_response, value=None),
             "Emulation.setFocusEmulationEnabled": partial(self._simple_response, value=None),
@@ -279,6 +357,7 @@ class CdpTarget:
             "CSS.trackComputedStyleUpdates": partial(self._simple_response, value=None),
             "CSS.takeComputedStyleUpdates": self._css_take_computed_style_updates,
             "CSS.addRule": self._css_add_rule,
+            "Input.insertText": self._input_insert_text,
             "Input.emulateTouchFromMouseEvent": self._input_emulate_touch_from_mouse_event,
             "Input.dispatchKeyEvent": self._input_dispatch_key_event,
             "Input.dispatchMouseEvent": self._input_dispatch_mouse_event,
@@ -286,6 +365,19 @@ class CdpTarget:
             "Page.setAdBlockingEnabled": partial(self._simple_response, value=None),
             "Page.addScriptToEvaluateOnNewDocument": self._page_add_script_to_evaluate_on_new_document,
             "Page.createIsolatedWorld": self._page_create_isolated_world,
+            # WebKit implements neither, and Chrome's screenshot path is built on both.
+            "Page.getLayoutMetrics": self._page_get_layout_metrics,
+            "Page.captureScreenshot": self._page_capture_screenshot,
+            # WebKit implements neither, and a Chrome client's click/fill path is built on both.
+            "DOM.scrollIntoViewIfNeeded": self._dom_scroll_into_view_if_needed,
+            "DOM.getContentQuads": self._dom_get_content_quads,
+            # WebKit has no DOM.describeNode; a client resolves an <iframe> element to the frame
+            # it hosts through it, which is how frameLocator() reaches into a child frame.
+            "DOM.describeNode": self._dom_describe_node,
+            # The other half of reaching into a frame: a client asks which element owns a frame
+            # and then resolves that answer back to an object it can measure.
+            "DOM.getFrameOwner": self._dom_get_frame_owner,
+            "DOM.resolveNode": self._dom_resolve_node,
             "Accessibility.enable": partial(self._simple_response, value=None),
             "Autofill.enable": partial(self._simple_response, value=None),
             "Autofill.setAddresses": partial(self._simple_response, value=None),
@@ -333,6 +425,12 @@ class CdpTarget:
             "Console.messageAdded": self._console_message_added,
             "Network.responseReceived": self._network_response_received,
             "Network.loadingFinished": self._network_loading_finished,
+            # WebKit reports a load's progress with the pre-lifecycle events Chrome has long since
+            # replaced; each is also turned into the Page.lifecycleEvent modern clients wait on.
+            "Page.frameNavigated": self._page_frame_navigated,
+            "Page.frameDetached": self._page_frame_detached,
+            "Page.domContentEventFired": self._page_dom_content_event_fired,
+            "Page.loadEventFired": self._page_load_event_fired,
         }
         # JavaScriptCore's JSContext inspector implements no Target domain at all: nothing is
         # announced on attach, messages are exchanged as-is instead of through
@@ -355,6 +453,9 @@ class CdpTarget:
         self._internal_id = 0
         # loop time of the last synthesized hover, to throttle high-frequency mouseMoved events.
         self._last_mousemove_time = 0.0
+        # Text a keyDown said it would produce, held until it is known whether the client also
+        # sends the "char" event that classically carried it (see _input_dispatch_key_event).
+        self._pending_key_text: Optional[str] = None
         # execution-context uniqueIds already announced to the frontend, to drop duplicate
         # Runtime.executionContextCreated events (WebKit re-announces contexts) that would
         # otherwise corrupt Chrome's RuntimeModel.
@@ -458,9 +559,9 @@ class CdpTarget:
         if self.screencast is not None:
             await self.screencast.stop()
             self.screencast = None
-        for task in (self._input_task, self._receiving_task):
+        for task in (self._input_task, self._receiving_task, *self._background_tasks):
             task.cancel()
-        await asyncio.gather(self._input_task, self._receiving_task, return_exceptions=True)
+        await asyncio.gather(self._input_task, self._receiving_task, *self._background_tasks, return_exceptions=True)
         # Without the teardown, webinspectord ignores the next socket setup for this page and
         # the following debugger connection never receives its Target.targetCreated event.
         await self.protocol.inspector.teardown_inspector_socket(self.session_id, self.app_id, self.page_id)
@@ -800,10 +901,52 @@ class CdpTarget:
         await self._send_message_to_target(message)
 
     async def _page_navigate(self, message: dict[str, Any]):
-        """WebKit has no Page.navigate; navigate in-page instead (URL bar / reload in DevTools)."""
+        """
+        WebKit has no Page.navigate; navigate in-page instead (URL bar / reload in DevTools).
+
+        The response must say which document the navigation started, because that is how a client
+        tells a new-document navigation from an in-page one: Chrome's Page.navigate answers with
+        the new loaderId, and Playwright waits for a *same-document* navigation when it is absent -
+        an event a real page load never sends, so page.goto() hung until its timeout. WebKit only
+        reveals the loaderId once the document commits, so start the navigation and report the
+        commit that follows. Nothing commits for an in-page navigation (a fragment change), and
+        answering without a loaderId is then exactly right.
+        """
         url = json.dumps(message["params"]["url"])
-        await self.evaluate_and_result(f"location.href = {url}")
-        await self.output_queue.put({"id": message["id"], "result": {"frameId": self.frame_id}})
+        commits_before = self._top_frame_commits
+        # Fire-and-forget: a committed navigation destroys the target and WebKit never answers the
+        # evaluation, and waiting for that would pause the receive loop past the commit below.
+        await self._send_message_to_target(
+            {
+                "id": self.next_internal_id(),
+                "method": "Runtime.evaluate",
+                "params": {"expression": self._tag_internal(f"location.href = {url}")},
+            },
+            record=False,
+        )
+        # The wait runs off the input loop: everything else the client sends - screencast acks
+        # above all - has to keep being served while a navigation is in flight, and a load that
+        # never commits must not freeze the session for the whole timeout.
+        self._spawn(self._answer_navigate_on_commit(message["id"], commits_before))
+
+    async def _answer_navigate_on_commit(self, id_: int, commits_before: int) -> None:
+        """Answer a Page.navigate once the navigation it started commits (see _page_navigate)."""
+        deadline = asyncio.get_event_loop().time() + NAVIGATE_COMMIT_TIMEOUT
+        while self._top_frame_commits == commits_before and asyncio.get_event_loop().time() < deadline:
+            # The receive loop is what applies the commit (see _page_frame_navigated). The client
+            # collects the commit it forwards meanwhile and matches it against the loaderId below.
+            await asyncio.sleep(SWAP_COMMIT_POLL_INTERVAL)
+        result: dict[str, Any] = {"frameId": self.frame_id}
+        if self._top_frame_commits != commits_before:
+            result["loaderId"] = self._loader_id
+        await self.output_queue.put({"id": id_, "result": result})
+
+    def _spawn(self, coroutine: "Awaitable[None]") -> None:
+        """Run a coroutine detached from the loop that started it, keeping a reference so it is
+        neither garbage collected mid-flight nor left running after the session closes."""
+        task = asyncio.ensure_future(coroutine)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def _dom_push_nodes_by_backend_ids(self, message: dict[str, Any]):
         await self.output_queue.put({"id": message["id"], "result": {"nodeIds": []}})
@@ -854,7 +997,665 @@ class CdpTarget:
         await self.output_queue.put({"id": message["id"], "result": {"fonts": []}})
 
     async def _page_add_script_to_evaluate_on_new_document(self, message: dict[str, Any]):
+        # The script itself cannot be honoured (WebKit has no equivalent), but the world it names
+        # must be: Chrome creates a world of that name in every document that loads, and that is
+        # how a client gets an isolated world in a frame it never explicitly asked about.
+        world_name = message.get("params", {}).get("worldName")
+        if isinstance(world_name, str) and world_name and world_name not in self._auto_world_names:
+            self._auto_world_names.append(world_name)
         await self.output_queue.put({"id": message["id"], "result": {"identifier": "1"}})
+
+    async def _page_set_lifecycle_events_enabled(self, message: dict[str, Any]):
+        """
+        WebKit has no Page.setLifecycleEventsEnabled, but the events it gates are not optional:
+        Playwright's navigation waits (page.goto, page.reload, waitForNavigation) block on
+        Page.lifecycleEvent and ignore the older Page.loadEventFired/domContentEventFired that
+        WebKit does emit, so every navigating call hung until its timeout. Record the request and
+        synthesize the lifecycle events off those real signals (see _emit_lifecycle_event).
+        """
+        self._lifecycle_events_enabled = bool(message.get("params", {}).get("enabled", True))
+        await self._simple_response(message, None)
+
+    async def _emit_lifecycle_event(
+        self, name: str, timestamp: Any, frame_id: Optional[str] = None, loader_id: Optional[str] = None
+    ) -> None:
+        """Emit one Chrome Page.lifecycleEvent, if the client asked for them."""
+        if not self._lifecycle_events_enabled:
+            return
+        await self.output_queue.put({
+            "method": "Page.lifecycleEvent",
+            "params": {
+                "frameId": frame_id if frame_id is not None else self.frame_id,
+                "loaderId": loader_id if loader_id is not None else self._loader_id,
+                "name": name,
+                # Page.lifecycleEvent.timestamp is a MonotonicTime, like WebKit's own.
+                "timestamp": timestamp if isinstance(timestamp, (int, float)) else datetime.now().timestamp(),
+            },
+        })
+
+    async def _page_frame_navigated(self, message: dict[str, Any]):
+        """Forward the navigation and open a new lifecycle for the document it commits."""
+        frame = message.get("params", {}).get("frame", {})
+        webkit_frame_id = frame.get("id")
+        is_top_frame = "parentId" not in frame
+        if is_top_frame:
+            # A top-frame navigation commits a new document; remember its loader for the
+            # lifecycle events that follow.
+            self._learn_webkit_frame_id(webkit_frame_id)
+            self._loader_id = frame.get("loaderId", "") or ""
+            self._top_frame_commits += 1
+        # This handler bypasses the pass-through path, so map the frame ids here.
+        self._map_frame_ids_outbound(message)
+        mapped = message.get("params", {}).get("frame", {})
+        client_frame_id = mapped.get("id")
+        client_parent_id = mapped.get("parentId")
+        if (
+            client_parent_id is not None
+            and isinstance(client_frame_id, str)
+            and client_frame_id not in self._announced_frames
+        ):
+            # WebKit never sends Page.frameAttached. A client builds its frame model from the live
+            # attach/navigate pair and only walks the frame tree once, when it attaches - so every
+            # child frame that appeared later (or was recreated by a reload) stayed invisible to
+            # it, and a navigation for a frame it does not know is discarded. Announce it first.
+            self._announced_frames.add(client_frame_id)
+            await self.output_queue.put({
+                "method": "Page.frameAttached",
+                "params": {"frameId": client_frame_id, "parentFrameId": client_parent_id},
+            })
+        await self.output_queue.put(message)
+        # Chrome opens every document's lifecycle with "init" at commit time.
+        await self._emit_lifecycle_event(
+            "init",
+            message.get("params", {}).get("timestamp"),
+            frame_id=self._to_client_frame_id(webkit_frame_id),
+            loader_id=frame.get("loaderId", ""),
+        )
+
+    async def _page_frame_detached(self, message: dict[str, Any]):
+        """Forward the detach and forget the frame, so one that comes back is announced again."""
+        self._map_frame_ids_outbound(message)
+        frame_id = message.get("params", {}).get("frameId")
+        if isinstance(frame_id, str):
+            self._announced_frames.discard(frame_id)
+            self._frame_execution_ids.pop(frame_id, None)
+        await self.output_queue.put(message)
+
+    async def _page_dom_content_event_fired(self, message: dict[str, Any]):
+        await self.output_queue.put(message)
+        await self._emit_lifecycle_event("DOMContentLoaded", message.get("params", {}).get("timestamp"))
+
+    async def _page_load_event_fired(self, message: dict[str, Any]):
+        await self.output_queue.put(message)
+        await self._emit_lifecycle_event("load", message.get("params", {}).get("timestamp"))
+
+    async def _evaluate_json_in(self, context_id: Optional[int], expression: str) -> Optional[Any]:
+        """_evaluate_json, in one particular frame's execution context."""
+        params: dict[str, Any] = {"expression": self._tag_internal(expression), "returnByValue": True}
+        if context_id:
+            params["contextId"] = context_id
+        response = await self.send_message_with_result("Runtime.evaluate", params)
+        result = response.get("result", {}).get("result", {})
+        if response.get("result", {}).get("wasThrown") or "value" not in result:
+            return None
+        return result["value"]
+
+    async def _top_frame_context(self) -> Optional[int]:
+        """The execution context of the frame the client attached to."""
+        return self._frame_execution_ids.get(self.frame_id) or self._default_execution_id or None
+
+    async def _child_frame_context(self, parent_frame_id: str, index: int) -> Optional[tuple[str, int]]:
+        """The (frame, context) of a frame's nth child, or None when it cannot be reached."""
+        tree = await self.send_message_with_result("Page.getResourceTree", {})
+        frame_tree = tree.get("result", {}).get("frameTree")
+        if frame_tree is None:
+            return None
+        self._map_frame_tree_ids(frame_tree)
+        child = self._child_frame_at(frame_tree, parent_frame_id, index)
+        if child is None:
+            return None
+        context = self._frame_execution_ids.get(child)
+        return (child, context) if context is not None else None
+
+    async def _context_at_point(self, x: int, y: int) -> tuple[Optional[int], int, int]:
+        """Find the frame that owns a viewport point, and the point in that frame's coordinates.
+
+        Synthesized input is dispatched by looking the target up in the page, and a document only
+        knows its own elements: a point over an <iframe> finds the frame element itself, never
+        what the user is aiming at inside it. Follow it down instead, subtracting each frame's
+        offset on the way, so a click or a hover lands in the document that actually owns it.
+        """
+        frame_id = self.frame_id
+        # Start with no context at all, so the device evaluates in its own current one; naming a
+        # context we tracked earlier risks naming a stale one from a document already replaced.
+        context_id: Optional[int] = None
+        for _ in range(MAX_FRAME_DESCENT):
+            probe = await self._evaluate_json_in(
+                context_id,
+                "(function () {"
+                f"  const el = document.elementFromPoint({x}, {y});"
+                "  if (!el || !el.tagName) { return null; }"
+                "  const tag = el.tagName.toLowerCase();"
+                "  if (tag !== 'iframe' && tag !== 'frame') { return null; }"
+                "  const rect = el.getBoundingClientRect();"
+                "  const frames = Array.prototype.slice.call(document.querySelectorAll('iframe, frame'));"
+                "  return {index: frames.indexOf(el), left: rect.left, top: rect.top};"
+                "})()",
+            )
+            if not isinstance(probe, dict):
+                break
+            found = cast(dict[str, Any], probe)
+            child = await self._child_frame_context(frame_id, int(found["index"]))
+            if child is None:
+                break
+            x -= int(found["left"])
+            y -= int(found["top"])
+            frame_id, context_id = child[0], child[1]
+        return context_id, x, y
+
+    async def _focused_context(self) -> Optional[int]:
+        """The execution context of the document that holds the focus.
+
+        Typing is dispatched at the focused element, and a document whose focus sits in a child
+        frame reports the frame element as focused - so text aimed at a field inside it was typed
+        into nothing at all, silently. The document that really holds the focus is the one that
+        both has focus and has something typeable focused in it; a child frame wins over the top,
+        which is only reporting the frame element.
+        """
+        typeable = (
+            "(function () {"
+            "  const active = document.activeElement;"
+            "  if (!active || !document.hasFocus || !document.hasFocus()) { return false; }"
+            "  if (active.isContentEditable) { return true; }"
+            "  const tag = active.tagName ? active.tagName.toLowerCase() : '';"
+            "  return tag === 'input' || tag === 'textarea';"
+            "})()"
+        )
+        # The common case by far: nothing is framed, or the focus is already on a field in the
+        # document the session is attached to. Asking it first keeps typing a single round-trip.
+        if await self._evaluate_json_in(None, typeable) is True:
+            return None
+        for frame_id, context_id in self._frame_execution_ids.items():
+            if frame_id == self.frame_id:
+                continue
+            if await self._evaluate_json_in(context_id, typeable) is True:
+                return context_id
+        return None
+
+    async def _evaluate_json(self, expression: str) -> Optional[Any]:
+        """Evaluate an expression that returns JSON-serializable data and give back the value.
+
+        WebKit's Runtime.evaluate honours returnByValue, so the result comes back inline rather
+        than as a remote object handle.
+        """
+        response = await self.send_message_with_result(
+            "Runtime.evaluate", {"expression": self._tag_internal(expression), "returnByValue": True}
+        )
+        result = response.get("result", {}).get("result", {})
+        if response.get("result", {}).get("wasThrown") or "value" not in result:
+            return None
+        return result["value"]
+
+    async def _page_get_layout_metrics(self, message: dict[str, Any]):
+        """
+        WebKit has no Page.getLayoutMetrics. It is the first call of Chrome's screenshot path
+        (the clip rectangle and the device-pixel scale are computed from it), so page.screenshot()
+        died on it before any capture was attempted. Measure the page itself instead.
+        """
+        metrics = await self._evaluate_json(
+            "(() => {"
+            "  const d = document.documentElement, b = document.body || d;"
+            "  const vv = window.visualViewport;"
+            "  const width = Math.max(d.scrollWidth, b.scrollWidth, d.clientWidth);"
+            "  const height = Math.max(d.scrollHeight, b.scrollHeight, d.clientHeight);"
+            "  return {"
+            "    x: window.scrollX, y: window.scrollY,"
+            "    clientWidth: d.clientWidth || window.innerWidth,"
+            "    clientHeight: d.clientHeight || window.innerHeight,"
+            "    width: width, height: height,"
+            "    scale: vv ? vv.scale : 1,"
+            "    offsetX: vv ? vv.offsetLeft : 0, offsetY: vv ? vv.offsetTop : 0,"
+            "    pageX: vv ? vv.pageLeft : window.scrollX, pageY: vv ? vv.pageTop : window.scrollY,"
+            "    vw: vv ? vv.width : window.innerWidth, vh: vv ? vv.height : window.innerHeight,"
+            "    dpr: window.devicePixelRatio || 1"
+            "  };"
+            "})()"
+        )
+        if not isinstance(metrics, dict):
+            await self._error_response(
+                message, {"code": -32000, "message": "the device did not report its layout metrics"}
+            )
+            return
+        m = cast(dict[str, Any], metrics)
+        layout_viewport = {
+            "pageX": int(m["x"]),
+            "pageY": int(m["y"]),
+            "clientWidth": int(m["clientWidth"]),
+            "clientHeight": int(m["clientHeight"]),
+        }
+        visual_viewport: dict[str, Any] = {
+            "offsetX": m["offsetX"],
+            "offsetY": m["offsetY"],
+            "pageX": m["pageX"],
+            "pageY": m["pageY"],
+            "clientWidth": m["vw"],
+            "clientHeight": m["vh"],
+            "scale": m["scale"],
+            "zoom": 1,
+        }
+        content_size: dict[str, Any] = {"x": 0, "y": 0, "width": m["width"], "height": m["height"]}
+        # Everything above is measured in CSS pixels, so the css* variants are the same values.
+        # Chrome's client divides contentSize by cssContentSize to recover the device pixel ratio;
+        # reporting equal sizes keeps that ratio at 1, which is what the snapshots below are in.
+        await self.output_queue.put({
+            "id": message["id"],
+            "result": {
+                "layoutViewport": layout_viewport,
+                "visualViewport": visual_viewport,
+                "contentSize": content_size,
+                "cssLayoutViewport": layout_viewport,
+                "cssVisualViewport": visual_viewport,
+                "cssContentSize": content_size,
+            },
+        })
+
+    async def _page_capture_screenshot(self, message: dict[str, Any]):
+        """
+        WebKit has no Page.captureScreenshot, but it does have Page.snapshotRect - the same call
+        the screencast is built on. Translate between them: Chrome asks for a clip in page
+        coordinates and wants raw base64 image bytes, WebKit answers a rect with a data URL.
+        """
+        params = message.get("params", {})
+        clip = params.get("clip")
+        rect: dict[str, Any]
+        if clip:
+            rect = {
+                "x": int(clip.get("x", 0)),
+                "y": int(clip.get("y", 0)),
+                "width": int(clip.get("width", 0)),
+                "height": int(clip.get("height", 0)),
+                # A clip is expressed in document coordinates, which is WebKit's "Page" system.
+                "coordinateSystem": "Page",
+            }
+        else:
+            # No clip: capture the visible viewport.
+            metrics = await self._evaluate_json(
+                "({w: window.innerWidth, h: window.innerHeight, x: window.scrollX, y: window.scrollY})"
+            )
+            if not isinstance(metrics, dict):
+                await self._error_response(
+                    message, {"code": -32000, "message": "the device did not report its viewport"}
+                )
+                return
+            m = cast(dict[str, Any], metrics)
+            rect = {
+                "x": int(m["x"]),
+                "y": int(m["y"]),
+                "width": int(m["w"]),
+                "height": int(m["h"]),
+                "coordinateSystem": "Page",
+            }
+        if rect["width"] <= 0 or rect["height"] <= 0:
+            await self._error_response(message, {"code": -32000, "message": "cannot capture an empty rectangle"})
+            return
+        response = await self.send_message_with_result_across_swaps("Page.snapshotRect", rect)
+        data_url = response.get("result", {}).get("dataURL")
+        if not data_url:
+            await self._error_response(
+                message,
+                response.get("error") or {"code": -32000, "message": "the device did not answer Page.snapshotRect"},
+            )
+            return
+        # WebKit answers a data: URL; Chrome's captureScreenshot answers the bare base64 payload.
+        marker = "base64,"
+        index = data_url.find(marker)
+        await self.output_queue.put({
+            "id": message["id"],
+            "result": {"data": data_url[index + len(marker) :] if index != -1 else data_url},
+        })
+
+    async def _call_on_object(self, object_id: str, function_declaration: str) -> dict[str, Any]:
+        """Runtime.callFunctionOn against a remote object, returning the value by value."""
+        return await self.send_message_with_result(
+            "Runtime.callFunctionOn",
+            {"objectId": object_id, "functionDeclaration": function_declaration, "returnByValue": True},
+        )
+
+    async def _dom_scroll_into_view_if_needed(self, message: dict[str, Any]):
+        """
+        WebKit has no DOM.scrollIntoViewIfNeeded. Chrome clients call it before every click, fill
+        or hover to bring the target into view, and Playwright treats the resulting "not found"
+        as a retryable condition - so every interaction spun until its timeout with no error
+        surfaced. Scroll the element in-page instead, reporting the two failures the caller
+        distinguishes (a detached node, and one with no layout box).
+        """
+        object_id = message.get("params", {}).get("objectId")
+        if not object_id:
+            # Only the objectId form is used by CDP clients; a nodeId would need a DOM.getDocument
+            # round-trip that the callers do not perform.
+            await self._error_response(message, {"code": -32000, "message": "objectId is required"})
+            return
+        response = await self._call_on_object(
+            object_id,
+            "function() {"
+            "  const node = this.nodeType === Node.ELEMENT_NODE ? this : this.parentElement;"
+            "  if (!node || !node.isConnected) { return 'detached'; }"
+            "  if (!node.getClientRects().length) { return 'nolayout'; }"
+            "  node.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});"
+            "  return 'done';"
+            "}",
+        )
+        outcome = response.get("result", {}).get("result", {}).get("value")
+        if outcome == "detached":
+            await self._error_response(message, {"code": -32000, "message": "Node is detached from document"})
+            return
+        if outcome == "nolayout":
+            await self._error_response(message, {"code": -32000, "message": "Node does not have a layout object"})
+            return
+        if outcome != "done":
+            await self._error_response(
+                message,
+                response.get("error") or {"code": -32000, "message": "the device did not scroll the node into view"},
+            )
+            return
+        await self._simple_response(message, None)
+
+    async def _dom_get_content_quads(self, message: dict[str, Any]):
+        """
+        WebKit has no DOM.getContentQuads. Chrome clients use the quads it returns to pick the
+        point to click, so without it an interaction never gets past its actionability check.
+        Measure the element's border boxes in-page; each rect becomes a quad of its corners, in
+        the viewport coordinates Chrome reports them in.
+        """
+        object_id = message.get("params", {}).get("objectId")
+        if not object_id:
+            await self._error_response(message, {"code": -32000, "message": "objectId is required"})
+            return
+        response = await self._call_on_object(
+            object_id,
+            "function() {"
+            "  const node = this.nodeType === Node.ELEMENT_NODE ? this : this.parentElement;"
+            "  if (!node || !node.isConnected) { return null; }"
+            "  return Array.from(node.getClientRects()).map("
+            "    r => [r.left, r.top, r.right, r.top, r.right, r.bottom, r.left, r.bottom]);"
+            "}",
+        )
+        quads = response.get("result", {}).get("result", {}).get("value")
+        if quads is None:
+            await self._error_response(
+                message,
+                response.get("error") or {"code": -32000, "message": "Node is detached from document"},
+            )
+            return
+        # The boxes were measured in the element's own document; a client expects them in the
+        # page's coordinates, so shift them by where that frame sits (see _frame_viewport_offset).
+        offset_x, offset_y = await self._frame_viewport_offset(self._frame_of_object(cast(str, object_id)))
+        if offset_x or offset_y:
+            quads = [
+                [value + (offset_x if position % 2 == 0 else offset_y) for position, value in enumerate(quad)]
+                for quad in cast(list[list[float]], quads)
+            ]
+        await self.output_queue.put({"id": message["id"], "result": {"quads": quads}})
+
+    def _frame_of_object(self, object_id: str) -> Optional[str]:
+        """The frame a remote object lives in, read out of the object id itself.
+
+        WebKit encodes the context an object belongs to in its id (`injectedScriptId`), and the
+        contexts are already tracked per frame, so an object can be traced back to its document
+        without asking the device anything.
+        """
+        try:
+            context_id = json.loads(object_id).get("injectedScriptId")
+        except (ValueError, TypeError, AttributeError):
+            return None
+        for frame_id, frame_context in self._frame_execution_ids.items():
+            if frame_context == context_id:
+                return frame_id
+        return None
+
+    def _child_frame_at(self, node: Any, parent_frame_id: str, index: int) -> Optional[str]:
+        """The id of the `index`-th child frame of `parent_frame_id`, walking a frame tree.
+
+        The frame tree lists a frame's children in document order, which is the order the
+        elements appear in - so the nth <iframe> of a document owns the nth child frame. This
+        identifies a frame that carries nothing to match on, which a name or a URL cannot: a
+        srcdoc or about:blank frame has neither, and several frames may share a URL.
+        """
+        if not isinstance(node, dict):
+            return None
+        tree = cast(dict[str, Any], node)
+        frame = tree.get("frame")
+        children = cast(list[Any], tree.get("childFrames") or [])
+        if isinstance(frame, dict) and cast(dict[str, Any], frame).get("id") == parent_frame_id:
+            if 0 <= index < len(children):
+                child = children[index]
+                if isinstance(child, dict):
+                    child_frame = cast(dict[str, Any], child).get("frame")
+                    if isinstance(child_frame, dict):
+                        found = cast(dict[str, Any], child_frame).get("id")
+                        return found if isinstance(found, str) else None
+            return None
+        for child in children:
+            found = self._child_frame_at(child, parent_frame_id, index)
+            if found is not None:
+                return found
+        return None
+
+    def _frame_index_path(self, node: Any, target: str, path: Optional[list[int]] = None) -> Optional[list[int]]:
+        """The child indices leading from the top frame down to `target`, or None."""
+        if not isinstance(node, dict):
+            return None
+        tree = cast(dict[str, Any], node)
+        frame = tree.get("frame")
+        here = path or []
+        if isinstance(frame, dict) and cast(dict[str, Any], frame).get("id") == target:
+            return here
+        for index, child in enumerate(cast(list[Any], tree.get("childFrames") or [])):
+            found = self._frame_index_path(child, target, [*here, index])
+            if found is not None:
+                return found
+        return None
+
+    async def _frame_viewport_offset(self, frame_id: Optional[str]) -> tuple[float, float]:
+        """Where a frame's viewport sits inside the top frame's.
+
+        A document measures its elements against its own viewport, so a box measured inside a
+        child frame is offset from the page by however far that frame sits down and across. A
+        client places its clicks in page coordinates, so the two have to be reconciled or every
+        interaction inside a frame is aimed at the wrong place.
+        """
+        if frame_id is None or frame_id == self.frame_id:
+            return (0.0, 0.0)
+        tree = await self.send_message_with_result("Page.getResourceTree", {})
+        frame_tree = tree.get("result", {}).get("frameTree")
+        if frame_tree is None:
+            return (0.0, 0.0)
+        self._map_frame_tree_ids(frame_tree)
+        path = self._frame_index_path(frame_tree, frame_id)
+        if not path:
+            return (0.0, 0.0)
+        offset_x = offset_y = 0.0
+        context_id = await self._top_frame_context()
+        current = self.frame_id
+        for index in path:
+            rect = await self._evaluate_json_in(
+                context_id,
+                "(function () {"
+                f"  const frame = document.querySelectorAll('iframe, frame')[{index}];"
+                "  if (!frame) { return null; }"
+                "  const rect = frame.getBoundingClientRect();"
+                "  return {left: rect.left, top: rect.top};"
+                "})()",
+            )
+            if not isinstance(rect, dict):
+                break
+            box = cast(dict[str, Any], rect)
+            offset_x += float(box["left"])
+            offset_y += float(box["top"])
+            child = self._child_frame_at(frame_tree, current, index)
+            if child is None:
+                break
+            child_context = self._frame_execution_ids.get(child)
+            if child_context is None:
+                break
+            current, context_id = child, child_context
+        return (offset_x, offset_y)
+
+    def _find_frame_in_tree(self, node: Any, name: str, url: str) -> Optional[str]:
+        """Find the frame an <iframe> hosts, by the name it was given or the URL it loaded.
+
+        WebKit exposes no handle from a DOM element to its frame, so the two are correlated
+        through the frame tree. A name is authoritative when the page sets one; otherwise the URL
+        identifies the frame, and an ambiguous match is reported as no match rather than a guess.
+        """
+        matches: list[str] = []
+
+        def walk(tree: Any) -> None:
+            if not isinstance(tree, dict):
+                return
+            branch = cast(dict[str, Any], tree)
+            frame = branch.get("frame")
+            if isinstance(frame, dict):
+                candidate = cast(dict[str, Any], frame)
+                frame_id = candidate.get("id")
+                is_child = isinstance(frame_id, str) and candidate.get("parentId") is not None
+                identified = (name and candidate.get("name") == name) or (
+                    not name and url and candidate.get("url") == url
+                )
+                if is_child and identified:
+                    matches.append(cast(str, frame_id))
+            for child in cast(list[Any], branch.get("childFrames") or []):
+                walk(child)
+
+        walk(node)
+        return matches[0] if len(matches) == 1 else None
+
+    async def _dom_describe_node(self, message: dict[str, Any]):
+        """
+        WebKit has no DOM.describeNode. A client uses it to resolve an <iframe> element to the
+        frame it hosts - that is how frameLocator()/contentFrame() reach into a child frame - and
+        reads `node.frameId` out of the answer. Correlate the element with the frame tree.
+        """
+        object_id = message.get("params", {}).get("objectId")
+        if not object_id:
+            await self._error_response(message, {"code": -32000, "message": "objectId is required"})
+            return
+        described = await self._call_on_object(
+            object_id,
+            "function() {"
+            "  if (!this.tagName) { return null; }"
+            "  const tag = this.tagName.toLowerCase();"
+            "  const frames = Array.prototype.slice.call("
+            "      this.ownerDocument.querySelectorAll('iframe, frame'));"
+            "  return {"
+            "    nodeName: this.tagName,"
+            "    localName: tag,"
+            "    isFrame: tag === 'iframe' || tag === 'frame',"
+            "    index: frames.indexOf(this),"
+            "    name: this.getAttribute ? (this.getAttribute('name') || '') : '',"
+            "    url: this.src || ''"
+            "  };"
+            "}",
+        )
+        value = described.get("result", {}).get("result", {}).get("value")
+        if not isinstance(value, dict):
+            await self._error_response(message, {"code": -32000, "message": "Node is detached from document"})
+            return
+        info = cast(dict[str, Any], value)
+        node: dict[str, Any] = {
+            "nodeId": 0,
+            "backendNodeId": 0,
+            "nodeType": 1,
+            "nodeName": info.get("nodeName", ""),
+            "localName": info.get("localName", ""),
+            "nodeValue": "",
+            "childNodeCount": 0,
+            "attributes": [],
+        }
+        if info.get("isFrame"):
+            tree = await self.send_message_with_result("Page.getResourceTree", {})
+            frame_tree = tree.get("result", {}).get("frameTree")
+            self._map_frame_tree_ids(frame_tree)
+            owner = self._frame_of_object(cast(str, object_id))
+            index = info.get("index")
+            frame_id: Optional[str] = None
+            if owner is not None and isinstance(index, int):
+                frame_id = self._child_frame_at(frame_tree, owner, index)
+            if frame_id is None:
+                # Nothing to position against (an object from a context we never saw); fall back
+                # to whatever the element itself identifies the frame by.
+                frame_id = self._find_frame_in_tree(
+                    frame_tree, cast(str, info.get("name") or ""), cast(str, info.get("url") or "")
+                )
+            if frame_id is not None:
+                node["frameId"] = frame_id
+        await self.output_queue.put({"id": message["id"], "result": {"node": node}})
+
+    def _frame_at_path(self, node: Any, path: list[int]) -> Optional[str]:
+        """The id of the frame reached by walking `path` from the top of a frame tree."""
+        current = node
+        for index in path:
+            if not isinstance(current, dict):
+                return None
+            children = cast(list[Any], cast(dict[str, Any], current).get("childFrames") or [])
+            if not 0 <= index < len(children):
+                return None
+            current = children[index]
+        if not isinstance(current, dict):
+            return None
+        frame = cast(dict[str, Any], current).get("frame")
+        if not isinstance(frame, dict):
+            return None
+        frame_id = cast(dict[str, Any], frame).get("id")
+        return frame_id if isinstance(frame_id, str) else None
+
+    async def _dom_get_frame_owner(self, message: dict[str, Any]):
+        """
+        WebKit has no DOM.getFrameOwner. A client asks it which element hosts a frame so it can
+        measure where that frame sits, which is part of every interaction with something inside
+        one - without it the actionability check never completes and the action spins until it
+        times out. Answer with a node id of our own, resolved back in _dom_resolve_node.
+        """
+        frame_id = message.get("params", {}).get("frameId")
+        tree = await self.send_message_with_result("Page.getResourceTree", {})
+        frame_tree = tree.get("result", {}).get("frameTree")
+        path: Optional[list[int]] = None
+        if frame_tree is not None and isinstance(frame_id, str):
+            self._map_frame_tree_ids(frame_tree)
+            path = self._frame_index_path(frame_tree, frame_id)
+        if not path:
+            # The message a client special-cases into "Frame has been detached."
+            await self._error_response(message, {"code": -32000, "message": "Frame with the given id was not found."})
+            return
+        parent_frame_id = self._frame_at_path(frame_tree, path[:-1])
+        if parent_frame_id is None:
+            await self._error_response(message, {"code": -32000, "message": "Frame with the given id was not found."})
+            return
+        backend_node_id = next(_FRAME_OWNER_NODE_IDS)
+        self._frame_owner_nodes[backend_node_id] = (parent_frame_id, path[-1])
+        await self.output_queue.put({"id": message["id"], "result": {"backendNodeId": backend_node_id}})
+
+    async def _dom_resolve_node(self, message: dict[str, Any]):
+        """Resolve a node back to an object. Only the frame-owner ids minted above are handled
+        here; anything else is WebKit's own and is passed through."""
+        backend_node_id = message.get("params", {}).get("backendNodeId")
+        owner = self._frame_owner_nodes.get(backend_node_id) if isinstance(backend_node_id, int) else None
+        if owner is None:
+            await self._send_message_to_target(message)
+            return
+        parent_frame_id, index = owner
+        params: dict[str, Any] = {
+            "expression": self._tag_internal(f"document.querySelectorAll('iframe, frame')[{index}]")
+        }
+        context_id = self._frame_execution_ids.get(parent_frame_id)
+        if context_id:
+            params["contextId"] = context_id
+        response = await self.send_message_with_result("Runtime.evaluate", params)
+        remote_object = response.get("result", {}).get("result")
+        if not isinstance(remote_object, dict) or "objectId" not in cast(dict[str, Any], remote_object):
+            await self._error_response(message, {"code": -32000, "message": "Frame has been detached."})
+            return
+        await self.output_queue.put({"id": message["id"], "result": {"object": remote_object}})
 
     async def _page_create_isolated_world(self, message: dict[str, Any]):
         """
@@ -872,9 +1673,17 @@ class CdpTarget:
         params = message.get("params", {})
         # _input_loop already mapped params.frameId back to WebKit's id; report the client's.
         frame_id = self._to_client_frame_id(params.get("frameId"))
-        world_name = params.get("worldName", "")
+        context_id = await self._announce_isolated_world(frame_id, params.get("worldName", ""))
+        await self.output_queue.put({"id": message["id"], "result": {"executionContextId": context_id}})
+
+    async def _announce_isolated_world(self, frame_id: Any, world_name: str) -> int:
+        """Mint a synthesized isolated world for a frame and announce it. See
+        _page_create_isolated_world for why these are synthesized at all."""
         context_id = next(_ISOLATED_WORLD_IDS)
         self._isolated_world_context_ids.add(context_id)
+        if isinstance(frame_id, str):
+            self._isolated_world_frames[context_id] = frame_id
+            self._announced_worlds.add((frame_id, world_name))
         await self.output_queue.put({
             "method": "Runtime.executionContextCreated",
             "params": {
@@ -887,18 +1696,87 @@ class CdpTarget:
                 }
             },
         })
-        await self.output_queue.put({"id": message["id"], "result": {"executionContextId": context_id}})
+        return context_id
 
     async def _dom_get_box_model(self, message: dict[str, Any]):
-        message["method"] = "DOM.highlightNode"
-        message["params"]["highlightConfig"] = {
-            "showInfo": True,
-            "contentColor": {"r": 111, "g": 168, "b": 220, "a": 0.66},
-            "paddingColor": {"r": 147, "g": 196, "b": 125, "a": 0.55},
-            "borderColor": {"r": 255, "g": 229, "b": 153, "a": 0.66},
-            "marginColor": {"r": 246, "g": 178, "b": 107, "a": 0.66},
-        }
-        await self._send_message_to_target(message)
+        """
+        WebKit has no DOM.getBoxModel. A client measures an element with it - it is how the
+        position of the frame an element sits in is worked out, so without a real answer every
+        interaction inside a child frame failed its actionability check and retried until it
+        timed out. Measure the element in-page, in the page's coordinates.
+
+        This used to be turned into a DOM.highlightNode, which drew the box rather than reporting
+        it; highlighting has its own translation (see Overlay.highlightNode).
+        """
+        object_id = message.get("params", {}).get("objectId")
+        if not object_id:
+            await self._error_response(message, {"code": -32000, "message": "objectId is required"})
+            return
+        boxes = await self._call_on_object(
+            object_id,
+            "function() {"
+            "  const node = this.nodeType === Node.ELEMENT_NODE ? this : this.parentElement;"
+            "  if (!node || !node.isConnected) { return null; }"
+            "  const rect = node.getBoundingClientRect();"
+            "  const style = window.getComputedStyle(node);"
+            "  const px = name => parseFloat(style.getPropertyValue(name)) || 0;"
+            "  return {"
+            "    left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,"
+            "    width: node.offsetWidth || rect.width, height: node.offsetHeight || rect.height,"
+            "    mt: px('margin-top'), mr: px('margin-right'), mb: px('margin-bottom'), ml: px('margin-left'),"
+            "    bt: px('border-top-width'), br: px('border-right-width'),"
+            "    bb: px('border-bottom-width'), bl: px('border-left-width'),"
+            "    pt: px('padding-top'), pr: px('padding-right'),"
+            "    pb: px('padding-bottom'), pl: px('padding-left')"
+            "  };"
+            "}",
+        )
+        measured = boxes.get("result", {}).get("result", {}).get("value")
+        if not isinstance(measured, dict):
+            await self._error_response(message, {"code": -32000, "message": "Could not compute box model."})
+            return
+        box = cast(dict[str, Any], measured)
+        offset_x, offset_y = await self._frame_viewport_offset(self._frame_of_object(cast(str, object_id)))
+
+        def quad(left: float, top: float, right: float, bottom: float) -> list[float]:
+            left += offset_x
+            right += offset_x
+            top += offset_y
+            bottom += offset_y
+            return [left, top, right, top, right, bottom, left, bottom]
+
+        border = quad(box["left"], box["top"], box["right"], box["bottom"])
+        padding = quad(
+            box["left"] + box["bl"],
+            box["top"] + box["bt"],
+            box["right"] - box["br"],
+            box["bottom"] - box["bb"],
+        )
+        content = quad(
+            box["left"] + box["bl"] + box["pl"],
+            box["top"] + box["bt"] + box["pt"],
+            box["right"] - box["br"] - box["pr"],
+            box["bottom"] - box["bb"] - box["pb"],
+        )
+        margin = quad(
+            box["left"] - box["ml"],
+            box["top"] - box["mt"],
+            box["right"] + box["mr"],
+            box["bottom"] + box["mb"],
+        )
+        await self.output_queue.put({
+            "id": message["id"],
+            "result": {
+                "model": {
+                    "content": content,
+                    "padding": padding,
+                    "border": border,
+                    "margin": margin,
+                    "width": int(box["width"]),
+                    "height": int(box["height"]),
+                }
+            },
+        })
 
     async def object_id_to_node_id(self, object_id: str):
         node = await self.send_message_with_result("DOM.requestNode", {"objectId": object_id})
@@ -1036,9 +1914,44 @@ class CdpTarget:
         # The top frame's id must be the id the client attached with (see self.frame_id); learn
         # WebKit's own id for it and rewrite it in the response the client reads.
         self._learn_webkit_frame_id(self.frame.get("id"))
-        self.frame["id"] = self._to_client_frame_id(self.frame.get("id"))
+        self._loader_id = self.frame.get("loaderId", "") or self._loader_id
+        # Every frame in the tree is reported by the id the client knows it as - the top frame's
+        # included, and so is each child's parentId. A child whose parent names WebKit's own id
+        # for the top frame refers to a frame the client has never heard of, and it drops the
+        # child rather than attaching it to nothing: the whole subtree stays invisible.
+        self._map_frame_tree_ids(result["result"]["frameTree"])
+        # The client builds frames from this snapshot too; remember them so they are not announced
+        # a second time.
+        self._remember_frame_tree(result["result"]["frameTree"])
         # result carries our internal request id; answer the frontend with its own id.
         await self.output_queue.put({"id": message["id"], "result": result["result"]})
+
+    def _map_frame_tree_ids(self, node: Any) -> None:
+        """Rewrite WebKit's frame ids to the client's throughout a frame tree, in place."""
+        if not isinstance(node, dict):
+            return
+        tree = cast(dict[str, Any], node)
+        frame = tree.get("frame")
+        if isinstance(frame, dict):
+            entry = cast(dict[str, Any], frame)
+            for key in ("id", "parentId"):
+                if key in entry:
+                    entry[key] = self._to_client_frame_id(entry[key])
+        for child in cast(list[Any], tree.get("childFrames") or []):
+            self._map_frame_tree_ids(child)
+
+    def _remember_frame_tree(self, node: Any) -> None:
+        """Record every child frame a frame tree already told the client about."""
+        if not isinstance(node, dict):
+            return
+        tree = cast(dict[str, Any], node)
+        frame = tree.get("frame")
+        if isinstance(frame, dict):
+            frame_id = cast(dict[str, Any], frame).get("id")
+            if isinstance(frame_id, str) and cast(dict[str, Any], frame).get("parentId") is not None:
+                self._announced_frames.add(frame_id)
+        for child in cast(list[Any], tree.get("childFrames") or []):
+            self._remember_frame_tree(child)
 
     async def _emulation_set_emulated_media(self, message: dict[str, Any]):
         message["method"] = "Page.setEmulatedMedia"
@@ -1196,9 +2109,28 @@ class CdpTarget:
             params.pop("uniqueContextId", None)
         elif params.get("contextId") in self._isolated_world_context_ids:
             # A synthesized isolated world (see _page_create_isolated_world) has no real context on
-            # the device; run in the page's main world instead, which WebKit does know.
-            if self._default_execution_id:
-                params["contextId"] = self._default_execution_id
+            # the device; run in the real main-world context of the frame it was created for.
+            world_frame = self._isolated_world_frames.get(params["contextId"], self.frame_id)
+            real_context = self._frame_execution_ids.get(world_frame)
+            if real_context is None and world_frame != self.frame_id:
+                # A frame whose context this session never saw - a cross-origin child, which
+                # WebKit debugs through a target of its own that this session does not adopt.
+                # Refuse: evaluating in the top frame instead would quietly answer questions
+                # about the wrong document, which is far worse than saying so.
+                await self._error_response(
+                    message,
+                    {
+                        "code": -32000,
+                        "message": (
+                            f"no execution context for frame {world_frame}; "
+                            "a cross-origin child frame is not reachable through this session"
+                        ),
+                    },
+                )
+                return
+            real_context = real_context or self._default_execution_id
+            if real_context:
+                params["contextId"] = real_context
             else:
                 params.pop("contextId", None)
         if params.get("throwOnSideEffect") and params.get("objectGroup") not in _COMPLETION_OBJECT_GROUPS:
@@ -1316,9 +2248,14 @@ class CdpTarget:
         return f'({simulate_mouse_event})("{type_}")'
 
     async def _synthesize_mouse_event(self, type_: str, x: int, y: int, modifiers: int, button: int):
-        await self.evaluate_and_result(self._mouse_event_js(type_, x, y, modifiers, button))
+        # Follow the point into the frame that owns it, so a click on something inside an iframe
+        # reaches that element rather than the frame it happens to sit in.
+        context_id, local_x, local_y = await self._context_at_point(x, y)
+        await self._evaluate_json_in(context_id, self._mouse_event_js(type_, local_x, local_y, modifiers, button))
         if type_ == "click":
-            await self.evaluate_and_result(self._mouse_event_js("mouseup", x, y, modifiers, button))
+            await self._evaluate_json_in(
+                context_id, self._mouse_event_js("mouseup", local_x, local_y, modifiers, button)
+            )
 
     async def _send_evaluate_noreply(self, expression: str) -> None:
         """
@@ -1387,9 +2324,102 @@ class CdpTarget:
 
         await self._simple_response(message, None)
 
+    @staticmethod
+    def _insert_text_js(text: str) -> str:
+        """Build the in-page expression that types `text` into the focused element.
+
+        Writes through the prototype's own value setter rather than assigning the property: a
+        framework that tracks its inputs (React and friends) patches the instance property and
+        only notices a change made through the native setter, so a plain assignment leaves the
+        field looking filled while the application still believes it is empty.
+        """
+        literal = json.dumps(text)
+        return (
+            "(function(text) {"
+            "  const el = document.activeElement;"
+            "  if (!el) { return false; }"
+            "  if (el.isContentEditable) {"
+            "    el.dispatchEvent(new InputEvent('beforeinput',"
+            "        {bubbles: true, cancelable: true, inputType: 'insertText', data: text}));"
+            "    document.execCommand('insertText', false, text);"
+            "    return true;"
+            "  }"
+            "  const tag = el.tagName ? el.tagName.toLowerCase() : '';"
+            "  if (tag !== 'input' && tag !== 'textarea') { return false; }"
+            "  if (el.disabled || el.readOnly) { return false; }"
+            "  const proto = tag === 'textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;"
+            "  const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');"
+            "  const value = el.value || '';"
+            "  const start = el.selectionStart === null || el.selectionStart === undefined"
+            "      ? value.length : el.selectionStart;"
+            "  const end = el.selectionEnd === null || el.selectionEnd === undefined"
+            "      ? value.length : el.selectionEnd;"
+            "  el.dispatchEvent(new InputEvent('beforeinput',"
+            "      {bubbles: true, cancelable: true, inputType: 'insertText', data: text}));"
+            "  const next = value.slice(0, start) + text + value.slice(end);"
+            "  if (descriptor && descriptor.set) { descriptor.set.call(el, next); } else { el.value = next; }"
+            "  try { el.setSelectionRange(start + text.length, start + text.length); } catch (e) {}"
+            "  el.dispatchEvent(new InputEvent('input',"
+            "      {bubbles: true, inputType: 'insertText', data: text}));"
+            "  return true;"
+            f"}})({literal})"
+        )
+
+    async def _input_insert_text(self, message: dict[str, Any]):
+        """
+        WebKit has no Input domain, and Input.insertText used to be swallowed by the blanket
+        acknowledgement for it - so a client's fill()/insertText() reported success and left the
+        field empty, which is worse than an error because a test believes the value went in.
+        Type it into the focused element instead.
+        """
+        text = message.get("params", {}).get("text", "")
+        if text:
+            await self._type_text(text)
+        await self._simple_response(message, None)
+
+    async def _type_text(self, text: str) -> None:
+        """Type into whichever document holds the focus (see _focused_context)."""
+        await self._evaluate_json_in(await self._focused_context(), self._insert_text_js(text))
+
+    @staticmethod
+    def _printable_key_text(params: dict[str, Any]) -> Optional[str]:
+        """The character a key event types, or None if it types nothing.
+
+        A key that performs an action rather than producing text (Enter, Tab, the arrows) either
+        carries no text or carries a control character, and is handled by the branches below.
+        """
+        text = params.get("text")
+        if not isinstance(text, str) or len(text) != 1 or text < " " or text == "\x7f":
+            return None
+        return text
+
     async def _input_dispatch_key_event(self, message: dict[str, Any]):
         params = message["params"]
         key = params["key"]
+        type_ = params["type"]
+        # Typing arrives in two shapes. DevTools sends keyDown, then a "char" event carrying the
+        # character, then keyUp; Playwright never sends "char" at all and puts the character in
+        # keyDown's own text field, which used to type nothing at all - silently, so a filled-in
+        # form stayed empty with every call reporting success. Take the character from whichever
+        # event carries it, and type it exactly once: remember what a keyDown promised, let a
+        # "char" supersede it, and fall back to typing it on keyUp when no "char" follows.
+        if type_ in ("keyDown", "rawKeyDown") and key not in ("Enter", "Backspace"):
+            self._pending_key_text = self._printable_key_text(params)
+            await self._simple_response(message, None)
+            return
+        if type_ == "keyUp" and key not in ("Enter", "Backspace"):
+            pending, self._pending_key_text = self._pending_key_text, None
+            if pending is not None:
+                await self._type_text(pending)
+            await self._simple_response(message, None)
+            return
+        if type_ == "char" and key not in ("Enter", "Backspace"):
+            self._pending_key_text = None
+            text = self._printable_key_text(params)
+            if text is not None:
+                await self._type_text(text)
+            await self._simple_response(message, None)
+            return
         if params["type"] == "keyUp" and key == "Backspace":
             manipulation = (
                 "document.activeElement.value = document.activeElement.value.slice(0, -1);"
@@ -1421,13 +2451,6 @@ class CdpTarget:
                 "        if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }"
                 "    }"
                 "}"
-            )
-        elif params["type"] == "char":
-            text = params["text"]
-            manipulation = (
-                f'document.activeElement.value = document.activeElement.value + "{text}";'
-                "document.activeElement.dispatchEvent("
-                "    new InputEvent('input', {bubbles: true, inputType: 'insertText'}));"
             )
         else:
             await self._simple_response(message, None)
@@ -1523,12 +2546,38 @@ class CdpTarget:
         # The device emits its own Page.frameNavigated for the new page, so no getResourceTree
         # round-trip is needed (and must not be done here - see _target_created). Just nudge the
         # frontend that the load finished and the document changed.
+        timestamp = datetime.now().timestamp()
         await self.output_queue.put({
             "method": "Page.loadEventFired",
             # MonotonicTime, in seconds - not a formatted string
-            "params": {"timestamp": datetime.now().timestamp()},
+            "params": {"timestamp": timestamp},
         })
+        # A client waiting on the modern lifecycle events must not be left hanging by a load that
+        # only ever produced the legacy one (see _page_set_lifecycle_events_enabled).
+        await self._emit_lifecycle_event("load", timestamp)
         await self.output_queue.put({"method": "DOM.documentUpdated"})
+
+    @staticmethod
+    def _normalize_remote_object_subtypes(obj: Any) -> None:
+        """
+        Fill in the RemoteObject.subtype Chrome sets and WebKit omits, in place and recursively.
+
+        WebKit describes a promise as `{type: "object", className: "Promise"}` with no subtype;
+        Chrome adds `subtype: "promise"`, and a client uses it to tell an object that still has to
+        be resolved from a plain one. Only the built-ins in REMOTE_OBJECT_SUBTYPES are mapped, and
+        an object that already carries a subtype is left alone.
+        """
+        if isinstance(obj, dict):
+            node = cast(dict[str, Any], obj)
+            if node.get("type") == "object" and "subtype" not in node:
+                subtype = REMOTE_OBJECT_SUBTYPES.get(cast(str, node.get("className") or ""))
+                if subtype is not None:
+                    node["subtype"] = subtype
+            for value in node.values():
+                CdpTarget._normalize_remote_object_subtypes(value)
+        elif isinstance(obj, list):
+            for value in cast(list[Any], obj):
+                CdpTarget._normalize_remote_object_subtypes(value)
 
     @staticmethod
     def _normalize_native_functions(obj: Any) -> None:
@@ -1568,6 +2617,7 @@ class CdpTarget:
             # Function objects in evaluate/callFunctionOn results carry native descriptions the
             # console autocomplete inspects; normalize them (see _normalize_native_functions).
             self._normalize_native_functions(message["result"])
+            self._normalize_remote_object_subtypes(message["result"])
         if "error" in message:
             # Expected protocol-level errors (e.g. element-only DOM queries on text nodes) are
             # already delivered to the frontend, which copes; don't shout about them here.
@@ -1656,6 +2706,8 @@ class CdpTarget:
     async def _debugger_global_object_cleared(self, message: dict[str, Any]):
         # Contexts are gone; allow their uniqueIds to be re-announced after the reload.
         self._emitted_context_unique_ids.clear()
+        self._frame_execution_ids.clear()
+        self._announced_worlds.clear()
         await self.output_queue.put({"method": "Runtime.executionContextsCleared"})
         await self.output_queue.put({"method": "DOM.documentUpdated"})
 
@@ -1680,7 +2732,13 @@ class CdpTarget:
             # Chrome's RuntimeModel (it keys contexts by uniqueId), so emit each at most once.
             return
         self._emitted_context_unique_ids.add(unique_id)
-        self._default_execution_id = context["id"]
+        self._frame_execution_ids[frame_id] = context["id"]
+        if frame_id == self.frame_id:
+            # Only the top frame's context is the page's default. A subframe announces its own,
+            # and letting that overwrite the default silently moved every evaluation addressed to
+            # "the page" into the last frame that happened to load - an ad or payment iframe.
+            self._default_execution_id = context["id"]
+        await self._announce_registered_worlds(frame_id)
         message["params"] = {
             "context": {
                 "id": context["id"],
@@ -1697,6 +2755,13 @@ class CdpTarget:
             }
         }
         await self.output_queue.put(message)
+
+    async def _announce_registered_worlds(self, frame_id: str) -> None:
+        """Give a freshly loaded document the isolated worlds the client registered by name."""
+        for world_name in self._auto_world_names:
+            if (frame_id, world_name) in self._announced_worlds:
+                continue
+            await self._announce_isolated_world(frame_id, world_name)
 
     async def _console_message_repeat_count_updated(self, message: dict[str, Any]):
         """

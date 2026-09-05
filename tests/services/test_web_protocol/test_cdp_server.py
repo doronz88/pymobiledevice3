@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import itertools
 import json
 import socket
@@ -14,7 +15,7 @@ from urllib.parse import urlsplit
 import pytest
 import uvicorn
 from wsproto import ConnectionType, WSConnection
-from wsproto.events import AcceptConnection, CloseConnection, TextMessage
+from wsproto.events import AcceptConnection, CloseConnection, Ping, TextMessage
 from wsproto.events import Request as WsRequest
 
 from pymobiledevice3.exceptions import WebInspectorNotEnabledError
@@ -146,6 +147,14 @@ class CdpWebsocketClient:
         assert self.reader is not None
         while True:
             for event in self.ws.events():
+                if isinstance(event, Ping):
+                    # uvicorn pings an idle connection and closes it when nothing pongs back
+                    # ("keepalive ping timeout"), which killed any session that ran longer than
+                    # its ping timeout - the device tests are exactly that long.
+                    assert self.writer is not None
+                    self.writer.write(self.ws.send(event.response()))
+                    await self.writer.drain()
+                    continue
                 return event
             self.ws.receive_data(await self.reader.read(4096))
 
@@ -348,6 +357,604 @@ async def testp_cdp_browser_endpoint_attaches_playwright_style(lockdown: Lockdow
             await client.close()
 
 
+async def testp_cdp_server_reports_the_navigation_lifecycle(lockdown: LockdownClient) -> None:
+    """
+    WebKit reports a load with the pre-lifecycle events Chrome replaced years ago, so a modern CDP
+    client saw a navigation happen and never learned it finished: Playwright's page.goto(),
+    page.reload() and waitForNavigation() all block on Page.lifecycleEvent, and page.goto() also
+    needs the new document's loaderId back from Page.navigate - without it the client waits for a
+    *same-document* navigation, which a real page load never reports. Both hung until timeout.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        page_id = targets[0]["id"]
+        client = CdpWebsocketClient(port, page_id)
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        try:
+            lifecycle: list[dict[str, Any]] = []
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                """client.command, keeping the lifecycle events it would otherwise discard."""
+                id_ = next(message_ids)
+                await client.send({"id": id_, "method": method, "params": params})
+
+                async def wait_for_response() -> dict[str, Any]:
+                    while True:
+                        message = await client.receive()
+                        if message.get("method") == "Page.lifecycleEvent":
+                            lifecycle.append(message["params"])
+                        if message.get("id") == id_:
+                            return message
+
+                return await asyncio.wait_for(wait_for_response(), TIMEOUT)
+
+            async def wait_for_lifecycle(name: str) -> dict[str, Any]:
+                async def wait() -> dict[str, Any]:
+                    while True:
+                        for event in lifecycle:
+                            if event["name"] == name:
+                                return event
+                        message = await client.receive()
+                        if message.get("method") == "Page.lifecycleEvent":
+                            lifecycle.append(message["params"])
+
+                return await asyncio.wait_for(wait(), TIMEOUT)
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.setLifecycleEventsEnabled", {"enabled": True})
+            lifecycle.clear()
+            # Navigating must report the document it committed, or a client cannot tell this from
+            # an in-page navigation.
+            navigate = await command("Page.navigate", {"url": "https://example.com/"})
+            assert navigate["result"].get("loaderId"), (
+                f"Page.navigate must report the committed document's loaderId: {navigate}"
+            )
+            assert navigate["result"]["frameId"] == page_id, navigate
+            # ... and the load must be announced through the modern lifecycle events.
+            load = await wait_for_lifecycle("load")
+            assert load["frameId"] == page_id, f"a lifecycle event must name the client's frame: {load}"
+            assert {event["name"] for event in lifecycle} >= {"init", "load"}, (
+                f"a committed navigation must open and finish a lifecycle: {lifecycle}"
+            )
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_implements_the_screenshot_methods(lockdown: LockdownClient) -> None:
+    """
+    Chrome's screenshot path is Page.getLayoutMetrics (for the clip and the device pixel ratio)
+    followed by Page.captureScreenshot, and WebKit implements neither - so page.screenshot() died
+    on the first of them before any capture was ever attempted. Both are synthesized: the metrics
+    by measuring the page, the capture from WebKit's own Page.snapshotRect.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                return await client.command(next(message_ids), method, params)
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+
+            metrics = await command("Page.getLayoutMetrics", {})
+            assert "result" in metrics, f"Page.getLayoutMetrics must be answered: {metrics.get('error')}"
+            content_size = metrics["result"]["contentSize"]
+            assert content_size["width"] > 0 and content_size["height"] > 0, metrics
+            # Chrome's client divides contentSize by cssContentSize to recover the pixel ratio, so
+            # the two must be consistent rather than merely present.
+            assert metrics["result"]["cssContentSize"]["width"] == content_size["width"], metrics
+            assert metrics["result"]["visualViewport"]["scale"], metrics
+
+            shot = await command(
+                "Page.captureScreenshot",
+                {"format": "png", "clip": {"x": 0, "y": 0, "width": 64, "height": 64, "scale": 1}},
+            )
+            assert "result" in shot, f"Page.captureScreenshot must be answered: {shot.get('error')}"
+            # The client feeds this straight to a base64 decoder, so it must be bare payload
+            # rather than the data: URL WebKit answers with.
+            data = shot["result"]["data"]
+            assert not data.startswith("data:"), "captureScreenshot must strip the data URL prefix"
+            assert base64.b64decode(data)[:8] == b"\x89PNG\r\n\x1a\n", "captureScreenshot must return a PNG"
+
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_implements_the_interaction_methods(lockdown: LockdownClient) -> None:
+    """
+    Before every click, fill or hover, a Chrome client brings the target into view with
+    DOM.scrollIntoViewIfNeeded and then picks the point to act on out of DOM.getContentQuads.
+    WebKit implements neither, and Playwright treats the resulting "was not found" as a retryable
+    condition - so every interaction spun until its timeout with nothing explaining why. Both are
+    synthesized by measuring and scrolling the element in-page.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                return await client.command(next(message_ids), method, params)
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+
+            body = await command("Runtime.evaluate", {"expression": "document.body"})
+            object_id = body["result"]["result"]["objectId"]
+            scrolled = await command("DOM.scrollIntoViewIfNeeded", {"objectId": object_id})
+            assert "result" in scrolled, f"DOM.scrollIntoViewIfNeeded must be answered: {scrolled.get('error')}"
+            quads = await command("DOM.getContentQuads", {"objectId": object_id})
+            assert "result" in quads, f"DOM.getContentQuads must be answered: {quads.get('error')}"
+            # A quad is the element's four corners, flattened - the client picks its click point
+            # out of these, so a malformed one silently misses the element.
+            assert quads["result"]["quads"], f"a rendered <body> must have at least one quad: {quads}"
+            assert all(len(quad) == 8 for quad in quads["result"]["quads"]), quads
+
+            # A node that is gone must be refused with the message the client special-cases,
+            # rather than looking like an unimplemented method.
+            detached = await command("Runtime.evaluate", {"expression": "document.createElement('div')"})
+            detached_error = await command(
+                "DOM.scrollIntoViewIfNeeded", {"objectId": detached["result"]["result"]["objectId"]}
+            )
+            assert "Node is detached from document" in detached_error.get("error", {}).get("message", ""), (
+                f"a detached node must be reported as such: {detached_error}"
+            )
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_keeps_each_frame_in_its_own_execution_context(lockdown: LockdownClient) -> None:
+    """
+    A page with subframes gets one main-world execution context announced per frame, and they are
+    not interchangeable. The bridge used to keep only the most recently announced one as "the
+    page's" context and route every isolated world to it, so the moment a subframe loaded - an ad
+    or a payment iframe - evaluations meant for the main frame silently ran inside that subframe
+    instead. A client's helper objects do not exist there, so its reads came back undefined.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        page_id = targets[0]["id"]
+        client = CdpWebsocketClient(port, page_id)
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        contexts: list[dict[str, Any]] = []
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                """client.command, keeping the context announcements it would otherwise drop."""
+                id_ = next(message_ids)
+                await client.send({"id": id_, "method": method, "params": params})
+
+                async def wait_for_response() -> dict[str, Any]:
+                    while True:
+                        message = await client.receive()
+                        if message.get("method") == "Runtime.executionContextCreated":
+                            contexts.append(message["params"]["context"])
+                        if message.get("id") == id_:
+                            return message
+
+                return await asyncio.wait_for(wait_for_response(), TIMEOUT)
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+            # The navigation replaced the document; only what the fresh one announces counts (a
+            # page left over from an earlier run may already have had a subframe).
+            contexts.clear()
+            world = await command(
+                "Page.createIsolatedWorld",
+                {"frameId": page_id, "worldName": "__pmd3_frame_world__", "grantUniveralAccess": True},
+            )
+            world_id = world["result"]["executionContextId"]
+
+            async def in_top_frame() -> Any:
+                """Is the main frame's isolated world still evaluating in the main frame?"""
+                response = await command(
+                    "Runtime.evaluate",
+                    {"expression": "window === window.top", "contextId": world_id, "returnByValue": True},
+                )
+                return response.get("result", {}).get("result", {}).get("value")
+
+            assert await in_top_frame() is True, "the isolated world must start in the main frame"
+
+            def subframe_announced() -> bool:
+                return any(context.get("auxData", {}).get("frameId") not in (page_id, None) for context in contexts)
+
+            # A same-origin child frame makes WebKit announce a second main-world context; that
+            # announcement is what used to hijack the page's default context.
+            await command(
+                "Runtime.evaluate",
+                {
+                    "expression": (
+                        "const f = document.createElement('iframe');"
+                        " f.src = 'https://example.com/'; document.body.appendChild(f); 'added'"
+                    ),
+                    "returnByValue": True,
+                },
+            )
+            # Keep asking while the subframe loads: the drift appears the moment its context is
+            # announced, and the answer must never move out of the top frame.
+            for _ in range(TIMEOUT):
+                assert await in_top_frame() is True, "the main frame's isolated world drifted into the subframe"
+                if subframe_announced():
+                    break
+                await asyncio.sleep(0.5)
+            assert subframe_announced(), "the subframe never announced an execution context"
+            # One more read after the announcement has definitely been processed.
+            assert await in_top_frame() is True, "the main frame's isolated world drifted into the subframe"
+
+            # A frame this session cannot reach must be refused rather than quietly answered from
+            # the top frame: a cross-origin child is debugged through a target of its own, and
+            # silently reporting the main document instead is worse than an error.
+            unreachable = await command(
+                "Page.createIsolatedWorld",
+                {"frameId": "0.unreachable", "worldName": "__pmd3_absent__", "grantUniveralAccess": True},
+            )
+            absent_world = unreachable["result"]["executionContextId"]
+            refused = await command(
+                "Runtime.evaluate",
+                {"expression": "document.URL", "contextId": absent_world, "returnByValue": True},
+            )
+            assert "result" not in refused, f"an unreachable frame must not be answered: {refused}"
+            assert "not reachable" in refused["error"]["message"], refused
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_reports_remote_object_subtypes(lockdown: LockdownClient) -> None:
+    """
+    Chrome tags a RemoteObject with the subtype of the built-in it is - most consequentially
+    `promise`, which is how a client tells a value it still has to resolve from a plain object.
+    WebKit reports only a className, so those objects arrived looking like ordinary ones.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        try:
+
+            async def evaluate(expression: str) -> dict[str, Any]:
+                response = await client.command(next(message_ids), "Runtime.evaluate", {"expression": expression})
+                return response["result"]["result"]
+
+            promise = await evaluate("Promise.resolve(42)")
+            assert promise.get("subtype") == "promise", f"a promise must be tagged as one: {promise}"
+            # Where WebKit does classify an object itself, its answer is kept rather than remapped
+            # (it calls a typed array an "array", which is a subtype Chrome also defines).
+            typed = await evaluate("new Uint8Array(1)")
+            assert typed.get("subtype") == "array", typed
+            for expression, subtype in (
+                ("[1, 2, 3]", "array"),
+                ("new Map()", "map"),
+                ("new Set()", "set"),
+                ("new Date()", "date"),
+                ("/x/", "regexp"),
+                ("new TypeError('x')", "error"),
+            ):
+                result = await evaluate(expression)
+                assert result.get("subtype") == subtype, f"{expression} -> {result}"
+            # A page's own class is not a built-in and must stay a plain object.
+            custom = await evaluate("(class Promise2 { })  && new (class Foo { })()")
+            assert "subtype" not in custom, f"a plain object must not be given a subtype: {custom}"
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_types_text_into_the_page(lockdown: LockdownClient) -> None:
+    """
+    WebKit has no Input domain, so the bridge types in-page. Two shapes have to work, because a
+    client sends one or the other and never both: Input.insertText (what fill() uses), and a
+    character carried on a key event. DevTools puts it on a "char" event; Playwright puts it on
+    keyDown and never sends "char" at all, which used to type nothing - silently, with every call
+    reporting success, so a form stayed empty while a test believed it was filled. The character
+    must also be typed exactly once when a client sends both.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                return await client.command(next(message_ids), method, params)
+
+            async def evaluate(expression: str) -> Any:
+                response = await command("Runtime.evaluate", {"expression": expression, "returnByValue": True})
+                return response.get("result", {}).get("result", {}).get("value")
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+
+            async def reset_field() -> None:
+                await evaluate(
+                    "(function () {"
+                    "  document.body.innerHTML = '';"
+                    "  var el = document.createElement('input');"
+                    "  el.id = 'f';"
+                    "  el.type = 'text';"
+                    "  document.body.appendChild(el);"
+                    "  el.focus();"
+                    "  return 'ok';"
+                    "})()"
+                )
+
+            async def field_value() -> Any:
+                return await evaluate("document.getElementById('f').value")
+
+            # Input.insertText must reach the page rather than being acknowledged into the void.
+            await reset_field()
+            await command("Input.insertText", {"text": "hello"})
+            assert await field_value() == "hello", "Input.insertText must type into the focused field"
+
+            # A character carried on keyDown alone (no "char" event ever sent) must be typed.
+            await reset_field()
+            for char in "abc":
+                await command("Input.dispatchKeyEvent", {"type": "keyDown", "key": char, "text": char})
+                await command("Input.dispatchKeyEvent", {"type": "keyUp", "key": char, "text": char})
+            assert await field_value() == "abc", "a character carried on keyDown must be typed"
+
+            # A client that sends keyDown, char and keyUp for one key must type it once, not twice.
+            await reset_field()
+            await command("Input.dispatchKeyEvent", {"type": "keyDown", "key": "x", "text": "x"})
+            await command("Input.dispatchKeyEvent", {"type": "char", "key": "x", "text": "x"})
+            await command("Input.dispatchKeyEvent", {"type": "keyUp", "key": "x", "text": "x"})
+            assert await field_value() == "x", "a key sent as keyDown+char+keyUp must be typed once"
+
+            # A key that performs an action rather than producing text must not type anything.
+            await reset_field()
+            for type_ in ("keyDown", "keyUp"):
+                await command("Input.dispatchKeyEvent", {"type": type_, "key": "ArrowLeft", "code": "ArrowLeft"})
+            assert await field_value() == "", "a non-printable key must not type anything"
+
+            # The value must be written through the native setter, or a framework that tracks its
+            # inputs never sees the change (the field looks filled while the app believes it empty).
+            await reset_field()
+            await evaluate(
+                "window.__seen = [];"
+                " document.getElementById('f').addEventListener('input', e => window.__seen.push(e.target.value));"
+                " 'ok'"
+            )
+            await command("Input.insertText", {"text": "abc"})
+            assert await evaluate("JSON.stringify(window.__seen)") == '["abc"]', (
+                "typing must fire a real input event carrying the new value"
+            )
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_makes_child_frames_reachable(lockdown: LockdownClient) -> None:
+    """
+    A client builds its frame model from the live attach/navigate pair and only walks the frame
+    tree once, when it attaches. WebKit never sends Page.frameAttached, so every child frame that
+    appeared later - or was recreated by a reload - stayed invisible: page.frames() never grew and
+    a navigation for a frame the client did not know was discarded. Reaching into one needs two
+    more things WebKit does not provide: DOM.describeNode, to resolve an <iframe> element to the
+    frame it hosts, and the named isolated world Chrome creates in every document that loads.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        page_id = targets[0]["id"]
+        client = CdpWebsocketClient(port, page_id)
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        world_name = "__pmd3_auto_world__"
+        events: list[dict[str, Any]] = []
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                """client.command, keeping the frame and context events it would otherwise drop."""
+                id_ = next(message_ids)
+                await client.send({"id": id_, "method": method, "params": params})
+
+                async def wait_for_response() -> dict[str, Any]:
+                    while True:
+                        message = await client.receive()
+                        if "id" not in message:
+                            events.append(message)
+                        if message.get("id") == id_:
+                            return message
+
+                return await asyncio.wait_for(wait_for_response(), TIMEOUT)
+
+            def child_frame_id() -> Optional[str]:
+                return next(
+                    (event["params"]["frameId"] for event in events if event.get("method") == "Page.frameAttached"),
+                    None,
+                )
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+            # Registering a world by name is how a client asks for one in every document, rather
+            # than creating it per frame - a frame that appears later has to get it too.
+            await command("Page.addScriptToEvaluateOnNewDocument", {"source": "", "worldName": world_name})
+            events.clear()
+
+            await command(
+                "Runtime.evaluate",
+                {
+                    "expression": (
+                        "const f = document.createElement('iframe');"
+                        " f.name = 'pmd3kid'; f.src = 'https://example.com/';"
+                        " document.body.appendChild(f); 'added'"
+                    ),
+                    "returnByValue": True,
+                },
+            )
+            for _ in range(TIMEOUT):
+                if child_frame_id() is not None:
+                    break
+                await command("Runtime.evaluate", {"expression": "1", "returnByValue": True})
+                await asyncio.sleep(0.5)
+            frame_id = child_frame_id()
+            assert frame_id is not None, "a child frame must be announced with Page.frameAttached"
+            attached = next(event for event in events if event.get("method") == "Page.frameAttached")
+            assert attached["params"]["parentFrameId"] == page_id, attached
+
+            # The world the client registered by name must exist in the new frame as well.
+            async def auto_world_for(frame: str) -> Optional[int]:
+                for event in events:
+                    if event.get("method") != "Runtime.executionContextCreated":
+                        continue
+                    context = event["params"]["context"]
+                    if context.get("name") == world_name and context["auxData"].get("frameId") == frame:
+                        return context["id"]
+                return None
+
+            for _ in range(TIMEOUT):
+                if await auto_world_for(frame_id) is not None:
+                    break
+                await command("Runtime.evaluate", {"expression": "1", "returnByValue": True})
+                await asyncio.sleep(0.5)
+            world_id = await auto_world_for(frame_id)
+            assert world_id is not None, f"the registered world must be created in the child frame: {world_name}"
+
+            # It must really be the child frame's world, not the page's.
+            in_child = await command(
+                "Runtime.evaluate",
+                {"expression": "window === window.top", "contextId": world_id, "returnByValue": True},
+            )
+            assert in_child["result"]["result"]["value"] is False, (
+                f"the child frame's world must evaluate inside the child frame: {in_child}"
+            )
+
+            # And the <iframe> element must resolve to that same frame, which is how a client
+            # reaches into it from a locator.
+            element = await command(
+                "Runtime.evaluate", {"expression": "document.querySelector('iframe[name=pmd3kid]')"}
+            )
+            described = await command("DOM.describeNode", {"objectId": element["result"]["result"]["objectId"]})
+            assert described["result"]["node"].get("frameId") == frame_id, (
+                f"an iframe element must resolve to the frame it hosts: {described}"
+            )
+
+            # The frame tree is the only way a client attaching later learns about frames that
+            # already exist, and it walks the tree by parent: a child whose parentId names
+            # WebKit's own id for the top frame refers to a frame the client never heard of, and
+            # the whole subtree is dropped.
+            tree = await command("Page.getFrameTree", {})
+            children = tree["result"]["frameTree"].get("childFrames") or []
+            assert children, f"the frame tree must report the child frame: {tree}"
+            assert children[0]["frame"]["parentId"] == page_id, (
+                f"a child frame's parentId must be the id the client knows the top frame by: {children[0]}"
+            )
+            assert children[0]["frame"]["id"] == frame_id, children[0]
+
+            # Typing must reach the field the focus is really on, even when that is inside the
+            # child frame rather than the document the session is attached to.
+            await command(
+                "Runtime.evaluate",
+                {
+                    "expression": (
+                        "(function () {"
+                        "  const doc = document.querySelector('iframe[name=pmd3kid]').contentDocument;"
+                        "  const input = doc.createElement('input');"
+                        "  input.id = 'inner';"
+                        "  doc.body.appendChild(input);"
+                        "  input.focus();"
+                        "  return 'ok';"
+                        "})()"
+                    ),
+                    "returnByValue": True,
+                },
+            )
+            await command("Input.insertText", {"text": "typed"})
+            typed = await command(
+                "Runtime.evaluate",
+                {
+                    "expression": (
+                        "document.querySelector('iframe[name=pmd3kid]').contentDocument.getElementById('inner').value"
+                    ),
+                    "returnByValue": True,
+                },
+            )
+            assert typed["result"]["result"]["value"] == "typed", (
+                f"typing must follow the focus into the child frame: {typed}"
+            )
+        finally:
+            await client.close()
+
+
+async def testp_cdp_browser_endpoint_gives_each_attachment_its_own_session(lockdown: LockdownClient) -> None:
+    """
+    A client may attach to one page more than once - Playwright drives a page through the session
+    it was auto-attached with and opens another for raw protocol access. Handing the second
+    attachment the first one's session id made each receive the other's answers, because a client
+    numbers its request ids per session and both start at one. That trips an assertion inside the
+    client and takes the whole connection down, not just the extra session.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        version = await http_get_json(port, "/json/version/")
+        browser_id = urlsplit(version["webSocketDebuggerUrl"]).path.rsplit("/", 1)[1]
+        page_id = targets[0]["id"]
+        client = CdpBrowserWebsocketClient(port, browser_id)
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        try:
+            await client.send({
+                "id": 1,
+                "method": "Target.setAutoAttach",
+                "params": {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True},
+            })
+
+            async def wait_for_page_attached() -> dict[str, Any]:
+                while True:
+                    message = await client.receive()
+                    if (
+                        message.get("method") == "Target.attachedToTarget"
+                        and message["params"]["targetInfo"]["targetId"] == page_id
+                    ):
+                        return message
+
+            attached = await asyncio.wait_for(wait_for_page_attached(), TIMEOUT)
+            first = attached["params"]["sessionId"]
+
+            second_reply = await client.command(2, "Target.attachToTarget", {"targetId": page_id, "flatten": True})
+            second = second_reply["result"]["sessionId"]
+            assert second != first, f"a second attachment must get a session of its own: {second}"
+
+            # The crux: both sessions use the same request id. Each answer has to come back on the
+            # session that asked, carrying that session's own result.
+            await client.send({
+                "id": 77,
+                "sessionId": first,
+                "method": "Runtime.evaluate",
+                "params": {"expression": "'first-session'", "returnByValue": True},
+            })
+            await client.send({
+                "id": 77,
+                "sessionId": second,
+                "method": "Runtime.evaluate",
+                "params": {"expression": "'second-session'", "returnByValue": True},
+            })
+
+            async def collect_answers() -> dict[str, Any]:
+                answers: dict[str, Any] = {}
+                while len(answers) < 2:
+                    message = await client.receive()
+                    if message.get("id") == 77 and "sessionId" in message:
+                        answers[message["sessionId"]] = message
+                return answers
+
+            answers = await asyncio.wait_for(collect_answers(), TIMEOUT)
+            assert answers[first]["result"]["result"]["value"] == "first-session", answers[first]
+            assert answers[second]["result"]["result"]["value"] == "second-session", answers[second]
+
+            # Detaching the extra session must leave the page usable through the original one.
+            await client.command(3, "Target.detachFromTarget", {"sessionId": second})
+            still_working = await client.session_command(
+                first, 4, "Runtime.evaluate", {"expression": "40 + 2", "returnByValue": True}
+            )
+            assert still_working["result"]["result"]["value"] == 42, still_working
+        finally:
+            await client.close()
+
+
 async def testp_cdp_server_drives_a_javascript_context(lockdown: LockdownClient) -> None:
     """
     A JSContext debuggable (any process that called -[JSContext setInspectable:YES]) implements
@@ -544,8 +1151,11 @@ async def testp_cdp_server_survives_process_swaps(lockdown: LockdownClient) -> N
             # Two distinct origins guarantee at least one process swap wherever Safari starts.
             for url, host in (("https://example.com/", "example.com"), ("https://www.apple.com/", "apple.com")):
                 id_ += 1
-                await client.command(id_, "Page.navigate", {"url": url})
+                # Cleared before navigating, not after: Page.navigate answers once the document
+                # it started has committed (that is when WebKit reveals the loaderId it must
+                # report), so the new load's events are already delivered by the time it returns.
                 client.seen_events.clear()
+                await client.command(id_, "Page.navigate", {"url": url})
                 reached = False
                 for _ in range(TIMEOUT):
                     id_ += 1
