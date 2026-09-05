@@ -881,6 +881,80 @@ async def testp_cdp_server_makes_child_frames_reachable(lockdown: LockdownClient
             await client.close()
 
 
+async def testp_cdp_browser_endpoint_gives_each_attachment_its_own_session(lockdown: LockdownClient) -> None:
+    """
+    A client may attach to one page more than once - Playwright drives a page through the session
+    it was auto-attached with and opens another for raw protocol access. Handing the second
+    attachment the first one's session id made each receive the other's answers, because a client
+    numbers its request ids per session and both start at one. That trips an assertion inside the
+    client and takes the whole connection down, not just the extra session.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        version = await http_get_json(port, "/json/version/")
+        browser_id = urlsplit(version["webSocketDebuggerUrl"]).path.rsplit("/", 1)[1]
+        page_id = targets[0]["id"]
+        client = CdpBrowserWebsocketClient(port, browser_id)
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        try:
+            await client.send({
+                "id": 1,
+                "method": "Target.setAutoAttach",
+                "params": {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True},
+            })
+
+            async def wait_for_page_attached() -> dict[str, Any]:
+                while True:
+                    message = await client.receive()
+                    if (
+                        message.get("method") == "Target.attachedToTarget"
+                        and message["params"]["targetInfo"]["targetId"] == page_id
+                    ):
+                        return message
+
+            attached = await asyncio.wait_for(wait_for_page_attached(), TIMEOUT)
+            first = attached["params"]["sessionId"]
+
+            second_reply = await client.command(2, "Target.attachToTarget", {"targetId": page_id, "flatten": True})
+            second = second_reply["result"]["sessionId"]
+            assert second != first, f"a second attachment must get a session of its own: {second}"
+
+            # The crux: both sessions use the same request id. Each answer has to come back on the
+            # session that asked, carrying that session's own result.
+            await client.send({
+                "id": 77,
+                "sessionId": first,
+                "method": "Runtime.evaluate",
+                "params": {"expression": "'first-session'", "returnByValue": True},
+            })
+            await client.send({
+                "id": 77,
+                "sessionId": second,
+                "method": "Runtime.evaluate",
+                "params": {"expression": "'second-session'", "returnByValue": True},
+            })
+
+            async def collect_answers() -> dict[str, Any]:
+                answers: dict[str, Any] = {}
+                while len(answers) < 2:
+                    message = await client.receive()
+                    if message.get("id") == 77 and "sessionId" in message:
+                        answers[message["sessionId"]] = message
+                return answers
+
+            answers = await asyncio.wait_for(collect_answers(), TIMEOUT)
+            assert answers[first]["result"]["result"]["value"] == "first-session", answers[first]
+            assert answers[second]["result"]["result"]["value"] == "second-session", answers[second]
+
+            # Detaching the extra session must leave the page usable through the original one.
+            await client.command(3, "Target.detachFromTarget", {"sessionId": second})
+            still_working = await client.session_command(
+                first, 4, "Runtime.evaluate", {"expression": "40 + 2", "returnByValue": True}
+            )
+            assert still_working["result"]["result"]["value"] == 42, still_working
+        finally:
+            await client.close()
+
+
 async def testp_cdp_server_drives_a_javascript_context(lockdown: LockdownClient) -> None:
     """
     A JSContext debuggable (any process that called -[JSContext setInspectable:YES]) implements
