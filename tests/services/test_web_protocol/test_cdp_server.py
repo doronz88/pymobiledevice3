@@ -729,6 +729,114 @@ async def testp_cdp_server_types_text_into_the_page(lockdown: LockdownClient) ->
             await client.close()
 
 
+async def testp_cdp_server_makes_child_frames_reachable(lockdown: LockdownClient) -> None:
+    """
+    A client builds its frame model from the live attach/navigate pair and only walks the frame
+    tree once, when it attaches. WebKit never sends Page.frameAttached, so every child frame that
+    appeared later - or was recreated by a reload - stayed invisible: page.frames() never grew and
+    a navigation for a frame the client did not know was discarded. Reaching into one needs two
+    more things WebKit does not provide: DOM.describeNode, to resolve an <iframe> element to the
+    frame it hosts, and the named isolated world Chrome creates in every document that loads.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        page_id = targets[0]["id"]
+        client = CdpWebsocketClient(port, page_id)
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        world_name = "__pmd3_auto_world__"
+        events: list[dict[str, Any]] = []
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                """client.command, keeping the frame and context events it would otherwise drop."""
+                id_ = next(message_ids)
+                await client.send({"id": id_, "method": method, "params": params})
+
+                async def wait_for_response() -> dict[str, Any]:
+                    while True:
+                        message = await client.receive()
+                        if "id" not in message:
+                            events.append(message)
+                        if message.get("id") == id_:
+                            return message
+
+                return await asyncio.wait_for(wait_for_response(), TIMEOUT)
+
+            def child_frame_id() -> Optional[str]:
+                return next(
+                    (event["params"]["frameId"] for event in events if event.get("method") == "Page.frameAttached"),
+                    None,
+                )
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+            # Registering a world by name is how a client asks for one in every document, rather
+            # than creating it per frame - a frame that appears later has to get it too.
+            await command("Page.addScriptToEvaluateOnNewDocument", {"source": "", "worldName": world_name})
+            events.clear()
+
+            await command(
+                "Runtime.evaluate",
+                {
+                    "expression": (
+                        "const f = document.createElement('iframe');"
+                        " f.name = 'pmd3kid'; f.src = 'https://example.com/';"
+                        " document.body.appendChild(f); 'added'"
+                    ),
+                    "returnByValue": True,
+                },
+            )
+            for _ in range(TIMEOUT):
+                if child_frame_id() is not None:
+                    break
+                await command("Runtime.evaluate", {"expression": "1", "returnByValue": True})
+                await asyncio.sleep(0.5)
+            frame_id = child_frame_id()
+            assert frame_id is not None, "a child frame must be announced with Page.frameAttached"
+            attached = next(event for event in events if event.get("method") == "Page.frameAttached")
+            assert attached["params"]["parentFrameId"] == page_id, attached
+
+            # The world the client registered by name must exist in the new frame as well.
+            async def auto_world_for(frame: str) -> Optional[int]:
+                for event in events:
+                    if event.get("method") != "Runtime.executionContextCreated":
+                        continue
+                    context = event["params"]["context"]
+                    if context.get("name") == world_name and context["auxData"].get("frameId") == frame:
+                        return context["id"]
+                return None
+
+            for _ in range(TIMEOUT):
+                if await auto_world_for(frame_id) is not None:
+                    break
+                await command("Runtime.evaluate", {"expression": "1", "returnByValue": True})
+                await asyncio.sleep(0.5)
+            world_id = await auto_world_for(frame_id)
+            assert world_id is not None, f"the registered world must be created in the child frame: {world_name}"
+
+            # It must really be the child frame's world, not the page's.
+            in_child = await command(
+                "Runtime.evaluate",
+                {"expression": "window === window.top", "contextId": world_id, "returnByValue": True},
+            )
+            assert in_child["result"]["result"]["value"] is False, (
+                f"the child frame's world must evaluate inside the child frame: {in_child}"
+            )
+
+            # And the <iframe> element must resolve to that same frame, which is how a client
+            # reaches into it from a locator.
+            element = await command(
+                "Runtime.evaluate", {"expression": "document.querySelector('iframe[name=pmd3kid]')"}
+            )
+            described = await command("DOM.describeNode", {"objectId": element["result"]["result"]["objectId"]})
+            assert described["result"]["node"].get("frameId") == frame_id, (
+                f"an iframe element must resolve to the frame it hosts: {described}"
+            )
+        finally:
+            await client.close()
+
+
 async def testp_cdp_server_drives_a_javascript_context(lockdown: LockdownClient) -> None:
     """
     A JSContext debuggable (any process that called -[JSContext setInspectable:YES]) implements

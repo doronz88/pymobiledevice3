@@ -268,6 +268,15 @@ class CdpTarget:
         # Frame -> the id of the main-world execution context WebKit announced for it. A page with
         # subframes announces one per frame, and they are not interchangeable.
         self._frame_execution_ids: dict[str, int] = {}
+        # Child frames the client has been told about, so each is announced once (see
+        # _page_frame_navigated).
+        self._announced_frames: set[str] = set()
+        # World names the client registered through Page.addScriptToEvaluateOnNewDocument. Chrome
+        # creates a world of that name in every document that loads; the bridge does the same, so
+        # a frame that appears later still gets the world its client expects to evaluate in.
+        self._auto_world_names: list[str] = []
+        # (frame, world name) pairs already announced, so each world is minted once per document.
+        self._announced_worlds: set[tuple[str, str]] = set()
         # Whether the client asked for Page.lifecycleEvent (Chrome only reports those once
         # Page.setLifecycleEventsEnabled turned them on, and DevTools never asks).
         self._lifecycle_events_enabled = False
@@ -352,6 +361,9 @@ class CdpTarget:
             # WebKit implements neither, and a Chrome client's click/fill path is built on both.
             "DOM.scrollIntoViewIfNeeded": self._dom_scroll_into_view_if_needed,
             "DOM.getContentQuads": self._dom_get_content_quads,
+            # WebKit has no DOM.describeNode; a client resolves an <iframe> element to the frame
+            # it hosts through it, which is how frameLocator() reaches into a child frame.
+            "DOM.describeNode": self._dom_describe_node,
             "Accessibility.enable": partial(self._simple_response, value=None),
             "Autofill.enable": partial(self._simple_response, value=None),
             "Autofill.setAddresses": partial(self._simple_response, value=None),
@@ -402,6 +414,7 @@ class CdpTarget:
             # WebKit reports a load's progress with the pre-lifecycle events Chrome has long since
             # replaced; each is also turned into the Page.lifecycleEvent modern clients wait on.
             "Page.frameNavigated": self._page_frame_navigated,
+            "Page.frameDetached": self._page_frame_detached,
             "Page.domContentEventFired": self._page_dom_content_event_fired,
             "Page.loadEventFired": self._page_load_event_fired,
         }
@@ -970,6 +983,12 @@ class CdpTarget:
         await self.output_queue.put({"id": message["id"], "result": {"fonts": []}})
 
     async def _page_add_script_to_evaluate_on_new_document(self, message: dict[str, Any]):
+        # The script itself cannot be honoured (WebKit has no equivalent), but the world it names
+        # must be: Chrome creates a world of that name in every document that loads, and that is
+        # how a client gets an isolated world in a frame it never explicitly asked about.
+        world_name = message.get("params", {}).get("worldName")
+        if isinstance(world_name, str) and world_name and world_name not in self._auto_world_names:
+            self._auto_world_names.append(world_name)
         await self.output_queue.put({"id": message["id"], "result": {"identifier": "1"}})
 
     async def _page_set_lifecycle_events_enabled(self, message: dict[str, Any]):
@@ -1013,6 +1032,23 @@ class CdpTarget:
             self._top_frame_commits += 1
         # This handler bypasses the pass-through path, so map the frame ids here.
         self._map_frame_ids_outbound(message)
+        mapped = message.get("params", {}).get("frame", {})
+        client_frame_id = mapped.get("id")
+        client_parent_id = mapped.get("parentId")
+        if (
+            client_parent_id is not None
+            and isinstance(client_frame_id, str)
+            and client_frame_id not in self._announced_frames
+        ):
+            # WebKit never sends Page.frameAttached. A client builds its frame model from the live
+            # attach/navigate pair and only walks the frame tree once, when it attaches - so every
+            # child frame that appeared later (or was recreated by a reload) stayed invisible to
+            # it, and a navigation for a frame it does not know is discarded. Announce it first.
+            self._announced_frames.add(client_frame_id)
+            await self.output_queue.put({
+                "method": "Page.frameAttached",
+                "params": {"frameId": client_frame_id, "parentFrameId": client_parent_id},
+            })
         await self.output_queue.put(message)
         # Chrome opens every document's lifecycle with "init" at commit time.
         await self._emit_lifecycle_event(
@@ -1021,6 +1057,15 @@ class CdpTarget:
             frame_id=self._to_client_frame_id(webkit_frame_id),
             loader_id=frame.get("loaderId", ""),
         )
+
+    async def _page_frame_detached(self, message: dict[str, Any]):
+        """Forward the detach and forget the frame, so one that comes back is announced again."""
+        self._map_frame_ids_outbound(message)
+        frame_id = message.get("params", {}).get("frameId")
+        if isinstance(frame_id, str):
+            self._announced_frames.discard(frame_id)
+            self._frame_execution_ids.pop(frame_id, None)
+        await self.output_queue.put(message)
 
     async def _page_dom_content_event_fired(self, message: dict[str, Any]):
         await self.output_queue.put(message)
@@ -1237,6 +1282,84 @@ class CdpTarget:
             return
         await self.output_queue.put({"id": message["id"], "result": {"quads": quads}})
 
+    def _find_frame_in_tree(self, node: Any, name: str, url: str) -> Optional[str]:
+        """Find the frame an <iframe> hosts, by the name it was given or the URL it loaded.
+
+        WebKit exposes no handle from a DOM element to its frame, so the two are correlated
+        through the frame tree. A name is authoritative when the page sets one; otherwise the URL
+        identifies the frame, and an ambiguous match is reported as no match rather than a guess.
+        """
+        matches: list[str] = []
+
+        def walk(tree: Any) -> None:
+            if not isinstance(tree, dict):
+                return
+            branch = cast(dict[str, Any], tree)
+            frame = branch.get("frame")
+            if isinstance(frame, dict):
+                candidate = cast(dict[str, Any], frame)
+                frame_id = candidate.get("id")
+                is_child = isinstance(frame_id, str) and candidate.get("parentId") is not None
+                identified = (name and candidate.get("name") == name) or (
+                    not name and url and candidate.get("url") == url
+                )
+                if is_child and identified:
+                    matches.append(cast(str, frame_id))
+            for child in cast(list[Any], branch.get("childFrames") or []):
+                walk(child)
+
+        walk(node)
+        return matches[0] if len(matches) == 1 else None
+
+    async def _dom_describe_node(self, message: dict[str, Any]):
+        """
+        WebKit has no DOM.describeNode. A client uses it to resolve an <iframe> element to the
+        frame it hosts - that is how frameLocator()/contentFrame() reach into a child frame - and
+        reads `node.frameId` out of the answer. Correlate the element with the frame tree.
+        """
+        object_id = message.get("params", {}).get("objectId")
+        if not object_id:
+            await self._error_response(message, {"code": -32000, "message": "objectId is required"})
+            return
+        described = await self._call_on_object(
+            object_id,
+            "function() {"
+            "  if (!this.tagName) { return null; }"
+            "  const tag = this.tagName.toLowerCase();"
+            "  return {"
+            "    nodeName: this.tagName,"
+            "    localName: tag,"
+            "    isFrame: tag === 'iframe' || tag === 'frame',"
+            "    name: this.getAttribute ? (this.getAttribute('name') || '') : '',"
+            "    url: this.src || ''"
+            "  };"
+            "}",
+        )
+        value = described.get("result", {}).get("result", {}).get("value")
+        if not isinstance(value, dict):
+            await self._error_response(message, {"code": -32000, "message": "Node is detached from document"})
+            return
+        info = cast(dict[str, Any], value)
+        node: dict[str, Any] = {
+            "nodeId": 0,
+            "backendNodeId": 0,
+            "nodeType": 1,
+            "nodeName": info.get("nodeName", ""),
+            "localName": info.get("localName", ""),
+            "nodeValue": "",
+            "childNodeCount": 0,
+            "attributes": [],
+        }
+        if info.get("isFrame"):
+            tree = await self.send_message_with_result("Page.getResourceTree", {})
+            frame_tree = tree.get("result", {}).get("frameTree")
+            webkit_frame_id = self._find_frame_in_tree(
+                frame_tree, cast(str, info.get("name") or ""), cast(str, info.get("url") or "")
+            )
+            if webkit_frame_id is not None:
+                node["frameId"] = self._to_client_frame_id(webkit_frame_id)
+        await self.output_queue.put({"id": message["id"], "result": {"node": node}})
+
     async def _page_create_isolated_world(self, message: dict[str, Any]):
         """
         WebKit's Web Inspector has no Page.createIsolatedWorld. Chrome clients (Playwright) create
@@ -1253,11 +1376,17 @@ class CdpTarget:
         params = message.get("params", {})
         # _input_loop already mapped params.frameId back to WebKit's id; report the client's.
         frame_id = self._to_client_frame_id(params.get("frameId"))
-        world_name = params.get("worldName", "")
+        context_id = await self._announce_isolated_world(frame_id, params.get("worldName", ""))
+        await self.output_queue.put({"id": message["id"], "result": {"executionContextId": context_id}})
+
+    async def _announce_isolated_world(self, frame_id: Any, world_name: str) -> int:
+        """Mint a synthesized isolated world for a frame and announce it. See
+        _page_create_isolated_world for why these are synthesized at all."""
         context_id = next(_ISOLATED_WORLD_IDS)
         self._isolated_world_context_ids.add(context_id)
         if isinstance(frame_id, str):
             self._isolated_world_frames[context_id] = frame_id
+            self._announced_worlds.add((frame_id, world_name))
         await self.output_queue.put({
             "method": "Runtime.executionContextCreated",
             "params": {
@@ -1270,7 +1399,7 @@ class CdpTarget:
                 }
             },
         })
-        await self.output_queue.put({"id": message["id"], "result": {"executionContextId": context_id}})
+        return context_id
 
     async def _dom_get_box_model(self, message: dict[str, Any]):
         message["method"] = "DOM.highlightNode"
@@ -1421,8 +1550,24 @@ class CdpTarget:
         self._learn_webkit_frame_id(self.frame.get("id"))
         self.frame["id"] = self._to_client_frame_id(self.frame.get("id"))
         self._loader_id = self.frame.get("loaderId", "") or self._loader_id
+        # The client builds frames from this snapshot too; remember them so they are not announced
+        # a second time.
+        self._remember_frame_tree(result["result"]["frameTree"])
         # result carries our internal request id; answer the frontend with its own id.
         await self.output_queue.put({"id": message["id"], "result": result["result"]})
+
+    def _remember_frame_tree(self, node: Any) -> None:
+        """Record every child frame a frame tree already told the client about."""
+        if not isinstance(node, dict):
+            return
+        tree = cast(dict[str, Any], node)
+        frame = tree.get("frame")
+        if isinstance(frame, dict):
+            frame_id = cast(dict[str, Any], frame).get("id")
+            if isinstance(frame_id, str) and cast(dict[str, Any], frame).get("parentId") is not None:
+                self._announced_frames.add(frame_id)
+        for child in cast(list[Any], tree.get("childFrames") or []):
+            self._remember_frame_tree(child)
 
     async def _emulation_set_emulated_media(self, message: dict[str, Any]):
         message["method"] = "Page.setEmulatedMedia"
@@ -2169,6 +2314,7 @@ class CdpTarget:
         # Contexts are gone; allow their uniqueIds to be re-announced after the reload.
         self._emitted_context_unique_ids.clear()
         self._frame_execution_ids.clear()
+        self._announced_worlds.clear()
         await self.output_queue.put({"method": "Runtime.executionContextsCleared"})
         await self.output_queue.put({"method": "DOM.documentUpdated"})
 
@@ -2199,6 +2345,7 @@ class CdpTarget:
             # and letting that overwrite the default silently moved every evaluation addressed to
             # "the page" into the last frame that happened to load - an ad or payment iframe.
             self._default_execution_id = context["id"]
+        await self._announce_registered_worlds(frame_id)
         message["params"] = {
             "context": {
                 "id": context["id"],
@@ -2215,6 +2362,13 @@ class CdpTarget:
             }
         }
         await self.output_queue.put(message)
+
+    async def _announce_registered_worlds(self, frame_id: str) -> None:
+        """Give a freshly loaded document the isolated worlds the client registered by name."""
+        for world_name in self._auto_world_names:
+            if (frame_id, world_name) in self._announced_worlds:
+                continue
+            await self._announce_isolated_world(frame_id, world_name)
 
     async def _console_message_repeat_count_updated(self, message: dict[str, Any]):
         """
