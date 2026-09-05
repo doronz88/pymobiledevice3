@@ -592,6 +592,45 @@ async def testp_cdp_server_keeps_each_frame_in_its_own_execution_context(lockdow
             await client.close()
 
 
+async def testp_cdp_server_reports_remote_object_subtypes(lockdown: LockdownClient) -> None:
+    """
+    Chrome tags a RemoteObject with the subtype of the built-in it is - most consequentially
+    `promise`, which is how a client tells a value it still has to resolve from a plain object.
+    WebKit reports only a className, so those objects arrived looking like ordinary ones.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        try:
+
+            async def evaluate(expression: str) -> dict[str, Any]:
+                response = await client.command(next(message_ids), "Runtime.evaluate", {"expression": expression})
+                return response["result"]["result"]
+
+            promise = await evaluate("Promise.resolve(42)")
+            assert promise.get("subtype") == "promise", f"a promise must be tagged as one: {promise}"
+            # Where WebKit does classify an object itself, its answer is kept rather than remapped
+            # (it calls a typed array an "array", which is a subtype Chrome also defines).
+            typed = await evaluate("new Uint8Array(1)")
+            assert typed.get("subtype") == "array", typed
+            for expression, subtype in (
+                ("[1, 2, 3]", "array"),
+                ("new Map()", "map"),
+                ("new Set()", "set"),
+                ("new Date()", "date"),
+                ("/x/", "regexp"),
+                ("new TypeError('x')", "error"),
+            ):
+                result = await evaluate(expression)
+                assert result.get("subtype") == subtype, f"{expression} -> {result}"
+            # A page's own class is not a built-in and must stay a plain object.
+            custom = await evaluate("(class Promise2 { })  && new (class Foo { })()")
+            assert "subtype" not in custom, f"a plain object must not be given a subtype: {custom}"
+        finally:
+            await client.close()
+
+
 async def testp_cdp_server_drives_a_javascript_context(lockdown: LockdownClient) -> None:
     """
     A JSContext debuggable (any process that called -[JSContext setInspectable:YES]) implements

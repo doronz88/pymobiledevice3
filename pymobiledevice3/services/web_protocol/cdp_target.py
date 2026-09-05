@@ -178,6 +178,44 @@ WEBKIT_SCOPE_TYPE_MAP = {
     "functionInParameter": "local",
 }
 
+# Chrome sets RemoteObject.subtype for the built-in object kinds a client dispatches on; WebKit
+# reports only className for most of them. A missing "promise" in particular strands a client that
+# uses it to decide the value still has to be awaited, so it reads a result that is not there yet.
+# Only unambiguous JavaScript built-ins are mapped - a page's own class named "Map" would be a
+# plain object, but so would Chrome report it, since it keys off the internal type, not the name.
+REMOTE_OBJECT_SUBTYPES = {
+    "Promise": "promise",
+    "Array": "array",
+    "Date": "date",
+    "RegExp": "regexp",
+    "Map": "map",
+    "Set": "set",
+    "WeakMap": "weakmap",
+    "WeakSet": "weakset",
+    "Proxy": "proxy",
+    "ArrayBuffer": "arraybuffer",
+    "DataView": "dataview",
+    "Error": "error",
+    "EvalError": "error",
+    "RangeError": "error",
+    "ReferenceError": "error",
+    "SyntaxError": "error",
+    "TypeError": "error",
+    "URIError": "error",
+    "AggregateError": "error",
+    "Int8Array": "typedarray",
+    "Uint8Array": "typedarray",
+    "Uint8ClampedArray": "typedarray",
+    "Int16Array": "typedarray",
+    "Uint16Array": "typedarray",
+    "Int32Array": "typedarray",
+    "Uint32Array": "typedarray",
+    "Float32Array": "typedarray",
+    "Float64Array": "typedarray",
+    "BigInt64Array": "typedarray",
+    "BigUint64Array": "typedarray",
+}
+
 DEBUGGER_PAUSED_REASON = {
     "XHR": "XHR",
     "Fetch": "other",
@@ -1879,6 +1917,28 @@ class CdpTarget:
         await self.output_queue.put({"method": "DOM.documentUpdated"})
 
     @staticmethod
+    def _normalize_remote_object_subtypes(obj: Any) -> None:
+        """
+        Fill in the RemoteObject.subtype Chrome sets and WebKit omits, in place and recursively.
+
+        WebKit describes a promise as `{type: "object", className: "Promise"}` with no subtype;
+        Chrome adds `subtype: "promise"`, and a client uses it to tell an object that still has to
+        be resolved from a plain one. Only the built-ins in REMOTE_OBJECT_SUBTYPES are mapped, and
+        an object that already carries a subtype is left alone.
+        """
+        if isinstance(obj, dict):
+            node = cast(dict[str, Any], obj)
+            if node.get("type") == "object" and "subtype" not in node:
+                subtype = REMOTE_OBJECT_SUBTYPES.get(cast(str, node.get("className") or ""))
+                if subtype is not None:
+                    node["subtype"] = subtype
+            for value in node.values():
+                CdpTarget._normalize_remote_object_subtypes(value)
+        elif isinstance(obj, list):
+            for value in cast(list[Any], obj):
+                CdpTarget._normalize_remote_object_subtypes(value)
+
+    @staticmethod
     def _normalize_native_functions(obj: Any) -> None:
         """
         Collapse WebKit's multi-line native-function descriptions to Chrome's exact single-line
@@ -1916,6 +1976,7 @@ class CdpTarget:
             # Function objects in evaluate/callFunctionOn results carry native descriptions the
             # console autocomplete inspects; normalize them (see _normalize_native_functions).
             self._normalize_native_functions(message["result"])
+            self._normalize_remote_object_subtypes(message["result"])
         if "error" in message:
             # Expected protocol-level errors (e.g. element-only DOM queries on text nodes) are
             # already delivered to the frontend, which copes; don't shout about them here.
