@@ -224,6 +224,12 @@ class CdpTarget:
         # into the page's real (main) world - the ids handed out for those synthetic contexts are
         # collected here so their contextId can be rewritten back on the way to the device.
         self._isolated_world_context_ids: set[int] = set()
+        # Synthetic isolated world -> the frame it was created for, so its evaluations reach that
+        # frame's real context rather than whichever one happened to be announced last.
+        self._isolated_world_frames: dict[int, str] = {}
+        # Frame -> the id of the main-world execution context WebKit announced for it. A page with
+        # subframes announces one per frame, and they are not interchangeable.
+        self._frame_execution_ids: dict[str, int] = {}
         # Whether the client asked for Page.lifecycleEvent (Chrome only reports those once
         # Page.setLifecycleEventsEnabled turned them on, and DevTools never asks).
         self._lifecycle_events_enabled = False
@@ -1208,6 +1214,8 @@ class CdpTarget:
         world_name = params.get("worldName", "")
         context_id = next(_ISOLATED_WORLD_IDS)
         self._isolated_world_context_ids.add(context_id)
+        if isinstance(frame_id, str):
+            self._isolated_world_frames[context_id] = frame_id
         await self.output_queue.put({
             "method": "Runtime.executionContextCreated",
             "params": {
@@ -1530,9 +1538,11 @@ class CdpTarget:
             params.pop("uniqueContextId", None)
         elif params.get("contextId") in self._isolated_world_context_ids:
             # A synthesized isolated world (see _page_create_isolated_world) has no real context on
-            # the device; run in the page's main world instead, which WebKit does know.
-            if self._default_execution_id:
-                params["contextId"] = self._default_execution_id
+            # the device; run in the real main-world context of the frame it was created for.
+            world_frame = self._isolated_world_frames.get(params["contextId"], self.frame_id)
+            real_context = self._frame_execution_ids.get(world_frame) or self._default_execution_id
+            if real_context:
+                params["contextId"] = real_context
             else:
                 params.pop("contextId", None)
         if params.get("throwOnSideEffect") and params.get("objectGroup") not in _COMPLETION_OBJECT_GROUPS:
@@ -1994,6 +2004,7 @@ class CdpTarget:
     async def _debugger_global_object_cleared(self, message: dict[str, Any]):
         # Contexts are gone; allow their uniqueIds to be re-announced after the reload.
         self._emitted_context_unique_ids.clear()
+        self._frame_execution_ids.clear()
         await self.output_queue.put({"method": "Runtime.executionContextsCleared"})
         await self.output_queue.put({"method": "DOM.documentUpdated"})
 
@@ -2018,7 +2029,12 @@ class CdpTarget:
             # Chrome's RuntimeModel (it keys contexts by uniqueId), so emit each at most once.
             return
         self._emitted_context_unique_ids.add(unique_id)
-        self._default_execution_id = context["id"]
+        self._frame_execution_ids[frame_id] = context["id"]
+        if frame_id == self.frame_id:
+            # Only the top frame's context is the page's default. A subframe announces its own,
+            # and letting that overwrite the default silently moved every evaluation addressed to
+            # "the page" into the last frame that happened to load - an ad or payment iframe.
+            self._default_execution_id = context["id"]
         message["params"] = {
             "context": {
                 "id": context["id"],

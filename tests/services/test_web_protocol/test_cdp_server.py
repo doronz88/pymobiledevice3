@@ -510,6 +510,88 @@ async def testp_cdp_server_implements_the_interaction_methods(lockdown: Lockdown
             await client.close()
 
 
+async def testp_cdp_server_keeps_each_frame_in_its_own_execution_context(lockdown: LockdownClient) -> None:
+    """
+    A page with subframes gets one main-world execution context announced per frame, and they are
+    not interchangeable. The bridge used to keep only the most recently announced one as "the
+    page's" context and route every isolated world to it, so the moment a subframe loaded - an ad
+    or a payment iframe - evaluations meant for the main frame silently ran inside that subframe
+    instead. A client's helper objects do not exist there, so its reads came back undefined.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        page_id = targets[0]["id"]
+        client = CdpWebsocketClient(port, page_id)
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        contexts: list[dict[str, Any]] = []
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                """client.command, keeping the context announcements it would otherwise drop."""
+                id_ = next(message_ids)
+                await client.send({"id": id_, "method": method, "params": params})
+
+                async def wait_for_response() -> dict[str, Any]:
+                    while True:
+                        message = await client.receive()
+                        if message.get("method") == "Runtime.executionContextCreated":
+                            contexts.append(message["params"]["context"])
+                        if message.get("id") == id_:
+                            return message
+
+                return await asyncio.wait_for(wait_for_response(), TIMEOUT)
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+            # The navigation replaced the document; only what the fresh one announces counts (a
+            # page left over from an earlier run may already have had a subframe).
+            contexts.clear()
+            world = await command(
+                "Page.createIsolatedWorld",
+                {"frameId": page_id, "worldName": "__pmd3_frame_world__", "grantUniveralAccess": True},
+            )
+            world_id = world["result"]["executionContextId"]
+
+            async def in_top_frame() -> Any:
+                """Is the main frame's isolated world still evaluating in the main frame?"""
+                response = await command(
+                    "Runtime.evaluate",
+                    {"expression": "window === window.top", "contextId": world_id, "returnByValue": True},
+                )
+                return response.get("result", {}).get("result", {}).get("value")
+
+            assert await in_top_frame() is True, "the isolated world must start in the main frame"
+
+            def subframe_announced() -> bool:
+                return any(context.get("auxData", {}).get("frameId") not in (page_id, None) for context in contexts)
+
+            # A same-origin child frame makes WebKit announce a second main-world context; that
+            # announcement is what used to hijack the page's default context.
+            await command(
+                "Runtime.evaluate",
+                {
+                    "expression": (
+                        "const f = document.createElement('iframe');"
+                        " f.src = 'https://example.com/'; document.body.appendChild(f); 'added'"
+                    ),
+                    "returnByValue": True,
+                },
+            )
+            # Keep asking while the subframe loads: the drift appears the moment its context is
+            # announced, and the answer must never move out of the top frame.
+            for _ in range(TIMEOUT):
+                assert await in_top_frame() is True, "the main frame's isolated world drifted into the subframe"
+                if subframe_announced():
+                    break
+                await asyncio.sleep(0.5)
+            assert subframe_announced(), "the subframe never announced an execution context"
+            # One more read after the announcement has definitely been processed.
+            assert await in_top_frame() is True, "the main frame's isolated world drifted into the subframe"
+        finally:
+            await client.close()
+
+
 async def testp_cdp_server_drives_a_javascript_context(lockdown: LockdownClient) -> None:
     """
     A JSContext debuggable (any process that called -[JSContext setInspectable:YES]) implements
