@@ -631,6 +631,89 @@ async def testp_cdp_server_reports_remote_object_subtypes(lockdown: LockdownClie
             await client.close()
 
 
+async def testp_cdp_server_types_text_into_the_page(lockdown: LockdownClient) -> None:
+    """
+    WebKit has no Input domain, so the bridge types in-page. Two shapes have to work, because a
+    client sends one or the other and never both: Input.insertText (what fill() uses), and a
+    character carried on a key event. DevTools puts it on a "char" event; Playwright puts it on
+    keyDown and never sends "char" at all, which used to type nothing - silently, with every call
+    reporting success, so a form stayed empty while a test believed it was filled. The character
+    must also be typed exactly once when a client sends both.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                return await client.command(next(message_ids), method, params)
+
+            async def evaluate(expression: str) -> Any:
+                response = await command("Runtime.evaluate", {"expression": expression, "returnByValue": True})
+                return response.get("result", {}).get("result", {}).get("value")
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+
+            async def reset_field() -> None:
+                await evaluate(
+                    "(function () {"
+                    "  document.body.innerHTML = '';"
+                    "  var el = document.createElement('input');"
+                    "  el.id = 'f';"
+                    "  el.type = 'text';"
+                    "  document.body.appendChild(el);"
+                    "  el.focus();"
+                    "  return 'ok';"
+                    "})()"
+                )
+
+            async def field_value() -> Any:
+                return await evaluate("document.getElementById('f').value")
+
+            # Input.insertText must reach the page rather than being acknowledged into the void.
+            await reset_field()
+            await command("Input.insertText", {"text": "hello"})
+            assert await field_value() == "hello", "Input.insertText must type into the focused field"
+
+            # A character carried on keyDown alone (no "char" event ever sent) must be typed.
+            await reset_field()
+            for char in "abc":
+                await command("Input.dispatchKeyEvent", {"type": "keyDown", "key": char, "text": char})
+                await command("Input.dispatchKeyEvent", {"type": "keyUp", "key": char, "text": char})
+            assert await field_value() == "abc", "a character carried on keyDown must be typed"
+
+            # A client that sends keyDown, char and keyUp for one key must type it once, not twice.
+            await reset_field()
+            await command("Input.dispatchKeyEvent", {"type": "keyDown", "key": "x", "text": "x"})
+            await command("Input.dispatchKeyEvent", {"type": "char", "key": "x", "text": "x"})
+            await command("Input.dispatchKeyEvent", {"type": "keyUp", "key": "x", "text": "x"})
+            assert await field_value() == "x", "a key sent as keyDown+char+keyUp must be typed once"
+
+            # A key that performs an action rather than producing text must not type anything.
+            await reset_field()
+            for type_ in ("keyDown", "keyUp"):
+                await command("Input.dispatchKeyEvent", {"type": type_, "key": "ArrowLeft", "code": "ArrowLeft"})
+            assert await field_value() == "", "a non-printable key must not type anything"
+
+            # The value must be written through the native setter, or a framework that tracks its
+            # inputs never sees the change (the field looks filled while the app believes it empty).
+            await reset_field()
+            await evaluate(
+                "window.__seen = [];"
+                " document.getElementById('f').addEventListener('input', e => window.__seen.push(e.target.value));"
+                " 'ok'"
+            )
+            await command("Input.insertText", {"text": "abc"})
+            assert await evaluate("JSON.stringify(window.__seen)") == '["abc"]', (
+                "typing must fire a real input event carrying the new value"
+            )
+        finally:
+            await client.close()
+
+
 async def testp_cdp_server_drives_a_javascript_context(lockdown: LockdownClient) -> None:
     """
     A JSContext debuggable (any process that called -[JSContext setInspectable:YES]) implements

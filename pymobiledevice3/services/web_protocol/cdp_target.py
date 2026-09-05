@@ -338,6 +338,7 @@ class CdpTarget:
             "CSS.trackComputedStyleUpdates": partial(self._simple_response, value=None),
             "CSS.takeComputedStyleUpdates": self._css_take_computed_style_updates,
             "CSS.addRule": self._css_add_rule,
+            "Input.insertText": self._input_insert_text,
             "Input.emulateTouchFromMouseEvent": self._input_emulate_touch_from_mouse_event,
             "Input.dispatchKeyEvent": self._input_dispatch_key_event,
             "Input.dispatchMouseEvent": self._input_dispatch_mouse_event,
@@ -425,6 +426,9 @@ class CdpTarget:
         self._internal_id = 0
         # loop time of the last synthesized hover, to throttle high-frequency mouseMoved events.
         self._last_mousemove_time = 0.0
+        # Text a keyDown said it would produce, held until it is known whether the client also
+        # sends the "char" event that classically carried it (see _input_dispatch_key_event).
+        self._pending_key_text: Optional[str] = None
         # execution-context uniqueIds already announced to the frontend, to drop duplicate
         # Runtime.executionContextCreated events (WebKit re-announces contexts) that would
         # otherwise corrupt Chrome's RuntimeModel.
@@ -1769,9 +1773,98 @@ class CdpTarget:
 
         await self._simple_response(message, None)
 
+    @staticmethod
+    def _insert_text_js(text: str) -> str:
+        """Build the in-page expression that types `text` into the focused element.
+
+        Writes through the prototype's own value setter rather than assigning the property: a
+        framework that tracks its inputs (React and friends) patches the instance property and
+        only notices a change made through the native setter, so a plain assignment leaves the
+        field looking filled while the application still believes it is empty.
+        """
+        literal = json.dumps(text)
+        return (
+            "(function(text) {"
+            "  const el = document.activeElement;"
+            "  if (!el) { return false; }"
+            "  if (el.isContentEditable) {"
+            "    el.dispatchEvent(new InputEvent('beforeinput',"
+            "        {bubbles: true, cancelable: true, inputType: 'insertText', data: text}));"
+            "    document.execCommand('insertText', false, text);"
+            "    return true;"
+            "  }"
+            "  const tag = el.tagName ? el.tagName.toLowerCase() : '';"
+            "  if (tag !== 'input' && tag !== 'textarea') { return false; }"
+            "  if (el.disabled || el.readOnly) { return false; }"
+            "  const proto = tag === 'textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;"
+            "  const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');"
+            "  const value = el.value || '';"
+            "  const start = el.selectionStart === null || el.selectionStart === undefined"
+            "      ? value.length : el.selectionStart;"
+            "  const end = el.selectionEnd === null || el.selectionEnd === undefined"
+            "      ? value.length : el.selectionEnd;"
+            "  el.dispatchEvent(new InputEvent('beforeinput',"
+            "      {bubbles: true, cancelable: true, inputType: 'insertText', data: text}));"
+            "  const next = value.slice(0, start) + text + value.slice(end);"
+            "  if (descriptor && descriptor.set) { descriptor.set.call(el, next); } else { el.value = next; }"
+            "  try { el.setSelectionRange(start + text.length, start + text.length); } catch (e) {}"
+            "  el.dispatchEvent(new InputEvent('input',"
+            "      {bubbles: true, inputType: 'insertText', data: text}));"
+            "  return true;"
+            f"}})({literal})"
+        )
+
+    async def _input_insert_text(self, message: dict[str, Any]):
+        """
+        WebKit has no Input domain, and Input.insertText used to be swallowed by the blanket
+        acknowledgement for it - so a client's fill()/insertText() reported success and left the
+        field empty, which is worse than an error because a test believes the value went in.
+        Type it into the focused element instead.
+        """
+        text = message.get("params", {}).get("text", "")
+        if text:
+            await self.evaluate_and_result(self._insert_text_js(text))
+        await self._simple_response(message, None)
+
+    @staticmethod
+    def _printable_key_text(params: dict[str, Any]) -> Optional[str]:
+        """The character a key event types, or None if it types nothing.
+
+        A key that performs an action rather than producing text (Enter, Tab, the arrows) either
+        carries no text or carries a control character, and is handled by the branches below.
+        """
+        text = params.get("text")
+        if not isinstance(text, str) or len(text) != 1 or text < " " or text == "\x7f":
+            return None
+        return text
+
     async def _input_dispatch_key_event(self, message: dict[str, Any]):
         params = message["params"]
         key = params["key"]
+        type_ = params["type"]
+        # Typing arrives in two shapes. DevTools sends keyDown, then a "char" event carrying the
+        # character, then keyUp; Playwright never sends "char" at all and puts the character in
+        # keyDown's own text field, which used to type nothing at all - silently, so a filled-in
+        # form stayed empty with every call reporting success. Take the character from whichever
+        # event carries it, and type it exactly once: remember what a keyDown promised, let a
+        # "char" supersede it, and fall back to typing it on keyUp when no "char" follows.
+        if type_ in ("keyDown", "rawKeyDown") and key not in ("Enter", "Backspace"):
+            self._pending_key_text = self._printable_key_text(params)
+            await self._simple_response(message, None)
+            return
+        if type_ == "keyUp" and key not in ("Enter", "Backspace"):
+            pending, self._pending_key_text = self._pending_key_text, None
+            if pending is not None:
+                await self.evaluate_and_result(self._insert_text_js(pending))
+            await self._simple_response(message, None)
+            return
+        if type_ == "char" and key not in ("Enter", "Backspace"):
+            self._pending_key_text = None
+            text = self._printable_key_text(params)
+            if text is not None:
+                await self.evaluate_and_result(self._insert_text_js(text))
+            await self._simple_response(message, None)
+            return
         if params["type"] == "keyUp" and key == "Backspace":
             manipulation = (
                 "document.activeElement.value = document.activeElement.value.slice(0, -1);"
@@ -1803,13 +1896,6 @@ class CdpTarget:
                 "        if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }"
                 "    }"
                 "}"
-            )
-        elif params["type"] == "char":
-            text = params["text"]
-            manipulation = (
-                f'document.activeElement.value = document.activeElement.value + "{text}";'
-                "document.activeElement.dispatchEvent("
-                "    new InputEvent('input', {bubbles: true, inputType: 'insertText'}));"
             )
         else:
             await self._simple_response(message, None)
