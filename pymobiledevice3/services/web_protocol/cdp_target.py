@@ -1582,7 +1582,24 @@ class CdpTarget:
             # A synthesized isolated world (see _page_create_isolated_world) has no real context on
             # the device; run in the real main-world context of the frame it was created for.
             world_frame = self._isolated_world_frames.get(params["contextId"], self.frame_id)
-            real_context = self._frame_execution_ids.get(world_frame) or self._default_execution_id
+            real_context = self._frame_execution_ids.get(world_frame)
+            if real_context is None and world_frame != self.frame_id:
+                # A frame whose context this session never saw - a cross-origin child, which
+                # WebKit debugs through a target of its own that this session does not adopt.
+                # Refuse: evaluating in the top frame instead would quietly answer questions
+                # about the wrong document, which is far worse than saying so.
+                await self._error_response(
+                    message,
+                    {
+                        "code": -32000,
+                        "message": (
+                            f"no execution context for frame {world_frame}; "
+                            "a cross-origin child frame is not reachable through this session"
+                        ),
+                    },
+                )
+                return
+            real_context = real_context or self._default_execution_id
             if real_context:
                 params["contextId"] = real_context
             else:

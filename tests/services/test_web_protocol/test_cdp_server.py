@@ -588,6 +588,21 @@ async def testp_cdp_server_keeps_each_frame_in_its_own_execution_context(lockdow
             assert subframe_announced(), "the subframe never announced an execution context"
             # One more read after the announcement has definitely been processed.
             assert await in_top_frame() is True, "the main frame's isolated world drifted into the subframe"
+
+            # A frame this session cannot reach must be refused rather than quietly answered from
+            # the top frame: a cross-origin child is debugged through a target of its own, and
+            # silently reporting the main document instead is worse than an error.
+            unreachable = await command(
+                "Page.createIsolatedWorld",
+                {"frameId": "0.unreachable", "worldName": "__pmd3_absent__", "grantUniveralAccess": True},
+            )
+            absent_world = unreachable["result"]["executionContextId"]
+            refused = await command(
+                "Runtime.evaluate",
+                {"expression": "document.URL", "contextId": absent_world, "returnByValue": True},
+            )
+            assert "result" not in refused, f"an unreachable frame must not be answered: {refused}"
+            assert "not reachable" in refused["error"]["message"], refused
         finally:
             await client.close()
 
