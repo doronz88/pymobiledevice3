@@ -833,6 +833,50 @@ async def testp_cdp_server_makes_child_frames_reachable(lockdown: LockdownClient
             assert described["result"]["node"].get("frameId") == frame_id, (
                 f"an iframe element must resolve to the frame it hosts: {described}"
             )
+
+            # The frame tree is the only way a client attaching later learns about frames that
+            # already exist, and it walks the tree by parent: a child whose parentId names
+            # WebKit's own id for the top frame refers to a frame the client never heard of, and
+            # the whole subtree is dropped.
+            tree = await command("Page.getFrameTree", {})
+            children = tree["result"]["frameTree"].get("childFrames") or []
+            assert children, f"the frame tree must report the child frame: {tree}"
+            assert children[0]["frame"]["parentId"] == page_id, (
+                f"a child frame's parentId must be the id the client knows the top frame by: {children[0]}"
+            )
+            assert children[0]["frame"]["id"] == frame_id, children[0]
+
+            # Typing must reach the field the focus is really on, even when that is inside the
+            # child frame rather than the document the session is attached to.
+            await command(
+                "Runtime.evaluate",
+                {
+                    "expression": (
+                        "(function () {"
+                        "  const doc = document.querySelector('iframe[name=pmd3kid]').contentDocument;"
+                        "  const input = doc.createElement('input');"
+                        "  input.id = 'inner';"
+                        "  doc.body.appendChild(input);"
+                        "  input.focus();"
+                        "  return 'ok';"
+                        "})()"
+                    ),
+                    "returnByValue": True,
+                },
+            )
+            await command("Input.insertText", {"text": "typed"})
+            typed = await command(
+                "Runtime.evaluate",
+                {
+                    "expression": (
+                        "document.querySelector('iframe[name=pmd3kid]').contentDocument.getElementById('inner').value"
+                    ),
+                    "returnByValue": True,
+                },
+            )
+            assert typed["result"]["result"]["value"] == "typed", (
+                f"typing must follow the focus into the child frame: {typed}"
+            )
         finally:
             await client.close()
 

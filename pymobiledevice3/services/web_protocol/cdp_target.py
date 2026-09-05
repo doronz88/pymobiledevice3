@@ -39,6 +39,14 @@ SWAP_COMMIT_POLL_INTERVAL = 0.05
 # loaderId (which is how an in-page navigation is reported - see _page_navigate).
 NAVIGATE_COMMIT_TIMEOUT = 10.0
 
+# How far synthesized input follows a point or the focus down into nested frames before giving up.
+MAX_FRAME_DESCENT = 5
+
+# backendNodeIds minted for the <iframe> elements that own a frame (see _dom_get_frame_owner).
+# WebKit has no node identity space of its own that survives without DOM.getDocument, so these are
+# allocated here, well clear of anything the device would produce.
+_FRAME_OWNER_NODE_IDS = itertools.count(0x60000000)
+
 # sourceURL stamped onto the bridge's own internal evaluations (screencast offsets, synthesized
 # input, navigation) so their Debugger.scriptParsed events can be recognized and dropped instead
 # of polluting Chrome's script model. WebKit-inspector-internal scripts (its injected script
@@ -271,6 +279,8 @@ class CdpTarget:
         # Child frames the client has been told about, so each is announced once (see
         # _page_frame_navigated).
         self._announced_frames: set[str] = set()
+        # Minted backendNodeId -> the (frame, index) of the <iframe> element it stands for.
+        self._frame_owner_nodes: dict[int, tuple[str, int]] = {}
         # World names the client registered through Page.addScriptToEvaluateOnNewDocument. Chrome
         # creates a world of that name in every document that loads; the bridge does the same, so
         # a frame that appears later still gets the world its client expects to evaluate in.
@@ -364,6 +374,10 @@ class CdpTarget:
             # WebKit has no DOM.describeNode; a client resolves an <iframe> element to the frame
             # it hosts through it, which is how frameLocator() reaches into a child frame.
             "DOM.describeNode": self._dom_describe_node,
+            # The other half of reaching into a frame: a client asks which element owns a frame
+            # and then resolves that answer back to an object it can measure.
+            "DOM.getFrameOwner": self._dom_get_frame_owner,
+            "DOM.resolveNode": self._dom_resolve_node,
             "Accessibility.enable": partial(self._simple_response, value=None),
             "Autofill.enable": partial(self._simple_response, value=None),
             "Autofill.setAddresses": partial(self._simple_response, value=None),
@@ -1075,6 +1089,109 @@ class CdpTarget:
         await self.output_queue.put(message)
         await self._emit_lifecycle_event("load", message.get("params", {}).get("timestamp"))
 
+    async def _evaluate_json_in(self, context_id: Optional[int], expression: str) -> Optional[Any]:
+        """_evaluate_json, in one particular frame's execution context."""
+        params: dict[str, Any] = {"expression": self._tag_internal(expression), "returnByValue": True}
+        if context_id:
+            params["contextId"] = context_id
+        response = await self.send_message_with_result("Runtime.evaluate", params)
+        result = response.get("result", {}).get("result", {})
+        if response.get("result", {}).get("wasThrown") or "value" not in result:
+            return None
+        return result["value"]
+
+    async def _top_frame_context(self) -> Optional[int]:
+        """The execution context of the frame the client attached to."""
+        return self._frame_execution_ids.get(self.frame_id) or self._default_execution_id or None
+
+    async def _child_frame_context(self, parent_frame_id: str, index: int) -> Optional[tuple[str, int]]:
+        """The (frame, context) of a frame's nth child, or None when it cannot be reached."""
+        tree = await self.send_message_with_result("Page.getResourceTree", {})
+        frame_tree = tree.get("result", {}).get("frameTree")
+        if frame_tree is None:
+            return None
+        self._map_frame_tree_ids(frame_tree)
+        child = self._child_frame_at(frame_tree, parent_frame_id, index)
+        if child is None:
+            return None
+        context = self._frame_execution_ids.get(child)
+        return (child, context) if context is not None else None
+
+    async def _context_at_point(self, x: int, y: int) -> tuple[Optional[int], int, int]:
+        """Find the frame that owns a viewport point, and the point in that frame's coordinates.
+
+        Synthesized input is dispatched by looking the target up in the page, and a document only
+        knows its own elements: a point over an <iframe> finds the frame element itself, never
+        what the user is aiming at inside it. Follow it down instead, subtracting each frame's
+        offset on the way, so a click or a hover lands in the document that actually owns it.
+        """
+        frame_id = self.frame_id
+        # Start with no context at all, so the device evaluates in its own current one; naming a
+        # context we tracked earlier risks naming a stale one from a document already replaced.
+        context_id: Optional[int] = None
+        for _ in range(MAX_FRAME_DESCENT):
+            probe = await self._evaluate_json_in(
+                context_id,
+                "(function () {"
+                f"  const el = document.elementFromPoint({x}, {y});"
+                "  if (!el || !el.tagName) { return null; }"
+                "  const tag = el.tagName.toLowerCase();"
+                "  if (tag !== 'iframe' && tag !== 'frame') { return null; }"
+                "  const rect = el.getBoundingClientRect();"
+                "  const frames = Array.prototype.slice.call(document.querySelectorAll('iframe, frame'));"
+                "  return {index: frames.indexOf(el), left: rect.left, top: rect.top};"
+                "})()",
+            )
+            if not isinstance(probe, dict):
+                break
+            found = cast(dict[str, Any], probe)
+            child = await self._child_frame_context(frame_id, int(found["index"]))
+            if child is None:
+                break
+            x -= int(found["left"])
+            y -= int(found["top"])
+            frame_id, context_id = child[0], child[1]
+        return context_id, x, y
+
+    async def _focused_context(self) -> Optional[int]:
+        """The execution context of the document that holds the focus.
+
+        Typing is dispatched at the focused element, and a document whose focus sits in a child
+        frame reports the frame element as focused - so text aimed at a field inside it was typed
+        into nothing at all, silently. Follow the focus down to the document that really holds it.
+        """
+        probe = (
+            "(function () {"
+            "  const active = document.activeElement;"
+            "  if (!active || !active.tagName) { return 'none'; }"
+            "  const tag = active.tagName.toLowerCase();"
+            "  return tag === 'iframe' || tag === 'frame' ? 'frame' : 'leaf';"
+            "})()"
+        )
+        context_id: Optional[int] = None
+        frame_id = self.frame_id
+        for _ in range(MAX_FRAME_DESCENT):
+            focus = await self._evaluate_json_in(context_id, probe)
+            if focus is None or focus != "frame":
+                # Either the focus is already on something typeable, or the page could not answer
+                # - in which case the device's own current context is the safer target.
+                return context_id
+            # The focused element is a frame; step into the one that holds the focus.
+            index = await self._evaluate_json_in(
+                context_id,
+                "(function () {"
+                "  const frames = Array.prototype.slice.call(document.querySelectorAll('iframe, frame'));"
+                "  return frames.indexOf(document.activeElement);"
+                "})()",
+            )
+            if not isinstance(index, int) or index < 0:
+                return context_id
+            child = await self._child_frame_context(frame_id, index)
+            if child is None:
+                return context_id
+            frame_id, context_id = child[0], child[1]
+        return context_id
+
     async def _evaluate_json(self, expression: str) -> Optional[Any]:
         """Evaluate an expression that returns JSON-serializable data and give back the value.
 
@@ -1280,7 +1397,119 @@ class CdpTarget:
                 response.get("error") or {"code": -32000, "message": "Node is detached from document"},
             )
             return
+        # The boxes were measured in the element's own document; a client expects them in the
+        # page's coordinates, so shift them by where that frame sits (see _frame_viewport_offset).
+        offset_x, offset_y = await self._frame_viewport_offset(self._frame_of_object(cast(str, object_id)))
+        if offset_x or offset_y:
+            quads = [
+                [value + (offset_x if position % 2 == 0 else offset_y) for position, value in enumerate(quad)]
+                for quad in cast(list[list[float]], quads)
+            ]
         await self.output_queue.put({"id": message["id"], "result": {"quads": quads}})
+
+    def _frame_of_object(self, object_id: str) -> Optional[str]:
+        """The frame a remote object lives in, read out of the object id itself.
+
+        WebKit encodes the context an object belongs to in its id (`injectedScriptId`), and the
+        contexts are already tracked per frame, so an object can be traced back to its document
+        without asking the device anything.
+        """
+        try:
+            context_id = json.loads(object_id).get("injectedScriptId")
+        except (ValueError, TypeError, AttributeError):
+            return None
+        for frame_id, frame_context in self._frame_execution_ids.items():
+            if frame_context == context_id:
+                return frame_id
+        return None
+
+    def _child_frame_at(self, node: Any, parent_frame_id: str, index: int) -> Optional[str]:
+        """The id of the `index`-th child frame of `parent_frame_id`, walking a frame tree.
+
+        The frame tree lists a frame's children in document order, which is the order the
+        elements appear in - so the nth <iframe> of a document owns the nth child frame. This
+        identifies a frame that carries nothing to match on, which a name or a URL cannot: a
+        srcdoc or about:blank frame has neither, and several frames may share a URL.
+        """
+        if not isinstance(node, dict):
+            return None
+        tree = cast(dict[str, Any], node)
+        frame = tree.get("frame")
+        children = cast(list[Any], tree.get("childFrames") or [])
+        if isinstance(frame, dict) and cast(dict[str, Any], frame).get("id") == parent_frame_id:
+            if 0 <= index < len(children):
+                child = children[index]
+                if isinstance(child, dict):
+                    child_frame = cast(dict[str, Any], child).get("frame")
+                    if isinstance(child_frame, dict):
+                        found = cast(dict[str, Any], child_frame).get("id")
+                        return found if isinstance(found, str) else None
+            return None
+        for child in children:
+            found = self._child_frame_at(child, parent_frame_id, index)
+            if found is not None:
+                return found
+        return None
+
+    def _frame_index_path(self, node: Any, target: str, path: Optional[list[int]] = None) -> Optional[list[int]]:
+        """The child indices leading from the top frame down to `target`, or None."""
+        if not isinstance(node, dict):
+            return None
+        tree = cast(dict[str, Any], node)
+        frame = tree.get("frame")
+        here = path or []
+        if isinstance(frame, dict) and cast(dict[str, Any], frame).get("id") == target:
+            return here
+        for index, child in enumerate(cast(list[Any], tree.get("childFrames") or [])):
+            found = self._frame_index_path(child, target, [*here, index])
+            if found is not None:
+                return found
+        return None
+
+    async def _frame_viewport_offset(self, frame_id: Optional[str]) -> tuple[float, float]:
+        """Where a frame's viewport sits inside the top frame's.
+
+        A document measures its elements against its own viewport, so a box measured inside a
+        child frame is offset from the page by however far that frame sits down and across. A
+        client places its clicks in page coordinates, so the two have to be reconciled or every
+        interaction inside a frame is aimed at the wrong place.
+        """
+        if frame_id is None or frame_id == self.frame_id:
+            return (0.0, 0.0)
+        tree = await self.send_message_with_result("Page.getResourceTree", {})
+        frame_tree = tree.get("result", {}).get("frameTree")
+        if frame_tree is None:
+            return (0.0, 0.0)
+        self._map_frame_tree_ids(frame_tree)
+        path = self._frame_index_path(frame_tree, frame_id)
+        if not path:
+            return (0.0, 0.0)
+        offset_x = offset_y = 0.0
+        context_id = await self._top_frame_context()
+        current = self.frame_id
+        for index in path:
+            rect = await self._evaluate_json_in(
+                context_id,
+                "(function () {"
+                f"  const frame = document.querySelectorAll('iframe, frame')[{index}];"
+                "  if (!frame) { return null; }"
+                "  const rect = frame.getBoundingClientRect();"
+                "  return {left: rect.left, top: rect.top};"
+                "})()",
+            )
+            if not isinstance(rect, dict):
+                break
+            box = cast(dict[str, Any], rect)
+            offset_x += float(box["left"])
+            offset_y += float(box["top"])
+            child = self._child_frame_at(frame_tree, current, index)
+            if child is None:
+                break
+            child_context = self._frame_execution_ids.get(child)
+            if child_context is None:
+                break
+            current, context_id = child, child_context
+        return (offset_x, offset_y)
 
     def _find_frame_in_tree(self, node: Any, name: str, url: str) -> Optional[str]:
         """Find the frame an <iframe> hosts, by the name it was given or the URL it loaded.
@@ -1326,10 +1555,13 @@ class CdpTarget:
             "function() {"
             "  if (!this.tagName) { return null; }"
             "  const tag = this.tagName.toLowerCase();"
+            "  const frames = Array.prototype.slice.call("
+            "      this.ownerDocument.querySelectorAll('iframe, frame'));"
             "  return {"
             "    nodeName: this.tagName,"
             "    localName: tag,"
             "    isFrame: tag === 'iframe' || tag === 'frame',"
+            "    index: frames.indexOf(this),"
             "    name: this.getAttribute ? (this.getAttribute('name') || '') : '',"
             "    url: this.src || ''"
             "  };"
@@ -1353,12 +1585,87 @@ class CdpTarget:
         if info.get("isFrame"):
             tree = await self.send_message_with_result("Page.getResourceTree", {})
             frame_tree = tree.get("result", {}).get("frameTree")
-            webkit_frame_id = self._find_frame_in_tree(
-                frame_tree, cast(str, info.get("name") or ""), cast(str, info.get("url") or "")
-            )
-            if webkit_frame_id is not None:
-                node["frameId"] = self._to_client_frame_id(webkit_frame_id)
+            self._map_frame_tree_ids(frame_tree)
+            owner = self._frame_of_object(cast(str, object_id))
+            index = info.get("index")
+            frame_id: Optional[str] = None
+            if owner is not None and isinstance(index, int):
+                frame_id = self._child_frame_at(frame_tree, owner, index)
+            if frame_id is None:
+                # Nothing to position against (an object from a context we never saw); fall back
+                # to whatever the element itself identifies the frame by.
+                frame_id = self._find_frame_in_tree(
+                    frame_tree, cast(str, info.get("name") or ""), cast(str, info.get("url") or "")
+                )
+            if frame_id is not None:
+                node["frameId"] = frame_id
         await self.output_queue.put({"id": message["id"], "result": {"node": node}})
+
+    def _frame_at_path(self, node: Any, path: list[int]) -> Optional[str]:
+        """The id of the frame reached by walking `path` from the top of a frame tree."""
+        current = node
+        for index in path:
+            if not isinstance(current, dict):
+                return None
+            children = cast(list[Any], cast(dict[str, Any], current).get("childFrames") or [])
+            if not 0 <= index < len(children):
+                return None
+            current = children[index]
+        if not isinstance(current, dict):
+            return None
+        frame = cast(dict[str, Any], current).get("frame")
+        if not isinstance(frame, dict):
+            return None
+        frame_id = cast(dict[str, Any], frame).get("id")
+        return frame_id if isinstance(frame_id, str) else None
+
+    async def _dom_get_frame_owner(self, message: dict[str, Any]):
+        """
+        WebKit has no DOM.getFrameOwner. A client asks it which element hosts a frame so it can
+        measure where that frame sits, which is part of every interaction with something inside
+        one - without it the actionability check never completes and the action spins until it
+        times out. Answer with a node id of our own, resolved back in _dom_resolve_node.
+        """
+        frame_id = message.get("params", {}).get("frameId")
+        tree = await self.send_message_with_result("Page.getResourceTree", {})
+        frame_tree = tree.get("result", {}).get("frameTree")
+        path: Optional[list[int]] = None
+        if frame_tree is not None and isinstance(frame_id, str):
+            self._map_frame_tree_ids(frame_tree)
+            path = self._frame_index_path(frame_tree, frame_id)
+        if not path:
+            # The message a client special-cases into "Frame has been detached."
+            await self._error_response(message, {"code": -32000, "message": "Frame with the given id was not found."})
+            return
+        parent_frame_id = self._frame_at_path(frame_tree, path[:-1])
+        if parent_frame_id is None:
+            await self._error_response(message, {"code": -32000, "message": "Frame with the given id was not found."})
+            return
+        backend_node_id = next(_FRAME_OWNER_NODE_IDS)
+        self._frame_owner_nodes[backend_node_id] = (parent_frame_id, path[-1])
+        await self.output_queue.put({"id": message["id"], "result": {"backendNodeId": backend_node_id}})
+
+    async def _dom_resolve_node(self, message: dict[str, Any]):
+        """Resolve a node back to an object. Only the frame-owner ids minted above are handled
+        here; anything else is WebKit's own and is passed through."""
+        backend_node_id = message.get("params", {}).get("backendNodeId")
+        owner = self._frame_owner_nodes.get(backend_node_id) if isinstance(backend_node_id, int) else None
+        if owner is None:
+            await self._send_message_to_target(message)
+            return
+        parent_frame_id, index = owner
+        params: dict[str, Any] = {
+            "expression": self._tag_internal(f"document.querySelectorAll('iframe, frame')[{index}]")
+        }
+        context_id = self._frame_execution_ids.get(parent_frame_id)
+        if context_id:
+            params["contextId"] = context_id
+        response = await self.send_message_with_result("Runtime.evaluate", params)
+        remote_object = response.get("result", {}).get("result")
+        if not isinstance(remote_object, dict) or "objectId" not in cast(dict[str, Any], remote_object):
+            await self._error_response(message, {"code": -32000, "message": "Frame has been detached."})
+            return
+        await self.output_queue.put({"id": message["id"], "result": {"object": remote_object}})
 
     async def _page_create_isolated_world(self, message: dict[str, Any]):
         """
@@ -1402,15 +1709,84 @@ class CdpTarget:
         return context_id
 
     async def _dom_get_box_model(self, message: dict[str, Any]):
-        message["method"] = "DOM.highlightNode"
-        message["params"]["highlightConfig"] = {
-            "showInfo": True,
-            "contentColor": {"r": 111, "g": 168, "b": 220, "a": 0.66},
-            "paddingColor": {"r": 147, "g": 196, "b": 125, "a": 0.55},
-            "borderColor": {"r": 255, "g": 229, "b": 153, "a": 0.66},
-            "marginColor": {"r": 246, "g": 178, "b": 107, "a": 0.66},
-        }
-        await self._send_message_to_target(message)
+        """
+        WebKit has no DOM.getBoxModel. A client measures an element with it - it is how the
+        position of the frame an element sits in is worked out, so without a real answer every
+        interaction inside a child frame failed its actionability check and retried until it
+        timed out. Measure the element in-page, in the page's coordinates.
+
+        This used to be turned into a DOM.highlightNode, which drew the box rather than reporting
+        it; highlighting has its own translation (see Overlay.highlightNode).
+        """
+        object_id = message.get("params", {}).get("objectId")
+        if not object_id:
+            await self._error_response(message, {"code": -32000, "message": "objectId is required"})
+            return
+        boxes = await self._call_on_object(
+            object_id,
+            "function() {"
+            "  const node = this.nodeType === Node.ELEMENT_NODE ? this : this.parentElement;"
+            "  if (!node || !node.isConnected) { return null; }"
+            "  const rect = node.getBoundingClientRect();"
+            "  const style = window.getComputedStyle(node);"
+            "  const px = name => parseFloat(style.getPropertyValue(name)) || 0;"
+            "  return {"
+            "    left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,"
+            "    width: node.offsetWidth || rect.width, height: node.offsetHeight || rect.height,"
+            "    mt: px('margin-top'), mr: px('margin-right'), mb: px('margin-bottom'), ml: px('margin-left'),"
+            "    bt: px('border-top-width'), br: px('border-right-width'),"
+            "    bb: px('border-bottom-width'), bl: px('border-left-width'),"
+            "    pt: px('padding-top'), pr: px('padding-right'),"
+            "    pb: px('padding-bottom'), pl: px('padding-left')"
+            "  };"
+            "}",
+        )
+        measured = boxes.get("result", {}).get("result", {}).get("value")
+        if not isinstance(measured, dict):
+            await self._error_response(message, {"code": -32000, "message": "Could not compute box model."})
+            return
+        box = cast(dict[str, Any], measured)
+        offset_x, offset_y = await self._frame_viewport_offset(self._frame_of_object(cast(str, object_id)))
+
+        def quad(left: float, top: float, right: float, bottom: float) -> list[float]:
+            left += offset_x
+            right += offset_x
+            top += offset_y
+            bottom += offset_y
+            return [left, top, right, top, right, bottom, left, bottom]
+
+        border = quad(box["left"], box["top"], box["right"], box["bottom"])
+        padding = quad(
+            box["left"] + box["bl"],
+            box["top"] + box["bt"],
+            box["right"] - box["br"],
+            box["bottom"] - box["bb"],
+        )
+        content = quad(
+            box["left"] + box["bl"] + box["pl"],
+            box["top"] + box["bt"] + box["pt"],
+            box["right"] - box["br"] - box["pr"],
+            box["bottom"] - box["bb"] - box["pb"],
+        )
+        margin = quad(
+            box["left"] - box["ml"],
+            box["top"] - box["mt"],
+            box["right"] + box["mr"],
+            box["bottom"] + box["mb"],
+        )
+        await self.output_queue.put({
+            "id": message["id"],
+            "result": {
+                "model": {
+                    "content": content,
+                    "padding": padding,
+                    "border": border,
+                    "margin": margin,
+                    "width": int(box["width"]),
+                    "height": int(box["height"]),
+                }
+            },
+        })
 
     async def object_id_to_node_id(self, object_id: str):
         node = await self.send_message_with_result("DOM.requestNode", {"objectId": object_id})
@@ -1548,13 +1924,31 @@ class CdpTarget:
         # The top frame's id must be the id the client attached with (see self.frame_id); learn
         # WebKit's own id for it and rewrite it in the response the client reads.
         self._learn_webkit_frame_id(self.frame.get("id"))
-        self.frame["id"] = self._to_client_frame_id(self.frame.get("id"))
         self._loader_id = self.frame.get("loaderId", "") or self._loader_id
+        # Every frame in the tree is reported by the id the client knows it as - the top frame's
+        # included, and so is each child's parentId. A child whose parent names WebKit's own id
+        # for the top frame refers to a frame the client has never heard of, and it drops the
+        # child rather than attaching it to nothing: the whole subtree stays invisible.
+        self._map_frame_tree_ids(result["result"]["frameTree"])
         # The client builds frames from this snapshot too; remember them so they are not announced
         # a second time.
         self._remember_frame_tree(result["result"]["frameTree"])
         # result carries our internal request id; answer the frontend with its own id.
         await self.output_queue.put({"id": message["id"], "result": result["result"]})
+
+    def _map_frame_tree_ids(self, node: Any) -> None:
+        """Rewrite WebKit's frame ids to the client's throughout a frame tree, in place."""
+        if not isinstance(node, dict):
+            return
+        tree = cast(dict[str, Any], node)
+        frame = tree.get("frame")
+        if isinstance(frame, dict):
+            entry = cast(dict[str, Any], frame)
+            for key in ("id", "parentId"):
+                if key in entry:
+                    entry[key] = self._to_client_frame_id(entry[key])
+        for child in cast(list[Any], tree.get("childFrames") or []):
+            self._map_frame_tree_ids(child)
 
     def _remember_frame_tree(self, node: Any) -> None:
         """Record every child frame a frame tree already told the client about."""
@@ -1864,9 +2258,14 @@ class CdpTarget:
         return f'({simulate_mouse_event})("{type_}")'
 
     async def _synthesize_mouse_event(self, type_: str, x: int, y: int, modifiers: int, button: int):
-        await self.evaluate_and_result(self._mouse_event_js(type_, x, y, modifiers, button))
+        # Follow the point into the frame that owns it, so a click on something inside an iframe
+        # reaches that element rather than the frame it happens to sit in.
+        context_id, local_x, local_y = await self._context_at_point(x, y)
+        await self._evaluate_json_in(context_id, self._mouse_event_js(type_, local_x, local_y, modifiers, button))
         if type_ == "click":
-            await self.evaluate_and_result(self._mouse_event_js("mouseup", x, y, modifiers, button))
+            await self._evaluate_json_in(
+                context_id, self._mouse_event_js("mouseup", local_x, local_y, modifiers, button)
+            )
 
     async def _send_evaluate_noreply(self, expression: str) -> None:
         """
@@ -1985,8 +2384,12 @@ class CdpTarget:
         """
         text = message.get("params", {}).get("text", "")
         if text:
-            await self.evaluate_and_result(self._insert_text_js(text))
+            await self._type_text(text)
         await self._simple_response(message, None)
+
+    async def _type_text(self, text: str) -> None:
+        """Type into whichever document holds the focus (see _focused_context)."""
+        await self._evaluate_json_in(await self._focused_context(), self._insert_text_js(text))
 
     @staticmethod
     def _printable_key_text(params: dict[str, Any]) -> Optional[str]:
@@ -2017,14 +2420,14 @@ class CdpTarget:
         if type_ == "keyUp" and key not in ("Enter", "Backspace"):
             pending, self._pending_key_text = self._pending_key_text, None
             if pending is not None:
-                await self.evaluate_and_result(self._insert_text_js(pending))
+                await self._type_text(pending)
             await self._simple_response(message, None)
             return
         if type_ == "char" and key not in ("Enter", "Backspace"):
             self._pending_key_text = None
             text = self._printable_key_text(params)
             if text is not None:
-                await self.evaluate_and_result(self._insert_text_js(text))
+                await self._type_text(text)
             await self._simple_response(message, None)
             return
         if params["type"] == "keyUp" and key == "Backspace":
