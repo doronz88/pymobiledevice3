@@ -1158,39 +1158,29 @@ class CdpTarget:
 
         Typing is dispatched at the focused element, and a document whose focus sits in a child
         frame reports the frame element as focused - so text aimed at a field inside it was typed
-        into nothing at all, silently. Follow the focus down to the document that really holds it.
+        into nothing at all, silently. The document that really holds the focus is the one that
+        both has focus and has something typeable focused in it; a child frame wins over the top,
+        which is only reporting the frame element.
         """
-        probe = (
+        typeable = (
             "(function () {"
             "  const active = document.activeElement;"
-            "  if (!active || !active.tagName) { return 'none'; }"
-            "  const tag = active.tagName.toLowerCase();"
-            "  return tag === 'iframe' || tag === 'frame' ? 'frame' : 'leaf';"
+            "  if (!active || !document.hasFocus || !document.hasFocus()) { return false; }"
+            "  if (active.isContentEditable) { return true; }"
+            "  const tag = active.tagName ? active.tagName.toLowerCase() : '';"
+            "  return tag === 'input' || tag === 'textarea';"
             "})()"
         )
-        context_id: Optional[int] = None
-        frame_id = self.frame_id
-        for _ in range(MAX_FRAME_DESCENT):
-            focus = await self._evaluate_json_in(context_id, probe)
-            if focus is None or focus != "frame":
-                # Either the focus is already on something typeable, or the page could not answer
-                # - in which case the device's own current context is the safer target.
+        # The common case by far: nothing is framed, or the focus is already on a field in the
+        # document the session is attached to. Asking it first keeps typing a single round-trip.
+        if await self._evaluate_json_in(None, typeable) is True:
+            return None
+        for frame_id, context_id in self._frame_execution_ids.items():
+            if frame_id == self.frame_id:
+                continue
+            if await self._evaluate_json_in(context_id, typeable) is True:
                 return context_id
-            # The focused element is a frame; step into the one that holds the focus.
-            index = await self._evaluate_json_in(
-                context_id,
-                "(function () {"
-                "  const frames = Array.prototype.slice.call(document.querySelectorAll('iframe, frame'));"
-                "  return frames.indexOf(document.activeElement);"
-                "})()",
-            )
-            if not isinstance(index, int) or index < 0:
-                return context_id
-            child = await self._child_frame_context(frame_id, index)
-            if child is None:
-                return context_id
-            frame_id, context_id = child[0], child[1]
-        return context_id
+        return None
 
     async def _evaluate_json(self, expression: str) -> Optional[Any]:
         """Evaluate an expression that returns JSON-serializable data and give back the value.
