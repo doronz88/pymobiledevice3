@@ -703,11 +703,10 @@ def test_landing_page_marks_held_targets_paused() -> None:
     try:
         html = targets_html(inspector, "127.0.0.1:9222")
         assert "paused" in html
-        # The link itself stays as it was: the title, nothing else, is its text.
-        assert (
-            '<a href="/devtools/js_app.html?ws=127.0.0.1:9222/devtools/page/PID:42:1">Example (42): JSContext #1</a>'
-            in html
-        )
+        # The link itself stays as it was: the context's label, nothing else, is its text; its
+        # process is named by the header it is listed under.
+        assert '<span class="name">Example</span>' in html
+        assert '<a href="/devtools/js_app.html?ws=127.0.0.1:9222/devtools/page/PID:42:1">JSContext #1</a>' in html
     finally:
         HELD_TARGETS.clear()
 
