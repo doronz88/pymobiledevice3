@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import uuid
+from collections import deque
 from collections.abc import Coroutine
 from dataclasses import dataclass, fields
 from enum import Enum
@@ -190,7 +191,7 @@ class WebinspectorService(LockdownService):
         self.connected_application: dict[str, Application] = {}
         self.application_pages: dict[str, Any] = {}
         self.wir_message_results: dict[str, Any] = {}
-        self.wir_events: dict[str, list[Any]] = {}
+        self.wir_events: dict[str, deque[Any]] = {}
         self.receive_handlers = {
             "_rpc_reportCurrentState:": self._handle_report_current_state,
             "_rpc_reportConnectedApplicationList:": self._handle_report_connected_application_list,
@@ -485,7 +486,7 @@ class WebinspectorService(LockdownService):
         await self._forward_did_close(session_id, app_id, page_id)
         self.wir_events.pop(session_id, None)
 
-    def session_events(self, session_id: str) -> list[Any]:
+    def session_events(self, session_id: str) -> deque[Any]:
         """The queue of events `webinspectord` forwarded to one session's socket.
 
         Events carry no id, so a consumer cannot tell its own from another's by content, and
@@ -495,9 +496,10 @@ class WebinspectorService(LockdownService):
         consume each other's events.
 
         :param session_id: The session identifier the socket was set up with.
-        :returns: The session's queue; consumers pop from it in place.
+        :returns: The session's queue (a deque, so consuming from the front is O(1)); consumers pop
+            from it in place.
         """
-        return self.wir_events.setdefault(session_id, [])
+        return self.wir_events.setdefault(session_id, deque())
 
     def find_page_id(self, page_id: str) -> tuple[Application, Page]:
         """Look up the application and page for a known page identifier.

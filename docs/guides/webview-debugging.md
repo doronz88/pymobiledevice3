@@ -276,3 +276,7 @@ already existed when a client attached keep running, as in Safari.
   `newCDPSession`); those share the one underlying session.
 - The page listing is polled as a fallback, so a tab the device did not announce on
   its own is still discovered (and auto-attached) within a couple of seconds.
+- The manual pause button (`Debugger.pause`) cannot interrupt JavaScript that is already
+  busy in a tight loop: WebKit handles inspector messages on the page's own JavaScript
+  thread, so the pause lands when the script next yields. Armed while the page is idle it
+  stops the next code that runs, as in Chrome.
