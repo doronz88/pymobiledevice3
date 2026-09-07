@@ -9,7 +9,7 @@ import uuid
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from urllib.parse import urlsplit
 
 import httpx
@@ -1584,6 +1584,122 @@ def test_landing_page_groups_targets_by_process() -> None:
     assert sections[1].count("<li") == 2
 
 
+def _listed_app(pages: dict[str, dict[str, Any]], **applications: Application) -> Any:
+    app = _landing_page_app()
+    app.state.inspector.connected_application = dict(applications)
+    app.state.inspector.application_pages = {
+        app_id: {key: Page.from_page_dictionary(listing) for key, listing in listings.items()}
+        for app_id, listings in pages.items()
+    }
+    return app
+
+
+_WEB_PAGE = {"WIRPageIdentifierKey": 1, "WIRTypeKey": "WIRTypeWeb", "WIRTitleKey": "Example", "WIRURLKey": "https://e/"}
+_JS_CONTEXT = {"WIRPageIdentifierKey": 1, "WIRTypeKey": "WIRTypeJavaScript", "WIRTitleKey": "JSContext"}
+
+
+@pytest.mark.asyncio
+async def test_hovering_a_page_highlights_it_on_the_device() -> None:
+    """The landing page forwards a hovered page to the device's indicate message, and clears it
+    when the pointer leaves. A JSContext has no view to highlight; an unknown target is gone."""
+    app = _listed_app(
+        {"PID:1": {"1": _WEB_PAGE}, "PID:2": {"1": _JS_CONTEXT}},
+        **{
+            "PID:1": Application(
+                "PID:1", "com.apple.mobilesafari", 1, "Safari", AutomationAvailability.AVAILABLE, 0, False, True
+            ),
+            "PID:2": Application("PID:2", "com.example.app", 2, "app", AutomationAvailability.UNKNOWN, 0, False, True),
+        },
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as client:
+        on = await client.post("/api/indicate", json={"id": "PID:1:1", "enabled": True})
+        off = await client.post("/api/indicate", json={"id": "PID:1:1", "enabled": False})
+        jscontext = await client.post("/api/indicate", json={"id": "PID:2:1", "enabled": True})
+        gone = await client.post("/api/indicate", json={"id": "PID:3:1", "enabled": True})
+
+    assert on.json() == {"enabled": True}
+    assert off.json() == {"enabled": False}
+    assert jscontext.json() == {"enabled": False}
+    assert gone.json() == {"enabled": False}
+    assert app.state.inspector.indicated == [("PID:1", 1, True), ("PID:1", 1, False)]
+
+
+@pytest.mark.asyncio
+async def test_chrome_listing_carries_the_process_icon_as_favicon() -> None:
+    """chrome://inspect shows a target's faviconUrl; a process with an icon lends it to its targets."""
+    with_icon = Application(
+        "PID:1", "com.apple.mobilesafari", 1, "Safari", AutomationAvailability.UNKNOWN, 0, False, True
+    )
+    with_icon.icon = b"\x89PNG"
+    without = Application("PID:2", "com.example.app", 2, "app", AutomationAvailability.UNKNOWN, 0, False, True)
+    app = _listed_app(
+        {"PID:1": {"1": _WEB_PAGE}, "PID:2": {"1": _JS_CONTEXT}}, **{"PID:1": with_icon, "PID:2": without}
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as client:
+        targets = {target["id"]: target for target in (await client.get("/json/list")).json()}
+
+    assert targets["PID:1:1"]["faviconUrl"] == "http://t/icon/PID:1"
+    assert "faviconUrl" not in targets["PID:2:1"]
+
+
+def test_landing_page_names_the_host_of_a_proxy_and_flags_automation() -> None:
+    """A process running web content for another names the app it runs in; a process that accepts
+    Remote Automation sessions is flagged. Neither shows on an ordinary process."""
+    inspector = _inspector_with(
+        {"PID:1": {"1": Page.from_page_dictionary(_WEB_PAGE)}, "PID:2": {"1": Page.from_page_dictionary(_WEB_PAGE)}},
+        {"PID:1": "Safari", "PID:2": "WebContent"},
+    )
+    inspector.connected_application["PID:1"].availability = AutomationAvailability.AVAILABLE
+    inspector.connected_application["PID:2"].proxy = True
+    inspector.connected_application["PID:2"].host = "PID:1"
+
+    html = targets_html(inspector, "127.0.0.1:9222")
+
+    safari, webcontent = html.split('<details class="app" open>')[1:]
+    assert "<small>com.example.app &middot; pid 1</small>" in safari
+    assert 'class="badge auto"' in safari and ">automation</span>" in safari
+    assert "<small>com.example.app &middot; pid 2 &middot; in Safari</small>" in webcontent
+    assert "badge auto" not in webcontent
+
+
+@pytest.mark.asyncio
+async def test_landing_page_has_a_filter_and_targets_carry_what_it_matches() -> None:
+    """The filter box narrows the list client-side; every target carries its searchable text, and
+    web pages (not JSContexts) carry the id the hover highlight is sent for."""
+    app = _listed_app(
+        {"PID:1": {"1": _WEB_PAGE}, "PID:2": {"1": _JS_CONTEXT}},
+        **{
+            "PID:1": Application(
+                "PID:1", "com.apple.mobilesafari", 1, "Safari", AutomationAvailability.UNKNOWN, 0, False, True
+            ),
+            "PID:2": Application("PID:2", "com.example.app", 2, "app", AutomationAvailability.UNKNOWN, 0, False, True),
+        },
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as client:
+        html = (await client.get("/")).text
+        listing = (await client.get("/api/targets")).json()
+
+    assert '<input class="filter" id="filter" type="search"' in html
+    assert (
+        '<li class="target" data-indicate="PID:1:1" data-search="example https://e/ safari com.apple.mobilesafari 1">'
+        in html
+    )
+    assert (
+        '<li class="target" data-search="jscontext #1 jscontext://com.example.app/2/1 app com.example.app 2">' in html
+    )
+    by_id = {target["id"]: target for target in listing["targets"]}
+    assert by_id["PID:1:1"]["search"] == "example https://e/ safari com.apple.mobilesafari 1"
+    assert by_id["PID:1:1"]["application"] == {
+        "id": "PID:1",
+        "name": "Safari",
+        "pid": 1,
+        "bundle": "com.apple.mobilesafari",
+        "icon": "",
+        "host": "",
+        "automation": False,
+    }
+
+
 @pytest.mark.asyncio
 async def test_process_icons_are_served_from_the_listing() -> None:
     """A process's icon is the PNG the device sent; a process without one, or unknown, is a 404."""
@@ -1814,11 +1930,19 @@ def _landing_page_app() -> Any:
 
     class _Inspector:
         def __init__(self) -> None:
+            self.connection_id = "BRIDGE-CONNECTION"
             self.application_pages: dict[str, dict[str, Page]] = {}
             self.connected_application: dict[str, Application] = {}
+            self.indicated: list[tuple[str, int, bool]] = []
 
         async def get_open_pages(self) -> None:
             pass
+
+        def find_page_id(self, page_id: str) -> tuple[Application, Page]:
+            return WebinspectorService.find_page_id(cast(Any, self), page_id)
+
+        async def indicate_web_view(self, application: Application, page: Page, enable: bool) -> None:
+            self.indicated.append((application.id_, page.id_, enable))
 
     class _Holder:
         running = False

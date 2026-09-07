@@ -35,8 +35,12 @@ page over `chrome://inspect` — see the command's `--help` for why.
 
 Debuggables are grouped by the process that owns them, with its icon, name, bundle
 identifier and pid as the device reports them; click a process header to fold its
-group. A badge next to a debuggable says whether it is paused, or who is already
-debugging it.
+group. A process that accepts Remote Automation sessions carries an **automation**
+badge, and one that runs web content for another (a proxy) names the app it runs
+in. A badge next to a debuggable says whether it is paused, or who is already
+debugging it. Hovering a page highlights its view on the device screen, as Safari's
+Develop menu does, and the filter box narrows the list to targets matching every
+word typed, by title, URL, process name, bundle identifier or pid.
 
 The listing keeps itself current: a tab opened, closed or navigated on the device
 appears there within a couple of seconds, with no reload. Leave it open in a

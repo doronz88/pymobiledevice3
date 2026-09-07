@@ -656,9 +656,19 @@ class WebinspectorService(LockdownService):
             },
         )
 
+    async def indicate_web_view(self, app: Application, page: Page, enable: bool) -> None:
+        """Highlight a web page's view on the device screen (a translucent overlay, as Safari's
+        Develop menu does while hovering a page), or clear the highlight.
+
+        :param app: The application owning the page.
+        :param page: The web page to highlight. JSContexts have nothing to highlight.
+        :param enable: Whether to show or clear the highlight.
+        """
+        await self._forward_indicate_web_view(app.id_, page.id_, enable)
+
     async def _forward_indicate_web_view(self, app_id: str, page_id: int, enable: bool):
         await self._send_message(
-            "_rpc_forwardIndicateWebView",
+            "_rpc_forwardIndicateWebView:",
             {
                 "WIRApplicationIdentifierKey": app_id,
                 "WIRPageIdentifierKey": page_id,

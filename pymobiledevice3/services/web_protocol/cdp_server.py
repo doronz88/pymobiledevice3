@@ -36,7 +36,13 @@ from pymobiledevice3.services.web_protocol.cdp_browser import (
 )
 from pymobiledevice3.services.web_protocol.cdp_target import CdpTarget
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
-from pymobiledevice3.services.webinspector import Application, Page, WebinspectorService, WirTypes
+from pymobiledevice3.services.webinspector import (
+    Application,
+    AutomationAvailability,
+    Page,
+    WebinspectorService,
+    WirTypes,
+)
 
 # chrome://inspect routes a network target's DevTools through Chrome's browser-process relay,
 # which deadlocks after sustained console traffic (the console/screen freeze). Serving the DevTools
@@ -121,15 +127,36 @@ def target_label(page: Page) -> str:
     return page.web_title or page.web_url or f"page {page.id_}"
 
 
-def application_info(application: Application) -> dict[str, Any]:
-    """The process a debuggable belongs to, as the landing page shows it."""
+def application_info(inspector: WebinspectorService, application: Application) -> dict[str, Any]:
+    """The process a debuggable belongs to, as the landing page shows it: identity, icon, the
+    application hosting it when it is a proxy for one (web content running out of process), and
+    whether it accepts Remote Automation sessions."""
+    host = inspector.connected_application.get(application.host) if application.proxy else None
     return {
         "id": application.id_,
         "name": application.name,
         "pid": application.pid,
         "bundle": application.bundle,
         "icon": f"/icon/{application.id_}" if application.icon else "",
+        "host": host.name if host is not None and host is not application else "",
+        "automation": application.availability == AutomationAvailability.AVAILABLE,
     }
+
+
+AUTOMATION_TITLE = "Accepts Remote Automation sessions (Settings > Safari > Advanced > Remote Automation)."
+INDICATE_TITLE = "Hover to highlight this page on the device."
+FILTER_PLACEHOLDER = "Filter by title, URL, process, bundle or pid"
+
+
+def search_text(application: Application, page: Page) -> str:
+    """What the landing page's filter box matches a target against."""
+    return " ".join((
+        target_label(page),
+        target_url(application, page),
+        application.name,
+        application.bundle,
+        str(application.pid),
+    )).lower()
 
 
 def debugged_by(inspector: WebinspectorService, page: Page) -> str:
@@ -212,6 +239,13 @@ li.target small { color: var(--muted); font-size: 11.5px; overflow-wrap: anywher
   border-radius: 999px; background: var(--paused); color: var(--paused-text); vertical-align: 1px;
 }
 .badge.held { background: var(--held); color: var(--held-text); }
+.badge.auto { background: var(--page); color: var(--page-text); }
+input.filter {
+  flex-basis: 100%; margin-top: 4px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--card); color: var(--text); font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+input.filter:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+li.target[data-indicate] .kind { cursor: crosshair; }
 details.attach { grid-column: 2; margin-top: 2px; font-size: 12px; }
 details.attach summary, details.editors summary { cursor: pointer; color: var(--muted); }
 details.attach summary:hover, details.editors summary:hover { color: var(--text); }
@@ -237,8 +271,59 @@ p.empty { color: var(--muted); text-align: center; padding: 28px 0; }
 INDEX_SCRIPT = Template("""
 (function () {
   const BADGES = $badges;
+  const AUTOMATION_TITLE = $automation_title;
+  const INDICATE_TITLE = $indicate_title;
   const container = document.getElementById('targets');
   const toggle = document.getElementById('pause-new-targets');
+  const filter = document.getElementById('filter');
+  // Narrow the list to targets mentioning every word typed; a process whose targets are all
+  // hidden goes with them. Re-applied after every rebuild of the list, so it sticks.
+  function applyFilter() {
+    const words = filter.value.toLowerCase().split(/\\s+/).filter(Boolean);
+    for (const group of container.querySelectorAll('details.app')) {
+      let shown = 0;
+      for (const item of group.querySelectorAll('li.target')) {
+        const match = words.every((word) => item.dataset.search.includes(word));
+        item.hidden = !match;
+        shown += match ? 1 : 0;
+      }
+      group.hidden = shown === 0;
+    }
+  }
+  filter.addEventListener('input', applyFilter);
+  // Hovering a page highlights its view on the device, as Safari's Develop menu does.
+  let indicated = null;
+  async function indicate(id, enabled) {
+    try {
+      await fetch('/api/indicate', {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({id, enabled}),
+      });
+    } catch (error) {
+      // The bridge is momentarily busy or gone; the highlight is cosmetic.
+    }
+  }
+  container.addEventListener('mouseover', (event) => {
+    const item = event.target.closest('li.target');
+    const id = item ? item.dataset.indicate || null : null;
+    if (id === indicated) {
+      return;
+    }
+    if (indicated !== null) {
+      indicate(indicated, false);
+    }
+    indicated = id;
+    if (indicated !== null) {
+      indicate(indicated, true);
+    }
+  });
+  container.addEventListener('mouseleave', () => {
+    if (indicated !== null) {
+      indicate(indicated, false);
+      indicated = null;
+    }
+  });
   // Process groups the user folded; the list is rebuilt whenever it changes, so the fold has to
   // outlive the elements.
   const folded = new Set();
@@ -284,12 +369,21 @@ INDEX_SCRIPT = Template("""
         name.className = 'name';
         name.textContent = target.application.name;
         const details = document.createElement('small');
-        details.textContent = target.application.bundle + ' \u00b7 pid ' + target.application.pid;
+        details.textContent = target.application.bundle + ' \u00b7 pid ' + target.application.pid
+          + (target.application.host ? ' \u00b7 in ' + target.application.host : '');
+        header.append(name, details);
+        if (target.application.automation) {
+          const automation = document.createElement('span');
+          automation.className = 'badge auto';
+          automation.textContent = 'automation';
+          automation.title = AUTOMATION_TITLE;
+          header.appendChild(automation);
+        }
         const count = document.createElement('small');
         count.className = 'count';
         const total = targets.filter((t) => t.application.id === target.application.id).length;
         count.textContent = total + (total === 1 ? ' target' : ' targets');
-        header.append(name, details, count);
+        header.appendChild(count);
         list = document.createElement('ul');
         list.className = 'targets';
         section.append(header, list);
@@ -298,6 +392,9 @@ INDEX_SCRIPT = Template("""
       const kind = document.createElement('span');
       kind.className = 'kind ' + (target.type === 'node' ? 'jscontext' : 'page');
       kind.textContent = target.type === 'node' ? 'JSContext' : 'Page';
+      if (target.type !== 'node') {
+        kind.title = INDICATE_TITLE;
+      }
       const title = document.createElement('span');
       const link = document.createElement('a');
       link.href = target.devtoolsFrontendUrl;
@@ -330,9 +427,14 @@ INDEX_SCRIPT = Template("""
       attach.append(summary, snippet);
       const item = document.createElement('li');
       item.className = 'target';
+      item.dataset.search = target.search;
+      if (target.type !== 'node') {
+        item.dataset.indicate = target.id;
+      }
       item.append(kind, title, url, attach);
       list.appendChild(item);
     }
+    applyFilter();
   }
   container.addEventListener('click', async (event) => {
     const button = event.target.closest('button.copy');
@@ -399,6 +501,8 @@ INDEX_SCRIPT = Template("""
     empty=json.dumps(NO_TARGETS_MESSAGE),
     interval=INDEX_POLL_INTERVAL_MS,
     badges=json.dumps({name: {"text": text, "title": title} for name, (text, title) in BADGES.items()}),
+    automation_title=json.dumps(AUTOMATION_TITLE),
+    indicate_title=json.dumps(INDICATE_TITLE),
 )
 
 
@@ -588,6 +692,9 @@ async def available_targets(request: Request, _: str):
             "webSocketDebuggerUrl": f"ws://{host}/devtools/page/{target_id}",
             "devtoolsFrontendUrl": f"{_frontend_url(page)}?ws={host}/devtools/page/{target_id}",
         })
+        if application.icon:
+            # chrome://inspect renders it next to the target, as it does a page's favicon.
+            targets[-1]["faviconUrl"] = f"http://{host}/icon/{application.id_}"
     return targets
 
 
@@ -632,7 +739,8 @@ async def landing_targets(request: Request) -> dict[str, Any]:
             "label": target_label(page),
             "type": target_type(page),
             "url": target_url(application, page),
-            "application": application_info(application),
+            "application": application_info(app.state.inspector, application),
+            "search": search_text(application, page),
             "paused": target_id in HELD_TARGETS,
             "debugged_by": debugged_by(app.state.inspector, page),
             "webSocketDebuggerUrl": f"ws://{host}/devtools/page/{target_id}",
@@ -640,6 +748,22 @@ async def landing_targets(request: Request) -> dict[str, Any]:
             "attach": attach_config(application, page, host, target_id),
         })
     return {"targets": targets, "pause_new_targets": app.state.holder.running}
+
+
+@app.post("/api/indicate")
+async def indicate_target(request: Request) -> dict[str, bool]:
+    """Highlight a page's view on the device, or clear it: {"id": target id, "enabled": bool}.
+    JSContexts have no view; asking for one is answered with enabled=false and nothing sent."""
+    body = await request.json()
+    try:
+        application, page = app.state.inspector.find_page_id(str(body["id"]))
+    except KeyError:
+        return {"enabled": False}
+    if page.type_ == WirTypes.JAVASCRIPT:
+        return {"enabled": False}
+    enabled = bool(body.get("enabled", True))
+    await app.state.inspector.indicate_web_view(application, page, enabled)
+    return {"enabled": enabled}
 
 
 @app.get("/pause-new-targets")
@@ -702,6 +826,8 @@ async def index(request: Request) -> HTMLResponse:
         f"<code>{escape(host.rpartition(':')[2])}</code>, attach to "
         "<i>Chrome or Node.js &gt; 6.3 started with --inspect</i>. Debug it and pick the page or "
         "JSContext from the list WebStorm shows.</p></details>"
+        f'<input class="filter" id="filter" type="search" placeholder="{FILTER_PLACEHOLDER}" '
+        'aria-label="Filter targets" autocomplete="off">'
         "</header>"
         # Rendered server-side once so the list is there before any script runs, then kept up to
         # date in place by INDEX_SCRIPT.
@@ -721,12 +847,18 @@ def targets_html(inspector: WebinspectorService, host: str) -> str:
     def flush() -> None:
         if current is None or not items:
             return
-        info = application_info(current)
+        info = application_info(inspector, current)
         icon = f'<img class="icon" src="{escape(info["icon"])}" alt="">' if info["icon"] else ""
+        host = f" &middot; in {escape(info['host'])}" if info["host"] else ""
+        automation = (
+            f'<span class="badge auto" title="{escape(AUTOMATION_TITLE)}">automation</span>'
+            if info["automation"]
+            else ""
+        )
         count = f"{len(items)} target{'' if len(items) == 1 else 's'}"
         header = (
             f'<summary class="app-header">{icon}<span class="name">{escape(info["name"])}</span>'
-            f"<small>{escape(info['bundle'])} &middot; pid {info['pid']}</small>"
+            f"<small>{escape(info['bundle'])} &middot; pid {info['pid']}{host}</small>{automation}"
             f'<small class="count">{count}</small></summary>'
         )
         sections.append(f'<details class="app" open>{header}<ul class="targets">{"".join(items)}</ul></details>')
@@ -739,7 +871,13 @@ def targets_html(inspector: WebinspectorService, host: str) -> str:
         frontend = f"{_frontend_url(page)}?ws={host}/devtools/page/{target_id}"
         title = target_label(page)
         is_jscontext = page.type_ == WirTypes.JAVASCRIPT
-        kind = f'<span class="kind {"jscontext" if is_jscontext else "page"}">{"JSContext" if is_jscontext else "Page"}</span>'
+        if is_jscontext:
+            kind = '<span class="kind jscontext">JSContext</span>'
+            attributes = ""
+        else:
+            kind = f'<span class="kind page" title="{escape(INDICATE_TITLE)}">Page</span>'
+            attributes = f' data-indicate="{escape(target_id)}"'
+        attributes += f' data-search="{escape(search_text(application, page))}"'
         # Attached before it ran and stopped on its first statement; opening it lands there.
         # Otherwise, whoever is debugging it now.
         state = "paused" if target_id in HELD_TARGETS else debugged_by(inspector, page)
@@ -755,7 +893,7 @@ def targets_html(inspector: WebinspectorService, host: str) -> str:
             f"<pre>{escape(config, quote=False)}</pre></div></details>"
         )
         items.append(
-            f'<li class="target">{kind}<span><a href="{escape(frontend)}">{escape(title)}</a>{badge}</span>'
+            f'<li class="target"{attributes}>{kind}<span><a href="{escape(frontend)}">{escape(title)}</a>{badge}</span>'
             f"<small>{escape(target_url(application, page))}</small>{attach}</li>"
         )
     flush()
