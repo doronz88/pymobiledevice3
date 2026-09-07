@@ -977,6 +977,91 @@ async def testp_cdp_server_correlates_frames_by_identity_not_document_order(lock
             await client.close()
 
 
+async def testp_cdp_server_answers_basic_auth_through_the_fetch_domain(lockdown: LockdownClient) -> None:
+    """
+    A client can answer an HTTP Basic auth challenge with no on-device dialog, through Chrome's
+    Fetch domain translated onto WebKit's request interception: arm it with Fetch.enable, receive
+    each request as Fetch.requestPaused, and inject an Authorization header on Fetch.continueRequest.
+    WebKit surfaces no auth event of its own (the dialog owns the challenge), so answering it means
+    supplying the credentials proactively on the request - which is what this proves end to end.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        credentials = "Basic " + base64.b64encode(b"user:pass").decode()
+        try:
+            # Drive the reads from one place: replies land in a dict, and each paused request is
+            # continued (with the Authorization header for the protected URL) as it arrives.
+            replies: dict[int, dict[str, Any]] = {}
+            paused_urls: list[str] = []
+
+            async def send(method: str, params: dict[str, Any]) -> int:
+                id_ = next(message_ids)
+                await client.send({"id": id_, "method": method, "params": params})
+                return id_
+
+            async def pump(seconds: float) -> None:
+                deadline = asyncio.get_event_loop().time() + seconds
+                while asyncio.get_event_loop().time() < deadline:
+                    try:
+                        message = await asyncio.wait_for(client.receive(), 0.5)
+                    except (asyncio.TimeoutError, TimeoutError):
+                        continue
+                    if message.get("method") == "Fetch.requestPaused":
+                        request = message["params"]
+                        url = request["request"]["url"]
+                        paused_urls.append(url)
+                        if "basic-auth" in url:
+                            headers = [
+                                {"name": name, "value": value}
+                                for name, value in (request["request"].get("headers") or {}).items()
+                            ]
+                            headers.append({"name": "Authorization", "value": credentials})
+                            await send("Fetch.continueRequest", {"requestId": request["requestId"], "headers": headers})
+                        else:
+                            await send("Fetch.continueRequest", {"requestId": request["requestId"]})
+                    elif "id" in message:
+                        replies[message["id"]] = message
+
+            await send("Runtime.enable", {})
+            await send("Page.enable", {})
+            await send("Network.enable", {})
+            await send("Page.navigate", {"url": "https://example.com/"})
+            await pump(4)
+            await send("Fetch.enable", {"patterns": [{"urlPattern": "*"}], "handleAuthRequests": True})
+            await pump(1)
+            await send(
+                "Runtime.evaluate",
+                {
+                    "expression": (
+                        "window.__auth = null;"
+                        " fetch('https://httpbin.org/basic-auth/user/pass', {mode: 'cors'})"
+                        "  .then(r => r.json()).then(j => window.__auth = j)"
+                        "  .catch(e => window.__auth = {error: '' + e});"
+                    ),
+                    "returnByValue": True,
+                },
+            )
+            result: Any = None
+            for _ in range(TIMEOUT):
+                await pump(1)
+                probe = await send("Runtime.evaluate", {"expression": "window.__auth", "returnByValue": True})
+                await pump(0.8)
+                value = replies.get(probe, {}).get("result", {}).get("result", {}).get("value")
+                if value:
+                    result = value
+                    break
+            assert any("basic-auth" in url for url in paused_urls), (
+                f"the protected request must surface as Fetch.requestPaused: {paused_urls}"
+            )
+            assert result == {"authenticated": True, "user": "user"}, (
+                f"the injected Authorization header must answer the Basic auth challenge: {result}"
+            )
+        finally:
+            await client.close()
+
+
 async def testp_cdp_browser_endpoint_gives_each_attachment_its_own_session(lockdown: LockdownClient) -> None:
     """
     A client may attach to one page more than once - Playwright drives a page through the session

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 import itertools
 import json
@@ -498,6 +499,13 @@ class CdpTarget:
             "Network.loadNetworkResource": self._network_load_network_resource,
             "Network.setAttachDebugStack": partial(self._simple_response, value=None),
             "Network.clearAcceptedEncodingsOverride": partial(self._simple_response, value=None),
+            "Fetch.enable": self._fetch_enable,
+            "Fetch.disable": self._fetch_disable,
+            "Fetch.continueRequest": self._fetch_continue_request,
+            "Fetch.continueResponse": self._fetch_continue_response,
+            "Fetch.continueWithAuth": self._fetch_continue_with_auth,
+            "Fetch.fulfillRequest": self._fetch_fulfill_request,
+            "Fetch.failRequest": self._fetch_fail_request,
             "ServiceWorker.enable": self._service_worker_enable,
             "HeapProfiler.enable": partial(self._simple_response, value=None),
             # Overlay is absent in WebKit; only highlightNode is worth translating, the rest are
@@ -585,6 +593,9 @@ class CdpTarget:
             "Console.messageAdded": self._console_message_added,
             "Network.responseReceived": self._network_response_received,
             "Network.loadingFinished": self._network_loading_finished,
+            "Network.requestWillBeSent": self._network_request_will_be_sent,
+            "Network.requestIntercepted": self._network_request_intercepted,
+            "Network.responseIntercepted": self._network_response_intercepted,
             # WebKit reports a load's progress with the pre-lifecycle events Chrome has long since
             # replaced; each is also turned into the Page.lifecycleEvent modern clients wait on.
             "Page.frameNavigated": self._page_frame_navigated,
@@ -624,6 +635,16 @@ class CdpTarget:
         # and the execution context its keydown was dispatched in (see _input_dispatch_key_event).
         self._key_default_prevented = False
         self._key_context: Optional[int] = None
+        # Chrome's Fetch domain, translated onto WebKit's Network request-interception. When
+        # armed, WebKit pauses each matching request as Network.requestIntercepted, which the
+        # bridge presents to the client as Fetch.requestPaused and answers through
+        # Network.intercept* on the client's continue/fulfill/fail. Injecting an Authorization
+        # header on continueRequest answers HTTP Basic auth without the on-device dialog.
+        self._fetch_enabled = False
+        self._fetch_handle_auth = False
+        # requestId -> {frameId (client), type}, from Network.requestWillBeSent: the fields
+        # Network.requestIntercepted omits but Fetch.requestPaused must carry.
+        self._request_meta: dict[str, dict[str, Any]] = {}
         # execution-context uniqueIds already announced to the frontend, to drop duplicate
         # Runtime.executionContextCreated events (WebKit re-announces contexts) that would
         # otherwise corrupt Chrome's RuntimeModel.
@@ -3386,3 +3407,206 @@ class CdpTarget:
             "timestamp": params["timestamp"],
         }
         await self.output_queue.put(message)
+
+    # --- Fetch domain (Chrome) over Network interception (WebKit) --------------------------------
+
+    @staticmethod
+    def _fetch_headers_to_object(headers: Any) -> dict[str, str]:
+        """Chrome carries headers as a [{name, value}] list; WebKit's intercept* want an object."""
+        result: dict[str, str] = {}
+        if isinstance(headers, list):
+            for entry in cast(list[Any], headers):
+                if isinstance(entry, dict):
+                    name = cast(dict[str, Any], entry).get("name")
+                    value = cast(dict[str, Any], entry).get("value")
+                    if isinstance(name, str):
+                        result[name] = "" if value is None else str(value)
+        elif isinstance(headers, dict):
+            for name, value in cast(dict[str, Any], headers).items():
+                result[str(name)] = "" if value is None else str(value)
+        return result
+
+    @staticmethod
+    def _fetch_pattern_to_regex(url_pattern: str) -> str:
+        """Chrome's Fetch urlPattern is a glob (``*`` any run, ``?`` any char); WebKit takes a regex."""
+        escaped = re.escape(url_pattern)
+        return "^" + escaped.replace("\\*", ".*").replace("\\?", ".") + "$"
+
+    async def _fetch_enable(self, message: dict[str, Any]) -> None:
+        params = message.get("params", {})
+        patterns = params.get("patterns") or [{"urlPattern": "*"}]
+        self._fetch_handle_auth = bool(params.get("handleAuthRequests", False))
+        for pattern in patterns:
+            if not isinstance(pattern, dict):
+                continue
+            spec = cast(dict[str, Any], pattern)
+            url = self._fetch_pattern_to_regex(cast(str, spec.get("urlPattern") or "*"))
+            stage = "response" if str(spec.get("requestStage", "Request")).lower() == "response" else "request"
+            await self._send_message_to_target({
+                "id": self.next_internal_id(),
+                "method": "Network.addInterception",
+                "params": {"url": url, "stage": stage, "isRegex": True},
+            })
+        await self._send_message_to_target({
+            "id": self.next_internal_id(),
+            "method": "Network.setInterceptionEnabled",
+            "params": {"enabled": True},
+        })
+        self._fetch_enabled = True
+        await self._result_response(message, {})
+
+    async def _fetch_disable(self, message: dict[str, Any]) -> None:
+        self._fetch_enabled = False
+        await self._send_message_to_target({
+            "id": self.next_internal_id(),
+            "method": "Network.setInterceptionEnabled",
+            "params": {"enabled": False},
+        })
+        await self._result_response(message, {})
+
+    async def _fetch_continue_request(self, message: dict[str, Any]) -> None:
+        params = message.get("params", {})
+        request_id = params.get("requestId")
+        overrides: dict[str, Any] = {"requestId": request_id}
+        changed = False
+        for key in ("url", "method"):
+            if params.get(key) is not None:
+                overrides[key] = params[key]
+                changed = True
+        if params.get("postData") is not None:
+            overrides["postData"] = params["postData"]
+            changed = True
+        if params.get("headers") is not None:
+            overrides["headers"] = self._fetch_headers_to_object(params["headers"])
+            changed = True
+        if changed:
+            await self._send_message_to_target({
+                "id": self.next_internal_id(),
+                "method": "Network.interceptWithRequest",
+                "params": overrides,
+            })
+        else:
+            await self._send_message_to_target({
+                "id": self.next_internal_id(),
+                "method": "Network.interceptContinue",
+                "params": {"requestId": request_id, "stage": "request"},
+            })
+        await self._result_response(message, {})
+
+    async def _fetch_continue_response(self, message: dict[str, Any]) -> None:
+        await self._send_message_to_target({
+            "id": self.next_internal_id(),
+            "method": "Network.interceptContinue",
+            "params": {"requestId": message.get("params", {}).get("requestId"), "stage": "response"},
+        })
+        await self._result_response(message, {})
+
+    async def _fetch_continue_with_auth(self, message: dict[str, Any]) -> None:
+        # WebKit surfaces no auth-challenge event of its own (the on-device dialog owns it), so this
+        # reactive path is a best effort: with credentials, inject an Authorization header and let
+        # the request go; otherwise just continue it. The reliable way to answer Basic auth here is
+        # proactive - continueRequest with an Authorization header on the matching request.
+        params = message.get("params", {})
+        request_id = params.get("requestId")
+        challenge = cast(dict[str, Any], params.get("authChallengeResponse") or {})
+        if challenge.get("response") == "ProvideCredentials":
+            token = base64.b64encode(
+                f"{challenge.get('username', '')}:{challenge.get('password', '')}".encode()
+            ).decode()
+            await self._send_message_to_target({
+                "id": self.next_internal_id(),
+                "method": "Network.interceptWithRequest",
+                "params": {"requestId": request_id, "headers": {"Authorization": f"Basic {token}"}},
+            })
+        else:
+            await self._send_message_to_target({
+                "id": self.next_internal_id(),
+                "method": "Network.interceptContinue",
+                "params": {"requestId": request_id, "stage": "request"},
+            })
+        await self._result_response(message, {})
+
+    async def _fetch_fulfill_request(self, message: dict[str, Any]) -> None:
+        params = message.get("params", {})
+        headers = self._fetch_headers_to_object(params.get("responseHeaders"))
+        await self._send_message_to_target({
+            "id": self.next_internal_id(),
+            "method": "Network.interceptRequestWithResponse",
+            "params": {
+                "requestId": params.get("requestId"),
+                "content": params.get("body", ""),
+                "base64Encoded": True,
+                "mimeType": headers.get("Content-Type") or headers.get("content-type") or "text/plain",
+                "status": params.get("responseCode", 200),
+                "statusText": params.get("responsePhrase", ""),
+                "headers": headers,
+            },
+        })
+        await self._result_response(message, {})
+
+    async def _fetch_fail_request(self, message: dict[str, Any]) -> None:
+        await self._send_message_to_target({
+            "id": self.next_internal_id(),
+            "method": "Network.interceptRequestWithError",
+            "params": {"requestId": message.get("params", {}).get("requestId"), "errorType": "General"},
+        })
+        await self._result_response(message, {})
+
+    async def _network_request_will_be_sent(self, message: dict[str, Any]) -> None:
+        # Cache what Network.requestIntercepted omits but Fetch.requestPaused needs, then forward
+        # the event as the raw path would have. Bound the cache so a long-lived page cannot grow it.
+        params = message["params"]
+        request_id = params.get("requestId")
+        if isinstance(request_id, str):
+            if len(self._request_meta) > 512:
+                self._request_meta.clear()
+            self._request_meta[request_id] = {
+                "frameId": self._to_client_frame_id(params.get("frameId")),
+                "type": params.get("type"),
+            }
+        self._map_frame_ids_outbound(message)
+        await self.output_queue.put(message)
+
+    async def _network_request_intercepted(self, message: dict[str, Any]) -> None:
+        params = message["params"]
+        if not self._fetch_enabled:
+            # A client driving WebKit's Network interception directly; leave its event untouched.
+            await self.output_queue.put(message)
+            return
+        request_id = params.get("requestId")
+        meta = self._request_meta.get(request_id, {}) if isinstance(request_id, str) else {}
+        resource_type = meta.get("type")
+        await self.output_queue.put({
+            "method": "Fetch.requestPaused",
+            "params": {
+                "requestId": request_id,
+                "request": params.get("request", {}),
+                "frameId": meta.get("frameId") or self.frame_id,
+                "resourceType": resource_type if resource_type in NETWORK_RESOURCE_TYPES else "Other",
+                "networkId": request_id,
+            },
+        })
+
+    async def _network_response_intercepted(self, message: dict[str, Any]) -> None:
+        params = message["params"]
+        if not self._fetch_enabled:
+            await self.output_queue.put(message)
+            return
+        request_id = params.get("requestId")
+        response = params.get("response", {})
+        meta = self._request_meta.get(request_id, {}) if isinstance(request_id, str) else {}
+        resource_type = meta.get("type")
+        headers = response.get("headers", {})
+        await self.output_queue.put({
+            "method": "Fetch.requestPaused",
+            "params": {
+                "requestId": request_id,
+                "request": {"url": response.get("url", ""), "method": "GET", "headers": {}},
+                "frameId": meta.get("frameId") or self.frame_id,
+                "resourceType": resource_type if resource_type in NETWORK_RESOURCE_TYPES else "Other",
+                "networkId": request_id,
+                "responseStatusCode": response.get("status"),
+                "responseStatusText": response.get("statusText", ""),
+                "responseHeaders": [{"name": str(k), "value": str(v)} for k, v in headers.items()],
+            },
+        })
