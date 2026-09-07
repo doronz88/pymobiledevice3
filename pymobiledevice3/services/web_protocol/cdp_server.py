@@ -143,6 +143,16 @@ def application_info(inspector: WebinspectorService, application: Application) -
     }
 
 
+def bridge_version() -> str:
+    """The running pymobiledevice3's version, or "" when the package was not built (a bare checkout
+    without its generated version module)."""
+    try:
+        from pymobiledevice3._version import __version__
+    except ImportError:
+        return ""
+    return __version__
+
+
 AUTOMATION_TITLE = "Accepts Remote Automation sessions (Settings > Safari > Advanced > Remote Automation)."
 INDICATE_TITLE = "Hover to highlight this page on the device."
 FILTER_PLACEHOLDER = "Filter by title, URL, process, bundle or pid"
@@ -802,6 +812,8 @@ async def index(request: Request) -> HTMLResponse:
     await refresh_listings()
     host = request.headers.get("host", "127.0.0.1:9222")
     checked = " checked" if app.state.holder.running else ""
+    version = bridge_version()
+    product = f"pymobiledevice3 {escape(version)}" if version else "pymobiledevice3"
     return HTMLResponse(
         "<!doctype html><meta charset=utf-8>"
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -810,7 +822,7 @@ async def index(request: Request) -> HTMLResponse:
         f"<style>{INDEX_STYLE}</style>"
         "<main><header>"
         '<img class="logo" src="/logo.png" alt="">'
-        "<h1>Web Inspector<small>pymobiledevice3 &middot; inspectable pages and JSContexts on the device</small></h1>"
+        f"<h1>Web Inspector<small>{product} &middot; inspectable pages and JSContexts on the device</small></h1>"
         f'<label class="toggle"><input type="checkbox" id="pause-new-targets"{checked}>'
         f'<span class="switch"></span>{PAUSE_NEW_TARGETS_LABEL}</label>'
         '<p class="hint">Attaches to every JSContext an app creates before it runs and stops it on its '
@@ -826,6 +838,14 @@ async def index(request: Request) -> HTMLResponse:
         f"<code>{escape(host.rpartition(':')[2])}</code>, attach to "
         "<i>Chrome or Node.js &gt; 6.3 started with --inspect</i>. Debug it and pick the page or "
         "JSContext from the list WebStorm shows.</p></details>"
+        '<details class="editors"><summary>Using chrome://inspect instead</summary>'
+        "<p>Chrome does not let a web page link to <code>chrome://inspect</code>, so this page cannot "
+        "open it for you: type <code>chrome://inspect/#devices</code> into the address bar. Chrome "
+        "looks for a bridge at <code>localhost:9222</code> on its own; for any other address, add "
+        f"<code>{escape(host)}</code> under <b>Configure...</b> next to <i>Discover network targets</i>. "
+        "Prefer this page when you can: chrome://inspect routes DevTools through Chrome's "
+        "browser-process relay, which deadlocks under sustained console traffic and freezes the "
+        "console and screen, whereas the links below connect to the bridge directly.</p></details>"
         f'<input class="filter" id="filter" type="search" placeholder="{FILTER_PLACEHOLDER}" '
         'aria-label="Filter targets" autocomplete="off">'
         "</header>"
