@@ -6,6 +6,7 @@ from asyncio import CancelledError
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from functools import update_wrapper
+from pathlib import Path
 from string import Template
 from typing import Annotated, Any, Optional, cast
 
@@ -35,6 +36,7 @@ from pymobiledevice3.exceptions import (
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.services.web_protocol.cdp_server import app, find_chrome
+from pymobiledevice3.services.web_protocol.cdp_trace import ProtocolTrace
 from pymobiledevice3.services.web_protocol.driver import By, Cookie, WebDriver
 from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
 from pymobiledevice3.services.webinspector import SAFARI, ApplicationPage, WebinspectorService
@@ -406,6 +408,13 @@ async def cdp(
             '"Pause new JSContexts on launch" switch.',
         ),
     ] = False,
+    trace: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--trace",
+            help="Record every protocol message, in both directions, to this JSON-lines file - attach it to a bug report.",
+        ),
+    ] = None,
 ) -> None:
     """
     Start a CDP server for debugging WebViews and inspectable JSContexts.
@@ -447,6 +456,11 @@ async def cdp(
     app.state.inspector = WebinspectorService(lockdown=service_provider)
     app.state.chrome_path = find_chrome(chrome)
     app.state.pause_new_targets = pause_new_targets
+    recorder = ProtocolTrace(trace) if trace is not None else None
+    if recorder is not None:
+        app.state.trace = recorder
+        app.state.inspector.trace = recorder.device_hook
+        typer.echo(f"Recording the protocol trace to {trace}")
     print(f"Web Inspector ready. Open in Google Chrome: http://{host}:{port}/")
     server = uvicorn.Server(
         uvicorn.Config(
@@ -457,7 +471,11 @@ async def cdp(
             ws="wsproto",
         )
     )
-    await server.serve()
+    try:
+        await server.serve()
+    finally:
+        if recorder is not None:
+            recorder.close()
 
 
 async def get_js_completions(jsshell: "JsShell", obj: str, prefix: str) -> AsyncIterator[Completion]:

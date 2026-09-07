@@ -6,7 +6,7 @@ from collections import deque
 from collections.abc import Coroutine
 from dataclasses import dataclass, fields
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
@@ -191,6 +191,9 @@ class WebinspectorService(LockdownService):
         self.connected_application: dict[str, Application] = {}
         self.application_pages: dict[str, Any] = {}
         self.wir_message_results: dict[str, Any] = {}
+        # Optional observer of every inspector-protocol message crossing the page sockets, as
+        # (direction, session id, message); the CDP bridge's --trace recorder plugs in here.
+        self.trace: Optional[Callable[[str, str, Any], None]] = None
         self.wir_events: dict[str, deque[Any]] = {}
         self.receive_handlers = {
             "_rpc_reportCurrentState:": self._handle_report_current_state,
@@ -585,6 +588,9 @@ class WebinspectorService(LockdownService):
 
     async def _handle_application_sent_data(self, arg: dict[str, Any]):
         response = json.loads(arg["WIRMessageDataKey"])
+        trace = getattr(self, "trace", None)
+        if trace is not None:
+            trace("device->bridge", arg.get("WIRDestinationKey", ""), response)
 
         if "id" in response:
             self.wir_message_results[response["id"]] = response
@@ -637,6 +643,9 @@ class WebinspectorService(LockdownService):
         )
 
     async def _forward_socket_data(self, session_id: str, app_id: str, page_id: int, data: dict[str, Any]):
+        trace = getattr(self, "trace", None)
+        if trace is not None:
+            trace("bridge->device", session_id, data)
         await self._send_message(
             "_rpc_forwardSocketData:",
             {
