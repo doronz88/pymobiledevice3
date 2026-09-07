@@ -8,6 +8,7 @@ import urllib.request
 import uuid
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
+from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional, cast
 from urllib.parse import urlsplit
@@ -28,6 +29,7 @@ from pymobiledevice3.services.web_protocol.cdp_server import (
     _fetch,
     _frontend_base,
     app,
+    bridge_version,
     targets_html,
 )
 from pymobiledevice3.services.web_protocol.cdp_target import JS_CONTEXT_EXECUTION_ID, CdpTarget
@@ -1950,6 +1952,22 @@ def _landing_page_app() -> Any:
     app.state.inspector = _Inspector()
     app.state.holder = _Holder()
     return app
+
+
+@pytest.mark.asyncio
+async def test_landing_page_names_its_version_and_explains_chrome_inspect() -> None:
+    """The header says which pymobiledevice3 is serving the page, and a note tells people how to
+    reach chrome://inspect - the page cannot link to it, Chrome blocks such navigations."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=_landing_page_app()), base_url="http://t") as client:
+        html = (await client.get("/")).text
+
+    version = bridge_version()
+    assert version
+    assert f"<small>pymobiledevice3 {escape(version)} &middot; inspectable pages" in html
+    assert "<summary>Using chrome://inspect instead</summary>" in html
+    assert "<code>chrome://inspect/#devices</code>" in html
+    # The bridge's own address, for Chrome's discovery list when it is not the default one.
+    assert "add <code>t</code> under <b>Configure...</b>" in html
 
 
 @pytest.mark.asyncio

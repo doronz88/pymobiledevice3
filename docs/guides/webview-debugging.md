@@ -31,7 +31,12 @@ the duration of the debugging session.
 ## Chrome DevTools
 
 Open <http://127.0.0.1:9222/> in Google Chrome and pick a page. Prefer this landing
-page over `chrome://inspect` — see the command's `--help` for why.
+page over `chrome://inspect` — see the command's `--help` for why. The page cannot
+link to `chrome://inspect` (Chrome blocks such navigations from web pages, clicked
+or not); if you want it anyway, type `chrome://inspect/#devices` into the address
+bar. Chrome discovers a bridge on `localhost:9222` by itself; any other address goes
+under **Configure...** next to *Discover network targets*. The page's header shows
+the pymobiledevice3 version serving it.
 
 Debuggables are grouped by the process that owns them, with its icon, name, bundle
 identifier and pid as the device reports them; click a process header to fold its
