@@ -7,7 +7,14 @@ import pytest
 
 from pymobiledevice3.exceptions import WebInspectorNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.services.webinspector import SAFARI, Page, WebinspectorService, WirTypes, make_target_id
+from pymobiledevice3.services.webinspector import (
+    SAFARI,
+    Application,
+    Page,
+    WebinspectorService,
+    WirTypes,
+    make_target_id,
+)
 
 
 @asynccontextmanager
@@ -47,6 +54,36 @@ def test_javascript_page_listing_keeps_its_title() -> None:
     assert page.type_ == WirTypes.JAVASCRIPT
     assert page.web_title == "JSContext"
     assert page.web_url == ""
+    assert page.web_connection_id == ""
+
+
+def test_javascript_page_listing_reports_the_debugger_holding_it() -> None:
+    """The device names the connection debugging a JSContext exactly as it does for a web page
+    (observed on iOS 26.6.1: the key appears while a session is attached, and only then)."""
+    page = Page.from_page_dictionary({
+        "WIRTitleKey": "JSContext",
+        "WIRTypeKey": "WIRTypeJavaScript",
+        "WIRPageIdentifierKey": 7,
+        "WIRConnectionIdentifierKey": "D0F5501A-3182-492B-AE82-F0F323B02C28",
+        "WIROverrideNameKey": "",
+    })
+    assert page.web_connection_id == "D0F5501A-3182-492B-AE82-F0F323B02C28"
+
+
+def test_application_listing_keeps_its_icon() -> None:
+    """The device sends each process's icon as PNG bytes (a generic one for processes without an
+    icon of their own); the landing page shows it."""
+    application = Application.from_application_dictionary({
+        "WIRApplicationIdentifierKey": "PID:26846",
+        "WIRApplicationBundleIdentifierKey": "com.apple.mobilesafari",
+        "WIRApplicationNameKey": "Safari",
+        "WIRAutomationAvailabilityKey": "WIRAutomationAvailabilityAvailable",
+        "WIRIsApplicationActiveKey": 2,
+        "WIRIsApplicationProxyKey": False,
+        "WIRIsApplicationReadyKey": True,
+        "WIRApplicationIconKey": b"\x89PNG\r\n\x1a\nicon",
+    })
+    assert application.icon == b"\x89PNG\r\n\x1a\nicon"
 
 
 def test_web_page_listing_reports_the_debugger_holding_it() -> None:

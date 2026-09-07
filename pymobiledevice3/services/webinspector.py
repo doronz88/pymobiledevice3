@@ -71,7 +71,8 @@ class Page:
     web_title: str = ""
     # The Web Inspector connection currently debugging this page, when there is one. WebKit serves
     # a single inspector session per debuggable, so a page listed with somebody else's connection
-    # identifier cannot be attached to until they let go.
+    # identifier cannot be attached to until they let go. Reported for every debuggable, JSContexts
+    # included; automation targets carry theirs in `automation_connection_id`.
     web_connection_id: str = ""
     automation_is_paired_key: bool = False
     automation_name: str = ""
@@ -85,11 +86,12 @@ class Page:
         if p.type_ in (WirTypes.WEB, WirTypes.WEB_PAGE):
             p.web_title = page_dict["WIRTitleKey"]
             p.web_url = page_dict["WIRURLKey"]
-            p.web_connection_id = page_dict.get("WIRConnectionIdentifierKey", "")
         if p.type_ == WirTypes.JAVASCRIPT:
             # A JSContext debuggable is listed with a title (its name, "JSContext" by default) but
             # no URL - there is no document behind it.
             p.web_title = page_dict.get("WIRTitleKey", "")
+        if p.type_ != WirTypes.AUTOMATION:
+            p.web_connection_id = page_dict.get("WIRConnectionIdentifierKey", "")
         if p.type_ == WirTypes.AUTOMATION:
             p.automation_is_paired_key = page_dict["WIRAutomationTargetIsPairedKey"]
             p.automation_name = page_dict["WIRAutomationTargetNameKey"]
@@ -121,6 +123,9 @@ class Application:
     proxy: bool
     ready: bool
     host: str = ""
+    # The application's icon as PNG bytes (`WIRApplicationIconKey`); processes without one are
+    # sent a generic placeholder by the device.
+    icon: bytes = b""
 
     @classmethod
     def from_application_dictionary(cls, app_dict: dict[str, Any]) -> "Application":
@@ -134,6 +139,7 @@ class Application:
             app_dict["WIRIsApplicationProxyKey"],
             app_dict["WIRIsApplicationReadyKey"],
             app_dict.get("WIRHostApplicationIdentifierKey", ""),
+            app_dict.get("WIRApplicationIconKey", b""),
         )
 
 

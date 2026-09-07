@@ -33,6 +33,11 @@ the duration of the debugging session.
 Open <http://127.0.0.1:9222/> in Google Chrome and pick a page. Prefer this landing
 page over `chrome://inspect` — see the command's `--help` for why.
 
+Debuggables are grouped by the process that owns them, with its icon, name, bundle
+identifier and pid as the device reports them; click a process header to fold its
+group. A badge next to a debuggable says whether it is paused, or who is already
+debugging it.
+
 The listing keeps itself current: a tab opened, closed or navigated on the device
 appears there within a couple of seconds, with no reload. Leave it open in a
 background tab and it stops polling until you come back to it.
@@ -255,7 +260,9 @@ already existed when a client attached keep running, as in Safari.
   Playwright) do not take pages over: a page held by another session is skipped after
   a short wait. A page held over a *different* Web Inspector connection (Safari's own
   Web Inspector, a second `pymobiledevice3`) cannot be taken; the bridge logs which
-  connection holds it — detach that client first. A single client may open as many CDP
+  connection holds it — detach that client first. The landing page shows who holds
+  each debuggable: **attached here** for a session of this bridge (opening it takes it
+  over), **held elsewhere** for another Web Inspector connection. A single client may open as many CDP
   sessions onto a page as it likes (Playwright does this when a script also opens a raw
   `newCDPSession`); those share the one underlying session.
 - The page listing is polled as a fallback, so a tab the device did not announce on

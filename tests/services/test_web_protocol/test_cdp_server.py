@@ -1494,6 +1494,7 @@ async def testp_cdp_server_keyboard_input_submits_forms(lockdown: LockdownClient
 
 def _inspector_with(pages: dict[str, dict[str, Page]], names: dict[str, str]) -> WebinspectorService:
     inspector = WebinspectorService.__new__(WebinspectorService)
+    inspector.connection_id = "BRIDGE-CONNECTION"
     inspector.application_pages = pages
     inspector.connected_application = {
         app_id: Application(
@@ -1537,8 +1538,107 @@ def test_landing_page_links_each_kind_to_its_own_frontend() -> None:
     html = targets_html(inspector, "127.0.0.1:9222")
 
     assert '<a href="/devtools/inspector.html?ws=127.0.0.1:9222/devtools/page/PID:1:1">Example</a>' in html
-    # Every JSContext of a process is titled "JSContext"; the context number tells them apart.
-    assert '<a href="/devtools/js_app.html?ws=127.0.0.1:9222/devtools/page/PID:2:1">myapp (2): JSContext #1</a>' in html
+    # Every JSContext of a process is titled "JSContext"; the context number tells them apart, and
+    # the process is named by the header the context is listed under.
+    assert '<a href="/devtools/js_app.html?ws=127.0.0.1:9222/devtools/page/PID:2:1">JSContext #1</a>' in html
+
+
+def test_landing_page_groups_targets_by_process() -> None:
+    """Each process gets a header with what the device reports about it - icon, name, bundle, pid -
+    and its debuggables listed under it, in a group that folds on the header. A process without an
+    icon gets no image."""
+    inspector = _inspector_with(
+        {
+            "PID:1": {
+                "1": Page.from_page_dictionary({
+                    "WIRPageIdentifierKey": 1,
+                    "WIRTypeKey": "WIRTypeWeb",
+                    "WIRTitleKey": "Example",
+                    "WIRURLKey": "https://example.com/",
+                })
+            },
+            "PID:2": {
+                str(n): Page.from_page_dictionary({
+                    "WIRPageIdentifierKey": n,
+                    "WIRTypeKey": "WIRTypeJavaScript",
+                    "WIRTitleKey": "JSContext",
+                })
+                for n in (1, 2)
+            },
+        },
+        {"PID:1": "MobileSafari", "PID:2": "myapp"},
+    )
+    inspector.connected_application["PID:1"].icon = b"\x89PNG..."
+
+    html = targets_html(inspector, "127.0.0.1:9222")
+
+    sections = html.split('<details class="app" open>')[1:]
+    assert len(sections) == 2
+    assert (
+        '<summary class="app-header"><img class="icon" src="/icon/PID:1" alt=""><span class="name">MobileSafari</span>'
+        '<small>com.example.app &middot; pid 1</small><small class="count">1 target</small></summary>'
+    ) in sections[0]
+    assert sections[0].count("<li") == 1
+    assert '<summary class="app-header"><span class="name">myapp</span>' in sections[1]
+    assert '<small class="count">2 targets</small>' in sections[1]
+    assert sections[1].count("<li") == 2
+
+
+@pytest.mark.asyncio
+async def test_process_icons_are_served_from_the_listing() -> None:
+    """A process's icon is the PNG the device sent; a process without one, or unknown, is a 404."""
+    app = _landing_page_app()
+    app.state.inspector.connected_application = {
+        "PID:1": Application(
+            "PID:1", "com.example.app", 1, "app", AutomationAvailability.NOT_AVAILABLE, 0, False, True
+        ),
+    }
+    app.state.inspector.connected_application["PID:1"].icon = b"\x89PNG\r\n\x1a\nicon"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as client:
+        icon = await client.get("/icon/PID:1")
+        missing = await client.get("/icon/PID:2")
+
+    assert icon.status_code == 200
+    assert icon.headers["content-type"] == "image/png"
+    assert icon.content == b"\x89PNG\r\n\x1a\nicon"
+    assert missing.status_code == 404
+
+
+def test_landing_page_says_who_is_debugging_each_target() -> None:
+    """A debuggable already held by a session is flagged, and whose session it is decides what
+    opening it will do: a session of this bridge is taken over, another connection has to let go."""
+    inspector = _inspector_with(
+        {
+            "PID:2": {
+                "1": Page.from_page_dictionary({
+                    "WIRPageIdentifierKey": 1,
+                    "WIRTypeKey": "WIRTypeJavaScript",
+                    "WIRTitleKey": "JSContext",
+                }),
+                "2": Page.from_page_dictionary({
+                    "WIRPageIdentifierKey": 2,
+                    "WIRTypeKey": "WIRTypeJavaScript",
+                    "WIRTitleKey": "JSContext",
+                    "WIRConnectionIdentifierKey": "BRIDGE-CONNECTION",
+                }),
+                "3": Page.from_page_dictionary({
+                    "WIRPageIdentifierKey": 3,
+                    "WIRTypeKey": "WIRTypeJavaScript",
+                    "WIRTitleKey": "JSContext",
+                    "WIRConnectionIdentifierKey": "SAFARI-CONNECTION",
+                }),
+            },
+        },
+        {"PID:2": "myapp"},
+    )
+
+    html = targets_html(inspector, "127.0.0.1:9222")
+
+    free, bridge, other = (html.split("</li>")[i] for i in range(3))
+    assert 'class="app-header"' in free
+    assert "badge" not in free
+    assert 'class="badge"' in bridge and ">attached here</span>" in bridge
+    assert 'class="badge held"' in other and ">held elsewhere</span>" in other
 
 
 def test_landing_page_escapes_titles_from_the_device() -> None:
