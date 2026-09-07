@@ -30,6 +30,26 @@ UNRESPONSIVE_PROBE_TIMEOUT = 1.5
 # CdpTarget._evaluate_key_handler). Typical replies arrive within ~10 ms.
 KEY_HANDLER_WAKE_DELAY = 0.05
 
+# Any forwarded client request hits the same iOS 26 WebKit quirk as the key handlers: its reply -
+# and the events it triggers, such as the Debugger.paused after a step - is occasionally held until
+# the next message reaches the page (see CdpTarget._wake_late_replies). Measured on a large script,
+# half of all step-overs stalled this way, and an evaluate, a stepOver reply and its paused event
+# were each freed by one throwaway message within ~10 ms. While any client reply is outstanding the
+# bridge checks every REPLY_WAKE_TICK and nudges once any reply has waited REPLY_WAKE_INTERVAL - one
+# nudge flushes everything held, so traffic is bounded whatever is pending - and stops tracking a
+# request after REPLY_WAKE_MAX_AGE (a script that never terminates). The interval is well above a
+# normal round-trip (~10 ms), so a prompt reply is never nudged; the finer tick keeps a withheld
+# step-over's stall to ~0.3 s rather than up to two intervals.
+REPLY_WAKE_TICK = 0.1
+REPLY_WAKE_INTERVAL = 0.25
+REPLY_WAKE_MAX_AGE = 20.0
+
+# The receive loop and the internal-reply waits poll their queues. Polling with sleep(0) spun a
+# core flat out whenever nothing was pending - 23% of a CPU measured while a debugger sat idle at
+# a breakpoint. A 1 ms sleep drops that to nothing; a message that is already queued is still
+# handled without sleeping, so throughput under load is unchanged.
+IDLE_POLL_INTERVAL = 0.001
+
 # A navigation that commits in a new process destroys the target the bridge is talking to, and
 # WebKit never answers what was in flight to it. That is exactly when Chrome's frontend asks for
 # the resource tree and when a screencast starts, so those requests wait here for the replacement
@@ -429,6 +449,13 @@ class CdpTarget:
         self._top_frame_commits = 0
         # Detached tasks (a navigation waiting for its commit); cancelled when the session closes.
         self._background_tasks: set[asyncio.Task[None]] = set()
+        # Forwarded client request id -> loop time it was sent, while its reply is outstanding, and the
+        # single watchdog nudging the page for them (see _wake_late_replies).
+        self._reply_wake_pending: dict[int, float] = {}
+        # Client request id -> how to finish that request when its device reply arrives, for
+        # requests forwarded without blocking (see _forward_and_translate).
+        self._reply_translators: dict[int, Callable[[dict[str, Any]], Awaitable[None]]] = {}
+        self._reply_wake_task: Optional[asyncio.Task[None]] = None
         self.output_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.input_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.screencast: Optional[ScreenCast] = None
@@ -705,9 +732,9 @@ class CdpTarget:
         events = protocol.inspector.session_events(protocol.id_)
         while True:
             if not events:
-                await asyncio.sleep(0)
+                await asyncio.sleep(IDLE_POLL_INTERVAL)
                 continue
-            created = events.pop(0)
+            created = events.popleft()
             target_info = created.get("params", {}).get("targetInfo")
             # Only a page target can serve this session (see _target_created).
             if target_info is not None and target_info.get("type", PAGE_TARGET_TYPE) == PAGE_TARGET_TYPE:
@@ -851,7 +878,7 @@ class CdpTarget:
                 del events[i]
                 self._pending_requests.pop(id_, None)
                 return message
-            await asyncio.sleep(0)
+            await asyncio.sleep(IDLE_POLL_INTERVAL)
         return None
 
     async def send_message_with_result(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -994,11 +1021,11 @@ class CdpTarget:
     async def _receive_loop(self):
         while True:
             if self._waiting_for_id:
-                await asyncio.sleep(0)
+                await asyncio.sleep(IDLE_POLL_INTERVAL)
                 continue
             message = self._next_message()
             if message is None:
-                await asyncio.sleep(0)
+                await asyncio.sleep(IDLE_POLL_INTERVAL)
                 continue
             try:
                 if self._flat:
@@ -1023,7 +1050,7 @@ class CdpTarget:
         events = self.protocol.inspector.session_events(self.session_id)
         if not events:
             return None
-        return cast(dict[str, Any], events.pop(0))
+        return cast(dict[str, Any], events.popleft())
 
     async def _to_output_queue(self, message: dict[str, Any]):
         if message["method"] != "Target.dispatchMessageFromTarget":
@@ -1039,6 +1066,15 @@ class CdpTarget:
         resolved_target_id = target_id if target_id is not None else self.target_id
         if "id" in message:
             self._pending_requests[message["id"]] = resolved_target_id
+        message_id = message.get("id")
+        if record and isinstance(message_id, int) and message_id > 0:
+            # A client request whose reply WebKit may withhold until the next message; the watchdog
+            # keeps the page nudged until it answers (see _wake_late_replies).
+            self._reply_wake_pending[message_id] = asyncio.get_event_loop().time()
+            if self._reply_wake_task is None or self._reply_wake_task.done():
+                self._reply_wake_task = asyncio.ensure_future(self._wake_late_replies())
+                self._background_tasks.add(self._reply_wake_task)
+                self._reply_wake_task.add_done_callback(self._background_tasks.discard)
         if record:
             self._record_setup_message(message)
         if self._flat:
@@ -1084,7 +1120,7 @@ class CdpTarget:
             if message is not None:
                 self._pending_requests.pop(id_, None)
                 return message
-            await asyncio.sleep(0)
+            await asyncio.sleep(IDLE_POLL_INTERVAL)
         return None
 
     def _record_setup_message(self, message: dict[str, Any]):
@@ -1184,39 +1220,67 @@ class CdpTarget:
     async def _dom_push_nodes_by_backend_ids(self, message: dict[str, Any]):
         await self.output_queue.put({"id": message["id"], "result": {"nodeIds": []}})
 
+    async def _forward_and_translate(
+        self,
+        message: dict[str, Any],
+        device_message: dict[str, Any],
+        translate: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        """Forward a client request to the device under the client's own id and finish it with
+        `translate` when the reply arrives, instead of waiting for it here.
+
+        Waiting here (send_message_with_result) holds the receive loop for up to WIR_RESULT_TIMEOUT
+        and gives up after it: a reply WebKit needs longer to build - the property list of a
+        large scope, which the Sources panel fetches on every pause - was silently answered
+        with an empty result, and no event reached the client for those five seconds. Forwarding
+        under the client's id also lets the withheld-reply watchdog cover the request.
+        """
+        self._reply_translators[message["id"]] = translate
+        await self._send_message_to_target({"id": message["id"], **device_message})
+
     async def _runtime_get_properties(self, message: dict[str, Any]):
         """
         WebKit answers Runtime.getProperties with a 'properties' array; Chrome's frontend reads
         'result' and renders "No properties" otherwise. WebKit also lacks the
-        accessorPropertiesOnly/nonIndexedPropertiesOnly filters, so apply them here.
+        accessorPropertiesOnly/nonIndexedPropertiesOnly filters, so apply them here. Forwarded
+        without blocking (see _forward_and_translate): a large scope's list takes WebKit longer
+        than the internal wait allowed, which left the Scope panel empty on every pause in a big
+        function and stalled event delivery meanwhile.
         """
         params = message["params"]
-        response = await self.send_message_with_result(
-            "Runtime.getProperties",
+
+        async def translate(reply: dict[str, Any]) -> None:
+            if "result" not in reply:
+                await self.output_queue.put({"id": message["id"], "result": {"result": []}})
+                return
+            properties: list[dict[str, Any]] = reply["result"].get("properties", [])
+            if params.get("accessorPropertiesOnly", False):
+                properties = [p for p in properties if "get" in p or "set" in p]
+            if params.get("nonIndexedPropertiesOnly", False):
+                properties = [p for p in properties if not p.get("name", "").isdigit()]
+            for prop in properties:
+                prop.setdefault("configurable", False)
+                prop.setdefault("enumerable", False)
+            # Expanded objects list function properties whose native descriptions the console
+            # autocomplete inspects; normalize them (see _normalize_native_functions).
+            self._normalize_native_functions(properties)
+            result: dict[str, Any] = {"result": properties}
+            if "internalProperties" in reply["result"]:
+                result["internalProperties"] = reply["result"]["internalProperties"]
+            await self.output_queue.put({"id": message["id"], "result": result})
+
+        await self._forward_and_translate(
+            message,
             {
-                "objectId": params["objectId"],
-                "ownProperties": params.get("ownProperties", False),
-                "generatePreview": params.get("generatePreview", False),
+                "method": "Runtime.getProperties",
+                "params": {
+                    "objectId": params["objectId"],
+                    "ownProperties": params.get("ownProperties", False),
+                    "generatePreview": params.get("generatePreview", False),
+                },
             },
+            translate,
         )
-        if "result" not in response:
-            await self.output_queue.put({"id": message["id"], "result": {"result": []}})
-            return
-        properties: list[dict[str, Any]] = response["result"].get("properties", [])
-        if params.get("accessorPropertiesOnly", False):
-            properties = [p for p in properties if "get" in p or "set" in p]
-        if params.get("nonIndexedPropertiesOnly", False):
-            properties = [p for p in properties if not p.get("name", "").isdigit()]
-        for prop in properties:
-            prop.setdefault("configurable", False)
-            prop.setdefault("enumerable", False)
-        # Expanded objects list function properties whose native descriptions the console
-        # autocomplete inspects; normalize them (see _normalize_native_functions).
-        self._normalize_native_functions(properties)
-        result: dict[str, Any] = {"result": properties}
-        if "internalProperties" in response["result"]:
-            result["internalProperties"] = response["result"]["internalProperties"]
-        await self.output_queue.put({"id": message["id"], "result": result})
 
     async def _runtime_global_lexical_scope_names(self, message: dict[str, Any]):
         """
@@ -2745,6 +2809,33 @@ class CdpTarget:
             })
         return await pending
 
+    async def _wake_late_replies(self) -> None:
+        """Free forwarded client replies that WebKit is withholding.
+
+        iOS 26 WebKit sometimes holds the reply to a client request - and the events that follow
+        it, such as the Debugger.paused after a step - until the next message reaches the page:
+        the work has finished, but the result only arrives right after whatever is sent next.
+        Left alone, a WebStorm/Chrome console evaluate hung until the user's next action, and a
+        step-over in a large script stalled about half the time. Runs while any client reply is
+        outstanding: each interval, if one has waited longer than the interval, send a single
+        throwaway evaluation (one message flushes everything held; its own reply, to an internal
+        id, is dropped on arrival). A prompt reply clears its id before the first interval, so a
+        normal request is never nudged; a request outstanding past REPLY_WAKE_MAX_AGE (a script
+        that never terminates) is dropped from tracking so nudging cannot go on forever.
+        """
+        while self._reply_wake_pending:
+            await asyncio.sleep(REPLY_WAKE_TICK)
+            now = asyncio.get_event_loop().time()
+            for request_id, sent_at in list(self._reply_wake_pending.items()):
+                if now - sent_at > REPLY_WAKE_MAX_AGE:
+                    self._reply_wake_pending.pop(request_id, None)
+            if any(now - sent_at >= REPLY_WAKE_INTERVAL for sent_at in self._reply_wake_pending.values()):
+                await self._send_message_to_target({
+                    "id": self.next_internal_id(),
+                    "method": "Runtime.evaluate",
+                    "params": {"expression": "0"},
+                })
+
     @staticmethod
     def _key_event_init(params: dict[str, Any]) -> str:
         """The JSON the in-page key handlers take: the key and its modifiers, decoded from CDP's
@@ -3039,6 +3130,12 @@ class CdpTarget:
                 message = {"id": message["id"], "result": {}}
         if "id" in message:
             self._pending_requests.pop(message["id"], None)
+            self._reply_wake_pending.pop(message["id"], None)
+            translator = self._reply_translators.pop(message["id"], None)
+            if translator is not None:
+                # A request forwarded without blocking; its translator answers the client itself.
+                await translator(message)
+                return
             if message["id"] < 0:
                 # Response to a bridge-internal request (setup replay or an abandoned wait);
                 # forwarding it would hand the frontend an id it never issued.

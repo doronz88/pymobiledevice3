@@ -7,6 +7,9 @@ from typing import Any, Callable, Optional, cast
 from pymobiledevice3.exceptions import InspectorEvaluateError
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 
+# Poll interval for waiting on the per-session event queue; see cdp_target.IDLE_POLL_INTERVAL.
+IDLE_POLL_INTERVAL = 0.001
+
 logger = logging.getLogger(__name__)
 console_logger = logging.getLogger("webinspector.console")
 # console history replayed by the page on attach, distinguishable (and silenceable) by logger name
@@ -127,10 +130,10 @@ class InspectorSession:
         if wait_target:
             events = protocol.inspector.session_events(protocol.id_)
             while not events:
-                await asyncio.sleep(0)
-            created = events.pop(0)
+                await asyncio.sleep(IDLE_POLL_INTERVAL)
+            created = events.popleft()
             while "targetInfo" not in created["params"]:
-                created = events.pop(0)
+                created = events.popleft()
             target_id = created["params"]["targetInfo"]["targetId"]
             logger.info(f"Created: {target_id}")
         target = cls(protocol, target_id)
@@ -217,9 +220,9 @@ class InspectorSession:
         while True:
             events = self.protocol.inspector.session_events(self.protocol.id_)
             while not events:
-                await asyncio.sleep(0)
+                await asyncio.sleep(IDLE_POLL_INTERVAL)
 
-            response = events.pop(0)
+            response = events.popleft()
             response_method = response["method"]
             if response_method in self.response_methods:
                 self.response_methods[response_method](response)
@@ -230,7 +233,7 @@ class InspectorSession:
         while True:
             if message_id in self._dispatch_message_responses:
                 return self._dispatch_message_responses.pop(message_id)
-            await asyncio.sleep(0)
+            await asyncio.sleep(IDLE_POLL_INTERVAL)
 
     async def get_properties_raw(self, object_id: str) -> list[dict[str, Any]]:
         """Raw ``Runtime.getProperties`` descriptors, preserving RemoteObject dicts (objectIds)."""

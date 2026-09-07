@@ -4,6 +4,7 @@ import itertools
 import json
 import socket
 import threading
+import time
 import urllib.request
 import uuid
 from collections.abc import AsyncGenerator, Generator
@@ -32,7 +33,11 @@ from pymobiledevice3.services.web_protocol.cdp_server import (
     bridge_version,
     targets_html,
 )
-from pymobiledevice3.services.web_protocol.cdp_target import JS_CONTEXT_EXECUTION_ID, CdpTarget
+from pymobiledevice3.services.web_protocol.cdp_target import (
+    JS_CONTEXT_EXECUTION_ID,
+    REPLY_WAKE_INTERVAL,
+    CdpTarget,
+)
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 from pymobiledevice3.services.webinspector import SAFARI, Application, AutomationAvailability, Page, WebinspectorService
 
@@ -1076,6 +1081,194 @@ async def testp_cdp_server_carries_a_user_gesture_through(lockdown: LockdownClie
                 f"Runtime.callFunctionOn must carry the gesture too: {with_gesture}"
             )
         finally:
+            await client.close()
+
+
+async def testp_cdp_server_frees_a_withheld_evaluate_reply(lockdown: LockdownClient) -> None:
+    """
+    iOS 26 WebKit occasionally holds a Runtime.evaluate reply until the next message reaches the
+    page, which hung a client's console evaluate - and stalled stepping - until the user's next
+    action. The bridge nudges the page while such a reply is outstanding, so an evaluate returns on
+    its own with nothing sent after it. A large expression source most reliably triggers the hold.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        try:
+            await client.command(1, "Runtime.enable", {})
+            await client.command(2, "Page.navigate", {"url": "https://example.com/"})
+            await asyncio.sleep(3)
+            big = "(() => { let s = 0; " + "s = s + 1; " * 10000 + "return s; })()"
+            # Nothing follows the evaluate; before the fix it hung until the next command. Bound the
+            # wait well under the 30s a genuine hang would take, but above the bridge's nudge cadence.
+            reply = await asyncio.wait_for(
+                client.command(3, "Runtime.evaluate", {"expression": big, "returnByValue": True}),
+                REPLY_WAKE_INTERVAL * 8,
+            )
+            assert reply["result"]["result"]["value"] == 10000, reply
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_debugs_a_megabyte_script_responsively(lockdown: LockdownClient) -> None:
+    """
+    The whole debugging surface on a ~1 MB script, each step bounded so a regression shows as a
+    failure rather than a slow test: the script defines, a `debugger;` hits, the scope's properties
+    all come back (a large scope's list used to be silently emptied by an internal five-second
+    wait that also stalled event delivery), step-over/into/out land where they should with
+    correct values in scope, a breakpoint set by URL is hit, the script completes with the right
+    result, an armed manual pause stops the next code that runs, and the bridge does not burn CPU
+    while the debugger sits idle at a breakpoint. WebKit withholds a step's reply and paused
+    event until the next message about half the time on a script this size; the watchdog frees
+    them, which is what keeps every bound here tight.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
+        paused_events: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+        async def reader() -> None:
+            while True:
+                message = await client.receive()
+                if "id" in message and message["id"] in pending and not pending[message["id"]].done():
+                    pending[message["id"]].set_result(message)
+                elif message.get("method") == "Debugger.paused":
+                    paused_events.put_nowait(message["params"])
+
+        reader_task = asyncio.create_task(reader())
+
+        async def call(method: str, params: dict[str, Any], budget: float = TIMEOUT) -> dict[str, Any]:
+            id_ = next(message_ids)
+            future: asyncio.Future[dict[str, Any]] = asyncio.get_event_loop().create_future()
+            pending[id_] = future
+            await client.send({"id": id_, "method": method, "params": params})
+            return await asyncio.wait_for(future, budget)
+
+        async def paused(budget: float = TIMEOUT) -> dict[str, Any]:
+            return await asyncio.wait_for(paused_events.get(), budget)
+
+        def value(reply: dict[str, Any]) -> Any:
+            return reply.get("result", {}).get("result", {}).get("value")
+
+        def top(frame_event: dict[str, Any]) -> dict[str, Any]:
+            return frame_event["callFrames"][0]
+
+        try:
+            for method in ("Runtime.enable", "Page.enable", "Debugger.enable"):
+                await call(method, {})
+            await call("Page.navigate", {"url": "https://example.com/"})
+            await asyncio.sleep(3)
+            while not paused_events.empty():
+                paused_events.get_nowait()
+
+            # ~1 MB: a nested function to step into, a `debugger;` to hit, and 45k hoisted vars.
+            var_count = 45000
+            filler = "\n".join(f"  var v{i} = {i} + 1;" for i in range(var_count))
+            source = (
+                "function inner(x){ let y = x*2; return y+1; }\n"
+                "function bigwork(){\n  let a = 1;\n  let b = 2;\n  debugger;\n  let c = a + b;\n"
+                "  let d = inner(c);\n  let e = d + 1;\n" + filler + "\n  return e;\n}\n//# sourceURL=bigwork.js"
+            )
+            return_line = 8 + var_count
+            assert len(source) > 1_000_000, len(source)
+            defined = await call("Runtime.evaluate", {"expression": source, "returnByValue": True}, 60)
+            assert "error" not in defined, defined
+
+            await call("Runtime.evaluate", {"expression": "setTimeout(() => { window.__r = bigwork(); }, 200); 1"})
+            hit = await paused()
+            assert top(hit).get("functionName") == "bigwork" and top(hit)["location"]["lineNumber"] == 4, top(hit)
+
+            # Idle at the breakpoint: the bridge must not spin a core waiting for nothing.
+            cpu_before, wall_before = time.process_time(), time.perf_counter()
+            await asyncio.sleep(3)
+            cpu_share = (time.process_time() - cpu_before) / (time.perf_counter() - wall_before)
+            assert cpu_share < 0.15, f"bridge burned {cpu_share:.0%} of a core idling at a breakpoint"
+
+            assert (
+                value(
+                    await call(
+                        "Debugger.evaluateOnCallFrame",
+                        {"callFrameId": top(hit)["callFrameId"], "expression": "a+b", "returnByValue": True},
+                    )
+                )
+                == 3
+            )
+
+            # Every non-global scope's properties, as the Sources panel fetches them on each pause.
+            started = time.perf_counter()
+            total = 0
+            for scope in top(hit)["scopeChain"]:
+                object_id = scope["object"].get("objectId")
+                if scope.get("type") == "global" or not object_id:
+                    continue
+                reply = await call("Runtime.getProperties", {"objectId": object_id, "ownProperties": True}, 60)
+                total += len(reply.get("result", {}).get("result", []))
+            assert total >= var_count, f"scope properties truncated: {total} < {var_count}"
+            assert time.perf_counter() - started < 10, "fetching the scope took too long"
+
+            stepped: dict[str, Any] = {}
+            for _ in range(2):  # to the inner() call line
+                started = time.perf_counter()
+                await call("Debugger.stepOver", {})
+                stepped = await paused()
+                assert time.perf_counter() - started < 2, "step-over stalled"
+            assert top(stepped)["location"]["lineNumber"] == 6, top(stepped)
+
+            await call("Debugger.stepInto", {})
+            inside = await paused()
+            assert top(inside).get("functionName") == "inner" and len(inside["callFrames"]) >= 3, top(inside)
+            assert (
+                value(
+                    await call(
+                        "Debugger.evaluateOnCallFrame",
+                        {"callFrameId": top(inside)["callFrameId"], "expression": "x", "returnByValue": True},
+                    )
+                )
+                == 3
+            )
+
+            await call("Debugger.stepOut", {})
+            back = await paused()
+            assert top(back).get("functionName") == "bigwork", top(back)
+
+            for _ in range(3):  # through the big body
+                started = time.perf_counter()
+                await call("Debugger.stepOver", {})
+                await paused()
+                assert time.perf_counter() - started < 2, "step-over in the large body stalled"
+
+            # A breakpoint by URL on the return line must be hit on resume, with the value in scope.
+            set_reply = await call("Debugger.setBreakpointByUrl", {"lineNumber": return_line, "url": "bigwork.js"})
+            assert "error" not in set_reply, set_reply
+            await call("Debugger.resume", {})
+            at_return = await paused()
+            assert top(at_return)["location"]["lineNumber"] == return_line, top(at_return)
+            assert (
+                value(
+                    await call(
+                        "Debugger.evaluateOnCallFrame",
+                        {"callFrameId": top(at_return)["callFrameId"], "expression": "e", "returnByValue": True},
+                    )
+                )
+                == 8
+            )
+            await call("Debugger.resume", {})
+            await asyncio.sleep(1)
+            assert value(await call("Runtime.evaluate", {"expression": "window.__r", "returnByValue": True})) == 8
+
+            # Manual pause: schedule code first, then arm the pause; it stops on that code's first
+            # statement. (Arming before an evaluate pauses inside that evaluate, as in Chrome.)
+            while not paused_events.empty():
+                paused_events.get_nowait()
+            await call("Runtime.evaluate", {"expression": "setTimeout(() => { let q = 1; q++; }, 800); 1"})
+            await call("Debugger.pause", {})
+            manual = await paused(10)
+            assert manual["callFrames"], manual
+            await call("Debugger.resume", {})
+        finally:
+            reader_task.cancel()
             await client.close()
 
 

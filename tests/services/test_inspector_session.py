@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from collections import deque
 from types import SimpleNamespace
 from typing import Any, Optional
 
@@ -11,10 +12,11 @@ from pymobiledevice3.services.web_protocol.inspector_session import InspectorSes
 
 @pytest.fixture()
 async def session():
-    events: dict[str, list[dict[str, Any]]] = {}
+    # The real service hands out a deque (consumed from the front in O(1)); the fake must match.
+    events: dict[str, deque[dict[str, Any]]] = {}
     protocol = SimpleNamespace(
         id_="session-1",
-        inspector=SimpleNamespace(session_events=lambda session_id: events.setdefault(session_id, [])),
+        inspector=SimpleNamespace(session_events=lambda session_id: events.setdefault(session_id, deque())),
     )
     session = InspectorSession(protocol, target_id="page-1")  # pyright: ignore[reportArgumentType]
     yield session
