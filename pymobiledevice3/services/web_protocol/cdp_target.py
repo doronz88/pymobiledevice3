@@ -2795,19 +2795,31 @@ class CdpTarget:
         arrives right after whatever is sent next. Observed on iOS 26 with the very same
         expression answering instantly most of the time, so it is a wake-up problem on the
         device, not the script. Left alone, the wait ran out, the target was declared
-        unresponsive and every following key was skipped. Sending a trivial evaluation as
-        soon as the reply is late frees it within milliseconds; nobody waits for the nudge's
+        unresponsive and every following key was skipped. Nudging the page as
+        soon as the reply is late frees it within milliseconds (see _nudge_target); nobody waits for the nudge's
         own reply, and a reply to an internal id nobody waits for is dropped on arrival.
         """
         pending = asyncio.ensure_future(self._evaluate_json_in(context_id, expression))
         done, _ = await asyncio.wait({pending}, timeout=KEY_HANDLER_WAKE_DELAY)
         if not done:
-            await self._send_message_to_target({
-                "id": self.next_internal_id(),
-                "method": "Runtime.evaluate",
-                "params": {"expression": "0"},
-            })
+            await self._nudge_target()
         return await pending
+
+    async def _nudge_target(self) -> None:
+        """Send the page a message that runs no JavaScript, to flush a reply WebKit is withholding.
+
+        Any message reaching the page frees a withheld reply (measured: a step held with its
+        paused event was freed by this in ~10 ms, exactly as by a throwaway evaluation). The
+        message must not run script, because an evaluation is itself a statement: with the Pause
+        button armed, an evaluation used as the nudge paused *inside its own "0"* and the user's
+        code then ran unpaused. Re-send the breakpoints-active setting at its current value - a
+        real Debugger command with nothing to execute and nothing to change.
+        """
+        active = self._setup_messages.get("Debugger.setBreakpointsActive", {}).get("active", True)
+        await self._send_message_to_target(
+            {"id": self.next_internal_id(), "method": "Debugger.setBreakpointsActive", "params": {"active": active}},
+            record=False,
+        )
 
     async def _wake_late_replies(self) -> None:
         """Free forwarded client replies that WebKit is withholding.
@@ -2830,11 +2842,7 @@ class CdpTarget:
                 if now - sent_at > REPLY_WAKE_MAX_AGE:
                     self._reply_wake_pending.pop(request_id, None)
             if any(now - sent_at >= REPLY_WAKE_INTERVAL for sent_at in self._reply_wake_pending.values()):
-                await self._send_message_to_target({
-                    "id": self.next_internal_id(),
-                    "method": "Runtime.evaluate",
-                    "params": {"expression": "0"},
-                })
+                await self._nudge_target()
 
     @staticmethod
     def _key_event_init(params: dict[str, Any]) -> str:
