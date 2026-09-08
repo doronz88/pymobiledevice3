@@ -384,9 +384,12 @@ class CdpBrowser:
         self._discover = bool(message.get("params", {}).get("discover"))
         if self._discover:
             self._events_session = message.get("sessionId")
-            # Announce the current pages before answering so a client awaiting the response
-            # observes the initial Target.targetCreated batch immediately after it.
-            await self._refresh_targets()
+            # Announce every current page before answering so a client awaiting the response
+            # observes the initial Target.targetCreated batch immediately after it. Chrome reports
+            # all existing targets when discovery is enabled; the batch must go out even for pages
+            # already learnt through an earlier Target.getTargets (js-debug's target picker calls
+            # getTargets first, then setDiscoverTargets, and hangs without this initial batch).
+            await self._refresh_targets(announce_all=True)
             self._ensure_poll()
         await self._reply(message, {})
 
@@ -463,13 +466,13 @@ class CdpBrowser:
     def _list_pages(self) -> dict[str, tuple[Application, Page]]:
         return {target_id: (application, page) for target_id, application, page in iter_inspectable(self.inspector)}
 
-    async def _refresh_targets(self) -> None:
+    async def _refresh_targets(self, announce_all: bool = False) -> None:
         """Ask every application for its listing, then bring the client's target list up to date."""
         await self.inspector.get_open_pages()
         await self.inspector.flush_input(PAGE_LISTING_FLUSH)
-        await self._sync_targets()
+        await self._sync_targets(announce_all=announce_all)
 
-    async def _sync_targets(self, attach: bool = True) -> None:
+    async def _sync_targets(self, attach: bool = True, announce_all: bool = False) -> None:
         """Bring the client's target list in line with the listings already received: announce
         new pages, destroy gone ones and, unless `attach` is off, auto-attach the new ones."""
         async with self._refresh_lock:
@@ -487,7 +490,7 @@ class CdpBrowser:
                     "canAccessOpener": False,
                     "browserContextId": DEFAULT_BROWSER_CONTEXT_ID,
                 }
-                if is_new and self._discover:
+                if (is_new or announce_all) and self._discover:
                     await self._send_event("Target.targetCreated", {"targetInfo": self._known_targets[page_id]})
                 if attach and self._auto_attach and page_id not in self._attachments:
                     if self._left_to_its_candidate(page_id, page):
