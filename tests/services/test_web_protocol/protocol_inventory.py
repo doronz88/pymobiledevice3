@@ -234,3 +234,41 @@ def in_events(spec: dict[str, Any], name: str) -> bool:
 def command_params(spec: dict[str, Any], name: str) -> dict[str, Any]:
     d, m = split(name)
     return spec.get(d, {}).get("commands", {}).get(m, {}).get("params", {})
+
+
+def event_params(spec: dict[str, Any], name: str) -> dict[str, Any]:
+    d, m = split(name)
+    return spec.get(d, {}).get("events", {}).get(m, {}).get("params", {})
+
+
+# CDP events the bridge emits that the vendored Chrome protocol has since removed a required field
+# from, or shapes slightly differently than the spec of record; each is kept with the reason it is
+# tolerated so a genuine missing field is still caught.
+EVENT_VALIDATION_ALLOWLIST: dict[str, set[str]] = {
+    # buildId is a recent addition to Debugger.scriptParsed that even node does not send; the hash
+    # and executionContextId the bridge now fills are the fields a client actually keys on.
+    "Debugger.scriptParsed": {"buildId"},
+}
+
+
+def validate_editor_event(spec: dict[str, Any], message: dict[str, Any]) -> list[str]:
+    """Problems with an event the bridge emitted to the editor, against Chrome's protocol.
+
+    Checks the shape a client actually depends on: the event exists, and every required parameter
+    is present. Returns a list of human-readable problems (empty when the event is valid). Replies
+    (id-carrying) are not checked here - the command they answer, and so their expected shape, is
+    not on the message.
+    """
+    method = message.get("method")
+    if not isinstance(method, str) or "id" in message:
+        return []
+    if not in_events(spec, method):
+        return [f"{method}: not a Chrome event"]
+    params = message.get("params") or {}
+    allowed_missing = EVENT_VALIDATION_ALLOWLIST.get(method, set())
+    missing = [
+        name
+        for name, meta in event_params(spec, method).items()
+        if not meta["optional"] and name not in params and name not in allowed_missing
+    ]
+    return [f"{method}: missing required parameter {name!r}" for name in missing]

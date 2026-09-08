@@ -1432,6 +1432,9 @@ class CdpTarget:
             self._top_frame_commits += 1
         # This handler bypasses the pass-through path, so map the frame ids here.
         self._map_frame_ids_outbound(message)
+        # Chrome requires Page.frameNavigated.type; WebKit omits it. Every navigation the bridge
+        # sees is an ordinary one (WebKit reports no back/forward-cache restore).
+        message.get("params", {}).setdefault("type", "Navigation")
         mapped = message.get("params", {}).get("frame", {})
         client_frame_id = mapped.get("id")
         client_parent_id = mapped.get("parentId")
@@ -3339,6 +3342,14 @@ class CdpTarget:
             self._flat_script_url_to_id[source] = script_id
         if script_id is not None:
             self._script_id_to_url[script_id] = source
+        # Chrome requires `hash` and `executionContextId` on Debugger.scriptParsed (verified: node
+        # sends both); WebKit omits them. Fill a stable per-script hash and the context the script
+        # belongs to - the one context on a JSContext, the page's default otherwise - so a client
+        # keying scripts on either does not choke. `buildId` is newer and node omits it too.
+        if "hash" not in params:
+            params["hash"] = hashlib.sha1(f"{script_id}:{source}".encode()).hexdigest()
+        if "executionContextId" not in params:
+            params["executionContextId"] = self._default_execution_id or JS_CONTEXT_EXECUTION_ID
         await self.output_queue.put(message)
         if self._flat and script_id is not None:
             await self._bind_pending_url_breakpoints(str(script_id))
